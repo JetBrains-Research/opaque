@@ -1,84 +1,81 @@
-[build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "opaque-dp"
-version = "0.1.0"
-description = "Differential Privacy for LoRA Fine-tuning"
+name = "opaque"
+version = "0.0.0"
+description = "Functional Differential Privacy for LoRA Fine-tuning"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 authors = [
     {name = "Opaque Contributors"}
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.11,<3.13"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
     "torch>=2.0.0",
-    "numpy>=1.21.0",
-    "scipy>=1.7.0",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
-    "black>=23.0.0",
     "ruff>=0.1.0",
-    "mypy>=1.0.0",
+    "hypothesis>=6.0.0",  # Property-based testing
 ]
-peft = [
-    "peft>=0.7.0",
+jax-validation = [
+    "jax>=0.6.0",
+    "jaxlib>=0.6.0",
+    "jax-privacy>=1.0.0",
+]
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.24.0",  # Auto-generate docs from docstrings
+    "mkdocs-jupyter>=0.24.0", # Jupyter notebook support
 ]
 examples = [
-    "transformers>=4.35.0",
-    "datasets>=2.14.0",
-    "accelerate>=0.24.0",
 ]
 
+[tool.uv.sources]
+jax-privacy = { path = "../jax_privacy", editable = true }
+
 [project.urls]
-Homepage = "https://github.com/yourusername/opaque"
-Documentation = "https://opaque.readthedocs.io"
-Repository = "https://github.com/yourusername/opaque"
-Issues = "https://github.com/yourusername/opaque/issues"
+Homepage = "https://github.com/evgri243/opaque"
+Documentation = "https://github.com/evgri243/opaque/tree/main/docs"
+Repository = "https://github.com/evgri243/opaque"
+Issues = "https://github.com/evgri243/opaque/issues"
 
-[tool.setuptools]
-packages = ["opaque"]
+[build-system]
+requires = ["hatchling>=0.11.2"]
+build-backend = "hatchling.build"
 
-[tool.setuptools.package-data]
-opaque = ["py.typed"]
-
-[tool.black]
-line-length = 100
-target-version = ['py38', 'py39', 'py310', 'py311']
+[tool.hatch.build.targets.wheel]
+packages = ["src/opaque"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py38"
+target-version = "py311"
 select = ["E", "F", "W", "I", "N", "UP"]
-ignore = ["E501"]  # Line too long (handled by black)
-
-[tool.mypy]
-python_version = "3.8"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-ignore_missing_imports = true
+ignore = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "--cov=opaque --cov-report=html --cov-report=term-missing"
+addopts = "--cov=opaque --cov-report=html --cov-report=term-missing -v"
+markers = [
+    "jax_validation: tests requiring JAX and JAX-Privacy for cross-framework validation",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "gpu: marks tests that require GPU",
+]
+# Ignore JAX validation tests by default (require optional jax-validation group)
+# Run with: uv run --group jax-validation pytest -m jax_validation
+norecursedirs = [".git", ".tox", "dist", "build", "*.egg"]

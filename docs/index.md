@@ -1,0 +1,61 @@
+# Opaque
+
+**Functional Differential Privacy for PyTorch LoRA Fine-tuning**
+
+Opaque is a PyTorch port of Google's [JAX-Privacy](https://github.com/google-deepmind/jax_privacy), adapted specifically for differentially private (DP) fine-tuning of Large Language Models (LLMs) using LoRA (Low-Rank Adaptation).
+
+## Features
+
+- **Functional API**: Composable DP primitives inspired by JAX-Privacy
+- **LoRA-First**: Optimized for parameter-efficient fine-tuning
+- **PyTorch Native**: Built on `torch.func` functional transformations
+- **Test-Driven**: Validated against JAX-Privacy reference implementation
+
+## Status
+
+!!! warning "Early Development"
+    Opaque is in early development. The core clipping module is currently being implemented. API may change.
+
+## Quick Example
+
+Note: This snippet shows the planned API and will work after Stage 1 is implemented. Do not run yet.
+
+```python
+import torch
+from opaque.core.clipping import clipped_grad
+
+# Define loss for a single example
+def loss_fn(params, data):
+    return 0.5 * ((data - params) ** 2).mean()
+
+# Create clipped gradient function
+clipped_grad_fn = clipped_grad(
+    loss_fn,
+    l2_clip_norm=1.0,      # Clip each example's gradient to max norm 1.0
+    normalize_by=3.0,       # Divide by batch size
+)
+
+# Compute clipped gradients on batch
+params = torch.tensor(3.0, requires_grad=True)
+data = torch.tensor([0.0, 7.0, -2.0])  # Batch of 3 examples
+
+clipped_grads = clipped_grad_fn(params, data)
+```
+
+## Installation
+
+!!! note
+    Opaque is not yet published to PyPI. Install from source:
+
+```bash
+git clone https://github.com/evgri243/opaque.git
+cd opaque
+uv sync
+```
+
+## Next Steps
+
+- [Quick Start Guide](getting-started/quickstart.md)
+- [DP Basics](user-guide/dp-basics.md)
+- [API Reference](api/core/clipping.md)
+- [Contributing](development/contributing.md)
