@@ -32,7 +32,6 @@ jnp = pytest.importorskip("jax.numpy")
 from jax import tree_util as jtu  # type: ignore
 from jax.flatten_util import ravel_pytree  # type: ignore
 
-
 pytestmark = [pytest.mark.jax_validation]
 
 ATOL = 1e-5  # Standard tolerance for JAX-PyTorch numerical comparison

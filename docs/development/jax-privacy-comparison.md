@@ -148,14 +148,98 @@ assert compute_norm(result) <= expected_norm
 
 Here's how JAX constructs map to PyTorch:
 
-| JAX Function | Purpose | PyTorch Equivalent |
-|--------------|---------|-------------------|
-| `jax.vmap(fn, in_dims=...)` | Vectorize over batch dimension | `torch.func.vmap(fn, in_dims=...)` |
-| `jax.grad(fn, argnums=...)` | Compute gradients | `torch.func.grad(fn, argnums=...)` |
-| `jax.lax.scan(fn, init, xs)` | Sequential accumulation | Custom loop or checkpointing |
-| `jax.tree_util.tree_map(fn, tree)` | Apply to nested structures | `torch.utils._pytree.tree_map(fn, tree)` |
-| `jax.random.PRNGKey(seed)` | Reproducible randomness | `torch.Generator().manual_seed(seed)` |
-| `optax.GradientTransformation` | Optimizer interface | `torch.optim.Optimizer` |
+| JAX Function | Purpose | PyTorch Equivalent | Notes |
+|--------------|---------|-------------------|-------|
+| `jax.vmap(fn, in_dims=...)` | Vectorize over batch dimension | `torch.func.vmap(fn, in_dims=...)` | ✅ Direct equivalent |
+| `jax.grad(fn, argnums=...)` | Compute gradients | `torch.func.grad(fn, argnums=...)` | ✅ Direct equivalent |
+| `jax.value_and_grad(fn, has_aux=True)` | Get value AND gradient | **No direct equivalent** | ⚠️ See workaround below |
+| `jax.lax.scan(fn, init, xs)` | Sequential accumulation | Custom loop or checkpointing | Manual implementation |
+| `jax.tree_util.tree_map(fn, tree)` | Apply to nested structures | `torch.utils._pytree.tree_map(fn, tree)` | ✅ Direct equivalent |
+| `jax.random.PRNGKey(seed)` | Reproducible randomness | `torch.Generator().manual_seed(seed)` | Different API |
+| `optax.GradientTransformation` | Optimizer interface | `torch.optim.Optimizer` | Different API |
+
+### ⚠️ Critical API Difference: `value_and_grad`
+
+One of the most important differences discovered during implementation:
+
+**JAX:**
+```python
+# jax.value_and_grad returns BOTH value and gradient
+grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
+(value, aux), grad = grad_fn(params, data)  # Returns ((value, aux), grad)
+```
+
+**PyTorch:**
+```python
+# torch.func.grad returns ONLY gradient (no value!)
+grad_fn = torch.func.grad(loss_fn, has_aux=True)
+grad, aux = grad_fn(params, data)  # Returns (grad, aux) - NO VALUE!
+```
+
+**Workaround in Opaque:**
+
+We created a `_value_and_grad()` helper to provide JAX-compatible behavior:
+
+```python
+def _value_and_grad(fun, argnums=0, has_aux=False):
+    """Mimic jax.value_and_grad behavior in PyTorch."""
+    grad_fn = torch.func.grad(fun, argnums=argnums, has_aux=has_aux)
+
+    if has_aux:
+        def wrapper(*args, **kwargs):
+            value, aux = fun(*args, **kwargs)  # Call original function
+            gradient, _ = grad_fn(*args, **kwargs)  # Get gradient
+            return (value, aux), gradient  # JAX format
+    else:
+        def wrapper(*args, **kwargs):
+            value = fun(*args, **kwargs)
+            gradient = grad_fn(*args, **kwargs)
+            return value, gradient
+
+    return wrapper
+```
+
+This is critical for `clipped_grad` which needs both the value (for `return_values=True`) and the gradient.
+
+### ⚠️ PyTorch vmap Cannot Handle None in Namedtuples
+
+Another important difference:
+
+**JAX:**
+```python
+AuxOutput = namedtuple("AuxOutput", ["values", "grad_norms", "aux"])
+aux = AuxOutput(values=tensor, grad_norms=None, aux=None)  # None OK!
+jax.vmap(fn_returning_aux, out_dims=0)  # Works fine
+```
+
+**PyTorch:**
+```python
+AuxOutput = namedtuple("AuxOutput", ["values", "grad_norms", "aux"])
+aux = AuxOutput(values=tensor, grad_norms=None, aux=None)
+torch.func.vmap(fn_returning_aux, out_dims=0)  # ERROR!
+# ValueError: vmap(...): must only return Tensors, got type <class 'NoneType'>
+```
+
+**Workaround in Opaque:**
+
+Use dicts instead of namedtuples inside vmapped functions, then convert back to namedtuples after vmap:
+
+```python
+# Inside grad_fn (before vmap)
+aux_dict = {}
+if return_values:
+    aux_dict["values"] = value
+if return_grad_norms:
+    aux_dict["grad_norms"] = norm
+return result, aux_dict  # Dict OK for vmap!
+
+# After clipped_fun returns (after vmap)
+aux_output = AuxiliaryOutput(
+    values=aux_dict.get("values"),
+    grad_norms=aux_dict.get("grad_norms"),
+    aux=aux_dict.get("aux"),
+)
+```
 
 ---
 

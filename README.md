@@ -19,7 +19,7 @@ Bring production-quality differential privacy to PyTorch's LLM fine-tuning ecosy
 - **PyTorch Native**: Built on `torch.func` (functional transformations)
 - **Zero Surprises**: Fail-fast error handling for security-critical DP training
 
-**Status**: Early Development — Core clipping module in progress (Stage 1)
+**Status**: Stage 1 Complete — Core clipping API ready. Stage 2 (Noise Injection) next.
 
 ---
 
@@ -103,15 +103,21 @@ Differential privacy (DP) provides mathematical guarantees that a model doesn't 
 - [x] Design PyTorch port strategy
 - [x] Define TDD-inspired workflow
 
-### 📋 Stage 1: Core Clipping (Ready to Start)
-**Timeline**: 3 weeks | [Detailed Plan](docs/development/stage1-plan.md)
+### ✅ Stage 1: Core Clipping (Complete!)
+**Timeline**: Completed | [Detailed Plan](docs/development/stage1-plan.md)
 
-- [ ] `opaque.core.pytree_utils` - PyTree operations
-- [ ] `opaque.core.clipping` - Per-example gradient clipping
-- [ ] Numerical validation against JAX-Privacy
-- [ ] Examples: Linear regression, basic usage
+- [x] `opaque.pytree_utils` - PyTree operations with optree
+- [x] `opaque.clipping` - Full clipping API:
+  - `clip_pytree()` - Low-level PyTree clipping
+  - `clipped_fun()` - Clip and sum function outputs (primary API)
+  - `clipped_grad()` - High-level gradient clipping
+  - `BoundedSensitivityCallable` - Wrapper with sensitivity tracking
+- [x] Numerical validation against JAX-Privacy main (all tests pass within 1e-5)
+- [x] 79 tests with 80% coverage (34 unit + 45 JAX validation)
+- [x] Module consolidation complete (JAX-Privacy main API parity)
+- [x] Created `_value_and_grad()` helper to bridge PyTorch/JAX API differences
 
-**Deliverable**: `clipped_grad()` function matching JAX-Privacy behavior
+**Deliverable**: ✅ Complete functional API matching JAX-Privacy main branch
 
 ### Stage 2: Noise Injection (Weeks 4-5)
 - [ ] `opaque.core.noise` - Gaussian noise generation

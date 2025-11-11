@@ -24,23 +24,35 @@ This document outlines the complete implementation roadmap for Opaque.
 
 ---
 
-## Stage 1: Core Clipping Module 📋 **READY TO START**
+## Stage 1: Core Clipping Module ✅ **COMPLETED**
 
-**Timeline**: 3 weeks
+**Timeline**: 3 weeks (Completed 2025-11-11)
 
 **Goal**: Implement per-example gradient clipping without noise
 
 **Deliverables**:
-1. `opaque.core.pytree_utils` - PyTree operations (~100 LOC)
-2. `opaque.core.clipping` - Gradient clipping (~400 LOC)
-3. Tests (~400 LOC)
-4. JAX-Privacy numerical validation
-5. Examples: Linear regression, basic usage
+- [x] `opaque.pytree_utils` - PyTree operations (152 LOC)
+- [x] `opaque.clipping` - Full clipping API (700 LOC)
+  - `clip_pytree()` - Low-level PyTree clipping
+  - `clipped_fun()` - Primary API for clipping function outputs
+  - `clipped_grad()` - High-level gradient clipping API
+  - `BoundedSensitivityCallable` - Wrapper with sensitivity tracking
+  - `AuxiliaryOutput` - Named tuple for auxiliary outputs
+- [x] Tests: 79 tests passing (34 unit + 45 JAX validation)
+- [x] JAX-Privacy numerical validation (atol=1e-5)
+- [x] 80% code coverage
 
-**Key Functions**:
-- `global_norm()` - Compute L2 norm across PyTree
-- `clip_pytree()` - Clip PyTree to max L2 norm
-- `clipped_grad()` - Main API for per-example clipped gradients
+**Implementation Highlights**:
+- Full API parity with JAX-Privacy main branch (single-device features)
+- All parameters implemented except `microbatch_size`, `prng_argnum`, `spmd_axis_name` (documented as tech debt)
+- Created `_value_and_grad()` helper to bridge PyTorch/JAX API differences
+- Workaround for PyTorch vmap None-handling limitation
+- Numerical validation against JAX-Privacy within 1e-5 tolerance
+
+**Known Limitations** (documented as tech debt):
+- `microbatch_size` - Deferred until Stage 3 (requires sophisticated implementation)
+- `prng_argnum` - Deferred (requires PRNG key splitting, no PyTorch equivalent)
+- `spmd_axis_name` - Deferred (distributed training feature)
 
 **See**: [Stage 1 Detailed Plan](stage1-plan.md)
 
@@ -152,12 +164,12 @@ This document outlines the complete implementation roadmap for Opaque.
 | Stage | Duration | Status |
 |-------|----------|--------|
 | Stage 0: Planning | 1 week | ✅ Complete |
-| Stage 1: Clipping | 3 weeks | 📋 Ready |
-| Stage 2: Noise | 2 weeks | 🔜 Future |
+| Stage 1: Clipping | 3 weeks | ✅ Complete (2025-11-11) |
+| Stage 2: Noise | 2 weeks | 📋 Ready |
 | Stage 3: Accounting | 2 weeks | 🔜 Future |
 | Stage 4: High-Level API | 2 weeks | 🔜 Future |
 | Stage 5: Polish | 2-3 weeks | 🔜 Future |
-| **Total** | **~12 weeks** | **In Progress** |
+| **Total** | **~12 weeks** | **Stage 1 Complete** |
 
 ---
 

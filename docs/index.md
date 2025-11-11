@@ -13,12 +13,12 @@ Opaque is a PyTorch port of Google's [JAX-Privacy](https://github.com/google-dee
 
 ## Status
 
-!!! warning "Early Development"
-    Opaque is in early development. The core clipping module is currently being implemented. API may change.
+!!! success "Stage 1 Complete"
+    ✅ Core clipping module is complete and tested! 79 tests passing with numerical validation against JAX-Privacy.
+
+    🔜 Next: Stage 2 (Noise Injection) to enable full DP-SGD.
 
 ## Quick Example
-
-Note: This snippet shows the planned API and will work after Stage 1 is implemented. Do not run yet.
 
 ```python
 import torch

@@ -22,7 +22,7 @@ import numpy as np
 import pytest
 import torch
 
-from opaque.gradient_clipping import clipped_grad
+from opaque.clipping import clipped_grad
 
 jax = pytest.importorskip("jax")
 jnp = pytest.importorskip("jax.numpy")
@@ -32,20 +32,28 @@ pytestmark = [pytest.mark.jax_validation]
 ATOL = 1e-5  # Standard tolerance for JAX-PyTorch numerical comparison
 
 
-def _import_jax_privacy_gradient_clipping():
-    """Import JAX-Privacy gradient_clipping module with path fallbacks."""
+def _import_jax_privacy_clipping():
+    """Import JAX-Privacy clipping module with clipped_grad function.
+
+    Note: In JAX-Privacy main branch, clipped_grad moved to experimental/clipping.py.
+    """
     import importlib
 
     candidates = [
-        "jax_privacy.experimental.gradient_clipping",
+        "jax_privacy.experimental.clipping",  # main branch location
+        "jax_privacy.experimental.gradient_clipping",  # old location
+        "jax_privacy.src.experimental.clipping",
         "jax_privacy.src.experimental.gradient_clipping",
     ]
     for name in candidates:
         try:
-            return importlib.import_module(name)
+            module = importlib.import_module(name)
+            # Verify clipped_grad is present
+            if hasattr(module, "clipped_grad"):
+                return module
         except Exception:
             continue
-    pytest.skip("Could not import JAX-Privacy gradient_clipping (check ../jax_privacy)")
+    pytest.skip("Could not import JAX-Privacy clipped_grad (check ../jax_privacy)")
 
 
 def _jax_to_torch(tree: Any) -> Any:
@@ -69,7 +77,7 @@ def _torch_to_jax(tree: Any) -> Any:
 
 def test_clipped_grad_matches_jax_basic():
     """Validate clipped_grad matches JAX-Privacy gradient_clipping."""
-    jax_gc = _import_jax_privacy_gradient_clipping()
+    jax_gc = _import_jax_privacy_clipping()
 
     def loss_fn_jax(param, data):
         return 0.5 * jnp.mean((data - param) ** 2)
@@ -96,7 +104,7 @@ def test_clipped_grad_matches_jax_basic():
 
 def test_clipped_grad_matches_jax_scalar_params():
     """Validate clipped_grad with scalar parameters."""
-    jax_gc = _import_jax_privacy_gradient_clipping()
+    jax_gc = _import_jax_privacy_clipping()
 
     def loss_fn_jax(param, data):
         return 0.5 * jnp.mean((data - param) ** 2)
@@ -120,7 +128,7 @@ def test_clipped_grad_matches_jax_scalar_params():
 
 def test_clipped_grad_matches_jax_with_pytree_params():
     """Validate clipped_grad with PyTree parameters."""
-    jax_gc = _import_jax_privacy_gradient_clipping()
+    jax_gc = _import_jax_privacy_clipping()
 
     def loss_fn_jax(params, data):
         pred = params["w"] * data + params["b"]
@@ -136,7 +144,10 @@ def test_clipped_grad_matches_jax_with_pytree_params():
     params_jax = {"w": jnp.array(1.0), "b": jnp.array(0.5)}
     data_jax = jnp.array([0.0, 1.0, 2.0])
 
-    params_torch = {"w": torch.tensor(1.0, requires_grad=True), "b": torch.tensor(0.5, requires_grad=True)}
+    params_torch = {
+        "w": torch.tensor(1.0, requires_grad=True),
+        "b": torch.tensor(0.5, requires_grad=True),
+    }
     data_torch = torch.tensor([0.0, 1.0, 2.0])
 
     grad_jax = cg_jax(params_jax, data_jax)
@@ -144,12 +155,14 @@ def test_clipped_grad_matches_jax_with_pytree_params():
 
     # Compare leaf by leaf
     for key in ["w", "b"]:
-        np.testing.assert_allclose(grad_torch[key].detach().numpy(), np.asarray(grad_jax[key]), atol=ATOL)
+        np.testing.assert_allclose(
+            grad_torch[key].detach().numpy(), np.asarray(grad_jax[key]), atol=ATOL
+        )
 
 
 def test_clipped_grad_matches_jax_nested_pytree():
     """Validate clipped_grad with deeply nested PyTree parameters."""
-    jax_gc = _import_jax_privacy_gradient_clipping()
+    jax_gc = _import_jax_privacy_clipping()
 
     def loss_fn_jax(params, data):
         pred = params["layer1"]["w"] * data + params["layer1"]["b"]
@@ -171,8 +184,14 @@ def test_clipped_grad_matches_jax_nested_pytree():
     data_jax = jnp.array([1.0, 2.0, 3.0])
 
     params_torch = {
-        "layer1": {"w": torch.tensor(1.0, requires_grad=True), "b": torch.tensor(0.5, requires_grad=True)},
-        "layer2": {"w": torch.tensor(2.0, requires_grad=True), "b": torch.tensor(-0.5, requires_grad=True)},
+        "layer1": {
+            "w": torch.tensor(1.0, requires_grad=True),
+            "b": torch.tensor(0.5, requires_grad=True),
+        },
+        "layer2": {
+            "w": torch.tensor(2.0, requires_grad=True),
+            "b": torch.tensor(-0.5, requires_grad=True),
+        },
     }
     data_torch = torch.tensor([1.0, 2.0, 3.0])
 
@@ -191,7 +210,7 @@ def test_clipped_grad_matches_jax_nested_pytree():
 
 def test_clipped_grad_matches_jax_with_return_grad_norms():
     """Validate clipped_grad with return_grad_norms=True."""
-    jax_gc = _import_jax_privacy_gradient_clipping()
+    jax_gc = _import_jax_privacy_clipping()
 
     def loss_fn_jax(param, data):
         return 0.5 * jnp.mean((data - param) ** 2)
@@ -218,7 +237,7 @@ def test_clipped_grad_matches_jax_with_return_grad_norms():
 
 def test_clipped_grad_matches_jax_with_return_values():
     """Validate clipped_grad with return_values=True."""
-    jax_gc = _import_jax_privacy_gradient_clipping()
+    jax_gc = _import_jax_privacy_clipping()
 
     def loss_fn_jax(param, data):
         return 0.5 * jnp.mean((data - param) ** 2)
@@ -245,7 +264,7 @@ def test_clipped_grad_matches_jax_with_return_values():
 
 def test_clipped_grad_matches_jax_with_all_auxiliary_outputs():
     """Validate clipped_grad with all auxiliary outputs enabled."""
-    jax_gc = _import_jax_privacy_gradient_clipping()
+    jax_gc = _import_jax_privacy_clipping()
 
     def loss_fn_jax(param, data):
         return 0.5 * jnp.mean((data - param) ** 2)
@@ -279,7 +298,7 @@ def test_clipped_grad_matches_jax_with_all_auxiliary_outputs():
 
 def test_clipped_grad_matches_jax_rescale_to_unit_norm():
     """Validate clipped_grad with rescale_to_unit_norm=True."""
-    jax_gc = _import_jax_privacy_gradient_clipping()
+    jax_gc = _import_jax_privacy_clipping()
 
     def loss_fn_jax(param, data):
         return 0.5 * jnp.mean((data - param) ** 2)
@@ -303,7 +322,7 @@ def test_clipped_grad_matches_jax_rescale_to_unit_norm():
 
 def test_clipped_grad_matches_jax_keep_batch_dim_false():
     """Validate clipped_grad with keep_batch_dim=False."""
-    jax_gc = _import_jax_privacy_gradient_clipping()
+    jax_gc = _import_jax_privacy_clipping()
 
     # Loss function expects single example (no batch dimension)
     def loss_fn_jax(param, data):
@@ -329,7 +348,7 @@ def test_clipped_grad_matches_jax_keep_batch_dim_false():
 @pytest.mark.parametrize("clip_norm", [0.5, 1.0, 2.0, 5.0])
 def test_clipped_grad_matches_jax_various_clip_norms(clip_norm):
     """Validate clipped_grad across various clip_norm values."""
-    jax_gc = _import_jax_privacy_gradient_clipping()
+    jax_gc = _import_jax_privacy_clipping()
 
     def loss_fn_jax(param, data):
         return 0.5 * jnp.mean((data - param) ** 2)
@@ -353,7 +372,7 @@ def test_clipped_grad_matches_jax_various_clip_norms(clip_norm):
 
 def test_clipped_grad_matches_jax_has_aux():
     """Validate clipped_grad with has_aux=True for user auxiliary outputs."""
-    jax_gc = _import_jax_privacy_gradient_clipping()
+    jax_gc = _import_jax_privacy_clipping()
 
     def loss_fn_jax(param, data):
         loss = 0.5 * jnp.mean((data - param) ** 2)
@@ -387,7 +406,7 @@ def test_clipped_grad_matches_jax_has_aux():
 
 def test_clipped_grad_matches_jax_l2_norm_bound_property():
     """Validate that clipped_grad returns callable with l2_norm_bound property."""
-    jax_gc = _import_jax_privacy_gradient_clipping()
+    jax_gc = _import_jax_privacy_clipping()
 
     def loss_fn_jax(param, data):
         return 0.5 * jnp.mean((data - param) ** 2)

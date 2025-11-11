@@ -4,7 +4,7 @@ import pytest
 import torch
 from torch.func import grad
 
-from opaque.clipping import clip_pytree, clip_sum
+from opaque.clipping import clip_pytree, clipped_fun
 
 
 @pytest.fixture(params=["cpu"])
@@ -44,7 +44,10 @@ def test_clip_rescales_to_threshold_when_above(device):
 def test_clip_preserves_structure_and_device(device):
     """Clipping should preserve PyTree structure and tensor devices."""
     pytree = {
-        "layer1": {"w": torch.tensor([1.0, 2.0], device=device), "b": torch.tensor([0.5], device=device)},
+        "layer1": {
+            "w": torch.tensor([1.0, 2.0], device=device),
+            "b": torch.tensor([0.5], device=device),
+        },
         "layer2": {"w": torch.tensor([3.0, 4.0], device=device)},
     }
     clipped, _ = clip_pytree(pytree, clip_norm=1.0)
@@ -76,18 +79,20 @@ def test_clip_handles_empty_tree(device):
 
 
 # ============================================================================
-# clip_sum tests (with gradients)
+# clipped_fun tests (with gradients)
 # ============================================================================
 
 
-def test_clip_sum_scalar_basic():
+def test_clipped_fun_scalar_basic():
     """Basic test: clip_sum with scalar param and batch data."""
 
     def loss_fn(param, data):
         # With keep_batch_dim=True (default), data has shape (1,)
         return 0.5 * ((data - param) ** 2).mean()
 
-    clipped_grad_fn = clip_sum(grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0, normalize_by=3.0)
+    clipped_grad_fn = clipped_fun(
+        grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0, normalize_by=3.0
+    )
 
     param = torch.tensor(3.0, requires_grad=True)
     data = torch.tensor([0.0, 7.0, -2.0])
@@ -97,27 +102,28 @@ def test_clip_sum_scalar_basic():
     assert result.shape == param.shape
 
 
-def test_clip_sum_return_norms():
+def test_clipped_fun_return_norms():
     """Test return_norms returns per-example norms before clipping."""
 
     def loss_fn(param, data):
         return 0.5 * ((data - param) ** 2).mean()
 
-    clipped_grad_fn = clip_sum(
+    clipped_grad_fn = clipped_fun(
         grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0, normalize_by=3.0, return_norms=True
     )
 
     param = torch.tensor(3.0, requires_grad=True)
     data = torch.tensor([0.0, 7.0, -2.0])
 
-    result, norms = clipped_grad_fn(param, data)
+    result, (aux, norms) = clipped_grad_fn(param, data)
     assert isinstance(result, torch.Tensor)
+    assert aux == ()  # aux should be empty tuple for has_aux=False
     assert isinstance(norms, torch.Tensor)
     assert norms.shape == (3,)  # One norm per example
     assert all(norms >= 0)
 
 
-def test_clip_sum_keep_batch_dim_true():
+def test_clipped_fun_keep_batch_dim_true():
     """Test keep_batch_dim=True passes size-1 batch dim to loss."""
 
     def loss_fn(param, data):
@@ -125,7 +131,7 @@ def test_clip_sum_keep_batch_dim_true():
         assert data.shape == (1,)
         return 0.5 * ((data - param) ** 2).mean()
 
-    clipped_grad_fn = clip_sum(
+    clipped_grad_fn = clipped_fun(
         grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0, normalize_by=3.0, keep_batch_dim=True
     )
 
@@ -136,13 +142,13 @@ def test_clip_sum_keep_batch_dim_true():
     assert isinstance(result, torch.Tensor)
 
 
-def test_clip_sum_has_aux_false():
+def test_clipped_fun_has_aux_false():
     """Test has_aux=False with function returning only value."""
 
     def loss_fn(param, data):
         return 0.5 * ((data - param) ** 2).mean()
 
-    clipped_grad_fn = clip_sum(grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0, has_aux=False)
+    clipped_grad_fn = clipped_fun(grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0, has_aux=False)
 
     param = torch.tensor(3.0, requires_grad=True)
     data = torch.tensor([0.0, 7.0, -2.0])
@@ -152,7 +158,7 @@ def test_clip_sum_has_aux_false():
     # Should only return the clipped grad, no aux
 
 
-def test_clip_sum_has_aux_true():
+def test_clipped_fun_has_aux_true():
     """Test has_aux=True with function returning (value, aux)."""
 
     # Test on a simple function (not grad) that returns aux
@@ -162,7 +168,7 @@ def test_clip_sum_has_aux_true():
         aux = data * 2  # Some auxiliary value (tensor)
         return value, aux
 
-    clipped_fn = clip_sum(fn_with_aux, batch_argnums=1, l2_clip_norm=1.0, has_aux=True)
+    clipped_fn = clipped_fun(fn_with_aux, batch_argnums=1, l2_clip_norm=1.0, has_aux=True)
 
     x = torch.tensor([1.0])
     data = torch.tensor([0.0, 1.0, 2.0])
@@ -172,7 +178,7 @@ def test_clip_sum_has_aux_true():
     # aux_list contains per-example aux values
 
 
-def test_clip_sum_has_aux_with_return_norms():
+def test_clipped_fun_has_aux_with_return_norms():
     """Test has_aux=True and return_norms=True together."""
 
     def fn_with_aux(x, data):
@@ -180,20 +186,20 @@ def test_clip_sum_has_aux_with_return_norms():
         aux = data
         return value, aux
 
-    clipped_fn = clip_sum(
+    clipped_fn = clipped_fun(
         fn_with_aux, batch_argnums=1, l2_clip_norm=1.0, has_aux=True, return_norms=True
     )
 
     x = torch.tensor([1.0])
     data = torch.tensor([0.0, 1.0, 2.0])
 
-    result, aux_list, norms = clipped_fn(x, data)
+    result, (aux_list, norms) = clipped_fn(x, data)
     assert isinstance(result, torch.Tensor)
     assert isinstance(norms, torch.Tensor)
     assert norms.shape == (3,)
 
 
-def test_clip_sum_nan_safe_replaces_nans():
+def test_clipped_fun_nan_safe_replaces_nans():
     """Test nan_safe=True replaces NaN/Inf in gradients."""
 
     def loss_fn(param, data):
@@ -201,7 +207,7 @@ def test_clip_sum_nan_safe_replaces_nans():
         # Use mean() to return scalar
         return torch.sqrt(param - data).mean()  # Gradient is undefined for param < data
 
-    clipped_grad_fn = clip_sum(grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0, nan_safe=True)
+    clipped_grad_fn = clipped_fun(grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0, nan_safe=True)
 
     param = torch.tensor(1.0, requires_grad=True)
     data = torch.tensor([0.5, 2.0, 0.3])  # data[1]=2.0 will cause NaN
@@ -211,14 +217,14 @@ def test_clip_sum_nan_safe_replaces_nans():
     assert torch.isfinite(result).all()
 
 
-def test_clip_sum_dtype_controls_accumulation():
+def test_clipped_fun_dtype_controls_accumulation():
     """Test dtype parameter controls accumulation precision."""
 
     def loss_fn(param, data):
         return 0.5 * ((data - param) ** 2).mean()
 
     # Use float64 for higher precision accumulation
-    clipped_grad_fn = clip_sum(
+    clipped_grad_fn = clipped_fun(
         grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0, normalize_by=3.0, dtype=torch.float64
     )
 
@@ -229,16 +235,21 @@ def test_clip_sum_dtype_controls_accumulation():
     assert result.dtype == torch.float64
 
 
-def test_clip_sum_pytree_params():
+def test_clipped_fun_pytree_params():
     """Test clip_sum with PyTree (dict) parameters."""
 
     def loss_fn(params, data):
         # params = {'w': tensor, 'b': tensor}
         return 0.5 * ((data - (params["w"] * data + params["b"])) ** 2).mean()
 
-    clipped_grad_fn = clip_sum(grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0, normalize_by=3.0)
+    clipped_grad_fn = clipped_fun(
+        grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0, normalize_by=3.0
+    )
 
-    params = {"w": torch.tensor(1.0, requires_grad=True), "b": torch.tensor(0.5, requires_grad=True)}
+    params = {
+        "w": torch.tensor(1.0, requires_grad=True),
+        "b": torch.tensor(0.5, requires_grad=True),
+    }
     data = torch.tensor([0.0, 1.0, 2.0])
 
     result = clipped_grad_fn(params, data)
@@ -248,7 +259,7 @@ def test_clip_sum_pytree_params():
     assert isinstance(result["b"], torch.Tensor)
 
 
-def test_clip_sum_nested_pytree_params():
+def test_clipped_fun_nested_pytree_params():
     """Test clip_sum with deeply nested PyTree parameters."""
 
     def loss_fn(params, data):
@@ -257,11 +268,19 @@ def test_clip_sum_nested_pytree_params():
         pred = params["layer2"]["w"] * pred + params["layer2"]["b"]
         return (pred**2).mean()
 
-    clipped_grad_fn = clip_sum(grad(loss_fn), batch_argnums=1, l2_clip_norm=2.0, normalize_by=3.0)
+    clipped_grad_fn = clipped_fun(
+        grad(loss_fn), batch_argnums=1, l2_clip_norm=2.0, normalize_by=3.0
+    )
 
     params = {
-        "layer1": {"w": torch.tensor(1.0, requires_grad=True), "b": torch.tensor(0.5, requires_grad=True)},
-        "layer2": {"w": torch.tensor(2.0, requires_grad=True), "b": torch.tensor(-0.5, requires_grad=True)},
+        "layer1": {
+            "w": torch.tensor(1.0, requires_grad=True),
+            "b": torch.tensor(0.5, requires_grad=True),
+        },
+        "layer2": {
+            "w": torch.tensor(2.0, requires_grad=True),
+            "b": torch.tensor(-0.5, requires_grad=True),
+        },
     }
     data = torch.tensor([1.0, 2.0, 3.0])
 
@@ -272,4 +291,8 @@ def test_clip_sum_nested_pytree_params():
     assert isinstance(result["layer2"], dict)
     assert "w" in result["layer1"] and "b" in result["layer1"]
     assert "w" in result["layer2"] and "b" in result["layer2"]
-    assert all(isinstance(result[layer][key], torch.Tensor) for layer in ["layer1", "layer2"] for key in ["w", "b"])
+    assert all(
+        isinstance(result[layer][key], torch.Tensor)
+        for layer in ["layer1", "layer2"]
+        for key in ["w", "b"]
+    )

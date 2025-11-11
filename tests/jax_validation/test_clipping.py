@@ -8,7 +8,7 @@ to edge cases.
 Module under test: opaque.clipping
 Functions tested:
     - clip_pytree() - Clip PyTree to max L2 norm
-    - clip_sum() - Wrap function to clip per-example outputs and sum
+    - clipped_fun() - Wrap function to clip per-example outputs and sum
 
 Reference: jax_privacy.experimental.clipping
 
@@ -24,7 +24,7 @@ import numpy as np
 import pytest
 import torch
 
-from opaque.clipping import clip_pytree, clip_sum
+from opaque.clipping import clip_pytree, clipped_fun
 
 jax = pytest.importorskip("jax")
 jnp = pytest.importorskip("jax.numpy")
@@ -176,8 +176,12 @@ def test_clip_pytree_matches_jax_rescale_to_unit_norm():
     tree_torch = _jax_to_torch(tree_jax)
 
     clip_norm = 2.0
-    clipped_jax, norm_jax = jax_clip.clip_pytree(tree_jax, clip_norm=clip_norm, rescale_to_unit_norm=True)
-    clipped_torch, norm_torch = clip_pytree(tree_torch, clip_norm=clip_norm, rescale_to_unit_norm=True)
+    clipped_jax, norm_jax = jax_clip.clip_pytree(
+        tree_jax, clip_norm=clip_norm, rescale_to_unit_norm=True
+    )
+    clipped_torch, norm_torch = clip_pytree(
+        tree_torch, clip_norm=clip_norm, rescale_to_unit_norm=True
+    )
 
     clipped_torch_as_jax = _torch_to_jax(clipped_torch)
 
@@ -253,8 +257,8 @@ def test_clip_pytree_matches_jax_with_zeros():
 # ============================================================================
 
 
-def test_clip_sum_matches_jax_basic():
-    """Validate clip_sum with grad(loss_fn) matches JAX-Privacy."""
+def test_clipped_fun_matches_jax_basic():
+    """Validate clip_sum/clipped_fun with grad(loss_fn) matches JAX-Privacy."""
     jax_clip = _import_jax_privacy_clipping()
 
     # Define loss function in both frameworks
@@ -268,12 +272,17 @@ def test_clip_sum_matches_jax_basic():
     clip_norm = 1.0
     batch_size = 3.0
 
-    clipped_grad_jax = jax_clip.clip_sum(
+    # JAX-Privacy main uses clipped_fun (not clip_sum)
+    clipped_grad_jax = jax_clip.clipped_fun(
         jax.grad(loss_fn_jax), l2_clip_norm=clip_norm, batch_argnums=1, normalize_by=batch_size
     )
 
-    clipped_grad_torch = clip_sum(
-        torch.func.grad(loss_fn_torch), l2_clip_norm=clip_norm, batch_argnums=1, normalize_by=batch_size
+    # Our implementation keeps clip_sum for now (will use clipped_fun later)
+    clipped_grad_torch = clipped_fun(
+        torch.func.grad(loss_fn_torch),
+        l2_clip_norm=clip_norm,
+        batch_argnums=1,
+        normalize_by=batch_size,
     )
 
     # Test data
@@ -291,7 +300,7 @@ def test_clip_sum_matches_jax_basic():
     np.testing.assert_allclose(grad_torch.detach().numpy(), np.asarray(grad_jax), atol=ATOL)
 
 
-def test_clip_sum_matches_jax_with_return_norms():
+def test_clipped_fun_matches_jax_with_return_norms():
     """Validate clip_sum with return_norms=True."""
     jax_clip = _import_jax_privacy_clipping()
 
@@ -302,11 +311,11 @@ def test_clip_sum_matches_jax_with_return_norms():
         return 0.5 * torch.mean((data - param) ** 2)
 
     clip_norm = 1.0
-    clipped_grad_jax = jax_clip.clip_sum(
+    clipped_grad_jax = jax_clip.clipped_fun(
         jax.grad(loss_fn_jax), l2_clip_norm=clip_norm, batch_argnums=1, return_norms=True
     )
 
-    clipped_grad_torch = clip_sum(
+    clipped_grad_torch = clipped_fun(
         torch.func.grad(loss_fn_torch), l2_clip_norm=clip_norm, batch_argnums=1, return_norms=True
     )
 
@@ -315,14 +324,18 @@ def test_clip_sum_matches_jax_with_return_norms():
     param_torch = torch.tensor(3.0, requires_grad=True)
     data_torch = torch.tensor([0.0, 7.0, -2.0])
 
-    grad_jax, norms_jax = clipped_grad_jax(param_jax, data_jax)
-    grad_torch, norms_torch = clipped_grad_torch(param_torch, data_torch)
+    # JAX-Privacy main returns (value, (aux, norms)) for return_norms=True
+    # where aux=() for has_aux=False
+    grad_jax, (aux_jax, norms_jax) = clipped_grad_jax(param_jax, data_jax)
+    grad_torch, (aux_torch, norms_torch) = clipped_grad_torch(param_torch, data_torch)
 
     np.testing.assert_allclose(grad_torch.detach().numpy(), np.asarray(grad_jax), atol=ATOL)
     np.testing.assert_allclose(norms_torch.detach().numpy(), np.asarray(norms_jax), atol=ATOL)
+    assert aux_jax == ()  # aux should be empty for has_aux=False
+    assert aux_torch == ()  # aux should be empty for has_aux=False
 
 
-def test_clip_sum_matches_jax_with_pytree():
+def test_clipped_fun_matches_jax_with_pytree():
     """Validate clip_sum works with PyTree outputs."""
     jax_clip = _import_jax_privacy_clipping()
 
@@ -334,8 +347,8 @@ def test_clip_sum_matches_jax_with_pytree():
         return {k: data * v for k, v in params.items()}
 
     clip_norm = 2.0
-    clipped_jax = jax_clip.clip_sum(grad_fn_jax, l2_clip_norm=clip_norm, batch_argnums=1)
-    clipped_torch = clip_sum(grad_fn_torch, l2_clip_norm=clip_norm, batch_argnums=1)
+    clipped_jax = jax_clip.clipped_fun(grad_fn_jax, l2_clip_norm=clip_norm, batch_argnums=1)
+    clipped_torch = clipped_fun(grad_fn_torch, l2_clip_norm=clip_norm, batch_argnums=1)
 
     params_jax = {"w": jnp.array(1.0), "b": jnp.array(0.5)}
     data_jax = jnp.array([1.0, 2.0, 3.0])
@@ -353,7 +366,7 @@ def test_clip_sum_matches_jax_with_pytree():
         )
 
 
-def test_clip_sum_matches_jax_keep_batch_dim_false():
+def test_clipped_fun_matches_jax_keep_batch_dim_false():
     """Validate clip_sum with keep_batch_dim=False."""
     jax_clip = _import_jax_privacy_clipping()
 
@@ -365,10 +378,10 @@ def test_clip_sum_matches_jax_keep_batch_dim_false():
         return param * data
 
     clip_norm = 1.0
-    clipped_jax = jax_clip.clip_sum(
+    clipped_jax = jax_clip.clipped_fun(
         fn_jax, l2_clip_norm=clip_norm, batch_argnums=1, keep_batch_dim=False
     )
-    clipped_torch = clip_sum(
+    clipped_torch = clipped_fun(
         fn_torch, l2_clip_norm=clip_norm, batch_argnums=1, keep_batch_dim=False
     )
 
@@ -384,7 +397,7 @@ def test_clip_sum_matches_jax_keep_batch_dim_false():
     np.testing.assert_allclose(result_torch.detach().numpy(), np.asarray(result_jax), atol=ATOL)
 
 
-def test_clip_sum_matches_jax_l2_norm_bound_property():
+def test_clipped_fun_matches_jax_l2_norm_bound_property():
     """Validate that clip_sum returns callable with l2_norm_bound property."""
     jax_clip = _import_jax_privacy_clipping()
 
@@ -395,8 +408,8 @@ def test_clip_sum_matches_jax_l2_norm_bound_property():
         return x * 2
 
     clip_norm = 5.0
-    clipped_jax = jax_clip.clip_sum(fn_jax, l2_clip_norm=clip_norm, batch_argnums=0)
-    clipped_torch = clip_sum(fn_torch, l2_clip_norm=clip_norm, batch_argnums=0)
+    clipped_jax = jax_clip.clipped_fun(fn_jax, l2_clip_norm=clip_norm, batch_argnums=0)
+    clipped_torch = clipped_fun(fn_torch, l2_clip_norm=clip_norm, batch_argnums=0)
 
     # Both should have l2_norm_bound property
     assert hasattr(clipped_jax, "l2_norm_bound")
