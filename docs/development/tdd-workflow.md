@@ -116,7 +116,8 @@ uv run --group jax-validation pytest tests/jax_validation/ -m jax_validation -v
 
 ```python
 import torch
-from opaque.core.clipping import clipped_grad
+from opaque.clipping import clipped_grad
+
 
 def test_clipped_grad_basic():
     """Test Opaque's clipped_grad against expected behavior."""
@@ -323,7 +324,8 @@ Demonstrates:
 """
 
 import torch
-from opaque.core.clipping import clipped_grad
+from opaque.clipping import clipped_grad
+
 
 def main():
     # Setup
@@ -342,6 +344,7 @@ def main():
 
     clipped = clipped_grad_fn(param, data)
     print(f"Clipped gradient: {clipped}")
+
 
 if __name__ == "__main__":
     main()
@@ -364,7 +367,8 @@ pytest.importorskip("jax_privacy")
 import jax.numpy as jnp
 import torch
 from jax_privacy.experimental.clipping import clipped_grad as jax_clipped_grad
-from opaque.core.clipping import clipped_grad as torch_clipped_grad
+from opaque.clipping import clipped_grad as torch_clipped_grad
+
 
 @pytest.mark.jax_validation
 def test_clipped_grad_matches_jax():

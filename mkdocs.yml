@@ -91,7 +91,8 @@ nav:
     - Roadmap: development/roadmap.md
     - Stage 1 Plan: development/stage1-plan.md
   - Examples:
-    - Linear Regression: examples/linear_regression.md
+    - Linear Regression (Guide): examples/linear_regression.md
+    - Linear Regression (Notebook): examples/clipped_grad_linear_regression.ipynb
 
 extra:
   social:

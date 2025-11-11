@@ -39,29 +39,31 @@ uv sync
 
 ### Minimal Example
 
-Note: This snippet shows the planned API and will work after Stage 1 is implemented. Do not run yet.
+Now runnable: demonstrates `clipped_grad` on a simple squared-error loss. This example performs per-example clipping and sums the clipped gradients (no noise added).
 
 ```python
 import torch
-from opaque.core.clipping import clipped_grad
+from opaque.clipping import clipped_grad
 
-# Define loss for a single example
-def loss_fn(params, data):
-    return 0.5 * ((data - params) ** 2).mean()
+
+# Loss for a single example
+def loss_fn(param, x):
+  return 0.5 * ((x - param) ** 2).mean()
+
 
 # Create clipped gradient function
-clipped_grad_fn = clipped_grad(
-    loss_fn,
-    l2_clip_norm=1.0,      # Clip each example's gradient to max norm 1.0
-    normalize_by=3.0,       # Divide by batch size
+cg = clipped_grad(
+  loss_fn,
+  l2_clip_norm=1.0,  # Clip each example's gradient to max norm 1.0
+  normalize_by=3.0,  # Divide by batch size
+  keep_batch_dim=False,
 )
 
-# Compute clipped gradients on batch
-params = torch.tensor(3.0, requires_grad=True)
-data = torch.tensor([0.0, 7.0, -2.0])  # Batch of 3 examples
+param = torch.tensor(3.0, requires_grad=True)
+data = torch.tensor([0.0, 7.0, -2.0])
 
-clipped_grads = clipped_grad_fn(params, data)
-print(clipped_grads)  # Gradients clipped per-example, then summed
+g = cg(param, data)
+print(g)  # Expected: tensor(0.3333) — (1 - 1 + 1)/3
 ```
 
 **Next**: Add Gaussian noise and privacy accounting (coming in Stage 2+)

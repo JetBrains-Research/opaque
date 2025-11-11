@@ -62,3 +62,5 @@ dmypy.json
 # Logs
 *.log
 
+# Docs
+site/

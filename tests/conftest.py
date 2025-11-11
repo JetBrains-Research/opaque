@@ -10,7 +10,9 @@ def pytest_configure(config):
         "markers",
         "jax_validation: marks tests that require JAX and JAX-Privacy for cross-framework validation",
     )
-    config.addinivalue_line("markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')")
+    config.addinivalue_line(
+        "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
+    )
     config.addinivalue_line("markers", "gpu: marks tests that require GPU")
 
 

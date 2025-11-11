@@ -19,6 +19,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
+    "optree>=0.17.0",
     "torch>=2.0.0",
 ]
 
@@ -39,8 +40,6 @@ docs = [
     "mkdocs-material>=9.5.0",
     "mkdocstrings[python]>=0.24.0",  # Auto-generate docs from docstrings
     "mkdocs-jupyter>=0.24.0", # Jupyter notebook support
-]
-examples = [
 ]
 
 [tool.uv.sources]

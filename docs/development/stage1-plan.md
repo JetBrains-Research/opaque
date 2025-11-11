@@ -123,17 +123,21 @@ Ensure PyTorch implementation matches JAX-Privacy numerically
 import jax.numpy as jnp
 from jax_privacy.experimental.clipping import clipped_grad
 
+
 def jax_loss(w, x, y):
     return 0.5 * jnp.mean((x @ w - y) ** 2)
+
 
 jax_grad_fn = clipped_grad(jax_loss, l2_clip_norm=1.0)
 
 # PyTorch version
 import torch
-from opaque.core.clipping import clipped_grad
+from opaque.clipping import clipped_grad
+
 
 def torch_loss(w, x, y):
     return 0.5 * ((x @ w - y) ** 2).mean()
+
 
 torch_grad_fn = clipped_grad(torch_loss, l2_clip_norm=1.0)
 

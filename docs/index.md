@@ -22,17 +22,19 @@ Note: This snippet shows the planned API and will work after Stage 1 is implemen
 
 ```python
 import torch
-from opaque.core.clipping import clipped_grad
+from opaque.clipping import clipped_grad
+
 
 # Define loss for a single example
 def loss_fn(params, data):
     return 0.5 * ((data - params) ** 2).mean()
 
+
 # Create clipped gradient function
 clipped_grad_fn = clipped_grad(
     loss_fn,
-    l2_clip_norm=1.0,      # Clip each example's gradient to max norm 1.0
-    normalize_by=3.0,       # Divide by batch size
+    l2_clip_norm=1.0,  # Clip each example's gradient to max norm 1.0
+    normalize_by=3.0,  # Divide by batch size
 )
 
 # Compute clipped gradients on batch
