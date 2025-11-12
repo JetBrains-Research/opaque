@@ -1839,7 +1839,9 @@ name = "opaque"
 version = "0.0.0"
 source = { editable = "." }
 dependencies = [
+  { name = "dp-accounting" },
     { name = "matplotlib" },
+  { name = "notebook" },
     { name = "optree" },
     { name = "torch" },
 ]
@@ -1856,6 +1858,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
+  { name = "scipy" },
 ]
 docs = [
     { name = "mkdocs" },
@@ -1871,9 +1874,11 @@ jax-validation = [
 
 [package.metadata]
 requires-dist = [
+  { name = "dp-accounting", specifier = ">=0.4.0" },
     { name = "jupyter", marker = "extra == 'examples'", specifier = ">=1.0.0" },
     { name = "matplotlib", specifier = ">=3.10.7" },
     { name = "matplotlib", marker = "extra == 'examples'", specifier = ">=3.10.7" },
+  { name = "notebook", specifier = ">=7.4.7" },
     { name = "optree", specifier = ">=0.17.0" },
     { name = "torch", specifier = ">=2.0.0" },
 ]
@@ -1885,6 +1890,7 @@ dev = [
     { name = "pytest", specifier = ">=7.0.0" },
     { name = "pytest-cov", specifier = ">=4.0.0" },
     { name = "ruff", specifier = ">=0.1.0" },
+  { name = "scipy", specifier = ">=1.11.0" },
 ]
 docs = [
     { name = "mkdocs", specifier = ">=1.5.0" },

@@ -36,7 +36,7 @@ def test_clip_rescales_to_threshold_when_above(device):
     """When norm > clip_norm, should scale down to clip_norm."""
     pytree = {"w": torch.tensor([3.0, 4.0], device=device)}  # norm=5
     clipped, _ = clip_pytree(pytree, clip_norm=1.0)
-    from opaque.pytree_utils import global_norm
+    from opaque.utils.pytree import global_norm
 
     assert global_norm(clipped).item() == pytest.approx(1.0)
 

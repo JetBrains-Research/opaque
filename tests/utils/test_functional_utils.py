@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.func import grad, vmap
 
-from opaque.functional_utils import make_functional
+from opaque.utils.functional import make_functional
 
 
 def test_make_functional_basic():
@@ -53,6 +53,7 @@ def test_make_functional_matches_original():
 
 def test_make_functional_with_mlp():
     """Test make_functional with a multi-layer network."""
+
     class SimpleMLP(nn.Module):
         def __init__(self):
             super().__init__()
@@ -119,9 +120,7 @@ def test_make_functional_with_vmap():
     y_batch = torch.randn(8, 1)
 
     # Compute per-example gradients
-    per_example_grads = vmap(grad(loss_single), in_dims=(None, 0, 0))(
-        params, x_batch, y_batch
-    )
+    per_example_grads = vmap(grad(loss_single), in_dims=(None, 0, 0))(params, x_batch, y_batch)
 
     # Check structure: tuple of (batch_size, *param_shape)
     assert isinstance(per_example_grads, tuple)
@@ -162,6 +161,7 @@ def test_make_functional_preserves_device():
 
 def test_make_functional_with_kwargs():
     """Test that fmodel works with keyword arguments."""
+
     class ModelWithKwargs(nn.Module):
         def __init__(self):
             super().__init__()

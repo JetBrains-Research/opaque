@@ -71,7 +71,7 @@ uv run pytest --cov=opaque --cov-report=html
 uv run --group jax-validation pytest -m jax_validation
 
 # Specific test
-uv run pytest tests/core/test_clipping.py::test_clip_pytree -v
+uv run pytest tests/core/test_clipped_fun.py::test_clip_pytree -v
 ```
 
 **Requirements**:
@@ -180,7 +180,6 @@ uv run mkdocs build
 **For comprehensive guides, see:**
 
 - [TDD Workflow](docs/development/tdd-workflow.md) - Step-by-step development process
-- [Architecture](docs/development/architecture.md) - System design and abstractions
 - [Design Decisions](docs/development/design-decisions.md) - Technical choices and rationale
 - [Stage 1 Plan](docs/development/stage1-plan.md) - Current implementation plan
 - [Roadmap](docs/development/roadmap.md) - Full project timeline

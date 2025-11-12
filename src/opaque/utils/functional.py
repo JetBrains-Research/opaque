@@ -1,3 +1,7 @@
+"""Functional utilities for PyTorch models."""
+
+import torch
+
 """Utilities for converting PyTorch modules to functional form.
 
 This module provides helpers for working with PyTorch's functional API,
@@ -6,16 +10,15 @@ compatible with torch.func transformations.
 """
 
 import copy
-from typing import Callable, Tuple
+from collections.abc import Callable
 
-import torch
 import torch.nn as nn
 
 
 def make_functional(
     mod: nn.Module,
     disable_autograd_tracking: bool = False,
-) -> Tuple[Callable, Tuple[torch.Tensor, ...]]:
+) -> tuple[Callable, tuple[torch.Tensor, ...]]:
     """Convert a PyTorch module to functional form.
 
     This helper mimics the behavior of the deprecated `functorch.make_functional()`.
@@ -116,9 +119,7 @@ def make_functional(
             Output of the module's forward pass.
         """
         # Reconstruct parameter dict from tuple
-        new_params_dict = {
-            name: value for name, value in zip(params_names, new_params_values)
-        }
+        new_params_dict = {name: value for name, value in zip(params_names, new_params_values)}
         # Call module with external parameters
         return torch.func.functional_call(stateless_mod, new_params_dict, args, kwargs)
 
@@ -127,3 +128,6 @@ def make_functional(
         params_values = torch.utils._pytree.tree_map(torch.Tensor.detach, params_values)
 
     return fmodel, params_values
+
+
+__all__ = ["make_functional"]

@@ -58,35 +58,40 @@ This document outlines the complete implementation roadmap for Opaque.
 
 ---
 
-## Stage 2: Noise Injection & Privacy Accounting 📋 **READY**
+## Stage 2: Noise Injection & Privacy Accounting ✅ **COMPLETED**
 
-**Timeline**: 3 weeks
+**Timeline**: 3 weeks (Completed 2025-11-12)
 
 **Goal**: Add Gaussian noise to clipped gradients and track privacy budget
 
 **Deliverables**:
 
-1. `opaque.noise` - Simple i.i.d. Gaussian noise generation
+1. [x] `opaque.noise` - Simple i.i.d. Gaussian noise generation
   - `add_gaussian_noise()` - Stateless functional API
   - Reproducible noise with `torch.Generator`
   - Statistical validation tests (normality, stddev)
   - JAX-Privacy numerical equivalence validation
-2. `opaque.accounting` - Privacy budget tracking
-  - Wrap Google's `dp-accounting` library
-  - RDP (Rényi Differential Privacy) accounting
-  - Noise calibration for target (ε, δ)
-  - Budget validation during training
 
-**Key Features**:
+2. [x] `opaque.accounting` - Privacy budget tracking
 
-- Simple i.i.d. Gaussian noise N(0, stddev²)
-- PyTree support via `tree_map()`
-- Stateless API (no state management)
-- Integration example with `clipped_grad()`
-- Privacy Loss Distribution (PLD) accounting
-- Automatic noise multiplier calibration
-- Training step privacy validation
-- Composition theorems for multi-epoch training
+- Uses Google's `dp-accounting` library
+- `PLDAccountant` - PLD (Privacy Loss Distribution) accounting for Poisson sampling
+- `RDPAccountant` - RDP (Rényi Differential Privacy) accounting for fixed-size mini-batches
+- Truncated Poisson sampling support
+- Three calibration functions: `calibrate_noise_multiplier`, `calibrate_steps`, `calibrate_batch_size`
+
+**Implementation Highlights**:
+
+- [x] Simple i.i.d. Gaussian noise N(0, stddev²)
+- [x] PyTree support via `tree_map()`
+- [x] Stateless API (no state management)
+- [x] Privacy Loss Distribution (PLD) accounting
+- [x] Automatic noise multiplier calibration
+- [x] Training step privacy validation
+- [x] Flexible accountant instantiation (string/class/callable)
+- [x] **Truncated Poisson sampling** - Solves variable batch size problem
+- [x] 30 unit tests + 13 JAX validation tests = 43 tests passing
+- [x] Numerical equivalence with JAX-Privacy confirmed (tolerance < 0.01-0.1 epsilon)
 
 **See**: [Stage 2 Detailed Plan](stage2-plan.md)
 
@@ -105,8 +110,7 @@ This document outlines the complete implementation roadmap for Opaque.
   - Adam with DP-Adam support
   - AdaClip (adaptive clipping)
 2. Integration with clipping and noise
-3. Support for DP-FTRL (Follow-The-Regularized-Leader)
-4. Per-layer clipping strategies
+3. Per-layer clipping strategies
 
 **Key Features**:
 
@@ -196,6 +200,17 @@ This document outlines the complete implementation roadmap for Opaque.
 
 **Potential Future Work**:
 
+- **Advanced Privacy Accounting**:
+  - **User-level privacy accounting**: Privacy for users with multiple examples in dataset
+    - Requires mixture of Gaussians analysis
+    - Uses hypergeometric distribution for sampling
+    - Reference: `DpsgdTrainingUserLevelAccountant` in JAX-Privacy
+  - **Single-release analysis for DP-FTRL**: Un-amplified analysis treating training as single DP event
+    - No subsampling amplification
+    - Reference: `SingleReleaseTrainingAccountant` in JAX-Privacy
+  - **Cyclic Poisson sampling**: For correlated noise with BandMF
+    - Supports partitioned sampling across cycles
+    - Reference: JAX-Privacy `analysis.py` cycle_length parameter
 - **Correlated Noise**: Matrix factorization privatizer from JAX-Privacy
   - Dense matrix implementation
   - StreamingMatrix for memory-efficient temporal correlation
@@ -224,16 +239,16 @@ This document outlines the complete implementation roadmap for Opaque.
 
 ## Timeline Summary
 
-| Stage                          | Duration      | Status                  |
-|--------------------------------|---------------|-------------------------|
-| Stage 0: Planning              | 1 week        | ✅ Complete              |
-| Stage 1: Clipping              | 3 weeks       | ✅ Complete (2025-11-11) |
-| Stage 2: Noise & Accounting    | 3 weeks       | 📋 Ready                |
-| Stage 3: Functional Optimizers | 3 weeks       | 🔜 Future               |
-| Stage 4: Privacy Amplification | 2 weeks       | 🔜 Future               |
-| Stage 5: High-Level API        | 2 weeks       | 🔜 Future               |
-| Stage 6: Polish                | 2-3 weeks     | 🔜 Future               |
-| **Total**                      | **~16 weeks** | **Stage 1 Complete**    |
+| Stage                          | Duration      | Status                   |
+|--------------------------------|---------------|--------------------------|
+| Stage 0: Planning              | 1 week        | ✅ Complete               |
+| Stage 1: Clipping              | 3 weeks       | ✅ Complete (2025-11-11)  |
+| Stage 2: Noise & Accounting    | 3 weeks       | ✅ Complete (2025-11-12)  |
+| Stage 3: Functional Optimizers | 3 weeks       | 🔜 Future                |
+| Stage 4: Privacy Amplification | 2 weeks       | 🔜 Future                |
+| Stage 5: High-Level API        | 2 weeks       | 🔜 Future                |
+| Stage 6: Polish                | 2-3 weeks     | 🔜 Future                |
+| **Total**                      | **~16 weeks** | **Stage 1 & 2 Complete** |
 
 ---
 

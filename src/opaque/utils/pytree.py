@@ -1,3 +1,7 @@
+"""PyTree utilities for working with nested structures."""
+
+import torch
+
 """PyTree utilities for working with nested parameter structures.
 
 This module provides utilities for working with PyTrees, i.e. nested Python
@@ -26,7 +30,6 @@ from collections.abc import Callable
 from typing import Any
 
 import optree as _ot
-import torch
 
 
 def tree_leaves(tree: Any) -> list[torch.Tensor]:

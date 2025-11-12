@@ -25,7 +25,7 @@ import numpy as np
 import pytest
 import torch
 
-from opaque.pytree_utils import global_norm, tree_leaves, tree_map
+from opaque.utils.pytree import global_norm, tree_leaves, tree_map
 
 jax = pytest.importorskip("jax")
 jnp = pytest.importorskip("jax.numpy")

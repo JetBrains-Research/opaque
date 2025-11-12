@@ -4,7 +4,7 @@ This directory contains Jupyter notebook tutorials for learning Opaque and diffe
 
 ## Tutorial Overview
 
-### [Tutorial: Gradient Clipping from Basics](01_gradient_clipping_from_basics.ipynb)
+### [Tutorial 01: Gradient Clipping from Basics](01_gradient_clipping_from_basics.ipynb)
 
 **Level**: Beginner to Intermediate
 **Duration**: 60-75 minutes
@@ -21,6 +21,27 @@ A comprehensive tutorial that builds from first principles to Opaque's `clipped_
 6. Use Opaque's **`clipped_grad()`** as a convenient wrapper
 
 **Key Takeaway**: Graduate from manual per-sample gradient computation to using Opaque's clean, efficient `clipped_grad()` API - understanding every step along the way.
+
+---
+
+### [Tutorial 02: Differential Privacy - Noise and Accounting](02_differential_privacy_noise_and_accounting.ipynb) ✨ NEW!
+
+**Level**: Intermediate
+**Duration**: 60-75 minutes
+**Prerequisites**: Tutorial 01, Basic understanding of privacy concepts
+
+Builds on Tutorial 01 to implement complete DP-SGD with noise injection and privacy accounting:
+
+**Learning objectives**:
+
+1. Understand why **noise is needed** for differential privacy
+2. Use `add_gaussian_noise()` to add **calibrated Gaussian noise**
+3. Track privacy with **accountants** (`PLDAccountant`, `RDPAccountant`)
+4. **Calibrate noise multipliers** for target privacy budgets
+5. Implement **complete DP-SGD training loop**
+6. Explore the **privacy-utility tradeoff**
+
+**Key Takeaway**: Complete DP-SGD workflow from calibration to training with formal privacy guarantees (ε, δ).
 
 ## Additional Resources
 
@@ -47,12 +68,16 @@ Found an issue or have suggestions for improving the tutorials?
 2. Submit a PR with improvements
 3. Share your own examples!
 
+**Completed tutorials**:
+
+- [x] Tutorial 01: Gradient Clipping from Basics (Stage 1)
+- [x] Tutorial 02: Differential Privacy - Noise and Accounting (Stage 2)
+
 **Planned tutorials** (coming in future stages):
-- [ ] Tutorial 3: Noise Injection Basics (Stage 2)
-- [ ] Tutorial 4: Training with DP-SGD (Stage 2)
-- [ ] Tutorial 5: Privacy Accounting (Stage 3)
-- [ ] Tutorial 6: Complete Differential Privacy Workflow (Stage 2+)
-- [ ] Tutorial 7: LoRA Fine-Tuning with DP (Stage 4)
+
+- [ ] Tutorial 03: End-to-End DP-SGD Training (Stage 3)
+- [ ] Tutorial 04: LoRA Fine-Tuning with DP (Stage 4)
+- [ ] Tutorial 05: Advanced Privacy Techniques (Stage 4+)
 
 ---
 
@@ -67,11 +92,18 @@ A: Yes! Upload the notebook and install Opaque:
 !pip install git+https://github.com/yourusername/opaque.git
 ```
 
-**Q: Can I train differentially private models with this tutorial?**
-A: Not yet! The tutorial covers gradient clipping, but DP requires noise injection (Stage 2). For now, you can use `clipped_grad()` for gradient norm regularization.
+**Q: Can I train differentially private models with these tutorials?**
+A: Yes! Tutorial 02 covers complete DP-SGD with noise injection and privacy accounting. You can train models with
+formal (ε, δ)-DP guarantees.
 
 **Q: What's available now vs "coming soon"?**
-A: As of Stage 1 (complete), `clipped_grad()` is fully functional for gradient clipping. Noise injection and privacy accounting are coming in Stages 2-3.
+A: As of Stage 2 (complete), all core DP-SGD components are ready:
+
+- ✅ Gradient clipping (`clipped_grad()`)
+- ✅ Noise injection (`add_gaussian_noise()`)
+- ✅ Privacy accounting (`PLDAccountant`, `RDPAccountant`)
+- ✅ Calibration functions for target privacy
+- 🔜 High-level API and LoRA integration (Stages 3-4)
 
 **Q: I found a bug in a tutorial. How do I report it?**
 A: Please open an issue with:

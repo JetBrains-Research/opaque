@@ -12,7 +12,7 @@ def compute_norm(pytree: dict) -> torch.Tensor:
     Returns:
         Global L2 norm as scalar tensor
     """
-    from opaque.pytree_utils import global_norm
+    from opaque.utils.pytree import global_norm
 
     return global_norm(pytree)
 
@@ -33,7 +33,7 @@ def assert_pytrees_close(
         rtol: Relative tolerance
         msg: Optional message to display on failure
     """
-    from opaque.pytree_utils import tree_leaves
+    from opaque.utils.pytree import tree_leaves
 
     actual_leaves = tree_leaves(actual)
     expected_leaves = tree_leaves(expected)

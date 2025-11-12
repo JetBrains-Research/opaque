@@ -1,27 +1,37 @@
-"""Opaque package bootstrap.
+"""Opaque: Differentially Private Training for PyTorch.
 
-This project provides differentially private training utilities for PyTorch,
-inspired by JAX-Privacy. See `.junie/guidelines.md` for contributor guidance.
+This package provides differentially private training utilities for PyTorch,
+inspired by JAX-Privacy.
 """
 
+from opaque.accounting import (
+    PLDAccountant,
+    RDPAccountant,
+    calibrate_batch_size,
+    calibrate_noise_multiplier,
+    calibrate_steps,
+)
 from opaque.clipping import (
-    AuxiliaryOutput,
-    BoundedSensitivityCallable,
     clip_pytree,
     clipped_fun,
     clipped_grad,
 )
-from opaque.functional_utils import make_functional
-from opaque.pytree_utils import global_norm, tree_leaves, tree_map
+from opaque.noise import add_gaussian_noise
+from opaque.utils import make_functional
 
 __all__ = [
-    "AuxiliaryOutput",
-    "BoundedSensitivityCallable",
+    # Clipping
     "clip_pytree",
     "clipped_fun",
     "clipped_grad",
-    "global_norm",
+    # Accounting
+    "PLDAccountant",
+    "RDPAccountant",
+    "calibrate_noise_multiplier",
+    "calibrate_steps",
+    "calibrate_batch_size",
+    # Noise
+    "add_gaussian_noise",
+    # Utils
     "make_functional",
-    "tree_leaves",
-    "tree_map",
 ]

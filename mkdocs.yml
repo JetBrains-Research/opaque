@@ -89,7 +89,6 @@ nav:
   - Development:
     - Contributing: development/contributing.md
     - TDD Workflow: development/tdd-workflow.md
-    - Architecture: development/architecture.md
     - JAX-Privacy Comparison: development/jax-privacy-comparison.md
     - Design Decisions: development/design-decisions.md
     - Roadmap: development/roadmap.md

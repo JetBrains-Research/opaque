@@ -143,7 +143,7 @@ def test_clipped_grad_basic():
 ### Run (Should Fail)
 
 ```bash
-uv run pytest tests/core/test_clipping.py::test_clipped_grad_basic -v
+uv run pytest tests/core/test_clipped_fun.py::test_clipped_grad_basic -v
 # Expected: ImportError or NotImplementedError
 ```
 
@@ -218,10 +218,10 @@ def clipped_grad(
 
 ```bash
 # Run the specific test
-uv run pytest tests/core/test_clipping.py::test_clipped_grad_basic -v
+uv run pytest tests/core/test_clipped_fun.py::test_clipped_grad_basic -v
 
 # Run all tests for the module
-uv run pytest tests/core/test_clipping.py -v
+uv run pytest tests/core/test_clipped_fun.py -v
 
 # Run all tests
 uv run pytest
@@ -460,13 +460,13 @@ cd ../jax_privacy && rg "clipped_grad"
 uv run --group jax-validation pytest -m jax_validation -v
 
 # 3. Write failing Opaque test
-uv run pytest tests/core/test_clipping.py -v
+uv run pytest tests/core/test_clipped_fun.py -v
 
 # 4. Implement
 # (edit src/opaque/core/clipping.py)
 
 # 5. Verify tests pass
-uv run pytest tests/core/test_clipping.py -v
+uv run pytest tests/core/test_clipped_fun.py -v
 uv run ruff format src/ tests/
 uv run ruff check src/ tests/
 

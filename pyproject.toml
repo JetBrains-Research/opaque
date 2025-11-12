@@ -19,7 +19,9 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
+  "dp-accounting>=0.4.0",
     "matplotlib>=3.10.7",
+  "notebook>=7.4.7",
     "optree>=0.17.0",
     "torch>=2.0.0",
 ]
@@ -36,6 +38,7 @@ dev = [
     "pytest-cov>=4.0.0",
     "ruff>=0.1.0",
     "hypothesis>=6.0.0",  # Property-based testing
+  "scipy>=1.11.0", # For statistical tests
 ]
 jax-validation = [
     "jax>=0.6.0",
@@ -68,6 +71,8 @@ packages = ["src/opaque"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP"]
 ignore = ["E501"]
 
@@ -76,7 +81,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "--cov=opaque --cov-report=html --cov-report=term-missing -v"
+addopts = "--cov=opaque --cov-report=html --cov-report=term-missing -v -m 'not slow'"
 markers = [
     "jax_validation: tests requiring JAX and JAX-Privacy for cross-framework validation",
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",

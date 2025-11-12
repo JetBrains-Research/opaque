@@ -19,7 +19,7 @@ Bring production-quality differential privacy to PyTorch's LLM fine-tuning ecosy
 - **PyTorch Native**: Built on `torch.func` (functional transformations)
 - **Zero Surprises**: Fail-fast error handling for security-critical DP training
 
-**Status**: Stage 1 Complete — Core clipping API ready. Stage 2 (Noise Injection) next.
+**Status**: 🎉 Stage 1 & 2 Complete — DP-SGD ready with clipping, noise injection, and privacy accounting!
 
 ---
 
@@ -37,36 +37,71 @@ cd opaque
 uv sync
 ```
 
-### Minimal Example
-
-Now runnable: demonstrates `clipped_grad` on a simple squared-error loss. This example performs per-example clipping and sums the clipped gradients (no noise added).
+### Minimal Example: DP-SGD Training
 
 ```python
 import torch
-from opaque.clipping import clipped_grad
-
-
-# Loss for a single example
-def loss_fn(param, x):
-  return 0.5 * ((x - param) ** 2).mean()
-
-
-# Create clipped gradient function
-cg = clipped_grad(
-  loss_fn,
-  l2_clip_norm=1.0,  # Clip each example's gradient to max norm 1.0
-  normalize_by=3.0,  # Divide by batch size
-  keep_batch_dim=False,
+import torch.nn as nn
+from opaque import (
+    make_functional,
+    clipped_grad,
+    add_gaussian_noise,
+    PLDAccountant,
+    calibrate_noise_multiplier,
 )
 
-param = torch.tensor(3.0, requires_grad=True)
-data = torch.tensor([0.0, 7.0, -2.0])
+# 1. Define model and convert to functional
+model = nn.Linear(10, 1)
+fmodel, params = make_functional(model)
 
-g = cg(param, data)
-print(g)  # Expected: tensor(0.3333) — (1 - 1 + 1)/3
+# 2. Define per-example loss
+def loss_fn(params, example):
+    x, y = example
+    pred = fmodel(params, x)
+    return ((pred - y) ** 2).mean()
+
+# 3. Calibrate noise for target privacy
+noise_multiplier = calibrate_noise_multiplier(
+    target_epsilon=3.0,
+    target_delta=1e-5,
+    sample_rate=0.01,  # batch_size / dataset_size
+    num_steps=1000,
+    accountant_type="pld",
+)
+
+# 4. Create clipped gradient function
+clip_norm = 1.0
+clipped_grad_fn = clipped_grad(
+    loss_fn,
+    argnums=0,
+    batch_argnums=1,
+    l2_clip_norm=clip_norm,
+)
+
+# 5. Training loop
+accountant = PLDAccountant()
+
+for step in range(1000):
+    # Compute clipped gradients
+    grads = clipped_grad_fn(params, (X_batch, y_batch))
+
+    # Add calibrated noise
+    noisy_grads = add_gaussian_noise(
+        grads, stddev=noise_multiplier * clip_norm
+    )
+
+    # Update parameters
+    params = tuple(p - lr * g for p, g in zip(params, noisy_grads))
+
+    # Track privacy
+    accountant.step_poisson(noise_multiplier, sample_rate=0.01, num_steps=1)
+
+# Get final privacy
+epsilon = accountant.get_epsilon(target_delta=1e-5)
+print(f"Privacy: (ε={epsilon:.2f}, δ=1e-5)")  # Should be ≈ 3.0
 ```
 
-**Next**: Add Gaussian noise and privacy accounting (coming in Stage 2+)
+**See**: [Tutorial 02](docs/tutorials/02_differential_privacy_noise_and_accounting.ipynb) for complete walkthrough
 
 ---
 
@@ -104,44 +139,69 @@ Differential privacy (DP) provides mathematical guarantees that a model doesn't 
 - [x] Define TDD-inspired workflow
 
 ### ✅ Stage 1: Core Clipping (Complete!)
-**Timeline**: Completed | [Detailed Plan](docs/development/stage1-plan.md)
 
-- [x] `opaque.pytree_utils` - PyTree operations with optree
+**Timeline**: Completed 2025-11-11 | [Detailed Plan](docs/development/stage1-plan.md)
+
+- [x] `opaque.utils.pytree` - PyTree operations with optree
 - [x] `opaque.clipping` - Full clipping API:
   - `clip_pytree()` - Low-level PyTree clipping
   - `clipped_fun()` - Clip and sum function outputs (primary API)
   - `clipped_grad()` - High-level gradient clipping
   - `BoundedSensitivityCallable` - Wrapper with sensitivity tracking
 - [x] Numerical validation against JAX-Privacy main (all tests pass within 1e-5)
-- [x] 79 tests with 80% coverage (34 unit + 45 JAX validation)
-- [x] Module consolidation complete (JAX-Privacy main API parity)
-- [x] Created `_value_and_grad()` helper to bridge PyTorch/JAX API differences
+- [x] Full API parity with JAX-Privacy main branch (single-device features)
 
-**Deliverable**: ✅ Complete functional API matching JAX-Privacy main branch
+**Deliverable**: ✅ Complete functional API matching JAX-Privacy
 
-### Stage 2: Noise Injection (Weeks 4-5)
-- [ ] `opaque.core.noise` - Gaussian noise generation
-- [ ] Reproducibility with `torch.Generator`
-- [ ] Integration with clipped gradients
+### ✅ Stage 2: Noise Injection & Privacy Accounting (Complete!)
 
-### Stage 3: Privacy Accounting (Weeks 6-7)
-- [ ] Wrap Google's `dp-accounting` library
-- [ ] Noise calibration for target (�, �)
-- [ ] Privacy budget tracking
+**Timeline**: Completed 2025-11-12 | [Detailed Plan](docs/development/stage2-plan.md)
 
-### Stage 4: High-Level API (Weeks 8-9)
+- [x] `opaque.noise` - Gaussian noise generation
+  - `add_gaussian_noise()` - Stateless functional API
+  - Reproducibility with `torch.Generator`
+  - PyTree support
+- [x] `opaque.accounting` - Privacy budget tracking
+  - `PLDAccountant` - PLD accounting for Poisson sampling (supports truncated Poisson)
+  - `RDPAccountant` - RDP accounting for mini-batch sampling
+  - `calibrate_noise_multiplier()` - Find noise for target (ε, δ)
+  - `calibrate_steps()` - Find max training steps
+  - `calibrate_batch_size()` - Find max batch size
+- [x] 43 tests passing (30 unit + 13 JAX validation)
+- [x] Numerical equivalence with JAX-Privacy confirmed
+
+**Deliverable**: ✅ Complete DP-SGD implementation with privacy accounting
+
+### Stage 3: Integration & End-to-End (Next)
+
+- [ ] End-to-end DP-SGD training examples
+- [ ] Integration with PyTorch optimizers
+- [ ] Memory-efficient microbatching
+- [ ] Performance optimization
+
+### Stage 4: High-Level API (Future)
 - [ ] `opaque.api.make_private()` - One-line DP wrapper
 - [ ] `DPConfig` - Configuration dataclass
 - [ ] Integration with Hugging Face `peft` library
+- [ ] Automatic LoRA detection
 
 ---
 
 ## Documentation
 
-- [Stage 1 Plan](docs/development/stage1-plan.md) — Current implementation plan
+### Tutorials
+
+- [Tutorial 01: Gradient Clipping from Basics](docs/tutorials/01_gradient_clipping_from_basics.ipynb) — Learn gradient
+  clipping with `clipped_grad()`
+- [Tutorial 02: Differential Privacy - Noise and Accounting](docs/tutorials/02_differential_privacy_noise_and_accounting.ipynb) —
+  Complete DP-SGD with noise injection and privacy accounting
+
+### Development Documentation
+
+- [Roadmap](docs/development/roadmap.md) — Project timeline and milestones
+- [Stage 1 Plan](docs/development/stage1-plan.md) — Gradient clipping implementation
+- [Stage 2 Plan](docs/development/stage2-plan.md) — Noise injection and accounting implementation
 - [Design Decisions](docs/development/design-decisions.md) — Technical choices and rationale
-- [Architecture Overview](docs/development/architecture.md)
-- [Roadmap](docs/development/roadmap.md)
 - [Contributing Guide](CONTRIBUTING.md) — Development workflow
 
 ---

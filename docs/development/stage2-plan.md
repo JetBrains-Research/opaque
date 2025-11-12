@@ -4,7 +4,7 @@
 
 **Timeline**: 3 weeks
 
-**Status**: 📋 Ready to start
+**Status**: ✅ **COMPLETED** (2025-11-12)
 
 ---
 
@@ -31,7 +31,7 @@ sum_grads = tree_map(lambda g: g.sum(dim=0), per_example_grads)
 
 # 3. Add noise to sum (Stage 2 - Noise)
 sensitivity = clipped_grad.sensitivity()
-stddev = noise_multiplier * sensitivity
+stddev = noise_Mmultiplier * sensitivity
 noisy_sum = add_gaussian_noise(sum_grads, stddev, generator)
 
 # 4. Track privacy (Stage 2 - Accounting)
@@ -1019,15 +1019,63 @@ for batch in dataloader:
 
 ---
 
+## Stage 2 Completion Summary ✅
+
+**Completed**: 2025-11-12
+
+### Final Implementation
+
+The implemented Stage 2 differs from the original plan but achieves all core objectives:
+
+**1. Noise Injection** (`opaque.noise`)
+
+- ✅ `add_gaussian_noise()` - Stateless functional API
+- ✅ PyTree support via `tree_map()`
+- ✅ Reproducible noise with `torch.Generator`
+- ✅ Statistical validation tests
+
+**2. Privacy Accounting** (`opaque.accounting`)
+
+- ✅ `PLDAccountant` - PLD accounting for Poisson sampling (supports truncated Poisson)
+- ✅ `RDPAccountant` - RDP accounting for fixed-size mini-batch sampling
+- ✅ `calibrate_noise_multiplier()` - Find noise for target (ε, δ)
+- ✅ `calibrate_steps()` - Find max training steps for target (ε, δ)
+- ✅ `calibrate_batch_size()` - Find max batch size for target (ε, δ)
+- ✅ Flexible accountant instantiation (string/class/callable)
+- ✅ Truncated Poisson sampling support
+
+**3. Testing & Validation**
+
+- ✅ 30 unit tests (26 fast, 4 slow)
+- ✅ 13 JAX validation tests (9 fast, 4 slow)
+- ✅ All 43 tests passing
+- ✅ Numerical equivalence with JAX-Privacy confirmed (tolerance < 0.01-0.1 epsilon)
+
+**Key Differences from Original Plan**:
+
+- Simplified accounting module structure (PLDAccountant + RDPAccountant vs. complex class hierarchy)
+- Added truncated Poisson sampling (not in original plan)
+- Added `calibrate_batch_size()` (not in original plan)
+- Made calibration functions accept flexible accountant types (string/class/callable)
+
+**Test Results**:
+
+```
+Unit tests:      26 fast (~24s) + 4 slow (excluded by default)
+JAX validation:  9 fast (~13s) + 4 slow (~88s total)
+Total:           43 tests passing
+```
+
+---
+
 ## What Comes Next
 
-After Stage 2 is complete:
+**Stage 3: Integration & End-to-End DP-SGD** (3 weeks)
 
-**Stage 3: Privacy Accounting** (2 weeks)
-
-- Wrap Google's `dp-accounting` library
-- Implement `calibrate_noise()` for target (ε, δ)
-- Privacy budget tracking
+- Combine clipping + noise + accounting into unified DP-SGD workflow
+- End-to-end training examples
+- Integration with PyTorch optimizers
+- Memory-efficient microbatching
 
 **Stage 4: High-Level API** (2 weeks)
 

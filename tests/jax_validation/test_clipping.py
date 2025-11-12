@@ -13,7 +13,7 @@ Functions tested:
 Reference: jax_privacy.experimental.clipping
 
 Run:
-    uv run --group jax-validation pytest -m jax_validation tests/jax_validation/test_clipping.py -v
+    uv run --group jax-validation pytest -m jax_validation tests/jax_validation/test_clipped_fun.py -v
 """
 
 from __future__ import annotations
