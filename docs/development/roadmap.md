@@ -58,47 +58,96 @@ This document outlines the complete implementation roadmap for Opaque.
 
 ---
 
-## Stage 2: Noise Injection 🔜 **FUTURE**
+## Stage 2: Noise Injection & Privacy Accounting 📋 **READY**
 
-**Timeline**: 2 weeks
+**Timeline**: 3 weeks
 
-**Goal**: Add Gaussian noise to clipped gradients
+**Goal**: Add Gaussian noise to clipped gradients and track privacy budget
 
 **Deliverables**:
-1. `opaque.core.noise` - Noise generation module
-2. Reproducible noise with `torch.Generator`
-3. Integration with `clipped_grad()`
-4. Tests validating noise properties
+
+1. `opaque.noise` - Simple i.i.d. Gaussian noise generation
+  - `add_gaussian_noise()` - Stateless functional API
+  - Reproducible noise with `torch.Generator`
+  - Statistical validation tests (normality, stddev)
+  - JAX-Privacy numerical equivalence validation
+2. `opaque.accounting` - Privacy budget tracking
+  - Wrap Google's `dp-accounting` library
+  - RDP (Rényi Differential Privacy) accounting
+  - Noise calibration for target (ε, δ)
+  - Budget validation during training
 
 **Key Features**:
-- Gaussian noise with correct scaling
-- PRNG for reproducibility
-- Noise multiplier calibration
-- Integration with clipping
+
+- Simple i.i.d. Gaussian noise N(0, stddev²)
+- PyTree support via `tree_map()`
+- Stateless API (no state management)
+- Integration example with `clipped_grad()`
+- Privacy Loss Distribution (PLD) accounting
+- Automatic noise multiplier calibration
+- Training step privacy validation
+- Composition theorems for multi-epoch training
+
+**See**: [Stage 2 Detailed Plan](stage2-plan.md)
 
 ---
 
-## Stage 3: Privacy Accounting 🔜 **FUTURE**
+## Stage 3: Functional Optimizers & Advanced Clipping 🔜 **FUTURE**
 
-**Timeline**: 2 weeks
+**Timeline**: 3 weeks
 
-**Goal**: Track privacy budget (ε, δ) across training
+**Goal**: Implement functional optimizers and advanced clipping mechanisms
 
 **Deliverables**:
-1. `opaque.accounting` - Privacy budget tracking
-2. Wrap Google's `dp-accounting` library
-3. Noise calibration for target (ε, δ)
-4. Budget validation during training
+
+1. `opaque.optimizers` - Functional optimizer implementations
+  - SGD with DP-SGD support
+  - Adam with DP-Adam support
+  - AdaClip (adaptive clipping)
+2. Integration with clipping and noise
+3. Support for DP-FTRL (Follow-The-Regularized-Leader)
+4. Per-layer clipping strategies
 
 **Key Features**:
-- RDP (Rényi Differential Privacy) accounting
-- Privacy Loss Distribution (PLD)
-- Automatic noise calibration
-- Training step validation
+
+- Functional optimizer interface matching `torch.func`
+- AdaClip: Adaptive clipping based on gradient quantiles
+- Stateless optimizer updates
+- Integration with existing `clipped_grad()` API
 
 ---
 
-## Stage 4: High-Level API 🔜 **FUTURE**
+## Stage 4: Privacy Amplification by Sampling 🔜 **FUTURE**
+
+**Timeline**: 2 weeks
+
+**Goal**: Implement privacy amplification through subsampling
+
+**Deliverables**:
+
+1. `opaque.sampling` - Privacy-aware data loading
+  - Poisson sampling for batch selection
+  - Secure shuffling with fixed privacy cost
+  - Batch size accounting
+2. `opaque.microbatching` - Memory-efficient microbatching
+  - Gradient accumulation over microbatches
+  - Memory vs. privacy tradeoffs
+  - Automatic microbatch size selection
+3. Integration with privacy accounting (from Stage 2)
+
+**Key Features**:
+
+- Poisson sampling with sampling probability q
+- Privacy amplification analysis (tighter ε bounds)
+- Microbatching to handle large logical batch sizes
+- Memory-efficient gradient accumulation
+- Compatible with PyTorch DataLoader
+- Automatic batch/microbatch sizing
+- Update accounting to use amplification
+
+---
+
+## Stage 5: High-Level API 🔜 **FUTURE**
 
 **Timeline**: 2 weeks
 
@@ -109,16 +158,18 @@ This document outlines the complete implementation roadmap for Opaque.
 2. `DPConfig` - Configuration dataclass
 3. Integration with Hugging Face `peft` library
 4. LoRA parameter detection
+5. End-to-end training examples
 
 **Key Features**:
 - Automatic LoRA adapter detection
-- Simple configuration
+- Simple configuration with sensible defaults
 - Validation and error checking
 - Examples with real LLMs
+- Integration with HuggingFace Trainer
 
 ---
 
-## Stage 5: Optimization & Polish 🔜 **FUTURE**
+## Stage 6: Optimization & Polish 🔜 **FUTURE**
 
 **Timeline**: 2-3 weeks
 
@@ -130,7 +181,7 @@ This document outlines the complete implementation roadmap for Opaque.
 3. Tutorial notebooks
 4. PyPI package publication
 
-**Tasks**:
+**Key Features**:
 - Profile and optimize bottlenecks
 - Add GPU-specific optimizations
 - Write migration guide from Opacus
@@ -141,15 +192,27 @@ This document outlines the complete implementation roadmap for Opaque.
 
 ## Long-term Goals
 
-### Beyond Stage 5
+### Beyond Stage 6
 
 **Potential Future Work**:
-- Support for more layer types (Conv, Attention)
-- Distributed training support
-- Integration with other PEFT methods (Prefix Tuning, Adapters)
-- DP-FTRL implementation
-- Privacy amplification by sampling
-- Adaptive clipping
+
+- **Correlated Noise**: Matrix factorization privatizer from JAX-Privacy
+  - Dense matrix implementation
+  - StreamingMatrix for memory-efficient temporal correlation
+  - Advanced correlation structures (prefix-sum, banded matrices)
+- **Distributed Training**: Multi-GPU and multi-node support
+  - SPMD (Single Program Multiple Data) training
+  - Distributed noise generation with sharding
+  - Cross-device gradient aggregation
+- **Advanced Features**:
+  - Support for more layer types (Conv, Attention)
+  - Integration with other PEFT methods (Prefix Tuning, Adapters)
+  - Virtual sequences for long-context models
+  - Gradient checkpointing integration
+- **Research Extensions**:
+  - DP-FTRL variants and optimizations
+  - Adaptive privacy budgets
+  - Privacy-utility tradeoff visualization
 
 **Community Building**:
 - Example gallery
@@ -161,15 +224,16 @@ This document outlines the complete implementation roadmap for Opaque.
 
 ## Timeline Summary
 
-| Stage | Duration | Status |
-|-------|----------|--------|
-| Stage 0: Planning | 1 week | ✅ Complete |
-| Stage 1: Clipping | 3 weeks | ✅ Complete (2025-11-11) |
-| Stage 2: Noise | 2 weeks | 📋 Ready |
-| Stage 3: Accounting | 2 weeks | 🔜 Future |
-| Stage 4: High-Level API | 2 weeks | 🔜 Future |
-| Stage 5: Polish | 2-3 weeks | 🔜 Future |
-| **Total** | **~12 weeks** | **Stage 1 Complete** |
+| Stage                          | Duration      | Status                  |
+|--------------------------------|---------------|-------------------------|
+| Stage 0: Planning              | 1 week        | ✅ Complete              |
+| Stage 1: Clipping              | 3 weeks       | ✅ Complete (2025-11-11) |
+| Stage 2: Noise & Accounting    | 3 weeks       | 📋 Ready                |
+| Stage 3: Functional Optimizers | 3 weeks       | 🔜 Future               |
+| Stage 4: Privacy Amplification | 2 weeks       | 🔜 Future               |
+| Stage 5: High-Level API        | 2 weeks       | 🔜 Future               |
+| Stage 6: Polish                | 2-3 weeks     | 🔜 Future               |
+| **Total**                      | **~16 weeks** | **Stage 1 Complete**    |
 
 ---
 
