@@ -45,7 +45,7 @@ htmlcov/
 docs/_build/
 docs/_static/
 docs/_templates/
-site/  # MkDocs build output
+site/
 
 # MyPy
 .mypy_cache/
@@ -57,8 +57,6 @@ dmypy.json
 
 # Jupyter
 .ipynb_checkpoints/
-*.ipynb
 
 # Logs
 *.log
-

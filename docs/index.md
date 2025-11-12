@@ -57,7 +57,12 @@ uv sync
 
 ## Next Steps
 
-- [Quick Start Guide](getting-started/quickstart.md)
-- [DP Basics](user-guide/dp-basics.md)
-- [API Reference](api/core/clipping.md)
-- [Contributing](development/contributing.md)
+### For Learners
+- 📚 [Tutorial: Gradient Clipping from Basics](tutorials/01_gradient_clipping_from_basics.ipynb) - Start here!
+- 📖 [Quick Start Guide](getting-started/quickstart.md)
+- 📖 [DP Basics](user-guide/dp-basics.md)
+
+### For Developers
+- 🔧 [API Reference](api/core/clipping.md)
+- 🔧 [Contributing Guide](development/contributing.md)
+- 🔧 [Design Decisions](development/design-decisions.md)

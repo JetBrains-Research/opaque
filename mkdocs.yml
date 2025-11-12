@@ -74,6 +74,9 @@ nav:
   - Getting Started:
     - Installation: getting-started/installation.md
     - Quick Start: getting-started/quickstart.md
+  - Tutorials:
+    - Overview: tutorials/README.md
+    - Gradient Clipping from Basics: tutorials/01_gradient_clipping_from_basics.ipynb
   - User Guide:
     - Differential Privacy Basics: user-guide/dp-basics.md
     - Gradient Clipping: user-guide/clipping.md
@@ -82,6 +85,7 @@ nav:
     - Core:
       - PyTree Utilities: api/core/pytree_utils.md
       - Clipping: api/core/clipping.md
+      - Functional Utilities: api/functional_utils.md
   - Development:
     - Contributing: development/contributing.md
     - TDD Workflow: development/tdd-workflow.md
@@ -90,9 +94,6 @@ nav:
     - Design Decisions: development/design-decisions.md
     - Roadmap: development/roadmap.md
     - Stage 1 Plan: development/stage1-plan.md
-  - Examples:
-    - Linear Regression (Guide): examples/linear_regression.md
-    - Linear Regression (Notebook): examples/clipped_grad_linear_regression.ipynb
 
 extra:
   social:

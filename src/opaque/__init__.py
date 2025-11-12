@@ -11,6 +11,7 @@ from opaque.clipping import (
     clipped_fun,
     clipped_grad,
 )
+from opaque.functional_utils import make_functional
 from opaque.pytree_utils import global_norm, tree_leaves, tree_map
 
 __all__ = [
@@ -20,6 +21,7 @@ __all__ = [
     "clipped_fun",
     "clipped_grad",
     "global_norm",
+    "make_functional",
     "tree_leaves",
     "tree_map",
 ]

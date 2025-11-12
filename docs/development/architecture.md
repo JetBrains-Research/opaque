@@ -149,7 +149,7 @@ per_example_grads = per_example_grad_fn(params, data_batch)  # [B, param_shape]
 
 **Mitigation**: Thin wrapper module for easy migration if API changes
 
-See [Design Decisions](design-decisions.md#1-pytree-implementation) for details.
+See [Design Decisions](design-decisions.md#decision-1-pytree-library-choice) for details.
 
 ### 2. Microbatching
 
@@ -166,7 +166,7 @@ clipped_grad(
 )
 ```
 
-See [Design Decisions](design-decisions.md#2-microbatching-strategy) for details.
+See [Design Decisions](design-decisions.md#decision-7-microbatching-approach) for details.
 
 ### 3. Error Handling
 
@@ -179,7 +179,7 @@ See [Design Decisions](design-decisions.md#2-microbatching-strategy) for details
 clip_pytree(tree, clip_norm, nan_safe=False)  # Fail on NaN by default
 ```
 
-See [Design Decisions](design-decisions.md#4-error-handling-philosophy) for details.
+See [Design Decisions](design-decisions.md#decision-4-error-handling-strategy) for details.
 
 ---
 
