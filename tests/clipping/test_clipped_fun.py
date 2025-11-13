@@ -7,8 +7,13 @@ from torch.func import grad
 from opaque.clipping import clip_pytree, clipped_fun
 
 
-@pytest.fixture(params=["cpu"])
+@pytest.fixture(params=["cpu", "cuda", "mps"])
 def device(request):
+    """Parametrize tests over all available devices."""
+    if request.param == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA not available")
+    if request.param == "mps" and not torch.backends.mps.is_available():
+        pytest.skip("MPS not available")
     return torch.device(request.param)
 
 
@@ -52,7 +57,7 @@ def test_clip_preserves_structure_and_device(device):
     }
     clipped, _ = clip_pytree(pytree, clip_norm=1.0)
     assert set(clipped.keys()) == set(pytree.keys())
-    assert clipped["layer1"]["w"].device == device
+    assert clipped["layer1"]["w"].device.type == device.type
 
 
 def test_clip_no_change_when_below_threshold(device):

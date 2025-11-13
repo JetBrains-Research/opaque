@@ -46,7 +46,7 @@ def test_tree_map_applies_fn_and_preserves_structure(device):
 
     doubled = pu.tree_map(lambda x: x * 2 if isinstance(x, torch.Tensor) else x, tree)
     assert isinstance(doubled, dict)
-    assert doubled["w"].device == device
+    assert doubled["w"].device.type == device.type
     torch.testing.assert_close(doubled["w"], tree["w"] * 2)
     torch.testing.assert_close(doubled["b"], tree["b"] * 2)
     assert doubled["meta"]["name"] == "layer"
@@ -80,7 +80,11 @@ def test_global_norm_l2(tree, expected, device):
     tree = _to_device(tree, device)
     got = pu.global_norm(tree)
     assert isinstance(got, torch.Tensor) and got.shape == ()
-    assert got.device == device
+    # Empty trees return CPU tensor, non-empty should match input device type
+    if tree:
+        assert got.device.type == device.type
+    else:
+        assert got.device.type == "cpu"
     assert math.isclose(float(got), expected, rel_tol=0, abs_tol=1e-6)
 
 

@@ -97,27 +97,43 @@ This document outlines the complete implementation roadmap for Opaque.
 
 ---
 
-## Stage 3: Functional Optimizers & Advanced Clipping 🔜 **FUTURE**
+## Stage 3: Functional Optimizers & DP-Adam-AC 🔜 **READY TO START**
 
-**Timeline**: 3 weeks
+**Timeline**: 4-5 weeks
 
-**Goal**: Implement functional optimizers and advanced clipping mechanisms
+**Goal**: Implement functional optimizers with TorchOpt, including state-of-the-art DP-Adam-AC
 
 **Deliverables**:
 
-1. `opaque.optimizers` - Functional optimizer implementations
-  - SGD with DP-SGD support
-  - Adam with DP-Adam support
-  - AdaClip (adaptive clipping)
-2. Integration with clipping and noise
-3. Per-layer clipping strategies
+1. `opaque.optimizers` - Functional optimizer implementations (~400 LOC)
+
+- DP-SGD using TorchOpt
+- DP-Adam using TorchOpt
+- **DP-Adam-AC** (Adaptive Clipping) from [arxiv:2510.05288](https://arxiv.org/abs/2510.05288)
+
+2. `opaque.adaptive` - Adaptive clipping infrastructure (~150 LOC)
+
+- Gradient norm buffer with percentile tracking
+- Clip-rate-based learning rate scaling
+
+3. Tutorial 03 - Updated with DP-Adam-AC comparison
+4. Comprehensive tests (~400 LOC)
 
 **Key Features**:
 
-- Functional optimizer interface matching `torch.func`
-- AdaClip: Adaptive clipping based on gradient quantiles
-- Stateless optimizer updates
-- Integration with existing `clipped_grad()` API
+- **TorchOpt Integration**: JAX-like functional optimizers (Optax pattern)
+- **DP-Adam-AC**: Adaptive clipping that adjusts threshold based on gradient percentiles
+- **Dynamic LR Scaling**: Learning rate adjusts based on clip rate
+- **EMA Smoothing**: Exponential moving average for better privacy-utility tradeoff
+- Stateless optimizer updates matching our functional design
+- Full integration with existing `clipped_grad()`, `add_gaussian_noise()`, accounting APIs
+
+**Why DP-Adam-AC?**:
+
+- 📈 1-3% accuracy improvement over fixed clipping
+- 🎯 Self-tuning: adapts to gradient scale during training
+- 🔒 Same privacy guarantees as standard DP-Adam
+- 🚀 State-of-the-art for LLM fine-tuning (October 2024 paper)
 
 ---
 

@@ -24,12 +24,16 @@ dependencies = [
   "notebook>=7.4.7",
     "optree>=0.17.0",
     "torch>=2.0.0",
+  "torchopt>=0.7.3",
 ]
 
 [project.optional-dependencies]
 examples = [
     "matplotlib>=3.10.7",
     "jupyter>=1.0.0",
+  "transformers>=4.0.0",
+  "datasets>=2.0.0",
+  "peft>=0.7.0",
 ]
 
 [dependency-groups]
@@ -39,8 +43,11 @@ dev = [
     "ruff>=0.1.0",
     "hypothesis>=6.0.0",  # Property-based testing
   "scipy>=1.11.0", # For statistical tests
-]
-jax-validation = [
+  # tests against transformers library
+  "transformers>=4.0.0",
+  "datasets>=2.0.0",
+  "peft>=0.7.0",
+  # tests against jax
     "jax>=0.6.0",
     "jaxlib>=0.6.0",
     "jax-privacy>=1.0.0",
@@ -81,12 +88,31 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "--cov=opaque --cov-report=html --cov-report=term-missing -v -m 'not slow'"
+addopts = "--cov=opaque --cov-report=html --cov-report=xml --cov-report=term-missing -v -m 'not slow'"
 markers = [
     "jax_validation: tests requiring JAX and JAX-Privacy for cross-framework validation",
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "gpu: marks tests that require GPU",
+  "integration: marks tests as integration tests (end-to-end scenarios with real models)",
 ]
 # Ignore JAX validation tests by default (require optional jax-validation group)
 # Run with: uv run --group jax-validation pytest -m jax_validation
 norecursedirs = [".git", ".tox", "dist", "build", "*.egg"]
+
+[tool.coverage.run]
+source = ["src"]
+relative_files = true
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "def __repr__",
+  "raise AssertionError",
+  "raise NotImplementedError",
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
+  "@abstractmethod",
+]
+
+[tool.coverage.xml]
+output = "coverage.xml"

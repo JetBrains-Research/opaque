@@ -1,7 +1,3 @@
-"""PyTree utilities for working with nested structures."""
-
-import torch
-
 """PyTree utilities for working with nested parameter structures.
 
 This module provides utilities for working with PyTrees, i.e. nested Python
@@ -26,10 +22,11 @@ Notes
 - Handles microbatching for memory efficiency in gradient clipping.
 """
 
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Callable  # noqa: E402
+from typing import Any  # noqa: E402
 
-import optree as _ot
+import optree as _ot  # noqa: E402
+import torch  # noqa: E402
 
 
 def tree_leaves(tree: Any) -> list[torch.Tensor]:
@@ -68,6 +65,206 @@ def tree_map(fn: Callable[..., Any], *trees: Any) -> Any:
         tensor([2., 4.])
     """
     return _ot.tree_map(fn, *trees)
+
+
+def tree_map_with_path(
+    fn: Callable[[tuple[Any, ...], Any], Any],
+    tree: Any,
+    *,
+    namespace: str = "",
+) -> Any:
+    """Apply function to leaves with their path in the tree.
+
+    This is useful for selective operations based on parameter names/locations.
+
+    Args:
+        fn: Function that takes (path, leaf) where path is a tuple of keys
+        tree: PyTree to traverse
+        namespace: Optional namespace prefix for paths
+
+    Returns:
+        PyTree with same structure, with fn applied to (path, leaf)
+
+    Example:
+        >>> tree = {'layer1': {'weight': torch.ones(2)}, 'layer2': {'bias': torch.zeros(3)}}
+        >>> def print_shapes(path, leaf):
+        ...     print(f"{path}: {leaf.shape}")
+        ...     return leaf
+        >>> tree_map_with_path(print_shapes, tree)
+        ('layer1', 'weight'): torch.Size([2])
+        ('layer2', 'bias'): torch.Size([3])
+    """
+
+    def _traverse(path: tuple, subtree: Any) -> Any:
+        if isinstance(subtree, dict):
+            return {k: _traverse(path + (k,), v) for k, v in subtree.items()}
+        elif isinstance(subtree, (list, tuple)):
+            result = [_traverse(path + (i,), v) for i, v in enumerate(subtree)]
+            return type(subtree)(result)
+        else:
+            # Leaf node
+            return fn(path, subtree)
+
+    return _traverse((), tree)
+
+
+def partition(
+    predicate: Callable[[tuple[Any, ...], Any], bool],
+    tree: Any,
+) -> tuple[Any, Any]:
+    """Partition PyTree into two trees based on predicate.
+
+    This is the key function for LoRA-style training: split parameters into
+    trainable (e.g., LoRA adapters) and frozen (e.g., pretrained backbone).
+
+    Args:
+        predicate: Function(path, value) -> bool. Returns True for first tree.
+        tree: PyTree to partition
+
+    Returns:
+        Tuple of (matching_tree, non_matching_tree) with same structure as input.
+        Branches where all leaves are filtered out are omitted.
+
+    Example:
+        >>> params = {
+        ...     'encoder': {
+        ...         'weight': torch.randn(10, 5),
+        ...         'lora_a': torch.randn(10, 2),
+        ...         'lora_b': torch.randn(2, 5),
+        ...     }
+        ... }
+        >>> def is_lora(path, value):
+        ...     return 'lora' in str(path)
+        >>> trainable, frozen = partition(is_lora, params)
+        >>> 'lora_a' in trainable['encoder']  # True
+        >>> 'weight' in frozen['encoder']      # True
+        >>> 'weight' in trainable['encoder']   # False
+
+    References:
+        Inspired by Haiku's hk.data_structures.partition():
+        https://github.com/deepmind/dm-haiku/blob/main/haiku/_src/data_structures.py
+    """
+
+    def _partition_subtree(path: tuple, subtree: Any) -> tuple[Any, Any]:
+        if isinstance(subtree, dict):
+            true_dict = {}
+            false_dict = {}
+            for k, v in subtree.items():
+                true_part, false_part = _partition_subtree(path + (k,), v)
+                if true_part is not None:
+                    true_dict[k] = true_part
+                if false_part is not None:
+                    false_dict[k] = false_part
+            return (
+                true_dict if true_dict else None,
+                false_dict if false_dict else None,
+            )
+        elif isinstance(subtree, (list, tuple)):
+            true_list = []
+            false_list = []
+            for i, v in enumerate(subtree):
+                true_part, false_part = _partition_subtree(path + (i,), v)
+                true_list.append(true_part)
+                false_list.append(false_part)
+            # Keep same type (list vs tuple)
+            any_true = any(x is not None for x in true_list)
+            any_false = any(x is not None for x in false_list)
+            return (
+                type(subtree)(true_list) if any_true else None,
+                type(subtree)(false_list) if any_false else None,
+            )
+        else:
+            # Leaf node - apply predicate
+            if predicate(path, subtree):
+                return subtree, None
+            else:
+                return None, subtree
+
+    true_tree, false_tree = _partition_subtree((), tree)
+    # Return empty dicts instead of None for empty trees
+    if true_tree is None:
+        true_tree = {} if isinstance(tree, dict) else type(tree)()
+    if false_tree is None:
+        false_tree = {} if isinstance(tree, dict) else type(tree)()
+    return true_tree, false_tree
+
+
+def merge(*trees: Any) -> Any:
+    """Merge multiple PyTrees into one.
+
+    Later trees override earlier ones for overlapping keys.
+
+    Args:
+        *trees: PyTrees to merge (must have compatible structures)
+
+    Returns:
+        Merged PyTree
+
+    Example:
+        >>> trainable = {'encoder': {'lora_a': torch.ones(2)}}
+        >>> frozen = {'encoder': {'weight': torch.zeros(3)}}
+        >>> merged = merge(frozen, trainable)
+        >>> merged
+        {'encoder': {'weight': ..., 'lora_a': ...}}
+
+    References:
+        Inspired by Haiku's hk.data_structures.merge():
+        https://github.com/deepmind/dm-haiku/blob/main/haiku/_src/data_structures.py
+    """
+    if not trees:
+        return {}
+
+    # Filter out None/empty trees
+    trees = [t for t in trees if t is not None]
+    if not trees:
+        return {}
+
+    # Base case: single tree
+    if len(trees) == 1:
+        return trees[0]
+
+    # Get first tree as reference
+    result = trees[0]
+
+    # Merge remaining trees
+    for tree in trees[1:]:
+        result = _merge_two(result, tree)
+
+    return result
+
+
+def _merge_two(tree1: Any, tree2: Any) -> Any:
+    """Merge two PyTrees (tree2 overrides tree1)."""
+    # If either is None, return the other
+    if tree1 is None:
+        return tree2
+    if tree2 is None:
+        return tree1
+
+    # If both are dicts, merge recursively
+    if isinstance(tree1, dict) and isinstance(tree2, dict):
+        result = dict(tree1)  # Start with tree1
+        for key in tree2:
+            if key in result:
+                # Recursively merge
+                result[key] = _merge_two(result[key], tree2[key])
+            else:
+                # Add new key
+                result[key] = tree2[key]
+        return result
+
+    # If both are lists/tuples, merge element-wise
+    if isinstance(tree1, (list, tuple)) and isinstance(tree2, (list, tuple)):
+        # Must have same length
+        if len(tree1) != len(tree2):
+            raise ValueError(
+                f"Cannot merge sequences of different lengths: {len(tree1)} vs {len(tree2)}"
+            )
+        merged = [_merge_two(a, b) for a, b in zip(tree1, tree2)]
+        return type(tree1)(merged)
+
+    # Otherwise, tree2 overwrites tree1
+    return tree2
 
 
 def global_norm(tree: Any) -> torch.Tensor:
@@ -143,4 +340,4 @@ def global_norm(tree: Any) -> torch.Tensor:
     return torch.sqrt(total)
 
 
-__all__ = ["tree_leaves", "tree_map", "global_norm"]
+__all__ = ["tree_leaves", "tree_map", "tree_map_with_path", "partition", "merge", "global_norm"]

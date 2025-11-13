@@ -1,6 +1,21 @@
 """Utility functions for opaque."""
 
 from opaque.utils.functional import make_functional
-from opaque.utils.pytree import global_norm, tree_leaves, tree_map
+from opaque.utils.pytree import (
+    global_norm,
+    merge,
+    partition,
+    tree_leaves,
+    tree_map,
+    tree_map_with_path,
+)
 
-__all__ = ["global_norm", "tree_leaves", "tree_map", "make_functional"]
+__all__ = [
+    "global_norm",
+    "tree_leaves",
+    "tree_map",
+    "tree_map_with_path",
+    "partition",
+    "merge",
+    "make_functional",
+]

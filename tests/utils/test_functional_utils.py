@@ -2,7 +2,7 @@
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn.functional as F  # noqa: N812
 from torch.func import grad, vmap
 
 from opaque.utils.functional import make_functional
@@ -142,21 +142,18 @@ def test_make_functional_disable_autograd_tracking():
     assert not any(p.requires_grad for p in params2)
 
 
-def test_make_functional_preserves_device():
+def test_make_functional_preserves_device(device):
     """Test that make_functional preserves device."""
-    if not torch.cuda.is_available():
-        return  # Skip if no CUDA
-
-    model = nn.Linear(5, 1).cuda()
+    model = nn.Linear(5, 1).to(device)
     fmodel, params = make_functional(model)
 
-    # Params should be on cuda
-    assert all(p.device.type == "cuda" for p in params)
+    # Params should be on the target device
+    assert all(p.device.type == device.type for p in params)
 
-    # Forward pass should work on cuda
-    x = torch.randn(3, 5, device="cuda")
+    # Forward pass should work on the target device
+    x = torch.randn(3, 5, device=device)
     output = fmodel(params, x)
-    assert output.device.type == "cuda"
+    assert output.device.type == device.type
 
 
 def test_make_functional_with_kwargs():

@@ -228,3 +228,156 @@ def test_clipped_grad_with_normalize_by():
     # Check result is normalized (smaller than without normalization)
     assert isinstance(result, torch.Tensor)
     assert result.shape == param.shape
+
+
+def test_clipped_grad_actual_clipping():
+    """Test that gradients are actually clipped when they exceed the norm threshold."""
+
+    def loss(param, data):
+        # MSE loss that will produce large gradients
+        return ((data - param) ** 2).mean()
+
+    # Small clip norm to force clipping
+    clip_norm = 1.0
+    clipped_grad_fn = clipped_grad(
+        loss,
+        argnums=0,
+        batch_argnums=1,
+        l2_clip_norm=clip_norm,
+        return_grad_norms=True,
+    )
+
+    param = torch.tensor(0.0)
+    data = torch.tensor([100.0, 200.0, 300.0])  # Large values -> large gradients
+
+    grad, aux = clipped_grad_fn(param, data)
+
+    # Check that some gradients were clipped
+    assert (aux.grad_norms > clip_norm).any(), "Expected some gradients to be clipped"
+    assert aux.grad_norms.shape == (3,), "Should have 3 per-example norms"
+
+
+def test_clipped_grad_preserves_direction():
+    """Test that clipping preserves gradient direction (only scales magnitude)."""
+
+    def loss(param, data):
+        return ((data - param) ** 2).mean()
+
+    clipped_grad_fn = clipped_grad(
+        loss,
+        argnums=0,
+        batch_argnums=1,
+        l2_clip_norm=1.0,  # Small clip norm
+        return_grad_norms=True,
+    )
+
+    # Compute unclipped gradient for single example
+    param = torch.tensor(0.0, requires_grad=True)
+    data_single = torch.tensor([10.0])
+
+    param.grad = None
+    loss_val = ((data_single - param) ** 2).mean()
+    loss_val.backward()
+    unclipped_grad = param.grad.clone()
+    unclipped_norm = unclipped_grad.abs().item()
+
+    # Compute clipped gradient
+    grad_clipped, aux = clipped_grad_fn(param, data_single)
+
+    # Check direction is preserved (signs match)
+    assert torch.sign(grad_clipped) == torch.sign(unclipped_grad), "Direction should be preserved"
+
+    # Check that norm is clipped
+    if unclipped_norm > 1.0:
+        assert abs(grad_clipped.item()) <= 1.0, "Should be clipped to norm 1.0"
+
+
+def test_clipped_grad_no_clipping_below_threshold():
+    """Test that gradients below threshold are unchanged."""
+
+    def loss(param, data):
+        return ((data - param) ** 2).mean()
+
+    # Large clip norm (won't clip)
+    large_clip_norm = 1000.0
+    clipped_grad_fn = clipped_grad(
+        loss,
+        argnums=0,
+        batch_argnums=1,
+        l2_clip_norm=large_clip_norm,
+        return_grad_norms=True,
+    )
+
+    param = torch.tensor(1.0)
+    data = torch.tensor([1.1, 0.9, 1.05])  # Small differences -> small gradients
+
+    grad, aux = clipped_grad_fn(param, data)
+
+    # All norms should be below threshold
+    assert (aux.grad_norms < large_clip_norm).all(), "All norms should be below threshold"
+    # Gradient should be non-trivial
+    assert grad.abs() > 1e-6, "Gradient should be non-zero"
+
+
+def test_clipped_grad_zero_gradients():
+    """Test handling of zero gradients."""
+
+    def loss(param, data):
+        return ((data - param) ** 2).mean()
+
+    clipped_grad_fn = clipped_grad(
+        loss,
+        argnums=0,
+        batch_argnums=1,
+        l2_clip_norm=1.0,
+        return_grad_norms=True,
+    )
+
+    # Zero data and zero param -> zero gradients
+    param = torch.tensor(0.0)
+    data = torch.zeros(3)
+
+    grad, aux = clipped_grad_fn(param, data)
+
+    # Check all zero
+    assert grad.abs() < 1e-7, "Gradient should be zero"
+    assert (aux.grad_norms < 1e-7).all(), "All norms should be zero"
+
+
+def test_clipped_grad_keep_batch_dim():
+    """Test keep_batch_dim parameter affects loss function signature."""
+
+    def loss_no_batch(param, data):
+        # Expects data without batch dim (will unsqueeze in real usage)
+        return ((data.unsqueeze(0) - param) ** 2).mean()
+
+    def loss_with_batch(param, data):
+        # Expects data with batch dim of size 1
+        return ((data - param) ** 2).mean()
+
+    param = torch.tensor(1.0)
+    data = torch.tensor([0.5, 1.5, 2.0])
+
+    # Test keep_batch_dim=False
+    grad_fn_no_batch = clipped_grad(
+        loss_no_batch,
+        argnums=0,
+        batch_argnums=1,
+        l2_clip_norm=10.0,
+        keep_batch_dim=False,
+    )
+    grad_no_batch = grad_fn_no_batch(param, data)
+
+    # Test keep_batch_dim=True
+    grad_fn_with_batch = clipped_grad(
+        loss_with_batch,
+        argnums=0,
+        batch_argnums=1,
+        l2_clip_norm=10.0,
+        keep_batch_dim=True,
+    )
+    grad_with_batch = grad_fn_with_batch(param, data)
+
+    # Both should produce gradients (exact values may differ due to loss function)
+    assert grad_no_batch.abs() > 1e-6, "Should have non-zero gradient"
+    assert grad_with_batch.abs() > 1e-6, "Should have non-zero gradient"

@@ -158,7 +158,7 @@ def clipped_fun(
         # Vmap over batch - specify out_dims for aux
         # aux might be empty tuple (), which should have out_dims=None
         out_dims = (0, None if not has_aux else 0, 0)  # (clipped_value, aux, norm)
-        vmapped = _vmap(per_example_fn, in_dims=in_dims, out_dims=out_dims)
+        vmapped = _vmap(per_example_fn, in_dims=in_dims, out_dims=out_dims, randomness="same")
         clipped_values, aux, norms = vmapped(*args)
 
         # Sum clipped values across batch dimension using tree_map

@@ -4,6 +4,20 @@ import pytest
 import torch
 
 
+def get_default_device():
+    """Get the default device for testing (CUDA > MPS > CPU in priority order).
+
+    Returns:
+        torch.device: Best available device
+    """
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        return torch.device("mps")
+    else:
+        return torch.device("cpu")
+
+
 def pytest_configure(config):
     """Register custom markers."""
     config.addinivalue_line(
@@ -14,19 +28,25 @@ def pytest_configure(config):
         "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
     )
     config.addinivalue_line("markers", "gpu: marks tests that require GPU")
+    config.addinivalue_line(
+        "markers",
+        "integration: marks tests as integration tests (end-to-end scenarios with real models)",
+    )
 
 
 @pytest.fixture
 def device():
-    """Provide device for tests (CUDA if available, else CPU)."""
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    """Provide device for tests (CUDA > MPS > CPU in priority order)."""
+    return get_default_device()
 
 
-@pytest.fixture(params=["cpu", "cuda"])
+@pytest.fixture(params=["cpu", "cuda", "mps"])
 def all_devices(request):
     """Parametrize tests over all available devices."""
     if request.param == "cuda" and not torch.cuda.is_available():
         pytest.skip("CUDA not available")
+    if request.param == "mps" and not torch.backends.mps.is_available():
+        pytest.skip("MPS not available")
     return torch.device(request.param)
 
 
@@ -38,6 +58,8 @@ def set_random_seed():
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
+        if torch.backends.mps.is_available():
+            torch.mps.manual_seed(seed)
 
     return _set_seed
 

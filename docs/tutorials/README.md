@@ -72,10 +72,10 @@ Found an issue or have suggestions for improving the tutorials?
 
 - [x] Tutorial 01: Gradient Clipping from Basics (Stage 1)
 - [x] Tutorial 02: Differential Privacy - Noise and Accounting (Stage 2)
+- [x] Tutorial 03: End-to-End DP-SGD Training (Stage 3)
 
 **Planned tutorials** (coming in future stages):
 
-- [ ] Tutorial 03: End-to-End DP-SGD Training (Stage 3)
 - [ ] Tutorial 04: LoRA Fine-Tuning with DP (Stage 4)
 - [ ] Tutorial 05: Advanced Privacy Techniques (Stage 4+)
 
