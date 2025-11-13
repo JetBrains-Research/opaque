@@ -22,6 +22,7 @@ from opaque.optimizers import (
     DPOptimizerState,
     dp_adam,
     dp_adam_ac,
+    dp_adamw,
     dp_sgd,
     make_dp_optimizer,
 )
@@ -46,6 +47,7 @@ __all__ = [
     "make_dp_optimizer",
     "dp_sgd",
     "dp_adam",
+    "dp_adamw",
     "dp_adam_ac",
     # Utils
     "make_functional",

@@ -43,6 +43,49 @@ Builds on Tutorial 01 to implement complete DP-SGD with noise injection and priv
 
 **Key Takeaway**: Complete DP-SGD workflow from calibration to training with formal privacy guarantees (ε, δ).
 
+---
+
+### [Tutorial 03: Complete DP-SGD Training Loop](03_complete_dp_sgd_training.ipynb)
+
+**Level**: Intermediate
+**Duration**: 45-60 minutes
+**Prerequisites**: Tutorial 01 (Gradient Clipping), Tutorial 02 (Noise & Accounting)
+
+Puts everything together to implement a complete DP-SGD training loop:
+
+**What you'll build**:
+
+1. Complete **DP-SGD training loop**
+2. Compare **DP-SGD vs non-private training**
+3. Visualize **privacy-utility tradeoffs**
+4. Track **privacy budget** throughout training
+
+**Key Takeaway**: End-to-end DP-SGD implementation with privacy tracking and performance optimization tips.
+
+---
+
+### [Tutorial 04: DP-SGD for LoRA Fine-Tuning with HuggingFace](04_lora_huggingface_dp_training.ipynb) ✨ NEW!
+
+**Level**: Advanced
+**Duration**: 60-90 minutes
+**Prerequisites**: Tutorials 01-03, Basic familiarity with transformers and LoRA
+
+Apply DP-SGD to real-world use case: fine-tuning large language models with LoRA:
+
+**What you'll learn**:
+
+1. Why **LoRA is ideal for DP** fine-tuning (smaller gradients, better SNR)
+2. Apply **LoRA to HuggingFace models** with PEFT
+3. Convert models to **functional form** with frozen + trainable parameters
+4. **Two ways to implement DP-AdamW**: Wrapper functions (educational) vs `dp_adamw()` optimizer (production)
+5. Use **PyTorch DataLoader** for proper batch handling
+6. Train with **fixed batch sampling** (not Poisson - that's Tutorial 05!)
+7. Proper **privacy accounting** for fixed-size batches (RDP accountant)
+8. **Practical hyperparameter guidance** for stable DP-SGD training
+
+**Key Takeaway**: Production-ready DP-SGD for HuggingFace models with LoRA. Learn DP-AdamW implementation both ways (
+wrapper functions for understanding, convenience optimizer for production), using fixed batch sampling with DataLoader.
+
 ## Additional Resources
 
 ### Documentation
@@ -72,12 +115,13 @@ Found an issue or have suggestions for improving the tutorials?
 
 - [x] Tutorial 01: Gradient Clipping from Basics (Stage 1)
 - [x] Tutorial 02: Differential Privacy - Noise and Accounting (Stage 2)
-- [x] Tutorial 03: End-to-End DP-SGD Training (Stage 3)
+- [x] Tutorial 03: Complete DP-SGD Training Loop (Stage 3)
+- [x] Tutorial 04: DP-SGD for LoRA Fine-Tuning with HuggingFace (Stage 3)
 
 **Planned tutorials** (coming in future stages):
 
-- [ ] Tutorial 04: LoRA Fine-Tuning with DP (Stage 4)
 - [ ] Tutorial 05: Advanced Privacy Techniques (Stage 4+)
+- [ ] Tutorial 06: Multi-GPU DP Training (Stage 5+)
 
 ---
 
