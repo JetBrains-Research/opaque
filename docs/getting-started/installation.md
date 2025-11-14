@@ -36,23 +36,6 @@ uv run pytest
 
 ## Optional Dependencies
 
-### JAX Validation
-
-For cross-framework validation against JAX-Privacy:
-
-```bash
-# Clone JAX-Privacy reference (required)
-cd ..
-git clone https://github.com/google-deepmind/jax_privacy.git
-cd opaque
-
-# Install JAX validation dependencies
-uv sync --group jax-validation
-
-# Run JAX validation tests
-uv run pytest -m jax_validation
-```
-
 ### Documentation
 
 To build documentation locally:

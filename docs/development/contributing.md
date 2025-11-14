@@ -30,9 +30,10 @@ uv sync
 ### Testing
 
 ```bash
-uv run pytest                                        # All tests
+uv run pytest                                        # All tests (excluding slow)
+uv run pytest -m ""                                  # All tests (including slow)
 uv run pytest --cov=opaque --cov-report=html        # With coverage
-uv run --group jax-validation pytest -m jax_validation  # JAX validation
+uv run pytest -m integration                         # Integration tests only
 ```
 
 ### Code Quality

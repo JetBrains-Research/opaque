@@ -15,21 +15,11 @@ Thank you for your interest in contributing to Opaque!
 git clone https://github.com/evgri243/opaque.git
 cd opaque
 
-# Clone JAX-Privacy reference (required)
-cd .. && git clone https://github.com/google-deepmind/jax_privacy.git && cd opaque
-
 # Install dependencies
 uv sync
 
 # Verify installation
 uv run pytest
-```
-
-### Optional: JAX Validation
-
-```bash
-uv sync --group jax-validation
-uv run --group jax-validation pytest -m jax_validation
 ```
 
 ---
@@ -47,12 +37,11 @@ uv run --group jax-validation pytest -m jax_validation
 
 Opaque follows a Test-Driven Development workflow:
 
-1. **Discover**: Study JAX-Privacy implementation in `../jax_privacy`
-2. **JAX Test** (optional): Create reference test
-3. **Failing Test**: Write Opaque test defining API
-4. **Implement**: Make test pass
-5. **Document**: Add docstrings and examples
-6. **Validate**: Compare numerically with JAX-Privacy
+1. **Test First**: Write failing test defining the API
+2. **Implement**: Make test pass (minimal code to pass)
+3. **Document**: Add docstrings with usage examples
+4. **Refactor**: Improve code quality and structure
+5. **Verify**: Run full test suite with coverage
 
 **See**: [Detailed TDD Workflow](docs/development/tdd-workflow.md)
 
@@ -66,9 +55,6 @@ uv run pytest
 
 # With coverage
 uv run pytest --cov=opaque --cov-report=html
-
-# JAX validation tests
-uv run --group jax-validation pytest -m jax_validation
 
 # Specific test
 uv run pytest tests/core/test_clipped_fun.py::test_clip_pytree -v

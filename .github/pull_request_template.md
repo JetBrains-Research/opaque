@@ -35,7 +35,7 @@ Closes #
 - [ ] All existing tests pass (`uv run pytest`)
 - [ ] Added new tests for new functionality
 - [ ] Tests achieve >80% coverage for new code
-- [ ] JAX validation tests pass (if applicable): `uv run --group jax-validation pytest -m jax_validation`
+- [ ] Integration tests pass (if applicable): `uv run pytest -m integration`
 
 ## Code Quality
 

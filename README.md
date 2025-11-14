@@ -226,21 +226,18 @@ Differential privacy (DP) provides mathematical guarantees that a model doesn't 
 
 We follow a rigorous test-driven approach:
 
-1. **Discover**: Study JAX-Privacy implementation
-2. **JAX Test**: Create reference test against JAX-Privacy (optional, requires `jax-validation` group)
-3. **Failing Test**: Write Opaque test that fails
-4. **Implement**: Make the test pass
-5. **Document**: Add docstrings and API reference
-6. **Example**: Create usage example (if warranted)
+1. **Test First**: Write failing test that defines the API
+2. **Implement**: Make the test pass (minimal code)
+3. **Document**: Add docstrings and API reference
+4. **Refactor**: Improve code quality
+5. **Verify**: Run full test suite
 
 ```bash
-# Run standard tests (no JAX needed)
+# Run all tests
 uv run pytest
 
-# Run JAX validation tests (optional, requires JAX)
-uv run --group jax-validation pytest -m jax_validation
-
-# Examples (coming soon)
+# Run with coverage
+uv run pytest --cov=opaque --cov-report=html
 ```
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for detailed guidelines.

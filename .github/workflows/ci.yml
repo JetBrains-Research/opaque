@@ -31,11 +31,11 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync
+          uv sync --group huggingface
 
-      - name: Run tests
+      - name: Run tests (including slow and integration tests)
         run: |
-          uv run pytest --cov=opaque --cov-report=xml --cov-report=term
+          uv run pytest -m "" --cov=opaque --cov-report=xml --cov-report=term
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

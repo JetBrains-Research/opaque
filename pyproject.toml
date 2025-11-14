@@ -3,9 +3,9 @@ name = "opaque"
 version = "0.2.0"
 description = "Functional Differential Privacy for LoRA Fine-tuning"
 readme = "README.md"
-license = {text = "Apache-2.0"}
+license = { text = "Apache-2.0" }
 authors = [
-    {name = "Opaque Contributors"}
+  { name = "Opaque Contributors" }
 ]
 requires-python = ">=3.11,<3.13"
 keywords = [
@@ -20,66 +20,58 @@ keywords = [
   "deep-learning",
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
-    "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: Apache Software License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
   "Topic :: Security",
 ]
 dependencies = [
   "dp-accounting>=0.4.0",
-    "matplotlib>=3.10.7",
+  "matplotlib>=3.10.7",
   "notebook>=7.4.7",
-    "optree>=0.17.0",
+  "optree>=0.17.0",
   "riskcal>=1.0.0", # For alpha/beta privacy queries
-    "torch>=2.0.0",
+  "torch>=2.0.0",
   "torchopt>=0.7.3",
 ]
 
 [project.optional-dependencies]
 examples = [
-    "matplotlib>=3.10.7",
-    "jupyter>=1.0.0",
-  "transformers>=4.0.0",
-  "datasets>=2.0.0",
-  "peft>=0.7.0",
+  "matplotlib>=3.10.7",
+  "jupyter>=1.0.0",
 ]
 
 [dependency-groups]
 dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
+  "pytest>=7.0.0",
+  "pytest-cov>=4.0.0",
   "pytest-xdist>=3.0.0", # Parallel test execution
-    "ruff>=0.1.0",
-    "hypothesis>=6.0.0",  # Property-based testing
+  "ruff>=0.1.0",
+  "hypothesis>=6.0.0", # Property-based testing
   "scipy>=1.11.0", # For statistical tests
-  # tests against transformers library
+]
+huggingface = [
+  # HuggingFace ecosystem for LLM fine-tuning
   "transformers>=4.0.0",
   "datasets>=2.0.0",
   "peft>=0.7.0",
-  # tests against jax
-    "jax>=0.6.0",
-    "jaxlib>=0.6.0",
-    "jax-privacy>=1.0.0",
 ]
 docs = [
-    "mkdocs>=1.5.0",
-    "mkdocs-material>=9.5.0",
-    "mkdocstrings[python]>=0.24.0",  # Auto-generate docs from docstrings
-    "mkdocs-jupyter>=0.24.0", # Jupyter notebook support
+  "mkdocs>=1.5.0",
+  "mkdocs-material>=9.5.0",
+  "mkdocstrings[python]>=0.24.0", # Auto-generate docs from docstrings
+  "mkdocs-jupyter>=0.24.0", # Jupyter notebook support
 ]
 
 [tool.uv]
 override-dependencies = [
   "dp-accounting>=0.5.1", # Required for from_truncated_subsampled_gaussian_mechanism
 ]
-
-[tool.uv.sources]
-jax-privacy = { path = "../jax_privacy", editable = true }
 
 [project.urls]
 Homepage = "https://github.com/evgri243/opaque"
@@ -109,13 +101,10 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-n=auto -v -m 'not slow'"
 markers = [
-    "jax_validation: tests requiring JAX and JAX-Privacy for cross-framework validation",
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "gpu: marks tests that require GPU",
+  "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+  "gpu: marks tests that require GPU",
   "integration: marks tests as integration tests (end-to-end scenarios with real models)",
 ]
-# Ignore JAX validation tests by default (require optional jax-validation group)
-# Run with: uv run --group jax-validation pytest -m jax_validation
 norecursedirs = [".git", ".tox", "dist", "build", "*.egg"]
 
 [tool.coverage.run]
