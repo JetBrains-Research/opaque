@@ -17,29 +17,32 @@ Opaque is a PyTorch port of Google's [JAX-Privacy](https://github.com/google-dee
 🎉 DP-SGD is ready! All core components implemented:
 
     - ✅ **Stage 1**: Gradient clipping with `clipped_grad()`
-    - ✅ **Stage 2**: Noise injection (`add_gaussian_noise()`) and privacy accounting (`PLDAccountant`, `RDPAccountant`)
-    - ✅ **43 tests passing** (30 unit + 13 JAX validation)
+    - ✅ **Stage 2**: Noise injection and functional privacy accounting
+    - ✅ **111 tests passing** (55 accounting + 56 optimizer tests)
     - ✅ **Numerical equivalence** with JAX-Privacy confirmed
+    - ✅ **Functional API**: Immutable state, composable privacy accounting
 
-    🔜 Next: Stage 3 (End-to-End Integration)
+    🔜 Next: Stage 3 (Additional Optimizer Features)
 
 ## Quick Example: Complete DP-SGD
 
 ```python
 import torch
+import opaque.accounting as acc
 from opaque import (
     clipped_grad,
     add_gaussian_noise,
-    PLDAccountant,
-    calibrate_noise_multiplier,
 )
 
 # 1. Calibrate noise for target privacy
-noise_multiplier = calibrate_noise_multiplier(
-    target_epsilon=3.0,
-    target_delta=1e-5,
-    sample_rate=0.01,
-    num_steps=1000,
+sample_rate = 0.01  # batch_size / dataset_size
+num_steps = 1000
+
+noise_multiplier = acc.find_noise_multiplier_for_epsilon_delta(
+    epsilon=3.0,
+    delta=1e-5,
+    sample_rate=sample_rate,
+    num_steps=num_steps,
 )
 
 # 2. Create clipped gradient function
@@ -47,20 +50,28 @@ clip_norm = 1.0
 clipped_grad_fn = clipped_grad(
     loss_fn,
     l2_clip_norm=clip_norm,
-    ...
+    argnums=0,
+    batch_argnums=1,
 )
 
 # 3. Training loop with privacy accounting
-accountant = PLDAccountant()
+privacy_state = acc.create()
 
-for step in range(1000):
+for step in range(num_steps):
     grads = clipped_grad_fn(params, batch)
     noisy_grads = add_gaussian_noise(grads, stddev=noise_multiplier * clip_norm)
     params = update(params, noisy_grads)
-    accountant.step_poisson(noise_multiplier, sample_rate=0.01, num_steps=1)
+
+    # Compose privacy
+    privacy_state = acc.compose_poisson_gaussian(
+        privacy_state,
+        noise_multiplier=noise_multiplier,
+        sample_rate=sample_rate,
+        count=1,
+    )
 
 # 4. Get final privacy guarantee
-epsilon = accountant.get_epsilon(target_delta=1e-5)
+epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
 print(f"Privacy: (ε={epsilon:.2f}, δ=1e-5)")
 ```
 

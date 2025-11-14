@@ -1,0 +1,101 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+title: "[Bug]: "
+labels: [ "bug", "triage" ]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the form below.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: Describe the bug...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Import opaque
+        2. Run code...
+        3. See error
+      value: |
+        ```python
+        # Your code here
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen
+      placeholder: Describe what should happen...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened (include error messages)
+      placeholder: |
+        Error message or unexpected output...
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Please provide your environment details
+      value: |
+        - OS: [e.g., Ubuntu 22.04, macOS 14.0]
+        - Python version: [e.g., 3.11.5]
+        - Opaque version: [e.g., 0.2.0]
+        - PyTorch version: [e.g., 2.1.0]
+        - CUDA version (if applicable): [e.g., 11.8]
+      render: markdown
+    validations:
+      required: true
+
+  - type: dropdown
+    id: privacy-impact
+    attributes:
+      label: Privacy Impact
+      description: Does this bug affect differential privacy guarantees?
+      options:
+        - "No - Performance/usability issue only"
+        - "Unclear - Needs investigation"
+        - "Yes - May weaken privacy guarantees"
+        - "Yes - Breaks privacy guarantees"
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context, screenshots, or relevant information
+      placeholder: Any other details...
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues to avoid duplicates
+          required: true
+        - label: I have provided a minimal reproducible example
+          required: true
+        - label: I have included my environment details
+          required: true

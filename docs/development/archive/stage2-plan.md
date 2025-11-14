@@ -45,17 +45,20 @@ params = params - learning_rate * noisy_sum
 ### Deliverables
 
 1. **`opaque.noise`** (~80 LOC)
-  - `add_gaussian_noise()` - Functional API (stateless)
-  - PyTree support via `tree_map()`
+
+- `add_gaussian_noise()` - Functional API (stateless)
+- PyTree support via `tree_map()`
 
 2. **`opaque.accounting`** (~150 LOC)
-  - `PrivacyAccountant` - Wrapper around Google's dp-accounting
-  - `calibrate_noise()` - Find noise_multiplier for target (ε, δ)
-  - RDP and PLD accounting support
+
+- `PrivacyAccountant` - Wrapper around Google's dp-accounting
+- `calibrate_noise()` - Find noise_multiplier for target (ε, δ)
+- RDP and PLD accounting support
 
 3. **Tests** (~300 LOC)
-  - Noise: Unit tests, statistical validation, JAX-Privacy validation
-  - Accounting: Budget tracking, calibration, composition tests
+
+- Noise: Unit tests, statistical validation, JAX-Privacy validation
+- Accounting: Budget tracking, calibration, composition tests
 
 ---
 

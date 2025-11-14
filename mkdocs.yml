@@ -76,23 +76,35 @@ nav:
     - Quick Start: getting-started/quickstart.md
   - Tutorials:
     - Overview: tutorials/README.md
-    - Gradient Clipping from Basics: tutorials/01_gradient_clipping_from_basics.ipynb
+    - 01 - Gradient Clipping from Basics: tutorials/01_gradient_clipping_from_basics.ipynb
+    - 02 - DP Noise and Accounting: tutorials/02_differential_privacy_noise_and_accounting.ipynb
+    - 03 - Complete DP-SGD Training: tutorials/03_complete_dp_sgd_training.ipynb
+    - 04 - Functional DP with TorchOpt: tutorials/04_dp_optimizers.ipynb
+    - 05 - Sampling and Microbatching: tutorials/05_sampling_and_microbatching.ipynb
+    - 06 - LoRA HuggingFace Training: tutorials/06_lora_huggingface_dp_training.ipynb
   - User Guide:
+      - Overview: user-guide/index.md
     - Differential Privacy Basics: user-guide/dp-basics.md
-    - Gradient Clipping: user-guide/clipping.md
+      - Per-Sample Gradient Clipping: user-guide/clipping.md
+      - Noise Addition: user-guide/noise.md
+      - Privacy Accounting: user-guide/accounting.md
+      - Optimizers & Adaptive Clipping: user-guide/optimizers.md
+      - Poisson Sampling & Microbatching: user-guide/sampling.md
     - LoRA Fine-tuning: user-guide/lora.md
   - API Reference:
-    - Core:
+      - Overview: api/index.md
+      - Utils:
       - PyTree Utilities: api/core/pytree_utils.md
-      - Clipping: api/core/clipping.md
       - Functional Utilities: api/functional_utils.md
+      - Clipping: api/core/clipping.md
+      - Noise: api/noise.md
+      - Accounting: api/accounting.md
+      - Optimizers: api/optimizers.md
+      - Sampling: api/sampling.md
   - Development:
     - Contributing: development/contributing.md
     - TDD Workflow: development/tdd-workflow.md
-    - JAX-Privacy Comparison: development/jax-privacy-comparison.md
-    - Design Decisions: development/design-decisions.md
     - Roadmap: development/roadmap.md
-    - Stage 1 Plan: development/stage1-plan.md
 
 extra:
   social:

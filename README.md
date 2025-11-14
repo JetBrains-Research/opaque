@@ -7,6 +7,11 @@ Opaque is a PyTorch port of Google's [JAX-Privacy](https://github.com/google-dee
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch 2.0+](https://img.shields.io/badge/pytorch-2.0+-red.svg)](https://pytorch.org/)
+[![CI](https://github.com/evgri243/opaque/actions/workflows/ci.yml/badge.svg)](https://github.com/evgri243/opaque/actions/workflows/ci.yml)
+[![Docs](https://github.com/evgri243/opaque/actions/workflows/docs.yml/badge.svg)](https://github.com/evgri243/opaque/actions/workflows/docs.yml)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+[![Tests](https://img.shields.io/badge/tests-111%20passing-brightgreen.svg)](https://github.com/evgri243/opaque)
+[![Stage](https://img.shields.io/badge/stage-2%20complete-success.svg)](https://github.com/evgri243/opaque)
 
 ---
 
@@ -42,12 +47,11 @@ uv sync
 ```python
 import torch
 import torch.nn as nn
+import opaque.accounting as acc
 from opaque import (
     make_functional,
     clipped_grad,
     add_gaussian_noise,
-    PLDAccountant,
-    calibrate_noise_multiplier,
 )
 
 # 1. Define model and convert to functional
@@ -61,12 +65,14 @@ def loss_fn(params, example):
     return ((pred - y) ** 2).mean()
 
 # 3. Calibrate noise for target privacy
-noise_multiplier = calibrate_noise_multiplier(
-    target_epsilon=3.0,
-    target_delta=1e-5,
-    sample_rate=0.01,  # batch_size / dataset_size
-    num_steps=1000,
-    accountant_type="pld",
+sample_rate = 0.01  # batch_size / dataset_size
+num_steps = 1000
+
+noise_multiplier = acc.find_noise_multiplier_for_epsilon_delta(
+  epsilon=3.0,
+  delta=1e-5,
+  sample_rate=sample_rate,
+  num_steps=num_steps,
 )
 
 # 4. Create clipped gradient function
@@ -79,9 +85,9 @@ clipped_grad_fn = clipped_grad(
 )
 
 # 5. Training loop
-accountant = PLDAccountant()
+privacy_state = acc.create()
 
-for step in range(1000):
+for step in range(num_steps):
     # Compute clipped gradients
     grads = clipped_grad_fn(params, (X_batch, y_batch))
 
@@ -93,11 +99,16 @@ for step in range(1000):
     # Update parameters
     params = tuple(p - lr * g for p, g in zip(params, noisy_grads))
 
-    # Track privacy
-    accountant.step_poisson(noise_multiplier, sample_rate=0.01, num_steps=1)
+    # Track privacy (compose one step)
+    privacy_state = acc.compose_poisson_gaussian(
+      privacy_state,
+      noise_multiplier=noise_multiplier,
+      sample_rate=sample_rate,
+      count=1,
+    )
 
 # Get final privacy
-epsilon = accountant.get_epsilon(target_delta=1e-5)
+epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
 print(f"Privacy: (ε={epsilon:.2f}, δ=1e-5)")  # Should be ≈ 3.0
 ```
 
@@ -155,22 +166,27 @@ Differential privacy (DP) provides mathematical guarantees that a model doesn't 
 
 ### ✅ Stage 2: Noise Injection & Privacy Accounting (Complete!)
 
-**Timeline**: Completed 2025-11-12 | [Detailed Plan](docs/development/stage2-plan.md)
+**Timeline**: Completed 2025-11-14 | [Detailed Plan](docs/development/stage2-plan.md)
 
 - [x] `opaque.noise` - Gaussian noise generation
   - `add_gaussian_noise()` - Stateless functional API
   - Reproducibility with `torch.Generator`
   - PyTree support
-- [x] `opaque.accounting` - Privacy budget tracking
-  - `PLDAccountant` - PLD accounting for Poisson sampling (supports truncated Poisson)
-  - `RDPAccountant` - RDP accounting for mini-batch sampling
-  - `calibrate_noise_multiplier()` - Find noise for target (ε, δ)
-  - `calibrate_steps()` - Find max training steps
-  - `calibrate_batch_size()` - Find max batch size
-- [x] 43 tests passing (30 unit + 13 JAX validation)
+- [x] `opaque.accounting` - Functional privacy accounting
+  - Immutable state API: `create()`, `compose_*()`, `get_*()`
+  - Composition: `compose_poisson_gaussian()`, `compose_truncated_poisson_gaussian()`, etc.
+  - Privacy queries: `get_epsilon()`, `get_beta()`, `get_advantage()`
+  - Three privacy metrics: (ε, δ)-DP, f-DP advantage, (α, β) error rates
+  - Calibration using riskcal: `find_noise_multiplier_for_epsilon_delta()`, etc.
+- [x] `opaque.sampling` - Poisson sampling mechanisms
+  - `PoissonSampler` - Standard Poisson sampling
+  - `TruncatedPoissonSampler` - Bounded batch sizes
+- [x] `opaque.optimizers` - DP optimizer wrappers
+  - `adaptive_clipping()` - Adaptive clipping wrapper for TorchOpt optimizers
+- [x] 111 tests passing (55 accounting + 56 optimizer tests)
 - [x] Numerical equivalence with JAX-Privacy confirmed
 
-**Deliverable**: ✅ Complete DP-SGD implementation with privacy accounting
+**Deliverable**: ✅ Complete DP-SGD implementation with functional privacy accounting
 
 ### Stage 3: Integration & End-to-End (Next)
 

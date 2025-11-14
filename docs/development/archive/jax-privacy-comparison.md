@@ -6,25 +6,30 @@ This document explains the relationship between Opaque and JAX-Privacy, includin
 
 ## JAX-Privacy Architecture
 
-JAX-Privacy provides three distinct APIs for differential privacy. Understanding these helps clarify Opaque's design decisions.
+JAX-Privacy provides three distinct APIs for differential privacy. Understanding these helps clarify Opaque's design
+decisions.
 
 ### 1. Old API (`dp_sgd/` module)
 
 **Characteristics**:
+
 - Object-oriented design (~3,550 LOC)
 - Explicit state management
 - High flexibility, high complexity
 - Used by Keras integration
 
 **Key Classes**:
+
 - `DpsgdGradientComputer`: Orchestrates clipping + noise
 - `DpsgdTrainingAccountant`: Privacy budget tracking
 
 **Pros**:
+
 - Maximum control over training loop
 - Well-tested in production
 
 **Cons**:
+
 - Verbose API
 - Steep learning curve
 - Requires manual state management
@@ -32,6 +37,7 @@ JAX-Privacy provides three distinct APIs for differential privacy. Understanding
 ### 2. New API (`experimental/clipping.py`) ✅ **We're porting this!**
 
 **Characteristics**:
+
 - Functional design (~550 LOC)
 - Composable primitives
 - Clean separation of concerns
@@ -40,6 +46,7 @@ JAX-Privacy provides three distinct APIs for differential privacy. Understanding
 **Key Function**: `clipped_grad(fun, l2_clip_norm=...)`
 
 **How it works**:
+
 ```python
 # Computes per-example gradients, clips each, then sums
 # Does NOT add noise - that's a separate step!
@@ -48,6 +55,7 @@ grads = clipped_grad_fn(params, data)
 ```
 
 **Pros**:
+
 - **Composable**: Clipping and noise are separate modules
 - **Stateless**: Functions in, values out
 - **Easier testing**: No hidden state
@@ -55,17 +63,20 @@ grads = clipped_grad_fn(params, data)
 - **Future-proof**: JAX-Privacy is moving this direction
 
 **Cons**:
+
 - Less mature than old API
 - Fewer examples (for now)
 
 ### 3. Keras API (High-Level Wrapper)
 
 **Characteristics**:
+
 - One-line integration: `make_private(model, config)`
 - Wraps old API internally
 - Easiest for users, least flexible
 
 **Example**:
+
 ```python
 from jax_privacy import make_private, DPKerasConfig
 
@@ -80,10 +91,12 @@ model.fit(train_data, epochs=10)
 ```
 
 **Pros**:
+
 - Minimal code changes
 - Good for quick prototyping
 
 **Cons**:
+
 - Keras-specific
 - Less control over training loop
 
@@ -104,6 +117,7 @@ noisy_grads = add_noise(clipped_grads, noise_scale=σ)
 ```
 
 This allows:
+
 - Testing clipping independently
 - Swapping noise mechanisms
 - Composing with other DP primitives
@@ -112,10 +126,10 @@ This allows:
 
 PyTorch's `torch.func` module is designed for functional transformations:
 
-| JAX | PyTorch |
-|-----|---------|
-| `jax.vmap` | `torch.func.vmap` |
-| `jax.grad` | `torch.func.grad` |
+| JAX                 | PyTorch             |
+|---------------------|---------------------|
+| `jax.vmap`          | `torch.func.vmap`   |
+| `jax.grad`          | `torch.func.grad`   |
 | Stateless functions | Stateless functions |
 
 Functional design is a natural fit.
@@ -130,7 +144,8 @@ The new API's features map well to LoRA:
 
 ### 4. **Future-Proof**
 
-JAX-Privacy developers indicate the new API is the future direction. By porting this, Opaque stays aligned with upstream development.
+JAX-Privacy developers indicate the new API is the future direction. By porting this, Opaque stays aligned with upstream
+development.
 
 ### 5. **Cleaner Testing**
 
@@ -148,21 +163,22 @@ assert compute_norm(result) <= expected_norm
 
 Here's how JAX constructs map to PyTorch:
 
-| JAX Function | Purpose | PyTorch Equivalent | Notes |
-|--------------|---------|-------------------|-------|
-| `jax.vmap(fn, in_dims=...)` | Vectorize over batch dimension | `torch.func.vmap(fn, in_dims=...)` | ✅ Direct equivalent |
-| `jax.grad(fn, argnums=...)` | Compute gradients | `torch.func.grad(fn, argnums=...)` | ✅ Direct equivalent |
-| `jax.value_and_grad(fn, has_aux=True)` | Get value AND gradient | **No direct equivalent** | ⚠️ See workaround below |
-| `jax.lax.scan(fn, init, xs)` | Sequential accumulation | Custom loop or checkpointing | Manual implementation |
-| `jax.tree_util.tree_map(fn, tree)` | Apply to nested structures | `torch.utils._pytree.tree_map(fn, tree)` | ✅ Direct equivalent |
-| `jax.random.PRNGKey(seed)` | Reproducible randomness | `torch.Generator().manual_seed(seed)` | Different API |
-| `optax.GradientTransformation` | Optimizer interface | `torch.optim.Optimizer` | Different API |
+| JAX Function                           | Purpose                        | PyTorch Equivalent                       | Notes                   |
+|----------------------------------------|--------------------------------|------------------------------------------|-------------------------|
+| `jax.vmap(fn, in_dims=...)`            | Vectorize over batch dimension | `torch.func.vmap(fn, in_dims=...)`       | ✅ Direct equivalent     |
+| `jax.grad(fn, argnums=...)`            | Compute gradients              | `torch.func.grad(fn, argnums=...)`       | ✅ Direct equivalent     |
+| `jax.value_and_grad(fn, has_aux=True)` | Get value AND gradient         | **No direct equivalent**                 | ⚠️ See workaround below |
+| `jax.lax.scan(fn, init, xs)`           | Sequential accumulation        | Custom loop or checkpointing             | Manual implementation   |
+| `jax.tree_util.tree_map(fn, tree)`     | Apply to nested structures     | `torch.utils._pytree.tree_map(fn, tree)` | ✅ Direct equivalent     |
+| `jax.random.PRNGKey(seed)`             | Reproducible randomness        | `torch.Generator().manual_seed(seed)`    | Different API           |
+| `optax.GradientTransformation`         | Optimizer interface            | `torch.optim.Optimizer`                  | Different API           |
 
 ### ⚠️ Critical API Difference: `value_and_grad`
 
 One of the most important differences discovered during implementation:
 
 **JAX:**
+
 ```python
 # jax.value_and_grad returns BOTH value and gradient
 grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
@@ -170,6 +186,7 @@ grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
 ```
 
 **PyTorch:**
+
 ```python
 # torch.func.grad returns ONLY gradient (no value!)
 grad_fn = torch.func.grad(loss_fn, has_aux=True)
@@ -206,6 +223,7 @@ This is critical for `clipped_grad` which needs both the value (for `return_valu
 Another important difference:
 
 **JAX:**
+
 ```python
 AuxOutput = namedtuple("AuxOutput", ["values", "grad_norms", "aux"])
 aux = AuxOutput(values=tensor, grad_norms=None, aux=None)  # None OK!
@@ -213,6 +231,7 @@ jax.vmap(fn_returning_aux, out_dims=0)  # Works fine
 ```
 
 **PyTorch:**
+
 ```python
 AuxOutput = namedtuple("AuxOutput", ["values", "grad_norms", "aux"])
 aux = AuxOutput(values=tensor, grad_norms=None, aux=None)
@@ -245,7 +264,8 @@ aux_output = AuxiliaryOutput(
 
 ## High-Level API (Stage 4)
 
-While we're porting the functional API first, Opaque will **also** provide a high-level API similar to JAX-Privacy's Keras API:
+While we're porting the functional API first, Opaque will **also** provide a high-level API similar to JAX-Privacy's
+Keras API:
 
 ```python
 from opaque import make_private, DPConfig
@@ -267,6 +287,7 @@ optimizer.step()  # DP-SGD happens automatically
 ```
 
 This combines:
+
 - **Functional core** (composable, testable) from new API
 - **User-friendly wrapper** inspired by Keras API
 

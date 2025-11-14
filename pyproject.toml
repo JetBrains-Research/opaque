@@ -1,6 +1,6 @@
 [project]
 name = "opaque"
-version = "0.0.0"
+version = "0.2.0"
 description = "Functional Differential Privacy for LoRA Fine-tuning"
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -8,6 +8,17 @@ authors = [
     {name = "Opaque Contributors"}
 ]
 requires-python = ">=3.11,<3.13"
+keywords = [
+  "differential-privacy",
+  "dp-sgd",
+  "pytorch",
+  "lora",
+  "fine-tuning",
+  "llm",
+  "privacy",
+  "machine-learning",
+  "deep-learning",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -17,6 +28,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Security",
 ]
 dependencies = [
   "dp-accounting>=0.4.0",

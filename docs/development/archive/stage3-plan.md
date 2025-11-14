@@ -28,6 +28,7 @@ TorchOpt provides JAX-like functional optimizers for PyTorch:
 - ✅ **Meta-Learning Ready**: Differentiable optimization support
 
 **Pattern**:
+
 ```python
 # TorchOpt follows Optax's GradientTransformation pattern
 optimizer = torchopt.adam(lr=0.001, betas=(0.9, 0.999))  # Returns GradientTransformation
@@ -60,6 +61,7 @@ DP-Adam by:
 ### 1. `opaque.optimizers` Package (~400 LOC)
 
 **File Structure**:
+
 ```
 src/opaque/optimizers/
 ├── __init__.py          # Public API exports
@@ -72,6 +74,7 @@ src/opaque/optimizers/
 **Key Components**:
 
 #### `base.py` - Base DP Optimizer Interface
+
 ```python
 class DPOptimizerState(NamedTuple):
     """State for DP optimizer."""
@@ -139,6 +142,7 @@ def dp_sgd(
 ```
 
 #### `dp_adam.py` - Basic DP-Adam
+
 ```python
 def dp_adam(
     learning_rate: float = 1e-3,
@@ -180,6 +184,7 @@ Algorithm: DP-Adam-AC
 ```
 
 **Implementation**:
+
 ```python
 class AdaptiveClipState(NamedTuple):
     """State for adaptive clipping."""
@@ -273,6 +278,7 @@ src/opaque/adaptive/
 ```
 
 **`clip_buffer.py`**:
+
 ```python
 class ClipNormBuffer:
     """Efficient buffer for tracking gradient norms."""

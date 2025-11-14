@@ -85,8 +85,9 @@ def clipped_fun(
             per-example values before clipping. These values should be handled with
             care, see the formal guarantees above.
         microbatch_size: If set, the batch is split up into microbatches of this
-            size. **Currently not implemented** - parameter accepted for API
-            compatibility but ignored. Will be implemented in future release.
+            size for memory-efficient processing. Uses torch.vmap's chunk_size
+            parameter to process examples sequentially in groups. Set this to reduce
+            peak memory usage at the cost of slightly slower computation.
         nan_safe: If True, the formal guarantees of the returned Callable still
             hold in the presence of NaNs and infs. See `clip_pytree` for more details.
         dtype: Optional dtype for the clipped+aggregated pytree. If None, the dtype
@@ -112,14 +113,6 @@ def clipped_fun(
         This matches JAX-Privacy main branch API.
     """
     # Warn about unimplemented parameters
-    if microbatch_size is not None:
-        import warnings
-
-        warnings.warn(
-            "microbatch_size parameter is not yet implemented and will be ignored. "
-            "This is documented tech debt and will be added in a future release.",
-            UserWarning,
-        )
     if spmd_axis_name is not None:
         import warnings
 
@@ -158,7 +151,13 @@ def clipped_fun(
         # Vmap over batch - specify out_dims for aux
         # aux might be empty tuple (), which should have out_dims=None
         out_dims = (0, None if not has_aux else 0, 0)  # (clipped_value, aux, norm)
-        vmapped = _vmap(per_example_fn, in_dims=in_dims, out_dims=out_dims, randomness="same")
+        vmapped = _vmap(
+            per_example_fn,
+            in_dims=in_dims,
+            out_dims=out_dims,
+            randomness="same",
+            chunk_size=microbatch_size,
+        )
         clipped_values, aux, norms = vmapped(*args)
 
         # Sum clipped values across batch dimension using tree_map

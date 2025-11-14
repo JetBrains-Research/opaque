@@ -4,13 +4,14 @@ This package provides differentially private training utilities for PyTorch,
 inspired by JAX-Privacy.
 """
 
-from opaque import accounting
+from opaque import accounting, sampling
 from opaque.clipping import (
     clip_pytree,
     clipped_fun,
     clipped_grad,
 )
 from opaque.noise import add_gaussian_noise
+from opaque.sampling import PoissonSampler, TruncatedPoissonSampler
 # TEMPORARILY COMMENTED OUT - optimizers being refactored to functional API
 # from opaque.optimizers import (
 #     AdaptiveClipState,
@@ -30,6 +31,10 @@ __all__ = [
     "clipped_grad",
     # Accounting (use opaque.accounting.* for functional API)
     "accounting",
+    # Sampling
+    "sampling",
+    "PoissonSampler",
+    "TruncatedPoissonSampler",
     # Noise
     "add_gaussian_noise",
     # Optimizers (temporarily disabled during refactor)

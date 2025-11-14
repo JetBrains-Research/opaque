@@ -10,23 +10,24 @@
 
 ## Overview
 
-Stage 1 focuses on porting JAX-Privacy's `experimental/clipping.py` module to PyTorch. This provides the foundation for DP-SGD by implementing per-example gradient clipping with bounded sensitivity.
+Stage 1 focuses on porting JAX-Privacy's `experimental/clipping.py` module to PyTorch. This provides the foundation for
+DP-SGD by implementing per-example gradient clipping with bounded sensitivity.
 
 ### Deliverables
 
 1. **`opaque.core.pytree_utils`** (~100 LOC)
-   - `global_norm()` - Compute L2 norm across PyTree
-   - `tree_leaves()` - Extract tensors from PyTree
-   - `tree_map()` - Apply function to PyTree leaves
+  - `global_norm()` - Compute L2 norm across PyTree
+  - `tree_leaves()` - Extract tensors from PyTree
+  - `tree_map()` - Apply function to PyTree leaves
 
 2. **`opaque.core.clipping`** (~400 LOC)
-   - `clip_pytree()` - Clip PyTree to max L2 norm
-   - `clipped_grad()` - Main API for per-example clipped gradients
+  - `clip_pytree()` - Clip PyTree to max L2 norm
+  - `clipped_grad()` - Main API for per-example clipped gradients
 
 3. **Tests** (~400 LOC)
-   - Unit tests for all functions
-   - JAX-Privacy numerical validation
-   - Property-based tests
+  - Unit tests for all functions
+  - JAX-Privacy numerical validation
+  - Property-based tests
 
 ---
 
@@ -39,6 +40,7 @@ Stage 1 focuses on porting JAX-Privacy's `experimental/clipping.py` module to Py
 **Functions to implement**:
 
 #### 1. `global_norm(tree: dict) -> torch.Tensor`
+
 Compute L2 norm of all tensors in tree.
 
 ```python
@@ -51,6 +53,7 @@ def global_norm(tree):
 ```
 
 **Tests to write**:
+
 - Single tensor
 - Multiple tensors
 - Nested dicts
@@ -58,9 +61,11 @@ def global_norm(tree):
 - Mixed dtypes/devices
 
 #### 2. `tree_leaves(tree: dict) -> list[torch.Tensor]`
+
 Wrapper around `torch.utils._pytree.tree_leaves`
 
 #### 3. `tree_map(fn: Callable, *trees) -> dict`
+
 Wrapper around `torch.utils._pytree.tree_map`
 
 ### Days 3-4: Basic Clipping
@@ -70,6 +75,7 @@ Wrapper around `torch.utils._pytree.tree_map`
 **Implement**: `clip_pytree()` with all edge cases
 
 **Edge cases to handle**:
+
 1. `clip_norm = 0` → return zero tree
 2. `clip_norm = inf` → return original tree
 3. `tree_norm = 0` → return original tree (avoid division by zero)
@@ -77,6 +83,7 @@ Wrapper around `torch.utils._pytree.tree_map`
 5. `rescale_to_unit_norm=True` → divide by `clip_norm` after clipping
 
 **Tests**:
+
 - Verify output norm ≤ clip_norm
 - Test with different dtypes (float16, float32, float64)
 - Test on GPU (if available)
@@ -88,6 +95,7 @@ Wrapper around `torch.utils._pytree.tree_map`
 **Key challenge**: Understanding `torch.func.vmap` in_dims
 
 Example:
+
 ```python
 # Loss function signature: loss_fn(param, data)
 # param: no batch dim
@@ -104,6 +112,7 @@ per_example_grads = vmapped_grad(param, data)  # shape [B, param_shape]
 ```
 
 **Tests**:
+
 - Compare against manual loop over examples
 - Verify gradient correctness with toy linear model
 - Test with `rescale_to_unit_norm=True/False`
@@ -114,6 +123,7 @@ per_example_grads = vmapped_grad(param, data)  # shape [B, param_shape]
 ## Week 2: Numerical Validation
 
 ### Goal
+
 Ensure PyTorch implementation matches JAX-Privacy numerically
 
 ### Toy Problem: Linear Regression
@@ -153,6 +163,7 @@ assert torch.allclose(torch_result, jax_to_torch(jax_result), atol=1e-5)
 ```
 
 ### Acceptance Criteria
+
 - Numerical difference < 1e-5 for float32
 - Works with batches of size 1, 32, 256
 - Works with multiple parameters (dict of tensors)
@@ -166,11 +177,13 @@ assert torch.allclose(torch_result, jax_to_torch(jax_result), atol=1e-5)
 **Goal**: Memory optimization by processing batch in chunks
 
 **Implementation**:
+
 - Split batch into chunks
 - Process sequentially with `for` loop
 - Accumulate clipped gradients
 
 **Verification**:
+
 - Memory profiling to verify benefit
 - Results identical to non-microbatched version
 
@@ -179,6 +192,7 @@ assert torch.allclose(torch_result, jax_to_torch(jax_result), atol=1e-5)
 **Goal**: Test with realistic use case
 
 **Steps**:
+
 1. Use `transformers` library's `Linear` layer
 2. Attach LoRA adapters manually
 3. Compute clipped gradients for LoRA params only
@@ -186,6 +200,7 @@ assert torch.allclose(torch_result, jax_to_torch(jax_result), atol=1e-5)
 ### Day 5: Documentation + Examples
 
 **Tasks**:
+
 - Write `examples/01_linear_regression.py`
 - Add comprehensive docstrings
 - Update CLAUDE.MD with learnings

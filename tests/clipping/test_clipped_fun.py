@@ -301,3 +301,180 @@ def test_clipped_fun_nested_pytree_params():
         for layer in ["layer1", "layer2"]
         for key in ["w", "b"]
     )
+
+
+# ============================================================================
+# Microbatching tests
+# ============================================================================
+
+
+def test_clipped_fun_microbatching_identical_results():
+    """Test that microbatching produces identical results to non-microbatched."""
+
+    # Simple function to clip
+    def square_fn(x):
+        return x ** 2
+
+    batch_size = 100
+    data = torch.randn(batch_size, 10)
+
+    # Without microbatching
+    clipped_fn = clipped_fun(square_fn, l2_clip_norm=1.0, microbatch_size=None)
+    result_no_mb = clipped_fn(data)
+
+    # With microbatching (chunk_size=10)
+    clipped_fn_mb = clipped_fun(square_fn, l2_clip_norm=1.0, microbatch_size=10)
+    result_mb = clipped_fn_mb(data)
+
+    # Results should be identical
+    assert torch.allclose(result_no_mb, result_mb, atol=1e-6)
+
+
+def test_clipped_fun_microbatching_different_sizes():
+    """Test microbatching with various chunk sizes."""
+
+    def square_fn(x):
+        return x ** 2
+
+    batch_size = 64
+    data = torch.randn(batch_size, 5)
+
+    # Reference without microbatching
+    clipped_fn_ref = clipped_fun(square_fn, l2_clip_norm=1.0)
+    result_ref = clipped_fn_ref(data)
+
+    # Test different microbatch sizes
+    for microbatch_size in [1, 4, 16, 32, 64]:
+        clipped_fn_mb = clipped_fun(square_fn, l2_clip_norm=1.0, microbatch_size=microbatch_size)
+        result_mb = clipped_fn_mb(data)
+        assert torch.allclose(result_ref, result_mb, atol=1e-6), (
+            f"Failed for microbatch_size={microbatch_size}"
+        )
+
+
+def test_clipped_fun_microbatching_with_pytree():
+    """Test microbatching with PyTree parameters."""
+
+    def loss_fn(params, x):
+        return torch.sum((params["w"] @ x - params["b"]) ** 2)
+
+    batch_size = 50
+    params = {
+        "w": torch.randn(5, 10, requires_grad=True),
+        "b": torch.randn(5, 1, requires_grad=True),
+    }
+    x = torch.randn(batch_size, 10, 1)
+
+    # Create clipped gradient functions
+    from opaque.clipping import clipped_grad
+
+    clipped_grad_fn_no_mb = clipped_grad(
+        loss_fn, argnums=0, batch_argnums=1, l2_clip_norm=1.0, microbatch_size=None
+    )
+    clipped_grad_fn_mb = clipped_grad(
+        loss_fn, argnums=0, batch_argnums=1, l2_clip_norm=1.0, microbatch_size=10
+    )
+
+    # Compute gradients
+    grads_no_mb = clipped_grad_fn_no_mb(params, x)
+    grads_mb = clipped_grad_fn_mb(params, x)
+
+    # Results should be identical
+    assert torch.allclose(grads_no_mb["w"], grads_mb["w"], atol=1e-6)
+    assert torch.allclose(grads_no_mb["b"], grads_mb["b"], atol=1e-6)
+
+
+def test_clipped_fun_microbatching_larger_than_batch():
+    """Test microbatch_size larger than batch size."""
+
+    def square_fn(x):
+        return x ** 2
+
+    batch_size = 10
+    data = torch.randn(batch_size, 5)
+
+    # Microbatch size larger than batch
+    clipped_fn_mb = clipped_fun(square_fn, l2_clip_norm=1.0, microbatch_size=100)
+    result_mb = clipped_fn_mb(data)
+
+    # Reference without microbatching
+    clipped_fn_ref = clipped_fun(square_fn, l2_clip_norm=1.0)
+    result_ref = clipped_fn_ref(data)
+
+    # Should still work correctly
+    assert torch.allclose(result_ref, result_mb, atol=1e-6)
+
+
+def test_clipped_fun_microbatching_single_example():
+    """Test microbatch_size=1 (process one example at a time)."""
+
+    def square_fn(x):
+        return x ** 2
+
+    batch_size = 20
+    data = torch.randn(batch_size, 3)
+
+    # Single example microbatches
+    clipped_fn_mb = clipped_fun(square_fn, l2_clip_norm=1.0, microbatch_size=1)
+    result_mb = clipped_fn_mb(data)
+
+    # Reference without microbatching
+    clipped_fn_ref = clipped_fun(square_fn, l2_clip_norm=1.0)
+    result_ref = clipped_fn_ref(data)
+
+    # Results should be identical
+    assert torch.allclose(result_ref, result_mb, atol=1e-6)
+
+
+def test_clipped_fun_microbatching_with_aux():
+    """Test microbatching preserves auxiliary outputs correctly."""
+
+    def fn_with_aux(x):
+        value = x ** 2
+        aux = torch.mean(x, dim=-1)  # Per-example auxiliary
+        return value, aux
+
+    batch_size = 30
+    data = torch.randn(batch_size, 5)
+
+    # Without microbatching
+    clipped_fn_no_mb = clipped_fun(
+        fn_with_aux, has_aux=True, l2_clip_norm=1.0, microbatch_size=None
+    )
+    result_no_mb, aux_no_mb = clipped_fn_no_mb(data)
+
+    # With microbatching
+    clipped_fn_mb = clipped_fun(fn_with_aux, has_aux=True, l2_clip_norm=1.0, microbatch_size=6)
+    result_mb, aux_mb = clipped_fn_mb(data)
+
+    # Primary results should be identical
+    assert torch.allclose(result_no_mb, result_mb, atol=1e-6)
+
+    # Auxiliary outputs should be identical (per-example)
+    assert torch.allclose(aux_no_mb, aux_mb, atol=1e-6)
+
+
+def test_clipped_fun_microbatching_with_return_norms():
+    """Test microbatching with return_norms=True."""
+
+    def square_fn(x):
+        return x ** 2
+
+    batch_size = 40
+    data = torch.randn(batch_size, 8)
+
+    # Without microbatching
+    clipped_fn_no_mb = clipped_fun(
+        square_fn, l2_clip_norm=1.0, return_norms=True, microbatch_size=None
+    )
+    result_no_mb, (_, norms_no_mb) = clipped_fn_no_mb(data)
+
+    # With microbatching
+    clipped_fn_mb = clipped_fun(square_fn, l2_clip_norm=1.0, return_norms=True, microbatch_size=8)
+    result_mb, (_, norms_mb) = clipped_fn_mb(data)
+
+    # Primary results should be identical
+    assert torch.allclose(result_no_mb, result_mb, atol=1e-6)
+
+    # Norms should be identical (per-example)
+    assert torch.allclose(norms_no_mb, norms_mb, atol=1e-6)

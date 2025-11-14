@@ -1,0 +1,97 @@
+name: Documentation Issue
+description: Report missing, unclear, or incorrect documentation
+title: "[Docs]: "
+labels: [ "documentation", "triage" ]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve our documentation!
+
+  - type: dropdown
+    id: doc-type
+    attributes:
+      label: Documentation Type
+      description: What type of documentation is affected?
+      options:
+        - "User Guide"
+        - "API Reference"
+        - "Tutorial/Example"
+        - "README"
+        - "Contributing Guide"
+        - "Docstrings"
+        - "Other"
+    validations:
+      required: true
+
+  - type: textarea
+    id: location
+    attributes:
+      label: Documentation Location
+      description: Where is the affected documentation? (URL or file path)
+      placeholder: |
+        https://evgri243.github.io/opaque/user-guide/clipping/
+        or
+        docs/user-guide/clipping.md
+    validations:
+      required: true
+
+  - type: dropdown
+    id: issue-type
+    attributes:
+      label: Issue Type
+      description: What's wrong with the documentation?
+      options:
+        - "Missing - Documentation doesn't exist"
+        - "Unclear - Confusing or hard to understand"
+        - "Incorrect - Contains errors or outdated info"
+        - "Incomplete - Missing important details"
+        - "Typo/Grammar - Language issues"
+        - "Broken Link - Link doesn't work"
+        - "Code Example - Example doesn't work or is wrong"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the documentation issue in detail
+      placeholder: "The documentation says X, but it should say Y..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Documentation
+      description: What should the documentation say or include?
+      placeholder: "It should explain..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested Fix
+      description: If you have a specific suggestion for how to fix this, describe it here
+      placeholder: "I suggest changing..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context, screenshots, or relevant information
+      placeholder: "See also..."
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues to avoid duplicates
+          required: true
+        - label: I have checked the latest documentation
+          required: true

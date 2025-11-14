@@ -179,10 +179,9 @@ uv run mkdocs build
 
 **For comprehensive guides, see:**
 
+- [Contributing Guide](docs/development/contributing.md) - Full contribution guidelines
 - [TDD Workflow](docs/development/tdd-workflow.md) - Step-by-step development process
-- [Design Decisions](docs/development/design-decisions.md) - Technical choices and rationale
-- [Stage 1 Plan](docs/development/stage1-plan.md) - Current implementation plan
-- [Roadmap](docs/development/roadmap.md) - Full project timeline
+- [Roadmap](docs/development/roadmap.md) - Project timeline and status
 
 ---
 

@@ -1,6 +1,7 @@
 # Design Decisions
 
-This document records key design decisions made during the development of Opaque, including rationale, alternatives considered, and trade-offs.
+This document records key design decisions made during the development of Opaque, including rationale, alternatives
+considered, and trade-offs.
 
 ---
 
@@ -11,7 +12,8 @@ This document records key design decisions made during the development of Opaque
 
 ### Context
 
-JAX-Privacy uses JAX's built-in `jax.tree_util` for PyTree operations. PyTorch has `torch.utils._pytree`, but it's a private API.
+JAX-Privacy uses JAX's built-in `jax.tree_util` for PyTree operations. PyTorch has `torch.utils._pytree`, but it's a
+private API.
 
 ### Decision
 
@@ -49,6 +51,7 @@ Use `optree` library as the primary PyTree implementation, with `torch.utils._py
 ### Context
 
 Need to validate PyTorch implementation against JAX-Privacy reference, but numerical differences are expected due to:
+
 - Different random number generators
 - Different dtype promotion rules
 - Floating-point accumulation order
@@ -89,6 +92,7 @@ Use `atol=1e-5` (absolute tolerance) for all JAX validation tests.
 ### Context
 
 JAX-Privacy provides two APIs:
+
 1. **Low-level**: `clip_pytree()` for direct PyTree clipping
 2. **High-level**: `clipped_grad()` for gradient clipping
 
@@ -131,6 +135,7 @@ Differential privacy is security-critical - incorrect implementation can leak pr
 ### Decision
 
 Fail-fast by default:
+
 - Validate inputs aggressively (dimension checks, dtype checks)
 - Raise exceptions on invalid configurations
 - No silent fallbacks or warnings for critical parameters
@@ -169,6 +174,7 @@ Need to test both correctness and equivalence with JAX-Privacy.
 ### Decision
 
 Two-tier test structure:
+
 1. **Unit tests** (`tests/core/`): Test Opaque in isolation
 2. **JAX validation** (`tests/jax_validation/`): Compare against JAX-Privacy
 
@@ -206,6 +212,7 @@ JAX validation tests marked with `@pytest.mark.jax_validation` and in separate o
 ### Context
 
 Need to document:
+
 - API reference (auto-generated)
 - Conceptual guides (hand-written)
 - Tutorials (interactive)
@@ -213,6 +220,7 @@ Need to document:
 ### Decision
 
 Use Material for MkDocs with:
+
 - **API docs**: Auto-generated from docstrings with mkdocstrings
 - **Tutorials**: Jupyter notebooks with mkdocs-jupyter
 - **Guides**: Hand-written markdown
@@ -250,6 +258,7 @@ Use Material for MkDocs with:
 ### Context
 
 JAX-Privacy implements sophisticated microbatching with:
+
 - `inmemory_microbatched_fn_general()` wrapper
 - `AccumulationType` (SUM, CONCAT) for different outputs
 - Sharding-aware reshaping for distributed training
@@ -335,20 +344,22 @@ Opaque is designed for DP fine-tuning of LLMs with LoRA. Need to decide how to i
 PyTorch's `torch.func` API is inspired by JAX but has critical differences:
 
 1. **value_and_grad behavior**:
-   - JAX: `jax.value_and_grad(fun, has_aux=True)(*args)` returns `((value, aux), grad)`
-   - PyTorch: `torch.func.grad(fun, has_aux=True)(*args)` returns `(grad, aux)` - NO VALUE!
+  - JAX: `jax.value_and_grad(fun, has_aux=True)(*args)` returns `((value, aux), grad)`
+  - PyTorch: `torch.func.grad(fun, has_aux=True)(*args)` returns `(grad, aux)` - NO VALUE!
 
 2. **vmap None handling**:
-   - JAX: `vmap` can handle None values in outputs transparently
-   - PyTorch: `vmap` with `out_dims != None` fails on None values: `ValueError: must only return Tensors`
+  - JAX: `vmap` can handle None values in outputs transparently
+  - PyTorch: `vmap` with `out_dims != None` fails on None values: `ValueError: must only return Tensors`
 
 ### Decision
 
 **Implement compatibility wrappers**:
 
-1. **`_value_and_grad()` helper**: Calls both original function (for value) and `torch.func.grad` (for gradient), returns JAX-compatible format `((value, aux), grad)`
+1. **`_value_and_grad()` helper**: Calls both original function (for value) and `torch.func.grad` (for gradient),
+   returns JAX-compatible format `((value, aux), grad)`
 
-2. **Dict-based aux handling**: Inside `vmap`'d functions, return dicts instead of namedtuples with None values. Convert back to `AuxiliaryOutput` namedtuple after `vmap` completes.
+2. **Dict-based aux handling**: Inside `vmap`'d functions, return dicts instead of namedtuples with None values. Convert
+   back to `AuxiliaryOutput` namedtuple after `vmap` completes.
 
 ### Rationale
 
@@ -371,6 +382,7 @@ PyTorch's `torch.func` API is inspired by JAX but has critical differences:
 ### Implementation Details
 
 **_value_and_grad helper** (35 lines):
+
 ```python
 def _value_and_grad(fun: Callable, argnums: int | tuple[int, ...] = 0, has_aux: bool = False):
     """Create a function that returns both value and gradient, mimicking jax.value_and_grad."""
@@ -391,6 +403,7 @@ def _value_and_grad(fun: Callable, argnums: int | tuple[int, ...] = 0, has_aux: 
 ```
 
 **Dict-based aux handling**:
+
 ```python
 # Inside grad_fn (called by vmap):
 aux_dict = {}  # Use dict instead of namedtuple
@@ -431,13 +444,16 @@ return grad, aux_output  # Convert back to namedtuple
 Topics to decide in future stages:
 
 ### Stage 2 (Noise Injection)
+
 - [ ] PRNG seeding strategy (reproducibility vs security)
 - [ ] Noise distribution library (native PyTorch vs custom)
 
 ### Stage 3 (Privacy Accounting)
+
 - [ ] Privacy accounting library choice (Opacus vs custom vs PRV accountant)
 - [ ] Privacy budget tracking API design
 
 ### Stage 5 (Polish)
+
 - [ ] Performance optimization priorities
 - [ ] Distributed training support (if needed)
