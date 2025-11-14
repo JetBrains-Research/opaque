@@ -1,18 +1,18 @@
-"""Tests for DP-Adam-AC (Adaptive Clipping) optimizer."""
+"""Tests for DP-AdamW-AC (Adaptive Clipping) optimizer."""
 
 import pytest
 import torch
 
 from opaque.adaptive import ClipNormBuffer
-from opaque.optimizers import AdaptiveClipState, dp_adam_ac
+from opaque.optimizers import AdaptiveClipState, dp_adamw_ac
 
 
-class TestDPAdamACCreation:
-    """Tests for DP-Adam-AC optimizer creation."""
+class TestDPAdamWACCreation:
+    """Tests for DP-AdamW-AC optimizer creation."""
 
     def test_creates_init_and_step_functions(self):
-        """Test that dp_adam_ac returns init_fn and step_fn."""
-        init_fn, step_fn = dp_adam_ac(
+        """Test that dp_adamw_ac returns init_fn and step_fn."""
+        init_fn, step_fn = dp_adamw_ac(
             initial_clip_norm=3.0,
             noise_multiplier=1.1,
             sample_rate=0.01,
@@ -23,8 +23,8 @@ class TestDPAdamACCreation:
         assert callable(step_fn)
 
     def test_default_parameters(self):
-        """Test DP-Adam-AC with default parameters."""
-        init_fn, _ = dp_adam_ac(
+        """Test DP-AdamW-AC with default parameters."""
+        init_fn, _ = dp_adamw_ac(
             initial_clip_norm=3.0,
             noise_multiplier=1.1,
             sample_rate=0.01,
@@ -41,8 +41,8 @@ class TestDPAdamACCreation:
         assert isinstance(state.clip_buffer, ClipNormBuffer)
 
     def test_custom_parameters(self):
-        """Test DP-Adam-AC with custom parameters."""
-        init_fn, _ = dp_adam_ac(
+        """Test DP-AdamW-AC with custom parameters."""
+        init_fn, _ = dp_adamw_ac(
             learning_rate=1e-4,
             initial_clip_norm=5.0,
             noise_multiplier=1.1,
@@ -61,12 +61,12 @@ class TestDPAdamACCreation:
         assert state.clip_buffer.capacity == 500
 
 
-class TestDPAdamACState:
+class TestDPAdamWACState:
     """Tests for AdaptiveClipState."""
 
     def test_state_structure(self):
         """Test that state has all required fields."""
-        init_fn, _ = dp_adam_ac(
+        init_fn, _ = dp_adamw_ac(
             initial_clip_norm=3.0,
             noise_multiplier=1.1,
             sample_rate=0.01,
@@ -88,7 +88,7 @@ class TestDPAdamACState:
 
     def test_ema_params_initialized(self):
         """Test that EMA parameters are initialized correctly."""
-        init_fn, _ = dp_adam_ac(
+        init_fn, _ = dp_adamw_ac(
             initial_clip_norm=3.0,
             noise_multiplier=1.1,
             sample_rate=0.01,
@@ -103,7 +103,7 @@ class TestDPAdamACState:
 
     def test_clip_buffer_initialized(self):
         """Test that clip buffer is properly initialized."""
-        init_fn, _ = dp_adam_ac(
+        init_fn, _ = dp_adamw_ac(
             initial_clip_norm=3.0,
             noise_multiplier=1.1,
             sample_rate=0.01,
@@ -120,12 +120,12 @@ class TestDPAdamACState:
         assert state.clip_buffer.target_clip_rate == 0.25
 
 
-class TestDPAdamACOptimization:
-    """Tests for DP-Adam-AC optimization behavior."""
+class TestDPAdamWACOptimization:
+    """Tests for DP-AdamW-AC optimization behavior."""
 
     def test_single_step(self):
-        """Test a single DP-Adam-AC optimization step."""
-        init_fn, step_fn = dp_adam_ac(
+        """Test a single DP-AdamW-AC optimization step."""
+        init_fn, step_fn = dp_adamw_ac(
             initial_clip_norm=3.0,
             noise_multiplier=1.1,
             sample_rate=0.01,
@@ -136,9 +136,9 @@ class TestDPAdamACOptimization:
         original_weight = params["weight"].clone()
         grads = {"weight": torch.ones(5, 3) * 0.5}
         grad_norms = torch.tensor([0.5, 0.6, 0.7, 0.8, 0.9])
-        batch_sizes = torch.ones(5)
 
         state = init_fn(params)
+        # batch_sizes is optional - defaults to ones
         new_params, new_state, metrics = step_fn(params, grads, grad_norms, state)
 
         # Parameters should change
@@ -153,8 +153,8 @@ class TestDPAdamACOptimization:
         assert "lr_multiplier" in metrics
 
     def test_multiple_steps(self):
-        """Test multiple DP-Adam-AC steps."""
-        init_fn, step_fn = dp_adam_ac(
+        """Test multiple DP-AdamW-AC steps."""
+        init_fn, step_fn = dp_adamw_ac(
             initial_clip_norm=3.0,
             noise_multiplier=1.1,
             sample_rate=0.01,
@@ -170,17 +170,17 @@ class TestDPAdamACOptimization:
 
         # Run 5 steps
         for i in range(5):
-            params, state, metrics = step_fn(params, grads, grad_norms, state)
+            params, state, metrics = step_fn(params, grads, grad_norms, state, batch_sizes=batch_sizes)
             assert state.step == i + 1
             assert metrics["epsilon"] > 0
 
 
-class TestDPAdamACAdaptiveClipping:
+class TestDPAdamWACAdaptiveClipping:
     """Tests for adaptive clipping functionality."""
 
     def test_clip_norm_adapts_to_gradient_distribution(self):
         """Test that clip norm adapts based on gradient norms."""
-        init_fn, step_fn = dp_adam_ac(
+        init_fn, step_fn = dp_adamw_ac(
             initial_clip_norm=3.0,
             noise_multiplier=0.1,
             sample_rate=0.01,
@@ -194,12 +194,11 @@ class TestDPAdamACAdaptiveClipping:
 
         # Small gradient norms (most around 1.0)
         grad_norms = torch.ones(5) * 1.0
-        batch_sizes = torch.ones(5)
 
         state = init_fn(params)
         initial_clip_norm = state.current_clip_norm
 
-        # Run many steps to build up history
+        # Run many steps to build up history (batch_sizes defaults to ones)
         for _ in range(30):
             params, state, metrics = step_fn(params, grads, grad_norms, state)
 
@@ -208,7 +207,7 @@ class TestDPAdamACAdaptiveClipping:
 
     def test_clip_norm_increases_for_large_gradients(self):
         """Test that clip norm increases when gradients are large."""
-        init_fn, step_fn = dp_adam_ac(
+        init_fn, step_fn = dp_adamw_ac(
             initial_clip_norm=1.0,  # Start low
             noise_multiplier=0.1,
             sample_rate=0.01,
@@ -222,12 +221,10 @@ class TestDPAdamACAdaptiveClipping:
 
         # Large gradient norms (most around 5.0)
         grad_norms = torch.ones(5) * 5.0
-        batch_sizes = torch.ones(5)
-
         state = init_fn(params)
         initial_clip_norm = state.current_clip_norm
 
-        # Run many steps
+        # Run many steps (batch_sizes defaults to ones)
         for _ in range(30):
             params, state, metrics = step_fn(params, grads, grad_norms, state)
 
@@ -236,7 +233,7 @@ class TestDPAdamACAdaptiveClipping:
 
     def test_clip_norm_respects_bounds(self):
         """Test that clip norm stays within min/max bounds."""
-        init_fn, step_fn = dp_adam_ac(
+        init_fn, step_fn = dp_adamw_ac(
             initial_clip_norm=3.0,
             noise_multiplier=0.1,
             sample_rate=0.01,
@@ -271,12 +268,12 @@ class TestDPAdamACAdaptiveClipping:
         assert state.current_clip_norm <= 5.0
 
 
-class TestDPAdamACLearningRateAdjustment:
+class TestDPAdamWACLearningRateAdjustment:
     """Tests for learning rate adjustment based on clip rate."""
 
     def test_lr_increases_when_clip_rate_low(self):
         """Test that LR multiplier increases when clip rate is low."""
-        init_fn, step_fn = dp_adam_ac(
+        init_fn, step_fn = dp_adamw_ac(
             initial_clip_norm=10.0,  # High C so nothing gets clipped
             noise_multiplier=0.1,
             sample_rate=0.01,
@@ -297,14 +294,14 @@ class TestDPAdamACLearningRateAdjustment:
 
         # Run steps (clip rate will be very low)
         for _ in range(20):
-            params, state, _ = step_fn(params, grads, grad_norms, state)
+            params, state, _ = step_fn(params, grads, grad_norms, state, batch_sizes=batch_sizes)
 
         # LR multiplier should increase
         assert state.lr_multiplier > initial_lr_mult
 
     def test_lr_decreases_when_clip_rate_high(self):
         """Test that LR multiplier decreases when clip rate is high."""
-        init_fn, step_fn = dp_adam_ac(
+        init_fn, step_fn = dp_adamw_ac(
             initial_clip_norm=3.0,  # Fixed clip norm
             noise_multiplier=0.1,
             sample_rate=0.01,
@@ -327,14 +324,14 @@ class TestDPAdamACLearningRateAdjustment:
 
         # Run steps (clip rate will be consistently high since norms > C)
         for _ in range(20):
-            params, state, _ = step_fn(params, grads, grad_norms, state)
+            params, state, _ = step_fn(params, grads, grad_norms, state, batch_sizes=batch_sizes)
 
         # LR multiplier should decrease (high clip rate → decrease LR)
         assert state.lr_multiplier < initial_lr_mult
 
     def test_lr_respects_bounds(self):
         """Test that LR multiplier stays within bounds."""
-        init_fn, step_fn = dp_adam_ac(
+        init_fn, step_fn = dp_adamw_ac(
             initial_clip_norm=3.0,
             noise_multiplier=0.1,
             sample_rate=0.01,
@@ -352,18 +349,18 @@ class TestDPAdamACLearningRateAdjustment:
 
         # Run many steps
         for _ in range(50):
-            params, state, _ = step_fn(params, grads, grad_norms, state)
+            params, state, _ = step_fn(params, grads, grad_norms, state, batch_sizes=batch_sizes)
 
         # Should stay within bounds
         assert 0.5 <= state.lr_multiplier <= 1.5
 
 
-class TestDPAdamACEMA:
+class TestDPAdamWACEMA:
     """Tests for EMA parameter updates."""
 
     def test_ema_params_update(self):
         """Test that EMA parameters are updated."""
-        init_fn, step_fn = dp_adam_ac(
+        init_fn, step_fn = dp_adamw_ac(
             initial_clip_norm=3.0,
             noise_multiplier=0.1,
             sample_rate=0.01,
@@ -378,14 +375,14 @@ class TestDPAdamACEMA:
         batch_sizes = torch.ones(3)
 
         state = init_fn(params)
-        params, state, _ = step_fn(params, grads, grad_norms, state)
+        params, state, _ = step_fn(params, grads, grad_norms, state, batch_sizes=batch_sizes)
 
         # EMA params should be different from original
         assert not torch.allclose(state.ema_params["weight"], original_ema)
 
     def test_ema_smooths_parameters(self):
         """Test that EMA parameters are smoother than current params."""
-        init_fn, step_fn = dp_adam_ac(
+        init_fn, step_fn = dp_adamw_ac(
             initial_clip_norm=3.0,
             noise_multiplier=0.1,
             sample_rate=0.01,
@@ -402,7 +399,7 @@ class TestDPAdamACEMA:
 
         # Run several steps
         for _ in range(10):
-            params, state, _ = step_fn(params, grads, grad_norms, state)
+            params, state, _ = step_fn(params, grads, grad_norms, state, batch_sizes=batch_sizes)
 
         # Current params should move more than EMA
         ema_change = torch.abs(state.ema_params["weight"]).mean()
@@ -412,12 +409,12 @@ class TestDPAdamACEMA:
         assert ema_change < param_change
 
 
-class TestDPAdamACMetrics:
-    """Tests for metrics returned by DP-Adam-AC."""
+class TestDPAdamWACMetrics:
+    """Tests for metrics returned by DP-AdamW-AC."""
 
     def test_metrics_structure(self):
         """Test that metrics have all required fields."""
-        init_fn, step_fn = dp_adam_ac(
+        init_fn, step_fn = dp_adamw_ac(
             initial_clip_norm=3.0,
             noise_multiplier=1.1,
             sample_rate=0.01,
@@ -430,7 +427,7 @@ class TestDPAdamACMetrics:
         batch_sizes = torch.ones(5)
 
         state = init_fn(params)
-        _, _, metrics = step_fn(params, grads, grad_norms, state)
+        _, _, metrics = step_fn(params, grads, grad_norms, state, batch_sizes=batch_sizes)
 
         # Check all fields
         assert "epsilon" in metrics
@@ -445,7 +442,7 @@ class TestDPAdamACMetrics:
         """Test that effective_lr = base_lr * lr_multiplier."""
         base_lr = 3e-4
 
-        init_fn, step_fn = dp_adam_ac(
+        init_fn, step_fn = dp_adamw_ac(
             learning_rate=base_lr,
             initial_clip_norm=3.0,
             noise_multiplier=1.1,
@@ -459,19 +456,19 @@ class TestDPAdamACMetrics:
         batch_sizes = torch.ones(5)
 
         state = init_fn(params)
-        _, state, metrics = step_fn(params, grads, grad_norms, state)
+        _, state, metrics = step_fn(params, grads, grad_norms, state, batch_sizes=batch_sizes)
 
         # Check effective LR
         expected_effective_lr = base_lr * metrics["lr_multiplier"]
         assert metrics["effective_lr"] == pytest.approx(expected_effective_lr)
 
 
-class TestDPAdamACReproducibility:
+class TestDPAdamWACReproducibility:
     """Tests for reproducibility."""
 
     def test_seed_reproducibility(self):
         """Test that same seed gives reproducible results."""
-        init_fn, step_fn = dp_adam_ac(
+        init_fn, step_fn = dp_adamw_ac(
             initial_clip_norm=3.0,
             noise_multiplier=1.1,
             sample_rate=0.01,
@@ -496,12 +493,12 @@ class TestDPAdamACReproducibility:
         assert torch.allclose(new_params1["weight"], new_params2["weight"])
 
 
-class TestDPAdamACPrivacy:
+class TestDPAdamWACPrivacy:
     """Tests for privacy accounting."""
 
     def test_privacy_cost_increases(self):
         """Test that epsilon increases with steps."""
-        init_fn, step_fn = dp_adam_ac(
+        init_fn, step_fn = dp_adamw_ac(
             initial_clip_norm=3.0,
             noise_multiplier=1.1,
             sample_rate=0.01,
@@ -517,7 +514,7 @@ class TestDPAdamACPrivacy:
         epsilons = []
 
         for _ in range(10):
-            params, state, metrics = step_fn(params, grads, grad_norms, state)
+            params, state, metrics = step_fn(params, grads, grad_norms, state, batch_sizes=batch_sizes)
             epsilons.append(metrics["epsilon"])
 
         # Should be monotonically increasing
@@ -525,12 +522,12 @@ class TestDPAdamACPrivacy:
             assert epsilons[i + 1] > epsilons[i]
 
 
-class TestDPAdamACEdgeCases:
+class TestDPAdamWACEdgeCases:
     """Tests for edge cases."""
 
     def test_empty_gradient_norms(self):
         """Test behavior when given zero gradients."""
-        init_fn, step_fn = dp_adam_ac(
+        init_fn, step_fn = dp_adamw_ac(
             initial_clip_norm=3.0,
             noise_multiplier=1.1,
             sample_rate=0.01,
@@ -544,7 +541,7 @@ class TestDPAdamACEdgeCases:
         batch_sizes = torch.ones(5)
 
         state = init_fn(params)
-        new_params, _, metrics = step_fn(params, grads, grad_norms, state)
+        new_params, _, metrics = step_fn(params, grads, grad_norms, state, batch_sizes=batch_sizes)
 
         # Should still work (noise will cause changes)
         assert not torch.allclose(new_params["weight"], original_weight, atol=1e-6)
@@ -552,7 +549,7 @@ class TestDPAdamACEdgeCases:
 
     def test_varying_batch_sizes(self):
         """Test with varying batch sizes (microbatching)."""
-        init_fn, step_fn = dp_adam_ac(
+        init_fn, step_fn = dp_adamw_ac(
             initial_clip_norm=3.0,
             noise_multiplier=1.1,
             sample_rate=0.01,
@@ -565,7 +562,7 @@ class TestDPAdamACEdgeCases:
         batch_sizes = torch.tensor([2.0, 4.0, 3.0])  # Different sizes
 
         state = init_fn(params)
-        new_params, new_state, metrics = step_fn(params, grads, grad_norms, state)
+        new_params, new_state, metrics = step_fn(params, grads, grad_norms, state, batch_sizes=batch_sizes)
 
         # Should work correctly (unit normalization handles varying sizes)
         assert new_state.step == 1

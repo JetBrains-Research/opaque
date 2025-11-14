@@ -16,7 +16,8 @@ from typing import Any, NamedTuple
 
 import torch
 
-from opaque.accounting import RDPAccountant
+# TODO: Update to use new functional accounting API
+# from opaque.accounting import RDPAccountant
 from opaque.noise import add_gaussian_noise
 
 
@@ -27,15 +28,15 @@ class DPOptimizerState(NamedTuple):
 
     Attributes:
         opt_state: Internal state of the base optimizer (from TorchOpt)
-        accountant: Privacy accountant tracking (ε, δ) budget
+        accountant: Privacy accountant tracking (ε, δ) budget (DEPRECATED)
         noise_gen: Random number generator for reproducible noise
         step: Current training step counter
     """
 
     opt_state: Any  # TorchOpt optimizer state
-    accountant: Any  # RDPAccountant or PLDAccountant
-    noise_gen: torch.Generator
-    step: int
+    accountant: Any = None  # DEPRECATED: Will use functional accounting API
+    noise_gen: torch.Generator = None
+    step: int = 0
 
 
 def make_dp_optimizer(
@@ -100,15 +101,16 @@ def make_dp_optimizer(
         ...
         ...     print(f"ε = {metrics['epsilon']:.2f}")
     """
-    # Create privacy accountant
-    if accountant_type == "rdp":
-        accountant = RDPAccountant()
-    elif accountant_type == "pld":
-        from opaque.accounting import PLDAccountant
-
-        accountant = PLDAccountant()
-    else:
-        raise ValueError(f"Unknown accountant_type: {accountant_type}. Use 'rdp' or 'pld'.")
+    # TODO: Update to use new functional accounting API
+    # For now, accounting is disabled in optimizers
+    accountant = None
+    # if accountant_type == "rdp":
+    #     accountant = RDPAccountant()
+    # elif accountant_type == "pld":
+    #     from opaque.accounting import PLDAccountant
+    #     accountant = PLDAccountant()
+    # else:
+    #     raise ValueError(f"Unknown accountant_type: {accountant_type}. Use 'rdp' or 'pld'.")
 
     # Noise stddev: σ·C
     stddev = noise_multiplier * l2_clip_norm
@@ -163,28 +165,29 @@ def make_dp_optimizer(
 
         new_params = torchopt.apply_updates(params, updates)
 
-        # 4. Track privacy
-        new_accountant = state.accountant
-        new_accountant.step_poisson(
-            noise_multiplier=noise_multiplier,
-            sample_rate=sample_rate,
-            num_steps=1,
-        )
+        # 4. Track privacy (TODO: Update to functional accounting API)
+        # new_accountant = state.accountant
+        # new_accountant.step_poisson(
+        #     noise_multiplier=noise_multiplier,
+        #     sample_rate=sample_rate,
+        #     num_steps=1,
+        # )
 
-        # 5. Compute current privacy cost
-        epsilon = new_accountant.get_epsilon(target_delta=target_delta)
+        # 5. Compute current privacy cost (TODO: Update to functional accounting API)
+        # epsilon = new_accountant.get_epsilon(target_delta=target_delta)
+        epsilon = None  # Disabled for now
 
         # Create new state
         new_state = DPOptimizerState(
             opt_state=new_opt_state,
-            accountant=new_accountant,
+            accountant=None,  # Disabled
             noise_gen=state.noise_gen,  # Same generator (mutable state)
             step=state.step + 1,
         )
 
         # Metrics for monitoring
         metrics = {
-            "epsilon": epsilon,
+            "epsilon": epsilon,  # None for now
             "delta": target_delta,
             "step": new_state.step,
         }

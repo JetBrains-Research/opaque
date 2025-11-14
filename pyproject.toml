@@ -23,6 +23,7 @@ dependencies = [
     "matplotlib>=3.10.7",
   "notebook>=7.4.7",
     "optree>=0.17.0",
+  "riskcal>=1.0.0", # For alpha/beta privacy queries
     "torch>=2.0.0",
   "torchopt>=0.7.3",
 ]
@@ -40,6 +41,7 @@ examples = [
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
+  "pytest-xdist>=3.0.0", # Parallel test execution
     "ruff>=0.1.0",
     "hypothesis>=6.0.0",  # Property-based testing
   "scipy>=1.11.0", # For statistical tests
@@ -57,6 +59,11 @@ docs = [
     "mkdocs-material>=9.5.0",
     "mkdocstrings[python]>=0.24.0",  # Auto-generate docs from docstrings
     "mkdocs-jupyter>=0.24.0", # Jupyter notebook support
+]
+
+[tool.uv]
+override-dependencies = [
+  "dp-accounting>=0.5.1", # Required for from_truncated_subsampled_gaussian_mechanism
 ]
 
 [tool.uv.sources]
@@ -88,7 +95,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "--cov=opaque --cov-report=html --cov-report=xml --cov-report=term-missing -v -m 'not slow'"
+addopts = "-n=auto -v -m 'not slow'"
 markers = [
     "jax_validation: tests requiring JAX and JAX-Privacy for cross-framework validation",
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",

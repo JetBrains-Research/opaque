@@ -1,19 +1,24 @@
-"""DP-Adam-AC: DP-Adam with Adaptive Clipping.
+"""DP-AdamW-AC: DP-AdamW with Adaptive Clipping.
 
-This module implements the state-of-the-art DP-Adam-AC optimizer from:
+This module implements DP-AdamW with adaptive clipping, combining:
+    - AdamW optimizer (adaptive learning rates + decoupled weight decay)
+    - Adaptive clipping (gradient threshold adapts to distribution)
+    - Dynamic LR scaling (learning rate adjusts based on clip rate)
+    - EMA smoothing (exponential moving average for better generalization)
+
+Based on DP-Adam-AC from:
     Zuo et al., "DP-Adam-AC: Privacy-preserving Fine-Tuning of Localizable
     Language Models Using Adam Optimization with Adaptive Clipping"
     https://arxiv.org/abs/2510.05288 (October 2024)
 
-Key innovations over standard DP-Adam:
-    1. Adaptive Clipping: Clip norm C adapts based on gradient percentiles
-    2. Dynamic LR Scaling: Learning rate adjusts based on clipping frequency
-    3. EMA Smoothing: Exponential moving average for better privacy-utility tradeoff
-    4. No Weight Decay: DP noise acts as implicit regularization
+Key improvements over DP-Adam-AC:
+    - Uses AdamW instead of Adam for better LLM training
+    - Explicit weight decay (not relying on noise as regularizer)
+    - Same adaptive clipping and LR scheduling
 """
 
 from collections.abc import Callable
-from typing import Any, NamedTuple, Optional
+from typing import Optional
 
 import torch
 
@@ -25,37 +30,15 @@ from opaque.adaptive import (
     compute_clip_rate_thresholds,
 )
 from opaque.noise import add_gaussian_noise
+from opaque.optimizers.dp_adam_ac import AdaptiveClipState  # Reuse same state class
 from opaque.utils.pytree import tree_map
 
 
-class AdaptiveClipState(NamedTuple):
-    """State for DP-Adam-AC with adaptive clipping.
-
-    Attributes:
-        opt_state: Internal Adam optimizer state from TorchOpt
-        accountant: Privacy accountant (RDP or PLD)
-        noise_gen: Random number generator for reproducible noise
-        clip_buffer: Buffer tracking gradient norms for adaptive threshold
-        current_clip_norm: Current adaptive clipping threshold (C)
-        lr_multiplier: Current learning rate multiplier (γ)
-        ema_params: Exponential moving average of parameters (θ̂)
-        step: Training step counter
-    """
-
-    opt_state: Any
-    accountant: Any
-    noise_gen: torch.Generator
-    clip_buffer: ClipNormBuffer
-    current_clip_norm: float
-    lr_multiplier: float
-    ema_params: Any  # PyTree of EMA parameters
-    step: int
-
-
-def dp_adam_ac(
+def dp_adamw_ac(
     learning_rate: float = 3e-4,
     betas: tuple[float, float] = (0.9, 0.999),
     eps: float = 1e-8,
+    weight_decay: float = 0.01,
     *,
     initial_clip_norm: float = 3.0,
     noise_multiplier: float,
@@ -78,32 +61,34 @@ def dp_adam_ac(
     accountant_type: str = "rdp",
     seed: int = 42,
 ) -> tuple[Callable, Callable]:
-    """Create DP-Adam-AC optimizer with adaptive clipping.
+    """Create DP-AdamW-AC optimizer with adaptive clipping.
 
-    DP-Adam-AC (Adaptive Clipping) adapts the gradient clipping threshold C
-    dynamically based on the distribution of recent gradient norms, and adjusts
-    the learning rate based on the empirical clipping frequency.
+    DP-AdamW-AC combines AdamW optimization with adaptive gradient clipping.
+    The clipping threshold C adapts based on the distribution of recent
+    gradient norms, and the learning rate scales with the empirical clipping
+    frequency for stable training.
 
-    Algorithm (from paper):
+    Algorithm (adapted from DP-Adam-AC paper):
         1. Compute per-example gradients and norms
         2. Clip gradients to adaptive threshold C
         3. Add Gaussian noise N(0, (σ·C)²I)
-        4. Update with scaled Adam: θ ← θ - γ·η·m̂/(√v̂ + ε)
+        4. Update with scaled AdamW: θ ← θ - γ·η·m̂/(√v̂ + ε) - η·λ·θ
         5. Update EMA parameters: θ̂ ← d·θ̂ + (1-d)·θ
         6. Track gradient norms in buffer
         7. Adapt C ← Percentile_q(buffer) where q = 1 - ρ*
         8. Adjust γ based on observed clip rate ρ
 
     Args:
-        learning_rate: Base learning rate (η_base in paper). Default: 3e-4
+        learning_rate: Base learning rate (η_base). Default: 3e-4
         betas: Adam momentum decay rates (β₁, β₂). Default: (0.9, 0.999)
         eps: Numerical stability constant. Default: 1e-8
+        weight_decay: Weight decay coefficient (λ). Default: 0.01
         initial_clip_norm: Initial clipping threshold C. Default: 3.0
         noise_multiplier: DP noise scale σ (required)
         sample_rate: Sampling rate q = batch_size / dataset_size (required)
         target_delta: Target δ for (ε, δ)-DP (required)
         target_clip_rate: Target fraction of clipped gradients (ρ*). Default: 0.20
-        history_size: Gradient norm buffer size (H in paper). Default: 1000
+        history_size: Gradient norm buffer size (H). Default: 1000
         clip_norm_min: Minimum C (C_min). Default: 0.1
         clip_norm_max: Maximum C (C_max). Default: 10.0
         lr_multiplier_min: Minimum γ (γ_min). Default: 0.1
@@ -116,13 +101,13 @@ def dp_adam_ac(
         seed: Random seed for reproducible noise. Default: 42
 
     Returns:
-        (init_fn, step_fn) for DP-Adam-AC optimization where:
+        (init_fn, step_fn) for DP-AdamW-AC optimization where:
           - init_fn(params) -> AdaptiveClipState
-          - step_fn(params, grads, grad_norms, batch_sizes, state)
+          - step_fn(params, grads, grad_norms, state, batch_sizes=None)
               -> (new_params, new_state, metrics)
 
     Example:
-        >>> from opaque.optimizers import dp_adam_ac
+        >>> from opaque.optimizers import dp_adamw_ac
         >>> from opaque import clipped_grad
         >>> import torch
         >>>
@@ -134,38 +119,39 @@ def dp_adam_ac(
         ...     return ((logits - y) ** 2).mean()
         >>>
         >>> # Create optimizer
-        >>> init_fn, step_fn = dp_adam_ac(
+        >>> init_fn, step_fn = dp_adamw_ac(
         ...     learning_rate=3e-4,
+        ...     weight_decay=0.01,
         ...     initial_clip_norm=3.0,
         ...     noise_multiplier=1.1,
         ...     sample_rate=0.01,
         ...     target_delta=1e-5,
-        ...     target_clip_rate=0.20,  # Aim for 20% clipping
+        ...     target_clip_rate=0.20,
         ... )
         >>>
         >>> # Initialize
         >>> state = init_fn(params)
         >>>
+        >>> # Create clipped gradient function with return_grad_norms=True
+        >>> clipped_grad_fn = clipped_grad(
+        ...     loss_fn,
+        ...     argnums=0,
+        ...     batch_argnums=(1, 2),
+        ...     l2_clip_norm=state.current_clip_norm,  # Initial value
+        ...     return_grad_norms=True,
+        ... )
+        >>>
         >>> # Training loop
         >>> for x_batch, y_batch in dataloader:
-        ...     # Need to compute gradients AND track norms for adaptive clipping
-        ...     # Use clipped_grad with return_grad_norms=True
-        ...     clipped_grad_fn = clipped_grad(
-        ...         loss_fn,
-        ...         argnums=0,
-        ...         batch_argnums=(1, 2),
-        ...         l2_clip_norm=state.current_clip_norm,  # Use adaptive C
-        ...         return_grad_norms=True,
-        ...     )
+        ...     # Update clipping threshold to current adaptive value
+        ...     clipped_grad_fn.keywords['l2_clip_norm'] = state.current_clip_norm
         ...
+        ...     # Compute clipped gradients with pre-clip norms
         ...     grads, aux = clipped_grad_fn(params, x_batch, y_batch)
-        ...     grad_norms = aux.grad_norms  # Pre-clip norms
-        ...     batch_sizes = torch.ones(len(x_batch))
+        ...     grad_norms = aux.grad_norms
         ...
-        ...     # DP-Adam-AC step
-        ...     params, state, metrics = step_fn(
-        ...         params, grads, grad_norms, batch_sizes, state
-        ...     )
+        ...     # DP-AdamW-AC step (batch_sizes optional for standard training)
+        ...     params, state, metrics = step_fn(params, grads, grad_norms, state)
         ...
         ...     # Monitor adaptive behavior
         ...     if state.step % 100 == 0:
@@ -180,18 +166,24 @@ def dp_adam_ac(
         - Clip norm C adapts automatically based on gradient distribution
         - Learning rate scales with clip rate to maintain stable training
         - EMA parameters θ̂ can be used for evaluation (better generalization)
+        - Weight decay is explicit (not relying on noise as implicit regularizer)
         - Typically achieves 1-3% better accuracy than fixed clipping
 
+    Difference from DP-Adam-AC:
+        - DP-Adam-AC: No weight decay (noise acts as implicit regularizer)
+        - DP-AdamW-AC: Explicit weight decay for better LLM training
+
     See Also:
-        dp_adam: Standard DP-Adam with fixed clipping
+        dp_adam_ac: Adam variant without weight decay
+        dp_adamw: Standard DP-AdamW with fixed clipping
         ClipNormBuffer: Underlying adaptive clipping logic
     """
-    # Create base Adam optimizer
-    base_optimizer = torchopt.adam(
+    # Create base AdamW optimizer
+    base_optimizer = torchopt.adamw(
         lr=learning_rate,
         betas=betas,
         eps=eps,
-        weight_decay=0.0,  # No weight decay (noise is regularizer)
+        weight_decay=weight_decay,
     )
 
     # Create privacy accountant
@@ -208,7 +200,7 @@ def dp_adam_ac(
     rho_low, rho_high = compute_clip_rate_thresholds(target_clip_rate, clip_rate_tolerance)
 
     def init_fn(params):
-        """Initialize DP-Adam-AC state.
+        """Initialize DP-AdamW-AC state.
 
         Args:
             params: PyTree of model parameters
@@ -216,7 +208,7 @@ def dp_adam_ac(
         Returns:
             AdaptiveClipState with all components initialized
         """
-        # Initialize base Adam optimizer
+        # Initialize base AdamW optimizer
         opt_state = base_optimizer.init(params)
 
         # Create noise generator
@@ -243,7 +235,7 @@ def dp_adam_ac(
         )
 
     def step_fn(params, grads, grad_norms, state, batch_sizes: Optional[torch.Tensor] = None):
-        """Perform one DP-Adam-AC step with adaptive clipping.
+        """Perform one DP-AdamW-AC step with adaptive clipping.
 
         Args:
             params: Current PyTree of parameters
@@ -266,11 +258,12 @@ def dp_adam_ac(
                     batch_sizes = torch.ones(len(grad_norms))
             else:
                 batch_sizes = torch.ones(1)
+
         # 1. Add DP noise to gradients
         stddev = noise_multiplier * state.current_clip_norm
         noisy_grads = add_gaussian_noise(grads, stddev=stddev, generator=state.noise_gen)
 
-        # 2. Get parameter updates from Adam (with LR scaling)
+        # 2. Get parameter updates from AdamW (with LR scaling)
         # Scale updates by γ (LR multiplier)
         scaled_grads = tree_map(lambda g: g * state.lr_multiplier, noisy_grads)
 
@@ -352,4 +345,4 @@ def dp_adam_ac(
     return init_fn, step_fn
 
 
-__all__ = ["dp_adam_ac", "AdaptiveClipState"]
+__all__ = ["dp_adamw_ac"]

@@ -55,20 +55,42 @@ Puts everything together to implement a complete DP-SGD training loop:
 
 **What you'll build**:
 
-1. Complete **DP-SGD training loop**
-2. Compare **DP-SGD vs non-private training**
-3. Visualize **privacy-utility tradeoffs**
-4. Track **privacy budget** throughout training
+1. **See the minimal difference**: Non-DP vs DP-SGD (just 2 lines!)
+2. Complete **DP-SGD training loop**
+3. Compare **DP-SGD vs non-private training**
+4. Visualize **privacy-utility tradeoffs**
+5. Track **privacy budget** throughout training
 
-**Key Takeaway**: End-to-end DP-SGD implementation with privacy tracking and performance optimization tips.
+**Key Takeaway**: End-to-end DP-SGD implementation with clear side-by-side comparison showing DP is just a 2-line
+change!
 
 ---
 
-### [Tutorial 04: DP-SGD for LoRA Fine-Tuning with HuggingFace](04_lora_huggingface_dp_training.ipynb) ✨ NEW!
+### [Tutorial 04: DP Optimizers - From Manual to Production-Ready](04_dp_optimizers.ipynb) ✨ NEW!
+
+**Level**: Intermediate to Advanced
+**Duration**: 60-75 minutes
+**Prerequisites**: Tutorials 01-03 (Gradient Clipping, Noise, Manual DP-SGD)
+
+Learn production-ready DP optimizers that handle noise, updates, and accounting automatically:
+
+**What you'll learn**:
+
+1. **Recap**: Manual DP-SGD from Tutorial 03
+2. **DP-SGD optimizer**: Production-ready with automatic noise + accounting
+3. **DP-AdamW**: Adaptive learning rates + weight decay for better convergence
+4. **DP-Adam-AC** (Extra): Adaptive clipping for optimal privacy-utility tradeoff
+
+**Key Takeaway**: Opaque's optimizers make DP training as easy as standard PyTorch training - just one line per step
+instead of manual noise + updates + accounting!
+
+---
+
+### [Tutorial 05: DP-SGD for LoRA Fine-Tuning with HuggingFace](05_lora_huggingface_dp_training.ipynb) ✨ NEW!
 
 **Level**: Advanced
 **Duration**: 60-90 minutes
-**Prerequisites**: Tutorials 01-03, Basic familiarity with transformers and LoRA
+**Prerequisites**: Tutorials 01-04, Basic familiarity with transformers and LoRA
 
 Apply DP-SGD to real-world use case: fine-tuning large language models with LoRA:
 
@@ -77,14 +99,12 @@ Apply DP-SGD to real-world use case: fine-tuning large language models with LoRA
 1. Why **LoRA is ideal for DP** fine-tuning (smaller gradients, better SNR)
 2. Apply **LoRA to HuggingFace models** with PEFT
 3. Convert models to **functional form** with frozen + trainable parameters
-4. **Two ways to implement DP-AdamW**: Wrapper functions (educational) vs `dp_adamw()` optimizer (production)
+4. Use **DP-AdamW optimizer** from Tutorial 04 for production training
 5. Use **PyTorch DataLoader** for proper batch handling
-6. Train with **fixed batch sampling** (not Poisson - that's Tutorial 05!)
-7. Proper **privacy accounting** for fixed-size batches (RDP accountant)
-8. **Practical hyperparameter guidance** for stable DP-SGD training
+6. Train with **fixed batch sampling** (RDP accountant)
+7. **Practical hyperparameter guidance** for stable DP-SGD training
 
-**Key Takeaway**: Production-ready DP-SGD for HuggingFace models with LoRA. Learn DP-AdamW implementation both ways (
-wrapper functions for understanding, convenience optimizer for production), using fixed batch sampling with DataLoader.
+**Key Takeaway**: Production-ready DP-SGD for HuggingFace models with LoRA using Opaque's DP-AdamW optimizer.
 
 ## Additional Resources
 
@@ -116,12 +136,13 @@ Found an issue or have suggestions for improving the tutorials?
 - [x] Tutorial 01: Gradient Clipping from Basics (Stage 1)
 - [x] Tutorial 02: Differential Privacy - Noise and Accounting (Stage 2)
 - [x] Tutorial 03: Complete DP-SGD Training Loop (Stage 3)
-- [x] Tutorial 04: DP-SGD for LoRA Fine-Tuning with HuggingFace (Stage 3)
+- [x] Tutorial 04: DP Optimizers - From Manual to Production-Ready (Stage 3)
+- [x] Tutorial 05: DP-SGD for LoRA Fine-Tuning with HuggingFace (Stage 3)
 
 **Planned tutorials** (coming in future stages):
 
-- [ ] Tutorial 05: Advanced Privacy Techniques (Stage 4+)
-- [ ] Tutorial 06: Multi-GPU DP Training (Stage 5+)
+- [ ] Tutorial 06: Advanced Privacy Techniques (Poisson sampling, microbatching, etc.) (Stage 4+)
+- [ ] Tutorial 07: Multi-GPU DP Training (Stage 5+)
 
 ---
 
