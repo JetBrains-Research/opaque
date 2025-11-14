@@ -36,12 +36,13 @@ Builds on Tutorial 01 to implement complete DP-SGD with noise injection and priv
 
 1. Understand why **noise is needed** for differential privacy
 2. Use `add_gaussian_noise()` to add **calibrated Gaussian noise**
-3. Track privacy with **accountants** (`PLDAccountant`, `RDPAccountant`)
-4. **Calibrate noise multipliers** for target privacy budgets
+3. Track privacy with **functional accounting API** (`opaque.accounting`)
+4. **Calibrate noise multipliers** for target privacy budgets (ε, δ, advantage, error rates)
 5. Implement **complete DP-SGD training loop**
 6. Explore the **privacy-utility tradeoff**
 
-**Key Takeaway**: Complete DP-SGD workflow from calibration to training with formal privacy guarantees (ε, δ).
+**Key Takeaway**: Complete DP-SGD workflow from calibration to training with formal privacy guarantees using functional,
+composable privacy accounting.
 
 ---
 
@@ -66,45 +67,27 @@ change!
 
 ---
 
-### [Tutorial 04: DP Optimizers - From Manual to Production-Ready](04_dp_optimizers.ipynb) ✨ NEW!
+### [Tutorial 04: Functional DP Training with TorchOpt](04_dp_optimizers.ipynb) ✨ UPDATED!
 
 **Level**: Intermediate to Advanced
 **Duration**: 60-75 minutes
 **Prerequisites**: Tutorials 01-03 (Gradient Clipping, Noise, Manual DP-SGD)
 
-Learn production-ready DP optimizers that handle noise, updates, and accounting automatically:
+Learn how to use TorchOpt's functional optimizers with Opaque's modular DP framework:
 
 **What you'll learn**:
 
-1. **Recap**: Manual DP-SGD from Tutorial 03
-2. **DP-SGD optimizer**: Production-ready with automatic noise + accounting
-3. **DP-AdamW**: Adaptive learning rates + weight decay for better convergence
-4. **DP-Adam-AC** (Extra): Adaptive clipping for optimal privacy-utility tradeoff
+1. **Setup**: Data generation, privacy config, noise multiplier calibration
+2. **TorchOpt optimizers**: Use ANY TorchOpt optimizer (SGD, Adam, AdamW) with DP
+3. **Adaptive clipping wrapper**: Automatically adjust clip threshold based on gradient distribution
+4. **Dynamic LR scaling**: Optional learning rate adjustment based on clip rate
+5. **Modular design**: External noise injection and privacy accounting for full transparency
 
-**Key Takeaway**: Opaque's optimizers make DP training as easy as standard PyTorch training - just one line per step
-instead of manual noise + updates + accounting!
+**Key Takeaway**: Opaque's functional API lets you compose DP training with any TorchOpt optimizer while maintaining
+full control over noise injection and privacy accounting. The `adaptive_clipping()` wrapper enhances any base optimizer
+with automatic threshold adaptation.
 
 ---
-
-### [Tutorial 05: DP-SGD for LoRA Fine-Tuning with HuggingFace](05_lora_huggingface_dp_training.ipynb) ✨ NEW!
-
-**Level**: Advanced
-**Duration**: 60-90 minutes
-**Prerequisites**: Tutorials 01-04, Basic familiarity with transformers and LoRA
-
-Apply DP-SGD to real-world use case: fine-tuning large language models with LoRA:
-
-**What you'll learn**:
-
-1. Why **LoRA is ideal for DP** fine-tuning (smaller gradients, better SNR)
-2. Apply **LoRA to HuggingFace models** with PEFT
-3. Convert models to **functional form** with frozen + trainable parameters
-4. Use **DP-AdamW optimizer** from Tutorial 04 for production training
-5. Use **PyTorch DataLoader** for proper batch handling
-6. Train with **fixed batch sampling** (RDP accountant)
-7. **Practical hyperparameter guidance** for stable DP-SGD training
-
-**Key Takeaway**: Production-ready DP-SGD for HuggingFace models with LoRA using Opaque's DP-AdamW optimizer.
 
 ## Additional Resources
 
@@ -135,12 +118,12 @@ Found an issue or have suggestions for improving the tutorials?
 
 - [x] Tutorial 01: Gradient Clipping from Basics (Stage 1)
 - [x] Tutorial 02: Differential Privacy - Noise and Accounting (Stage 2)
-- [x] Tutorial 03: Complete DP-SGD Training Loop (Stage 3)
-- [x] Tutorial 04: DP Optimizers - From Manual to Production-Ready (Stage 3)
-- [x] Tutorial 05: DP-SGD for LoRA Fine-Tuning with HuggingFace (Stage 3)
+- [x] Tutorial 03: Complete DP-SGD Training Loop (Stage 2)
+- [x] Tutorial 04: Functional DP Training with TorchOpt (Stage 2)
 
 **Planned tutorials** (coming in future stages):
 
+- [ ] Tutorial 05: DP-SGD for LoRA Fine-Tuning with HuggingFace (Stage 4+)
 - [ ] Tutorial 06: Advanced Privacy Techniques (Poisson sampling, microbatching, etc.) (Stage 4+)
 - [ ] Tutorial 07: Multi-GPU DP Training (Stage 5+)
 
@@ -164,11 +147,12 @@ formal (ε, δ)-DP guarantees.
 **Q: What's available now vs "coming soon"?**
 A: As of Stage 2 (complete), all core DP-SGD components are ready:
 
-- ✅ Gradient clipping (`clipped_grad()`)
+- ✅ Gradient clipping (`clipped_grad()`, `clipped_fun()`, `clip_pytree()`)
 - ✅ Noise injection (`add_gaussian_noise()`)
-- ✅ Privacy accounting (`PLDAccountant`, `RDPAccountant`)
-- ✅ Calibration functions for target privacy
-- 🔜 High-level API and LoRA integration (Stages 3-4)
+- ✅ Privacy accounting (functional API via `opaque.accounting` module)
+- ✅ Calibration functions for target privacy (ε/δ, advantage, error rates)
+- ✅ Optimizer wrappers (`adaptive_clipping()` for TorchOpt optimizers)
+- 🔜 LoRA integration and advanced examples (Stages 4+)
 
 **Q: I found a bug in a tutorial. How do I report it?**
 A: Please open an issue with:

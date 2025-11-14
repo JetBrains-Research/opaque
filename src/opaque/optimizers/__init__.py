@@ -5,38 +5,28 @@ functional optimization framework. All optimizers follow the same pattern:
 
     init_fn, step_fn = dp_optimizer(...)
     state = init_fn(params)
-    params, state, metrics = step_fn(params, grads, state)
+    params, state, metrics = step_fn(params, grads, grad_norms, state)
 
 Available Optimizers:
-    - dp_sgd: Basic DP-SGD with momentum
-    - dp_adam: DP-Adam with adaptive learning rates (no weight decay)
-    - dp_adamw: DP-AdamW with decoupled weight decay (recommended for LLMs)
-    - dp_adam_ac: DP-Adam with adaptive clipping (no weight decay)
-    - dp_adamw_ac: DP-AdamW with adaptive clipping (state-of-the-art, recommended for LLMs)
+    - dp_optimizer_ac: DP optimizer with adaptive clipping (works with any TorchOpt
+      optimizer as base, defaults to AdamW)
 
 All optimizers integrate:
     - Gradient clipping (per-example, from Stage 1)
     - Noise injection (Gaussian mechanism, from Stage 2)
-    - Privacy accounting (RDP/PLD, from Stage 2)
+    - Adaptive clipping and learning rate scheduling
+    - EMA smoothing for better generalization
+
+Note: Privacy accounting is EXTERNAL - users must track privacy budget separately
+using opaque.accounting module.
 """
 
-from opaque.optimizers.base import DPOptimizerState, make_dp_optimizer
-from opaque.optimizers.dp_adam import dp_adam
-from opaque.optimizers.dp_adam_ac import AdaptiveClipState, dp_adam_ac
-from opaque.optimizers.dp_adamw import dp_adamw
-from opaque.optimizers.dp_adamw_ac import dp_adamw_ac
-from opaque.optimizers.dp_sgd import dp_sgd
+from opaque.optimizers.dp_optimizer_ac import adaptive_clipping
+from opaque.optimizers.types import DPAdaptiveClipState
 
 __all__ = [
-    # Base
-    "DPOptimizerState",
-    "make_dp_optimizer",
     # Optimizers
-    "dp_sgd",
-    "dp_adam",
-    "dp_adamw",
-    "dp_adam_ac",
-    "dp_adamw_ac",
+    "adaptive_clipping",
     # States
-    "AdaptiveClipState",
+    "DPAdaptiveClipState",
 ]

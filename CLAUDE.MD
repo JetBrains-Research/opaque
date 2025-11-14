@@ -18,7 +18,7 @@
 - ✅ **Stage 2 COMPLETE**: Noise injection (add_gaussian_noise) and functional privacy accounting
 - **Modules**: Modularized into `utils/`, `clipping/`, `noise/`, `accounting/` packages
 - **API Parity**: All single-device parameters except microbatch_size and spmd_axis_name (tech debt documented below)
-- **Tests**: 55 accounting tests passing (50 unit + 5 JAX validation), parallel execution enabled
+- **Tests**: 111 tests passing (55 accounting + 56 optimizer tests), parallel execution enabled
 - **Privacy Accounting** (functional API):
   - Immutable state: `state = acc.create()`
   - Composition: `acc.compose_poisson_gaussian()`, `acc.compose_truncated_poisson_gaussian()`, etc.
@@ -77,7 +77,9 @@ tests/
 ├── noise/                  # Tests for noise injection (if separate)
 ├── jax_validation/         # ✅ 5 JAX validation tests
 │   └── test_accounting.py  # Validates against JAX-Privacy (functional API)
-└── optimizers/             # ⚠️ Deferred - to be refactored to functional API
+└── optimizers/             # ✅ 56 tests (37 adaptive_clipping + 19 dp_optimizer_ac)
+    ├── test_adaptive_clipping.py  # Tests for adaptive clipping wrapper
+    └── test_dp_optimizer_ac.py    # Integration tests with functional API
 ```
 
 **Test Coverage**:
@@ -85,8 +87,8 @@ tests/
 - Accounting module: 76% (calibration.py: 76%, composition.py: 57%, queries.py: 50%)
 - Overall: 39% (lower due to untested clipping/noise/optimizers modules)
 
-**Total Tests**: 55 accounting tests (50 unit + 5 JAX validation), all passing
-**Current Status**: ✅ Stage 2 COMPLETE - Functional accounting API + parallel test execution
+**Total Tests**: 111 tests passing (55 accounting + 56 optimizer), all passing
+**Current Status**: ✅ Stage 2 COMPLETE - Functional accounting API, optimizer tests fixed, tutorial restructured
 
 **Test Execution**:
 
@@ -326,12 +328,13 @@ noise = acc.find_noise_multiplier_for_err_rates(
 
 Items not included in Stage 1 & 2 (to be addressed in later stages):
 
-**Stage 3 (Optimizer Refactoring)**:
+**Stage 3 (Additional Optimizer Features)**:
 
-- [ ] Refactor optimizer modules to functional API
-- [ ] Update DP-SGD, DP-Adam, DP-AdamW optimizers to use functional accounting
-- [ ] Migrate optimizer tests from OOP API to functional API
-- [ ] Ensure optimizers compose with `opaque.accounting` state management
+- [x] adaptive_clipping wrapper for TorchOpt optimizers (COMPLETE)
+- [x] Optimizer tests using functional API (56 tests passing)
+- [x] Tutorial demonstrating TorchOpt flexibility (COMPLETE)
+- [ ] Additional optimizer wrappers if needed (e.g., DPOptimizer base class)
+- [ ] Integration with more TorchOpt optimizers beyond SGD/Adam/AdamW
 
 **Stage 4 (High-Level API)**:
 - [ ] LoRA integration test with `transformers` library
@@ -349,7 +352,39 @@ Items not included in Stage 1 & 2 (to be addressed in later stages):
 
 ## Fast Context Recovery
 
-**Recent Changes** (2025-11-14 - Test Suite Cleanup & Parallel Execution):
+**Recent Changes** (2025-11-14 - Optimizer Tests Fixed & Tutorial Restructured):
+
+- ✅ **Fixed all 23 failing optimizer tests** - Complete rewrite of test_dp_optimizer_ac.py (437 lines)
+  - Fixed syntax errors (missing commas, malformed comments)
+  - Rewrote tests to match functional API: `adaptive_clipping(base_optimizer, ...)` not
+    `dp_optimizer_ac(learning_rate=...)`
+  - Updated to use external noise injection and privacy accounting (not built-in)
+  - New test classes: TestInitialization, TestStepFunction, TestAdaptiveClipping, TestLRScaling,
+    TestDifferentOptimizers, TestMetrics, TestIntegrationWithClippedGrad, TestStateImmutability
+  - All 56 optimizer tests now passing (37 adaptive_clipping + 19 dp_optimizer_ac) ✓
+
+- ✅ **Tutorial restructured** - docs/tutorials/04_dp_optimizers.ipynb (18 cells)
+  - **New title**: "Functional DP Training with TorchOpt"
+  - **Part 1**: Setup (data, privacy config) - kept as-is
+  - **Part 2 (NEW)**: TorchOpt Optimizers Comparison
+    - Shows that ANY TorchOpt optimizer works: torchopt.sgd, torchopt.adam, torchopt.adamw
+    - Trains 3 models in parallel with fixed clipping and external noise/accounting
+    - Compares convergence across optimizers
+    - Emphasizes adaptive_clipping comes AFTER understanding base optimizers
+  - **Part 3**: Introduce adaptive_clipping as WRAPPER around base optimizers
+    - Shows how clip norm C adapts automatically
+    - Compares against fixed clipping from Part 2
+  - **Part 4**: Dynamic LR Scaling (optional enhancement)
+  - **Part 5**: Updated summary emphasizing TorchOpt flexibility and modular design
+  - Fixed variable reference errors (losses_fixed → losses_adamw)
+
+- 🎉 **Key improvements**:
+  - Better pedagogical flow: base optimizers first, then adaptive wrapper
+  - Demonstrates TorchOpt flexibility (any optimizer works)
+  - Maintains modular design (external noise + accounting)
+  - All 56 optimizer tests passing, tutorial ready to execute
+
+**Previous Changes** (2025-11-14 - Test Suite Cleanup & Parallel Execution):
 
 - ✅ **Test suite cleanup** - Fixed all failing tests after functional API migration
   - Deleted irrelevant tests: `TestNeighboringRelation` class (3 tests) and `test_invalid_sampling_method`
@@ -366,7 +401,6 @@ Items not included in Stage 1 & 2 (to be addressed in later stages):
   - test_queries.py: 16 tests (epsilon/delta/beta/advantage queries)
   - test_calibration.py: 21 tests (epsilon/delta, advantage, error rates calibration)
   - test_accounting.py (JAX validation): 5 tests (cross-framework numerical equivalence)
-- ⚠️ **Optimizer tests deferred** - Will be refactored to functional API in Stage 3
 
 **Previous Changes** (2025-11-14 - Calibration Reimplementation):
 
@@ -431,8 +465,9 @@ Items not included in Stage 1 & 2 (to be addressed in later stages):
 
 **Implementation Status**: ✅ **Stage 1 & 2 COMPLETE (100%)**. All single-device features from JAX-Privacy main branch
 implemented, tested, and validated. Functional privacy accounting API with riskcal-based calibration fully working.
-Tutorial notebook updated to use new API. All 55 accounting tests passing with parallel execution (3.17x speedup).
-Ready to begin Stage 3 (Optimizer Refactoring to Functional API).
+All 111 tests passing (55 accounting + 56 optimizer) with parallel execution (3.17x speedup).
+Tutorial notebook restructured to demonstrate TorchOpt flexibility and adaptive_clipping wrapper pattern.
+Ready to begin Stage 3 (Additional Optimizer Functionality if needed).
 
 ---
 
