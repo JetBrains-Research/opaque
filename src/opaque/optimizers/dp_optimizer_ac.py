@@ -25,8 +25,8 @@ from collections.abc import Callable
 from typing import Any, Optional
 
 import torch
-import torchopt
 
+import torchopt
 from opaque.optimizers.adaptive import clip_buffer
 from opaque.optimizers.adaptive.lr_scheduler import (
     clip_rate_based_lr_adjustment,
@@ -221,9 +221,7 @@ def adaptive_clipping(
         torchopt: Base optimizers (adam, adamw, sgd, etc.)
     """
     # Compute clip rate thresholds for LR scaling
-    rho_low, rho_high = compute_clip_rate_thresholds(
-        target_clip_rate, DEFAULT_CLIP_RATE_TOLERANCE
-    )
+    rho_low, rho_high = compute_clip_rate_thresholds(target_clip_rate, DEFAULT_CLIP_RATE_TOLERANCE)
 
     def init_fn(params):
         """Initialize optimizer state.
@@ -291,9 +289,7 @@ def adaptive_clipping(
 
         # 1. Get parameter updates from base optimizer (LR already applied)
         # Note: Pass unscaled gradients so Adam's momentum buffers see correct statistics
-        updates, new_opt_state = base_optimizer.update(
-            grads, state.opt_state, params=params
-        )
+        updates, new_opt_state = base_optimizer.update(grads, state.opt_state, params=params)
 
         # 2. [Optional] Scale updates by LR multiplier (Zuo et al. 2024 enhancement)
         # This adjusts the step size without affecting momentum buffers

@@ -9,10 +9,7 @@ See [CONTRIBUTING.md](https://github.com/evgri243/opaque/blob/main/CONTRIBUTING.
 This section provides detailed guides for contributors:
 
 - **[TDD Workflow](tdd-workflow.md)** - Step-by-step test-driven development process
-- **[JAX-Privacy Comparison](jax-privacy-comparison.md)** - Which API we're porting and why
-- **[Design Decisions](design-decisions.md)** - Technical choices and rationale
 - **[Roadmap](roadmap.md)** - Full project timeline and stages
-- **[Stage 1 Plan](stage1-plan.md)** - Current implementation details
 
 ---
 

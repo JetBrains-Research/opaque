@@ -92,9 +92,10 @@ with automatic threshold adaptation.
 ## Additional Resources
 
 ### Documentation
-- [Opaque API Reference](../api/core/clipping.md)
-- [Design Decisions](../development/design-decisions.md)
-- [JAX-Privacy Comparison](../development/jax-privacy-comparison.md)
+
+- [Opaque API Reference](../api/index.md)
+- [User Guide](../user-guide/index.md)
+- [Contributing Guide](../development/contributing.md)
 
 ### Papers
 - [Deep Learning with Differential Privacy](https://arxiv.org/abs/1607.00133) (DP-SGD)

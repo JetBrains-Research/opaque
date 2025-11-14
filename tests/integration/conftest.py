@@ -35,9 +35,7 @@ class TinyLLaMA(nn.Module):
         self.tok_embeddings = nn.Embedding(vocab_size, dim)
 
         # Transformer blocks
-        self.layers = nn.ModuleList(
-            [TransformerBlock(dim, n_heads) for _ in range(n_layers)]
-        )
+        self.layers = nn.ModuleList([TransformerBlock(dim, n_heads) for _ in range(n_layers)])
 
         # Output
         self.norm = nn.LayerNorm(dim)
@@ -91,9 +89,9 @@ class TransformerBlock(nn.Module):
         batch, seq_len, dim = x.shape
 
         # Create causal mask for attention
-        causal_mask = torch.triu(
-            torch.full((seq_len, seq_len), float("-inf")), diagonal=1
-        ).to(x.device)
+        causal_mask = torch.triu(torch.full((seq_len, seq_len), float("-inf")), diagonal=1).to(
+            x.device
+        )
 
         # Attention with residual
         normed = self.attention_norm(x)
@@ -180,9 +178,14 @@ def create_huggingface_model(model_name, max_seq_len=32):
 
         # Disable dropout for deterministic behavior
         dropout_attrs = [
-            'attn_pdrop', 'resid_pdrop', 'embd_pdrop',  # GPT-2
-            'attention_dropout', 'hidden_dropout',  # Qwen, LLaMA, Gemma
-            'dropout', 'attn_dropout', 'ffn_dropout',
+            "attn_pdrop",
+            "resid_pdrop",
+            "embd_pdrop",  # GPT-2
+            "attention_dropout",
+            "hidden_dropout",  # Qwen, LLaMA, Gemma
+            "dropout",
+            "attn_dropout",
+            "ffn_dropout",
         ]
         for attr in dropout_attrs:
             if hasattr(config, attr):
@@ -251,9 +254,6 @@ def compute_causal_lm_loss(logits, targets):
     shift_targets = targets[:, 1:].contiguous()
 
     # Compute cross-entropy loss
-    loss = F.cross_entropy(
-        shift_logits.view(-1, logits.size(-1)),
-        shift_targets.view(-1)
-    )
+    loss = F.cross_entropy(shift_logits.view(-1, logits.size(-1)), shift_targets.view(-1))
 
     return loss

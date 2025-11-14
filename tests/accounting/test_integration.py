@@ -88,9 +88,7 @@ class TestStateImmutability:
     def test_composition_returns_new_state(self):
         """Test that composition returns a new state object."""
         state1 = acc.create()
-        state2 = acc.compose_poisson_gaussian(
-            state1, noise_multiplier=1.0, sample_rate=0.01
-        )
+        state2 = acc.compose_poisson_gaussian(state1, noise_multiplier=1.0, sample_rate=0.01)
 
         # Should be different objects
         assert state1 is not state2

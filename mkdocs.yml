@@ -84,13 +84,13 @@ nav:
     - 06 - LoRA HuggingFace Training: tutorials/06_lora_huggingface_dp_training.ipynb
   - User Guide:
       - Overview: user-guide/index.md
-    - Differential Privacy Basics: user-guide/dp-basics.md
+      - Differential Privacy Basics: user-guide/dp-basics.md
       - Per-Sample Gradient Clipping: user-guide/clipping.md
       - Noise Addition: user-guide/noise.md
       - Privacy Accounting: user-guide/accounting.md
       - Optimizers & Adaptive Clipping: user-guide/optimizers.md
       - Poisson Sampling & Microbatching: user-guide/sampling.md
-    - LoRA Fine-tuning: user-guide/lora.md
+      - LoRA Fine-tuning: user-guide/lora.md
   - API Reference:
       - Overview: api/index.md
       - Utils:

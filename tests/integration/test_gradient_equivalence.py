@@ -50,7 +50,7 @@ TEST_MODELS = [
         "Qwen/Qwen2.5-0.5B",
         marks=[
             pytest.mark.skipif(not HAS_TRANSFORMERS, reason="requires transformers"),
-            pytest.mark.slow()
+            pytest.mark.slow(),
         ],
         id="qwen2.5-0.5b",
     ),
@@ -58,7 +58,7 @@ TEST_MODELS = [
         "google/gemma-3-270m",
         marks=[
             pytest.mark.skipif(not HAS_TRANSFORMERS, reason="requires transformers"),
-            pytest.mark.slow()
+            pytest.mark.slow(),
         ],
         id="gemma-3",
     ),
@@ -243,9 +243,7 @@ def test_gradient_equivalence(model_id):
     # =========================================================================
 
     # Method 1: Standard .backward()
-    grads_standard, loss_standard, norm_standard = compute_gradients_with_backward(
-        model, tokens
-    )
+    grads_standard, loss_standard, norm_standard = compute_gradients_with_backward(model, tokens)
     print(f"\n[1/4] Standard .backward(): loss={loss_standard:.6f}, norm={norm_standard:.2f}")
 
     # Convert to functional (shared by methods 2-4)
@@ -347,9 +345,15 @@ def test_gradient_equivalence(model_id):
 
             print(f"\n  - {name}:")
             print(f"      Param norm: {norm_std:.6e}")
-            print(f"      Functional: {'✓' if cf else '✗'} (rel: {pf:.4f}%, max_abs_diff: {err_func_abs:.6e})")
-            print(f"      Manual:     {'✓' if cm else '✗'} (rel: {pm:.4f}%, max_abs_diff: {err_man_abs:.6e})")
-            print(f"      Clipped:    {'✓' if cc else '✗'} (rel: {pc:.4f}%, max_abs_diff: {err_clip_abs:.6e})")
+            print(
+                f"      Functional: {'✓' if cf else '✗'} (rel: {pf:.4f}%, max_abs_diff: {err_func_abs:.6e})"
+            )
+            print(
+                f"      Manual:     {'✓' if cm else '✗'} (rel: {pm:.4f}%, max_abs_diff: {err_man_abs:.6e})"
+            )
+            print(
+                f"      Clipped:    {'✓' if cc else '✗'} (rel: {pc:.4f}%, max_abs_diff: {err_clip_abs:.6e})"
+            )
         if len(mismatches) > 5:
             print(f"\n  ... and {len(mismatches) - 5} more")
 

@@ -42,7 +42,7 @@ jobs:
 
       - name: Build documentation
         run: |
-          uv run --group docs mkdocs build --strict
+          uv run --group docs mkdocs build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

@@ -140,14 +140,20 @@ class TestCompositionInputValidation:
 
         with pytest.raises(ValueError):
             acc.compose_truncated_poisson_gaussian(
-                state, noise_multiplier=1.0, sample_rate=0.01,
-                truncated_batch_size=0, dataset_size=10000
+                state,
+                noise_multiplier=1.0,
+                sample_rate=0.01,
+                truncated_batch_size=0,
+                dataset_size=10000,
             )
 
         with pytest.raises(ValueError):
             acc.compose_truncated_poisson_gaussian(
-                state, noise_multiplier=1.0, sample_rate=0.01,
-                truncated_batch_size=-1, dataset_size=10000
+                state,
+                noise_multiplier=1.0,
+                sample_rate=0.01,
+                truncated_batch_size=-1,
+                dataset_size=10000,
             )
 
     def test_invalid_dataset_size(self):
@@ -156,14 +162,20 @@ class TestCompositionInputValidation:
 
         with pytest.raises(ValueError):
             acc.compose_truncated_poisson_gaussian(
-                state, noise_multiplier=1.0, sample_rate=0.01,
-                truncated_batch_size=100, dataset_size=0
+                state,
+                noise_multiplier=1.0,
+                sample_rate=0.01,
+                truncated_batch_size=100,
+                dataset_size=0,
             )
 
         with pytest.raises(ValueError):
             acc.compose_truncated_poisson_gaussian(
-                state, noise_multiplier=1.0, sample_rate=0.01,
-                truncated_batch_size=100, dataset_size=-1
+                state,
+                noise_multiplier=1.0,
+                sample_rate=0.01,
+                truncated_batch_size=100,
+                dataset_size=-1,
             )
 
     def test_invalid_count(self):
@@ -172,14 +184,22 @@ class TestCompositionInputValidation:
 
         with pytest.raises(ValueError):
             acc.compose_truncated_poisson_gaussian(
-                state, noise_multiplier=1.0, sample_rate=0.01,
-                truncated_batch_size=100, dataset_size=10000, count=0
+                state,
+                noise_multiplier=1.0,
+                sample_rate=0.01,
+                truncated_batch_size=100,
+                dataset_size=10000,
+                count=0,
             )
 
         with pytest.raises(ValueError):
             acc.compose_truncated_poisson_gaussian(
-                state, noise_multiplier=1.0, sample_rate=0.01,
-                truncated_batch_size=100, dataset_size=10000, count=-1
+                state,
+                noise_multiplier=1.0,
+                sample_rate=0.01,
+                truncated_batch_size=100,
+                dataset_size=10000,
+                count=-1,
             )
 
 

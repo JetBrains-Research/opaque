@@ -126,9 +126,7 @@ def compose_sampled_gaussian(
     if batch_size < 1:
         raise ValueError(f"batch_size must be at least 1, got {batch_size}")
     if dataset_size < batch_size:
-        raise ValueError(
-            f"dataset_size must be >= batch_size, got {dataset_size} < {batch_size}"
-        )
+        raise ValueError(f"dataset_size must be >= batch_size, got {dataset_size} < {batch_size}")
     if count < 1:
         raise ValueError(f"count must be at least 1, got {count}")
 
@@ -191,9 +189,7 @@ def compose_truncated_poisson_gaussian(
     if not 0 < sample_rate <= 1:
         raise ValueError(f"sample_rate must be in (0, 1], got {sample_rate}")
     if truncated_batch_size < 1:
-        raise ValueError(
-            f"truncated_batch_size must be at least 1, got {truncated_batch_size}"
-        )
+        raise ValueError(f"truncated_batch_size must be at least 1, got {truncated_batch_size}")
     if dataset_size < truncated_batch_size:
         raise ValueError(
             f"dataset_size must be >= truncated_batch_size, "

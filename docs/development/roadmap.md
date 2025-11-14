@@ -54,8 +54,6 @@ This document outlines the complete implementation roadmap for Opaque.
 - `prng_argnum` - Deferred (requires PRNG key splitting, no PyTorch equivalent)
 - `spmd_axis_name` - Deferred (distributed training feature)
 
-**See**: [Stage 1 Detailed Plan](stage1-plan.md)
-
 ---
 
 ## Stage 2: Noise Injection & Privacy Accounting ✅ **COMPLETED**
@@ -92,8 +90,6 @@ This document outlines the complete implementation roadmap for Opaque.
 - [x] **Truncated Poisson sampling** - Solves variable batch size problem
 - [x] 30 unit tests + 13 JAX validation tests = 43 tests passing
 - [x] Numerical equivalence with JAX-Privacy confirmed (tolerance < 0.01-0.1 epsilon)
-
-**See**: [Stage 2 Detailed Plan](stage2-plan.md)
 
 ---
 

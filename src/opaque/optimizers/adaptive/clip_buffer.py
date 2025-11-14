@@ -46,9 +46,7 @@ def create(
     if capacity <= 0:
         raise ValueError(f"capacity must be positive, got {capacity}")
     if not 0 < target_clip_rate < 1:
-        raise ValueError(
-            f"target_clip_rate must be in (0, 1), got {target_clip_rate}"
-        )
+        raise ValueError(f"target_clip_rate must be in (0, 1), got {target_clip_rate}")
 
     norms_tensor = torch.zeros(capacity)
     size = 0

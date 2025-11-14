@@ -102,4 +102,3 @@ Complete DP-SGD
 - 🔧 [API Reference](api/core/clipping.md)
 - 🔧 [Roadmap](development/roadmap.md) - Project timeline and stages
 - 🔧 [Contributing Guide](development/contributing.md)
-- 🔧 [Design Decisions](development/design-decisions.md)

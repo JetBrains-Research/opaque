@@ -39,6 +39,7 @@ from dp_accounting.pld.privacy_loss_distribution import (
     PrivacyLossDistribution as PrivacyState,
 )
 from dp_accounting.privacy_accountant import NeighboringRelation
+
 # Calibration (using riskcal.calibration.core primitives)
 from opaque.accounting.calibration import (
     # Core primitives
@@ -61,6 +62,7 @@ from opaque.accounting.calibration import (
     get_advantage_for_dpsgd,
     get_beta_for_dpsgd,
 )
+
 # Composition functions
 from opaque.accounting.composition import (
     compose_fixed_batch,
@@ -69,6 +71,7 @@ from opaque.accounting.composition import (
     compose_truncated_poisson_gaussian,
     create,
 )
+
 # Query functions
 from opaque.accounting.queries import (
     get_advantage,

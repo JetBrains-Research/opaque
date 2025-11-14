@@ -25,8 +25,6 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn.functional as F
-import torchopt
 from datasets import load_dataset
 from peft import LoraConfig, TaskType, get_peft_model
 from torch.utils.data import DataLoader, TensorDataset
@@ -34,6 +32,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 # Opaque imports
 import opaque.accounting as acc
+import torchopt
 from opaque import (
     TruncatedPoissonSampler,
     add_gaussian_noise,
@@ -60,20 +59,32 @@ def setup_args():
     # Training
     parser.add_argument("--num_steps", type=int, default=1000, help="Total training steps")
     parser.add_argument("--batch_size", type=int, default=256, help="Expected batch size")
-    parser.add_argument("--max_batch_size", type=int, default=320, help="Max batch size (TruncatedPoisson cap)")
-    parser.add_argument("--microbatch_size", type=int, default=64, help="Microbatch size for memory efficiency")
+    parser.add_argument(
+        "--max_batch_size", type=int, default=320, help="Max batch size (TruncatedPoisson cap)"
+    )
+    parser.add_argument(
+        "--microbatch_size", type=int, default=64, help="Microbatch size for memory efficiency"
+    )
     parser.add_argument("--lr", type=float, default=5e-4, help="Learning rate")
     parser.add_argument("--weight_decay", type=float, default=0.01, help="Weight decay")
 
     # Privacy
-    parser.add_argument("--initial_clip_norm", type=float, default=0.5, help="Initial clipping threshold (adaptive)")
-    parser.add_argument("--target_clip_rate", type=float, default=0.20, help="Target fraction of clipped gradients")
+    parser.add_argument(
+        "--initial_clip_norm", type=float, default=0.5, help="Initial clipping threshold (adaptive)"
+    )
+    parser.add_argument(
+        "--target_clip_rate", type=float, default=0.20, help="Target fraction of clipped gradients"
+    )
     parser.add_argument("--noise_multiplier", type=float, default=0.8, help="Noise multiplier (σ)")
-    parser.add_argument("--target_delta", type=float, default=1e-6, help="Target delta for (ε, δ)-DP")
+    parser.add_argument(
+        "--target_delta", type=float, default=1e-6, help="Target delta for (ε, δ)-DP"
+    )
 
     # Data
     parser.add_argument("--max_length", type=int, default=512, help="Maximum sequence length")
-    parser.add_argument("--num_train_samples", type=int, default=50000, help="Number of training samples")
+    parser.add_argument(
+        "--num_train_samples", type=int, default=50000, help="Number of training samples"
+    )
     parser.add_argument("--num_eval_samples", type=int, default=2000, help="Number of eval samples")
 
     # Evaluation
@@ -82,7 +93,9 @@ def setup_args():
 
     # Misc
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
-    parser.add_argument("--output_dir", type=str, default="./llama_dp_output", help="Output directory")
+    parser.add_argument(
+        "--output_dir", type=str, default="./llama_dp_output", help="Output directory"
+    )
     parser.add_argument("--device", type=str, default="cuda", help="Device (cuda or cpu)")
 
     return parser.parse_args()
@@ -95,7 +108,9 @@ def load_and_prepare_data(args, tokenizer):
     print("=" * 80)
 
     # Load OpenAssistant Conversations dataset
-    print(f"Loading OpenAssistant dataset (train: {args.num_train_samples}, eval: {args.num_eval_samples})...")
+    print(
+        f"Loading OpenAssistant dataset (train: {args.num_train_samples}, eval: {args.num_eval_samples})..."
+    )
     dataset = load_dataset("OpenAssistant/oasst1", split="train")
 
     # Filter for English, high-quality conversations
@@ -112,8 +127,8 @@ def load_and_prepare_data(args, tokenizer):
     print(f"Collected {len(texts)} text samples")
 
     # Split train/eval
-    train_texts = texts[:args.num_train_samples]
-    eval_texts = texts[args.num_train_samples:args.num_train_samples + args.num_eval_samples]
+    train_texts = texts[: args.num_train_samples]
+    eval_texts = texts[args.num_train_samples: args.num_train_samples + args.num_eval_samples]
 
     print(f"Train samples: {len(train_texts)}")
     print(f"Eval samples: {len(eval_texts)}")

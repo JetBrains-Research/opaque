@@ -80,8 +80,7 @@ def create_dpsgd_epsilon_evaluator(
     elif sampling_method == "truncated_poisson":
         if sample_rate is None or dataset_size is None or truncated_batch_size is None:
             raise ValueError(
-                "sample_rate, dataset_size, and truncated_batch_size "
-                "required for truncated_poisson"
+                "sample_rate, dataset_size, and truncated_batch_size required for truncated_poisson"
             )
 
     def evaluator(noise_multiplier: float) -> PrivacyMetrics:
@@ -295,8 +294,7 @@ def create_dpsgd_advantage_evaluator(
     elif sampling_method == "truncated_poisson":
         if sample_rate is None or dataset_size is None or truncated_batch_size is None:
             raise ValueError(
-                "sample_rate, dataset_size, and truncated_batch_size "
-                "required for truncated_poisson"
+                "sample_rate, dataset_size, and truncated_batch_size required for truncated_poisson"
             )
 
     def evaluator(noise_multiplier: float) -> PrivacyMetrics:
@@ -306,19 +304,24 @@ def create_dpsgd_advantage_evaluator(
         # Compose based on sampling method
         if sampling_method == "poisson":
             state = acc.compose_poisson_gaussian(
-                state, noise_multiplier=noise_multiplier,
-                sample_rate=sample_rate, count=num_steps
+                state, noise_multiplier=noise_multiplier, sample_rate=sample_rate, count=num_steps
             )
         elif sampling_method == "fixed_batch":
             state = acc.compose_sampled_gaussian(
-                state, noise_multiplier=noise_multiplier,
-                batch_size=batch_size, dataset_size=dataset_size, count=num_steps
+                state,
+                noise_multiplier=noise_multiplier,
+                batch_size=batch_size,
+                dataset_size=dataset_size,
+                count=num_steps,
             )
         elif sampling_method == "truncated_poisson":
             state = acc.compose_truncated_poisson_gaussian(
-                state, noise_multiplier=noise_multiplier,
-                sample_rate=sample_rate, truncated_batch_size=truncated_batch_size,
-                dataset_size=dataset_size, count=num_steps
+                state,
+                noise_multiplier=noise_multiplier,
+                sample_rate=sample_rate,
+                truncated_batch_size=truncated_batch_size,
+                dataset_size=dataset_size,
+                count=num_steps,
             )
 
         # Get advantage
@@ -378,9 +381,7 @@ def find_noise_multiplier_for_advantage(
         increasing=False,  # Higher noise → lower advantage
     )
 
-    result = calibrate_parameter(
-        evaluator, target, config, parameter_name="noise_multiplier"
-    )
+    result = calibrate_parameter(evaluator, target, config, parameter_name="noise_multiplier")
 
     return result.parameter_value
 
@@ -458,8 +459,7 @@ def create_dpsgd_beta_evaluator(
     elif sampling_method == "truncated_poisson":
         if sample_rate is None or dataset_size is None or truncated_batch_size is None:
             raise ValueError(
-                "sample_rate, dataset_size, and truncated_batch_size "
-                "required for truncated_poisson"
+                "sample_rate, dataset_size, and truncated_batch_size required for truncated_poisson"
             )
 
     def evaluator(noise_multiplier: float) -> PrivacyMetrics:
@@ -469,19 +469,24 @@ def create_dpsgd_beta_evaluator(
         # Compose based on sampling method
         if sampling_method == "poisson":
             state = acc.compose_poisson_gaussian(
-                state, noise_multiplier=noise_multiplier,
-                sample_rate=sample_rate, count=num_steps
+                state, noise_multiplier=noise_multiplier, sample_rate=sample_rate, count=num_steps
             )
         elif sampling_method == "fixed_batch":
             state = acc.compose_sampled_gaussian(
-                state, noise_multiplier=noise_multiplier,
-                batch_size=batch_size, dataset_size=dataset_size, count=num_steps
+                state,
+                noise_multiplier=noise_multiplier,
+                batch_size=batch_size,
+                dataset_size=dataset_size,
+                count=num_steps,
             )
         elif sampling_method == "truncated_poisson":
             state = acc.compose_truncated_poisson_gaussian(
-                state, noise_multiplier=noise_multiplier,
-                sample_rate=sample_rate, truncated_batch_size=truncated_batch_size,
-                dataset_size=dataset_size, count=num_steps
+                state,
+                noise_multiplier=noise_multiplier,
+                sample_rate=sample_rate,
+                truncated_batch_size=truncated_batch_size,
+                dataset_size=dataset_size,
+                count=num_steps,
             )
 
         # Get beta at target alpha
@@ -544,9 +549,7 @@ def find_noise_multiplier_for_err_rates(
         increasing=True,  # Higher noise → higher beta
     )
 
-    result = calibrate_parameter(
-        evaluator, target, config, parameter_name="noise_multiplier"
-    )
+    result = calibrate_parameter(evaluator, target, config, parameter_name="noise_multiplier")
 
     return result.parameter_value
 
@@ -586,26 +589,30 @@ def get_beta_for_dpsgd(
         if sample_rate is None:
             raise ValueError("sample_rate required for poisson sampling")
         state = acc.compose_poisson_gaussian(
-            state, noise_multiplier=noise_multiplier,
-            sample_rate=sample_rate, count=num_steps
+            state, noise_multiplier=noise_multiplier, sample_rate=sample_rate, count=num_steps
         )
     elif sampling_method == "fixed_batch":
         if batch_size is None or dataset_size is None:
             raise ValueError("batch_size and dataset_size required for fixed_batch")
         state = acc.compose_sampled_gaussian(
-            state, noise_multiplier=noise_multiplier,
-            batch_size=batch_size, dataset_size=dataset_size, count=num_steps
+            state,
+            noise_multiplier=noise_multiplier,
+            batch_size=batch_size,
+            dataset_size=dataset_size,
+            count=num_steps,
         )
     elif sampling_method == "truncated_poisson":
         if sample_rate is None or dataset_size is None or truncated_batch_size is None:
             raise ValueError(
-                "sample_rate, dataset_size, and truncated_batch_size "
-                "required for truncated_poisson"
+                "sample_rate, dataset_size, and truncated_batch_size required for truncated_poisson"
             )
         state = acc.compose_truncated_poisson_gaussian(
-            state, noise_multiplier=noise_multiplier,
-            sample_rate=sample_rate, truncated_batch_size=truncated_batch_size,
-            dataset_size=dataset_size, count=num_steps
+            state,
+            noise_multiplier=noise_multiplier,
+            sample_rate=sample_rate,
+            truncated_batch_size=truncated_batch_size,
+            dataset_size=dataset_size,
+            count=num_steps,
         )
 
     return acc.get_beta(state, alpha=alpha)

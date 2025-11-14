@@ -12,6 +12,7 @@ from opaque.clipping import (
 )
 from opaque.noise import add_gaussian_noise
 from opaque.sampling import PoissonSampler, TruncatedPoissonSampler
+
 # TEMPORARILY COMMENTED OUT - optimizers being refactored to functional API
 # from opaque.optimizers import (
 #     AdaptiveClipState,

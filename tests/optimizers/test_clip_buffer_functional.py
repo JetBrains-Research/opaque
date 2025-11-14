@@ -159,9 +159,7 @@ class TestGetAdaptiveClipNorm:
         state = clip_buffer.update(state, norms)
 
         # Should clamp to min
-        clip_norm = clip_buffer.get_adaptive_clip_norm(
-            state, clip_norm_min=0.5, clip_norm_max=10.0
-        )
+        clip_norm = clip_buffer.get_adaptive_clip_norm(state, clip_norm_min=0.5, clip_norm_max=10.0)
         assert clip_norm == 0.5
 
         # Very large norms
@@ -170,9 +168,7 @@ class TestGetAdaptiveClipNorm:
         state = clip_buffer.update(state, norms)
 
         # Should clamp to max
-        clip_norm = clip_buffer.get_adaptive_clip_norm(
-            state, clip_norm_min=0.1, clip_norm_max=10.0
-        )
+        clip_norm = clip_buffer.get_adaptive_clip_norm(state, clip_norm_min=0.1, clip_norm_max=10.0)
         assert clip_norm == 10.0
 
 
