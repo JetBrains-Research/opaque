@@ -1,7 +1,13 @@
-"""Standalone DP-SGD LoRA training with adaptive clipping for Qwen2.5.
+"""Realistic DP-SGD LoRA training with adaptive clipping for Qwen2.5-7B.
 
 Automatically detects and uses available device (CUDA > MPS > CPU).
-Uses AG News dataset with proper batching (batch_size=8, 32 total samples, seq_len=64).
+Uses AG News dataset with realistic settings optimized for 7B model:
+- Model: Qwen2.5-7B (7B parameter model)
+- Batch size: 2
+- Sequence length: 256 tokens
+- Training samples: 200
+- LoRA rank: 16 with attention layers (q/k/v/o_proj)
+- Expected runtime on H200: 5-10 minutes
 
 IMPORTANT - Adaptive Clipping Performance:
 - By default: use_adaptive_clipping=False (fast, fixed clip norm)
@@ -10,16 +16,16 @@ IMPORTANT - Adaptive Clipping Performance:
 - Adaptive clipping: must recreate clipped_grad each step (slow!)
 - This is a known limitation of PyTorch's vmap with changing parameters
 
-Expected timing (on Apple M-series):
+Expected timing (on H200 GPU):
 DEFAULT (use_adaptive_clipping=False):
-- Setup: ~60s (includes one-time clipped_grad creation)
-- First step: ~5-15s (first vmap compilation)
-- Subsequent steps: ~5-10s each (reuses same function!)
-- Total for 20 steps: ~3-5 minutes
+- Setup: ~60-90s (includes model loading and one-time clipped_grad creation)
+- First step: ~15-25s (first vmap compilation)
+- Subsequent steps: ~3-5s each (reuses same function!)
+- Total for ~1000 steps (10 epochs × ~100 batches): 5-10 minutes
 
 OPTIONAL (use_adaptive_clipping=True):
-- Each step: ~60s (recreates clipped_grad + recompilation)
-- Total for 20 steps: ~20 minutes
+- Each step: ~30-60s (recreates clipped_grad + recompilation)
+- Not recommended for this configuration
 """
 
 import time
@@ -77,10 +83,10 @@ def main():
 
     # Setup
     torch.manual_seed(42)
-    model_name = "Qwen/Qwen2.5-0.5B"
-    max_seq_len = 64  # Reduced for faster testing
-    batch_size = 8  # Batch size for training
-    num_train_samples = 32  # Total samples (reduced for faster testing)
+    model_name = "Qwen/Qwen2.5-7B"  # Larger 7B model
+    max_seq_len = 256  # Balanced sequence length
+    batch_size = 2  # Very small batch size for 7B model memory
+    num_train_samples = 200  # Reduced samples due to larger model
 
     # Load model config and modify dropout settings
     print("\n[1/7] Loading model config...")
@@ -136,9 +142,9 @@ def main():
     print("[3/7] Applying LoRA...")
     t0 = time.time()
     lora_config = LoraConfig(
-        r=8,  # LoRA rank
-        lora_alpha=16,  # LoRA scaling factor
-        target_modules=["q_proj", "v_proj"],  # Apply LoRA to attention layers
+        r=16,  # Moderate LoRA rank for memory efficiency
+        lora_alpha=32,  # LoRA scaling factor
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],  # Apply LoRA to attention layers only
         lora_dropout=0.0,  # No dropout for deterministic behavior
         bias="none",
         task_type="CAUSAL_LM",
@@ -226,8 +232,8 @@ def main():
     # Setup DP-SGD training with adaptive clipping
     print("[6/7] Setting up DP-SGD with adaptive clipping...")
     initial_clip_norm = 1.0
-    learning_rate = 0.001  # Lower LR for real data
-    num_epochs = 5
+    learning_rate = 0.00001  # Learning rate for smaller batch size
+    num_epochs = 10  # More epochs due to very small batch size
     noise_multiplier = 0.24
     target_clip_rate = 0.20
     use_adaptive_clipping = False  # Set to True for adaptive clipping (slow: ~1min/step)
@@ -280,7 +286,7 @@ def main():
             argnums=0,
             batch_argnums=(1,),
             l2_clip_norm=fixed_clip_norm,
-            microbatch_size=4,
+            microbatch_size=1,  # Microbatch size of 1 for 7B model
             keep_batch_dim=False,
             return_grad_norms=True,
             return_values=True,
@@ -339,7 +345,7 @@ def main():
                         argnums=0,
                         batch_argnums=(1,),
                         l2_clip_norm=current_clip_norm,
-                        microbatch_size=4,
+                        microbatch_size=1,  # Microbatch size of 1 for 7B model
                         keep_batch_dim=False,
                         return_grad_norms=True,
                         return_values=True,

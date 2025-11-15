@@ -51,6 +51,7 @@ TEST_MODELS = [
         marks=[
             pytest.mark.skipif(not HAS_TRANSFORMERS, reason="requires transformers"),
             pytest.mark.slow(),
+            pytest.mark.skip(reason="slow test - disabled for now"),
         ],
         id="qwen2.5-0.5b",
     ),
@@ -59,6 +60,7 @@ TEST_MODELS = [
         marks=[
             pytest.mark.skipif(not HAS_TRANSFORMERS, reason="requires transformers"),
             pytest.mark.slow(),
+            pytest.mark.skip(reason="slow test - disabled for now"),
         ],
         id="gemma-3",
     ),

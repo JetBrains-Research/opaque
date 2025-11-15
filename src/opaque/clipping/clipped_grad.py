@@ -3,50 +3,12 @@
 from collections.abc import Callable
 
 import torch
-from torch.func import grad as _torch_grad
+from torch.func import grad_and_value
 
 from opaque.clipping._helpers import normalize_fun_to_return_aux, normalize_to_tuple
 from opaque.clipping.clipped_fun import clipped_fun
 from opaque.clipping.types import AuxiliaryOutput, BoundedSensitivityCallable
 from opaque.utils.pytree import global_norm
-
-
-def _value_and_grad(fun: Callable, argnums: int | tuple[int, ...] = 0, has_aux: bool = False):
-    """Create a function that returns both value and gradient, mimicking jax.value_and_grad.
-
-    PyTorch's torch.func.grad returns (grad, aux) when has_aux=True,
-    but JAX's jax.value_and_grad returns ((value, aux), grad).
-    This helper provides JAX-compatible behavior.
-
-    Args:
-        fun: Function to differentiate. If has_aux=True, should return (value, aux).
-        argnums: Arguments to differentiate with respect to.
-        has_aux: Whether fun returns auxiliary data.
-
-    Returns:
-        A function that returns ((value, aux), grad) if has_aux=True,
-        or (value, grad) if has_aux=False.
-    """
-    grad_fn = _torch_grad(fun, argnums=argnums, has_aux=has_aux)
-
-    if has_aux:
-
-        def wrapper(*args, **kwargs):
-            # Call original function to get value and aux
-            value, aux = fun(*args, **kwargs)
-            # Get gradient (aux from grad is the same)
-            gradient, _ = grad_fn(*args, **kwargs)
-            # Return in JAX format: ((value, aux), grad)
-            return (value, aux), gradient
-
-    else:
-
-        def wrapper(*args, **kwargs):
-            value = fun(*args, **kwargs)
-            gradient = grad_fn(*args, **kwargs)
-            return value, gradient
-
-    return wrapper
 
 
 def _validate_static_args(argnums, batch_argnums, normalize_by):
@@ -190,11 +152,11 @@ def clipped_grad(
     _validate_static_args(argnums, batch_argnums, normalize_by)
     fun = normalize_fun_to_return_aux(fun, has_aux)
 
-    # Use our _value_and_grad helper to get JAX-compatible behavior
-    value_and_grad_fn = _value_and_grad(fun, argnums=argnums, has_aux=True)
+    # Use PyTorch's grad_and_value (returns (grad, value) or (grad, (value, aux)))
+    grad_and_value_fn = grad_and_value(fun, argnums=argnums, has_aux=True)
 
     def grad_fn(*args, **kwargs):
-        value_and_aux, grad = value_and_grad_fn(*args, **kwargs)
+        grad, value_and_aux = grad_and_value_fn(*args, **kwargs)
         result = pre_clipping_transform(grad)
         if has_aux or return_values or return_grad_norms:
             # Return a dict instead of AuxiliaryOutput to avoid vmap issues with None values

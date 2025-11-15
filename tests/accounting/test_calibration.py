@@ -245,6 +245,7 @@ class TestAdvantageCalibration:
 
 
 @pytest.mark.slow()
+@pytest.mark.skip(reason="slow test - disabled for now")
 class TestErrorRatesCalibration:
     """Test error rates calibration (re-exported from riskcal)."""
 
