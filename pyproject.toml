@@ -44,6 +44,9 @@ dependencies = [
 examples = [
   "matplotlib>=3.10.7",
   "jupyter>=1.0.0",
+  "transformers>=4.0.0",
+  "datasets>=2.0.0",
+  "peft>=0.7.0",
 ]
 
 [dependency-groups]
@@ -54,12 +57,6 @@ dev = [
   "ruff>=0.1.0",
   "hypothesis>=6.0.0", # Property-based testing
   "scipy>=1.11.0", # For statistical tests
-]
-huggingface = [
-  # HuggingFace ecosystem for LLM fine-tuning
-  "transformers>=4.0.0",
-  "datasets>=2.0.0",
-  "peft>=0.7.0",
 ]
 docs = [
   "mkdocs>=1.5.0",
@@ -99,7 +96,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-n=auto -v -m 'not slow'"
+addopts = "-n=auto -v -m ''"
 markers = [
   "slow: marks tests as slow (deselect with '-m \"not slow\"')",
   "gpu: marks tests that require GPU",
