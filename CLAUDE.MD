@@ -1,30 +1,32 @@
 # Opaque: Agent Briefing
 
 **Project**: PyTorch port of JAX-Privacy for DP-SGD LoRA fine-tuning
-**Status**: ✅ Stage 1 & 2 Complete → Ready for Stage 3 (Integration)
+**Status**: ✅ Stage 1-2 Complete → 🔄 Phase 1 (Production Hardening)
 **JAX-Privacy Reference**: `../jax_privacy/` (always available)
 
 ---
 
 ## Current State
 
-**Repository Phase**: ✅ Stage 1 COMPLETE - Full single-device API parity with JAX-Privacy
+**Repository Phase**: ✅ Stages 1-2 COMPLETE → 🔄 Phase 1 (Production Hardening)
 
 **Key Constraint**: Follow TDD workflow strictly - write tests before implementation
 
-**Stage 1 & 2 Achievements**:
+**Completed (Stages 1-2)**:
 
-- ✅ **Stage 1 COMPLETE**: Full clipping API (clip_pytree, clipped_fun, clipped_grad)
-- ✅ **Stage 2 COMPLETE**: Noise injection (add_gaussian_noise) and functional privacy accounting
-- **Modules**: Modularized into `utils/`, `clipping/`, `noise/`, `accounting/` packages
-- **API Parity**: All single-device parameters except microbatch_size and spmd_axis_name (tech debt documented below)
+- ✅ **Stage 1**: Full clipping API (clip_pytree, clipped_fun, clipped_grad)
+- ✅ **Stage 2**: Noise injection (add_gaussian_noise) and functional privacy accounting
+- **Modules**: Modularized into `utils/`, `clipping/`, `noise/`, `accounting/`, `optimizers/` packages
+- **API Parity**: All single-device parameters except microbatch_size and spmd_axis_name (tech debt - to be fixed in Phase 1)
 - **Tests**: 111 tests passing (55 accounting + 56 optimizer tests), parallel execution enabled
-- **Privacy Accounting** (functional API):
-  - Immutable state: `state = acc.create()`
-  - Composition: `acc.compose_poisson_gaussian()`, `acc.compose_truncated_poisson_gaussian()`, etc.
-  - Queries: `acc.get_epsilon()`, `acc.get_beta()`, `acc.get_advantage()`
-  - Calibration using riskcal.calibration.core primitives
-  - Three privacy metrics: (ε, δ)-DP, advantage (f-DP), (α, β) error rates
+- **Validation**: GPT-2 (124M params) integration test passes
+
+**In Progress (Phase 1 - Week 1)**:
+
+- 🔄 **Microbatching implementation** (fixes OOM on large batches)
+- 🔄 **Memory profiling tools** (estimate_memory, recommend_microbatch_size)
+- 📋 **Opacus cross-validation** (Weeks 3-4)
+- 📋 **Large model testing** (GPT-2-Large/XL, Weeks 5-6)
 
 ---
 
@@ -38,11 +40,16 @@ PyTorch implementation of differential privacy for LLM fine-tuning:
 
 ### Essential Context Files
 
-1. **Stage 1 Plan**: [docs/development/stage1-plan.md](docs/development/stage1-plan.md)
-2. **Stage 2 Plan**: [docs/development/stage2-plan.md](docs/development/stage2-plan.md)
-3. **TDD Workflow**: [docs/development/tdd-workflow.md](docs/development/tdd-workflow.md)
-4. **Design Decisions**: [docs/development/design-decisions.md](docs/development/design-decisions.md)
-5. **Full Roadmap**: [docs/development/roadmap.md](docs/development/roadmap.md)
+**Production Planning** (START HERE):
+1. **[RFC: Production Plan](docs/development/RFC_PRODUCTION_PLAN.md)** - Complete implementation plan, architecture decisions, timeline
+2. **[Status & Roadmap](docs/development/STATUS.md)** - Current status, stage history, next steps
+
+**Development Process**:
+3. **[TDD Workflow](docs/development/tdd-workflow.md)** - Test-driven development process
+4. **[Design Comparisons](docs/development/DESIGN_COMPARISON_EXAMPLES.md)** - API design examples (functional vs class-based)
+
+**Historical Reference** (for context only):
+- [docs/development/archive/](docs/development/archive/) - Archived planning docs (Stages 1-2 complete)
 
 ### Current Codebase
 ```
@@ -463,11 +470,15 @@ Items not included in Stage 1 & 2 (to be addressed in later stages):
 - ✅ Fixed `rescale_to_unit_norm` edge case
 - ✅ Removed examples/ folder (defer to Stage 5)
 
-**Implementation Status**: ✅ **Stage 1 & 2 COMPLETE (100%)**. All single-device features from JAX-Privacy main branch
+**Implementation Status**: ✅ **Stages 1-2 COMPLETE (100%)**. All single-device features from JAX-Privacy main branch
 implemented, tested, and validated. Functional privacy accounting API with riskcal-based calibration fully working.
 All 111 tests passing (55 accounting + 56 optimizer) with parallel execution (3.17x speedup).
-Tutorial notebook restructured to demonstrate TorchOpt flexibility and adaptive_clipping wrapper pattern.
-Ready to begin Stage 3 (Additional Optimizer Functionality if needed).
+
+🔄 **Phase 1 IN PROGRESS (Production Hardening)**: See [RFC: Production Plan](docs/development/RFC_PRODUCTION_PLAN.md) for:
+- Complete 4-phase roadmap (~16 weeks to v1.0.0)
+- Production readiness gaps (memory efficiency, Opacus validation, scale testing)
+- Functional architecture decision (following JAX-Privacy patterns)
+- Week-by-week implementation tasks
 
 ---
 
