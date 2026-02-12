@@ -7,7 +7,7 @@ from torch.func import grad_and_value
 
 from opaque.clipping._helpers import normalize_fun_to_return_aux, normalize_to_tuple
 from opaque.clipping.clipped_fun import clipped_fun
-from opaque.clipping.types import AuxiliaryOutput, BoundedSensitivityCallable
+from opaque.clipping.types import ClippedGradAux, FixedClipState
 from opaque.utils.pytree import global_norm
 
 
@@ -20,7 +20,9 @@ def _validate_static_args(argnums, batch_argnums, normalize_by):
     if not batch_argnums:
         raise ValueError("Batch argnums must not be empty.")
     if min(argnums + batch_argnums) < 0:
-        raise ValueError(f"argnums={argnums} and batch_argnums={batch_argnums} must be >= 0.")
+        raise ValueError(
+            f"argnums={argnums} and batch_argnums={batch_argnums} must be >= 0."
+        )
     shared_argnums = set(argnums) & set(batch_argnums)
     if shared_argnums:
         raise ValueError(
@@ -46,7 +48,7 @@ def clipped_grad(
     nan_safe: bool = True,
     dtype: torch.dtype | None = None,
     spmd_axis_name: str | None = None,
-) -> BoundedSensitivityCallable:
+) -> Callable:
     """Create a function to compute the sum of clipped gradients of fun.
 
     This function acts as a transformation similar to `torch.func.grad`, but with added
@@ -142,12 +144,16 @@ def clipped_grad(
             in PyTorch version (tech debt).
 
     Returns:
-        A new function `clipped_grad_fn` that computes the sum of clipped
-        per-example gradients of `fun`. The returned function returns `grad`
-        if return_values = return_grad_norms = has_aux = False. Otherwise, it
-        returns a tuple of (grad, AuxiliaryOutput), where AuxiliaryOutput is a
-        namedtuple with optional fields (values, grad_norms, aux) containing the
-        per-example values, gradient norms, and auxiliary data, respectively.
+        Tuple of (clipped_grad_fn, clip_state) where:
+        - clipped_grad_fn: A function that computes the sum of clipped per-example gradients.
+          Call signature: clipped_grads, new_state = clipped_grad_fn(..., state=clip_state)
+          If auxiliary outputs are requested, returns: (clipped_grads, grad_aux), new_state
+        - clip_state: Initial FixedClipState containing sensitivity information
+
+        The grad_aux output (when requested) is a ClippedGradAux named tuple with fields:
+            - loss_values: Per-example function values (if return_values=True), else None
+            - grad_norms: Per-example gradient norms (if return_grad_norms=True), else None
+            - user_aux: Per-example auxiliary data (if has_aux=True), else None
     """
     _validate_static_args(argnums, batch_argnums, normalize_by)
     fun = normalize_fun_to_return_aux(fun, has_aux)
@@ -171,7 +177,7 @@ def clipped_grad(
             return result, aux_dict
         return result
 
-    clipped_grad_fn = clipped_fun(
+    clipped_grad_fn, clip_state = clipped_fun(
         grad_fn,
         has_aux=has_aux or return_values or return_grad_norms,
         batch_argnums=batch_argnums,
@@ -185,27 +191,27 @@ def clipped_grad(
         spmd_axis_name=spmd_axis_name,
     )
 
+    # clipped_grad_fn is now a callable, clip_state is a FixedClipState
     # Wrap the result to convert dict to AuxiliaryOutput
     if not (has_aux or return_values or return_grad_norms):
-        # No aux, return directly
-        return clipped_grad_fn
-    else:
-        # Need to convert aux_dict to AuxiliaryOutput
-        def wrapper(*args, **kwargs):
-            grad, aux_dict = clipped_grad_fn(*args, **kwargs)
-            aux_output = AuxiliaryOutput(
-                values=aux_dict.get("values"),
-                grad_norms=aux_dict.get("grad_norms"),
-                aux=aux_dict.get("aux"),
-            )
-            return grad, aux_output
+        # No aux, return wrapped directly with state-passing signature
+        def grad_fn_wrapper(*args, state, **kwargs):
+            (result, returned_state) = clipped_grad_fn(*args, state=state, **kwargs)
+            return result, returned_state
 
-        # Return wrapped function with same properties
-        return BoundedSensitivityCallable(
-            wrapper,
-            clipped_grad_fn.l2_norm_bound,
-            clipped_grad_fn.has_aux,
-        )
+        return grad_fn_wrapper, clip_state
+    else:
+        # Need to convert aux_dict to ClippedGradAux
+        def grad_fn_wrapper(*args, state, **kwargs):
+            (clipped_grads, aux_dict), returned_state = clipped_grad_fn(*args, state=state, **kwargs)
+            grad_aux = ClippedGradAux(
+                loss_values=aux_dict.get("values"),
+                grad_norms=aux_dict.get("grad_norms"),
+                user_aux=aux_dict.get("aux"),
+            )
+            return (clipped_grads, grad_aux), returned_state
+
+        return grad_fn_wrapper, clip_state
 
 
 __all__ = ["clipped_grad"]

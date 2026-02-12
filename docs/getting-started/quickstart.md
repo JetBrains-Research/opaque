@@ -15,12 +15,13 @@ uv sync
 
 ## Your First DP-SGD Model
 
-Let's train a simple linear regression model with differential privacy. This example demonstrates all core Opaque
-components:
+Let's train a simple linear regression model with differential privacy. This example demonstrates Opaque's core
+training components:
 
 1. **Gradient clipping** for bounded sensitivity
 2. **Noise injection** for privacy
-3. **Privacy accounting** to track privacy budget
+
+**Note**: Privacy accounting is handled externally (use `dp_accounting` or `jbr-fed-accounting`)
 
 ### Complete Example
 

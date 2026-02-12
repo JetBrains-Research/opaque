@@ -97,28 +97,16 @@ After analyzing JAX-Privacy's design (the gold standard for functional DP) and c
 5. ✅ **Less boilerplate**: No class hierarchies, just write functions
 6. ✅ **Research flexibility**: Quick iteration on new mechanisms
 
-### 2.2 JAX-Privacy Pattern Analysis
+### 2.2 Opaque Pattern: Plain Functions with Attributes
 
-**Core Pattern**: `BoundedSensitivityCallable` dataclass wraps functions with sensitivity tracking
+**Core Pattern**: Higher-order functions return plain callables with metadata attributes
 
-```python
-@dataclass(frozen=True)
-class BoundedSensitivityCallable:
-    """Lightweight wrapper tracking sensitivity of a function."""
-    fun: Callable[..., Any]
-    l2_norm_bound: float
-    has_aux: bool
+**Design Decision**: After analysis, we **simplified** JAX-Privacy's `BoundedSensitivityCallable` wrapper:
+- **Sensitivity is a privacy accounting concern**, not a training concern
+- **Neighboring relations** (ADD_OR_REMOVE, REPLACE_ONE) belong in accounting layer
+- **Plain functions with attributes** are simpler and equally composable
 
-    def sensitivity(self, neighboring: str) -> float:
-        """Return sensitivity based on neighboring relation."""
-        multiplier = 2.0 if neighboring == "replace_one" else 1.0
-        return self.l2_norm_bound * multiplier
-
-    def __call__(self, *args, **kwargs):
-        return self.fun(*args, **kwargs)
-```
-
-**Higher-Order Functions**: Functions return wrapped callables
+**Implementation**:
 
 ```python
 def clipped_grad(
@@ -127,63 +115,83 @@ def clipped_grad(
     l2_clip_norm: float,
     batch_argnums: int = 1,
     ...
-) -> BoundedSensitivityCallable:
+) -> Callable:
     """Create a function that computes clipped gradients."""
 
     def grad_fn(*args, **kwargs):
         # ... compute, clip, sum ...
         return clipped_grads, aux
 
-    norm_bound = 1.0 if rescale_to_unit_norm else l2_clip_norm
-    return BoundedSensitivityCallable(grad_fn, norm_bound, has_aux)
+    # Store clip_norm as function attribute (not a method)
+    grad_fn.clip_norm = 1.0 if rescale_to_unit_norm else l2_clip_norm
+
+    return grad_fn
 ```
 
 **Usage**:
 
 ```python
-# Create wrapped function
-grad_fn = jax_privacy.clipped_grad(loss_fn, l2_clip_norm=1.0)
+# Create clipping function
+grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0)
 
-# Use in training
-grads = grad_fn(params, batch)
+# Access clip norm as simple attribute
+print(grad_fn.clip_norm)  # 1.0
 
-# Access sensitivity for noise calibration
-sensitivity = grad_fn.sensitivity("replace_one")
-noise_fn = gaussian_privatizer(stddev=noise_multiplier * sensitivity)
+# Create noise function (user does multiplication)
+noise_fn = gaussian(stddev=1.1 * grad_fn.clip_norm)
+
+# Training loop
+for batch in dataloader:
+    grads = grad_fn(params, batch)
+    noisy = noise_fn(grads)
+    params = optimizer.step(params, noisy)
 ```
 
 **Key Insights**:
-- Only **noise addition is stateful** (for PRNG key management)
-- Everything else is **pure functions**
-- Composition is **built-in** (no custom API needed)
+- **Plain functions** - No wrapper classes needed
+- **Simple attributes** - Use Python's function attributes for metadata
+- **Explicit math** - User does `stddev = noise_mult * clip_norm` (clearer)
+- **Full composability** - Easy to swap any component
+- **Research flexibility** - No abstraction barriers for experimenting
 
-### 2.3 Comparison: Current vs Proposed
+### 2.3 Comparison: Old vs New
 
-**Current API** (flat functional):
+**Old API** (PoC - flat functional):
 
 ```python
-# Current: Direct calls, no composition
+# Old: Direct calls, no composition
 grads = clipped_grad(loss_fn, l2_clip_norm=1.0)(params, batch)
-noisy = add_gaussian_noise(grads, noise_multiplier=1.1, clip_norm=1.0)
+noisy = add_gaussian_noise(grads, stddev=1.1)
 ```
 
-**Proposed API** (higher-order functional):
+**New API** (Production - higher-order functional):
 
 ```python
-# Proposed: Configure once, compose naturally
+# New: Configure once, compose naturally
 grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0)
-noise_fn = gaussian(noise_multiplier=1.1, sensitivity=grad_fn.sensitivity())
+noise_fn = gaussian(stddev=1.1 * grad_fn.clip_norm)
 
 # Training loop
-grads = grad_fn(params, batch)
-noisy = noise_fn(grads)
+for batch in dataloader:
+    grads = grad_fn(params, batch)
+    noisy = noise_fn(grads)
+    params = optimizer.step(params, noisy)
 ```
 
 **Benefits**:
-- Configure once, use many times
-- Sensitivity tracked automatically
-- Natural composition: `noise_fn(grad_fn(...))`
-- Aligns with jbr-fed-accounting: `gaussian(nm).poisson(rate).repeat(count)`
+- ✅ **Configure once, use many times** - Define components outside loop
+- ✅ **Natural composition** - `noise_fn(grad_fn(...))` reads like math
+- ✅ **Simple & explicit** - No hidden complexity, clear data flow
+- ✅ **Research flexibility** - Easy to swap clipping/noise mechanisms:
+  ```python
+  # Swap clipping
+  grad_fn = per_layer_clipped_grad(loss_fn, clip_norms={'layer1': 1.0, 'layer2': 0.5})
+
+  # Swap noise
+  noise_fn = correlated_gaussian(stddev=1.1, rank=10)  # Matrix factorization
+  noise_fn = clipped_gaussian(stddev=1.1, clip_at=3.0)  # Truncated noise
+  noise_fn = laplace(scale=1.1)  # Pure DP
+  ```
 
 ---
 
@@ -433,42 +441,40 @@ See DESIGN_COMPARISON_EXAMPLES.md for detailed code examples. Key functional pat
 
 ---
 
-### Phase 2: Functional API Refactoring (3-4 weeks)
+### Phase 2: Functional API Refactoring (2-3 weeks)
 
-**Goal**: Adopt functional architecture following JAX-Privacy patterns
+**Goal**: Simplify to plain functions with attributes (no wrapper classes)
 
-**Week 1: BoundedSensitivityCallable**
-- [ ] Add `BoundedSensitivityCallable` dataclass to `clipping/types.py`
-- [ ] Update `clipped_grad()` to return wrapped function
-- [ ] Add `sensitivity()` method with neighboring relation support
-- [ ] Tests: Verify backward compatibility
+**Week 1: Simplify Clipping API**
+- [ ] Remove `BoundedSensitivityCallable` from `clipping/types.py`
+- [ ] Update `clipped_fun()` to return plain function with `.clip_norm` attribute
+- [ ] Update `clipped_grad()` to return plain function with `.clip_norm` attribute
+- [ ] Remove `.sensitivity()` method (not needed for training)
+- [ ] Update tests: Replace `.sensitivity()` with `.clip_norm`
 
 **Week 2: Higher-Order Noise Functions**
-- [ ] Implement `gaussian()` returning function (stateless)
-- [ ] Implement `gaussian_stateful()` with explicit state
-- [ ] Implement `laplace()` for pure DP
-- [ ] Tests: Equivalence with current `add_gaussian_noise()`
+- [ ] Implement `gaussian(stddev)` returning stateless noise function
+- [ ] Implement `gaussian_stateful(stddev, seed)` with explicit state
+- [ ] Deprecate `add_gaussian_noise()` with migration warnings
+- [ ] Update tests for new noise API
+- [ ] Add composition examples (grad_fn + noise_fn)
 
-**Week 3: Compositional Sampling**
-- [ ] Implement `poisson()` returning sampler function
-- [ ] Implement `truncated_poisson()` for fixed max batch size
-- [ ] Integration tests with clipping + noise
-- [ ] Update tutorial notebook
-
-**Week 4: API Migration**
-- [ ] Update all examples to use new API
-- [ ] Deprecate old API with warnings
-- [ ] Update documentation
-- [ ] Create migration guide
+**Week 3: Documentation & Migration**
+- [ ] Update tutorial notebook with new API
+- [ ] Create migration guide (old → new API)
+- [ ] Update all integration tests
+- [ ] Update README examples
+- [ ] Document research flexibility (swappable components)
 
 **Success Criteria**:
-- ✅ New API matches JAX-Privacy patterns
-- ✅ All existing tests pass with new API
-- ✅ Tutorial demonstrates compositional usage
-- ✅ Migration guide shows old→new mapping
+- ✅ Plain functions with simple `.clip_norm` attribute
+- ✅ Natural composition: `noise_fn(grad_fn(...))`
+- ✅ All tests pass with new API
+- ✅ Migration guide complete
+- ✅ ~100 lines of wrapper code removed
 
 **Deliverables**:
-- Functional API implementation
+- Simplified functional API (plain functions)
 - Updated tests and examples
 - Migration guide
 - Tutorial notebook

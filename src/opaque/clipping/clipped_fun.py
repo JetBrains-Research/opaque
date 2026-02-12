@@ -1,11 +1,13 @@
 """Per-example clipping and summing for arbitrary functions."""
 
+from collections.abc import Callable
+
 import torch
 from torch.func import vmap as _vmap
 
 from opaque.clipping._helpers import normalize_to_tuple
 from opaque.clipping.pytree import clip_pytree
-from opaque.clipping.types import BoundedSensitivityCallable
+from opaque.clipping.types import FixedClipState
 from opaque.utils.pytree import tree_map
 
 
@@ -38,7 +40,7 @@ def clipped_fun(
     nan_safe: bool = True,
     dtype: torch.dtype | None = None,
     spmd_axis_name: str | None = None,
-):
+) -> Callable:
     """Transform a function to clip its output and sum across a batch.
 
     This is the primary API for per-example clipping in DP-SGD. It wraps a function
@@ -184,13 +186,22 @@ def clipped_fun(
     if keep_batch_dim:
         clipped_fn = _with_extra_batch_axis(clipped_fn, batch_argnums)
 
-    # Calculate sensitivity bound
-    norm_bound = (1.0 if rescale_to_unit_norm else l2_clip_norm) / normalize_by
+    # Calculate L2 sensitivity bound
+    l2_norm_bound = (1.0 if rescale_to_unit_norm else l2_clip_norm) / normalize_by
 
-    # Determine if output has auxiliary data
-    output_has_aux = has_aux or return_norms
+    # Create fixed clip state
+    clip_state = FixedClipState(
+        l2_norm_bound=l2_norm_bound,
+        rescale_to_unit_norm=rescale_to_unit_norm,
+    )
 
-    return BoundedSensitivityCallable(clipped_fn, norm_bound, output_has_aux)
+    # Wrap function to accept and return state
+    def stateful_clipped_fn(*args, state, **kwargs):
+        result = clipped_fn(*args, **kwargs)
+        return result, state  # State unchanged for fixed clipping
+
+    # Return wrapped function with state
+    return stateful_clipped_fn, clip_state
 
 
 __all__ = ["clipped_fun"]

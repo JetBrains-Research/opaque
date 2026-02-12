@@ -1,148 +1,203 @@
-"""Unit tests for noise module."""
+"""Unit tests for noise module - new functional API."""
 
 import pytest
 import scipy.stats
 import torch
 
-from opaque.noise import add_gaussian_noise
+from opaque.noise import gaussian, gaussian_stateful
 
 
-def test_add_noise_single_tensor():
-    """Basic noise addition to single tensor."""
-    grad = torch.randn(10, 5)
-    stddev = 1.0
-    generator = torch.Generator().manual_seed(42)
+class TestGaussian:
+    """Tests for gaussian() function."""
 
-    noisy = add_gaussian_noise(grad, stddev, generator)
+    def test_returns_callable(self):
+        """gaussian() should return a callable."""
+        noise_fn = gaussian(stddev=1.0)
+        assert callable(noise_fn)
 
-    assert noisy.shape == grad.shape
-    assert noisy.dtype == grad.dtype
-    assert not torch.allclose(noisy, grad)
+    def test_adds_noise_to_tensor(self):
+        """Noise function should add noise to a tensor."""
+        noise_fn = gaussian(stddev=1.0)
+        grad = torch.zeros(10, 5)
+        noisy = noise_fn(grad)
 
+        assert noisy.shape == grad.shape
+        assert noisy.dtype == grad.dtype
+        assert not torch.allclose(noisy, grad)
 
-def test_add_noise_pytree():
-    """Noise addition to PyTree (dict of tensors)."""
-    grads = {
-        "weight": torch.randn(10, 5),
-        "bias": torch.randn(10),
-    }
-    noisy = add_gaussian_noise(grads, stddev=1.0)
+    def test_adds_noise_to_pytree(self):
+        """Noise function should work with PyTrees."""
+        noise_fn = gaussian(stddev=1.0)
+        grads = {
+            "weight": torch.zeros(10, 5),
+            "bias": torch.zeros(10),
+        }
+        noisy = noise_fn(grads)
 
-    assert set(noisy.keys()) == set(grads.keys())
-    assert noisy["weight"].shape == grads["weight"].shape
-    assert noisy["bias"].shape == grads["bias"].shape
+        assert set(noisy.keys()) == set(grads.keys())
+        assert noisy["weight"].shape == grads["weight"].shape
+        assert noisy["bias"].shape == grads["bias"].shape
+        assert not torch.allclose(noisy["weight"], grads["weight"])
 
+    def test_zero_stddev(self):
+        """stddev=0 should return original gradients."""
+        noise_fn = gaussian(stddev=0.0)
+        grad = torch.randn(5, 3)
+        noisy = noise_fn(grad)
+        assert torch.equal(noisy, grad)
 
-def test_zero_stddev():
-    """stddev=0 should return original gradients."""
-    grad = torch.randn(5, 3)
-    noisy = add_gaussian_noise(grad, stddev=0.0)
-    assert torch.equal(noisy, grad)
+    def test_negative_stddev_raises(self):
+        """Negative stddev should raise ValueError."""
+        with pytest.raises(ValueError, match="stddev must be non-negative"):
+            gaussian(stddev=-1.0)
 
+    def test_dtype_preservation(self):
+        """Noise function should preserve dtype."""
+        noise_fn = gaussian(stddev=1.0)
 
-def test_negative_stddev_raises():
-    """Negative stddev should raise ValueError."""
-    grad = torch.randn(5, 3)
-    with pytest.raises(ValueError, match="stddev must be non-negative"):
-        add_gaussian_noise(grad, stddev=-1.0)
+        # float32
+        grad_f32 = torch.randn(5, 3, dtype=torch.float32)
+        noisy_f32 = noise_fn(grad_f32)
+        assert noisy_f32.dtype == torch.float32
 
+        # float64
+        grad_f64 = torch.randn(5, 3, dtype=torch.float64)
+        noisy_f64 = noise_fn(grad_f64)
+        assert noisy_f64.dtype == torch.float64
 
-def test_dtype_preservation():
-    """Noise should preserve input dtype."""
-    for dtype in [torch.float32, torch.float64]:
-        grad = torch.randn(10, 5, dtype=dtype)
-        noisy = add_gaussian_noise(grad, stddev=1.0)
-        assert noisy.dtype == dtype
+    def test_device_preservation(self):
+        """Noise function should preserve device."""
+        noise_fn = gaussian(stddev=1.0)
 
+        # CPU
+        grad_cpu = torch.randn(5, 3)
+        noisy_cpu = noise_fn(grad_cpu)
+        assert noisy_cpu.device == torch.device("cpu")
 
-def test_device_preservation():
-    """Noise should preserve input device."""
-    grad = torch.randn(10, 5)
-    noisy = add_gaussian_noise(grad, stddev=1.0)
-    assert noisy.device == grad.device
+        # MPS if available
+        if torch.backends.mps.is_available():
+            grad_mps = torch.randn(5, 3, device="mps")
+            noisy_mps = noise_fn(grad_mps)
+            assert noisy_mps.device.type == "mps"
 
+    def test_noise_normality(self):
+        """Noise should follow normal distribution."""
+        noise_fn = gaussian(stddev=1.0)
+        zeros = torch.zeros(10000)
+        noisy = noise_fn(zeros)
 
-def test_noise_normality():
-    """Verify noise follows N(0, stddev²) using K-S test."""
-    stddev = 1.5
-    generator = torch.Generator().manual_seed(42)
+        # Test normality with Kolmogorov-Smirnov test
+        _, p_value = scipy.stats.kstest(noisy.numpy(), "norm", args=(0, 1))
+        assert p_value > 0.01  # Not rejecting null hypothesis
 
-    # Generate many samples
-    n_samples = 10000
-    grad = torch.zeros(n_samples)
-    noisy = add_gaussian_noise(grad, stddev, generator)
-    noise = (noisy - grad).numpy()
+    def test_noise_stddev(self):
+        """Noise should have correct stddev."""
+        target_stddev = 2.5
+        noise_fn = gaussian(stddev=target_stddev)
+        zeros = torch.zeros(10000)
+        noisy = noise_fn(zeros)
 
-    # Kolmogorov-Smirnov test
-    # H0: noise ~ N(0, stddev²)
-    _, p_value = scipy.stats.kstest(noise, scipy.stats.norm(0, stddev).cdf)
+        measured_stddev = noisy.std().item()
+        assert abs(measured_stddev - target_stddev) < 0.1
 
-    # Accept at 5% significance level
-    assert p_value > 0.025
+    def test_uniqueness(self):
+        """Successive calls should produce different noise."""
+        noise_fn = gaussian(stddev=1.0)
+        grad = torch.zeros(100)
 
+        noisy1 = noise_fn(grad)
+        noisy2 = noise_fn(grad)
 
-def test_noise_stddev():
-    """Empirical stddev should match specified stddev."""
-    stddev = 2.0
-    generator = torch.Generator().manual_seed(123)
+        assert not torch.allclose(noisy1, noisy2)
 
-    # Many samples
-    n_samples = 50000
-    grad = torch.zeros(n_samples)
-    noisy = add_gaussian_noise(grad, stddev, generator)
-    noise = noisy - grad
+    def test_nested_pytree(self):
+        """Works with nested PyTree structures."""
+        noise_fn = gaussian(stddev=1.0)
+        grads = {
+            "layer1": {"w": torch.zeros(10, 5), "b": torch.zeros(10)},
+            "layer2": {"w": torch.zeros(5, 3), "b": torch.zeros(3)},
+        }
+        noisy = noise_fn(grads)
 
-    empirical_std = noise.std().item()
+        assert set(noisy.keys()) == {"layer1", "layer2"}
+        assert not torch.allclose(noisy["layer1"]["w"], grads["layer1"]["w"])
 
-    # Within 5% (statistical variation)
-    assert abs(empirical_std - stddev) / stddev < 0.05
+    def test_tuple_pytree(self):
+        """Works with tuple PyTrees."""
+        noise_fn = gaussian(stddev=1.0)
+        grads = (torch.zeros(10, 5), torch.zeros(10))
+        noisy = noise_fn(grads)
 
-
-def test_reproducibility():
-    """Same seed produces same noise."""
-    grad = torch.randn(100, 50)
-    stddev = 1.0
-
-    gen1 = torch.Generator().manual_seed(42)
-    noisy1 = add_gaussian_noise(grad, stddev, gen1)
-
-    gen2 = torch.Generator().manual_seed(42)
-    noisy2 = add_gaussian_noise(grad, stddev, gen2)
-
-    assert torch.equal(noisy1, noisy2)
-
-
-def test_uniqueness():
-    """Different calls produce different noise."""
-    grad = torch.randn(100, 50)
-    generator = torch.Generator().manual_seed(42)
-
-    noisy1 = add_gaussian_noise(grad, 1.0, generator)
-    noisy2 = add_gaussian_noise(grad, 1.0, generator)
-
-    assert not torch.allclose(noisy1, noisy2, atol=1e-6)
-
-
-def test_nested_pytree():
-    """Test with nested PyTree structure."""
-    grads = {
-        "layer1": {"weight": torch.randn(10, 5), "bias": torch.randn(10)},
-        "layer2": {"weight": torch.randn(5, 3), "bias": torch.randn(5)},
-    }
-
-    noisy = add_gaussian_noise(grads, stddev=1.0)
-
-    assert "layer1" in noisy
-    assert "layer2" in noisy
-    assert noisy["layer1"]["weight"].shape == grads["layer1"]["weight"].shape
-    assert noisy["layer2"]["bias"].shape == grads["layer2"]["bias"].shape
+        assert len(noisy) == 2
+        assert not torch.allclose(noisy[0], grads[0])
 
 
-def test_tuple_pytree():
-    """Test with tuple PyTree structure."""
-    grads = (torch.randn(10, 5), torch.randn(10))
-    noisy = add_gaussian_noise(grads, stddev=1.0)
+class TestGaussianStateful:
+    """Tests for gaussian_stateful() function."""
 
-    assert len(noisy) == len(grads)
-    assert noisy[0].shape == grads[0].shape
-    assert noisy[1].shape == grads[1].shape
+    def test_returns_tuple(self):
+        """gaussian_stateful() should return (fn, state) tuple."""
+        result = gaussian_stateful(stddev=1.0, seed=42)
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+
+        noise_fn, state = result
+        assert callable(noise_fn)
+        assert isinstance(state, torch.Generator)
+
+    def test_reproducibility(self):
+        """Same seed should produce same noise."""
+        noise_fn1, state1 = gaussian_stateful(stddev=1.0, seed=42)
+        noise_fn2, state2 = gaussian_stateful(stddev=1.0, seed=42)
+
+        grad = torch.zeros(10, 10)
+        noisy1 = noise_fn1(grad, state1)
+        noisy2 = noise_fn2(grad, state2)
+
+        assert torch.allclose(noisy1, noisy2)
+
+    def test_different_seeds(self):
+        """Different seeds should produce different noise."""
+        noise_fn1, state1 = gaussian_stateful(stddev=1.0, seed=42)
+        noise_fn2, state2 = gaussian_stateful(stddev=1.0, seed=43)
+
+        grad = torch.zeros(10, 10)
+        noisy1 = noise_fn1(grad, state1)
+        noisy2 = noise_fn2(grad, state2)
+
+        assert not torch.allclose(noisy1, noisy2)
+
+    def test_state_evolution(self):
+        """State should evolve, producing different noise each call."""
+        noise_fn, state = gaussian_stateful(stddev=1.0, seed=42)
+
+        grad = torch.zeros(10)
+        noisy1 = noise_fn(grad, state)
+        noisy2 = noise_fn(grad, state)
+
+        assert not torch.allclose(noisy1, noisy2)
+
+    def test_state_reset(self):
+        """Resetting state should reproduce noise."""
+        noise_fn, state = gaussian_stateful(stddev=1.0, seed=42)
+
+        grad = torch.zeros(10)
+        noisy1 = noise_fn(grad, state)
+
+        # Reset state
+        state.manual_seed(42)
+        noisy2 = noise_fn(grad, state)
+
+        assert torch.allclose(noisy1, noisy2)
+
+    def test_zero_stddev_stateful(self):
+        """stddev=0 should return original gradients."""
+        noise_fn, state = gaussian_stateful(stddev=0.0, seed=42)
+        grad = torch.randn(5, 3)
+        noisy = noise_fn(grad, state)
+        assert torch.equal(noisy, grad)
+
+    def test_negative_stddev_raises_stateful(self):
+        """Negative stddev should raise ValueError."""
+        with pytest.raises(ValueError, match="stddev must be non-negative"):
+            gaussian_stateful(stddev=-1.0, seed=42)

@@ -8,11 +8,16 @@ Note: Privacy accounting is provided by jbr-fed-accounting (external library).
 
 from opaque import sampling
 from opaque.clipping import (
+    AdaptiveClipState,
+    ClipState,
+    FixedClipState,
+    NeighboringRelation,
+    adaptive_clipped_grad,
     clip_pytree,
     clipped_fun,
     clipped_grad,
 )
-from opaque.noise import add_gaussian_noise
+from opaque.noise import gaussian, gaussian_stateful
 from opaque.sampling import PoissonSampler, TruncatedPoissonSampler
 
 # TEMPORARILY COMMENTED OUT - optimizers being refactored to functional API
@@ -32,20 +37,18 @@ __all__ = [
     "clip_pytree",
     "clipped_fun",
     "clipped_grad",
+    "adaptive_clipped_grad",
+    "ClipState",
+    "FixedClipState",
+    "AdaptiveClipState",
+    "NeighboringRelation",
     # Sampling
     "sampling",
     "PoissonSampler",
     "TruncatedPoissonSampler",
     # Noise
-    "add_gaussian_noise",
-    # Optimizers (temporarily disabled during refactor)
-    # "DPOptimizerState",
-    # "AdaptiveClipState",
-    # "make_dp_optimizer",
-    # "dp_sgd",
-    # "dp_adam",
-    # "dp_adamw",
-    # "dp_adam_ac",
+    "gaussian",
+    "gaussian_stateful",
     # Utils
     "make_functional",
 ]

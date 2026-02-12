@@ -24,7 +24,7 @@ Bring production-quality differential privacy to PyTorch's LLM fine-tuning ecosy
 - **PyTorch Native**: Built on `torch.func` (functional transformations)
 - **Zero Surprises**: Fail-fast error handling for security-critical DP training
 
-**Status**: 🎉 Stage 1 & 2 Complete — DP-SGD ready with clipping, noise injection, and privacy accounting!
+**Status**: 🎉 Stage 1 & 2 Complete — DP-SGD ready with functional clipping and noise injection!
 
 ---
 
@@ -46,70 +46,31 @@ uv sync
 
 ```python
 import torch
-import torch.nn as nn
-import opaque.accounting as acc
-from opaque import (
-    make_functional,
-    clipped_grad,
-    add_gaussian_noise,
-)
+from opaque import clipped_grad, gaussian
 
-# 1. Define model and convert to functional
-model = nn.Linear(10, 1)
-fmodel, params = make_functional(model)
+# 1. Define your loss function
+def loss_fn(params, x, y):
+    predictions = x @ params
+    return ((predictions - y) ** 2).sum()
 
-# 2. Define per-example loss
-def loss_fn(params, example):
-    x, y = example
-    pred = fmodel(params, x)
-    return ((pred - y) ** 2).mean()
+# 2. Configure DP-SGD components (once, outside loop)
+grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=1)
+noise_fn = gaussian(stddev=1.1 * grad_fn.clip_norm)
 
-# 3. Calibrate noise for target privacy
-sample_rate = 0.01  # batch_size / dataset_size
-num_steps = 1000
+# 3. Training loop - clean functional composition!
+params = torch.randn(10, requires_grad=False)
 
-noise_multiplier = acc.find_noise_multiplier_for_epsilon_delta(
-  epsilon=3.0,
-  delta=1e-5,
-  sample_rate=sample_rate,
-  num_steps=num_steps,
-)
-
-# 4. Create clipped gradient function
-clip_norm = 1.0
-clipped_grad_fn = clipped_grad(
-    loss_fn,
-    argnums=0,
-    batch_argnums=1,
-    l2_clip_norm=clip_norm,
-)
-
-# 5. Training loop
-privacy_state = acc.create()
-
-for step in range(num_steps):
+for batch_x, batch_y in dataloader:
     # Compute clipped gradients
-    grads = clipped_grad_fn(params, (X_batch, y_batch))
+    grads = grad_fn(params, batch_x, batch_y)
 
-    # Add calibrated noise
-    noisy_grads = add_gaussian_noise(
-        grads, stddev=noise_multiplier * clip_norm
-    )
+    # Add noise - natural composition!
+    noisy_grads = noise_fn(grads)
 
     # Update parameters
-    params = tuple(p - lr * g for p, g in zip(params, noisy_grads))
+    params = params - learning_rate * noisy_grads
 
-    # Track privacy (compose one step)
-    privacy_state = acc.compose_poisson_gaussian(
-      privacy_state,
-      noise_multiplier=noise_multiplier,
-      sample_rate=sample_rate,
-      count=1,
-    )
-
-# Get final privacy
-epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
-print(f"Privacy: (ε={epsilon:.2f}, δ=1e-5)")  # Should be ≈ 3.0
+# Privacy accounting handled externally (dp_accounting or jbr-fed-accounting)
 ```
 
 **See**: [Tutorial 02](docs/tutorials/02_differential_privacy_noise_and_accounting.ipynb) for complete walkthrough
@@ -158,35 +119,31 @@ Differential privacy (DP) provides mathematical guarantees that a model doesn't 
   - `clip_pytree()` - Low-level PyTree clipping
   - `clipped_fun()` - Clip and sum function outputs (primary API)
   - `clipped_grad()` - High-level gradient clipping
-  - `BoundedSensitivityCallable` - Wrapper with sensitivity tracking
+  - Plain functions with `.clip_norm` attribute (no wrapper classes)
 - [x] Numerical validation against JAX-Privacy main (all tests pass within 1e-5)
 - [x] Full API parity with JAX-Privacy main branch (single-device features)
 
 **Deliverable**: ✅ Complete functional API matching JAX-Privacy
 
-### ✅ Stage 2: Noise Injection & Privacy Accounting (Complete!)
+### ✅ Stage 2: Noise Injection & Optimizers (Complete!)
 
 **Timeline**: Completed 2025-11-14 | [Detailed Plan](docs/development/stage2-plan.md)
 
-- [x] `opaque.noise` - Gaussian noise generation
-  - `add_gaussian_noise()` - Stateless functional API
-  - Reproducibility with `torch.Generator`
-  - PyTree support
-- [x] `opaque.accounting` - Functional privacy accounting
-  - Immutable state API: `create()`, `compose_*()`, `get_*()`
-  - Composition: `compose_poisson_gaussian()`, `compose_truncated_poisson_gaussian()`, etc.
-  - Privacy queries: `get_epsilon()`, `get_beta()`, `get_advantage()`
-  - Three privacy metrics: (ε, δ)-DP, f-DP advantage, (α, β) error rates
-  - Calibration using riskcal: `find_noise_multiplier_for_epsilon_delta()`, etc.
+- [x] `opaque.noise` - Higher-order noise functions (NEW API!)
+  - `gaussian(stddev)` - Stateless noise function
+  - `gaussian_stateful(stddev, seed)` - Reproducible noise with explicit state
+  - Clean functional composition: `noise_fn(grad_fn(...))`
 - [x] `opaque.sampling` - Poisson sampling mechanisms
   - `PoissonSampler` - Standard Poisson sampling
   - `TruncatedPoissonSampler` - Bounded batch sizes
 - [x] `opaque.optimizers` - DP optimizer wrappers
   - `adaptive_clipping()` - Adaptive clipping wrapper for TorchOpt optimizers
-- [x] 111 tests passing (55 accounting + 56 optimizer tests)
+- [x] 218 tests passing (all core functionality)
 - [x] Numerical equivalence with JAX-Privacy confirmed
 
-**Deliverable**: ✅ Complete DP-SGD implementation with functional privacy accounting
+**Note**: Privacy accounting is now external (use `dp_accounting` or `jbr-fed-accounting`)
+
+**Deliverable**: ✅ Complete DP-SGD training implementation with clean functional API
 
 ### Stage 3: Integration & End-to-End (Next)
 
