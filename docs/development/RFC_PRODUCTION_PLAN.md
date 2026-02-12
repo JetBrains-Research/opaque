@@ -398,19 +398,20 @@ See DESIGN_COMPARISON_EXAMPLES.md for detailed code examples. Key functional pat
 
 ## 5. Implementation Plan
 
-### Phase 1: Production Hardening (4-6 weeks) 🎯 **CRITICAL**
+### Phase 1: Memory & Core Production (6-8 weeks) 🎯 **CRITICAL**
 
 **Goal**: Make Opaque reliable for single-GPU, medium-scale models (≤1B params)
 
 **Week 1-2: Memory Management**
-- [ ] Implement microbatching in `clipped_grad()`
-  - Add `microbatch_size` parameter
+- [ ] Implement microbatching in `clipped_grad()` and `clipped_fun()`
+  - Actually implement `microbatch_size` parameter (currently declared but not implemented)
   - Use `AccumulationType.SUM` for gradients
   - Use `AccumulationType.CONCAT` for auxiliary outputs
+  - Pattern: Split batch into chunks, accumulate clipped gradients
   - Test: Verify results identical to full batch
-- [ ] Implement memory profiling tools
-  - `estimate_memory()` function
-  - `recommend_microbatch_size()` function
+- [ ] Implement memory profiling tools (`opaque/profiling/`)
+  - `estimate_memory(model, batch_size)` - Predict memory usage
+  - `recommend_microbatch_size(model, batch_size, available_gb)` - Suggest optimal size
   - Test on GPT-2, GPT-2-Large
 
 **Week 3-4: Cross-Validation**
@@ -421,135 +422,297 @@ See DESIGN_COMPARISON_EXAMPLES.md for detailed code examples. Key functional pat
 - [ ] Test matrix: Linear (MNIST), CNN (CIFAR-10), GPT-2 (Wikitext)
 - [ ] Document any discrepancies and root causes
 
-**Week 5-6: Large Model Testing**
+**Week 5-6: Gradient Checkpointing & Large Models**
+- [ ] Integrate `torch.utils.checkpoint` with `functional_call`
+  - Verify compatibility with `torch.func.vmap`
+  - Create helper: `opaque.integration.checkpointing.wrap_layers()`
+  - Test: GPT-2-XL (1.5B params) with checkpointing fits in 40GB
+  - Measure compute vs memory tradeoff
 - [ ] Test GPT-2-Large (774M params) with microbatching
-- [ ] Test GPT-2-XL (1.5B params) with gradient checkpointing
 - [ ] Create troubleshooting guide for OOM errors
 - [ ] Document recommended settings per model size
+
+**Week 7-8: Empirical Privacy Auditing**
+- [ ] Implement `opaque.auditing` module (~1,146 lines from JAX-Privacy)
+  - `CanaryScoreAuditor(in_scores, out_scores)` - Core auditing class
+  - `epsilon_raw_counts()` - Simplest method (start here)
+  - `epsilon_clopper_pearson()` - Standard method
+  - `epsilon_one_run()` - State-of-the-art single-run method (Steinke 2024)
+  - Bootstrap confidence intervals with BCa
+  - Utility metrics: AUROC, TPR@FPR, max accuracy
+- [ ] Validation tests against JAX-Privacy auditing
+- [ ] Tutorial: How to audit your DP training
 
 **Success Criteria**:
 - ✅ Train GPT-2 on Wikitext without OOM (batch_size=32, microbatch_size=8)
 - ✅ Match Opacus privacy accounting within 0.1 epsilon
 - ✅ Match Opacus utility within 2% accuracy on MNIST/CIFAR-10
 - ✅ Memory profiler predicts actual usage within 20%
+- ✅ Gradient checkpointing works with vmap (GPT-2-XL fits in 40GB)
+- ✅ Empirical auditing validates theoretical epsilon bounds
 
 **Deliverables**:
-- Microbatching implementation
+- Microbatching implementation (actually working)
 - Memory profiling tools
+- Gradient checkpointing integration
 - Opacus validation tests
+- Empirical privacy auditing module
 - Production troubleshooting guide
 
 ---
 
-### Phase 2: Functional API Refactoring (2-3 weeks)
+### Phase 2: Batch Selection & Advanced Accounting (3-4 weeks)
 
-**Goal**: Simplify to plain functions with attributes (no wrapper classes)
+**Goal**: Complete batch sampling strategies and multi-epoch accounting
 
-**Week 1: Simplify Clipping API**
-- [ ] Remove `BoundedSensitivityCallable` from `clipping/types.py`
-- [ ] Update `clipped_fun()` to return plain function with `.clip_norm` attribute
-- [ ] Update `clipped_grad()` to return plain function with `.clip_norm` attribute
-- [ ] Remove `.sensitivity()` method (not needed for training)
-- [ ] Update tests: Replace `.sensitivity()` with `.clip_norm`
+**Week 1: Batch Selection Strategies**
+- [ ] Implement `opaque.sampling.batch_selection` module
+  - `CyclicPoissonSampling` - Core DP-SGD with cyclic sampling (BandMF amplification)
+  - `BallsInBinsSampling` - Alternative to Poisson (arxiv.org/abs/2410.06266)
+  - `FixedBatchSampling` - Uniform random with/without replacement
+  - `UserSelectionStrategy` - Federated learning (user-level DP)
+  - `split_and_pad_global_batch()` - Split with padding (-1 indices)
+  - `pad_to_multiple_of()` - Pad to batch size multiple
+- [ ] Integration with DataLoader patterns
+- [ ] Tests: Validate sampling distributions, padding strategies
 
-**Week 2: Higher-Order Noise Functions**
-- [ ] Implement `gaussian(stddev)` returning stateless noise function
-- [ ] Implement `gaussian_stateful(stddev, seed)` with explicit state
-- [ ] Deprecate `add_gaussian_noise()` with migration warnings
-- [ ] Update tests for new noise API
-- [ ] Add composition examples (grad_fn + noise_fn)
+**Week 2: Multi-Epoch Privacy Accounting**
+- [ ] Extend accounting module for multi-epoch training
+  - Without-replacement sampling across epochs
+  - Amplification from epoch boundaries
+  - Integration with `dp_accounting` library
+- [ ] Event constructors for multi-epoch mechanisms
+- [ ] Tests: Validate amplification vs JAX-Privacy
 
-**Week 3: Documentation & Migration**
-- [ ] Update tutorial notebook with new API
-- [ ] Create migration guide (old → new API)
-- [ ] Update all integration tests
+**Week 3: Functional API Refinement**
+- [ ] **Consider**: Stateful noise API wrapper (if needed)
+  - `gaussian_stateful(stddev, seed)` with PRNG state management
+  - **Defer if not critical** - stateless is clearer for DP
+- [ ] Add composition examples (grad_fn + noise_fn + optimizer)
+- [ ] Document functional patterns
+
+**Week 4: Documentation & Migration**
+- [ ] Update tutorial notebook with batch selection
+- [ ] Multi-epoch training examples
 - [ ] Update README examples
-- [ ] Document research flexibility (swappable components)
+- [ ] Document sampling strategies trade-offs
 
 **Success Criteria**:
-- ✅ Plain functions with simple `.clip_norm` attribute
-- ✅ Natural composition: `noise_fn(grad_fn(...))`
-- ✅ All tests pass with new API
-- ✅ Migration guide complete
-- ✅ ~100 lines of wrapper code removed
+- ✅ All batch selection strategies implemented and tested
+- ✅ Multi-epoch accounting matches JAX-Privacy
+- ✅ Cyclic sampling amplification validated
+- ✅ Integration examples with DataLoader
 
 **Deliverables**:
-- Simplified functional API (plain functions)
-- Updated tests and examples
-- Migration guide
-- Tutorial notebook
+- Batch selection strategies module
+- Multi-epoch accounting
+- Updated tutorials
+- Sampling strategy comparison docs
 
 ---
 
-### Phase 3: Scale to Billions (4-6 weeks)
+### Phase 3: Matrix Factorization & DP-FTRL (6-8 weeks)
 
-**Goal**: Support Llama-7B/13B LoRA fine-tuning
+**Goal**: Implement correlated noise mechanisms (BandMF, DP-FTRL) for 10-50% utility improvement
+
+**Week 1-2: Matrix Factorization Core**
+- [ ] Implement `opaque.matrix_factorization` module structure
+  - `streaming_matrix.py` - Abstract interface for matrix multiplication
+  - `dense.py` - Small-scale exact factorizations (start here)
+  - `banded.py` - General banded matrix support
+  - `sensitivity.py` - L2 sensitivity computation under participation patterns
+    - `single_participation_sensitivity(C)` - Single-epoch
+    - `minsep_sensitivity(C, min_sep, max_participations)` - Multi-epoch
+    - `max_participation_for_linear_fn(x, min_sep, max_participations)` - Dynamic programming
+  - `optimization.py` - Finding optimal strategy matrices (L-BFGS)
+- [ ] Tests: Validate sensitivity computations, matrix operations
+
+**Week 3-4: BandMF (Banded Matrix Factorization)**
+- [ ] Implement `toeplitz.py` - Banded Toeplitz matrices
+  - BandMF mechanism (arxiv.org/abs/2306.08153)
+  - Cyclic sampling integration for amplified privacy
+  - Optimal band selection via optimization
+- [ ] Implement `buffered_toeplitz.py` - Memory-efficient streaming
+  - BLT mechanisms (arxiv.org/abs/2404.16706)
+  - Multi-epoch support (arxiv.org/abs/2408.08868)
+- [ ] Tests: Validate utility improvement vs independent noise
+
+**Week 5-6: DP-FTRL Integration**
+- [ ] Implement DP-FTRL optimizer wrapper
+  - Follow-The-Regularized-Leader with matrix mechanisms
+  - State management for correlated noise across steps
+  - Integration with TorchOpt optimizers
+- [ ] Noise addition transforms using matrix factorization
+  - `matrix_factorization_privatizer()` wrapper
+  - Stateful noise generation with strategy matrices
+- [ ] Tests: Multi-epoch training with correlated noise
+
+**Week 7-8: Validation & Optimization**
+- [ ] End-to-end validation: BandMF vs standard DP-SGD
+  - Compare utility at same privacy budget
+  - Measure 10-50% accuracy improvement (as per papers)
+  - Test on MNIST, CIFAR-10, Wikitext
+- [ ] Performance optimization for online noise generation
+- [ ] Documentation: When to use matrix mechanisms
+
+**Success Criteria**:
+- ✅ BandMF achieves 10-50% utility improvement over independent noise (matching papers)
+- ✅ Sensitivity computations validated against JAX-Privacy
+- ✅ DP-FTRL works for multi-epoch training
+- ✅ Efficient online noise generation (<10% overhead)
+
+**Deliverables**:
+- Matrix factorization module (~2,000+ lines from JAX-Privacy)
+- BandMF and BLT mechanisms
+- DP-FTRL optimizer wrapper
+- Utility improvement benchmarks
+- Usage guide: When to use correlated noise
+
+---
+
+### Phase 4: Scale to Billions & LoRA (4-6 weeks)
+
+**Goal**: Support Llama-7B/13B LoRA fine-tuning with all production features
 
 **Week 1-2: LoRA Integration**
-- [ ] Implement LoRA adapter detection
-- [ ] Create `opaque.integration.lora.make_lora_functional()`
-- [ ] Test: Fine-tune Llama-7B on Alpaca
+- [ ] Implement `opaque.integration.lora` module
+  - Automatic detection of PEFT/LoRA parameters (`.lora_A`, `.lora_B`)
+  - Helper: `make_lora_functional(model)` for PEFT integration
+  - Memory-efficient handling (only compute gradients for adapters)
+  - **Note**: No LoRA-specific optimizations in JAX-Privacy, just convenience wrappers
+- [ ] Test: Fine-tune Llama-7B on Alpaca with DP-SGD
+- [ ] Test: Fine-tune with BandMF (compare utility improvement)
 - [ ] Verify memory usage < 24GB (single A100)
 
-**Week 3-4: Gradient Checkpointing**
-- [ ] Integrate `torch.utils.checkpoint` with `functional_call`
-- [ ] Create helper: `opaque.integration.checkpointing.wrap_layers()`
-- [ ] Test: Llama-13B with checkpointing fits in 40GB
-- [ ] Measure compute vs memory tradeoff
-
-**Week 5-6: Large-Scale Validation**
+**Week 3-4: Large-Scale Validation**
 - [ ] End-to-end LoRA fine-tuning experiments
+  - Llama-7B on Alpaca (instruction tuning)
+  - Llama-13B with gradient checkpointing
+  - Compare: DP-SGD vs DP-FTRL/BandMF utility
 - [ ] Compare utility against published baselines
 - [ ] Performance benchmarking (tokens/sec)
 - [ ] Memory optimization guide
 
+**Week 5-6: High-Level API (Optional)**
+- [ ] **Consider**: DP Execution Plans (`opaque.execution_plan`)
+  - High-level API packaging all DP components
+  - `DPExecutionPlan` dataclass with validated composition
+  - Config classes: `DPSGDConfig`, `BandMFConfig`, etc.
+  - Automatic noise calibration from (ε, δ) budget
+  - **Decision**: Implement if users request simplified API, otherwise defer
+- [ ] Alternative: Document manual composition patterns
+- [ ] Tutorial: Composing DP components
+
 **Success Criteria**:
 - ✅ LoRA fine-tune Llama-7B on Alpaca (single A100, <24GB)
+- ✅ Llama-13B works with gradient checkpointing (<40GB)
+- ✅ BandMF shows utility improvement over DP-SGD on LoRA task
 - ✅ Achieve published utility benchmarks (within 5% accuracy)
-- ✅ Document memory-compute tradeoffs
 
 **Deliverables**:
 - LoRA integration module
-- Gradient checkpointing helpers
 - Large-scale validation results
 - Performance benchmarks
+- Memory optimization guide
+- (Optional) High-level execution plan API
 
 ---
 
-### Phase 4: Production Polish (2-3 weeks)
+### Phase 5: Distributed Training (4-6 weeks)
 
-**Goal**: Release-ready library with comprehensive documentation
+**Goal**: Support multi-GPU/multi-node DP training for models >10B parameters
+
+**Week 1-2: Sharding Utilities**
+- [ ] Implement `opaque.distributed.sharding_utils` module
+  - `flatten_with_zero_redundancy()` - ZeRO-style sharding for gradients
+  - `local_reshape_add()` - Add noise without cross-device communication
+  - `compute_early_stopping_order()` - Optimal data ordering for microbatching
+- [ ] Integration with PyTorch distributed primitives
+  - DDP (DistributedDataParallel) compatibility
+  - FSDP (FullyShardedDataParallel) integration
+  - Device mesh and sharding strategies
+- [ ] Tests: Validate sharding, noise distribution
+
+**Week 3-4: Distributed Noise Generation**
+- [ ] Implement distributed BandMF noise generation
+  - No cross-device communication required (arxiv.org/abs/2405.15913)
+  - Per-device PRNG seeding strategy
+  - Gradient accumulation across devices
+- [ ] Integration with matrix factorization mechanisms
+- [ ] Tests: Verify privacy guarantees under distributed training
+
+**Week 5-6: Large-Scale Validation**
+- [ ] Multi-GPU training experiments
+  - 2-8 GPU training on single node
+  - Llama-7B/13B full fine-tuning (not just LoRA)
+  - Measure scaling efficiency
+- [ ] Multi-node training (if infrastructure available)
+- [ ] Performance benchmarking vs single-GPU
+- [ ] Documentation: Distributed training best practices
+
+**Success Criteria**:
+- ✅ DDP/FSDP compatibility validated
+- ✅ Distributed noise generation maintains privacy guarantees
+- ✅ Linear scaling efficiency up to 8 GPUs
+- ✅ Llama-13B full fine-tuning works (multi-GPU)
+
+**Deliverables**:
+- Distributed training utilities
+- DDP/FSDP integration
+- Distributed BandMF implementation
+- Scaling benchmarks
+- Multi-GPU training guide
+
+---
+
+### Phase 6: Production Polish & Release (3-4 weeks)
+
+**Goal**: Production-ready library with comprehensive documentation and tooling
 
 **Week 1: Documentation**
+- [ ] Update committed docs (see review checklist below)
 - [ ] Getting Started guide (10-minute tutorial)
-- [ ] User Guide (DP basics, clipping strategies, memory management)
+- [ ] User Guide updates (new features: matrix factorization, distributed)
 - [ ] API Reference (auto-generated from docstrings)
 - [ ] Migration Guide (Opacus → Opaque)
 - [ ] Troubleshooting (common errors, solutions)
+- [ ] Performance tuning guide
 
 **Week 2: Testing & CI**
 - [ ] Expand test coverage to >80%
 - [ ] Add integration tests for large models (CI with GPU)
 - [ ] Performance regression tests
 - [ ] Memory usage tests
+- [ ] Distributed training tests (if CI supports multi-GPU)
 
-**Week 3: Release Preparation**
+**Week 3: Advanced Features Documentation**
+- [ ] Matrix factorization tutorial (BandMF, DP-FTRL)
+- [ ] Empirical auditing guide
+- [ ] Distributed training tutorial
+- [ ] Batch selection strategies comparison
+- [ ] When to use which mechanism (decision tree)
+
+**Week 4: Release Preparation**
 - [ ] Finalize API (no breaking changes after 1.0)
 - [ ] Code review and cleanup
 - [ ] Prepare release notes
 - [ ] Create release checklist
+- [ ] Security review (DP guarantees audit)
 
 **Success Criteria**:
 - ✅ Documentation covers all user scenarios
 - ✅ Test coverage >80%
 - ✅ CI passes on CPU and GPU
-- ✅ Ready for public release
+- ✅ All committed docs updated and accurate
+- ✅ Security review complete
+- ✅ Ready for production use
 
 **Deliverables**:
 - Complete documentation site
 - Comprehensive test suite
+- Production troubleshooting guide
 - Release-ready codebase
-- v1.0.0 release
+- **v1.0.0 release**
 
 ---
 
@@ -745,27 +908,77 @@ See DESIGN_COMPARISON_EXAMPLES.md for detailed migration examples.
 
 | Phase | Duration | Focus | Key Deliverables |
 |-------|----------|-------|------------------|
-| **Phase 1** | 4-6 weeks | Production Hardening | Microbatching, profiling, Opacus validation |
-| **Phase 2** | 3-4 weeks | Functional API | BoundedSensitivityCallable, higher-order functions |
-| **Phase 3** | 4-6 weeks | Scale to Billions | LoRA integration, gradient checkpointing |
-| **Phase 4** | 2-3 weeks | Production Polish | Documentation, testing, release |
-| **Total** | **13-19 weeks** | **~4 months** | **Production-ready v1.0.0** |
+| **Phase 1** | 6-8 weeks | Memory & Core Production | Microbatching, profiling, checkpointing, auditing, Opacus validation |
+| **Phase 2** | 3-4 weeks | Batch Selection & Accounting | Sampling strategies, multi-epoch accounting |
+| **Phase 3** | 6-8 weeks | Matrix Factorization & DP-FTRL | BandMF, BLT, correlated noise, sensitivity analysis |
+| **Phase 4** | 4-6 weeks | Scale to Billions & LoRA | LoRA integration, large-scale validation, execution plans |
+| **Phase 5** | 4-6 weeks | Distributed Training | Sharding, distributed noise, multi-GPU/multi-node |
+| **Phase 6** | 3-4 weeks | Production Polish & Release | Documentation, testing, security review, v1.0.0 |
+| **Total** | **26-36 weeks** | **~6-9 months** | **Production-ready v1.0.0 with all features** |
+
+**Note**: This is the complete v1.0 implementation. There is no v2.0 - all features are in this effort.
 
 ---
 
-## 11. Conclusion
+## 11. Committed Documentation Review Checklist
 
-This RFC presents a comprehensive plan to evolve Opaque from a functional prototype to a production-ready DP training library. The plan prioritizes:
+**Committed docs requiring updates** (run `git ls-files docs/`):
 
-1. **Memory efficiency** (Phase 1) - Blocker for large models
-2. **Validation** (Phase 1) - Critical for trust
-3. **Functional architecture** (Phase 2) - Aligns with JAX-Privacy and jbr-fed-accounting
-4. **Scale** (Phase 3) - Support Llama-7B/13B LoRA
-5. **Polish** (Phase 4) - Release-ready
+### User-Facing Docs (High Priority)
+- [ ] `docs/getting-started/quickstart.md` - Add memory profiling, microbatching examples
+- [ ] `docs/user-guide/clipping.md` - Document microbatching parameter
+- [ ] `docs/user-guide/noise.md` - Add matrix factorization noise mechanisms
+- [ ] `docs/user-guide/accounting.md` - Multi-epoch accounting, batch selection integration
+- [ ] `docs/user-guide/optimizers.md` - Add DP-FTRL optimizer
+- [ ] `docs/user-guide/sampling.md` - Complete batch selection strategies
+- [ ] `docs/user-guide/lora.md` - Update with Phase 4 LoRA helpers
+- [ ] `docs/tutorials/05_sampling_and_microbatching.ipynb` - Actually implement microbatching examples
+- [ ] `docs/tutorials/06_lora_huggingface_dp_training.ipynb` - Update with production patterns
 
-**Estimated timeline**: 4 months to production-ready v1.0.0 release.
+### API Docs (Medium Priority)
+- [ ] `docs/api/core/clipping.md` - Document microbatching, gradient checkpointing
+- [ ] `docs/api/noise.md` - Add matrix factorization mechanisms
+- [ ] `docs/api/accounting.md` - Multi-epoch, batch selection integration
+- [ ] `docs/api/optimizers.md` - Add DP-FTRL
+- [ ] `docs/api/sampling.md` - Complete batch selection API
+
+### Development Docs (Keep as Reference, Update for Accuracy)
+- [ ] `docs/development/STATUS.md` - Update with new phase plan
+- [ ] `docs/development/RFC_PRODUCTION_PLAN.md` - **This file** (being updated now)
+- [ ] `docs/development/DESIGN_COMPARISON_EXAMPLES.md` - Add matrix factorization examples
+- [ ] `docs/development/tdd-workflow.md` - No changes needed
+
+### New Docs Required
+- [ ] `docs/user-guide/matrix-factorization.md` - NEW: BandMF, DP-FTRL guide
+- [ ] `docs/user-guide/auditing.md` - NEW: Empirical privacy auditing
+- [ ] `docs/user-guide/distributed.md` - NEW: Multi-GPU/multi-node training
+- [ ] `docs/user-guide/memory-optimization.md` - NEW: Profiling, checkpointing, microbatching
+- [ ] `docs/tutorials/07_matrix_factorization_bandmf.ipynb` - NEW: BandMF tutorial
+- [ ] `docs/tutorials/08_empirical_auditing.ipynb` - NEW: Auditing tutorial
+- [ ] `docs/tutorials/09_distributed_training.ipynb` - NEW: Multi-GPU tutorial
+
+**Note**: `docs/development/` files are **local reference only** - accuracy is important but they won't be in user-facing documentation builds.
+
+---
+
+## 12. Conclusion
+
+This RFC presents a comprehensive plan to evolve Opaque from a functional prototype to a **production-ready, research-grade DP training library** with all advanced features. The plan prioritizes:
+
+1. **Memory efficiency** (Phase 1) - Microbatching, checkpointing, profiling
+2. **Validation** (Phase 1) - Opacus parity, empirical auditing
+3. **Batch selection** (Phase 2) - Complete sampling strategies
+4. **Advanced mechanisms** (Phase 3) - Matrix factorization, BandMF, DP-FTRL
+5. **Scale** (Phase 4) - Llama-7B/13B LoRA fine-tuning
+6. **Distributed** (Phase 5) - Multi-GPU/multi-node support
+7. **Polish** (Phase 6) - Documentation, testing, security review
+
+**Estimated timeline**: 6-9 months to feature-complete v1.0.0 release.
+
+**Key Insight**: This is the **complete v1.0 implementation** - no v2.0 planned. All features from JAX-Privacy (except JAX-specific utilities) will be implemented.
 
 **Next Steps**:
 1. Review and approve this RFC
-2. Begin Phase 1 Week 1: Microbatching implementation
+2. Begin Phase 1 Week 1: Microbatching implementation (fix the declared-but-not-implemented parameter)
 3. Set up weekly progress reviews
+4. Track progress against 26-36 week timeline
