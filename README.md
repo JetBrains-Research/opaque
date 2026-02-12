@@ -7,11 +7,11 @@ Opaque is a PyTorch port of Google's [JAX-Privacy](https://github.com/google-dee
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch 2.0+](https://img.shields.io/badge/pytorch-2.0+-red.svg)](https://pytorch.org/)
-[![CI](https://github.com/evgri243/opaque/actions/workflows/ci.yml/badge.svg)](https://github.com/evgri243/opaque/actions/workflows/ci.yml)
-[![Docs](https://github.com/evgri243/opaque/actions/workflows/docs.yml/badge.svg)](https://github.com/evgri243/opaque/actions/workflows/docs.yml)
+[![CI](https://github.com/JetBrains-Research/opaque/actions/workflows/ci.yml/badge.svg)](https://github.com/JetBrains-Research/opaque/actions/workflows/ci.yml)
+[![Docs](https://github.com/JetBrains-Research/opaque/actions/workflows/docs.yml/badge.svg)](https://github.com/JetBrains-Research/opaque/actions/workflows/docs.yml)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
-[![Tests](https://img.shields.io/badge/tests-111%20passing-brightgreen.svg)](https://github.com/evgri243/opaque)
-[![Stage](https://img.shields.io/badge/stage-2%20complete-success.svg)](https://github.com/evgri243/opaque)
+[![Tests](https://img.shields.io/badge/tests-111%20passing-brightgreen.svg)](https://github.com/JetBrains-Research/opaque)
+[![Stage](https://img.shields.io/badge/stage-2%20complete-success.svg)](https://github.com/JetBrains-Research/opaque)
 
 ---
 
@@ -37,7 +37,7 @@ Bring production-quality differential privacy to PyTorch's LLM fine-tuning ecosy
 pip install opaque-dp  # Not yet published
 
 # From source (development)
-git clone https://github.com/evgri243/opaque.git
+git clone https://github.com/JetBrains-Research/opaque.git
 cd opaque
 uv sync
 ```
@@ -210,7 +210,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for:
 - Code style guidelines
 - Pull request process
 
-**Good First Issues**: Check the [issue tracker](https://github.com/evgri243/opaque/issues) for beginner-friendly tasks.
+**Good First Issues**: Check the [issue tracker](https://github.com/JetBrains-Research/opaque/issues) for beginner-friendly tasks.
 
 ---
 
@@ -270,4 +270,4 @@ Apache 2.0 - See [LICENSE](./LICENSE) for details.
 
 ---
 
-**Questions?** Open an [issue](https://github.com/evgri243/opaque/issues) or start a [discussion](https://github.com/evgri243/opaque/discussions)!
+**Questions?** Open an [issue](https://github.com/JetBrains-Research/opaque/issues) or start a [discussion](https://github.com/JetBrains-Research/opaque/discussions)!

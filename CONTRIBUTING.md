@@ -12,7 +12,7 @@ Thank you for your interest in contributing to Opaque!
 
 ```bash
 # Clone repository
-git clone https://github.com/evgri243/opaque.git
+git clone https://github.com/JetBrains-Research/opaque.git
 cd opaque
 
 # Install dependencies
@@ -156,8 +156,8 @@ uv run mkdocs build
 
 ## Getting Help
 
-- **Questions**: Open a [Discussion](https://github.com/evgri243/opaque/discussions)
-- **Bugs**: Open an [Issue](https://github.com/evgri243/opaque/issues)
+- **Questions**: Open a [Discussion](https://github.com/JetBrains-Research/opaque/discussions)
+- **Bugs**: Open an [Issue](https://github.com/JetBrains-Research/opaque/issues)
 
 ---
 
