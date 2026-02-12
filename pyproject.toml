@@ -31,11 +31,9 @@ classifiers = [
   "Topic :: Security",
 ]
 dependencies = [
-  "dp-accounting>=0.4.0",
   "matplotlib>=3.10.7",
   "notebook>=7.4.7",
   "optree>=0.17.0",
-  "riskcal>=1.0.0", # For alpha/beta privacy queries
   "torch>=2.0.0",
   "torchopt>=0.7.3",
 ]
@@ -65,11 +63,6 @@ docs = [
   "mkdocs-jupyter>=0.24.0", # Jupyter notebook support
 ]
 
-[tool.uv]
-override-dependencies = [
-  "dp-accounting>=0.5.1", # Required for from_truncated_subsampled_gaussian_mechanism
-]
-
 [project.urls]
 Homepage = "https://github.com/evgri243/opaque"
 Documentation = "https://github.com/evgri243/opaque/tree/main/docs"
@@ -80,33 +73,19 @@ Issues = "https://github.com/evgri243/opaque/issues"
 requires = ["hatchling>=0.11.2"]
 build-backend = "hatchling.build"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/opaque"]
-
-[tool.ruff]
-line-length = 100
-target-version = "py311"
-
-[tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP"]
-ignore = ["E501"]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = "-n=auto -v -m ''"
+python_files = "test_*.py"
+python_functions = "test_*"
+addopts = "-v --strict-markers"
 markers = [
-  "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-  "gpu: marks tests that require GPU",
-  "integration: marks tests as integration tests (end-to-end scenarios with real models)",
+  "jax_validation: Tests that validate against JAX-Privacy (optional dependency)",
+  "slow: Tests that take a long time to run",
 ]
-norecursedirs = [".git", ".tox", "dist", "build", "*.egg"]
 
 [tool.coverage.run]
-source = ["src"]
-relative_files = true
+source = ["src/opaque"]
+omit = ["*/tests/*", "*/__pycache__/*", "*/examples/*"]
 
 [tool.coverage.report]
 exclude_lines = [
@@ -119,5 +98,30 @@ exclude_lines = [
   "@abstractmethod",
 ]
 
-[tool.coverage.xml]
-output = "coverage.xml"
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle errors
+  "W",   # pycodestyle warnings
+  "F",   # pyflakes
+  "I",   # isort
+  "B",   # flake8-bugbear
+  "C4",  # flake8-comprehensions
+  "UP",  # pyupgrade
+]
+ignore = [
+  "E501",  # line-too-long (handled by formatter)
+  "B008",  # function-call-in-default-argument (common in dataclasses)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # unused imports
+"tests/*" = ["F401", "F811"]  # unused imports, redefined while testing
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

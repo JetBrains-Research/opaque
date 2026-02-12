@@ -2,9 +2,11 @@
 
 This package provides differentially private training utilities for PyTorch,
 inspired by JAX-Privacy.
+
+Note: Privacy accounting is provided by jbr-fed-accounting (external library).
 """
 
-from opaque import accounting, sampling
+from opaque import sampling
 from opaque.clipping import (
     clip_pytree,
     clipped_fun,
@@ -30,8 +32,6 @@ __all__ = [
     "clip_pytree",
     "clipped_fun",
     "clipped_grad",
-    # Accounting (use opaque.accounting.* for functional API)
-    "accounting",
     # Sampling
     "sampling",
     "PoissonSampler",
