@@ -1,6 +1,6 @@
 # Contributing
 
-See [CONTRIBUTING.md](https://github.com/evgri243/opaque/blob/main/CONTRIBUTING.md) in the repository root for quick start and contribution guidelines.
+See [CONTRIBUTING.md](https://github.com/JetBrains-Research/opaque/blob/main/CONTRIBUTING.md) in the repository root for quick start and contribution guidelines.
 
 ---
 
@@ -18,7 +18,7 @@ This section provides detailed guides for contributors:
 ### Setup
 
 ```bash
-git clone https://github.com/evgri243/opaque.git
+git clone https://github.com/JetBrains-Research/opaque.git
 cd opaque
 cd .. && git clone https://github.com/google-deepmind/jax_privacy.git && cd opaque
 uv sync
@@ -51,5 +51,5 @@ uv run --group docs mkdocs build                     # Build static site
 
 ## Getting Help
 
-- **Questions**: [Discussions](https://github.com/evgri243/opaque/discussions)
-- **Bugs**: [Issues](https://github.com/evgri243/opaque/issues)
+- **Questions**: [Discussions](https://github.com/JetBrains-Research/opaque/discussions)
+- **Bugs**: [Issues](https://github.com/JetBrains-Research/opaque/issues)

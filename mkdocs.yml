@@ -3,8 +3,8 @@ site_description: Functional Differential Privacy for PyTorch LoRA Fine-tuning
 site_author: Opaque Contributors
 site_url: https://opaque.readthedocs.io
 
-repo_name: evgri243/opaque
-repo_url: https://github.com/evgri243/opaque
+repo_name: JetBrains-Research/opaque
+repo_url: https://github.com/JetBrains-Research/opaque
 edit_uri: edit/main/docs/
 
 theme:
@@ -109,6 +109,6 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/evgri243/opaque
+      link: https://github.com/JetBrains-Research/opaque
   version:
     provider: mike

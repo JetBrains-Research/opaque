@@ -223,4 +223,4 @@ LoRA fine-tuning of 7B model: ~2x slower with DP
 
 ---
 
-**Questions?** Open an issue on [GitHub](https://github.com/evgri243/opaque/issues)
+**Questions?** Open an issue on [GitHub](https://github.com/JetBrains-Research/opaque/issues)

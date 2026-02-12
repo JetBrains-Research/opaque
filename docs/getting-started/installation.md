@@ -12,7 +12,7 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/evgri243/opaque.git
+git clone https://github.com/JetBrains-Research/opaque.git
 cd opaque
 
 # Install with uv (recommended)

@@ -20,7 +20,7 @@ This directory contains automated workflows for the Opaque project.
   - Verifies package can be built
   - Uploads build artifacts
 
-**Status**: ![CI](https://github.com/evgri243/opaque/actions/workflows/ci.yml/badge.svg)
+**Status**: ![CI](https://github.com/JetBrains-Research/opaque/actions/workflows/ci.yml/badge.svg)
 
 ### 📚 Documentation Deployment (`docs.yml`)
 
@@ -34,9 +34,9 @@ This directory contains automated workflows for the Opaque project.
   - Uploads site artifact
 - **Deploy**: Deploy to GitHub Pages
   - Deploys built site to GitHub Pages
-  - Available at: https://evgri243.github.io/opaque
+  - Available at: https://jetbrains-research.github.io/opaque
 
-**Status**: ![Docs](https://github.com/evgri243/opaque/actions/workflows/docs.yml/badge.svg)
+**Status**: ![Docs](https://github.com/JetBrains-Research/opaque/actions/workflows/docs.yml/badge.svg)
 
 ### ✅ Documentation Check (`docs-check.yml`)
 
@@ -49,7 +49,7 @@ This directory contains automated workflows for the Opaque project.
   - Ensures PRs don't break documentation
   - Reports build errors early
 
-**Status**: ![Docs Check](https://github.com/evgri243/opaque/actions/workflows/docs-check.yml/badge.svg)
+**Status**: ![Docs Check](https://github.com/JetBrains-Research/opaque/actions/workflows/docs-check.yml/badge.svg)
 
 ## Setup Instructions
 
@@ -62,7 +62,7 @@ This directory contains automated workflows for the Opaque project.
   - **Source**: GitHub Actions
 3. Save changes
 
-The documentation will be automatically deployed to `https://evgri243.github.io/opaque` on every push to `main`.
+The documentation will be automatically deployed to `https://jetbrains-research.github.io/opaque` on every push to `main`.
 
 #### 2. Configure Codecov (Optional)
 
@@ -187,8 +187,8 @@ Workflows follow security best practices:
 For README.md:
 
 ```markdown
-![CI](https://github.com/evgri243/opaque/actions/workflows/ci.yml/badge.svg)
-![Docs](https://github.com/evgri243/opaque/actions/workflows/docs.yml/badge.svg)
+![CI](https://github.com/JetBrains-Research/opaque/actions/workflows/ci.yml/badge.svg)
+![Docs](https://github.com/JetBrains-Research/opaque/actions/workflows/docs.yml/badge.svg)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 ```

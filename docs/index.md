@@ -81,7 +81,7 @@ print(f"Privacy: (ε={epsilon:.2f}, δ=1e-5)")
     Opaque is not yet published to PyPI. Install from source:
 
 ```bash
-git clone https://github.com/evgri243/opaque.git
+git clone https://github.com/JetBrains-Research/opaque.git
 cd opaque
 uv sync
 ```

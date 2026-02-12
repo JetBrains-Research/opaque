@@ -30,7 +30,7 @@ body:
       label: Documentation Location
       description: Where is the affected documentation? (URL or file path)
       placeholder: |
-        https://evgri243.github.io/opaque/user-guide/clipping/
+        https://jetbrains-research.github.io/opaque/user-guide/clipping/
         or
         docs/user-guide/clipping.md
     validations:

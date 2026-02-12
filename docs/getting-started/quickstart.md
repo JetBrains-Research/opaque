@@ -8,7 +8,7 @@ Make sure you have Opaque installed. If not, see the [Installation Guide](instal
 
 ```bash
 # From source (recommended for now)
-git clone https://github.com/evgri243/opaque.git
+git clone https://github.com/JetBrains-Research/opaque.git
 cd opaque
 uv sync
 ```
@@ -256,8 +256,8 @@ Noise addition reduces effective gradient magnitude. Try learning rates 2-5x hig
 ## Getting Help
 
 - **[API Reference](../api/index.md)**: Detailed function documentation
-- **[GitHub Issues](https://github.com/evgri243/opaque/issues)**: Report bugs or request features
-- **[GitHub Discussions](https://github.com/evgri243/opaque/discussions)**: Ask questions
+- **[GitHub Issues](https://github.com/JetBrains-Research/opaque/issues)**: Report bugs or request features
+- **[GitHub Discussions](https://github.com/JetBrains-Research/opaque/discussions)**: Ask questions
 
 ---
 
