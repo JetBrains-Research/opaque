@@ -55,6 +55,8 @@ dev = [
   "ruff>=0.1.0",
   "hypothesis>=6.0.0", # Property-based testing
   "scipy>=1.11.0", # For statistical tests
+  "opacus>=1.5.4",
+  "torchvision>=0.24.0",
 ]
 docs = [
   "mkdocs>=1.5.0",

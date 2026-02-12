@@ -1,0 +1,248 @@
+"""Memory profiling tools for DP training.
+
+This module provides tools to estimate memory usage and recommend microbatch sizes
+for differentially private training with per-example gradients.
+"""
+
+from dataclasses import dataclass
+
+import torch
+import torch.nn as nn
+
+
+@dataclass
+class MemoryEstimate:
+    """Memory usage estimate for DP training.
+
+    Attributes:
+        model_gb: Model parameters memory in GB
+        optimizer_gb: Optimizer state memory in GB
+        activations_gb: Activations memory in GB (approximate)
+        per_example_grads_gb: Per-example gradients memory in GB
+        peak_gb: Total peak memory usage in GB
+        batch_size: Batch size used for estimation
+        microbatch_size: Microbatch size used (None if full batch)
+    """
+
+    model_gb: float
+    optimizer_gb: float
+    activations_gb: float
+    per_example_grads_gb: float
+    peak_gb: float
+    batch_size: int
+    microbatch_size: int | None = None
+
+    def will_oom(self, available_gb: float, safety_margin: float = 0.9) -> bool:
+        """Check if this configuration will cause OOM.
+
+        Args:
+            available_gb: Available GPU memory in GB
+            safety_margin: Use only this fraction of available memory (default: 0.9)
+
+        Returns:
+            True if estimated peak exceeds available memory
+        """
+        return self.peak_gb > available_gb * safety_margin
+
+    def __str__(self) -> str:
+        """Human-readable memory estimate."""
+        lines = [
+            f"Memory Estimate (batch_size={self.batch_size}"
+            + (f", microbatch_size={self.microbatch_size})" if self.microbatch_size else ")"),
+            f"  Model:            {self.model_gb:>6.2f} GB",
+            f"  Optimizer:        {self.optimizer_gb:>6.2f} GB",
+            f"  Activations:      {self.activations_gb:>6.2f} GB",
+            f"  Per-Ex Gradients: {self.per_example_grads_gb:>6.2f} GB",
+            f"  {'─' * 35}",
+            f"  Peak Total:       {self.peak_gb:>6.2f} GB",
+        ]
+        return "\n".join(lines)
+
+
+def estimate_memory(
+    model: nn.Module,
+    batch_size: int,
+    *,
+    sequence_length: int | None = None,
+    microbatch_size: int | None = None,
+    use_vmap: bool = True,
+    dtype: torch.dtype = torch.float32,
+    optimizer_type: str = "adam",
+) -> MemoryEstimate:
+    """Estimate memory usage for DP training.
+
+    This provides a rough estimate based on parameter counts and typical memory
+    patterns. Actual usage may vary depending on model architecture, activation
+    checkpointing, and other factors.
+
+    Args:
+        model: PyTorch model to estimate memory for
+        batch_size: Training batch size
+        sequence_length: For sequence models (Transformers), length of sequences.
+            If None, assumes non-sequential model.
+        microbatch_size: If using microbatching, size of microbatches. If None,
+            assumes full batch processing.
+        use_vmap: Whether using vmap for per-example gradients (default: True)
+        dtype: Model dtype (affects memory by ~2× for fp16)
+        optimizer_type: Type of optimizer ("sgd", "adam", "adamw")
+
+    Returns:
+        MemoryEstimate with breakdown of memory usage
+
+    Example:
+        >>> model = GPT2Model.from_pretrained("gpt2")
+        >>> est = estimate_memory(model, batch_size=64)
+        >>> print(est)
+        Memory Estimate (batch_size=64)
+          Model:              0.48 GB
+          Optimizer:          0.96 GB
+          Activations:        2.50 GB
+          Per-Ex Gradients:  30.72 GB
+          ───────────────────────────────────
+          Peak Total:        34.66 GB
+        >>> if est.will_oom(available_gb=16):
+        ...     print("WARNING: Will OOM!")
+    """
+    # Count parameters
+    num_params = sum(p.numel() for p in model.parameters())
+    bytes_per_param = torch.finfo(dtype).bits // 8
+
+    # Model memory
+    model_gb = (num_params * bytes_per_param) / 1e9
+
+    # Optimizer memory (state variables)
+    if optimizer_type.lower() in ["adam", "adamw"]:
+        # Adam has 2 state variables per parameter (momentum, variance)
+        optimizer_gb = model_gb * 2
+    elif optimizer_type.lower() == "sgd":
+        # SGD with momentum has 1 state variable
+        optimizer_gb = model_gb
+    else:
+        # Conservative estimate
+        optimizer_gb = model_gb * 2
+
+    # Activations memory (rough heuristic)
+    if sequence_length:
+        # For transformer models: batch_size * seq_len * hidden_dim * num_layers
+        # Rough estimate: ~4KB per token
+        activations_gb = (batch_size * sequence_length * 4096 * 4) / 1e9
+    else:
+        # For non-sequential models: rough estimate based on model size
+        activations_gb = model_gb * 0.5
+
+    # Per-example gradients memory
+    if use_vmap:
+        # With vmap, we materialize all per-example gradients
+        effective_batch = microbatch_size if microbatch_size else batch_size
+        per_example_grads_gb = model_gb * effective_batch
+    else:
+        # Without vmap (e.g., with hooks), only one gradient at a time
+        per_example_grads_gb = model_gb
+
+    # Peak memory (all components together)
+    peak_gb = model_gb + optimizer_gb + activations_gb + per_example_grads_gb
+
+    return MemoryEstimate(
+        model_gb=model_gb,
+        optimizer_gb=optimizer_gb,
+        activations_gb=activations_gb,
+        per_example_grads_gb=per_example_grads_gb,
+        peak_gb=peak_gb,
+        batch_size=batch_size,
+        microbatch_size=microbatch_size,
+    )
+
+
+def recommend_microbatch_size(
+    model: nn.Module,
+    batch_size: int,
+    available_gb: float,
+    **kwargs,
+) -> int:
+    """Recommend microbatch size to avoid OOM.
+
+    Performs binary search to find the largest microbatch size that fits in
+    available memory.
+
+    Args:
+        model: PyTorch model
+        batch_size: Desired training batch size
+        available_gb: Available GPU memory in GB
+        **kwargs: Additional arguments passed to estimate_memory()
+
+    Returns:
+        Recommended microbatch_size (power of 2, or 1 if even 1 doesn't fit)
+
+    Raises:
+        RuntimeError: If even microbatch_size=1 will OOM
+
+    Example:
+        >>> model = GPT2Model.from_pretrained("gpt2")
+        >>> rec = recommend_microbatch_size(model, batch_size=64, available_gb=16)
+        >>> print(f"Use microbatch_size={rec}")
+        Use microbatch_size=8
+    """
+    # Try powers of 2 from batch_size down to 1
+    candidates = []
+    candidate = batch_size
+    while candidate >= 1:
+        candidates.append(candidate)
+        candidate = candidate // 2
+
+    # Binary search for largest that fits
+    for microbatch_size in candidates:
+        est = estimate_memory(
+            model, batch_size, microbatch_size=microbatch_size, **kwargs
+        )
+        if not est.will_oom(available_gb):
+            return microbatch_size
+
+    # Even size 1 doesn't fit - raise error
+    est_one = estimate_memory(model, batch_size, microbatch_size=1, **kwargs)
+    raise RuntimeError(
+        f"Even microbatch_size=1 will OOM!\n"
+        f"Estimated peak: {est_one.peak_gb:.2f} GB\n"
+        f"Available: {available_gb:.2f} GB\n"
+        f"Consider: gradient checkpointing, smaller model, or more GPU memory"
+    )
+
+
+def get_available_memory_gb(device: torch.device | str = "cuda") -> float:
+    """Get available GPU memory in GB.
+
+    Args:
+        device: Device to check (default: "cuda")
+
+    Returns:
+        Available memory in GB
+
+    Example:
+        >>> available = get_available_memory_gb()
+        >>> print(f"Available GPU memory: {available:.2f} GB")
+    """
+    if isinstance(device, str):
+        device = torch.device(device)
+
+    if device.type == "cuda":
+        # Get total memory
+        total_memory = torch.cuda.get_device_properties(device).total_memory
+        # Get currently allocated memory
+        allocated_memory = torch.cuda.memory_allocated(device)
+        # Available = total - allocated
+        available_bytes = total_memory - allocated_memory
+        return available_bytes / 1e9
+    elif device.type == "mps":
+        # MPS doesn't have a reliable way to query memory
+        # Return conservative estimate (8GB for M1/M2)
+        return 8.0
+    else:
+        # CPU - return large value
+        return 64.0
+
+
+__all__ = [
+    "MemoryEstimate",
+    "estimate_memory",
+    "recommend_microbatch_size",
+    "get_available_memory_gb",
+]
