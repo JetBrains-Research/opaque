@@ -11,7 +11,7 @@ Opaque is a PyTorch port of Google's [JAX-Privacy](https://github.com/google-dee
 [![Docs](https://github.com/JetBrains-Research/opaque/actions/workflows/docs.yml/badge.svg)](https://github.com/JetBrains-Research/opaque/actions/workflows/docs.yml)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![Tests](https://img.shields.io/badge/tests-111%20passing-brightgreen.svg)](https://github.com/JetBrains-Research/opaque)
-[![Stage](https://img.shields.io/badge/stage-2%20complete-success.svg)](https://github.com/JetBrains-Research/opaque)
+[![Status](https://img.shields.io/badge/status-Phase%201A%20Ready-blue.svg)](https://github.com/JetBrains-Research/opaque)
 
 ---
 
@@ -24,7 +24,7 @@ Bring production-quality differential privacy to PyTorch's LLM fine-tuning ecosy
 - **PyTorch Native**: Built on `torch.func` (functional transformations)
 - **Zero Surprises**: Fail-fast error handling for security-critical DP training
 
-**Status**: 🎉 Stage 1 & 2 Complete — DP-SGD ready with functional clipping and noise injection!
+**Status**: Foundation complete (clipping, noise, accounting, optimizers) — Ready for Phase 1A: LoRA validation at 8B scale
 
 ---
 
@@ -105,58 +105,40 @@ Differential privacy (DP) provides mathematical guarantees that a model doesn't 
 
 ## Project Status & Roadmap
 
-### Stage 0: Planning (Completed)
-- [x] Analyze JAX-Privacy architecture
-- [x] Design PyTorch port strategy
-- [x] Define TDD-inspired workflow
+### ✅ Foundation Complete
 
-### ✅ Stage 1: Core Clipping (Complete!)
+Core DP-SGD primitives are implemented and validated:
 
-**Timeline**: Completed 2025-11-11 | [Detailed Plan](docs/development/stage1-plan.md)
+- **Clipping**: `clip_pytree()`, `clipped_fun()`, `clipped_grad()` — Full JAX-Privacy API parity
+- **Noise**: `gaussian()`, `gaussian_stateful()` — Stateless and reproducible noise injection
+- **Sampling**: `PoissonSampler`, `TruncatedPoissonSampler` — Batch selection mechanisms
+- **Optimizers**: `adaptive_clipping()` — TorchOpt wrapper with adaptive clipping
+- **Accounting**: Functional privacy accounting API
+- **Validation**: 111 tests passing, numerical equivalence with JAX-Privacy (atol=1e-5)
+- **Integration**: GPT-2 (124M) validated with HuggingFace models
 
-- [x] `opaque.utils.pytree` - PyTree operations with optree
-- [x] `opaque.clipping` - Full clipping API:
-  - `clip_pytree()` - Low-level PyTree clipping
-  - `clipped_fun()` - Clip and sum function outputs (primary API)
-  - `clipped_grad()` - High-level gradient clipping
-  - Plain functions with `.clip_norm` attribute (no wrapper classes)
-- [x] Numerical validation against JAX-Privacy main (all tests pass within 1e-5)
-- [x] Full API parity with JAX-Privacy main branch (single-device features)
+### 🎯 Phase 1A: LoRA Validation at 8B Scale (Current)
 
-**Deliverable**: ✅ Complete functional API matching JAX-Privacy
+Validate Opaque on production workload before adding advanced features:
 
-### ✅ Stage 2: Noise Injection & Optimizers (Complete!)
+- [ ] LoRA fine-tuning with DP on Llama-3-8B or Mistral-7B
+- [ ] Cross-validation with JAX-Privacy (gradient + utility equivalence)
+- [ ] End-to-end tutorial notebook
+- [ ] Basic microbatching if needed for memory
 
-**Timeline**: Completed 2025-11-14 | [Detailed Plan](docs/development/stage2-plan.md)
+### Upcoming Phases
 
-- [x] `opaque.noise` - Higher-order noise functions (NEW API!)
-  - `gaussian(stddev)` - Stateless noise function
-  - `gaussian_stateful(stddev, seed)` - Reproducible noise with explicit state
-  - Clean functional composition: `noise_fn(grad_fn(...))`
-- [x] `opaque.sampling` - Poisson sampling mechanisms
-  - `PoissonSampler` - Standard Poisson sampling
-  - `TruncatedPoissonSampler` - Bounded batch sizes
-- [x] `opaque.optimizers` - DP optimizer wrappers
-  - `adaptive_clipping()` - Adaptive clipping wrapper for TorchOpt optimizers
-- [x] 218 tests passing (all core functionality)
-- [x] Numerical equivalence with JAX-Privacy confirmed
+| Phase | Focus | Key Deliverables |
+|-------|-------|------------------|
+| **1B** | Memory Optimization | Microbatching, memory profiler |
+| **1C** | Empirical Auditing | Privacy auditing module |
+| **2** | API Polish | Refinements based on Phase 1A learnings |
+| **3** | BandMF & DP-FTRL | Correlated noise mechanisms (10-50% utility improvement) |
+| **4** | Scale (optional) | 13B+ validation if needed |
+| **5** | Distributed | Multi-GPU/multi-node training |
+| **6** | Release | Documentation, v1.0.0 |
 
-**Note**: Privacy accounting is now external (use `dp_accounting` or `jbr-fed-accounting`)
-
-**Deliverable**: ✅ Complete DP-SGD training implementation with clean functional API
-
-### Stage 3: Integration & End-to-End (Next)
-
-- [ ] End-to-end DP-SGD training examples
-- [ ] Integration with PyTorch optimizers
-- [ ] Memory-efficient microbatching
-- [ ] Performance optimization
-
-### Stage 4: High-Level API (Future)
-- [ ] `opaque.api.make_private()` - One-line DP wrapper
-- [ ] `DPConfig` - Configuration dataclass
-- [ ] Integration with Hugging Face `peft` library
-- [ ] Automatic LoRA detection
+**Timeline**: ~6-9 months to v1.0.0 | [Full Plan](docs/development/RFC_PRODUCTION_PLAN.md) | [Status](docs/development/STATUS.md)
 
 ---
 
@@ -164,17 +146,13 @@ Differential privacy (DP) provides mathematical guarantees that a model doesn't 
 
 ### Tutorials
 
-- [Tutorial 01: Gradient Clipping from Basics](docs/tutorials/01_gradient_clipping_from_basics.ipynb) — Learn gradient
-  clipping with `clipped_grad()`
-- [Tutorial 02: Differential Privacy - Noise and Accounting](docs/tutorials/02_differential_privacy_noise_and_accounting.ipynb) —
-  Complete DP-SGD with noise injection and privacy accounting
+- [Tutorial 01: Gradient Clipping from Basics](docs/tutorials/01_gradient_clipping_from_basics.ipynb) — Learn gradient clipping with `clipped_grad()`
+- [Tutorial 02: Differential Privacy - Noise and Accounting](docs/tutorials/02_differential_privacy_noise_and_accounting.ipynb) — Complete DP-SGD with noise injection and privacy accounting
 
 ### Development Documentation
 
-- [Roadmap](docs/development/roadmap.md) — Project timeline and milestones
-- [Stage 1 Plan](docs/development/stage1-plan.md) — Gradient clipping implementation
-- [Stage 2 Plan](docs/development/stage2-plan.md) — Noise injection and accounting implementation
-- [Design Decisions](docs/development/design-decisions.md) — Technical choices and rationale
+- [Status & Roadmap](docs/development/STATUS.md) — Current status and what's next
+- [Production Plan (RFC)](docs/development/RFC_PRODUCTION_PLAN.md) — Full implementation plan to v1.0.0
 - [Contributing Guide](CONTRIBUTING.md) — Development workflow
 
 ---
