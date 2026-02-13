@@ -15,7 +15,7 @@ from typing import Any
 import torch
 
 from opaque.clipping.clipped_grad import clipped_grad
-from opaque.clipping.types import AuxiliaryOutput, ClipState, NeighboringRelation
+from opaque.clipping.types import ClippedGradAux, ClipState, NeighboringRelation
 
 
 @dataclass(frozen=True)
@@ -314,10 +314,10 @@ def adaptive_clipped_grad(
             # We need to filter out the forced grad_norms if user didn't ask for them
             if not user_wants_return_norms and grad_norms is not None:
                 # Remove grad_norms from aux
-                new_aux = AuxiliaryOutput(
-                    values=aux.values if hasattr(aux, "values") else None,
+                new_aux = ClippedGradAux(
+                    loss_values=aux.loss_values if hasattr(aux, "loss_values") else None,
                     grad_norms=None,
-                    aux=aux.aux if hasattr(aux, "aux") else None,
+                    user_aux=aux.user_aux if hasattr(aux, "user_aux") else None,
                 )
                 return (grads, new_aux), new_state
             else:

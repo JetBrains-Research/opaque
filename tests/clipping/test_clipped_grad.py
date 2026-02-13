@@ -46,7 +46,7 @@ def test_clipped_grad_basic():
     def loss(param, data):
         return 0.5 * ((data - param) ** 2).mean()
 
-    clipped_grad_fn = clipped_grad(
+    grad_fn, clip_state = clipped_grad(
         loss,
         argnums=0,
         batch_argnums=1,
@@ -56,12 +56,12 @@ def test_clipped_grad_basic():
     param = torch.tensor(3.0, requires_grad=True)
     data = torch.tensor([0.0, 7.0, -2.0])
 
-    result = clipped_grad_fn(param, data)
+    grad, _ = grad_fn(param, data, state=clip_state)
 
-    # Check result is a tensor
-    assert isinstance(result, torch.Tensor)
+    # Check grad is a tensor
+    assert isinstance(grad, torch.Tensor)
     # With high clip norm, should get unclipped sum of gradients
-    assert result.shape == param.shape
+    assert grad.shape == param.shape
 
 
 def test_clipped_grad_with_rescale():
@@ -70,7 +70,7 @@ def test_clipped_grad_with_rescale():
     def loss(param, data):
         return 0.5 * ((data - param) ** 2).mean()
 
-    clipped_grad_fn = clipped_grad(
+    grad_fn, clip_state = clipped_grad(
         loss,
         argnums=0,
         batch_argnums=1,
@@ -81,11 +81,11 @@ def test_clipped_grad_with_rescale():
     param = torch.tensor(3.0, requires_grad=True)
     data = torch.tensor([0.0, 7.0, -2.0])
 
-    result = clipped_grad_fn(param, data)
+    grad, _ = grad_fn(param, data, state=clip_state)
 
-    # Check result is a tensor with correct shape
-    assert isinstance(result, torch.Tensor)
-    assert result.shape == param.shape
+    # Check grad is a tensor with correct shape
+    assert isinstance(grad, torch.Tensor)
+    assert grad.shape == param.shape
 
 
 def test_clipped_grad_with_pytree_params():
@@ -95,7 +95,7 @@ def test_clipped_grad_with_pytree_params():
         pred = params["w"] * data + params["b"]
         return ((pred - data) ** 2).mean()
 
-    clipped_grad_fn = clipped_grad(
+    grad_fn, clip_state = clipped_grad(
         loss,
         argnums=0,
         batch_argnums=1,
@@ -108,13 +108,13 @@ def test_clipped_grad_with_pytree_params():
     }
     data = torch.tensor([0.0, 1.0, 2.0])
 
-    result = clipped_grad_fn(params, data)
+    grads, _ = grad_fn(params, data, state=clip_state)
 
-    # Check result has same structure as params
-    assert isinstance(result, dict)
-    assert set(result.keys()) == set(params.keys())
-    assert result["w"].shape == params["w"].shape
-    assert result["b"].shape == params["b"].shape
+    # Check grads has same structure as params
+    assert isinstance(grads, dict)
+    assert set(grads.keys()) == set(params.keys())
+    assert grads["w"].shape == params["w"].shape
+    assert grads["b"].shape == params["b"].shape
 
 
 def test_clipped_grad_return_grad_norms():
@@ -123,7 +123,7 @@ def test_clipped_grad_return_grad_norms():
     def loss(param, data):
         return 0.5 * ((data - param) ** 2).mean()
 
-    clipped_grad_fn = clipped_grad(
+    grad_fn, clip_state = clipped_grad(
         loss,
         argnums=0,
         batch_argnums=1,
@@ -134,16 +134,16 @@ def test_clipped_grad_return_grad_norms():
     param = torch.tensor(3.0, requires_grad=True)
     data = torch.tensor([0.0, 7.0, -2.0])
 
-    grad, aux_output = clipped_grad_fn(param, data)
+    (grad, grad_aux), _ = grad_fn(param, data, state=clip_state)
 
     # Check gradient
     assert isinstance(grad, torch.Tensor)
     assert grad.shape == param.shape
 
-    # Check aux_output has grad_norms
-    assert aux_output.grad_norms is not None
-    assert aux_output.grad_norms.shape == (3,)  # One norm per example
-    assert (aux_output.grad_norms >= 0).all()  # Norms are non-negative
+    # Check grad_aux has grad_norms
+    assert grad_aux.grad_norms is not None
+    assert grad_aux.grad_norms.shape == (3,)  # One norm per example
+    assert (grad_aux.grad_norms >= 0).all()  # Norms are non-negative
 
 
 def test_clipped_grad_return_values():
@@ -152,7 +152,7 @@ def test_clipped_grad_return_values():
     def loss(param, data):
         return 0.5 * ((data - param) ** 2).mean()
 
-    clipped_grad_fn = clipped_grad(
+    grad_fn, clip_state = clipped_grad(
         loss,
         argnums=0,
         batch_argnums=1,
@@ -163,15 +163,15 @@ def test_clipped_grad_return_values():
     param = torch.tensor(3.0, requires_grad=True)
     data = torch.tensor([0.0, 7.0, -2.0])
 
-    grad, aux_output = clipped_grad_fn(param, data)
+    (grad, grad_aux), _ = grad_fn(param, data, state=clip_state)
 
     # Check gradient
     assert isinstance(grad, torch.Tensor)
     assert grad.shape == param.shape
 
-    # Check aux_output has values
-    assert aux_output.values is not None
-    assert aux_output.values.shape == (3,)  # One value per example
+    # Check grad_aux has values
+    assert grad_aux.loss_values is not None
+    assert grad_aux.loss_values.shape == (3,)  # One value per example
 
 
 def test_clipped_grad_has_aux():
@@ -179,10 +179,10 @@ def test_clipped_grad_has_aux():
 
     def loss_with_aux(param, data):
         loss = 0.5 * ((data - param) ** 2).mean()
-        aux = {"mean_data": data.mean()}
-        return loss, aux
+        user_aux = {"mean_data": data.mean()}
+        return loss, user_aux
 
-    clipped_grad_fn = clipped_grad(
+    grad_fn, clip_state = clipped_grad(
         loss_with_aux,
         argnums=0,
         has_aux=True,
@@ -193,16 +193,16 @@ def test_clipped_grad_has_aux():
     param = torch.tensor(3.0, requires_grad=True)
     data = torch.tensor([0.0, 7.0, -2.0])
 
-    grad, aux_output = clipped_grad_fn(param, data)
+    (grad, grad_aux), _ = grad_fn(param, data, state=clip_state)
 
     # Check gradient
     assert isinstance(grad, torch.Tensor)
     assert grad.shape == param.shape
 
-    # Check aux_output has aux data
-    assert aux_output.aux is not None
-    assert isinstance(aux_output.aux, dict)
-    assert "mean_data" in aux_output.aux
+    # Check grad_aux has user_aux data
+    assert grad_aux.user_aux is not None
+    assert isinstance(grad_aux.user_aux, dict)
+    assert "mean_data" in grad_aux.user_aux
 
 
 def test_clipped_grad_with_normalize_by():
@@ -212,7 +212,7 @@ def test_clipped_grad_with_normalize_by():
         return 0.5 * ((data - param) ** 2).mean()
 
     batch_size = 3.0
-    clipped_grad_fn = clipped_grad(
+    grad_fn, clip_state = clipped_grad(
         loss,
         argnums=0,
         batch_argnums=1,
@@ -223,11 +223,11 @@ def test_clipped_grad_with_normalize_by():
     param = torch.tensor(3.0, requires_grad=True)
     data = torch.tensor([0.0, 7.0, -2.0])
 
-    result = clipped_grad_fn(param, data)
+    grad, _ = grad_fn(param, data, state=clip_state)
 
-    # Check result is normalized (smaller than without normalization)
-    assert isinstance(result, torch.Tensor)
-    assert result.shape == param.shape
+    # Check grad is normalized (smaller than without normalization)
+    assert isinstance(grad, torch.Tensor)
+    assert grad.shape == param.shape
 
 
 def test_clipped_grad_actual_clipping():
@@ -239,7 +239,7 @@ def test_clipped_grad_actual_clipping():
 
     # Small clip norm to force clipping
     clip_norm = 1.0
-    clipped_grad_fn = clipped_grad(
+    grad_fn, clip_state = clipped_grad(
         loss,
         argnums=0,
         batch_argnums=1,
@@ -250,11 +250,11 @@ def test_clipped_grad_actual_clipping():
     param = torch.tensor(0.0)
     data = torch.tensor([100.0, 200.0, 300.0])  # Large values -> large gradients
 
-    grad, aux = clipped_grad_fn(param, data)
+    (grad, grad_aux), _ = grad_fn(param, data, state=clip_state)
 
     # Check that some gradients were clipped
-    assert (aux.grad_norms > clip_norm).any(), "Expected some gradients to be clipped"
-    assert aux.grad_norms.shape == (3,), "Should have 3 per-example norms"
+    assert (grad_aux.grad_norms > clip_norm).any(), "Expected some gradients to be clipped"
+    assert grad_aux.grad_norms.shape == (3,), "Should have 3 per-example norms"
 
 
 def test_clipped_grad_preserves_direction():
@@ -263,7 +263,7 @@ def test_clipped_grad_preserves_direction():
     def loss(param, data):
         return ((data - param) ** 2).mean()
 
-    clipped_grad_fn = clipped_grad(
+    grad_fn, clip_state = clipped_grad(
         loss,
         argnums=0,
         batch_argnums=1,
@@ -282,14 +282,14 @@ def test_clipped_grad_preserves_direction():
     unclipped_norm = unclipped_grad.abs().item()
 
     # Compute clipped gradient
-    grad_clipped, aux = clipped_grad_fn(param, data_single)
+    (grad, grad_aux), _ = grad_fn(param, data_single, state=clip_state)
 
     # Check direction is preserved (signs match)
-    assert torch.sign(grad_clipped) == torch.sign(unclipped_grad), "Direction should be preserved"
+    assert torch.sign(grad) == torch.sign(unclipped_grad), "Direction should be preserved"
 
     # Check that norm is clipped
     if unclipped_norm > 1.0:
-        assert abs(grad_clipped.item()) <= 1.0, "Should be clipped to norm 1.0"
+        assert abs(grad.item()) <= 1.0, "Should be clipped to norm 1.0"
 
 
 def test_clipped_grad_no_clipping_below_threshold():
@@ -300,7 +300,7 @@ def test_clipped_grad_no_clipping_below_threshold():
 
     # Large clip norm (won't clip)
     large_clip_norm = 1000.0
-    clipped_grad_fn = clipped_grad(
+    grad_fn, clip_state = clipped_grad(
         loss,
         argnums=0,
         batch_argnums=1,
@@ -311,10 +311,10 @@ def test_clipped_grad_no_clipping_below_threshold():
     param = torch.tensor(1.0)
     data = torch.tensor([1.1, 0.9, 1.05])  # Small differences -> small gradients
 
-    grad, aux = clipped_grad_fn(param, data)
+    (grad, grad_aux), _ = grad_fn(param, data, state=clip_state)
 
     # All norms should be below threshold
-    assert (aux.grad_norms < large_clip_norm).all(), "All norms should be below threshold"
+    assert (grad_aux.grad_norms < large_clip_norm).all(), "All norms should be below threshold"
     # Gradient should be non-trivial
     assert grad.abs() > 1e-6, "Gradient should be non-zero"
 
@@ -325,7 +325,7 @@ def test_clipped_grad_zero_gradients():
     def loss(param, data):
         return ((data - param) ** 2).mean()
 
-    clipped_grad_fn = clipped_grad(
+    grad_fn, clip_state = clipped_grad(
         loss,
         argnums=0,
         batch_argnums=1,
@@ -337,11 +337,11 @@ def test_clipped_grad_zero_gradients():
     param = torch.tensor(0.0)
     data = torch.zeros(3)
 
-    grad, aux = clipped_grad_fn(param, data)
+    (grad, grad_aux), _ = grad_fn(param, data, state=clip_state)
 
     # Check all zero
     assert grad.abs() < 1e-7, "Gradient should be zero"
-    assert (aux.grad_norms < 1e-7).all(), "All norms should be zero"
+    assert (grad_aux.grad_norms < 1e-7).all(), "All norms should be zero"
 
 
 def test_clipped_grad_keep_batch_dim():
@@ -359,24 +359,24 @@ def test_clipped_grad_keep_batch_dim():
     data = torch.tensor([0.5, 1.5, 2.0])
 
     # Test keep_batch_dim=False
-    grad_fn_no_batch = clipped_grad(
+    grad_fn_no_batch, clip_state_no_batch = clipped_grad(
         loss_no_batch,
         argnums=0,
         batch_argnums=1,
         l2_clip_norm=10.0,
         keep_batch_dim=False,
     )
-    grad_no_batch = grad_fn_no_batch(param, data)
+    grad_no_batch, _ = grad_fn_no_batch(param, data, state=clip_state_no_batch)
 
     # Test keep_batch_dim=True
-    grad_fn_with_batch = clipped_grad(
+    grad_fn_with_batch, clip_state_with_batch = clipped_grad(
         loss_with_batch,
         argnums=0,
         batch_argnums=1,
         l2_clip_norm=10.0,
         keep_batch_dim=True,
     )
-    grad_with_batch = grad_fn_with_batch(param, data)
+    grad_with_batch, _ = grad_fn_with_batch(param, data, state=clip_state_with_batch)
 
     # Both should produce gradients (exact values may differ due to loss function)
     assert grad_no_batch.abs() > 1e-6, "Should have non-zero gradient"

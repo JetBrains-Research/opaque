@@ -19,7 +19,7 @@ class TestAdaptiveClippedGrad:
             return ((pred - y) ** 2).mean()
 
         # Create adaptive clipping function
-        grad_fn = adaptive_clipped_grad(
+        grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
             target_quantile=0.5,
@@ -27,21 +27,21 @@ class TestAdaptiveClippedGrad:
         )
 
         # Check initial state
-        assert grad_fn.clip_norm == 1.0
-        assert grad_fn.step == 0
-        assert grad_fn.clipping_rate == 0.0
+        assert clip_state.clip_norm == 1.0
+        assert clip_state.step == 0
+        assert clip_state.clipping_rate == 0.0
 
         # Compute gradients
         params = torch.randn(10, requires_grad=False)
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        grads = grad_fn(params, batch_x, batch_y)
+        grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Check state updated
-        assert grad_fn.step == 1
-        assert isinstance(grad_fn.clip_norm, float)
-        assert isinstance(grad_fn.clipping_rate, float)
+        assert clip_state.step == 1
+        assert isinstance(clip_state.clip_norm, float)
+        assert isinstance(clip_state.clipping_rate, float)
         assert grads.shape == params.shape
 
     def test_threshold_increases_when_too_many_clipped(self):
@@ -52,7 +52,7 @@ class TestAdaptiveClippedGrad:
             return ((pred - y) ** 2).mean()
 
         # Start with very low threshold → many gradients will be clipped
-        grad_fn = adaptive_clipped_grad(
+        grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=0.01,  # Very low
             target_quantile=0.5,
@@ -64,14 +64,14 @@ class TestAdaptiveClippedGrad:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        initial_clip_norm = grad_fn.clip_norm
+        initial_clip_norm = clip_state.clip_norm
 
         # First step
-        grad_fn(params, batch_x, batch_y)
+        _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Threshold should increase (many gradients clipped)
-        assert grad_fn.clipping_rate > 0.5
-        assert grad_fn.clip_norm > initial_clip_norm
+        assert clip_state.clipping_rate > 0.5
+        assert clip_state.clip_norm > initial_clip_norm
 
     def test_threshold_decreases_when_too_few_clipped(self):
         """Test that threshold decreases when clipping rate < target quantile."""
@@ -81,7 +81,7 @@ class TestAdaptiveClippedGrad:
             return ((pred - y) ** 2).mean()
 
         # Start with very high threshold → few gradients will be clipped
-        grad_fn = adaptive_clipped_grad(
+        grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=100.0,  # Very high
             target_quantile=0.5,
@@ -93,14 +93,14 @@ class TestAdaptiveClippedGrad:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        initial_clip_norm = grad_fn.clip_norm
+        initial_clip_norm = clip_state.clip_norm
 
         # First step
-        grad_fn(params, batch_x, batch_y)
+        _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Threshold should decrease (few gradients clipped)
-        assert grad_fn.clipping_rate < 0.5
-        assert grad_fn.clip_norm < initial_clip_norm
+        assert clip_state.clipping_rate < 0.5
+        assert clip_state.clip_norm < initial_clip_norm
 
     def test_geometric_update_formula(self):
         """Test that updates follow geometric formula: C_{t+1} = C_t * exp(η * direction)."""
@@ -110,7 +110,7 @@ class TestAdaptiveClippedGrad:
             return ((pred - y) ** 2).mean()
 
         learning_rate = 0.2
-        grad_fn = adaptive_clipped_grad(
+        grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
             target_quantile=0.5,
@@ -123,9 +123,9 @@ class TestAdaptiveClippedGrad:
         batch_y = torch.randn(8)
 
         # Step 1
-        initial_clip_norm = grad_fn.clip_norm
-        grad_fn(params, batch_x, batch_y)
-        clipping_rate = grad_fn.clipping_rate
+        initial_clip_norm = clip_state.clip_norm
+        _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+        clipping_rate = clip_state.clipping_rate
 
         # Verify geometric update
         if clipping_rate > 0.5:
@@ -133,7 +133,7 @@ class TestAdaptiveClippedGrad:
         else:
             expected_clip_norm = initial_clip_norm * math.exp(-learning_rate)
 
-        assert abs(grad_fn.clip_norm - expected_clip_norm) < 1e-6
+        assert abs(clip_state.clip_norm - expected_clip_norm) < 1e-6
 
     def test_threshold_clamped_to_bounds(self):
         """Test that threshold is clamped to [clip_norm_min, clip_norm_max]."""
@@ -145,7 +145,7 @@ class TestAdaptiveClippedGrad:
         clip_norm_min = 0.5
         clip_norm_max = 2.0
 
-        grad_fn = adaptive_clipped_grad(
+        grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=0.1,  # Below min
             target_quantile=0.5,
@@ -161,10 +161,10 @@ class TestAdaptiveClippedGrad:
 
         # Run many steps to push threshold beyond bounds
         for _ in range(20):
-            grad_fn(params, batch_x, batch_y)
+            _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Threshold should be clamped
-        assert clip_norm_min <= grad_fn.clip_norm <= clip_norm_max
+        assert clip_norm_min <= clip_state.clip_norm <= clip_norm_max
 
     def test_step_counter_increments(self):
         """Test that step counter increments correctly."""
@@ -173,7 +173,7 @@ class TestAdaptiveClippedGrad:
             pred = x @ params
             return ((pred - y) ** 2).mean()
 
-        grad_fn = adaptive_clipped_grad(
+        grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
             batch_argnums=(1, 2),
@@ -183,11 +183,11 @@ class TestAdaptiveClippedGrad:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        assert grad_fn.step == 0
+        assert clip_state.step == 0
 
         for i in range(1, 6):
-            grad_fn(params, batch_x, batch_y)
-            assert grad_fn.step == i
+            _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+            assert clip_state.step == i
 
     def test_with_aux_output(self):
         """Test that has_aux=True works correctly."""
@@ -199,7 +199,7 @@ class TestAdaptiveClippedGrad:
             aux = {"accuracy": torch.tensor(0.95)}
             return loss, aux
 
-        grad_fn = adaptive_clipped_grad(
+        grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             has_aux=True,
             initial_clip_norm=1.0,
@@ -210,11 +210,11 @@ class TestAdaptiveClippedGrad:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        # Should return only gradients (aux is internal)
-        grads = grad_fn(params, batch_x, batch_y)
+        # Should return (grads, grad_aux) and new state
+        (grads, grad_aux), clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         assert grads.shape == params.shape
-        assert grad_fn.step == 1
+        assert clip_state.step == 1
 
     def test_different_target_quantiles(self):
         """Test that different target quantiles affect adaptation."""
@@ -228,7 +228,7 @@ class TestAdaptiveClippedGrad:
         batch_y = torch.randn(8)
 
         # Low target quantile (aim to clip fewer gradients)
-        grad_fn_low = adaptive_clipped_grad(
+        grad_fn_low, clip_state_low = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
             target_quantile=0.1,
@@ -236,7 +236,7 @@ class TestAdaptiveClippedGrad:
         )
 
         # High target quantile (aim to clip more gradients)
-        grad_fn_high = adaptive_clipped_grad(
+        grad_fn_high, clip_state_high = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
             target_quantile=0.9,
@@ -245,12 +245,12 @@ class TestAdaptiveClippedGrad:
 
         # Run 10 steps
         for _ in range(10):
-            grad_fn_low(params, batch_x, batch_y)
-            grad_fn_high(params, batch_x, batch_y)
+            _, clip_state_low = grad_fn_low(params, batch_x, batch_y, state=clip_state_low)
+            _, clip_state_high = grad_fn_high(params, batch_x, batch_y, state=clip_state_high)
 
         # Low quantile should result in higher threshold (clip fewer)
         # High quantile should result in lower threshold (clip more)
-        assert grad_fn_low.clip_norm > grad_fn_high.clip_norm
+        assert clip_state_low.clip_norm > clip_state_high.clip_norm
 
     def test_different_learning_rates(self):
         """Test that learning rate affects adaptation speed."""
@@ -264,7 +264,7 @@ class TestAdaptiveClippedGrad:
         batch_y = torch.randn(8)
 
         # Slow adaptation
-        grad_fn_slow = adaptive_clipped_grad(
+        grad_fn_slow, clip_state_slow = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=0.01,
             learning_rate=0.05,
@@ -272,7 +272,7 @@ class TestAdaptiveClippedGrad:
         )
 
         # Fast adaptation
-        grad_fn_fast = adaptive_clipped_grad(
+        grad_fn_fast, clip_state_fast = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=0.01,
             learning_rate=0.5,
@@ -281,22 +281,21 @@ class TestAdaptiveClippedGrad:
 
         # Run 5 steps
         for _ in range(5):
-            grad_fn_slow(params, batch_x, batch_y)
-            grad_fn_fast(params, batch_x, batch_y)
+            _, clip_state_slow = grad_fn_slow(params, batch_x, batch_y, state=clip_state_slow)
+            _, clip_state_fast = grad_fn_fast(params, batch_x, batch_y, state=clip_state_fast)
 
         # Fast should have adapted more
-        assert abs(grad_fn_fast.clip_norm - 0.01) > abs(grad_fn_slow.clip_norm - 0.01)
+        assert abs(clip_state_fast.clip_norm - 0.01) > abs(clip_state_slow.clip_norm - 0.01)
 
     def test_kwargs_passed_to_clipped_grad(self):
         """Test that additional kwargs are passed to clipped_grad."""
-        from opaque.clipping import AuxiliaryOutput
 
         def loss_fn(params, x, y):
             pred = x @ params
             return ((pred - y) ** 2).mean()
 
         # Test with return_values=True to verify kwargs are passed
-        grad_fn = adaptive_clipped_grad(
+        grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
             batch_argnums=(1, 2),
@@ -307,16 +306,12 @@ class TestAdaptiveClippedGrad:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        result = grad_fn(params, batch_x, batch_y)
+        (grads, grad_aux), clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
-        # With return_values=True, should return tuple (grads, AuxiliaryOutput)
-        assert isinstance(result, tuple)
-        assert len(result) == 2
-        grads, aux = result
         assert grads.shape == params.shape
-        assert isinstance(aux, AuxiliaryOutput)
-        assert aux.values is not None
-        assert aux.grad_norms is not None  # We force return_grad_norms=True internally
+        assert grad_aux.loss_values is not None
+        # Note: grad_norms is used internally for adaptation but stripped from output
+        # unless user explicitly sets return_grad_norms=True
 
     def test_composition_with_noise(self):
         """Test that adaptive clipping composes naturally with noise."""
@@ -326,7 +321,7 @@ class TestAdaptiveClippedGrad:
             pred = x @ params
             return ((pred - y) ** 2).mean()
 
-        grad_fn = adaptive_clipped_grad(
+        grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
             batch_argnums=(1, 2),
@@ -337,10 +332,10 @@ class TestAdaptiveClippedGrad:
         batch_y = torch.randn(8)
 
         # Compute clipped gradients
-        grads = grad_fn(params, batch_x, batch_y)
+        grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Add noise scaled to current clip norm
-        noise_fn = gaussian(stddev=1.1 * grad_fn.clip_norm)
+        noise_fn = gaussian(stddev=1.1 * clip_state.clip_norm)
         noisy_grads = noise_fn(grads)
 
         assert noisy_grads.shape == grads.shape
@@ -409,7 +404,7 @@ class TestEdgeCases:
             pred = x @ params
             return ((pred - y) ** 2).mean()
 
-        grad_fn = adaptive_clipped_grad(
+        grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
             batch_argnums=(1, 2),
@@ -419,10 +414,10 @@ class TestEdgeCases:
         batch_x = torch.randn(1, 10)
         batch_y = torch.randn(1)
 
-        grads = grad_fn(params, batch_x, batch_y)
+        grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         assert grads.shape == params.shape
-        assert grad_fn.step == 1
+        assert clip_state.step == 1
 
     def test_zero_gradients(self):
         """Test with zero gradients (e.g., at local minimum)."""
@@ -430,7 +425,7 @@ class TestEdgeCases:
         def loss_fn(params, x, y):
             return torch.tensor(0.0)  # Constant loss → zero gradients
 
-        grad_fn = adaptive_clipped_grad(
+        grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
             batch_argnums=(1, 2),
@@ -440,11 +435,11 @@ class TestEdgeCases:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        grads = grad_fn(params, batch_x, batch_y)
+        grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Should handle gracefully
         assert torch.allclose(grads, torch.zeros_like(grads))
-        assert grad_fn.step == 1
+        assert clip_state.step == 1
 
     def test_large_batch(self):
         """Test with large batch size."""
@@ -453,7 +448,7 @@ class TestEdgeCases:
             pred = x @ params
             return ((pred - y) ** 2).mean()
 
-        grad_fn = adaptive_clipped_grad(
+        grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
             batch_argnums=(1, 2),
@@ -463,8 +458,8 @@ class TestEdgeCases:
         batch_x = torch.randn(1000, 10)  # Large batch
         batch_y = torch.randn(1000)
 
-        grads = grad_fn(params, batch_x, batch_y)
+        grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         assert grads.shape == params.shape
-        assert grad_fn.step == 1
-        assert 0.0 <= grad_fn.clipping_rate <= 1.0
+        assert clip_state.step == 1
+        assert 0.0 <= clip_state.clipping_rate <= 1.0
