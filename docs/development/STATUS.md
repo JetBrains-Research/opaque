@@ -1,38 +1,79 @@
 # Opaque Status & Roadmap
 
-**Last Updated**: 2026-02-12
+**Last Updated**: 2026-02-13
 **Current Version**: v0.1.0-alpha
-**Status**: Prototype → Production Transition
+**Status**: Stages 1-2 Complete → Phase 1A (LoRA Validation) Ready
 
 ---
 
 ## Quick Status
 
 **Completed** (Stages 1-2):
-- ✅ Core clipping API (111 tests passing)
-- ✅ Functional accounting API
-- ✅ GPT-2 integration validated
+- ✅ Core clipping API (JAX-Privacy parity)
+- ✅ Noise injection (stateless)
+- ✅ Functional accounting API (to be migrated - see RFC_ACCOUNTING_MIGRATION.md)
+- ✅ TorchOpt optimizer wrappers
+- ✅ 111 tests passing (56 optimizer + 55 accounting)
+- ✅ GPT-2 (124M) integration validated
 
-**In Progress** (Phase 1):
-- 🔄 Memory optimization (microbatching)
-- 🔄 Opacus cross-validation
-- 🔄 Production hardening
+**Ready to Start** (Phase 1A):
+- 🎯 **LoRA validation at 8B scale** (Llama-3-8B or Mistral-7B)
+- 🎯 JAX-Privacy cross-validation
+- 🎯 H200 GPU environment available
 
 **Planned**:
-- 📋 Phase 2: Functional API refactoring
-- 📋 Phase 3: Scale to Llama-7B/13B
-- 📋 Phase 4: v1.0.0 release
+- 📋 Phase 1B: Memory profiling & optimization
+- 📋 Phase 1C: Empirical privacy auditing
+- 📋 Phase 2: Functional API polish
+- 📋 Phase 3: BandMF & DP-FTRL
+- 📋 Phase 4-6: Scale, distributed, v1.0.0 release
 
 ---
 
-## For Complete Plan
+## For Agents: Starting Phase 1A
+
+**If you're an agent tasked with Phase 1A implementation**, see:
+
+1. **[RFC: Production Plan](RFC_PRODUCTION_PLAN.md)** - Section 5, Phase 1A for complete task breakdown
+2. **Key tasks**:
+   - Choose LoRA model: Llama-3-8B or Mistral-7B
+   - Task: Instruction tuning (Alpaca/Dolly)
+   - Get non-DP LoRA baseline working
+   - Integrate Opaque DP training (`clipped_grad()` + `add_gaussian_noise()`)
+   - Cross-validate with JAX-Privacy (gradient + utility equivalence)
+   - Document all issues encountered
+   - Implement basic microbatching if OOM occurs
+   - Create end-to-end tutorial notebook
+
+3. **Success criteria**:
+   - ✅ 8B LoRA model fine-tunes end-to-end with DP
+   - ✅ Matches JAX-Privacy gradient output (atol=1e-5)
+   - ✅ Achieves reasonable utility (comparable to JAX-Privacy)
+   - ✅ Tutorial demonstrates complete workflow
+
+**Environment**: H200 GPU with 80GB memory
+
+---
+
+## Complete Plan
 
 See **[RFC: Production Plan](RFC_PRODUCTION_PLAN.md)** for:
-- Complete production readiness assessment
-- 4-phase implementation plan (~16 weeks)
-- Architectural decisions (functional design)
-- Validation strategy
-- Timeline and deliverables
+- Complete 6-phase implementation plan (~6-9 months to v1.0.0)
+- Phase 1A: LoRA validation at scale (4-6 weeks) 🎯 **START HERE**
+- Phase 1B: Memory profiling & optimization (2-3 weeks)
+- Phase 1C: Empirical privacy auditing (2-3 weeks)
+- Phase 2: Functional API polish (1-2 weeks)
+- Phase 3: BandMF & DP-FTRL (6-8 weeks)
+- Phase 4: Larger scale validation - optional (2-3 weeks)
+- Phase 5: Distributed training (4-6 weeks)
+- Phase 6: Production polish & v1.0.0 (3-4 weeks)
+
+**Key decisions**:
+- ✅ LoRA validation moved to Phase 1A (validate on real use case, not toy models)
+- ✅ JAX-Privacy comparison (not Opacus - more flexible)
+- ✅ Memory profiler = context manager (observe, not predict)
+- ✅ Batch selection deferred to Phase 3 (only CyclicPoisson for BandMF)
+- ❌ No DP Execution Plans (out of scope for functional v1.0)
 
 ---
 
@@ -41,11 +82,11 @@ See **[RFC: Production Plan](RFC_PRODUCTION_PLAN.md)** for:
 ### Stage 1: Core Clipping ✅ COMPLETE (Nov 2025)
 
 **Deliverables**:
-- `opaque.clipping` module (700 LOC)
+- `opaque.clipping` module (modularized structure)
   - `clip_pytree()`, `clipped_fun()`, `clipped_grad()`
   - Full JAX-Privacy API parity (single-device)
-- Tests: 79 passing (34 unit + 45 JAX validation)
-- Coverage: 80%
+- Tests: 70 passing with JAX validation
+- Coverage: ~90%
 
 **Achievements**:
 - Numerical equivalence with JAX-Privacy (atol=1e-5)
@@ -61,6 +102,7 @@ See **[RFC: Production Plan](RFC_PRODUCTION_PLAN.md)** for:
   - Composition: `compose_gaussian()`, `compose_poisson_gaussian()`, etc.
   - Queries: `get_epsilon()`, `get_beta()`, `get_advantage()`
   - Calibration: Using riskcal primitives
+  - **Note**: Will be migrated to separate library (see RFC_ACCOUNTING_MIGRATION.md)
 - `opaque.optimizers` module
   - `adaptive_clipping()` wrapper for TorchOpt
 - Tests: 111 passing (55 accounting + 56 optimizer)
@@ -68,74 +110,49 @@ See **[RFC: Production Plan](RFC_PRODUCTION_PLAN.md)** for:
 **Achievements**:
 - Functional API (immutable state, pure functions)
 - Truncated Poisson sampling (solves variable batch problem)
-- Parallel test execution (3.17× speedup)
+- Parallel test execution (3.17× speedup with pytest-xdist)
 - Tutorial notebook restructured
 
----
-
-## Next: Phase 1 (Production Hardening)
-
-**Timeline**: 4-6 weeks
-**Focus**: Memory efficiency + validation
-
-**Week 1-2**: Memory Management
-- Implement microbatching in `clipped_grad()`
-- Memory profiling tools (`estimate_memory()`, `recommend_microbatch_size()`)
-
-**Week 3-4**: Cross-Validation
-- Validate against Opacus (gradient, privacy, utility)
-- Test matrix: MNIST, CIFAR-10, Wikitext
-
-**Week 5-6**: Large Model Testing
-- GPT-2-Large (774M) with microbatching
-- GPT-2-XL (1.5B) with gradient checkpointing
-- Troubleshooting guide
-
-**Success Criteria**:
-- ✅ Train GPT-2 without OOM (batch=32, microbatch=8)
-- ✅ Match Opacus within 0.1 epsilon
-- ✅ Match Opacus within 2% accuracy
+**Archived Documentation**:
+- Stage 1-2 detailed progress docs moved to `archive/stages_1_2_complete/`
 
 ---
 
-## Production Readiness Gaps
+## Production Readiness Assessment
 
-### 🔥 BLOCKER: Memory Efficiency
-- `vmap` materializes all per-example grads (31GB for GPT-2 batch=64)
-- **Solution**: Microbatching + memory profiling (Phase 1)
+### Current State
+- ✅ **Core primitives work** (clipping, noise, accounting)
+- ✅ **Small model validation** (GPT-2 124M)
+- ❌ **No large-scale validation** (8B+ models untested)
+- ❌ **No LoRA integration testing**
+- ❌ **Memory optimization missing** (microbatching not implemented)
+- ❌ **Limited cross-validation** (JAX-Privacy not tested)
 
-### ❌ HIGH PRIORITY: Validation
-- No Opacus cross-validation yet
-- No utility benchmarks
-- **Solution**: Systematic validation tests (Phase 1)
-
-### ❌ Scale Testing
-- Only tested GPT-2 (124M params)
-- LoRA integration untested
-- **Solution**: Large model testing (Phase 3)
-
-### ❌ Documentation
-- Limited production guides
-- No migration guide from Opacus
-- **Solution**: Comprehensive docs (Phase 4)
+### Critical Path: Phase 1A
+**Phase 1A is the blocker for everything else.** Must prove library works on production workload (LoRA @ 8B scale) before proceeding with advanced features.
 
 ---
 
 ## Timeline to v1.0.0
 
-| Phase | Duration | Key Deliverables |
-|-------|----------|------------------|
-| Phase 1 | 4-6 weeks | Microbatching, Opacus validation |
-| Phase 2 | 3-4 weeks | Functional API (JAX-Privacy patterns) |
-| Phase 3 | 4-6 weeks | Llama-7B LoRA, gradient checkpointing |
-| Phase 4 | 2-3 weeks | Documentation, v1.0.0 release |
-| **Total** | **~16 weeks** | **Production-ready library** |
+| Phase | Duration | Focus | Key Deliverables |
+|-------|----------|-------|------------------|
+| **Phase 1A** 🎯 | 4-6 weeks | **LoRA @ 8B Scale** | Validation, JAX comparison, tutorial |
+| Phase 1B | 2-3 weeks | Memory Optimization | Microbatching, profiler |
+| Phase 1C | 2-3 weeks | Empirical Auditing | Auditing module |
+| Phase 2 | 1-2 weeks | API Polish | Based on Phase 1A learnings |
+| Phase 3 | 6-8 weeks | BandMF & DP-FTRL | Matrix factorization |
+| Phase 4 | 2-3 weeks | Optional Scaling | 13B+ if needed |
+| Phase 5 | 4-6 weeks | Distributed | Multi-GPU |
+| Phase 6 | 3-4 weeks | Polish & Release | Docs, tests, v1.0.0 |
+| **Total** | **~6-9 months** | | **Production-ready library** |
 
 ---
 
 ## References
 
-- **[RFC: Production Plan](RFC_PRODUCTION_PLAN.md)** - Complete implementation plan
-- **[Design Comparison](DESIGN_COMPARISON_EXAMPLES.md)** - API design examples
+- **[RFC: Production Plan](RFC_PRODUCTION_PLAN.md)** - Complete implementation plan with all phases
+- **[Design Comparison](DESIGN_COMPARISON_EXAMPLES.md)** - Functional API design examples
 - **[TDD Workflow](tdd-workflow.md)** - Development process
 - **[CLAUDE.md](../../CLAUDE.md)** - Agent briefing (current context)
+- **[Archive](archive/stages_1_2_complete/)** - Completed Stages 1-2 documentation

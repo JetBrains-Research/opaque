@@ -1,14 +1,15 @@
 # Opaque: Agent Briefing
 
 **Project**: PyTorch port of JAX-Privacy for DP-SGD LoRA fine-tuning
-**Status**: ✅ Stage 1-2 Complete → 🔄 Phase 1 (Production Hardening)
+**Status**: ✅ Stages 1-2 Complete → 🎯 Phase 1A Ready (LoRA Validation @ 8B Scale)
 **JAX-Privacy Reference**: `../jax_privacy/` (always available)
+**Environment**: H200 GPU with 80GB memory
 
 ---
 
 ## Current State
 
-**Repository Phase**: ✅ Stages 1-2 COMPLETE → 🔄 Phase 1 (Production Hardening)
+**Repository Phase**: ✅ Stages 1-2 COMPLETE → 🎯 **Phase 1A READY TO START**
 
 **Key Constraint**: Follow TDD workflow strictly - write tests before implementation
 
@@ -17,16 +18,47 @@
 - ✅ **Stage 1**: Full clipping API (clip_pytree, clipped_fun, clipped_grad)
 - ✅ **Stage 2**: Noise injection (add_gaussian_noise) and functional privacy accounting
 - **Modules**: Modularized into `utils/`, `clipping/`, `noise/`, `accounting/`, `optimizers/` packages
-- **API Parity**: All single-device parameters except microbatch_size and spmd_axis_name (tech debt - to be fixed in Phase 1)
+- **API Parity**: All single-device parameters except microbatch_size and spmd_axis_name (tech debt)
 - **Tests**: 111 tests passing (55 accounting + 56 optimizer tests), parallel execution enabled
 - **Validation**: GPT-2 (124M params) integration test passes
+- **Archived**: Stages 1-2 detailed docs moved to `docs/development/archive/stages_1_2_complete/`
 
-**In Progress (Phase 1 - Week 1)**:
+**⚠️ Note on Privacy Accounting**:
+- The `opaque.accounting` module will be migrated to a separate library
+- See forthcoming `docs/development/RFC_ACCOUNTING_MIGRATION.md` for details
+- Phase 1A focuses on DP training library only (clipping, noise, sampling, optimizers)
 
-- 🔄 **Microbatching implementation** (fixes OOM on large batches)
-- 🔄 **Memory profiling tools** (estimate_memory, recommend_microbatch_size)
-- 📋 **Opacus cross-validation** (Weeks 3-4)
-- 📋 **Large model testing** (GPT-2-Large/XL, Weeks 5-6)
+**Ready to Start (Phase 1A - LoRA Validation @ 8B Scale)**:
+
+**🎯 Goal**: Prove Opaque works for real LoRA fine-tuning with DP at production scale
+
+**Why LoRA now?** LoRA is the actual use case. Training small models doesn't test memory pressure or scale issues. Better to discover LoRA-specific issues early.
+
+**Phase 1A Tasks** (4-6 weeks):
+1. **Week 1-2: Baseline & Integration**
+   - Choose LoRA model: Llama-3-8B or Mistral-7B
+   - Task: Instruction tuning (Alpaca/Dolly)
+   - Get non-DP LoRA baseline working
+   - Add Opaque DP training (`clipped_grad()` + `add_gaussian_noise()`)
+
+2. **Week 3-4: Debugging & JAX-Privacy Validation**
+   - Debug all issues (API friction, memory, numerical stability, LoRA integration)
+   - Cross-validate with JAX-Privacy (gradient + utility equivalence)
+   - Create `tests/validation/test_opaque_vs_jax_privacy.py`
+
+3. **Week 5-6: Documentation & Microbatching**
+   - Troubleshooting guide (real issues + solutions)
+   - Implement basic microbatching if OOM occurred
+   - Tutorial notebook: End-to-end LoRA DP training
+
+**Success Criteria**:
+- ✅ 8B LoRA model fine-tunes end-to-end with DP
+- ✅ Matches JAX-Privacy gradient output (single step, atol=1e-5)
+- ✅ Achieves reasonable utility (task performance comparable to JAX-Privacy)
+- ✅ Documented all real issues encountered
+- ✅ Tutorial demonstrates complete workflow
+
+**For detailed task breakdown**: See `docs/development/RFC_PRODUCTION_PLAN.md` Section 5, Phase 1A
 
 ---
 
