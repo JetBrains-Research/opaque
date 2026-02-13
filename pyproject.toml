@@ -36,6 +36,8 @@ dependencies = [
   "optree>=0.17.0",
   "torch>=2.0.0",
   "torchopt>=0.7.3",
+  "unsloth>=2026.2.1",
+  "unsloth-zoo>=2026.2.1",
 ]
 
 [project.optional-dependencies]

@@ -6,6 +6,8 @@ inspired by JAX-Privacy.
 Note: Privacy accounting is provided by jbr-fed-accounting (external library).
 """
 
+import os
+
 from opaque import sampling
 from opaque.clipping import (
     AdaptiveClipState,
@@ -31,6 +33,24 @@ from opaque.sampling import PoissonSampler, TruncatedPoissonSampler
 #     make_dp_optimizer,
 # )
 from opaque.utils import make_functional
+
+# =============================================================================
+# Auto-patching for HuggingFace Transformers vmap compatibility
+# =============================================================================
+# Disable with: OPAQUE_NO_PATCH=1
+#
+# These patches make HuggingFace models work with vmap (required for clipped_grad).
+# They replace functions that use hardcoded shapes or data-dependent control flow
+# with vmap-compatible versions using dynamic shapes.
+
+if not os.environ.get("OPAQUE_NO_PATCH"):
+    try:
+        from opaque.compat.transformers import apply_global_patches
+
+        apply_global_patches()
+    except ImportError:
+        # transformers not installed, skip patching
+        pass
 
 __all__ = [
     # Clipping

@@ -253,7 +253,7 @@ def profile_memory(
     params = {**frozen, **trainable}
 
     # Create grad function
-    grad_fn = clipped_grad(
+    grad_fn, clip_state = clipped_grad(
         loss_fn,
         l2_clip_norm=l2_clip_norm,
         batch_argnums=tuple(range(1, len(sample_batch) + 1)),
@@ -265,7 +265,7 @@ def profile_memory(
 
     # Run one step (no_grad to avoid accumulating .grad attributes)
     with torch.no_grad():
-        grads = grad_fn(params, *sample_batch)
+        grads, _ = grad_fn(params, *sample_batch, state=clip_state)
 
     # Get measurements
     peak_bytes = tracker.get_peak_allocated()

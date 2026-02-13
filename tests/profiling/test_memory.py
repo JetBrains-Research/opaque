@@ -369,7 +369,7 @@ class TestIntegration:
         # Step 3: Train with recommended config
         from opaque import clipped_grad
 
-        grad_fn = clipped_grad(
+        grad_fn, clip_state = clipped_grad(
             loss_fn,
             l2_clip_norm=1.0,
             batch_argnums=(1, 2),
@@ -381,7 +381,7 @@ class TestIntegration:
         params = {**frozen, **trainable}
 
         # Should successfully compute gradients
-        grads = grad_fn(params, data, targets)
+        grads, _ = grad_fn(params, data, targets, state=clip_state)
 
         # Check gradients exist
         assert isinstance(grads, dict)
