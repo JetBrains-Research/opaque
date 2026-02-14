@@ -26,6 +26,127 @@ def _with_extra_batch_axis(fun, batch_argnums):
     return wrapped_fun
 
 
+def _microbatch_accumulate(
+    per_example_fn,
+    args,
+    batch_argnums,
+    in_dims,
+    microbatch_size,
+    has_aux,
+    dtype,
+):
+    """Process batch in microbatches, accumulating results without materializing full batch.
+
+    This implementation processes the batch in chunks of `microbatch_size`, accumulating
+    results according to their type:
+    - Clipped gradients: SUM (accumulate in-place, don't keep all per-example grads)
+    - Auxiliary outputs: CONCAT (keep per-example for privacy analysis)
+    - Norms: CONCAT (keep per-example for privacy analysis)
+
+    Args:
+        per_example_fn: Function to vmap over each example
+        args: Full batch arguments
+        batch_argnums: Which arguments contain batch dimension
+        in_dims: Input dimensions for vmap
+        microbatch_size: Size of each microbatch
+        has_aux: Whether function returns auxiliary outputs
+        dtype: Optional dtype for accumulated gradients
+
+    Returns:
+        Tuple of (accumulated_grads, concatenated_aux, concatenated_norms)
+    """
+    # Get batch size from first batch argument
+    first_batch_idx = batch_argnums[0]
+    first_batch_arg = args[first_batch_idx]
+    if isinstance(first_batch_arg, torch.Tensor):
+        batch_size = first_batch_arg.shape[0]
+    else:
+        # Handle PyTree case - get batch size from first tensor
+        def get_first_tensor(pytree):
+            if isinstance(pytree, torch.Tensor):
+                return pytree
+            elif isinstance(pytree, dict):
+                for v in pytree.values():
+                    result = get_first_tensor(v)
+                    if result is not None:
+                        return result
+            elif isinstance(pytree, (list, tuple)):
+                for v in pytree:
+                    result = get_first_tensor(v)
+                    if result is not None:
+                        return result
+            return None
+
+        first_tensor = get_first_tensor(first_batch_arg)
+        batch_size = first_tensor.shape[0]
+
+    # Initialize accumulators
+    accumulated_grads = None
+    aux_list = []
+    norms_list = []
+
+    # Process each microbatch
+    for start_idx in range(0, batch_size, microbatch_size):
+        end_idx = min(start_idx + microbatch_size, batch_size)
+
+        # Slice batch arguments for this microbatch
+        microbatch_args = list(args)
+        for i in batch_argnums:
+            microbatch_args[i] = tree_map(
+                lambda x: x[start_idx:end_idx] if isinstance(x, torch.Tensor) else x,
+                args[i],
+            )
+
+        # vmap over microbatch
+        out_dims = (0, None if not has_aux else 0, 0)  # (clipped_value, aux, norm)
+        vmapped = _vmap(
+            per_example_fn,
+            in_dims=in_dims,
+            out_dims=out_dims,
+            randomness="same",
+        )
+        clipped_values, aux, norms = vmapped(*microbatch_args)
+
+        # Accumulate clipped gradients (SUM)
+        microbatch_sum = tree_map(
+            lambda x: torch.sum(x, dim=0, dtype=dtype), clipped_values
+        )
+        if accumulated_grads is None:
+            accumulated_grads = microbatch_sum
+        else:
+            accumulated_grads = tree_map(
+                lambda acc, new: acc + new, accumulated_grads, microbatch_sum
+            )
+
+        # Collect aux outputs (CONCAT) - keep per-example
+        if has_aux:
+            aux_list.append(aux)
+
+        # Collect norms (CONCAT) - keep per-example
+        norms_list.append(norms)
+
+    # Concatenate aux and norms across all microbatches
+    if has_aux:
+        # Concatenate aux outputs along batch dimension
+        # Need to handle the list structure properly - transpose list of pytrees into pytree of lists
+        def concat_leaves(*leaf_values):
+            """Concatenate corresponding leaf values across microbatches."""
+            if all(isinstance(v, torch.Tensor) for v in leaf_values):
+                return torch.cat(leaf_values, dim=0)
+            return leaf_values  # Non-tensor leaves remain as-is
+
+        aux = tree_map(concat_leaves, *aux_list)
+    else:
+        aux = ()
+
+    # Concatenate norms (extract .norm field from ClipPytreeAux namedtuples)
+    from opaque.clipping.types import ClipPytreeAux
+    norm_tensors = [n.norm for n in norms_list]
+    norms = ClipPytreeAux(norm=torch.cat(norm_tensors, dim=0))
+
+    return accumulated_grads, aux, norms
+
+
 def clipped_fun(
     fun,
     has_aux: bool = False,
@@ -87,9 +208,9 @@ def clipped_fun(
             per-example values before clipping. These values should be handled with
             care, see the formal guarantees above.
         microbatch_size: If set, the batch is split up into microbatches of this
-            size for memory-efficient processing. Uses torch.vmap's chunk_size
-            parameter to process examples sequentially in groups. Set this to reduce
-            peak memory usage at the cost of slightly slower computation.
+            size for memory-efficient processing. Processes each microbatch separately
+            and accumulates results without materializing the full batch of gradients.
+            Set this to reduce peak memory usage at the cost of slightly slower computation.
         nan_safe: If True, the formal guarantees of the returned Callable still
             hold in the presence of NaNs and infs. See `clip_pytree` for more details.
         dtype: Optional dtype for the clipped+aggregated pytree. If None, the dtype
@@ -151,21 +272,31 @@ def clipped_fun(
             )
             return clipped_value, aux, norm
 
-        # Vmap over batch - specify out_dims for aux
-        # aux might be empty tuple (), which should have out_dims=None
-        out_dims = (0, None if not has_aux else 0, 0)  # (clipped_value, aux, norm)
-        vmapped = _vmap(
-            per_example_fn,
-            in_dims=in_dims,
-            out_dims=out_dims,
-            randomness="same",
-            chunk_size=microbatch_size,
-        )
-        clipped_values, aux, norms = vmapped(*args)
+        # Choose execution path based on microbatch_size
+        if microbatch_size is None:
+            # Fast path: vmap entire batch at once
+            out_dims = (0, None if not has_aux else 0, 0)  # (clipped_value, aux, norm)
+            vmapped = _vmap(
+                per_example_fn,
+                in_dims=in_dims,
+                out_dims=out_dims,
+                randomness="same",
+            )
+            clipped_values, aux, norms = vmapped(*args)
 
-        # Sum clipped values across batch dimension using tree_map
-        # This handles both scalars/tensors and arbitrarily nested PyTrees
-        result = tree_map(lambda x: torch.sum(x, dim=0, dtype=dtype), clipped_values)
+            # Sum clipped values across batch dimension
+            result = tree_map(lambda x: torch.sum(x, dim=0, dtype=dtype), clipped_values)
+        else:
+            # Manual microbatch accumulation: process in chunks, accumulate as we go
+            result, aux, norms = _microbatch_accumulate(
+                per_example_fn=per_example_fn,
+                args=args,
+                batch_argnums=batch_argnums,
+                in_dims=in_dims,
+                microbatch_size=microbatch_size,
+                has_aux=has_aux,
+                dtype=dtype,
+            )
 
         # Normalize
         if normalize_by != 1.0:
