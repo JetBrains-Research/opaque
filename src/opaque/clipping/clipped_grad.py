@@ -133,7 +133,9 @@ def clipped_grad(
             accommodate preconditioner clipping. Does not affect the sensitivity
             guarantee. Default is identity function.
         microbatch_size: If set, input groups are formed into microbatches of this
-            size. Not yet implemented in PyTorch version (tech debt).
+            size. Processes chunks sequentially and accumulates the sum incrementally,
+            ensuring only microbatch_size gradients are in memory at any time. This is
+            essential for memory-efficient DP-SGD training with large batches.
         nan_safe: If True, the formal guarantees of the returned Callable still
             hold in the presence of NaNs and infs.
         dtype: Optional dtype for the returned gradient. If None, the dtype will be

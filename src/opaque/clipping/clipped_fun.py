@@ -87,9 +87,12 @@ def clipped_fun(
             per-example values before clipping. These values should be handled with
             care, see the formal guarantees above.
         microbatch_size: If set, the batch is split up into microbatches of this
-            size for memory-efficient processing. Uses torch.vmap's chunk_size
-            parameter to process examples sequentially in groups. Set this to reduce
-            peak memory usage at the cost of slightly slower computation.
+            size for memory-efficient processing. Unlike PyTorch's vmap chunk_size,
+            this implementation processes chunks sequentially and accumulates the
+            sum incrementally, ensuring only microbatch_size gradients are in memory
+            at any time. This is crucial for DP-SGD where per-example gradients are
+            the memory bottleneck. Set this to reduce peak memory usage at the cost
+            of slightly slower computation.
         nan_safe: If True, the formal guarantees of the returned Callable still
             hold in the presence of NaNs and infs. See `clip_pytree` for more details.
         dtype: Optional dtype for the clipped+aggregated pytree. If None, the dtype
@@ -150,21 +153,79 @@ def clipped_fun(
             )
             return clipped_value, aux, norm
 
-        # Vmap over batch - specify out_dims for aux
-        # aux might be empty tuple (), which should have out_dims=None
-        out_dims = (0, None if not has_aux else 0, 0)  # (clipped_value, aux, norm)
-        vmapped = _vmap(
-            per_example_fn,
-            in_dims=in_dims,
-            out_dims=out_dims,
-            randomness="same",
-            chunk_size=microbatch_size,
-        )
-        clipped_values, aux, norms = vmapped(*args)
+        # Get batch size from first batch argument
+        first_batch_arg_idx = batch_argnums[0]
+        first_batch_arg = args[first_batch_arg_idx]
+        # Handle PyTree batch args by getting first leaf
+        if isinstance(first_batch_arg, (dict, list, tuple)):
+            from opaque.utils.pytree import tree_leaves
+            batch_size = tree_leaves(first_batch_arg)[0].shape[0]
+        else:
+            batch_size = first_batch_arg.shape[0]
 
-        # Sum clipped values across batch dimension using tree_map
-        # This handles both scalars/tensors and arbitrarily nested PyTrees
-        result = tree_map(lambda x: torch.sum(x, dim=0, dtype=dtype), clipped_values)
+        # Choose between microbatched and full-batch processing
+        if microbatch_size is None or microbatch_size >= batch_size:
+            # Full-batch processing (original behavior)
+            out_dims = (0, None if not has_aux else 0, 0)  # (clipped_value, aux, norm)
+            vmapped = _vmap(
+                per_example_fn,
+                in_dims=in_dims,
+                out_dims=out_dims,
+                randomness="same",
+            )
+            clipped_values, aux, norms = vmapped(*args)
+
+            # Sum clipped values across batch dimension
+            result = tree_map(lambda x: torch.sum(x, dim=0, dtype=dtype), clipped_values)
+        else:
+            # True microbatching: process chunks and accumulate sum incrementally
+            # This saves memory by not materializing all per-example outputs at once
+            result = None
+            all_aux = [] if has_aux else None
+            all_norms = []
+
+            # Process batch in chunks
+            for chunk_start in range(0, batch_size, microbatch_size):
+                chunk_end = min(chunk_start + microbatch_size, batch_size)
+
+                # Extract chunk from batch arguments
+                chunk_args = list(args)
+                for i in batch_argnums:
+                    chunk_args[i] = tree_map(
+                        lambda x: x[chunk_start:chunk_end] if isinstance(x, torch.Tensor) else x,
+                        args[i]
+                    )
+
+                # Process chunk with vmap (no chunk_size needed here - processing small chunk)
+                out_dims = (0, None if not has_aux else 0, 0)
+                vmapped = _vmap(
+                    per_example_fn,
+                    in_dims=in_dims,
+                    out_dims=out_dims,
+                    randomness="same",
+                )
+                chunk_clipped_values, chunk_aux, chunk_norms = vmapped(*chunk_args)
+
+                # Sum chunk's clipped values and accumulate
+                chunk_sum = tree_map(lambda x: torch.sum(x, dim=0, dtype=dtype), chunk_clipped_values)
+                if result is None:
+                    result = chunk_sum
+                else:
+                    # Add chunk sum to accumulated result
+                    result = tree_map(lambda x, y: x + y, result, chunk_sum)
+
+                # Collect auxiliary outputs
+                if has_aux:
+                    all_aux.append(chunk_aux)
+                all_norms.append(chunk_norms)
+
+            # Concatenate auxiliary outputs across chunks
+            if has_aux:
+                # Concatenate along batch dimension
+                aux = tree_map(lambda *xs: torch.cat(xs, dim=0), *all_aux)
+            else:
+                aux = ()
+            norms = torch.cat(all_norms, dim=0)
 
         # Normalize
         if normalize_by != 1.0:

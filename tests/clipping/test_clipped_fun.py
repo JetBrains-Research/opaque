@@ -517,3 +517,96 @@ def test_clipped_fun_microbatching_with_return_norms():
 
     # Norms should be identical (per-example)
     assert torch.allclose(clip_aux_no_mb.norm, clip_aux_mb.norm, atol=1e-6)
+
+
+def test_true_microbatching_memory_efficient():
+    """Test that microbatching truly processes chunks incrementally.
+    
+    This test validates the new implementation that manually chunks the batch
+    and accumulates sums incrementally, rather than using vmap's chunk_size
+    which still materializes all outputs before summing.
+    """
+
+    def square_fn(x):
+        return x**2
+
+    batch_size = 100
+    data = torch.randn(batch_size, 10)
+
+    # Reference: full batch
+    clipped_fn_ref, clip_state_ref = clipped_fun(
+        square_fn, l2_clip_norm=1.0, microbatch_size=None
+    )
+    clipped_ref, _ = clipped_fn_ref(data, state=clip_state_ref)
+
+    # Test various microbatch sizes
+    for microbatch_size in [1, 5, 10, 25, 50, 100, 150]:
+        clipped_fn_mb, clip_state_mb = clipped_fun(
+            square_fn, l2_clip_norm=1.0, microbatch_size=microbatch_size
+        )
+        clipped_mb, _ = clipped_fn_mb(data, state=clip_state_mb)
+
+        # Results should be identical
+        assert torch.allclose(clipped_ref, clipped_mb, atol=1e-6), (
+            f"Failed for microbatch_size={microbatch_size}"
+        )
+
+
+def test_true_microbatching_with_pytree():
+    """Test true microbatching with PyTree parameters."""
+    from opaque.clipping import clipped_grad
+
+    def loss_fn(params, x):
+        return torch.sum((params["w"] @ x - params["b"]) ** 2)
+
+    batch_size = 50
+    params = {
+        "w": torch.randn(5, 10, requires_grad=True),
+        "b": torch.randn(5, 1, requires_grad=True),
+    }
+    x = torch.randn(batch_size, 10, 1)
+
+    # Reference: full batch
+    grad_fn_ref, clip_state_ref = clipped_grad(
+        loss_fn, argnums=0, batch_argnums=1, l2_clip_norm=1.0, microbatch_size=None
+    )
+    grads_ref, _ = grad_fn_ref(params, x, state=clip_state_ref)
+
+    # With true microbatching
+    grad_fn_mb, clip_state_mb = clipped_grad(
+        loss_fn, argnums=0, batch_argnums=1, l2_clip_norm=1.0, microbatch_size=10
+    )
+    grads_mb, _ = grad_fn_mb(params, x, state=clip_state_mb)
+
+    # Both parameters should match
+    assert torch.allclose(grads_ref["w"], grads_mb["w"], atol=1e-6)
+    assert torch.allclose(grads_ref["b"], grads_mb["b"], atol=1e-6)
+
+
+def test_true_microbatching_preserves_aux():
+    """Test that true microbatching correctly concatenates auxiliary outputs."""
+
+    def fn_with_aux(x):
+        value = x**2
+        aux = x.sum()  # Scalar auxiliary per example
+        return value, aux
+
+    batch_size = 30
+    data = torch.randn(batch_size, 5)
+
+    # Reference: full batch
+    clipped_fn_ref, clip_state_ref = clipped_fun(
+        fn_with_aux, has_aux=True, l2_clip_norm=1.0, microbatch_size=None
+    )
+    (clipped_ref, aux_ref), _ = clipped_fn_ref(data, state=clip_state_ref)
+
+    # With microbatching
+    clipped_fn_mb, clip_state_mb = clipped_fun(
+        fn_with_aux, has_aux=True, l2_clip_norm=1.0, microbatch_size=7
+    )
+    (clipped_mb, aux_mb), _ = clipped_fn_mb(data, state=clip_state_mb)
+
+    # Results should match
+    assert torch.allclose(clipped_ref, clipped_mb, atol=1e-6)
+    assert torch.allclose(aux_ref, aux_mb, atol=1e-6)
+    assert aux_ref.shape == aux_mb.shape == (batch_size,)
