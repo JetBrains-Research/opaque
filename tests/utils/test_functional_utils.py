@@ -120,7 +120,9 @@ def test_make_functional_with_vmap():
     y_batch = torch.randn(8, 1)
 
     # Compute per-example gradients
-    per_example_grads = vmap(grad(loss_single), in_dims=(None, 0, 0))(params, x_batch, y_batch)
+    per_example_grads = vmap(grad(loss_single), in_dims=(None, 0, 0))(
+        params, x_batch, y_batch
+    )
 
     # Check structure: tuple of (batch_size, *param_shape)
     assert isinstance(per_example_grads, tuple)

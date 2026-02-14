@@ -22,14 +22,12 @@ import torch.nn.functional as F
 from opaque import clipped_grad, gaussian
 from opaque.utils import make_functional
 
-
 # Skip all tests if transformers not available
 transformers = pytest.importorskip("transformers")
 peft = pytest.importorskip("peft")
 
-from peft import LoraConfig, TaskType, get_peft_model
-from transformers import AutoModelForCausalLM, AutoTokenizer
-
+from peft import LoraConfig, TaskType, get_peft_model  # noqa: E402
+from transformers import AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 
 # =============================================================================
 # Fixtures
@@ -136,7 +134,13 @@ class TestGPT2LoRADPTraining:
             partition_trainable=True,
         )
 
-        def per_example_loss(trainable_params, frozen_params, input_ids_single, mask_single, labels_single):
+        def per_example_loss(
+            trainable_params,
+            frozen_params,
+            input_ids_single,
+            mask_single,
+            labels_single,
+        ):
             """Loss for single example using HF built-in loss."""
             all_params = {**frozen_params, **trainable_params}
 
@@ -158,14 +162,18 @@ class TestGPT2LoRADPTraining:
         )
 
         # Compute gradients
-        grads, _ = grad_fn(trainable, frozen, input_ids, attention_mask, labels, state=clip_state)
+        grads, _ = grad_fn(
+            trainable, frozen, input_ids, attention_mask, labels, state=clip_state
+        )
 
         # Verify gradients exist and have correct structure
         assert isinstance(grads, dict)
         assert len(grads) > 0
 
         for name, grad in grads.items():
-            assert isinstance(grad, torch.Tensor), f"Gradient for {name} is not a tensor"
+            assert isinstance(grad, torch.Tensor), (
+                f"Gradient for {name} is not a tensor"
+            )
             assert grad.shape == trainable[name].shape, f"Shape mismatch for {name}"
             assert torch.isfinite(grad).all(), f"Non-finite gradient for {name}"
 
@@ -181,7 +189,13 @@ class TestGPT2LoRADPTraining:
             partition_trainable=True,
         )
 
-        def per_example_loss(trainable_params, frozen_params, input_ids_single, mask_single, labels_single):
+        def per_example_loss(
+            trainable_params,
+            frozen_params,
+            input_ids_single,
+            mask_single,
+            labels_single,
+        ):
             all_params = {**frozen_params, **trainable_params}
             outputs = fmodel(
                 all_params,
@@ -199,7 +213,9 @@ class TestGPT2LoRADPTraining:
             return_values=True,
         )
 
-        (grads, grad_aux), _ = grad_fn(trainable, frozen, input_ids, attention_mask, labels, state=clip_state)
+        (grads, grad_aux), _ = grad_fn(
+            trainable, frozen, input_ids, attention_mask, labels, state=clip_state
+        )
 
         # Check loss values
         assert grad_aux.loss_values is not None
@@ -218,7 +234,13 @@ class TestGPT2LoRADPTraining:
             partition_trainable=True,
         )
 
-        def per_example_loss(trainable_params, frozen_params, input_ids_single, mask_single, labels_single):
+        def per_example_loss(
+            trainable_params,
+            frozen_params,
+            input_ids_single,
+            mask_single,
+            labels_single,
+        ):
             all_params = {**frozen_params, **trainable_params}
             outputs = fmodel(
                 all_params,
@@ -237,7 +259,9 @@ class TestGPT2LoRADPTraining:
             return_grad_norms=True,
         )
 
-        (grads, grad_aux), _ = grad_fn(trainable, frozen, input_ids, attention_mask, labels, state=clip_state)
+        (grads, grad_aux), _ = grad_fn(
+            trainable, frozen, input_ids, attention_mask, labels, state=clip_state
+        )
 
         # Check grad norms
         assert grad_aux.grad_norms is not None
@@ -256,7 +280,13 @@ class TestGPT2LoRADPTraining:
             partition_trainable=True,
         )
 
-        def per_example_loss(trainable_params, frozen_params, input_ids_single, mask_single, labels_single):
+        def per_example_loss(
+            trainable_params,
+            frozen_params,
+            input_ids_single,
+            mask_single,
+            labels_single,
+        ):
             all_params = {**frozen_params, **trainable_params}
             outputs = fmodel(
                 all_params,
@@ -274,7 +304,9 @@ class TestGPT2LoRADPTraining:
             l2_clip_norm=clip_norm,
         )
 
-        grads, _ = grad_fn(trainable, frozen, input_ids, attention_mask, labels, state=clip_state)
+        grads, _ = grad_fn(
+            trainable, frozen, input_ids, attention_mask, labels, state=clip_state
+        )
 
         # Add noise
         noise_multiplier = 1.0
@@ -283,7 +315,9 @@ class TestGPT2LoRADPTraining:
 
         # Verify noise was added
         for name in grads:
-            assert not torch.allclose(grads[name], noisy_grads[name]), f"Noise not added to {name}"
+            assert not torch.allclose(grads[name], noisy_grads[name]), (
+                f"Noise not added to {name}"
+            )
 
     def test_microbatching_produces_same_result(self, gpt2_with_lora, sample_batch):
         """Test that microbatching produces identical results."""
@@ -297,7 +331,13 @@ class TestGPT2LoRADPTraining:
             partition_trainable=True,
         )
 
-        def per_example_loss(trainable_params, frozen_params, input_ids_single, mask_single, labels_single):
+        def per_example_loss(
+            trainable_params,
+            frozen_params,
+            input_ids_single,
+            mask_single,
+            labels_single,
+        ):
             all_params = {**frozen_params, **trainable_params}
             outputs = fmodel(
                 all_params,
@@ -317,7 +357,9 @@ class TestGPT2LoRADPTraining:
             l2_clip_norm=clip_norm,
             microbatch_size=None,
         )
-        grads_no_mb, _ = grad_fn_no_mb(trainable, frozen, input_ids, attention_mask, labels, state=clip_state_no_mb)
+        grads_no_mb, _ = grad_fn_no_mb(
+            trainable, frozen, input_ids, attention_mask, labels, state=clip_state_no_mb
+        )
 
         # With microbatching (batch_size=4, microbatch_size=2)
         grad_fn_mb, clip_state_mb = clipped_grad(
@@ -327,7 +369,9 @@ class TestGPT2LoRADPTraining:
             l2_clip_norm=clip_norm,
             microbatch_size=2,
         )
-        grads_mb, _ = grad_fn_mb(trainable, frozen, input_ids, attention_mask, labels, state=clip_state_mb)
+        grads_mb, _ = grad_fn_mb(
+            trainable, frozen, input_ids, attention_mask, labels, state=clip_state_mb
+        )
 
         # Results should be identical
         for name in grads_no_mb:
@@ -348,7 +392,13 @@ class TestGPT2LoRADPTraining:
             partition_trainable=True,
         )
 
-        def per_example_loss(trainable_params, frozen_params, input_ids_single, mask_single, labels_single):
+        def per_example_loss(
+            trainable_params,
+            frozen_params,
+            input_ids_single,
+            mask_single,
+            labels_single,
+        ):
             all_params = {**frozen_params, **trainable_params}
             outputs = fmodel(
                 all_params,
@@ -370,7 +420,9 @@ class TestGPT2LoRADPTraining:
             batch_argnums=(2, 3, 4),
             l2_clip_norm=clip_norm,
         )
-        grads, _ = grad_fn(trainable, frozen, input_ids, attention_mask, labels, state=clip_state)
+        grads, _ = grad_fn(
+            trainable, frozen, input_ids, attention_mask, labels, state=clip_state
+        )
 
         # 2. Add noise
         noise_fn = gaussian(stddev=noise_multiplier * clip_norm)
@@ -409,7 +461,7 @@ def _has_sufficient_gpu_memory() -> bool:
 @pytest.mark.slow
 @pytest.mark.skipif(
     not _has_sufficient_gpu_memory(),
-    reason="Requires GPU with >=16GB memory for Mellum-4b"
+    reason="Requires GPU with >=16GB memory for Mellum-4b",
 )
 class TestMellumLoRADPTraining:
     """Heavy load tests with Mellum-4b.
@@ -497,10 +549,12 @@ class TestMellumLoRADPTraining:
         trainable_count = sum(p.numel() for p in trainable.values())
         frozen_count = sum(p.numel() for p in frozen.values())
 
-        print(f"\nMellum-4b LoRA stats:")
+        print("\nMellum-4b LoRA stats:")
         print(f"  Trainable params: {trainable_count:,}")
         print(f"  Frozen params: {frozen_count:,}")
-        print(f"  Trainable ratio: {trainable_count / (trainable_count + frozen_count):.4%}")
+        print(
+            f"  Trainable ratio: {trainable_count / (trainable_count + frozen_count):.4%}"
+        )
 
         # LoRA should be tiny fraction of 4B model
         assert trainable_count < frozen_count / 100  # Less than 1%
@@ -528,12 +582,16 @@ class TestMellumLoRADPTraining:
         labels = labels.to(device)
 
         # Get trainable parameters (LoRA weights)
-        trainable_params = {n: p for n, p in model.named_parameters() if p.requires_grad}
+        trainable_params = {
+            n: p for n, p in model.named_parameters() if p.requires_grad
+        }
         assert len(trainable_params) > 0, "No trainable parameters found"
 
         # Manual per-sample gradient computation with clipping
         clip_norm = 1.0
-        accumulated_grads = {n: torch.zeros_like(p) for n, p in trainable_params.items()}
+        accumulated_grads = {
+            n: torch.zeros_like(p) for n, p in trainable_params.items()
+        }
 
         for i in range(batch_size):
             ids_i = input_ids[i : i + 1]
@@ -575,7 +633,7 @@ class TestMellumLoRADPTraining:
         for name, grad in accumulated_grads.items():
             assert torch.isfinite(grad).all(), f"Non-finite gradient for {name}"
 
-        print(f"\nMellum manual gradient computation:")
+        print("\nMellum manual gradient computation:")
         print(f"  Batch size: {batch_size}")
         print(f"  Trainable params: {len(trainable_params)}")
         print(f"  Non-zero gradients: {non_zero_grads}")
@@ -604,7 +662,11 @@ class TestMellumLoRADPTraining:
         )
 
         def per_example_loss(
-            trainable_params, frozen_params, input_ids_single, mask_single, labels_single
+            trainable_params,
+            frozen_params,
+            input_ids_single,
+            mask_single,
+            labels_single,
         ):
             all_params = {**frozen_params, **trainable_params}
             outputs = fmodel(
@@ -633,12 +695,14 @@ class TestMellumLoRADPTraining:
         for name, grad in grads.items():
             assert torch.isfinite(grad).all(), f"Non-finite gradient for {name}"
 
-        print(f"\nMellum clipped_grad:")
+        print("\nMellum clipped_grad:")
         print(f"  Parameters with gradients: {len(grads)}")
         non_zero = sum(1 for g in grads.values() if g.norm() > 0)
         print(f"  Non-zero gradients: {non_zero}")
 
-    def test_mellum_memory_bounded_with_microbatching(self, mellum_with_lora, code_batch):
+    def test_mellum_memory_bounded_with_microbatching(
+        self, mellum_with_lora, code_batch
+    ):
         """Test that memory usage is bounded when using microbatching.
 
         vmap compatibility patches are applied at import time.
@@ -659,7 +723,11 @@ class TestMellumLoRADPTraining:
         )
 
         def per_example_loss(
-            trainable_params, frozen_params, input_ids_single, mask_single, labels_single
+            trainable_params,
+            frozen_params,
+            input_ids_single,
+            mask_single,
+            labels_single,
         ):
             all_params = {**frozen_params, **trainable_params}
             outputs = fmodel(
@@ -689,7 +757,7 @@ class TestMellumLoRADPTraining:
         memory_after = torch.cuda.max_memory_allocated()
         memory_used_gb = (memory_after - memory_before) / (1024**3)
 
-        print(f"\nMellum-4b memory usage:")
+        print("\nMellum-4b memory usage:")
         print(f"  Peak memory: {memory_after / (1024**3):.2f} GB")
         print(f"  Memory for gradients: {memory_used_gb:.2f} GB")
 
@@ -717,7 +785,13 @@ class TestEndToEndDPTraining:
             partition_trainable=True,
         )
 
-        def per_example_loss(trainable_params, frozen_params, input_ids_single, mask_single, labels_single):
+        def per_example_loss(
+            trainable_params,
+            frozen_params,
+            input_ids_single,
+            mask_single,
+            labels_single,
+        ):
             all_params = {**frozen_params, **trainable_params}
             outputs = fmodel(
                 all_params,
@@ -745,7 +819,9 @@ class TestEndToEndDPTraining:
                 return_values=True,
             )
 
-            (grads, grad_aux), _ = grad_fn(params, frozen, input_ids, attention_mask, labels, state=clip_state)
+            (grads, grad_aux), _ = grad_fn(
+                params, frozen, input_ids, attention_mask, labels, state=clip_state
+            )
 
             # Track loss
             losses.append(grad_aux.loss_values.mean().item())
@@ -755,7 +831,10 @@ class TestEndToEndDPTraining:
             noisy_grads = noise_fn(grads)
 
             # Update
-            params = {name: param - learning_rate * noisy_grads[name] for name, param in params.items()}
+            params = {
+                name: param - learning_rate * noisy_grads[name]
+                for name, param in params.items()
+            }
 
         # Verify training progressed (losses recorded)
         assert len(losses) == num_steps
@@ -773,7 +852,13 @@ class TestEndToEndDPTraining:
             partition_trainable=True,
         )
 
-        def per_example_loss(trainable_params, frozen_params, input_ids_single, mask_single, labels_single):
+        def per_example_loss(
+            trainable_params,
+            frozen_params,
+            input_ids_single,
+            mask_single,
+            labels_single,
+        ):
             all_params = {**frozen_params, **trainable_params}
             outputs = fmodel(
                 all_params,
@@ -796,7 +881,9 @@ class TestEndToEndDPTraining:
         assert sensitivity == clip_norm
 
         # Compute gradients to ensure state works
-        grads, _ = grad_fn(trainable, frozen, input_ids, attention_mask, labels, state=clip_state)
+        grads, _ = grad_fn(
+            trainable, frozen, input_ids, attention_mask, labels, state=clip_state
+        )
         assert len(grads) > 0
 
 
@@ -953,7 +1040,13 @@ class TestMultiArchitectureModels:
             partition_trainable=True,
         )
 
-        def per_example_loss(trainable_params, frozen_params, input_ids_single, mask_single, labels_single):
+        def per_example_loss(
+            trainable_params,
+            frozen_params,
+            input_ids_single,
+            mask_single,
+            labels_single,
+        ):
             all_params = {**frozen_params, **trainable_params}
             outputs = fmodel(
                 all_params,
@@ -971,7 +1064,9 @@ class TestMultiArchitectureModels:
         )
 
         try:
-            grads, _ = grad_fn(trainable, frozen, input_ids, attention_mask, labels, state=clip_state)
+            grads, _ = grad_fn(
+                trainable, frozen, input_ids, attention_mask, labels, state=clip_state
+            )
             # Verify gradients
             for name, grad in grads.items():
                 assert torch.isfinite(grad).all(), f"Non-finite gradient for {name}"
@@ -1121,7 +1216,10 @@ class TestMultiArchitectureModels:
             trust_remote_code=True,
         )
         # Falcon config may not have pad_token_id attribute
-        if not hasattr(model.config, 'pad_token_id') or model.config.pad_token_id is None:
+        if (
+            not hasattr(model.config, "pad_token_id")
+            or model.config.pad_token_id is None
+        ):
             model.config.pad_token_id = tokenizer.pad_token_id
 
         return model, tokenizer
@@ -1257,7 +1355,10 @@ class TestMultiArchitectureModels:
             torch_dtype=torch.float32,
             trust_remote_code=True,
         )
-        if not hasattr(model.config, 'pad_token_id') or model.config.pad_token_id is None:
+        if (
+            not hasattr(model.config, "pad_token_id")
+            or model.config.pad_token_id is None
+        ):
             model.config.pad_token_id = tokenizer.pad_token_id
 
         return model, tokenizer
@@ -1317,7 +1418,9 @@ class TestMultiArchitectureModels:
     # Test methods for additional models
     # -------------------------------------------------------------------------
 
-    @pytest.mark.skip(reason="Gemma2 uses sliding window attention - needs investigation")
+    @pytest.mark.skip(
+        reason="Gemma2 uses sliding window attention - needs investigation"
+    )
     def test_gemma2_clipped_grad(self, gemma2_with_lora):
         """Test Gemma2 with clipped_grad."""
         model, tokenizer = gemma2_with_lora

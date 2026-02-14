@@ -2,10 +2,8 @@
 
 from abc import ABC, abstractmethod
 from collections import namedtuple
-from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
 
 
 class NeighboringRelation(Enum):
@@ -108,7 +106,9 @@ class FixedClipState(ClipState):
     def __post_init__(self):
         """Validate state parameters."""
         if self.l2_norm_bound <= 0:
-            raise ValueError(f"l2_norm_bound must be positive, got {self.l2_norm_bound}")
+            raise ValueError(
+                f"l2_norm_bound must be positive, got {self.l2_norm_bound}"
+            )
 
     def sensitivity(
         self,

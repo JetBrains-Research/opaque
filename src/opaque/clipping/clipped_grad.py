@@ -7,7 +7,7 @@ from torch.func import grad_and_value
 
 from opaque.clipping._helpers import normalize_fun_to_return_aux, normalize_to_tuple
 from opaque.clipping.clipped_fun import clipped_fun
-from opaque.clipping.types import ClippedGradAux, FixedClipState
+from opaque.clipping.types import ClippedGradAux
 from opaque.utils.pytree import global_norm
 
 
@@ -203,7 +203,9 @@ def clipped_grad(
     else:
         # Need to convert aux_dict to ClippedGradAux
         def grad_fn_wrapper(*args, state, **kwargs):
-            (clipped_grads, aux_dict), returned_state = clipped_grad_fn(*args, state=state, **kwargs)
+            (clipped_grads, aux_dict), returned_state = clipped_grad_fn(
+                *args, state=state, **kwargs
+            )
             grad_aux = ClippedGradAux(
                 loss_values=aux_dict.get("values"),
                 grad_norms=aux_dict.get("grad_norms"),

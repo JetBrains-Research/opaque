@@ -19,6 +19,7 @@ pytestmark = pytest.mark.compat
 # device fixture is inherited from tests/conftest.py
 # It automatically selects: CUDA > MPS > CPU
 
+
 @pytest.fixture
 def qwen2_config():
     """Small Qwen2 config for testing."""

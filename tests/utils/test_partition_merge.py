@@ -63,7 +63,11 @@ class TestPartition:
 
     def test_simple_dict(self):
         """Test partitioning simple dictionary."""
-        tree = {"a": torch.tensor([1, 2]), "b": torch.tensor([3, 4]), "c": torch.tensor([5])}
+        tree = {
+            "a": torch.tensor([1, 2]),
+            "b": torch.tensor([3, 4]),
+            "c": torch.tensor([5]),
+        }
 
         def predicate(path, value):
             return path[0] in ["a", "c"]
@@ -222,7 +226,10 @@ class TestMerge:
 
     def test_nested_merge(self):
         """Test merging nested structures."""
-        tree1 = {"encoder": {"weight": torch.ones(3)}, "decoder": {"weight": torch.zeros(2)}}
+        tree1 = {
+            "encoder": {"weight": torch.ones(3)},
+            "decoder": {"weight": torch.zeros(2)},
+        }
         tree2 = {"encoder": {"bias": torch.ones(3)}}
 
         result = merge(tree1, tree2)
@@ -322,10 +329,18 @@ class TestPartitionMergeRoundtrip:
         assert set(reconstructed["decoder"].keys()) == set(original["decoder"].keys())
 
         # Check all tensors are the same
-        assert torch.allclose(reconstructed["encoder"]["weight"], original["encoder"]["weight"])
-        assert torch.allclose(reconstructed["encoder"]["lora_a"], original["encoder"]["lora_a"])
-        assert torch.allclose(reconstructed["encoder"]["lora_b"], original["encoder"]["lora_b"])
-        assert torch.allclose(reconstructed["decoder"]["weight"], original["decoder"]["weight"])
+        assert torch.allclose(
+            reconstructed["encoder"]["weight"], original["encoder"]["weight"]
+        )
+        assert torch.allclose(
+            reconstructed["encoder"]["lora_a"], original["encoder"]["lora_a"]
+        )
+        assert torch.allclose(
+            reconstructed["encoder"]["lora_b"], original["encoder"]["lora_b"]
+        )
+        assert torch.allclose(
+            reconstructed["decoder"]["weight"], original["decoder"]["weight"]
+        )
 
 
 class TestLoRAWorkflow:
@@ -378,13 +393,17 @@ class TestLoRAWorkflow:
 
         # 6. Verify merge
         assert set(updated_model.keys()) == set(model_params.keys())
-        assert set(updated_model["encoder"].keys()) == set(model_params["encoder"].keys())
+        assert set(updated_model["encoder"].keys()) == set(
+            model_params["encoder"].keys()
+        )
 
         # Frozen params unchanged
         assert torch.allclose(
             updated_model["encoder"]["weight"], frozen_params["encoder"]["weight"]
         )
-        assert torch.allclose(updated_model["encoder"]["bias"], frozen_params["encoder"]["bias"])
+        assert torch.allclose(
+            updated_model["encoder"]["bias"], frozen_params["encoder"]["bias"]
+        )
 
         # Trainable params updated (different from original)
         assert not torch.allclose(

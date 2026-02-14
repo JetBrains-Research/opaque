@@ -5,7 +5,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 # ============================================================================
 # Model Definitions
 # ============================================================================
@@ -35,7 +34,9 @@ class TinyLLaMA(nn.Module):
         self.tok_embeddings = nn.Embedding(vocab_size, dim)
 
         # Transformer blocks
-        self.layers = nn.ModuleList([TransformerBlock(dim, n_heads) for _ in range(n_layers)])
+        self.layers = nn.ModuleList(
+            [TransformerBlock(dim, n_heads) for _ in range(n_layers)]
+        )
 
         # Output
         self.norm = nn.LayerNorm(dim)
@@ -89,9 +90,9 @@ class TransformerBlock(nn.Module):
         batch, seq_len, dim = x.shape
 
         # Create causal mask for attention
-        causal_mask = torch.triu(torch.full((seq_len, seq_len), float("-inf")), diagonal=1).to(
-            x.device
-        )
+        causal_mask = torch.triu(
+            torch.full((seq_len, seq_len), float("-inf")), diagonal=1
+        ).to(x.device)
 
         # Attention with residual
         normed = self.attention_norm(x)
@@ -129,7 +130,9 @@ class FeedForward(nn.Module):
 # ============================================================================
 
 
-def create_custom_llama(vocab_size=1000, dim=128, n_layers=2, n_heads=4, batch_size=4, seq_len=16):
+def create_custom_llama(
+    vocab_size=1000, dim=128, n_layers=2, n_heads=4, batch_size=4, seq_len=16
+):
     """Create custom TinyLLaMA model with random tokens.
 
     Args:
@@ -146,7 +149,9 @@ def create_custom_llama(vocab_size=1000, dim=128, n_layers=2, n_heads=4, batch_s
     """
     torch.manual_seed(42)
 
-    model = TinyLLaMA(vocab_size=vocab_size, dim=dim, n_layers=n_layers, n_heads=n_heads)
+    model = TinyLLaMA(
+        vocab_size=vocab_size, dim=dim, n_layers=n_layers, n_heads=n_heads
+    )
     model.eval()
 
     tokens = torch.randint(0, vocab_size, (batch_size, seq_len))
@@ -254,6 +259,8 @@ def compute_causal_lm_loss(logits, targets):
     shift_targets = targets[:, 1:].contiguous()
 
     # Compute cross-entropy loss
-    loss = F.cross_entropy(shift_logits.view(-1, logits.size(-1)), shift_targets.view(-1))
+    loss = F.cross_entropy(
+        shift_logits.view(-1, logits.size(-1)), shift_targets.view(-1)
+    )
 
     return loss

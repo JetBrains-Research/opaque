@@ -114,13 +114,19 @@ def test_clipped_fun_return_norms():
         return 0.5 * ((data - param) ** 2).mean()
 
     clipped_grad_fn, clip_state = clipped_fun(
-        grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0, normalize_by=3.0, return_norms=True
+        grad(loss_fn),
+        batch_argnums=1,
+        l2_clip_norm=1.0,
+        normalize_by=3.0,
+        return_norms=True,
     )
 
     param = torch.tensor(3.0, requires_grad=True)
     data = torch.tensor([0.0, 7.0, -2.0])
 
-    (clipped_grad, (user_aux, clip_aux)), _ = clipped_grad_fn(param, data, state=clip_state)
+    (clipped_grad, (user_aux, clip_aux)), _ = clipped_grad_fn(
+        param, data, state=clip_state
+    )
     assert isinstance(clipped_grad, torch.Tensor)
     assert user_aux == ()  # user_aux should be empty tuple for has_aux=False
     # clip_aux is ClipPytreeAux with .norm attribute containing per-example norms
@@ -138,7 +144,11 @@ def test_clipped_fun_keep_batch_dim_true():
         return 0.5 * ((data - param) ** 2).mean()
 
     clipped_grad_fn, clip_state = clipped_fun(
-        grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0, normalize_by=3.0, keep_batch_dim=True
+        grad(loss_fn),
+        batch_argnums=1,
+        l2_clip_norm=1.0,
+        normalize_by=3.0,
+        keep_batch_dim=True,
     )
 
     param = torch.tensor(3.0, requires_grad=True)
@@ -154,7 +164,9 @@ def test_clipped_fun_has_aux_false():
     def loss_fn(param, data):
         return 0.5 * ((data - param) ** 2).mean()
 
-    clipped_grad_fn, clip_state = clipped_fun(grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0, has_aux=False)
+    clipped_grad_fn, clip_state = clipped_fun(
+        grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0, has_aux=False
+    )
 
     param = torch.tensor(3.0, requires_grad=True)
     data = torch.tensor([0.0, 7.0, -2.0])
@@ -174,7 +186,9 @@ def test_clipped_fun_has_aux_true():
         user_aux = data * 2  # Some auxiliary value (tensor)
         return value, user_aux
 
-    clipped_fn, clip_state = clipped_fun(fn_with_aux, batch_argnums=1, l2_clip_norm=1.0, has_aux=True)
+    clipped_fn, clip_state = clipped_fun(
+        fn_with_aux, batch_argnums=1, l2_clip_norm=1.0, has_aux=True
+    )
 
     x = torch.tensor([1.0])
     data = torch.tensor([0.0, 1.0, 2.0])
@@ -199,7 +213,9 @@ def test_clipped_fun_has_aux_with_return_norms():
     x = torch.tensor([1.0])
     data = torch.tensor([0.0, 1.0, 2.0])
 
-    (clipped_value, (user_aux_list, clip_aux)), _ = clipped_fn(x, data, state=clip_state)
+    (clipped_value, (user_aux_list, clip_aux)), _ = clipped_fn(
+        x, data, state=clip_state
+    )
     assert isinstance(clipped_value, torch.Tensor)
     assert isinstance(clip_aux.norm, torch.Tensor)
     assert clip_aux.norm.shape == (3,)
@@ -213,7 +229,9 @@ def test_clipped_fun_nan_safe_replaces_nans():
         # Use mean() to return scalar
         return torch.sqrt(param - data).mean()  # Gradient is undefined for param < data
 
-    clipped_grad_fn, clip_state = clipped_fun(grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0, nan_safe=True)
+    clipped_grad_fn, clip_state = clipped_fun(
+        grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0, nan_safe=True
+    )
 
     param = torch.tensor(1.0, requires_grad=True)
     data = torch.tensor([0.5, 2.0, 0.3])  # data[1]=2.0 will cause NaN
@@ -231,7 +249,11 @@ def test_clipped_fun_dtype_controls_accumulation():
 
     # Use float64 for higher precision accumulation
     clipped_grad_fn, clip_state = clipped_fun(
-        grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0, normalize_by=3.0, dtype=torch.float64
+        grad(loss_fn),
+        batch_argnums=1,
+        l2_clip_norm=1.0,
+        normalize_by=3.0,
+        dtype=torch.float64,
     )
 
     param = torch.tensor(3.0, requires_grad=True)
@@ -314,17 +336,21 @@ def test_clipped_fun_microbatching_identical_results():
 
     # Simple function to clip
     def square_fn(x):
-        return x ** 2
+        return x**2
 
     batch_size = 100
     data = torch.randn(batch_size, 10)
 
     # Without microbatching
-    clipped_fn, clip_state = clipped_fun(square_fn, l2_clip_norm=1.0, microbatch_size=None)
+    clipped_fn, clip_state = clipped_fun(
+        square_fn, l2_clip_norm=1.0, microbatch_size=None
+    )
     clipped_no_mb, _ = clipped_fn(data, state=clip_state)
 
     # With microbatching (chunk_size=10)
-    clipped_fn_mb, clip_state_mb = clipped_fun(square_fn, l2_clip_norm=1.0, microbatch_size=10)
+    clipped_fn_mb, clip_state_mb = clipped_fun(
+        square_fn, l2_clip_norm=1.0, microbatch_size=10
+    )
     clipped_mb, _ = clipped_fn_mb(data, state=clip_state_mb)
 
     # Results should be identical
@@ -335,7 +361,7 @@ def test_clipped_fun_microbatching_different_sizes():
     """Test microbatching with various chunk sizes."""
 
     def square_fn(x):
-        return x ** 2
+        return x**2
 
     batch_size = 64
     data = torch.randn(batch_size, 5)
@@ -346,7 +372,9 @@ def test_clipped_fun_microbatching_different_sizes():
 
     # Test different microbatch sizes
     for microbatch_size in [1, 4, 16, 32, 64]:
-        clipped_fn_mb, clip_state_mb = clipped_fun(square_fn, l2_clip_norm=1.0, microbatch_size=microbatch_size)
+        clipped_fn_mb, clip_state_mb = clipped_fun(
+            square_fn, l2_clip_norm=1.0, microbatch_size=microbatch_size
+        )
         clipped_mb, _ = clipped_fn_mb(data, state=clip_state_mb)
         assert torch.allclose(clipped_ref, clipped_mb, atol=1e-6), (
             f"Failed for microbatch_size={microbatch_size}"
@@ -389,13 +417,15 @@ def test_clipped_fun_microbatching_larger_than_batch():
     """Test microbatch_size larger than batch size."""
 
     def square_fn(x):
-        return x ** 2
+        return x**2
 
     batch_size = 10
     data = torch.randn(batch_size, 5)
 
     # Microbatch size larger than batch
-    clipped_fn_mb, clip_state_mb = clipped_fun(square_fn, l2_clip_norm=1.0, microbatch_size=100)
+    clipped_fn_mb, clip_state_mb = clipped_fun(
+        square_fn, l2_clip_norm=1.0, microbatch_size=100
+    )
     clipped_mb, _ = clipped_fn_mb(data, state=clip_state_mb)
 
     # Reference without microbatching
@@ -410,13 +440,15 @@ def test_clipped_fun_microbatching_single_example():
     """Test microbatch_size=1 (process one example at a time)."""
 
     def square_fn(x):
-        return x ** 2
+        return x**2
 
     batch_size = 20
     data = torch.randn(batch_size, 3)
 
     # Single example microbatches
-    clipped_fn_mb, clip_state_mb = clipped_fun(square_fn, l2_clip_norm=1.0, microbatch_size=1)
+    clipped_fn_mb, clip_state_mb = clipped_fun(
+        square_fn, l2_clip_norm=1.0, microbatch_size=1
+    )
     clipped_mb, _ = clipped_fn_mb(data, state=clip_state_mb)
 
     # Reference without microbatching
@@ -431,7 +463,7 @@ def test_clipped_fun_microbatching_with_aux():
     """Test microbatching preserves auxiliary outputs correctly."""
 
     def fn_with_aux(x):
-        value = x ** 2
+        value = x**2
         user_aux = torch.mean(x, dim=-1)  # Per-example auxiliary
         return value, user_aux
 
@@ -445,7 +477,9 @@ def test_clipped_fun_microbatching_with_aux():
     (clipped_no_mb, user_aux_no_mb), _ = clipped_fn_no_mb(data, state=clip_state_no_mb)
 
     # With microbatching
-    clipped_fn_mb, clip_state_mb = clipped_fun(fn_with_aux, has_aux=True, l2_clip_norm=1.0, microbatch_size=6)
+    clipped_fn_mb, clip_state_mb = clipped_fun(
+        fn_with_aux, has_aux=True, l2_clip_norm=1.0, microbatch_size=6
+    )
     (clipped_mb, user_aux_mb), _ = clipped_fn_mb(data, state=clip_state_mb)
 
     # Primary results should be identical
@@ -459,7 +493,7 @@ def test_clipped_fun_microbatching_with_return_norms():
     """Test microbatching with return_norms=True."""
 
     def square_fn(x):
-        return x ** 2
+        return x**2
 
     batch_size = 40
     data = torch.randn(batch_size, 8)
@@ -468,10 +502,14 @@ def test_clipped_fun_microbatching_with_return_norms():
     clipped_fn_no_mb, clip_state_no_mb = clipped_fun(
         square_fn, l2_clip_norm=1.0, return_norms=True, microbatch_size=None
     )
-    (clipped_no_mb, (_, clip_aux_no_mb)), _ = clipped_fn_no_mb(data, state=clip_state_no_mb)
+    (clipped_no_mb, (_, clip_aux_no_mb)), _ = clipped_fn_no_mb(
+        data, state=clip_state_no_mb
+    )
 
     # With microbatching
-    clipped_fn_mb, clip_state_mb = clipped_fun(square_fn, l2_clip_norm=1.0, return_norms=True, microbatch_size=8)
+    clipped_fn_mb, clip_state_mb = clipped_fun(
+        square_fn, l2_clip_norm=1.0, return_norms=True, microbatch_size=8
+    )
     (clipped_mb, (_, clip_aux_mb)), _ = clipped_fn_mb(data, state=clip_state_mb)
 
     # Primary results should be identical

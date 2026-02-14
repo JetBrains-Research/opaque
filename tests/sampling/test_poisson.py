@@ -53,7 +53,10 @@ class TestPoissonSampler:
         """Test that mean batch size matches expectation."""
         dataset = TensorDataset(torch.randn(1000, 10))
         sampler = PoissonSampler(
-            dataset, sample_rate=0.1, num_epochs=100, generator=np.random.default_rng(42)
+            dataset,
+            sample_rate=0.1,
+            num_epochs=100,
+            generator=np.random.default_rng(42),
         )
 
         batch_sizes = [len(batch) for batch in sampler]
@@ -70,7 +73,10 @@ class TestPoissonSampler:
         """Test that variance matches Poisson distribution."""
         dataset = TensorDataset(torch.randn(1000, 10))
         sampler = PoissonSampler(
-            dataset, sample_rate=0.1, num_epochs=500, generator=np.random.default_rng(42)
+            dataset,
+            sample_rate=0.1,
+            num_epochs=500,
+            generator=np.random.default_rng(42),
         )
 
         batch_sizes = [len(batch) for batch in sampler]
@@ -171,7 +177,9 @@ class TestTruncatedPoissonSampler:
     def test_init_basic(self):
         """Test basic initialization."""
         dataset = TensorDataset(torch.randn(1000, 10))
-        sampler = TruncatedPoissonSampler(dataset, sample_rate=0.1, max_batch_size=50, num_epochs=5)
+        sampler = TruncatedPoissonSampler(
+            dataset, sample_rate=0.1, max_batch_size=50, num_epochs=5
+        )
 
         assert sampler.sample_rate == 0.1
         assert sampler.max_batch_size == 50
@@ -326,7 +334,10 @@ class TestEdgeCases:
         """Test with very small sample_rate."""
         dataset = TensorDataset(torch.randn(10000, 10))
         sampler = PoissonSampler(
-            dataset, sample_rate=0.001, num_epochs=100, generator=np.random.default_rng(42)
+            dataset,
+            sample_rate=0.001,
+            num_epochs=100,
+            generator=np.random.default_rng(42),
         )
 
         batch_sizes = [len(batch) for batch in sampler]

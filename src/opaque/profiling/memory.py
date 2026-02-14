@@ -25,9 +25,10 @@ Example:
     >>> print(f"Use microbatch_size={max_mb}")
 """
 
-from dataclasses import dataclass
-from typing import Literal, Callable
 import warnings
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Literal
 
 import torch
 import torch.nn as nn
@@ -65,19 +66,21 @@ class MemoryProfile:
 
     def __str__(self) -> str:
         """Human-readable memory profile."""
-        mb_str = f", microbatch_size={self.microbatch_size}" if self.microbatch_size else ""
+        mb_str = (
+            f", microbatch_size={self.microbatch_size}" if self.microbatch_size else ""
+        )
         status_emoji = {
             "ok": "✓",
             "warning": "⚠️",
             "critical": "❌",
-            "unsupported": "ℹ️"
+            "unsupported": "ℹ️",
         }[self.status]
 
         return f"""Memory Profile (batch_size={self.batch_size}{mb_str})
   Device:           {self.device}
   Peak Memory:      {self.peak_gb:>6.2f} GB
   Available:        {self.available_gb:>6.2f} GB
-  Utilization:      {self.utilization()*100:>5.1f}%
+  Utilization:      {self.utilization() * 100:>5.1f}%
   Status:           {status_emoji} {self.status.upper()}
 """
 
@@ -165,12 +168,13 @@ class MemoryTracker:
             # Use ~70% of available as conservative estimate
             try:
                 import psutil
+
                 return int(psutil.virtual_memory().available * 0.7)
             except ImportError:
                 warnings.warn(
                     "psutil not installed. Cannot determine MPS memory. "
                     "Install with: pip install psutil",
-                    UserWarning
+                    UserWarning,
                 )
                 return 0.0
         return 0.0
@@ -245,7 +249,7 @@ def profile_memory(
         warnings.warn(
             f"Memory profiling on {device.upper()} is limited. "
             "For accurate profiling, use CUDA or MPS devices.",
-            UserWarning
+            UserWarning,
         )
 
     # Make functional
@@ -368,7 +372,7 @@ def find_max_microbatch_size(
         warnings.warn(
             f"Memory profiling on {device.upper()} is not supported. "
             f"Returning min_size={min_size}. Test manually on CUDA/MPS for accurate sizing.",
-            UserWarning
+            UserWarning,
         )
         return min_size
 

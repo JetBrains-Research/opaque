@@ -299,8 +299,12 @@ def global_norm(tree: Any) -> torch.Tensor:
     # Determine common floating dtype for accumulation.
     # If all leaves are integer/bool, promote to float32.
     dtypes = [t.dtype for t in leaves]
-    float_dtypes = [dt for dt in dtypes if torch.is_floating_point(torch.empty((), dtype=dt))]
-    complex_dtypes = [dt for dt in dtypes if torch.is_complex(torch.empty((), dtype=dt))]
+    float_dtypes = [
+        dt for dt in dtypes if torch.is_floating_point(torch.empty((), dtype=dt))
+    ]
+    complex_dtypes = [
+        dt for dt in dtypes if torch.is_complex(torch.empty((), dtype=dt))
+    ]
 
     if complex_dtypes:
         acc_dtype = torch.complex64
@@ -340,4 +344,11 @@ def global_norm(tree: Any) -> torch.Tensor:
     return torch.sqrt(total)
 
 
-__all__ = ["tree_leaves", "tree_map", "tree_map_with_path", "partition", "merge", "global_norm"]
+__all__ = [
+    "tree_leaves",
+    "tree_map",
+    "tree_map_with_path",
+    "partition",
+    "merge",
+    "global_norm",
+]

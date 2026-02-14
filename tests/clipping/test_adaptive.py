@@ -211,7 +211,9 @@ class TestAdaptiveClippedGrad:
         batch_y = torch.randn(8)
 
         # Should return (grads, grad_aux) and new state
-        (grads, grad_aux), clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+        (grads, grad_aux), clip_state = grad_fn(
+            params, batch_x, batch_y, state=clip_state
+        )
 
         assert grads.shape == params.shape
         assert clip_state.step == 1
@@ -245,8 +247,12 @@ class TestAdaptiveClippedGrad:
 
         # Run 10 steps
         for _ in range(10):
-            _, clip_state_low = grad_fn_low(params, batch_x, batch_y, state=clip_state_low)
-            _, clip_state_high = grad_fn_high(params, batch_x, batch_y, state=clip_state_high)
+            _, clip_state_low = grad_fn_low(
+                params, batch_x, batch_y, state=clip_state_low
+            )
+            _, clip_state_high = grad_fn_high(
+                params, batch_x, batch_y, state=clip_state_high
+            )
 
         # Low quantile should result in higher threshold (clip fewer)
         # High quantile should result in lower threshold (clip more)
@@ -281,11 +287,17 @@ class TestAdaptiveClippedGrad:
 
         # Run 5 steps
         for _ in range(5):
-            _, clip_state_slow = grad_fn_slow(params, batch_x, batch_y, state=clip_state_slow)
-            _, clip_state_fast = grad_fn_fast(params, batch_x, batch_y, state=clip_state_fast)
+            _, clip_state_slow = grad_fn_slow(
+                params, batch_x, batch_y, state=clip_state_slow
+            )
+            _, clip_state_fast = grad_fn_fast(
+                params, batch_x, batch_y, state=clip_state_fast
+            )
 
         # Fast should have adapted more
-        assert abs(clip_state_fast.clip_norm - 0.01) > abs(clip_state_slow.clip_norm - 0.01)
+        assert abs(clip_state_fast.clip_norm - 0.01) > abs(
+            clip_state_slow.clip_norm - 0.01
+        )
 
     def test_kwargs_passed_to_clipped_grad(self):
         """Test that additional kwargs are passed to clipped_grad."""
@@ -306,7 +318,9 @@ class TestAdaptiveClippedGrad:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        (grads, grad_aux), clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+        (grads, grad_aux), clip_state = grad_fn(
+            params, batch_x, batch_y, state=clip_state
+        )
 
         assert grads.shape == params.shape
         assert grad_aux.loss_values is not None

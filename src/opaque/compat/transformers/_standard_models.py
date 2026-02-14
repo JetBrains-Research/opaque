@@ -7,7 +7,6 @@ LLaMA, Mistral, Qwen2, Phi, Phi3, OLMo, Gemma.
 """
 
 import importlib
-from typing import Optional
 
 import torch
 
@@ -30,7 +29,7 @@ def vmap_eager_attention_forward(
     query: torch.Tensor,
     key: torch.Tensor,
     value: torch.Tensor,
-    attention_mask: Optional[torch.Tensor],
+    attention_mask: torch.Tensor | None,
     scaling: float,
     dropout: float = 0.0,
     **kwargs,

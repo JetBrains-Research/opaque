@@ -34,7 +34,9 @@ class TestMultiArchitectureCompatibility:
         grads, _ = run_clipped_grad_test(model, tokenizer)
         assert len(grads) > 0
 
-    @pytest.mark.skip(reason="Large model download - enable for full integration testing")
+    @pytest.mark.skip(
+        reason="Large model download - enable for full integration testing"
+    )
     def test_deepseek_architecture(self):
         """Test DeepSeek architecture."""
         config = AutoConfig.from_pretrained("deepseek-ai/deepseek-coder-1.3b-base")
@@ -53,7 +55,9 @@ class TestMultiArchitectureCompatibility:
         grads, _ = run_clipped_grad_test(model, tokenizer)
         assert len(grads) > 0
 
-    @pytest.mark.skip(reason="Large model download - enable for full integration testing")
+    @pytest.mark.skip(
+        reason="Large model download - enable for full integration testing"
+    )
     def test_phi2_architecture(self):
         """Test Phi-2 architecture."""
         config = AutoConfig.from_pretrained("microsoft/phi-2", trust_remote_code=True)

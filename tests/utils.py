@@ -38,7 +38,9 @@ def assert_pytrees_close(
     actual_leaves = tree_leaves(actual)
     expected_leaves = tree_leaves(expected)
 
-    assert len(actual_leaves) == len(expected_leaves), f"PyTree structure mismatch. {msg}"
+    assert len(actual_leaves) == len(expected_leaves), (
+        f"PyTree structure mismatch. {msg}"
+    )
 
     for i, (a, e) in enumerate(zip(actual_leaves, expected_leaves)):
         assert torch.allclose(a, e, atol=atol, rtol=rtol), (
@@ -77,7 +79,9 @@ def jax_to_torch(jax_array):
 
         return torch.from_numpy(jnp.asarray(jax_array))
     except ImportError:
-        raise ImportError("JAX not installed. Install with 'uv sync --group jax-validation'")
+        raise ImportError(
+            "JAX not installed. Install with 'uv sync --group jax-validation'"
+        )
 
 
 def torch_to_jax(torch_tensor):
@@ -94,4 +98,6 @@ def torch_to_jax(torch_tensor):
 
         return jnp.asarray(torch_tensor.detach().cpu().numpy())
     except ImportError:
-        raise ImportError("JAX not installed. Install with 'uv sync --group jax-validation'")
+        raise ImportError(
+            "JAX not installed. Install with 'uv sync --group jax-validation'"
+        )

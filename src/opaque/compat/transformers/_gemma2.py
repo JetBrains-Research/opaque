@@ -6,7 +6,6 @@ Gemma2 uses softcap attention which requires special handling.
 """
 
 import importlib
-from typing import Optional
 
 import torch
 
@@ -20,10 +19,10 @@ def vmap_eager_attention_forward_gemma2(
     query: torch.Tensor,
     key: torch.Tensor,
     value: torch.Tensor,
-    attention_mask: Optional[torch.Tensor],
-    scaling: Optional[float] = None,
+    attention_mask: torch.Tensor | None,
+    scaling: float | None = None,
     dropout: float = 0.0,
-    softcap: Optional[float] = None,
+    softcap: float | None = None,
     **kwargs,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """vmap-compatible eager_attention_forward for Gemma2.

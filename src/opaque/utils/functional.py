@@ -184,7 +184,9 @@ def make_functional(
             Returns:
                 Output of the module's forward pass.
             """
-            return torch.func.functional_call(stateless_mod, params_dict_input, args, kwargs)
+            return torch.func.functional_call(
+                stateless_mod, params_dict_input, args, kwargs
+            )
 
         return fmodel_dict, trainable_params, frozen_params
 
@@ -205,9 +207,13 @@ def make_functional(
                 Output of the module's forward pass.
             """
             # Reconstruct parameter dict from tuple
-            new_params_dict = {name: value for name, value in zip(params_names, new_params_values)}
+            new_params_dict = {
+                name: value for name, value in zip(params_names, new_params_values)
+            }
             # Call module with external parameters
-            return torch.func.functional_call(stateless_mod, new_params_dict, args, kwargs)
+            return torch.func.functional_call(
+                stateless_mod, new_params_dict, args, kwargs
+            )
 
         return fmodel_tuple, params_values
 
