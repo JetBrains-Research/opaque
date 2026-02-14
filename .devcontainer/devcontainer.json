@@ -1,0 +1,35 @@
+{
+  "name": "Opaque (DevContainer)",
+  "image": "ubuntu:24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils": {
+      "username": "dev"
+    },
+    "ghcr.io/devcontainers/features/python": {
+      "version": "3.11"
+    },
+    "ghcr.io/va-h/devcontainers-features/uv": {
+      "shellautocompletion": true
+    },
+    "ghcr.io/devcontainers/features/git": {
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/github-cli": {},
+    "ghcr.io/devcontainers/features/docker-outside-of-docker": {},
+    "ghcr.io/devcontainers/features/sshd": {}
+  },
+  "customizations": {
+    "jetbrains": {
+      "backend": "PyCharm"
+    },
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "ms-python.pytest"
+      ]
+    }
+  },
+  "remoteUser": "dev"
+}
