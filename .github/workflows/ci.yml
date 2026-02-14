@@ -7,8 +7,8 @@ on:
     branches: [ main ]
 
 jobs:
-  test:
-    name: Test on Python ${{ matrix.python-version }}
+  test-core:
+    name: Core Tests - Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -31,18 +31,93 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --group compat
+          uv sync --group dev
 
-      - name: Run tests (including slow and integration tests)
+      - name: Run core tests (clipping, noise, sampling, utils, profiling)
         run: |
-          uv run pytest -m "" --cov=opaque --cov-report=xml --cov-report=term
+          uv run pytest tests/clipping tests/noise tests/sampling tests/utils tests/profiling --cov=opaque --cov-report=xml --cov-report=term
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
-          flags: unittests
-          name: codecov-umbrella
+          flags: core
+          name: codecov-core-py${{ matrix.python-version }}
+          fail_ci_if_error: false
+
+  test-compat-cpu:
+    name: Compat Tests (CPU) - Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ "3.11", "3.12" ]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          uv sync --group dev --group compat
+
+      - name: Run compat tests (HuggingFace integration on CPU)
+        run: |
+          uv run pytest tests/compat tests/validation -m "not gpu" --cov=opaque --cov-report=xml --cov-report=term
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          flags: compat
+          name: codecov-compat-py${{ matrix.python-version }}
+          fail_ci_if_error: false
+
+  test-compat-gpu:
+    name: Compat Tests (GPU) - Python 3.11
+    runs-on: [self-hosted, gpu]
+    if: false  # Disabled until GPU runners are configured
+    # To enable: Change 'if: false' to 'if: github.event_name == push || github.event.pull_request.draft == false'
+    # Requires self-hosted runner with 'gpu' label
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          uv sync --group dev --group compat
+
+      - name: Run all compat tests (including GPU-specific)
+        run: |
+          uv run pytest tests/compat tests/validation --cov=opaque --cov-report=xml --cov-report=term
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          flags: compat-gpu
+          name: codecov-compat-gpu
           fail_ci_if_error: false
 
   lint:
