@@ -7,7 +7,7 @@ from torch.func import vmap as _vmap
 
 from opaque.clipping._helpers import normalize_to_tuple
 from opaque.clipping.pytree import clip_pytree
-from opaque.clipping.types import FixedClipState
+from opaque.clipping.types import ClipPytreeAux, FixedClipState
 from opaque.utils.pytree import tree_map
 
 
@@ -78,6 +78,11 @@ def _microbatch_accumulate(
             return None
 
         first_tensor = get_first_tensor(first_batch_arg)
+        if first_tensor is None:
+            raise ValueError(
+                "Could not determine batch size: no torch.Tensor found in the "
+                f"batch argument PyTree at index {first_batch_idx}."
+            )
         batch_size = first_tensor.shape[0]
 
     # Initialize accumulators
@@ -133,14 +138,15 @@ def _microbatch_accumulate(
             """Concatenate corresponding leaf values across microbatches."""
             if all(isinstance(v, torch.Tensor) for v in leaf_values):
                 return torch.cat(leaf_values, dim=0)
-            return leaf_values  # Non-tensor leaves remain as-is
+            # Non-tensor leaves are assumed to be identical across microbatches;
+            # return a single representative value to preserve the original structure.
+            return leaf_values[0]
 
         aux = tree_map(concat_leaves, *aux_list)
     else:
         aux = ()
 
     # Concatenate norms (extract .norm field from ClipPytreeAux namedtuples)
-    from opaque.clipping.types import ClipPytreeAux
     norm_tensors = [n.norm for n in norms_list]
     norms = ClipPytreeAux(norm=torch.cat(norm_tensors, dim=0))
 
