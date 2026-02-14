@@ -86,8 +86,10 @@ jobs:
   test-compat-gpu:
     name: Compat Tests (GPU) - Python 3.11
     runs-on: [self-hosted, gpu]
-    if: github.event_name == 'push' || github.event.pull_request.draft == false
-    # Runs on org-level GPU runner (GPU-runner-001)
+    if: false  # Disabled: Repository needs access to GPU runner group
+    # GPU-runner-001 exists in org but repository needs to be added to "GPU" runner group
+    # To enable: Configure runner group access and change 'if: false' to:
+    # if: github.event_name == 'push' || github.event.pull_request.draft == false
 
     steps:
       - name: Checkout code

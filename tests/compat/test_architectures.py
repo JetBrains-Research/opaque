@@ -21,6 +21,9 @@ class TestMultiArchitectureCompatibility:
         grads, _ = run_clipped_grad_test(model, qwen2_tokenizer)
         assert len(grads) > 0
 
+    @pytest.mark.skip(
+        reason="Gemma-2 requires HuggingFace authentication (gated model)"
+    )
     def test_gemma2_architecture(self, device):
         """Test Gemma2 architecture (custom sliding window attention)."""
         config = AutoConfig.from_pretrained("google/gemma-2-2b")
