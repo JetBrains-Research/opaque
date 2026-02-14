@@ -24,6 +24,7 @@ privacy-utility tradeoff without weakening privacy guarantees.
 
 **See also**: [Optimizers & Adaptive Clipping User Guide](../user-guide/optimizers.md)
 
+<!-- TODO: Uncomment when optimizers module is implemented
 ## Adaptive Clipping
 
 ::: opaque.optimizers.adaptive
@@ -39,3 +40,4 @@ members:
 options:
 members:
 - LRScheduler
+-->

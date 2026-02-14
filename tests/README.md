@@ -7,7 +7,10 @@ This document describes the organization and purpose of different test directori
 ```
 tests/
 ├── compat/                         # Compatibility tests for patches
-│   └── test_transformers_patches.py
+│   ├── test_attention.py           # Attention implementation tests
+│   ├── test_features.py            # Training feature tests
+│   ├── test_peft.py                # PEFT method tests
+│   └── test_architectures.py       # Multi-architecture tests
 ├── validation/                     # End-to-end DP training validation
 │   └── test_lora_dp_training.py
 ├── integration/                    # Integration tests (planned)

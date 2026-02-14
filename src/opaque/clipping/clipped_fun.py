@@ -121,6 +121,7 @@ def clipped_fun(
         warnings.warn(
             "spmd_axis_name parameter is not yet implemented and will be ignored.",
             UserWarning,
+            stacklevel=2,
         )
 
     # Normalize batch_argnums to tuple

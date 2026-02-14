@@ -235,7 +235,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for:
 ```bash
 pip install opaque-dp
 ```
-**Includes**: `torch>=2.10.0`, `optree>=0.17.0`
+**Includes**: `torch>=2.10`, `optree>=0.17`
 
 #### Then Add Your ML Stack
 ```bash

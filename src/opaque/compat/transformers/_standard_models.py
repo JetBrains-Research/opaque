@@ -99,6 +99,6 @@ def apply_standard_model_patches() -> None:
             if hasattr(module, "eager_attention_forward"):
                 module.eager_attention_forward = vmap_eager_attention_forward
 
-        except ImportError:
-            # Model not available in this transformers version
+        except (ImportError, RuntimeError):
+            # Model not available in this transformers version or missing dependencies
             pass
