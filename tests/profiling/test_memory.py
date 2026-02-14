@@ -582,3 +582,52 @@ class TestMemoryProfiler:
         report = profiler.report()
         assert "after_grad" in report
         assert "after_optimizer" in report
+
+    @pytest.mark.skipif(
+        not torch.cuda.is_available(),
+        reason="Requires CUDA for detailed stats",
+    )
+    def test_detailed_report_cuda(self):
+        """Should generate detailed report with CUDA stats."""
+        device = "cuda"
+        model = SmallModel().to(device)
+        data, targets = create_sample_batch(32, device=device)
+        loss_fn = create_loss_fn(model)
+
+        # Make functional
+        from opaque import clipped_grad
+
+        fmodel, trainable, frozen = make_functional(model, partition_trainable=True)
+        params = {**frozen, **trainable}
+
+        grad_fn, clip_state = clipped_grad(
+            loss_fn,
+            l2_clip_norm=1.0,
+            batch_argnums=(1, 2),
+            microbatch_size=8,
+        )
+
+        # Profile with detailed stats
+        profiler = MemoryProfiler(device=device)
+
+        with profiler:
+            grads, _ = grad_fn(params, data, targets, state=clip_state)
+            profiler.mark("after_grad")
+
+        # Get both standard and detailed reports
+        standard_report = profiler.report(detailed=False)
+        detailed_report = profiler.report(detailed=True)
+
+        # Standard report should have basic info
+        assert "Memory Profile Report" in standard_report
+        assert "after_grad" in standard_report
+
+        # Detailed report should have CUDA-specific info
+        assert "Memory Profile Report" in detailed_report
+        assert "Reserved" in detailed_report or "Efficiency" in detailed_report
+        assert "CUDA Memory Stats" in detailed_report
+
+        # Check that snapshots have CUDA stats
+        for snapshot in profiler.snapshots:
+            assert snapshot.reserved_gb is not None
+            assert snapshot.reserved_gb >= snapshot.allocated_gb

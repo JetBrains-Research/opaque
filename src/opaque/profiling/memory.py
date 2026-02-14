@@ -194,6 +194,29 @@ class MemoryTracker:
                 return 0.0
         return 0.0
 
+    def get_memory_stats(self) -> dict[str, float | int]:
+        """Get detailed memory statistics (CUDA only).
+
+        Returns:
+            Dictionary with detailed memory stats:
+            - allocated: Currently allocated memory in bytes
+            - reserved: Reserved memory in bytes (may be larger than allocated)
+            - active: Active memory blocks count
+            - num_alloc_retries: Number of failed cudaMalloc calls that were retried
+            - num_ooms: Number of out-of-memory errors
+            Returns empty dict for non-CUDA devices.
+        """
+        if self.device == "cuda" and self._supported:
+            stats = torch.cuda.memory_stats()
+            return {
+                "allocated": stats.get("allocated_bytes.all.current", 0),
+                "reserved": stats.get("reserved_bytes.all.current", 0),
+                "active": stats.get("active_bytes.all.current", 0),
+                "num_alloc_retries": stats.get("num_alloc_retries", 0),
+                "num_ooms": stats.get("num_ooms", 0),
+            }
+        return {}
+
 
 @dataclass
 class MemorySnapshot:
@@ -203,11 +226,17 @@ class MemorySnapshot:
         label: Description of this measurement point
         allocated_gb: Memory allocated at this point in GB
         delta_gb: Change in memory from previous snapshot in GB
+        reserved_gb: Reserved memory (CUDA only), or None
+        active_gb: Active memory (CUDA only), or None
+        num_allocs: Number of allocations (CUDA only), or None
     """
 
     label: str
     allocated_gb: float
     delta_gb: float = 0.0
+    reserved_gb: float | None = None
+    active_gb: float | None = None
+    num_allocs: int | None = None
 
 
 class MemoryProfiler:
@@ -272,12 +301,16 @@ class MemoryProfiler:
         self.tracker.reset()
         self._start_allocated = self.tracker.get_current_allocated()
 
-        # Record initial state
+        # Record initial state with detailed stats if available
+        stats = self.tracker.get_memory_stats()
         self.snapshots = [
             MemorySnapshot(
                 label="start",
                 allocated_gb=self._start_allocated / 1e9,
                 delta_gb=0.0,
+                reserved_gb=stats.get("reserved", 0) / 1e9 if stats else None,
+                active_gb=stats.get("active", 0) / 1e9 if stats else None,
+                num_allocs=stats.get("num_alloc_retries", 0) if stats else None,
             )
         ]
         return self
@@ -286,15 +319,19 @@ class MemoryProfiler:
         """Exit context manager and record final state."""
         self._active = False
 
-        # Record final state
+        # Record final state with detailed stats
         final_allocated = self.tracker.get_current_allocated()
         prev_allocated = self.snapshots[-1].allocated_gb * 1e9
+        stats = self.tracker.get_memory_stats()
 
         self.snapshots.append(
             MemorySnapshot(
                 label="end",
                 allocated_gb=final_allocated / 1e9,
                 delta_gb=(final_allocated - prev_allocated) / 1e9,
+                reserved_gb=stats.get("reserved", 0) / 1e9 if stats else None,
+                active_gb=stats.get("active", 0) / 1e9 if stats else None,
+                num_allocs=stats.get("num_alloc_retries", 0) if stats else None,
             )
         )
         return False
@@ -315,12 +352,16 @@ class MemoryProfiler:
 
         current_allocated = self.tracker.get_current_allocated()
         prev_allocated = self.snapshots[-1].allocated_gb * 1e9
+        stats = self.tracker.get_memory_stats()
 
         self.snapshots.append(
             MemorySnapshot(
                 label=label,
                 allocated_gb=current_allocated / 1e9,
                 delta_gb=(current_allocated - prev_allocated) / 1e9,
+                reserved_gb=stats.get("reserved", 0) / 1e9 if stats else None,
+                active_gb=stats.get("active", 0) / 1e9 if stats else None,
+                num_allocs=stats.get("num_alloc_retries", 0) if stats else None,
             )
         )
 
@@ -340,8 +381,11 @@ class MemoryProfiler:
         """
         return self.tracker.get_total_memory() / 1e9
 
-    def report(self) -> str:
+    def report(self, detailed: bool = False) -> str:
         """Generate formatted memory report.
+
+        Args:
+            detailed: If True and on CUDA, include reserved memory and allocation stats
 
         Returns:
             Formatted string showing memory timeline and breakdown
@@ -353,29 +397,75 @@ class MemoryProfiler:
         total_gb = self.get_total_memory()
         peak_pct = (peak_gb / total_gb * 100) if total_gb > 0 else 0.0
 
-        # Build report
+        # Check if we have detailed stats available
+        has_detailed_stats = (
+            detailed
+            and self.device == "cuda"
+            and any(s.reserved_gb is not None for s in self.snapshots)
+        )
+
+        # Build report header
+        width = 95 if has_detailed_stats else 60
         lines = [
-            "=" * 60,
+            "=" * width,
             f"Memory Profile Report ({self.device.upper()})",
-            "=" * 60,
+            "=" * width,
             f"Peak Memory:      {peak_gb:>8.2f} GB",
             f"Total Available:  {total_gb:>8.2f} GB",
             f"Peak Utilization: {peak_pct:>7.1f}%",
             "",
-            "Timeline:",
-            "-" * 60,
-            f"{'Label':<25} {'Memory (GB)':>15} {'Delta (GB)':>15}",
-            "-" * 60,
         ]
 
+        # Add detailed stats summary if available
+        if has_detailed_stats:
+            final_stats = self.tracker.get_memory_stats()
+            if final_stats:
+                lines.extend(
+                    [
+                        "CUDA Memory Stats:",
+                        f"  Reserved:         {final_stats.get('reserved', 0) / 1e9:>8.2f} GB (memory cached by PyTorch)",
+                        f"  Alloc Retries:    {final_stats.get('num_alloc_retries', 0):>8} (fragmentation indicator)",
+                        f"  OOM Count:        {final_stats.get('num_ooms', 0):>8} (out-of-memory errors)",
+                        "",
+                    ]
+                )
+
+        # Timeline header
+        lines.append("Timeline:")
+        lines.append("-" * width)
+
+        if has_detailed_stats:
+            lines.append(
+                f"{'Label':<20} {'Allocated':>12} {'Delta':>10} "
+                f"{'Reserved':>12} {'Efficiency':>10}"
+            )
+        else:
+            lines.append(f"{'Label':<25} {'Memory (GB)':>15} {'Delta (GB)':>15}")
+        lines.append("-" * width)
+
+        # Timeline data
         for snapshot in self.snapshots:
             delta_sign = "+" if snapshot.delta_gb >= 0 else ""
-            lines.append(
-                f"{snapshot.label:<25} {snapshot.allocated_gb:>15.2f} "
-                f"{delta_sign}{snapshot.delta_gb:>14.2f}"
-            )
 
-        lines.append("=" * 60)
+            if has_detailed_stats and snapshot.reserved_gb is not None:
+                # Calculate efficiency (allocated / reserved)
+                efficiency = (
+                    (snapshot.allocated_gb / snapshot.reserved_gb * 100)
+                    if snapshot.reserved_gb > 0
+                    else 100.0
+                )
+                lines.append(
+                    f"{snapshot.label:<20} {snapshot.allocated_gb:>10.2f} GB "
+                    f"{delta_sign}{snapshot.delta_gb:>8.2f} GB "
+                    f"{snapshot.reserved_gb:>10.2f} GB {efficiency:>9.1f}%"
+                )
+            else:
+                lines.append(
+                    f"{snapshot.label:<25} {snapshot.allocated_gb:>15.2f} "
+                    f"{delta_sign}{snapshot.delta_gb:>14.2f}"
+                )
+
+        lines.append("=" * width)
 
         return "\n".join(lines)
 
