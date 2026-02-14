@@ -38,9 +38,11 @@ def assert_pytrees_close(
     actual_leaves = tree_leaves(actual)
     expected_leaves = tree_leaves(expected)
 
-    assert len(actual_leaves) == len(expected_leaves), f"PyTree structure mismatch. {msg}"
+    assert len(actual_leaves) == len(expected_leaves), (
+        f"PyTree structure mismatch. {msg}"
+    )
 
-    for i, (a, e) in enumerate(zip(actual_leaves, expected_leaves)):
+    for i, (a, e) in enumerate(zip(actual_leaves, expected_leaves, strict=True)):
         assert torch.allclose(a, e, atol=atol, rtol=rtol), (
             f"Leaf {i} not close:\nActual: {a}\nExpected: {e}\n{msg}"
         )
@@ -60,7 +62,7 @@ def create_random_pytree(
         Dictionary of random tensors
     """
     torch.manual_seed(seed)
-    return {key: torch.randn(shape) for key, shape in zip(keys, shapes)}
+    return dict(zip(keys, (torch.randn(shape) for shape in shapes), strict=True))
 
 
 def jax_to_torch(jax_array):
@@ -76,8 +78,10 @@ def jax_to_torch(jax_array):
         import jax.numpy as jnp
 
         return torch.from_numpy(jnp.asarray(jax_array))
-    except ImportError:
-        raise ImportError("JAX not installed. Install with 'uv sync --group jax-validation'")
+    except ImportError as e:
+        raise ImportError(
+            "JAX not installed. Install with 'uv sync --group jax-validation'"
+        ) from e
 
 
 def torch_to_jax(torch_tensor):
@@ -93,5 +97,7 @@ def torch_to_jax(torch_tensor):
         import jax.numpy as jnp
 
         return jnp.asarray(torch_tensor.detach().cpu().numpy())
-    except ImportError:
-        raise ImportError("JAX not installed. Install with 'uv sync --group jax-validation'")
+    except ImportError as e:
+        raise ImportError(
+            "JAX not installed. Install with 'uv sync --group jax-validation'"
+        ) from e

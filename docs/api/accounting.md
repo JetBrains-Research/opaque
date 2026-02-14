@@ -20,6 +20,7 @@ Privacy accounting tracks how privacy degrades across training steps. Opaque use
 
 **See also**: [Privacy Accounting User Guide](../user-guide/accounting.md)
 
+<!-- TODO: Uncomment when accounting module is implemented
 ## Composition Functions
 
 ::: opaque.accounting.composition
@@ -31,3 +32,4 @@ Privacy accounting tracks how privacy degrades across training steps. Opaque use
 ## Calibration Functions
 
 ::: opaque.accounting.calibration
+-->

@@ -283,9 +283,7 @@ def adaptive_clipped_grad(
                 direction = -1.0
 
             # Update with exponential
-            update_factor = torch.exp(
-                torch.tensor(config["learning_rate"] * direction)
-            )
+            update_factor = torch.exp(torch.tensor(config["learning_rate"] * direction))
             new_clip_norm = state.clip_norm * update_factor.item()
 
             # Clamp to valid range
@@ -315,7 +313,9 @@ def adaptive_clipped_grad(
             if not user_wants_return_norms and grad_norms is not None:
                 # Remove grad_norms from aux
                 new_aux = ClippedGradAux(
-                    loss_values=aux.loss_values if hasattr(aux, "loss_values") else None,
+                    loss_values=aux.loss_values
+                    if hasattr(aux, "loss_values")
+                    else None,
                     grad_norms=None,
                     user_aux=aux.user_aux if hasattr(aux, "user_aux") else None,
                 )

@@ -3,8 +3,8 @@
 from opaque.profiling.memory import (
     MemoryProfile,
     MemoryTracker,
-    profile_memory,
     find_max_microbatch_size,
+    profile_memory,
 )
 
 __all__ = [

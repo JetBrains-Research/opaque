@@ -253,7 +253,9 @@ def test_clipped_grad_actual_clipping():
     (grad, grad_aux), _ = grad_fn(param, data, state=clip_state)
 
     # Check that some gradients were clipped
-    assert (grad_aux.grad_norms > clip_norm).any(), "Expected some gradients to be clipped"
+    assert (grad_aux.grad_norms > clip_norm).any(), (
+        "Expected some gradients to be clipped"
+    )
     assert grad_aux.grad_norms.shape == (3,), "Should have 3 per-example norms"
 
 
@@ -285,7 +287,9 @@ def test_clipped_grad_preserves_direction():
     (grad, grad_aux), _ = grad_fn(param, data_single, state=clip_state)
 
     # Check direction is preserved (signs match)
-    assert torch.sign(grad) == torch.sign(unclipped_grad), "Direction should be preserved"
+    assert torch.sign(grad) == torch.sign(unclipped_grad), (
+        "Direction should be preserved"
+    )
 
     # Check that norm is clipped
     if unclipped_norm > 1.0:
@@ -314,7 +318,9 @@ def test_clipped_grad_no_clipping_below_threshold():
     (grad, grad_aux), _ = grad_fn(param, data, state=clip_state)
 
     # All norms should be below threshold
-    assert (grad_aux.grad_norms < large_clip_norm).all(), "All norms should be below threshold"
+    assert (grad_aux.grad_norms < large_clip_norm).all(), (
+        "All norms should be below threshold"
+    )
     # Gradient should be non-trivial
     assert grad.abs() > 1e-6, "Gradient should be non-zero"
 

@@ -33,14 +33,25 @@ Bring production-quality differential privacy to PyTorch's LLM fine-tuning ecosy
 ### Installation
 
 ```bash
-# Basic installation
+# Core library (only torch + optree)
 pip install opaque-dp  # Not yet published
 
-# From source (development)
+# Then add your ML stack
+pip install transformers peft  # For LLMs
+# or
+pip install torchvision         # For CV
+# or whatever you need!
+
+# Development
 git clone https://github.com/JetBrains-Research/opaque.git
 cd opaque
-uv sync
+uv sync --group dev  # Core tests
+uv sync --group dev --group compat  # + HF tests
 ```
+
+**Philosophy**: Opaque provides DP-SGD primitives. You bring the models.
+
+See [Installation Guide](#installation-guide) for detailed instructions.
 
 ### Minimal Example: DP-SGD Training
 
@@ -213,6 +224,100 @@ We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for:
 - **Maturity**: Opacus is battle-tested, Opaque is experimental
 - **Coverage**: Opacus supports conv layers, batchnorm, etc.
 - **If you need production DP today, use Opacus!**
+
+---
+
+## Installation Guide
+
+### For End Users
+
+#### Install Opaque
+```bash
+pip install opaque-dp
+```
+**Includes**: `torch>=2.10`, `optree>=0.17`
+
+#### Then Add Your ML Stack
+```bash
+# For LLM fine-tuning
+pip install transformers peft datasets
+
+# For computer vision
+pip install torchvision
+
+# For optimizers
+pip install torchopt
+
+# Whatever you need!
+```
+
+**Philosophy**: Opaque is DP infrastructure. You choose your models and libraries.
+
+### For Developers
+
+#### Quick Start (Development)
+```bash
+git clone https://github.com/JetBrains-Research/opaque.git
+cd opaque
+uv sync --group dev
+```
+**Includes**: Core tests, linting, formatting
+
+#### Full Development (All Features)
+```bash
+uv sync --all-groups
+```
+**Includes**: Everything (tests, docs, examples, benchmarks)
+
+#### Selective Installation
+```bash
+# Just compatibility testing
+uv sync --group compat
+
+# Run examples and tutorials
+uv sync --group examples
+
+# Build documentation
+uv sync --group docs
+
+# Benchmark against Opacus
+uv sync --group benchmark
+
+# Multiple groups
+uv sync --group dev --group compat --group examples
+```
+
+### Common Workflows
+
+**Researcher**: Use Opaque for custom DP experiments
+```bash
+pip install opaque-dp
+# Then install whatever models/datasets you need
+```
+
+**ML Engineer**: Fine-tune LLMs with DP
+```bash
+pip install opaque-dp
+pip install transformers peft datasets
+```
+
+**Contributor**: Develop and test code
+```bash
+git clone https://github.com/JetBrains-Research/opaque.git
+cd opaque
+uv sync --group dev
+pytest tests/  # Core tests only
+
+# Optional: Test HuggingFace compatibility
+uv sync --group compat
+pytest tests/compat/
+```
+
+**Documentation Writer**: Build docs locally
+```bash
+uv sync --group docs
+mkdocs serve
+```
 
 ---
 

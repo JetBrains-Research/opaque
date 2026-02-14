@@ -30,41 +30,60 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
   "Topic :: Security",
 ]
+# Core runtime dependencies - required for library functionality
 dependencies = [
-  "matplotlib>=3.10.7",
-  "notebook>=7.4.7",
-  "optree>=0.17.0",
-  "torch>=2.0.0",
-  "torchopt>=0.7.3",
-  "unsloth>=2026.2.1",
-  "unsloth-zoo>=2026.2.1",
+  "torch>=2.10.0",      # Core PyTorch with vmap/functorch
+  "optree>=0.17.0",     # PyTree manipulation for functional conversion
 ]
 
-[project.optional-dependencies]
-examples = [
-  "matplotlib>=3.10.7",
-  "jupyter>=1.0.0",
-  "transformers>=4.0.0",
-  "datasets>=2.0.0",
-  "peft>=0.7.0",
-]
+# No optional dependencies - users choose their own ML stack
+# Opaque only provides DP-SGD primitives (clipped_grad, noise, accounting)
 
 [dependency-groups]
+# Core development - linting, formatting, basic testing
+# Install with: uv sync --group dev
 dev = [
   "pytest>=7.0.0",
   "pytest-cov>=4.0.0",
-  "pytest-xdist>=3.0.0", # Parallel test execution
   "ruff>=0.1.0",
-  "hypothesis>=6.0.0", # Property-based testing
-  "scipy>=1.11.0", # For statistical tests
-  "opacus>=1.5.4",
-  "torchvision>=0.24.0",
+  "hypothesis>=6.0.0",     # Property-based testing
+  "scipy>=1.11.0",         # Statistical tests
 ]
+
+# Compatibility testing with HuggingFace ecosystem
+# Install with: uv sync --group compat
+compat = [
+  "transformers>=4.57.0",
+  "peft>=0.18.0",
+  "pytest>=7.0.0",
+  "typeguard>=4.0.0",
+]
+
+# Benchmarking against other DP libraries
+# Install with: uv sync --group benchmark
+benchmark = [
+  "opacus>=1.5.4",         # Meta's DP library
+  "torchvision>=0.24.0",   # For Opacus examples
+]
+
+# Examples and tutorials
+# Install with: uv sync --group examples
+examples = [
+  "transformers>=4.57.0",
+  "peft>=0.18.0",
+  "datasets>=2.0.0",
+  "torchopt>=0.7.3",
+  "jupyter>=1.0.0",
+  "matplotlib>=3.10.7",
+]
+
+# Documentation building
+# Install with: uv sync --group docs
 docs = [
   "mkdocs>=1.5.0",
   "mkdocs-material>=9.5.0",
-  "mkdocstrings[python]>=0.24.0", # Auto-generate docs from docstrings
-  "mkdocs-jupyter>=0.24.0", # Jupyter notebook support
+  "mkdocstrings[python]>=0.24.0",
+  "mkdocs-jupyter>=0.24.0",
 ]
 
 [project.urls]
@@ -85,6 +104,7 @@ addopts = "-v --strict-markers"
 markers = [
   "jax_validation: Tests that validate against JAX-Privacy (optional dependency)",
   "slow: Tests that take a long time to run",
+  "compat: HuggingFace compatibility tests (requires transformers, peft - install with 'uv sync --group compat')",
 ]
 
 [tool.coverage.run]

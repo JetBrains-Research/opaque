@@ -12,11 +12,10 @@ import torch.nn.functional as F
 from opaque.profiling import (
     MemoryProfile,
     MemoryTracker,
-    profile_memory,
     find_max_microbatch_size,
+    profile_memory,
 )
 from opaque.utils import make_functional
-
 
 # Test on all available devices
 DEVICES = []
@@ -329,7 +328,7 @@ class TestIntegration:
 
     @pytest.mark.skipif(
         not (torch.cuda.is_available() or torch.backends.mps.is_available()),
-        reason="Requires CUDA or MPS"
+        reason="Requires CUDA or MPS",
     )
     def test_profile_then_train(self):
         """Should be able to profile then train with recommended config."""

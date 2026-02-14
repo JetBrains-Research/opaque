@@ -32,6 +32,10 @@ def pytest_configure(config):
         "markers",
         "integration: marks tests as integration tests (end-to-end scenarios with real models)",
     )
+    config.addinivalue_line(
+        "markers",
+        "compat: marks tests requiring HuggingFace ecosystem (install with 'uv sync --group compat')",
+    )
 
 
 @pytest.fixture

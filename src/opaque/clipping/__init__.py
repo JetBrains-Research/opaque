@@ -13,9 +13,9 @@ from opaque.clipping.clipped_grad import clipped_grad
 from opaque.clipping.pytree import clip_pytree
 from opaque.clipping.types import (
     AuxiliaryOutput,
-    ClipPytreeAux,
     ClippedFunAux,
     ClippedGradAux,
+    ClipPytreeAux,
     ClipState,
     FixedClipState,
     NeighboringRelation,
