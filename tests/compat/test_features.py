@@ -12,10 +12,37 @@ from tests.compat.conftest import prepare_lora_model, run_clipped_grad_test
 
 
 class TestGradientCheckpointing:
-    """Test gradient checkpointing compatibility."""
+    """Test gradient checkpointing compatibility.
+    
+    PyTorch's torch.utils.checkpoint uses autograd.Function which is incompatible
+    with torch.func.vmap. This is a known limitation documented at:
+    https://pytorch.org/docs/stable/checkpoint.html
+    
+    The issue: autograd.Function subclasses need setup_context() staticmethod for
+    vmap compatibility (PyTorch 2.0+), but CheckpointFunction doesn't implement this.
+    
+    Workaround: Use microbatching instead of gradient checkpointing for memory
+    optimization in DP-SGD. See docs/development/GRADIENT_CHECKPOINTING_PLAN.md
+    
+    JAX comparison: jax.checkpoint works seamlessly with jax.vmap due to functional
+    design. PyTorch's imperative autograd creates friction with vmap.
+    """
 
     def test_gradient_checkpointing(self, qwen2_config, qwen2_tokenizer, device):
-        """Test gradient checkpointing - should fail due to autograd.Function incompatibility."""
+        """Test gradient checkpointing - should fail due to autograd.Function incompatibility.
+        
+        This test verifies the expected behavior: gradient checkpointing is incompatible
+        with vmap-based per-example gradient computation. Users should use microbatching
+        instead for memory optimization.
+        
+        Technical details:
+        - PyTorch's CheckpointFunction (internal to torch.utils.checkpoint) is a custom
+          autograd.Function that doesn't implement vmap batching rules
+        - vmap requires explicit batching rules via setup_context() staticmethod
+        - Without this, vmap cannot transform checkpointed operations
+        
+        See: docs/development/GRADIENT_CHECKPOINTING_PLAN.md for full analysis
+        """
         qwen2_config._attn_implementation = "eager"
         qwen2_config.use_cache = False  # Required for gradient checkpointing
         model = prepare_lora_model(qwen2_config).to(device)
@@ -23,8 +50,7 @@ class TestGradientCheckpointing:
         # Enable gradient checkpointing
         model.gradient_checkpointing_enable()
 
-        # Gradient checkpointing uses autograd.Function which is incompatible with vmap
-        # unless it overrides setup_context staticmethod
+        # Expected to fail: vmap cannot handle autograd.Function without setup_context
         with pytest.raises(RuntimeError, match="autograd.Function"):
             grads, _ = run_clipped_grad_test(model, qwen2_tokenizer)
 

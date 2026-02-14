@@ -119,7 +119,8 @@ Each test:
 ### Gradient Checkpointing ❌
 - **Why**: Uses `autograd.Function` which requires `setup_context` staticmethod for vmap compatibility
 - **Can it be fixed?**: Theoretically yes, but requires changes to PyTorch's checkpointing implementation
-- **Workaround**: Don't use gradient checkpointing with DP-SGD (memory-compute tradeoff)
+- **Workaround**: Use **microbatching** instead of gradient checkpointing for memory optimization
+- **Details**: See [docs/development/GRADIENT_CHECKPOINTING_PLAN.md](../../docs/development/GRADIENT_CHECKPOINTING_PLAN.md) for comprehensive analysis
 
 **Recommendation**: Use **eager** or **sdpa** attention for maximum compatibility across all devices.
 
