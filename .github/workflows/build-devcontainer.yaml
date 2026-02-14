@@ -91,6 +91,10 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
+      - name: Set up Google Cloud SDK
+        if: env.IS_FORK_PR == 'false'
+        uses: google-github-actions/setup-gcloud@v2
+
       - name: Configure Docker for GCP Artifact Registry
         if: env.IS_FORK_PR == 'false'
         run: gcloud auth configure-docker europe-west4-docker.pkg.dev
