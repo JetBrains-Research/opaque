@@ -8,11 +8,25 @@ Device Support:
   - MPS (Apple Silicon): Full memory tracking via torch.mps APIs
   - CPU: Limited support (warns that profiling is approximate)
 
-Example:
+Examples:
     >>> import torch
-    >>> from opaque.profiling import profile_memory, find_max_microbatch_size
+    >>> from opaque.profiling import MemoryProfiler, profile_memory, find_max_microbatch_size
+    >>> from opaque import clipped_grad
     >>>
-    >>> # Profile current configuration
+    >>> # Context manager for detailed timeline
+    >>> profiler = MemoryProfiler()
+    >>> with profiler:
+    ...     grads, aux = grad_fn(params, batch)
+    ...     profiler.mark("after_grad")
+    ...
+    ...     noisy_grads = noise_fn(grads)
+    ...     profiler.mark("after_noise")
+    ...
+    ...     params = optimizer.step(params, noisy_grads)
+    ...     profiler.mark("after_optimizer")
+    >>> print(profiler.report())
+    >>>
+    >>> # One-shot profiling
     >>> model = model.to('mps')  # or .cuda()
     >>> data = data.to('mps')
     >>> profile = profile_memory(model, (data, targets), loss_fn, l2_clip_norm=1.0)
@@ -179,6 +193,191 @@ class MemoryTracker:
                 )
                 return 0.0
         return 0.0
+
+
+@dataclass
+class MemorySnapshot:
+    """Single point-in-time memory measurement.
+
+    Attributes:
+        label: Description of this measurement point
+        allocated_gb: Memory allocated at this point in GB
+        delta_gb: Change in memory from previous snapshot in GB
+    """
+
+    label: str
+    allocated_gb: float
+    delta_gb: float = 0.0
+
+
+class MemoryProfiler:
+    """Context manager for tracking memory during DP training operations.
+
+    Provides component-wise memory breakdown and timeline tracking during
+    training step execution.
+
+    Example:
+        >>> from opaque.profiling import MemoryProfiler
+        >>> from opaque import clipped_grad
+        >>>
+        >>> # Profile a training step
+        >>> profiler = MemoryProfiler()
+        >>> with profiler:
+        >>>     grads, aux = grad_fn(params, batch)
+        >>>     profiler.mark("after_grad")
+        >>>
+        >>>     noisy_grads = noise_fn(grads)
+        >>>     profiler.mark("after_noise")
+        >>>
+        >>>     params = optimizer.step(params, noisy_grads)
+        >>>     profiler.mark("after_optimizer")
+        >>>
+        >>> profiler.report()
+    """
+
+    def __init__(self, device: str | None = None):
+        """Initialize memory profiler.
+
+        Args:
+            device: Device to track ("cuda", "mps", "cpu"). If None, auto-detect
+                   from current default device.
+        """
+        if device is None:
+            # Auto-detect device
+            if torch.cuda.is_available() and torch.cuda.current_device() >= 0:
+                device = "cuda"
+            elif torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
+
+        self.device = device
+        self.tracker = MemoryTracker(device)
+        self.snapshots: list[MemorySnapshot] = []
+        self._start_allocated = 0.0
+        self._active = False
+
+        # Warn if profiling not fully supported
+        if not self.tracker.is_supported():
+            warnings.warn(
+                f"Memory profiling on {device.upper()} is limited. "
+                "For accurate profiling, use CUDA or MPS devices.",
+                UserWarning,
+                stacklevel=2,
+            )
+
+    def __enter__(self):
+        """Enter context manager and start profiling."""
+        self._active = True
+        self.tracker.reset()
+        self._start_allocated = self.tracker.get_current_allocated()
+
+        # Record initial state
+        self.snapshots = [
+            MemorySnapshot(
+                label="start",
+                allocated_gb=self._start_allocated / 1e9,
+                delta_gb=0.0,
+            )
+        ]
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit context manager and record final state."""
+        self._active = False
+
+        # Record final state
+        final_allocated = self.tracker.get_current_allocated()
+        prev_allocated = self.snapshots[-1].allocated_gb * 1e9
+
+        self.snapshots.append(
+            MemorySnapshot(
+                label="end",
+                allocated_gb=final_allocated / 1e9,
+                delta_gb=(final_allocated - prev_allocated) / 1e9,
+            )
+        )
+        return False
+
+    def mark(self, label: str) -> None:
+        """Record a memory measurement at this point.
+
+        Args:
+            label: Description of this measurement point (e.g., "after_grad")
+
+        Raises:
+            RuntimeError: If called outside context manager
+        """
+        if not self._active:
+            raise RuntimeError(
+                "MemoryProfiler.mark() can only be called within context manager"
+            )
+
+        current_allocated = self.tracker.get_current_allocated()
+        prev_allocated = self.snapshots[-1].allocated_gb * 1e9
+
+        self.snapshots.append(
+            MemorySnapshot(
+                label=label,
+                allocated_gb=current_allocated / 1e9,
+                delta_gb=(current_allocated - prev_allocated) / 1e9,
+            )
+        )
+
+    def get_peak_memory(self) -> float:
+        """Get peak memory usage in GB.
+
+        Returns:
+            Peak memory in GB, or 0.0 if unsupported
+        """
+        return self.tracker.get_peak_allocated() / 1e9
+
+    def get_total_memory(self) -> float:
+        """Get total available memory in GB.
+
+        Returns:
+            Total memory in GB, or 0.0 if unsupported
+        """
+        return self.tracker.get_total_memory() / 1e9
+
+    def report(self) -> str:
+        """Generate formatted memory report.
+
+        Returns:
+            Formatted string showing memory timeline and breakdown
+        """
+        if not self.snapshots:
+            return "No profiling data collected"
+
+        peak_gb = self.get_peak_memory()
+        total_gb = self.get_total_memory()
+        peak_pct = (peak_gb / total_gb * 100) if total_gb > 0 else 0.0
+
+        # Build report
+        lines = [
+            "=" * 60,
+            f"Memory Profile Report ({self.device.upper()})",
+            "=" * 60,
+            f"Peak Memory:      {peak_gb:>8.2f} GB",
+            f"Total Available:  {total_gb:>8.2f} GB",
+            f"Peak Utilization: {peak_pct:>7.1f}%",
+            "",
+            "Timeline:",
+            "-" * 60,
+            f"{'Label':<25} {'Memory (GB)':>15} {'Delta (GB)':>15}",
+            "-" * 60,
+        ]
+
+        for snapshot in self.snapshots:
+            delta_sign = "+" if snapshot.delta_gb >= 0 else ""
+            lines.append(
+                f"{snapshot.label:<25} {snapshot.allocated_gb:>15.2f} "
+                f"{delta_sign}{snapshot.delta_gb:>14.2f}"
+            )
+
+        lines.append("=" * 60)
+
+        return "\n".join(lines)
 
 
 def profile_memory(

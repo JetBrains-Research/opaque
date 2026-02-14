@@ -11,6 +11,7 @@ import torch.nn.functional as F
 
 from opaque.profiling import (
     MemoryProfile,
+    MemoryProfiler,
     MemoryTracker,
     find_max_microbatch_size,
     profile_memory,
@@ -385,3 +386,199 @@ class TestIntegration:
         # Check gradients exist
         assert isinstance(grads, dict)
         assert len(grads) > 0
+
+
+class TestMemoryProfiler:
+    """Tests for MemoryProfiler context manager."""
+
+    @pytest.mark.parametrize("device", DEVICES)
+    def test_initialization(self, device):
+        """Should initialize profiler for device."""
+        profiler = MemoryProfiler(device=device)
+        assert profiler.device == device
+        assert len(profiler.snapshots) == 0
+        assert not profiler._active
+
+    def test_auto_detect_device(self):
+        """Should auto-detect device when not specified."""
+        profiler = MemoryProfiler()
+        assert profiler.device in ["cuda", "mps", "cpu"]
+
+    @pytest.mark.parametrize("device", DEVICES)
+    def test_context_manager_basic(self, device):
+        """Should work as context manager."""
+        profiler = MemoryProfiler(device=device)
+
+        with profiler:
+            assert profiler._active
+            assert len(profiler.snapshots) == 1
+            assert profiler.snapshots[0].label == "start"
+
+        # After exit
+        assert not profiler._active
+        assert len(profiler.snapshots) == 2
+        assert profiler.snapshots[-1].label == "end"
+
+    @pytest.mark.parametrize("device", DEVICES)
+    def test_mark_inside_context(self, device):
+        """Should record marks inside context."""
+        profiler = MemoryProfiler(device=device)
+
+        with profiler:
+            profiler.mark("checkpoint1")
+            profiler.mark("checkpoint2")
+
+        # Should have: start, checkpoint1, checkpoint2, end
+        assert len(profiler.snapshots) == 4
+        assert profiler.snapshots[0].label == "start"
+        assert profiler.snapshots[1].label == "checkpoint1"
+        assert profiler.snapshots[2].label == "checkpoint2"
+        assert profiler.snapshots[3].label == "end"
+
+    @pytest.mark.parametrize("device", DEVICES)
+    def test_mark_outside_context_raises(self, device):
+        """Should raise error when marking outside context."""
+        profiler = MemoryProfiler(device=device)
+
+        with pytest.raises(RuntimeError, match="can only be called within"):
+            profiler.mark("invalid")
+
+    @pytest.mark.parametrize("device", DEVICES)
+    def test_delta_calculation(self, device):
+        """Should calculate memory deltas correctly."""
+        if device == "cpu":
+            pytest.skip("CPU profiling not fully supported")
+
+        profiler = MemoryProfiler(device=device)
+
+        with profiler:
+            # Create some tensors to change memory
+            _x = torch.randn(1000, 1000, device=device)  # noqa: F841
+            profiler.mark("after_tensor")
+            _y = torch.randn(1000, 1000, device=device)  # noqa: F841
+            profiler.mark("after_second_tensor")
+
+        # Check that we have memory snapshots
+        assert len(profiler.snapshots) == 4
+
+        # First snapshot should have 0 delta
+        assert profiler.snapshots[0].delta_gb == 0.0
+
+        # Later snapshots should have deltas (could be positive or negative)
+        for snapshot in profiler.snapshots[1:]:
+            assert isinstance(snapshot.delta_gb, float)
+
+    @pytest.mark.parametrize("device", DEVICES)
+    def test_get_peak_memory(self, device):
+        """Should report peak memory."""
+        profiler = MemoryProfiler(device=device)
+
+        with profiler:
+            # Allocate some tensors
+            _x = torch.randn(100, 100, device=device)  # noqa: F841
+            profiler.mark("allocated")
+
+        peak = profiler.get_peak_memory()
+        assert isinstance(peak, float)
+        assert peak >= 0.0
+
+    @pytest.mark.parametrize("device", DEVICES)
+    def test_get_total_memory(self, device):
+        """Should report total memory."""
+        profiler = MemoryProfiler(device=device)
+
+        with profiler:
+            pass
+
+        total = profiler.get_total_memory()
+        assert isinstance(total, float)
+        assert total >= 0.0
+
+        # On supported devices, should have meaningful total
+        if device in ["cuda", "mps"]:
+            if (device == "cuda" and torch.cuda.is_available()) or (
+                device == "mps" and torch.backends.mps.is_available()
+            ):
+                assert total > 0.0
+
+    @pytest.mark.parametrize("device", DEVICES)
+    def test_report_format(self, device):
+        """Should generate formatted report."""
+        profiler = MemoryProfiler(device=device)
+
+        with profiler:
+            profiler.mark("step1")
+            profiler.mark("step2")
+
+        report = profiler.report()
+
+        # Check report contains expected elements
+        assert "Memory Profile Report" in report
+        assert device.upper() in report
+        assert "Peak Memory" in report
+        assert "Total Available" in report
+        assert "Timeline" in report
+        assert "start" in report
+        assert "step1" in report
+        assert "step2" in report
+        assert "end" in report
+
+    @pytest.mark.parametrize("device", DEVICES)
+    def test_empty_report(self, device):
+        """Should handle empty profiler gracefully."""
+        profiler = MemoryProfiler(device=device)
+        report = profiler.report()
+        assert "No profiling data" in report
+
+    @pytest.mark.skipif(
+        not (torch.cuda.is_available() or torch.backends.mps.is_available()),
+        reason="Requires CUDA or MPS",
+    )
+    def test_profile_training_step(self):
+        """Should profile complete training step."""
+        # Detect available device
+        if torch.cuda.is_available():
+            device = "cuda"
+        elif torch.backends.mps.is_available():
+            device = "mps"
+        else:
+            pytest.skip("No GPU available")
+
+        model = SmallModel().to(device)
+        data, targets = create_sample_batch(32, device=device)
+        loss_fn = create_loss_fn(model)
+
+        # Make functional
+        from opaque import clipped_grad
+
+        fmodel, trainable, frozen = make_functional(model, partition_trainable=True)
+        params = {**frozen, **trainable}
+
+        grad_fn, clip_state = clipped_grad(
+            loss_fn,
+            l2_clip_norm=1.0,
+            batch_argnums=(1, 2),
+            microbatch_size=8,
+        )
+
+        # Profile the training step
+        profiler = MemoryProfiler(device=device)
+
+        with profiler:
+            grads, _ = grad_fn(params, data, targets, state=clip_state)
+            profiler.mark("after_grad")
+
+            # Simulate optimizer step
+            for key in grads:
+                params[key] = params[key] - 0.01 * grads[key]
+            profiler.mark("after_optimizer")
+
+        # Check we captured all stages
+        assert len(profiler.snapshots) >= 4
+        assert "after_grad" in [s.label for s in profiler.snapshots]
+        assert "after_optimizer" in [s.label for s in profiler.snapshots]
+
+        # Report should be valid
+        report = profiler.report()
+        assert "after_grad" in report
+        assert "after_optimizer" in report

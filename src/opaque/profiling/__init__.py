@@ -2,6 +2,8 @@
 
 from opaque.profiling.memory import (
     MemoryProfile,
+    MemoryProfiler,
+    MemorySnapshot,
     MemoryTracker,
     find_max_microbatch_size,
     profile_memory,
@@ -9,6 +11,8 @@ from opaque.profiling.memory import (
 
 __all__ = [
     "MemoryProfile",
+    "MemoryProfiler",
+    "MemorySnapshot",
     "MemoryTracker",
     "profile_memory",
     "find_max_microbatch_size",
