@@ -58,7 +58,32 @@ def vmap_create_causal_mask(
     # Fill the causal part (allow attention to past and current tokens)
     if seq_len > 1:
         # For each query position, allow attention to keys up to and including that position
-        mask_cond = cache_position.view(seq_len, 1) >= cache_position.view(1, target_length)
+        # cache_position may be batched under vmap - flatten it first
+        cache_pos_flat = cache_position.view(-1)
+        if cache_pos_flat.shape[0] == seq_len:
+            # Normal case: cache_position has shape (seq_len,)
+            mask_cond = cache_pos_flat.view(seq_len, 1) >= cache_pos_flat.view(1, seq_len)
+            # Expand to full target_length if we have past KV cache
+            if target_length > seq_len:
+                full_mask_cond = torch.zeros(
+                    (seq_len, target_length), dtype=torch.bool, device=input_embeds.device
+                )
+                full_mask_cond[:, :seq_len] = mask_cond
+                # Can attend to all past cached tokens
+                full_mask_cond[:, seq_len:target_length] = True
+                mask_cond = full_mask_cond
+        else:
+            # Under vmap with batch dimension: cache_position shape (batch*seq_len,)
+            # Just create a standard causal mask
+            mask_cond = torch.tril(torch.ones((seq_len, seq_len), dtype=torch.bool, device=input_embeds.device))
+            if target_length > seq_len:
+                full_mask_cond = torch.zeros(
+                    (seq_len, target_length), dtype=torch.bool, device=input_embeds.device
+                )
+                full_mask_cond[:, :seq_len] = mask_cond
+                full_mask_cond[:, seq_len:target_length] = True
+                mask_cond = full_mask_cond
+
         causal_mask[..., :seq_len, :target_length] = torch.where(
             mask_cond,
             torch.tensor(0.0, dtype=input_embeds.dtype, device=input_embeds.device),
