@@ -217,6 +217,68 @@ class MemoryTracker:
             }
         return {}
 
+    @staticmethod
+    def get_tensor_memory_breakdown(
+        device: str | None = None,
+    ) -> dict[str, float]:
+        """Get memory breakdown by tensor type.
+
+        Analyzes all live tensors on the device and categorizes them by:
+        - parameters: Model parameters (requires_grad=True, part of nn.Module)
+        - gradients: Gradient tensors (.grad attribute)
+        - activations: Intermediate tensors from forward pass
+        - other: Other allocated tensors
+
+        Args:
+            device: Device to analyze ("cuda", "mps", "cpu"). If None, analyze all devices.
+
+        Returns:
+            Dictionary mapping category name to memory in GB
+        """
+        breakdown = {
+            "parameters": 0.0,
+            "gradients": 0.0,
+            "activations": 0.0,
+            "other": 0.0,
+        }
+
+        # Get all live tensors
+        import gc
+
+        for obj in gc.get_objects():
+            try:
+                if not isinstance(obj, torch.Tensor):
+                    continue
+
+                # Filter by device if specified
+                if device is not None and obj.device.type != device:
+                    continue
+
+                # Calculate tensor memory
+                tensor_bytes = obj.element_size() * obj.nelement()
+                tensor_gb = tensor_bytes / 1e9
+
+                # Categorize tensor
+                if obj.is_leaf and obj.requires_grad:
+                    # Likely a parameter
+                    breakdown["parameters"] += tensor_gb
+                elif hasattr(obj, "grad_fn") and obj.grad_fn is not None:
+                    # Has grad_fn, so it's an activation (intermediate result)
+                    breakdown["activations"] += tensor_gb
+                elif obj.is_leaf and obj.grad is not None:
+                    # It's a gradient tensor
+                    breakdown["gradients"] += (
+                        obj.grad.element_size() * obj.grad.nelement() / 1e9
+                    )
+                else:
+                    breakdown["other"] += tensor_gb
+
+            except (RuntimeError, AttributeError):
+                # Skip tensors we can't inspect
+                continue
+
+        return breakdown
+
 
 @dataclass
 class MemorySnapshot:
@@ -229,6 +291,7 @@ class MemorySnapshot:
         reserved_gb: Reserved memory (CUDA only), or None
         active_gb: Active memory (CUDA only), or None
         num_allocs: Number of allocations (CUDA only), or None
+        components: Optional breakdown by tensor type (parameters, gradients, activations)
     """
 
     label: str
@@ -237,6 +300,7 @@ class MemorySnapshot:
     reserved_gb: float | None = None
     active_gb: float | None = None
     num_allocs: int | None = None
+    components: dict[str, float] | None = None  # Component name -> memory in GB
 
 
 class MemoryProfiler:
@@ -336,11 +400,13 @@ class MemoryProfiler:
         )
         return False
 
-    def mark(self, label: str) -> None:
+    def mark(self, label: str, *, track_components: bool = False) -> None:
         """Record a memory measurement at this point.
 
         Args:
             label: Description of this measurement point (e.g., "after_grad")
+            track_components: If True, analyze tensor breakdown (parameters/gradients/activations).
+                            Warning: This uses gc.get_objects() which is slow. Use sparingly.
 
         Raises:
             RuntimeError: If called outside context manager
@@ -354,6 +420,11 @@ class MemoryProfiler:
         prev_allocated = self.snapshots[-1].allocated_gb * 1e9
         stats = self.tracker.get_memory_stats()
 
+        # Optionally get component breakdown
+        components = None
+        if track_components:
+            components = self.tracker.get_tensor_memory_breakdown(device=self.device)
+
         self.snapshots.append(
             MemorySnapshot(
                 label=label,
@@ -362,6 +433,7 @@ class MemoryProfiler:
                 reserved_gb=stats.get("reserved", 0) / 1e9 if stats else None,
                 active_gb=stats.get("active", 0) / 1e9 if stats else None,
                 num_allocs=stats.get("num_alloc_retries", 0) if stats else None,
+                components=components,
             )
         )
 
@@ -466,6 +538,33 @@ class MemoryProfiler:
                 )
 
         lines.append("=" * width)
+
+        # Add component breakdown section if any snapshots have it
+        has_components = any(s.components is not None for s in self.snapshots)
+        if has_components:
+            lines.extend(
+                [
+                    "",
+                    "Component Breakdown (GB):",
+                    "-" * width,
+                    f"{'Label':<20} {'Params':>10} {'Grads':>10} {'Activations':>12} {'Other':>10}",
+                    "-" * width,
+                ]
+            )
+
+            for snapshot in self.snapshots:
+                if snapshot.components:
+                    c = snapshot.components
+                    lines.append(
+                        f"{snapshot.label:<20} {c.get('parameters', 0):>10.3f} "
+                        f"{c.get('gradients', 0):>10.3f} "
+                        f"{c.get('activations', 0):>12.3f} "
+                        f"{c.get('other', 0):>10.3f}"
+                    )
+                else:
+                    lines.append(f"{snapshot.label:<20} {'(not tracked)':>43}")
+
+            lines.append("=" * width)
 
         return "\n".join(lines)
 

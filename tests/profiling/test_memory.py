@@ -631,3 +631,46 @@ class TestMemoryProfiler:
         for snapshot in profiler.snapshots:
             assert snapshot.reserved_gb is not None
             assert snapshot.reserved_gb >= snapshot.allocated_gb
+
+    def test_component_tracking(self):
+        """Should track tensor components when requested."""
+        device = "cpu"  # Use CPU for deterministic test
+        model = SmallModel().to(device)
+
+        # Create a simple training scenario
+        model.train()
+        x = torch.randn(4, 100)
+        y = torch.randint(0, 10, (4,))
+
+        profiler = MemoryProfiler(device=device)
+
+        with profiler:
+            # Mark with component tracking
+            profiler.mark("initial", track_components=True)
+
+            # Forward pass
+            output = model(x)
+            loss = torch.nn.functional.cross_entropy(output, y)
+
+            profiler.mark("after_forward", track_components=True)
+
+            # Backward pass
+            loss.backward()
+
+            profiler.mark("after_backward", track_components=True)
+
+        # Check that components were tracked
+        for snapshot in profiler.snapshots:
+            if snapshot.label in ["initial", "after_forward", "after_backward"]:
+                assert snapshot.components is not None
+                assert "parameters" in snapshot.components
+                assert "gradients" in snapshot.components
+                assert "activations" in snapshot.components
+                assert "other" in snapshot.components
+
+        # Report should include component breakdown
+        report = profiler.report()
+        assert "Component Breakdown" in report
+        assert "Params" in report
+        assert "Grads" in report
+        assert "Activations" in report
