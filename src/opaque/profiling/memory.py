@@ -217,68 +217,6 @@ class MemoryTracker:
             }
         return {}
 
-    @staticmethod
-    def get_tensor_memory_breakdown(
-        device: str | None = None,
-    ) -> dict[str, float]:
-        """Get memory breakdown by tensor type.
-
-        Analyzes all live tensors on the device and categorizes them by:
-        - parameters: Model parameters (requires_grad=True, part of nn.Module)
-        - gradients: Gradient tensors (.grad attribute)
-        - activations: Intermediate tensors from forward pass
-        - other: Other allocated tensors
-
-        Args:
-            device: Device to analyze ("cuda", "mps", "cpu"). If None, analyze all devices.
-
-        Returns:
-            Dictionary mapping category name to memory in GB
-        """
-        breakdown = {
-            "parameters": 0.0,
-            "gradients": 0.0,
-            "activations": 0.0,
-            "other": 0.0,
-        }
-
-        # Get all live tensors
-        import gc
-
-        for obj in gc.get_objects():
-            try:
-                if not isinstance(obj, torch.Tensor):
-                    continue
-
-                # Filter by device if specified
-                if device is not None and obj.device.type != device:
-                    continue
-
-                # Calculate tensor memory
-                tensor_bytes = obj.element_size() * obj.nelement()
-                tensor_gb = tensor_bytes / 1e9
-
-                # Categorize tensor
-                if obj.is_leaf and obj.requires_grad:
-                    # Likely a parameter
-                    breakdown["parameters"] += tensor_gb
-                elif hasattr(obj, "grad_fn") and obj.grad_fn is not None:
-                    # Has grad_fn, so it's an activation (intermediate result)
-                    breakdown["activations"] += tensor_gb
-                elif obj.is_leaf and obj.grad is not None:
-                    # It's a gradient tensor
-                    breakdown["gradients"] += (
-                        obj.grad.element_size() * obj.grad.nelement() / 1e9
-                    )
-                else:
-                    breakdown["other"] += tensor_gb
-
-            except (RuntimeError, AttributeError):
-                # Skip tensors we can't inspect
-                continue
-
-        return breakdown
-
 
 @dataclass
 class MemorySnapshot:
@@ -291,7 +229,6 @@ class MemorySnapshot:
         reserved_gb: Reserved memory (CUDA only), or None
         active_gb: Active memory (CUDA only), or None
         num_allocs: Number of allocations (CUDA only), or None
-        components: Optional breakdown by tensor type (parameters, gradients, activations)
     """
 
     label: str
@@ -300,7 +237,6 @@ class MemorySnapshot:
     reserved_gb: float | None = None
     active_gb: float | None = None
     num_allocs: int | None = None
-    components: dict[str, float] | None = None  # Component name -> memory in GB
 
 
 class MemoryProfiler:
@@ -328,12 +264,15 @@ class MemoryProfiler:
         >>> profiler.report()
     """
 
-    def __init__(self, device: str | None = None):
+    def __init__(self, device: str | None = None, *, enable_profiler: bool = False):
         """Initialize memory profiler.
 
         Args:
             device: Device to track ("cuda", "mps", "cpu"). If None, auto-detect
                    from current default device.
+            enable_profiler: If True, enable torch.profiler for detailed operation-level
+                           profiling. This provides detailed breakdown of memory usage
+                           per PyTorch operation, but adds overhead (~10-20%).
         """
         if device is None:
             # Auto-detect device
@@ -349,6 +288,9 @@ class MemoryProfiler:
         self.snapshots: list[MemorySnapshot] = []
         self._start_allocated = 0.0
         self._active = False
+        self._enable_profiler = enable_profiler
+        self._torch_profiler = None
+        self._profiler_results = None
 
         # Warn if profiling not fully supported
         if not self.tracker.is_supported():
@@ -364,6 +306,22 @@ class MemoryProfiler:
         self._active = True
         self.tracker.reset()
         self._start_allocated = self.tracker.get_current_allocated()
+
+        # Start torch.profiler if enabled
+        if self._enable_profiler:
+            from torch.profiler import ProfilerActivity, profile
+
+            activities = [ProfilerActivity.CPU]
+            if self.device == "cuda":
+                activities.append(ProfilerActivity.CUDA)
+
+            self._torch_profiler = profile(
+                activities=activities,
+                profile_memory=True,
+                record_shapes=False,
+                with_stack=False,
+            )
+            self._torch_profiler.__enter__()
 
         # Record initial state with detailed stats if available
         stats = self.tracker.get_memory_stats()
@@ -383,6 +341,11 @@ class MemoryProfiler:
         """Exit context manager and record final state."""
         self._active = False
 
+        # Stop torch.profiler if enabled
+        if self._torch_profiler is not None:
+            self._torch_profiler.__exit__(exc_type, exc_val, exc_tb)
+            self._profiler_results = self._torch_profiler.key_averages()
+
         # Record final state with detailed stats
         final_allocated = self.tracker.get_current_allocated()
         prev_allocated = self.snapshots[-1].allocated_gb * 1e9
@@ -400,13 +363,11 @@ class MemoryProfiler:
         )
         return False
 
-    def mark(self, label: str, *, track_components: bool = False) -> None:
+    def mark(self, label: str) -> None:
         """Record a memory measurement at this point.
 
         Args:
             label: Description of this measurement point (e.g., "after_grad")
-            track_components: If True, analyze tensor breakdown (parameters/gradients/activations).
-                            Warning: This uses gc.get_objects() which is slow. Use sparingly.
 
         Raises:
             RuntimeError: If called outside context manager
@@ -420,11 +381,6 @@ class MemoryProfiler:
         prev_allocated = self.snapshots[-1].allocated_gb * 1e9
         stats = self.tracker.get_memory_stats()
 
-        # Optionally get component breakdown
-        components = None
-        if track_components:
-            components = self.tracker.get_tensor_memory_breakdown(device=self.device)
-
         self.snapshots.append(
             MemorySnapshot(
                 label=label,
@@ -433,7 +389,6 @@ class MemoryProfiler:
                 reserved_gb=stats.get("reserved", 0) / 1e9 if stats else None,
                 active_gb=stats.get("active", 0) / 1e9 if stats else None,
                 num_allocs=stats.get("num_alloc_retries", 0) if stats else None,
-                components=components,
             )
         )
 
@@ -452,6 +407,28 @@ class MemoryProfiler:
             Total memory in GB, or 0.0 if unsupported
         """
         return self.tracker.get_total_memory() / 1e9
+
+    def print_ops(self, top_k: int = 20) -> None:
+        """Print detailed operation-level memory breakdown (requires enable_profiler=True).
+
+        Args:
+            top_k: Number of top memory-consuming operations to show
+
+        Raises:
+            RuntimeError: If profiler was not enabled
+        """
+        if self._profiler_results is None:
+            raise RuntimeError(
+                "Operation-level profiling not available. "
+                "Create profiler with enable_profiler=True"
+            )
+
+        sort_key = (
+            "self_cuda_memory_usage"
+            if self.device == "cuda"
+            else "self_cpu_memory_usage"
+        )
+        print(self._profiler_results.table(sort_by=sort_key, row_limit=top_k))
 
     def report(self, detailed: bool = False) -> str:
         """Generate formatted memory report.
@@ -538,33 +515,6 @@ class MemoryProfiler:
                 )
 
         lines.append("=" * width)
-
-        # Add component breakdown section if any snapshots have it
-        has_components = any(s.components is not None for s in self.snapshots)
-        if has_components:
-            lines.extend(
-                [
-                    "",
-                    "Component Breakdown (GB):",
-                    "-" * width,
-                    f"{'Label':<20} {'Params':>10} {'Grads':>10} {'Activations':>12} {'Other':>10}",
-                    "-" * width,
-                ]
-            )
-
-            for snapshot in self.snapshots:
-                if snapshot.components:
-                    c = snapshot.components
-                    lines.append(
-                        f"{snapshot.label:<20} {c.get('parameters', 0):>10.3f} "
-                        f"{c.get('gradients', 0):>10.3f} "
-                        f"{c.get('activations', 0):>12.3f} "
-                        f"{c.get('other', 0):>10.3f}"
-                    )
-                else:
-                    lines.append(f"{snapshot.label:<20} {'(not tracked)':>43}")
-
-            lines.append("=" * width)
 
         return "\n".join(lines)
 
