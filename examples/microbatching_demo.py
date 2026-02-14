@@ -7,9 +7,17 @@ materializes gradients for the entire batch.
 
 Key concepts:
 1. Microbatching processes the batch in smaller chunks (microbatches)
-2. Gradients are computed and clipped per microbatch, then accumulated
-3. Memory usage scales with microbatch_size, not batch_size
-4. Results are numerically identical to processing the full batch at once
+2. Each chunk is processed, clipped, and summed immediately
+3. The sum is accumulated incrementally (not materializing all gradients)
+4. Memory usage scales with microbatch_size, not batch_size
+5. Results are numerically identical to processing the full batch at once
+
+Implementation details:
+- The implementation manually chunks the batch and processes each chunk
+- After processing a chunk, it's summed and added to a running accumulator
+- Only microbatch_size gradients are held in memory at any time
+- This is more memory-efficient than vmap's chunk_size which still materializes
+  all outputs before summing
 
 This is the recommended alternative to gradient checkpointing (which is
 incompatible with vmap). See docs/development/GRADIENT_CHECKPOINTING_PLAN.md

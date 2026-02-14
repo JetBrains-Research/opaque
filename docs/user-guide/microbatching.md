@@ -2,14 +2,37 @@
 
 ## What is Microbatching?
 
-Microbatching is a memory optimization technique for DP-SGD training. Instead of processing an entire batch at once, it splits the batch into smaller "microbatches" that are processed sequentially. The clipped gradients from each microbatch are accumulated to produce the same result as processing the full batch.
+Microbatching is a memory optimization technique for DP-SGD training. Instead of processing an entire batch at once, it splits the batch into smaller "microbatches" that are processed sequentially. Crucially, each microbatch is summed immediately after processing, and only the accumulated sum is kept in memory—not the individual per-example gradients.
 
 ## Why is Microbatching Important?
 
 DP-SGD computes per-example gradients for an entire batch, which can be memory-intensive:
-- A batch of 128 examples materializes 128 gradient tensors simultaneously
+- A batch of 128 examples would materialize 128 gradient tensors simultaneously
 - With large models (7B+ parameters), this can exceed available GPU memory
-- Microbatching reduces memory usage proportionally to the microbatch size
+- **Key insight**: We don't need all per-example gradients in memory—we only need their sum!
+
+## How Opaque's Microbatching Works
+
+**Traditional approach** (what we DON'T do):
+```python
+# Process all examples with vmap
+all_grads = vmap(compute_gradient)(batch)  # Shape: [batch_size, ...]
+# Sum all at once
+total = sum(all_grads)  # Still needs [batch_size, ...] in memory!
+```
+
+**Opaque's implementation** (what we DO):
+```python
+# Process batch in chunks
+total = None
+for chunk in split_batch(batch, microbatch_size):
+    chunk_grads = vmap(compute_gradient)(chunk)  # Shape: [microbatch_size, ...]
+    chunk_sum = sum(chunk_grads)  # Shape: [...]
+    total = total + chunk_sum if total else chunk_sum
+    # chunk_grads is discarded here, freeing memory!
+```
+
+This ensures only `microbatch_size` gradients are in memory at any time, not the full batch.
 
 ## Quick Start
 
@@ -120,19 +143,40 @@ for epoch in range(epochs):
 
 ### Memory Usage
 - **Without microbatching**: O(batch_size × model_size)
+  - All per-example gradients materialized simultaneously
 - **With microbatching**: O(microbatch_size × model_size)
+  - Only one chunk's gradients in memory at a time
 - **Memory reduction**: ~(batch_size / microbatch_size)x
 
-Example: With batch_size=128 and microbatch_size=32, memory usage is reduced by ~4x.
+Example: With batch_size=128 and microbatch_size=32, memory usage is reduced by **~4x**.
+
+### How It Works Internally
+
+The implementation manually chunks the batch and processes each chunk:
+
+1. **Split**: Divide batch into chunks of size `microbatch_size`
+2. **Process**: For each chunk:
+   - Compute per-example gradients using vmap
+   - Clip each gradient
+   - **Sum the chunk immediately** → produces shape `[...]` not `[microbatch_size, ...]`
+   - Add to running accumulator
+   - **Discard individual gradients** (frees memory)
+3. **Result**: Final accumulated sum, identical to full-batch result
+
+**Key difference from vmap's chunk_size**: PyTorch's `vmap(..., chunk_size=N)` still returns ALL outputs in memory. Our implementation discards each chunk after summing it.
 
 ### Compute Time
 - **Overhead**: Typically <5% compared to full-batch processing
-- **Why so small?**: PyTorch's vmap is highly optimized
+- **Why so small?**: 
+  - vmap is highly optimized
+  - Chunking overhead is minimal
+  - Main cost is the forward/backward passes, not chunking
 - **Trade-off**: Slightly slower but enables much larger effective batch sizes
 
 ### Numerical Accuracy
 - **Guarantee**: Results are **bit-for-bit identical** to full-batch processing
 - **Tested**: Comprehensive test suite verifies equivalence (see tests/clipping/test_clipped_fun.py)
+- **Floating point**: Uses same arithmetic operations, just in different order
 
 ## Advanced Usage
 
