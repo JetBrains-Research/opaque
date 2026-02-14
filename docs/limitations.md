@@ -31,6 +31,8 @@ generate_vmap_rule=True.
 
 2. **HuggingFace Transformers:**
    ```python
+   from transformers import AutoModel
+
    model = AutoModel.from_pretrained("gpt2")
    model.gradient_checkpointing_enable()  # ← Breaks!
    ```
@@ -61,13 +63,17 @@ grad_fn, state = clipped_grad(
 from opaque.profiling import find_max_microbatch_size
 from opaque.clipping import clipped_grad
 
+# Target batch size you use in training
+batch_size = 128
+
 # Automatically find optimal microbatch size
 optimal_size = find_max_microbatch_size(
     model=model,
     sample_batch=(sample_x, sample_y),
+    batch_size=batch_size,
     loss_fn=loss_fn,
     l2_clip_norm=1.0,
-    safety_margin=0.1,  # Keep 10% memory free
+    safety_margin=0.9,  # Keep 10% memory free
 )
 
 print(f"Using microbatch_size={optimal_size}")
