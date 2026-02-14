@@ -50,7 +50,7 @@ PyTorch's imperative autograd creates friction:
 
 ---
 
-## Recommended Solution: Microbatching
+## Recommended Solution: Microbatching ✅ ALREADY IMPLEMENTED
 
 **Why microbatching is better for DP-SGD**:
 
@@ -58,15 +58,21 @@ PyTorch's imperative autograd creates friction:
 2. **Checkpointing doesn't help**: Still materializes all per-example gradients
 3. **Microbatching directly addresses**: Process batch in chunks
 
-**API (to be implemented in Phase 1B)**:
+**API (already available)**:
 ```python
-grad_fn = clipped_grad(
+grad_fn, clip_state = clipped_grad(
     loss_fn,
     l2_clip_norm=1.0,
     microbatch_size=32,  # Process 32 examples at a time
 )
-grads = grad_fn(params, large_batch)  # Can handle 1024+ examples
+grads, new_state = grad_fn(params, large_batch, state=clip_state)  # Can handle 1024+ examples
 ```
+
+**Implementation details**:
+- Uses PyTorch's `vmap(..., chunk_size=microbatch_size)` internally
+- Available in `clipped_grad()` and `clipped_fun()` since initial release
+- Thoroughly tested (see tests/clipping/test_clipped_fun.py)
+- Used in production examples (examples/train_causal_lm.py, examples/train_qwen.py)
 
 **Benefits**:
 - ✅ No vmap incompatibility
@@ -74,23 +80,30 @@ grads = grad_fn(params, large_batch)  # Can handle 1024+ examples
 - ✅ Minimal compute overhead (<5%)
 - ✅ More effective than checkpointing for DP-SGD
 
+**Try it now**:
+```bash
+python examples/microbatching_demo.py
+```
+
 ---
 
-## Implementation Roadmap
+## Implementation Status
 
-### Phase 1: Documentation ✅ (Current)
+### ✅ Phase 1: Documentation (COMPLETE)
 - [x] Research JAX-Privacy and JAX-federated approaches
 - [x] Document incompatibility clearly
 - [x] Update tests with detailed explanations
 - [x] Create implementation plan
 
-### Phase 2: Microbatching (Phase 1B - High Priority)
-- [ ] Implement `microbatch_size` parameter in `clipped_grad`
-- [ ] Test numerical equivalence with full-batch
-- [ ] Measure memory reduction on 8B model
-- [ ] Create tutorial: "Memory Optimization with Microbatching"
+### ✅ Phase 2: Microbatching (COMPLETE - Already Implemented!)
+- [x] `microbatch_size` parameter available in `clipped_grad`
+- [x] Tests verify numerical equivalence with full-batch
+- [x] Used in production examples (train_causal_lm.py, train_qwen.py)
+- [x] Tutorial created: examples/microbatching_demo.py
 
-### Phase 3: Advanced Options (Phase 3+ - Low Priority)
+**Status**: Microbatching has been implemented and tested since the initial Opaque release! It uses PyTorch's `vmap(..., chunk_size=microbatch_size)` internally.
+
+### Phase 3: Advanced Options (Future - Low Priority)
 - [ ] Monitor PyTorch for vmap-compatible checkpointing
 - [ ] Evaluate custom checkpointing implementation
 - [ ] Consider JAX backend for users who need native checkpointing

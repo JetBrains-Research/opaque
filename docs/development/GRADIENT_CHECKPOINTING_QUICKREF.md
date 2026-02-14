@@ -18,19 +18,24 @@ grads = clipped_grad(loss_fn, ...)(params, batch)
 
 ---
 
-## ✅ What to Use Instead
+## ✅ What to Use Instead (Already Available!)
 
 ```python
-# Microbatching (coming in Phase 1B)
-grad_fn = clipped_grad(
+# Microbatching is already implemented!
+grad_fn, clip_state = clipped_grad(
     loss_fn,
     l2_clip_norm=1.0,
     microbatch_size=32,  # Process 32 examples at a time
 )
-grads = grad_fn(params, large_batch)
+grads, new_state = grad_fn(params, large_batch, state=clip_state)
 ```
 
 **Why**: Reduces memory by processing batches in chunks. More effective for DP-SGD.
+
+**Where to find it**:
+- See `examples/microbatching_demo.py` for comprehensive tutorial
+- Used in `examples/train_causal_lm.py` and `examples/train_qwen.py`
+- Implemented via PyTorch's `vmap(..., chunk_size=microbatch_size)`
 
 ---
 
@@ -81,14 +86,28 @@ Don't need microbatching when:
 
 ---
 
-## 🚀 Coming in Phase 1B
+## 🚀 Status: Already Available!
 
-Full microbatching implementation with:
-- Automatic chunk size selection
-- Memory profiling integration
-- Performance benchmarks
-- Tutorial and examples
+Microbatching has been implemented and is ready to use:
+- ✅ Available in `clipped_grad()` and `clipped_fun()`
+- ✅ Thoroughly tested (tests/clipping/test_clipped_fun.py)
+- ✅ Used in production examples
+- ✅ Tutorial available: examples/microbatching_demo.py
+
+```bash
+# Try the demo
+python examples/microbatching_demo.py
+
+# Or use in training
+python examples/train_causal_lm.py --microbatch_size 4
+```
+
+For more details, see:
+- examples/microbatching_demo.py (comprehensive tutorial)
+- docs/development/GRADIENT_CHECKPOINTING_PLAN.md (technical analysis)
+- docs/development/GRADIENT_CHECKPOINTING_SUMMARY.md (quick reference)
+- examples/train_causal_lm.py (real-world usage with LLMs)
 
 ---
 
-**Status**: ✅ Research complete | 📅 Implementation planned for Phase 1B
+**Status**: ✅ Implementation complete | 📚 Ready to use today
