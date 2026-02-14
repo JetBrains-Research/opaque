@@ -113,9 +113,8 @@ jobs:
 
       - name: Test devcontainer
         run: |
-          devcontainer up --workspace-folder . --remove-existing-container
+          devcontainer up --workspace-folder . 
           devcontainer exec --workspace-folder . echo "Devcontainer smoke test passed"
-          devcontainer down --workspace-folder .
 
       - name: Tag and push to GitHub Container Registry
         if: env.IS_FORK_PR == 'false'
