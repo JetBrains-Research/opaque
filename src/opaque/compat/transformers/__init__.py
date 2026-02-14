@@ -2,45 +2,27 @@
 # SPDX-License-Identifier: Apache-2.0
 """vmap compatibility patches for HuggingFace Transformers models.
 
-This module provides automatic model detection and patching for vmap compatibility.
-Each model architecture has its own patcher that applies only the necessary patches.
+Patches are applied automatically at `import opaque` time.
+No user action required - just import opaque and use clipped_grad with any
+supported HuggingFace model.
 
-Usage:
-    from opaque.compat.transformers import patch_model, vmap_compat
+Disable auto-patching with: OPAQUE_NO_PATCH=1
 
-    # Option 1: Explicit patching
-    patch_model(model)
-    # ... use clipped_grad ...
-
-    # Option 2: Context manager
-    with vmap_compat(model):
-        grads, state = grad_fn(...)
+Supported models:
+- GPT-2
+- LLaMA (and LLaMA-based: Mistral, DeepSeek, etc.)
+- Qwen2
+- Phi, Phi-3
+- OLMo
+- Gemma, Gemma2
 """
 
-from opaque.compat.transformers.registry import (
-    patch_model,
-    unpatch_model,
-    is_patched,
-    vmap_compat,
-    get_model_architecture,
-    list_supported_architectures,
-    SUPPORTED_ARCHITECTURES,
-)
 from opaque.compat.transformers._global_patches import (
     apply_global_patches,
-    remove_global_patches,
     is_globally_patched,
 )
 
 __all__ = [
-    "patch_model",
-    "unpatch_model",
-    "is_patched",
-    "vmap_compat",
-    "get_model_architecture",
-    "list_supported_architectures",
-    "SUPPORTED_ARCHITECTURES",
     "apply_global_patches",
-    "remove_global_patches",
     "is_globally_patched",
 ]

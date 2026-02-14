@@ -20,7 +20,6 @@ import torch
 import torch.nn.functional as F
 
 from opaque import clipped_grad, gaussian
-from opaque.compat import patch_model, unpatch_model, vmap_compat
 from opaque.utils import make_functional
 
 
@@ -41,15 +40,14 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 def gpt2_model_and_tokenizer():
     """Load GPT-2 small model and tokenizer.
 
-    Uses eager attention implementation to avoid vmap compatibility issues
-    with SDPA's data-dependent control flow in transformers>=5.0.
+    Uses default attention (SDPA) - vmap compatibility is handled by
+    import-time patches applied when opaque is imported.
     """
     model_name = "gpt2"
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
 
-    # Use eager attention to avoid vmap incompatibility with SDPA
-    model = AutoModelForCausalLM.from_pretrained(model_name, attn_implementation="eager")
+    model = AutoModelForCausalLM.from_pretrained(model_name)
     model.config.pad_token_id = tokenizer.pad_token_id
 
     return model, tokenizer
@@ -142,12 +140,12 @@ class TestGPT2LoRADPTraining:
             """Loss for single example using HF built-in loss."""
             all_params = {**frozen_params, **trainable_params}
 
-            # Add batch dimension
+            # With keep_batch_dim=True (default), inputs already have batch dimension
             outputs = fmodel(
                 all_params,
-                input_ids_single.unsqueeze(0),
-                attention_mask=mask_single.unsqueeze(0),
-                labels=labels_single.unsqueeze(0),
+                input_ids_single,
+                attention_mask=mask_single,
+                labels=labels_single,
             )
             return outputs.loss  # HuggingFace's built-in loss
 
@@ -187,9 +185,9 @@ class TestGPT2LoRADPTraining:
             all_params = {**frozen_params, **trainable_params}
             outputs = fmodel(
                 all_params,
-                input_ids_single.unsqueeze(0),
-                attention_mask=mask_single.unsqueeze(0),
-                labels=labels_single.unsqueeze(0),
+                input_ids_single,
+                attention_mask=mask_single,
+                labels=labels_single,
             )
             return outputs.loss
 
@@ -224,9 +222,9 @@ class TestGPT2LoRADPTraining:
             all_params = {**frozen_params, **trainable_params}
             outputs = fmodel(
                 all_params,
-                input_ids_single.unsqueeze(0),
-                attention_mask=mask_single.unsqueeze(0),
-                labels=labels_single.unsqueeze(0),
+                input_ids_single,
+                attention_mask=mask_single,
+                labels=labels_single,
             )
             return outputs.loss
 
@@ -262,9 +260,9 @@ class TestGPT2LoRADPTraining:
             all_params = {**frozen_params, **trainable_params}
             outputs = fmodel(
                 all_params,
-                input_ids_single.unsqueeze(0),
-                attention_mask=mask_single.unsqueeze(0),
-                labels=labels_single.unsqueeze(0),
+                input_ids_single,
+                attention_mask=mask_single,
+                labels=labels_single,
             )
             return outputs.loss
 
@@ -303,9 +301,9 @@ class TestGPT2LoRADPTraining:
             all_params = {**frozen_params, **trainable_params}
             outputs = fmodel(
                 all_params,
-                input_ids_single.unsqueeze(0),
-                attention_mask=mask_single.unsqueeze(0),
-                labels=labels_single.unsqueeze(0),
+                input_ids_single,
+                attention_mask=mask_single,
+                labels=labels_single,
             )
             return outputs.loss
 
@@ -354,9 +352,9 @@ class TestGPT2LoRADPTraining:
             all_params = {**frozen_params, **trainable_params}
             outputs = fmodel(
                 all_params,
-                input_ids_single.unsqueeze(0),
-                attention_mask=mask_single.unsqueeze(0),
-                labels=labels_single.unsqueeze(0),
+                input_ids_single,
+                attention_mask=mask_single,
+                labels=labels_single,
             )
             return outputs.loss
 
@@ -587,8 +585,7 @@ class TestMellumLoRADPTraining:
     def test_mellum_clipped_grad_forward_pass(self, mellum_with_lora, code_batch):
         """Test that clipped_grad can compute gradients for Mellum.
 
-        Uses patch_model() to make LLaMA-style models vmap-compatible.
-        This patches repeat_kv, create_causal_mask, and eager_attention_forward.
+        vmap compatibility patches are applied at import time.
         """
         model, _ = mellum_with_lora
         input_ids, attention_mask = code_batch
@@ -600,57 +597,51 @@ class TestMellumLoRADPTraining:
         attention_mask = attention_mask.to(device)
         labels = labels.to(device)
 
-        # Apply vmap compatibility patch
-        patch_model(model)
-        try:
-            fmodel, trainable, frozen = make_functional(
-                model,
-                disable_autograd_tracking=True,
-                partition_trainable=True,
+        fmodel, trainable, frozen = make_functional(
+            model,
+            disable_autograd_tracking=True,
+            partition_trainable=True,
+        )
+
+        def per_example_loss(
+            trainable_params, frozen_params, input_ids_single, mask_single, labels_single
+        ):
+            all_params = {**frozen_params, **trainable_params}
+            outputs = fmodel(
+                all_params,
+                input_ids_single,
+                attention_mask=mask_single,
+                labels=labels_single,
             )
+            return outputs.loss
 
-            def per_example_loss(
-                trainable_params, frozen_params, input_ids_single, mask_single, labels_single
-            ):
-                all_params = {**frozen_params, **trainable_params}
-                outputs = fmodel(
-                    all_params,
-                    input_ids_single.unsqueeze(0),
-                    attention_mask=mask_single.unsqueeze(0),
-                    labels=labels_single.unsqueeze(0),
-                )
-                return outputs.loss
+        # Use microbatching for memory efficiency
+        grad_fn, clip_state = clipped_grad(
+            per_example_loss,
+            argnums=0,
+            batch_argnums=(2, 3, 4),
+            l2_clip_norm=1.0,
+            microbatch_size=1,  # Process one at a time for large model
+        )
 
-            # Use microbatching for memory efficiency
-            grad_fn, clip_state = clipped_grad(
-                per_example_loss,
-                argnums=0,
-                batch_argnums=(2, 3, 4),
-                l2_clip_norm=1.0,
-                microbatch_size=1,  # Process one at a time for large model
-            )
+        grads, _ = grad_fn(
+            trainable, frozen, input_ids, attention_mask, labels, state=clip_state
+        )
 
-            grads, _ = grad_fn(
-                trainable, frozen, input_ids, attention_mask, labels, state=clip_state
-            )
+        # Verify gradients
+        assert len(grads) > 0
+        for name, grad in grads.items():
+            assert torch.isfinite(grad).all(), f"Non-finite gradient for {name}"
 
-            # Verify gradients
-            assert len(grads) > 0
-            for name, grad in grads.items():
-                assert torch.isfinite(grad).all(), f"Non-finite gradient for {name}"
-
-            print(f"\nMellum clipped_grad with patch:")
-            print(f"  Parameters with gradients: {len(grads)}")
-            non_zero = sum(1 for g in grads.values() if g.norm() > 0)
-            print(f"  Non-zero gradients: {non_zero}")
-        finally:
-            unpatch_model(model)
+        print(f"\nMellum clipped_grad:")
+        print(f"  Parameters with gradients: {len(grads)}")
+        non_zero = sum(1 for g in grads.values() if g.norm() > 0)
+        print(f"  Non-zero gradients: {non_zero}")
 
     def test_mellum_memory_bounded_with_microbatching(self, mellum_with_lora, code_batch):
         """Test that memory usage is bounded when using microbatching.
 
-        Uses patch_model() to make LLaMA-style models vmap-compatible.
-        This patches repeat_kv, create_causal_mask, and eager_attention_forward.
+        vmap compatibility patches are applied at import time.
         """
         model, _ = mellum_with_lora
         input_ids, attention_mask = code_batch
@@ -661,54 +652,49 @@ class TestMellumLoRADPTraining:
         attention_mask = attention_mask.to(device)
         labels = labels.to(device)
 
-        # Apply vmap compatibility patch
-        patch_model(model)
-        try:
-            fmodel, trainable, frozen = make_functional(
-                model,
-                disable_autograd_tracking=True,
-                partition_trainable=True,
+        fmodel, trainable, frozen = make_functional(
+            model,
+            disable_autograd_tracking=True,
+            partition_trainable=True,
+        )
+
+        def per_example_loss(
+            trainable_params, frozen_params, input_ids_single, mask_single, labels_single
+        ):
+            all_params = {**frozen_params, **trainable_params}
+            outputs = fmodel(
+                all_params,
+                input_ids_single,
+                attention_mask=mask_single,
+                labels=labels_single,
             )
+            return outputs.loss
 
-            def per_example_loss(
-                trainable_params, frozen_params, input_ids_single, mask_single, labels_single
-            ):
-                all_params = {**frozen_params, **trainable_params}
-                outputs = fmodel(
-                    all_params,
-                    input_ids_single.unsqueeze(0),
-                    attention_mask=mask_single.unsqueeze(0),
-                    labels=labels_single.unsqueeze(0),
-                )
-                return outputs.loss
+        # Record memory before
+        torch.cuda.reset_peak_memory_stats()
+        memory_before = torch.cuda.max_memory_allocated()
 
-            # Record memory before
-            torch.cuda.reset_peak_memory_stats()
-            memory_before = torch.cuda.max_memory_allocated()
+        grad_fn, clip_state = clipped_grad(
+            per_example_loss,
+            argnums=0,
+            batch_argnums=(2, 3, 4),
+            l2_clip_norm=1.0,
+            microbatch_size=1,
+        )
 
-            grad_fn, clip_state = clipped_grad(
-                per_example_loss,
-                argnums=0,
-                batch_argnums=(2, 3, 4),
-                l2_clip_norm=1.0,
-                microbatch_size=1,
-            )
+        grads, _ = grad_fn(
+            trainable, frozen, input_ids, attention_mask, labels, state=clip_state
+        )
 
-            grads, _ = grad_fn(
-                trainable, frozen, input_ids, attention_mask, labels, state=clip_state
-            )
+        memory_after = torch.cuda.max_memory_allocated()
+        memory_used_gb = (memory_after - memory_before) / (1024**3)
 
-            memory_after = torch.cuda.max_memory_allocated()
-            memory_used_gb = (memory_after - memory_before) / (1024**3)
+        print(f"\nMellum-4b memory usage:")
+        print(f"  Peak memory: {memory_after / (1024**3):.2f} GB")
+        print(f"  Memory for gradients: {memory_used_gb:.2f} GB")
 
-            print(f"\nMellum-4b memory usage:")
-            print(f"  Peak memory: {memory_after / (1024**3):.2f} GB")
-            print(f"  Memory for gradients: {memory_used_gb:.2f} GB")
-
-            # Memory should be bounded (not OOM)
-            assert memory_after < 80 * (1024**3), "Memory usage exceeded 80GB (H200 limit)"
-        finally:
-            unpatch_model(model)
+        # Memory should be bounded (not OOM)
+        assert memory_after < 80 * (1024**3), "Memory usage exceeded 80GB (H200 limit)"
 
 
 # =============================================================================
@@ -735,9 +721,9 @@ class TestEndToEndDPTraining:
             all_params = {**frozen_params, **trainable_params}
             outputs = fmodel(
                 all_params,
-                input_ids_single.unsqueeze(0),
-                attention_mask=mask_single.unsqueeze(0),
-                labels=labels_single.unsqueeze(0),
+                input_ids_single,
+                attention_mask=mask_single,
+                labels=labels_single,
             )
             return outputs.loss
 
@@ -791,9 +777,9 @@ class TestEndToEndDPTraining:
             all_params = {**frozen_params, **trainable_params}
             outputs = fmodel(
                 all_params,
-                input_ids_single.unsqueeze(0),
-                attention_mask=mask_single.unsqueeze(0),
-                labels=labels_single.unsqueeze(0),
+                input_ids_single,
+                attention_mask=mask_single,
+                labels=labels_single,
             )
             return outputs.loss
 
@@ -953,8 +939,11 @@ class TestMultiArchitectureModels:
         )
         return tokenized["input_ids"], tokenized["attention_mask"]
 
-    def _test_clipped_grad_without_patch(self, model, tokenizer):
-        """Test if clipped_grad works without patching. Returns (success, error_msg)."""
+    def _test_clipped_grad(self, model, tokenizer):
+        """Test if clipped_grad works. Returns (success, error_msg).
+
+        Patches are applied at import time, so no explicit patching needed.
+        """
         input_ids, attention_mask = self._create_sample_batch(tokenizer)
         labels = input_ids.clone()
 
@@ -968,9 +957,9 @@ class TestMultiArchitectureModels:
             all_params = {**frozen_params, **trainable_params}
             outputs = fmodel(
                 all_params,
-                input_ids_single.unsqueeze(0),
-                attention_mask=mask_single.unsqueeze(0),
-                labels=labels_single.unsqueeze(0),
+                input_ids_single,
+                attention_mask=mask_single,
+                labels=labels_single,
             )
             return outputs.loss
 
@@ -990,101 +979,26 @@ class TestMultiArchitectureModels:
         except Exception as e:
             return False, str(e)
 
-    def _test_clipped_grad_with_patch(self, model, tokenizer):
-        """Test if clipped_grad works with patching. Returns (success, error_msg)."""
-        from opaque.compat import patch_model, unpatch_model
-
-        input_ids, attention_mask = self._create_sample_batch(tokenizer)
-        labels = input_ids.clone()
-
-        patch_model(model)
-        try:
-            fmodel, trainable, frozen = make_functional(
-                model,
-                disable_autograd_tracking=True,
-                partition_trainable=True,
-            )
-
-            def per_example_loss(trainable_params, frozen_params, input_ids_single, mask_single, labels_single):
-                all_params = {**frozen_params, **trainable_params}
-                outputs = fmodel(
-                    all_params,
-                    input_ids_single.unsqueeze(0),
-                    attention_mask=mask_single.unsqueeze(0),
-                    labels=labels_single.unsqueeze(0),
-                )
-                return outputs.loss
-
-            grad_fn, clip_state = clipped_grad(
-                per_example_loss,
-                argnums=0,
-                batch_argnums=(2, 3, 4),
-                l2_clip_norm=1.0,
-            )
-
-            grads, _ = grad_fn(trainable, frozen, input_ids, attention_mask, labels, state=clip_state)
-            # Verify gradients
-            for name, grad in grads.items():
-                assert torch.isfinite(grad).all(), f"Non-finite gradient for {name}"
-            return True, None
-        except Exception as e:
-            return False, str(e)
-        finally:
-            unpatch_model(model)
-
     def test_qwen2_clipped_grad(self, qwen2_with_lora):
-        """Test Qwen2 with clipped_grad - check if patching is needed."""
+        """Test Qwen2 with clipped_grad."""
         model, tokenizer = qwen2_with_lora
-
-        # First try without patch
-        success_no_patch, error_no_patch = self._test_clipped_grad_without_patch(model, tokenizer)
-
-        if success_no_patch:
-            print("\nQwen2: Works WITHOUT patching")
-        else:
-            print(f"\nQwen2: Failed without patch: {error_no_patch[:100]}...")
-            # Try with patch
-            success_with_patch, error_with_patch = self._test_clipped_grad_with_patch(model, tokenizer)
-            if success_with_patch:
-                print("Qwen2: Works WITH patching")
-            else:
-                pytest.fail(f"Qwen2 failed even with patching: {error_with_patch}")
+        success, error = self._test_clipped_grad(model, tokenizer)
+        if not success:
+            pytest.fail(f"Qwen2 failed: {error}")
 
     def test_deepseek_clipped_grad(self, deepseek_with_lora):
-        """Test DeepSeek with clipped_grad - check if patching is needed."""
+        """Test DeepSeek with clipped_grad."""
         model, tokenizer = deepseek_with_lora
-
-        # First try without patch
-        success_no_patch, error_no_patch = self._test_clipped_grad_without_patch(model, tokenizer)
-
-        if success_no_patch:
-            print("\nDeepSeek: Works WITHOUT patching")
-        else:
-            print(f"\nDeepSeek: Failed without patch: {error_no_patch[:100]}...")
-            # Try with patch
-            success_with_patch, error_with_patch = self._test_clipped_grad_with_patch(model, tokenizer)
-            if success_with_patch:
-                print("DeepSeek: Works WITH patching")
-            else:
-                pytest.fail(f"DeepSeek failed even with patching: {error_with_patch}")
+        success, error = self._test_clipped_grad(model, tokenizer)
+        if not success:
+            pytest.fail(f"DeepSeek failed: {error}")
 
     def test_phi2_clipped_grad(self, phi2_with_lora):
-        """Test Phi-2 with clipped_grad - check if patching is needed."""
+        """Test Phi-2 with clipped_grad."""
         model, tokenizer = phi2_with_lora
-
-        # First try without patch
-        success_no_patch, error_no_patch = self._test_clipped_grad_without_patch(model, tokenizer)
-
-        if success_no_patch:
-            print("\nPhi-2: Works WITHOUT patching")
-        else:
-            print(f"\nPhi-2: Failed without patch: {error_no_patch[:100]}...")
-            # Try with patch
-            success_with_patch, error_with_patch = self._test_clipped_grad_with_patch(model, tokenizer)
-            if success_with_patch:
-                print("Phi-2: Works WITH patching")
-            else:
-                pytest.fail(f"Phi-2 failed even with patching: {error_with_patch}")
+        success, error = self._test_clipped_grad(model, tokenizer)
+        if not success:
+            pytest.fail(f"Phi-2 failed: {error}")
 
     # -------------------------------------------------------------------------
     # Additional model fixtures and tests
@@ -1403,71 +1317,73 @@ class TestMultiArchitectureModels:
     # Test methods for additional models
     # -------------------------------------------------------------------------
 
-    def _run_model_test(self, model, tokenizer, model_name: str):
-        """Generic test runner for any model."""
-        # First try without patch
-        success_no_patch, error_no_patch = self._test_clipped_grad_without_patch(model, tokenizer)
-
-        if success_no_patch:
-            print(f"\n{model_name}: Works WITHOUT patching")
-        else:
-            print(f"\n{model_name}: Failed without patch: {error_no_patch[:100]}...")
-            # Try with patch
-            success_with_patch, error_with_patch = self._test_clipped_grad_with_patch(model, tokenizer)
-            if success_with_patch:
-                print(f"{model_name}: Works WITH patching")
-            else:
-                pytest.fail(f"{model_name} failed even with patching: {error_with_patch}")
-
-    @pytest.mark.skip(reason="Gemma2 uses sliding window attention with incompatible mask creation")
+    @pytest.mark.skip(reason="Gemma2 uses sliding window attention - needs investigation")
     def test_gemma2_clipped_grad(self, gemma2_with_lora):
         """Test Gemma2 with clipped_grad."""
         model, tokenizer = gemma2_with_lora
-        self._run_model_test(model, tokenizer, "Gemma2")
+        success, error = self._test_clipped_grad(model, tokenizer)
+        if not success:
+            pytest.fail(f"Gemma2 failed: {error}")
 
-    @pytest.mark.skip(reason="Mistral-7B too large for CI testing - should work with patching")
+    @pytest.mark.skip(reason="Mistral-7B too large for CI testing")
     def test_mistral_clipped_grad(self, mistral_with_lora):
         """Test Mistral with clipped_grad."""
         model, tokenizer = mistral_with_lora
-        self._run_model_test(model, tokenizer, "Mistral")
+        success, error = self._test_clipped_grad(model, tokenizer)
+        if not success:
+            pytest.fail(f"Mistral failed: {error}")
 
-    @pytest.mark.skip(reason="Phi-3 too large for CI testing - needs investigation")
+    @pytest.mark.skip(reason="Phi-3 too large for CI testing")
     def test_phi3_clipped_grad(self, phi3_with_lora):
         """Test Phi-3 with clipped_grad."""
         model, tokenizer = phi3_with_lora
-        self._run_model_test(model, tokenizer, "Phi-3")
+        success, error = self._test_clipped_grad(model, tokenizer)
+        if not success:
+            pytest.fail(f"Phi-3 failed: {error}")
 
-    @pytest.mark.skip(reason="Falcon uses hardcoded shape unpacking in attention - needs full attention rewrite")
+    @pytest.mark.skip(reason="Falcon not supported - hardcoded shape unpacking")
     def test_falcon_clipped_grad(self, falcon_with_lora):
         """Test Falcon with clipped_grad."""
         model, tokenizer = falcon_with_lora
-        self._run_model_test(model, tokenizer, "Falcon")
+        success, error = self._test_clipped_grad(model, tokenizer)
+        if not success:
+            pytest.fail(f"Falcon failed: {error}")
 
-    @pytest.mark.skip(reason="StableLM has inplace operations in causal_mask creation")
+    @pytest.mark.skip(reason="StableLM not supported - inplace operations")
     def test_stablelm_clipped_grad(self, stablelm_with_lora):
         """Test StableLM with clipped_grad."""
         model, tokenizer = stablelm_with_lora
-        self._run_model_test(model, tokenizer, "StableLM")
+        success, error = self._test_clipped_grad(model, tokenizer)
+        if not success:
+            pytest.fail(f"StableLM failed: {error}")
 
     def test_olmo_clipped_grad(self, olmo_with_lora):
         """Test OLMo with clipped_grad."""
         model, tokenizer = olmo_with_lora
-        self._run_model_test(model, tokenizer, "OLMo")
+        success, error = self._test_clipped_grad(model, tokenizer)
+        if not success:
+            pytest.fail(f"OLMo failed: {error}")
 
-    @pytest.mark.skip(reason="BLOOM uses older attention architecture with different shape handling")
+    @pytest.mark.skip(reason="BLOOM not supported - older architecture")
     def test_bloom_clipped_grad(self, bloom_with_lora):
         """Test BLOOM with clipped_grad."""
         model, tokenizer = bloom_with_lora
-        self._run_model_test(model, tokenizer, "BLOOM")
+        success, error = self._test_clipped_grad(model, tokenizer)
+        if not success:
+            pytest.fail(f"BLOOM failed: {error}")
 
-    @pytest.mark.skip(reason="MPT uses custom attention with hardcoded shapes")
+    @pytest.mark.skip(reason="MPT not supported - custom attention")
     def test_mpt_clipped_grad(self, mpt_with_lora):
         """Test MPT with clipped_grad."""
         model, tokenizer = mpt_with_lora
-        self._run_model_test(model, tokenizer, "MPT")
+        success, error = self._test_clipped_grad(model, tokenizer)
+        if not success:
+            pytest.fail(f"MPT failed: {error}")
 
-    @pytest.mark.skip(reason="InternLM needs investigation - custom architecture")
+    @pytest.mark.skip(reason="InternLM not supported - custom architecture")
     def test_internlm_clipped_grad(self, internlm_with_lora):
         """Test InternLM with clipped_grad."""
         model, tokenizer = internlm_with_lora
-        self._run_model_test(model, tokenizer, "InternLM")
+        success, error = self._test_clipped_grad(model, tokenizer)
+        if not success:
+            pytest.fail(f"InternLM failed: {error}")

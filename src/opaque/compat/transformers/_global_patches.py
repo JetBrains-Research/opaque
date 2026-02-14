@@ -1,120 +1,54 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Global patches for shared transformers modules.
+"""Global patching orchestration for HuggingFace Transformers models.
 
-These patches are applied once at import time and affect all model architectures
-that use these shared utilities.
+This module coordinates applying all vmap-compatible patches at import time.
+Patches are organized into three independent layers:
+
+1. Shared utilities (masking_utils, sdpa_attention) - required by all models
+2. Standard models (LLaMA, Mistral, Qwen2, etc.) - independent from each other
+3. Custom models (Gemma2, etc.) - independent from each other but depend on shared
+
+To add support for a new model with custom requirements:
+1. Create _model_name.py with vmap implementations
+2. Add apply_model_name_patches() function (with dependency note if needed)
+3. Call it from apply_global_patches() below
 """
 
-from typing import Any, Optional
-import torch
+from opaque.compat.transformers._gemma2 import apply_gemma2_patches
+from opaque.compat.transformers._shared import apply_shared_patches
+from opaque.compat.transformers._standard_models import apply_standard_model_patches
 
-# Store originals for unpatch
-_original_implementations: dict[str, Any] = {}
+# Track if patches have been applied
 _is_patched = False
 
 
-def vmap_create_causal_mask(
-    config,
-    input_embeds: torch.Tensor,
-    attention_mask: Optional[torch.Tensor],
-    cache_position: torch.Tensor,
-    past_key_values=None,
-    position_ids: Optional[torch.Tensor] = None,
-    or_mask_function=None,
-    and_mask_function=None,
-) -> Optional[torch.Tensor]:
-    """vmap-compatible version of create_causal_mask.
-
-    The original has data-dependent control flow that breaks under vmap.
-    This version creates masks without conditional branches on tensor values.
-
-    Signature matches transformers.masking_utils.create_causal_mask
-    """
-    dtype = input_embeds.dtype
-    device = input_embeds.device
-
-    # Get sequence length from input - use negative indexing for vmap compatibility
-    # input_embeds shape: (..., seq_len, hidden_size)
-    q_length = input_embeds.shape[-2]
-    kv_length = q_length
-
-    if past_key_values is not None:
-        kv_length = past_key_values.get_seq_length() + q_length
-
-    # Create base causal mask (q_length, kv_length)
-    causal_mask = torch.tril(
-        torch.ones(q_length, kv_length, dtype=torch.bool, device=device),
-        diagonal=kv_length - q_length,
-    )
-
-    # Handle 2D padding mask from attention_mask
-    if attention_mask is not None and attention_mask.dim() == 2:
-        # Pad if needed
-        if attention_mask.shape[-1] < kv_length:
-            pad_len = kv_length - attention_mask.shape[-1]
-            attention_mask = torch.nn.functional.pad(attention_mask, (0, pad_len), value=1)
-
-        # Combine padding mask with causal mask
-        padding_mask = attention_mask[..., :kv_length].bool()
-        padding_mask = padding_mask.unsqueeze(-2).unsqueeze(-2)  # (..., 1, 1, kv_length)
-        causal_mask = causal_mask.unsqueeze(0).unsqueeze(0)  # (1, 1, q_length, kv_length)
-        combined_mask = causal_mask & padding_mask
-    else:
-        combined_mask = causal_mask.unsqueeze(0).unsqueeze(0)
-
-    # Convert to float mask: True -> 0.0, False -> -inf
-    float_mask = torch.where(
-        combined_mask,
-        torch.tensor(0.0, device=device, dtype=dtype),
-        torch.tensor(float("-inf"), device=device, dtype=dtype),
-    )
-
-    return float_mask
-
-
 def apply_global_patches() -> None:
-    """Apply global patches to shared transformers modules."""
+    """Apply all vmap compatibility patches at import time.
+
+    Orchestrates patching in three independent layers:
+    1. Shared utilities - required by all models
+    2. Standard models - can work independently after shared patches
+    3. Custom models - can work independently after shared patches
+
+    Each model's patches are independent from other models.
+    """
     global _is_patched
 
     if _is_patched:
         return
 
-    try:
-        import transformers.masking_utils as masking_utils
+    # Layer 1: Patch shared utilities (required by all)
+    apply_shared_patches()
 
-        # Patch create_causal_mask
-        if hasattr(masking_utils, "create_causal_mask"):
-            _original_implementations["masking_utils_create_causal_mask"] = (
-                masking_utils.create_causal_mask
-            )
-            masking_utils.create_causal_mask = vmap_create_causal_mask
+    # Layer 2: Patch standard models (independent from each other)
+    apply_standard_model_patches()
 
-        _is_patched = True
-    except ImportError:
-        # transformers not installed
-        pass
+    # Layer 3: Patch custom models (independent from each other)
+    apply_gemma2_patches()
+    # Future custom models: add apply_*_patches() calls here
 
-
-def remove_global_patches() -> None:
-    """Remove global patches from shared transformers modules."""
-    global _is_patched
-
-    if not _is_patched:
-        return
-
-    try:
-        import transformers.masking_utils as masking_utils
-
-        if "masking_utils_create_causal_mask" in _original_implementations:
-            masking_utils.create_causal_mask = _original_implementations[
-                "masking_utils_create_causal_mask"
-            ]
-            del _original_implementations["masking_utils_create_causal_mask"]
-
-        _is_patched = False
-    except ImportError:
-        pass
+    _is_patched = True
 
 
 def is_globally_patched() -> bool:
