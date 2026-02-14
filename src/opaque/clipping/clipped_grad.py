@@ -132,8 +132,10 @@ def clipped_grad(
             structure). Can be used to e.g., scale the leaves of the pytree to
             accommodate preconditioner clipping. Does not affect the sensitivity
             guarantee. Default is identity function.
-        microbatch_size: If set, input groups are formed into microbatches of this
-            size. Not yet implemented in PyTorch version (tech debt).
+        microbatch_size: If set, the batch is split up into microbatches of this
+            size for memory-efficient processing. Processes each microbatch separately
+            and accumulates results without materializing the full batch of gradients.
+            Set this to reduce peak memory usage at the cost of slightly slower computation.
         nan_safe: If True, the formal guarantees of the returned Callable still
             hold in the presence of NaNs and infs.
         dtype: Optional dtype for the returned gradient. If None, the dtype will be

@@ -387,3 +387,183 @@ def test_clipped_grad_keep_batch_dim():
     # Both should produce gradients (exact values may differ due to loss function)
     assert grad_no_batch.abs() > 1e-6, "Should have non-zero gradient"
     assert grad_with_batch.abs() > 1e-6, "Should have non-zero gradient"
+
+
+def test_clipped_grad_microbatching_identical_results():
+    """Test that microbatching produces identical gradients."""
+
+    def loss_fn(params, x, y):
+        return ((x @ params - y) ** 2).mean()
+
+    batch_size = 64
+    params = torch.randn(10, 1, requires_grad=False)
+    x = torch.randn(batch_size, 10)
+    y = torch.randn(batch_size, 1)
+
+    # Without microbatching
+    grad_fn_no_mb, clip_state_no_mb = clipped_grad(
+        loss_fn, argnums=0, batch_argnums=(1, 2), l2_clip_norm=1.0, microbatch_size=None
+    )
+    grads_no_mb, _ = grad_fn_no_mb(params, x, y, state=clip_state_no_mb)
+
+    # With microbatching
+    grad_fn_mb, clip_state_mb = clipped_grad(
+        loss_fn, argnums=0, batch_argnums=(1, 2), l2_clip_norm=1.0, microbatch_size=8
+    )
+    grads_mb, _ = grad_fn_mb(params, x, y, state=clip_state_mb)
+
+    # Results should be identical
+    torch.testing.assert_close(grads_mb, grads_no_mb, rtol=1e-5, atol=1e-6)
+
+
+def test_clipped_grad_microbatching_with_aux():
+    """Test microbatching preserves auxiliary outputs."""
+
+    def loss_fn_with_aux(params, x, y):
+        pred = x @ params
+        loss = ((pred - y) ** 2).mean()
+        # Per-example auxiliary outputs (scalars per example)
+        aux = {"pred_sum": pred.sum(), "y_sum": y.sum()}
+        return loss, aux
+
+    batch_size = 32
+    params = torch.randn(5, 1, requires_grad=False)
+    x = torch.randn(batch_size, 5)
+    y = torch.randn(batch_size, 1)
+
+    # Without microbatching
+    grad_fn_no_mb, clip_state_no_mb = clipped_grad(
+        loss_fn_with_aux,
+        argnums=0,
+        batch_argnums=(1, 2),
+        l2_clip_norm=1.0,
+        has_aux=True,
+        microbatch_size=None,
+    )
+    (grads_no_mb, grad_aux_no_mb), _ = grad_fn_no_mb(params, x, y, state=clip_state_no_mb)
+
+    # With microbatching
+    grad_fn_mb, clip_state_mb = clipped_grad(
+        loss_fn_with_aux,
+        argnums=0,
+        batch_argnums=(1, 2),
+        l2_clip_norm=1.0,
+        has_aux=True,
+        microbatch_size=8,
+    )
+    (grads_mb, grad_aux_mb), _ = grad_fn_mb(params, x, y, state=clip_state_mb)
+
+    # Gradients should be identical
+    torch.testing.assert_close(grads_mb, grads_no_mb, rtol=1e-5, atol=1e-6)
+
+    # Auxiliary outputs should be identical (per-example)
+    assert grad_aux_mb.user_aux is not None
+    assert grad_aux_no_mb.user_aux is not None
+    assert grad_aux_mb.user_aux["pred_sum"].shape == (batch_size,)
+    assert grad_aux_no_mb.user_aux["pred_sum"].shape == (batch_size,)
+    torch.testing.assert_close(
+        grad_aux_mb.user_aux["pred_sum"],
+        grad_aux_no_mb.user_aux["pred_sum"],
+        rtol=1e-5,
+        atol=1e-6,
+    )
+    torch.testing.assert_close(
+        grad_aux_mb.user_aux["y_sum"],
+        grad_aux_no_mb.user_aux["y_sum"],
+        rtol=1e-5,
+        atol=1e-6,
+    )
+
+
+def test_clipped_grad_microbatching_with_return_values_and_norms():
+    """Test microbatching with return_values and return_grad_norms."""
+
+    def loss_fn(params, x, y):
+        return ((x @ params - y) ** 2).mean()
+
+    batch_size = 48
+    params = torch.randn(8, 1, requires_grad=False)
+    x = torch.randn(batch_size, 8)
+    y = torch.randn(batch_size, 1)
+
+    # Without microbatching
+    grad_fn_no_mb, clip_state_no_mb = clipped_grad(
+        loss_fn,
+        argnums=0,
+        batch_argnums=(1, 2),
+        l2_clip_norm=1.0,
+        return_values=True,
+        return_grad_norms=True,
+        microbatch_size=None,
+    )
+    (grads_no_mb, grad_aux_no_mb), _ = grad_fn_no_mb(params, x, y, state=clip_state_no_mb)
+
+    # With microbatching
+    grad_fn_mb, clip_state_mb = clipped_grad(
+        loss_fn,
+        argnums=0,
+        batch_argnums=(1, 2),
+        l2_clip_norm=1.0,
+        return_values=True,
+        return_grad_norms=True,
+        microbatch_size=12,
+    )
+    (grads_mb, grad_aux_mb), _ = grad_fn_mb(params, x, y, state=clip_state_mb)
+
+    # Gradients should be identical
+    torch.testing.assert_close(grads_mb, grads_no_mb, rtol=1e-5, atol=1e-6)
+
+    # Loss values should be identical (per-example)
+    assert grad_aux_mb.loss_values is not None
+    assert grad_aux_no_mb.loss_values is not None
+    assert grad_aux_mb.loss_values.shape == (batch_size,)
+    assert grad_aux_no_mb.loss_values.shape == (batch_size,)
+    torch.testing.assert_close(
+        grad_aux_mb.loss_values, grad_aux_no_mb.loss_values, rtol=1e-5, atol=1e-6
+    )
+
+    # Gradient norms should be identical (per-example)
+    assert grad_aux_mb.grad_norms is not None
+    assert grad_aux_no_mb.grad_norms is not None
+    assert grad_aux_mb.grad_norms.shape == (batch_size,)
+    assert grad_aux_no_mb.grad_norms.shape == (batch_size,)
+    torch.testing.assert_close(
+        grad_aux_mb.grad_norms, grad_aux_no_mb.grad_norms, rtol=1e-5, atol=1e-6
+    )
+
+
+def test_clipped_grad_microbatching_with_pytree_params():
+    """Test microbatching with PyTree parameters."""
+
+    def loss_fn(params, x, y):
+        pred = x @ params["w"] + params["b"]
+        return ((pred - y) ** 2).mean()
+
+    batch_size = 40
+    params = {
+        "w": torch.randn(6, 1, requires_grad=False),
+        "b": torch.randn(1, requires_grad=False),
+    }
+    x = torch.randn(batch_size, 6)
+    y = torch.randn(batch_size, 1)
+
+    # Without microbatching
+    grad_fn_no_mb, clip_state_no_mb = clipped_grad(
+        loss_fn, argnums=0, batch_argnums=(1, 2), l2_clip_norm=1.0, microbatch_size=None
+    )
+    grads_no_mb, _ = grad_fn_no_mb(params, x, y, state=clip_state_no_mb)
+
+    # With microbatching
+    grad_fn_mb, clip_state_mb = clipped_grad(
+        loss_fn, argnums=0, batch_argnums=(1, 2), l2_clip_norm=1.0, microbatch_size=10
+    )
+    grads_mb, _ = grad_fn_mb(params, x, y, state=clip_state_mb)
+
+    # Both gradients should be PyTrees with same structure
+    assert isinstance(grads_mb, dict)
+    assert isinstance(grads_no_mb, dict)
+    assert set(grads_mb.keys()) == set(grads_no_mb.keys()) == {"w", "b"}
+
+    # Gradient values should be identical
+    torch.testing.assert_close(grads_mb["w"], grads_no_mb["w"], rtol=1e-5, atol=1e-6)
+    torch.testing.assert_close(grads_mb["b"], grads_no_mb["b"], rtol=1e-5, atol=1e-6)
