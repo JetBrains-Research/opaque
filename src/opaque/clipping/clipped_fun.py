@@ -98,7 +98,7 @@ def _microbatch_accumulate(
         microbatch_args = list(args)
         for i in batch_argnums:
             microbatch_args[i] = tree_map(
-                lambda x: x[start_idx:end_idx] if isinstance(x, torch.Tensor) else x,
+                lambda x, s=start_idx, e=end_idx: x[s:e] if isinstance(x, torch.Tensor) else x,
                 args[i],
             )
 
