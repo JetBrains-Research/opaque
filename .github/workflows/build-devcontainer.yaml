@@ -69,6 +69,7 @@ jobs:
           fi
 
           echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
+          echo "CONTAINER_NAME=opaque-devcontainer" >> $GITHUB_ENV
           echo "GHCR_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/opaque-devcontainer" >> $GITHUB_ENV
           echo "GAR_IMAGE=europe-west4-docker.pkg.dev/jetbrains-ml4se-fed/coder/opaque-devcontainer" >> $GITHUB_ENV
 
@@ -108,8 +109,9 @@ jobs:
 
       - name: Test devcontainer
         run: |
-          devcontainer up --workspace-folder .
+          devcontainer up --workspace-folder . --remove-existing-container
           devcontainer exec --workspace-folder . echo "Devcontainer smoke test passed"
+          devcontainer down --workspace-folder .
 
       - name: Tag and push to GitHub Container Registry
         if: env.IS_FORK_PR == 'false'
@@ -139,7 +141,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: actions/delete-package-versions@v5
         with:
-          package-name: opaque-devcontainer
+          package-name: ${{ env.CONTAINER_NAME }}
           package-type: container
           min-versions-to-keep: 8
           ignore-versions: '^latest$'
