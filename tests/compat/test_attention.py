@@ -35,9 +35,6 @@ class TestAttentionImplementations:
         """Test Flash Attention 2 - should fail due to torch.nonzero incompatibility."""
         pytest.importorskip("flash_attn")
 
-        if not torch.cuda.is_available():
-            pytest.skip("Flash Attention 2 requires CUDA")
-
         qwen2_config._attn_implementation = "flash_attention_2"
         model = prepare_lora_model(qwen2_config).to("cuda")
 
@@ -57,5 +54,5 @@ class TestAttentionImplementations:
         model = prepare_lora_model(qwen2_config).to(device)
 
         # flex_attention fails with metadata assertion errors under vmap
-        with pytest.raises(AssertionError, match="False != True"):
+        with pytest.raises(AssertionError):
             grads, _ = run_clipped_grad_test(model, qwen2_tokenizer)

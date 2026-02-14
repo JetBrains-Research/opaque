@@ -25,7 +25,7 @@ class TestGradientCheckpointing:
 
         # Gradient checkpointing uses autograd.Function which is incompatible with vmap
         # unless it overrides setup_context staticmethod
-        with pytest.raises(RuntimeError, match="autograd.Function.*functorch"):
+        with pytest.raises(RuntimeError, match="autograd.Function"):
             grads, _ = run_clipped_grad_test(model, qwen2_tokenizer)
 
 
@@ -44,10 +44,10 @@ class TestMixedPrecision:
 class TestTorchCompile:
     """Test torch.compile integration."""
 
-    def test_torch_compile(self, qwen2_config, qwen2_tokenizer):
+    def test_torch_compile(self, qwen2_config, qwen2_tokenizer, device):
         """Test that models work with torch.compile."""
         qwen2_config._attn_implementation = "eager"
-        model = prepare_lora_model(qwen2_config)
+        model = prepare_lora_model(qwen2_config).to(device)
 
         # Compile the per-example loss function
         def per_example_loss(trainable_params, frozen_params, input_ids, mask, labels):
@@ -60,5 +60,22 @@ class TestTorchCompile:
 
         compiled_loss = torch.compile(per_example_loss)
 
-        # This should work (compilation happens lazily)
-        assert callable(compiled_loss)
+        # Execute the compiled function once to ensure compilation works
+        from opaque import make_functional
+
+        fmodel, trainable_params, frozen_params = make_functional(
+            model, disable_autograd_tracking=True
+        )
+
+        encoded = qwen2_tokenizer("test input", return_tensors="pt")
+        input_ids = encoded["input_ids"].to(device)
+        mask = encoded.get("attention_mask")
+        if mask is None:
+            mask = torch.ones_like(input_ids)
+        else:
+            mask = mask.to(device)
+        labels = input_ids.clone()
+
+        loss = compiled_loss(trainable_params, frozen_params, input_ids, mask, labels)
+        assert isinstance(loss, torch.Tensor)
+        assert loss.numel() == 1

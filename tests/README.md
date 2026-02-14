@@ -23,7 +23,12 @@ tests/
 
 **Purpose**: Verify that HuggingFace Transformers patches work correctly with various configurations.
 
-**File**: `test_transformers_patches.py`
+**Files**:
+- `test_attention.py` - Attention implementation tests
+- `test_features.py` - Training feature tests
+- `test_peft.py` - PEFT method tests
+- `test_architectures.py` - Multi-architecture tests
+- `conftest.py` - Shared fixtures and helpers
 
 **Dependencies**: Install with `uv sync --group compat`
 - Requires: `transformers>=4.57.0`, `peft>=0.18.0`
@@ -33,19 +38,17 @@ tests/
 - ❌ flash_attention_2 (incompatible with vmap - uses torch.nonzero)
 - ❌ flex_attention (incompatible with vmap - tensor metadata issues)
 - ✅ Mixed precision (fp16, bfloat16)
-- ✅ CUDA support
+- ✅ CUDA/MPS/CPU support (cross-platform)
 - ✅ torch.compile integration
-- ✅ Multiple model architectures (Qwen2, DeepSeek, Phi2, etc.)
+- ✅ Multiple model architectures (Qwen2, Gemma2, DeepSeek, Phi-2)
 - ✅ PEFT methods (LoRA, IA3, Prefix tuning, P-tuning, Prompt tuning)
 - ❌ Gradient checkpointing (known incompatibility with vmap)
 
-**Test Classes**:
-- `TestAttentionImplementations` - Different attention backends (5 tests)
-- `TestGradientCheckpointing` - Gradient checkpointing compatibility (1 test)
-- `TestMixedPrecision` - fp16/bfloat16 support (2 tests)
-- `TestTorchCompile` - torch.compile integration (1 test)
+**Test Classes** (17 tests total):
+- `TestAttentionImplementations` - Different attention backends (4 tests)
+- `TestTrainingFeatures` - Checkpointing, mixed precision, compile (4 tests)
+- `TestPEFTMethods` - LoRA, IA3, Prefix/P/Prompt tuning (5 tests)
 - `TestMultiArchitectureCompatibility` - Architecture smoke tests (4 tests)
-- `TestPEFTMethods` - LoRA, IA3, Prefix tuning, P-tuning, Prompt tuning (5 tests)
 
 **Run with**:
 ```bash
@@ -59,7 +62,7 @@ pytest -m compat -v
 pytest -m "not compat" -v
 ```
 
-**Results**: 16 passing, 2 skipped (large model downloads)
+**Results**: 15 passing, 2 skipped (large model downloads)
 
 ---
 
@@ -178,7 +181,7 @@ The test suite is organized to support different CI strategies:
 
 | Category | Passing | Skipped | Notes |
 |----------|---------|---------|-------|
-| Compatibility | 16 | 2 | 18 total tests, 2 skipped (large downloads) |
+| Compatibility | 15 | 2 | 17 total tests, 2 skipped (large downloads) |
 | Validation | TBD | TBD | Being reorganized |
 | Core | TBD | TBD | Existing tests |
 

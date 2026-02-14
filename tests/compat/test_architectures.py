@@ -14,36 +14,35 @@ from tests.compat.conftest import prepare_lora_model, run_clipped_grad_test
 class TestMultiArchitectureCompatibility:
     """Test different model architectures."""
 
-    def test_qwen2_architecture(self, qwen2_config, qwen2_tokenizer):
+    def test_qwen2_architecture(self, qwen2_config, qwen2_tokenizer, device):
         """Test Qwen2 architecture (standard MHA/GQA)."""
         qwen2_config._attn_implementation = "eager"
-        model = prepare_lora_model(qwen2_config)
+        model = prepare_lora_model(qwen2_config).to(device)
         grads, _ = run_clipped_grad_test(model, qwen2_tokenizer)
         assert len(grads) > 0
 
-    def test_gemma2_architecture(self):
+    def test_gemma2_architecture(self, device):
         """Test Gemma2 architecture (custom sliding window attention)."""
         config = AutoConfig.from_pretrained("google/gemma-2-2b")
         config.num_hidden_layers = 1
         config._attn_implementation = "eager"
 
-        model = AutoModelForCausalLM.from_config(config)
         tokenizer = AutoTokenizer.from_pretrained("google/gemma-2-2b")
-
-        model = prepare_lora_model(config, target_modules=["q_proj", "v_proj"])
+        model = prepare_lora_model(config, target_modules=["q_proj", "v_proj"]).to(
+            device
+        )
         grads, _ = run_clipped_grad_test(model, tokenizer)
         assert len(grads) > 0
 
     @pytest.mark.skip(
         reason="Large model download - enable for full integration testing"
     )
-    def test_deepseek_architecture(self):
+    def test_deepseek_architecture(self, device):
         """Test DeepSeek architecture."""
         config = AutoConfig.from_pretrained("deepseek-ai/deepseek-coder-1.3b-base")
         config.num_hidden_layers = 1
         config._attn_implementation = "eager"
 
-        model = AutoModelForCausalLM.from_config(config)
         tokenizer = AutoTokenizer.from_pretrained(
             "deepseek-ai/deepseek-coder-1.3b-base"
         )
@@ -51,20 +50,21 @@ class TestMultiArchitectureCompatibility:
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
 
-        model = prepare_lora_model(config, target_modules=["q_proj", "v_proj"])
+        model = prepare_lora_model(config, target_modules=["q_proj", "v_proj"]).to(
+            device
+        )
         grads, _ = run_clipped_grad_test(model, tokenizer)
         assert len(grads) > 0
 
     @pytest.mark.skip(
         reason="Large model download - enable for full integration testing"
     )
-    def test_phi2_architecture(self):
+    def test_phi2_architecture(self, device):
         """Test Phi-2 architecture."""
         config = AutoConfig.from_pretrained("microsoft/phi-2", trust_remote_code=True)
         config.num_hidden_layers = 1
         config._attn_implementation = "eager"
 
-        model = AutoModelForCausalLM.from_config(config, trust_remote_code=True)
         tokenizer = AutoTokenizer.from_pretrained(
             "microsoft/phi-2", trust_remote_code=True
         )
@@ -72,6 +72,8 @@ class TestMultiArchitectureCompatibility:
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
 
-        model = prepare_lora_model(config, target_modules=["q_proj", "v_proj"])
+        model = prepare_lora_model(config, target_modules=["q_proj", "v_proj"]).to(
+            device
+        )
         grads, _ = run_clipped_grad_test(model, tokenizer)
         assert len(grads) > 0

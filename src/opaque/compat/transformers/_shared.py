@@ -56,10 +56,13 @@ def vmap_create_causal_mask(
     # Fill the causal part (allow attention to past and current tokens)
     if seq_len > 1:
         # For each query position, allow attention to keys up to and including that position
-        # cache_position may be batched under vmap - flatten it first
+        # cache_position may be batched under vmap - flatten it first to detect batching
+        # Normal: cache_position.shape == (seq_len,) → flat has shape (seq_len,)
+        # Batched: cache_position.shape == (batch, seq_len) → flat has shape (batch*seq_len,)
         cache_pos_flat = cache_position.view(-1)
         if cache_pos_flat.shape[0] == seq_len:
             # Normal case: cache_position has shape (seq_len,)
+            # Use actual position values for the mask
             mask_cond = cache_pos_flat.view(seq_len, 1) >= cache_pos_flat.view(
                 1, seq_len
             )
