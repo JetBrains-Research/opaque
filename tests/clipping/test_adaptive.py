@@ -397,9 +397,7 @@ class TestAdaptiveClippedGrad:
 
             # State updates should be identical
             assert state_mb.step == state_no_mb.step == step + 1
-            assert math.isclose(
-                state_mb.clip_norm, state_no_mb.clip_norm, rel_tol=1e-5
-            )
+            assert math.isclose(state_mb.clip_norm, state_no_mb.clip_norm, rel_tol=1e-5)
             assert math.isclose(
                 state_mb.clipping_rate, state_no_mb.clipping_rate, rel_tol=1e-5
             )

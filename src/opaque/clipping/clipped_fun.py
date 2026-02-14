@@ -98,7 +98,9 @@ def _microbatch_accumulate(
         microbatch_args = list(args)
         for i in batch_argnums:
             microbatch_args[i] = tree_map(
-                lambda x: x[start_idx:end_idx] if isinstance(x, torch.Tensor) else x,
+                lambda x, s=start_idx, e=end_idx: x[s:e]
+                if isinstance(x, torch.Tensor)
+                else x,
                 args[i],
             )
 
@@ -291,7 +293,9 @@ def clipped_fun(
             clipped_values, aux, norms = vmapped(*args)
 
             # Sum clipped values across batch dimension
-            result = tree_map(lambda x: torch.sum(x, dim=0, dtype=dtype), clipped_values)
+            result = tree_map(
+                lambda x: torch.sum(x, dim=0, dtype=dtype), clipped_values
+            )
         else:
             # Manual microbatch accumulation: process in chunks, accumulate as we go
             result, aux, norms = _microbatch_accumulate(

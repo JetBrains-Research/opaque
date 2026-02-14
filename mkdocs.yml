@@ -91,6 +91,7 @@ nav:
     - Optimizers & Adaptive Clipping: user-guide/optimizers.md
     - Poisson Sampling & Microbatching: user-guide/sampling.md
     - LoRA Fine-tuning: user-guide/lora.md
+    - Known Limitations: limitations.md
   - API Reference:
     - Overview: api/index.md
     - Utils:

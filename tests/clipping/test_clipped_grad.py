@@ -440,7 +440,9 @@ def test_clipped_grad_microbatching_with_aux():
         has_aux=True,
         microbatch_size=None,
     )
-    (grads_no_mb, grad_aux_no_mb), _ = grad_fn_no_mb(params, x, y, state=clip_state_no_mb)
+    (grads_no_mb, grad_aux_no_mb), _ = grad_fn_no_mb(
+        params, x, y, state=clip_state_no_mb
+    )
 
     # With microbatching
     grad_fn_mb, clip_state_mb = clipped_grad(
@@ -496,7 +498,9 @@ def test_clipped_grad_microbatching_with_return_values_and_norms():
         return_grad_norms=True,
         microbatch_size=None,
     )
-    (grads_no_mb, grad_aux_no_mb), _ = grad_fn_no_mb(params, x, y, state=clip_state_no_mb)
+    (grads_no_mb, grad_aux_no_mb), _ = grad_fn_no_mb(
+        params, x, y, state=clip_state_no_mb
+    )
 
     # With microbatching
     grad_fn_mb, clip_state_mb = clipped_grad(
