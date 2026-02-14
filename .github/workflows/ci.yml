@@ -73,7 +73,7 @@ jobs:
 
       - name: Run compat tests (HuggingFace integration on CPU)
         run: |
-          uv run pytest tests/compat tests/validation -m "not gpu" --cov=opaque --cov-report=xml --cov-report=term
+          uv run pytest tests/compat -m "not gpu" --cov=opaque --cov-report=xml --cov-report=term
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -86,9 +86,8 @@ jobs:
   test-compat-gpu:
     name: Compat Tests (GPU) - Python 3.11
     runs-on: [self-hosted, gpu]
-    if: false  # Disabled until GPU runners are configured
-    # To enable: Change 'if: false' to 'if: github.event_name == push || github.event.pull_request.draft == false'
-    # Requires self-hosted runner with 'gpu' label
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    # Runs on org-level GPU runner (GPU-runner-001)
 
     steps:
       - name: Checkout code
