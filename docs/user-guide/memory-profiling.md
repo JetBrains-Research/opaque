@@ -131,10 +131,13 @@ Low efficiency (<80%) suggests memory fragmentation. Consider:
 
 ### Component-Level Tracking
 
-Understand exactly where memory is allocated:
+Understand exactly where memory is allocated in **standard PyTorch code**:
 
 ```python
+# Component tracking works for regular PyTorch operations
+model = YourModel()
 profiler = MemoryProfiler()
+
 with profiler:
     # Track components at key points
     profiler.mark("before_forward", track_components=True)
@@ -142,6 +145,7 @@ with profiler:
     output = model(data)
     profiler.mark("after_forward", track_components=True)
 
+    loss = criterion(output, targets)
     loss.backward()
     profiler.mark("after_backward", track_components=True)
 
@@ -187,7 +191,65 @@ end                                                (not tracked)
 - **Activations**: Intermediate tensors from forward pass
 - **Other**: Optimizer state, buffers, temporary allocations
 
+**Important Limitations:**
+
+1. **Component tracking does NOT work inside `clipped_grad()`**: The per-example gradient computation happens inside `torch.func.vmap`, which creates and destroys tensors that never become visible to Python's garbage collector. You'll only see memory state before and after `clipped_grad` executes.
+
+2. **Use peak memory tracking instead**: For profiling DP training with `clipped_grad`, rely on:
+   - Peak memory metrics (captured automatically)
+   - Detailed CUDA stats (`detailed=True`)
+   - Timeline profiling (memory before/after operations)
+
+3. **When component tracking IS useful**:
+   - Regular PyTorch training loops (non-DP)
+   - Model loading and initialization
+   - Optimizer state analysis
+   - Debugging memory leaks outside of `clipped_grad`
+
 **Performance Warning**: Component tracking uses `gc.get_objects()` which is slow (100-500ms). Use sparingly, only at critical checkpoints where you need detailed analysis.
+
+### Profiling DP Training (What Actually Works)
+
+For DP training with `clipped_grad`, use peak memory and detailed CUDA stats:
+
+```python
+from opaque.profiling import MemoryProfiler
+from opaque import clipped_grad
+
+# Setup
+grad_fn, state = clipped_grad(loss_fn, l2_clip_norm=1.0, microbatch_size=16)
+
+# Profile DP training step
+profiler = MemoryProfiler(device="cuda")
+with profiler:
+    # Peak memory is captured during this call
+    grads, aux = grad_fn(params, data, targets, state=state)
+    profiler.mark("after_clipped_grad")
+
+    # Noise and optimizer
+    noisy_grads = noise_fn(grads)
+    profiler.mark("after_noise")
+
+    params = optimizer.step(params, noisy_grads)
+    profiler.mark("after_optimizer")
+
+# Use detailed report to see CUDA stats
+print(profiler.report(detailed=True))
+```
+
+**Output shows what matters:**
+```
+Peak Memory:          2.45 GB  ← Maximum during clipped_grad
+Reserved:             2.60 GB  ← PyTorch cache overhead
+Efficiency:          94.7%     ← Good (>90%)
+Alloc Retries:           0     ← No fragmentation
+```
+
+**Key insights:**
+- Peak memory tells you if you'll hit OOM
+- Reserved vs Allocated shows caching overhead
+- Low efficiency (<80%) indicates fragmentation → reduce `microbatch_size`
+- Alloc retries > 0 means memory fragmentation → call `torch.cuda.empty_cache()`
 
 ## Automated Profiling
 
@@ -312,23 +374,26 @@ if epoch % 10 == 0:
         f.write(report)
 ```
 
-### 4. Use Component Tracking for Debugging
+### 4. Focus on Peak Memory and CUDA Stats
 
-When investigating memory issues, add component tracking:
+For DP training, peak memory and CUDA efficiency are most actionable:
 
 ```python
-# Only at problematic points
-profiler = MemoryProfiler()
+profiler = MemoryProfiler(device="cuda")
 with profiler:
-    profiler.mark("before_issue", track_components=True)
+    grads, _ = grad_fn(params, batch, targets, state=state)
+    profiler.mark("after_grad")
 
-    # ... code that causes high memory ...
+# Check detailed stats
+print(profiler.report(detailed=True))
 
-    profiler.mark("after_issue", track_components=True)
-
-# Identify which component grew unexpectedly
-print(profiler.report())
+# Look for:
+# - Peak memory (will you OOM?)
+# - Efficiency < 80% (fragmentation issue)
+# - Alloc retries > 0 (need empty_cache)
 ```
+
+**Note:** Component tracking (`track_components=True`) is only useful for debugging non-DP code paths like model initialization, optimizer state, or data loading.
 
 ## Device Support
 
