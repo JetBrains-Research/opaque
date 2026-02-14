@@ -260,7 +260,7 @@ def _merge_two(tree1: Any, tree2: Any) -> Any:
             raise ValueError(
                 f"Cannot merge sequences of different lengths: {len(tree1)} vs {len(tree2)}"
             )
-        merged = [_merge_two(a, b) for a, b in zip(tree1, tree2)]
+        merged = [_merge_two(a, b) for a, b in zip(tree1, tree2, strict=True)]
         return type(tree1)(merged)
 
     # Otherwise, tree2 overwrites tree1

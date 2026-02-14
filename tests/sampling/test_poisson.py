@@ -144,7 +144,7 @@ class TestPoissonSampler:
         batches2 = list(sampler2)
 
         # Same seed should produce same batches
-        for b1, b2 in zip(batches1, batches2):
+        for b1, b2 in zip(batches1, batches2, strict=True):
             assert b1 == b2
 
     def test_integration_with_dataloader(self):

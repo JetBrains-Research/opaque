@@ -49,7 +49,7 @@ class PoissonSampler(Sampler):
         num_epochs: int = 1,
         generator: np.random.Generator | None = None,
     ):
-        super().__init__(data_source)
+        super().__init__()
 
         if not 0 < sample_rate <= 1:
             raise ValueError(f"sample_rate must be in (0, 1], got {sample_rate}")

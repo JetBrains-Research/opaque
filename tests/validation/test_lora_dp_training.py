@@ -809,7 +809,7 @@ class TestEndToEndDPTraining:
         params = trainable
         losses = []
 
-        for step in range(num_steps):
+        for _step in range(num_steps):
             # Create fresh clipped_grad function each step
             grad_fn, clip_state = clipped_grad(
                 per_example_loss,
