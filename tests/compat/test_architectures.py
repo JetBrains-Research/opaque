@@ -11,6 +11,7 @@ from peft import LoraConfig, get_peft_model
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 from opaque import clipped_grad, make_functional
+from tests.compat.conftest import prepare_lora_model, run_clipped_grad_test
 
 
 class TestMultiArchitectureCompatibility:

@@ -143,7 +143,7 @@ def _run_ddp_scaling_test(
             accumulated = None
 
             # Gradient accumulation
-            for accum_idx in range(accum_steps):
+            for _ in range(accum_steps):
                 grads, state = grad_fn(
                     trainable_params,
                     frozen,
@@ -160,7 +160,7 @@ def _run_ddp_scaling_test(
 
             # Apply accumulated gradients
             scale = 1.0 / float(accum_steps)
-            accumulated = tree_map(lambda x: x * scale, accumulated)
+            accumulated = tree_map(lambda x, s=scale: x * s, accumulated)
 
             trainable_params = tree_map(
                 lambda p, g: p - LEARNING_RATE * g,
@@ -282,9 +282,9 @@ class TestDDPQuickSanity:
         state = clip_state
         trainable_params = trainable
 
-        for step in range(training_steps):
+        for _step in range(training_steps):
             accumulated = None
-            for accum in range(accum_steps):
+            for _ in range(accum_steps):
                 grads, state = grad_fn(
                     trainable_params,
                     frozen,
@@ -299,7 +299,7 @@ class TestDDPQuickSanity:
                     accumulated = tree_map(lambda x, y: x + y, accumulated, grads)
 
             scale = 1.0 / float(accum_steps)
-            accumulated = tree_map(lambda x: x * scale, accumulated)
+            accumulated = tree_map(lambda x, s=scale: x * s, accumulated)
 
             trainable_params = tree_map(
                 lambda param, grad: param - lr * grad,

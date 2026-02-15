@@ -310,7 +310,7 @@ def run_dp_training_step(
     last_accumulated = None
 
     # Training loop
-    for step in range(training_steps):
+    for _step in range(training_steps):
         accumulated = None
 
         # Gradient accumulation
@@ -331,7 +331,7 @@ def run_dp_training_step(
 
         # Apply accumulated gradients
         scale = 1.0 / float(accum_steps)
-        accumulated = tree_map(lambda x: x * scale, accumulated)
+        accumulated = tree_map(lambda x, s=scale: x * s, accumulated)
 
         trainable_params = tree_map(
             lambda p, g: p - learning_rate * g,

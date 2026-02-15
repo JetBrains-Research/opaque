@@ -238,7 +238,6 @@ class TestDeterministicNoise:
         if not is_distributed():
             pytest.skip("Requires distributed setup")
 
-        rank = get_rank()
         seed = 42
 
         # Create noise function with distributed=True
@@ -320,12 +319,9 @@ class TestEndToEndDPTraining:
     def test_adaptive_clipping_with_sync(self, device, simple_model):
         """Test adaptive clipping with automatic state synchronization."""
         from opaque.clipping import adaptive_clipped_grad
-        from opaque.distributed import get_rank
 
         if not is_distributed():
             pytest.skip("Requires distributed setup")
-
-        rank = get_rank()
 
         # Move model to device
         model = simple_model.to(device)
