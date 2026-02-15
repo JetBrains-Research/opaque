@@ -36,9 +36,9 @@ class AuditResult:
 def audit(
     in_scores: np.ndarray,
     out_scores: np.ndarray,
+    *,
     significance: float = 0.05,
     delta: float = 0.0,
-    *,
     method: str = "clopper_pearson",
 ) -> AuditResult:
     """Run a comprehensive privacy audit.
@@ -64,11 +64,15 @@ def audit(
     """
     match method:
         case "clopper_pearson":
-            eps = epsilon_clopper_pearson(in_scores, out_scores, significance, delta)
+            eps = epsilon_clopper_pearson(
+                in_scores, out_scores, significance=significance, delta=delta
+            )
         case "raw_counts":
             eps = epsilon_raw_counts(in_scores, out_scores, delta=delta)
         case "one_run":
-            eps = epsilon_one_run(in_scores, out_scores, significance, delta)
+            eps = epsilon_one_run(
+                in_scores, out_scores, significance=significance, delta=delta
+            )
         case _:
             raise ValueError(
                 f"Unknown method '{method}'. "

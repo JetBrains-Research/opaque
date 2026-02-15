@@ -12,12 +12,14 @@ Reference:
     B. Efron, "Bootstrap Confidence Intervals", Statist. Sci. 2(3), 189-228 (1987)
 """
 
-from dataclasses import dataclass
+import dataclasses
+from collections.abc import Callable
 
 import numpy as np
+import scipy.stats
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class BootstrapParams:
     """Parameters for bootstrap confidence interval estimation.
 
@@ -138,7 +140,7 @@ class BootstrapParams:
 
 
 def bootstrap(
-    fn,
+    fn: Callable[[np.ndarray, np.ndarray], float],
     in_scores: np.ndarray,
     out_scores: np.ndarray,
     params: BootstrapParams,
@@ -146,7 +148,7 @@ def bootstrap(
     """Compute bootstrapped quantiles for any auditing function.
 
     Args:
-        fn: Function with signature fn(in_scores, out_scores, ...) -> float
+        fn: Function with signature fn(in_scores, out_scores) -> float.
         in_scores: Attack scores for held-in canaries.
         out_scores: Attack scores for held-out canaries.
         params: Bootstrap parameters.
@@ -160,8 +162,6 @@ def bootstrap(
         >>> auroc_ci = bootstrap(attack_auroc, in_scores, out_scores, params)
         >>> print(f"AUROC 95% CI: [{auroc_ci[0]:.3f}, {auroc_ci[1]:.3f}]")
     """
-    import scipy.stats
-
     in_arr = np.asarray(in_scores)
     out_arr = np.asarray(out_scores)
     n_in, n_out = len(in_arr), len(out_arr)

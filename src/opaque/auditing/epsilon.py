@@ -31,9 +31,9 @@ __all__ = [
 def epsilon_clopper_pearson(
     in_scores: np.ndarray,
     out_scores: np.ndarray,
+    *,
     significance: float = 0.05,
     delta: float = 0.0,
-    *,
     threshold: float | None = None,
 ) -> float:
     """Estimate epsilon using Clopper-Pearson confidence intervals.
@@ -109,9 +109,9 @@ def _epsilon_cp_at_threshold(
 def epsilon_one_run(
     in_scores: np.ndarray,
     out_scores: np.ndarray,
+    *,
     significance: float = 0.05,
     delta: float = 0.0,
-    *,
     threshold: float | None = None,
     eps_max: float = 20.0,
     tol: float = 1e-4,
@@ -201,6 +201,7 @@ def _epsilon_one_run_at_threshold(
 def epsilon_raw_counts(
     in_scores: np.ndarray,
     out_scores: np.ndarray,
+    *,
     min_count: int = 50,
     delta: float = 0.0,
 ) -> float:
