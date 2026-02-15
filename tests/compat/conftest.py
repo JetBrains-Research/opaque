@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Shared fixtures and helpers for compatibility tests."""
 
+import os
+
 import pytest
 import torch
 from peft import LoraConfig, get_peft_model
@@ -14,6 +16,14 @@ def pytest_runtest_setup(item):
     """Auto-skip GPU tests if CUDA is not available."""
     if "gpu" in item.keywords and not torch.cuda.is_available():
         pytest.skip("CUDA not available - skipping GPU tests")
+
+
+def has_hf_token() -> bool:
+    """Return True when a Hugging Face token is available via env vars."""
+    return any(
+        os.getenv(name)
+        for name in ("HF_TOKEN", "HUGGINGFACEHUB_API_TOKEN", "HUGGINGFACE_TOKEN")
+    )
 
 
 @pytest.fixture(scope="module")

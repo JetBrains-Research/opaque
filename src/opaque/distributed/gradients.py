@@ -45,9 +45,6 @@ def all_reduce_gradients(
             - gradients: Same PyTree with reduced tensors (modified in-place)
             - work_handles: List of dist.Work handles if async_op=True, else None
 
-    Raises:
-        RuntimeError: If distributed is not initialized.
-
     Example:
         >>> import torch
         >>> import torch.distributed as dist

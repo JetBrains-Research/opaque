@@ -11,7 +11,7 @@ from peft import LoraConfig, get_peft_model
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 from opaque import clipped_grad, make_functional
-from tests.compat.conftest import prepare_lora_model, run_clipped_grad_test
+from tests.compat.conftest import has_hf_token, prepare_lora_model, run_clipped_grad_test
 
 
 @pytest.mark.gpu
@@ -66,6 +66,10 @@ class TestMultiArchitectureCompatibility:
         Note: Requires HuggingFace authentication token for gated model access.
         Run with: huggingface-cli login
         """
+        if not has_hf_token():
+            pytest.skip(
+                "HuggingFace token required for gated model google/gemma-2-2b"
+            )
         config = AutoConfig.from_pretrained("google/gemma-2-2b")
         config.num_hidden_layers = 1
         config._attn_implementation = "eager"

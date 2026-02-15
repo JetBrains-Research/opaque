@@ -11,7 +11,6 @@ same sampled indices. Rank 0 samples and broadcasts indices to all other devices
 from collections.abc import Iterator
 
 import numpy as np
-import torch
 from torch.utils.data import Sampler
 
 
@@ -141,20 +140,20 @@ class PoissonSampler(Sampler):
                     indices = None
                     batch_size = 0
 
-                # Broadcast batch size
-                batch_size_tensor = torch.tensor(batch_size, dtype=torch.long)
-                dist.broadcast(batch_size_tensor, src=0)
-                batch_size = batch_size_tensor.item()
+                # Broadcast batch size and indices as Python objects.
+                batch_size_list = [batch_size]
+                dist.broadcast_object_list(batch_size_list, src=0)
+                batch_size = batch_size_list[0]
 
-                # Allocate buffer on all ranks
-                if rank != 0:
-                    indices = np.zeros(batch_size, dtype=np.int64)
-
-                # Broadcast indices if batch is non-empty
                 if batch_size > 0:
-                    indices_tensor = torch.from_numpy(indices).long()
-                    dist.broadcast(indices_tensor, src=0)
-                    indices = indices_tensor.numpy()
+                    if rank == 0:
+                        indices_list = [indices.tolist()]
+                    else:
+                        indices_list = [None]
+                    dist.broadcast_object_list(indices_list, src=0)
+                    indices = np.array(indices_list[0], dtype=np.int64)
+                else:
+                    indices = np.array([], dtype=np.int64)
 
                 # Yield as list
                 yield indices.tolist()

@@ -20,7 +20,7 @@ Here's a minimal DDP training script:
 import torch.distributed as dist
 from opaque.clipping import clipped_grad
 from opaque.distributed import average_gradients
-from opaque.noise import gaussian
+from opaque.noise import gaussian_stateful
 
 # 1. Initialize distributed training
 dist.init_process_group(backend="nccl")
@@ -32,16 +32,16 @@ model = MyModel().to(device)
 fmodel, params = make_functional(model)
 
 # 3. Create DP gradient function
-clipped_grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0)
-noise_fn = gaussian(stddev=1.1)
+clipped_grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0)
+noise_fn, noise_state = gaussian_stateful(stddev=1.1, seed=42, distributed=True)
 
 # 4. Training loop with gradient averaging
 for batch in dataloader:
     # Compute clipped gradients locally
-    grads = clipped_grad_fn(params, batch)
+    grads, clip_state = clipped_grad_fn(params, batch, state=clip_state)
     
     # Add noise locally
-    noisy_grads = noise_fn(grads)
+    noisy_grads = noise_fn(grads, noise_state)
     
     # Average gradients across GPUs
     noisy_grads = average_gradients(noisy_grads)

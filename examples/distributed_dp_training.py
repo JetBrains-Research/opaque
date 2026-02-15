@@ -115,14 +115,13 @@ def main():
         print(f"   Noise multiplier: {1.1}")
     
     # Training loop
-    for step, indices in enumerate(dataloader):
-        # Get batch (same indices on all devices due to distributed sampler)
-        batch_x, batch_y = dataset[indices[0]]
+    for step, (batch_x, batch_y) in enumerate(dataloader):
+        # Batches are already indexed/collated by the DataLoader.
         batch_x = batch_x.to(device)
         batch_y = batch_y.to(device)
         
         # Skip if batch is empty
-        if len(batch_x) == 0:
+        if batch_x.numel() == 0:
             continue
         
         # Step 1: Compute clipped gradients (per-device)
