@@ -14,6 +14,7 @@ around five core concepts:
 4. **[Optimizers & Adaptive Clipping](optimizers.md)** - Adaptive clipping with TorchOpt integration
 5. **[Poisson Sampling & Microbatching](sampling.md)** - Privacy amplification through sampling
 6. **[LoRA Fine-tuning](lora.md)** - Parameter-efficient DP training for LLMs
+7. **[Privacy Auditing](auditing.md)** - Empirically validate DP guarantees
 
 ## Learning Path
 
@@ -42,9 +43,10 @@ For production use and optimization:
 1. **[Optimizers & Adaptive Clipping](optimizers.md)** - Use adaptive clipping for better utility
 2. **[Poisson Sampling & Microbatching](sampling.md)** - Optimize privacy-utility tradeoffs
 3. **[LoRA Fine-tuning](lora.md)** - Train large language models efficiently
-4. **[Tutorial 04](../tutorials/04_dp_optimizers.ipynb)** - TorchOpt integration
-5. **[Tutorial 05](../tutorials/05_sampling_and_microbatching.ipynb)** - Advanced sampling techniques
-6. **[Tutorial 06](../tutorials/06_lora_huggingface_dp_training.ipynb)** - Real-world LLM fine-tuning
+4. **[Privacy Auditing](auditing.md)** - Validate your DP implementation empirically
+5. **[Tutorial 04](../tutorials/04_dp_optimizers.ipynb)** - TorchOpt integration
+6. **[Tutorial 05](../tutorials/05_sampling_and_microbatching.ipynb)** - Advanced sampling techniques
+7. **[Tutorial 06](../tutorials/06_lora_huggingface_dp_training.ipynb)** - Real-world LLM fine-tuning
 
 ## Key Concepts Summary
 
