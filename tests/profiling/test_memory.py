@@ -631,4 +631,3 @@ class TestMemoryProfiler:
         for snapshot in profiler.snapshots:
             assert snapshot.reserved_gb is not None
             assert snapshot.reserved_gb >= snapshot.allocated_gb
-
