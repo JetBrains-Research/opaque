@@ -90,6 +90,7 @@ nav:
     - Privacy Accounting: user-guide/accounting.md
     - Optimizers & Adaptive Clipping: user-guide/optimizers.md
     - Poisson Sampling & Microbatching: user-guide/sampling.md
+    - Memory Profiling: user-guide/memory-profiling.md
     - LoRA Fine-tuning: user-guide/lora.md
     - Known Limitations: limitations.md
   - API Reference:
