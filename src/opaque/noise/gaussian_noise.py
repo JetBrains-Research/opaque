@@ -1,134 +1,128 @@
 """Gaussian noise generation for differential privacy.
 
-This module provides higher-order functions for adding calibrated Gaussian noise
+This module provides a higher-order function for adding calibrated Gaussian noise
 to gradients in DP-SGD (Differentially Private Stochastic Gradient Descent).
 
-The functional API provides:
-1. `gaussian_noise(stddev)` - Returns a stateless noise function (recommended)
-2. `gaussian_noise_stateful(stddev, seed)` - Returns (fn, state) for reproducibility
+The API returns ``(noise_fn, state)`` where state is always immutable:
+
+    >>> noise_fn, state = gaussian_noise(stddev=1.0, generator=42)
+    >>> noisy_grads, state = noise_fn(grads, state)
 """
 
+import dataclasses
 from collections.abc import Callable
+from typing import Any
 
 import torch
 
 from opaque.utils.pytree import tree_map
 
 
-def gaussian_noise(stddev: float) -> Callable:
-    """Create a stateless Gaussian noise function.
+@dataclasses.dataclass(frozen=True)
+class GaussianNoiseState:
+    """Immutable state for Gaussian noise generation.
 
-    Returns a function that adds calibrated Gaussian noise N(0, stddev²) to gradients.
-    This is the recommended API for typical use cases where reproducibility is not critical.
+    Wraps a ``torch.Generator`` for reproducible noise. Although the
+    generator itself is mutable internally, the state object is frozen
+    and users must always pass back the state they received.
 
-    For reproducible noise (e.g., testing, debugging), use `gaussian_noise_stateful()`.
+    Attributes:
+        rng_state: Random number generator.
+    """
+
+    rng_state: torch.Generator
+
+
+def _resolve_generator(
+    generator: None | int | torch.Generator,
+) -> torch.Generator:
+    """Resolve a generator specification to a torch.Generator.
 
     Args:
-        stddev: Standard deviation of Gaussian noise (usually `noise_multiplier * clip_norm`)
-
-    Returns:
-        A function `noise_fn(grads) -> noisy_grads` that adds calibrated noise
-
-    Example:
-        >>> import torch
-        >>> from opaque.clipping import clipped_grad
-        >>> from opaque.noise import gaussian_noise
-        >>>
-        >>> # Configure gradient clipping
-        >>> grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0)
-        >>>
-        >>> # Configure noise (user does multiplication)
-        >>> noise_fn = gaussian_noise(stddev=1.1 * grad_fn.clip_norm)
-        >>>
-        >>> # Training loop
-        >>> for batch in dataloader:
-        >>>     grads = grad_fn(params, batch['x'], batch['y'])
-        >>>     noisy_grads = noise_fn(grads)  # Natural composition
-        >>>     params = optimizer.step(params, noisy_grads)
+        generator: One of:
+            - ``None``: create a new unseeded generator (non-reproducible)
+            - ``int``: create a generator seeded with this value (reproducible)
+            - ``torch.Generator``: use directly
     """
-    if stddev < 0:
-        raise ValueError(f"stddev must be non-negative, got {stddev}")
-
-    if stddev == 0:
-        # No noise (for testing/debugging)
-        return lambda grads: grads
-
-    def noise_fn(grads):
-        """Add Gaussian noise to gradients."""
-
-        def add_noise_to_tensor(tensor: torch.Tensor) -> torch.Tensor:
-            """Add noise to a single tensor, preserving dtype and device."""
-            noise = torch.randn(
-                tensor.shape,
-                dtype=tensor.dtype,
-                device=tensor.device,
-            )
-            return tensor + noise * stddev
-
-        return tree_map(add_noise_to_tensor, grads)
-
-    return noise_fn
+    if generator is None:
+        gen = torch.Generator()
+        gen.seed()
+        return gen
+    elif isinstance(generator, int):
+        return torch.Generator().manual_seed(generator)
+    elif isinstance(generator, torch.Generator):
+        return generator
+    else:
+        raise TypeError(
+            f"generator must be None, int, or torch.Generator, got {type(generator)}"
+        )
 
 
-def gaussian_noise_stateful(
-    stddev: float, seed: int
-) -> tuple[Callable, torch.Generator]:
-    """Create a Gaussian noise function with explicit state management.
+def gaussian_noise(
+    stddev: float,
+    *,
+    generator: None | int | torch.Generator = None,
+) -> tuple[
+    Callable[[Any, GaussianNoiseState], tuple[Any, GaussianNoiseState]],
+    GaussianNoiseState,
+]:
+    """Create a Gaussian noise function with immutable state.
 
-    Returns a tuple (noise_fn, state) where state is a torch.Generator for
-    reproducible noise. This follows the functional pattern of explicit state passing.
-
-    Use this when you need reproducible noise (e.g., for testing, debugging,
-    or deterministic training). For typical use cases, use `gaussian_noise()`.
+    Returns ``(noise_fn, state)`` where ``noise_fn`` adds calibrated Gaussian
+    noise N(0, stddev²) to gradients and returns updated state.
 
     Args:
         stddev: Standard deviation of Gaussian noise
-        seed: Random seed for the PRNG state
+            (usually ``noise_multiplier * clip_norm``).
+        generator: RNG configuration:
+            - ``None``: new unseeded generator (non-reproducible)
+            - ``int``: seeded generator (reproducible)
+            - ``torch.Generator``: use directly
 
     Returns:
-        A tuple (noise_fn, state) where:
-        - noise_fn(grads, state) -> noisy_grads
-        - state is a torch.Generator initialized with seed
+        A tuple ``(noise_fn, state)`` where:
+
+        - ``noise_fn(grads, state) -> (noisy_grads, new_state)``
+        - ``state`` is a :class:`GaussianNoiseState`
 
     Example:
         >>> import torch
-        >>> from opaque.noise import gaussian_noise_stateful
+        >>> from opaque.noise import gaussian_noise
         >>>
-        >>> # Create noise function with explicit state
-        >>> noise_fn, state = gaussian_noise_stateful(stddev=1.1, seed=42)
-        >>>
-        >>> # Use in training (pass state explicitly)
-        >>> for batch in dataloader:
-        >>>     grads = compute_gradients(params, batch)
-        >>>     noisy_grads = noise_fn(grads, state)  # Reproducible noise
-        >>>     params = optimizer.step(params, noisy_grads)
+        >>> noise_fn, state = gaussian_noise(stddev=1.1, generator=42)
+        >>> grads = torch.zeros(10)
+        >>> noisy_grads, state = noise_fn(grads, state)
     """
     if stddev < 0:
         raise ValueError(f"stddev must be non-negative, got {stddev}")
 
-    # Create generator with seed
-    state = torch.Generator().manual_seed(seed)
+    gen = _resolve_generator(generator)
+    state = GaussianNoiseState(rng_state=gen)
 
     if stddev == 0:
-        # No noise (for testing/debugging)
-        return lambda grads, gen: grads, state
 
-    def noise_fn(grads, generator: torch.Generator):
-        """Add Gaussian noise to gradients using the provided generator."""
+        def zero_noise_fn(grads, st):
+            return grads, st
+
+        return zero_noise_fn, state
+
+    def noise_fn(grads, st):
+        """Add Gaussian noise to gradients."""
+        g = st.rng_state
 
         def add_noise_to_tensor(tensor: torch.Tensor) -> torch.Tensor:
-            """Add noise to a single tensor, preserving dtype and device."""
             noise = torch.randn(
                 tensor.shape,
                 dtype=tensor.dtype,
                 device=tensor.device,
-                generator=generator,
+                generator=g,
             )
             return tensor + noise * stddev
 
-        return tree_map(add_noise_to_tensor, grads)
+        noisy = tree_map(add_noise_to_tensor, grads)
+        return noisy, GaussianNoiseState(rng_state=g)
 
     return noise_fn, state
 
 
-__all__ = ["gaussian_noise", "gaussian_noise_stateful"]
+__all__ = ["gaussian_noise", "GaussianNoiseState"]

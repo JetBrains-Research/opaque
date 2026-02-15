@@ -5,6 +5,7 @@ import torch
 
 from opaque.noise.matrix_factorization.banded import (
     ColumnNormalizedBanded,
+    materialize,
     minsep_sensitivity_squared,
 )
 
@@ -18,7 +19,7 @@ class TestColumnNormalizedBanded:
 
     def test_materialize_square(self):
         cnb = ColumnNormalizedBanded.default(n=5, bands=2)
-        M = cnb.materialize()
+        M = materialize(cnb)
         assert M.shape == (5, 5)
         # Lower triangular (up to numerical precision)
         upper = torch.triu(M, diagonal=1)
@@ -27,7 +28,7 @@ class TestColumnNormalizedBanded:
     def test_column_normalized(self):
         """Verify each column has L2 norm 1."""
         cnb = ColumnNormalizedBanded.default(n=8, bands=3)
-        M = cnb.materialize()
+        M = materialize(cnb)
         col_norms = torch.linalg.norm(M, dim=0)
         expected = torch.ones(8, dtype=torch.float64)
         torch.testing.assert_close(col_norms, expected, atol=1e-10, rtol=1e-10)
@@ -35,7 +36,7 @@ class TestColumnNormalizedBanded:
     def test_banded_structure(self):
         """Verify matrix has correct banding."""
         cnb = ColumnNormalizedBanded.default(n=6, bands=2)
-        M = cnb.materialize()
+        M = materialize(cnb)
         # Entries more than 2 rows below diagonal should be zero
         for i in range(6):
             for j in range(6):

@@ -139,6 +139,14 @@ def strategy_from_X(X: torch.Tensor) -> torch.Tensor:
     return L.T.flip(0, 1)
 
 
+__all__ = [
+    "optimize",
+    "per_query_error",
+    "max_error",
+    "mean_error",
+]
+
+
 def optimize(
     n: int,
     *,

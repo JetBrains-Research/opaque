@@ -46,8 +46,8 @@ class ClipState(ABC):
         >>> # Compute sensitivity for noise calibration
         >>> sensitivity = clip_state.sensitivity()  # 1.0
         >>> from opaque import gaussian_noise
-        >>> noise_fn = gaussian_noise(stddev=1.1 * sensitivity)
-        >>> noisy_grads = noise_fn(grads)
+        >>> noise_fn, noise_state = gaussian_noise(stddev=1.1 * sensitivity)
+        >>> noisy_grads, noise_state = noise_fn(grads, noise_state)
     """
 
     @abstractmethod

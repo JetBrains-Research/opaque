@@ -7,16 +7,24 @@ from opaque.noise.matrix_factorization.buffered_toeplitz import (
     BufferedToeplitz,
     LossFn,
     Parameterization,
+    as_streaming_matrix,
     blt_pair_from_theta_pair,
     geometric_sum,
     get_init_blt,
+    get_parameterized_loss,
+    inverse,
+    inverse_as_streaming_matrix,
     iteration_error,
+    loss,
+    materialize,
     max_error,
     min_buf_decay_gap,
     optimize_loss,
+    penalized_loss,
     robust_max_error_Gamma_j,
     robust_max_error_Gamma_jk,
     sensitivity_squared,
+    toeplitz_coefs,
 )
 from opaque.noise.matrix_factorization.toeplitz import materialize_lower_triangular
 
@@ -44,7 +52,7 @@ class TestBufferedToeplitz:
             buf_decay=[0.5],
             output_scale=[0.3],
         )
-        coefs = blt.toeplitz_coefs(5)
+        coefs = toeplitz_coefs(blt, 5)
         assert coefs[0] == pytest.approx(1.0)
         assert coefs[1] == pytest.approx(0.3)
         assert coefs[2] == pytest.approx(0.3 * 0.5)
@@ -55,13 +63,13 @@ class TestBufferedToeplitz:
             buf_decay=[0.5],
             output_scale=[0.3],
         )
-        M = blt.materialize(3)
-        expected = materialize_lower_triangular(blt.toeplitz_coefs(3))
+        M = materialize(blt, 3)
+        expected = materialize_lower_triangular(toeplitz_coefs(blt, 3))
         torch.testing.assert_close(M, expected)
 
     def test_empty_blt(self):
         blt = BufferedToeplitz.build(buf_decay=[], output_scale=[])
-        coefs = blt.toeplitz_coefs(3)
+        coefs = toeplitz_coefs(blt, 3)
         expected = torch.tensor([1.0, 0.0, 0.0], dtype=torch.float64)
         torch.testing.assert_close(coefs, expected)
 
@@ -82,11 +90,11 @@ class TestBLTInverse:
             buf_decay=[0.8, 0.4],
             output_scale=[0.3, 0.1],
         )
-        inv_blt = blt.inverse()
+        inv_blt = inverse(blt)
 
         n = 6
-        C = blt.materialize(n)
-        C_inv = inv_blt.materialize(n)
+        C = materialize(blt, n)
+        C_inv = materialize(inv_blt, n)
         product = C @ C_inv
         torch.testing.assert_close(
             product, torch.eye(n, dtype=torch.float64), atol=1e-8, rtol=1e-8
@@ -97,10 +105,10 @@ class TestBLTInverse:
             buf_decay=[0.5],
             output_scale=[0.3],
         )
-        inv_blt = blt.inverse()
+        inv_blt = inverse(blt)
         n = 5
-        C = blt.materialize(n)
-        C_inv = inv_blt.materialize(n)
+        C = materialize(blt, n)
+        C_inv = materialize(inv_blt, n)
         product = C @ C_inv
         torch.testing.assert_close(
             product, torch.eye(n, dtype=torch.float64), atol=1e-8, rtol=1e-8
@@ -114,8 +122,8 @@ class TestBLTStreamingMatrix:
             output_scale=[0.4, 0.2],
         )
         n = 5
-        dense = blt.materialize(n)
-        streaming = blt.as_streaming_matrix()
+        dense = materialize(blt, n)
+        streaming = as_streaming_matrix(blt)
         streaming_dense = streaming.materialize(n)
         torch.testing.assert_close(streaming_dense, dense, atol=1e-8, rtol=1e-8)
 
@@ -125,9 +133,9 @@ class TestBLTStreamingMatrix:
             output_scale=[0.4, 0.2],
         )
         n = 5
-        C = blt.materialize(n)
+        C = materialize(blt, n)
         C_inv_dense = torch.linalg.inv(C)
-        C_inv_streaming = blt.inverse_as_streaming_matrix()
+        C_inv_streaming = inverse_as_streaming_matrix(blt)
         C_inv_streaming_dense = C_inv_streaming.materialize(n)
         torch.testing.assert_close(
             C_inv_streaming_dense, C_inv_dense, atol=1e-8, rtol=1e-8
@@ -278,8 +286,8 @@ class TestBLTPairFromThetaPair:
         blt, inv_blt = blt_pair_from_theta_pair(theta, theta_hat)
 
         n = 6
-        C = blt.materialize(n)
-        C_inv = inv_blt.materialize(n)
+        C = materialize(blt, n)
+        C_inv = materialize(inv_blt, n)
         product = C @ C_inv
         torch.testing.assert_close(
             product, torch.eye(n, dtype=torch.float64), atol=1e-6, rtol=1e-6
@@ -309,22 +317,22 @@ class TestLossFn:
     def test_single_participation(self):
         loss_fn = LossFn.build_closed_form_single_participation(n=10)
         blt = get_init_blt(num_buffers=2)
-        loss = loss_fn.loss(blt)
-        assert float(loss) > 0
-        assert torch.isfinite(loss)
+        loss_val = loss(loss_fn, blt)
+        assert float(loss_val) > 0
+        assert torch.isfinite(loss_val)
 
     def test_min_sep(self):
         loss_fn = LossFn.build_min_sep(n=20, min_sep=2, max_participations=3)
         blt = get_init_blt(num_buffers=2)
-        loss = loss_fn.loss(blt, skip_checks=True)
-        assert float(loss) > 0
+        loss_val = loss(loss_fn, blt, skip_checks=True)
+        assert float(loss_val) > 0
 
     def test_penalized_loss(self):
         loss_fn = LossFn.build_closed_form_single_participation(n=10)
         blt = get_init_blt(num_buffers=2)
-        inv_blt = blt.inverse()
-        penalized = loss_fn.penalized_loss(blt, inv_blt)
-        plain = loss_fn.loss(blt)
+        inv_blt = inverse(blt)
+        penalized = penalized_loss(loss_fn, blt, inv_blt)
+        plain = loss(loss_fn, blt)
         # Penalized loss should be close to plain loss (penalty is small)
         assert torch.isfinite(penalized)
         # penalty_strength is 1e-8, so difference should be small
@@ -341,8 +349,8 @@ class TestParameterization:
 
         blt_out, inv_blt_out = param.blt_and_inverse_from_params(params)
         n = 10
-        C = blt_out.materialize(n)
-        C_inv = inv_blt_out.materialize(n)
+        C = materialize(blt_out, n)
+        C_inv = materialize(inv_blt_out, n)
         product = C @ C_inv
         torch.testing.assert_close(
             product, torch.eye(n, dtype=torch.float64), atol=1e-6, rtol=1e-6
@@ -353,7 +361,7 @@ class TestParameterization:
         param = Parameterization.buf_decay_pair()
         blt = get_init_blt(num_buffers=2)
         params = param.params_from_blt(blt)
-        opt_loss_fn = param.get_loss_fn(loss_fn)
+        opt_loss_fn = get_parameterized_loss(param, loss_fn)
         result = opt_loss_fn(params)
         assert torch.isfinite(result)
         assert float(result) > 0
@@ -370,7 +378,7 @@ class TestOptimizeLoss:
         """L-BFGS should not make the loss worse (within tolerance)."""
         loss_fn = LossFn.build_closed_form_single_participation(n=100)
         init_blt = get_init_blt(num_buffers=1)
-        init_loss = float(loss_fn.loss(init_blt))
+        init_loss = float(loss(loss_fn, init_blt))
 
         opt_blt, opt_loss = optimize_loss(
             loss_fn, num_buffers=1, max_optimizer_steps=50

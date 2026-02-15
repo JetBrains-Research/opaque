@@ -7,6 +7,10 @@ Dependencies: Install with `uv sync --group compat`
 
 import pytest
 import torch
+
+peft = pytest.importorskip("peft", reason="peft not installed, run `uv sync --group compat`")
+transformers = pytest.importorskip("transformers", reason="transformers not installed")
+
 from peft import LoraConfig, get_peft_model
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 

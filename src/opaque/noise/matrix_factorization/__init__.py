@@ -21,10 +21,7 @@ References:
     - Multi-epoch BLT: https://arxiv.org/abs/2408.08868
 """
 
-from opaque.noise.matrix_factorization.noise import (
-    MFNoiseState,
-    matrix_factorization_noise,
-)
+from opaque.noise.matrix_factorization.noise import MFNoiseState
 from opaque.noise.matrix_factorization.streaming_matrix import (
     StreamingMatrix,
     diagonal,
@@ -41,7 +38,6 @@ __all__ = [
     "StreamingMatrix",
     "diagonal",
     "identity",
-    "matrix_factorization_noise",
     "momentum_sgd_matrix",
     "multiply_array",
     "multiply_streaming_matrices",

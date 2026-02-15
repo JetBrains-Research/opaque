@@ -22,12 +22,12 @@ from opaque.clipping import (
 )
 from opaque.noise import (
     band_mf_noise,
-    blt_noise,
+    blt_mf_noise,
     bounded_gaussian_noise,
-    bounded_gaussian_noise_stateful,
-    dense_noise,
+    custom_mf_noise,
+    dense_mf_noise,
     gaussian_noise,
-    gaussian_noise_stateful,
+    identity_mf_noise,
 )
 from opaque.sampling import (
     CyclicPoissonSampling,
@@ -71,12 +71,12 @@ __all__ = [
     "CyclicPoissonSampling",
     # Noise
     "gaussian_noise",
-    "gaussian_noise_stateful",
     "bounded_gaussian_noise",
-    "bounded_gaussian_noise_stateful",
     "band_mf_noise",
-    "blt_noise",
-    "dense_noise",
+    "blt_mf_noise",
+    "custom_mf_noise",
+    "dense_mf_noise",
+    "identity_mf_noise",
     # Utils
     "make_functional",
 ]

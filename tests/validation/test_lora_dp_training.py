@@ -310,8 +310,8 @@ class TestGPT2LoRADPTraining:
 
         # Add noise
         noise_multiplier = 1.0
-        noise_fn = gaussian_noise(stddev=noise_multiplier * clip_norm)
-        noisy_grads = noise_fn(grads)
+        noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_norm)
+        noisy_grads, noise_state = noise_fn(grads, noise_state)
 
         # Verify noise was added
         for name in grads:
@@ -425,8 +425,8 @@ class TestGPT2LoRADPTraining:
         )
 
         # 2. Add noise
-        noise_fn = gaussian_noise(stddev=noise_multiplier * clip_norm)
-        noisy_grads = noise_fn(grads)
+        noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_norm)
+        noisy_grads, noise_state = noise_fn(grads, noise_state)
 
         # 3. SGD update
         updated_params = {}

@@ -27,9 +27,23 @@ from . import sensitivity, streaming_matrix, toeplitz
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "BufferedToeplitz",
+    "optimize",
+    "materialize",
+    "inverse",
+    "inverse_as_streaming_matrix",
+    "sensitivity_squared",
+    "max_error",
+    "iteration_error",
+]
+
+
+# ── Internal builder ────────────────────────────────────────────────────
+
 
 @dataclasses.dataclass
-class StreamingMatrixBuilder:
+class _StreamingMatrixBuilder:
     """Builder to convert a BLT to a StreamingMatrix.
 
     Attributes:
@@ -94,6 +108,9 @@ class StreamingMatrixBuilder:
         )
 
 
+# ── Data container ──────────────────────────────────────────────────────
+
+
 @dataclasses.dataclass
 class BufferedToeplitz:
     """A lower-triangular Toeplitz C parameterized as a BLT.
@@ -149,7 +166,7 @@ class BufferedToeplitz:
             buf_decay=torch.as_tensor(buf_decay, dtype=dtype),
             output_scale=torch.as_tensor(output_scale, dtype=dtype),
         )
-        return blt.canonicalize()
+        return canonicalize(blt)
 
     @classmethod
     def from_rational_approx_to_sqrt_x(
@@ -190,7 +207,7 @@ class BufferedToeplitz:
 
         # Build C^{-1}, then invert to get C
         inv_blt = cls.build(buf_decay=buf_decay, output_scale=output_scale)
-        blt = inv_blt.inverse()
+        blt = inverse(inv_blt)
         buf_decay_t = blt.buf_decay.clone()
         output_scale_t = blt.output_scale.clone()
 
@@ -206,15 +223,6 @@ class BufferedToeplitz:
 
         return cls.build(buf_decay=buf_decay_t, output_scale=output_scale_t)
 
-    def canonicalize(self) -> BufferedToeplitz:
-        """Return a BLT with buf_decay in decreasing order."""
-        self.validate()
-        idx = torch.argsort(self.buf_decay, descending=True)
-        return BufferedToeplitz(
-            buf_decay=self.buf_decay[idx],
-            output_scale=self.output_scale[idx],
-        )
-
     @property
     def dtype(self):
         return self.buf_decay.dtype
@@ -222,81 +230,6 @@ class BufferedToeplitz:
     @property
     def _num_buffers(self) -> int:
         return self.buf_decay.shape[0]
-
-    def toeplitz_coefs(self, n: int) -> torch.Tensor:
-        """Returns the Toeplitz coefficients for C.
-
-        Args:
-            n: Number of coefficients.
-
-        Returns:
-            Tensor of n Toeplitz coefficients.
-        """
-        if self._num_buffers == 0:
-            result = torch.zeros(n, dtype=self.dtype)
-            result[0] = 1.0
-            return result
-        powers = torch.arange(n - 1, dtype=self.dtype)
-        tmp = self.buf_decay.unsqueeze(0) ** powers.unsqueeze(1) * self.output_scale
-        return torch.cat([torch.ones(1, dtype=self.dtype), tmp.sum(dim=1)])
-
-    def materialize(self, n: int) -> torch.Tensor:
-        """Convert to dense n x n matrix."""
-        return toeplitz.materialize_lower_triangular(self.toeplitz_coefs(n))
-
-    def inverse(self, skip_checks: bool = False) -> BufferedToeplitz:
-        """Compute the BLT parameterization of C^{-1}.
-
-        Implements the inverse computation from Lemma 5.2 of
-        https://arxiv.org/abs/2404.16706.
-
-        Args:
-            skip_checks: Skip validation checks.
-
-        Returns:
-            A BufferedToeplitz representing C^{-1}.
-        """
-        if self._num_buffers == 0:
-            return BufferedToeplitz.build(buf_decay=[], output_scale=[])
-
-        blt = self
-        if not skip_checks and len(blt.buf_decay) > 1:
-            gap = min_buf_decay_gap(blt.buf_decay)
-            if gap < 1e-9:
-                raise ValueError(
-                    "Input BLT has buf_decay values too close: "
-                    f"gap={float(gap)}, buf_decay={blt.buf_decay}"
-                )
-
-        nbuf = len(blt.buf_decay)
-        Theta = torch.diag(blt.buf_decay)
-        omega = blt.output_scale
-        alpha = torch.ones(nbuf, dtype=blt.dtype)
-
-        Theta2 = Theta - torch.outer(omega, alpha)
-        omega2 = -omega
-
-        # Diagonalize Theta2
-        evals = torch.linalg.eigvals(Theta2).real
-
-        # Closed-form eigenvectors
-        evecs = omega.unsqueeze(1) / (evals.unsqueeze(0) - blt.buf_decay.unsqueeze(1))
-        einv = torch.linalg.inv(evecs)
-
-        if not skip_checks:
-            Theta2_diag = evecs @ torch.diag(evals) @ einv
-            if not torch.allclose(Theta2_diag, Theta2, atol=1e-7):
-                raise RuntimeError(
-                    f"Error computing inverse: Theta2 mismatch.\n"
-                    f"blt={blt}\nevecs={evecs}\nevals={evals}"
-                )
-
-        omega3 = (einv @ omega2) * (evecs.T @ alpha)
-        return BufferedToeplitz.build(
-            buf_decay=evals,
-            output_scale=omega3,
-            dtype=blt.dtype,
-        )
 
     def pillutla_score(self) -> float:
         """Returns the Pillutla Score of the BLT.
@@ -309,28 +242,156 @@ class BufferedToeplitz:
         """
         return float(torch.sum(self.output_scale / self.buf_decay))
 
-    def _streaming_matrix_builder(self) -> StreamingMatrixBuilder:
-        dtype = np.float64
-        return StreamingMatrixBuilder(
-            output_scale=self.output_scale.detach().numpy().astype(dtype),
-            buf_decay=self.buf_decay.detach().numpy().astype(dtype),
-        )
-
-    def as_streaming_matrix(self) -> streaming_matrix.StreamingMatrix:
-        """Returns a StreamingMatrix representing C."""
-        return self._streaming_matrix_builder().build()
-
-    def inverse_as_streaming_matrix(
-        self,
-    ) -> streaming_matrix.StreamingMatrix:
-        """Returns a StreamingMatrix representing C^{-1}."""
-        return self._streaming_matrix_builder().build_inverse()
-
     def __repr__(self) -> str:
         return (
             f"BufferedToeplitz(buf_decay={self.buf_decay.tolist()}, "
             f"output_scale={self.output_scale.tolist()})"
         )
+
+
+# ── Standalone functions (extracted from BufferedToeplitz methods) ───────
+
+
+def canonicalize(blt: BufferedToeplitz) -> BufferedToeplitz:
+    """Return a BLT with buf_decay in decreasing order.
+
+    Args:
+        blt: The BLT to canonicalize.
+
+    Returns:
+        A new BufferedToeplitz with sorted buf_decay.
+    """
+    blt.validate()
+    idx = torch.argsort(blt.buf_decay, descending=True)
+    return BufferedToeplitz(
+        buf_decay=blt.buf_decay[idx],
+        output_scale=blt.output_scale[idx],
+    )
+
+
+def toeplitz_coefs(blt: BufferedToeplitz, n: int) -> torch.Tensor:
+    """Returns the Toeplitz coefficients for C.
+
+    Args:
+        blt: The BLT.
+        n: Number of coefficients.
+
+    Returns:
+        Tensor of n Toeplitz coefficients.
+    """
+    if blt._num_buffers == 0:
+        result = torch.zeros(n, dtype=blt.dtype)
+        result[0] = 1.0
+        return result
+    powers = torch.arange(n - 1, dtype=blt.dtype)
+    tmp = blt.buf_decay.unsqueeze(0) ** powers.unsqueeze(1) * blt.output_scale
+    return torch.cat([torch.ones(1, dtype=blt.dtype), tmp.sum(dim=1)])
+
+
+def materialize(blt: BufferedToeplitz, n: int) -> torch.Tensor:
+    """Convert to dense n x n matrix.
+
+    Args:
+        blt: The BLT.
+        n: Matrix dimension.
+
+    Returns:
+        Dense lower-triangular Toeplitz matrix.
+    """
+    return toeplitz.materialize_lower_triangular(toeplitz_coefs(blt, n))
+
+
+def inverse(blt: BufferedToeplitz, skip_checks: bool = False) -> BufferedToeplitz:
+    """Compute the BLT parameterization of C^{-1}.
+
+    Implements the inverse computation from Lemma 5.2 of
+    https://arxiv.org/abs/2404.16706.
+
+    Args:
+        blt: The BLT to invert.
+        skip_checks: Skip validation checks.
+
+    Returns:
+        A BufferedToeplitz representing C^{-1}.
+    """
+    if blt._num_buffers == 0:
+        return BufferedToeplitz.build(buf_decay=[], output_scale=[])
+
+    if not skip_checks and len(blt.buf_decay) > 1:
+        gap = min_buf_decay_gap(blt.buf_decay)
+        if gap < 1e-9:
+            raise ValueError(
+                "Input BLT has buf_decay values too close: "
+                f"gap={float(gap)}, buf_decay={blt.buf_decay}"
+            )
+
+    nbuf = len(blt.buf_decay)
+    Theta = torch.diag(blt.buf_decay)
+    omega = blt.output_scale
+    alpha = torch.ones(nbuf, dtype=blt.dtype)
+
+    Theta2 = Theta - torch.outer(omega, alpha)
+    omega2 = -omega
+
+    # Diagonalize Theta2
+    evals = torch.linalg.eigvals(Theta2).real
+
+    # Closed-form eigenvectors
+    evecs = omega.unsqueeze(1) / (evals.unsqueeze(0) - blt.buf_decay.unsqueeze(1))
+    einv = torch.linalg.inv(evecs)
+
+    if not skip_checks:
+        Theta2_diag = evecs @ torch.diag(evals) @ einv
+        if not torch.allclose(Theta2_diag, Theta2, atol=1e-7):
+            raise RuntimeError(
+                f"Error computing inverse: Theta2 mismatch.\n"
+                f"blt={blt}\nevecs={evecs}\nevals={evals}"
+            )
+
+    omega3 = (einv @ omega2) * (evecs.T @ alpha)
+    return BufferedToeplitz.build(
+        buf_decay=evals,
+        output_scale=omega3,
+        dtype=blt.dtype,
+    )
+
+
+def _streaming_matrix_builder(blt: BufferedToeplitz) -> _StreamingMatrixBuilder:
+    """Create a _StreamingMatrixBuilder from a BLT."""
+    dtype = np.float64
+    return _StreamingMatrixBuilder(
+        output_scale=blt.output_scale.detach().numpy().astype(dtype),
+        buf_decay=blt.buf_decay.detach().numpy().astype(dtype),
+    )
+
+
+def as_streaming_matrix(blt: BufferedToeplitz) -> streaming_matrix.StreamingMatrix:
+    """Returns a StreamingMatrix representing C.
+
+    Args:
+        blt: The BLT.
+
+    Returns:
+        StreamingMatrix for C.
+    """
+    return _streaming_matrix_builder(blt).build()
+
+
+def inverse_as_streaming_matrix(
+    blt: BufferedToeplitz,
+) -> streaming_matrix.StreamingMatrix:
+    """Returns a StreamingMatrix representing C^{-1}.
+
+    Args:
+        blt: The BLT.
+
+    Returns:
+        StreamingMatrix for C^{-1}.
+    """
+    return _streaming_matrix_builder(blt).build_inverse()
+
+
+# ── Helper functions (unchanged) ────────────────────────────────────────
 
 
 def min_buf_decay_gap(buf_decay: torch.Tensor) -> torch.Tensor:
@@ -411,6 +472,9 @@ def geometric_sum(
     series = (1 / 6) * a * n * (x0 * x1**2 * (n - 2) + 3 * x0 * x1 + 6)
 
     return torch.where(use_direct, direct, series)
+
+
+# ── BLT error and sensitivity (already standalone) ──────────────────────
 
 
 def sensitivity_squared(blt: BufferedToeplitz, n: float) -> torch.Tensor:
@@ -612,13 +676,16 @@ def robust_max_error_Gamma_jk(omega1, theta1, omega2, theta2, n):
     )
 
 
+# ── Loss function and optimization ─────────────────────────────────────
+
+
 @dataclasses.dataclass(frozen=True)
 class LossFn:
     """Encapsulates the loss to be optimized for a BLT.
 
     Attributes:
         error_for_inv: Error function taking C^{-1} BLT.
-        sensitivity_squared: Sensitivity function taking C BLT.
+        sensitivity_squared_fn: Sensitivity function taking C BLT.
         n: Number of iterations.
         min_sep: Minimum separation of participations.
         max_participations: Maximum participations.
@@ -658,10 +725,10 @@ class LossFn:
         """Construct LossFn for min-sep participation."""
 
         def mean_error_fn(inv_blt):
-            return toeplitz.mean_error(noising_coef=inv_blt.toeplitz_coefs(n))
+            return toeplitz.mean_error(noising_coef=toeplitz_coefs(inv_blt, n))
 
         def max_error_fn(inv_blt):
-            return toeplitz.max_error(noising_coef=inv_blt.toeplitz_coefs(n))
+            return toeplitz.max_error(noising_coef=toeplitz_coefs(inv_blt, n))
 
         if error == "mean":
             error_fn = mean_error_fn
@@ -672,7 +739,7 @@ class LossFn:
 
         def minsep_sens_sq(blt):
             return toeplitz.minsep_sensitivity_squared(
-                strategy_coef=blt.toeplitz_coefs(n),
+                strategy_coef=toeplitz_coefs(blt, n),
                 min_sep=min_sep,
                 max_participations=max_participations,
                 skip_checks=True,
@@ -690,24 +757,6 @@ class LossFn:
             ),
             **kwargs,
         )
-
-    def loss(self, blt: BufferedToeplitz, skip_checks: bool = False) -> torch.Tensor:
-        """Returns the loss (not including penalties).
-
-        Args:
-            blt: The BLT to evaluate.
-            skip_checks: Skip validation.
-
-        Returns:
-            error * sensitivity_squared.
-        """
-        try:
-            inv_blt = blt.inverse(skip_checks=skip_checks)
-        except (RuntimeError, ValueError):
-            return torch.tensor(float("inf"), dtype=torch.float64)
-        error = self.error_for_inv(inv_blt)
-        sens_sq = self.sensitivity_squared_fn(blt)
-        return error * sens_sq
 
     def compute_penalties(
         self, blt: BufferedToeplitz, inv_blt: BufferedToeplitz
@@ -764,25 +813,47 @@ class LossFn:
 
         return penalty
 
-    def penalized_loss(
-        self, blt: BufferedToeplitz, inv_blt: BufferedToeplitz
-    ) -> torch.Tensor:
-        """Returns loss + penalty_strength * penalties.
 
-        This is the objective function used during L-BFGS optimization.
+def loss(loss_fn: LossFn, blt: BufferedToeplitz, skip_checks: bool = False) -> torch.Tensor:
+    """Returns the loss (not including penalties).
 
-        Args:
-            blt: The strategy BLT (C).
-            inv_blt: The inverse BLT (C^{-1}).
+    Args:
+        loss_fn: The loss function configuration.
+        blt: The BLT to evaluate.
+        skip_checks: Skip validation.
 
-        Returns:
-            loss + penalties.
-        """
-        error = self.error_for_inv(inv_blt)
-        sens_sq = self.sensitivity_squared_fn(blt)
-        loss = error * sens_sq
-        penalties = self.compute_penalties(blt, inv_blt)
-        return loss + self.penalty_strength * penalties
+    Returns:
+        error * sensitivity_squared.
+    """
+    try:
+        inv_blt = inverse(blt, skip_checks=skip_checks)
+    except (RuntimeError, ValueError):
+        return torch.tensor(float("inf"), dtype=torch.float64)
+    error = loss_fn.error_for_inv(inv_blt)
+    sens_sq = loss_fn.sensitivity_squared_fn(blt)
+    return error * sens_sq
+
+
+def penalized_loss(
+    loss_fn: LossFn, blt: BufferedToeplitz, inv_blt: BufferedToeplitz
+) -> torch.Tensor:
+    """Returns loss + penalty_strength * penalties.
+
+    This is the objective function used during L-BFGS optimization.
+
+    Args:
+        loss_fn: The loss function configuration.
+        blt: The strategy BLT (C).
+        inv_blt: The inverse BLT (C^{-1}).
+
+    Returns:
+        loss + penalties.
+    """
+    error = loss_fn.error_for_inv(inv_blt)
+    sens_sq = loss_fn.sensitivity_squared_fn(blt)
+    loss_val = error * sens_sq
+    penalties = loss_fn.compute_penalties(blt, inv_blt)
+    return loss_val + loss_fn.penalty_strength * penalties
 
 
 def blt_pair_from_theta_pair(
@@ -875,14 +946,14 @@ class Parameterization:
 
         Optimises the buf_decay arrays of C and C^{-1} jointly, which is
         more numerically stable than optimising the full BLT and avoids
-        the SVD inside ``blt.inverse()``.
+        the SVD inside ``inverse()``.
 
         Returns:
             A Parameterization.
         """
 
         def params_from_blt(blt: BufferedToeplitz) -> torch.Tensor:
-            inv_blt = blt.inverse()
+            inv_blt = inverse(blt)
             return torch.cat([blt.buf_decay, inv_blt.buf_decay])
 
         def blt_and_inverse_from_params(
@@ -898,11 +969,22 @@ class Parameterization:
             blt_and_inverse_from_params=blt_and_inverse_from_params,
         )
 
-    def get_loss_fn(self, loss_fn: LossFn) -> Callable[[torch.Tensor], torch.Tensor]:
-        """Returns a scalar loss function over the flat parameter vector."""
-        return lambda params: loss_fn.penalized_loss(
-            *self.blt_and_inverse_from_params(params)
-        )
+
+def get_parameterized_loss(
+    param: Parameterization, loss_fn: LossFn
+) -> Callable[[torch.Tensor], torch.Tensor]:
+    """Returns a scalar loss function over the flat parameter vector.
+
+    Args:
+        param: The parameterization.
+        loss_fn: The loss function.
+
+    Returns:
+        A callable mapping flat parameters to scalar loss.
+    """
+    return lambda params: penalized_loss(
+        loss_fn, *param.blt_and_inverse_from_params(params)
+    )
 
 
 def optimize_loss(
@@ -930,8 +1012,8 @@ def optimize_loss(
             ``optimization.optimize``.
 
     Returns:
-        Tuple ``(blt, loss)`` where *blt* is the optimised BLT and *loss*
-        is the unpenalised loss value.
+        Tuple ``(blt, loss_val)`` where *blt* is the optimised BLT and
+        *loss_val* is the unpenalised loss value.
 
     Raises:
         RuntimeError: If the optimiser produces a BLT with non-finite loss.
@@ -940,7 +1022,7 @@ def optimize_loss(
 
     if num_buffers == 0:
         blt = BufferedToeplitz.build(buf_decay=[], output_scale=[])
-        return blt, loss_fn.loss(blt)
+        return blt, loss(loss_fn, blt)
 
     if parameterization is None:
         parameterization = Parameterization.buf_decay_pair()
@@ -948,7 +1030,7 @@ def optimize_loss(
     blt = get_init_blt(num_buffers=num_buffers, init_blt=init_blt)
     params = parameterization.params_from_blt(blt)
 
-    loss_fn_to_optimize = parameterization.get_loss_fn(loss_fn)
+    loss_fn_to_optimize = get_parameterized_loss(parameterization, loss_fn)
     params = optim_mod.optimize(
         loss_fn_to_optimize,
         params,
@@ -957,12 +1039,12 @@ def optimize_loss(
     )
 
     blt, _ = parameterization.blt_and_inverse_from_params(params)
-    blt = blt.canonicalize()
+    blt = canonicalize(blt)
 
-    loss = loss_fn.loss(blt)
-    if not torch.isfinite(loss):
+    loss_val = loss(loss_fn, blt)
+    if not torch.isfinite(loss_val):
         raise RuntimeError(
-            f"Optimization produced BLT with non-finite loss {loss}:\n{blt}"
+            f"Optimization produced BLT with non-finite loss {loss_val}:\n{blt}"
         )
 
     if torch.any(torch.abs(blt.output_scale) < 1e-8):
@@ -972,7 +1054,7 @@ def optimize_loss(
             "with a smaller number of buffers.\n%s",
             blt,
         )
-    return blt, loss
+    return blt, loss_val
 
 
 def _optimize_increasing_nbuf(
@@ -985,13 +1067,13 @@ def _optimize_increasing_nbuf(
     prev_blt, prev_loss = opt_blt_and_loss_fn(min_buffers)
     for nbuf in range(min_buffers + 1, max_buffers + 1):
         try:
-            blt, loss = opt_blt_and_loss_fn(nbuf)
+            blt, loss_val = opt_blt_and_loss_fn(nbuf)
         except RuntimeError as err:
             logger.warning("Optimization failed for %d buffers: %s", nbuf, err)
-            blt, loss = None, float("inf")
+            blt, loss_val = None, float("inf")
 
-        if rtol * loss < prev_loss:
-            prev_blt, prev_loss = blt, loss
+        if rtol * loss_val < prev_loss:
+            prev_blt, prev_loss = blt, loss_val
         else:
             return prev_blt
     return prev_blt

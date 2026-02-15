@@ -18,6 +18,16 @@ import torch
 from . import checks
 
 
+__all__ = [
+    "single_participation_sensitivity",
+    "max_participation_for_linear_fn",
+    "minsep_true_max_participations",
+    "get_min_sep_sensitivity_upper_bound",
+    "get_sensitivity_banded",
+    "fixed_epoch_sensitivity",
+]
+
+
 def single_participation_sensitivity(C: torch.Tensor) -> float:
     """Returns the L2 sensitivity of a matrix with single participation.
 

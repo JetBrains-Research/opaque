@@ -21,6 +21,19 @@ from scipy.linalg import toeplitz as scipy_toeplitz
 from . import checks, optimization, sensitivity, streaming_matrix
 
 
+__all__ = [
+    "optimize",
+    "inverse_as_streaming_matrix",
+    "materialize_lower_triangular",
+    "sensitivity_squared",
+    "minsep_sensitivity_squared",
+    "per_query_error",
+    "max_error",
+    "mean_error",
+    "optimal_max_error_strategy_coefs",
+]
+
+
 def _l2_norm_squared(x: torch.Tensor) -> torch.Tensor:
     return torch.dot(x, x)
 
@@ -395,7 +408,7 @@ mean_loss = functools.partial(loss, error_fn=mean_error)
 max_loss = functools.partial(loss, error_fn=max_error)
 
 
-def optimize_banded_toeplitz(
+def optimize(
     n: int,
     bands: int,
     strategy_coef: torch.Tensor | None = None,

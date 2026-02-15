@@ -16,6 +16,16 @@ import torch
 
 from . import sensitivity, streaming_matrix
 
+__all__ = [
+    "ColumnNormalizedBanded",
+    "materialize",
+    "inverse_as_streaming_matrix",
+    "minsep_sensitivity_squared",
+    "per_query_error",
+    "max_error",
+    "mean_error",
+]
+
 
 @dataclasses.dataclass
 class ColumnNormalizedBanded:
@@ -89,80 +99,88 @@ class ColumnNormalizedBanded:
         coefs[0] = 1.0
         return cls.from_banded_toeplitz(n, coefs)
 
-    def materialize(self) -> torch.Tensor:
-        """Convert to a dense n x n matrix.
 
-        Returns:
-            Dense lower-triangular column-normalized matrix.
-        """
-        row_idx = torch.arange(self.n, dtype=torch.long).unsqueeze(1)
-        col_idx = torch.arange(self.n, dtype=torch.long).unsqueeze(0)
-        D = row_idx - col_idx
-        # Index into flattened params
-        indexer = (D + self.bands * col_idx + 1) * (D >= 0) * (D < self.bands)
-        flat_params = torch.cat(
-            [torch.zeros(1, dtype=self.params.dtype), self.params.flatten()]
-        )
-        C = flat_params[indexer.long()]
-        # Column normalize
-        col_norms = torch.linalg.norm(C, dim=0)
-        col_norms = col_norms.clamp(min=1e-12)  # Avoid division by zero
-        return C / col_norms
+def materialize(cnb: ColumnNormalizedBanded) -> torch.Tensor:
+    """Convert to a dense n x n matrix.
 
-    def inverse_as_streaming_matrix(
-        self,
-    ) -> streaming_matrix.StreamingMatrix:
-        """Create C^{-1} as a StreamingMatrix.
+    Args:
+        cnb: The ColumnNormalizedBanded to materialize.
 
-        Implements Algorithm 9 from https://arxiv.org/abs/2306.08153.
+    Returns:
+        Dense lower-triangular column-normalized matrix.
+    """
+    row_idx = torch.arange(cnb.n, dtype=torch.long).unsqueeze(1)
+    col_idx = torch.arange(cnb.n, dtype=torch.long).unsqueeze(0)
+    D = row_idx - col_idx
+    # Index into flattened params
+    indexer = (D + cnb.bands * col_idx + 1) * (D >= 0) * (D < cnb.bands)
+    flat_params = torch.cat(
+        [torch.zeros(1, dtype=cnb.params.dtype), cnb.params.flatten()]
+    )
+    C = flat_params[indexer.long()]
+    # Column normalize
+    col_norms = torch.linalg.norm(C, dim=0)
+    col_norms = col_norms.clamp(min=1e-12)  # Avoid division by zero
+    return C / col_norms
 
-        Returns:
-            StreamingMatrix representing C^{-1}.
-        """
-        params = self.params
-        n = self.n
-        b = self.bands
 
-        def init_fn(abstract_value):
-            dtype = torch.promote_types(abstract_value.dtype, params.dtype)
-            zero = torch.zeros_like(abstract_value, dtype=dtype)
-            buffers = zero.unsqueeze(0).expand(b, *zero.shape).clone()
-            return (torch.tensor(0, dtype=torch.long), buffers)
+def inverse_as_streaming_matrix(
+    cnb: ColumnNormalizedBanded,
+) -> streaming_matrix.StreamingMatrix:
+    """Create C^{-1} as a StreamingMatrix.
 
-        def next_fn(value, state):
-            index, bufs = state
-            if b == 1:
-                return value, (index + 1, bufs)
+    Implements Algorithm 9 from https://arxiv.org/abs/2306.08153.
 
-            k = int(index.item()) % b
-            r = torch.arange(b, dtype=torch.long)
+    Args:
+        cnb: The ColumnNormalizedBanded strategy.
 
-            # Get the row of params for this index
-            idx = index.item()
-            if idx >= n:
-                # Beyond the matrix, identity behavior
-                return value, (index + 1, bufs)
+    Returns:
+        StreamingMatrix representing C^{-1}.
+    """
+    params = cnb.params
+    n = cnb.n
+    b = cnb.bands
 
-            row = torch.zeros(b, dtype=params.dtype)
-            for j in range(b):
-                src_idx = idx - int(r[j].item())
-                if 0 <= src_idx < n:
-                    row[j] = params[src_idx, int(r[j].item())]
+    def init_fn(abstract_value):
+        dtype = torch.promote_types(abstract_value.dtype, params.dtype)
+        zero = torch.zeros_like(abstract_value, dtype=dtype)
+        buffers = zero.unsqueeze(0).expand(b, *zero.shape).clone()
+        return (torch.tensor(0, dtype=torch.long), buffers)
 
-            # Algorithm 9: xi = (value - row[1:] @ bufs[k-r][1:]) / row[0]
-            buf_indices = [(k - int(r[j].item())) % b for j in range(1, b)]
-            selected_bufs = torch.stack([bufs[bi] for bi in buf_indices])
-            inner = torch.tensordot(row[1:], selected_bufs, dims=1)
-            xi = (value - inner) / row[0].clamp(min=1e-15)
+    def next_fn(value, state):
+        index, bufs = state
+        if b == 1:
+            return value, (index + 1, bufs)
 
-            col_norm = torch.linalg.norm(params[idx])
-            new_bufs = bufs.clone()
-            new_bufs[k] = xi
-            return xi * col_norm, (index + 1, new_bufs)
+        k = int(index.item()) % b
+        r = torch.arange(b, dtype=torch.long)
 
-        return streaming_matrix.StreamingMatrix.from_array_implementation(
-            init_fn, next_fn
-        )
+        # Get the row of params for this index
+        idx = index.item()
+        if idx >= n:
+            # Beyond the matrix, identity behavior
+            return value, (index + 1, bufs)
+
+        row = torch.zeros(b, dtype=params.dtype)
+        for j in range(b):
+            src_idx = idx - int(r[j].item())
+            if 0 <= src_idx < n:
+                row[j] = params[src_idx, int(r[j].item())]
+
+        # Algorithm 9: xi = (value - row[1:] @ bufs[k-r][1:]) / row[0]
+        buf_indices = [(k - int(r[j].item())) % b for j in range(1, b)]
+        selected_bufs = torch.stack([bufs[bi] for bi in buf_indices])
+        inner = torch.tensordot(row[1:], selected_bufs, dims=1)
+        xi = (value - inner) / row[0].clamp(min=1e-15)
+
+        col_norm = torch.linalg.norm(params[idx])
+        new_bufs = bufs.clone()
+        new_bufs[k] = xi
+        return xi * col_norm, (index + 1, new_bufs)
+
+    return streaming_matrix.StreamingMatrix.from_array_implementation(
+        init_fn, next_fn
+    )
 
 
 def minsep_sensitivity_squared(
@@ -218,7 +236,7 @@ def per_query_error(
     """
     if workload is None:
         workload = streaming_matrix.prefix_sum()
-    B = workload @ strategy.inverse_as_streaming_matrix()
+    B = workload @ inverse_as_streaming_matrix(strategy)
     return B.row_norms_squared(strategy.n)
 
 

@@ -351,8 +351,8 @@ class TestAdaptiveClippedGrad:
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Add noise scaled to current clip norm
-        noise_fn = gaussian_noise(stddev=1.1 * clip_state.clip_norm)
-        noisy_grads = noise_fn(grads)
+        noise_fn, noise_state = gaussian_noise(stddev=1.1 * clip_state.clip_norm)
+        noisy_grads, noise_state = noise_fn(grads, noise_state)
 
         assert noisy_grads.shape == grads.shape
         assert not torch.allclose(noisy_grads, grads)  # Noise added

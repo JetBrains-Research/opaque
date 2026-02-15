@@ -23,8 +23,10 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `clip_pytree()` - Low-level PyTree clipping
 
 - **[Noise](noise.md)**: Noise injection for DP
-  - `gaussian_noise()` / `gaussian_noise_stateful()` - Standard Gaussian noise
-  - `bounded_gaussian_noise()` / `bounded_gaussian_noise_stateful()` - Bounded Gaussian noise (truncated normal)
+  - `gaussian_noise()` - Standard Gaussian noise
+  - `bounded_gaussian_noise()` - Bounded Gaussian noise (truncated normal)
+  - `band_mf_noise()`, `blt_mf_noise()`, `dense_mf_noise()` - Correlated noise (DP-FTRL)
+  - `identity_mf_noise()`, `custom_mf_noise()` - MF API utilities
 
 - **[Accounting](accounting.md)**: Privacy budget tracking
   - `create()` - Initialize privacy state
@@ -61,9 +63,11 @@ dp_grad_fn = clipped_grad(
 # 3. Training loop
 privacy_state = acc.create()
 
+noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier)
+
 for step in range(1000):
     grads = dp_grad_fn(params, batch)
-    noisy_grads = gaussian_noise(grads, stddev=noise_multiplier)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = update(params, noisy_grads)
     privacy_state = acc.compose_poisson_gaussian(
         privacy_state, noise_multiplier, sample_rate=0.01, count=1
@@ -88,9 +92,12 @@ epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
 | Function                       | Purpose                                      | User Guide                      |
 |--------------------------------|----------------------------------------------|---------------------------------|
 | `gaussian_noise()`                   | Standard Gaussian noise (unbounded)          | [Guide](../user-guide/noise.md) |
-| `gaussian_noise_stateful()`          | Standard Gaussian with reproducible state    | [Guide](../user-guide/noise.md) |
 | `bounded_gaussian_noise()`           | Bounded Gaussian noise (truncated normal)    | [Guide](../user-guide/noise.md#bounded-gaussian-noise) |
-| `bounded_gaussian_noise_stateful()`  | Bounded Gaussian with reproducible state     | [Guide](../user-guide/noise.md#bounded-gaussian-noise) |
+| `band_mf_noise()`                   | BandMF correlated noise (DP-FTRL)           | [Guide](../user-guide/noise.md) |
+| `blt_mf_noise()`                    | BLT correlated noise (DP-FTRL)              | [Guide](../user-guide/noise.md) |
+| `dense_mf_noise()`                  | Dense optimal correlated noise               | [Guide](../user-guide/noise.md) |
+| `identity_mf_noise()`               | Identity noise via MF API                    | [Guide](../user-guide/noise.md) |
+| `custom_mf_noise()`                 | Bring-your-own noising matrix                | [Guide](../user-guide/noise.md) |
 
 ### Accounting (Composition)
 

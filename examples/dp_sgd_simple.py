@@ -67,7 +67,7 @@ def main():
     print(f"   - Clip norm from grad_fn: {grad_fn.clip_norm}")
 
     # Step 2: Configure noise based on clip_norm
-    noise_fn = gaussian_noise(stddev=noise_multiplier * grad_fn.clip_norm)
+    noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * grad_fn.clip_norm)
     print(f"   - Noise stddev: {noise_multiplier * grad_fn.clip_norm:.3f}")
 
     # Training loop
@@ -81,7 +81,7 @@ def main():
             grads = grad_fn(params, batch_x, batch_y)
 
             # Add noise (natural composition!)
-            noisy_grads = noise_fn(grads)
+            noisy_grads, noise_state = noise_fn(grads, noise_state)
 
             # Update parameters (simple SGD)
             params = params - lr * noisy_grads
@@ -126,14 +126,14 @@ def demo_research_flexibility():
     # Example 1: Standard DP-SGD
     print("\n1. Standard DP-SGD:")
     grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0)
-    noise_fn = gaussian_noise(stddev=1.1 * grad_fn.clip_norm)
+    noise_fn, noise_state = gaussian_noise(stddev=1.1 * grad_fn.clip_norm)
     print(f"   ✓ Clip norm: {grad_fn.clip_norm}")
     print(f"   ✓ Noise: Gaussian(stddev={1.1 * grad_fn.clip_norm})")
 
     # Example 2: Different clip norm
     print("\n2. Higher clip norm:")
     grad_fn_2 = clipped_grad(loss_fn, l2_clip_norm=2.0)
-    noise_fn_2 = gaussian_noise(stddev=1.1 * grad_fn_2.clip_norm)
+    noise_fn_2, noise_state_2 = gaussian_noise(stddev=1.1 * grad_fn_2.clip_norm)
     print(f"   ✓ Clip norm: {grad_fn_2.clip_norm}")
     print(f"   ✓ Noise: Gaussian(stddev={1.1 * grad_fn_2.clip_norm})")
 
@@ -142,13 +142,13 @@ def demo_research_flexibility():
     grad_fn_3 = clipped_grad(
         loss_fn, l2_clip_norm=5.0, rescale_to_unit_norm=True
     )
-    noise_fn_3 = gaussian_noise(stddev=1.1 * grad_fn_3.clip_norm)
+    noise_fn_3, noise_state_3 = gaussian_noise(stddev=1.1 * grad_fn_3.clip_norm)
     print(f"   ✓ Clip norm: {grad_fn_3.clip_norm}")  # Should be 1.0
     print(f"   ✓ Noise: Gaussian(stddev={1.1 * grad_fn_3.clip_norm})")
 
     # Example 4: Bounded Gaussian noise (truncated normal)
     print("\n4. Bounded Gaussian (Chen & Hale, 2024):")
-    noise_fn_bounded = bounded_gaussian_noise(
+    noise_fn_bounded, noise_state_bounded = bounded_gaussian_noise(
         stddev=1.1 * grad_fn.clip_norm, bounds=(-3.0, 3.0)
     )
     print(f"   ✓ Noise: BoundedGaussian(stddev={1.1 * grad_fn.clip_norm}, bounds=(-3, 3))")

@@ -3,22 +3,21 @@
 import torch
 import torch.nn as nn
 
-from opaque.noise.matrix_factorization import identity, matrix_factorization_noise
+from opaque.noise import custom_mf_noise
+from opaque.noise.matrix_factorization import identity
 from opaque.noise.matrix_factorization.toeplitz import (
     inverse_as_streaming_matrix,
     optimal_max_error_strategy_coefs,
 )
 
 
-def _train_loop(model, optimizer, init_fn, noise_fn, x_data, y_data, steps):
+def _train_loop(model, optimizer, noise_fn, state, x_data, y_data, steps):
     """Run a DP-FTRL training loop and return losses.
 
-    Uses the (init_fn, noise_fn) API to add correlated noise to gradients
+    Uses the (noise_fn, state) API to add correlated noise to gradients
     before each optimizer step.
     """
     params = list(model.parameters())
-    template = {i: torch.zeros_like(p) for i, p in enumerate(params)}
-    state = init_fn(template)
 
     losses = []
     for _ in range(steps):
@@ -39,20 +38,25 @@ def _train_loop(model, optimizer, init_fn, noise_fn, x_data, y_data, steps):
 
 
 class TestDPFTRLTrainingLoop:
-    """Tests for using matrix_factorization_noise in a training loop."""
+    """Tests for using custom_mf_noise in a training loop."""
+
+    def _make_template(self, model):
+        return {i: torch.zeros_like(p) for i, p in enumerate(model.parameters())}
 
     def test_identity_noise_trains(self):
         """Identity noise (DP-SGD equivalent) trains a simple model."""
         torch.manual_seed(0)
         model = nn.Linear(5, 1, bias=False)
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
-        init_fn, noise_fn = matrix_factorization_noise(identity(), stddev=0.1, seed=42)
+        noise_fn, state = custom_mf_noise(
+            self._make_template(model), identity(), stddev=0.1, generator=42,
+        )
 
         x = torch.randn(50, 5)
         true_w = torch.randn(5, 1)
         y = x @ true_w
 
-        losses = _train_loop(model, optimizer, init_fn, noise_fn, x, y, steps=50)
+        losses = _train_loop(model, optimizer, noise_fn, state, x, y, steps=50)
         assert losses[-1] < losses[0]
 
     def test_toeplitz_noise_trains(self):
@@ -63,13 +67,15 @@ class TestDPFTRLTrainingLoop:
         steps = 50
         coefs = optimal_max_error_strategy_coefs(steps)
         noising = inverse_as_streaming_matrix(coefs)
-        init_fn, noise_fn = matrix_factorization_noise(noising, stddev=0.1, seed=42)
+        noise_fn, state = custom_mf_noise(
+            self._make_template(model), noising, stddev=0.1, generator=42,
+        )
 
         x = torch.randn(50, 5)
         true_w = torch.randn(5, 1)
         y = x @ true_w
 
-        losses = _train_loop(model, optimizer, init_fn, noise_fn, x, y, steps=steps)
+        losses = _train_loop(model, optimizer, noise_fn, state, x, y, steps=steps)
         assert losses[-1] < losses[0]
 
     def test_dense_matrix_noise_trains(self):
@@ -79,13 +85,15 @@ class TestDPFTRLTrainingLoop:
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
         steps = 5
         noising = torch.eye(steps, dtype=torch.float64)
-        init_fn, noise_fn = matrix_factorization_noise(noising, stddev=0.1, seed=42)
+        noise_fn, state = custom_mf_noise(
+            self._make_template(model), noising, stddev=0.1, generator=42,
+        )
 
         x = torch.randn(50, 5)
         true_w = torch.randn(5, 1)
         y = x @ true_w
 
-        losses = _train_loop(model, optimizer, init_fn, noise_fn, x, y, steps=steps)
+        losses = _train_loop(model, optimizer, noise_fn, state, x, y, steps=steps)
         assert losses[-1] < losses[0]
 
     def test_with_adam_optimizer(self):
@@ -93,13 +101,15 @@ class TestDPFTRLTrainingLoop:
         torch.manual_seed(0)
         model = nn.Linear(5, 1, bias=False)
         optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-        init_fn, noise_fn = matrix_factorization_noise(identity(), stddev=0.1, seed=42)
+        noise_fn, state = custom_mf_noise(
+            self._make_template(model), identity(), stddev=0.1, generator=42,
+        )
 
         x = torch.randn(50, 5)
         true_w = torch.randn(5, 1)
         y = x @ true_w
 
-        losses = _train_loop(model, optimizer, init_fn, noise_fn, x, y, steps=30)
+        losses = _train_loop(model, optimizer, noise_fn, state, x, y, steps=30)
         assert losses[-1] < losses[0]
 
     def test_multi_param_model(self):
@@ -111,13 +121,15 @@ class TestDPFTRLTrainingLoop:
             nn.Linear(5, 1),
         )
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
-        init_fn, noise_fn = matrix_factorization_noise(identity(), stddev=0.1, seed=42)
+        noise_fn, state = custom_mf_noise(
+            self._make_template(model), identity(), stddev=0.1, generator=42,
+        )
 
         x = torch.randn(50, 10)
         true_w = torch.randn(10, 1)
         y = x @ true_w
 
-        losses = _train_loop(model, optimizer, init_fn, noise_fn, x, y, steps=30)
+        losses = _train_loop(model, optimizer, noise_fn, state, x, y, steps=30)
         assert losses[-1] < losses[0]
 
     def test_deterministic_with_seed(self):
@@ -127,15 +139,15 @@ class TestDPFTRLTrainingLoop:
             torch.manual_seed(0)
             model = nn.Linear(5, 1, bias=False)
             optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
-            init_fn, noise_fn = matrix_factorization_noise(
-                identity(), stddev=1.0, seed=42
+            noise_fn, state = custom_mf_noise(
+                self._make_template(model), identity(), stddev=1.0, generator=42,
             )
 
             x = torch.randn(4, 5)
             true_w = torch.randn(5, 1)
             y = x @ true_w
 
-            _train_loop(model, optimizer, init_fn, noise_fn, x, y, steps=3)
+            _train_loop(model, optimizer, noise_fn, state, x, y, steps=3)
             results.append(model.weight.data.clone())
 
         torch.testing.assert_close(results[0], results[1])
@@ -145,6 +157,9 @@ class TestBandMFvsDPSGD:
     """End-to-end comparison: BandMF (correlated noise) should achieve
     better or comparable utility to independent noise (DP-SGD)
     on a simple regression problem."""
+
+    def _make_template(self, model):
+        return {i: torch.zeros_like(p) for i, p in enumerate(model.parameters())}
 
     def test_bandmf_trains_simple_regression(self):
         """BandMF DP-FTRL can train a simple model (loss decreases)."""
@@ -158,9 +173,11 @@ class TestBandMFvsDPSGD:
         steps = 50
         coefs = optimal_max_error_strategy_coefs(steps)
         noising = inverse_as_streaming_matrix(coefs)
-        init_fn, noise_fn = matrix_factorization_noise(noising, stddev=0.1, seed=42)
+        noise_fn, state = custom_mf_noise(
+            self._make_template(model), noising, stddev=0.1, generator=42,
+        )
 
-        losses = _train_loop(model, optimizer, init_fn, noise_fn, x, y, steps)
+        losses = _train_loop(model, optimizer, noise_fn, state, x, y, steps)
         assert losses[-1] < losses[0]
 
     def test_bandmf_vs_dpsgd_utility(self):
@@ -181,10 +198,10 @@ class TestBandMFvsDPSGD:
         torch.manual_seed(0)
         model_sgd = nn.Linear(5, 1, bias=False)
         opt_sgd = torch.optim.SGD(model_sgd.parameters(), lr=0.01)
-        init_sgd, noise_sgd = matrix_factorization_noise(
-            identity(), stddev=stddev, seed=42
+        noise_sgd, state_sgd = custom_mf_noise(
+            self._make_template(model_sgd), identity(), stddev=stddev, generator=42,
         )
-        losses_sgd = _train_loop(model_sgd, opt_sgd, init_sgd, noise_sgd, x, y, steps)
+        losses_sgd = _train_loop(model_sgd, opt_sgd, noise_sgd, state_sgd, x, y, steps)
 
         # BandMF (correlated noise)
         torch.manual_seed(0)
@@ -192,8 +209,10 @@ class TestBandMFvsDPSGD:
         opt_mf = torch.optim.SGD(model_mf.parameters(), lr=0.01)
         coefs = optimal_max_error_strategy_coefs(steps)
         noising = inverse_as_streaming_matrix(coefs)
-        init_mf, noise_mf = matrix_factorization_noise(noising, stddev=stddev, seed=43)
-        losses_mf = _train_loop(model_mf, opt_mf, init_mf, noise_mf, x, y, steps)
+        noise_mf, state_mf = custom_mf_noise(
+            self._make_template(model_mf), noising, stddev=stddev, generator=43,
+        )
+        losses_mf = _train_loop(model_mf, opt_mf, noise_mf, state_mf, x, y, steps)
 
         # Both should train (loss decreases)
         assert losses_sgd[-1] < losses_sgd[0]
