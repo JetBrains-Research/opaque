@@ -7,7 +7,6 @@ from opaque.noise.matrix_factorization.checks import (
     check,
     check_exactly_one,
     check_finite,
-    check_is_matrix,
     check_lower_triangular,
     check_square,
     check_symmetric,

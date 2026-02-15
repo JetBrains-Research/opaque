@@ -32,38 +32,27 @@ The **sensitivity** of C determines how much noise is needed, while the **error*
 
 ## Quick Start
 
-The API follows the same `(fn, state)` pattern as `gaussian_stateful`:
+All MF constructors follow the same `(noise_fn, state)` pattern as `gaussian_noise`:
 
 ```python
 import torch
-from opaque.noise.matrix_factorization import matrix_factorization_noise
-from opaque.noise.matrix_factorization.toeplitz import (
-    inverse_as_streaming_matrix,
-    optimal_max_error_strategy_coefs,
-)
+from opaque.noise import band_mf_noise
 
-# 1. Create the BandMF noising matrix
-n_steps = 1000
-coefs = optimal_max_error_strategy_coefs(n_steps)
-noising = inverse_as_streaming_matrix(coefs)
-
-# 2. Create init and noise functions
-init_fn, noise_fn = matrix_factorization_noise(
-    noising,
-    stddev=noise_multiplier * clip_norm * sensitivity,
-    seed=42,
-)
-
-# 3. Initialize state from a gradient template
+# A gradient template (zeros with the right shapes)
 grad_template = {name: torch.zeros_like(p) for name, p in model.named_parameters()}
-noise_state = init_fn(grad_template)
 
-# 4. Training loop — compose with any optimizer
-optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+# Create noise function — grad_template is always the first argument
+noise_fn, noise_state = band_mf_noise(
+    grad_template,
+    n=1000,
+    bands=4,
+    stddev=noise_multiplier * clip_norm,
+    generator=42,
+)
 
+# Training loop
 for batch in dataloader:
-    optimizer.zero_grad()
-    clipped_grad = compute_clipped_grad(model, batch)  # Per-example clipping
+    clipped_grad = compute_clipped_grad(model, batch)
 
     # Add correlated noise
     noisy_grad, noise_state = noise_fn(clipped_grad, noise_state)
@@ -79,14 +68,14 @@ for batch in dataloader:
 BandMF uses banded lower-triangular Toeplitz matrices. The `bands` parameter controls the trade-off between memory and utility:
 
 ```python
-from opaque.noise.matrix_factorization.toeplitz import (
-    inverse_as_streaming_matrix,
-    optimize_banded_toeplitz,
-)
+from opaque.noise import band_mf_noise
 
-# Optimize a banded Toeplitz strategy
-coefs = optimize_banded_toeplitz(n=1000, bands=4, max_optimizer_steps=500)
-noising = inverse_as_streaming_matrix(coefs)
+noise_fn, state = band_mf_noise(
+    grad_template,
+    n=1000,
+    bands=4,
+    stddev=noise_multiplier * clip_norm,
+)
 ```
 
 - `bands=1`: Equivalent to DP-SGD (no correlation)
@@ -98,30 +87,64 @@ noising = inverse_as_streaming_matrix(coefs)
 BLT matrices provide state-of-the-art utility with O(num_buffers) memory:
 
 ```python
-from opaque.noise.matrix_factorization.buffered_toeplitz import (
-    optimize,
-    optimize_loss,
-    LossFn,
+from opaque.noise import blt_mf_noise
+
+noise_fn, state = blt_mf_noise(
+    grad_template,
+    n=10000,
+    stddev=noise_multiplier * clip_norm,
+    min_buffers=1,
+    max_buffers=5,
 )
-
-# Automatic optimization (recommended)
-blt = optimize(n=10000, min_buffers=1, max_buffers=5)
-
-# Use as streaming matrix
-noising = blt.inverse_as_streaming_matrix()
-init_fn, noise_fn = matrix_factorization_noise(noising, stddev=sigma, seed=42)
 ```
 
-### BLT Optimization
+## Dense Factorization
 
-BLT uses L-BFGS to find optimal parameters:
+For small n, you can use a dense (optimal) factorization:
 
 ```python
-# Fine-grained control
-loss_fn = LossFn.build_closed_form_single_participation(n=10000)
-blt, loss = optimize_loss(loss_fn, num_buffers=3, max_optimizer_steps=600)
-print(f"Optimized loss: {loss:.4f}")
-print(f"BLT parameters: {blt}")
+from opaque.noise import dense_mf_noise
+
+noise_fn, state = dense_mf_noise(
+    grad_template,
+    n=100,
+    stddev=noise_multiplier * clip_norm,
+)
+```
+
+## Identity (DP-SGD Equivalent)
+
+For comparison, `identity_mf_noise` uses the identity matrix (equivalent to standard DP-SGD):
+
+```python
+from opaque.noise import identity_mf_noise
+
+noise_fn, state = identity_mf_noise(
+    grad_template,
+    stddev=noise_multiplier * clip_norm,
+)
+```
+
+## Custom Matrix
+
+Bring your own noising matrix with `custom_mf_noise`:
+
+```python
+from opaque.noise import custom_mf_noise
+from opaque.noise.matrix_factorization.toeplitz import (
+    inverse_as_streaming_matrix,
+    optimal_max_error_strategy_coefs,
+)
+
+coefs = optimal_max_error_strategy_coefs(1000)
+noising = inverse_as_streaming_matrix(coefs)
+
+noise_fn, state = custom_mf_noise(
+    grad_template,
+    noising,
+    stddev=noise_multiplier * clip_norm,
+    generator=42,
+)
 ```
 
 ## Multi-Participation (Multi-Epoch)
@@ -129,11 +152,13 @@ print(f"BLT parameters: {blt}")
 When training for multiple epochs, each example participates multiple times. The sensitivity computation must account for this:
 
 ```python
-from opaque.noise.matrix_factorization.buffered_toeplitz import optimize
+from opaque.noise import blt_mf_noise
 
 # min_sep = epoch_length / batch_size (minimum steps between participations)
-blt = optimize(
+noise_fn, state = blt_mf_noise(
+    grad_template,
     n=5000,
+    stddev=noise_multiplier * clip_norm,
     min_sep=100,
     max_participations=5,  # 5 epochs
 )
@@ -153,8 +178,7 @@ from opaque.noise.matrix_factorization.sensitivity import (
 sens = single_participation_sensitivity(C_matrix)
 
 # For banded matrices with min-sep
-from opaque.noise.matrix_factorization.buffered_toeplitz import sensitivity_squared
-sens_sq = sensitivity_squared(blt, n=1000)
+sens = get_sensitivity_banded(C_matrix, min_sep=100, max_participations=5)
 ```
 
 ## Comparison: DP-SGD vs BandMF vs BLT

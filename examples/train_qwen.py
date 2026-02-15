@@ -34,12 +34,12 @@ import torch
 import torch.nn.functional as F
 import torchopt
 from datasets import load_dataset
+from opaque.optimizers import adaptive_clipping
 from peft import LoraConfig, get_peft_model
 from transformers import AutoConfig, AutoModelForCausalLM
 
 from opaque.clipping import clipped_grad
 from opaque.noise import add_gaussian_noise
-from opaque.optimizers import adaptive_clipping
 from opaque.utils import make_functional
 
 
@@ -54,7 +54,9 @@ def compute_causal_lm_loss(logits, targets):
     shift_targets = targets[:, 1:].contiguous()
 
     # Compute cross-entropy loss
-    loss = F.cross_entropy(shift_logits.view(-1, logits.size(-1)), shift_targets.view(-1))
+    loss = F.cross_entropy(
+        shift_logits.view(-1, logits.size(-1)), shift_targets.view(-1)
+    )
 
     return loss
 
@@ -144,7 +146,12 @@ def main():
     lora_config = LoraConfig(
         r=16,  # Moderate LoRA rank for memory efficiency
         lora_alpha=32,  # LoRA scaling factor
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],  # Apply LoRA to attention layers only
+        target_modules=[
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+        ],  # Apply LoRA to attention layers only
         lora_dropout=0.0,  # No dropout for deterministic behavior
         bias="none",
         task_type="CAUSAL_LM",
@@ -163,16 +170,13 @@ def main():
     t0 = time.time()
     dataset = load_dataset("ag_news", split="train")
     print(f"   Dataset loaded in {time.time() - t0:.1f}s")
-    print(f"   Dataset: ag_news (news articles)")
+    print("   Dataset: ag_news (news articles)")
     print(f"   Total examples in dataset: {len(dataset)}")
 
     # Extract text from AG News
     print(f"   Selecting {num_train_samples} samples...")
     t0 = time.time()
-    all_texts = [
-        f"{item['text']}"
-        for item in dataset.select(range(num_train_samples))
-    ]
+    all_texts = [f"{item['text']}" for item in dataset.select(range(num_train_samples))]
     print(f"   Selection completed in {time.time() - t0:.1f}s")
 
     print(f"   Total news articles: {len(all_texts)}")
@@ -205,7 +209,9 @@ def main():
         batch_tokens = all_tokens[start_idx:end_idx]
         batches.append(batch_tokens)
 
-    print(f"   Created {len(batches)} batches of size {batch_size} in {time.time() - t0:.1f}s")
+    print(
+        f"   Created {len(batches)} batches of size {batch_size} in {time.time() - t0:.1f}s"
+    )
 
     # Convert to functional (only LoRA parameters)
     print("[5/7] Converting to functional form (LoRA parameters only)...")
@@ -217,7 +223,9 @@ def main():
             param.requires_grad = False
 
     fmodel, params = make_functional(model, disable_autograd_tracking=True)
-    param_names = [name for name, param in model.named_parameters() if param.requires_grad]
+    param_names = [
+        name for name, param in model.named_parameters() if param.requires_grad
+    ]
     print(f"   Number of trainable LoRA parameters: {len(param_names)}")
     print(f"   Total parameter tensors: {len(params)}")
     print(f"   Conversion completed in {time.time() - t0:.1f}s")
@@ -236,7 +244,9 @@ def main():
     num_epochs = 10  # More epochs due to very small batch size
     noise_multiplier = 0.24
     target_clip_rate = 0.20
-    use_adaptive_clipping = False  # Set to True for adaptive clipping (slow: ~1min/step)
+    use_adaptive_clipping = (
+        False  # Set to True for adaptive clipping (slow: ~1min/step)
+    )
 
     print(f"   Clip norm: {initial_clip_norm}")
     print(f"   Learning rate: {learning_rate}")
@@ -244,10 +254,10 @@ def main():
     print(f"   Adaptive clipping: {use_adaptive_clipping}")
     if use_adaptive_clipping:
         print(f"   Target clip rate: {target_clip_rate:.1%}")
-        print(f"   ⚠️  WARNING: Adaptive clipping causes ~1min recompilation per step!")
-        print(f"   ⚠️  Set use_adaptive_clipping=False for faster training.")
+        print("   ⚠️  WARNING: Adaptive clipping causes ~1min recompilation per step!")
+        print("   ⚠️  Set use_adaptive_clipping=False for faster training.")
     else:
-        print(f"   ✓ Using fixed clipping (fast mode)")
+        print("   ✓ Using fixed clipping (fast mode)")
     print(f"   Number of epochs: {num_epochs}")
     print(f"   Batches per epoch: {len(batches)}")
     print(f"   Total training steps: {num_epochs * len(batches)}")
@@ -260,7 +270,7 @@ def main():
             base_opt,
             initial_clip_norm=initial_clip_norm,
             target_clip_rate=target_clip_rate,
-            clip_norm_max=10000
+            clip_norm_max=10000,
         )
         opt_state = init_fn(params)
         fixed_clip_norm = None  # Will use adaptive norm from state
@@ -279,7 +289,9 @@ def main():
 
     # Pre-create clipped_grad function if using fixed clipping (avoids recreation)
     if not use_adaptive_clipping:
-        print("\n   Creating clipped_grad function (one-time setup for fixed clipping)...")
+        print(
+            "\n   Creating clipped_grad function (one-time setup for fixed clipping)..."
+        )
         t0 = time.time()
         fixed_clipped_grad_fn = clipped_grad(
             per_example_loss_fn,
@@ -310,21 +322,23 @@ def main():
         global_step = 0
 
         for epoch in range(num_epochs):
-            print(f"\n{'='*80}")
+            print(f"\n{'=' * 80}")
             print(f"Epoch {epoch + 1}/{num_epochs}")
-            print(f"{'='*80}")
+            print(f"{'=' * 80}")
             epoch_losses = []
 
             for batch_idx, tokens in enumerate(batches):
-                step_start = time.time()
-
                 if global_step == 0:
-                    print(f"Step 1: Compiling model...")
-                    print(f"  - Setting up vmap for per-example gradients")
-                    print(f"  - Please wait...\n")
+                    print("Step 1: Compiling model...")
+                    print("  - Setting up vmap for per-example gradients")
+                    print("  - Please wait...\n")
 
                 # Determine clip norm to use
-                current_clip_norm = fixed_clip_norm if fixed_clip_norm is not None else opt_state.current_clip_norm
+                current_clip_norm = (
+                    fixed_clip_norm
+                    if fixed_clip_norm is not None
+                    else opt_state.current_clip_norm
+                )
 
                 # 1. Compute clipped gradients
                 if global_step <= 2:
@@ -336,7 +350,9 @@ def main():
                     grads_tuple, aux = fixed_clipped_grad_fn(params, tokens)
                     grad_compute_time = time.time() - grad_compute_start
                     if global_step <= 2:
-                        print(f"    gradient computation (reusing fn): {grad_compute_time:.1f}s")
+                        print(
+                            f"    gradient computation (reusing fn): {grad_compute_time:.1f}s"
+                        )
                 else:
                     # Adaptive clipping - must recreate with new clip_norm
                     fn_create_start = time.time()
@@ -362,7 +378,9 @@ def main():
 
                 # 2. Add Gaussian noise for DP
                 stddev = noise_multiplier * current_clip_norm
-                noisy_grads = add_gaussian_noise(grads_tuple, stddev=stddev, generator=rng)
+                noisy_grads = add_gaussian_noise(
+                    grads_tuple, stddev=stddev, generator=rng
+                )
 
                 # 3. Optimizer step
                 if use_adaptive_clipping:
@@ -372,9 +390,13 @@ def main():
                     )
                 else:
                     # Use base optimizer directly (fixed clipping)
-                    updates, opt_state = base_opt.update(noisy_grads, opt_state, params=params)
+                    updates, opt_state = base_opt.update(
+                        noisy_grads, opt_state, params=params
+                    )
                     # Manually compute metrics
-                    clip_rate = (aux.grad_norms > current_clip_norm).float().mean().item()
+                    clip_rate = (
+                        (aux.grad_norms > current_clip_norm).float().mean().item()
+                    )
                     metrics = {
                         "clip_norm": current_clip_norm,
                         "clip_rate": clip_rate,
@@ -395,7 +417,7 @@ def main():
 
                 # Print step metrics
                 print(
-                    f"Step {global_step:3d} [Epoch {epoch+1}, Batch {batch_idx+1}/{len(batches)}]: "
+                    f"Step {global_step:3d} [Epoch {epoch + 1}, Batch {batch_idx + 1}/{len(batches)}]: "
                     f"loss={avg_loss:.4f}, "
                     f"clip_norm={metrics['clip_norm']:.3f}, "
                     f"clip_rate={metrics['clip_rate']:.1%}, "
@@ -413,37 +435,47 @@ def main():
 
         # Success!
         print("\n" + "=" * 80)
-        print(f"✅ DP-SGD LORA TRAINING COMPLETE! (ADAPTIVE CLIPPING + {device.type.upper()})")
+        print(
+            f"✅ DP-SGD LORA TRAINING COMPLETE! (ADAPTIVE CLIPPING + {device.type.upper()})"
+        )
         print("=" * 80)
         print(f"Device: {device}")
         print(f"Dataset: ag_news ({len(all_texts)} news articles)")
         print(f"Batch size: {batch_size}, Number of batches: {len(batches)}")
         print(f"Sequence length: {all_tokens.shape[1]}")
-        print(f"\nLoRA configuration:")
+        print("\nLoRA configuration:")
         print(f"  Rank (r): {lora_config.r}")
         print(f"  Alpha: {lora_config.lora_alpha}")
         print(f"  Target modules: {lora_config.target_modules}")
         print(f"  Trainable LoRA parameters: {len(param_names)}")
-        print(f"\nTraining results:")
+        print("\nTraining results:")
         print(f"  Total epochs: {num_epochs}")
         print(f"  Total steps: {global_step}")
         print(f"  Initial loss: {losses[0]:.4f}")
         print(f"  Final loss: {losses[-1]:.4f}")
-        print(f"  Loss reduction: {losses[0] - losses[-1]:.4f} ({(1 - losses[-1]/losses[0]) * 100:.1f}%)")
+        print(
+            f"  Loss reduction: {losses[0] - losses[-1]:.4f} ({(1 - losses[-1] / losses[0]) * 100:.1f}%)"
+        )
         if use_adaptive_clipping:
-            print(f"\nAdaptive clipping:")
+            print("\nAdaptive clipping:")
             print(f"  Initial clip norm: {initial_clip_norm:.3f}")
             print(f"  Final clip norm: {clip_norms_history[-1]:.3f}")
             print(f"  Target clip rate: {target_clip_rate:.1%}")
             print(f"  Final clip rate: {clip_rates_history[-1]:.1%}")
-            print(f"  Clip norm range: [{min(clip_norms_history):.3f}, {max(clip_norms_history):.3f}]")
+            print(
+                f"  Clip norm range: [{min(clip_norms_history):.3f}, {max(clip_norms_history):.3f}]"
+            )
         else:
-            print(f"\nFixed clipping:")
+            print("\nFixed clipping:")
             print(f"  Clip norm: {fixed_clip_norm:.3f} (constant)")
-            print(f"  Average clip rate: {sum(clip_rates_history)/len(clip_rates_history):.1%}")
-        print(f"\nDP parameters:")
+            print(
+                f"  Average clip rate: {sum(clip_rates_history) / len(clip_rates_history):.1%}"
+            )
+        print("\nDP parameters:")
         print(f"  Noise multiplier: {noise_multiplier}")
-        final_clip = clip_norms_history[-1] if use_adaptive_clipping else fixed_clip_norm
+        final_clip = (
+            clip_norms_history[-1] if use_adaptive_clipping else fixed_clip_norm
+        )
         print(f"  Final noise stddev: {noise_multiplier * final_clip:.4f}")
 
     except Exception as e:

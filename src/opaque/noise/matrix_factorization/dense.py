@@ -155,9 +155,9 @@ def optimize(
     equal_norm: bool = False,
     A: torch.Tensor | None = None,
     max_optimizer_steps: int = 10000,
-    callback: optimization.CallbackFnType = lambda _: True
-    if _.grad is not None and float(torch.abs(_.grad).max()) <= 1e-3
-    else None,
+    callback: optimization.CallbackFnType = lambda _: (
+        True if _.grad is not None and float(torch.abs(_.grad).max()) <= 1e-3 else None
+    ),
 ) -> torch.Tensor:
     """Optimize a strategy matrix C for mean loss and a participation pattern.
 

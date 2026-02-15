@@ -15,6 +15,7 @@ from __future__ import annotations
 import functools
 from typing import Protocol
 
+import numpy as np
 import torch
 from scipy.linalg import toeplitz as scipy_toeplitz
 
@@ -209,8 +210,6 @@ def multiply(
 
     # Convolution of Toeplitz coefficients
     # Use numpy for convolution since torch doesn't have a direct 1D convolve
-    import numpy as np
-
     conv = np.convolve(
         lhs_coef.detach().cpu().numpy(), rhs_coef.detach().cpu().numpy()
     )[:n]
@@ -377,7 +376,8 @@ class ErrorOrLossFn(Protocol):
 
     def __call__(
         self, *, strategy_coef: torch.Tensor, n: int | None = None
-    ) -> torch.Tensor: ...
+    ) -> torch.Tensor:
+        raise NotImplementedError
 
 
 def loss(

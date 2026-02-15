@@ -3,7 +3,6 @@
 import pytest
 import torch
 
-from opaque.noise.matrix_factorization.streaming_matrix import multiply_array
 from opaque.noise.matrix_factorization.toeplitz import (
     inverse_as_streaming_matrix,
     inverse_coef,
@@ -12,12 +11,10 @@ from opaque.noise.matrix_factorization.toeplitz import (
     mean_error,
     minsep_sensitivity_squared,
     multiply,
-    optimal_max_error_noising_coefs,
     optimal_max_error_strategy_coefs,
     pad_coefs_to_n,
     per_query_error,
     sensitivity_squared,
-    solve_banded,
 )
 
 

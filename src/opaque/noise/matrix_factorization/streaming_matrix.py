@@ -134,7 +134,7 @@ class StreamingMatrix(Generic[State]):
         elif isinstance(other, torch.Tensor):
             return multiply_array(self, other)
         else:
-            raise ValueError(f"Unsupported type for multiplication: {type(other)}")
+            return NotImplemented
 
     def __mul__(self, other: float) -> StreamingMatrix:
         """Multiply by a scalar."""

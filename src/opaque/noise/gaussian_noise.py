@@ -111,12 +111,12 @@ def gaussian_noise(
         g = st.rng_state
 
         def add_noise_to_tensor(tensor: torch.Tensor) -> torch.Tensor:
+            # torch.Generator is CPU-only; generate on CPU and move if needed
             noise = torch.randn(
                 tensor.shape,
                 dtype=tensor.dtype,
-                device=tensor.device,
                 generator=g,
-            )
+            ).to(device=tensor.device)
             return tensor + noise * stddev
 
         noisy = tree_map(add_noise_to_tensor, grads)

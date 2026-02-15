@@ -1,6 +1,5 @@
 """Tests for the StreamingMatrix interface."""
 
-import pytest
 import torch
 
 from opaque.noise.matrix_factorization.streaming_matrix import (

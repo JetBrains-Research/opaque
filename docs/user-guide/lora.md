@@ -104,6 +104,7 @@ dp_grad_fn = clipped_grad(
 )
 
 # 7. Training loop
+noise_fn, noise_state = gaussian_noise(stddev=noise_mult * clip_norm)
 privacy_state = acc.create()
 learning_rate = 0.0001
 
@@ -113,7 +114,7 @@ for epoch in range(num_epochs):
         grads = dp_grad_fn(lora_params, batch)
 
         # Add noise
-        noisy_grads = gaussian_noise(grads, stddev=noise_mult * clip_norm)
+        noisy_grads, noise_state = noise_fn(grads, noise_state)
 
         # Update LoRA parameters
         lora_params = tuple(p - learning_rate * g for p, g in zip(lora_params, noisy_grads))
@@ -409,7 +410,7 @@ for step in range(num_steps):
     accumulated_grads = {k: v / accumulation_steps for k, v in accumulated_grads.items()}
 
     # Add noise and update
-    noisy_grads = gaussian_noise(accumulated_grads, stddev=noise_mult * clip_norm)
+    noisy_grads, noise_state = noise_fn(accumulated_grads, noise_state)
     params = update(params, noisy_grads)
 ```
 

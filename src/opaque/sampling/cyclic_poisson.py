@@ -236,16 +236,34 @@ def _compute_early_stopping_order(
     """Compute reordering for padding-aware early stopping.
 
     Reorders indices so that padding (-1) values are concentrated at
-    the end of the last microbatch, enabling early exit.
+    the end of the last microbatch, enabling early exit when the last
+    microbatch contains only padding.
 
     Args:
         minibatch_size: Total minibatch size.
         microbatch_size: Microbatch size.
 
     Returns:
-        Permutation array.
+        Permutation array of length ``minibatch_size``.
     """
     if microbatch_size is None or microbatch_size <= 0:
         return np.arange(minibatch_size)
-    # Standard order: no special reordering needed for basic case
-    return np.arange(minibatch_size)
+
+    if minibatch_size <= 0:
+        return np.arange(minibatch_size)
+
+    num_microbatches = int(np.ceil(minibatch_size / microbatch_size))
+    full_size = num_microbatches * microbatch_size
+
+    grid = np.arange(full_size, dtype=int).reshape(num_microbatches, microbatch_size)
+
+    if num_microbatches == 1:
+        order_full = grid.ravel()
+    else:
+        # All rows except the last first, then the last row.
+        # Padding sits at the end of the minibatch, so after splitting
+        # into microbatches it lands in the final microbatch.
+        order_full = np.concatenate([grid[:-1].ravel(), grid[-1]])
+
+    # Only keep positions that correspond to actual minibatch elements.
+    return order_full[order_full < minibatch_size]

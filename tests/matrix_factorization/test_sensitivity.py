@@ -7,7 +7,6 @@ from opaque.noise.matrix_factorization.sensitivity import (
     banded_lower_triangular_mask,
     banded_symmetric_mask,
     fixed_epoch_sensitivity,
-    get_min_sep_sensitivity_upper_bound,
     get_sensitivity_banded_for_X,
     max_participation_for_linear_fn,
     minsep_true_max_participations,

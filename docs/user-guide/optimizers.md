@@ -40,6 +40,7 @@ optimizer = adaptive_clipping(
 )
 
 # 3. Use like any optimizer
+noise_fn, noise_state = gaussian_noise(stddev=noise_mult * clip_norm_initial)
 for step in range(num_steps):
     # Get gradients (clipped with current adaptive norm)
     grads, current_clip_norm = optimizer.compute_clipped_grads(
@@ -47,7 +48,7 @@ for step in range(num_steps):
     )
 
     # Add noise
-    noisy_grads = gaussian_noise(grads, stddev=noise_mult * current_clip_norm)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
 
     # Update parameters
     params = optimizer.step(params, noisy_grads)
@@ -119,6 +120,7 @@ def loss_fn(params, example):
     return (pred - y) ** 2
 
 # Training loop
+noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_norm_initial)
 privacy_state = acc.create()
 
 for step in range(num_steps):
@@ -128,10 +130,7 @@ for step in range(num_steps):
     )
 
     # Add calibrated noise (using current clip norm)
-    noisy_grads = gaussian_noise(
-        grads,
-        stddev=noise_multiplier * current_clip_norm,
-    )
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
 
     # Update parameters
     params = optimizer.step(params, noisy_grads)
@@ -248,7 +247,7 @@ for step in range(num_steps):
     grads, current_clip_norm = optimizer.compute_clipped_grads(params, loss_fn, batch)
     clip_norms.append(current_clip_norm)
 
-    noisy_grads = gaussian_noise(grads, stddev=noise_mult * current_clip_norm)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = optimizer.step(params, noisy_grads)
 
 # Plot clip norm evolution
@@ -280,9 +279,10 @@ dp_grad_fn = clipped_grad(
 )
 
 # Training loop
+noise_fn, noise_state = gaussian_noise(stddev=noise_mult * clip_norm)
 for step in range(num_steps):
     grads = dp_grad_fn(params, batch)
-    noisy_grads = gaussian_noise(grads, stddev=noise_mult * clip_norm)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = update(params, noisy_grads)
 ```
 

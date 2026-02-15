@@ -827,8 +827,8 @@ class TestEndToEndDPTraining:
             losses.append(grad_aux.loss_values.mean().item())
 
             # Add noise
-            noise_fn = gaussian_noise(stddev=noise_multiplier * clip_norm)
-            noisy_grads = noise_fn(grads)
+            noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_norm)
+            noisy_grads, noise_state = noise_fn(grads, noise_state)
 
             # Update
             params = {

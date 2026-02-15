@@ -26,7 +26,6 @@ def main():
 
     # Hyperparameters
     input_dim = 20
-    output_dim = 1
     n_samples = 1000
     batch_size = 32
     epochs = 5
@@ -54,7 +53,7 @@ def main():
         return F.mse_loss(predictions, y, reduction="sum")
 
     # Configure DP-SGD components
-    print(f"\n2. Configuring DP-SGD components...")
+    print("\n2. Configuring DP-SGD components...")
     print(f"   - L2 clip norm: {l2_clip_norm}")
     print(f"   - Noise multiplier: {noise_multiplier}")
 
@@ -96,14 +95,14 @@ def main():
         print(f"   Epoch {epoch + 1}/{epochs} - Avg Loss: {avg_loss:.4f}")
 
     # Evaluate
-    print(f"\n4. Final evaluation...")
+    print("\n4. Final evaluation...")
     with torch.no_grad():
         predictions = X @ params
         final_loss = F.mse_loss(predictions, y).item()
         print(f"   Final MSE: {final_loss:.4f}")
 
-    print(f"\n5. Privacy accounting...")
-    print(f"   Note: Use jbr-fed-accounting for actual privacy analysis")
+    print("\n5. Privacy accounting...")
+    print("   Note: Use jbr-fed-accounting for actual privacy analysis")
     print(f"   - Noise multiplier: {noise_multiplier}")
     print(f"   - Clip norm: {l2_clip_norm}")
     print(f"   - Steps: {epochs * len(dataloader)}")
@@ -126,32 +125,32 @@ def demo_research_flexibility():
     # Example 1: Standard DP-SGD
     print("\n1. Standard DP-SGD:")
     grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0)
-    noise_fn, noise_state = gaussian_noise(stddev=1.1 * grad_fn.clip_norm)
+    _noise_fn, _state = gaussian_noise(stddev=1.1 * grad_fn.clip_norm)
     print(f"   ✓ Clip norm: {grad_fn.clip_norm}")
     print(f"   ✓ Noise: Gaussian(stddev={1.1 * grad_fn.clip_norm})")
 
     # Example 2: Different clip norm
     print("\n2. Higher clip norm:")
     grad_fn_2 = clipped_grad(loss_fn, l2_clip_norm=2.0)
-    noise_fn_2, noise_state_2 = gaussian_noise(stddev=1.1 * grad_fn_2.clip_norm)
+    _noise_fn, _state = gaussian_noise(stddev=1.1 * grad_fn_2.clip_norm)
     print(f"   ✓ Clip norm: {grad_fn_2.clip_norm}")
     print(f"   ✓ Noise: Gaussian(stddev={1.1 * grad_fn_2.clip_norm})")
 
     # Example 3: Rescale to unit norm
     print("\n3. Unit norm (rescale_to_unit_norm=True):")
-    grad_fn_3 = clipped_grad(
-        loss_fn, l2_clip_norm=5.0, rescale_to_unit_norm=True
-    )
-    noise_fn_3, noise_state_3 = gaussian_noise(stddev=1.1 * grad_fn_3.clip_norm)
+    grad_fn_3 = clipped_grad(loss_fn, l2_clip_norm=5.0, rescale_to_unit_norm=True)
+    _noise_fn, _state = gaussian_noise(stddev=1.1 * grad_fn_3.clip_norm)
     print(f"   ✓ Clip norm: {grad_fn_3.clip_norm}")  # Should be 1.0
     print(f"   ✓ Noise: Gaussian(stddev={1.1 * grad_fn_3.clip_norm})")
 
     # Example 4: Bounded Gaussian noise (truncated normal)
     print("\n4. Bounded Gaussian (Chen & Hale, 2024):")
-    noise_fn_bounded, noise_state_bounded = bounded_gaussian_noise(
+    _noise_fn, _state = bounded_gaussian_noise(
         stddev=1.1 * grad_fn.clip_norm, bounds=(-3.0, 3.0)
     )
-    print(f"   ✓ Noise: BoundedGaussian(stddev={1.1 * grad_fn.clip_norm}, bounds=(-3, 3))")
+    print(
+        f"   ✓ Noise: BoundedGaussian(stddev={1.1 * grad_fn.clip_norm}, bounds=(-3, 3))"
+    )
     print("   → Outputs guaranteed in [-3.0, 3.0]")
 
     # Example 5: Future - swap clipping mechanism

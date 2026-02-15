@@ -14,12 +14,12 @@ import torch
 import torch.nn.functional as F
 import torchopt
 from datasets import load_dataset
+from opaque.optimizers import adaptive_clipping
 from peft import LoraConfig, get_peft_model
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 from opaque.clipping import clipped_grad
 from opaque.noise import add_gaussian_noise
-from opaque.optimizers import adaptive_clipping
 from opaque.utils import make_functional
 
 
@@ -33,68 +33,129 @@ def compute_causal_lm_loss(logits, targets):
     shift_targets = targets[:, 1:].contiguous()
 
     # Compute cross-entropy loss
-    loss = F.cross_entropy(shift_logits.view(-1, logits.size(-1)), shift_targets.view(-1))
+    loss = F.cross_entropy(
+        shift_logits.view(-1, logits.size(-1)), shift_targets.view(-1)
+    )
     return loss
 
 
 def parse_args():
     """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description="DP-SGD LoRA training for Causal Language Models")
+    parser = argparse.ArgumentParser(
+        description="DP-SGD LoRA training for Causal Language Models"
+    )
 
     # Model arguments
-    parser.add_argument("--model_name", type=str, default="Qwen/Qwen2.5-0.5B",
-                        help="HuggingFace model name or path")
-    parser.add_argument("--use_eager_attention", action="store_true",
-                        help="Use eager attention")
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        default="Qwen/Qwen2.5-0.5B",
+        help="HuggingFace model name or path",
+    )
+    parser.add_argument(
+        "--use_eager_attention", action="store_true", help="Use eager attention"
+    )
 
     # Dataset arguments
-    parser.add_argument("--dataset", type=str, default="ag_news",
-                        help="HuggingFace dataset name")
-    parser.add_argument("--dataset_split", type=str, default="train",
-                        help="Dataset split to use")
-    parser.add_argument("--dataset_text_field", type=str, default="text",
-                        help="Field containing text data")
-    parser.add_argument("--num_train_samples", type=int, default=20000,
-                        help="Number of training samples to use")
-    parser.add_argument("--max_seq_len", type=int, default=1024,
-                        help="Maximum sequence length")
+    parser.add_argument(
+        "--dataset", type=str, default="ag_news", help="HuggingFace dataset name"
+    )
+    parser.add_argument(
+        "--dataset_split", type=str, default="train", help="Dataset split to use"
+    )
+    parser.add_argument(
+        "--dataset_text_field",
+        type=str,
+        default="text",
+        help="Field containing text data",
+    )
+    parser.add_argument(
+        "--num_train_samples",
+        type=int,
+        default=20000,
+        help="Number of training samples to use",
+    )
+    parser.add_argument(
+        "--max_seq_len", type=int, default=1024, help="Maximum sequence length"
+    )
 
     # Training arguments
-    parser.add_argument("--batch_size", type=int, default=16,
-                        help="Batch size for training")
-    parser.add_argument("--num_epochs", type=int, default=10,
-                        help="Number of training epochs")
-    parser.add_argument("--learning_rate", type=float, default=1.0e-5,
-                        help="Learning rate")
-    parser.add_argument("--optimizer", type=str, default="adam", choices=["sgd", "adam"],
-                        help="Optimizer to use")
-    parser.add_argument("--seed", type=int, default=56,
-                        help="Random seed")
+    parser.add_argument(
+        "--batch_size", type=int, default=16, help="Batch size for training"
+    )
+    parser.add_argument(
+        "--num_epochs", type=int, default=10, help="Number of training epochs"
+    )
+    parser.add_argument(
+        "--learning_rate", type=float, default=1.0e-5, help="Learning rate"
+    )
+    parser.add_argument(
+        "--optimizer",
+        type=str,
+        default="adam",
+        choices=["sgd", "adam"],
+        help="Optimizer to use",
+    )
+    parser.add_argument("--seed", type=int, default=56, help="Random seed")
 
     # LoRA arguments
-    parser.add_argument("--lora_r", type=int, default=8,
-                        help="LoRA rank")
-    parser.add_argument("--lora_alpha", type=int, default=32,
-                        help="LoRA alpha (scaling factor)")
-    parser.add_argument("--lora_target_modules", type=str, nargs="+",
-                        default=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
-                        help="Target modules for LoRA")
+    parser.add_argument("--lora_r", type=int, default=8, help="LoRA rank")
+    parser.add_argument(
+        "--lora_alpha", type=int, default=32, help="LoRA alpha (scaling factor)"
+    )
+    parser.add_argument(
+        "--lora_target_modules",
+        type=str,
+        nargs="+",
+        default=[
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        ],
+        help="Target modules for LoRA",
+    )
 
     # DP-SGD arguments
-    parser.add_argument("--clip_norm", type=float, default=0.15,
-                        help="Gradient clipping norm")
-    parser.add_argument("--noise_multiplier", type=float, default=0.24,
-                        help="Noise multiplier for DP")
-    parser.add_argument("--microbatch_size", type=int, default=4,
-                        help="Microbatch size for gradient computation")
-    parser.add_argument("--use_adaptive_clipping", action="store_true", default=True,
-                        help="Use adaptive clipping (adapts clip norm during training)")
-    parser.add_argument("--no_adaptive_clipping", dest="use_adaptive_clipping", action="store_false",
-                        help="Disable adaptive clipping (use fixed clip norm)")
-    parser.add_argument("--target_clip_rate", type=float, default=0.50,
-                        help="Target clipping rate for adaptive clipping (target_unclipped_quantile)")
-    parser.add_argument("--clip_norm_max", type=float, default=10.0,
-                        help="Maximum clip norm for adaptive clipping")
+    parser.add_argument(
+        "--clip_norm", type=float, default=0.15, help="Gradient clipping norm"
+    )
+    parser.add_argument(
+        "--noise_multiplier", type=float, default=0.24, help="Noise multiplier for DP"
+    )
+    parser.add_argument(
+        "--microbatch_size",
+        type=int,
+        default=4,
+        help="Microbatch size for gradient computation",
+    )
+    parser.add_argument(
+        "--use_adaptive_clipping",
+        action="store_true",
+        default=True,
+        help="Use adaptive clipping (adapts clip norm during training)",
+    )
+    parser.add_argument(
+        "--no_adaptive_clipping",
+        dest="use_adaptive_clipping",
+        action="store_false",
+        help="Disable adaptive clipping (use fixed clip norm)",
+    )
+    parser.add_argument(
+        "--target_clip_rate",
+        type=float,
+        default=0.50,
+        help="Target clipping rate for adaptive clipping (target_unclipped_quantile)",
+    )
+    parser.add_argument(
+        "--clip_norm_max",
+        type=float,
+        default=10.0,
+        help="Maximum clip norm for adaptive clipping",
+    )
 
     return parser.parse_args()
 
@@ -129,8 +190,16 @@ def main():
     print(f"\nLoading model: {args.model_name}...")
     config = AutoConfig.from_pretrained(args.model_name)
 
-    dropout_attrs = ["attn_pdrop", "resid_pdrop", "embd_pdrop", "attention_dropout",
-                     "hidden_dropout", "dropout", "attn_dropout", "ffn_dropout"]
+    dropout_attrs = [
+        "attn_pdrop",
+        "resid_pdrop",
+        "embd_pdrop",
+        "attention_dropout",
+        "hidden_dropout",
+        "dropout",
+        "attn_dropout",
+        "ffn_dropout",
+    ]
     for attr in dropout_attrs:
         if hasattr(config, attr):
             setattr(config, attr, 0.0)
@@ -189,7 +258,7 @@ def main():
     # Create batches
     num_batches = len(all_texts) // args.batch_size
     batches = [
-        all_tokens[i * args.batch_size:(i + 1) * args.batch_size]
+        all_tokens[i * args.batch_size : (i + 1) * args.batch_size]
         for i in range(num_batches)
     ]
     print(f"Created {len(batches)} batches of size {args.batch_size}")
@@ -201,7 +270,9 @@ def main():
             param.requires_grad = False
 
     fmodel, params = make_functional(model, disable_autograd_tracking=True)
-    param_names = [name for name, param in model.named_parameters() if param.requires_grad]
+    param_names = [
+        name for name, param in model.named_parameters() if param.requires_grad
+    ]
     print(f"Trainable parameters: {len(param_names)}")
 
     # Define per-example loss
@@ -211,7 +282,7 @@ def main():
         return compute_causal_lm_loss(logits, tokens_batch)
 
     # Setup optimizer
-    print(f"\nSetting up DP-SGD training...")
+    print("\nSetting up DP-SGD training...")
     print(f"  Optimizer: {args.optimizer}")
     print(f"  Learning rate: {args.learning_rate}")
     print(f"  Clip norm: {args.clip_norm}")
@@ -231,7 +302,7 @@ def main():
             base_opt,
             initial_clip_norm=args.clip_norm,
             target_clip_rate=args.target_clip_rate,
-            clip_norm_max=args.clip_norm_max
+            clip_norm_max=args.clip_norm_max,
         )
         opt_state = init_fn(params)
         fixed_clip_norm = None
@@ -278,7 +349,11 @@ def main():
 
         for batch_idx, tokens in enumerate(batches):
             # Determine clip norm
-            current_clip_norm = fixed_clip_norm if fixed_clip_norm is not None else opt_state.current_clip_norm
+            current_clip_norm = (
+                fixed_clip_norm
+                if fixed_clip_norm is not None
+                else opt_state.current_clip_norm
+            )
 
             # Compute clipped gradients
             if fixed_clipped_grad_fn is not None:
@@ -306,7 +381,9 @@ def main():
                     noisy_grads, aux.grad_norms, opt_state, params=params
                 )
             else:
-                updates, opt_state = base_opt.update(noisy_grads, opt_state, params=params)
+                updates, opt_state = base_opt.update(
+                    noisy_grads, opt_state, params=params
+                )
                 clip_rate = (aux.grad_norms > current_clip_norm).float().mean().item()
                 metrics = {
                     "clip_norm": current_clip_norm,
@@ -338,7 +415,7 @@ def main():
 
             # Print detailed telemetry every step
             print(
-                f"Step {global_step:4d} [E{epoch+1} B{batch_idx+1:3d}/{len(batches):3d}] | "
+                f"Step {global_step:4d} [E{epoch + 1} B{batch_idx + 1:3d}/{len(batches):3d}] | "
                 f"Loss: {avg_loss:.4f} (min={min_loss:.4f}, max={max_loss:.4f}, std={loss_std:.4f}) | "
                 f"Clip: norm={metrics['clip_norm']:.3f}, rate={metrics['clip_rate']:.1%} ({num_clipped}/{len(aux.grad_norms)}) | "
                 f"Grad: μ={mean_grad_norm:.3f}, med={median_grad_norm:.3f}, σ=[{min_grad_norm:.3f}, {max_grad_norm:.3f}] | "
@@ -355,23 +432,27 @@ def main():
     print("=" * 80)
     print(f"Model: {args.model_name}")
     print(f"Dataset: {args.dataset} ({len(all_texts)} samples)")
-    print(f"\nTraining results:")
+    print("\nTraining results:")
     print(f"  Total steps: {global_step}")
     print(f"  Initial loss: {losses[0]:.4f}")
     print(f"  Final loss: {losses[-1]:.4f}")
     print(f"  Loss reduction: {((losses[0] - losses[-1]) / losses[0] * 100):.1f}%")
 
     if args.use_adaptive_clipping:
-        print(f"\nAdaptive clipping:")
+        print("\nAdaptive clipping:")
         print(f"  Initial clip norm: {args.clip_norm:.3f}")
         print(f"  Final clip norm: {clip_norms_history[-1]:.3f}")
-        print(f"  Clip norm range: [{min(clip_norms_history):.3f}, {max(clip_norms_history):.3f}]")
+        print(
+            f"  Clip norm range: [{min(clip_norms_history):.3f}, {max(clip_norms_history):.3f}]"
+        )
     else:
-        print(f"\nFixed clipping:")
+        print("\nFixed clipping:")
         print(f"  Clip norm: {fixed_clip_norm:.3f}")
-        print(f"  Average clip rate: {sum(clip_rates_history)/len(clip_rates_history):.2%}")
+        print(
+            f"  Average clip rate: {sum(clip_rates_history) / len(clip_rates_history):.2%}"
+        )
 
-    print(f"\nPrivacy:")
+    print("\nPrivacy:")
     print(f"  Noise multiplier: {args.noise_multiplier}")
 
     return 0
