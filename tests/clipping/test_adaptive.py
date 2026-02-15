@@ -220,14 +220,16 @@ class TestAdaptiveClippedGrad:
 
     def test_different_target_quantiles(self):
         """Test that different target quantiles affect adaptation."""
+        # Use fixed seed for reproducibility in CI
+        torch.manual_seed(42)
 
         def loss_fn(params, x, y):
             pred = x @ params
             return ((pred - y) ** 2).mean()
 
         params = torch.randn(10, requires_grad=False)
-        batch_x = torch.randn(8, 10)
-        batch_y = torch.randn(8)
+        batch_x = torch.randn(16, 10)  # Larger batch for more stable statistics
+        batch_y = torch.randn(16)
 
         # Low target quantile (aim to clip fewer gradients)
         grad_fn_low, clip_state_low = adaptive_clipped_grad(
@@ -245,8 +247,8 @@ class TestAdaptiveClippedGrad:
             batch_argnums=(1, 2),
         )
 
-        # Run 10 steps
-        for _ in range(10):
+        # Run 20 steps for more reliable convergence
+        for _ in range(20):
             _, clip_state_low = grad_fn_low(
                 params, batch_x, batch_y, state=clip_state_low
             )
