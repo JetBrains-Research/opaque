@@ -9,7 +9,19 @@ Note: Privacy accounting is provided by jbr-fed-accounting (external library).
 
 import os
 
-from opaque import sampling
+from opaque import auditing, sampling
+from opaque.auditing import (
+    AuditResult,
+    BootstrapParams,
+    attack_auroc,
+    audit,
+    bootstrap,
+    epsilon_clopper_pearson,
+    epsilon_one_run,
+    epsilon_raw_counts,
+    max_accuracy,
+    tpr_at_fpr,
+)
 from opaque.clipping import (
     AdaptiveClipState,
     ClipState,
@@ -77,6 +89,18 @@ __all__ = [
     "custom_mf_noise",
     "dense_mf_noise",
     "identity_mf_noise",
+    # Auditing
+    "auditing",
+    "epsilon_clopper_pearson",
+    "epsilon_one_run",
+    "epsilon_raw_counts",
+    "attack_auroc",
+    "tpr_at_fpr",
+    "max_accuracy",
+    "audit",
+    "AuditResult",
+    "bootstrap",
+    "BootstrapParams",
     # Utils
     "make_functional",
 ]

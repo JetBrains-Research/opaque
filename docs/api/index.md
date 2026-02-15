@@ -41,6 +41,14 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `PoissonSampler` - Standard Poisson sampling
   - `TruncatedPoissonSampler` - Bounded Poisson sampling (recommended)
 
+### Validation & Debugging
+
+- **[Auditing](auditing.md)**: Empirical privacy validation
+  - `epsilon_clopper_pearson()`, `epsilon_one_run()` - Estimate epsilon from attacks
+  - `audit()` - Comprehensive privacy audit
+  - `attack_auroc()`, `tpr_at_fpr()` - Attack utility metrics
+  - `bootstrap()` - Confidence intervals
+
 ## Quick Reference
 
 ### Typical DP-SGD Workflow
@@ -137,6 +145,18 @@ epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
 |---------------------------|----------------------------|---------------------------------------------------------------|
 | `PoissonSampler`          | Standard Poisson sampling  | [Guide](../user-guide/sampling.md#standard-poisson-sampling)  |
 | `TruncatedPoissonSampler` | Truncated Poisson sampling | [Guide](../user-guide/sampling.md#truncated-poisson-sampling) |
+
+### Privacy Auditing
+
+| Function                    | Purpose                         | User Guide                                     |
+|-----------------------------|---------------------------------|------------------------------------------------|
+| `epsilon_clopper_pearson()` | Conservative epsilon bound      | [Guide](../user-guide/auditing.md)             |
+| `epsilon_one_run()`         | Tighter bound (Nasr et al.)     | [Guide](../user-guide/auditing.md)             |
+| `epsilon_raw_counts()`      | Direct epsilon estimate         | [Guide](../user-guide/auditing.md)             |
+| `audit()`                   | Comprehensive audit             | [Guide](../user-guide/auditing.md)             |
+| `attack_auroc()`            | Membership inference AUROC      | [Guide](../user-guide/auditing.md)             |
+| `tpr_at_fpr()`              | TPR at given FPR                | [Guide](../user-guide/auditing.md)             |
+| `bootstrap()`               | Bootstrap confidence intervals  | [Guide](../user-guide/auditing.md)             |
 
 ## Type Hints
 
