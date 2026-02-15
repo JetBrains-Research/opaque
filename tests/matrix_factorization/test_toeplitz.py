@@ -3,8 +3,8 @@
 import pytest
 import torch
 
-from opaque.matrix_factorization.streaming_matrix import multiply_array
-from opaque.matrix_factorization.toeplitz import (
+from opaque.noise.matrix_factorization.streaming_matrix import multiply_array
+from opaque.noise.matrix_factorization.toeplitz import (
     inverse_as_streaming_matrix,
     inverse_coef,
     materialize_lower_triangular,

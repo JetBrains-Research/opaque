@@ -3,8 +3,8 @@
 import pytest
 import torch
 
-from opaque.matrix_factorization.streaming_matrix import identity, prefix_sum
-from opaque.matrix_factorization.toeplitz import (
+from opaque.noise.matrix_factorization.streaming_matrix import identity, prefix_sum
+from opaque.noise.matrix_factorization.toeplitz import (
     inverse_as_streaming_matrix,
     optimal_max_error_strategy_coefs,
 )

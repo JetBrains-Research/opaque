@@ -57,7 +57,7 @@ See [Installation Guide](#installation-guide) for detailed instructions.
 
 ```python
 import torch
-from opaque import clipped_grad, gaussian
+from opaque import clipped_grad, gaussian_noise
 
 # 1. Define your loss function
 def loss_fn(params, x, y):
@@ -66,7 +66,7 @@ def loss_fn(params, x, y):
 
 # 2. Configure DP-SGD components (once, outside loop)
 grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=1)
-noise_fn = gaussian(stddev=1.1 * grad_fn.clip_norm)
+noise_fn = gaussian_noise(stddev=1.1 * grad_fn.clip_norm)
 
 # 3. Training loop - clean functional composition!
 params = torch.randn(10, requires_grad=False)

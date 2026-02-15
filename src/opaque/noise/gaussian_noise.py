@@ -4,8 +4,8 @@ This module provides higher-order functions for adding calibrated Gaussian noise
 to gradients in DP-SGD (Differentially Private Stochastic Gradient Descent).
 
 The functional API provides:
-1. `gaussian(stddev)` - Returns a stateless noise function (recommended)
-2. `gaussian_stateful(stddev, seed)` - Returns (fn, state) for reproducibility
+1. `gaussian_noise(stddev)` - Returns a stateless noise function (recommended)
+2. `gaussian_noise_stateful(stddev, seed)` - Returns (fn, state) for reproducibility
 """
 
 from collections.abc import Callable
@@ -15,13 +15,13 @@ import torch
 from opaque.utils.pytree import tree_map
 
 
-def gaussian(stddev: float) -> Callable:
+def gaussian_noise(stddev: float) -> Callable:
     """Create a stateless Gaussian noise function.
 
     Returns a function that adds calibrated Gaussian noise N(0, stddev²) to gradients.
     This is the recommended API for typical use cases where reproducibility is not critical.
 
-    For reproducible noise (e.g., testing, debugging), use `gaussian_stateful()`.
+    For reproducible noise (e.g., testing, debugging), use `gaussian_noise_stateful()`.
 
     Args:
         stddev: Standard deviation of Gaussian noise (usually `noise_multiplier * clip_norm`)
@@ -32,13 +32,13 @@ def gaussian(stddev: float) -> Callable:
     Example:
         >>> import torch
         >>> from opaque.clipping import clipped_grad
-        >>> from opaque.noise import gaussian
+        >>> from opaque.noise import gaussian_noise
         >>>
         >>> # Configure gradient clipping
         >>> grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0)
         >>>
         >>> # Configure noise (user does multiplication)
-        >>> noise_fn = gaussian(stddev=1.1 * grad_fn.clip_norm)
+        >>> noise_fn = gaussian_noise(stddev=1.1 * grad_fn.clip_norm)
         >>>
         >>> # Training loop
         >>> for batch in dataloader:
@@ -70,14 +70,14 @@ def gaussian(stddev: float) -> Callable:
     return noise_fn
 
 
-def gaussian_stateful(stddev: float, seed: int) -> tuple[Callable, torch.Generator]:
+def gaussian_noise_stateful(stddev: float, seed: int) -> tuple[Callable, torch.Generator]:
     """Create a Gaussian noise function with explicit state management.
 
     Returns a tuple (noise_fn, state) where state is a torch.Generator for
     reproducible noise. This follows the functional pattern of explicit state passing.
 
     Use this when you need reproducible noise (e.g., for testing, debugging,
-    or deterministic training). For typical use cases, use `gaussian()`.
+    or deterministic training). For typical use cases, use `gaussian_noise()`.
 
     Args:
         stddev: Standard deviation of Gaussian noise
@@ -90,10 +90,10 @@ def gaussian_stateful(stddev: float, seed: int) -> tuple[Callable, torch.Generat
 
     Example:
         >>> import torch
-        >>> from opaque.noise import gaussian_stateful
+        >>> from opaque.noise import gaussian_noise_stateful
         >>>
         >>> # Create noise function with explicit state
-        >>> noise_fn, state = gaussian_stateful(stddev=1.1, seed=42)
+        >>> noise_fn, state = gaussian_noise_stateful(stddev=1.1, seed=42)
         >>>
         >>> # Use in training (pass state explicitly)
         >>> for batch in dataloader:
@@ -129,4 +129,4 @@ def gaussian_stateful(stddev: float, seed: int) -> tuple[Callable, torch.Generat
     return noise_fn, state
 
 
-__all__ = ["gaussian", "gaussian_stateful"]
+__all__ = ["gaussian_noise", "gaussian_noise_stateful"]

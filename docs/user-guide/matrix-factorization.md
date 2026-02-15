@@ -37,7 +37,7 @@ The API follows the same `(fn, state)` pattern as `gaussian_stateful`:
 ```python
 import torch
 from opaque.noise.matrix_factorization import matrix_factorization_noise
-from opaque.matrix_factorization.toeplitz import (
+from opaque.noise.matrix_factorization.toeplitz import (
     inverse_as_streaming_matrix,
     optimal_max_error_strategy_coefs,
 )
@@ -79,7 +79,7 @@ for batch in dataloader:
 BandMF uses banded lower-triangular Toeplitz matrices. The `bands` parameter controls the trade-off between memory and utility:
 
 ```python
-from opaque.matrix_factorization.toeplitz import (
+from opaque.noise.matrix_factorization.toeplitz import (
     inverse_as_streaming_matrix,
     optimize_banded_toeplitz,
 )
@@ -98,7 +98,7 @@ noising = inverse_as_streaming_matrix(coefs)
 BLT matrices provide state-of-the-art utility with O(num_buffers) memory:
 
 ```python
-from opaque.matrix_factorization.buffered_toeplitz import (
+from opaque.noise.matrix_factorization.buffered_toeplitz import (
     optimize,
     optimize_loss,
     LossFn,
@@ -129,7 +129,7 @@ print(f"BLT parameters: {blt}")
 When training for multiple epochs, each example participates multiple times. The sensitivity computation must account for this:
 
 ```python
-from opaque.matrix_factorization.buffered_toeplitz import optimize
+from opaque.noise.matrix_factorization.buffered_toeplitz import optimize
 
 # min_sep = epoch_length / batch_size (minimum steps between participations)
 blt = optimize(
@@ -144,7 +144,7 @@ blt = optimize(
 The sensitivity of the strategy matrix C determines the noise calibration:
 
 ```python
-from opaque.matrix_factorization.sensitivity import (
+from opaque.noise.matrix_factorization.sensitivity import (
     single_participation_sensitivity,
     get_sensitivity_banded,
 )
@@ -153,7 +153,7 @@ from opaque.matrix_factorization.sensitivity import (
 sens = single_participation_sensitivity(C_matrix)
 
 # For banded matrices with min-sep
-from opaque.matrix_factorization.buffered_toeplitz import sensitivity_squared
+from opaque.noise.matrix_factorization.buffered_toeplitz import sensitivity_squared
 sens_sq = sensitivity_squared(blt, n=1000)
 ```
 

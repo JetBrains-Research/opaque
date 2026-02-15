@@ -19,7 +19,7 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from opaque import clipped_grad, gaussian
+from opaque import clipped_grad, gaussian_noise
 from opaque.utils import make_functional
 
 # Skip all tests if transformers not available
@@ -310,7 +310,7 @@ class TestGPT2LoRADPTraining:
 
         # Add noise
         noise_multiplier = 1.0
-        noise_fn = gaussian(stddev=noise_multiplier * clip_norm)
+        noise_fn = gaussian_noise(stddev=noise_multiplier * clip_norm)
         noisy_grads = noise_fn(grads)
 
         # Verify noise was added
@@ -425,7 +425,7 @@ class TestGPT2LoRADPTraining:
         )
 
         # 2. Add noise
-        noise_fn = gaussian(stddev=noise_multiplier * clip_norm)
+        noise_fn = gaussian_noise(stddev=noise_multiplier * clip_norm)
         noisy_grads = noise_fn(grads)
 
         # 3. SGD update
@@ -827,7 +827,7 @@ class TestEndToEndDPTraining:
             losses.append(grad_aux.loss_values.mean().item())
 
             # Add noise
-            noise_fn = gaussian(stddev=noise_multiplier * clip_norm)
+            noise_fn = gaussian_noise(stddev=noise_multiplier * clip_norm)
             noisy_grads = noise_fn(grads)
 
             # Update

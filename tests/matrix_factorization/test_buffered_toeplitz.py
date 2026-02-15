@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from opaque.matrix_factorization.buffered_toeplitz import (
+from opaque.noise.matrix_factorization.buffered_toeplitz import (
     BufferedToeplitz,
     LossFn,
     Parameterization,
@@ -18,7 +18,7 @@ from opaque.matrix_factorization.buffered_toeplitz import (
     robust_max_error_Gamma_jk,
     sensitivity_squared,
 )
-from opaque.matrix_factorization.toeplitz import materialize_lower_triangular
+from opaque.noise.matrix_factorization.toeplitz import materialize_lower_triangular
 
 
 class TestBufferedToeplitz:

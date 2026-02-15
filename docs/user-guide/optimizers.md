@@ -47,7 +47,7 @@ for step in range(num_steps):
     )
 
     # Add noise
-    noisy_grads = add_gaussian_noise(grads, stddev=noise_mult * current_clip_norm)
+    noisy_grads = gaussian_noise(grads, stddev=noise_mult * current_clip_norm)
 
     # Update parameters
     params = optimizer.step(params, noisy_grads)
@@ -85,7 +85,7 @@ Here's a full training loop using adaptive clipping:
 ```python
 import torch
 import opaque.accounting as acc
-from opaque import clipped_grad, add_gaussian_noise
+from opaque import clipped_grad, gaussian_noise
 from opaque.optimizers import adaptive_clipping
 import torchopt
 
@@ -128,7 +128,7 @@ for step in range(num_steps):
     )
 
     # Add calibrated noise (using current clip norm)
-    noisy_grads = add_gaussian_noise(
+    noisy_grads = gaussian_noise(
         grads,
         stddev=noise_multiplier * current_clip_norm,
     )
@@ -248,7 +248,7 @@ for step in range(num_steps):
     grads, current_clip_norm = optimizer.compute_clipped_grads(params, loss_fn, batch)
     clip_norms.append(current_clip_norm)
 
-    noisy_grads = add_gaussian_noise(grads, stddev=noise_mult * current_clip_norm)
+    noisy_grads = gaussian_noise(grads, stddev=noise_mult * current_clip_norm)
     params = optimizer.step(params, noisy_grads)
 
 # Plot clip norm evolution
@@ -266,7 +266,7 @@ For comparison, here's standard DP-SGD with **fixed clipping**:
 
 ```python
 import opaque.accounting as acc
-from opaque import clipped_grad, add_gaussian_noise
+from opaque import clipped_grad, gaussian_noise
 
 # Fixed clip norm
 clip_norm = 1.0
@@ -282,7 +282,7 @@ dp_grad_fn = clipped_grad(
 # Training loop
 for step in range(num_steps):
     grads = dp_grad_fn(params, batch)
-    noisy_grads = add_gaussian_noise(grads, stddev=noise_mult * clip_norm)
+    noisy_grads = gaussian_noise(grads, stddev=noise_mult * clip_norm)
     params = update(params, noisy_grads)
 ```
 

@@ -202,7 +202,7 @@ Here's a full DP-SGD training loop with accounting:
 ```python
 import torch
 import opaque.accounting as acc
-from opaque import clipped_grad, add_gaussian_noise
+from opaque import clipped_grad, gaussian_noise
 
 # Setup
 clip_norm = 1.0
@@ -234,7 +234,7 @@ for epoch in range(num_epochs):
     for batch in dataloader:
         # Compute noisy gradients
         grads = dp_grad_fn(params, batch)
-        noisy_grads = add_gaussian_noise(grads, stddev=noise_multiplier * clip_norm)
+        noisy_grads = gaussian_noise(grads, stddev=noise_multiplier * clip_norm)
 
         # Update parameters
         params = update(params, noisy_grads)
@@ -307,7 +307,7 @@ privacy_state = acc.create()
 for step in range(num_steps):
     # Training step
     grads = dp_grad_fn(params, batch)
-    noisy_grads = add_gaussian_noise(grads, stddev=noise_multiplier * clip_norm)
+    noisy_grads = gaussian_noise(grads, stddev=noise_multiplier * clip_norm)
     params = update(params, noisy_grads)
 
     # Update privacy

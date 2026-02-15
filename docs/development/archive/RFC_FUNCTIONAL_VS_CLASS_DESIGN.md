@@ -29,7 +29,7 @@ Opaque currently has a **flat functional design**:
 ```python
 # Direct function calls (no composition yet)
 clipped_grads = clipped_grad(loss_fn, l2_clip_norm=1.0)(params, batch)
-noisy_grads = add_gaussian_noise(clipped_grads, noise_multiplier=1.1, clip_norm=1.0)
+noisy_grads = gaussian_noise(clipped_grads, noise_multiplier=1.1, clip_norm=1.0)
 ```
 
 ### User's Challenge
@@ -40,7 +40,7 @@ The user proposed exploring a **compositional functional design** similar to jbr
 # Higher-order functions returning functions
 sample = truncated(poisson(sample_rate=0.01), max_batch_size=64, dataset_size=len(data_loader))
 clip = adaclip(...)
-add_noise = gaussian(noise_multiplier=0.3)
+add_noise = gaussian_noise(noise_multiplier=0.3)
 
 batch = sample(...)
 grad = grad_sample(loss, params, batch)
@@ -158,7 +158,7 @@ noisy_grads, noise_state = privatizer.update(grads, noise_state)
 ```python
 # Each function returns a function
 clip_fn = l2_clipper(clip_norm=1.0)
-noise_fn = gaussian(noise_multiplier=1.1, clip_norm=1.0)
+noise_fn = gaussian_noise(noise_multiplier=1.1, clip_norm=1.0)
 
 # Compose directly
 process = lambda grads: noise_fn(clip_fn(grads))
@@ -223,7 +223,7 @@ clipper: ClippingStrategy = L2Clipper(1.0)
 
 ```rust
 // Higher-order functions returning Process trait objects
-let mechanism = gaussian(noise_multiplier)
+let mechanism = gaussian_noise(noise_multiplier)
     .poisson(sample_rate)
     .truncated(max_batch_size, dataset_size)
     .repeat(num_steps);
@@ -502,7 +502,7 @@ def gaussian(
         Function that adds noise: grads -> noisy_grads
     """
     def add_noise(grads: PyTree) -> PyTree:
-        return add_gaussian_noise(
+        return gaussian_noise(
             grads,
             noise_multiplier=noise_multiplier,
             sensitivity=sensitivity,
@@ -529,7 +529,7 @@ def gaussian_stateful(
         (update_fn, initial_state): Tuple of update function and initial state
     """
     def update(grads: PyTree, state: PrivatizerState) -> tuple[PyTree, PrivatizerState]:
-        noisy = add_gaussian_noise(
+        noisy = gaussian_noise(
             grads,
             noise_multiplier=noise_multiplier,
             sensitivity=sensitivity,
@@ -653,7 +653,7 @@ for epoch in range(num_epochs):
 ```python
 # Current: Direct function calls
 grads = clipped_grad(loss_fn, l2_clip_norm=1.0)(params, batch)
-noisy = add_gaussian_noise(grads, noise_multiplier=1.1, clip_norm=1.0)
+noisy = gaussian_noise(grads, noise_multiplier=1.1, clip_norm=1.0)
 ```
 
 ### Proposed Functional API
@@ -663,7 +663,7 @@ noisy = add_gaussian_noise(grads, noise_multiplier=1.1, clip_norm=1.0)
 grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0)  # Returns BoundedSensitivityCallable
 grads = grad_fn(params, batch)
 
-noise_fn = gaussian(noise_multiplier=1.1, sensitivity=grad_fn.sensitivity())
+noise_fn = gaussian_noise(noise_multiplier=1.1, sensitivity=grad_fn.sensitivity())
 noisy = noise_fn(grads)
 ```
 
@@ -712,9 +712,9 @@ def compute_clipped_grads(loss_fn, params, batch, l2_clip_norm):
    - Tests: Verify backward compatibility
 
 2. **Week 2**: Add higher-order noise functions
-   - `gaussian()`, `laplace()` returning functions
-   - `gaussian_stateful()` with explicit state
-   - Tests: Equivalence with current `add_gaussian_noise()`
+   - `gaussian_noise()`, `laplace()` returning functions
+   - `gaussian_noise_stateful()` with explicit state
+   - Tests: Equivalence with current noise implementation
 
 3. **Week 3**: Add compositional sampling
    - `poisson()`, `truncated_poisson()` returning functions

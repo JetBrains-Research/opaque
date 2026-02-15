@@ -29,7 +29,7 @@ training components:
 import torch
 import torch.nn as nn
 import opaque.accounting as acc
-from opaque import make_functional, clipped_grad, add_gaussian_noise
+from opaque import make_functional, clipped_grad, gaussian_noise
 
 # Generate synthetic data
 torch.manual_seed(42)
@@ -93,7 +93,7 @@ for epoch in range(num_epochs):
         grads = clipped_grad_fn(params, (X_batch, y_batch))
 
         # Add calibrated Gaussian noise
-        noisy_grads = add_gaussian_noise(
+        noisy_grads = gaussian_noise(
             grads,
             stddev=noise_multiplier * clip_norm,
         )

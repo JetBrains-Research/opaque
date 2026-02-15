@@ -39,7 +39,7 @@
    - Choose LoRA model: Llama-3-8B or Mistral-7B
    - Task: Instruction tuning (Alpaca/Dolly)
    - Get non-DP LoRA baseline working
-   - Integrate Opaque DP training (`clipped_grad()` + `add_gaussian_noise()`)
+   - Integrate Opaque DP training (`clipped_grad()` + `gaussian_noise()`)
    - Cross-validate with JAX-Privacy (gradient + utility equivalence)
    - Document all issues encountered
    - Implement basic microbatching if OOM occurs
@@ -97,7 +97,7 @@ See **[RFC: Production Plan](RFC_PRODUCTION_PLAN.md)** for:
 
 **Deliverables**:
 - `opaque.noise` module
-  - `add_gaussian_noise()` - Stateless Gaussian noise
+  - `gaussian_noise()` - Stateless Gaussian noise
 - `opaque.accounting` module (functional API)
   - Composition: `compose_gaussian()`, `compose_poisson_gaussian()`, etc.
   - Queries: `get_epsilon()`, `get_beta()`, `get_advantage()`

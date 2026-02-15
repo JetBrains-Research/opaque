@@ -1,17 +1,20 @@
 """Noise generation for differential privacy."""
 
-from opaque.noise.bounded_gaussian import bounded_gaussian, bounded_gaussian_stateful
-from opaque.noise.gaussian import gaussian, gaussian_stateful
-from opaque.noise.matrix_factorization import (
-    MFNoiseState,
-    matrix_factorization_noise,
+from opaque.noise.band_mf_noise import band_mf_noise
+from opaque.noise.blt_noise import blt_noise
+from opaque.noise.bounded_gaussian_noise import (
+    bounded_gaussian_noise,
+    bounded_gaussian_noise_stateful,
 )
+from opaque.noise.dense_noise import dense_noise
+from opaque.noise.gaussian_noise import gaussian_noise, gaussian_noise_stateful
 
 __all__ = [
-    "bounded_gaussian",
-    "bounded_gaussian_stateful",
-    "gaussian",
-    "gaussian_stateful",
-    "MFNoiseState",
-    "matrix_factorization_noise",
+    "band_mf_noise",
+    "blt_noise",
+    "bounded_gaussian_noise",
+    "bounded_gaussian_noise_stateful",
+    "dense_noise",
+    "gaussian_noise",
+    "gaussian_noise_stateful",
 ]

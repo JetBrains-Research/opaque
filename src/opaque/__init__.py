@@ -9,7 +9,7 @@ Note: Privacy accounting is provided by jbr-fed-accounting (external library).
 
 import os
 
-from opaque import matrix_factorization, sampling
+from opaque import sampling
 from opaque.clipping import (
     AdaptiveClipState,
     ClipState,
@@ -21,14 +21,13 @@ from opaque.clipping import (
     clipped_grad,
 )
 from opaque.noise import (
-    bounded_gaussian,
-    bounded_gaussian_stateful,
-    gaussian,
-    gaussian_stateful,
-)
-from opaque.noise.matrix_factorization import (
-    MFNoiseState,
-    matrix_factorization_noise,
+    band_mf_noise,
+    blt_noise,
+    bounded_gaussian_noise,
+    bounded_gaussian_noise_stateful,
+    dense_noise,
+    gaussian_noise,
+    gaussian_noise_stateful,
 )
 from opaque.sampling import (
     CyclicPoissonSampling,
@@ -71,14 +70,13 @@ __all__ = [
     "TruncatedPoissonSampler",
     "CyclicPoissonSampling",
     # Noise
-    "bounded_gaussian",
-    "bounded_gaussian_stateful",
-    "gaussian",
-    "gaussian_stateful",
-    # Matrix Factorization Noise
-    "matrix_factorization",
-    "matrix_factorization_noise",
-    "MFNoiseState",
+    "gaussian_noise",
+    "gaussian_noise_stateful",
+    "bounded_gaussian_noise",
+    "bounded_gaussian_noise_stateful",
+    "band_mf_noise",
+    "blt_noise",
+    "dense_noise",
     # Utils
     "make_functional",
 ]

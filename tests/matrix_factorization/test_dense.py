@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from opaque.matrix_factorization.dense import (
+from opaque.noise.matrix_factorization.dense import (
     get_orthogonal_mask,
     max_error,
     mean_error,

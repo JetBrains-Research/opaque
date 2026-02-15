@@ -53,7 +53,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import get_peft_model, LoraConfig
 import opaque.accounting as acc
-from opaque import clipped_grad, add_gaussian_noise
+from opaque import clipped_grad, gaussian_noise
 
 # 1. Load base model
 model_name = "meta-llama/Llama-2-7b-hf"
@@ -113,7 +113,7 @@ for epoch in range(num_epochs):
         grads = dp_grad_fn(lora_params, batch)
 
         # Add noise
-        noisy_grads = add_gaussian_noise(grads, stddev=noise_mult * clip_norm)
+        noisy_grads = gaussian_noise(grads, stddev=noise_mult * clip_norm)
 
         # Update LoRA parameters
         lora_params = tuple(p - learning_rate * g for p, g in zip(lora_params, noisy_grads))
@@ -271,7 +271,7 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from peft import get_peft_model, LoraConfig
 import torch
 import opaque.accounting as acc
-from opaque import clipped_grad, add_gaussian_noise
+from opaque import clipped_grad, gaussian_noise
 
 # 1. Load dataset
 dataset = load_dataset("imdb")
@@ -409,7 +409,7 @@ for step in range(num_steps):
     accumulated_grads = {k: v / accumulation_steps for k, v in accumulated_grads.items()}
 
     # Add noise and update
-    noisy_grads = add_gaussian_noise(accumulated_grads, stddev=noise_mult * clip_norm)
+    noisy_grads = gaussian_noise(accumulated_grads, stddev=noise_mult * clip_norm)
     params = update(params, noisy_grads)
 ```
 

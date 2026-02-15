@@ -9,9 +9,9 @@ noise obscures individual contributions, providing the actual privacy guarantee.
 
 Opaque provides two noise mechanisms:
 
-- **`gaussian()`** / **`gaussian_stateful()`** — Standard (unbounded) Gaussian noise. The default for most DP-SGD
+- **`gaussian_noise()`** / **`gaussian_noise_stateful()`** — Standard (unbounded) Gaussian noise. The default for most DP-SGD
   workflows.
-- **`bounded_gaussian()`** / **`bounded_gaussian_stateful()`** — Bounded Gaussian noise using a truncated normal
+- **`bounded_gaussian_noise()`** / **`bounded_gaussian_noise_stateful()`** — Bounded Gaussian noise using a truncated normal
   distribution ([Chen & Hale, 2024](https://arxiv.org/abs/2211.17230)). Guarantees all noisy outputs lie within a
   specified domain — useful when gradient values must stay in a valid range.
 
@@ -19,8 +19,8 @@ Opaque provides two noise mechanisms:
 
 ## Standard Gaussian
 
-::: opaque.noise.gaussian
+::: opaque.noise.gaussian_noise
 
 ## Bounded Gaussian
 
-::: opaque.noise.bounded_gaussian
+::: opaque.noise.bounded_gaussian_noise

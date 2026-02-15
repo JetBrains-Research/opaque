@@ -3,12 +3,11 @@
 import torch
 import torch.nn as nn
 
-from opaque.matrix_factorization.streaming_matrix import identity
-from opaque.matrix_factorization.toeplitz import (
+from opaque.noise.matrix_factorization import identity, matrix_factorization_noise
+from opaque.noise.matrix_factorization.toeplitz import (
     inverse_as_streaming_matrix,
     optimal_max_error_strategy_coefs,
 )
-from opaque.noise.matrix_factorization import matrix_factorization_noise
 
 
 def _train_loop(model, optimizer, init_fn, noise_fn, x_data, y_data, steps):

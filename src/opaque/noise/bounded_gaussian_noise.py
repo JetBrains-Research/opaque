@@ -13,8 +13,8 @@ produce invalid values that require post-hoc projection), this mechanism
 confines noise to a bounded region from the start.
 
 The functional API provides:
-1. ``bounded_gaussian(stddev, bounds)`` -- stateless noise function (recommended)
-2. ``bounded_gaussian_stateful(stddev, bounds, seed)`` -- (fn, state) for reproducibility
+1. ``bounded_gaussian_noise(stddev, bounds)`` -- stateless noise function (recommended)
+2. ``bounded_gaussian_noise_stateful(stddev, bounds, seed)`` -- (fn, state) for reproducibility
 """
 
 import math
@@ -90,7 +90,7 @@ def _truncated_normal_around(
     return torch.clamp(samples, min=lower, max=upper)
 
 
-def bounded_gaussian(
+def bounded_gaussian_noise(
     stddev: float,
     bounds: tuple[float, float],
 ) -> Callable:
@@ -106,7 +106,7 @@ def bounded_gaussian(
     valid domain.
 
     For reproducible noise (e.g., testing, debugging), use
-    ``bounded_gaussian_stateful()``.
+    ``bounded_gaussian_noise_stateful()``.
 
     Args:
         stddev: Standard deviation of the underlying Gaussian noise
@@ -123,9 +123,9 @@ def bounded_gaussian(
 
     Example:
         >>> import torch
-        >>> from opaque.noise import bounded_gaussian
+        >>> from opaque.noise import bounded_gaussian_noise
         >>>
-        >>> noise_fn = bounded_gaussian(stddev=1.0, bounds=(-3.0, 3.0))
+        >>> noise_fn = bounded_gaussian_noise(stddev=1.0, bounds=(-3.0, 3.0))
         >>> grads = torch.zeros(1000)
         >>> noisy = noise_fn(grads)
         >>> assert noisy.min() >= -3.0
@@ -164,7 +164,7 @@ def bounded_gaussian(
     return noise_fn
 
 
-def bounded_gaussian_stateful(
+def bounded_gaussian_noise_stateful(
     stddev: float,
     bounds: tuple[float, float],
     seed: int,
@@ -176,12 +176,12 @@ def bounded_gaussian_stateful(
     pattern of explicit state passing used throughout Opaque.
 
     Use this when you need reproducible noise (e.g., for testing, debugging, or
-    deterministic training).  For typical use cases, use ``bounded_gaussian()``.
+    deterministic training).  For typical use cases, use ``bounded_gaussian_noise()``.
 
     Note:
         The returned generator is created on CPU. For CUDA tensors, you must
         create a CUDA generator manually and pass it to the noise function,
-        or use ``bounded_gaussian()`` for non-reproducible CUDA sampling.
+        or use ``bounded_gaussian_noise()`` for non-reproducible CUDA sampling.
 
     Args:
         stddev: Standard deviation of the underlying Gaussian noise.
@@ -200,9 +200,9 @@ def bounded_gaussian_stateful(
 
     Example:
         >>> import torch
-        >>> from opaque.noise import bounded_gaussian_stateful
+        >>> from opaque.noise import bounded_gaussian_noise_stateful
         >>>
-        >>> noise_fn, state = bounded_gaussian_stateful(
+        >>> noise_fn, state = bounded_gaussian_noise_stateful(
         ...     stddev=1.0, bounds=(-3.0, 3.0), seed=42
         ... )
         >>> grads = torch.zeros(100)
@@ -248,4 +248,4 @@ def bounded_gaussian_stateful(
     return noise_fn, state
 
 
-__all__ = ["bounded_gaussian", "bounded_gaussian_stateful"]
+__all__ = ["bounded_gaussian_noise", "bounded_gaussian_noise_stateful"]

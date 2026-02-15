@@ -18,18 +18,18 @@ Imagine you're trying to figure out if Alice's data was used to train a model:
 
 The more noise we add, the stronger the privacy guarantee, but the worse the model accuracy.
 
-## The `add_gaussian_noise()` Function
+## The `gaussian_noise()` Function
 
 Opaque provides a simple, stateless function for adding noise:
 
 ```python
-from opaque import add_gaussian_noise
+from opaque import gaussian_noise
 
 # After computing clipped gradients
 clipped_grads = clipped_grad_fn(params, batch)
 
 # Add Gaussian noise (std = noise_multiplier * clip_norm)
-noisy_grads = add_gaussian_noise(
+noisy_grads = gaussian_noise(
     clipped_grads,
     stddev=noise_multiplier * clip_norm,
 )
@@ -50,7 +50,7 @@ params = update(params, noisy_grads)
 
 ```python
 gen = torch.Generator().manual_seed(42)
-noisy_grads = add_gaussian_noise(grads, stddev=1.0, generator=gen)
+noisy_grads = gaussian_noise(grads, stddev=1.0, generator=gen)
 ```
 
 ## Calibrating Noise
@@ -156,7 +156,7 @@ Here's how gradient clipping and noise addition work together:
 ```python
 import torch
 import opaque.accounting as acc
-from opaque import clipped_grad, add_gaussian_noise
+from opaque import clipped_grad, gaussian_noise
 
 # 1. Setup
 clip_norm = 1.0
@@ -189,7 +189,7 @@ for step in range(num_steps):
     grads = dp_grad_fn(params, batch)
 
     # Add calibrated noise
-    noisy_grads = add_gaussian_noise(
+    noisy_grads = gaussian_noise(
         grads,
         stddev=noise_multiplier * clip_norm,
     )
@@ -217,10 +217,10 @@ mechanism** based on [Chen & Hale (2024)](https://arxiv.org/abs/2211.17230). Ins
 uses a **truncated normal distribution** restricted to a domain `[lower, upper]`.
 
 ```python
-from opaque import bounded_gaussian
+from opaque import bounded_gaussian_noise
 
 # Outputs are guaranteed to lie in [-3.0, 3.0]
-noise_fn = bounded_gaussian(stddev=noise_multiplier * clip_norm, bounds=(-3.0, 3.0))
+noise_fn = bounded_gaussian_noise(stddev=noise_multiplier * clip_norm, bounds=(-3.0, 3.0))
 
 noisy_grads = noise_fn(clipped_grads)
 ```
@@ -229,18 +229,18 @@ noisy_grads = noise_fn(clipped_grads)
 
 | Scenario | Recommended Mechanism |
 |----------|----------------------|
-| General DP-SGD training | `gaussian()` (standard) |
-| Gradient values must stay in a valid range | `bounded_gaussian()` |
-| Queries with bounded output domains | `bounded_gaussian()` |
+| General DP-SGD training | `gaussian_noise()` (standard) |
+| Gradient values must stay in a valid range | `bounded_gaussian_noise()` |
+| Queries with bounded output domains | `bounded_gaussian_noise()` |
 
 ### Reproducibility
 
-Use `bounded_gaussian_stateful()` for deterministic noise:
+Use `bounded_gaussian_noise_stateful()` for deterministic noise:
 
 ```python
-from opaque import bounded_gaussian_stateful
+from opaque import bounded_gaussian_noise_stateful
 
-noise_fn, state = bounded_gaussian_stateful(stddev=1.0, bounds=(-3.0, 3.0), seed=42)
+noise_fn, state = bounded_gaussian_noise_stateful(stddev=1.0, bounds=(-3.0, 3.0), seed=42)
 noisy_grads = noise_fn(grads, state)
 ```
 
@@ -260,7 +260,7 @@ for step in range(num_steps):
     grads = dp_grad_fn(params, batch)
 
     current_noise = noise_schedule(step, num_steps)
-    noisy_grads = add_gaussian_noise(grads, stddev=current_noise * clip_norm)
+    noisy_grads = gaussian_noise(grads, stddev=current_noise * clip_norm)
 
     params = update(params, noisy_grads)
 
@@ -323,7 +323,7 @@ understand privacy composition.
 
 ## PyTree Support
 
-`add_gaussian_noise()` works with any PyTree structure:
+`gaussian_noise()` works with any PyTree structure:
 
 ```python
 # Nested dictionaries of tensors
@@ -332,7 +332,7 @@ grads = {
     "decoder": {"weight": tensor3, "bias": tensor4},
 }
 
-noisy_grads = add_gaussian_noise(grads, stddev=1.0)
+noisy_grads = gaussian_noise(grads, stddev=1.0)
 # Noise added independently to each tensor
 ```
 
@@ -346,7 +346,7 @@ torch.manual_seed(42)
 
 # Or use per-call generator
 gen = torch.Generator().manual_seed(42)
-noisy_grads = add_gaussian_noise(grads, stddev=1.0, generator=gen)
+noisy_grads = gaussian_noise(grads, stddev=1.0, generator=gen)
 ```
 
 ## See Also

@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from opaque.matrix_factorization.streaming_matrix import (
+from opaque.noise.matrix_factorization.streaming_matrix import (
     StreamingMatrix,
     diagonal,
     identity,

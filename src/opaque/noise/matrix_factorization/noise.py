@@ -11,8 +11,7 @@ The API follows the same ``(fn, state)`` pattern as ``gaussian_stateful``:
 applies correlated noise at each step.
 
 Example:
-    >>> from opaque.matrix_factorization.streaming_matrix import identity
-    >>> from opaque.noise.matrix_factorization import matrix_factorization_noise
+    >>> from opaque.noise.matrix_factorization import identity, matrix_factorization_noise
     >>> init_fn, noise_fn = matrix_factorization_noise(identity(), stddev=1.0, seed=42)
     >>> state = init_fn(grad_template)
     >>> noisy_grad, state = noise_fn(clipped_grad, state)
@@ -31,7 +30,7 @@ from typing import Any
 
 import torch
 
-from opaque.matrix_factorization import streaming_matrix
+from . import streaming_matrix
 from opaque.utils.pytree import tree_map
 
 
@@ -127,7 +126,7 @@ def matrix_factorization_noise(
 
     Example:
         >>> import torch
-        >>> from opaque.matrix_factorization.toeplitz import (
+        >>> from opaque.noise.matrix_factorization.toeplitz import (
         ...     inverse_as_streaming_matrix,
         ...     optimal_max_error_strategy_coefs,
         ... )

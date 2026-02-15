@@ -40,7 +40,7 @@ This RFC presents a unified plan to evolve Opaque from a functional prototype (S
 
 **Core Primitives** (Stages 1-2 Complete):
 - ✅ **Clipping**: `clip_pytree()`, `clipped_grad()`, `clipped_fun()` - Full JAX-Privacy API parity
-- ✅ **Noise**: `add_gaussian_noise()` - Stateless noise injection
+- ✅ **Noise**: `gaussian_noise()` - Stateless noise injection
 - ✅ **Accounting**: Functional API (to be migrated per RFC_ACCOUNTING_MIGRATION.md)
 - ✅ **Optimizers**: `adaptive_clipping()` wrapper for TorchOpt optimizers
 
@@ -138,7 +138,7 @@ grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0)
 print(grad_fn.clip_norm)  # 1.0
 
 # Create noise function (user does multiplication)
-noise_fn = gaussian(stddev=1.1 * grad_fn.clip_norm)
+noise_fn = gaussian_noise(stddev=1.1 * grad_fn.clip_norm)
 
 # Training loop
 for batch in dataloader:
@@ -161,7 +161,7 @@ for batch in dataloader:
 ```python
 # Old: Direct calls, no composition
 grads = clipped_grad(loss_fn, l2_clip_norm=1.0)(params, batch)
-noisy = add_gaussian_noise(grads, stddev=1.1)
+noisy = gaussian_noise(grads, stddev=1.1)
 ```
 
 **New API** (Production - higher-order functional):
@@ -169,7 +169,7 @@ noisy = add_gaussian_noise(grads, stddev=1.1)
 ```python
 # New: Configure once, compose naturally
 grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0)
-noise_fn = gaussian(stddev=1.1 * grad_fn.clip_norm)
+noise_fn = gaussian_noise(stddev=1.1 * grad_fn.clip_norm)
 
 # Training loop
 for batch in dataloader:
@@ -417,7 +417,7 @@ See DESIGN_COMPARISON_EXAMPLES.md for detailed code examples. Key functional pat
   - Profile memory usage (model, LoRA adapters, gradients, optimizer state)
   - Document training hyperparameters
 - [ ] **Add Opaque DP training to LoRA**
-  - Integrate `clipped_grad()` + `add_gaussian_noise()` with LoRA parameters
+  - Integrate `clipped_grad()` + `gaussian_noise()` with LoRA parameters
   - Use `torch.func.functional_call` for HF PEFT model
   - Start with small batch (avoid OOM initially)
   - **Goal**: Get training to complete, even if slow/inefficient
@@ -866,20 +866,20 @@ See DESIGN_COMPARISON_EXAMPLES.md for detailed code examples. Key functional pat
 
 ```python
 # Before: Direct function calls
-from opaque import clipped_grad, add_gaussian_noise
+from opaque import clipped_grad, gaussian_noise
 
 grads = clipped_grad(loss_fn, l2_clip_norm=1.0)(params, batch)
-noisy = add_gaussian_noise(grads, noise_multiplier=1.1, clip_norm=1.0)
+noisy = gaussian_noise(grads, noise_multiplier=1.1, clip_norm=1.0)
 ```
 
 **Functional API** (proposed):
 
 ```python
 # After: Higher-order functions
-from opaque import clipped_grad, gaussian
+from opaque import clipped_grad, gaussian_noise
 
 grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0)
-noise_fn = gaussian(noise_multiplier=1.1, sensitivity=grad_fn.sensitivity())
+noise_fn = gaussian_noise(noise_multiplier=1.1, sensitivity=grad_fn.sensitivity())
 
 grads = grad_fn(params, batch)
 noisy = noise_fn(grads)
@@ -912,7 +912,7 @@ def compute_clipped_grads(loss_fn, params, batch, l2_clip_norm):
 |--------|-------------------|-------|
 | `PrivacyEngine` | No equivalent | Low-level API only |
 | `GradSampleModule` | `clipped_grad()` | Functional, no module wrapping |
-| `make_private()` | `clipped_grad()` + `gaussian()` | Explicit composition |
+| `make_private()` | `clipped_grad()` + `gaussian_noise()` | Explicit composition |
 | `DPOptimizer` | `adaptive_clipping()` | Wrapper for TorchOpt |
 | `PrivacyAccountant` | `opaque.accounting` | Functional API |
 

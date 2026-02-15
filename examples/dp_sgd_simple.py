@@ -1,21 +1,21 @@
 """Simple DP-SGD training example with the new functional API.
 
 This example demonstrates:
-1. Natural composition of clipped_grad() and gaussian()
+1. Natural composition of clipped_grad() and gaussian_noise()
 2. Using .clip_norm attribute for noise calibration
 3. Full DP-SGD training loop with the simplified API
-4. Swapping in bounded_gaussian() for bounded-domain noise
+4. Swapping in bounded_gaussian_noise() for bounded-domain noise
 
 The new API makes it easy to swap components for research:
 - Swap clipping: per_layer_clipped_grad(), adaptive_clipper()
-- Swap noise: bounded_gaussian(), correlated_gaussian(), laplace()
+- Swap noise: bounded_gaussian_noise(), correlated_gaussian(), laplace()
 """
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
-from opaque import bounded_gaussian, clipped_grad, gaussian
+from opaque import bounded_gaussian_noise, clipped_grad, gaussian_noise
 
 
 def main():
@@ -67,7 +67,7 @@ def main():
     print(f"   - Clip norm from grad_fn: {grad_fn.clip_norm}")
 
     # Step 2: Configure noise based on clip_norm
-    noise_fn = gaussian(stddev=noise_multiplier * grad_fn.clip_norm)
+    noise_fn = gaussian_noise(stddev=noise_multiplier * grad_fn.clip_norm)
     print(f"   - Noise stddev: {noise_multiplier * grad_fn.clip_norm:.3f}")
 
     # Training loop
@@ -126,14 +126,14 @@ def demo_research_flexibility():
     # Example 1: Standard DP-SGD
     print("\n1. Standard DP-SGD:")
     grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0)
-    noise_fn = gaussian(stddev=1.1 * grad_fn.clip_norm)
+    noise_fn = gaussian_noise(stddev=1.1 * grad_fn.clip_norm)
     print(f"   ✓ Clip norm: {grad_fn.clip_norm}")
     print(f"   ✓ Noise: Gaussian(stddev={1.1 * grad_fn.clip_norm})")
 
     # Example 2: Different clip norm
     print("\n2. Higher clip norm:")
     grad_fn_2 = clipped_grad(loss_fn, l2_clip_norm=2.0)
-    noise_fn_2 = gaussian(stddev=1.1 * grad_fn_2.clip_norm)
+    noise_fn_2 = gaussian_noise(stddev=1.1 * grad_fn_2.clip_norm)
     print(f"   ✓ Clip norm: {grad_fn_2.clip_norm}")
     print(f"   ✓ Noise: Gaussian(stddev={1.1 * grad_fn_2.clip_norm})")
 
@@ -142,13 +142,13 @@ def demo_research_flexibility():
     grad_fn_3 = clipped_grad(
         loss_fn, l2_clip_norm=5.0, rescale_to_unit_norm=True
     )
-    noise_fn_3 = gaussian(stddev=1.1 * grad_fn_3.clip_norm)
+    noise_fn_3 = gaussian_noise(stddev=1.1 * grad_fn_3.clip_norm)
     print(f"   ✓ Clip norm: {grad_fn_3.clip_norm}")  # Should be 1.0
     print(f"   ✓ Noise: Gaussian(stddev={1.1 * grad_fn_3.clip_norm})")
 
     # Example 4: Bounded Gaussian noise (truncated normal)
     print("\n4. Bounded Gaussian (Chen & Hale, 2024):")
-    noise_fn_bounded = bounded_gaussian(
+    noise_fn_bounded = bounded_gaussian_noise(
         stddev=1.1 * grad_fn.clip_norm, bounds=(-3.0, 3.0)
     )
     print(f"   ✓ Noise: BoundedGaussian(stddev={1.1 * grad_fn.clip_norm}, bounds=(-3, 3))")
@@ -156,7 +156,7 @@ def demo_research_flexibility():
 
     # Example 5: Future - swap clipping mechanism
     print("\n5. Future: Swappable mechanisms:")
-    print("   # noise_fn = correlated_gaussian(stddev=1.1, rank=10)")
+    print("   # noise_fn = correlated_gaussian_noise(stddev=1.1, rank=10)")
     print("   # grad_fn = per_layer_clipped_grad(loss_fn, clip_norms={...})")
     print("   # grad_fn = adaptive_clipper(loss_fn, target_quantile=0.5)")
 

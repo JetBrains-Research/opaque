@@ -71,7 +71,7 @@ for step in range(num_steps):
 
     # Compute gradients
     grads = dp_grad_fn(params, batch)
-    noisy_grads = add_gaussian_noise(grads, stddev=noise_mult * clip_norm)
+    noisy_grads = gaussian_noise(grads, stddev=noise_mult * clip_norm)
     params = update(params, noisy_grads)
 
     # Track privacy with Poisson composition
@@ -117,7 +117,7 @@ for step in range(num_steps):
 
     batch = dataset[indices]
     grads = dp_grad_fn(params, batch)
-    noisy_grads = add_gaussian_noise(grads, stddev=noise_mult * clip_norm)
+    noisy_grads = gaussian_noise(grads, stddev=noise_mult * clip_norm)
     params = update(params, noisy_grads)
 
     # Track privacy with TRUNCATED Poisson composition
@@ -190,7 +190,7 @@ for step in range(num_steps):
     # Use microbatching (memory-efficient!)
     grads = compute_clipped_gradients_microbatched(params, batch, microbatch_size=8)
 
-    noisy_grads = add_gaussian_noise(grads, stddev=noise_mult * clip_norm)
+    noisy_grads = gaussian_noise(grads, stddev=noise_mult * clip_norm)
     params = update(params, noisy_grads)
 ```
 
@@ -241,7 +241,7 @@ Here's a full training loop combining both techniques:
 ```python
 import torch
 import opaque.accounting as acc
-from opaque import clipped_grad, add_gaussian_noise
+from opaque import clipped_grad, gaussian_noise
 from opaque.sampling import TruncatedPoissonSampler
 
 # Setup
@@ -290,7 +290,7 @@ for step in range(num_steps):
             total_grads = {k: total_grads[k] + grads[k] for k in grads}
 
     # Add noise
-    noisy_grads = add_gaussian_noise(total_grads, stddev=noise_mult * clip_norm)
+    noisy_grads = gaussian_noise(total_grads, stddev=noise_mult * clip_norm)
 
     # Update
     params = update(params, noisy_grads)

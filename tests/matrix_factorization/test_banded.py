@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from opaque.matrix_factorization.banded import (
+from opaque.noise.matrix_factorization.banded import (
     ColumnNormalizedBanded,
     minsep_sensitivity_squared,
 )
