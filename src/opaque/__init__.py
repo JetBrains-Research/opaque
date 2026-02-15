@@ -1,14 +1,15 @@
 """Opaque: Differentially Private Training for PyTorch.
 
 This package provides differentially private training utilities for PyTorch,
-inspired by JAX-Privacy.
+inspired by JAX-Privacy. Includes standard DP-SGD as well as correlated noise
+mechanisms (BandMF, BLT, DP-FTRL) for improved utility.
 
 Note: Privacy accounting is provided by jbr-fed-accounting (external library).
 """
 
 import os
 
-from opaque import sampling
+from opaque import matrix_factorization, sampling
 from opaque.clipping import (
     AdaptiveClipState,
     ClipState,
@@ -25,18 +26,17 @@ from opaque.noise import (
     gaussian,
     gaussian_stateful,
 )
-from opaque.sampling import PoissonSampler, TruncatedPoissonSampler
-
-# TEMPORARILY COMMENTED OUT - optimizers being refactored to functional API
-# from opaque.optimizers import (
-#     AdaptiveClipState,
-#     DPOptimizerState,
-#     dp_adam,
-#     dp_adam_ac,
-#     dp_adamw,
-#     dp_sgd,
-#     make_dp_optimizer,
-# )
+from opaque.noise.matrix_factorization import (
+    Privatizer,
+    PrivatizerState,
+    gaussian_privatizer,
+    matrix_factorization_privatizer,
+)
+from opaque.sampling import (
+    CyclicPoissonSampling,
+    PoissonSampler,
+    TruncatedPoissonSampler,
+)
 from opaque.utils import make_functional
 
 # =============================================================================
@@ -71,11 +71,18 @@ __all__ = [
     "sampling",
     "PoissonSampler",
     "TruncatedPoissonSampler",
+    "CyclicPoissonSampling",
     # Noise
     "bounded_gaussian",
     "bounded_gaussian_stateful",
     "gaussian",
     "gaussian_stateful",
+    # Matrix Factorization / DP-FTRL
+    "matrix_factorization",
+    "matrix_factorization_privatizer",
+    "gaussian_privatizer",
+    "Privatizer",
+    "PrivatizerState",
     # Utils
     "make_functional",
 ]
