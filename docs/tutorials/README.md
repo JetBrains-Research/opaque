@@ -89,6 +89,27 @@ with automatic threshold adaptation.
 
 ---
 
+### [Tutorial 07: Empirical Privacy Auditing](07_privacy_auditing.ipynb)
+
+**Level**: Advanced
+**Duration**: 45-60 minutes
+**Prerequisites**: Tutorials 01-03, basic understanding of DP guarantees
+
+Learn how to empirically validate your DP implementation using membership inference attacks:
+
+**What you'll learn**:
+
+1. **Why audit**: Gap between theoretical and empirical privacy
+2. **Membership inference**: How attacks reveal privacy leakage
+3. **Epsilon estimation**: Clopper-Pearson, one-run, and raw counts methods
+4. **Attack metrics**: AUROC, TPR@FPR, and max accuracy
+5. **Bootstrap**: Confidence intervals for uncertainty quantification
+6. **Complete workflow**: End-to-end auditing example
+
+**Key Takeaway**: Privacy auditing lets you validate that your DP implementation provides the expected guarantees by measuring actual attack success.
+
+---
+
 ## Additional Resources
 
 ### Documentation
@@ -121,12 +142,13 @@ Found an issue or have suggestions for improving the tutorials?
 - [x] Tutorial 02: Differential Privacy - Noise and Accounting (Stage 2)
 - [x] Tutorial 03: Complete DP-SGD Training Loop (Stage 2)
 - [x] Tutorial 04: Functional DP Training with TorchOpt (Stage 2)
+- [x] Tutorial 07: Empirical Privacy Auditing (Stage 3)
 
 **Planned tutorials** (coming in future stages):
 
 - [ ] Tutorial 05: DP-SGD for LoRA Fine-Tuning with HuggingFace (Stage 4+)
 - [ ] Tutorial 06: Advanced Privacy Techniques (Poisson sampling, microbatching, etc.) (Stage 4+)
-- [ ] Tutorial 07: Multi-GPU DP Training (Stage 5+)
+- [ ] Tutorial 08: Multi-GPU DP Training (Stage 5+)
 
 ---
 
