@@ -14,6 +14,7 @@ from opaque import clipped_grad, make_functional
 from tests.compat.conftest import prepare_lora_model, run_clipped_grad_test
 
 
+@pytest.mark.gpu
 class TestMultiArchitectureCompatibility:
     """Test different model architectures."""
 

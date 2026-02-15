@@ -10,6 +10,12 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 from opaque import clipped_grad, make_functional
 
 
+def pytest_runtest_setup(item):
+    """Auto-skip GPU tests if CUDA is not available."""
+    if "gpu" in item.keywords and not torch.cuda.is_available():
+        pytest.skip("CUDA not available - skipping GPU tests")
+
+
 @pytest.fixture(scope="module")
 def qwen2_config():
     """Small Qwen2 config for fast testing."""
