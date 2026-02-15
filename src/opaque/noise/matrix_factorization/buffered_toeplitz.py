@@ -35,8 +35,6 @@ __all__ = [
     "inverse_as_streaming_matrix",
     "sensitivity_squared",
     "max_error",
-    "limit_max_error",
-    "limit_max_loss",
     "iteration_error",
 ]
 

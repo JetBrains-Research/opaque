@@ -86,48 +86,62 @@ PyTorch implementation of differential privacy for LLM fine-tuning:
 ### Current Codebase
 ```
 src/opaque/
-├── __init__.py             # ✅ Public API exports
-├── utils/                  # ✅ Utility modules
-│   ├── __init__.py
+├── __init__.py             # Public API exports
+├── utils/                  # Utility modules
 │   ├── pytree.py           # PyTree operations (tree_map, global_norm)
 │   └── functional.py       # Functional utils (make_functional)
-├── clipping/               # ✅ Clipping module (modularized structure)
-│   ├── __init__.py         # Public exports: clip_pytree, clipped_fun, clipped_grad, types
+├── clipping/               # Clipping module
 │   ├── types.py            # BoundedSensitivityCallable, AuxiliaryOutput
 │   ├── pytree.py           # clip_pytree implementation
 │   ├── clipped_fun.py      # clipped_fun (primary API)
 │   ├── clipped_grad.py     # clipped_grad (gradient clipping)
 │   └── _helpers.py         # Internal helpers
-├── noise/                  # ✅ Stage 2: Noise injection
-│   ├── __init__.py
-│   └── gaussian.py         # add_gaussian_noise implementation
-└── accounting/             # ✅ Stage 2: Privacy accounting (functional API)
-    ├── __init__.py         # Public exports
-    ├── composition.py      # Functional composition (create, compose_*)
-    ├── queries.py          # Privacy queries (get_epsilon, get_beta, get_advantage)
-    └── calibration.py      # Calibration using riskcal.calibration.core primitives
+├── noise/                  # Noise injection (DP-SGD + correlated MF)
+│   ├── gaussian_noise.py           # gaussian_noise() → (noise_fn, state)
+│   ├── bounded_gaussian_noise.py   # bounded_gaussian_noise() → (noise_fn, state)
+│   ├── band_mf_noise.py            # BandMF correlated noise
+│   ├── blt_mf_noise.py             # Buffered Linear Toeplitz noise
+│   ├── dense_mf_noise.py           # Dense matrix noise
+│   ├── custom_mf_noise.py          # Bring-your-own-matrix noise
+│   ├── identity_mf_noise.py        # Identity (DP-SGD via MF API)
+│   └── matrix_factorization/       # MF math infrastructure
+│       ├── streaming_matrix.py     # StreamingMatrix data structure
+│       ├── toeplitz.py             # Banded Toeplitz strategies
+│       ├── buffered_toeplitz.py    # BLT strategies
+│       ├── banded.py               # General banded strategies
+│       ├── dense.py                # Dense strategies
+│       ├── sensitivity.py          # Sensitivity calculations
+│       ├── checks.py               # Validation
+│       └── optimization.py         # Strategy optimization
+├── auditing/               # Empirical privacy auditing
+│   ├── __init__.py         # setup(), evaluate() module-level API
+│   ├── audit.py            # AuditResult, CoinFlipExperiment
+│   ├── scoring.py          # score_by_loss (torch.func.vmap)
+│   ├── bootstrap.py        # BootstrapParams
+│   └── helpers.py          # Internal helpers
+├── accounting/             # Privacy accounting (functional API)
+│   ├── composition.py      # create(), compose_*() functions
+│   ├── queries.py          # get_epsilon, get_beta, get_advantage
+│   └── calibration.py      # find_noise_multiplier_for_*()
+├── sampling/               # Batch sampling strategies
+├── optimizers/             # TorchOpt wrappers
+│   └── adaptive_clipping.py
+└── compat/                 # HuggingFace compatibility
+    └── transformers/
 
 tests/
-├── accounting/             # ✅ 50 unit tests (composition, queries, calibration)
-│   ├── test_composition.py # Composition functions (13 tests)
-│   ├── test_queries.py     # Privacy queries (16 tests)
-│   └── test_calibration.py # Calibration using riskcal (21 tests)
-├── clipping/               # ✅ 9 clipping tests
-├── noise/                  # Tests for noise injection (if separate)
-├── jax_validation/         # ✅ 5 JAX validation tests
-│   └── test_accounting.py  # Validates against JAX-Privacy (functional API)
-└── optimizers/             # ✅ 56 tests (37 adaptive_clipping + 19 dp_optimizer_ac)
-    ├── test_adaptive_clipping.py  # Tests for adaptive clipping wrapper
-    └── test_dp_optimizer_ac.py    # Integration tests with functional API
+├── auditing/               # 108 auditing tests
+├── accounting/             # 50 accounting tests
+├── clipping/               # 9 clipping tests
+├── noise/                  # Noise tests (gaussian, bounded)
+├── matrix_factorization/   # MF infrastructure tests
+├── jax_validation/         # 5 JAX validation tests
+├── optimizers/             # 56 optimizer tests
+└── test_dp_ftrl.py         # End-to-end DP-FTRL tests
 ```
 
-**Test Coverage**:
-
-- Accounting module: 76% (calibration.py: 76%, composition.py: 57%, queries.py: 50%)
-- Overall: 39% (lower due to untested clipping/noise/optimizers modules)
-
-**Total Tests**: 111 tests passing (55 accounting + 56 optimizer), all passing
-**Current Status**: ✅ Stage 2 COMPLETE - Functional accounting API, optimizer tests fixed, tutorial restructured
+**Total Tests**: 458 tests passing (108 auditing + 55 accounting + 56 optimizer + 239 other)
+**Current Status**: Stages 1-2 COMPLETE, Phase 1C (Auditing) COMPLETE, Noise API unified
 
 **Test Execution**:
 
@@ -226,7 +240,7 @@ See [docs/development/stage2-plan.md](docs/development/stage2-plan.md) for full 
 
 **Implemented**:
 
-1. ✅ `opaque.noise.add_gaussian_noise()` - Stateless Gaussian noise generation
+1. ✅ `opaque.noise.gaussian_noise()` - Returns `(noise_fn, state)` with immutable state
 
 2. ✅ `opaque.accounting` - Functional privacy accounting framework
   - **Immutable state**: `state = acc.create()` returns PLD object
