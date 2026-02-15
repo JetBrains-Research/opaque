@@ -11,7 +11,8 @@ per device. The aggregation happens AFTER per-example clipping on each device.
 from typing import Any
 
 import torch
-from torch.utils._pytree import tree_map
+
+from opaque.utils.pytree import tree_map
 
 from . import all_reduce as all_reduce_tensor
 from . import get_world_size, is_initialized

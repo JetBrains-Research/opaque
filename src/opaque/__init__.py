@@ -27,6 +27,7 @@ from opaque.noise import (
     custom_mf_noise,
     dense_mf_noise,
     gaussian_noise,
+    gaussian_stateful,
     identity_mf_noise,
 )
 from opaque.sampling import (
@@ -71,6 +72,7 @@ __all__ = [
     "CyclicPoissonSampling",
     # Noise
     "gaussian_noise",
+    "gaussian_stateful",
     "bounded_gaussian_noise",
     "band_mf_noise",
     "blt_mf_noise",

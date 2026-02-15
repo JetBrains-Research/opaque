@@ -24,7 +24,7 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 from opaque.clipping import adaptive_clipped_grad
 from opaque.distributed import average_gradients
-from opaque.noise import gaussian
+from opaque.noise import gaussian_noise
 from opaque.utils import make_functional, merge
 
 
@@ -183,7 +183,11 @@ def main():
         return_grad_norms=True,
         return_values=True,
     )
-    noise_fn = gaussian(stddev=noise_multiplier * clip_state.sensitivity())
+    noise_gen = torch.Generator().manual_seed(42 + rank)
+    noise_fn, noise_state = gaussian_noise(
+        stddev=noise_multiplier * clip_state.sensitivity(),
+        generator=noise_gen,
+    )
 
     opt = torchopt.sgd(lr=learning_rate)
     opt_state = opt.init(trainable)
@@ -201,8 +205,11 @@ def main():
         for batch in batches:
             (grads, aux), clip_state = grad_fn(trainable, batch, state=clip_state)
             # Recompute noise scale based on current adaptive clip norm
-            noise_fn = gaussian(stddev=noise_multiplier * clip_state.sensitivity())
-            noisy_grads = noise_fn(grads)
+            noise_fn, noise_state = gaussian_noise(
+                stddev=noise_multiplier * clip_state.sensitivity(),
+                generator=noise_state.rng_state,
+            )
+            noisy_grads, noise_state = noise_fn(grads, noise_state)
             if distributed:
                 noisy_grads = average_gradients(noisy_grads)
 

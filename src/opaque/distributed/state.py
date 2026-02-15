@@ -9,6 +9,7 @@ from dataclasses import fields, is_dataclass
 from typing import Any
 
 import torch
+import torch.distributed as dist
 
 from . import all_reduce as all_reduce_tensor
 from . import is_initialized
@@ -62,6 +63,10 @@ def sync_scalar(
     # Convert to tensor
     if device is None:
         device = torch.device("cpu")
+        if dist.is_available() and dist.is_initialized():
+            backend = dist.get_backend()
+            if backend == "nccl" and torch.cuda.is_available():
+                device = torch.device(f"cuda:{torch.cuda.current_device()}")
     tensor = torch.tensor(value, dtype=torch.float32, device=device)
 
     # All-reduce

@@ -24,8 +24,8 @@
 ### Status: ✅ **FULLY COMPATIBLE**
 
 ### Implementation
-- **Module**: `src/opaque/distributed/ddp.py`
-- **API**: `aggregate_gradients_across_ranks()`
+- **Module**: `src/opaque/distributed/gradients.py`
+- **APIs**: `average_gradients()`, `all_reduce_gradients()`
 - **Tests**: 
   - `tests/distributed/test_ddp_integration.py` - DDP primitives
   - `tests/distributed/test_ddp_models.py` - Integration with real models
