@@ -82,7 +82,8 @@ nav:
     - 04 - Functional DP with TorchOpt: tutorials/04_dp_optimizers.ipynb
     - 05 - Sampling and Microbatching: tutorials/05_sampling_and_microbatching.ipynb
     - 06 - LoRA HuggingFace Training: tutorials/06_lora_huggingface_dp_training.ipynb
-    - 07 - Distributed Training with DDP: tutorials/07_distributed_training.ipynb
+    - 07 - Privacy Auditing: tutorials/07_privacy_auditing.ipynb
+    - 08 - Distributed Training with DDP: tutorials/08_distributed_training.ipynb
   - User Guide:
     - Overview: user-guide/index.md
     - Differential Privacy Basics: user-guide/dp-basics.md
