@@ -6,12 +6,16 @@ import torch
 from opaque.matrix_factorization.buffered_toeplitz import (
     BufferedToeplitz,
     LossFn,
+    Parameterization,
     blt_pair_from_theta_pair,
     geometric_sum,
     get_init_blt,
     iteration_error,
     max_error,
     min_buf_decay_gap,
+    optimize_loss,
+    robust_max_error_Gamma_j,
+    robust_max_error_Gamma_jk,
     sensitivity_squared,
 )
 from opaque.matrix_factorization.toeplitz import materialize_lower_triangular
@@ -150,6 +154,94 @@ class TestGeometricSum:
         result = geometric_sum(a, r, num=5)
         assert float(result) == pytest.approx(3.0)
 
+    def test_near_one_ratio(self):
+        """geometric_sum should be accurate when r is very close to 1."""
+        a = torch.tensor(1.0, dtype=torch.float64)
+        r = torch.tensor(1 - 1e-10, dtype=torch.float64)
+        result = geometric_sum(a, r, num=100)
+        # For r very close to 1, the sum should be close to n=100
+        assert float(result) == pytest.approx(100.0, rel=1e-4)
+
+
+class TestRobustGammaJ:
+    """Tests for the numerically robust Gamma_j computation."""
+
+    def test_matches_brute_force_small_theta(self):
+        """robust_max_error_Gamma_j matches brute force for theta far from 1."""
+        omega = torch.tensor(0.3, dtype=torch.float64)
+        theta = torch.tensor(0.5, dtype=torch.float64)
+        n = 10
+        result = robust_max_error_Gamma_j(omega, theta, n)
+        # Brute force: sum_{i=1}^{n-1} geometric_sum(omega, theta, i) / n
+        total = sum(float(geometric_sum(omega, theta, num=i)) for i in range(1, n))
+        expected = total / n
+        assert float(result) == pytest.approx(expected, rel=1e-6)
+
+    def test_near_one_theta_finite(self):
+        """robust_max_error_Gamma_j returns finite values for theta near 1."""
+        omega = torch.tensor(0.3, dtype=torch.float64)
+        theta = torch.tensor(1 - 1e-10, dtype=torch.float64)
+        result = robust_max_error_Gamma_j(omega, theta, 1000)
+        assert torch.isfinite(result)
+        assert float(result) > 0
+
+
+class TestRobustGammaJK:
+    """Tests for the numerically robust Gamma_jk computation."""
+
+    def test_matches_brute_force_small_thetas(self):
+        """robust_max_error_Gamma_jk matches brute force for small thetas."""
+        omega1 = torch.tensor(0.3, dtype=torch.float64)
+        theta1 = torch.tensor(0.5, dtype=torch.float64)
+        omega2 = torch.tensor(0.2, dtype=torch.float64)
+        theta2 = torch.tensor(0.4, dtype=torch.float64)
+        n = 10
+        result = robust_max_error_Gamma_jk(omega1, theta1, omega2, theta2, n)
+        # Brute force
+        total = sum(
+            float(geometric_sum(omega1, theta1, num=i))
+            * float(geometric_sum(omega2, theta2, num=i))
+            for i in range(1, n)
+        )
+        expected = total / n
+        assert float(result) == pytest.approx(expected, rel=1e-6)
+
+    def test_both_near_one_finite(self):
+        """robust_max_error_Gamma_jk handles both thetas near 1."""
+        omega1 = torch.tensor(0.3, dtype=torch.float64)
+        theta1 = torch.tensor(1 - 1e-10, dtype=torch.float64)
+        omega2 = torch.tensor(0.2, dtype=torch.float64)
+        theta2 = torch.tensor(1 - 1e-10, dtype=torch.float64)
+        result = robust_max_error_Gamma_jk(omega1, theta1, omega2, theta2, 1000)
+        assert torch.isfinite(result)
+
+    def test_one_near_one_finite(self):
+        """robust_max_error_Gamma_jk handles one theta near 1."""
+        omega1 = torch.tensor(0.3, dtype=torch.float64)
+        theta1 = torch.tensor(1 - 1e-10, dtype=torch.float64)
+        omega2 = torch.tensor(0.2, dtype=torch.float64)
+        theta2 = torch.tensor(0.5, dtype=torch.float64)
+        result = robust_max_error_Gamma_jk(omega1, theta1, omega2, theta2, 1000)
+        assert torch.isfinite(result)
+
+
+class TestIterationErrorRobust:
+    """Test that iteration_error is finite even for BLTs with buf_decay near 1."""
+
+    def test_normal_blt(self):
+        blt = BufferedToeplitz.build(
+            buf_decay=[0.5, 0.3],
+            output_scale=[-0.2, -0.1],
+        )
+        err = iteration_error(blt, 50)
+        assert torch.isfinite(err)
+        assert float(err) > 0
+
+    def test_identity_error(self):
+        blt = BufferedToeplitz.build(buf_decay=[], output_scale=[])
+        error = max_error(blt, n=5)
+        assert float(error) == pytest.approx(5.0)
+
 
 class TestSensitivitySquared:
     def test_identity(self):
@@ -165,13 +257,6 @@ class TestSensitivitySquared:
         result = sensitivity_squared(blt, n=10)
         # sens^2 = 1 + sum of geometric series
         assert float(result) > 1.0
-
-
-class TestMaxError:
-    def test_identity_error(self):
-        blt = BufferedToeplitz.build(buf_decay=[], output_scale=[])
-        error = max_error(blt, n=5)
-        assert float(error) == pytest.approx(5.0)
 
 
 class TestMinBufDecayGap:
@@ -233,6 +318,75 @@ class TestLossFn:
         blt = get_init_blt(num_buffers=2)
         loss = loss_fn.loss(blt, skip_checks=True)
         assert float(loss) > 0
+
+    def test_penalized_loss(self):
+        loss_fn = LossFn.build_closed_form_single_participation(n=10)
+        blt = get_init_blt(num_buffers=2)
+        inv_blt = blt.inverse()
+        penalized = loss_fn.penalized_loss(blt, inv_blt)
+        plain = loss_fn.loss(blt)
+        # Penalized loss should be close to plain loss (penalty is small)
+        assert torch.isfinite(penalized)
+        # penalty_strength is 1e-8, so difference should be small
+        assert float(penalized) == pytest.approx(float(plain), abs=1.0)
+
+
+class TestParameterization:
+    def test_buf_decay_pair_roundtrip(self):
+        """Parameters -> BLT -> parameters should approximately round-trip."""
+        param = Parameterization.buf_decay_pair()
+        blt = get_init_blt(num_buffers=2)
+        params = param.params_from_blt(blt)
+        assert params.shape == (4,)  # 2 theta + 2 theta_hat
+
+        blt_out, inv_blt_out = param.blt_and_inverse_from_params(params)
+        n = 10
+        C = blt_out.materialize(n)
+        C_inv = inv_blt_out.materialize(n)
+        product = C @ C_inv
+        torch.testing.assert_close(
+            product, torch.eye(n, dtype=torch.float64), atol=1e-6, rtol=1e-6
+        )
+
+    def test_get_loss_fn(self):
+        loss_fn = LossFn.build_closed_form_single_participation(n=10)
+        param = Parameterization.buf_decay_pair()
+        blt = get_init_blt(num_buffers=2)
+        params = param.params_from_blt(blt)
+        opt_loss_fn = param.get_loss_fn(loss_fn)
+        result = opt_loss_fn(params)
+        assert torch.isfinite(result)
+        assert float(result) > 0
+
+
+class TestOptimizeLoss:
+    def test_zero_buffers(self):
+        loss_fn = LossFn.build_closed_form_single_participation(n=10)
+        blt, loss = optimize_loss(loss_fn, num_buffers=0)
+        assert blt._num_buffers == 0
+        assert float(loss) == pytest.approx(10.0)
+
+    def test_single_buffer_improves(self):
+        """L-BFGS should not make the loss worse (within tolerance)."""
+        loss_fn = LossFn.build_closed_form_single_participation(n=100)
+        init_blt = get_init_blt(num_buffers=1)
+        init_loss = float(loss_fn.loss(init_blt))
+
+        opt_blt, opt_loss = optimize_loss(
+            loss_fn, num_buffers=1, max_optimizer_steps=50
+        )
+        # Allow tiny floating-point tolerance
+        assert float(opt_loss) <= init_loss * (1 + 1e-10)
+        assert torch.isfinite(opt_loss)
+
+    def test_two_buffers(self):
+        loss_fn = LossFn.build_closed_form_single_participation(n=50)
+        opt_blt, opt_loss = optimize_loss(
+            loss_fn, num_buffers=2, max_optimizer_steps=50
+        )
+        assert opt_blt._num_buffers == 2
+        assert torch.isfinite(opt_loss)
+        assert float(opt_loss) > 0
 
 
 class TestFromRationalApprox:

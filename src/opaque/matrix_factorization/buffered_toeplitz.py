@@ -373,6 +373,11 @@ def geometric_sum(
 ) -> torch.Tensor:
     """Compute a + a*r + a*r^2 + ... + a*r^(num-1).
 
+    Uses a quadratic Taylor approximation near r=1 for numerical stability.
+    The threshold for switching to the Taylor series is chosen to minimise
+    the error in the *gradient* w.r.t. ``r`` (not just the value), following
+    the JAX-Privacy implementation.
+
     Args:
         a: Scale factor(s).
         r: Common ratio(s), requires |r| < 1.
@@ -384,16 +389,23 @@ def geometric_sum(
     if math.isinf(num):
         return a / (1 - r)
 
+    n_val = torch.as_tensor(num, dtype=torch.float64)
     n = num
-    # Choose between direct computation and Taylor approximation
-    threshold = 1 - 1e-3  # Simplified threshold
+
+    # Adaptive threshold: calibrated to minimise gradient error.
+    # Constants from regression on numerical experiments (see JAX-Privacy).
+    _SLOPE = 0.53018965
+    _INTERCEPT = 3.33503185
+    pow_threshold = _INTERCEPT + _SLOPE * torch.log(n_val)
+    threshold = 1 - 10 ** (-pow_threshold)
+
     use_direct = r < threshold
 
     # Direct computation (safe when r is not near 1)
     safe_r = torch.where(use_direct, r, torch.zeros_like(r))
     direct = a * (1 - safe_r**n) / (1 - safe_r)
 
-    # Taylor series near r = 1
+    # Quadratic Taylor polynomial at r = 1 (from sympy)
     x0 = n - 1
     x1 = r - 1
     series = (1 / 6) * a * n * (x0 * x1**2 * (n - 2) + 3 * x0 * x1 + 6)
@@ -464,48 +476,140 @@ def iteration_error(inv_blt: BufferedToeplitz, i: float) -> torch.Tensor:
     omega = inv_blt.output_scale
     theta = inv_blt.buf_decay
 
-    # s1: sum of Gamma_j terms
-    s1 = torch.tensor(0.0, dtype=torch.float64)
-    for j in range(len(omega)):
-        gj = _max_error_Gamma_j(omega[j], theta[j], n)
-        s1 = s1 + gj
-
-    # s2: sum of Gamma_jk cross terms
-    s2 = torch.tensor(0.0, dtype=torch.float64)
-    for j in range(len(omega)):
-        for k in range(len(omega)):
-            gjk = _max_error_Gamma_jk(omega[j], theta[j], omega[k], theta[k], n)
-            s2 = s2 + gjk
+    # Vectorised over buffers using broadcasting
+    s1 = robust_max_error_Gamma_j(omega, theta, n).sum()
+    s2 = robust_max_error_Gamma_jk(
+        omega,
+        theta,
+        omega.unsqueeze(1),
+        theta.unsqueeze(1),
+        n,
+    ).sum()
 
     return n * (1 + 2 * s1 + s2)
 
 
 def _max_error_Gamma_j(omega, theta, n):
-    """Compute Gamma_j for max error."""
-    if abs(float(theta) - 1.0) < 1e-6:
-        # Taylor series near theta=1
-        return omega * (n - 1) / 2
-    return (omega / (1 - theta)) * (
+    """Direct computation of Gamma_j for max error."""
+    return (omega / (1.0 - theta)) * (
         1 - geometric_sum(torch.ones_like(theta), theta, num=n) / n
     )
 
 
+def _max_error_Gamma_j_series(omega, theta, n):
+    """Taylor series approximation to _max_error_Gamma_j near theta=1.
+
+    Auto-generated via sympy (see robust_max_error_for_blts.ipynb in
+    JAX-Privacy).
+    """
+    x0 = theta - 1
+    x1 = omega * (n - 2) * (n - 1)
+    return (
+        -omega * (1 / 2 - n / 2) + (1 / 24) * x0**2 * x1 * (n - 3) + (1 / 6) * x0 * x1
+    )
+
+
+def robust_max_error_Gamma_j(omega, theta, n):
+    """Robustly compute Gamma_j, dispatching to Taylor series near theta=1.
+
+    Uses empirically-calibrated thresholds from JAX-Privacy to decide
+    when to switch from the direct formula to a Taylor series.
+    """
+    n_t = torch.as_tensor(n, dtype=torch.float64)
+    _J_SLOPE = 0.43877484
+    _J_INTERCEPT = 2.91215085
+    power = _J_INTERCEPT + _J_SLOPE * torch.log(n_t)
+    threshold = 1 - 10 ** (-power)
+
+    use_direct = theta < threshold
+    safe_theta = torch.where(use_direct, theta, torch.zeros_like(theta))
+    v0 = _max_error_Gamma_j(omega, safe_theta, n)
+    v1 = _max_error_Gamma_j_series(omega, theta, n)
+    return torch.where(use_direct, v0, v1)
+
+
 def _max_error_Gamma_jk(omega1, theta1, omega2, theta2, n):
-    """Compute cross term Gamma_jk for max error."""
-    if abs(float(theta1) - 1.0) < 1e-6 and abs(float(theta2) - 1.0) < 1e-6:
-        # Both near 1
-        return omega1 * omega2 * (2 * n**2 / 3 - n + 1 / 3) / n
-
-    if abs(float(theta1) - 1.0) < 1e-6 or abs(float(theta2) - 1.0) < 1e-6:
-        # One near 1 - use formula with geometric sum
-        pass
-
+    """Direct computation of cross term Gamma_jk for max error."""
     temp1 = omega1 * omega2 / ((1 - theta1) * (1 - theta2))
     gs1 = geometric_sum(torch.ones_like(theta1), theta1, num=n)
     gs2 = geometric_sum(torch.ones_like(theta2), theta2, num=n)
     gs12 = geometric_sum(torch.ones_like(theta1), theta1 * theta2, num=n)
     temp2 = (n - gs1 - gs2 + gs12) / n
     return temp1 * temp2
+
+
+def _max_error_Gamma_jk_series_j(omega1, theta1, omega2, theta2, n):
+    """Taylor series in theta1 near 1, theta2 handled directly.
+
+    Auto-generated via sympy (see robust_max_error_for_blts.ipynb in
+    JAX-Privacy).
+    """
+    # fmt: off
+    x0 = theta2 - 1
+    x1 = theta2 ** (n + 1)
+    x2 = -x1
+    x3 = 6 * x0
+    x4 = theta2 ** n
+    x5 = n - 1
+    x6 = theta1 - 1
+    x7 = theta2 ** (n + 2)
+    return (-1 / 6 * omega1 * omega2 * (
+        n * x0 ** 3 * (3 * n + x5 * x6 * (n - 2) - 3) + n * x3 * (x2 + x4) - x3 * (theta2 + x2)
+        + 3 * x6 * (n * x0 * (-x1 * x5 + x4 * x5) - 2 * n * (x1 - x7)
+                     + 2 * theta2 ** 2 - 2 * x7)) / (n * x0 ** 4))
+    # fmt: on
+
+
+def _max_error_Gamma_jk_series_jk(omega1, theta1, omega2, theta2, n):
+    """Taylor series in both theta1 and theta2 near 1.
+
+    Auto-generated via sympy (see robust_max_error_for_blts.ipynb in
+    JAX-Privacy).
+    """
+    # fmt: off
+    x0 = n ** 2
+    x1 = 3 * n ** 3 + 9 * n - 10 * x0 - 2
+    return ((1 / 24) * omega1 * omega2 * (-12 * n + 8 * x0 + x1 * (theta1 - 1)
+                                           + x1 * (theta2 - 1) + 4))
+    # fmt: on
+
+
+def robust_max_error_Gamma_jk(omega1, theta1, omega2, theta2, n):
+    """Robustly compute Gamma_jk, dispatching to Taylor series.
+
+    Uses three-way dispatch based on how close theta1/theta2 are to 1:
+    - Both far from 1: direct formula
+    - theta1 near 1, theta2 far: Taylor series in theta1
+    - Both near 1: Taylor series in both
+
+    The series_j approximation requires theta1 >= theta2, so we sort.
+    """
+    n_t = torch.as_tensor(n, dtype=torch.float64)
+    # Ensure theta1 >= theta2 (required by series_j)
+    theta1, theta2 = torch.maximum(theta1, theta2), torch.minimum(theta1, theta2)
+
+    _JK_SLOPE = 0.35321577
+    _JK_INTERCEPT = 2.81518052
+    power = _JK_INTERCEPT + _JK_SLOPE * torch.log(n_t)
+    threshold = 1 - 10 ** (-power)
+
+    v0_predicate = theta1 < threshold
+    v1_predicate = theta2 < threshold
+
+    # Avoid inf/nan in untaken branches
+    safe_theta1 = torch.where(v0_predicate, theta1, torch.zeros_like(theta1))
+    safe_theta2_v0 = torch.where(v0_predicate, theta2, torch.zeros_like(theta2))
+    v0 = _max_error_Gamma_jk(omega1, safe_theta1, omega2, safe_theta2_v0, n)
+
+    safe_theta2_v1 = torch.where(v1_predicate, theta2, torch.zeros_like(theta2))
+    v1 = _max_error_Gamma_jk_series_j(omega1, theta1, omega2, safe_theta2_v1, n)
+    v2 = _max_error_Gamma_jk_series_jk(omega1, theta1, omega2, theta2, n)
+
+    return torch.where(
+        v0_predicate,
+        v0,
+        torch.where(v1_predicate, v1, v2),
+    )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -552,6 +656,7 @@ class LossFn:
         **kwargs,
     ) -> LossFn:
         """Construct LossFn for min-sep participation."""
+
         def mean_error_fn(inv_blt):
             return toeplitz.mean_error(noising_coef=inv_blt.toeplitz_coefs(n))
 
@@ -603,6 +708,81 @@ class LossFn:
         error = self.error_for_inv(inv_blt)
         sens_sq = self.sensitivity_squared_fn(blt)
         return error * sens_sq
+
+    def compute_penalties(
+        self, blt: BufferedToeplitz, inv_blt: BufferedToeplitz
+    ) -> torch.Tensor:
+        """Compute log-barrier penalties enforcing the BLT feasible set.
+
+        Penalties enforce:
+        - buf_decay in (0, 1)
+        - output_scale > 0
+        - inv_buf_decay in (0, 1)
+        - inv_output_scale < 0
+        - buf_decay gap >= min_theta_gap
+        - second Toeplitz coefficient <= max_second_coef
+        - Pillutla score < 1
+
+        Args:
+            blt: The strategy BLT (C).
+            inv_blt: The inverse BLT (C^{-1}).
+
+        Returns:
+            Scalar penalty value.
+        """
+        penalty = torch.tensor(0.0, dtype=torch.float64)
+
+        if blt._num_buffers == 0:
+            return penalty
+
+        # buf_decay in (0, 1)
+        penalty = penalty + _gt_zero_penalty(blt.buf_decay)
+        penalty = penalty + _lt_one_penalty(blt.buf_decay)
+
+        # output_scale > 0
+        penalty = penalty + _gt_zero_penalty(blt.output_scale)
+
+        # inv_buf_decay in (0, 1)
+        penalty = penalty + _gt_zero_penalty(inv_blt.buf_decay)
+        penalty = penalty + _lt_one_penalty(inv_blt.buf_decay)
+
+        # inv_output_scale < 0
+        penalty = penalty + _lt_zero_penalty(inv_blt.output_scale)
+
+        # buf_decay gap separation
+        if blt._num_buffers > 1:
+            gap = min_buf_decay_gap(blt.buf_decay)
+            penalty = penalty - torch.log(gap - self.min_theta_gap)
+
+        # Second coefficient: sum(output_scale) <= max_second_coef
+        second_coef = torch.sum(blt.output_scale)
+        penalty = penalty + _lt_penalty(second_coef, self.max_second_coef)
+
+        # Pillutla score < 1
+        pillutla = torch.sum(blt.output_scale / blt.buf_decay)
+        penalty = penalty + _lt_one_penalty(pillutla.unsqueeze(0))
+
+        return penalty
+
+    def penalized_loss(
+        self, blt: BufferedToeplitz, inv_blt: BufferedToeplitz
+    ) -> torch.Tensor:
+        """Returns loss + penalty_strength * penalties.
+
+        This is the objective function used during L-BFGS optimization.
+
+        Args:
+            blt: The strategy BLT (C).
+            inv_blt: The inverse BLT (C^{-1}).
+
+        Returns:
+            loss + penalties.
+        """
+        error = self.error_for_inv(inv_blt)
+        sens_sq = self.sensitivity_squared_fn(blt)
+        loss = error * sens_sq
+        penalties = self.compute_penalties(blt, inv_blt)
+        return loss + self.penalty_strength * penalties
 
 
 def blt_pair_from_theta_pair(
@@ -672,6 +852,151 @@ def get_init_blt(
     return init_blt
 
 
+@dataclasses.dataclass(frozen=True)
+class Parameterization:
+    """A reparameterization of a BufferedToeplitz for L-BFGS optimization.
+
+    Provides the mapping between optimizable parameters and the BLT pair
+    (strategy, noising) used for loss computation.
+
+    Attributes:
+        params_from_blt: Extracts optimizable parameters from a BLT.
+        blt_and_inverse_from_params: Reconstructs (C, C^{-1}) from parameters.
+    """
+
+    params_from_blt: Callable[[BufferedToeplitz], torch.Tensor]
+    blt_and_inverse_from_params: Callable[
+        ..., tuple[BufferedToeplitz, BufferedToeplitz]
+    ]
+
+    @classmethod
+    def buf_decay_pair(cls) -> Parameterization:
+        """Parameterization over the pair (theta, theta_hat).
+
+        Optimises the buf_decay arrays of C and C^{-1} jointly, which is
+        more numerically stable than optimising the full BLT and avoids
+        the SVD inside ``blt.inverse()``.
+
+        Returns:
+            A Parameterization.
+        """
+
+        def params_from_blt(blt: BufferedToeplitz) -> torch.Tensor:
+            inv_blt = blt.inverse()
+            return torch.cat([blt.buf_decay, inv_blt.buf_decay])
+
+        def blt_and_inverse_from_params(
+            params: torch.Tensor,
+        ) -> tuple[BufferedToeplitz, BufferedToeplitz]:
+            half = len(params) // 2
+            theta = params[:half]
+            theta_hat = params[half:]
+            return blt_pair_from_theta_pair(theta, theta_hat)
+
+        return cls(
+            params_from_blt=params_from_blt,
+            blt_and_inverse_from_params=blt_and_inverse_from_params,
+        )
+
+    def get_loss_fn(self, loss_fn: LossFn) -> Callable[[torch.Tensor], torch.Tensor]:
+        """Returns a scalar loss function over the flat parameter vector."""
+        return lambda params: loss_fn.penalized_loss(
+            *self.blt_and_inverse_from_params(params)
+        )
+
+
+def optimize_loss(
+    loss_fn: LossFn,
+    num_buffers: int = 1,
+    init_blt: BufferedToeplitz | None = None,
+    parameterization: Parameterization | None = None,
+    max_optimizer_steps: int = 600,
+    **kwargs,
+) -> tuple[BufferedToeplitz, torch.Tensor]:
+    """Optimise a BLT for a fixed number of buffers using L-BFGS.
+
+    This is the main workhorse: it initialises a BLT, converts it to an
+    optimisable parameter vector via ``parameterization``, runs L-BFGS,
+    and returns the resulting BLT together with its (unpenalised) loss.
+
+    Args:
+        loss_fn: The loss function to minimise.
+        num_buffers: Number of buffers for the BLT.
+        init_blt: Optional explicit initial BLT.
+        parameterization: Reparameterization to use.  Defaults to
+            ``Parameterization.buf_decay_pair()``.
+        max_optimizer_steps: Maximum L-BFGS iterations.
+        **kwargs: Additional keyword arguments forwarded to
+            ``optimization.optimize``.
+
+    Returns:
+        Tuple ``(blt, loss)`` where *blt* is the optimised BLT and *loss*
+        is the unpenalised loss value.
+
+    Raises:
+        RuntimeError: If the optimiser produces a BLT with non-finite loss.
+    """
+    from . import optimization as optim_mod
+
+    if num_buffers == 0:
+        blt = BufferedToeplitz.build(buf_decay=[], output_scale=[])
+        return blt, loss_fn.loss(blt)
+
+    if parameterization is None:
+        parameterization = Parameterization.buf_decay_pair()
+
+    blt = get_init_blt(num_buffers=num_buffers, init_blt=init_blt)
+    params = parameterization.params_from_blt(blt)
+
+    loss_fn_to_optimize = parameterization.get_loss_fn(loss_fn)
+    params = optim_mod.optimize(
+        loss_fn_to_optimize,
+        params,
+        max_optimizer_steps=max_optimizer_steps,
+        **kwargs,
+    )
+
+    blt, _ = parameterization.blt_and_inverse_from_params(params)
+    blt = blt.canonicalize()
+
+    loss = loss_fn.loss(blt)
+    if not torch.isfinite(loss):
+        raise RuntimeError(
+            f"Optimization produced BLT with non-finite loss {loss}:\n{blt}"
+        )
+
+    if torch.any(torch.abs(blt.output_scale) < 1e-8):
+        logger.warning(
+            "BLT has near-zero output_scale parameters, which "
+            "means some buffers are ignored. Consider re-optimizing "
+            "with a smaller number of buffers.\n%s",
+            blt,
+        )
+    return blt, loss
+
+
+def _optimize_increasing_nbuf(
+    opt_blt_and_loss_fn: Callable[[int], tuple[BufferedToeplitz, float]],
+    min_buffers: int = 0,
+    max_buffers: int = 10,
+    rtol: float = 1.02,
+) -> BufferedToeplitz:
+    """Increase num_buffers until improvement < rtol."""
+    prev_blt, prev_loss = opt_blt_and_loss_fn(min_buffers)
+    for nbuf in range(min_buffers + 1, max_buffers + 1):
+        try:
+            blt, loss = opt_blt_and_loss_fn(nbuf)
+        except RuntimeError as err:
+            logger.warning("Optimization failed for %d buffers: %s", nbuf, err)
+            blt, loss = None, float("inf")
+
+        if rtol * loss < prev_loss:
+            prev_blt, prev_loss = blt, loss
+        else:
+            return prev_blt
+    return prev_blt
+
+
 def optimize(
     *,
     n: int,
@@ -681,22 +1006,32 @@ def optimize(
     min_buffers: int = 0,
     max_buffers: int = 10,
     rtol: float = 1.01,
+    **kwargs,
 ) -> BufferedToeplitz:
-    """Compute a good BLT with dynamically-chosen num_buffers.
+    """Compute an optimised BLT with dynamically-chosen num_buffers.
 
-    Internally increases num_buffers until improvement < rtol.
+    Uses L-BFGS to refine BLT parameters at each buffer count, then
+    increases the buffer count until improvement drops below ``rtol``.
+
+    For single-participation max-error, uses closed-form sensitivity and
+    error from https://arxiv.org/abs/2404.16706, so optimisation time is
+    essentially independent of ``n``.  For multi-participation or mean
+    error, materialises Toeplitz coefficients (benefits from GPU for
+    large ``n``).
 
     Args:
-        n: Number of iterations.
+        n: Number of iterations the mechanism is optimised for.
         min_sep: Minimum separation of participations.
         max_participations: Maximum participations.
-        error: 'max' or 'mean'.
-        min_buffers: Minimum buffers to try.
-        max_buffers: Maximum buffers to try.
-        rtol: Relative tolerance for improvement.
+        error: ``'max'`` or ``'mean'``.
+        min_buffers: Minimum buffers to try (inclusive).
+        max_buffers: Maximum buffers to try (inclusive).
+        rtol: Relative tolerance for loss improvement.
+        **kwargs: Additional keyword arguments forwarded to
+            ``optimize_loss`` / ``optimization.optimize``.
 
     Returns:
-        An optimized BLT.
+        An optimised BLT.
     """
     if max_buffers > 15:
         raise ValueError("max_buffers > 15 will likely cause numerical issues.")
@@ -715,21 +1050,14 @@ def optimize(
             max_participations=max_participations,
         )
 
-    prev_blt = get_init_blt(num_buffers=min_buffers)
-    prev_loss = float(loss_fn.loss(prev_blt))
-
-    for nbuf in range(min_buffers + 1, max_buffers + 1):
-        try:
-            blt = get_init_blt(num_buffers=nbuf)
-            curr_loss = float(loss_fn.loss(blt))
-        except (RuntimeError, ValueError) as err:
-            logger.warning("Optimization failed for %d buffers: %s", nbuf, err)
-            curr_loss = float("inf")
-            blt = None
-
-        if blt is not None and rtol * curr_loss < prev_loss:
-            prev_blt, prev_loss = blt, curr_loss
-        else:
-            return prev_blt
-
-    return prev_blt
+    return _optimize_increasing_nbuf(
+        opt_blt_and_loss_fn=lambda nbuf: optimize_loss(
+            loss_fn=loss_fn,
+            num_buffers=nbuf,
+            parameterization=Parameterization.buf_decay_pair(),
+            **kwargs,
+        ),
+        min_buffers=min_buffers,
+        max_buffers=max_buffers,
+        rtol=rtol,
+    )
