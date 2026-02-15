@@ -124,6 +124,7 @@ def clipped_fun(
         warnings.warn(
             "spmd_axis_name parameter is not yet implemented and will be ignored.",
             UserWarning,
+            stacklevel=2,
         )
 
     # Normalize batch_argnums to tuple
@@ -159,6 +160,7 @@ def clipped_fun(
         # Handle PyTree batch args by getting first leaf
         if isinstance(first_batch_arg, (dict, list, tuple)):
             from opaque.utils.pytree import tree_leaves
+
             batch_size = tree_leaves(first_batch_arg)[0].shape[0]
         else:
             batch_size = first_batch_arg.shape[0]
@@ -176,7 +178,9 @@ def clipped_fun(
             clipped_values, aux, norms = vmapped(*args)
 
             # Sum clipped values across batch dimension
-            result = tree_map(lambda x: torch.sum(x, dim=0, dtype=dtype), clipped_values)
+            result = tree_map(
+                lambda x: torch.sum(x, dim=0, dtype=dtype), clipped_values
+            )
         else:
             # True microbatching: process chunks and accumulate sum incrementally
             # This saves memory by not materializing all per-example outputs at once
@@ -192,8 +196,10 @@ def clipped_fun(
                 chunk_args = list(args)
                 for i in batch_argnums:
                     chunk_args[i] = tree_map(
-                        lambda x: x[chunk_start:chunk_end] if isinstance(x, torch.Tensor) else x,
-                        args[i]
+                        lambda x, cs=chunk_start, ce=chunk_end: (
+                            x[cs:ce] if isinstance(x, torch.Tensor) else x
+                        ),
+                        args[i],
                     )
 
                 # Process chunk with vmap (no chunk_size needed here - processing small chunk)
@@ -207,7 +213,9 @@ def clipped_fun(
                 chunk_clipped_values, chunk_aux, chunk_norms = vmapped(*chunk_args)
 
                 # Sum chunk's clipped values and accumulate
-                chunk_sum = tree_map(lambda x: torch.sum(x, dim=0, dtype=dtype), chunk_clipped_values)
+                chunk_sum = tree_map(
+                    lambda x: torch.sum(x, dim=0, dtype=dtype), chunk_clipped_values
+                )
                 if result is None:
                     result = chunk_sum
                 else:
@@ -225,7 +233,10 @@ def clipped_fun(
                 aux = tree_map(lambda *xs: torch.cat(xs, dim=0), *all_aux)
             else:
                 aux = ()
-            norms = torch.cat(all_norms, dim=0)
+            # Extract norm tensors from ClipPytreeAux namedtuples and concatenate
+            from opaque.clipping.types import ClipPytreeAux
+
+            norms = ClipPytreeAux(norm=torch.cat([n.norm for n in all_norms], dim=0))
 
         # Normalize
         if normalize_by != 1.0:

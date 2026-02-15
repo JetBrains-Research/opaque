@@ -175,6 +175,7 @@ class MemoryTracker:
                     "psutil not installed. Cannot determine MPS memory. "
                     "Install with: pip install psutil",
                     UserWarning,
+                    stacklevel=2,
                 )
                 return 0.0
         return 0.0
@@ -250,6 +251,7 @@ def profile_memory(
             f"Memory profiling on {device.upper()} is limited. "
             "For accurate profiling, use CUDA or MPS devices.",
             UserWarning,
+            stacklevel=2,
         )
 
     # Make functional
@@ -373,6 +375,7 @@ def find_max_microbatch_size(
             f"Memory profiling on {device.upper()} is not supported. "
             f"Returning min_size={min_size}. Test manually on CUDA/MPS for accurate sizing.",
             UserWarning,
+            stacklevel=2,
         )
         return min_size
 

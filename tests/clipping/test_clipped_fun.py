@@ -521,7 +521,7 @@ def test_clipped_fun_microbatching_with_return_norms():
 
 def test_true_microbatching_memory_efficient():
     """Test that microbatching truly processes chunks incrementally.
-    
+
     This test validates the new implementation that manually chunks the batch
     and accumulates sums incrementally, rather than using vmap's chunk_size
     which still materializes all outputs before summing.
