@@ -19,7 +19,12 @@ from opaque.clipping import (
     clipped_fun,
     clipped_grad,
 )
-from opaque.noise import gaussian, gaussian_stateful
+from opaque.noise import (
+    bounded_gaussian,
+    bounded_gaussian_stateful,
+    gaussian,
+    gaussian_stateful,
+)
 from opaque.sampling import PoissonSampler, TruncatedPoissonSampler
 
 # TEMPORARILY COMMENTED OUT - optimizers being refactored to functional API
@@ -67,6 +72,8 @@ __all__ = [
     "PoissonSampler",
     "TruncatedPoissonSampler",
     # Noise
+    "bounded_gaussian",
+    "bounded_gaussian_stateful",
     "gaussian",
     "gaussian_stateful",
     # Utils
