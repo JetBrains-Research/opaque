@@ -137,4 +137,70 @@ class BootstrapParams:
         )
 
 
-__all__ = ["BootstrapParams"]
+def bootstrap(
+    fn,
+    in_scores: np.ndarray,
+    out_scores: np.ndarray,
+    params: BootstrapParams,
+) -> np.ndarray:
+    """Compute bootstrapped quantiles for any auditing function.
+
+    Args:
+        fn: Function with signature fn(in_scores, out_scores, ...) -> float
+        in_scores: Attack scores for held-in canaries.
+        out_scores: Attack scores for held-out canaries.
+        params: Bootstrap parameters.
+
+    Returns:
+        Array of quantiles specified in params.quantiles.
+
+    Example:
+        >>> from opaque.auditing import bootstrap, attack_auroc, BootstrapParams
+        >>> params = BootstrapParams(num_samples=1000, seed=42)
+        >>> auroc_ci = bootstrap(attack_auroc, in_scores, out_scores, params)
+        >>> print(f"AUROC 95% CI: [{auroc_ci[0]:.3f}, {auroc_ci[1]:.3f}]")
+    """
+    import scipy.stats
+
+    in_arr = np.asarray(in_scores)
+    out_arr = np.asarray(out_scores)
+    n_in, n_out = len(in_arr), len(out_arr)
+
+    rng = np.random.default_rng(seed=params.seed)
+
+    values = np.empty(params.num_samples)
+    for i in range(params.num_samples):
+        in_sample = rng.choice(in_arr, size=n_in)
+        out_sample = rng.choice(out_arr, size=n_out)
+        values[i] = fn(in_sample, out_sample)
+
+    if not params.bias_correction:
+        return np.quantile(values, params.quantiles, method="linear")
+
+    # Bias-corrected bootstrap (BCa)
+    full_estimate = fn(in_arr, out_arr)
+    prop_less = (np.sum(values < full_estimate) + 1) / (params.num_samples + 2)
+    z0 = scipy.stats.norm.ppf(prop_less)
+
+    if params.acceleration:
+        # Jackknife for acceleration
+        jk = np.empty(n_in + n_out)
+        for i in range(n_in):
+            jk[i] = fn(np.delete(in_arr, i), out_arr)
+        for i in range(n_out):
+            jk[n_in + i] = fn(in_arr, np.delete(out_arr, i))
+
+        jk_mean = np.mean(jk)
+        num = np.sum((jk_mean - jk) ** 3)
+        denom = 6 * np.sum((jk_mean - jk) ** 2) ** 1.5
+        accel = 0.0 if denom == 0 else num / denom
+    else:
+        accel = 0.0
+
+    z_q = scipy.stats.norm.ppf(params.quantiles)
+    corrected = scipy.stats.norm.cdf(z0 + (z0 + z_q) / (1 - accel * (z0 + z_q)))
+
+    return np.quantile(values, corrected, method="linear")
+
+
+__all__ = ["BootstrapParams", "bootstrap"]

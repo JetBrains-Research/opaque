@@ -221,18 +221,18 @@ class TestMaxAccuracy:
 class TestAudit:
     """Tests for audit convenience function."""
 
-    def test_returns_namedtuple(self):
-        """Test that audit returns an AuditResult."""
+    def test_returns_audit_result(self):
+        """Test that audit returns an AuditResult dataclass."""
         in_scores = np.arange(50, 100)
         out_scores = np.arange(0, 50)
 
         result = audit(in_scores, out_scores, significance=0.05, delta=0)
 
         assert isinstance(result, AuditResult)
-        assert hasattr(result, "epsilon")
-        assert hasattr(result, "auroc")
-        assert hasattr(result, "tpr_at_low_fpr")
-        assert hasattr(result, "max_accuracy")
+        assert isinstance(result.epsilon, float)
+        assert isinstance(result.auroc, float)
+        assert isinstance(result.tpr_at_low_fpr, float)
+        assert isinstance(result.max_accuracy, float)
 
     def test_clopper_pearson_method(self):
         """Test with Clopper-Pearson method."""
@@ -269,15 +269,11 @@ class TestAudit:
         with pytest.raises(ValueError, match="Unknown method"):
             audit([1, 2], [3, 4], method="invalid")
 
-    def test_unpacking(self):
-        """Test that result can be unpacked."""
-        in_scores = np.arange(50, 100)
-        out_scores = np.arange(0, 50)
-
-        eps, auroc, tpr, acc = audit(in_scores, out_scores)
-
-        assert eps > 0
-        assert auroc > 0.99
+    def test_frozen(self):
+        """Test that AuditResult is immutable."""
+        result = audit(np.arange(50, 100), np.arange(0, 50))
+        with pytest.raises(AttributeError):
+            result.epsilon = 0.0
 
 
 class TestBootstrap:
