@@ -86,9 +86,7 @@ def pareto_frontier(points: np.ndarray) -> np.ndarray:
         ValueError: If points has wrong shape or is not sorted by x-coordinate.
     """
     if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] != 2:
-        raise ValueError(
-            f"Expected at least two 2D points, got shape {points.shape}"
-        )
+        raise ValueError(f"Expected at least two 2D points, got shape {points.shape}")
 
     if not np.all(points[:-1, 0] <= points[1:, 0]):
         raise ValueError("Expected points to be sorted by x-coordinate")
@@ -142,9 +140,7 @@ def get_tn_fn_counts(
     out_scores = np.asarray(out_canary_scores)
 
     if in_scores.size == 0 and out_scores.size == 0:
-        raise ValueError(
-            "At least one of the canary score arrays must be non-empty"
-        )
+        raise ValueError("At least one of the canary score arrays must be non-empty")
 
     # Get unique sorted thresholds from both arrays
     unique_scores_sorted = np.union1d(in_scores, out_scores)

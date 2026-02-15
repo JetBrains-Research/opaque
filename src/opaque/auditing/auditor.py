@@ -27,7 +27,8 @@ from opaque.auditing.helpers import (
     epsilon_raw_counts_helper,
     get_tn_fn_counts,
     one_run_p_value,
-    random_partition,
+)
+from opaque.auditing.helpers import (
     tpr_at_given_fpr as _tpr_at_given_fpr,
 )
 
@@ -274,11 +275,19 @@ def attack_auroc(in_scores: Scores, out_scores: Scores) -> float:
     Returns:
         AUROC value in [0, 1].
 
+    Raises:
+        ValueError: If either in_scores or out_scores is empty.
+
     Example:
         >>> auroc = attack_auroc(in_scores, out_scores)
         >>> print(f"Attack AUROC: {auroc:.3f}")
     """
-    _, tn_counts, fn_counts = get_tn_fn_counts(in_scores, out_scores)
+    in_arr = np.asarray(in_scores)
+    out_arr = np.asarray(out_scores)
+    if len(in_arr) == 0 or len(out_arr) == 0:
+        raise ValueError("in_scores and out_scores must be non-empty")
+
+    _, tn_counts, fn_counts = get_tn_fn_counts(in_arr, out_arr)
 
     tnr = tn_counts / tn_counts[-1]
     fnr = fn_counts / fn_counts[-1]
@@ -332,10 +341,16 @@ def max_accuracy(
     Returns:
         Maximum accuracy across all thresholds.
 
+    Raises:
+        ValueError: If prevalence is not in [0, 1].
+
     Example:
         >>> acc = max_accuracy(in_scores, out_scores)
         >>> print(f"Max accuracy: {acc:.3f}")
     """
+    if prevalence is not None and not 0.0 <= prevalence <= 1.0:
+        raise ValueError(f"prevalence must be in [0, 1], got {prevalence}")
+
     _, tn_counts, fn_counts = get_tn_fn_counts(in_scores, out_scores)
 
     n_pos = fn_counts[-1]

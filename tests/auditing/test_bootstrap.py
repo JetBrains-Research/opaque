@@ -1,5 +1,7 @@
 """Tests for bootstrap parameters."""
 
+import dataclasses
+
 import numpy as np
 import pytest
 
@@ -66,7 +68,7 @@ class TestBootstrapParams:
     def test_frozen(self):
         """Test that BootstrapParams is frozen (immutable)."""
         params = BootstrapParams()
-        with pytest.raises(Exception):  # FrozenInstanceError
+        with pytest.raises(dataclasses.FrozenInstanceError):
             params.num_samples = 2000
 
     def test_confidence_interval_factory(self):
