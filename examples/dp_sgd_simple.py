@@ -4,17 +4,18 @@ This example demonstrates:
 1. Natural composition of clipped_grad() and gaussian()
 2. Using .clip_norm attribute for noise calibration
 3. Full DP-SGD training loop with the simplified API
+4. Swapping in bounded_gaussian() for bounded-domain noise
 
 The new API makes it easy to swap components for research:
 - Swap clipping: per_layer_clipped_grad(), adaptive_clipper()
-- Swap noise: correlated_gaussian(), clipped_gaussian(), laplace()
+- Swap noise: bounded_gaussian(), correlated_gaussian(), laplace()
 """
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
-from opaque import clipped_grad, gaussian
+from opaque import bounded_gaussian, clipped_grad, gaussian
 
 
 def main():
@@ -145,14 +146,17 @@ def demo_research_flexibility():
     print(f"   ✓ Clip norm: {grad_fn_3.clip_norm}")  # Should be 1.0
     print(f"   ✓ Noise: Gaussian(stddev={1.1 * grad_fn_3.clip_norm})")
 
-    # Example 4: Future - swap noise mechanism
-    print("\n4. Future: Swappable noise mechanisms:")
-    print("   # noise_fn = correlated_gaussian(stddev=1.1, rank=10)")
-    print("   # noise_fn = clipped_gaussian(stddev=1.1, clip_at=3.0)")
-    print("   # noise_fn = laplace(scale=1.1)")
+    # Example 4: Bounded Gaussian noise (truncated normal)
+    print("\n4. Bounded Gaussian (Chen & Hale, 2024):")
+    noise_fn_bounded = bounded_gaussian(
+        stddev=1.1 * grad_fn.clip_norm, bounds=(-3.0, 3.0)
+    )
+    print(f"   ✓ Noise: BoundedGaussian(stddev={1.1 * grad_fn.clip_norm}, bounds=(-3, 3))")
+    print("   → Outputs guaranteed in [-3.0, 3.0]")
 
     # Example 5: Future - swap clipping mechanism
-    print("\n5. Future: Swappable clipping mechanisms:")
+    print("\n5. Future: Swappable mechanisms:")
+    print("   # noise_fn = correlated_gaussian(stddev=1.1, rank=10)")
     print("   # grad_fn = per_layer_clipped_grad(loss_fn, clip_norms={...})")
     print("   # grad_fn = adaptive_clipper(loss_fn, target_quantile=0.5)")
 
