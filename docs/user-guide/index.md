@@ -93,7 +93,7 @@ Opaque helps you navigate this tradeoff through:
 
 ```python
 import opaque.accounting as acc
-from opaque import clipped_grad, add_gaussian_noise
+from opaque import clipped_grad, gaussian_noise
 
 # 1. Calibrate noise
 noise_multiplier = acc.find_noise_multiplier_for_epsilon_delta(
@@ -104,10 +104,11 @@ noise_multiplier = acc.find_noise_multiplier_for_epsilon_delta(
 clipped_grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0, ...)
 
 # 3. Training loop
+noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier)
 privacy_state = acc.create()
 for step in range(1000):
     grads = clipped_grad_fn(params, batch)
-    noisy_grads = add_gaussian_noise(grads, stddev=noise_multiplier)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = update(params, noisy_grads)
     privacy_state = acc.compose_poisson_gaussian(privacy_state, ...)
 

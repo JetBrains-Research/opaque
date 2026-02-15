@@ -35,7 +35,7 @@ Builds on Tutorial 01 to implement complete DP-SGD with noise injection and priv
 **Learning objectives**:
 
 1. Understand why **noise is needed** for differential privacy
-2. Use `add_gaussian_noise()` to add **calibrated Gaussian noise**
+2. Use `gaussian_noise()` to add **calibrated Gaussian noise**
 3. Track privacy with **functional accounting API** (`opaque.accounting`)
 4. **Calibrate noise multipliers** for target privacy budgets (ε, δ, advantage, error rates)
 5. Implement **complete DP-SGD training loop**
@@ -149,7 +149,7 @@ formal (ε, δ)-DP guarantees.
 A: As of Stage 2 (complete), all core DP-SGD components are ready:
 
 - ✅ Gradient clipping (`clipped_grad()`, `clipped_fun()`, `clip_pytree()`)
-- ✅ Noise injection (`add_gaussian_noise()`)
+- ✅ Noise injection (`gaussian_noise()`)
 - ✅ Privacy accounting (functional API via `opaque.accounting` module)
 - ✅ Calibration functions for target privacy (ε/δ, advantage, error rates)
 - ✅ Optimizer wrappers (`adaptive_clipping()` for TorchOpt optimizers)

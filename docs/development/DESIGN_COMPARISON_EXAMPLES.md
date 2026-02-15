@@ -18,7 +18,7 @@
 
 ```python
 import opaque
-from opaque import clipped_grad, add_gaussian_noise
+from opaque import clipped_grad, gaussian_noise
 
 # Define components inline
 loss_fn = lambda params, x, y: F.cross_entropy(model(x, params), y)
@@ -33,7 +33,7 @@ for batch in dataloader:
     )(params, batch['x'], batch['y'])
 
     # Add noise (function returns result directly)
-    noisy_grads = add_gaussian_noise(
+    noisy_grads = gaussian_noise(
         grads,
         noise_multiplier=1.1,
         clip_norm=1.0,
@@ -284,7 +284,7 @@ for batch in dataloader:
 ```python
 # Option 1: Direct composition
 grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0)
-noise_fn = gaussian(noise_multiplier=1.1, sensitivity=grad_fn.sensitivity())
+noise_fn = gaussian_noise(noise_multiplier=1.1, sensitivity=grad_fn.sensitivity())
 
 process = lambda params, batch: noise_fn(grad_fn(params, batch))
 
@@ -471,7 +471,7 @@ from opaque.accounting import AccountingContext
 
 with AccountingContext() as acc:
     grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0)
-    noise_fn = gaussian(noise_multiplier=1.1)
+    noise_fn = gaussian_noise(noise_multiplier=1.1)
 
     for batch in dataloader:
         grads = acc.track(grad_fn)(params, batch)

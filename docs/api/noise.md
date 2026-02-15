@@ -7,20 +7,42 @@ The `opaque.noise` module provides functions for adding calibrated noise to grad
 After clipping gradients, DP-SGD requires adding noise proportional to the clip norm and noise multiplier. The
 noise obscures individual contributions, providing the actual privacy guarantee.
 
-Opaque provides two noise mechanisms:
+Opaque provides several noise mechanisms:
 
-- **`gaussian()`** / **`gaussian_stateful()`** — Standard (unbounded) Gaussian noise. The default for most DP-SGD
-  workflows.
-- **`bounded_gaussian()`** / **`bounded_gaussian_stateful()`** — Bounded Gaussian noise using a truncated normal
-  distribution ([Chen & Hale, 2024](https://arxiv.org/abs/2211.17230)). Guarantees all noisy outputs lie within a
-  specified domain — useful when gradient values must stay in a valid range.
+### Independent Noise (DP-SGD)
+
+- **`gaussian_noise()`** — Standard (unbounded) Gaussian noise. The default for most DP-SGD workflows.
+- **`bounded_gaussian_noise()`** — Bounded Gaussian noise using a truncated normal distribution
+  ([Chen & Hale, 2024](https://arxiv.org/abs/2211.17230)). Guarantees all noisy outputs lie within a specified domain.
+
+### Correlated Noise (DP-FTRL / Matrix Factorization)
+
+- **`band_mf_noise()`** — BandMF banded Toeplitz correlated noise
+- **`blt_mf_noise()`** — Buffered Linear Toeplitz (BLT) correlated noise
+- **`dense_mf_noise()`** — Dense optimal strategy (small n)
+- **`identity_mf_noise()`** — Identity (DP-SGD via MF API, easy to swap)
+- **`custom_mf_noise()`** — Bring-your-own noising matrix
+
+All noise functions return `(noise_fn, state)` where `noise_fn(grads, state) -> (noisy_grads, new_state)`.
 
 **See also**: [Noise Addition User Guide](../user-guide/noise.md)
 
 ## Standard Gaussian
 
-::: opaque.noise.gaussian
+::: opaque.noise.gaussian_noise
 
 ## Bounded Gaussian
 
-::: opaque.noise.bounded_gaussian
+::: opaque.noise.bounded_gaussian_noise
+
+## Matrix Factorization Noise
+
+::: opaque.noise.band_mf_noise
+
+::: opaque.noise.blt_mf_noise
+
+::: opaque.noise.dense_mf_noise
+
+::: opaque.noise.identity_mf_noise
+
+::: opaque.noise.custom_mf_noise

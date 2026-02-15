@@ -65,7 +65,7 @@ This document outlines the complete implementation roadmap for Opaque.
 **Deliverables**:
 
 1. [x] `opaque.noise` - Simple i.i.d. Gaussian noise generation
-  - `add_gaussian_noise()` - Stateless functional API
+  - `gaussian_noise()` - Stateless functional API
   - Reproducible noise with `torch.Generator`
   - Statistical validation tests (normality, stddev)
   - JAX-Privacy numerical equivalence validation
@@ -122,7 +122,7 @@ This document outlines the complete implementation roadmap for Opaque.
 - **Dynamic LR Scaling**: Learning rate adjusts based on clip rate
 - **EMA Smoothing**: Exponential moving average for better privacy-utility tradeoff
 - Stateless optimizer updates matching our functional design
-- Full integration with existing `clipped_grad()`, `add_gaussian_noise()`, accounting APIs
+- Full integration with existing `clipped_grad()`, `gaussian_noise()`, accounting APIs
 
 **Why DP-Adam-AC?**:
 

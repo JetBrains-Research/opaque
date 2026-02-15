@@ -31,7 +31,7 @@ import torch
 import opaque.accounting as acc
 from opaque import (
     clipped_grad,
-    add_gaussian_noise,
+    gaussian_noise,
 )
 
 # 1. Calibrate noise for target privacy
@@ -54,12 +54,13 @@ clipped_grad_fn = clipped_grad(
     batch_argnums=1,
 )
 
-# 3. Training loop with privacy accounting
+# 3. Create noise function and training loop
+noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_norm)
 privacy_state = acc.create()
 
 for step in range(num_steps):
     grads = clipped_grad_fn(params, batch)
-    noisy_grads = add_gaussian_noise(grads, stddev=noise_multiplier * clip_norm)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = update(params, noisy_grads)
 
     # Compose privacy

@@ -29,7 +29,7 @@ training components:
 import torch
 import torch.nn as nn
 import opaque.accounting as acc
-from opaque import make_functional, clipped_grad, add_gaussian_noise
+from opaque import make_functional, clipped_grad, gaussian_noise
 
 # Generate synthetic data
 torch.manual_seed(42)
@@ -75,6 +75,7 @@ clipped_grad_fn = clipped_grad(
 )
 
 # 6. Training loop with privacy accounting
+noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_norm)
 privacy_state = acc.create()
 learning_rate = 0.01
 
@@ -93,10 +94,7 @@ for epoch in range(num_epochs):
         grads = clipped_grad_fn(params, (X_batch, y_batch))
 
         # Add calibrated Gaussian noise
-        noisy_grads = add_gaussian_noise(
-            grads,
-            stddev=noise_multiplier * clip_norm,
-        )
+        noisy_grads, noise_state = noise_fn(grads, noise_state)
 
         # Update parameters
         params = tuple(p - learning_rate * g for p, g in zip(params, noisy_grads))

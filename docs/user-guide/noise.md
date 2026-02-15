@@ -18,21 +18,21 @@ Imagine you're trying to figure out if Alice's data was used to train a model:
 
 The more noise we add, the stronger the privacy guarantee, but the worse the model accuracy.
 
-## The `add_gaussian_noise()` Function
+## The `gaussian_noise()` Function
 
-Opaque provides a simple, stateless function for adding noise:
+Opaque provides a simple function for adding noise. All noise functions return `(noise_fn, state)`:
 
 ```python
-from opaque import add_gaussian_noise
+from opaque import gaussian_noise
+
+# Create noise function
+noise_fn, state = gaussian_noise(stddev=noise_multiplier * clip_norm)
 
 # After computing clipped gradients
 clipped_grads = clipped_grad_fn(params, batch)
 
-# Add Gaussian noise (std = noise_multiplier * clip_norm)
-noisy_grads = add_gaussian_noise(
-    clipped_grads,
-    stddev=noise_multiplier * clip_norm,
-)
+# Add Gaussian noise
+noisy_grads, state = noise_fn(clipped_grads, state)
 
 # Update parameters with noisy gradients
 params = update(params, noisy_grads)
@@ -46,11 +46,15 @@ params = update(params, noisy_grads)
 - Lower stddev → Weaker privacy, higher accuracy
 - Typically: `stddev = noise_multiplier * clip_norm`
 
-**`generator`** (optional): PyTorch random number generator for reproducibility
+**`generator`** (optional): RNG configuration for reproducibility
 
 ```python
+# Seeded for reproducibility
+noise_fn, state = gaussian_noise(stddev=1.0, generator=42)
+
+# Or pass a torch.Generator directly
 gen = torch.Generator().manual_seed(42)
-noisy_grads = add_gaussian_noise(grads, stddev=1.0, generator=gen)
+noise_fn, state = gaussian_noise(stddev=1.0, generator=gen)
 ```
 
 ## Calibrating Noise
@@ -156,7 +160,7 @@ Here's how gradient clipping and noise addition work together:
 ```python
 import torch
 import opaque.accounting as acc
-from opaque import clipped_grad, add_gaussian_noise
+from opaque import clipped_grad, gaussian_noise
 
 # 1. Setup
 clip_norm = 1.0
@@ -173,7 +177,10 @@ noise_multiplier = acc.find_noise_multiplier_for_epsilon_delta(
     num_steps=num_steps,
 )
 
-# 3. Create DP gradient function
+# 3. Create noise function
+noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_norm)
+
+# 4. Create DP gradient function
 dp_grad_fn = clipped_grad(
     loss_fn,
     l2_clip_norm=clip_norm,
@@ -181,7 +188,7 @@ dp_grad_fn = clipped_grad(
     batch_argnums=1,
 )
 
-# 4. Training loop
+# 5. Training loop
 privacy_state = acc.create()
 
 for step in range(num_steps):
@@ -189,10 +196,7 @@ for step in range(num_steps):
     grads = dp_grad_fn(params, batch)
 
     # Add calibrated noise
-    noisy_grads = add_gaussian_noise(
-        grads,
-        stddev=noise_multiplier * clip_norm,
-    )
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
 
     # Update parameters
     params = update(params, noisy_grads)
@@ -205,7 +209,7 @@ for step in range(num_steps):
         count=1,
     )
 
-# 5. Verify privacy
+# 6. Verify privacy
 final_epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
 print(f"Final privacy: (ε={final_epsilon:.2f}, δ=1e-5)")
 ```
@@ -217,31 +221,31 @@ mechanism** based on [Chen & Hale (2024)](https://arxiv.org/abs/2211.17230). Ins
 uses a **truncated normal distribution** restricted to a domain `[lower, upper]`.
 
 ```python
-from opaque import bounded_gaussian
+from opaque import bounded_gaussian_noise
 
 # Outputs are guaranteed to lie in [-3.0, 3.0]
-noise_fn = bounded_gaussian(stddev=noise_multiplier * clip_norm, bounds=(-3.0, 3.0))
+noise_fn, state = bounded_gaussian_noise(stddev=noise_multiplier * clip_norm, bounds=(-3.0, 3.0))
 
-noisy_grads = noise_fn(clipped_grads)
+noisy_grads, state = noise_fn(clipped_grads, state)
 ```
 
 ### When to Use Bounded Gaussian
 
 | Scenario | Recommended Mechanism |
 |----------|----------------------|
-| General DP-SGD training | `gaussian()` (standard) |
-| Gradient values must stay in a valid range | `bounded_gaussian()` |
-| Queries with bounded output domains | `bounded_gaussian()` |
+| General DP-SGD training | `gaussian_noise()` (standard) |
+| Gradient values must stay in a valid range | `bounded_gaussian_noise()` |
+| Queries with bounded output domains | `bounded_gaussian_noise()` |
 
 ### Reproducibility
 
-Use `bounded_gaussian_stateful()` for deterministic noise:
+Use the `generator` parameter for deterministic noise:
 
 ```python
-from opaque import bounded_gaussian_stateful
+from opaque import bounded_gaussian_noise
 
-noise_fn, state = bounded_gaussian_stateful(stddev=1.0, bounds=(-3.0, 3.0), seed=42)
-noisy_grads = noise_fn(grads, state)
+noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-3.0, 3.0), generator=42)
+noisy_grads, state = noise_fn(grads, state)
 ```
 
 ## Advanced: Noise Multiplier Schedule
@@ -260,7 +264,8 @@ for step in range(num_steps):
     grads = dp_grad_fn(params, batch)
 
     current_noise = noise_schedule(step, num_steps)
-    noisy_grads = add_gaussian_noise(grads, stddev=current_noise * clip_norm)
+    noise_fn, noise_state = gaussian_noise(stddev=current_noise * clip_norm)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
 
     params = update(params, noisy_grads)
 
@@ -323,7 +328,7 @@ understand privacy composition.
 
 ## PyTree Support
 
-`add_gaussian_noise()` works with any PyTree structure:
+`gaussian_noise()` works with any PyTree structure:
 
 ```python
 # Nested dictionaries of tensors
@@ -332,7 +337,8 @@ grads = {
     "decoder": {"weight": tensor3, "bias": tensor4},
 }
 
-noisy_grads = add_gaussian_noise(grads, stddev=1.0)
+noise_fn, state = gaussian_noise(stddev=1.0)
+noisy_grads, state = noise_fn(grads, state)
 # Noise added independently to each tensor
 ```
 
@@ -341,12 +347,14 @@ noisy_grads = add_gaussian_noise(grads, stddev=1.0)
 For reproducible noise across runs:
 
 ```python
-# Set global seed
-torch.manual_seed(42)
+# Seed the noise function for reproducibility
+noise_fn, state = gaussian_noise(stddev=1.0, generator=42)
+noisy_grads, state = noise_fn(grads, state)
 
-# Or use per-call generator
+# Or pass a torch.Generator directly
 gen = torch.Generator().manual_seed(42)
-noisy_grads = add_gaussian_noise(grads, stddev=1.0, generator=gen)
+noise_fn, state = gaussian_noise(stddev=1.0, generator=gen)
+noisy_grads, state = noise_fn(grads, state)
 ```
 
 ## See Also

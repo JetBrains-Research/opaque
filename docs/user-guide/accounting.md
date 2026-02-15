@@ -202,7 +202,7 @@ Here's a full DP-SGD training loop with accounting:
 ```python
 import torch
 import opaque.accounting as acc
-from opaque import clipped_grad, add_gaussian_noise
+from opaque import clipped_grad, gaussian_noise
 
 # Setup
 clip_norm = 1.0
@@ -226,7 +226,8 @@ noise_multiplier = acc.find_noise_multiplier_for_epsilon_delta(
 # Create DP gradient function
 dp_grad_fn = clipped_grad(loss_fn, l2_clip_norm=clip_norm, ...)
 
-# Initialize privacy state
+# Initialize noise and privacy state
+noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_norm)
 privacy_state = acc.create()
 
 # Training loop
@@ -234,7 +235,7 @@ for epoch in range(num_epochs):
     for batch in dataloader:
         # Compute noisy gradients
         grads = dp_grad_fn(params, batch)
-        noisy_grads = add_gaussian_noise(grads, stddev=noise_multiplier * clip_norm)
+        noisy_grads, noise_state = noise_fn(grads, noise_state)
 
         # Update parameters
         params = update(params, noisy_grads)
@@ -302,12 +303,13 @@ print(f"Sampled: ε={eps_sample:.1f}")  # 150x better!
 Track privacy consumption in real-time:
 
 ```python
+noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_norm)
 privacy_state = acc.create()
 
 for step in range(num_steps):
     # Training step
     grads = dp_grad_fn(params, batch)
-    noisy_grads = add_gaussian_noise(grads, stddev=noise_multiplier * clip_norm)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = update(params, noisy_grads)
 
     # Update privacy

@@ -43,7 +43,7 @@ def main():
         batch_argnums=(1, 2),  # x and y are batched
     )
 
-    print(f"Initial state:")
+    print("Initial state:")
     print(f"  - clip_norm: {clip_state.clip_norm:.4f}")
     print(f"  - step: {clip_state.step}")
     print(f"  - clipping_rate: {clip_state.clipping_rate:.2%}")
@@ -75,7 +75,7 @@ def main():
         # params = params - 0.01 * grad
 
     print("-" * 55)
-    print(f"\nFinal state:")
+    print("\nFinal state:")
     print(f"  - clip_norm: {clip_state.clip_norm:.4f}")
     print(f"  - step: {clip_state.step}")
     print(f"  - clipping_rate: {clip_state.clipping_rate:.2%}")

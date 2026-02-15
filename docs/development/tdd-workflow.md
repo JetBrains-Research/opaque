@@ -272,22 +272,22 @@ open htmlcov/index.html
 
 ## Complete Example Workflow
 
-Let's walk through implementing `add_gaussian_noise()`:
+Let's walk through implementing `gaussian_noise()`:
 
 ### 1. Write Failing Test
 
 ```python
 # tests/noise/test_gaussian.py
 import torch
-from opaque.noise import add_gaussian_noise
+from opaque.noise import gaussian_noise
 
 
-def test_add_gaussian_noise_basic():
+def test_gaussian_noise_basic():
   """Test that Gaussian noise is added to gradients."""
   grads = {'weight': torch.randn(10, 5)}
   stddev = 0.1
 
-  noisy_grads = add_gaussian_noise(grads, stddev=stddev)
+  noisy_grads = gaussian_noise(grads, stddev=stddev)
 
   # Verify shape is preserved
   assert noisy_grads['weight'].shape == grads['weight'].shape
@@ -295,7 +295,7 @@ def test_add_gaussian_noise_basic():
 
 Run test (should fail):
 ```bash
-uv run pytest tests/noise/test_gaussian.py::test_add_gaussian_noise_basic -v
+uv run pytest tests/noise/test_gaussian.py::test_gaussian_noise_basic -v
 ```
 
 ### 2. Implement
@@ -305,7 +305,7 @@ uv run pytest tests/noise/test_gaussian.py::test_add_gaussian_noise_basic -v
 import torch
 
 
-def add_gaussian_noise(pytree, stddev):
+def gaussian_noise(pytree, stddev):
   """Add Gaussian noise to PyTree of tensors."""
 
   def add_noise(tensor):
@@ -325,7 +325,7 @@ uv run pytest tests/noise/test_gaussian.py -v
 ### 4. Document
 
 ```python
-def add_gaussian_noise(pytree, stddev):
+def gaussian_noise(pytree, stddev):
   """Add independent Gaussian noise to each element of a PyTree.
 
   Args:
@@ -337,7 +337,7 @@ def add_gaussian_noise(pytree, stddev):
 
   Example:
       >>> grads = {'weight': torch.tensor([1.0, 2.0, 3.0])}
-      >>> noisy_grads = add_gaussian_noise(grads, stddev=0.1)
+      >>> noisy_grads = gaussian_noise(grads, stddev=0.1)
   """
 ```
 
@@ -397,8 +397,8 @@ def test_noise_is_different():
   """Test that noise is random (not deterministic)."""
   grads = {'weight': torch.zeros(10)}
 
-  noisy1 = add_gaussian_noise(grads, stddev=0.1)
-  noisy2 = add_gaussian_noise(grads, stddev=0.1)
+  noisy1 = gaussian_noise(grads, stddev=0.1)
+  noisy2 = gaussian_noise(grads, stddev=0.1)
 
   # Should be different due to randomness
   assert not torch.allclose(noisy1['weight'], noisy2['weight'])

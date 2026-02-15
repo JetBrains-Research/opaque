@@ -1,7 +1,8 @@
 """Opaque: Differentially Private Training for PyTorch.
 
 This package provides differentially private training utilities for PyTorch,
-inspired by JAX-Privacy.
+inspired by JAX-Privacy. Includes standard DP-SGD as well as correlated noise
+mechanisms (BandMF, BLT, DP-FTRL) for improved utility.
 
 Note: Privacy accounting is provided by jbr-fed-accounting (external library).
 """
@@ -20,23 +21,19 @@ from opaque.clipping import (
     clipped_grad,
 )
 from opaque.noise import (
-    bounded_gaussian,
-    bounded_gaussian_stateful,
-    gaussian,
-    gaussian_stateful,
+    band_mf_noise,
+    blt_mf_noise,
+    bounded_gaussian_noise,
+    custom_mf_noise,
+    dense_mf_noise,
+    gaussian_noise,
+    identity_mf_noise,
 )
-from opaque.sampling import PoissonSampler, TruncatedPoissonSampler
-
-# TEMPORARILY COMMENTED OUT - optimizers being refactored to functional API
-# from opaque.optimizers import (
-#     AdaptiveClipState,
-#     DPOptimizerState,
-#     dp_adam,
-#     dp_adam_ac,
-#     dp_adamw,
-#     dp_sgd,
-#     make_dp_optimizer,
-# )
+from opaque.sampling import (
+    CyclicPoissonSampling,
+    PoissonSampler,
+    TruncatedPoissonSampler,
+)
 from opaque.utils import make_functional
 
 # =============================================================================
@@ -71,11 +68,15 @@ __all__ = [
     "sampling",
     "PoissonSampler",
     "TruncatedPoissonSampler",
+    "CyclicPoissonSampling",
     # Noise
-    "bounded_gaussian",
-    "bounded_gaussian_stateful",
-    "gaussian",
-    "gaussian_stateful",
+    "gaussian_noise",
+    "bounded_gaussian_noise",
+    "band_mf_noise",
+    "blt_mf_noise",
+    "custom_mf_noise",
+    "dense_mf_noise",
+    "identity_mf_noise",
     # Utils
     "make_functional",
 ]

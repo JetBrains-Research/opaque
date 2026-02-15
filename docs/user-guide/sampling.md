@@ -64,6 +64,8 @@ from opaque.sampling import PoissonSampler
 
 sampler = PoissonSampler(sample_rate=0.01)
 
+noise_fn, noise_state = gaussian_noise(stddev=noise_mult * clip_norm)
+
 for step in range(num_steps):
     # Sample batch (variable size!)
     indices = sampler.sample(dataset_size=10000)
@@ -71,7 +73,7 @@ for step in range(num_steps):
 
     # Compute gradients
     grads = dp_grad_fn(params, batch)
-    noisy_grads = add_gaussian_noise(grads, stddev=noise_mult * clip_norm)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = update(params, noisy_grads)
 
     # Track privacy with Poisson composition
@@ -117,7 +119,7 @@ for step in range(num_steps):
 
     batch = dataset[indices]
     grads = dp_grad_fn(params, batch)
-    noisy_grads = add_gaussian_noise(grads, stddev=noise_mult * clip_norm)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = update(params, noisy_grads)
 
     # Track privacy with TRUNCATED Poisson composition
@@ -190,7 +192,7 @@ for step in range(num_steps):
     # Use microbatching (memory-efficient!)
     grads = compute_clipped_gradients_microbatched(params, batch, microbatch_size=8)
 
-    noisy_grads = add_gaussian_noise(grads, stddev=noise_mult * clip_norm)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = update(params, noisy_grads)
 ```
 
@@ -241,7 +243,7 @@ Here's a full training loop combining both techniques:
 ```python
 import torch
 import opaque.accounting as acc
-from opaque import clipped_grad, add_gaussian_noise
+from opaque import clipped_grad, gaussian_noise
 from opaque.sampling import TruncatedPoissonSampler
 
 # Setup
@@ -270,6 +272,9 @@ noise_multiplier = acc.find_noise_multiplier_for_epsilon_delta(
 # Create DP gradient function
 dp_grad_fn = clipped_grad(loss_fn, l2_clip_norm=clip_norm, ...)
 
+# Create noise function
+noise_fn, noise_state = gaussian_noise(stddev=noise_mult * clip_norm)
+
 # Training loop
 privacy_state = acc.create()
 
@@ -290,7 +295,7 @@ for step in range(num_steps):
             total_grads = {k: total_grads[k] + grads[k] for k in grads}
 
     # Add noise
-    noisy_grads = add_gaussian_noise(total_grads, stddev=noise_mult * clip_norm)
+    noisy_grads, noise_state = noise_fn(total_grads, noise_state)
 
     # Update
     params = update(params, noisy_grads)

@@ -1841,6 +1841,7 @@ version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "optree" },
+    { name = "scipy" },
     { name = "torch" },
 ]
 
@@ -1880,6 +1881,7 @@ examples = [
 [package.metadata]
 requires-dist = [
     { name = "optree", specifier = ">=0.17.0" },
+    { name = "scipy", specifier = ">=1.11.0" },
     { name = "torch", specifier = ">=2.10.0" },
 ]
 
