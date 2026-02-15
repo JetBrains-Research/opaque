@@ -15,6 +15,8 @@ from opaque.noise.matrix_factorization.buffered_toeplitz import (
     inverse,
     inverse_as_streaming_matrix,
     iteration_error,
+    limit_max_error,
+    limit_max_loss,
     loss,
     materialize,
     max_error,
@@ -249,6 +251,63 @@ class TestIterationErrorRobust:
         blt = BufferedToeplitz.build(buf_decay=[], output_scale=[])
         error = max_error(blt, n=5)
         assert float(error) == pytest.approx(5.0)
+
+
+class TestLimitMaxError:
+    def test_identity(self):
+        """Identity BLT (no buffers) should have limit_max_error = 1."""
+        inv_blt = BufferedToeplitz.build(buf_decay=[], output_scale=[])
+        result = limit_max_error(inv_blt)
+        assert float(result) == pytest.approx(1.0)
+
+    def test_converges_to_finite_n(self):
+        """limit_max_error should approximate max_error(n)/n for large n."""
+        blt = BufferedToeplitz.build(
+            buf_decay=[0.8, 0.4],
+            output_scale=[0.3, 0.1],
+        )
+        inv_blt = inverse(blt)
+        limit = float(limit_max_error(inv_blt))
+
+        # For large n, max_error(n)/n should converge to limit_max_error
+        n_large = 10000
+        finite = float(max_error(inv_blt, n_large)) / n_large
+        assert limit == pytest.approx(finite, rel=1e-3)
+
+    def test_single_buffer(self):
+        """Sanity check for single-buffer BLT."""
+        inv_blt = BufferedToeplitz.build(
+            buf_decay=[0.5],
+            output_scale=[-0.3],
+        )
+        result = limit_max_error(inv_blt)
+        # 1 + 2*(-0.3)/(1-0.5) + (-0.3)^2/(1-0.5)^2
+        #   = 1 + 2*(-0.6) + 0.36 = 1 - 1.2 + 0.36 = 0.16
+        expected = 1 + 2 * (-0.3 / 0.5) + (-0.3 / 0.5) ** 2
+        assert float(result) == pytest.approx(expected, rel=1e-10)
+
+
+class TestLimitMaxLoss:
+    def test_identity(self):
+        """Identity BLT should have limit_max_loss = 1."""
+        blt = BufferedToeplitz.build(buf_decay=[], output_scale=[])
+        result = limit_max_loss(blt)
+        assert float(result) == pytest.approx(1.0)
+
+    def test_converges_to_finite_n(self):
+        """limit_max_loss should approximate loss for large n."""
+        blt = BufferedToeplitz.build(
+            buf_decay=[0.8, 0.4],
+            output_scale=[0.3, 0.1],
+        )
+        limit = float(limit_max_loss(blt))
+
+        inv_blt = inverse(blt)
+        n_large = 10000
+        finite_error = float(max_error(inv_blt, n_large)) / n_large
+        finite_sens = float(sensitivity_squared(blt, n_large))
+        finite_loss = finite_error * finite_sens
+        assert limit == pytest.approx(finite_loss, rel=1e-3)
 
 
 class TestSensitivitySquared:

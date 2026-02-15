@@ -35,6 +35,8 @@ __all__ = [
     "inverse_as_streaming_matrix",
     "sensitivity_squared",
     "max_error",
+    "limit_max_error",
+    "limit_max_loss",
     "iteration_error",
 ]
 
@@ -551,6 +553,48 @@ def iteration_error(inv_blt: BufferedToeplitz, i: float) -> torch.Tensor:
     ).sum()
 
     return n * (1 + 2 * s1 + s2)
+
+
+def limit_max_error(inv_blt: BufferedToeplitz) -> torch.Tensor:
+    """Closed-form max squared error per iteration as n -> infinity.
+
+    This is the limit of ``max_error(inv_blt, n) / n`` as n grows.
+    Uses direct arithmetic on the BLT parameters (no loop over n),
+    making it O(num_buffers^2).
+
+    Args:
+        inv_blt: BLT representing C^{-1}.
+
+    Returns:
+        The asymptotic per-iteration max squared error.
+    """
+    if inv_blt._num_buffers == 0:
+        return torch.tensor(1.0, dtype=torch.float64)
+
+    omega = inv_blt.output_scale
+    theta = inv_blt.buf_decay
+
+    omega_pairs = omega.unsqueeze(0) * omega.unsqueeze(1)
+    theta_complement_pairs = (1 - theta).unsqueeze(0) * (1 - theta).unsqueeze(1)
+    cross_term_sum = (omega_pairs / theta_complement_pairs).sum()
+
+    return 1 + 2 * (omega / (1 - theta)).sum() + cross_term_sum
+
+
+def limit_max_loss(blt: BufferedToeplitz) -> torch.Tensor:
+    """Closed-form loss (error * sensitivity^2) as n -> infinity.
+
+    Composes ``limit_max_error`` with ``sensitivity_squared(blt, inf)``.
+
+    Args:
+        blt: BLT representing the strategy C.
+
+    Returns:
+        The asymptotic loss.
+    """
+    sens_sq = sensitivity_squared(blt, n=float("inf"))
+    inv_blt = inverse(blt, skip_checks=True)
+    return limit_max_error(inv_blt) * sens_sq
 
 
 def _max_error_Gamma_j(omega, theta, n):
