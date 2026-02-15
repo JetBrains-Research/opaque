@@ -53,9 +53,7 @@ class TestStreamingMatrixFactorizationNoise:
 
     def test_adds_noise(self):
         """Noise is actually added to gradients."""
-        init_fn, noise_fn = matrix_factorization_noise(
-            identity(), stddev=1.0, seed=42
-        )
+        init_fn, noise_fn = matrix_factorization_noise(identity(), stddev=1.0, seed=42)
         grad = torch.zeros(10, dtype=torch.float32)
         state = init_fn(grad)
         noisy, _ = noise_fn(grad, state)
@@ -63,9 +61,7 @@ class TestStreamingMatrixFactorizationNoise:
 
     def test_stateful(self):
         """Successive calls produce different noise."""
-        init_fn, noise_fn = matrix_factorization_noise(
-            identity(), stddev=1.0, seed=42
-        )
+        init_fn, noise_fn = matrix_factorization_noise(identity(), stddev=1.0, seed=42)
         grad = torch.zeros(10, dtype=torch.float32)
         state = init_fn(grad)
         noisy1, state = noise_fn(grad, state)
@@ -77,17 +73,13 @@ class TestStreamingMatrixFactorizationNoise:
         grad = torch.zeros(1000, dtype=torch.float32)
 
         # Large stddev
-        init_fn, noise_fn = matrix_factorization_noise(
-            identity(), stddev=100.0, seed=0
-        )
+        init_fn, noise_fn = matrix_factorization_noise(identity(), stddev=100.0, seed=0)
         state = init_fn(grad)
         noisy, _ = noise_fn(grad, state)
         large_std = noisy.std().item()
 
         # Small stddev
-        init_fn, noise_fn = matrix_factorization_noise(
-            identity(), stddev=1.0, seed=1
-        )
+        init_fn, noise_fn = matrix_factorization_noise(identity(), stddev=1.0, seed=1)
         state = init_fn(grad)
         noisy, _ = noise_fn(grad, state)
         small_std = noisy.std().item()

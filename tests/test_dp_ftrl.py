@@ -185,9 +185,7 @@ class TestBandMFvsDPSGD:
         init_sgd, noise_sgd = matrix_factorization_noise(
             identity(), stddev=stddev, seed=42
         )
-        losses_sgd = _train_loop(
-            model_sgd, opt_sgd, init_sgd, noise_sgd, x, y, steps
-        )
+        losses_sgd = _train_loop(model_sgd, opt_sgd, init_sgd, noise_sgd, x, y, steps)
 
         # BandMF (correlated noise)
         torch.manual_seed(0)
@@ -195,12 +193,8 @@ class TestBandMFvsDPSGD:
         opt_mf = torch.optim.SGD(model_mf.parameters(), lr=0.01)
         coefs = optimal_max_error_strategy_coefs(steps)
         noising = inverse_as_streaming_matrix(coefs)
-        init_mf, noise_mf = matrix_factorization_noise(
-            noising, stddev=stddev, seed=43
-        )
-        losses_mf = _train_loop(
-            model_mf, opt_mf, init_mf, noise_mf, x, y, steps
-        )
+        init_mf, noise_mf = matrix_factorization_noise(noising, stddev=stddev, seed=43)
+        losses_mf = _train_loop(model_mf, opt_mf, init_mf, noise_mf, x, y, steps)
 
         # Both should train (loss decreases)
         assert losses_sgd[-1] < losses_sgd[0]

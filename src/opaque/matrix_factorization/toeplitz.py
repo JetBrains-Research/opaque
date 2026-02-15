@@ -304,9 +304,7 @@ def per_query_error(
         Per-query expected squared error, tensor of length n.
     """
     if not skip_checks:
-        checks.check_exactly_one(
-            strategy_coef=strategy_coef, noising_coef=noising_coef
-        )
+        checks.check_exactly_one(strategy_coef=strategy_coef, noising_coef=noising_coef)
 
     if strategy_coef is not None:
         strategy_coef, n = _reconcile(strategy_coef, n)

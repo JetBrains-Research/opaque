@@ -100,7 +100,10 @@ def matrix_factorization_noise(
     stddev: float,
     seed: int | None = None,
     dtype: torch.dtype | None = None,
-) -> tuple[Callable[[Any], MFNoiseState], Callable[[Any, MFNoiseState], tuple[Any, MFNoiseState]]]:
+) -> tuple[
+    Callable[[Any], MFNoiseState],
+    Callable[[Any, MFNoiseState], tuple[Any, MFNoiseState]],
+]:
     """Create correlated noise functions using matrix factorization.
 
     This is the primary entry point for DP-FTRL-style noise addition. The
