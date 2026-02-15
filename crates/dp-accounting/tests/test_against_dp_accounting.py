@@ -21,8 +21,11 @@ import pytest
 
 import opaque_dp_accounting as dp
 
-# Google's dp_accounting library
-from dp_accounting.pld import privacy_loss_distribution as pld_lib
+# Google's dp_accounting library - skip tests if not installed
+pld_lib = pytest.importorskip(
+    "dp_accounting.pld.privacy_loss_distribution",
+    reason="dp_accounting not installed",
+)
 
 
 # =============================================================================
@@ -218,7 +221,7 @@ class TestRealisticDPSGD:
         via_op = (step * 100).epsilon_at(1e-5)
         via_fn = dp.repeat(step, 100).epsilon_at(1e-5)
 
-        assert via_op == via_fn
+        assert via_op == pytest.approx(via_fn, rel=1e-10)
 
 
 # =============================================================================

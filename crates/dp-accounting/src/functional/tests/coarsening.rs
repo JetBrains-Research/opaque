@@ -4,9 +4,12 @@
 //! gaussian(nm) [default config] against build_exact_pld(nm) [disc=1e-4,
 //! unlimited grid size].
 //!
-//! With the default max_grid_size of 10M, no nm values in [0.1, 1.2] trigger
-//! pre-composition coarsening. These tests verify:
-//! - Single-mechanism PLDs match exact PLDs (no coarsening active)
+//! With the default max_grid_size of 10M, pre-composition coarsening is only
+//! triggered for sufficiently small noise multipliers (e.g., nm in [0.1, 0.3])
+//! where the effective discretization becomes very fine. These tests verify:
+//! - Single-mechanism PLDs match exact PLDs when coarsening is inactive
+//! - Single-mechanism PLDs stay within a bounded relative error when
+//!   pre-composition coarsening is active
 //! - Post-composition coarsening still works when grids exceed max_grid_size
 //! - Explicit max_grid_size overrides via self_compose_with_max_grid_size()
 //! - Coarsening conservativeness (pessimistic_estimate=true)

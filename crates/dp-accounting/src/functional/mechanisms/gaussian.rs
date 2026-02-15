@@ -73,8 +73,8 @@ pub(crate) const DEFAULT_MIN_BETA: f64 = 1e-6;
 /// For the Gaussian mechanism with noise multiplier σ and sensitivity Δ = 1:
 /// - Pure DP (δ = 0) is not achievable with finite noise
 /// - Approximate DP (ε, δ) is achieved for any ε > 0 and δ > 0
-/// - Smaller σ means more noise and stronger privacy (smaller ε for fixed δ)
-/// - Larger σ means less noise and weaker privacy (larger ε for fixed δ)
+/// - Smaller σ means less noise and weaker privacy (larger ε for fixed δ)
+/// - Larger σ means more noise and stronger privacy (smaller ε for fixed δ)
 ///
 /// # Tail bounds
 ///

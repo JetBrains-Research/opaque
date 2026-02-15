@@ -60,7 +60,7 @@ use std::f64::consts::LN_2;
 /// assert!(large.is_finite());
 /// ```
 pub fn log_sinh(x: f64) -> f64 {
-    debug_assert!(x > 0.0, "log_sinh requires x > 0, got {}", x);
+    assert!(x > 0.0, "log_sinh requires x > 0, got {}", x);
 
     // For very small x, use Taylor expansion: sinh(x) ≈ x
     if x < 1e-8 {
@@ -96,9 +96,16 @@ pub fn log_sinh(x: f64) -> f64 {
 /// ```
 pub fn arcsinh(x: f64) -> f64 {
     // Standard formula: arcsinh(x) = log(x + sqrt(x^2 + 1))
-    // This is numerically stable for all x
+    // For large |x|, use asymptotic form to avoid overflow: arcsinh(x) ≈ sign(x) * (ln(2|x|))
     let abs_x = x.abs();
-    let result = (abs_x + (abs_x * abs_x + 1.0).sqrt()).ln();
+
+    let result = if abs_x > 1e150 {
+        // For very large |x|, x^2 would overflow, use asymptotic form
+        abs_x.ln() + LN_2
+    } else {
+        (abs_x + (abs_x * abs_x + 1.0).sqrt()).ln()
+    };
+
     if x < 0.0 {
         -result
     } else {

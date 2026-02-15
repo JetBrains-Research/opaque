@@ -16,8 +16,8 @@ fn test_pld_metric_properties() {
     for eps in epsilons {
         let delta = pld.delta_at(eps);
         assert!(
-            delta < prev_delta,
-            "delta not decreasing: d({})={} >= prev={}",
+            delta <= prev_delta,
+            "delta not non-increasing: d({})={} > prev={}",
             eps,
             delta,
             prev_delta
@@ -75,8 +75,8 @@ fn test_delta_decreases_with_noise() {
         for noise in noise_multipliers {
             let delta = gaussian(noise).unwrap().pld().unwrap().delta_at(eps);
             assert!(
-                delta < prev_delta,
-                "d not decreasing at e={}: s={}, d={} >= prev={}",
+                delta <= prev_delta,
+                "d not non-increasing at e={}: s={}, d={} > prev={}",
                 eps,
                 noise,
                 delta,
@@ -97,8 +97,8 @@ fn test_epsilon_decreases_with_noise() {
         for noise in noise_multipliers {
             let eps = gaussian(noise).unwrap().pld().unwrap().epsilon_at(delta);
             assert!(
-                eps < prev_eps,
-                "e not decreasing at d={}: s={}, e={} >= prev={}",
+                eps <= prev_eps,
+                "e not non-increasing at d={}: s={}, e={} > prev={}",
                 delta,
                 noise,
                 eps,

@@ -1,4 +1,4 @@
-// ! Chernoff bound truncation for self-convolution
+//! Chernoff bound truncation for self-convolution
 //!
 //! Implements optimal truncation bounds for repeated convolution using
 //! Chernoff bounds on moment generating functions. This reduces
