@@ -43,6 +43,26 @@ def check_symmetric(M: torch.Tensor, name: str = "", **allclose_kwargs) -> None:
         raise ValueError(f"Matrix {_pad(name)}should be symmetric, found\n{M}")
 
 
+def check_exactly_one(**kwargs) -> str:
+    """Check that exactly one keyword argument is not None.
+
+    Returns the name of the provided argument. Raises ``ValueError`` if
+    zero or more than one argument is not None.
+
+    Example:
+        >>> which = check_exactly_one(strategy_coef=coef, noising_coef=None)
+        >>> assert which == "strategy_coef"
+    """
+    provided = [k for k, v in kwargs.items() if v is not None]
+    if len(provided) != 1:
+        names = ", ".join(kwargs.keys())
+        raise ValueError(
+            f"Specify exactly one of: {names}. "
+            f"Got: {', '.join(provided) if provided else 'none'}"
+        )
+    return provided[0]
+
+
 def check(
     *,
     A: torch.Tensor | None = None,

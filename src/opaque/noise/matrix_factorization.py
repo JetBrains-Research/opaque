@@ -95,7 +95,7 @@ def _gaussian_linear_combination(
 
 
 def matrix_factorization_noise(
-    noising_matrix: torch.Tensor | streaming_matrix.StreamingMatrix,
+    noising: torch.Tensor | streaming_matrix.StreamingMatrix,
     *,
     stddev: float,
     seed: int | None = None,
@@ -104,15 +104,15 @@ def matrix_factorization_noise(
     """Create correlated noise functions using matrix factorization.
 
     This is the primary entry point for DP-FTRL-style noise addition. The
-    ``noising_matrix`` represents C^{-1} in the factorization A = B @ C,
+    ``noising`` argument represents C^{-1} in the factorization A = B @ C,
     where the noise covariance is proportional to (C^{-1})^T @ C^{-1}.
 
     Returns ``(init_fn, noise_fn)`` following the functional ``(fn, state)``
-    pattern used by ``gaussian_stateful``.
+    pattern used by ``gaussian_noise_stateful``.
 
     Args:
-        noising_matrix: Either a dense matrix (torch.Tensor) or a
-            StreamingMatrix representing C^{-1}.
+        noising: Either a dense 2D tensor (``torch.Tensor``) or a
+            ``StreamingMatrix`` representing C^{-1}.
         stddev: Standard deviation for the base noise.
         seed: Optional random seed for reproducibility.
         dtype: Optional dtype for intermediate noise computation.
@@ -136,24 +136,24 @@ def matrix_factorization_noise(
         >>> state = init_fn(grad_template)
         >>> noisy_grad, state = noise_fn(clipped_grad, state)
     """
-    if isinstance(noising_matrix, torch.Tensor):
-        return _dense_mf_noise(noising_matrix, stddev=stddev, seed=seed, dtype=dtype)
-    elif isinstance(noising_matrix, streaming_matrix.StreamingMatrix):
-        return _streaming_mf_noise(noising_matrix, stddev=stddev, seed=seed, dtype=dtype)
+    if isinstance(noising, torch.Tensor):
+        return _dense_mf_noise(noising, stddev=stddev, seed=seed, dtype=dtype)
+    elif isinstance(noising, streaming_matrix.StreamingMatrix):
+        return _streaming_mf_noise(noising, stddev=stddev, seed=seed, dtype=dtype)
     else:
-        raise TypeError(f"Unsupported noising_matrix type: {type(noising_matrix)}")
+        raise TypeError(f"Unsupported noising type: {type(noising)}")
 
 
 def _dense_mf_noise(
-    noising_matrix: torch.Tensor,
+    noising: torch.Tensor,
     *,
     stddev: float,
     seed: int | None = None,
     dtype: torch.dtype | None = None,
 ) -> tuple[Callable, Callable]:
     """Init/noise functions from a dense noising matrix C^{-1}."""
-    if noising_matrix.ndim != 2:
-        raise ValueError(f"Expected 2D matrix, found shape {noising_matrix.shape}")
+    if noising.ndim != 2:
+        raise ValueError(f"Expected 2D matrix, found shape {noising.shape}")
 
     def init_fn(grad_template):
         gen = torch.Generator()
@@ -169,13 +169,13 @@ def _dense_mf_noise(
     def noise_fn(clipped_grads, state):
         index = state.inner_state
         gen = state.rng_state
-        max_steps = noising_matrix.shape[0]
+        max_steps = noising.shape[0]
         if index >= max_steps:
             raise ValueError(
-                f"Step {index} exceeds noising_matrix size {max_steps}. "
+                f"Step {index} exceeds noising matrix size {max_steps}. "
                 f"The noising matrix must have at least as many rows as steps."
             )
-        matrix_row = noising_matrix[index] * stddev
+        matrix_row = noising[index] * stddev
 
         def add_noise(grad_tensor):
             noise = _gaussian_linear_combination(
@@ -198,7 +198,7 @@ def _dense_mf_noise(
 
 
 def _streaming_mf_noise(
-    noising_matrix: streaming_matrix.StreamingMatrix,
+    noising: streaming_matrix.StreamingMatrix,
     *,
     stddev: float,
     seed: int | None = None,
@@ -212,7 +212,7 @@ def _streaming_mf_noise(
             gen.manual_seed(seed)
         else:
             gen.seed()
-        streaming_state = noising_matrix.init_multiply(grad_template)
+        streaming_state = noising.init_multiply(grad_template)
         return MFNoiseState(
             inner_state=streaming_state,
             rng_state=gen,
@@ -225,7 +225,7 @@ def _streaming_mf_noise(
         # Generate IID noise
         iid_noise = _iid_normal_noise(clipped_grads, stddev, generator=gen, dtype=dtype)
         # Apply streaming matrix to correlate noise
-        corr_noise, new_streaming_state = noising_matrix.multiply_next(
+        corr_noise, new_streaming_state = noising.multiply_next(
             iid_noise, streaming_state
         )
         # Add correlated noise to gradients

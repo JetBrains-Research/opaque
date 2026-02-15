@@ -5,6 +5,7 @@ import torch
 
 from opaque.matrix_factorization.checks import (
     check,
+    check_exactly_one,
     check_finite,
     check_is_matrix,
     check_lower_triangular,
@@ -72,6 +73,24 @@ class TestCheckSymmetric:
         M = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
         with pytest.raises(ValueError, match="symmetric"):
             check_symmetric(M, "M")
+
+
+class TestCheckExactlyOne:
+    def test_one_provided(self):
+        result = check_exactly_one(a=1, b=None)
+        assert result == "a"
+
+    def test_none_provided(self):
+        with pytest.raises(ValueError, match="exactly one"):
+            check_exactly_one(a=None, b=None)
+
+    def test_both_provided(self):
+        with pytest.raises(ValueError, match="exactly one"):
+            check_exactly_one(a=1, b=2)
+
+    def test_returns_name(self):
+        result = check_exactly_one(strategy_coef=None, noising_coef="value")
+        assert result == "noising_coef"
 
 
 class TestCheck:

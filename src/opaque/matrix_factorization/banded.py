@@ -204,22 +204,22 @@ def minsep_sensitivity_squared(
 
 
 def per_query_error(
-    C: ColumnNormalizedBanded,
-    A: streaming_matrix.StreamingMatrix | None = None,
+    strategy: ColumnNormalizedBanded,
+    workload: streaming_matrix.StreamingMatrix | None = None,
 ) -> torch.Tensor:
     """Compute expected per-query squared error.
 
     Args:
-        C: The strategy matrix.
-        A: The workload matrix (defaults to prefix sum).
+        strategy: The strategy matrix (C).
+        workload: The workload matrix (defaults to prefix sum).
 
     Returns:
         Per-query expected squared error, tensor of length n.
     """
-    if A is None:
-        A = streaming_matrix.prefix_sum()
-    B = A @ C.inverse_as_streaming_matrix()
-    return B.row_norms_squared(C.n)
+    if workload is None:
+        workload = streaming_matrix.prefix_sum()
+    B = workload @ strategy.inverse_as_streaming_matrix()
+    return B.row_norms_squared(strategy.n)
 
 
 def mean_error(*args, **kwargs):
@@ -227,11 +227,6 @@ def mean_error(*args, **kwargs):
     return per_query_error(*args, **kwargs).mean()
 
 
-def last_error(*args, **kwargs):
-    """Last-iterate per-query error."""
-    return per_query_error(*args, **kwargs)[-1]
-
-
-def max_error_fn(*args, **kwargs):
+def max_error(*args, **kwargs):
     """Max per-query error."""
     return per_query_error(*args, **kwargs).max()

@@ -36,10 +36,9 @@ def per_query_error(
         Per-query expected squared error, a tensor of length n.
     """
     if not skip_checks:
-        if (strategy_matrix is None) == (noising_matrix is None):
-            raise ValueError(
-                "Specify exactly one of strategy_matrix or noising_matrix."
-            )
+        checks.check_exactly_one(
+            strategy_matrix=strategy_matrix, noising_matrix=noising_matrix
+        )
 
     if strategy_matrix is not None:
         C = strategy_matrix

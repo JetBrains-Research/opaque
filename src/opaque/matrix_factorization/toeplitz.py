@@ -18,7 +18,7 @@ from typing import Protocol
 import torch
 from scipy.linalg import toeplitz as scipy_toeplitz
 
-from . import optimization, sensitivity, streaming_matrix
+from . import checks, optimization, sensitivity, streaming_matrix
 
 
 def _l2_norm_squared(x: torch.Tensor) -> torch.Tensor:
@@ -304,8 +304,9 @@ def per_query_error(
         Per-query expected squared error, tensor of length n.
     """
     if not skip_checks:
-        if (strategy_coef is None) == (noising_coef is None):
-            raise ValueError("Specify exactly one of strategy_coef or noising_coef.")
+        checks.check_exactly_one(
+            strategy_coef=strategy_coef, noising_coef=noising_coef
+        )
 
     if strategy_coef is not None:
         strategy_coef, n = _reconcile(strategy_coef, n)
