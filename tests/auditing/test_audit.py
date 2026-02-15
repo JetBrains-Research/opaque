@@ -1,9 +1,9 @@
-"""Tests for AuditResult class."""
+"""Tests for AuditResult and CoinFlipExperiment classes."""
 
 import numpy as np
 import pytest
 
-from opaque.auditing import AuditResult
+from opaque.auditing import AuditResult, CoinFlipExperiment
 
 
 class TestConstruction:
@@ -311,3 +311,127 @@ class TestBootstrap:
             lambda r: r.epsilon_clopper_pearson(significance=0.05), params
         )
         assert len(ci) == 2
+
+
+class TestCoinFlipExperiment:
+    """Tests for CoinFlipExperiment (one-run auditing setup)."""
+
+    def test_basic_construction(self):
+        """Test constructing experiment with canary indices."""
+        canary_idx = np.arange(100)
+        exp = CoinFlipExperiment(canary_idx, seed=42)
+
+        assert exp.num_canaries == 100
+        assert len(exp.in_indices) + len(exp.out_indices) == 100
+        # With 100 coins, both groups should be non-empty
+        assert len(exp.in_indices) > 0
+        assert len(exp.out_indices) > 0
+
+    def test_coin_flip_reproducibility(self):
+        """Test that same seed gives same coin flips."""
+        canary_idx = np.arange(200)
+        exp1 = CoinFlipExperiment(canary_idx, seed=42)
+        exp2 = CoinFlipExperiment(canary_idx, seed=42)
+
+        np.testing.assert_array_equal(exp1.in_indices, exp2.in_indices)
+        np.testing.assert_array_equal(exp1.out_indices, exp2.out_indices)
+
+    def test_different_seeds_give_different_splits(self):
+        """Test that different seeds give different splits."""
+        canary_idx = np.arange(200)
+        exp1 = CoinFlipExperiment(canary_idx, seed=42)
+        exp2 = CoinFlipExperiment(canary_idx, seed=99)
+
+        # Extremely unlikely to be identical with different seeds
+        assert not np.array_equal(exp1.in_indices, exp2.in_indices)
+
+    def test_indices_are_subset_of_canaries(self):
+        """Test that in/out indices are subsets of canary indices."""
+        canary_idx = np.array([10, 20, 30, 40, 50])
+        exp = CoinFlipExperiment(canary_idx, seed=42)
+
+        for idx in exp.in_indices:
+            assert idx in canary_idx
+        for idx in exp.out_indices:
+            assert idx in canary_idx
+
+    def test_no_overlap(self):
+        """Test that in and out indices don't overlap."""
+        canary_idx = np.arange(100)
+        exp = CoinFlipExperiment(canary_idx, seed=42)
+
+        in_set = set(exp.in_indices.tolist())
+        out_set = set(exp.out_indices.tolist())
+        assert len(in_set & out_set) == 0
+
+    def test_train_indices(self):
+        """Test train_indices excludes out canaries."""
+        canary_idx = np.array([5, 15, 25])
+        exp = CoinFlipExperiment(canary_idx, seed=42)
+
+        train_idx = exp.train_indices(dataset_size=30)
+        train_set = set(train_idx.tolist())
+
+        # Out canaries must not be in training set
+        for idx in exp.out_indices:
+            assert idx not in train_set
+
+        # In canaries must be in training set
+        for idx in exp.in_indices:
+            assert idx in train_set
+
+        # Non-canary indices must be in training set
+        non_canary = set(range(30)) - set(canary_idx.tolist())
+        for idx in non_canary:
+            assert idx in train_set
+
+    def test_audit_produces_audit_result(self):
+        """Test that audit() returns correct AuditResult."""
+        canary_idx = np.arange(100)
+        exp = CoinFlipExperiment(canary_idx, seed=42)
+
+        # Simulate: in-canaries get high scores, out-canaries get low
+        scores = np.zeros(100)
+        scores[exp._in_mask] = 10.0
+        scores[~exp._in_mask] = 0.0
+
+        result = exp.audit(scores)
+
+        assert isinstance(result, AuditResult)
+        assert result.n_in == len(exp.in_indices)
+        assert result.n_out == len(exp.out_indices)
+        # Perfect separation → high AUROC
+        assert result.auroc() > 0.99
+
+    def test_audit_wrong_length_raises(self):
+        """Test that wrong-length scores raise ValueError."""
+        canary_idx = np.arange(100)
+        exp = CoinFlipExperiment(canary_idx, seed=42)
+
+        with pytest.raises(ValueError, match="Expected 100 scores"):
+            exp.audit(np.zeros(50))
+
+    def test_empty_canaries_raises(self):
+        """Test that empty canary indices raise ValueError."""
+        with pytest.raises(ValueError, match="non-empty"):
+            CoinFlipExperiment(np.array([]))
+
+    def test_end_to_end_one_run_audit(self):
+        """Test complete one-run auditing workflow with simulated scores."""
+        rng = np.random.default_rng(42)
+
+        # Setup: 500 canaries from a 10k dataset
+        canary_idx = rng.choice(10000, size=500, replace=False)
+        exp = CoinFlipExperiment(canary_idx, seed=42)
+
+        # Simulate membership scores: in-canaries score higher
+        scores = np.empty(500)
+        scores[exp._in_mask] = rng.normal(loc=0.7, scale=0.3, size=exp._in_mask.sum())
+        scores[~exp._in_mask] = rng.normal(
+            loc=0.3, scale=0.3, size=(~exp._in_mask).sum()
+        )
+
+        # Audit
+        result = exp.audit(scores)
+        assert result.auroc() > 0.6
+        assert result.epsilon_one_run(significance=0.05, delta=1e-5) > 0

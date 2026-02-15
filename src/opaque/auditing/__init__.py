@@ -14,10 +14,11 @@ References:
     - Carlini et al. (2022), https://arxiv.org/pdf/2112.03570
 """
 
-from opaque.auditing.audit import AuditResult
+from opaque.auditing.audit import AuditResult, CoinFlipExperiment
 from opaque.auditing.bootstrap import BootstrapParams
 
 __all__ = [
     "AuditResult",
     "BootstrapParams",
+    "CoinFlipExperiment",
 ]

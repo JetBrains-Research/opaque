@@ -4,14 +4,25 @@ Construct an :class:`AuditResult` from held-in and held-out canary scores,
 then query metrics as methods. Shared state (TN/FN counts on the Pareto
 frontier) is precomputed once at construction.
 
-Example:
+For end-to-end auditing with a single training run, use
+:class:`CoinFlipExperiment` to manage canary inclusion/exclusion, then
+call :meth:`CoinFlipExperiment.audit` to produce an :class:`AuditResult`.
+
+Example — post-hoc (scores already computed):
     >>> result = AuditResult(in_scores, out_scores)
     >>> print(f"Epsilon: {result.epsilon_clopper_pearson():.2f}")
-    >>> print(f"AUROC: {result.auroc():.3f}")
+
+Example — one-run auditing (Steinke et al. 2023):
+    >>> experiment = CoinFlipExperiment(num_canaries=1000, seed=42)
+    >>> # train model on data that includes experiment.in_indices canaries
+    >>> # and excludes experiment.out_indices canaries ...
+    >>> scores = compute_membership_scores(model, canary_data)
+    >>> result = experiment.audit(scores)
+    >>> print(f"Epsilon: {result.epsilon_one_run():.2f}")
 
 References:
-    - Nasr et al. (2023), https://arxiv.org/pdf/2305.08846
-    - Carlini et al. (2022), https://arxiv.org/pdf/2112.03570
+    - Steinke, Nasr, Jagielski (2023), https://arxiv.org/abs/2305.08846
+    - Carlini et al. (2022), https://arxiv.org/abs/2112.03570
 """
 
 from __future__ import annotations
@@ -30,7 +41,7 @@ from opaque.auditing.helpers import (
     _tpr_at_given_fpr,
 )
 
-__all__ = ["AuditResult"]
+__all__ = ["AuditResult", "CoinFlipExperiment"]
 
 
 class AuditResult:
@@ -325,6 +336,107 @@ class AuditResult:
         )
 
         return np.quantile(values, corrected, method="linear")
+
+
+class CoinFlipExperiment:
+    """One-run privacy audit: manages canary coin flips and score splitting.
+
+    Implements the canary setup from Steinke, Nasr, Jagielski (2023):
+    each canary is independently included or excluded from training with
+    probability 0.5 (a fair coin flip). After training, the user computes
+    a membership score for each canary and calls :meth:`audit` to get an
+    :class:`AuditResult`.
+
+    This bridges training and auditing — the two pieces that were previously
+    disconnected. The user provides canary indices into their dataset; the
+    experiment decides which are in/out and provides index arrays for
+    constructing the training set.
+
+    Attributes:
+        num_canaries: Total number of canary examples.
+        in_indices: Canary indices included in training (coin = heads).
+        out_indices: Canary indices excluded from training (coin = tails).
+
+    Example:
+        >>> # 1. Setup: pick 1000 canaries from a 50k dataset
+        >>> canary_idx = rng.choice(50000, size=1000, replace=False)
+        >>> experiment = CoinFlipExperiment(canary_idx, seed=42)
+        >>>
+        >>> # 2. Build training set: full dataset minus excluded canaries
+        >>> train_idx = sorted(set(range(50000)) - set(experiment.out_indices))
+        >>> model = train(dataset, train_idx, ...)
+        >>>
+        >>> # 3. Score all canaries (higher = more likely member)
+        >>> scores = -np.array([loss(model, dataset[i]) for i in canary_idx])
+        >>>
+        >>> # 4. Audit
+        >>> result = experiment.audit(scores)
+        >>> print(f"Epsilon: {result.epsilon_one_run(significance=0.05):.2f}")
+        >>> print(f"AUROC: {result.auroc():.3f}")
+
+    Reference:
+        Steinke, Nasr, Jagielski. "Privacy Auditing with One (1) Training
+        Run." NeurIPS 2023. https://arxiv.org/abs/2305.08846
+    """
+
+    def __init__(
+        self,
+        canary_indices: np.ndarray,
+        *,
+        seed: int | None = None,
+    ) -> None:
+        """Flip coins for each canary to decide inclusion/exclusion.
+
+        Args:
+            canary_indices: Array of dataset indices designated as canaries.
+            seed: Random seed for reproducible coin flips.
+        """
+        canary_indices = np.asarray(canary_indices)
+        if canary_indices.ndim != 1 or canary_indices.size == 0:
+            raise ValueError("canary_indices must be a non-empty 1-D array")
+
+        rng = np.random.default_rng(seed)
+        in_mask = rng.random(len(canary_indices)) < 0.5
+
+        self.num_canaries = len(canary_indices)
+        self._canary_indices = canary_indices
+        self._in_mask = in_mask
+        self.in_indices = canary_indices[in_mask]
+        self.out_indices = canary_indices[~in_mask]
+
+    def train_indices(self, dataset_size: int) -> np.ndarray:
+        """Dataset indices to use for training.
+
+        Returns all indices in ``range(dataset_size)`` except the excluded
+        canaries. Convenience method so users don't have to do set arithmetic.
+
+        Args:
+            dataset_size: Total number of examples in the full dataset.
+
+        Returns:
+            Sorted array of training indices.
+        """
+        excluded = set(self.out_indices.tolist())
+        return np.array([i for i in range(dataset_size) if i not in excluded])
+
+    def audit(self, scores: np.ndarray) -> AuditResult:
+        """Split scores by coin flip and return an AuditResult.
+
+        Args:
+            scores: Membership score for each canary, in the same order as
+                ``canary_indices`` passed to the constructor. Shape
+                ``(num_canaries,)``. Higher scores should indicate higher
+                likelihood of being a training member.
+
+        Returns:
+            :class:`AuditResult` with in/out scores split by coin flip.
+        """
+        scores = np.asarray(scores, dtype=float)
+        if scores.shape != (self.num_canaries,):
+            raise ValueError(
+                f"Expected {self.num_canaries} scores, got shape {scores.shape}"
+            )
+        return AuditResult(scores[self._in_mask], scores[~self._in_mask])
 
 
 # ------------------------------------------------------------------
