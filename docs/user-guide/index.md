@@ -6,7 +6,7 @@ to use Opaque effectively.
 ## Overview
 
 Opaque provides a functional API for training PyTorch models with differential privacy (DP). The library is organized
-around five core concepts:
+around seven core concepts:
 
 1. **[Per-Sample Gradient Clipping](clipping.md)** - Bound sensitivity by clipping gradients
 2. **[Noise Addition](noise.md)** - Add calibrated Gaussian noise for privacy
@@ -15,6 +15,7 @@ around five core concepts:
 5. **[Poisson Sampling & Microbatching](sampling.md)** - Privacy amplification through sampling
 6. **[LoRA Fine-tuning](lora.md)** - Parameter-efficient DP training for LLMs
 7. **[Privacy Auditing](auditing.md)** - Empirically validate DP guarantees
+8. **[Distributed Training](distributed.md)** - Multi-GPU training with DDP
 
 ## Learning Path
 
@@ -44,7 +45,8 @@ For production use and optimization:
 2. **[Poisson Sampling & Microbatching](sampling.md)** - Optimize privacy-utility tradeoffs
 3. **[LoRA Fine-tuning](lora.md)** - Train large language models efficiently
 4. **[Privacy Auditing](auditing.md)** - Validate your DP implementation empirically
-5. **[Tutorial 04](../tutorials/04_dp_optimizers.ipynb)** - TorchOpt integration
+5. **[Distributed Training](distributed.md)** - Scale to multiple GPUs with DDP
+6. **[Tutorial 04](../tutorials/04_dp_optimizers.ipynb)** - TorchOpt integration
 6. **[Tutorial 05](../tutorials/05_sampling_and_microbatching.ipynb)** - Advanced sampling techniques
 7. **[Tutorial 06](../tutorials/06_lora_huggingface_dp_training.ipynb)** - Real-world LLM fine-tuning
 

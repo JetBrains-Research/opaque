@@ -12,8 +12,11 @@ tests/
 │   ├── test_peft.py                # PEFT method tests
 │   └── test_architectures.py       # Multi-architecture tests
 ├── validation/                     # End-to-end DP training validation
-│   └── test_lora_dp_training.py
-├── integration/                    # Integration tests (planned)
+│   └── test_training.py            # LoRA + DP training workflows
+├── distributed/                    # Distributed training tests
+│   ├── test_ddp_models.py          # DDP with real models (multi-GPU)
+│   ├── test_ddp_integration.py     # DDP primitives integration
+│   └── test_*.py                   # Other distributed tests
 ├── clipping/                       # Core clipping functionality
 ├── noise/                          # Noise mechanisms
 ├── sampling/                       # Privacy sampling
@@ -73,7 +76,7 @@ pytest -m "not compat" -v
 
 **Purpose**: End-to-end validation of differential privacy training workflows.
 
-**File**: `test_lora_dp_training.py`
+**File**: `test_training.py`
 
 **What it tests**:
 - GPT-2 LoRA + DP training workflows
@@ -81,12 +84,13 @@ pytest -m "not compat" -v
 - Multiple training steps
 - Privacy accounting integration
 - Mellum-specific model tests
+- Multi-architecture compatibility
 
 **Test Classes**:
 - `TestGPT2LoRADPTraining` - GPT-2 specific workflows
 - `TestMellumLoRADPTraining` - Mellum model tests
 - `TestEndToEndDPTraining` - Complete training scenarios
-- `TestMultiArchitectureModels` - Architecture-specific tests (to be reorganized)
+- `TestMultiArchitectureModels` - Architecture-specific tests
 
 **Run with**:
 ```bash
@@ -166,7 +170,7 @@ pytest tests/compat/test_transformers_patches.py::TestAttentionImplementations -
 - Mark with `@pytest.mark.skip()` if it requires large downloads
 
 **For new training feature**:
-- Add end-to-end test to `tests/validation/test_lora_dp_training.py`
+- Add end-to-end test to `tests/validation/test_training.py`
 
 ---
 
@@ -217,7 +221,11 @@ uv sync --all-groups
 - ~~Add Flash Attention 2 tests~~ ✅ (documented as incompatible)
 - ~~Add flex_attention tests~~ ✅ (documented as incompatible)
 
-### Planned Reorganization
-1. Move API-specific tests (microbatching, noise, return values) to `tests/integration/`
-2. Simplify `test_lora_dp_training.py` to focus only on end-to-end validation
-3. Add CI configuration to skip compat tests when dependencies not installed
+### Completed Reorganization ✅
+1. ~~Simplified validation tests~~ → Renamed `test_lora_dp_training.py` → `test_training.py`
+2. ~~Consolidated DDP tests~~ → Moved to `tests/distributed/test_ddp_models.py`
+3. ~~Eliminated duplicate fixtures~~ → Single source of truth in `tests/conftest.py`
+
+### Future Work
+1. Add CI configuration to skip compat tests when dependencies not installed
+2. Add more multi-GPU scaling tests for larger models

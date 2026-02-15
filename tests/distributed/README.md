@@ -8,7 +8,8 @@ This directory contains tests for Opaque's distributed training primitives.
 - `test_gradient_aggregation.py` - Gradient aggregation (all_reduce_gradients, average_gradients)
 - `test_state_synchronization.py` - State synchronization (sync_scalar, sync_state)
 - `test_noise_determinism.py` - Deterministic noise generation in distributed mode
-- `test_ddp_integration.py` - Full DDP integration tests (requires GPU)
+- `test_ddp_integration.py` - DDP primitives integration (requires GPU)
+- `test_ddp_models.py` - DDP with real HuggingFace models (requires multi-GPU, uses mp.spawn)
 
 ## Running Tests
 
@@ -29,14 +30,16 @@ uv run pytest tests/distributed/test_core_utilities.py -v
 The DDP integration tests require actual multi-GPU setup. On the machine with 4 L4 GPUs:
 
 ```bash
-# Run with all 4 GPUs
+# DDP primitives integration (torchrun)
 torchrun --nproc_per_node=4 -m pytest tests/distributed/test_ddp_integration.py -v
-
-# Run with 2 GPUs
 torchrun --nproc_per_node=2 -m pytest tests/distributed/test_ddp_integration.py -v
 
-# Run specific test
-torchrun --nproc_per_node=4 -m pytest tests/distributed/test_ddp_integration.py::TestGradientAggregation::test_all_reduce_gradients_sum -v
+# DDP with real models (uses mp.spawn internally, no torchrun needed)
+pytest tests/distributed/test_ddp_models.py -v -s
+
+# Run specific model test
+pytest tests/distributed/test_ddp_models.py::TestDDPQuickSanity::test_ddp_qwen2_0_5b_basic -v -s
+pytest tests/distributed/test_ddp_models.py::TestDDPMultiGPUScaling::test_qwen2_0_5b -v -s
 ```
 
 ## Test Coverage
@@ -70,6 +73,13 @@ torchrun --nproc_per_node=4 -m pytest tests/distributed/test_ddp_integration.py:
 - State synchronization validation
 - Deterministic noise per rank
 - End-to-end DP training step
+
+✅ **DDP with Real Models** (5 tests) - requires multi-GPU
+- Qwen2-0.5B, Qwen2-1.5B, TinyLlama-1.1B, Phi-3-mini
+- Quick sanity tests (reduced layers)
+- Full scaling tests (memory validation)
+- Uses mp.spawn for process management
+- Validates training convergence across GPUs
 
 ## Hardware Requirements
 

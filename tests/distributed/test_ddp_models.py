@@ -1,60 +1,52 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""DDP scaling tests for real Hugging Face models with clipped gradients.
+"""DDP multi-GPU model testing: quick sanity checks and scaling validation.
 
-Tests multi-GPU degradation, memory efficiency, and convergence across different
-batch sizes and gradient accumulation configs. Follows Opacus testing pattern
-with mp.spawn() for multi-GPU tests.
+Uses shared model configs and training logic from tests/conftest.py.
+Tests DDP training with HuggingFace models (Qwen2, TinyLlama, Phi-3) using mp.spawn.
+
+Quick tests run in ~1-2 minutes and validate basic DDP functionality.
+Scaling tests verify memory efficiency and convergence across multiple models.
 
 Run with:
-  pytest tests/compat/test_ddp_multi_gpu_scaling.py -v -s
+  pytest tests/distributed/test_ddp_models.py -v -s
+  pytest tests/distributed/test_ddp_models.py::TestDDPQuickSanity -v -s  (quick only)
+  pytest tests/distributed/test_ddp_models.py::TestDDPMultiGPUScaling -v -s  (scaling only)
 
-(pytest automatically skips if < 2 GPUs are available)
+(pytest automatically skips multi-GPU tests if < 2 GPUs are available)
 """
 
 import os
 import sys
 import unittest
 
+import pytest
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
-from peft import LoraConfig, get_peft_model
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
+from tests.conftest import (
+    MODEL_CONFIGS,
+    build_text_batch,
+    has_min_gpu_memory,
+    load_model_with_lora,
+)
 from opaque import clipped_grad, make_functional
 from opaque.utils.pytree import tree_map
-
-
-# Memory-aware test configurations for A100 40GB multi-GPU scaling
-# Models sized to fit within 40GB per GPU with DP-SGD per-example gradients
-DDP_TEST_CONFIGS = [
-    {
-        "model": "Qwen/Qwen2-0.5B",
-        "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
-        "max_length": 2048,
-        "batch_size": 8,
-        "accum_steps": 32,
-    },
-    {
-        "model": "Qwen/Qwen2-1.5B",
-        "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
-        "max_length": 1024,
-        "batch_size": 8,
-        "accum_steps": 16,
-    },
-    {
-        "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-        "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
-        "max_length": 1024,
-        "batch_size": 8,
-        "accum_steps": 16,
-    },
-]
 
 TRAINING_STEPS = 3
 LEARNING_RATE = 1e-3
 L2_CLIP_NORM = 1.0
+
+
+def _is_distributed():
+    return dist.is_available() and dist.is_initialized()
+
+
+def _rank():
+    if _is_distributed():
+        return dist.get_rank()
+    return 0
 
 
 def _setup_ddp(rank, world_size):
@@ -79,43 +71,23 @@ def _cleanup_ddp():
         dist.destroy_process_group()
 
 
-def _build_text_batch(batch_size):
-    """Create deterministic text batch."""
-    base_texts = [
-        "Hello world test",
-        "Another example",
-        "Third sample",
-        "Final one",
-        "Short prompt",
-        "Yet another example",
-        "Testing a longer input",
-        "Final sample in batch",
-    ]
-    if batch_size <= len(base_texts):
-        return base_texts[:batch_size]
-    repeats = (batch_size + len(base_texts) - 1) // len(base_texts)
-    return (base_texts * repeats)[:batch_size]
-
-
 def _run_ddp_scaling_test(
     rank,
     world_size,
-    model_name,
-    target_modules,
-    max_length,
+    model_key,
     batch_size,
+    max_length,
     accum_steps,
     result_dict,
 ):
-    """Run DDP training step with clipped_grad and gradient accumulation.
+    """Run DDP training step with clipped_grad and gradient accumulation using shared utilities.
 
     Args:
         rank: Process rank
         world_size: Total number of processes
-        model_name: HF model ID
-        target_modules: LoRA target modules
-        max_length: Tokenizer max length
+        model_key: Key into MODEL_CONFIGS dict
         batch_size: Batch size per GPU
+        max_length: Max sequence length
         accum_steps: Gradient accumulation steps
         result_dict: Shared dict to store (success, loss) tuples
     """
@@ -126,32 +98,12 @@ def _run_ddp_scaling_test(
         _setup_ddp(rank, world_size)
         device = torch.device(f"cuda:{rank}")
 
-        # Load model and tokenizer
-        tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=False)
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
+        # Load model using shared utility
+        config = MODEL_CONFIGS[model_key]
+        model, tokenizer = load_model_with_lora(config, device=device)
 
-        config = AutoConfig.from_pretrained(model_name, trust_remote_code=False)
-        config._attn_implementation = "eager"
-
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            config=config,
-            dtype=torch.float16,
-            trust_remote_code=False,
-        ).to(device)
-
-        # Apply LoRA
-        lora_config = LoraConfig(
-            r=8,
-            lora_alpha=16,
-            lora_dropout=0.0,
-            target_modules=target_modules,
-        )
-        model = get_peft_model(model, lora_config)
-
-        # Prepare batch
-        texts = _build_text_batch(batch_size)
+        # Prepare batch using shared utility
+        texts = build_text_batch(batch_size)
         inputs = tokenizer(
             texts,
             return_tensors="pt",
@@ -238,10 +190,9 @@ def _run_ddp_scaling_test(
 def _run_multi_gpu_wrapper(
     rank,
     world_size,
-    model_name,
-    target_modules,
-    max_length,
+    model_key,
     batch_size,
+    max_length,
     accum_steps,
     result_dict,
 ):
@@ -249,13 +200,112 @@ def _run_multi_gpu_wrapper(
     _run_ddp_scaling_test(
         rank,
         world_size,
-        model_name,
-        target_modules,
-        max_length,
+        model_key,
         batch_size,
+        max_length,
         accum_steps,
         result_dict,
     )
+
+
+@pytest.mark.compat
+@pytest.mark.slow
+@pytest.mark.gpu
+class TestDDPQuickSanity:
+    """Quick DDP sanity check - minimal config for fast feedback."""
+
+    def test_ddp_qwen2_0_5b_basic(self):
+        """Quick DDP test with Qwen2-0.5B, reduced layers, 2 training steps."""
+        if not _is_distributed():
+            pytest.skip("Requires DDP (torch.distributed initialized)")
+
+        if not has_min_gpu_memory(12):
+            pytest.skip("Requires CUDA GPU with >= 12GB memory")
+
+        # Use shared config with modifications for speed
+        config = MODEL_CONFIGS["qwen2-0.5b"]
+        model, tokenizer = load_model_with_lora(config, device="cuda")
+        
+        # Reduce layers for speed
+        model.model.layers = model.model.layers[:2]
+
+        batch_size = 4
+        max_length = 512
+        accum_steps = 8
+        training_steps = 2
+        lr = 1e-3
+
+        texts = build_text_batch(batch_size)
+        inputs = tokenizer(
+            texts,
+            return_tensors="pt",
+            padding=True,
+            max_length=max_length,
+            truncation=True,
+        )
+        device = next(model.parameters()).device
+        input_ids = inputs["input_ids"].to(device)
+        attention_mask = inputs["attention_mask"].to(device)
+        labels = input_ids.clone()
+
+        fmodel, trainable, frozen = make_functional(
+            model,
+            disable_autograd_tracking=True,
+            partition_trainable=True,
+        )
+
+        def per_example_loss(
+            trainable_params, frozen_params, input_ids_single, mask_single, labels_single
+        ):
+            all_params = {**frozen_params, **trainable_params}
+            outputs = fmodel(
+                all_params,
+                input_ids_single,
+                attention_mask=mask_single,
+                labels=labels_single,
+            )
+            return outputs.loss
+
+        grad_fn, clip_state = clipped_grad(
+            per_example_loss,
+            argnums=0,
+            batch_argnums=(2, 3, 4),
+            l2_clip_norm=1.0,
+        )
+
+        state = clip_state
+        trainable_params = trainable
+
+        for step in range(training_steps):
+            accumulated = None
+            for accum in range(accum_steps):
+                grads, state = grad_fn(
+                    trainable_params,
+                    frozen,
+                    input_ids,
+                    attention_mask,
+                    labels,
+                    state=state,
+                )
+                if accumulated is None:
+                    accumulated = tree_map(lambda x: x.detach().clone(), grads)
+                else:
+                    accumulated = tree_map(lambda x, y: x + y, accumulated, grads)
+
+            scale = 1.0 / float(accum_steps)
+            accumulated = tree_map(lambda x: x * scale, accumulated)
+
+            trainable_params = tree_map(
+                lambda param, grad: param - lr * grad,
+                trainable_params,
+                accumulated,
+            )
+
+        # Synchronize across ranks
+        if _is_distributed():
+            dist.barrier()
+
+        assert trainable_params is not None
 
 
 @unittest.skipIf(
@@ -265,10 +315,9 @@ def _run_multi_gpu_wrapper(
 class TestDDPMultiGPUScaling(unittest.TestCase):
     """DDP multi-GPU scaling tests to detect memory degradation and OOM issues."""
 
-    def _run_ddp_scaling_test(
-        self, model_name, target_modules, max_length, batch_size, accum_steps
-    ):
+    def _run_ddp_scaling_test(self, model_key):
         """Helper to run DDP scaling test on multiple processes."""
+        config = MODEL_CONFIGS[model_key]
         world_size = min(torch.cuda.device_count(), 2)
 
         with mp.Manager() as manager:
@@ -278,11 +327,10 @@ class TestDDPMultiGPUScaling(unittest.TestCase):
                 _run_multi_gpu_wrapper,
                 args=(
                     world_size,
-                    model_name,
-                    target_modules,
-                    max_length,
-                    batch_size,
-                    accum_steps,
+                    model_key,
+                    config["batch_size"],
+                    config["max_length"],
+                    config["accum_steps"],
                     result_dict,
                 ),
                 nprocs=world_size,
@@ -301,33 +349,16 @@ class TestDDPMultiGPUScaling(unittest.TestCase):
 
     def test_qwen2_0_5b(self):
         """Test Qwen2-0.5B (0.5B, bs=8, accum=32)."""
-        cfg = DDP_TEST_CONFIGS[0]
-        self._run_ddp_scaling_test(
-            model_name=cfg["model"],
-            target_modules=cfg["target_modules"],
-            max_length=cfg["max_length"],
-            batch_size=cfg["batch_size"],
-            accum_steps=cfg["accum_steps"],
-        )
+        self._run_ddp_scaling_test("qwen2-0.5b")
 
     def test_qwen2_1_5b(self):
         """Test Qwen2-1.5B (1.5B, bs=8, accum=16)."""
-        cfg = DDP_TEST_CONFIGS[1]
-        self._run_ddp_scaling_test(
-            model_name=cfg["model"],
-            target_modules=cfg["target_modules"],
-            max_length=cfg["max_length"],
-            batch_size=cfg["batch_size"],
-            accum_steps=cfg["accum_steps"],
-        )
+        self._run_ddp_scaling_test("qwen2-1.5b")
 
     def test_tinyllama_1_1b(self):
         """Test TinyLlama-1.1B (1.1B, bs=8, accum=16)."""
-        cfg = DDP_TEST_CONFIGS[2]
-        self._run_ddp_scaling_test(
-            model_name=cfg["model"],
-            target_modules=cfg["target_modules"],
-            max_length=cfg["max_length"],
-            batch_size=cfg["batch_size"],
-            accum_steps=cfg["accum_steps"],
-        )
+        self._run_ddp_scaling_test("tinyllama-1.1b")
+
+    def test_phi3_3_8b(self):
+        """Test Phi-3-mini (3.8B, bs=8, accum=16, Phi-3-specific vmap patches)."""
+        self._run_ddp_scaling_test("phi3-mini")
