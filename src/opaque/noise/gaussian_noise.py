@@ -70,7 +70,9 @@ def gaussian_noise(stddev: float) -> Callable:
     return noise_fn
 
 
-def gaussian_noise_stateful(stddev: float, seed: int) -> tuple[Callable, torch.Generator]:
+def gaussian_noise_stateful(
+    stddev: float, seed: int
+) -> tuple[Callable, torch.Generator]:
     """Create a Gaussian noise function with explicit state management.
 
     Returns a tuple (noise_fn, state) where state is a torch.Generator for

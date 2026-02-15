@@ -12,7 +12,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from opaque.noise.matrix_factorization.noise import MFNoiseState, matrix_factorization_noise
+from opaque.noise.matrix_factorization.noise import (
+    MFNoiseState,
+    matrix_factorization_noise,
+)
 from opaque.noise.matrix_factorization.toeplitz import (
     inverse_as_streaming_matrix,
     optimize_banded_toeplitz,

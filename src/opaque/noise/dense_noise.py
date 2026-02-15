@@ -16,7 +16,10 @@ from typing import Any
 import torch
 
 from opaque.noise.matrix_factorization.dense import optimize
-from opaque.noise.matrix_factorization.noise import MFNoiseState, matrix_factorization_noise
+from opaque.noise.matrix_factorization.noise import (
+    MFNoiseState,
+    matrix_factorization_noise,
+)
 
 
 def dense_noise(

@@ -217,7 +217,9 @@ class TestBoundedGaussianStateful:
 
     def test_returns_tuple(self):
         """bounded_gaussian_noise_stateful() should return (fn, state) tuple."""
-        result = bounded_gaussian_noise_stateful(stddev=1.0, bounds=(-3.0, 3.0), seed=42)
+        result = bounded_gaussian_noise_stateful(
+            stddev=1.0, bounds=(-3.0, 3.0), seed=42
+        )
         assert isinstance(result, tuple)
         assert len(result) == 2
 

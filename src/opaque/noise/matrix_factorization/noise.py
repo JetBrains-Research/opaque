@@ -30,8 +30,9 @@ from typing import Any
 
 import torch
 
-from . import streaming_matrix
 from opaque.utils.pytree import tree_map
+
+from . import streaming_matrix
 
 
 @dataclasses.dataclass(frozen=True)

@@ -14,7 +14,10 @@ from collections.abc import Callable
 from typing import Any
 
 from opaque.noise.matrix_factorization.buffered_toeplitz import optimize
-from opaque.noise.matrix_factorization.noise import MFNoiseState, matrix_factorization_noise
+from opaque.noise.matrix_factorization.noise import (
+    MFNoiseState,
+    matrix_factorization_noise,
+)
 
 
 def blt_noise(
