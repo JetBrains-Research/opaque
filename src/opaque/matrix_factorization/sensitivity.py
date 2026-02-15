@@ -198,9 +198,7 @@ def get_sensitivity_banded_for_X(
     expected_zeros = ~banded_symmetric_mask(n, min_sep).bool()
     if not torch.all(X[expected_zeros] == 0):
         raise ValueError(
-            "All columns of C corresponding to iterations i and j where "
-            "user might participate (that is, |i - j| < min_sep + 1) "
-            "must be orthogonal."
+            "X must be min_sep-banded: entries with |i - j| >= min_sep must be zero."
         )
 
     x = torch.diag(X)

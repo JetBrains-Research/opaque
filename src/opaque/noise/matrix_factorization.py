@@ -209,6 +209,12 @@ def _dense_matrix_factorization_privatizer(
     def update(clipped_grads, state):
         index = state.inner_state
         gen = state.rng_state
+        max_steps = noising_matrix.shape[0]
+        if index >= max_steps:
+            raise ValueError(
+                f"Privatizer step {index} exceeds noising_matrix size {max_steps}. "
+                f"The noising matrix must have at least as many rows as optimizer steps."
+            )
         matrix_row = noising_matrix[index] * stddev
 
         def add_noise(grad_tensor):

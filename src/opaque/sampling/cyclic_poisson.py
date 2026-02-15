@@ -183,7 +183,12 @@ def split_and_pad_global_batch(
 
     Returns:
         List of minibatches, each of size exactly ``minibatch_size``.
+
+    Raises:
+        ValueError: If minibatch_size is not positive.
     """
+    if minibatch_size <= 0:
+        raise ValueError(f"minibatch_size must be positive, got {minibatch_size}")
     sections = range(minibatch_size, indices.shape[0], minibatch_size)
     minibatches = np.array_split(indices, sections, axis=0)
     minibatch_shape = (minibatch_size,) + indices.shape[1:]
@@ -216,6 +221,8 @@ def pad_to_multiple_of(indices: np.ndarray, multiple: int) -> np.ndarray:
     """
     if indices.ndim > 1:
         raise ValueError("pad_to_multiple_of expects 1D indices.")
+    if multiple <= 0:
+        raise ValueError(f"multiple must be positive, got {multiple}")
     curr_size = indices.shape[0]
     pad_size = (multiple - curr_size) % multiple
     new_indices = np.full(curr_size + pad_size, -1, dtype=indices.dtype)

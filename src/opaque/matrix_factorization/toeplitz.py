@@ -139,10 +139,14 @@ def materialize_lower_triangular(
     """
     full_coef = pad_coefs_to_n(coef, n)
     n_actual = len(full_coef)
-    col = full_coef.numpy()
+    original_device = full_coef.device
+    col = full_coef.detach().cpu().numpy()
     row = torch.zeros(n_actual, dtype=full_coef.dtype).numpy()
     row[0] = col[0]
-    return torch.tensor(scipy_toeplitz(col, row), dtype=full_coef.dtype)
+    toeplitz_np = scipy_toeplitz(col, row)
+    return torch.from_numpy(toeplitz_np).to(
+        device=original_device, dtype=full_coef.dtype
+    )
 
 
 def solve_banded(coef: torch.Tensor, rhs: torch.Tensor) -> torch.Tensor:
@@ -195,8 +199,11 @@ def multiply(
     # Use numpy for convolution since torch doesn't have a direct 1D convolve
     import numpy as np
 
-    conv = np.convolve(lhs_coef.detach().numpy(), rhs_coef.detach().numpy())[:n]
-    return torch.tensor(conv, dtype=lhs_coef.dtype)
+    conv = np.convolve(
+        lhs_coef.detach().cpu().numpy(), rhs_coef.detach().cpu().numpy()
+    )[:n]
+    result = torch.as_tensor(conv, dtype=lhs_coef.dtype)
+    return result.to(lhs_coef.device)
 
 
 def inverse_coef(coef: torch.Tensor, n: int | None = None) -> torch.Tensor:
