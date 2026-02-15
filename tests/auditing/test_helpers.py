@@ -5,12 +5,10 @@ import pytest
 
 from opaque.auditing.helpers import (
     _clopper_pearson_upper,
-    _epsilon_raw_counts_helper,
     _get_tn_fn_counts,
     _log_sub,
     _one_run_p_value,
     _pareto_frontier,
-    _random_partition,
     _tpr_at_given_fpr,
 )
 
@@ -138,60 +136,6 @@ class TestTprAtGivenFpr:
             _tpr_at_given_fpr(-0.1, tp_counts, fp_counts)
         with pytest.raises(ValueError, match="fpr must be in"):
             _tpr_at_given_fpr(1.5, tp_counts, fp_counts)
-
-
-class TestEpsilonRawCountsHelper:
-    def test_no_attack(self):
-        tp_counts = np.array([0, 50, 100])
-        fp_counts = np.array([0, 50, 100])
-        eps = _epsilon_raw_counts_helper(tp_counts, fp_counts, min_count=10, delta=0)
-        assert eps == 0.0
-
-    def test_perfect_attack(self):
-        tp_counts = np.array([0, 50, 90, 100])
-        fp_counts = np.array([0, 5, 10, 20])
-        eps = _epsilon_raw_counts_helper(tp_counts, fp_counts, min_count=5, delta=0)
-        assert eps > 0.5
-
-    def test_with_delta(self):
-        tp_counts = np.array([0, 50, 100])
-        fp_counts = np.array([0, 10, 20])
-        eps_delta0 = _epsilon_raw_counts_helper(
-            tp_counts, fp_counts, min_count=5, delta=0
-        )
-        eps_delta = _epsilon_raw_counts_helper(
-            tp_counts, fp_counts, min_count=5, delta=0.01
-        )
-        assert eps_delta >= eps_delta0
-
-    def test_min_count_threshold(self):
-        tp_counts = np.array([0, 90, 100])
-        fp_counts = np.array([0, 5, 100])
-        eps = _epsilon_raw_counts_helper(tp_counts, fp_counts, min_count=200, delta=0)
-        assert eps == 0.0
-
-
-class TestRandomPartition:
-    def test_partition_sizes(self):
-        scores = np.arange(100)
-        rng = np.random.default_rng(42)
-        part1, part2 = _random_partition(scores, rng, 0.3)
-        assert len(part1) == 30
-        assert len(part2) == 70
-
-    def test_no_overlap(self):
-        scores = np.arange(100)
-        rng = np.random.default_rng(42)
-        part1, part2 = _random_partition(scores, rng, 0.5)
-        assert len(np.intersect1d(part1, part2)) == 0
-
-    def test_invalid_p(self):
-        scores = np.arange(10)
-        rng = np.random.default_rng(42)
-        with pytest.raises(ValueError, match="p must be in"):
-            _random_partition(scores, rng, 0.0)
-        with pytest.raises(ValueError, match="p must be in"):
-            _random_partition(scores, rng, 1.0)
 
 
 class TestOneRunPValue:

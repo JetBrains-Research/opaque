@@ -1,326 +1,219 @@
-# Privacy Auditing
+# Privacy Auditing API
 
-The `opaque.auditing` module provides functional tools for empirically auditing differential privacy guarantees using membership inference attacks on canary examples.
+The `opaque.auditing` module provides empirical privacy auditing via membership inference on canary examples.
 
-## Overview
+## Module-Level Functions
 
-Privacy auditing empirically validates DP guarantees by:
-
-1. **Inserting canaries**: Training with (in) and without (out) specific examples
-2. **Running attacks**: Computing membership scores for each canary
-3. **Estimating epsilon**: Using statistical methods to bound the privacy parameter
-
-**Key functions**:
-
-- `epsilon_clopper_pearson()` - Conservative statistical bounds (recommended)
-- `epsilon_one_run()` - Likelihood-ratio method from Nasr et al. (2023)
-- `epsilon_raw_counts()` - Direct computation (less conservative)
-- `audit()` - Convenience function for comprehensive auditing
-- `attack_auroc()`, `tpr_at_fpr()`, `max_accuracy()` - Utility metrics
-
-**See also**: [Privacy Auditing User Guide](../user-guide/auditing.md)
-
-## Epsilon Estimation
-
-### epsilon_clopper_pearson
+### auditing.setup
 
 ```python
-def epsilon_clopper_pearson(
-    in_scores: Sequence[float] | np.ndarray,
-    out_scores: Sequence[float] | np.ndarray,
-    significance: float = 0.05,
-    delta: float = 0.0,
+def setup(
+    dataset: Any,
     *,
-    threshold: float | None = None,
-) -> float:
+    num_canaries: int,
+    seed: int | None = None,
+) -> CoinFlipExperiment:
 ```
 
-Estimate epsilon using Clopper-Pearson confidence intervals.
-
-Constructs conservative binomial confidence intervals for TPR/FPR and uses them to bound epsilon. Provides formal statistical guarantees with Bonferroni correction over all thresholds.
-
-**Args**:
+Set up a one-run privacy audit experiment. Randomly selects canary examples and flips a fair coin for each to decide inclusion/exclusion (Steinke et al. 2023).
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `in_scores` | `Sequence[float] \| np.ndarray` | required | Attack scores for held-in canaries (training set) |
-| `out_scores` | `Sequence[float] \| np.ndarray` | required | Attack scores for held-out canaries (test set) |
-| `significance` | `float` | `0.05` | Allowed failure probability (1 - confidence) |
-| `delta` | `float` | `0.0` | DP delta parameter (0 for pure DP) |
-| `threshold` | `float \| None` | `None` | If provided, use this specific threshold instead of searching |
+| `dataset` | any with `len()` | required | The full training dataset |
+| `num_canaries` | `int` | required | Number of canary examples to designate |
+| `seed` | `int \| None` | `None` | Random seed for reproducibility |
 
-**Returns**: Epsilon lower bound at the specified confidence level.
+**Returns**: `CoinFlipExperiment` managing the canary assignment.
 
-**Example**:
 ```python
-from opaque.auditing import epsilon_clopper_pearson
+import opaque.auditing as auditing
 
-eps = epsilon_clopper_pearson(in_scores, out_scores, significance=0.05)
-print(f"Epsilon lower bound (95% confidence): {eps:.2f}")
+experiment = auditing.setup(dataset, num_canaries=1000, seed=42)
+train_data = experiment.subset(dataset)
 ```
 
 ---
 
-### epsilon_one_run
+### auditing.evaluate
 
 ```python
-def epsilon_one_run(
-    in_scores: Sequence[float] | np.ndarray,
-    out_scores: Sequence[float] | np.ndarray,
-    significance: float = 0.05,
-    delta: float = 0.0,
+def evaluate(
+    experiment: CoinFlipExperiment,
+    loss_fn: Callable,
+    params: Any,
+    dataset: Any,
     *,
-    threshold: float | None = None,
-    eps_max: float = 20.0,
-    tol: float = 1e-4,
-) -> float:
+    batch_size: int = 256,
+) -> AuditResult:
 ```
 
-Estimate epsilon using the one-run method from Nasr et al. (2023).
-
-Uses a likelihood-ratio test tailored for DP auditing. Generally less conservative than Clopper-Pearson for the same sample size.
-
-**Args**:
+Score canaries by negative loss and produce audit results in one call. Uses `torch.func.vmap` for per-example loss computation (same requirement as `clipped_grad`).
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `in_scores` | `Sequence[float] \| np.ndarray` | required | Attack scores for held-in canaries |
-| `out_scores` | `Sequence[float] \| np.ndarray` | required | Attack scores for held-out canaries |
-| `significance` | `float` | `0.05` | Allowed failure probability |
-| `delta` | `float` | `0.0` | DP delta parameter |
-| `threshold` | `float \| None` | `None` | If provided, use this specific threshold |
-| `eps_max` | `float` | `20.0` | Maximum epsilon to search |
-| `tol` | `float` | `1e-4` | Binary search tolerance |
+| `experiment` | `CoinFlipExperiment` | required | From `auditing.setup()` |
+| `loss_fn` | `Callable` | required | `loss_fn(params, x, y) -> scalar`, vmap-compatible |
+| `params` | any | required | Trained model parameters |
+| `dataset` | any | required | The full dataset (same as passed to `setup`) |
+| `batch_size` | `int` | `256` | Batch size for scoring |
 
-**Returns**: Epsilon lower bound at the specified confidence level.
+**Returns**: `AuditResult` with `epsilon_at()` defaulting to the `'one_run'` method.
 
-**Reference**: [Nasr et al. (2023)](https://arxiv.org/abs/2305.08846)
+```python
+audit = auditing.evaluate(experiment, loss_fn, params, dataset)
+audit.epsilon_at(delta=1e-5)
+print(audit.summary())
+```
 
 ---
 
-### epsilon_raw_counts
+### auditing.score_by_loss
 
 ```python
-def epsilon_raw_counts(
-    in_scores: Sequence[float] | np.ndarray,
-    out_scores: Sequence[float] | np.ndarray,
-    min_count: int = 50,
+def score_by_loss(
+    loss_fn: Callable,
+    params: Any,
+    dataset: Any,
+    indices: np.ndarray | None = None,
+    *,
+    batch_size: int = 256,
+) -> np.ndarray:
+```
+
+Compute membership scores as negative per-example loss. Higher score = lower loss = more likely a training member. Lower-level than `evaluate()` — use when you need raw scores.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `loss_fn` | `Callable` | required | `loss_fn(params, x, y) -> scalar`, vmap-compatible |
+| `params` | any | required | Model parameters |
+| `dataset` | any | required | Dataset returning `(x, y, ...)` tuples |
+| `indices` | `np.ndarray \| None` | `None` | Score only these indices |
+| `batch_size` | `int` | `256` | Batch size for scoring |
+
+**Returns**: Array of scores, shape `(n,)`.
+
+---
+
+## AuditResult
+
+```python
+class AuditResult:
+    n_in: int       # Number of held-in canaries
+    n_out: int      # Number of held-out canaries
+```
+
+Privacy audit results computed from canary scores. Construct from `auditing.evaluate()` or directly from pre-computed scores.
+
+### AuditResult.epsilon_at
+
+```python
+def epsilon_at(
+    self,
+    *,
     delta: float = 0.0,
+    significance: float = 0.05,
+    method: str | None = None,
 ) -> float:
 ```
 
-Estimate epsilon from raw TPR/FPR counts.
-
-Direct computation without confidence intervals. Less conservative but higher variance than Clopper-Pearson.
-
-**Args**:
+Epsilon lower bound at the given delta. Matches the accounting API (`DpProcess.epsilon_at(delta=)`). Method is chosen automatically based on provenance.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `in_scores` | `Sequence[float] \| np.ndarray` | required | Attack scores for held-in canaries |
-| `out_scores` | `Sequence[float] \| np.ndarray` | required | Attack scores for held-out canaries |
-| `min_count` | `int` | `50` | Minimum FP count to consider a threshold |
 | `delta` | `float` | `0.0` | DP delta parameter |
+| `significance` | `float` | `0.05` | Failure probability (1 - confidence) |
+| `method` | `str \| None` | auto | `'one_run'` or `'clopper_pearson'` |
 
-**Returns**: Epsilon estimate.
-
----
-
-## Utility Metrics
-
-### attack_auroc
+### AuditResult.auroc
 
 ```python
-def attack_auroc(
-    in_scores: Sequence[float] | np.ndarray,
-    out_scores: Sequence[float] | np.ndarray,
-) -> float:
+def auroc(self) -> float:
 ```
 
-Area under ROC curve for the membership inference attack.
+Area under the ROC curve. 0.5 = random guessing, 1.0 = perfect attack.
 
-- AUROC = 0.5 means random guessing (no privacy leakage detectable)
-- AUROC = 1.0 means perfect attack (complete privacy breach)
-
-**Example**:
-```python
-from opaque.auditing import attack_auroc
-
-auroc = attack_auroc(in_scores, out_scores)
-print(f"Attack AUROC: {auroc:.3f}")
-```
-
----
-
-### tpr_at_fpr
+### AuditResult.tpr_at_fpr
 
 ```python
-def tpr_at_fpr(
-    in_scores: Sequence[float] | np.ndarray,
-    out_scores: Sequence[float] | np.ndarray,
-    fpr: float | np.ndarray,
-) -> float | np.ndarray:
+def tpr_at_fpr(self, *, fpr: float | np.ndarray) -> float | np.ndarray:
 ```
 
 True positive rate at a given false positive rate.
 
-**Args**:
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `in_scores` | `Sequence[float] \| np.ndarray` | Attack scores for held-in canaries |
-| `out_scores` | `Sequence[float] \| np.ndarray` | Attack scores for held-out canaries |
-| `fpr` | `float \| np.ndarray` | Target false positive rate(s) in [0, 1] |
-
-**Returns**: TPR value(s) at the specified FPR(s).
-
-**Example**:
-```python
-from opaque.auditing import tpr_at_fpr
-
-# Single FPR
-tpr = tpr_at_fpr(in_scores, out_scores, fpr=0.01)
-print(f"TPR at 1% FPR: {tpr:.3f}")
-
-# Multiple FPRs
-tprs = tpr_at_fpr(in_scores, out_scores, fpr=[0.001, 0.01, 0.1])
-```
-
----
-
-### max_accuracy
+### AuditResult.max_accuracy
 
 ```python
-def max_accuracy(
-    in_scores: Sequence[float] | np.ndarray,
-    out_scores: Sequence[float] | np.ndarray,
-    *,
-    prevalence: float | None = None,
-) -> float:
+def max_accuracy(self, *, prevalence: float | None = None) -> float:
 ```
 
-Maximum classification accuracy achievable across all thresholds.
+Maximum classification accuracy across all thresholds.
 
-**Args**:
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `in_scores` | `Sequence[float] \| np.ndarray` | required | Attack scores for held-in canaries |
-| `out_scores` | `Sequence[float] \| np.ndarray` | required | Attack scores for held-out canaries |
-| `prevalence` | `float \| None` | `None` | Fraction of positives in population (default: use sample ratio) |
-
-**Returns**: Maximum accuracy in [0, 1].
-
----
-
-## Convenience Functions
-
-### audit
+### AuditResult.summary
 
 ```python
-def audit(
-    in_scores: Sequence[float] | np.ndarray,
-    out_scores: Sequence[float] | np.ndarray,
-    significance: float = 0.05,
-    delta: float = 0.0,
-    *,
-    method: str = "clopper_pearson",
-) -> AuditResult:
+def summary(self, *, significance: float = 0.05, delta: float = 0.0) -> str:
 ```
 
-Run a comprehensive privacy audit.
+Multi-line formatted summary of all metrics.
 
-Computes epsilon and all utility metrics in a single call.
-
-**Args**:
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `in_scores` | array-like | required | Attack scores for held-in canaries |
-| `out_scores` | array-like | required | Attack scores for held-out canaries |
-| `significance` | `float` | `0.05` | Allowed failure probability |
-| `delta` | `float` | `0.0` | DP delta parameter |
-| `method` | `str` | `"clopper_pearson"` | Epsilon method: `"clopper_pearson"`, `"raw_counts"`, or `"one_run"` |
-
-**Returns**: `AuditResult` namedtuple with fields:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `epsilon` | `float` | Estimated epsilon lower bound |
-| `auroc` | `float` | Attack AUROC |
-| `tpr_at_low_fpr` | `float` | TPR at 1% FPR |
-| `max_accuracy` | `float` | Maximum achievable accuracy |
-
-**Example**:
-```python
-from opaque.auditing import audit
-
-result = audit(in_scores, out_scores, significance=0.05, delta=1e-5)
-print(f"Epsilon: {result.epsilon:.2f}")
-print(f"AUROC: {result.auroc:.3f}")
-print(f"TPR@1%FPR: {result.tpr_at_low_fpr:.3f}")
-print(f"Max Accuracy: {result.max_accuracy:.3f}")
-
-# Unpack as tuple
-eps, auroc, tpr, acc = audit(in_scores, out_scores)
-```
-
----
-
-## Bootstrap Confidence Intervals
-
-### bootstrap
+### AuditResult.bootstrap
 
 ```python
 def bootstrap(
-    fn: Callable,
-    in_scores: Sequence[float] | np.ndarray,
-    out_scores: Sequence[float] | np.ndarray,
+    self,
+    metric: Callable[[AuditResult], float],
     params: BootstrapParams,
 ) -> np.ndarray:
 ```
 
-Compute bootstrapped quantiles for any auditing function.
+Bootstrap confidence intervals for any metric. Supports bias-corrected and accelerated (BCa) intervals.
 
-Supports bias-corrected and accelerated (BCa) bootstrap for more accurate confidence intervals.
-
-**Args**:
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `fn` | `Callable` | Function with signature `fn(in_scores, out_scores) -> float` |
-| `in_scores` | array-like | Attack scores for held-in canaries |
-| `out_scores` | array-like | Attack scores for held-out canaries |
-| `params` | `BootstrapParams` | Bootstrap configuration |
-
-**Returns**: Array of quantiles specified in `params.quantiles`.
-
-**Example**:
 ```python
-from opaque.auditing import bootstrap, attack_auroc, BootstrapParams
-
-# Basic bootstrap
-params = BootstrapParams(num_samples=1000, seed=42)
-auroc_ci = bootstrap(attack_auroc, in_scores, out_scores, params)
-print(f"AUROC 95% CI: [{auroc_ci[0]:.3f}, {auroc_ci[1]:.3f}]")
-
-# With bias correction
-params = BootstrapParams.confidence_interval(
-    confidence=0.95,
-    num_samples=2000,
-    bias_correction=True,
-    acceleration=True,
-    seed=42,
-)
-eps_ci = bootstrap(
-    lambda i, o: epsilon_clopper_pearson(i, o, significance=0.05),
-    in_scores, out_scores, params
-)
+params = BootstrapParams.confidence_interval(confidence=0.95, seed=42)
+auroc_ci = audit.bootstrap(AuditResult.auroc, params)
+eps_ci = audit.bootstrap(lambda r: r.epsilon_at(delta=1e-5), params)
 ```
 
 ---
 
-### BootstrapParams
+## CoinFlipExperiment
+
+```python
+class CoinFlipExperiment:
+    num_canaries: int          # Total canary count
+    in_indices: np.ndarray     # Canaries included in training
+    out_indices: np.ndarray    # Canaries excluded from training
+```
+
+Manages canary coin flips for one-run auditing. Prefer `auditing.setup()` over direct construction.
+
+### CoinFlipExperiment.subset
+
+```python
+def subset(self, dataset) -> torch.utils.data.Subset:
+```
+
+Return a `Subset` for training (excludes held-out canaries).
+
+### CoinFlipExperiment.canary_subset
+
+```python
+def canary_subset(self, dataset) -> torch.utils.data.Subset:
+```
+
+Return a `Subset` containing only canary examples.
+
+### CoinFlipExperiment.audit
+
+```python
+def audit(self, scores: np.ndarray) -> AuditResult:
+```
+
+Split scores by coin flip and return an `AuditResult`. The result defaults to the `'one_run'` epsilon method.
+
+---
+
+## BootstrapParams
 
 ```python
 @dataclass(frozen=True)
@@ -334,17 +227,8 @@ class BootstrapParams:
 
 Configuration for bootstrap confidence intervals.
 
-**Fields**:
+### BootstrapParams.confidence_interval
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `num_samples` | `int` | `1000` | Number of bootstrap resamples |
-| `quantiles` | `tuple[float, ...]` | `(0.025, 0.975)` | Quantiles to compute |
-| `bias_correction` | `bool` | `True` | Use bias-corrected bootstrap |
-| `acceleration` | `bool` | `False` | Use accelerated (BCa) bootstrap |
-| `seed` | `int \| None` | `None` | Random seed for reproducibility |
-
-**Factory method**:
 ```python
 @classmethod
 def confidence_interval(
@@ -359,39 +243,26 @@ def confidence_interval(
 
 Create params for a symmetric confidence interval.
 
-**Example**:
 ```python
-# Default 95% CI
-params = BootstrapParams()
-
-# 99% CI with BCa
-params = BootstrapParams.confidence_interval(
-    confidence=0.99,
-    num_samples=5000,
-    bias_correction=True,
-    acceleration=True,
-)
+params = BootstrapParams.confidence_interval(confidence=0.95, seed=42)
 ```
 
 ---
 
 ## Quick Reference
 
-| Function | Purpose | When to Use |
-|----------|---------|-------------|
-| `epsilon_clopper_pearson()` | Conservative epsilon bound | Default choice, formal guarantees |
-| `epsilon_one_run()` | Tighter epsilon bound | Smaller sample sizes |
-| `epsilon_raw_counts()` | Point estimate | Quick sanity checks |
-| `attack_auroc()` | Attack strength | Compare attack methods |
-| `tpr_at_fpr()` | Low-FPR performance | Real-world attack scenarios |
-| `max_accuracy()` | Best-case attack | Upper bound on attack success |
-| `audit()` | All metrics at once | Comprehensive reporting |
-| `bootstrap()` | Confidence intervals | Uncertainty quantification |
-
----
+| Function / Method | Purpose |
+|-------------------|---------|
+| `auditing.setup()` | Set up canary experiment |
+| `auditing.evaluate()` | Score canaries and compute audit |
+| `audit.epsilon_at(delta=)` | Epsilon bound (auto-selects method) |
+| `audit.auroc()` | Attack AUROC |
+| `audit.tpr_at_fpr(fpr=)` | TPR at given FPR |
+| `audit.max_accuracy()` | Best-case attack accuracy |
+| `audit.summary()` | Formatted report |
+| `audit.bootstrap(metric, params)` | Confidence intervals |
 
 ## See Also
 
 - **[Privacy Auditing User Guide](../user-guide/auditing.md)**: Conceptual explanations and workflows
 - **[Tutorial: Empirical Privacy Auditing](../tutorials/07_privacy_auditing.ipynb)**: Interactive walkthrough
-- **[Privacy Accounting](accounting.md)**: Theoretical privacy guarantees

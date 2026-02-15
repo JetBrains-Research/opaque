@@ -117,41 +117,6 @@ class TestEpsilonOneRun:
             result.epsilon_one_run(significance=0.05, delta=1.5)
 
 
-class TestEpsilonRawCounts:
-    """Tests for epsilon_raw_counts method."""
-
-    def test_perfect_attack(self):
-        """Test with perfect attack."""
-        result = AuditResult(np.arange(50, 100), np.arange(0, 50))
-
-        eps = result.epsilon_raw_counts(min_count=10, delta=0)
-        assert eps > 1.5
-
-    def test_no_attack(self):
-        """Test with no attack."""
-        scores = np.arange(100)
-        result = AuditResult(scores, scores)
-
-        eps = result.epsilon_raw_counts(min_count=10, delta=0)
-        assert eps == 0.0
-
-    def test_invalid_min_count(self):
-        """Test that invalid min_count raises ValueError."""
-        result = AuditResult([1, 2], [3, 4])
-        with pytest.raises(ValueError, match="min_count must be positive"):
-            result.epsilon_raw_counts(min_count=0)
-        with pytest.raises(ValueError, match="min_count must be positive"):
-            result.epsilon_raw_counts(min_count=-5)
-
-    def test_invalid_delta(self):
-        """Test that invalid delta raises ValueError."""
-        result = AuditResult([1, 2], [3, 4])
-        with pytest.raises(ValueError, match="delta must be in"):
-            result.epsilon_raw_counts(delta=-0.1)
-        with pytest.raises(ValueError, match="delta must be in"):
-            result.epsilon_raw_counts(delta=1.5)
-
-
 class TestAuroc:
     """Tests for auroc method."""
 

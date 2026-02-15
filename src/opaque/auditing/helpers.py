@@ -110,51 +110,6 @@ def _tpr_at_given_fpr(
     return float(result) if np.isscalar(fpr) else result
 
 
-def _epsilon_raw_counts_helper(
-    tp_counts: np.ndarray,
-    fp_counts: np.ndarray,
-    min_count: int,
-    delta: float,
-) -> float:
-    """Estimate epsilon from TP/FP counts."""
-    n_pos = tp_counts[-1]
-    n_neg = fp_counts[-1]
-
-    if min_count >= n_neg:
-        return 0.0
-
-    min_fpr = min_count / n_neg
-    tpr_at_min_fpr = _tpr_at_given_fpr(min_fpr, tp_counts, fp_counts)
-
-    if delta == 0:
-        return np.log(tpr_at_min_fpr / min_fpr)
-
-    if tpr_at_min_fpr > delta:
-        initial_eps = max(0, np.log(tpr_at_min_fpr - delta) - np.log(min_fpr))
-    else:
-        initial_eps = 0.0
-
-    tpr = tp_counts / n_pos
-    fpr = fp_counts / n_neg
-    valid = (fp_counts >= min_count) & (tpr > delta)
-    eps = np.log(tpr[valid] - delta) - np.log(fpr[valid])
-
-    return float(np.max(eps, initial=initial_eps))
-
-
-def _random_partition(
-    scores: np.ndarray,
-    rng: np.random.Generator,
-    p: float,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Randomly split a score array into two parts."""
-    if not 0 < p < 1:
-        raise ValueError(f"p must be in (0, 1), got {p}")
-    perm = rng.permutation(len(scores))
-    split_idx = int(len(scores) * p)
-    return scores[perm[:split_idx]], scores[perm[split_idx:]]
-
-
 def _one_run_p_value(
     m: int, n_guess: int, n_correct: int, eps: float, delta: float
 ) -> float:

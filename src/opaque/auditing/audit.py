@@ -31,7 +31,6 @@ import scipy.stats
 from opaque.auditing.bootstrap import BootstrapParams
 from opaque.auditing.helpers import (
     _clopper_pearson_upper,
-    _epsilon_raw_counts_helper,
     _get_tn_fn_counts,
     _one_run_p_value,
     _tpr_at_given_fpr,
@@ -224,35 +223,6 @@ class AuditResult:
             )
             best = max(best, eps_i)
         return best
-
-    def epsilon_raw_counts(
-        self,
-        *,
-        min_count: int = 50,
-        delta: float = 0.0,
-    ) -> float:
-        """Epsilon estimate from raw TPR/FPR counts.
-
-        Direct computation without confidence intervals. Less conservative
-        but higher variance than Clopper-Pearson.
-
-        Args:
-            min_count: Minimum FP count to consider a threshold. Default: 50.
-            delta: DP delta parameter. Default: 0 (pure DP).
-
-        Returns:
-            Epsilon estimate.
-        """
-        if min_count < 1:
-            raise ValueError(f"min_count must be positive, got {min_count}")
-        _validate_delta(delta)
-
-        return max(
-            0.0,
-            _epsilon_raw_counts_helper(
-                self._tp_counts, self._fp_counts, min_count, delta
-            ),
-        )
 
     # ------------------------------------------------------------------
     # Attack utility metrics

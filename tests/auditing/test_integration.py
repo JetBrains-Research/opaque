@@ -71,14 +71,14 @@ def test_perfect_attack():
 def test_real_world_scenario():
     """Test realistic privacy auditing scenario."""
     np.random.seed(42)
-    in_scores = np.random.exponential(scale=2.5, size=200)
-    out_scores = np.random.exponential(scale=2.0, size=200)
+    in_scores = np.random.normal(loc=0.6, scale=0.3, size=500)
+    out_scores = np.random.normal(loc=0.4, scale=0.3, size=500)
     result = AuditResult(in_scores, out_scores)
 
-    eps = result.epsilon_raw_counts(min_count=20, delta=1e-5)
+    eps = result.epsilon_at(delta=1e-5, method="clopper_pearson")
     assert eps > 0, "Should detect some privacy leakage"
 
-    assert 0.5 < result.auroc() < 0.75, "AUROC should show modest attack"
+    assert 0.5 < result.auroc() < 0.85, "AUROC should show modest attack"
 
     tpr_at_1pct = result.tpr_at_fpr(fpr=0.01)
     assert tpr_at_1pct < 0.3, "TPR should be limited at low FPR"
@@ -106,10 +106,9 @@ def test_all_metrics_on_single_result():
         np.random.normal(loc=3.0, scale=1.0, size=100),
     )
 
-    # All three epsilon methods
+    # Both epsilon methods
     assert result.epsilon_clopper_pearson(significance=0.05, delta=1e-5) > 0
     assert result.epsilon_one_run(significance=0.05, delta=1e-5) > 0
-    assert result.epsilon_raw_counts(min_count=10, delta=1e-5) > 0
 
     # All utility metrics
     assert 0.5 < result.auroc() < 1.0

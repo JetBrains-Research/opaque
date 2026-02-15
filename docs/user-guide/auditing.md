@@ -18,292 +18,170 @@ audited_epsilon <= theoretical_epsilon
 
 If the audited epsilon exceeds the theoretical epsilon, there's likely a bug in your implementation.
 
-## How Privacy Auditing Works
-
-### The Canary Approach
-
-1. **Create canary examples**: Special training examples designed to be memorable
-2. **Train with/without canaries**: Run training multiple times including/excluding each canary
-3. **Run membership inference**: Use an attack to distinguish trained-on vs not-trained-on canaries
-4. **Estimate epsilon**: Convert attack success to a privacy bound
-
-### Intuition
-
-If a model is (ε, δ)-DP, then:
-- An attacker cannot reliably tell if any single example was in the training set
-- The attack success rate is bounded by the privacy parameters
-
-By measuring actual attack success, we get an empirical lower bound on epsilon.
-
-## Basic Usage
-
-### Minimal Example
+## Quick Start
 
 ```python
-import numpy as np
-from opaque.auditing import audit
+import opaque.auditing as auditing
+from torch.utils.data import DataLoader
 
-# Attack scores: higher = more likely to be a training member
-in_scores = np.array([0.8, 0.9, 0.7, 0.85, 0.75])   # Held-in canaries
-out_scores = np.array([0.3, 0.4, 0.2, 0.35, 0.25])  # Held-out canaries
+# 1. Setup: designate canaries and flip coins
+experiment = auditing.setup(dataset, num_canaries=1000, seed=42)
 
-# Run comprehensive audit
-result = audit(in_scores, out_scores, significance=0.05, delta=1e-5)
+# 2. Train on the subset (excludes held-out canaries)
+train_loader = DataLoader(experiment.subset(dataset), batch_size=32)
+# ... standard DP-SGD training loop ...
 
-print(f"Epsilon lower bound: {result.epsilon:.2f}")
-print(f"Attack AUROC: {result.auroc:.3f}")
-print(f"TPR at 1% FPR: {result.tpr_at_low_fpr:.3f}")
-print(f"Max accuracy: {result.max_accuracy:.3f}")
+# 3. Evaluate: score canaries and compute epsilon
+audit = auditing.evaluate(experiment, loss_fn, params, dataset)
+print(audit.summary())
 ```
 
-### Understanding the Scores
+Output:
+```
+Audit Summary
+────────────────────────────────────────
+  Samples:              502 in, 498 out
+  AUROC:                0.7310
+  ε (Clopper-Pearson):  1.2300
+  ε (one-run):          1.6700
+  TPR @ 1% FPR:         0.1200
+  TPR @ 10% FPR:        0.3800
+  Max accuracy:         0.6800
+  (α=0.05, δ=0)
+```
 
-**Attack scores** come from a membership inference attack. Common sources:
+## How It Works (Steinke et al. 2023)
 
-| Score Type | Description | Higher means |
-|------------|-------------|--------------|
-| Loss | Training loss on the example | More likely OUT |
-| Negative loss | `-loss` | More likely IN |
-| Confidence | Model's confidence on correct label | More likely IN |
-| LiRA score | Likelihood ratio statistic | More likely IN |
+The **one-run** auditing method avoids training multiple models:
 
-Opaque's auditing functions expect **higher scores = more likely IN** (training member).
+1. **Pick canaries**: Select m examples from the dataset as canaries
+2. **Flip coins**: For each canary, flip a fair coin — include (heads) or exclude (tails)
+3. **Train once**: Train on the full dataset minus excluded canaries
+4. **Score**: Compute membership scores for all canaries (higher = more likely member)
+5. **Test**: Count correct guesses and use a binomial test to bound epsilon
+
+The key insight: non-canary data is always included. Only the m canaries are randomly in/out. This lets you audit with a single training run.
+
+## End-to-End Example
+
+```python
+import torch
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, TensorDataset
+
+from opaque import clipped_grad, gaussian_noise, PoissonSampler
+import opaque.auditing as auditing
+
+# Dataset
+dataset = TensorDataset(X, y)
+
+# ── Auditing setup (1 line) ──
+experiment = auditing.setup(dataset, num_canaries=1000, seed=42)
+
+# ── Training (unchanged except: experiment.subset) ──
+train_data = experiment.subset(dataset)
+sampler = PoissonSampler(train_data, sample_rate=0.01)
+train_loader = DataLoader(train_data, batch_sampler=sampler)
+
+def loss_fn(params, x, y):
+    return F.mse_loss(x @ params, y, reduction="sum")
+
+grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=1)
+noise_fn, noise_state = gaussian_noise(stddev=1.1 * grad_fn.clip_norm)
+
+for step in range(num_steps):
+    batch_x, batch_y = next(iter(train_loader))
+    grads = grad_fn(params, batch_x, batch_y)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
+    params = params - lr * noisy_grads
+
+# ── Auditing evaluation (1 line) ──
+audit = auditing.evaluate(experiment, loss_fn, params, dataset)
+
+# ── Results ──
+print(audit.summary(delta=1e-5))
+print(f"Empirical epsilon: {audit.epsilon_at(delta=1e-5):.2f}")
+```
 
 ## Epsilon Estimation Methods
 
-Opaque provides three methods for estimating epsilon:
+### Clopper-Pearson (general)
 
-### 1. Clopper-Pearson (Recommended)
-
-Conservative statistical bounds using binomial confidence intervals.
+Conservative statistical bounds using binomial confidence intervals. Works with **any** in/out split — no assumptions about how the split was created.
 
 ```python
-from opaque.auditing import epsilon_clopper_pearson
-
-eps = epsilon_clopper_pearson(
-    in_scores, out_scores,
-    significance=0.05,  # 95% confidence
-    delta=1e-5,         # DP delta parameter
-)
-print(f"Epsilon >= {eps:.2f} (95% confidence)")
+audit.epsilon_at(delta=1e-5, method="clopper_pearson")
 ```
 
-**When to use**: Default choice. Provides formal guarantees that hold with high probability.
+**When to use**: Post-hoc auditing with manual train/test splits, or when you want the most conservative bound.
 
-**Trade-off**: Conservative (may underestimate true epsilon with small samples).
+### One-Run (Steinke/Nasr 2023)
 
-### 2. One-Run Method (Nasr et al. 2023)
-
-Likelihood-ratio test that's less conservative with smaller samples.
+Likelihood-ratio test tailored for coin-flip experiments. Tighter than Clopper-Pearson but **only valid when canaries were randomly included/excluded with probability 0.5**.
 
 ```python
-from opaque.auditing import epsilon_one_run
-
-eps = epsilon_one_run(
-    in_scores, out_scores,
-    significance=0.05,
-    delta=1e-5,
-)
-print(f"Epsilon >= {eps:.2f} (one-run method)")
+audit.epsilon_at(delta=1e-5, method="one_run")
 ```
 
-**When to use**: When you have fewer canaries but want tighter bounds.
+**When to use**: When using `auditing.setup()` + `auditing.evaluate()` (the standard path). This is the default.
 
-**Reference**: [Tight Auditing of Differentially Private Machine Learning](https://arxiv.org/abs/2305.08846)
+### Automatic Selection
 
-### 3. Raw Counts
+`epsilon_at()` automatically picks the right method based on how the `AuditResult` was created:
 
-Direct computation without confidence intervals.
-
-```python
-from opaque.auditing import epsilon_raw_counts
-
-eps = epsilon_raw_counts(
-    in_scores, out_scores,
-    min_count=50,  # Minimum FP count for stability
-    delta=1e-5,
-)
-print(f"Epsilon estimate: {eps:.2f}")
-```
-
-**When to use**: Quick sanity checks. Not recommended for final results.
-
-**Trade-off**: Higher variance, no formal guarantees.
+| Created via | Default method | Why |
+|-------------|---------------|-----|
+| `auditing.evaluate()` | `one_run` | Coin-flip setup is guaranteed |
+| `AuditResult(in_scores, out_scores)` | `clopper_pearson` | No assumption about the split |
 
 ## Attack Metrics
 
 Beyond epsilon, these metrics help understand attack strength:
 
-### AUROC (Area Under ROC Curve)
-
 ```python
-from opaque.auditing import attack_auroc
-
-auroc = attack_auroc(in_scores, out_scores)
-print(f"Attack AUROC: {auroc:.3f}")
+audit.auroc()                    # Area under ROC curve (0.5 = random, 1.0 = perfect)
+audit.tpr_at_fpr(fpr=0.01)      # True positive rate at 1% false positive rate
+audit.tpr_at_fpr(fpr=0.1)       # True positive rate at 10% FPR
+audit.max_accuracy()             # Best-case classification accuracy
 ```
 
-| AUROC | Interpretation |
-|-------|----------------|
-| 0.50 | Random guessing (no privacy leakage) |
-| 0.60 | Weak attack |
-| 0.80 | Strong attack |
-| 1.00 | Perfect attack (complete privacy breach) |
-
-### TPR at Low FPR
-
-True positive rate at a given false positive rate. Important for real-world attacks where false accusations are costly.
-
-```python
-from opaque.auditing import tpr_at_fpr
-
-# TPR at 1% FPR (common benchmark)
-tpr_001 = tpr_at_fpr(in_scores, out_scores, fpr=0.01)
-print(f"TPR at 1% FPR: {tpr_001:.3f}")
-
-# Multiple FPRs
-tprs = tpr_at_fpr(in_scores, out_scores, fpr=[0.001, 0.01, 0.1])
-for fpr, tpr in zip([0.001, 0.01, 0.1], tprs):
-    print(f"  FPR={fpr:.1%}: TPR={tpr:.3f}")
-```
-
-### Maximum Accuracy
-
-Best-case classification accuracy achievable by the attack.
-
-```python
-from opaque.auditing import max_accuracy
-
-acc = max_accuracy(in_scores, out_scores)
-print(f"Max accuracy: {acc:.1%}")
-
-# With imbalanced prevalence (e.g., 10% of population was in training)
-acc_imbalanced = max_accuracy(in_scores, out_scores, prevalence=0.1)
-```
+| Metric | Random | Weak Attack | Strong Attack |
+|--------|--------|-------------|---------------|
+| AUROC | 0.50 | 0.60 | 0.80+ |
+| TPR @ 1% FPR | 0.01 | 0.05 | 0.20+ |
+| Max accuracy | 0.50 | 0.60 | 0.80+ |
 
 ## Confidence Intervals with Bootstrap
 
-For uncertainty quantification, use bootstrap resampling:
-
 ```python
-from opaque.auditing import bootstrap, attack_auroc, epsilon_clopper_pearson, BootstrapParams
+from opaque.auditing import AuditResult, BootstrapParams
 
-# Configure bootstrap
 params = BootstrapParams.confidence_interval(
-    confidence=0.95,
-    num_samples=2000,
-    bias_correction=True,  # BCa bootstrap
-    acceleration=True,
-    seed=42,
+    confidence=0.95, num_samples=2000, seed=42
 )
 
-# Bootstrap AUROC
-auroc_ci = bootstrap(attack_auroc, in_scores, out_scores, params)
+# Bootstrap any metric
+auroc_ci = audit.bootstrap(AuditResult.auroc, params)
 print(f"AUROC 95% CI: [{auroc_ci[0]:.3f}, {auroc_ci[1]:.3f}]")
 
-# Bootstrap epsilon (wrap to pass fixed parameters)
-def eps_fn(in_s, out_s):
-    return epsilon_clopper_pearson(in_s, out_s, significance=0.05, delta=1e-5)
-
-eps_ci = bootstrap(eps_fn, in_scores, out_scores, params)
+# Bootstrap epsilon (use a lambda for parameterized metrics)
+eps_ci = audit.bootstrap(
+    lambda r: r.epsilon_at(delta=1e-5),
+    params,
+)
 print(f"Epsilon 95% CI: [{eps_ci[0]:.2f}, {eps_ci[1]:.2f}]")
 ```
 
-## Complete Auditing Workflow
+## Post-Hoc Auditing (without training integration)
 
-### Step 1: Design Canaries
-
-Choose canary examples that are:
-- **Distinct**: Different from typical training examples
-- **Memorable**: Easy for the model to memorize if included
-- **Representative**: Cover the data distribution
+If you already have membership scores from another source:
 
 ```python
-# Example: Random canaries
-def create_canaries(dataset, num_canaries=1000, seed=42):
-    rng = np.random.default_rng(seed)
-    indices = rng.choice(len(dataset), size=num_canaries, replace=False)
-    return indices
-```
+from opaque.auditing import AuditResult
 
-### Step 2: Train with Canary Splitting
-
-```python
-def train_and_score(model_fn, dataset, canary_indices, seed):
-    """Train model and return membership scores for canaries."""
-    rng = np.random.default_rng(seed)
-
-    # Random split: half in, half out
-    in_mask = rng.random(len(canary_indices)) < 0.5
-    in_indices = canary_indices[in_mask]
-    out_indices = canary_indices[~in_mask]
-
-    # Train on full dataset MINUS out canaries
-    train_indices = set(range(len(dataset))) - set(out_indices)
-    model = model_fn(dataset, list(train_indices))
-
-    # Score all canaries
-    in_scores = compute_membership_scores(model, dataset, in_indices)
-    out_scores = compute_membership_scores(model, dataset, out_indices)
-
-    return in_scores, out_scores
-```
-
-### Step 3: Compute Membership Scores
-
-Common scoring functions:
-
-```python
-def loss_based_scores(model, dataset, indices):
-    """Higher loss = less likely to be training member."""
-    model.eval()
-    scores = []
-    for idx in indices:
-        x, y = dataset[idx]
-        with torch.no_grad():
-            loss = F.cross_entropy(model(x.unsqueeze(0)), y.unsqueeze(0))
-        scores.append(-loss.item())  # Negate so higher = more likely IN
-    return np.array(scores)
-
-def confidence_based_scores(model, dataset, indices):
-    """Higher confidence = more likely training member."""
-    model.eval()
-    scores = []
-    for idx in indices:
-        x, y = dataset[idx]
-        with torch.no_grad():
-            probs = F.softmax(model(x.unsqueeze(0)), dim=1)
-            confidence = probs[0, y].item()
-        scores.append(confidence)
-    return np.array(scores)
-```
-
-### Step 4: Run Audit
-
-```python
-from opaque.auditing import audit, bootstrap, BootstrapParams
-
-# Collect scores from training run
-in_scores, out_scores = train_and_score(
-    model_fn, dataset, canary_indices, seed=42
-)
-
-# Run comprehensive audit
-result = audit(in_scores, out_scores, significance=0.05, delta=1e-5)
-
-print("=== Privacy Audit Results ===")
-print(f"Epsilon lower bound: {result.epsilon:.2f}")
-print(f"Attack AUROC: {result.auroc:.3f}")
-print(f"TPR at 1% FPR: {result.tpr_at_low_fpr:.3f}")
-print(f"Max accuracy: {result.max_accuracy:.1%}")
-
-# Compare to theoretical epsilon
-theoretical_eps = acc.get_epsilon(privacy_state, delta=1e-5)
-print(f"\nTheoretical epsilon: {theoretical_eps:.2f}")
-print(f"Gap: {theoretical_eps - result.epsilon:.2f}")
-
-if result.epsilon > theoretical_eps:
-    print("WARNING: Audited epsilon exceeds theoretical bound!")
+audit = AuditResult(in_scores, out_scores)
+audit.epsilon_at(delta=1e-5)  # Uses Clopper-Pearson by default
+print(audit.summary())
 ```
 
 ## Interpreting Results
@@ -313,103 +191,31 @@ if result.epsilon > theoretical_eps:
 ```
 Theoretical epsilon: 3.00
 Audited epsilon:     1.50
-Gap: 1.50
 ```
 
-The audited epsilon is less than theoretical. The gap exists because:
-- Statistical estimation is imperfect
-- The attack may not be optimal
-- The bound is conservative
+The gap exists because: the attack may not be optimal, estimation is imperfect, and the bound is conservative.
 
 ### Potential Issues
 
 ```
 Theoretical epsilon: 3.00
-Audited epsilon:     5.00  # PROBLEM!
+Audited epsilon:     5.00
 ```
 
-If audited > theoretical, investigate:
-- Bug in gradient clipping
-- Bug in noise injection
-- Privacy accounting error
-- Data leakage in preprocessing
+Investigate: bug in gradient clipping, noise injection, privacy accounting, or data leakage.
 
 ## Best Practices
 
-### 1. Use Enough Canaries
-
-| Canaries | Reliability |
-|----------|-------------|
-| 100 | Low (high variance) |
-| 1,000 | Moderate |
-| 10,000+ | High |
-
-More canaries = tighter confidence intervals.
-
-### 2. Use Conservative Methods
-
-Start with `epsilon_clopper_pearson()` for formal guarantees. Use `epsilon_one_run()` only when sample size is limited.
-
-### 3. Report Confidence Intervals
-
-```python
-params = BootstrapParams.confidence_interval(confidence=0.95, num_samples=2000)
-eps_ci = bootstrap(eps_fn, in_scores, out_scores, params)
-print(f"Epsilon: {result.epsilon:.2f} (95% CI: [{eps_ci[0]:.2f}, {eps_ci[1]:.2f}])")
-```
-
-### 4. Audit Multiple Metrics
-
-Don't rely on epsilon alone:
-- AUROC captures overall attack strength
-- TPR@FPR captures worst-case scenarios
-- Max accuracy is easy to interpret
-
-### 5. Run Multiple Seeds
-
-```python
-# Aggregate over multiple random splits
-all_results = []
-for seed in range(10):
-    in_s, out_s = train_and_score(model_fn, dataset, canaries, seed=seed)
-    all_results.append(audit(in_s, out_s))
-
-epsilons = [r.epsilon for r in all_results]
-print(f"Epsilon: {np.mean(epsilons):.2f} +/- {np.std(epsilons):.2f}")
-```
-
-## Common Pitfalls
-
-### 1. Using Test Set as Canaries
-
-**Wrong**: Using the model's test set as "out" canaries.
-
-**Problem**: Test examples may have been seen during hyperparameter tuning.
-
-**Fix**: Reserve a separate set of canaries never used for anything else.
-
-### 2. Score Direction
-
-**Wrong**: Using loss directly (higher loss = out).
-
-**Problem**: Opaque expects higher scores = more likely IN.
-
-**Fix**: Negate loss scores: `scores = -losses`
-
-### 3. Too Few Canaries
-
-**Wrong**: Auditing with 10 canaries.
-
-**Problem**: Confidence intervals will be too wide to be useful.
-
-**Fix**: Use at least 1000 canaries for reliable results.
+1. **Use enough canaries**: 1000+ for reliable results (100 is too few)
+2. **Report confidence intervals**: Use `bootstrap()` to quantify uncertainty
+3. **Audit multiple metrics**: Don't rely on epsilon alone
+4. **Compare to theoretical epsilon**: The empirical bound should be lower
 
 ## API Reference
 
-See [Privacy Auditing API Reference](../api/auditing.md) for detailed function documentation.
+See [Privacy Auditing API Reference](../api/auditing.md) for detailed documentation.
 
 ## References
 
-- Nasr et al. (2023). [Tight Auditing of Differentially Private Machine Learning](https://arxiv.org/abs/2305.08846)
-- Carlini et al. (2022). [Membership Inference Attacks From First Principles](https://arxiv.org/abs/2112.03570)
-- Jagielski et al. (2020). [Auditing Differentially Private Machine Learning](https://arxiv.org/abs/2006.07709)
+- Steinke, Nasr, Jagielski (2023). [Privacy Auditing with One (1) Training Run](https://arxiv.org/abs/2305.08846). NeurIPS 2023.
+- Carlini et al. (2022). [Membership Inference Attacks From First Principles](https://arxiv.org/abs/2112.03570).
