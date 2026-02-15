@@ -46,12 +46,18 @@ def _truncated_normal_around(
         3. u_i     ~ Uniform(alpha_i, beta_i)
         4. sample_i = c_i + sigma * sqrt(2) * erfinv(2 * u_i - 1)
 
+    Note:
+        The generator must be on the same device as the input tensor.
+        For CPU tensors, use a CPU generator. For CUDA tensors, use a
+        CUDA generator or pass None for non-reproducible sampling.
+
     Args:
         center: Centre (mean) of the truncated Gaussian for each element.
         stddev: Standard deviation of the underlying Gaussian.
         lower: Lower bound of the output domain.
         upper: Upper bound of the output domain.
         generator: Optional ``torch.Generator`` for reproducibility.
+            Must be on the same device as ``center``.
 
     Returns:
         Tensor of same shape as *center* with values in [lower, upper].
@@ -171,6 +177,11 @@ def bounded_gaussian_stateful(
 
     Use this when you need reproducible noise (e.g., for testing, debugging, or
     deterministic training).  For typical use cases, use ``bounded_gaussian()``.
+
+    Note:
+        The returned generator is created on CPU. For CUDA tensors, you must
+        create a CUDA generator manually and pass it to the noise function,
+        or use ``bounded_gaussian()`` for non-reproducible CUDA sampling.
 
     Args:
         stddev: Standard deviation of the underlying Gaussian noise.
