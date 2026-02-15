@@ -210,6 +210,40 @@ final_epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
 print(f"Final privacy: (ε={final_epsilon:.2f}, δ=1e-5)")
 ```
 
+## Bounded Gaussian Noise
+
+For applications where noisy gradient values must stay within a valid range, Opaque provides a **bounded Gaussian
+mechanism** based on [Chen & Hale (2024)](https://arxiv.org/abs/2211.17230). Instead of unbounded Gaussian noise, this
+uses a **truncated normal distribution** restricted to a domain `[lower, upper]`.
+
+```python
+from opaque import bounded_gaussian
+
+# Outputs are guaranteed to lie in [-3.0, 3.0]
+noise_fn = bounded_gaussian(stddev=noise_multiplier * clip_norm, bounds=(-3.0, 3.0))
+
+noisy_grads = noise_fn(clipped_grads)
+```
+
+### When to Use Bounded Gaussian
+
+| Scenario | Recommended Mechanism |
+|----------|----------------------|
+| General DP-SGD training | `gaussian()` (standard) |
+| Gradient values must stay in a valid range | `bounded_gaussian()` |
+| Queries with bounded output domains | `bounded_gaussian()` |
+
+### Reproducibility
+
+Use `bounded_gaussian_stateful()` for deterministic noise:
+
+```python
+from opaque import bounded_gaussian_stateful
+
+noise_fn, state = bounded_gaussian_stateful(stddev=1.0, bounds=(-3.0, 3.0), seed=42)
+noisy_grads = noise_fn(grads, state)
+```
+
 ## Advanced: Noise Multiplier Schedule
 
 Instead of fixed noise, you can use a **noise schedule** that decreases over time:

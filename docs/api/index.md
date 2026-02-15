@@ -22,8 +22,9 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `clipped_fun()` - Clip and sum function outputs
   - `clip_pytree()` - Low-level PyTree clipping
 
-- **[Noise](noise.md)**: Gaussian noise injection
-  - `add_gaussian_noise()` - Add calibrated noise to gradients
+- **[Noise](noise.md)**: Noise injection for DP
+  - `gaussian()` / `gaussian_stateful()` - Standard Gaussian noise
+  - `bounded_gaussian()` / `bounded_gaussian_stateful()` - Bounded Gaussian noise (truncated normal)
 
 - **[Accounting](accounting.md)**: Privacy budget tracking
   - `create()` - Initialize privacy state
@@ -84,9 +85,12 @@ epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
 
 ### Noise
 
-| Function               | Purpose                      | User Guide                      |
-|------------------------|------------------------------|---------------------------------|
-| `add_gaussian_noise()` | Add Gaussian noise to PyTree | [Guide](../user-guide/noise.md) |
+| Function                       | Purpose                                      | User Guide                      |
+|--------------------------------|----------------------------------------------|---------------------------------|
+| `gaussian()`                   | Standard Gaussian noise (unbounded)          | [Guide](../user-guide/noise.md) |
+| `gaussian_stateful()`          | Standard Gaussian with reproducible state    | [Guide](../user-guide/noise.md) |
+| `bounded_gaussian()`           | Bounded Gaussian noise (truncated normal)    | [Guide](../user-guide/noise.md#bounded-gaussian-noise) |
+| `bounded_gaussian_stateful()`  | Bounded Gaussian with reproducible state     | [Guide](../user-guide/noise.md#bounded-gaussian-noise) |
 
 ### Accounting (Composition)
 
