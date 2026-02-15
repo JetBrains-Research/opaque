@@ -25,14 +25,14 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
+from opaque import clipped_grad, make_functional
+from opaque.utils.pytree import tree_map
 from tests.conftest import (
     MODEL_CONFIGS,
     build_text_batch,
     has_min_gpu_memory,
     load_model_with_lora,
 )
-from opaque import clipped_grad, make_functional
-from opaque.utils.pytree import tree_map
 
 TRAINING_STEPS = 3
 LEARNING_RATE = 1e-3
@@ -172,7 +172,9 @@ def _run_ddp_scaling_test(
             if step == TRAINING_STEPS - 1:
                 # Compute loss on last step for final comparison
                 all_params = {**frozen, **trainable_params}
-                outputs = fmodel(all_params, input_ids, attention_mask=attention_mask, labels=labels)
+                outputs = fmodel(
+                    all_params, input_ids, attention_mask=attention_mask, labels=labels
+                )
                 final_loss = float(outputs.loss.detach().cpu())
 
         result_dict[rank] = (True, final_loss if final_loss is not None else 0.0)
@@ -225,7 +227,7 @@ class TestDDPQuickSanity:
         # Use shared config with modifications for speed
         config = MODEL_CONFIGS["qwen2-0.5b"]
         model, tokenizer = load_model_with_lora(config, device="cuda")
-        
+
         # Reduce layers for speed
         model.model.layers = model.model.layers[:2]
 
@@ -255,7 +257,11 @@ class TestDDPQuickSanity:
         )
 
         def per_example_loss(
-            trainable_params, frozen_params, input_ids_single, mask_single, labels_single
+            trainable_params,
+            frozen_params,
+            input_ids_single,
+            mask_single,
+            labels_single,
         ):
             all_params = {**frozen_params, **trainable_params}
             outputs = fmodel(

@@ -4,8 +4,8 @@ These tests focus on non-distributed behavior (when torch.distributed is not ini
 For actual multi-device distributed tests, see test_ddp_integration.py.
 """
 
-import torch
 import pytest
+import torch
 
 import opaque.distributed as dist_utils
 

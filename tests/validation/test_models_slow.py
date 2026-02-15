@@ -30,13 +30,13 @@ class TestRealModelsSingleGPU:
     def test_model_lora_dp_training(self, model_key):
         """Run DP-SGD training with LoRA using shared test utilities."""
         config = MODEL_CONFIGS[model_key]
-        
+
         if not has_min_gpu_memory(config["min_mem_gb"]):
             pytest.skip(f"Requires CUDA GPU with >= {config['min_mem_gb']}GB memory")
-        
+
         # Load model using shared utility
         model, tokenizer = load_model_with_lora(config, device="cuda")
-        
+
         # Run training using shared utility
         grads, state = run_dp_training_step(
             model,
@@ -48,6 +48,6 @@ class TestRealModelsSingleGPU:
             learning_rate=1e-3,
             l2_clip_norm=1.0,
         )
-        
+
         # Verify training produced gradients
         assert len(grads) > 0

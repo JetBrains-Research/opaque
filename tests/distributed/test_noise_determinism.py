@@ -142,9 +142,7 @@ class TestDistributedNoiseWithPyTree:
         assert "bias" in noisy["layer1"]
 
         # Should add noise
-        assert not torch.allclose(
-            noisy["layer1"]["weight"], grads["layer1"]["weight"]
-        )
+        assert not torch.allclose(noisy["layer1"]["weight"], grads["layer1"]["weight"])
 
     def test_list_of_tensors(self):
         """Distributed noise works with list of tensors."""

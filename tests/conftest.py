@@ -144,10 +144,10 @@ MODEL_CONFIGS = {
 
 def build_text_batch(batch_size):
     """Create deterministic text batch for testing.
-    
+
     Args:
         batch_size: Number of texts to generate
-        
+
     Returns:
         list[str]: List of text strings
     """
@@ -169,10 +169,10 @@ def build_text_batch(batch_size):
 
 def has_min_gpu_memory(min_gb):
     """Check if GPU has minimum required memory.
-    
+
     Args:
         min_gb: Minimum required GB of GPU memory
-        
+
     Returns:
         bool: True if GPU has sufficient memory
     """
@@ -185,49 +185,53 @@ def has_min_gpu_memory(min_gb):
         return False
 
 
-def load_model_with_lora(model_config, device="cuda", dtype=torch.float16, lora_config=None):
+def load_model_with_lora(
+    model_config, device="cuda", dtype=torch.float16, lora_config=None
+):
     """Load HuggingFace model with LoRA adapters.
-    
+
     Shared utility for loading models consistently across all tests.
-    
+
     Args:
         model_config: Model configuration dict from MODEL_CONFIGS
         device: Device to load model on
         dtype: Model dtype
         lora_config: Optional LoRA config dict, uses STANDARD_LORA_CONFIG if None
-    
+
     Returns:
         tuple: (model, tokenizer)
     """
     from peft import LoraConfig, get_peft_model
     from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
-    
+
     model_id = model_config["model_id"]
     trust_remote_code = model_config["trust_remote_code"]
-    
+
     # Load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=trust_remote_code)
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_id, trust_remote_code=trust_remote_code
+    )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    
+
     # Load model config and model
     config = AutoConfig.from_pretrained(model_id, trust_remote_code=trust_remote_code)
     config._attn_implementation = "eager"  # For vmap compatibility
-    
+
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
         config=config,
         torch_dtype=dtype,
         trust_remote_code=trust_remote_code,
     ).to(device)
-    
+
     # Apply LoRA
     if lora_config is None:
         lora_config = STANDARD_LORA_CONFIG.copy()
-    
+
     lora_config["target_modules"] = model_config["target_modules"]
     model = get_peft_model(model, LoraConfig(**lora_config))
-    
+
     return model, tokenizer
 
 
@@ -242,9 +246,9 @@ def run_dp_training_step(
     l2_clip_norm=1.0,
 ):
     """Run DP-SGD training with clipped gradients and gradient accumulation.
-    
+
     Shared training logic used across single-GPU and multi-GPU tests.
-    
+
     Args:
         model: Model with LoRA (or full parameters)
         tokenizer: Tokenizer
@@ -254,15 +258,15 @@ def run_dp_training_step(
         training_steps: Number of training steps
         learning_rate: Learning rate
         l2_clip_norm: L2 clipping norm
-    
+
     Returns:
         tuple: (final_accumulated_grads, final_clip_state)
     """
     from opaque import clipped_grad, make_functional
     from opaque.utils.pytree import tree_map
-    
+
     device = next(model.parameters()).device
-    
+
     # Prepare batch
     texts = build_text_batch(batch_size)
     inputs = tokenizer(
@@ -275,20 +279,24 @@ def run_dp_training_step(
     input_ids = inputs["input_ids"].to(device)
     attention_mask = inputs["attention_mask"].to(device)
     labels = input_ids.clone()
-    
+
     # Make functional
     fmodel, trainable, frozen = make_functional(
         model,
         disable_autograd_tracking=True,
         partition_trainable=True,
     )
-    
+
     # Define per-example loss
-    def per_example_loss(trainable_params, frozen_params, ids_single, mask_single, labels_single):
+    def per_example_loss(
+        trainable_params, frozen_params, ids_single, mask_single, labels_single
+    ):
         all_params = {**frozen_params, **trainable_params}
-        outputs = fmodel(all_params, ids_single, attention_mask=mask_single, labels=labels_single)
+        outputs = fmodel(
+            all_params, ids_single, attention_mask=mask_single, labels=labels_single
+        )
         return outputs.loss
-    
+
     # Create clipped gradient function
     grad_fn, clip_state = clipped_grad(
         per_example_loss,
@@ -296,15 +304,15 @@ def run_dp_training_step(
         batch_argnums=(2, 3, 4),
         l2_clip_norm=l2_clip_norm,
     )
-    
+
     state = clip_state
     trainable_params = trainable
     last_accumulated = None
-    
+
     # Training loop
     for step in range(training_steps):
         accumulated = None
-        
+
         # Gradient accumulation
         for _ in range(accum_steps):
             grads, state = grad_fn(
@@ -315,24 +323,24 @@ def run_dp_training_step(
                 labels,
                 state=state,
             )
-            
+
             if accumulated is None:
                 accumulated = tree_map(lambda x: x.detach().clone(), grads)
             else:
                 accumulated = tree_map(lambda x, y: x + y, accumulated, grads)
-        
+
         # Apply accumulated gradients
         scale = 1.0 / float(accum_steps)
         accumulated = tree_map(lambda x: x * scale, accumulated)
-        
+
         trainable_params = tree_map(
             lambda p, g: p - learning_rate * g,
             trainable_params,
             accumulated,
         )
-        
+
         last_accumulated = accumulated
-    
+
     return last_accumulated, state
 
 
