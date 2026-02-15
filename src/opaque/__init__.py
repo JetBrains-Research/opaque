@@ -20,6 +20,7 @@ from opaque.clipping import (
     clipped_fun,
     clipped_grad,
 )
+from opaque.dp_ftrl import DPFTRLOptimizer, DPFTRLState, dp_ftrl_train_step
 from opaque.noise import (
     bounded_gaussian,
     bounded_gaussian_stateful,
@@ -83,6 +84,9 @@ __all__ = [
     "gaussian_privatizer",
     "Privatizer",
     "PrivatizerState",
+    "DPFTRLOptimizer",
+    "DPFTRLState",
+    "dp_ftrl_train_step",
     # Utils
     "make_functional",
 ]
