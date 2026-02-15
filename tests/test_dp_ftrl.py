@@ -1,301 +1,151 @@
-"""Tests for the DP-FTRL integration module."""
+"""End-to-end tests for DP-FTRL noise in training loops."""
 
-import pytest
 import torch
 import torch.nn as nn
 
-from opaque.dp_ftrl import DPFTRLOptimizer, DPFTRLState, dp_ftrl_train_step
-from opaque.matrix_factorization.streaming_matrix import identity, prefix_sum
+from opaque.matrix_factorization.streaming_matrix import identity
 from opaque.matrix_factorization.toeplitz import (
     inverse_as_streaming_matrix,
     optimal_max_error_strategy_coefs,
 )
-from opaque.noise.matrix_factorization import (
-    matrix_factorization_privatizer,
-)
+from opaque.noise.matrix_factorization import matrix_factorization_noise
 
 
-class TestDPFTRLOptimizer:
-    """Tests for the DPFTRLOptimizer class."""
+def _train_loop(model, optimizer, init_fn, noise_fn, x_data, y_data, steps):
+    """Run a DP-FTRL training loop and return losses.
 
-    def _make_model(self):
-        torch.manual_seed(0)
-        return nn.Linear(10, 1, bias=False)
+    Uses the (init_fn, noise_fn) API to add correlated noise to gradients
+    before each optimizer step.
+    """
+    params = list(model.parameters())
+    template = {i: torch.zeros_like(p) for i, p in enumerate(params)}
+    state = init_fn(template)
 
-    def test_basic_step(self):
-        """Optimizer runs without error."""
-        model = self._make_model()
-        optimizer = DPFTRLOptimizer(
-            params=model.parameters(),
-            noising_matrix=identity(),
-            base_optimizer_cls=torch.optim.SGD,
-            lr=0.01,
-            stddev=1.0,
-            seed=42,
-        )
-        x = torch.randn(4, 10)
-        loss = model(x).sum()
-        loss.backward()
-        optimizer.step()
-        assert optimizer.current_step == 1
-
-    def test_zero_grad(self):
-        """zero_grad clears parameter gradients."""
-        model = self._make_model()
-        optimizer = DPFTRLOptimizer(
-            params=model.parameters(),
-            noising_matrix=identity(),
-            base_optimizer_cls=torch.optim.SGD,
-            lr=0.01,
-            stddev=1.0,
-            seed=42,
-        )
-        x = torch.randn(4, 10)
-        loss = model(x).sum()
-        loss.backward()
-        assert model.weight.grad is not None
+    losses = []
+    for _ in range(steps):
         optimizer.zero_grad()
-        assert model.weight.grad is None
-
-    def test_step_counter_advances(self):
-        """Step counter increments on each step."""
-        model = self._make_model()
-        optimizer = DPFTRLOptimizer(
-            params=model.parameters(),
-            noising_matrix=identity(),
-            base_optimizer_cls=torch.optim.SGD,
-            lr=0.01,
-            stddev=1.0,
-            seed=42,
-        )
-        for i in range(5):
-            optimizer.zero_grad()
-            loss = model(torch.randn(4, 10)).sum()
-            loss.backward()
-            optimizer.step()
-            assert optimizer.current_step == i + 1
-
-    def test_noise_is_added(self):
-        """Gradients should be noisy (not equal to clean gradients)."""
-        model = self._make_model()
-        optimizer = DPFTRLOptimizer(
-            params=model.parameters(),
-            noising_matrix=identity(),
-            base_optimizer_cls=torch.optim.SGD,
-            lr=0.0,  # zero LR so params don't change
-            stddev=10.0,  # Large noise to make it obvious
-            seed=42,
-        )
-        x = torch.randn(4, 10)
-        loss = model(x).sum()
+        pred = model(x_data)
+        loss = ((pred - y_data) ** 2).mean()
         loss.backward()
+
+        # Privatize: collect grads, add correlated noise, write back
+        grads = {i: p.grad.clone() for i, p in enumerate(params)}
+        noisy_grads, state = noise_fn(grads, state)
+        for i, p in enumerate(params):
+            p.grad = noisy_grads[i].to(p.dtype)
+
         optimizer.step()
-        # The privatizer replaces clean gradients with noisy versions
-        # We verify it ran by checking the step advanced
-        assert optimizer.current_step == 1
+        losses.append(loss.item())
+    return losses
 
-    def test_with_toeplitz_noising(self):
-        """Works with BandMF Toeplitz noising matrix."""
-        model = self._make_model()
-        coefs = optimal_max_error_strategy_coefs(20)
+
+class TestDPFTRLTrainingLoop:
+    """Tests for using matrix_factorization_noise in a training loop."""
+
+    def test_identity_noise_trains(self):
+        """Identity noise (DP-SGD equivalent) trains a simple model."""
+        torch.manual_seed(0)
+        model = nn.Linear(5, 1, bias=False)
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+        init_fn, noise_fn = matrix_factorization_noise(identity(), stddev=0.1, seed=42)
+
+        x = torch.randn(50, 5)
+        true_w = torch.randn(5, 1)
+        y = x @ true_w
+
+        losses = _train_loop(model, optimizer, init_fn, noise_fn, x, y, steps=50)
+        assert losses[-1] < losses[0]
+
+    def test_toeplitz_noise_trains(self):
+        """BandMF Toeplitz noise trains a simple model."""
+        torch.manual_seed(0)
+        model = nn.Linear(5, 1, bias=False)
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+        steps = 50
+        coefs = optimal_max_error_strategy_coefs(steps)
         noising = inverse_as_streaming_matrix(coefs)
+        init_fn, noise_fn = matrix_factorization_noise(noising, stddev=0.1, seed=42)
 
-        optimizer = DPFTRLOptimizer(
-            params=model.parameters(),
-            noising_matrix=noising,
-            base_optimizer_cls=torch.optim.SGD,
-            lr=0.01,
-            stddev=1.0,
-            seed=42,
-        )
+        x = torch.randn(50, 5)
+        true_w = torch.randn(5, 1)
+        y = x @ true_w
 
-        for _ in range(10):
-            optimizer.zero_grad()
-            loss = model(torch.randn(4, 10)).sum()
-            loss.backward()
-            optimizer.step()
+        losses = _train_loop(model, optimizer, init_fn, noise_fn, x, y, steps=steps)
+        assert losses[-1] < losses[0]
 
-        assert optimizer.current_step == 10
+    def test_dense_matrix_noise_trains(self):
+        """Dense noising matrix trains a simple model."""
+        torch.manual_seed(0)
+        model = nn.Linear(5, 1, bias=False)
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+        steps = 5
+        noising = torch.eye(steps, dtype=torch.float64)
+        init_fn, noise_fn = matrix_factorization_noise(noising, stddev=0.1, seed=42)
 
-    def test_with_dense_noising(self):
-        """Works with a dense noising matrix."""
-        model = self._make_model()
-        noising = torch.eye(5, dtype=torch.float64)
+        x = torch.randn(50, 5)
+        true_w = torch.randn(5, 1)
+        y = x @ true_w
 
-        optimizer = DPFTRLOptimizer(
-            params=model.parameters(),
-            noising_matrix=noising,
-            base_optimizer_cls=torch.optim.SGD,
-            lr=0.01,
-            stddev=1.0,
-            seed=42,
-        )
+        losses = _train_loop(model, optimizer, init_fn, noise_fn, x, y, steps=steps)
+        assert losses[-1] < losses[0]
 
-        for _ in range(5):
-            optimizer.zero_grad()
-            loss = model(torch.randn(4, 10)).sum()
-            loss.backward()
-            optimizer.step()
-
-        assert optimizer.current_step == 5
-
-    def test_with_adam_base_optimizer(self):
+    def test_with_adam_optimizer(self):
         """Works with Adam as the base optimizer."""
-        model = self._make_model()
-        optimizer = DPFTRLOptimizer(
-            params=model.parameters(),
-            noising_matrix=identity(),
-            base_optimizer_cls=torch.optim.Adam,
-            lr=0.001,
-            stddev=0.1,
-            seed=42,
-        )
+        torch.manual_seed(0)
+        model = nn.Linear(5, 1, bias=False)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+        init_fn, noise_fn = matrix_factorization_noise(identity(), stddev=0.1, seed=42)
 
-        for _ in range(3):
-            optimizer.zero_grad()
-            loss = model(torch.randn(4, 10)).sum()
-            loss.backward()
-            optimizer.step()
+        x = torch.randn(50, 5)
+        true_w = torch.randn(5, 1)
+        y = x @ true_w
 
-        assert optimizer.current_step == 3
-
-    def test_param_groups(self):
-        """param_groups delegates to base optimizer."""
-        model = self._make_model()
-        optimizer = DPFTRLOptimizer(
-            params=model.parameters(),
-            noising_matrix=identity(),
-            base_optimizer_cls=torch.optim.SGD,
-            lr=0.01,
-            stddev=1.0,
-        )
-        assert len(optimizer.param_groups) == 1
-        assert optimizer.param_groups[0]["lr"] == 0.01
+        losses = _train_loop(model, optimizer, init_fn, noise_fn, x, y, steps=30)
+        assert losses[-1] < losses[0]
 
     def test_multi_param_model(self):
-        """Works with models having multiple parameter groups."""
+        """Works with models having multiple parameters."""
         torch.manual_seed(0)
         model = nn.Sequential(
             nn.Linear(10, 5),
             nn.ReLU(),
             nn.Linear(5, 1),
         )
-        optimizer = DPFTRLOptimizer(
-            params=model.parameters(),
-            noising_matrix=identity(),
-            base_optimizer_cls=torch.optim.SGD,
-            lr=0.01,
-            stddev=0.1,
-            seed=42,
-        )
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+        init_fn, noise_fn = matrix_factorization_noise(identity(), stddev=0.1, seed=42)
 
-        for _ in range(3):
-            optimizer.zero_grad()
-            loss = model(torch.randn(4, 10)).sum()
-            loss.backward()
-            optimizer.step()
+        x = torch.randn(50, 10)
+        true_w = torch.randn(10, 1)
+        y = x @ true_w
 
-        assert optimizer.current_step == 3
+        losses = _train_loop(model, optimizer, init_fn, noise_fn, x, y, steps=30)
+        assert losses[-1] < losses[0]
 
     def test_deterministic_with_seed(self):
         """Same seed produces same noisy updates."""
         results = []
         for _ in range(2):
             torch.manual_seed(0)
-            model = nn.Linear(10, 1, bias=False)
-            optimizer = DPFTRLOptimizer(
-                params=model.parameters(),
-                noising_matrix=identity(),
-                base_optimizer_cls=torch.optim.SGD,
-                lr=0.01,
-                stddev=1.0,
-                seed=42,
+            model = nn.Linear(5, 1, bias=False)
+            optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+            init_fn, noise_fn = matrix_factorization_noise(
+                identity(), stddev=1.0, seed=42
             )
-            x = torch.randn(4, 10)
-            loss = model(x).sum()
-            loss.backward()
-            optimizer.step()
+
+            x = torch.randn(4, 5)
+            true_w = torch.randn(5, 1)
+            y = x @ true_w
+
+            _train_loop(model, optimizer, init_fn, noise_fn, x, y, steps=3)
             results.append(model.weight.data.clone())
 
         torch.testing.assert_close(results[0], results[1])
 
 
-class TestDPFTRLTrainStep:
-    """Tests for the composable dp_ftrl_train_step function."""
-
-    def test_basic(self):
-        """dp_ftrl_train_step runs one step correctly."""
-        torch.manual_seed(0)
-        model = nn.Linear(5, 1, bias=False)
-        privatizer = matrix_factorization_privatizer(identity(), stddev=0.1, seed=42)
-
-        template = {
-            i: torch.zeros_like(p) for i, p in enumerate(list(model.parameters()))
-        }
-        noise_state = privatizer.init(template)
-        optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
-
-        # Compute gradient
-        x = torch.randn(4, 5)
-        loss = model(x).sum()
-        loss.backward()
-
-        # Collect clipped grads into dict
-        params = list(model.parameters())
-        clipped_grads = {i: p.grad.clone() for i, p in enumerate(params)}
-        optimizer.zero_grad()
-
-        # Run train step
-        new_state, _ = dp_ftrl_train_step(
-            clipped_grads, noise_state, privatizer, params, optimizer
-        )
-        assert isinstance(new_state, type(noise_state))
-
-    def test_with_toeplitz(self):
-        """dp_ftrl_train_step works with BandMF noising."""
-        torch.manual_seed(0)
-        model = nn.Linear(5, 1, bias=False)
-        steps = 10
-        coefs = optimal_max_error_strategy_coefs(steps)
-        noising = inverse_as_streaming_matrix(coefs)
-        privatizer = matrix_factorization_privatizer(noising, stddev=0.1, seed=42)
-
-        params = list(model.parameters())
-        template = {i: torch.zeros_like(p) for i, p in enumerate(params)}
-        noise_state = privatizer.init(template)
-        optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
-
-        initial_weight = model.weight.data.clone()
-        for _ in range(steps):
-            x = torch.randn(4, 5)
-            loss = model(x).sum()
-            loss.backward()
-            clipped_grads = {i: p.grad.clone() for i, p in enumerate(params)}
-            optimizer.zero_grad()
-            noise_state, _ = dp_ftrl_train_step(
-                clipped_grads, noise_state, privatizer, params, optimizer
-            )
-
-        # Weights should have changed
-        assert not torch.allclose(model.weight.data, initial_weight)
-
-
-class TestDPFTRLvsDPSGD:
-    """End-to-end comparison: DP-FTRL (BandMF) should achieve
+class TestBandMFvsDPSGD:
+    """End-to-end comparison: BandMF (correlated noise) should achieve
     better or comparable utility to independent noise (DP-SGD)
     on a simple regression problem."""
-
-    def _train_loop(self, model, optimizer, x_data, y_data, steps):
-        """Run training and return final loss."""
-        losses = []
-        for _step in range(steps):
-            optimizer.zero_grad()
-            pred = model(x_data)
-            loss = ((pred - y_data) ** 2).mean()
-            loss.backward()
-            optimizer.step()
-            losses.append(loss.item())
-        return losses
 
     def test_bandmf_trains_simple_regression(self):
         """BandMF DP-FTRL can train a simple model (loss decreases)."""
@@ -305,21 +155,13 @@ class TestDPFTRLvsDPSGD:
         y = x @ true_w
 
         model = nn.Linear(5, 1, bias=False)
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
         steps = 50
         coefs = optimal_max_error_strategy_coefs(steps)
         noising = inverse_as_streaming_matrix(coefs)
+        init_fn, noise_fn = matrix_factorization_noise(noising, stddev=0.1, seed=42)
 
-        optimizer = DPFTRLOptimizer(
-            params=model.parameters(),
-            noising_matrix=noising,
-            base_optimizer_cls=torch.optim.SGD,
-            lr=0.01,
-            stddev=0.1,
-            seed=42,
-        )
-
-        losses = self._train_loop(model, optimizer, x, y, steps)
-        # Loss should decrease over training
+        losses = _train_loop(model, optimizer, init_fn, noise_fn, x, y, steps)
         assert losses[-1] < losses[0]
 
     def test_bandmf_vs_dpsgd_utility(self):
@@ -339,35 +181,30 @@ class TestDPFTRLvsDPSGD:
         # DP-SGD (identity = independent noise)
         torch.manual_seed(0)
         model_sgd = nn.Linear(5, 1, bias=False)
-        opt_sgd = DPFTRLOptimizer(
-            params=model_sgd.parameters(),
-            noising_matrix=identity(),
-            base_optimizer_cls=torch.optim.SGD,
-            lr=0.01,
-            stddev=stddev,
-            seed=42,
+        opt_sgd = torch.optim.SGD(model_sgd.parameters(), lr=0.01)
+        init_sgd, noise_sgd = matrix_factorization_noise(
+            identity(), stddev=stddev, seed=42
         )
-        losses_sgd = self._train_loop(model_sgd, opt_sgd, x, y, steps)
+        losses_sgd = _train_loop(
+            model_sgd, opt_sgd, init_sgd, noise_sgd, x, y, steps
+        )
 
         # BandMF (correlated noise)
         torch.manual_seed(0)
         model_mf = nn.Linear(5, 1, bias=False)
+        opt_mf = torch.optim.SGD(model_mf.parameters(), lr=0.01)
         coefs = optimal_max_error_strategy_coefs(steps)
         noising = inverse_as_streaming_matrix(coefs)
-        opt_mf = DPFTRLOptimizer(
-            params=model_mf.parameters(),
-            noising_matrix=noising,
-            base_optimizer_cls=torch.optim.SGD,
-            lr=0.01,
-            stddev=stddev,
-            seed=43,
+        init_mf, noise_mf = matrix_factorization_noise(
+            noising, stddev=stddev, seed=43
         )
-        losses_mf = self._train_loop(model_mf, opt_mf, x, y, steps)
+        losses_mf = _train_loop(
+            model_mf, opt_mf, init_mf, noise_mf, x, y, steps
+        )
 
         # Both should train (loss decreases)
         assert losses_sgd[-1] < losses_sgd[0]
         assert losses_mf[-1] < losses_mf[0]
 
-        # BandMF final loss should be within a reasonable factor of DP-SGD
-        # (in practice often better, but noise is stochastic)
-        assert losses_mf[-1] < losses_sgd[0]  # At least better than start
+        # BandMF final loss should be at least better than start
+        assert losses_mf[-1] < losses_sgd[0]

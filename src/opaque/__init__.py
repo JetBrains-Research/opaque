@@ -20,7 +20,6 @@ from opaque.clipping import (
     clipped_fun,
     clipped_grad,
 )
-from opaque.dp_ftrl import DPFTRLOptimizer, DPFTRLState, dp_ftrl_train_step
 from opaque.noise import (
     bounded_gaussian,
     bounded_gaussian_stateful,
@@ -28,10 +27,8 @@ from opaque.noise import (
     gaussian_stateful,
 )
 from opaque.noise.matrix_factorization import (
-    Privatizer,
-    PrivatizerState,
-    gaussian_privatizer,
-    matrix_factorization_privatizer,
+    MFNoiseState,
+    matrix_factorization_noise,
 )
 from opaque.sampling import (
     CyclicPoissonSampling,
@@ -78,15 +75,10 @@ __all__ = [
     "bounded_gaussian_stateful",
     "gaussian",
     "gaussian_stateful",
-    # Matrix Factorization / DP-FTRL
+    # Matrix Factorization Noise
     "matrix_factorization",
-    "matrix_factorization_privatizer",
-    "gaussian_privatizer",
-    "Privatizer",
-    "PrivatizerState",
-    "DPFTRLOptimizer",
-    "DPFTRLState",
-    "dp_ftrl_train_step",
+    "matrix_factorization_noise",
+    "MFNoiseState",
     # Utils
     "make_functional",
 ]

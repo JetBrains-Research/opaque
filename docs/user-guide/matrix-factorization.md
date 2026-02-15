@@ -30,13 +30,13 @@ The **sensitivity** of C determines how much noise is needed, while the **error*
 | **BLT** (Buffered Linear Toeplitz) | O(num_buffers) | Large n, state-of-the-art |
 | **Dense** | O(n^2) | Small n, exact solutions |
 
-## Quick Start: Composable Transform (Recommended)
+## Quick Start
 
-The recommended approach follows the composable transform pattern used by JAX-Privacy and TorchOpt:
+The API follows the same `(fn, state)` pattern as `gaussian_stateful`:
 
 ```python
 import torch
-from opaque.noise.matrix_factorization import matrix_factorization_privatizer
+from opaque.noise.matrix_factorization import matrix_factorization_noise
 from opaque.matrix_factorization.toeplitz import (
     inverse_as_streaming_matrix,
     optimal_max_error_strategy_coefs,
@@ -47,15 +47,16 @@ n_steps = 1000
 coefs = optimal_max_error_strategy_coefs(n_steps)
 noising = inverse_as_streaming_matrix(coefs)
 
-# 2. Create the privatizer
-privatizer = matrix_factorization_privatizer(
+# 2. Create init and noise functions
+init_fn, noise_fn = matrix_factorization_noise(
     noising,
     stddev=noise_multiplier * clip_norm * sensitivity,
+    seed=42,
 )
 
-# 3. Initialize state
+# 3. Initialize state from a gradient template
 grad_template = {name: torch.zeros_like(p) for name, p in model.named_parameters()}
-noise_state = privatizer.init(grad_template)
+noise_state = init_fn(grad_template)
 
 # 4. Training loop — compose with any optimizer
 optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
@@ -63,49 +64,14 @@ optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
 for batch in dataloader:
     optimizer.zero_grad()
     clipped_grad = compute_clipped_grad(model, batch)  # Per-example clipping
-    noisy_grad, noise_state = privatizer.update(clipped_grad, noise_state)
+
+    # Add correlated noise
+    noisy_grad, noise_state = noise_fn(clipped_grad, noise_state)
+
     # Assign noisy gradients and step
     for (name, p), g in zip(model.named_parameters(), noisy_grad.values()):
         p.grad = g.to(p.dtype)
     optimizer.step()
-```
-
-### Functional Train Step Helper
-
-For cleaner training loops, use `dp_ftrl_train_step`:
-
-```python
-from opaque.dp_ftrl import dp_ftrl_train_step
-
-for batch in dataloader:
-    clipped_grad = compute_clipped_grad(model, batch)
-    noise_state, _ = dp_ftrl_train_step(
-        clipped_grad, noise_state, privatizer,
-        list(model.parameters()), optimizer,
-    )
-```
-
-## Convenience Wrapper
-
-For simpler integration, `DPFTRLOptimizer` wraps a base optimizer:
-
-```python
-from opaque.dp_ftrl import DPFTRLOptimizer
-
-optimizer = DPFTRLOptimizer(
-    params=model.parameters(),
-    noising_matrix=noising,
-    base_optimizer_cls=torch.optim.SGD,
-    lr=0.01,
-    stddev=noise_multiplier * clip_norm * sensitivity,
-    seed=42,
-)
-
-for batch in dataloader:
-    optimizer.zero_grad()
-    loss = model(batch).sum()
-    loss.backward()  # Gradients should already be clipped
-    optimizer.step()  # Adds correlated noise, then updates
 ```
 
 ## BandMF: Banded Toeplitz Strategies
@@ -143,7 +109,7 @@ blt = optimize(n=10000, min_buffers=1, max_buffers=5)
 
 # Use as streaming matrix
 noising = blt.inverse_as_streaming_matrix()
-privatizer = matrix_factorization_privatizer(noising, stddev=sigma)
+init_fn, noise_fn = matrix_factorization_noise(noising, stddev=sigma, seed=42)
 ```
 
 ### BLT Optimization
