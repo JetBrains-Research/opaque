@@ -5,6 +5,8 @@ import pytest
 
 from opaque.auditing import AuditResult, CoinFlipExperiment
 
+import opaque.auditing as auditing
+
 
 class TestConstruction:
     """Tests for AuditResult construction."""
@@ -435,3 +437,183 @@ class TestCoinFlipExperiment:
         result = exp.audit(scores)
         assert result.auroc() > 0.6
         assert result.epsilon_one_run(significance=0.05, delta=1e-5) > 0
+
+    def test_repr(self):
+        """Test CoinFlipExperiment repr."""
+        exp = CoinFlipExperiment(np.arange(100), seed=42)
+        r = repr(exp)
+        assert "CoinFlipExperiment" in r
+        assert "num_canaries=100" in r
+        assert "n_in=" in r
+        assert "n_out=" in r
+
+    def test_subset(self):
+        """Test subset() returns a torch Subset excluding out-canaries."""
+        from torch.utils.data import TensorDataset
+        import torch
+
+        dataset = TensorDataset(torch.arange(50), torch.arange(50))
+        canary_idx = np.array([5, 15, 25, 35, 45])
+        exp = CoinFlipExperiment(canary_idx, seed=42)
+
+        sub = exp.subset(dataset)
+        assert len(sub) == 50 - len(exp.out_indices)
+
+        # All out-canaries excluded
+        sub_indices = set(sub.indices)
+        for idx in exp.out_indices:
+            assert idx not in sub_indices
+
+        # All in-canaries included
+        for idx in exp.in_indices:
+            assert idx in sub_indices
+
+    def test_canary_subset(self):
+        """Test canary_subset() returns only canary examples."""
+        from torch.utils.data import TensorDataset
+        import torch
+
+        dataset = TensorDataset(torch.arange(50), torch.arange(50))
+        canary_idx = np.array([5, 15, 25, 35, 45])
+        exp = CoinFlipExperiment(canary_idx, seed=42)
+
+        sub = exp.canary_subset(dataset)
+        assert len(sub) == 5
+        assert sub.indices == canary_idx.tolist()
+
+
+class TestAuditResultRepr:
+    """Tests for AuditResult __repr__ and summary."""
+
+    def test_repr(self):
+        """Test __repr__ contains key info."""
+        result = AuditResult(np.arange(50, 100), np.arange(0, 50))
+        r = repr(result)
+        assert "AuditResult" in r
+        assert "n_in=50" in r
+        assert "n_out=50" in r
+        assert "auroc=" in r
+
+    def test_summary(self):
+        """Test summary() produces multi-line report."""
+        result = AuditResult(np.arange(50, 100), np.arange(0, 50))
+        s = result.summary()
+        assert "Audit Summary" in s
+        assert "Samples:" in s
+        assert "AUROC:" in s
+        assert "Clopper-Pearson" in s
+        assert "TPR" in s
+        assert "Max accuracy" in s
+
+    def test_summary_coin_flip_shows_one_run(self):
+        """Test summary shows one-run epsilon when from coin flip."""
+        exp = CoinFlipExperiment(np.arange(100), seed=42)
+        scores = np.zeros(100)
+        scores[exp._in_mask] = 10.0
+        result = exp.audit(scores)
+
+        s = result.summary()
+        assert "one-run" in s
+
+    def test_summary_direct_hides_one_run(self):
+        """Test summary hides one-run epsilon when constructed directly."""
+        result = AuditResult(np.arange(50, 100), np.arange(0, 50))
+        s = result.summary()
+        assert "one-run" not in s
+
+    def test_summary_custom_params(self):
+        """Test summary with custom significance and delta."""
+        result = AuditResult(np.arange(50, 100), np.arange(0, 50))
+        s = result.summary(significance=0.01, delta=1e-5)
+        assert "\u03b1=0.01" in s
+        assert "\u03b4=1e-05" in s
+
+
+class TestEpsilonAt:
+    """Tests for epsilon_at method."""
+
+    def test_direct_defaults_to_clopper_pearson(self):
+        """Test that directly constructed AuditResult uses clopper_pearson."""
+        result = AuditResult(np.arange(50, 100), np.arange(0, 50))
+        eps_at = result.epsilon_at(delta=0.0)
+        eps_cp = result.epsilon_clopper_pearson(significance=0.05, delta=0.0)
+        assert eps_at == eps_cp
+
+    def test_coin_flip_defaults_to_one_run(self):
+        """Test that coin-flip AuditResult uses one_run."""
+        exp = CoinFlipExperiment(np.arange(100), seed=42)
+        scores = np.zeros(100)
+        scores[exp._in_mask] = 10.0
+        result = exp.audit(scores)
+
+        eps_at = result.epsilon_at(delta=0.0)
+        eps_or = result.epsilon_one_run(significance=0.05, delta=0.0)
+        assert eps_at == eps_or
+
+    def test_explicit_method_override(self):
+        """Test that method parameter overrides default."""
+        result = AuditResult(np.arange(50, 100), np.arange(0, 50))
+        eps_or = result.epsilon_at(delta=0.0, method="one_run")
+        eps_cp = result.epsilon_at(delta=0.0, method="clopper_pearson")
+        # Both should be valid numbers (may differ)
+        assert eps_or > 0
+        assert eps_cp > 0
+
+    def test_invalid_method(self):
+        """Test that invalid method raises ValueError."""
+        result = AuditResult([1, 2, 3], [4, 5, 6])
+        with pytest.raises(ValueError, match="method must be"):
+            result.epsilon_at(method="invalid")
+
+    def test_delta_passthrough(self):
+        """Test that delta is passed through correctly."""
+        result = AuditResult(np.arange(50, 100), np.arange(0, 50))
+        eps_0 = result.epsilon_at(delta=0.0)
+        eps_d = result.epsilon_at(delta=0.1)
+        # With delta > 0, epsilon should generally be different
+        assert isinstance(eps_0, float)
+        assert isinstance(eps_d, float)
+
+
+class TestSetup:
+    """Tests for auditing.setup() module-level function."""
+
+    def test_basic_setup(self):
+        """Test setup creates experiment from dataset."""
+        dataset = list(range(1000))  # Anything with len()
+        exp = auditing.setup(dataset, num_canaries=100, seed=42)
+
+        assert isinstance(exp, CoinFlipExperiment)
+        assert exp.num_canaries == 100
+        assert len(exp.in_indices) + len(exp.out_indices) == 100
+
+    def test_setup_reproducibility(self):
+        """Test setup is reproducible with same seed."""
+        dataset = list(range(1000))
+        exp1 = auditing.setup(dataset, num_canaries=100, seed=42)
+        exp2 = auditing.setup(dataset, num_canaries=100, seed=42)
+
+        np.testing.assert_array_equal(exp1._canary_indices, exp2._canary_indices)
+        np.testing.assert_array_equal(exp1.in_indices, exp2.in_indices)
+
+    def test_setup_different_seeds(self):
+        """Test different seeds give different experiments."""
+        dataset = list(range(1000))
+        exp1 = auditing.setup(dataset, num_canaries=100, seed=42)
+        exp2 = auditing.setup(dataset, num_canaries=100, seed=99)
+
+        assert not np.array_equal(exp1._canary_indices, exp2._canary_indices)
+
+    def test_setup_too_many_canaries(self):
+        """Test that requesting more canaries than dataset size raises."""
+        dataset = list(range(10))
+        with pytest.raises(ValueError, match="exceeds dataset size"):
+            auditing.setup(dataset, num_canaries=20, seed=42)
+
+    def test_setup_canaries_are_valid_indices(self):
+        """Test all canary indices are valid for the dataset."""
+        dataset = list(range(500))
+        exp = auditing.setup(dataset, num_canaries=100, seed=42)
+
+        assert np.all(exp._canary_indices >= 0)
+        assert np.all(exp._canary_indices < 500)

@@ -5,20 +5,16 @@ then query metrics as methods. Shared state (TN/FN counts on the Pareto
 frontier) is precomputed once at construction.
 
 For end-to-end auditing with a single training run, use
-:class:`CoinFlipExperiment` to manage canary inclusion/exclusion, then
-call :meth:`CoinFlipExperiment.audit` to produce an :class:`AuditResult`.
+:func:`opaque.auditing.setup` and :func:`opaque.auditing.evaluate`::
 
-Example — post-hoc (scores already computed):
-    >>> result = AuditResult(in_scores, out_scores)
-    >>> print(f"Epsilon: {result.epsilon_clopper_pearson():.2f}")
+    import opaque.auditing as auditing
 
-Example — one-run auditing (Steinke et al. 2023):
-    >>> experiment = CoinFlipExperiment(num_canaries=1000, seed=42)
-    >>> # train model on data that includes experiment.in_indices canaries
-    >>> # and excludes experiment.out_indices canaries ...
-    >>> scores = compute_membership_scores(model, canary_data)
-    >>> result = experiment.audit(scores)
-    >>> print(f"Epsilon: {result.epsilon_one_run():.2f}")
+    experiment = auditing.setup(dataset, num_canaries=1000, seed=42)
+    train_loader = DataLoader(experiment.subset(dataset), ...)
+    # ... train model ...
+    audit = auditing.evaluate(experiment, loss_fn, params, dataset)
+    audit.epsilon_at(delta=1e-5)
+    print(audit.summary())
 
 References:
     - Steinke, Nasr, Jagielski (2023), https://arxiv.org/abs/2305.08846
@@ -75,6 +71,7 @@ class AuditResult:
         self._out_arr = out_arr
         self.n_in = len(in_arr)
         self.n_out = len(out_arr)
+        self._from_coin_flip = False  # Set True by CoinFlipExperiment.audit()
 
         # Precompute Pareto-optimal thresholds and counts
         thresholds, tn_counts, fn_counts = _get_tn_fn_counts(in_arr, out_arr)
@@ -86,9 +83,54 @@ class AuditResult:
         self._tp_counts = (fn_counts[-1] - fn_counts)[::-1]
         self._fp_counts = (tn_counts[-1] - tn_counts)[::-1]
 
+    def __repr__(self) -> str:
+        return (
+            f"AuditResult(n_in={self.n_in}, n_out={self.n_out}, "
+            f"auroc={self.auroc():.4f})"
+        )
+
     # ------------------------------------------------------------------
     # Epsilon estimation
     # ------------------------------------------------------------------
+
+    def epsilon_at(
+        self,
+        *,
+        delta: float = 0.0,
+        significance: float = 0.05,
+        method: str | None = None,
+    ) -> float:
+        """Epsilon lower bound at the given delta.
+
+        Matches the accounting API (``DpProcess.epsilon_at(delta=)``).
+        The statistical method is chosen automatically based on how this
+        object was created:
+
+        - From :meth:`CoinFlipExperiment.audit`: defaults to ``'one_run'``
+          (tighter, assumes coin-flip setup).
+        - Constructed directly: defaults to ``'clopper_pearson'``
+          (general, no assumptions on the split).
+
+        Args:
+            delta: DP delta parameter. Default: 0 (pure DP).
+            significance: Allowed failure probability (1 - confidence).
+            method: ``'one_run'`` or ``'clopper_pearson'``. If None,
+                chosen automatically.
+
+        Returns:
+            Epsilon lower bound at the specified confidence level.
+        """
+        if method is None:
+            method = "one_run" if self._from_coin_flip else "clopper_pearson"
+        if method == "one_run":
+            return self.epsilon_one_run(significance=significance, delta=delta)
+        if method == "clopper_pearson":
+            return self.epsilon_clopper_pearson(
+                significance=significance, delta=delta
+            )
+        raise ValueError(
+            f"method must be 'one_run' or 'clopper_pearson', got {method!r}"
+        )
 
     def epsilon_clopper_pearson(
         self,
@@ -337,6 +379,55 @@ class AuditResult:
 
         return np.quantile(values, corrected, method="linear")
 
+    # ------------------------------------------------------------------
+    # Display
+    # ------------------------------------------------------------------
+
+    def summary(
+        self,
+        *,
+        significance: float = 0.05,
+        delta: float = 0.0,
+    ) -> str:
+        """Multi-line summary of all metrics.
+
+        Matches the accounting API (``DpProcess.summary()``).
+
+        Args:
+            significance: Allowed failure probability for epsilon bounds.
+            delta: DP delta parameter.
+
+        Returns:
+            Formatted string with all metrics.
+        """
+        eps_cp = self.epsilon_clopper_pearson(
+            significance=significance, delta=delta
+        )
+
+        lines = [
+            "Audit Summary",
+            "\u2500" * 40,
+            f"  Samples:              {self.n_in} in, {self.n_out} out",
+            f"  AUROC:                {self.auroc():.4f}",
+            f"  \u03b5 (Clopper-Pearson):  {eps_cp:.4f}",
+        ]
+
+        if self._from_coin_flip:
+            eps_or = self.epsilon_one_run(
+                significance=significance, delta=delta
+            )
+            lines.append(f"  \u03b5 (one-run):          {eps_or:.4f}")
+
+        lines.extend(
+            [
+                f"  TPR @ 1% FPR:         {self.tpr_at_fpr(fpr=0.01):.4f}",
+                f"  TPR @ 10% FPR:        {self.tpr_at_fpr(fpr=0.1):.4f}",
+                f"  Max accuracy:         {self.max_accuracy():.4f}",
+                f"  (\u03b1={significance}, \u03b4={delta})",
+            ]
+        )
+        return "\n".join(lines)
+
 
 class CoinFlipExperiment:
     """One-run privacy audit: manages canary coin flips and score splitting.
@@ -347,32 +438,16 @@ class CoinFlipExperiment:
     a membership score for each canary and calls :meth:`audit` to get an
     :class:`AuditResult`.
 
-    This bridges training and auditing — the two pieces that were previously
-    disconnected. The user provides canary indices into their dataset; the
-    experiment decides which are in/out and provides index arrays for
-    constructing the training set.
+    Prefer :func:`opaque.auditing.setup` which handles canary selection
+    automatically::
+
+        import opaque.auditing as auditing
+        experiment = auditing.setup(dataset, num_canaries=1000, seed=42)
 
     Attributes:
         num_canaries: Total number of canary examples.
         in_indices: Canary indices included in training (coin = heads).
         out_indices: Canary indices excluded from training (coin = tails).
-
-    Example:
-        >>> # 1. Setup: pick 1000 canaries from a 50k dataset
-        >>> canary_idx = rng.choice(50000, size=1000, replace=False)
-        >>> experiment = CoinFlipExperiment(canary_idx, seed=42)
-        >>>
-        >>> # 2. Build training set: full dataset minus excluded canaries
-        >>> train_idx = sorted(set(range(50000)) - set(experiment.out_indices))
-        >>> model = train(dataset, train_idx, ...)
-        >>>
-        >>> # 3. Score all canaries (higher = more likely member)
-        >>> scores = -np.array([loss(model, dataset[i]) for i in canary_idx])
-        >>>
-        >>> # 4. Audit
-        >>> result = experiment.audit(scores)
-        >>> print(f"Epsilon: {result.epsilon_one_run(significance=0.05):.2f}")
-        >>> print(f"AUROC: {result.auroc():.3f}")
 
     Reference:
         Steinke, Nasr, Jagielski. "Privacy Auditing with One (1) Training
@@ -404,11 +479,17 @@ class CoinFlipExperiment:
         self.in_indices = canary_indices[in_mask]
         self.out_indices = canary_indices[~in_mask]
 
+    def __repr__(self) -> str:
+        return (
+            f"CoinFlipExperiment(num_canaries={self.num_canaries}, "
+            f"n_in={len(self.in_indices)}, n_out={len(self.out_indices)})"
+        )
+
     def train_indices(self, dataset_size: int) -> np.ndarray:
         """Dataset indices to use for training.
 
         Returns all indices in ``range(dataset_size)`` except the excluded
-        canaries. Convenience method so users don't have to do set arithmetic.
+        canaries.
 
         Args:
             dataset_size: Total number of examples in the full dataset.
@@ -419,8 +500,43 @@ class CoinFlipExperiment:
         excluded = set(self.out_indices.tolist())
         return np.array([i for i in range(dataset_size) if i not in excluded])
 
+    def subset(self, dataset):
+        """Return a ``torch.utils.data.Subset`` for training.
+
+        Excludes canaries that were assigned to the held-out group.
+        Pass the result to a ``DataLoader`` for training.
+
+        Args:
+            dataset: A PyTorch-style dataset with ``len()``.
+
+        Returns:
+            ``Subset`` containing all non-excluded examples.
+        """
+        from torch.utils.data import Subset
+
+        return Subset(dataset, self.train_indices(len(dataset)).tolist())
+
+    def canary_subset(self, dataset):
+        """Return a ``torch.utils.data.Subset`` of canary examples only.
+
+        Useful for scoring canaries after training.
+
+        Args:
+            dataset: A PyTorch-style dataset with ``len()``.
+
+        Returns:
+            ``Subset`` containing only canary examples (in order).
+        """
+        from torch.utils.data import Subset
+
+        return Subset(dataset, self._canary_indices.tolist())
+
     def audit(self, scores: np.ndarray) -> AuditResult:
         """Split scores by coin flip and return an AuditResult.
+
+        The returned :class:`AuditResult` has ``epsilon_at()`` defaulting
+        to the ``'one_run'`` method, which is valid and tighter for
+        coin-flip experiments.
 
         Args:
             scores: Membership score for each canary, in the same order as
@@ -436,7 +552,9 @@ class CoinFlipExperiment:
             raise ValueError(
                 f"Expected {self.num_canaries} scores, got shape {scores.shape}"
             )
-        return AuditResult(scores[self._in_mask], scores[~self._in_mask])
+        result = AuditResult(scores[self._in_mask], scores[~self._in_mask])
+        result._from_coin_flip = True
+        return result
 
 
 # ------------------------------------------------------------------

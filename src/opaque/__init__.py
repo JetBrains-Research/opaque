@@ -10,7 +10,7 @@ Note: Privacy accounting is provided by jbr-fed-accounting (external library).
 import os
 
 from opaque import auditing, sampling
-from opaque.auditing import AuditResult, BootstrapParams, CoinFlipExperiment
+from opaque.auditing import AuditResult, BootstrapParams, CoinFlipExperiment, score_by_loss
 from opaque.clipping import (
     AdaptiveClipState,
     ClipState,
@@ -83,6 +83,7 @@ __all__ = [
     "AuditResult",
     "BootstrapParams",
     "CoinFlipExperiment",
+    "score_by_loss",
     # Utils
     "make_functional",
 ]
