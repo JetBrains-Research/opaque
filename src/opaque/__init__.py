@@ -10,7 +10,7 @@ Note: Privacy accounting is provided by jbr-fed-accounting (external library).
 import os
 
 from opaque import auditing, sampling
-from opaque.auditing import AuditResult, BootstrapParams, audit
+from opaque.auditing import AuditResult, BootstrapParams
 from opaque.clipping import (
     AdaptiveClipState,
     ClipState,
@@ -80,7 +80,6 @@ __all__ = [
     "identity_mf_noise",
     # Auditing
     "auditing",
-    "audit",
     "AuditResult",
     "BootstrapParams",
     # Utils

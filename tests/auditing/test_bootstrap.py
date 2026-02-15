@@ -1,11 +1,11 @@
-"""Tests for bootstrap parameters and resampling."""
+"""Tests for BootstrapParams dataclass."""
 
 import dataclasses
 
 import numpy as np
 import pytest
 
-from opaque.auditing import BootstrapParams, attack_auroc, bootstrap
+from opaque.auditing import BootstrapParams
 
 
 class TestBootstrapParams:
@@ -114,43 +114,3 @@ class TestBootstrapParams:
         # NumPy array
         params = BootstrapParams(quantiles=np.array([0.025, 0.975]))
         assert len(params.quantiles) == 2
-
-
-class TestBootstrap:
-    """Tests for bootstrap function."""
-
-    def test_basic_bootstrap(self):
-        """Test basic bootstrap functionality."""
-        rng = np.random.default_rng(42)
-        in_scores = rng.normal(2.0, 1.0, 100)
-        out_scores = rng.normal(0.0, 1.0, 100)
-
-        params = BootstrapParams(num_samples=50, seed=42)
-        result = bootstrap(attack_auroc, in_scores, out_scores, params)
-
-        assert isinstance(result, np.ndarray)
-        assert len(result) == 2
-        assert result[0] < result[1]
-
-    def test_bootstrap_reproducibility(self):
-        """Test that bootstrap is reproducible with seed."""
-        in_scores = np.arange(50, 100)
-        out_scores = np.arange(0, 50)
-
-        params = BootstrapParams(num_samples=20, seed=42)
-        result1 = bootstrap(attack_auroc, in_scores, out_scores, params)
-        result2 = bootstrap(attack_auroc, in_scores, out_scores, params)
-
-        np.testing.assert_array_equal(result1, result2)
-
-    def test_bootstrap_custom_quantiles(self):
-        """Test bootstrap with custom quantiles."""
-        rng = np.random.default_rng(42)
-        in_scores = rng.normal(2.0, 1.0, 100)
-        out_scores = rng.normal(0.0, 1.0, 100)
-
-        params = BootstrapParams(num_samples=50, quantiles=(0.1, 0.5, 0.9), seed=42)
-        result = bootstrap(attack_auroc, in_scores, out_scores, params)
-
-        assert len(result) == 3
-        assert result[0] <= result[1] <= result[2]
