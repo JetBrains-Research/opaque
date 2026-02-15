@@ -367,6 +367,50 @@ Run full test suite after each step. No deprecation wrappers — just execute th
 
 ---
 
+## Known Temporary Omissions (vs JAX-Privacy)
+
+### `optimize_coefs_for_amplifications` (toeplitz.py)
+
+JAX-Privacy has `optimize_coefs_for_amplifications()` and its helper class
+`_AmplifiedBandMFHelper` in `toeplitz.py`. This function jointly optimizes:
+1. The **number of bands** for a banded Toeplitz mechanism
+2. The **Toeplitz coefficients** themselves
+3. The **noise standard deviation** needed to satisfy an (epsilon, delta)-DP target
+
+It integrates with `dp_accounting` (RDP accountant) to calibrate noise under
+privacy amplification from block-cyclic Poisson sampling. This is the main
+user-facing function for practitioners who have a privacy budget and want to
+automatically configure BandMF.
+
+**Status**: Blocked on the privacy accounting module (parallel PR). Once
+accounting is merged, this should be ported from JAX-Privacy's
+`jax_privacy/matrix_factorization/toeplitz.py` (lines 614–815).
+
+**Signature in JAX-Privacy**:
+```python
+def optimize_coefs_for_amplifications(
+    n: int,
+    *,
+    dataset_size: int,
+    expected_batch_size: int,
+    epsilon: float,
+    delta: float,
+    max_optimizer_steps: int = 250,
+    loss_fn: ErrorOrLossFn = mean_loss,
+) -> tuple[jax.Array, float]:   # (coefs, stddev)
+```
+
+### Other minor gaps (not planned for implementation)
+
+- `limit_max_error` / `limit_max_loss` (buffered_toeplitz.py) — asymptotic
+  n→∞ closed-form error formulas. Useful for large-scale parameter selection
+  but not blocking.
+- `banded.optimize()` — dense ColumnNormalizedBanded optimization. JAX-Privacy
+  docs explicitly state banded Toeplitz is <0.5% suboptimal and recommended
+  for practice.
+
+---
+
 ## What We Are NOT Doing
 
 - Not refactoring `StreamingMatrix` itself (fine as frozen dataclass with methods)
