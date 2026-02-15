@@ -31,6 +31,9 @@ __all__ = [
     "max_error",
     "mean_error",
     "optimal_max_error_strategy_coefs",
+    "loss",
+    "mean_loss",
+    "max_loss",
 ]
 
 
