@@ -1,14 +1,13 @@
-//! PyO3 Python bindings for the functional DP accounting API
+//! PyO3 Python bindings for the functional DP accounting API.
 //!
-//! Exposes the full functional API as Python classes and functions.
-//!
-//! The bindings use type erasure via `DynProcess` to present a unified
-//! `DpProcess` Python class. The trait-object approach stores the concrete
-//! Rust type behind `Box<dyn DynProcess>`, keeping full PLD computation
-//! capability (needed for composition).
+//! Exposes a Pythonic API where functions have natural names (`gaussian`,
+//! not `py_gaussian`), processes support operators (`step * 1000`,
+//! `a | b`), and rich introspection is available for debugging.
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
+use std::time::Instant;
 
 use crate::error::PldError;
 use crate::functional::amplification::{accumulate, poisson, truncated_poisson};
@@ -30,13 +29,9 @@ fn to_py_err(e: PldError) -> PyErr {
 }
 
 // ---------------------------------------------------------------------------
-// DynProcess: Type-erased Process trait object
+// DynProcess: type-erased Process trait object
 // ---------------------------------------------------------------------------
 
-/// Type-erased wrapper for any `Process` implementation.
-///
-/// This trait adds `clone_box` and `compute_pld` to allow dynamic dispatch
-/// while retaining full PLD computation capability for composition.
 trait DynProcess: Send + Sync {
     fn compute_pld(&self) -> Result<PrivacyLossDistribution, PldError>;
     fn clone_box(&self) -> Box<dyn DynProcess>;
@@ -61,17 +56,11 @@ impl Clone for Box<dyn DynProcess> {
 // ProcessWrapper: bridges DynProcess → Process trait
 // ---------------------------------------------------------------------------
 
-/// Wrapper that implements `Process` by delegating to a `DynProcess` trait object.
-///
-/// This allows type-erased processes (from Python) to participate in
-/// Rust composition (`repeat`, `compose`) which requires the `Process` trait.
 #[derive(Clone)]
 struct ProcessWrapper(Box<dyn DynProcess>);
 
 impl PartialEq for ProcessWrapper {
     fn eq(&self, _other: &Self) -> bool {
-        // Type-erased processes can't be structurally compared;
-        // this is only needed to satisfy Repeated<P: PartialEq> bounds.
         false
     }
 }
@@ -83,110 +72,286 @@ impl Process for ProcessWrapper {
 }
 
 // ---------------------------------------------------------------------------
-// Python classes
+// PyDpProcess
 // ---------------------------------------------------------------------------
 
 /// A differential privacy process that can be queried for privacy guarantees.
 ///
-/// This is the main class returned by all mechanism constructors (gaussian, poisson, etc.).
-/// Use methods like ``epsilon_at(delta)`` or ``delta_at(epsilon)`` to query privacy guarantees.
+/// Construct with module-level functions like :func:`gaussian`,
+/// :func:`poisson`, etc.  Compose with :func:`repeat` / :func:`compose`,
+/// or use the operator shorthands::
 ///
-/// Examples::
+///     import opaque_dp_accounting as dp
 ///
-///     import opaque_dp_accounting as acc
-///
-///     # Single Gaussian mechanism
-///     proc = acc.py_gaussian(1.1)
-///     eps = proc.epsilon_at(1e-5)
-///
-///     # Poisson-subsampled Gaussian, 1000 steps
-///     step = acc.py_poisson(1.1, 0.01)
-///     training = acc.py_repeat(step, 1000)
+///     step = dp.poisson(1.1, 0.01)
+///     training = step * 1000          # same as dp.repeat(step, 1000)
 ///     eps = training.epsilon_at(1e-5)
+///
+///     # heterogeneous composition
+///     combined = step | dp.gaussian(0.8)
+///
+///     # debugging
+///     print(training)                 # human-readable summary
+///     training.describe()             # dict of parameters
+///     training.pld_info()             # PLD grid diagnostics
+///     training.summary(delta=1e-5)    # formatted privacy summary
 #[pyclass(name = "DpProcess")]
 #[derive(Clone)]
 struct PyDpProcess {
     inner: Box<dyn DynProcess>,
-    description: String,
+    /// Machine-readable tag, e.g. "Gaussian(noise_multiplier=1.1)"
+    label: String,
+    /// Preserved kwargs from the constructor for introspection.
+    params: Vec<(String, ParamValue)>,
+}
+
+/// Parameter values that can be stored for introspection.
+#[derive(Clone, Debug)]
+enum ParamValue {
+    Float(f64),
+    Int(usize),
+    Str(String),
+}
+
+impl IntoPy<PyObject> for ParamValue {
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        match self {
+            ParamValue::Float(f) => f.into_py(py),
+            ParamValue::Int(i) => i.into_py(py),
+            ParamValue::Str(s) => s.into_py(py),
+        }
+    }
+}
+
+impl PyDpProcess {
+    fn new(inner: Box<dyn DynProcess>, label: String, params: Vec<(&str, ParamValue)>) -> Self {
+        Self {
+            inner,
+            label,
+            params: params.into_iter().map(|(k, v)| (k.to_string(), v)).collect(),
+        }
+    }
 }
 
 #[pymethods]
 impl PyDpProcess {
-    /// Compute epsilon for a given delta target.
+    // ---- metrics ----------------------------------------------------------
+
+    /// Compute epsilon for a given delta.
     ///
     /// Args:
-    ///     delta: The delta parameter (probability of privacy breach)
+    ///     delta: Probability of privacy breach.
     ///
     /// Returns:
-    ///     The epsilon value achieving the given delta
+    ///     float: The smallest epsilon such that the mechanism is (epsilon, delta)-DP.
     #[pyo3(text_signature = "(self, delta)")]
     fn epsilon_at(&self, delta: f64) -> PyResult<f64> {
         let pld = self.inner.compute_pld().map_err(to_py_err)?;
         Ok(pld.epsilon_at(delta))
     }
 
-    /// Compute delta for a given epsilon target.
+    /// Compute delta for a given epsilon.
     ///
     /// Args:
-    ///     epsilon: The epsilon parameter (privacy budget)
+    ///     epsilon: Privacy budget.
     ///
     /// Returns:
-    ///     The delta value at the given epsilon
+    ///     float: The delta value at the given epsilon.
     #[pyo3(text_signature = "(self, epsilon)")]
     fn delta_at(&self, epsilon: f64) -> PyResult<f64> {
         let pld = self.inner.compute_pld().map_err(to_py_err)?;
         Ok(pld.delta_at(epsilon))
     }
 
-    /// Compute the advantage (total variation distance / hockey-stick at eps=0).
-    ///
-    /// Returns:
-    ///     The advantage value
+    /// Total-variation advantage (= delta at epsilon=0).
     fn advantage(&self) -> PyResult<f64> {
         let pld = self.inner.compute_pld().map_err(to_py_err)?;
         Ok(pld.advantage())
     }
 
-    /// Compute beta (type II error) at a given alpha (type I error).
-    ///
-    /// Args:
-    ///     alpha: The type I error (false positive rate)
-    ///
-    /// Returns:
-    ///     The beta value (type II error / false negative rate)
+    /// Type-II error (beta) at a given type-I error (alpha).
     #[pyo3(text_signature = "(self, alpha)")]
     fn beta_at(&self, alpha: f64) -> PyResult<f64> {
         let pld = self.inner.compute_pld().map_err(to_py_err)?;
         Ok(pld.beta_at(alpha))
     }
 
-    /// Compute the Bayes risk at a given prior probability.
-    ///
-    /// Args:
-    ///     prior: Prior probability of the sensitive hypothesis
-    ///
-    /// Returns:
-    ///     The Bayes risk under optimal adversary
+    /// Bayes risk under an optimal adversary.
     #[pyo3(text_signature = "(self, prior)")]
     fn risk_at(&self, prior: f64) -> PyResult<f64> {
         let pld = self.inner.compute_pld().map_err(to_py_err)?;
         Ok(pld.risk_at(prior))
     }
 
+    // ---- operators --------------------------------------------------------
+
+    /// ``process * k`` is shorthand for ``repeat(process, k)``.
+    fn __mul__(&self, count: usize) -> PyResult<PyDpProcess> {
+        let wrapper = ProcessWrapper(self.inner.clone());
+        let r = repeat(wrapper, count).map_err(to_py_err)?;
+        Ok(PyDpProcess::new(
+            Box::new(r),
+            format!("Repeat({}, k={})", self.label, count),
+            vec![
+                ("inner", ParamValue::Str(self.label.clone())),
+                ("count", ParamValue::Int(count)),
+            ],
+        ))
+    }
+
+    /// ``k * process`` also works (reflected multiply).
+    fn __rmul__(&self, count: usize) -> PyResult<PyDpProcess> {
+        self.__mul__(count)
+    }
+
+    /// ``a | b`` is shorthand for ``compose(a, b)``.
+    fn __or__(&self, other: &PyDpProcess) -> PyResult<PyDpProcess> {
+        let lw = ProcessWrapper(self.inner.clone());
+        let rw = ProcessWrapper(other.inner.clone());
+        let c = compose(lw, rw);
+        Ok(PyDpProcess::new(
+            Box::new(c),
+            format!("Compose({}, {})", self.label, other.label),
+            vec![
+                ("left", ParamValue::Str(self.label.clone())),
+                ("right", ParamValue::Str(other.label.clone())),
+            ],
+        ))
+    }
+
+    // ---- introspection / debugging ----------------------------------------
+
+    /// Return constructor parameters as a dict.
+    ///
+    /// >>> dp.poisson(1.1, 0.01).describe()
+    /// {'type': 'Poisson', 'noise_multiplier': 1.1, 'sample_rate': 0.01}
+    fn describe(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let dict = PyDict::new(py);
+        dict.set_item("type", &self.label)?;
+        for (k, v) in &self.params {
+            dict.set_item(k, v.clone().into_py(py))?;
+        }
+        Ok(dict.into())
+    }
+
+    /// Compute the PLD and return diagnostic info about the internal grid.
+    ///
+    /// This is useful for understanding numerical precision and debugging
+    /// unexpected results.
+    ///
+    /// Returns:
+    ///     dict with keys: ``grid_size``, ``discretization``, ``lower_index``,
+    ///     ``upper_index``, ``infinity_mass``, ``neg_infinity_mass``,
+    ///     ``pessimistic``, ``total_mass``, ``elapsed_ms``.
+    fn pld_info(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let start = Instant::now();
+        let pld = self.inner.compute_pld().map_err(to_py_err)?;
+        let elapsed = start.elapsed();
+
+        let pmf = &pld.pmf_remove;
+        let dict = PyDict::new(py);
+        dict.set_item("grid_size", pmf.probs.len())?;
+        dict.set_item("discretization", pmf.discretization)?;
+        dict.set_item("lower_index", pmf.lower_loss_index)?;
+        dict.set_item(
+            "upper_index",
+            pmf.lower_loss_index + pmf.probs.len() as i64 - 1,
+        )?;
+        dict.set_item("infinity_mass", pmf.infinity_mass)?;
+        dict.set_item("neg_infinity_mass", pmf.negative_infinity_mass)?;
+        dict.set_item("pessimistic", pmf.pessimistic_estimate)?;
+        let total: f64 =
+            pmf.probs.iter().sum::<f64>() + pmf.infinity_mass + pmf.negative_infinity_mass;
+        dict.set_item("total_mass", total)?;
+        dict.set_item("is_symmetric", pld.pmf_add.is_none())?;
+        dict.set_item("elapsed_ms", elapsed.as_secs_f64() * 1000.0)?;
+        Ok(dict.into())
+    }
+
+    /// Print a human-readable privacy summary.
+    ///
+    /// Args:
+    ///     delta: Delta for epsilon computation (default 1e-5).
+    ///     epsilon: Epsilon for delta computation (default 1.0).
+    ///     alpha: Type-I error for beta computation (default 0.05).
+    ///     prior: Prior for risk computation (default 0.5).
+    ///
+    /// Returns:
+    ///     str: Formatted multi-line summary.
+    #[pyo3(signature = (delta=1e-5, epsilon=1.0, alpha=0.05, prior=0.5))]
+    fn summary(&self, delta: f64, epsilon: f64, alpha: f64, prior: f64) -> PyResult<String> {
+        let start = Instant::now();
+        let pld = self.inner.compute_pld().map_err(to_py_err)?;
+        let pld_ms = start.elapsed().as_secs_f64() * 1000.0;
+
+        let eps_val = pld.epsilon_at(delta);
+        let delta_val = pld.delta_at(epsilon);
+        let adv = pld.advantage();
+        let beta_val = pld.beta_at(alpha);
+        let risk_val = pld.risk_at(prior);
+
+        let pmf = &pld.pmf_remove;
+        let grid = pmf.probs.len();
+
+        Ok(format!(
+            concat!(
+                "--- {label} ---\n",
+                "epsilon(delta={delta:.0e})  = {eps:.6}\n",
+                "delta(epsilon={epsilon})      = {dval:.6e}\n",
+                "advantage                 = {adv:.6e}\n",
+                "beta(alpha={alpha})        = {beta:.6}\n",
+                "risk(prior={prior})        = {risk:.6}\n",
+                "---\n",
+                "PLD grid: {grid} bins, disc={disc}, inf_mass={inf:.2e}\n",
+                "PLD computed in {ms:.1} ms\n",
+            ),
+            label = self.label,
+            delta = delta,
+            eps = eps_val,
+            epsilon = epsilon,
+            dval = delta_val,
+            adv = adv,
+            alpha = alpha,
+            beta = beta_val,
+            prior = prior,
+            risk = risk_val,
+            grid = grid,
+            disc = pmf.discretization,
+            inf = pmf.infinity_mass,
+            ms = pld_ms,
+        ))
+    }
+
+    // ---- dunder -----------------------------------------------------------
+
     fn __repr__(&self) -> String {
-        format!("DpProcess({})", self.description)
+        format!("DpProcess({})", self.label)
+    }
+
+    fn __str__(&self) -> String {
+        // Quick summary: try to compute epsilon cheaply.
+        // If PLD computation is too heavy we fall back to label only.
+        match self.inner.compute_pld() {
+            Ok(pld) => {
+                let eps = pld.epsilon_at(1e-5);
+                format!("{} | eps(delta=1e-5)={:.6}", self.label, eps)
+            }
+            Err(_) => self.label.clone(),
+        }
     }
 }
 
-/// Discretization configuration for PLD computation.
-///
-/// Controls the precision of Privacy Loss Distribution discretization.
+// ---------------------------------------------------------------------------
+// PyDiscretizationConfig
+// ---------------------------------------------------------------------------
+
+/// Configuration controlling PLD discretization precision.
 ///
 /// Args:
-///     discretization: Grid spacing (default: 1e-4, smaller = more precise)
-///     log_mass_truncation_bound: Log of mass to truncate (default: -32.0)
-///     pessimistic_estimate: Use pessimistic (upper-bound) estimates (default: True)
-///     max_grid_size: Maximum grid size (default: 10_000_000)
+///     discretization (float): Grid spacing (default 1e-4).
+///     log_mass_truncation_bound (float): log2 threshold for tail truncation (default -32).
+///     pessimistic_estimate (bool): Use pessimistic (upper-bound) rounding (default True).
+///     max_grid_size (int): Maximum grid bins before coarsening (default 10M).
 #[pyclass(name = "DiscretizationConfig")]
 #[derive(Clone)]
 struct PyDiscretizationConfig {
@@ -203,23 +368,53 @@ impl PyDiscretizationConfig {
         pessimistic_estimate: bool,
         max_grid_size: usize,
     ) -> PyResult<Self> {
-        let config =
-            DiscretizationConfig::with_estimate(discretization, log_mass_truncation_bound, pessimistic_estimate)
-                .map_err(to_py_err)?;
+        let config = DiscretizationConfig::with_estimate(
+            discretization,
+            log_mass_truncation_bound,
+            pessimistic_estimate,
+        )
+        .map_err(to_py_err)?;
         let config = config.with_max_grid_size(max_grid_size);
         Ok(Self { inner: config })
     }
 
+    #[getter]
+    fn discretization(&self) -> f64 {
+        self.inner.discretization
+    }
+    #[getter]
+    fn log_mass_truncation_bound(&self) -> f64 {
+        self.inner.log_mass_truncation_bound
+    }
+    #[getter]
+    fn pessimistic_estimate(&self) -> bool {
+        self.inner.pessimistic_estimate
+    }
+    #[getter]
+    fn max_grid_size(&self) -> usize {
+        self.inner.max_grid_size
+    }
+
     fn __repr__(&self) -> String {
         format!(
-            "DiscretizationConfig(discretization={}, log_mass_truncation_bound={})",
-            self.inner.discretization, self.inner.log_mass_truncation_bound
+            "DiscretizationConfig(discretization={}, log_mass_truncation_bound={}, pessimistic_estimate={}, max_grid_size={})",
+            self.inner.discretization,
+            self.inner.log_mass_truncation_bound,
+            self.inner.pessimistic_estimate,
+            self.inner.max_grid_size,
         )
+    }
+
+    fn __eq__(&self, other: &PyDiscretizationConfig) -> bool {
+        self.inner.discretization == other.inner.discretization
+            && self.inner.log_mass_truncation_bound == other.inner.log_mass_truncation_bound
+            && self.inner.pessimistic_estimate == other.inner.pessimistic_estimate
+            && self.inner.max_grid_size == other.inner.max_grid_size
     }
 }
 
 // ---------------------------------------------------------------------------
-// Helper: build a Gaussian with optional config
+// Helper
 // ---------------------------------------------------------------------------
 
 fn make_gaussian(
@@ -233,41 +428,47 @@ fn make_gaussian(
 }
 
 // ---------------------------------------------------------------------------
-// Module functions — mechanisms
+// Module-level functions — mechanisms
 // ---------------------------------------------------------------------------
 
-/// Create a Gaussian mechanism with the given noise multiplier.
+/// Create a Gaussian mechanism.
 ///
 /// Args:
-///     noise_multiplier: The ratio sigma/sensitivity (must be > 0)
-///     config: Optional discretization config
+///     noise_multiplier (float): sigma / sensitivity. Must be in [0.1, 1.2].
+///     config (DiscretizationConfig, optional): Custom discretization.
 ///
 /// Returns:
-///     A DpProcess representing the Gaussian mechanism
+///     DpProcess
+///
+/// Example::
+///
+///     proc = dp.gaussian(1.1)
+///     proc.epsilon_at(1e-5)  # ~3.73
 #[pyfunction]
-#[pyo3(signature = (noise_multiplier, config=None))]
+#[pyo3(name = "gaussian", signature = (noise_multiplier, config=None))]
 fn py_gaussian(
     noise_multiplier: f64,
     config: Option<PyDiscretizationConfig>,
 ) -> PyResult<PyDpProcess> {
     let g = make_gaussian(noise_multiplier, config.as_ref()).map_err(to_py_err)?;
-    Ok(PyDpProcess {
-        description: format!("Gaussian(nm={})", noise_multiplier),
-        inner: Box::new(g),
-    })
+    Ok(PyDpProcess::new(
+        Box::new(g),
+        format!("Gaussian(noise_multiplier={})", noise_multiplier),
+        vec![("noise_multiplier", ParamValue::Float(noise_multiplier))],
+    ))
 }
 
-/// Create an (epsilon, delta)-DP mechanism with specified guarantees.
+/// Create an (epsilon, delta)-DP mechanism.
 ///
 /// Args:
-///     epsilon: The epsilon parameter
-///     delta: The delta parameter (default: 0.0 for pure DP)
-///     config: Optional discretization config
+///     epsilon (float): Privacy parameter.
+///     delta (float): Failure probability (default 0).
+///     config (DiscretizationConfig, optional): Custom discretization.
 ///
 /// Returns:
-///     A DpProcess representing the (eps, delta)-DP mechanism
+///     DpProcess
 #[pyfunction]
-#[pyo3(signature = (epsilon, delta=0.0, config=None))]
+#[pyo3(name = "eps_delta", signature = (epsilon, delta=0.0, config=None))]
 fn py_eps_delta(
     epsilon: f64,
     delta: f64,
@@ -277,141 +478,171 @@ fn py_eps_delta(
         Some(c) => eps_delta_with(epsilon, delta, c.inner).map_err(to_py_err)?,
         None => eps_delta(epsilon, delta).map_err(to_py_err)?,
     };
-    Ok(PyDpProcess {
-        description: format!("EpsDelta(eps={}, delta={})", epsilon, delta),
-        inner: Box::new(e),
-    })
+    Ok(PyDpProcess::new(
+        Box::new(e),
+        format!("EpsDelta(epsilon={}, delta={})", epsilon, delta),
+        vec![
+            ("epsilon", ParamValue::Float(epsilon)),
+            ("delta", ParamValue::Float(delta)),
+        ],
+    ))
 }
 
-/// Create an identity (perfect privacy) mechanism.
+/// Create an identity (zero privacy loss) mechanism.
 ///
 /// Returns:
-///     A DpProcess with zero privacy loss
+///     DpProcess
 #[pyfunction]
-#[pyo3(signature = (config=None))]
+#[pyo3(name = "identity", signature = (config=None))]
 fn py_identity(config: Option<PyDiscretizationConfig>) -> PyResult<PyDpProcess> {
     let i = match config {
         Some(c) => identity_with(c.inner),
         None => identity(),
     };
-    Ok(PyDpProcess {
-        description: "Identity".to_string(),
-        inner: Box::new(i),
-    })
+    Ok(PyDpProcess::new(
+        Box::new(i),
+        "Identity()".to_string(),
+        vec![],
+    ))
 }
 
 // ---------------------------------------------------------------------------
-// Module functions — amplification
+// Module-level functions — amplification
 // ---------------------------------------------------------------------------
 
-/// Apply Poisson subsampling amplification to a Gaussian mechanism.
+/// Poisson-subsampled Gaussian mechanism.
 ///
-/// Each record is included independently with probability ``rate``,
-/// providing privacy amplification.
+/// Each record is included independently with probability *sample_rate*,
+/// providing privacy amplification by subsampling.
 ///
 /// Args:
-///     noise_multiplier: Gaussian noise multiplier (sigma/sensitivity)
-///     rate: Poisson sampling rate q in (0, 1]
-///     config: Optional discretization config
+///     noise_multiplier (float): Gaussian sigma / sensitivity.
+///     sample_rate (float): Poisson sampling probability q in (0, 1].
+///     config (DiscretizationConfig, optional): Custom discretization.
 ///
 /// Returns:
-///     A DpProcess with amplified privacy guarantees
+///     DpProcess
+///
+/// Example::
+///
+///     step = dp.poisson(1.1, 0.01)
+///     training = step * 1000
+///     training.epsilon_at(1e-5)
 #[pyfunction]
-#[pyo3(signature = (noise_multiplier, rate, config=None))]
+#[pyo3(name = "poisson", signature = (noise_multiplier, sample_rate, config=None))]
 fn py_poisson(
     noise_multiplier: f64,
-    rate: f64,
+    sample_rate: f64,
     config: Option<PyDiscretizationConfig>,
 ) -> PyResult<PyDpProcess> {
     let g = make_gaussian(noise_multiplier, config.as_ref()).map_err(to_py_err)?;
-    let p = poisson(g, rate);
-    Ok(PyDpProcess {
-        description: format!("Poisson(Gaussian(nm={}), q={})", noise_multiplier, rate),
-        inner: Box::new(p),
-    })
+    let p = poisson(g, sample_rate);
+    Ok(PyDpProcess::new(
+        Box::new(p),
+        format!(
+            "Poisson(noise_multiplier={}, sample_rate={})",
+            noise_multiplier, sample_rate
+        ),
+        vec![
+            ("noise_multiplier", ParamValue::Float(noise_multiplier)),
+            ("sample_rate", ParamValue::Float(sample_rate)),
+        ],
+    ))
 }
 
-/// Apply truncated Poisson subsampling (production DP-SGD).
+/// Truncated-Poisson-subsampled Gaussian (production DP-SGD).
 ///
-/// Like Poisson sampling but caps the batch size at ``batch_size_max``.
-/// This models what Opacus, JAX Privacy, and TF Privacy actually use.
+/// Like Poisson sampling but caps the batch at *batch_size_cap*.
+/// This matches what Opacus / JAX Privacy / TF Privacy actually do.
 ///
 /// Args:
-///     noise_multiplier: Gaussian noise multiplier
-///     rate: Poisson sampling rate q in (0, 1]
-///     batch_size_max: Maximum batch size B_max
-///     dataset_size: Total dataset size n
-///     config: Optional discretization config
+///     noise_multiplier (float): Gaussian sigma / sensitivity.
+///     sample_rate (float): Expected sampling rate q.
+///     batch_size_cap (int): Maximum batch size B_max.
+///     dataset_size (int): Total dataset size n.
+///     config (DiscretizationConfig, optional): Custom discretization.
 ///
 /// Returns:
-///     A DpProcess with truncated Poisson amplification
+///     DpProcess
 #[pyfunction]
-#[pyo3(signature = (noise_multiplier, rate, batch_size_max, dataset_size, config=None))]
+#[pyo3(name = "truncated_poisson", signature = (noise_multiplier, sample_rate, batch_size_cap, dataset_size, config=None))]
 fn py_truncated_poisson(
     noise_multiplier: f64,
-    rate: f64,
-    batch_size_max: usize,
+    sample_rate: f64,
+    batch_size_cap: usize,
     dataset_size: usize,
     config: Option<PyDiscretizationConfig>,
 ) -> PyResult<PyDpProcess> {
     let g = make_gaussian(noise_multiplier, config.as_ref()).map_err(to_py_err)?;
-    let tp = truncated_poisson(g, rate, batch_size_max, dataset_size);
-    Ok(PyDpProcess {
-        description: format!(
-            "TruncatedPoisson(Gaussian(nm={}), q={}, B_max={}, n={})",
-            noise_multiplier, rate, batch_size_max, dataset_size
+    let tp = truncated_poisson(g, sample_rate, batch_size_cap, dataset_size);
+    Ok(PyDpProcess::new(
+        Box::new(tp),
+        format!(
+            "TruncatedPoisson(noise_multiplier={}, sample_rate={}, batch_size_cap={}, dataset_size={})",
+            noise_multiplier, sample_rate, batch_size_cap, dataset_size
         ),
-        inner: Box::new(tp),
-    })
+        vec![
+            ("noise_multiplier", ParamValue::Float(noise_multiplier)),
+            ("sample_rate", ParamValue::Float(sample_rate)),
+            ("batch_size_cap", ParamValue::Int(batch_size_cap)),
+            ("dataset_size", ParamValue::Int(dataset_size)),
+        ],
+    ))
 }
 
-/// Apply gradient accumulation to a Poisson-subsampled Gaussian.
+/// Gradient-accumulated Poisson-subsampled Gaussian.
 ///
-/// Models ``m`` microbatches with a single noise addition (Mixture of Gaussians).
+/// Models *microbatches* micro-batches accumulated before a single noise
+/// addition (Mixture-of-Gaussians framework).
 ///
 /// Args:
-///     noise_multiplier: Gaussian noise multiplier
-///     rate: Poisson sampling rate per microbatch
-///     microbatches: Number of microbatches m
-///     config: Optional discretization config
+///     noise_multiplier (float): Gaussian sigma / sensitivity.
+///     sample_rate (float): Per-microbatch Poisson rate.
+///     microbatches (int): Number of micro-batches m.
+///     config (DiscretizationConfig, optional): Custom discretization.
 ///
 /// Returns:
-///     A DpProcess with accumulated privacy guarantees
+///     DpProcess
 #[pyfunction]
-#[pyo3(signature = (noise_multiplier, rate, microbatches, config=None))]
+#[pyo3(name = "accumulate", signature = (noise_multiplier, sample_rate, microbatches, config=None))]
 fn py_accumulate(
     noise_multiplier: f64,
-    rate: f64,
+    sample_rate: f64,
     microbatches: usize,
     config: Option<PyDiscretizationConfig>,
 ) -> PyResult<PyDpProcess> {
     let g = make_gaussian(noise_multiplier, config.as_ref()).map_err(to_py_err)?;
-    let p = poisson(g, rate);
+    let p = poisson(g, sample_rate);
     let acc = accumulate(p, microbatches).map_err(to_py_err)?;
-    Ok(PyDpProcess {
-        description: format!(
-            "Accumulate(Poisson(Gaussian(nm={}), q={}), m={})",
-            noise_multiplier, rate, microbatches
+    Ok(PyDpProcess::new(
+        Box::new(acc),
+        format!(
+            "Accumulate(noise_multiplier={}, sample_rate={}, microbatches={})",
+            noise_multiplier, sample_rate, microbatches
         ),
-        inner: Box::new(acc),
-    })
+        vec![
+            ("noise_multiplier", ParamValue::Float(noise_multiplier)),
+            ("sample_rate", ParamValue::Float(sample_rate)),
+            ("microbatches", ParamValue::Int(microbatches)),
+        ],
+    ))
 }
 
 // ---------------------------------------------------------------------------
-// Module functions — transforms
+// Module-level functions — transforms
 // ---------------------------------------------------------------------------
 
-/// Wrap a Gaussian mechanism with adaptive clipping (Andrew et al. 2021).
+/// Gaussian mechanism with adaptive clipping (Andrew et al. 2021).
 ///
 /// Args:
-///     noise_multiplier: Gaussian noise multiplier
-///     quantile_noise_std: Noise std for quantile estimation
-///     config: Optional discretization config
+///     noise_multiplier (float): Gradient noise multiplier.
+///     quantile_noise_std (float): Noise std for quantile estimation.
+///     config (DiscretizationConfig, optional): Custom discretization.
 ///
 /// Returns:
-///     A DpProcess representing the AdaClip mechanism
+///     DpProcess
 #[pyfunction]
-#[pyo3(signature = (noise_multiplier, quantile_noise_std, config=None))]
+#[pyo3(name = "adaclip", signature = (noise_multiplier, quantile_noise_std, config=None))]
 fn py_adaclip(
     noise_multiplier: f64,
     quantile_noise_std: f64,
@@ -419,113 +650,144 @@ fn py_adaclip(
 ) -> PyResult<PyDpProcess> {
     let g = make_gaussian(noise_multiplier, config.as_ref()).map_err(to_py_err)?;
     let ac = adaclip(g, quantile_noise_std);
-    Ok(PyDpProcess {
-        description: format!(
-            "AdaClip(Gaussian(nm={}), sb={})",
+    Ok(PyDpProcess::new(
+        Box::new(ac),
+        format!(
+            "AdaClip(noise_multiplier={}, quantile_noise_std={})",
             noise_multiplier, quantile_noise_std
         ),
-        inner: Box::new(ac),
-    })
+        vec![
+            ("noise_multiplier", ParamValue::Float(noise_multiplier)),
+            ("quantile_noise_std", ParamValue::Float(quantile_noise_std)),
+        ],
+    ))
 }
 
-/// Apply Poisson subsampling to an AdaClip-wrapped Gaussian mechanism.
+/// Poisson-subsampled AdaClip Gaussian.
+///
+/// Convenience wrapper combining :func:`adaclip` and :func:`poisson`.
 ///
 /// Args:
-///     noise_multiplier: Gaussian noise multiplier
-///     quantile_noise_std: AdaClip quantile noise std
-///     rate: Poisson sampling rate
-///     config: Optional discretization config
+///     noise_multiplier (float): Gradient noise multiplier.
+///     quantile_noise_std (float): AdaClip quantile noise std.
+///     sample_rate (float): Poisson sampling rate.
+///     config (DiscretizationConfig, optional): Custom discretization.
 ///
 /// Returns:
-///     A DpProcess with Poisson-amplified AdaClip
+///     DpProcess
 #[pyfunction]
-#[pyo3(signature = (noise_multiplier, quantile_noise_std, rate, config=None))]
+#[pyo3(name = "poisson_adaclip", signature = (noise_multiplier, quantile_noise_std, sample_rate, config=None))]
 fn py_poisson_adaclip(
     noise_multiplier: f64,
     quantile_noise_std: f64,
-    rate: f64,
+    sample_rate: f64,
     config: Option<PyDiscretizationConfig>,
 ) -> PyResult<PyDpProcess> {
     let g = make_gaussian(noise_multiplier, config.as_ref()).map_err(to_py_err)?;
     let ac = adaclip(g, quantile_noise_std);
-    let p = poisson(ac, rate);
-    Ok(PyDpProcess {
-        description: format!(
-            "Poisson(AdaClip(Gaussian(nm={}), sb={}), q={})",
-            noise_multiplier, quantile_noise_std, rate
+    let p = poisson(ac, sample_rate);
+    Ok(PyDpProcess::new(
+        Box::new(p),
+        format!(
+            "PoissonAdaClip(noise_multiplier={}, quantile_noise_std={}, sample_rate={})",
+            noise_multiplier, quantile_noise_std, sample_rate
         ),
-        inner: Box::new(p),
-    })
+        vec![
+            ("noise_multiplier", ParamValue::Float(noise_multiplier)),
+            ("quantile_noise_std", ParamValue::Float(quantile_noise_std)),
+            ("sample_rate", ParamValue::Float(sample_rate)),
+        ],
+    ))
 }
 
 // ---------------------------------------------------------------------------
-// Module functions — composition
+// Module-level functions — composition
 // ---------------------------------------------------------------------------
 
-/// Compose a process with itself ``count`` times (homogeneous composition).
+/// Homogeneous k-fold composition (repeat a process *count* times).
 ///
-/// This uses FFT-based self-convolution for efficient computation.
+/// Equivalent to ``process * count``.
 ///
 /// Args:
-///     process: A DpProcess to repeat
-///     count: Number of repetitions k
+///     process (DpProcess): The process to repeat.
+///     count (int): Number of repetitions.
 ///
 /// Returns:
-///     A DpProcess representing k-fold composition
+///     DpProcess
 #[pyfunction]
-#[pyo3(text_signature = "(process, count)")]
-fn py_repeat(process: PyDpProcess, count: usize) -> PyResult<PyDpProcess> {
-    let wrapper = ProcessWrapper(process.inner.clone());
-    let r = repeat(wrapper, count).map_err(to_py_err)?;
-    Ok(PyDpProcess {
-        description: format!("Repeat({}, k={})", process.description, count),
-        inner: Box::new(r),
-    })
+#[pyo3(name = "repeat", text_signature = "(process, count)")]
+fn py_repeat(process: &PyDpProcess, count: usize) -> PyResult<PyDpProcess> {
+    process.__mul__(count)
 }
 
-/// Compose two heterogeneous processes.
+/// Heterogeneous composition of two processes.
+///
+/// Equivalent to ``left | right``.
 ///
 /// Args:
-///     left: First DpProcess
-///     right: Second DpProcess
+///     left (DpProcess): First process.
+///     right (DpProcess): Second process.
 ///
 /// Returns:
-///     A DpProcess representing the composition of both
+///     DpProcess
 #[pyfunction]
-#[pyo3(text_signature = "(left, right)")]
-fn py_compose(left: PyDpProcess, right: PyDpProcess) -> PyResult<PyDpProcess> {
-    let lw = ProcessWrapper(left.inner.clone());
-    let rw = ProcessWrapper(right.inner.clone());
-    let c = compose(lw, rw);
-    Ok(PyDpProcess {
-        description: format!("Compose({}, {})", left.description, right.description),
-        inner: Box::new(c),
-    })
+#[pyo3(name = "compose", text_signature = "(left, right)")]
+fn py_compose(left: &PyDpProcess, right: &PyDpProcess) -> PyResult<PyDpProcess> {
+    left.__or__(right)
 }
 
 // ---------------------------------------------------------------------------
-// Module functions — calibration & convenience
+// Module-level functions — convenience / calibration
 // ---------------------------------------------------------------------------
 
-/// Calibrate the noise multiplier for a DP-SGD training run.
+/// Compute epsilon for a standard DP-SGD run.
 ///
-/// Uses bisection search to find the smallest noise multiplier that
-/// achieves the target privacy guarantee.
+/// Shorthand for ``(poisson(noise_multiplier, sample_rate) * num_steps).epsilon_at(delta)``.
 ///
 /// Args:
-///     target_epsilon: Target epsilon value
-///     target_delta: Target delta value
-///     sample_rate: Poisson sampling rate q (= batch_size / dataset_size)
-///     num_steps: Number of training steps (composition count)
-///     param_min: Minimum noise multiplier to search (default: 0.1)
-///     param_max: Maximum noise multiplier to search (default: 100.0)
-///     tolerance: Convergence tolerance (default: 1e-6)
-///     max_iterations: Maximum bisection iterations (default: 100)
+///     noise_multiplier (float): Gaussian sigma / sensitivity.
+///     sample_rate (float): batch_size / dataset_size.
+///     num_steps (int): Number of training steps.
+///     delta (float): Target delta.
 ///
 /// Returns:
-///     The calibrated noise multiplier
+///     float: The epsilon value.
+///
+/// Example::
+///
+///     eps = dp.compute_epsilon(1.1, 0.01, 1000, delta=1e-5)
 #[pyfunction]
-#[pyo3(signature = (target_epsilon, target_delta, sample_rate, num_steps, param_min=0.1, param_max=100.0, tolerance=1e-6, max_iterations=100))]
+#[pyo3(name = "compute_epsilon", signature = (noise_multiplier, sample_rate, num_steps, delta))]
+fn py_compute_epsilon(
+    noise_multiplier: f64,
+    sample_rate: f64,
+    num_steps: usize,
+    delta: f64,
+) -> PyResult<f64> {
+    let g = gaussian(noise_multiplier).map_err(to_py_err)?;
+    let step = poisson(g, sample_rate);
+    let training = repeat(step, num_steps).map_err(to_py_err)?;
+    training.epsilon_at(delta).map_err(to_py_err)
+}
+
+/// Calibrate the noise multiplier for a target epsilon.
+///
+/// Uses bisection search over the noise multiplier.
+///
+/// Args:
+///     target_epsilon (float): Desired epsilon.
+///     target_delta (float): Delta for the (epsilon, delta) guarantee.
+///     sample_rate (float): Poisson sampling rate.
+///     num_steps (int): Number of composition steps.
+///     param_min (float): Lower bound on noise multiplier (default 0.1).
+///     param_max (float): Upper bound on noise multiplier (default 1.2).
+///     tolerance (float): Bisection tolerance (default 1e-6).
+///     max_iterations (int): Maximum iterations (default 100).
+///
+/// Returns:
+///     float: Calibrated noise multiplier.
+#[pyfunction]
+#[pyo3(name = "calibrate_noise", signature = (target_epsilon, target_delta, sample_rate, num_steps, param_min=0.1, param_max=1.2, tolerance=1e-6, max_iterations=100))]
 fn py_calibrate_noise(
     target_epsilon: f64,
     target_delta: f64,
@@ -551,40 +813,13 @@ fn py_calibrate_noise(
         let eps = training.epsilon_at(target_delta).map_err(to_py_err)?;
 
         if eps > target_epsilon {
-            lo = mid; // Need more noise
+            lo = mid;
         } else {
-            hi = mid; // Can use less noise
+            hi = mid;
         }
     }
 
     Ok((lo + hi) / 2.0)
-}
-
-/// Compute epsilon for a DP-SGD training run (convenience function).
-///
-/// This is the most common use case: Poisson-subsampled Gaussian, composed
-/// over ``num_steps`` training steps.
-///
-/// Args:
-///     noise_multiplier: Gaussian noise multiplier (sigma / sensitivity)
-///     sample_rate: Poisson sampling rate q (= batch_size / dataset_size)
-///     num_steps: Number of training steps
-///     delta: Target delta value
-///
-/// Returns:
-///     The epsilon value
-#[pyfunction]
-#[pyo3(signature = (noise_multiplier, sample_rate, num_steps, delta))]
-fn py_compute_epsilon(
-    noise_multiplier: f64,
-    sample_rate: f64,
-    num_steps: usize,
-    delta: f64,
-) -> PyResult<f64> {
-    let g = gaussian(noise_multiplier).map_err(to_py_err)?;
-    let step = poisson(g, sample_rate);
-    let training = repeat(step, num_steps).map_err(to_py_err)?;
-    training.epsilon_at(delta).map_err(to_py_err)
 }
 
 // ---------------------------------------------------------------------------
@@ -614,9 +849,9 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_repeat, m)?)?;
     m.add_function(wrap_pyfunction!(py_compose, m)?)?;
 
-    // Calibration & convenience
-    m.add_function(wrap_pyfunction!(py_calibrate_noise, m)?)?;
+    // Convenience
     m.add_function(wrap_pyfunction!(py_compute_epsilon, m)?)?;
+    m.add_function(wrap_pyfunction!(py_calibrate_noise, m)?)?;
 
     Ok(())
 }
