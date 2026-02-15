@@ -124,9 +124,7 @@ class AuditResult:
         if method == "one_run":
             return self.epsilon_one_run(significance=significance, delta=delta)
         if method == "clopper_pearson":
-            return self.epsilon_clopper_pearson(
-                significance=significance, delta=delta
-            )
+            return self.epsilon_clopper_pearson(significance=significance, delta=delta)
         raise ValueError(
             f"method must be 'one_run' or 'clopper_pearson', got {method!r}"
         )
@@ -167,9 +165,7 @@ class AuditResult:
         for i in range(len(self._thresholds)):
             fn_i = self._fn_counts[i]
             fp_i = self.n_out - self._tn_counts[i]
-            eps_i = _epsilon_cp(
-                fn_i, fp_i, self.n_in, self.n_out, sig_corrected, delta
-            )
+            eps_i = _epsilon_cp(fn_i, fp_i, self.n_in, self.n_out, sig_corrected, delta)
             best = max(best, eps_i)
         return best
 
@@ -327,9 +323,7 @@ class AuditResult:
             # Jackknife for acceleration
             jk = np.empty(self.n_in + self.n_out)
             for i in range(self.n_in):
-                jk[i] = metric(
-                    AuditResult(np.delete(self._in_arr, i), self._out_arr)
-                )
+                jk[i] = metric(AuditResult(np.delete(self._in_arr, i), self._out_arr))
             for i in range(self.n_out):
                 jk[self.n_in + i] = metric(
                     AuditResult(self._in_arr, np.delete(self._out_arr, i))
@@ -343,9 +337,7 @@ class AuditResult:
             accel = 0.0
 
         z_q = scipy.stats.norm.ppf(params.quantiles)
-        corrected = scipy.stats.norm.cdf(
-            z0 + (z0 + z_q) / (1 - accel * (z0 + z_q))
-        )
+        corrected = scipy.stats.norm.cdf(z0 + (z0 + z_q) / (1 - accel * (z0 + z_q)))
 
         return np.quantile(values, corrected, method="linear")
 
@@ -370,9 +362,7 @@ class AuditResult:
         Returns:
             Formatted string with all metrics.
         """
-        eps_cp = self.epsilon_clopper_pearson(
-            significance=significance, delta=delta
-        )
+        eps_cp = self.epsilon_clopper_pearson(significance=significance, delta=delta)
 
         lines = [
             "Audit Summary",
@@ -383,9 +373,7 @@ class AuditResult:
         ]
 
         if self._from_coin_flip:
-            eps_or = self.epsilon_one_run(
-                significance=significance, delta=delta
-            )
+            eps_or = self.epsilon_one_run(significance=significance, delta=delta)
             lines.append(f"  \u03b5 (one-run):          {eps_or:.4f}")
 
         lines.extend(

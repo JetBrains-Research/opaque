@@ -13,9 +13,7 @@ def test_basic_audit_workflow():
     result = AuditResult(in_scores, out_scores)
 
     # Test epsilon estimation with explicit threshold
-    eps = result.epsilon_clopper_pearson(
-        significance=0.05, delta=1e-5, threshold=4.0
-    )
+    eps = result.epsilon_clopper_pearson(significance=0.05, delta=1e-5, threshold=4.0)
     assert eps > 0, "Should detect privacy leakage"
 
     # Test epsilon with Bonferroni (default)
@@ -56,15 +54,11 @@ def test_no_privacy_leakage():
 
 def test_perfect_attack():
     """Test auditing with perfect attack separation."""
-    result = AuditResult(
-        np.arange(50, 100, dtype=float), np.arange(0, 50, dtype=float)
-    )
+    result = AuditResult(np.arange(50, 100, dtype=float), np.arange(0, 50, dtype=float))
 
     assert result.auroc() > 0.99, "Perfect attack should have AUROC ~1.0"
 
-    eps = result.epsilon_clopper_pearson(
-        significance=0.05, delta=0, threshold=50
-    )
+    eps = result.epsilon_clopper_pearson(significance=0.05, delta=0, threshold=50)
     assert eps > 2.5, "Perfect attack should give large epsilon"
 
 

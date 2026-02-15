@@ -3,9 +3,8 @@
 import numpy as np
 import pytest
 
-from opaque.auditing import AuditResult, CoinFlipExperiment
-
 import opaque.auditing as auditing
+from opaque.auditing import AuditResult, CoinFlipExperiment
 
 
 class TestConstruction:
@@ -41,9 +40,7 @@ class TestEpsilonClopperPearson:
         """Test with perfectly separated scores."""
         result = AuditResult(list(range(100, 150)), list(range(0, 50)))
 
-        eps = result.epsilon_clopper_pearson(
-            significance=0.05, delta=0, threshold=75
-        )
+        eps = result.epsilon_clopper_pearson(significance=0.05, delta=0, threshold=75)
         assert eps > 2.0
 
     def test_no_separation(self):
@@ -74,9 +71,7 @@ class TestEpsilonClopperPearson:
         """Test with explicit threshold."""
         result = AuditResult(np.arange(50, 100), np.arange(0, 50))
 
-        eps = result.epsilon_clopper_pearson(
-            significance=0.05, delta=0, threshold=50
-        )
+        eps = result.epsilon_clopper_pearson(significance=0.05, delta=0, threshold=50)
         assert eps > 0
 
 
@@ -87,9 +82,7 @@ class TestEpsilonOneRun:
         """Test with perfectly separated scores."""
         result = AuditResult(list(range(100, 150)), list(range(0, 50)))
 
-        eps = result.epsilon_one_run(
-            significance=0.05, delta=0, threshold=75
-        )
+        eps = result.epsilon_one_run(significance=0.05, delta=0, threshold=75)
         assert eps > 0
 
     def test_no_separation(self):
@@ -204,18 +197,14 @@ class TestEdgeCases:
     def test_single_score_each(self):
         """Test with single score in each group."""
         result = AuditResult([10], [0])
-        eps = result.epsilon_clopper_pearson(
-            significance=0.05, delta=0, threshold=5
-        )
+        eps = result.epsilon_clopper_pearson(significance=0.05, delta=0, threshold=5)
         assert eps >= 0
 
     def test_large_separation(self):
         """Test with very large score separation."""
         result = AuditResult(np.arange(1000, 2000), np.arange(0, 1000))
 
-        eps = result.epsilon_clopper_pearson(
-            significance=0.05, delta=0, threshold=1000
-        )
+        eps = result.epsilon_clopper_pearson(significance=0.05, delta=0, threshold=1000)
         assert eps > 5.0
 
 
@@ -227,9 +216,7 @@ class TestBootstrap:
         from opaque.auditing import BootstrapParams
 
         rng = np.random.default_rng(42)
-        result = AuditResult(
-            rng.normal(2.0, 1.0, 100), rng.normal(0.0, 1.0, 100)
-        )
+        result = AuditResult(rng.normal(2.0, 1.0, 100), rng.normal(0.0, 1.0, 100))
 
         params = BootstrapParams(num_samples=50, seed=42)
         ci = result.bootstrap(AuditResult.auroc, params)
@@ -255,13 +242,9 @@ class TestBootstrap:
         from opaque.auditing import BootstrapParams
 
         rng = np.random.default_rng(42)
-        result = AuditResult(
-            rng.normal(2.0, 1.0, 100), rng.normal(0.0, 1.0, 100)
-        )
+        result = AuditResult(rng.normal(2.0, 1.0, 100), rng.normal(0.0, 1.0, 100))
 
-        params = BootstrapParams(
-            num_samples=50, quantiles=(0.1, 0.5, 0.9), seed=42
-        )
+        params = BootstrapParams(num_samples=50, quantiles=(0.1, 0.5, 0.9), seed=42)
         ci = result.bootstrap(AuditResult.auroc, params)
 
         assert len(ci) == 3
@@ -414,8 +397,8 @@ class TestCoinFlipExperiment:
 
     def test_subset(self):
         """Test subset() returns a torch Subset excluding out-canaries."""
-        from torch.utils.data import TensorDataset
         import torch
+        from torch.utils.data import TensorDataset
 
         dataset = TensorDataset(torch.arange(50), torch.arange(50))
         canary_idx = np.array([5, 15, 25, 35, 45])
@@ -435,8 +418,8 @@ class TestCoinFlipExperiment:
 
     def test_canary_subset(self):
         """Test canary_subset() returns only canary examples."""
-        from torch.utils.data import TensorDataset
         import torch
+        from torch.utils.data import TensorDataset
 
         dataset = TensorDataset(torch.arange(50), torch.arange(50))
         canary_idx = np.array([5, 15, 25, 35, 45])
