@@ -28,7 +28,9 @@ def test_basic_audit_workflow():
     assert eps > 0, "Should detect privacy leakage"
 
     # Test epsilon with Bonferroni (default)
-    eps_bonf = epsilon_clopper_pearson(in_scores, out_scores, significance=0.05, delta=1e-5)
+    eps_bonf = epsilon_clopper_pearson(
+        in_scores, out_scores, significance=0.05, delta=1e-5
+    )
     assert eps_bonf > 0, "Bonferroni should also detect leakage"
 
     # Test utility metrics
@@ -110,7 +112,9 @@ def test_one_run_audit():
     eps_one_run = epsilon_one_run(in_scores, out_scores, significance=0.05, delta=1e-5)
     assert eps_one_run > 0, "Should detect privacy leakage"
 
-    eps_cp = epsilon_clopper_pearson(in_scores, out_scores, significance=0.05, delta=1e-5)
+    eps_cp = epsilon_clopper_pearson(
+        in_scores, out_scores, significance=0.05, delta=1e-5
+    )
     assert eps_cp > 0, "Clopper-Pearson should also detect leakage"
 
 

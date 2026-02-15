@@ -325,7 +325,9 @@ class TestEdgeCases:
 
     def test_single_score_each(self):
         """Test with single score in each group."""
-        eps = epsilon_clopper_pearson([10], [0], significance=0.05, delta=0, threshold=5)
+        eps = epsilon_clopper_pearson(
+            [10], [0], significance=0.05, delta=0, threshold=5
+        )
         assert eps >= 0
 
     def test_large_separation(self):

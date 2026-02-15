@@ -288,11 +288,7 @@ class TestOneRunPValue:
 
     def test_with_delta(self):
         """Test p-value computation with delta > 0."""
-        p_delta0 = one_run_p_value(
-            m=100, n_guess=50, n_correct=30, eps=1.0, delta=0
-        )
-        p_delta = one_run_p_value(
-            m=100, n_guess=50, n_correct=30, eps=1.0, delta=0.01
-        )
+        p_delta0 = one_run_p_value(m=100, n_guess=50, n_correct=30, eps=1.0, delta=0)
+        p_delta = one_run_p_value(m=100, n_guess=50, n_correct=30, eps=1.0, delta=0.01)
         # With delta, p-value should increase (harder to reject)
         assert p_delta >= p_delta0

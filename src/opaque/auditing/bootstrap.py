@@ -46,11 +46,8 @@ class BootstrapParams:
     Example:
         >>> # 95% confidence interval with bias correction (default)
         >>> params = BootstrapParams.confidence_interval(confidence=0.95, seed=42)
-        >>> auditor = CanaryScoreAuditor(in_scores, out_scores)
-        >>> eps, (eps_lo, eps_hi) = auditor.epsilon_clopper_pearson(
-        ...     threshold_strategy=Split(),
-        ...     bootstrap_params=params,
-        ... )
+        >>> from opaque.auditing import bootstrap, attack_auroc
+        >>> auroc_ci = bootstrap(attack_auroc, in_scores, out_scores, params)
 
         >>> # Custom quantiles (e.g., 90% CI)
         >>> params = BootstrapParams(
@@ -78,14 +75,10 @@ class BootstrapParams:
             raise ValueError("quantiles cannot be empty")
 
         if not np.all((0 < quantile_arr) & (quantile_arr < 1)):
-            raise ValueError(
-                f"quantiles must be in (0, 1), got {self.quantiles}"
-            )
+            raise ValueError(f"quantiles must be in (0, 1), got {self.quantiles}")
 
         if self.num_samples <= 0:
-            raise ValueError(
-                f"num_samples must be positive, got {self.num_samples}"
-            )
+            raise ValueError(f"num_samples must be positive, got {self.num_samples}")
 
         if self.acceleration and not self.bias_correction:
             raise ValueError("Cannot use acceleration without bias correction")
@@ -93,8 +86,10 @@ class BootstrapParams:
     @classmethod
     def confidence_interval(
         cls,
-        num_samples: int = 1000,
         confidence: float = 0.95,
+        num_samples: int = 1000,
+        bias_correction: bool = True,
+        acceleration: bool = False,
         seed: int | None = None,
     ) -> "BootstrapParams":
         """Create BootstrapParams for a symmetric confidence interval.
@@ -103,9 +98,11 @@ class BootstrapParams:
         (e.g., 95%, 99%) without manually computing the quantiles.
 
         Args:
-            num_samples: Number of bootstrap resamples. Default: 1000.
             confidence: Desired confidence level in (0, 1). For example, 0.95
                 for a 95% confidence interval. Default: 0.95.
+            num_samples: Number of bootstrap resamples. Default: 1000.
+            bias_correction: If True, apply bias correction. Default: True.
+            acceleration: If True, apply acceleration (BCa). Default: False.
             seed: Random seed for reproducibility. If None, a non-deterministic
                 seed is chosen.
 
@@ -118,20 +115,26 @@ class BootstrapParams:
             >>> # Equivalent to:
             >>> # params = BootstrapParams(quantiles=(0.025, 0.975))
 
-            >>> # 99% confidence interval
-            >>> params = BootstrapParams.confidence_interval(confidence=0.99)
-            >>> # Equivalent to:
-            >>> # params = BootstrapParams(quantiles=(0.005, 0.995))
+            >>> # 99% CI with BCa acceleration
+            >>> params = BootstrapParams.confidence_interval(
+            ...     confidence=0.99,
+            ...     bias_correction=True,
+            ...     acceleration=True,
+            ... )
         """
         if not 0 < confidence < 1:
-            raise ValueError(
-                f"confidence must be in (0, 1), got {confidence}"
-            )
+            raise ValueError(f"confidence must be in (0, 1), got {confidence}")
 
         significance = 1 - confidence
         quantiles = (significance / 2, 1 - significance / 2)
 
-        return cls(num_samples=num_samples, quantiles=quantiles, seed=seed)
+        return cls(
+            num_samples=num_samples,
+            quantiles=quantiles,
+            bias_correction=bias_correction,
+            acceleration=acceleration,
+            seed=seed,
+        )
 
 
 __all__ = ["BootstrapParams"]

@@ -1,5 +1,7 @@
 """Tests for threshold selection strategies."""
 
+import dataclasses
+
 import pytest
 
 from opaque.auditing.threshold import Bonferroni, Explicit, MultiSplit, Split
@@ -16,7 +18,7 @@ class TestExplicit:
     def test_frozen(self):
         """Test that Explicit is frozen (immutable)."""
         strategy = Explicit(threshold=0.5)
-        with pytest.raises(Exception):  # FrozenInstanceError in Python 3.10+
+        with pytest.raises(dataclasses.FrozenInstanceError):
             strategy.threshold = 0.7
 
 
@@ -49,7 +51,7 @@ class TestSplit:
     def test_frozen(self):
         """Test that Split is frozen."""
         strategy = Split(threshold_estimation_frac=0.3)
-        with pytest.raises(Exception):
+        with pytest.raises(dataclasses.FrozenInstanceError):
             strategy.threshold_estimation_frac = 0.5
 
 
@@ -65,9 +67,7 @@ class TestMultiSplit:
 
     def test_creation_custom(self):
         """Test creating MultiSplit with custom values."""
-        strategy = MultiSplit(
-            num_samples=50, threshold_estimation_frac=0.3, seed=42
-        )
+        strategy = MultiSplit(num_samples=50, threshold_estimation_frac=0.3, seed=42)
         assert strategy.num_samples == 50
         assert strategy.threshold_estimation_frac == 0.3
         assert strategy.seed == 42
@@ -89,7 +89,7 @@ class TestMultiSplit:
     def test_frozen(self):
         """Test that MultiSplit is frozen."""
         strategy = MultiSplit(num_samples=50)
-        with pytest.raises(Exception):
+        with pytest.raises(dataclasses.FrozenInstanceError):
             strategy.num_samples = 100
 
 

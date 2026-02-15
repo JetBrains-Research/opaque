@@ -327,9 +327,9 @@ eps_ci = bootstrap(
 class BootstrapParams:
     num_samples: int = 1000
     quantiles: tuple[float, ...] = (0.025, 0.975)
-    seed: int | None = None
-    bias_correction: bool = False
+    bias_correction: bool = True
     acceleration: bool = False
+    seed: int | None = None
 ```
 
 Configuration for bootstrap confidence intervals.
@@ -340,9 +340,9 @@ Configuration for bootstrap confidence intervals.
 |-------|------|---------|-------------|
 | `num_samples` | `int` | `1000` | Number of bootstrap resamples |
 | `quantiles` | `tuple[float, ...]` | `(0.025, 0.975)` | Quantiles to compute |
-| `seed` | `int \| None` | `None` | Random seed for reproducibility |
-| `bias_correction` | `bool` | `False` | Use bias-corrected bootstrap |
+| `bias_correction` | `bool` | `True` | Use bias-corrected bootstrap |
 | `acceleration` | `bool` | `False` | Use accelerated (BCa) bootstrap |
+| `seed` | `int \| None` | `None` | Random seed for reproducibility |
 
 **Factory method**:
 ```python
@@ -351,7 +351,7 @@ def confidence_interval(
     cls,
     confidence: float = 0.95,
     num_samples: int = 1000,
-    bias_correction: bool = False,
+    bias_correction: bool = True,
     acceleration: bool = False,
     seed: int | None = None,
 ) -> BootstrapParams:

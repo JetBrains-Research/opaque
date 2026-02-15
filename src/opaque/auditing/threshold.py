@@ -47,11 +47,8 @@ class Bonferroni(ThresholdStrategy):
     - Slower (tests all thresholds)
 
     Example:
-        >>> auditor = CanaryScoreAuditor(in_scores, out_scores)
-        >>> eps = auditor.epsilon_clopper_pearson(
-        ...     threshold_strategy=Bonferroni(),
-        ...     significance=0.05,
-        ... )
+        >>> # Bonferroni correction is the default when threshold is not specified
+        >>> eps = epsilon_clopper_pearson(in_scores, out_scores, significance=0.05)
     """
 
 
@@ -72,10 +69,8 @@ class Explicit(ThresholdStrategy):
 
     Example:
         >>> # Use threshold from theoretical analysis
-        >>> auditor = CanaryScoreAuditor(in_scores, out_scores)
-        >>> eps = auditor.epsilon_clopper_pearson(
-        ...     threshold_strategy=Explicit(threshold=0.5),
-        ...     significance=0.05,
+        >>> eps = epsilon_clopper_pearson(
+        ...     in_scores, out_scores, significance=0.05, threshold=0.5
         ... )
     """
 
@@ -101,13 +96,10 @@ class Split(ThresholdStrategy):
         seed: Random seed for reproducible splitting. If None, a non-deterministic
             seed is chosen.
 
-    Example:
-        >>> # Use 50% of data for threshold selection
-        >>> auditor = CanaryScoreAuditor(in_scores, out_scores)
-        >>> eps = auditor.epsilon_clopper_pearson(
-        ...     threshold_strategy=Split(threshold_estimation_frac=0.5, seed=42),
-        ...     significance=0.05,
-        ... )
+    Note:
+        Split threshold selection is not currently exposed in the functional API.
+        Use Bonferroni (default, no threshold argument) or Explicit (threshold=...)
+        strategies instead.
     """
 
     threshold_estimation_frac: float = 0.5
@@ -148,13 +140,10 @@ class MultiSplit(ThresholdStrategy):
     Reference:
         Meinshausen et al. (2009), https://arxiv.org/pdf/0811.2177
 
-    Example:
-        >>> # Use 100 splits for stable estimates
-        >>> auditor = CanaryScoreAuditor(in_scores, out_scores)
-        >>> eps = auditor.epsilon_clopper_pearson(
-        ...     threshold_strategy=MultiSplit(num_samples=100, seed=42),
-        ...     significance=0.05,
-        ... )
+    Note:
+        MultiSplit threshold selection is not currently exposed in the functional API.
+        Use Bonferroni (default, no threshold argument) or Explicit (threshold=...)
+        strategies instead.
     """
 
     num_samples: int = 100
