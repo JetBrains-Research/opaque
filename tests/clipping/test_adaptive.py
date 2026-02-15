@@ -220,14 +220,16 @@ class TestAdaptiveClippedGrad:
 
     def test_different_target_quantiles(self):
         """Test that different target quantiles affect adaptation."""
+        # Use fixed seed for reproducibility in CI
+        torch.manual_seed(42)
 
         def loss_fn(params, x, y):
             pred = x @ params
             return ((pred - y) ** 2).mean()
 
         params = torch.randn(10, requires_grad=False)
-        batch_x = torch.randn(8, 10)
-        batch_y = torch.randn(8)
+        batch_x = torch.randn(16, 10)  # Larger batch for more stable statistics
+        batch_y = torch.randn(16)
 
         # Low target quantile (aim to clip fewer gradients)
         grad_fn_low, clip_state_low = adaptive_clipped_grad(
@@ -245,8 +247,8 @@ class TestAdaptiveClippedGrad:
             batch_argnums=(1, 2),
         )
 
-        # Run 10 steps
-        for _ in range(10):
+        # Run 20 steps for more reliable convergence
+        for _ in range(20):
             _, clip_state_low = grad_fn_low(
                 params, batch_x, batch_y, state=clip_state_low
             )
@@ -354,6 +356,53 @@ class TestAdaptiveClippedGrad:
 
         assert noisy_grads.shape == grads.shape
         assert not torch.allclose(noisy_grads, grads)  # Noise added
+
+    def test_microbatching_produces_identical_results(self):
+        """Test that microbatching produces identical gradients and state updates."""
+
+        def loss_fn(params, x, y):
+            pred = x @ params
+            return ((pred - y) ** 2).mean()
+
+        # Create two functions with same config, one with microbatching
+        grad_fn_no_mb, state_no_mb = adaptive_clipped_grad(
+            loss_fn,
+            initial_clip_norm=1.0,
+            target_quantile=0.5,
+            learning_rate=0.2,
+            batch_argnums=(1, 2),
+            microbatch_size=None,  # No microbatching
+        )
+
+        grad_fn_mb, state_mb = adaptive_clipped_grad(
+            loss_fn,
+            initial_clip_norm=1.0,
+            target_quantile=0.5,
+            learning_rate=0.2,
+            batch_argnums=(1, 2),
+            microbatch_size=8,  # Process in microbatches of 8
+        )
+
+        # Test over multiple steps to verify state updates match
+        params = torch.randn(10, requires_grad=False)
+        batch_x = torch.randn(32, 10)
+        batch_y = torch.randn(32)
+
+        for step in range(3):
+            grads_no_mb, state_no_mb = grad_fn_no_mb(
+                params, batch_x, batch_y, state=state_no_mb
+            )
+            grads_mb, state_mb = grad_fn_mb(params, batch_x, batch_y, state=state_mb)
+
+            # Gradients should be identical
+            torch.testing.assert_close(grads_mb, grads_no_mb, rtol=1e-5, atol=1e-6)
+
+            # State updates should be identical
+            assert state_mb.step == state_no_mb.step == step + 1
+            assert math.isclose(state_mb.clip_norm, state_no_mb.clip_norm, rel_tol=1e-5)
+            assert math.isclose(
+                state_mb.clipping_rate, state_no_mb.clipping_rate, rel_tol=1e-5
+            )
 
 
 class TestInputValidation:
