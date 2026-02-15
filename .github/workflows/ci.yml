@@ -90,13 +90,84 @@ jobs:
           name: codecov-compat-gpu-py${{ matrix.python-version }}
           fail_ci_if_error: false
 
-  lint:
-    name: Lint and Format Check
+  autoformat:
+    name: Auto-format (PRs only)
     runs-on: ubuntu-latest
+    # Only run on PRs, not on main branch pushes
+    if: github.event_name == 'pull_request'
+
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          uv sync
+
+      - name: Run ruff format
+        run: |
+          uv run ruff format src/ tests/
+
+      - name: Run ruff check with autofixes
+        run: |
+          uv run ruff check --fix src/ tests/ || true
+
+      - name: Check for changes
+        id: git-check
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "changes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit and push changes
+        if: steps.git-check.outputs.changes == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add -A
+          git commit -m "Auto-format with ruff
+
+          🤖 Automated formatting by GitHub Actions"
+          git push
+
+  lint:
+    name: Lint and Format Check
+    runs-on: ubuntu-latest
+    # Wait for autoformat on PRs, run immediately on main
+    needs: [autoformat]
+    if: always() && (needs.autoformat.result == 'success' || needs.autoformat.result == 'skipped')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # On PRs, get the latest commit (may have been updated by autoformat)
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Pull latest changes (in case autoformat pushed)
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin ${{ github.head_ref }}
+          git checkout ${{ github.head_ref }}
+          git pull origin ${{ github.head_ref }} || true
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
