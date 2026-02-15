@@ -114,9 +114,13 @@ def _matrix_factorization_noise(
         ``(noise_fn, state)`` where ``noise_fn(grads, state) -> (noisy, state)``.
     """
     if isinstance(noising, torch.Tensor):
-        return _dense_mf_noise(grad_template, noising, stddev=stddev, gen=gen, dtype=dtype)
+        return _dense_mf_noise(
+            grad_template, noising, stddev=stddev, gen=gen, dtype=dtype
+        )
     elif isinstance(noising, streaming_matrix.StreamingMatrix):
-        return _streaming_mf_noise(grad_template, noising, stddev=stddev, gen=gen, dtype=dtype)
+        return _streaming_mf_noise(
+            grad_template, noising, stddev=stddev, gen=gen, dtype=dtype
+        )
     else:
         raise TypeError(f"Unsupported noising type: {type(noising)}")
 
@@ -189,9 +193,7 @@ def _streaming_mf_noise(
         s_state = st.inner_state
 
         iid_noise = _iid_normal_noise(clipped_grads, stddev, generator=g, dtype=dtype)
-        corr_noise, new_streaming_state = noising.multiply_next(
-            iid_noise, s_state
-        )
+        corr_noise, new_streaming_state = noising.multiply_next(iid_noise, s_state)
         noisy_grads = tree_map(
             lambda grad, n: (grad + n).to(grad.dtype),
             clipped_grads,

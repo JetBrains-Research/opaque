@@ -49,7 +49,10 @@ class TestDPFTRLTrainingLoop:
         model = nn.Linear(5, 1, bias=False)
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
         noise_fn, state = custom_mf_noise(
-            self._make_template(model), identity(), stddev=0.1, generator=42,
+            self._make_template(model),
+            identity(),
+            stddev=0.1,
+            generator=42,
         )
 
         x = torch.randn(50, 5)
@@ -68,7 +71,10 @@ class TestDPFTRLTrainingLoop:
         coefs = optimal_max_error_strategy_coefs(steps)
         noising = inverse_as_streaming_matrix(coefs)
         noise_fn, state = custom_mf_noise(
-            self._make_template(model), noising, stddev=0.1, generator=42,
+            self._make_template(model),
+            noising,
+            stddev=0.1,
+            generator=42,
         )
 
         x = torch.randn(50, 5)
@@ -86,7 +92,10 @@ class TestDPFTRLTrainingLoop:
         steps = 5
         noising = torch.eye(steps, dtype=torch.float64)
         noise_fn, state = custom_mf_noise(
-            self._make_template(model), noising, stddev=0.1, generator=42,
+            self._make_template(model),
+            noising,
+            stddev=0.1,
+            generator=42,
         )
 
         x = torch.randn(50, 5)
@@ -102,7 +111,10 @@ class TestDPFTRLTrainingLoop:
         model = nn.Linear(5, 1, bias=False)
         optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
         noise_fn, state = custom_mf_noise(
-            self._make_template(model), identity(), stddev=0.1, generator=42,
+            self._make_template(model),
+            identity(),
+            stddev=0.1,
+            generator=42,
         )
 
         x = torch.randn(50, 5)
@@ -122,7 +134,10 @@ class TestDPFTRLTrainingLoop:
         )
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
         noise_fn, state = custom_mf_noise(
-            self._make_template(model), identity(), stddev=0.1, generator=42,
+            self._make_template(model),
+            identity(),
+            stddev=0.1,
+            generator=42,
         )
 
         x = torch.randn(50, 10)
@@ -140,7 +155,10 @@ class TestDPFTRLTrainingLoop:
             model = nn.Linear(5, 1, bias=False)
             optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
             noise_fn, state = custom_mf_noise(
-                self._make_template(model), identity(), stddev=1.0, generator=42,
+                self._make_template(model),
+                identity(),
+                stddev=1.0,
+                generator=42,
             )
 
             x = torch.randn(4, 5)
@@ -174,7 +192,10 @@ class TestBandMFvsDPSGD:
         coefs = optimal_max_error_strategy_coefs(steps)
         noising = inverse_as_streaming_matrix(coefs)
         noise_fn, state = custom_mf_noise(
-            self._make_template(model), noising, stddev=0.1, generator=42,
+            self._make_template(model),
+            noising,
+            stddev=0.1,
+            generator=42,
         )
 
         losses = _train_loop(model, optimizer, noise_fn, state, x, y, steps)
@@ -199,7 +220,10 @@ class TestBandMFvsDPSGD:
         model_sgd = nn.Linear(5, 1, bias=False)
         opt_sgd = torch.optim.SGD(model_sgd.parameters(), lr=0.01)
         noise_sgd, state_sgd = custom_mf_noise(
-            self._make_template(model_sgd), identity(), stddev=stddev, generator=42,
+            self._make_template(model_sgd),
+            identity(),
+            stddev=stddev,
+            generator=42,
         )
         losses_sgd = _train_loop(model_sgd, opt_sgd, noise_sgd, state_sgd, x, y, steps)
 
@@ -210,7 +234,10 @@ class TestBandMFvsDPSGD:
         coefs = optimal_max_error_strategy_coefs(steps)
         noising = inverse_as_streaming_matrix(coefs)
         noise_mf, state_mf = custom_mf_noise(
-            self._make_template(model_mf), noising, stddev=stddev, generator=43,
+            self._make_template(model_mf),
+            noising,
+            stddev=stddev,
+            generator=43,
         )
         losses_mf = _train_loop(model_mf, opt_mf, noise_mf, state_mf, x, y, steps)
 

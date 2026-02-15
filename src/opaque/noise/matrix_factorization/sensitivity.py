@@ -17,7 +17,6 @@ import torch
 
 from . import checks
 
-
 __all__ = [
     "single_participation_sensitivity",
     "max_participation_for_linear_fn",

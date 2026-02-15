@@ -20,7 +20,10 @@ from opaque.noise.matrix_factorization.buffered_toeplitz import (
     inverse_as_streaming_matrix,
     optimize,
 )
-from opaque.noise.matrix_factorization.noise import MFNoiseState, _matrix_factorization_noise
+from opaque.noise.matrix_factorization.noise import (
+    MFNoiseState,
+    _matrix_factorization_noise,
+)
 
 
 def blt_mf_noise(

@@ -814,7 +814,9 @@ class LossFn:
         return penalty
 
 
-def loss(loss_fn: LossFn, blt: BufferedToeplitz, skip_checks: bool = False) -> torch.Tensor:
+def loss(
+    loss_fn: LossFn, blt: BufferedToeplitz, skip_checks: bool = False
+) -> torch.Tensor:
     """Returns the loss (not including penalties).
 
     Args:

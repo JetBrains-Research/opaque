@@ -178,9 +178,7 @@ def inverse_as_streaming_matrix(
         new_bufs[k] = xi
         return xi * col_norm, (index + 1, new_bufs)
 
-    return streaming_matrix.StreamingMatrix.from_array_implementation(
-        init_fn, next_fn
-    )
+    return streaming_matrix.StreamingMatrix.from_array_implementation(init_fn, next_fn)
 
 
 def minsep_sensitivity_squared(

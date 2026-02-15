@@ -17,7 +17,10 @@ import torch
 
 from opaque.noise.gaussian_noise import _resolve_generator
 from opaque.noise.matrix_factorization.dense import optimize
-from opaque.noise.matrix_factorization.noise import MFNoiseState, _matrix_factorization_noise
+from opaque.noise.matrix_factorization.noise import (
+    MFNoiseState,
+    _matrix_factorization_noise,
+)
 
 
 def dense_mf_noise(

@@ -20,7 +20,6 @@ from scipy.linalg import toeplitz as scipy_toeplitz
 
 from . import checks, optimization, sensitivity, streaming_matrix
 
-
 __all__ = [
     "optimize",
     "inverse_as_streaming_matrix",

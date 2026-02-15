@@ -55,7 +55,10 @@ def identity_mf_noise(
         ...     noisy_grads, state = noise_fn(clipped_grads, state)
     """
     return custom_mf_noise(
-        grad_template, identity(), stddev=stddev, generator=generator,
+        grad_template,
+        identity(),
+        stddev=stddev,
+        generator=generator,
     )
 
 

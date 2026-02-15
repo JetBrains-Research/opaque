@@ -15,9 +15,14 @@ from typing import Any
 import torch
 
 from opaque.noise.gaussian_noise import _resolve_generator
-from opaque.noise.matrix_factorization.noise import MFNoiseState, _matrix_factorization_noise
+from opaque.noise.matrix_factorization.noise import (
+    MFNoiseState,
+    _matrix_factorization_noise,
+)
 from opaque.noise.matrix_factorization.toeplitz import (
     inverse_as_streaming_matrix,
+)
+from opaque.noise.matrix_factorization.toeplitz import (
     optimize as optimize_toeplitz,
 )
 
