@@ -7,10 +7,41 @@ Opaque supports distributed training using PyTorch's **DistributedDataParallel (
 Distributed training with DP requires careful handling because:
 
 1. **Per-example gradients** must be computed before averaging across GPUs
-2. **Noise is added locally** on each GPU to maintain DP guarantees
+2. **Noise is added independently on EVERY GPU** to maintain DP guarantees
 3. **Gradient aggregation** happens after clipping and noise injection
 
 Opaque provides utilities for distributed DP-SGD that maintain privacy guarantees while scaling to multiple GPUs.
+
+!!! danger "Critical: Noise Must Be Applied on EVERY Device"
+    
+    For DP guarantees to hold in distributed training, **every device must independently apply noise**:
+    
+    ```python
+    # ✅ CORRECT: Each device creates and applies its own noise function
+    noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42 + rank)
+    # Each rank now has its own noise_fn that it will apply
+    
+    for batch in dataloader:
+        grads = clipped_grad_fn(params, batch)
+        noisy_grads = noise_fn(grads, noise_state)  # THIS HAPPENS ON EVERY DEVICE
+        noisy_grads = all_reduce_gradients(noisy_grads)
+        params = optimizer_update(params, noisy_grads)
+    ```
+    
+    ```python
+    # ❌ WRONG: Only rank 0 applies noise (breaks DP for other devices)
+    if rank == 0:
+        noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42)
+        noisy_grads, noise_state = noise_fn(grads, noise_state)
+        dist.broadcast(noisy_grads)  # ← DON'T DO THIS!
+    # Other ranks receive noisy_grads but didn't apply DP → No privacy!
+    ```
+    
+    **Why this matters:**
+    - DP guarantees are **per-device per-batch**
+    - If device i doesn't apply noise, batch i has **zero privacy**
+    - Noise must be applied independently (different seed) or synchronized (same seed), but always locally on every device
+    - Never compute noise on rank 0 and broadcast it
 
 ## Quick Start
 
@@ -107,9 +138,35 @@ noisy_grads = noise_fn(grads, noise_state)  # Same seed on all devices
 ```
 
 - All devices use **same noise** (same seed on all ranks: `generator=seed`)
+- **IMPORTANT**: Each device independently generates the noise with the same seed
+- Each device applies `noise_fn()` locally (not rank 0 broadcasting to others)
 - Noise added **after** aggregation
 - **Standard DP-SGD accounting** (mixture Gaussian)
 - Works with **all noise functions**
+
+!!! info "What 'Shared Noise' Really Means"
+    
+    **Shared seed ≠ Centralized generation**
+    
+    ```python
+    # ✅ CORRECT: Each device uses same seed, independently applies noise
+    seed = 42
+    noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=seed)
+    #                                                        ↑
+    #                                    SAME SEED on all devices
+    
+    for batch in dataloader:
+        grads = clipped_grad_fn(params, batch)
+        grads = all_reduce_gradients(grads)  # Aggregate first
+        
+        # Each device independently applies the same noise function
+        noisy_grads, noise_state = noise_fn(grads, noise_state)
+        # ↓ Device 0, 1, 2, 3 all call this, with same seed → same noise
+        
+        params = optimizer_update(params, noisy_grads)
+    ```
+    
+    Because all devices use the same seed, they independently generate **the same noise**. This is different from (and better than) broadcasting rank 0's noise to all ranks.
 
 !!! tip "Which Strategy?"
     **Strategy 1 (independent noise)** typically gives better privacy-utility tradeoffs due to amplification.
@@ -117,12 +174,17 @@ noisy_grads = noise_fn(grads, noise_state)  # Same seed on all devices
 
 ### Privacy Guarantees
 
-Both strategies maintain DP guarantees:
+Both strategies maintain DP guarantees **only if noise is applied on every device**:
 
+- **Per-device DP**: Each GPU must independently apply DP mechanisms
+  - Device i: Compute clipped grads on batch i → Apply noise on batch i → Contributes to aggregate
+  - If device i skips noise: **Batch i has zero privacy** (breaks DP!)
 - Each GPU processes **disjoint batches** (no data overlap)
 - Clipping happens **per-example** before aggregation
 - Noise scale is appropriate for effective batch size
 - Gradient aggregation is **post-processing** (doesn't affect privacy)
+
+**Critical Implementation Detail**: The noise function `noise_fn()` must be called on **every** device in the training loop. It is **never** called on rank 0 and broadcast to others.
 
 The effective batch size for accounting: `local_batch_size × num_gpus`
 
