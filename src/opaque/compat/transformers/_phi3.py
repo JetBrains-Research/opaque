@@ -149,18 +149,32 @@ def vmap_phi3_eager_attention_forward(
     if attn_output.shape[0] == 1:
         attn_output = attn_output.squeeze(0)
 
-    return attn_output, attn_weights if output_attentions else None
+    # Return (attn_output, attn_weights_or_None, past_key_value) to match
+    # the standard attention forward signature that some Phi-3 variants expect.
+    return attn_output, (attn_weights if output_attentions else None), past_key_value
 
 
 def apply_rotary_pos_emb(
     x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor = None
 ) -> torch.Tensor:
     """Apply rotary position embeddings."""
-    # This is a simplified version - the actual implementation depends on
-    # how rotary embedding is implemented in the specific Phi-3 version
+    # Simplified, numerically-stable rotary embedding helper suitable for
+    # vmap-compatible patches. This is NOT a full replacement of the model's
+    # rotary implementation, but preserves the interface and shape.
     if sin is None:
-        sin = 1 - cos**2  # Simplified
-    return x * cos + x * sin
+        # Compute sin from cos using unit-circle relationship with clamping
+        sin = torch.sqrt(torch.clamp(1.0 - cos.pow(2), min=0.0))
+
+    # Typical rotary implementations rotate pairs of elements in the last dim.
+    # Implement rotate-half: split last dim into two and apply complex rotation.
+    if x.size(-1) % 2 != 0:
+        # If head_dim is odd, fall back to elementwise mix to avoid shape errors.
+        return x * cos + x * sin
+
+    x1, x2 = x.chunk(2, dim=-1)
+    out1 = x1 * cos - x2 * sin
+    out2 = x1 * sin + x2 * cos
+    return torch.cat([out1, out2], dim=-1)
 
 
 def vmap_phi3_attention_forward(
