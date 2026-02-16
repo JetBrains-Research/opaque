@@ -39,7 +39,7 @@ from peft import LoraConfig, get_peft_model
 from transformers import AutoConfig, AutoModelForCausalLM
 
 from opaque.clipping import clipped_grad
-from opaque.noise import add_gaussian_noise
+from opaque.noise import gaussian_noise
 from opaque.utils import make_functional
 
 
@@ -281,11 +281,7 @@ def main():
         fixed_clip_norm = initial_clip_norm  # Use constant clip norm
         print(f"   Using fixed clip norm (no adaptation): {fixed_clip_norm}")
 
-    # RNG for noise
-    if device.type == "cpu":
-        rng = torch.Generator().manual_seed(42)
-    else:
-        rng = torch.Generator(device=device).manual_seed(42)
+    # Note: Noise generation uses stateful API with per-step seed for reproducibility
 
     # Pre-create clipped_grad function if using fixed clipping (avoids recreation)
     if not use_adaptive_clipping:
@@ -376,11 +372,10 @@ def main():
                     if global_step <= 2:
                         print(f"    gradient computation: {grad_compute_time:.1f}s")
 
-                # 2. Add Gaussian noise for DP
+                # 2. Add Gaussian noise for DP (stateful API)
                 stddev = noise_multiplier * current_clip_norm
-                noisy_grads = add_gaussian_noise(
-                    grads_tuple, stddev=stddev, generator=rng
-                )
+                noise_fn, noise_state = gaussian_noise(stddev=stddev, generator=42 + global_step)
+                noisy_grads, noise_state = noise_fn(grads_tuple, noise_state)
 
                 # 3. Optimizer step
                 if use_adaptive_clipping:

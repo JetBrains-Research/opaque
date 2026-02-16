@@ -65,9 +65,11 @@ class AdaptiveClipState(ClipState):
             L2 sensitivity (float).
 
         Example:
+            >>> from opaque.noise import gaussian_noise
             >>> grad, clip_state = grad_fn(params, x, y, state=clip_state)
             >>> sens = clip_state.sensitivity()
-            >>> noisy_grad = add_gaussian_noise(grad, noise_multiplier * sens)
+            >>> noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * sens)
+            >>> noisy_grad, noise_state = noise_fn(grad, noise_state)
         """
         l2_bound = 1.0 if self.rescale_to_unit_norm else self.clip_norm
 
@@ -136,7 +138,7 @@ def adaptive_clipped_grad(
     Example:
         >>> import torch
         >>> from opaque.clipping.stateful import adaptive_clipped_grad
-        >>> from opaque.noise import add_gaussian_noise
+        >>> from opaque.noise import gaussian_noise
         >>> import torchopt
         >>>
         >>> def loss_fn(params, x, y):
@@ -156,13 +158,15 @@ def adaptive_clipped_grad(
         >>> optimizer = torchopt.adamw(lr=1e-3)
         >>> opt_state = optimizer.init(params)
         >>>
+        >>> # Create noise function once
+        >>> noise_fn, noise_state = gaussian_noise(stddev=1.1 * clip_state.clip_norm, generator=42)
+        >>>
         >>> for batch_x, batch_y in dataloader:
         ...     # Compute clipped gradients - state passed explicitly
         ...     grad, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
         ...
         ...     # Add DP noise scaled to current threshold
-        ...     noise_std = 1.1 * clip_state.clip_norm
-        ...     noisy_grad = add_gaussian_noise(grad, noise_std)
+        ...     noisy_grad, noise_state = noise_fn(grad, noise_state)
         ...
         ...     # Optimizer step
         ...     updates, opt_state = optimizer.update(noisy_grad, opt_state, params=params)
