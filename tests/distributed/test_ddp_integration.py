@@ -231,7 +231,24 @@ class TestDeterministicNoise:
     """Test deterministic noise generation in distributed mode."""
 
     def test_different_noise_per_rank(self, device):
-        """Test that each rank gets different noise."""
+        """Test that each rank independently applies noise (critical for DP).
+        
+        This test verifies that noise is applied independently on every device,
+        not just rank 0. This is CRITICAL for DP guarantees to hold.
+        
+        Pattern (CORRECT):
+            Each device creates its own noise_fn and applies it independently
+            noise_fn = gaussian_noise(stddev, generator=seed + rank)
+            noisy = noise_fn(grads)  # <- Applied on ALL devices
+        
+        Anti-pattern (WRONG - breaks DP):
+            Only rank 0 applies noise and broadcasts to others
+            if rank == 0:
+                noisy = noise_fn(grads)
+                broadcast(noisy)  # <- Other devices have NO DP!
+        
+        Reference: docs/user-guide/distributed.md "Critical: Noise Must Be Applied on EVERY Device"
+        """
         from opaque.distributed import get_rank
         from opaque.noise import gaussian_noise
 
@@ -240,7 +257,7 @@ class TestDeterministicNoise:
 
         seed = 42
 
-        # Create noise function (offset seed by rank for per-rank determinism)
+        # CORRECT PATTERN: Each rank creates its own noise function with unique seed
         gen = seed + get_rank() if isinstance(seed, int) else seed
         noise_fn, state = gaussian_noise(1.0, generator=gen)
 
@@ -249,16 +266,16 @@ class TestDeterministicNoise:
             "bias": torch.zeros(5, device=device),
         }
 
-        # Apply noise
-        noisy = noise_fn(grads, state)
+        # CRITICAL: Each device applies noise independently
+        # This happens on rank 0, rank 1, rank 2, rank 3, etc.
+        # Not just on rank 0!
+        noisy, state = noise_fn(grads, state)
 
-        # Verify noise was added (not all zeros)
-        assert not torch.allclose(noisy["weight"], torch.zeros_like(noisy["weight"]))
-        assert not torch.allclose(noisy["bias"], torch.zeros_like(noisy["bias"]))
-
-        # Each rank should have different noise
-        # (We can't easily verify this without communication, but the test
-        # ensures no errors occur)
+        # Verify noise was actually added on this rank
+        assert not torch.allclose(noisy["weight"], torch.zeros_like(noisy["weight"])), \
+            f"Rank {get_rank()}: Noise was not applied! DP guarantee broken!"
+        assert not torch.allclose(noisy["bias"], torch.zeros_like(noisy["bias"])), \
+            f"Rank {get_rank()}: Noise was not applied! DP guarantee broken!"
 
 
 class TestEndToEndDPTraining:

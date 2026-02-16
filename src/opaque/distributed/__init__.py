@@ -54,7 +54,7 @@ import torch.distributed as dist
 
 __all__ = [
     # Core utilities
-    "is_initialized",
+    "is_distributed",
     "get_rank",
     "get_world_size",
     "all_reduce",
@@ -75,7 +75,7 @@ __all__ = [
 ]
 
 
-def is_initialized() -> bool:
+def is_distributed() -> bool:
     """Check if PyTorch distributed training is initialized.
 
     Returns:
@@ -86,12 +86,12 @@ def is_initialized() -> bool:
         >>> import opaque.distributed as dist_utils
         >>>
         >>> # Before init
-        >>> dist_utils.is_initialized()
+        >>> dist_utils.is_distributed()
         False
         >>>
         >>> # After init
         >>> dist.init_process_group(backend='nccl')
-        >>> dist_utils.is_initialized()
+        >>> dist_utils.is_distributed()
         True
     """
     return dist.is_available() and dist.is_initialized()
@@ -110,7 +110,7 @@ def get_rank() -> int:
         >>> print(f"Process rank: {rank}")
         Process rank: 0
     """
-    if is_initialized():
+    if is_distributed():
         return dist.get_rank()
     return 0
 
@@ -128,7 +128,7 @@ def get_world_size() -> int:
         >>> print(f"Training on {world_size} devices")
         Training on 1 devices
     """
-    if is_initialized():
+    if is_distributed():
         return dist.get_world_size()
     return 1
 
@@ -174,7 +174,7 @@ def all_reduce(
         >>> dist_utils.all_reduce(t, op="mean")
         >>> print(t)  # [1.0, 2.0, 3.0] (average of rank 0 and rank 1)
     """
-    if not is_initialized():
+    if not is_distributed():
         raise RuntimeError(
             "torch.distributed is not initialized. "
             "Call torch.distributed.init_process_group() first."
@@ -215,7 +215,7 @@ def barrier() -> None:
         >>> # All processes continue together
         >>> train(model)
     """
-    if is_initialized():
+    if is_distributed():
         dist.barrier()
 
 

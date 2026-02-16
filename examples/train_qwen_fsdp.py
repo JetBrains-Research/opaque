@@ -313,13 +313,14 @@ def main():
     if is_main:
         print(f"   Created in {time.time() - t0:.1f}s")
     
-    # Create noise function (different seed per rank for independent noise)
+    # Create noise function
+    # When distributed is detected, automatically uses same seed across all ranks
+    # (no need to manually manage seed per rank!)
     if is_main:
         print("\n   Creating noise function...")
     
     stddev = noise_multiplier * initial_clip_norm
-    noise_gen = torch.Generator().manual_seed(42 + rank)
-    noise_fn, noise_state = gaussian_noise(stddev=stddev, generator=noise_gen)
+    noise_fn, noise_state = gaussian_noise(stddev=stddev)
     
     # Training loop
     if is_main:
@@ -358,15 +359,19 @@ def main():
                     state=clip_state,
                 )
                 
-                # 2. Add noise (different noise per rank)
-                noisy_grads, noise_state = noise_fn(grads_tuple, noise_state)
-                
-                # 3. If distributed, average gradients across ranks
+                # 2. Aggregate clipped gradients across ranks
                 if distributed:
                     # FSDP handles gradient synchronization automatically
-                    # But for functional API, we need to average manually
+                    # But for functional API, we need to aggregate manually
                     from opaque.distributed import sum_gradients
-                    noisy_grads = sum_gradients(noisy_grads)
+                    grads_tuple = sum_gradients(grads_tuple)
+                
+                # 3. Add noise (same seed on all ranks for standard DP-SGD)
+                # ⚠️ CRITICAL: This noise injection happens on EVERY rank
+                #    (rank 0, 1, 2, etc.). Not just on the main/rank-0 process!
+                #    Each rank independently calls noise_fn() with same seed → same noise.
+                #    This is not a broadcast; it's synchronized independent application.
+                noisy_grads, noise_state = noise_fn(grads_tuple, noise_state)
                 
                 # 4. Optimizer step
                 updates, opt_state = base_opt.update(

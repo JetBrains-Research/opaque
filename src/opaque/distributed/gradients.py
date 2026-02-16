@@ -15,7 +15,7 @@ import torch
 from opaque.utils.pytree import tree_map
 
 from . import all_reduce as all_reduce_tensor
-from . import get_world_size, is_initialized
+from . import get_world_size, is_distributed
 
 __all__ = [
     "reduce_pytree",
@@ -70,7 +70,7 @@ def reduce_pytree(
         - Operates in-place for memory efficiency
         - Generic reduction - works with any PyTree, not just gradients
     """
-    if not is_initialized():
+    if not is_distributed():
         return pytree, None
 
     # Collect work handles if async
@@ -190,7 +190,7 @@ def average_gradients(
         stacklevel=2,
     )
 
-    if not is_initialized():
+    if not is_distributed():
         return gradients
 
     if world_size is None:

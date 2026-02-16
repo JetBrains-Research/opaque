@@ -183,10 +183,11 @@ def main():
         return_grad_norms=True,
         return_values=True,
     )
-    noise_gen = torch.Generator().manual_seed(42 + rank)
+    # Same seed on all devices for sharded Poisson sampling
+    # When distributed is detected, noise automatically uses the same seed everywhere
+    # (no need to manually shift by rank!)
     noise_fn, noise_state = gaussian_noise(
         stddev=noise_multiplier * clip_state.sensitivity(),
-        generator=noise_gen,
     )
 
     opt = torchopt.sgd(lr=learning_rate)
@@ -204,15 +205,18 @@ def main():
             print(f"Epoch {epoch + 1}/{num_epochs}")
         for batch in batches:
             (grads, aux), clip_state = grad_fn(trainable, batch, state=clip_state)
-            # Recompute noise scale based on current adaptive clip norm
-            noise_fn, noise_state = gaussian_noise(
-                stddev=noise_multiplier * clip_state.sensitivity(),
-                generator=noise_state.rng_state,
-            )
-            noisy_grads, noise_state = noise_fn(grads, noise_state)
+            
+            # Standard DP-SGD with sharded Poisson sampling:
+            # 1. Aggregate clipped gradients across devices
             if distributed:
-                noisy_grads = sum_gradients(noisy_grads)
+                grads = sum_gradients(grads)  # Sum before noise
+            
+            # 2. Add noise on EVERY device (all with same seed → same noise)
+            # ⚠️ CRITICAL: noise_fn() is called on EVERY device in the distributed setting
+            #    NOT just the main rank! Each device independently applies the same noise.
+            noisy_grads, noise_state = noise_fn(grads, noise_state)
 
+            # 3. Update parameters with noisy aggregated gradients
             updates, opt_state = opt.update(noisy_grads, opt_state, params=trainable)
             trainable = torchopt.apply_updates(trainable, updates)
 

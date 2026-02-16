@@ -191,7 +191,7 @@ def adaptive_clipped_grad(
         ... )
         >>>
         >>> # Use Poisson sampling (different batch sizes on each device)
-        >>> sampler = PoissonSampler(dataset, sample_rate=0.01, distributed=False)
+        >>> sampler = PoissonSampler(dataset, sample_rate=0.01, mode=SamplingMode.INDEPENDENT)
         >>>
         >>> for batch_x, batch_y in dataloader:
         ...     # Each device: compute clipped gradients on local batch
@@ -287,9 +287,9 @@ def adaptive_clipped_grad(
         if grad_norms is not None:
             # If distributed, gather norms from all devices for accurate quantile
             try:
-                from opaque.distributed import gather_tensors, is_initialized
+                from opaque.distributed import gather_tensors, is_distributed
 
-                if is_initialized():
+                if is_distributed():
                     # Gather all per-example norms across devices (handles variable sizes)
                     all_norms = gather_tensors(grad_norms, dim=0)
                 else:
