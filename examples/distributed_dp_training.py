@@ -148,7 +148,7 @@ def main():
         
         # Step 3: Sum noisy gradients across devices (NOT average!)
         # For Poisson sampling with variable batch sizes, use sum
-        noisy_grads = dist_utils.all_reduce_gradients(noisy_grads, op="sum")
+        noisy_grads = dist_utils.sum_gradients(noisy_grads)
         
         # Step 4: Update parameters (all devices have same noisy gradient sum)
         lr = 0.01
@@ -157,7 +157,7 @@ def main():
         
         # APPROACH 2 ALTERNATIVE (shared noise):
         # grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
-        # grads = dist_utils.all_reduce_gradients(grads, op="sum")  # Sum first
+        # grads = dist_utils.sum_gradients(grads)  # Sum first
         # noisy_grads, noise_state = noise_fn(grads, noise_state)  # Same seed → same noise
         # for key in params:
         #     params[key] = params[key] - lr * noisy_grads[key]

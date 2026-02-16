@@ -23,7 +23,7 @@ from peft import LoraConfig, get_peft_model
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 from opaque.clipping import adaptive_clipped_grad
-from opaque.distributed import average_gradients
+from opaque.distributed import sum_gradients
 from opaque.noise import gaussian_noise
 from opaque.utils import make_functional, merge
 
@@ -211,7 +211,7 @@ def main():
             )
             noisy_grads, noise_state = noise_fn(grads, noise_state)
             if distributed:
-                noisy_grads = average_gradients(noisy_grads)
+                noisy_grads = sum_gradients(noisy_grads)
 
             updates, opt_state = opt.update(noisy_grads, opt_state, params=trainable)
             trainable = torchopt.apply_updates(trainable, updates)

@@ -1,8 +1,8 @@
-"""State synchronization for distributed DP training.
+"""State synchronization and gathering for distributed DP training.
 
-This module provides functions to synchronize scalar values and state objects
-across devices. Particularly useful for adaptive clipping where clip_norm
-needs to be consistent across all devices.
+This module provides functions to reduce scalars and gather tensors
+across devices. Particularly useful for adaptive clipping where per-example
+norms need to be gathered from all devices.
 """
 
 from dataclasses import fields, is_dataclass
@@ -12,49 +12,51 @@ import torch
 import torch.distributed as dist
 
 from . import all_reduce as all_reduce_tensor
-from . import is_initialized
+from . import get_world_size, is_initialized
 
 __all__ = [
-    "sync_scalar",
-    "sync_state",
+    "reduce_scalar",
+    "gather_tensors",
+    "sync_scalar",  # Deprecated alias
+    "sync_state",  # Deprecated - will be removed
 ]
 
 
-def sync_scalar(
+def reduce_scalar(
     value: float,
     op: str = "mean",
     device: torch.device | None = None,
 ) -> float:
-    """Synchronize a scalar value across all processes.
+    """Reduce a scalar value across all processes.
 
     Args:
-        value: Scalar value to synchronize.
+        value: Scalar value to reduce.
         op: Reduction operation. One of: "sum", "mean", "max", "min", "product".
-            Default: "mean" (most common for statistics like clip_norm).
-        device: Device to place tensor on. If None, uses CPU.
+            Default: "mean".
+        device: Device to place tensor on. If None, auto-selects based on backend.
             Default: None.
 
     Returns:
-        float: Synchronized scalar value.
+        float: Reduced scalar value.
 
     Example:
-        >>> import opaque.distributed.state as dist_state
+        >>> from opaque.distributed import reduce_scalar
         >>> import torch.distributed as dist
         >>>
         >>> # Initialize distributed (rank 0 of 2)
         >>> dist.init_process_group(backend='nccl', rank=0, world_size=2)
         >>>
-        >>> # Each device has a different clip_norm
-        >>> clip_norm_rank0 = 1.0  # Rank 0
-        >>> clip_norm_rank1 = 1.2  # Rank 1
+        >>> # Each device has a different batch size
+        >>> batch_size_rank0 = 32  # Rank 0
+        >>> batch_size_rank1 = 28  # Rank 1 (Poisson sampling!)
         >>>
-        >>> # Synchronize (average across devices)
-        >>> clip_norm = dist_state.sync_scalar(clip_norm_rank0, op="mean")
-        >>> # clip_norm is now 1.1 on both devices
+        >>> # Get total batch size across devices
+        >>> total_batch_size = reduce_scalar(batch_size_rank0, op="sum")
+        >>> # total_batch_size is now 60 on both devices
 
     Notes:
         - If distributed is not initialized, returns input unchanged
-        - Typical use: sync adaptive clipping state after each step
+        - Typical use: sum batch sizes, average metrics
         - Creates a temporary tensor for communication
     """
     if not is_initialized():
@@ -72,7 +74,7 @@ def sync_scalar(
                 if not torch.cuda.is_available():
                     raise RuntimeError(
                         "Distributed backend is 'nccl' but CUDA is not available; "
-                        "provide an explicit `device` to `sync_scalar` or initialize "
+                        "provide an explicit `device` to `reduce_scalar` or initialize "
                         "with a CUDA-capable process."
                     )
                 # Use the currently selected CUDA device for this process.
@@ -89,6 +91,80 @@ def sync_scalar(
 
     # Convert back to float
     return tensor.item()
+
+
+def gather_tensors(
+    tensor: torch.Tensor,
+    dim: int = 0,
+) -> torch.Tensor:
+    """Gather tensors from all devices and concatenate along dimension.
+
+    This function handles variable-size tensors across devices, which is
+    essential for Poisson sampling where batch sizes differ. Uses
+    `all_gather_object` internally to support arbitrary tensor sizes.
+
+    Args:
+        tensor: Local tensor to gather (any shape).
+        dim: Dimension to concatenate along. Default: 0 (batch dimension).
+
+    Returns:
+        torch.Tensor: Concatenated tensor from all devices.
+
+    Example:
+        >>> from opaque.distributed import gather_tensors
+        >>> import torch.distributed as dist
+        >>>
+        >>> # Initialize distributed (2 devices)
+        >>> dist.init_process_group(backend='nccl')
+        >>>
+        >>> # Each device has different number of per-example norms (Poisson sampling!)
+        >>> norms_rank0 = torch.tensor([1.2, 2.1, 1.8])  # 3 examples
+        >>> norms_rank1 = torch.tensor([2.3, 1.9])       # 2 examples
+        >>>
+        >>> # Gather all norms across devices
+        >>> all_norms = gather_tensors(norms_rank0, dim=0)  # On rank 0
+        >>> # all_norms = tensor([1.2, 2.1, 1.8, 2.3, 1.9])  # 5 examples total
+        >>>
+        >>> # Compute global quantile for adaptive clipping
+        >>> quantile = torch.quantile(all_norms, 0.5)
+
+    Notes:
+        - If distributed is not initialized, returns input tensor unchanged
+        - Handles variable-size tensors naturally (no padding required)
+        - Essential for adaptive clipping with Poisson sampling
+        - Uses CPU communication via all_gather_object (moves tensors temporarily)
+    """
+    if not is_initialized():
+        return tensor
+
+    # Gather tensors from all devices (handles variable sizes)
+    gathered = [None] * get_world_size()
+    dist.all_gather_object(gathered, tensor.cpu())
+
+    # Concatenate along specified dimension
+    gathered_tensors = [t.to(tensor.device) for t in gathered]
+    return torch.cat(gathered_tensors, dim=dim)
+
+
+# Deprecated alias for backward compatibility
+def sync_scalar(
+    value: float,
+    op: str = "mean",
+    device: torch.device | None = None,
+) -> float:
+    """Deprecated: Use reduce_scalar instead.
+
+    .. deprecated:: 2.0.0
+        Use :func:`reduce_scalar` instead. This will be removed in v3.0.0.
+    """
+    import warnings
+
+    warnings.warn(
+        "sync_scalar is deprecated, use reduce_scalar instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return reduce_scalar(value, op=op, device=device)
 
 
 def sync_state(
@@ -174,7 +250,7 @@ def sync_state(
     for field_name in sync_fields:
         value = getattr(state, field_name)
         if isinstance(value, (float, int)):
-            synced_value = sync_scalar(value, op=op, device=device)
+            synced_value = reduce_scalar(value, op=op, device=device)
             # Preserve type (int stays int, float stays float)
             if isinstance(value, int):
                 synced_value = int(synced_value)

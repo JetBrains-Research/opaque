@@ -125,7 +125,7 @@ class TestGradientAggregation:
         }
 
         # Sum across all devices
-        result, _ = all_reduce_gradients(grads, op="sum")
+        result, _ = reduce_pytree(grads, op="sum")
 
         # Expected: sum of 1 + 2 + ... + world_size = world_size * (world_size + 1) / 2
         expected_sum = sum(range(1, world_size + 1))
@@ -184,7 +184,7 @@ class TestStateSynchronization:
         value = float(rank + 1)
 
         # Synchronize (average)
-        synced = sync_scalar(value, op="mean", device=device)
+        synced = reduce_scalar(value, op="mean", device=device)
 
         # Expected: average of 1 + 2 + ... + world_size
         expected_avg = sum(range(1, world_size + 1)) / world_size
@@ -267,7 +267,7 @@ class TestEndToEndDPTraining:
     def test_dp_training_step(self, device, simple_model):
         """Test a single DP training step with DDP."""
         from opaque.clipping import clipped_grad
-        from opaque.distributed import all_reduce_gradients, get_rank
+        from opaque.distributed import sum_gradients, get_rank
         from opaque.noise import gaussian_noise
 
         if not is_distributed():
@@ -309,7 +309,7 @@ class TestEndToEndDPTraining:
         noisy_grads, noise_state = noise_fn(grads, noise_state)
 
         # Sum noisy gradients across devices (NOT average for Poisson sampling!)
-        noisy_grads, _ = all_reduce_gradients(noisy_grads, op="sum")
+        noisy_grads = sum_gradients(noisy_grads)
 
         # Verify gradients are reasonable
         for param_name, grad in noisy_grads.items():
@@ -321,7 +321,7 @@ class TestEndToEndDPTraining:
     def test_dp_training_step_shared_noise(self, device, simple_model):
         """Test DP training with shared noise (mixture Gaussian accounting)."""
         from opaque.clipping import clipped_grad
-        from opaque.distributed import all_reduce_gradients, get_rank
+        from opaque.distributed import sum_gradients, get_rank
         from opaque.noise import gaussian_noise
 
         if not is_distributed():
@@ -360,7 +360,7 @@ class TestEndToEndDPTraining:
         grads, clip_state = grad_fn(params, x, y, state=clip_state)
 
         # Sum gradients FIRST (before noise)
-        grads, _ = all_reduce_gradients(grads, op="sum")
+        grads = sum_gradients(grads)
 
         # Add noise AFTER aggregation (same seed → same noise on all devices)
         noisy_grads, noise_state = noise_fn(grads, noise_state)

@@ -2,43 +2,49 @@
 
 This module provides PyTorch-native distributed primitives for DP training:
 - Core utilities: check initialization, get rank/world_size
-- Gradient aggregation: all_reduce PyTrees of gradients
-- State synchronization: sync adaptive clipping state across devices
-- Deterministic noise: seed-based noise generation without communication
+- PyTree reduction: reduce_pytree for generic aggregation
+- Gradient helpers: sum_gradients for DP-specific gradient summing
+- Scalar reduction: reduce_scalar for batch sizes, metrics
+- Tensor gathering: gather_tensors for adaptive clipping with variable batch sizes
 
 Design Philosophy:
     - Composable primitives, not heavyweight abstractions
     - PyTorch-native patterns (DDP/FSDP/DTensor)
     - No custom backward hooks (functional API already produces clipped gradients)
-    - Two noise strategies supported:
-        - Independent noise (offset seed by rank): better privacy via amplification
-        - Shared noise (same seed on all ranks): standard DP-SGD accounting
+    - Automatic distributed detection (no manual configuration)
 
-Example - Independent Noise (Privacy Amplification):
+Example - Standard DP-SGD with Poisson Sampling:
     >>> import opaque.distributed as dist_utils
     >>> import torch.distributed as dist
+    >>> from opaque.clipping import clipped_grad
     >>> from opaque.noise import gaussian_noise
     >>>
     >>> # Initialize distributed
     >>> dist.init_process_group(backend='nccl')
-    >>> rank = dist_utils.get_rank()
     >>>
-    >>> # Independent noise: offset seed by rank
-    >>> noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42 + rank)
+    >>> # Each device: compute clipped gradients on local batch (Poisson sampling)
+    >>> grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2))
+    >>> grads = grad_fn(params, batch_x, batch_y)  # Sum of B_local clipped grads
     >>>
-    >>> # Training: Noise BEFORE aggregation
-    >>> grads = clipped_grad_fn(params, batch)  # Sum of local clipped grads
-    >>> noisy_grads, noise_state = noise_fn(grads, noise_state)  # Add noise locally
-    >>> noisy_grads = dist_utils.all_reduce_gradients(noisy_grads, op="sum")  # Sum across devices
+    >>> # Sum across devices: total gradients from all examples
+    >>> grads = dist_utils.sum_gradients(grads)
+    >>>
+    >>> # Add noise (sensitivity = C, NOT batch-dependent!)
+    >>> noisy_grads = gaussian_noise(grads, sigma=1.1)
 
-Example - Shared Noise (Mixture Gaussian):
-    >>> # Shared noise: same seed on all ranks
-    >>> noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42)
+Example - Adaptive Clipping (Automatic Distributed Detection):
+    >>> from opaque.clipping import adaptive_clipped_grad
     >>>
-    >>> # Training: Aggregate BEFORE noise
-    >>> grads = clipped_grad_fn(params, batch)  # Sum of local clipped grads
-    >>> grads = dist_utils.all_reduce_gradients(grads, op="sum")  # Sum across devices
-    >>> noisy_grads, noise_state = noise_fn(grads, noise_state)  # Add noise once
+    >>> # Adaptive clipping automatically detects distributed mode!
+    >>> grad_fn, clip_state = adaptive_clipped_grad(
+    ...     loss_fn,
+    ...     batch_argnums=(1, 2),
+    ...     initial_clip_norm=1.0,
+    ... )
+    >>>
+    >>> # In distributed mode, gathers ALL per-example norms from ALL devices
+    >>> # to compute global quantile (clip_norm identical everywhere)
+    >>> grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 """
 
 from typing import Optional
@@ -53,10 +59,17 @@ __all__ = [
     "get_world_size",
     "all_reduce",
     "barrier",
-    # Gradient aggregation
+    # PyTree reduction
+    "reduce_pytree",
+    # DP-specific helpers
+    "sum_gradients",
+    # Scalar reduction
+    "reduce_scalar",
+    # Tensor gathering
+    "gather_tensors",
+    # Deprecated aliases (will be removed in v3.0)
     "all_reduce_gradients",
     "average_gradients",
-    # State synchronization
     "sync_scalar",
     "sync_state",
 ]
@@ -207,5 +220,10 @@ def barrier() -> None:
 
 
 # Import submodules AFTER core functions are defined (avoid circular import)
-from .gradients import all_reduce_gradients, average_gradients  # noqa: E402
-from .state import sync_scalar, sync_state  # noqa: E402
+from .gradients import (  # noqa: E402
+    all_reduce_gradients,
+    average_gradients,
+    reduce_pytree,
+    sum_gradients,
+)
+from .state import gather_tensors, reduce_scalar, sync_scalar, sync_state  # noqa: E402

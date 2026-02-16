@@ -95,7 +95,6 @@ def adaptive_clipped_grad(
     learning_rate: float = 0.2,
     clip_norm_min: float = 0.01,
     clip_norm_max: float = 100.0,
-    distributed: bool = False,
     **clipped_grad_kwargs: Any,
 ) -> tuple[Callable, AdaptiveClipState]:
     """Create function for adaptive gradient clipping with explicit state-passing.
@@ -108,6 +107,8 @@ def adaptive_clipped_grad(
         C_{t+1} = C_t * exp(η * sign(ρ_t - γ))
 
     Where ρ_t is the fraction of per-example gradients clipped at step t.
+
+    **Distributed training is automatically detected** - no configuration needed!
 
     Args:
         fun: The function to be differentiated (loss function). Should return a scalar.
@@ -124,9 +125,6 @@ def adaptive_clipped_grad(
             (as used in Andrew et al. 2021). Controls adaptation speed.
         clip_norm_min: Minimum allowed clipping threshold. Default: 0.01.
         clip_norm_max: Maximum allowed clipping threshold. Default: 100.0.
-        distributed: If True, automatically synchronize clip_norm and clipping_rate
-            across all devices after each step. Requires torch.distributed to be
-            initialized. Default: False.
         **clipped_grad_kwargs: Additional arguments passed to `clipped_grad()`,
             such as `batch_argnums`, `rescale_to_unit_norm`, `normalize_by`, etc.
 
@@ -137,10 +135,10 @@ def adaptive_clipped_grad(
                 (*args, state, **kwargs) -> ((grad, aux), new_state)
             - initial_state: Initial AdaptiveClipState
 
-    Example:
+    Example (single-device or distributed):
         >>> import torch
-        >>> from opaque.clipping.stateful import adaptive_clipped_grad
-        >>> from opaque.noise import add_gaussian_noise
+        >>> from opaque.clipping import adaptive_clipped_grad
+        >>> from opaque.noise import gaussian_noise
         >>> import torchopt
         >>>
         >>> def loss_fn(params, x, y):
@@ -148,6 +146,7 @@ def adaptive_clipped_grad(
         ...     return ((pred - y) ** 2).mean()
         >>>
         >>> # Create adaptive clipping function with initial state
+        >>> # (automatically detects if distributed!)
         >>> grad_fn, clip_state = adaptive_clipped_grad(
         ...     loss_fn,
         ...     initial_clip_norm=0.1,
@@ -165,8 +164,7 @@ def adaptive_clipped_grad(
         ...     grad, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
         ...
         ...     # Add DP noise scaled to current threshold
-        ...     noise_std = 1.1 * clip_state.clip_norm
-        ...     noisy_grad = add_gaussian_noise(grad, noise_std)
+        ...     noisy_grad = gaussian_noise(grad, clip_state.clip_norm * 1.1)
         ...
         ...     # Optimizer step
         ...     updates, opt_state = optimizer.update(noisy_grad, opt_state, params=params)
@@ -177,49 +175,42 @@ def adaptive_clipped_grad(
         ...         print(f"Step {clip_state.step}: C={clip_state.clip_norm:.4f}, "
         ...               f"ρ={clip_state.clipping_rate:.2%}")
 
-    Example with distributed training (DDP) - automatic synchronization:
+    Example with distributed training (DDP with Poisson sampling):
         >>> import torch.distributed as dist
-        >>> from opaque.clipping.adaptive import adaptive_clipped_grad
+        >>> from opaque.clipping import adaptive_clipped_grad
+        >>> from opaque.distributed import sum_gradients
+        >>> from opaque.sampling import PoissonSampler
         >>>
         >>> # Initialize distributed
         >>> dist.init_process_group(backend='nccl')
         >>>
-        >>> # Create adaptive clipping with distributed=True
+        >>> # Create adaptive clipping (auto-detects distributed!)
         >>> grad_fn, clip_state = adaptive_clipped_grad(
         ...     loss_fn,
         ...     batch_argnums=(1, 2),
-        ...     distributed=True,  # Automatic synchronization
         ... )
         >>>
-        >>> for batch_x, batch_y in dataloader:
-        ...     # Compute gradients - clip_norm automatically synced across devices
-        ...     grad, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
-        ...
-        ...     # Continue with noise and optimizer...
-
-    Example with distributed training (DDP) - manual synchronization:
-        >>> import torch.distributed as dist
-        >>> import opaque.distributed as dist_utils
-        >>>
-        >>> # Create adaptive clipping without automatic sync
-        >>> grad_fn, clip_state = adaptive_clipped_grad(loss_fn, batch_argnums=(1, 2))
+        >>> # Use Poisson sampling (different batch sizes on each device)
+        >>> sampler = PoissonSampler(dataset, sample_rate=0.01, distributed=False)
         >>>
         >>> for batch_x, batch_y in dataloader:
-        ...     # Compute gradients (local to each device)
+        ...     # Each device: compute clipped gradients on local batch
+        ...     # (clip_state.clip_norm is IDENTICAL across devices)
         ...     grad, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
         ...
-        ...     # Manually synchronize state across devices
-        ...     clip_state = dist_utils.sync_state(
-        ...         clip_state,
-        ...         sync_fields=["clip_norm", "clipping_rate"],
-        ...         op="mean",
-        ...     )
+        ...     # Sum clipped gradients across devices
+        ...     grad = sum_gradients(grad)
         ...
-        ...     # Continue with noise and optimizer...
+        ...     # Add noise and update (only on rank 0, or broadcast)
+        ...     noisy_grad = gaussian_noise(grad, clip_state.clip_norm * 1.1)
+        ...     # ... optimizer step
 
     Notes:
         - State is IMMUTABLE - a new state object is returned each call.
         - Works with torch.compile, DDP, FSDP (state is explicit).
+        - **Distributed mode is automatically detected** via torch.distributed.is_initialized()
+        - In distributed mode, per-example norms are gathered from ALL devices
+          to compute the clipping rate, ensuring clip_norm is identical everywhere.
         - The clipping threshold adapts over ~23 iterations by a factor of 10
           with default parameters (learning_rate=0.2, target_quantile=0.5).
         - Andrew et al. recommend using the median (γ=0.5) as it works well
@@ -294,9 +285,23 @@ def adaptive_clipped_grad(
 
         # Update clipping threshold using Andrew et al. 2021 algorithm
         if grad_norms is not None:
+            # If distributed, gather norms from all devices for accurate quantile
+            try:
+                from opaque.distributed import gather_tensors, is_initialized
+
+                if is_initialized():
+                    # Gather all per-example norms across devices (handles variable sizes)
+                    all_norms = gather_tensors(grad_norms, dim=0)
+                else:
+                    all_norms = grad_norms
+            except ImportError:
+                # opaque.distributed not available, use local norms only
+                all_norms = grad_norms
+
             # Compute clipping rate: ρ_t = fraction of gradients clipped
-            num_clipped = (grad_norms > state.clip_norm).sum().item()
-            clipping_rate = num_clipped / max(1, grad_norms.numel())
+            # (computed on ALL norms if distributed, so result is identical everywhere)
+            num_clipped = (all_norms > state.clip_norm).sum().item()
+            clipping_rate = num_clipped / max(1, all_norms.numel())
 
             # Geometric update: C_{t+1} = C_t * exp(η * sign(ρ_t - γ))
             if clipping_rate > config["target_quantile"]:
@@ -326,21 +331,6 @@ def adaptive_clipped_grad(
             clipping_rate=clipping_rate,
             rescale_to_unit_norm=state.rescale_to_unit_norm,
         )
-
-        # Synchronize state across devices if distributed
-        if distributed:
-            try:
-                from opaque.distributed import sync_state
-
-                new_state = sync_state(
-                    new_state,
-                    sync_fields=["clip_norm", "clipping_rate"],
-                    op="mean",
-                )
-            except ImportError:
-                raise RuntimeError(
-                    "distributed=True but opaque.distributed module not available"
-                ) from None
 
         # Return result according to user's requested signature
         user_wants_return_values = clipped_grad_kwargs.get("return_values", False)

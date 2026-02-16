@@ -365,8 +365,8 @@ def main():
                 if distributed:
                     # FSDP handles gradient synchronization automatically
                     # But for functional API, we need to average manually
-                    from opaque.distributed import average_gradients
-                    noisy_grads = average_gradients(noisy_grads)
+                    from opaque.distributed import sum_gradients
+                    noisy_grads = sum_gradients(noisy_grads)
                 
                 # 4. Optimizer step
                 updates, opt_state = base_opt.update(
