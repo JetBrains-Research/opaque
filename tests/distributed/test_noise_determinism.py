@@ -33,7 +33,9 @@ class TestDistributedNoise:
 
     def test_distributed_true_without_init_raises(self):
         """distributed=True raises RuntimeError when torch.distributed not initialized."""
-        pytest.skip("gaussian_stateful removed; distributed-specific behavior is handled by passing generator offset by rank")
+        pytest.skip(
+            "gaussian_stateful removed; distributed-specific behavior is handled by passing generator offset by rank"
+        )
 
     def test_distributed_noise_is_deterministic(self):
         """Noise with same seed+rank is reproducible across resets."""
@@ -179,7 +181,9 @@ class TestDistributedNoiseWithPyTree:
         """Distributed noise preserves tensor device."""
         # Skip CUDA test - generator device mismatch is known limitation
         if device.type == "cuda":
-            pytest.skip("CUDA generator not supported in gaussian_noise generator usage yet")
+            pytest.skip(
+                "CUDA generator not supported in gaussian_noise generator usage yet"
+            )
 
         stddev = 1.0
         seed = 42
