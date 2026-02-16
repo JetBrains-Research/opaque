@@ -144,48 +144,6 @@ def vmap_phi3_eager_attention_forward(
 
 
 def apply_rotary_pos_emb(
-    x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor = None
-) -> torch.Tensor:
-    """Apply rotary position embeddings."""
-    # Simplified, numerically-stable rotary embedding helper suitable for
-    # vmap-compatible patches. This is NOT a full replacement of the model's
-    # rotary implementation, but preserves the interface and shape.
-    if sin is None:
-        # Compute sin from cos using unit-circle relationship with clamping
-        sin = torch.sqrt(torch.clamp(1.0 - cos.pow(2), min=0.0))
-
-    # Typical rotary implementations rotate pairs of elements in the last dim.
-    # Implement rotate-half: split last dim into two and apply complex rotation.
-    if x.size(-1) % 2 != 0:
-        # If head_dim is odd, fall back to elementwise mix to avoid shape errors.
-        return x * cos + x * sin
-
-    x1, x2 = x.chunk(2, dim=-1)
-    out1 = x1 * cos - x2 * sin
-    out2 = x1 * sin + x2 * cos
-    return torch.cat([out1, out2], dim=-1)
-
-
-def _apply_rotary_pos_emb_simple(
-    x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor = None
-) -> torch.Tensor:
-    """Simple rotary helper used as a fallback by the HF-preferring wrapper.
-
-    Preserves the minimal interface and numeric stability for vmap patches.
-    """
-    if sin is None:
-        sin = torch.sqrt(torch.clamp(1.0 - cos.pow(2), min=0.0))
-
-    if x.size(-1) % 2 != 0:
-        return x * cos + x * sin
-
-    x1, x2 = x.chunk(2, dim=-1)
-    out1 = x1 * cos - x2 * sin
-    out2 = x1 * sin + x2 * cos
-    return torch.cat([out1, out2], dim=-1)
-
-
-def apply_rotary_pos_emb(
     q: torch.Tensor, k: torch.Tensor | None, cos: torch.Tensor, sin: torch.Tensor
 ):
     """Delegate to HuggingFace Phi-3 rotary helper when available.
