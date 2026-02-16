@@ -41,9 +41,9 @@ use crate::functional::process::Process;
 use statrs::distribution::{Binomial, DiscreteCDF};
 
 use super::poisson::{
-    poisson_gaussian_epsilon_bounds, poisson_gaussian_get_delta, PoissonEvidence,
-    TightGaussianPoissonEvidence,
+    poisson_gaussian_get_delta, PoissonEvidence, TightGaussianPoissonEvidence,
 };
+use crate::functional::discretization::config::EpsilonBounds;
 
 // ---------------------------------------------------------------------------
 // Trait + types
@@ -279,6 +279,86 @@ pub(crate) fn truncated_get_delta(
 }
 
 // ---------------------------------------------------------------------------
+// Epsilon bounds for truncated mechanism
+// ---------------------------------------------------------------------------
+
+/// Compute epsilon bounds for the truncated Poisson mechanism by bisecting
+/// on the actual `truncated_get_delta` function.
+///
+/// The standard Poisson bounds are too narrow because component 2 uses
+/// sigma/2 (doubled sensitivity), which has a much wider epsilon range.
+/// Using the standard Poisson bounds causes the infinity_mass on the ADD
+/// side to be large, making epsilon_at return infinity.
+fn truncated_epsilon_bounds(
+    sigma: f64,
+    sensitivity: f64,
+    rate: f64,
+    adjacency: Adjacency,
+    min_delta: f64,
+    min_beta: f64,
+    p_trunc: f64,
+    q_cond: f64,
+) -> EpsilonBounds {
+    use crate::math_helpers::gaussian::gaussian_epsilon_for_delta;
+
+    // Use the base Gaussian bound (always wider than any subsampled variant)
+    // as the initial bisection interval. Component 2 uses sigma/2, so we
+    // use that for the widest possible range.
+    let delta_tilde_comp2 = sensitivity / (sigma / 2.0); // = 2/sigma
+    let delta_tilde_base = sensitivity / sigma;
+    let hi_init = gaussian_epsilon_for_delta(delta_tilde_comp2, min_delta)
+        .max(gaussian_epsilon_for_delta(delta_tilde_base, min_delta));
+
+    // Bisect on the actual truncated delta for epsilon_upper
+    let mut lo = 0.0_f64;
+    let mut hi = hi_init;
+    for _ in 0..100 {
+        let mid = (lo + hi) / 2.0;
+        let d = truncated_get_delta(mid, adjacency, sigma, sensitivity, rate, p_trunc, q_cond);
+        if d > min_delta {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    let epsilon_upper = hi;
+
+    // Bisect for epsilon_lower (beta side): beta_adj(E) = delta_opposite(-E)
+    let opposite_adj = match adjacency {
+        Adjacency::Add => Adjacency::Remove,
+        Adjacency::Remove => Adjacency::Add,
+        Adjacency::Replace => Adjacency::Replace,
+    };
+    let hi_init_beta = gaussian_epsilon_for_delta(delta_tilde_comp2, min_beta)
+        .max(gaussian_epsilon_for_delta(delta_tilde_base, min_beta));
+    let mut lo = 0.0_f64;
+    let mut hi = hi_init_beta;
+    for _ in 0..100 {
+        let mid = (lo + hi) / 2.0;
+        let d = truncated_get_delta(
+            -mid,
+            opposite_adj,
+            sigma,
+            sensitivity,
+            rate,
+            p_trunc,
+            q_cond,
+        );
+        if d > min_beta {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    let epsilon_lower = -hi;
+
+    EpsilonBounds {
+        epsilon_lower,
+        epsilon_upper,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Evidence implementation
 // ---------------------------------------------------------------------------
 
@@ -303,28 +383,30 @@ impl TruncatedPoissonEvidence<Gaussian> for TightGaussianTruncatedPoissonEvidenc
 
         let q_cond = conditional_sampling_probability(dataset_size, rate, batch_size_max, p_trunc);
 
-        // Epsilon bounds: use standard Poisson bounds (component 1 only).
-        // Truncation only affects delta, not the privacy loss range. Component 2's
-        // delta contribution outside these bounds is negligible (weighted by p_trunc
-        // and decaying to zero). This matches the old API's connect_dots_bounds
-        // which delegates to standard PoissonSampling bounds.
+        // Epsilon bounds: bisect on the actual truncated delta function.
+        // Standard Poisson bounds are too narrow because component 2 uses
+        // sigma/2 (doubled sensitivity), which has a wider epsilon range.
         let min_delta = inner.min_delta;
         let min_beta = inner.min_beta;
-        let bounds_remove = poisson_gaussian_epsilon_bounds(
+        let bounds_remove = truncated_epsilon_bounds(
             sigma,
             sensitivity,
             rate,
             Adjacency::Remove,
             min_delta,
             min_beta,
+            p_trunc,
+            q_cond,
         );
-        let bounds_add = poisson_gaussian_epsilon_bounds(
+        let bounds_add = truncated_epsilon_bounds(
             sigma,
             sensitivity,
             rate,
             Adjacency::Add,
             min_delta,
             min_beta,
+            p_trunc,
+            q_cond,
         );
 
         discretize_asymmetric_mechanism(config, bounds_remove, bounds_add, |epsilon, adj| {

@@ -326,7 +326,7 @@ impl Pmf {
             (0, self.probs.len() * count - count)
         };
 
-        let result_probs =
+        let mut result_probs =
             fft::self_convolve_with_bounds(&self.probs, count, Some((lower_bound, upper_bound)));
 
         // The lower_loss_index scales by count AND shifts by the truncation offset

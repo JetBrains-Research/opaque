@@ -13,12 +13,12 @@ use crate::error::{PldError, Result};
 /// # Defaults
 ///
 /// The default configuration (`DiscretizationConfig::default()`) uses:
-/// discretization = 1e-4, log_mass_truncation_bound = -32.0,
+/// discretization = 1e-4, log_mass_truncation_bound = -50.0,
 /// pessimistic_estimate = true.
 ///
-/// The truncation bound -32 corresponds to tail_mass ≈ 6.2e-15, derived from
-/// the largest practical dataset size n = 2^42 (100T tokens / 30 tokens per record)
-/// with delta_min = n^{-1.1}.
+/// The truncation bound -50 matches Google dp_accounting's default, ensuring
+/// Poisson-subsampled mechanisms produce identical epsilon bounds and grid
+/// sizes for accurate beta computation after FFT-based composition.
 ///
 /// # References
 ///
@@ -41,7 +41,7 @@ pub struct DiscretizationConfig {
     /// The PLD is computed only for outcomes with tail probability ≥ exp(log_mass_truncation_bound).
     /// More negative values give higher accuracy but larger grids.
     ///
-    /// Example: -32 means truncate mass < e^{-32} ≈ 1.3×10^{-14}. Default: -32.0.
+    /// Example: -50 means truncate mass < e^{-50} ≈ 1.9×10^{-22}. Default: -50.0.
     pub log_mass_truncation_bound: f64,
 
     /// Whether to use pessimistic (conservative) estimation
@@ -129,7 +129,7 @@ impl Default for DiscretizationConfig {
     fn default() -> Self {
         Self {
             discretization: 1e-4,
-            log_mass_truncation_bound: -32.0,
+            log_mass_truncation_bound: -50.0,
             pessimistic_estimate: true,
             max_grid_size: 10_000_000,
         }
@@ -164,7 +164,7 @@ mod tests {
     fn test_discretization_config_default() {
         let config = DiscretizationConfig::default();
         assert_eq!(config.discretization, 1e-4);
-        assert_eq!(config.log_mass_truncation_bound, -32.0);
+        assert_eq!(config.log_mass_truncation_bound, -50.0);
         assert_eq!(config.pessimistic_estimate, true);
     }
 

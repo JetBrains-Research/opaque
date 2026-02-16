@@ -109,6 +109,25 @@ pub(crate) fn bayes_risk(pld: &PrivacyLossDistribution, prior: f64) -> f64 {
 // Private helpers — operates on &Pmf (actual math)
 // ---------------------------------------------------------------------------
 
+/// Clean FFT artifacts from PMF probabilities and renormalize.
+///
+/// After FFT-based composition, small negative probabilities can appear from
+/// floating-point rounding. This function clamps negatives to zero and
+/// renormalizes so that `sum(probs) = 1 - infinity_mass`, matching the
+/// cleanup performed by riskcal's `pld_to_plrvs` before beta computation.
+fn clean_probs(probs: &[f64], infinity_mass: f64) -> Vec<f64> {
+    let mut cleaned: Vec<f64> = probs.iter().map(|&p| p.max(0.0)).collect();
+    let sum: f64 = cleaned.iter().sum();
+    let target = 1.0 - infinity_mass;
+    if sum > 0.0 && target > 0.0 {
+        let scale = target / sum;
+        for p in cleaned.iter_mut() {
+            *p *= scale;
+        }
+    }
+    cleaned
+}
+
 /// Compute epsilon-hockey stick divergence on a single dense PMF
 ///
 /// delta(epsilon) = infinity_mass + sum_{loss_i > epsilon} [(1 - exp(epsilon - loss_i)) * prob_i]
@@ -244,6 +263,8 @@ fn pmf_beta(pmf: &Pmf, target_alpha: f64) -> f64 {
 /// Compute the Neyman-Pearson trade-off function for asymmetric PLDs
 ///
 /// Uses pmf_remove as Y and pmf_add (negated) as X.
+/// Applies riskcal-style cleanup: clamp negative probabilities to zero and
+/// renormalize to `1 - infinity_mass` before computing the tradeoff function.
 fn pmf_beta_asymmetric(pmf_remove: &Pmf, pmf_add: &Pmf, target_alpha: f64) -> f64 {
     if target_alpha <= 0.0 {
         return 1.0 - pmf_remove.infinity_mass;
@@ -263,26 +284,30 @@ fn pmf_beta_asymmetric(pmf_remove: &Pmf, pmf_add: &Pmf, target_alpha: f64) -> f6
         };
     }
 
+    // Clean FFT artifacts: clamp negatives and renormalize to 1 - infinity_mass.
+    // This matches riskcal's pld_to_plrvs cleanup before beta computation.
+    let probs_y = clean_probs(&pmf_remove.probs, pmf_remove.infinity_mass);
+    let probs_x_add = clean_probs(&pmf_add.probs, pmf_add.infinity_mass);
+
     let y0 = pmf_remove.lower_loss_index;
     let upper_loss_add = pmf_add.lower_loss_index + n_x as i64 - 1;
     let x0 = -upper_loss_add;
 
-    // Build CDF of Y (pmf_remove), starting from negative_infinity_mass.
-    // This ensures left-tail mass truncated during Chernoff composition
-    // is accounted for, keeping beta estimates conservative.
+    // Build CDF of Y (pmf_remove) from cleaned probabilities.
+    // No negative_infinity_mass: it's absorbed by the renormalization to
+    // sum(probs) = 1 - infinity_mass (matching riskcal).
     let mut cdf_y = vec![0.0; n_y];
-    cdf_y[0] = pmf_remove.negative_infinity_mass + pmf_remove.probs[0];
+    cdf_y[0] = probs_y[0];
     for i in 1..n_y {
-        cdf_y[i] = cdf_y[i - 1] + pmf_remove.probs[i];
+        cdf_y[i] = cdf_y[i - 1] + probs_y[i];
     }
 
-    // Build complement CDF of X (X = −L_add, so pmf_X is pmf_add reversed).
-    // Include pmf_add.negative_infinity_mass: mass at L_add = −∞ becomes
-    // X = +∞, which contributes to alpha at any finite threshold.
+    // Build complement CDF of X (X = −L_add, so pmf_X is pmf_add reversed)
+    // from cleaned probabilities. No negative_infinity_mass added.
     let mut cdf_add = vec![0.0; n_x];
-    cdf_add[0] = pmf_add.negative_infinity_mass + pmf_add.probs[0];
+    cdf_add[0] = probs_x_add[0];
     for i in 1..n_x {
-        cdf_add[i] = cdf_add[i - 1] + pmf_add.probs[i];
+        cdf_add[i] = cdf_add[i - 1] + probs_x_add[i];
     }
 
     let mut ccdf_x = vec![0.0; n_x + 1];
@@ -319,13 +344,13 @@ fn pmf_beta_asymmetric(pmf_remove: &Pmf, pmf_add: &Pmf, target_alpha: f64) -> f6
 
     let j_idx = j as usize;
 
-    let pmf_x_t = pmf_add.probs[n_x - 1 - t_idx];
+    let pmf_x_t = probs_x_add[n_x - 1 - t_idx];
     if pmf_x_t <= 1e-300 {
         return cdf_y[j_idx];
     }
     let gamma = (target_alpha - ccdf_x[t_idx + 1]) / pmf_x_t;
 
-    let pmf_y_j = pmf_remove.probs[j_idx];
+    let pmf_y_j = probs_y[j_idx];
     let beta = cdf_y[j_idx] - gamma * pmf_y_j;
 
     beta.clamp(0.0, 1.0 - pmf_remove.infinity_mass)
@@ -342,6 +367,9 @@ fn pmf_beta_inverse(pmf_remove: &Pmf, pmf_add: &Pmf, target_alpha: f64) -> f64 {
 ///
 /// Implements Definition F.1 from Dong et al. (2022).
 /// "Gaussian Differential Privacy" JRSS-B.
+///
+/// Uses riskcal-style cleanup: clamp negative probabilities and renormalize
+/// before computing alpha_bar and f_alpha_bar.
 fn pmf_beta_symmetrized(pmf_remove: &Pmf, pmf_add: &Pmf, target_alpha: f64) -> f64 {
     if target_alpha <= 0.0 {
         return 1.0 - pmf_remove.infinity_mass;
@@ -361,22 +389,26 @@ fn pmf_beta_symmetrized(pmf_remove: &Pmf, pmf_add: &Pmf, target_alpha: f64) -> f
         };
     }
 
-    // Compute alpha_bar = Pr[X > 0]
+    // Clean FFT artifacts for alpha_bar/f_alpha_bar computation
+    let probs_y = clean_probs(&pmf_remove.probs, pmf_remove.infinity_mass);
+    let probs_x_add = clean_probs(&pmf_add.probs, pmf_add.infinity_mass);
+
+    // Compute alpha_bar = Pr[X > 0] using cleaned probs
     let upper_loss_add = pmf_add.lower_loss_index + n_x as i64 - 1;
     let x0 = -upper_loss_add;
 
     let start_idx = ((-x0 + 1) as usize).min(n_x);
     let mut alpha_bar = 0.0;
     for i in start_idx..n_x {
-        alpha_bar += pmf_add.probs[n_x - 1 - i];
+        alpha_bar += probs_x_add[n_x - 1 - i];
     }
 
-    // f_alpha_bar = Pr[Y <= 0]
+    // f_alpha_bar = Pr[Y <= 0] using cleaned probs
     let y0 = pmf_remove.lower_loss_index;
     let end_idx = ((-y0 + 1) as usize).min(n_y);
     let mut f_alpha_bar = 0.0;
     for j in 0..end_idx {
-        f_alpha_bar += pmf_remove.probs[j];
+        f_alpha_bar += probs_y[j];
     }
 
     if alpha_bar <= f_alpha_bar {

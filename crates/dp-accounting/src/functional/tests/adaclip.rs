@@ -276,9 +276,9 @@ fn test_reference_base_nm01() {
     let pld = ac.pld().unwrap();
     let tol = reference_tol(pld_disc(&pld), 1);
 
-    assert_abs_eq(pld.epsilon_at(1e-5), 9.1817360884429377e1, tol, "nm=0.1 eps(1e-5)");
-    assert_abs_eq(pld.epsilon_at(1e-8), 1.0532732507321121e2, tol, "nm=0.1 eps(1e-8)");
-    assert_abs_eq(pld.delta_at(1.0), 9.9999905919201626e-1, tol, "nm=0.1 delta(1)");
+    assert_abs_eq(pld.epsilon_at(1e-5), 9.18173607148263073e1, tol, "nm=0.1 eps(1e-5)");
+    assert_abs_eq(pld.epsilon_at(1e-8), 1.05327324941838626e2, tol, "nm=0.1 eps(1e-8)");
+    assert_abs_eq(pld.delta_at(1.0), 9.99998983462454638e-1, tol, "nm=0.1 delta(1)");
 }
 
 /// Reference values for nm=0.3, sigma_b=50 (single step).

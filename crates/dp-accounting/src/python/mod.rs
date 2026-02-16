@@ -455,7 +455,7 @@ impl PyDpProcess {
 ///     discretization (float): Grid spacing for the PLD PMF (default 1e-4).
 ///         Smaller = more precise, larger grid.  Error scales as O(disc^2).
 ///     log_mass_truncation_bound (float): Tails with probability below
-///         2^bound are truncated (default -32, i.e., 2^-32 ~ 2.3e-10).
+///         exp(bound) are truncated (default -50, matching Google dp_accounting).
 ///     pessimistic_estimate (bool): If True (default), round probabilities
 ///         to produce an **upper bound** on privacy loss.  Set to False for
 ///         an optimistic (lower-bound) estimate -- useful for debugging
@@ -485,7 +485,7 @@ struct PyDiscretizationConfig {
 #[pymethods]
 impl PyDiscretizationConfig {
     #[new]
-    #[pyo3(signature = (discretization=1e-4, log_mass_truncation_bound=-32.0, pessimistic_estimate=true, max_grid_size=10_000_000))]
+    #[pyo3(signature = (discretization=1e-4, log_mass_truncation_bound=-50.0, pessimistic_estimate=true, max_grid_size=10_000_000))]
     fn new(
         discretization: f64,
         log_mass_truncation_bound: f64,

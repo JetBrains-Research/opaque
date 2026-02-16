@@ -141,7 +141,6 @@ pub trait PoissonAmplifiable: Process + Sized {
 /// Poisson-transformed privacy loss for REMOVE adjacency
 ///
 /// `L_rem(x) = log(1-q + q*exp(L_raw(x)))` where `L_raw(x) = D*(-0.5*D - x) / sigma^2`
-#[allow(dead_code)]
 fn privacy_loss_remove(x: f64, sigma: f64, sensitivity: f64, rate: f64) -> f64 {
     let sigma_sq = sigma * sigma;
     let l_raw = sensitivity * (-0.5 * sensitivity - x) / sigma_sq;
@@ -157,7 +156,6 @@ fn privacy_loss_remove(x: f64, sigma: f64, sensitivity: f64, rate: f64) -> f64 {
 /// Poisson-transformed privacy loss for ADD adjacency
 ///
 /// By symmetry: `L_add(x) = -L_rem(-x)`
-#[allow(dead_code)]
 fn privacy_loss_add(x: f64, sigma: f64, sensitivity: f64, rate: f64) -> f64 {
     -privacy_loss_remove(-x, sigma, sensitivity, rate)
 }
@@ -212,102 +210,83 @@ fn privacy_loss_at_point(
 // Math: epsilon bounds (x-space truncation -> epsilon-space)
 // ---------------------------------------------------------------------------
 
-/// Find epsilon_upper: smallest ε where `poisson_delta(ε, adj) ≤ target`.
+/// Compute epsilon bounds for Poisson-subsampled Gaussian using x-space truncation.
 ///
-/// Bisects on the Poisson-subsampled Gaussian delta function directly,
-/// giving the exact crossing point for a given `min_delta` threshold.
+/// Matches Google dp_accounting's approach: compute x-space truncation points
+/// from the Gaussian tail (via `ppf(0.5 * exp(log_mass_truncation_bound))`),
+/// then evaluate the Poisson-subsampled privacy loss at those points to get
+/// epsilon bounds.
 ///
-/// The initial upper bound uses the base Gaussian analytic formula
-/// (always ≥ the Poisson-amplified epsilon) capped at the Poisson
-/// theoretical maximum for ADD adjacency.
-fn poisson_epsilon_for_delta(
-    sigma: f64,
-    sensitivity: f64,
-    rate: f64,
-    adjacency: Adjacency,
-    target: f64,
-) -> f64 {
-    use crate::math_helpers::gaussian::gaussian_epsilon_for_delta;
-
-    let delta_tilde = sensitivity / sigma;
-
-    // Start from the base Gaussian bound (which is always wider)
-    let mut hi = gaussian_epsilon_for_delta(delta_tilde, target);
-
-    // For ADD, epsilon is bounded above by -log(1-q)
-    if adjacency == Adjacency::Add {
-        hi = hi.min(-(1.0 - rate).ln());
-    }
-
-    let mut lo = 0.0_f64;
-    for _ in 0..100 {
-        let mid = (lo + hi) / 2.0;
-        if poisson_gaussian_get_delta(mid, adjacency, sigma, sensitivity, rate) > target {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    hi
-}
-
-/// Find epsilon_lower: most negative ε where `poisson_beta(|ε|, adj) ≤ target`.
+/// This ensures our grid size matches Google's exactly, which is critical for
+/// accurate beta computation after FFT-based composition.
 ///
-/// The beta function for adjacency A is the delta function for the opposite
-/// adjacency evaluated at −ε. So for ADD beta, we bisect on REMOVE delta
-/// at negative epsilon, and vice versa.
-fn poisson_epsilon_for_beta(
-    sigma: f64,
-    sensitivity: f64,
-    rate: f64,
-    adjacency: Adjacency,
-    target: f64,
-) -> f64 {
-    use crate::math_helpers::gaussian::gaussian_epsilon_for_delta;
-
-    let delta_tilde = sensitivity / sigma;
-    let opposite_adj = match adjacency {
-        Adjacency::Add => Adjacency::Remove,
-        Adjacency::Remove => Adjacency::Add,
-        Adjacency::Replace => unreachable!(),
-    };
-
-    // Upper bound from base Gaussian (wider than amplified)
-    let hi_init = gaussian_epsilon_for_delta(delta_tilde, target);
-
-    let mut lo = 0.0_f64;
-    let mut hi = hi_init;
-    for _ in 0..100 {
-        let mid = (lo + hi) / 2.0;
-        // beta_adj(E) = delta_opposite(-E), so check delta at -mid
-        if poisson_gaussian_get_delta(-mid, opposite_adj, sigma, sensitivity, rate) > target {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    -hi
-}
-
-/// Compute epsilon bounds for Poisson-subsampled Gaussian
+/// For REMOVE adjacency:
+/// - `lower_x = sigma * ppf(half_mass) - sensitivity` (shift for mu_upper tail)
+/// - `upper_x = -sigma * ppf(half_mass)`
+/// - `epsilon_upper = L_remove(lower_x)` (highest privacy loss)
+/// - `epsilon_lower = L_remove(upper_x)` ≈ `log(1-q)` (lowest privacy loss)
 ///
-/// Uses bisection on the Poisson-amplified delta and beta functions
-/// directly, giving tight bounds that match the `min_delta`/`min_beta`
-/// semantics from the inner Gaussian.
+/// For ADD adjacency:
+/// - `lower_x = sigma * ppf(half_mass)`
+/// - `upper_x = -sigma * ppf(half_mass) + sensitivity` (shift for mu_upper tail)
+/// - `epsilon_upper = L_add(lower_x)` ≈ `-log(1-q)` (highest privacy loss)
+/// - `epsilon_lower = L_add(upper_x)` = `-epsilon_upper_remove` (lowest privacy loss)
+///
+/// # References
+///
+/// Google dp_accounting `GaussianPrivacyLoss.privacy_loss_tail()` and
+/// `GaussianPrivacyLoss.connect_dots_bounds()`.
 pub(crate) fn poisson_gaussian_epsilon_bounds(
     sigma: f64,
     sensitivity: f64,
     rate: f64,
     adjacency: Adjacency,
-    min_delta: f64,
-    min_beta: f64,
+    log_mass_truncation_bound: f64,
 ) -> EpsilonBounds {
-    let epsilon_upper = poisson_epsilon_for_delta(sigma, sensitivity, rate, adjacency, min_delta);
-    let epsilon_lower = poisson_epsilon_for_beta(sigma, sensitivity, rate, adjacency, min_beta);
+    use statrs::distribution::{ContinuousCDF, Normal};
 
-    EpsilonBounds {
-        epsilon_lower,
-        epsilon_upper,
+    let standard_normal = Normal::new(0.0, 1.0).unwrap();
+
+    // x-space truncation: find x where Gaussian tail mass = 0.5 * exp(log_mass)
+    // ppf returns a very negative z-score for tiny probabilities
+    let half_mass = 0.5 * log_mass_truncation_bound.exp();
+    let lower_x_base = sigma * standard_normal.inverse_cdf(half_mass);
+    let upper_x_base = -lower_x_base; // symmetric
+
+    match adjacency {
+        Adjacency::Remove => {
+            // Shift lower_x by -sensitivity to cover mu_upper = (1-q)*mu(x) + q*mu(x+D)
+            let lower_x = lower_x_base - sensitivity;
+            let upper_x = upper_x_base;
+            let epsilon_upper = privacy_loss_remove(lower_x, sigma, sensitivity, rate);
+            let epsilon_lower = privacy_loss_remove(upper_x, sigma, sensitivity, rate);
+            EpsilonBounds {
+                epsilon_lower,
+                epsilon_upper,
+            }
+        }
+        Adjacency::Add => {
+            // Shift upper_x by +sensitivity to cover mu_upper = mu(x)
+            let lower_x = lower_x_base;
+            let upper_x = upper_x_base + sensitivity;
+            let epsilon_upper = privacy_loss_add(lower_x, sigma, sensitivity, rate);
+            let epsilon_lower = privacy_loss_add(upper_x, sigma, sensitivity, rate);
+            EpsilonBounds {
+                epsilon_lower,
+                epsilon_upper,
+            }
+        }
+        Adjacency::Replace => {
+            // For REPLACE, use both shifts
+            let lower_x = lower_x_base - sensitivity;
+            let upper_x = upper_x_base + sensitivity;
+            let epsilon_upper = privacy_loss_replace(lower_x, sigma, sensitivity, rate);
+            let epsilon_lower = privacy_loss_replace(upper_x, sigma, sensitivity, rate);
+            EpsilonBounds {
+                epsilon_lower,
+                epsilon_upper,
+            }
+        }
     }
 }
 
@@ -512,8 +491,9 @@ impl PoissonEvidence<Gaussian> for TightGaussianPoissonEvidence {
         let sigma = inner.noise_multiplier;
         let sensitivity = 1.0; // Normalized in functional API
         let config = &inner.config;
-        let min_delta = inner.min_delta;
-        let min_beta = inner.min_beta;
+
+        // Use log_mass_truncation_bound for x-space truncation (matching Google dp_accounting)
+        let log_mass = config.log_mass_truncation_bound;
 
         // Compute epsilon bounds for ADD and REMOVE adjacencies
         let bounds_remove = poisson_gaussian_epsilon_bounds(
@@ -521,16 +501,14 @@ impl PoissonEvidence<Gaussian> for TightGaussianPoissonEvidence {
             sensitivity,
             rate,
             Adjacency::Remove,
-            min_delta,
-            min_beta,
+            log_mass,
         );
         let bounds_add = poisson_gaussian_epsilon_bounds(
             sigma,
             sensitivity,
             rate,
             Adjacency::Add,
-            min_delta,
-            min_beta,
+            log_mass,
         );
 
         discretize_asymmetric_mechanism(config, bounds_remove, bounds_add, |epsilon, adj| {
@@ -542,7 +520,26 @@ impl PoissonEvidence<Gaussian> for TightGaussianPoissonEvidence {
                 rate,
             ))
         })
-        .map(|pld| pld.with_tail_budgets(min_delta, min_beta))
+        .map(|mut pld| {
+            // Chernoff truncation budgets for composition.
+            //
+            // Use symmetric budgets matching Google dp_accounting's default
+            // tail_mass_truncation=1e-15 (split equally between left and right).
+            // Google uses log(2/tail_mass) in the Chernoff bound, which is
+            // equivalent to per-side budgets of tail_mass/2 with log(1/budget).
+            //
+            // Decoupled from min_delta (which controls grid extent for
+            // epsilon_at/delta_at accuracy) to match Google's FFT behavior
+            // during composition, ensuring accurate beta computation.
+            const COMPOSE_TAIL_BUDGET: f64 = 5e-16; // 1e-15 / 2
+            pld.pmf_remove.right_tail_budget = COMPOSE_TAIL_BUDGET;
+            pld.pmf_remove.left_tail_budget = COMPOSE_TAIL_BUDGET;
+            if let Some(ref mut pmf_add) = pld.pmf_add {
+                pmf_add.right_tail_budget = COMPOSE_TAIL_BUDGET;
+                pmf_add.left_tail_budget = COMPOSE_TAIL_BUDGET;
+            }
+            pld
+        })
     }
 }
 

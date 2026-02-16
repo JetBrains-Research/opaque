@@ -375,12 +375,6 @@ class TestTruncatedPoisson:
             f"No-truncation: trunc={eps_trunc:.6f}, std={eps_std:.6f}"
         )
 
-    @pytest.mark.xfail(
-        reason="BUG: truncated_poisson.epsilon_at() returns inf for all nm values, "
-        "even single-step. delta_at() works correctly. Needs investigation in the "
-        "Rust PLD epsilon search for the TruncatedPoisson mechanism type.",
-        strict=True,
-    )
     def test_truncated_differs_when_truncation_occurs(self):
         """When truncation occurs, truncated analysis may differ from standard."""
         nm, q, n = 0.8, 0.01, 10_000
@@ -395,11 +389,6 @@ class TestTruncatedPoisson:
         assert math.isfinite(eps_trunc), f"eps_trunc={eps_trunc}"
         assert eps_trunc > 0, f"eps_trunc={eps_trunc}"
 
-    @pytest.mark.xfail(
-        reason="BUG: truncated_poisson.epsilon_at() returns inf — see "
-        "test_truncated_differs_when_truncation_occurs.",
-        strict=True,
-    )
     def test_cifar10_workflow(self):
         """CIFAR-10: n=50k, batch=250, sigma=0.8, 100 epochs."""
         n = 50_000
@@ -416,11 +405,6 @@ class TestTruncatedPoisson:
         assert math.isfinite(eps), f"CIFAR-10: epsilon={eps}"
         assert eps > 0, f"CIFAR-10: epsilon={eps}"
 
-    @pytest.mark.xfail(
-        reason="BUG: truncated_poisson.epsilon_at() returns inf — see "
-        "test_truncated_differs_when_truncation_occurs.",
-        strict=True,
-    )
     def test_imagenet_workflow(self):
         """ImageNet: n=1.28M, batch=4096, sigma=1.1."""
         n = 1_280_000
@@ -436,11 +420,6 @@ class TestTruncatedPoisson:
         assert math.isfinite(eps), f"ImageNet: epsilon={eps}"
         assert eps > 0, f"ImageNet: epsilon={eps}"
 
-    @pytest.mark.xfail(
-        reason="BUG: truncated_poisson.epsilon_at() returns inf — see "
-        "test_truncated_differs_when_truncation_occurs.",
-        strict=True,
-    )
     def test_llm_finetuning_workflow(self):
         """LLM fine-tuning: n=100k, batch=128, sigma=0.8."""
         n = 100_000
@@ -594,13 +573,19 @@ class TestDeltaQueries:
 
         assert 0.0 <= our_delta <= 1.0, f"eps={epsilon}: delta={our_delta}"
 
-        if abs(ref_delta) > 1e-9:
+        # At extreme epsilons, both implementations return grid-floor values
+        # dominated by truncation mass, not real privacy loss. Our truncation
+        # bound (-32) is tighter than Google's (-32*ln2 ≈ -22.18), so our
+        # floor is ~6e-12 vs Google's ~2.7e-10. Use Google's floor level as
+        # the threshold: below it, both answers are "effectively zero."
+        google_floor = 1e-9  # ~exp(-32*ln2) * composition factor
+        if abs(ref_delta) > google_floor:
             assert rel_error(our_delta, ref_delta) < 0.01, (
                 f"eps={epsilon}: ours={our_delta:.2e}, ref={ref_delta:.2e}"
             )
         else:
             # Both near PLD grid floor — just check ours is also tiny.
-            assert our_delta < 1e-8, f"eps={epsilon}: delta={our_delta}"
+            assert our_delta < google_floor, f"eps={epsilon}: delta={our_delta}"
 
     def test_delta_in_valid_range_for_all_epsilons(self):
         """Delta should be in [0, 1] for a sweep of epsilons including negative."""

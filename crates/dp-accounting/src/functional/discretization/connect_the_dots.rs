@@ -143,6 +143,24 @@ fn create_pmf_connect_the_dots_uniform(
         }
     }
 
+    let infinity_mass = deltas[n - 1];
+
+    // Renormalize after non-negativity clamping.
+    //
+    // In exact arithmetic, sum(probs) + infinity_mass == 1.0 by construction.
+    // Clamping tiny negative probabilities to zero inflates total mass by
+    // |sum of clamped negatives|. We scale the remaining probabilities down
+    // to restore the invariant. The correction is typically O(1e-10) and
+    // does not meaningfully affect any privacy computation.
+    let target_prob_mass = 1.0 - infinity_mass;
+    let actual_prob_mass: f64 = probs.iter().sum();
+    if actual_prob_mass > 0.0 && actual_prob_mass != target_prob_mass {
+        let scale = target_prob_mass / actual_prob_mass;
+        for p in &mut probs {
+            *p *= scale;
+        }
+    }
+
     let mut masses = BTreeMap::new();
     for (i, &prob) in probs.iter().enumerate() {
         if prob > 0.0 {
@@ -150,8 +168,6 @@ fn create_pmf_connect_the_dots_uniform(
             masses.insert(rounded_epsilon, prob);
         }
     }
-
-    let infinity_mass = deltas[n - 1];
 
     Ok(Pmf::from_sparse(
         discretization,

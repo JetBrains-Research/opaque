@@ -47,11 +47,14 @@ pub(crate) const MAX_NOISE_MULTIPLIER: f64 = 1.2;
 
 /// Default minimum delta for PLD right-bound truncation.
 ///
-/// Derived from the largest practical dataset: n = 2^42 ≈ 4.4T records
-/// (100T tokens / 30 tokens per record), with δ_min = n^{-1.1} ≈ 6.2e-15.
+/// Controls how far the PLD grid extends into the right tail. Smaller values
+/// give wider grids with better tail precision. Set to 1e-25 to ensure the
+/// grid covers enough tail mass for accurate `beta_at()` / `risk_at()`
+/// queries after multi-step composition, matching the precision of
+/// Google dp_accounting's default `log_mass_truncation_bound = -50`.
 ///
-/// This determines accuracy of `delta_at()` and `epsilon_at()` metrics.
-pub(crate) const DEFAULT_MIN_DELTA: f64 = 6.2e-15;
+/// This determines accuracy of `delta_at()`, `epsilon_at()`, and `beta_at()`.
+pub(crate) const DEFAULT_MIN_DELTA: f64 = 1e-25;
 
 /// Default minimum beta for PLD left-bound truncation.
 ///
