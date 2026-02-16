@@ -61,12 +61,27 @@ def sync_scalar(
         return value
 
     # Convert to tensor
+    # For NCCL backend we must use CUDA tensors; prefer the current CUDA device
+    # when `device` is not provided. If CUDA is unavailable while using NCCL,
+    # raise an informative error rather than silently creating a CPU tensor
+    # which would make the collective fail at runtime.
     if device is None:
-        device = torch.device("cpu")
         if dist.is_available() and dist.is_initialized():
             backend = dist.get_backend()
-            if backend == "nccl" and torch.cuda.is_available():
+            if backend == "nccl":
+                if not torch.cuda.is_available():
+                    raise RuntimeError(
+                        "Distributed backend is 'nccl' but CUDA is not available; "
+                        "provide an explicit `device` to `sync_scalar` or initialize "
+                        "with a CUDA-capable process." 
+                    )
+                # Use the currently selected CUDA device for this process.
                 device = torch.device(f"cuda:{torch.cuda.current_device()}")
+            else:
+                device = torch.device("cpu")
+        else:
+            device = torch.device("cpu")
+
     tensor = torch.tensor(value, dtype=torch.float32, device=device)
 
     # All-reduce
