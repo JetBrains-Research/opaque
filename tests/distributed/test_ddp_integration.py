@@ -281,7 +281,7 @@ class TestEndToEndDPTraining:
         # Make functional
         from opaque.utils import make_functional
 
-        params, func_model = make_functional(model)
+        func_model, params = make_functional(model)
 
         # Create loss function
         def loss_fn(params, x, y):
@@ -289,7 +289,9 @@ class TestEndToEndDPTraining:
             return ((pred - y) ** 2).mean()
 
         # Create clipped gradient function
-        grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2))
+        grad_fn, clip_state = clipped_grad(
+            loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2)
+        )
 
         # Create deterministic noise
         noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42 + rank)
@@ -300,7 +302,7 @@ class TestEndToEndDPTraining:
         y = torch.randn(batch_size, 1, device=device)
 
         # Compute clipped gradients (per-device)
-        grads = grad_fn(params, x, y)
+        grads, clip_state = grad_fn(params, x, y, state=clip_state)
 
         # Average gradients across devices
         grads = average_gradients(grads)
@@ -328,7 +330,7 @@ class TestEndToEndDPTraining:
         # Make functional
         from opaque.utils import make_functional
 
-        params, func_model = make_functional(model)
+        func_model, params = make_functional(model)
 
         # Create loss function
         def loss_fn(params, x, y):
