@@ -15,5 +15,10 @@ __all__ = [
     "custom_mf_noise",
     "dense_mf_noise",
     "gaussian_noise",
+    # Backwards-compatible convenience alias
+    "gaussian",
     "identity_mf_noise",
 ]
+
+# Convenience alias for callers using the short `gaussian` name in docs/examples
+gaussian = gaussian_noise
