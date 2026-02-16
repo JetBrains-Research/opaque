@@ -317,7 +317,7 @@ def main():
     # Pre-create clipped_grad function for fixed clipping
     if not args.use_adaptive_clipping:
         print("Creating clipped_grad function...")
-        fixed_clipped_grad_fn = clipped_grad(
+        fixed_clipped_grad_fn, fixed_clip_state = clipped_grad(
             per_example_loss_fn,
             argnums=0,
             batch_argnums=(1,),
@@ -329,6 +329,7 @@ def main():
         )
     else:
         fixed_clipped_grad_fn = None
+        fixed_clip_state = None
 
     # Training loop
     print("\n" + "=" * 80)
@@ -355,9 +356,10 @@ def main():
 
             # Compute clipped gradients
             if fixed_clipped_grad_fn is not None:
-                grads_tuple, aux = fixed_clipped_grad_fn(params, tokens)
+                result, fixed_clip_state = fixed_clipped_grad_fn(params, tokens, state=fixed_clip_state)
+                grads_tuple, aux = result if isinstance(result, tuple) else (result, None)
             else:
-                clipped_grad_fn = clipped_grad(
+                clipped_grad_fn, clip_state = clipped_grad(
                     per_example_loss_fn,
                     argnums=0,
                     batch_argnums=(1,),
@@ -367,7 +369,8 @@ def main():
                     return_grad_norms=True,
                     return_values=True,
                 )
-                grads_tuple, aux = clipped_grad_fn(params, tokens)
+                result, clip_state = clipped_grad_fn(params, tokens, state=clip_state)
+                grads_tuple, aux = result if isinstance(result, tuple) else (result, None)
 
             # Add Gaussian noise (stateful API)
             stddev = args.noise_multiplier * current_clip_norm
