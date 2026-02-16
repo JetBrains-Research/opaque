@@ -11,47 +11,10 @@ shared patches, so no attention patching is needed.
 """
 
 import importlib
-from typing import Any
 
 from opaque.compat.transformers._shared import vmap_repeat_kv
 
 _PHI3_MODULE = "transformers.models.phi3.modeling_phi3"
-
-
-class VmapCompatibleDynamicCache:
-    """vmap-compatible wrapper for Phi-3's DynamicCache.
-
-    Phi-3 uses a custom DynamicCache that may not have get_usable_length() method.
-    This wrapper ensures compatibility under vmap.
-    """
-
-    def __init__(self, original_cache):
-        """Initialize with original cache object."""
-        self._cache = original_cache
-
-    def __getattr__(self, name: str) -> Any:
-        """Delegate to original cache for all other attributes."""
-        return getattr(self._cache, name)
-
-    def get_usable_length(self, layer_idx: int) -> int:
-        """Get usable sequence length for given layer."""
-        if hasattr(self._cache, "get_usable_length"):
-            return self._cache.get_usable_length(layer_idx)
-
-        # Fallback for caches that store KV in key_cache/value_cache attributes
-        if hasattr(self._cache, "key_cache") and len(self._cache.key_cache) > layer_idx:
-            key_cache = self._cache.key_cache[layer_idx]
-            if key_cache is not None:
-                # key_cache shape: (batch, num_heads, seq_len, head_dim)
-                # Under vmap: (num_heads, seq_len, head_dim)
-                return key_cache.shape[-2]
-
-        # Fallback for caches with seen_tokens attribute
-        if hasattr(self._cache, "seen_tokens"):
-            return self._cache.seen_tokens
-
-        # Last resort: return 0 (no cached tokens)
-        return 0
 
 
 # =============================================================================
