@@ -88,8 +88,9 @@ def gaussian_noise(
     noise N(0, stddev²) to gradients and returns updated state.
 
     **Automatic distributed support**: When ``generator=None`` and distributed
-    mode is detected (via RANK/WORLD_SIZE env vars), automatically uses the SAME
-    seed across all devices. This provides synchronized noise for model convergence.
+    mode is detected (via ``torch.distributed.is_initialized()``), automatically 
+    uses the SAME seed across all devices. This provides synchronized noise for 
+    model convergence.
 
     Args:
         stddev: Standard deviation of Gaussian noise

@@ -7,8 +7,8 @@ Opaque supports distributed training using PyTorch's **DistributedDataParallel (
 Distributed training with DP requires careful handling because:
 
 1. **Per-example gradients** must be computed before averaging across GPUs
-2. **Noise is added independently on EVERY GPU** to maintain DP guarantees
-3. **Gradient aggregation** happens after clipping and noise injection
+2. **Gradients are aggregated** across devices (AllReduce SUM)
+3. **Same noise is added on EVERY device** after aggregation to maintain DP guarantees
 
 Opaque provides utilities for distributed DP-SGD that maintain privacy guarantees while scaling to multiple GPUs.
 
@@ -22,8 +22,8 @@ Opaque provides utilities for distributed DP-SGD that maintain privacy guarantee
     
     for batch in dataloader:
         grads = clipped_grad_fn(params, batch)
-        noisy_grads = noise_fn(grads, noise_state)  # THIS HAPPENS ON EVERY DEVICE
-        noisy_grads = all_reduce_gradients(noisy_grads)
+        grads = all_reduce_gradients(grads, op="sum")  # Aggregate FIRST
+        noisy_grads, noise_state = noise_fn(grads, noise_state)  # Then add noise
         params = optimizer_update(params, noisy_grads)
     ```
     
@@ -51,7 +51,266 @@ Opaque provides utilities for distributed DP-SGD that maintain privacy guarantee
 
 ## Quick Start
 
+### Example 1: Gaussian Noise with DDP
+
+**Complete working example with standard DP-SGD:**
+
+```python
+import torch
+import torch.nn.functional as F
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.func import functional_call
+from opaque.clipping import clipped_grad
+from opaque.distributed import all_reduce_gradients
+from opaque.noise import gaussian_noise
+from opaque.sampling import PoissonSampler
+
+# Initialize distributed (run with: torchrun --nproc_per_node=4 train.py)
+dist.init_process_group(backend="nccl")
+rank = dist.get_rank()
+world_size = dist.get_world_size()
+device = torch.device(f"cuda:{rank}")
+
+# Model setup
+model = MyModel().to(device)
+model = DDP(model, device_ids=[rank])
+
+# Create functional params for clipping (from base model, not DDP wrapper)
+params = {k: v.detach() for k, v in model.module.named_parameters()}
+
+# Clipping function
+def loss_fn(params, batch):
+    x, y = batch
+    logits = functional_call(model.module, params, (x,))
+    return F.cross_entropy(logits, y)
+
+clipped_grad_fn, clip_state = clipped_grad(
+    loss_fn, 
+    l2_clip_norm=1.0,
+    batch_size=32,
+)
+
+# Noise: No seed needed - automatically uses same seed on all devices!
+noise_fn, noise_state = gaussian_noise(stddev=1.1)
+
+# Sampler: Automatically shards data across devices (seed shifts by rank)
+sampler = PoissonSampler(dataset, sample_rate=0.01, generator=42)
+dataloader = torch.utils.data.DataLoader(
+    dataset,
+    batch_sampler=sampler,
+    collate_fn=collate_fn,
+)
+
+# Optimizer
+optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+
+# Training loop
+for epoch in range(num_epochs):
+    for batch in dataloader:
+        batch = tuple(t.to(device) for t in batch)
+        
+        # 1. Compute per-example clipped gradients (local data)
+        grads, clip_state = clipped_grad_fn(params, batch, state=clip_state)
+        
+        # 2. Aggregate gradients across devices (SUM)
+        grads = all_reduce_gradients(grads, op="sum")
+        
+        # 3. Add noise (same noise on all devices - no manual seed management!)
+        noisy_grads, noise_state = noise_fn(grads, noise_state)
+        
+        # 4. Assign gradients and update
+        for (name, p), g in zip(model.named_parameters(), noisy_grads.values()):
+            p.grad = g.to(p.dtype)
+        
+        optimizer.step()
+        optimizer.zero_grad()
+        
+        # Update params dict for next iteration
+        params = {k: v.detach() for k, v in model.named_parameters()}
+
+dist.destroy_process_group()
+```
+
+### Example 2: Matrix Factorization (BandMF) with DDP
+
+**Identical pattern with correlated noise:**
+
+```python
+import torch
+import torch.nn.functional as F
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.func import functional_call
+from opaque.clipping import clipped_grad
+from opaque.distributed import all_reduce_gradients
+from opaque.noise import band_mf_noise  # ← Only difference!
+from opaque.sampling import PoissonSampler
+
+# Initialize distributed (same as Gaussian)
+dist.init_process_group(backend="nccl")
+rank = dist.get_rank()
+device = torch.device(f"cuda:{rank}")
+
+# Model setup (same as Gaussian)
+model = MyModel().to(device)
+model = DDP(model, device_ids=[rank])
+params = {k: v.detach() for k, v in model.module.named_parameters()}
+
+# Clipping (same as Gaussian)
+def loss_fn(params, batch):
+    x, y = batch
+    logits = functional_call(model.module, params, (x,))
+    return F.cross_entropy(logits, y)
+
+clipped_grad_fn, clip_state = clipped_grad(
+    loss_fn,
+    l2_clip_norm=1.0,
+    batch_size=32,
+)
+
+# Create gradient template for MF
+grad_template = {k: torch.zeros_like(v) for k, v in params.items()}
+
+# Correlated noise: Same API as gaussian_noise!
+# No seed needed - automatically uses same seed on all devices!
+noise_fn, noise_state = band_mf_noise(
+    grad_template,
+    n=1000,           # Total training steps
+    bands=4,          # Correlation bands
+    stddev=1.1,       # Same as Gaussian
+)
+
+# Sampler (same as Gaussian)
+sampler = PoissonSampler(dataset, sample_rate=0.01, generator=42)
+dataloader = torch.utils.data.DataLoader(
+    dataset,
+    batch_sampler=sampler,
+    collate_fn=collate_fn,
+)
+
+# Optimizer (same as Gaussian)
+optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+
+# Training loop (IDENTICAL to Gaussian!)
+for epoch in range(num_epochs):
+    for batch in dataloader:
+        batch = tuple(t.to(device) for t in batch)
+        
+        # 1. Compute clipped gradients (local data)
+        grads, clip_state = clipped_grad_fn(params, batch, state=clip_state)
+        
+        # 2. Aggregate across devices (SUM)
+        grads = all_reduce_gradients(grads, op="sum")
+        
+        # 3. Add correlated noise (same noise on all devices!)
+        noisy_grads, noise_state = noise_fn(grads, noise_state)
+        
+        # 4. Update parameters
+        for (name, p), g in zip(model.named_parameters(), noisy_grads.values()):
+            p.grad = g.to(p.dtype)
+        
+        optimizer.step()
+        optimizer.zero_grad()
+        params = {k: v.detach() for k, v in model.module.module.named_parameters()}
+
+dist.destroy_process_group()
+```
+
+**Key Takeaways:**
+
+✅ **Identical training loop** - Only difference is noise function initialization  
+✅ **Same seed management** - Both automatically synchronize seeds in distributed mode  
+✅ **Same flow** - Clip → Aggregate → Add Noise → Update  
+✅ **Drop-in replacement** - Switch between Gaussian and MF by changing 1 line  
+
+### All Noise Mechanisms - Quick Reference
+
+**All noise mechanisms work identically in DDP. Only the initialization differs:**
+
+```python
+import torch.distributed as dist
+from opaque.noise import (
+    gaussian_noise, band_mf_noise, blt_mf_noise, 
+    dense_mf_noise, custom_mf_noise, identity_mf_noise
+)
+
+# Initialize distributed
+dist.init_process_group(backend="nccl")
+rank = dist.get_rank()
+device = torch.device(f"cuda:{rank}")
+
+# Model + clipping setup (same for all)
+model = DDP(MyModel().to(device), device_ids=[rank])
+params = {k: v.detach() for k, v in model.named_parameters()}
+grad_template = {k: torch.zeros_like(v) for k, v in params.items()}
+clipped_grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_size=32)
+
+# Choose ONE noise mechanism (no seed needed - automatically syncs in DDP!):
+# ============================================================================
+
+# 1. Gaussian Noise (Standard DP-SGD)
+noise_fn, noise_state = gaussian_noise(stddev=1.1)
+
+# 2. BandMF (Banded Toeplitz) - 10-50% better utility
+noise_fn, noise_state = band_mf_noise(grad_template, n=1000, bands=4, stddev=1.1)
+
+# 3. BLT (Buffered Linear Toeplitz) - State-of-the-art
+noise_fn, noise_state = blt_mf_noise(grad_template, n=10000, stddev=1.1, min_buffers=1, max_buffers=5)
+
+# 4. Dense MF - Best for small n (< 100 steps)
+noise_fn, noise_state = dense_mf_noise(grad_template, n=100, stddev=1.1)
+
+# 5. Custom MF - Your own strategy matrix
+strategy_matrix = torch.eye(1000)  # Your C^{-1}
+noise_fn, noise_state = custom_mf_noise(grad_template, noising=strategy_matrix, stddev=1.1)
+
+# 6. Identity MF - DP-SGD via MF API
+noise_fn, noise_state = identity_mf_noise(grad_template, stddev=1.1)
+
+# Training loop (IDENTICAL for all 6 mechanisms!)
+for batch in dataloader:
+    batch = tuple(t.to(device) for t in batch)
+    
+    # 1. Clip gradients
+    grads, clip_state = clipped_grad_fn(params, batch, state=clip_state)
+    
+    # 2. Aggregate
+    grads = all_reduce_gradients(grads, op="sum")
+    
+    # 3. Add noise (mechanism determined by initialization above)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
+    
+    # 4. Update
+    for (name, p), g in zip(model.named_parameters(), noisy_grads.values()):
+        p.grad = g.to(p.dtype)
+    optimizer.step()
+    optimizer.zero_grad()
+    params = {k: v.detach() for k, v in model.named_parameters()}
+```
+
+**Comparison Table:**
+
+| Mechanism | Initialization Complexity | Memory | Utility vs Gaussian | Best For |
+|-----------|---------------------------|--------|---------------------|----------|
+| `gaussian_noise` | ★☆☆☆☆ (simplest) | O(1) | Baseline | Quick start, benchmarking |
+| `identity_mf_noise` | ★★☆☆☆ | O(1) | Same as Gaussian | Testing MF infrastructure |
+| `band_mf_noise` | ★★★☆☆ | O(bands) | +10-50% | **Recommended default** |
+| `blt_mf_noise` | ★★★★☆ | O(buffers) | +20-60% | Long training (n > 5000) |
+| `dense_mf_noise` | ★★☆☆☆ | O(n²) | Optimal | Small n (< 100 steps) |
+| `custom_mf_noise` | ★★★★★ | O(matrix) | Varies | Research, custom strategies |
+
+All mechanisms support the same features:
+- ✅ Automatic distributed seed synchronization
+- ✅ Reproducible with explicit `generator=42`
+- ✅ Works with all optimizers (SGD, Adam, etc.)
+- ✅ Compatible with all sampling strategies
+
+See [Matrix Factorization Guide](matrix-factorization.md) for detailed explanations of each mechanism.  
+
 ### Recommended: Sharded Poisson Sampling
+
+**Simplified version without explicit DDP wrapper:**
 
 **Standard approach with simple accounting and automatic seed management:**
 
@@ -138,7 +397,115 @@ for batch in dataloader:
 torchrun --nproc_per_node=4 train.py
 ```
 
+!!! tip "Matrix Factorization with DDP"
+    
+    **Correlated noise mechanisms** (BandMF, BLT) also support distributed training with the same centralized pattern:
+    
+    ```python
+    from opaque.noise import band_mf_noise
+    
+    # Automatically uses same seed on all devices (centralized pattern)
+    noise_fn, noise_state = band_mf_noise(
+        grad_template, 
+        n=1000, 
+        bands=4, 
+        stddev=1.1,
+    )
+    
+    # Training loop identical to Gaussian noise
+    for batch in dataloader:
+        grads = clipped_grad_fn(params, batch)
+        grads = all_reduce_gradients(grads)
+        noisy_grads, noise_state = noise_fn(grads, noise_state)
+        params = optimizer_update(params, noisy_grads)
+    ```
+    
+    For details, see [Matrix Factorization Guide - Distributed Training](matrix-factorization.md#distributed-training-ddp).
+
 ## Key Concepts
+
+### How Distributed DP-SGD Works
+
+**Critical insight**: All devices generate **the SAME noise** and add it to their local copy of the **aggregated** gradient. The noise is **not accumulated** across devices.
+
+**Step-by-step example with 2 GPUs:**
+
+```python
+# Step 1: Each device computes clipped gradients on its local data
+Device 0: clipped_grad = [1.0, 2.0, 3.0]  # From batch_0
+Device 1: clipped_grad = [4.0, 5.0, 6.0]  # From batch_1
+
+# Step 2: AllReduce SUM aggregates gradients
+# Both devices now have the SAME aggregated gradient:
+Device 0: aggregated = [5.0, 7.0, 9.0]  # 1+4, 2+5, 3+6
+Device 1: aggregated = [5.0, 7.0, 9.0]  # (identical)
+
+# Step 3: Each device generates IDENTICAL noise (same seed)
+Device 0: noise = [0.1, 0.2, 0.3]  # torch.randn(..., generator=seed_0)
+Device 1: noise = [0.1, 0.2, 0.3]  # Same seed → same noise!
+
+# Step 4: Each device adds noise to its local copy
+Device 0: noisy_grad = [5.1, 7.2, 9.3]  # aggregated + noise
+Device 1: noisy_grad = [5.1, 7.2, 9.3]  # (identical)
+
+# Step 5: Optimizer updates parameters
+# Both devices have identical parameters after update
+```
+
+**Key points:**
+
+- ✅ **Same noise everywhere** - Prevents model divergence (parameters stay synchronized)
+- ✅ **Noise NOT accumulated** - We don't sum noise across devices (would give √k scaling)
+- ✅ **Conceptually noise after aggregation** - But physically added on each device
+- ✅ **Standard privacy accounting** - Noise magnitude is exactly as calibrated
+
+**What if we used DIFFERENT seeds per device?** ❌
+
+```python
+# BAD: Different noise per device
+Device 0: noise = [0.1, 0.2, 0.3]  # seed=42
+Device 1: noise = [0.9, 0.8, 0.7]  # seed=43 (DIFFERENT!)
+
+Device 0: noisy_grad = [5.1, 7.2, 9.3]
+Device 1: noisy_grad = [5.9, 7.8, 9.7]  # Different from Device 0!
+
+# Result: Models DIVERGE! Parameters become different across devices.
+# Training fails because devices compute different updates.
+```
+
+**What if we added noise BEFORE aggregation?** ❌
+
+```python
+# BAD: Add noise before AllReduce (federated pattern)
+Device 0: clipped = [1.0, 2.0, 3.0] + noise_0 = [1.1, 2.2, 3.3]
+Device 1: clipped = [4.0, 5.0, 6.0] + noise_1 = [4.9, 5.8, 6.7]
+
+# AllReduce SUM accumulates BOTH gradients AND noise
+aggregated = [6.0, 8.0, 10.0]  # Combined gradient + noise
+
+# Problem: Noise magnitude scales by √k where k = num devices
+# With 4 GPUs: noise is 2x larger, with 16 GPUs: 4x larger!
+# Privacy accounting must use "mixture Gaussian" (more complex)
+```
+
+**Our approach (centralized pattern)** ✅
+
+```python
+# GOOD: Aggregate THEN add noise
+Device 0: clipped = [1.0, 2.0, 3.0]  # No noise yet
+Device 1: clipped = [4.0, 5.0, 6.0]  # No noise yet
+
+# AllReduce SUM (only gradients)
+aggregated = [5.0, 7.0, 9.0]
+
+# Each device adds SAME noise to aggregated gradient
+both_devices: noisy = [5.0, 7.0, 9.0] + [0.1, 0.2, 0.3] = [5.1, 7.2, 9.3]
+
+# Benefits:
+# ✅ Noise magnitude is exactly as calibrated (no scaling)
+# ✅ Standard DP-SGD accounting (no mixture Gaussian needed)
+# ✅ Parameters stay synchronized (no divergence)
+```
 
 ### Automatic Seed Management in Distributed Training
 
@@ -834,9 +1201,9 @@ Current DDP support limitations:
 
 ## Next Steps
 
+- **[Matrix Factorization](matrix-factorization.md)** - Correlated noise (BandMF, BLT) with DDP support
 - **[Memory Profiling](memory-profiling.md)** - Optimize memory usage for multi-GPU
 - **[LoRA Fine-tuning](lora.md)** - Parameter-efficient training with DP
-- **[Tutorial 07](../tutorials/07_distributed_training.ipynb)** - Interactive DDP tutorial
 
 ---
 
