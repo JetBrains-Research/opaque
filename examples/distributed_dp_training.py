@@ -102,21 +102,22 @@ def main():
     )
     
     # Create deterministic noise function (functional API)
-    # Two approaches for distributed DP-SGD:
+    # For sharded Poisson sampling with DDP, use SAME seed on all devices.
+    # Each device independently applies noise with the same seed,
+    # so they all generate the same noise (no broadcast needed).
     #
-    # APPROACH 1: Independent noise (privacy amplification via parallel composition)
-    # - Each device adds noise with DIFFERENT seed BEFORE aggregation
-    # - Better privacy bounds (amplification)
-    # - Used here:
+    # STANDARD APPROACH: Shared noise (standard DP-SGD accounting)
+    # - All devices use SAME seed (no +rank offset)
+    # - Each device independently applies noise_fn() with this seed
+    # - Noise added AFTER aggregation (each device aggregates first)
     seed = 42
-    gen = seed + rank if isinstance(seed, int) else seed
-    noise_fn, noise_state = opaque.gaussian_noise(stddev=1.1, generator=gen)
+    noise_fn, noise_state = opaque.gaussian_noise(stddev=1.1, generator=seed)
     #
-    # APPROACH 2: Shared noise (mixture Gaussian accounting)
-    # - All devices use SAME seed (no +rank) AFTER aggregation
-    # - Standard DP-SGD accounting
-    # - Alternative:
-    # gen = seed  # Same seed on all ranks
+    # ALTERNATIVE (Advanced): Independent noise (privacy amplification)
+    # - Each device adds noise BEFORE aggregation with DIFFERENT seed (+rank)
+    # - Better privacy bounds but requires different accounting
+    # - Only use if you understand the privacy implications:
+    # gen = seed + rank if isinstance(seed, int) else seed
     # noise_fn, noise_state = opaque.gaussian_noise(stddev=1.1, generator=gen)
     
     # Privacy accounting (same on all ranks)
@@ -125,7 +126,7 @@ def main():
     
     if rank == 0:
         print(f"\n📊 Privacy budget: ε={epsilon_target}, δ={delta}")
-        print(f"   Approach: Independent noise (privacy amplification)")
+        print(f"   Approach: Standard DP-SGD (shared noise across devices)")
         print(f"   Clip norm (initial): {clip_state.clip_norm}")
         print(f"   Noise multiplier: {1.1}")
     
@@ -139,31 +140,23 @@ def main():
         if batch_x.numel() == 0:
             continue
         
-        # APPROACH 1: Independent noise (privacy amplification)
-        # Step 1: Compute clipped gradients (per-device)
+        # Standard DP-SGD with sharded Poisson sampling:
+        # Step 1: Compute clipped gradients (per-device, on disjoint data shard)
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
         
-        # Step 2: Add noise BEFORE aggregation (different seed per device)
+        # Step 2: Aggregate gradients across devices
+        grads = dist_utils.sum_gradients(grads)  # Sum before noise
+        
+        # Step 3: Add noise AFTER aggregation
         # ⚠️ CRITICAL: noise_fn() is called on EVERY device (rank 0, 1, 2, ...)
-        #    NOT just rank 0! This ensures DP is applied on all devices.
-        #    Each device independently generates noise using its own seed (42 + rank).
+        #    Each device independently calls noise_fn() with same seed → generates same noise.
+        #    This is NOT a broadcast from rank 0, but synchronized independent application.
         noisy_grads, noise_state = noise_fn(grads, noise_state)
         
-        # Step 3: Sum noisy gradients across devices (NOT average!)
-        # For Poisson sampling with variable batch sizes, use sum
-        noisy_grads = dist_utils.sum_gradients(noisy_grads)
-        
-        # Step 4: Update parameters (all devices have same noisy gradient sum)
+        # Step 4: Update parameters (all devices have identically noisy gradients)
         lr = 0.01
         for key in params:
             params[key] = params[key] - lr * noisy_grads[key]
-        
-        # APPROACH 2 ALTERNATIVE (shared noise):
-        # grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
-        # grads = dist_utils.sum_gradients(grads)  # Sum first
-        # noisy_grads, noise_state = noise_fn(grads, noise_state)  # Same seed → same noise
-        # for key in params:
-        #     params[key] = params[key] - lr * noisy_grads[key]
         
         # Log progress
         if rank == 0 and step % 10 == 0:
