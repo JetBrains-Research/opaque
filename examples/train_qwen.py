@@ -289,7 +289,7 @@ def main():
             "\n   Creating clipped_grad function (one-time setup for fixed clipping)..."
         )
         t0 = time.time()
-        fixed_clipped_grad_fn = clipped_grad(
+        fixed_clipped_grad_fn, fixed_clip_state = clipped_grad(
             per_example_loss_fn,
             argnums=0,
             batch_argnums=(1,),
@@ -302,6 +302,7 @@ def main():
         print(f"   ✓ Created in {time.time() - t0:.1f}s")
     else:
         fixed_clipped_grad_fn = None
+        fixed_clip_state = None
 
     # Training loop
     setup_time = time.time() - overall_start
@@ -343,7 +344,8 @@ def main():
                 if fixed_clipped_grad_fn is not None:
                     # Use pre-created function (fixed clipping - no recreation!)
                     grad_compute_start = time.time()
-                    grads_tuple, aux = fixed_clipped_grad_fn(params, tokens)
+                    result, fixed_clip_state = fixed_clipped_grad_fn(params, tokens, state=fixed_clip_state)
+                    grads_tuple, aux = result if isinstance(result, tuple) else (result, None)
                     grad_compute_time = time.time() - grad_compute_start
                     if global_step <= 2:
                         print(
@@ -352,7 +354,7 @@ def main():
                 else:
                     # Adaptive clipping - must recreate with new clip_norm
                     fn_create_start = time.time()
-                    clipped_grad_fn = clipped_grad(
+                    clipped_grad_fn, clip_state = clipped_grad(
                         per_example_loss_fn,
                         argnums=0,
                         batch_argnums=(1,),
@@ -367,7 +369,8 @@ def main():
                         print(f"    clipped_grad creation: {fn_create_time:.1f}s")
 
                     grad_compute_start = time.time()
-                    grads_tuple, aux = clipped_grad_fn(params, tokens)
+                    result, clip_state = clipped_grad_fn(params, tokens, state=clip_state)
+                    grads_tuple, aux = result if isinstance(result, tuple) else (result, None)
                     grad_compute_time = time.time() - grad_compute_start
                     if global_step <= 2:
                         print(f"    gradient computation: {grad_compute_time:.1f}s")
