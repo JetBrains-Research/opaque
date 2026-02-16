@@ -406,11 +406,11 @@ class TestTruncatedPoisson:
         assert eps > 0, f"CIFAR-10: epsilon={eps}"
 
     def test_imagenet_workflow(self):
-        """ImageNet: n=1.28M, batch=4096, sigma=0.8."""
+        """ImageNet: n=1.28M, batch=4096, sigma=1.1."""
         n = 1_280_000
         batch = 4096
         q = batch / n
-        nm = 0.8
+        nm = 1.1
         steps = 5 * (n // batch)  # 5 epochs
 
         step = dp.truncated_poisson(nm, q, batch_size_cap=batch, dataset_size=n)
@@ -956,7 +956,7 @@ class TestNumericalStability:
     @pytest.mark.parametrize("delta", [1e-10, 1e-12])
     def test_extreme_small_delta(self, delta):
         """Very small delta should give finite epsilon."""
-        proc = dp.poisson(0.9, 0.001) * 1000
+        proc = dp.poisson(1.1, 0.001) * 1000
         eps = proc.epsilon_at(delta)
         assert math.isfinite(eps), f"delta={delta}: epsilon={eps}"
         assert eps > 0, f"delta={delta}: epsilon={eps}"

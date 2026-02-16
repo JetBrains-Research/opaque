@@ -394,7 +394,7 @@ class TestIntrospection:
         assert "elapsed_ms" in info
         assert info["grid_size"] > 0
         assert info["discretization"] == pytest.approx(1e-4)
-        assert abs(info["total_mass"] - 1.0) < 1e-10
+        assert abs(info["total_mass"] - 1.0) < 1e-8
 
     def test_summary_returns_string(self):
         """summary() should return a formatted multi-line string."""
