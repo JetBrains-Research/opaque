@@ -287,9 +287,9 @@ def adaptive_clipped_grad(
         if grad_norms is not None:
             # If distributed, gather norms from all devices for accurate quantile
             try:
-                from opaque.distributed import gather_tensors, is_initialized
+                from opaque.distributed import gather_tensors, is_distributed
 
-                if is_initialized():
+                if is_distributed():
                     # Gather all per-example norms across devices (handles variable sizes)
                     all_norms = gather_tensors(grad_norms, dim=0)
                 else:

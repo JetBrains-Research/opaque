@@ -9,19 +9,19 @@ The API returns ``(noise_fn, state)`` where state is always immutable:
     >>> noisy_grads, state = noise_fn(grads, state)
 
 Auto-distributed support:
-- When distributed mode is detected (RANK/WORLD_SIZE env vars), and no generator
-  is provided, all devices automatically use the SAME seed for synchronized noise.
+- When distributed mode is detected (via torch.distributed.is_initialized()), and no
+  generator is provided, all devices automatically use the SAME seed for synchronized noise.
 - This prevents model divergence while keeping the API simple - just pass generator=None.
 """
 
 import dataclasses
-import os
 import warnings
 from collections.abc import Callable
 from typing import Any
 
 import torch
 
+from opaque.distributed import is_distributed
 from opaque.utils.pytree import tree_map
 
 
@@ -40,25 +40,6 @@ class GaussianNoiseState:
     rng_state: torch.Generator
 
 
-def _detect_distributed_env() -> tuple[int | None, int | None]:
-    """Detect distributed training environment from environment variables.
-    
-    Returns:
-        Tuple of (rank, world_size) if distributed environment detected,
-        otherwise (None, None).
-    """
-    rank = os.environ.get("RANK") or os.environ.get("LOCAL_RANK")
-    world_size = os.environ.get("WORLD_SIZE")
-    
-    if rank is not None and world_size is not None:
-        try:
-            return int(rank), int(world_size)
-        except ValueError:
-            pass
-    
-    return None, None
-
-
 def _resolve_generator(
     generator: None | int | torch.Generator,
 ) -> torch.Generator:
@@ -74,8 +55,7 @@ def _resolve_generator(
     """
     if generator is None:
         # Auto-detect distributed mode for synchronized noise
-        rank, world_size = _detect_distributed_env()
-        if world_size is not None and world_size > 1:
+        if is_distributed():
             # Distributed mode: use same seed everywhere for synchronized noise
             # Use a fixed seed (e.g., 0) that doesn't depend on rank
             gen = torch.Generator().manual_seed(0)

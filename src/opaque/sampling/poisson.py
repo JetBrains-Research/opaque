@@ -9,37 +9,14 @@ Supports distributed training with automatic environment detection:
 - SHARDED: Workers sample from disjoint shards (distributed default, ensures "single Poisson")
 """
 
-import os
 import warnings
 from collections.abc import Iterator
 
 import numpy as np
 from torch.utils.data import Sampler
 
+from opaque.distributed import get_rank, get_world_size, is_distributed
 from opaque.sampling.types import SamplingMode
-
-
-def _detect_distributed_env() -> tuple[int | None, int | None]:
-    """Detect distributed training environment from environment variables.
-
-    Checks for common distributed training environment variables set by
-    torchrun, torch.distributed.launch, or manual DDP setup.
-
-    Returns:
-        Tuple of (rank, world_size) if distributed environment detected,
-        otherwise (None, None).
-    """
-    # Try common environment variable names
-    rank = os.environ.get("RANK") or os.environ.get("LOCAL_RANK")
-    world_size = os.environ.get("WORLD_SIZE")
-
-    if rank is not None and world_size is not None:
-        try:
-            return int(rank), int(world_size)
-        except ValueError:
-            pass
-
-    return None, None
 
 
 class PoissonSampler(Sampler):

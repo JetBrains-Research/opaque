@@ -12,7 +12,7 @@ import torch
 import torch.distributed as dist
 
 from . import all_reduce as all_reduce_tensor
-from . import get_world_size, is_initialized
+from . import get_world_size, is_distributed
 
 __all__ = [
     "reduce_scalar",
@@ -59,7 +59,7 @@ def reduce_scalar(
         - Typical use: sum batch sizes, average metrics
         - Creates a temporary tensor for communication
     """
-    if not is_initialized():
+    if not is_distributed():
         return value
 
     # Convert to tensor
@@ -134,7 +134,7 @@ def gather_tensors(
         - Essential for adaptive clipping with Poisson sampling
         - Uses CPU communication via all_gather_object (moves tensors temporarily)
     """
-    if not is_initialized():
+    if not is_distributed():
         return tensor
 
     # Gather tensors from all devices (handles variable sizes)
@@ -220,7 +220,7 @@ def sync_state(
         - Only synchronizes numeric (float/int) fields
         - Step counters typically should NOT be synchronized (use sync_fields)
     """
-    if not is_initialized():
+    if not is_distributed():
         return state
 
     if not is_dataclass(state):
