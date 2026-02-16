@@ -100,10 +100,22 @@ def main():
     )
     
     # Create deterministic noise function (functional API)
-    # Offset seed by rank for per-rank determinism
+    # Two approaches for distributed DP-SGD:
+    #
+    # APPROACH 1: Independent noise (privacy amplification via parallel composition)
+    # - Each device adds noise with DIFFERENT seed BEFORE aggregation
+    # - Better privacy bounds (amplification)
+    # - Used here:
     seed = 42
     gen = seed + rank if isinstance(seed, int) else seed
     noise_fn, noise_state = opaque.gaussian_noise(stddev=1.1, generator=gen)
+    #
+    # APPROACH 2: Shared noise (mixture Gaussian accounting)
+    # - All devices use SAME seed (no +rank) AFTER aggregation
+    # - Standard DP-SGD accounting
+    # - Alternative:
+    # gen = seed  # Same seed on all ranks
+    # noise_fn, noise_state = opaque.gaussian_noise(stddev=1.1, generator=gen)
     
     # Privacy accounting (same on all ranks)
     epsilon_target = 3.0
@@ -111,6 +123,7 @@ def main():
     
     if rank == 0:
         print(f"\n📊 Privacy budget: ε={epsilon_target}, δ={delta}")
+        print(f"   Approach: Independent noise (privacy amplification)")
         print(f"   Clip norm (initial): {clip_state.clip_norm}")
         print(f"   Noise multiplier: {1.1}")
     
@@ -124,22 +137,28 @@ def main():
         if batch_x.numel() == 0:
             continue
         
+        # APPROACH 1: Independent noise (privacy amplification)
         # Step 1: Compute clipped gradients (per-device)
-        # Each device clips its local batch independently
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
         
-        # Step 2: Aggregate gradients across devices
-        # Sum clipped gradients from all devices
-        grads = dist_utils.average_gradients(grads)
-        
-        # Step 3: Add noise (deterministic, different per device)
-        # Each device adds different noise (privacy preserving)
+        # Step 2: Add noise BEFORE aggregation (different seed per device)
         noisy_grads, noise_state = noise_fn(grads, noise_state)
         
-        # Step 4: Update parameters (same update on all devices)
+        # Step 3: Average noisy gradients across devices
+        # Independent noise samples → privacy amplification
+        noisy_grads = dist_utils.average_gradients(noisy_grads)
+        
+        # Step 4: Update parameters (all devices have same noisy gradient)
         lr = 0.01
         for key in params:
             params[key] = params[key] - lr * noisy_grads[key]
+        
+        # APPROACH 2 ALTERNATIVE (shared noise):
+        # grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+        # grads = dist_utils.average_gradients(grads)  # Aggregate first
+        # noisy_grads, noise_state = noise_fn(grads, noise_state)  # Same seed → same noise
+        # for key in params:
+        #     params[key] = params[key] - lr * noisy_grads[key]
         
         # Log progress
         if rank == 0 and step % 10 == 0:

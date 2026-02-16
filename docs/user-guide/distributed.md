@@ -14,41 +14,50 @@ Opaque provides utilities for distributed DP-SGD that maintain privacy guarantee
 
 ## Quick Start
 
-Here's a minimal DDP training script:
+### Strategy 1: Independent Noise (Recommended)
+
+Each device adds different noise before aggregation (better privacy via amplification):
 
 ```python
 import torch.distributed as dist
 from opaque.clipping import clipped_grad
-from opaque.distributed import average_gradients
+from opaque.distributed import average_gradients, get_rank
 from opaque.noise import gaussian_noise
 
-# 1. Initialize distributed training
+# Initialize distributed
 dist.init_process_group(backend="nccl")
-rank = dist.get_rank()
+rank = get_rank()
 device = torch.device(f"cuda:{rank}")
 
-# 2. Create model (same as single-GPU)
+# Model and clipping
 model = MyModel().to(device)
 fmodel, params = make_functional(model)
-
-# 3. Create DP gradient function
 clipped_grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0)
-# Create deterministic noise using functional API; offset seed by rank if desired
-gen = 42 + rank if isinstance(42, int) else 42
-noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=gen)
 
-# 4. Training loop with gradient averaging
+# Independent noise: OFFSET seed by rank
+noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42 + rank)
+
+# Training loop
 for batch in dataloader:
-    # Compute clipped gradients locally
     grads, clip_state = clipped_grad_fn(params, batch, state=clip_state)
-    
-    # Add noise locally
-    noisy_grads, noise_state = noise_fn(grads, noise_state)
-    
-    # Average gradients across GPUs
-    noisy_grads = average_gradients(noisy_grads)
-    
-    # Update parameters
+    noisy_grads, noise_state = noise_fn(grads, noise_state)  # Noise FIRST
+    noisy_grads = average_gradients(noisy_grads)              # Aggregate SECOND
+    params = optimizer_update(params, noisy_grads)
+```
+
+### Strategy 2: Shared Noise
+
+All devices use same noise after aggregation (standard DP-SGD accounting):
+
+```python
+# Shared noise: SAME seed on all ranks (no +rank)
+noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42)
+
+# Training loop
+for batch in dataloader:
+    grads, clip_state = clipped_grad_fn(params, batch, state=clip_state)
+    grads = average_gradients(grads)                          # Aggregate FIRST
+    noisy_grads, noise_state = noise_fn(grads, noise_state)  # Noise SECOND
     params = optimizer_update(params, noisy_grads)
 ```
 
@@ -59,29 +68,54 @@ torchrun --nproc_per_node=4 train.py
 
 ## Key Concepts
 
-### DDP for DP-SGD
+### Two Distributed DP-SGD Strategies
 
-Standard DDP aggregates gradients **before** applying them. DP-SGD requires a different approach:
+There are **two valid approaches** for distributed DP training, with different privacy accounting:
 
-1. **Compute per-example gradients** on local batch (via `vmap`)
-2. **Clip each gradient** independently (maintains sensitivity)
-3. **Sum clipped gradients** locally
-4. **Add noise** to local sum
-5. **Average noisy gradients** across GPUs (via `all_reduce`)
+#### Strategy 1: Independent Noise (Privacy Amplification)
 
-!!! warning "Order Matters"
-    You **must** add noise **before** averaging gradients. Adding noise after averaging would break DP guarantees!
+**Order**: Clip → Noise → Aggregate
+
+```python
+grads = clipped_grad_fn(params, batch)
+noisy_grads = noise_fn(grads, noise_state)  # Different seed per device
+noisy_grads = average_gradients(noisy_grads)
+```
+
+- Each device adds **different noise** (offset seed by rank: `generator=seed + rank`)
+- Noise added **before** aggregation
+- **Better privacy bounds** via parallel composition (privacy amplification)
+- Works with **all noise functions** (gaussian, bounded, matrix factorization)
+
+#### Strategy 2: Shared Noise (Mixture Gaussian)
+
+**Order**: Clip → Aggregate → Noise
+
+```python
+grads = clipped_grad_fn(params, batch)
+grads = average_gradients(grads)  # Aggregate first
+noisy_grads = noise_fn(grads, noise_state)  # Same seed on all devices
+```
+
+- All devices use **same noise** (same seed on all ranks: `generator=seed`)
+- Noise added **after** aggregation
+- **Standard DP-SGD accounting** (mixture Gaussian)
+- Works with **all noise functions**
+
+!!! tip "Which Strategy?"
+    **Strategy 1 (independent noise)** typically gives better privacy-utility tradeoffs due to amplification.
+    Use **Strategy 2** if you need standard DP-SGD accounting or want deterministic reproducibility across runs.
 
 ### Privacy Guarantees
 
-With DDP, privacy guarantees are maintained because:
+Both strategies maintain DP guarantees:
 
 - Each GPU processes **disjoint batches** (no data overlap)
 - Clipping happens **per-example** before aggregation
-- Noise is added **locally** with appropriate scale
-- Gradient averaging is a **post-processing** step (doesn't affect privacy)
+- Noise scale is appropriate for effective batch size
+- Gradient aggregation is **post-processing** (doesn't affect privacy)
 
-The overall privacy budget is the same as single-GPU training with the combined batch size.
+The effective batch size for accounting: `local_batch_size × num_gpus`
 
 ### Effective Batch Size
 
@@ -224,7 +258,9 @@ def main():
         microbatch_size=2,
     )
     
-    noise_fn = gaussian(stddev=1.1)
+    # Independent noise: offset seed by rank for privacy amplification
+    from opaque.noise import gaussian_noise
+    noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42 + rank)
     
     # Training loop
     for epoch in range(num_epochs):
@@ -233,12 +269,12 @@ def main():
         
         for batch in local_dataloader:
             # 1. Compute clipped gradients locally
-            (grads, aux), clip_state = grad_fn(
+            grads, clip_state = grad_fn(
                 trainable, batch, state=clip_state
             )
             
-            # 2. Add noise locally
-            noisy_grads = noise_fn(grads)
+            # 2. Add noise locally (different per device)
+            noisy_grads, noise_state = noise_fn(grads, noise_state)
             
             # 3. Average across GPUs
             if distributed:

@@ -65,7 +65,9 @@ def all_reduce_gradients(
 
     Notes:
         - If distributed is not initialized, returns input unchanged
-        - For DP training, typically use op="sum" then add noise to summed gradients
+        - For DP training, two strategies:
+            - Independent noise: add noise BEFORE aggregation (privacy amplification)
+            - Shared noise: aggregate FIRST, then add noise (mixture Gaussian)
         - Operates in-place for memory efficiency
     """
     if not is_initialized():
@@ -125,8 +127,10 @@ def average_gradients(
         >>> # grads now contains average of 64 clipped gradients
 
     Notes:
-        - For DP training with equal batch sizes per device, averaging vs summing
-          only changes the effective learning rate
+        - For DP training, two strategies:
+            - Independent noise: add noise BEFORE calling this function
+            - Shared noise: call this function FIRST, then add noise
+        - Averaging vs summing only affects effective learning rate
         - Operates in-place for memory efficiency
         - If distributed is not initialized, returns input unchanged
     """

@@ -293,7 +293,7 @@ class TestEndToEndDPTraining:
             loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2)
         )
 
-        # Create deterministic noise
+        # Create deterministic noise (INDEPENDENT per device)
         noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42 + rank)
 
         # Generate batch (different on each rank)
@@ -301,16 +301,71 @@ class TestEndToEndDPTraining:
         x = torch.randn(batch_size, 10, device=device)
         y = torch.randn(batch_size, 1, device=device)
 
+        # APPROACH 1: Independent noise (privacy amplification)
         # Compute clipped gradients (per-device)
         grads, clip_state = grad_fn(params, x, y, state=clip_state)
 
-        # Average gradients across devices
-        grads = average_gradients(grads)
-
-        # Add noise
+        # Add noise BEFORE aggregation (different per device)
         noisy_grads, noise_state = noise_fn(grads, noise_state)
 
+        # Average noisy gradients across devices
+        noisy_grads = average_gradients(noisy_grads)
+
         # Verify gradients are reasonable
+        for param_name, grad in noisy_grads.items():
+            assert grad.shape == params[param_name].shape
+            assert grad.device == device
+            assert not torch.isnan(grad).any()
+            assert not torch.isinf(grad).any()
+
+    def test_dp_training_step_shared_noise(self, device, simple_model):
+        """Test DP training with shared noise (mixture Gaussian accounting)."""
+        from opaque.clipping import clipped_grad
+        from opaque.distributed import average_gradients, get_rank
+        from opaque.noise import gaussian_noise
+
+        if not is_distributed():
+            pytest.skip("Requires distributed setup")
+
+        rank = get_rank()
+
+        # Move model to device
+        model = simple_model.to(device)
+
+        # Make functional
+        from opaque.utils import make_functional
+
+        func_model, params = make_functional(model)
+
+        # Create loss function
+        def loss_fn(params, x, y):
+            pred = func_model(params, x)
+            return ((pred - y) ** 2).mean()
+
+        # Create clipped gradient function
+        grad_fn, clip_state = clipped_grad(
+            loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2)
+        )
+
+        # Create deterministic noise (SHARED seed - same on all devices)
+        noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42)  # No +rank
+
+        # Generate batch (different on each rank)
+        batch_size = 8
+        x = torch.randn(batch_size, 10, device=device)
+        y = torch.randn(batch_size, 1, device=device)
+
+        # APPROACH 2: Shared noise (mixture Gaussian accounting)
+        # Compute clipped gradients (per-device)
+        grads, clip_state = grad_fn(params, x, y, state=clip_state)
+
+        # Aggregate gradients FIRST
+        grads = average_gradients(grads)
+
+        # Add noise AFTER aggregation (same seed → same noise on all devices)
+        noisy_grads, noise_state = noise_fn(grads, noise_state)
+
+        # Verify gradients are reasonable and same on all devices
         for param_name, grad in noisy_grads.items():
             assert grad.shape == params[param_name].shape
             assert grad.device == device

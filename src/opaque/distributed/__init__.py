@@ -10,23 +10,35 @@ Design Philosophy:
     - Composable primitives, not heavyweight abstractions
     - PyTorch-native patterns (DDP/FSDP/DTensor)
     - No custom backward hooks (functional API already produces clipped gradients)
-    - Deterministic seed-based noise (no communication overhead)
+    - Two noise strategies supported:
+        - Independent noise (offset seed by rank): better privacy via amplification
+        - Shared noise (same seed on all ranks): standard DP-SGD accounting
 
-Example:
+Example - Independent Noise (Privacy Amplification):
     >>> import opaque.distributed as dist_utils
     >>> import torch.distributed as dist
+    >>> from opaque.noise import gaussian_noise
     >>>
-    >>> # Initialize PyTorch distributed
+    >>> # Initialize distributed
     >>> dist.init_process_group(backend='nccl')
+    >>> rank = dist_utils.get_rank()
     >>>
-    >>> # Check if distributed
-    >>> if dist_utils.is_initialized():
-    ...     rank = dist_utils.get_rank()
-    ...     world_size = dist_utils.get_world_size()
+    >>> # Independent noise: offset seed by rank
+    >>> noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42 + rank)
     >>>
-    >>> # Aggregate gradients across devices
-    >>> grads = {"weight": torch.randn(10, 5), "bias": torch.randn(5)}
-    >>> averaged_grads = dist_utils.average_gradients(grads)
+    >>> # Training: Noise BEFORE aggregation
+    >>> grads = clipped_grad_fn(params, batch)
+    >>> noisy_grads, noise_state = noise_fn(grads, noise_state)
+    >>> noisy_grads = dist_utils.average_gradients(noisy_grads)
+
+Example - Shared Noise (Mixture Gaussian):
+    >>> # Shared noise: same seed on all ranks
+    >>> noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42)
+    >>>
+    >>> # Training: Aggregate BEFORE noise
+    >>> grads = clipped_grad_fn(params, batch)
+    >>> grads = dist_utils.average_gradients(grads)
+    >>> noisy_grads, noise_state = noise_fn(grads, noise_state)
 """
 
 from typing import Optional
