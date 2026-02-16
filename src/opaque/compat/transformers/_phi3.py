@@ -164,16 +164,35 @@ def apply_rotary_pos_emb(
     out1 = x1 * cos - x2 * sin
     out2 = x1 * sin + x2 * cos
     return torch.cat([out1, out2], dim=-1)
-)
+
+
+def _apply_rotary_pos_emb_simple(
+    x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor = None
+) -> torch.Tensor:
+    """Simple rotary helper used as a fallback by the HF-preferring wrapper.
+
+    Preserves the minimal interface and numeric stability for vmap patches.
+    """
+    if sin is None:
+        sin = torch.sqrt(torch.clamp(1.0 - cos.pow(2), min=0.0))
+
+    if x.size(-1) % 2 != 0:
+        return x * cos + x * sin
+
+    x1, x2 = x.chunk(2, dim=-1)
+    out1 = x1 * cos - x2 * sin
+    out2 = x1 * sin + x2 * cos
+    return torch.cat([out1, out2], dim=-1)
+
+
 def apply_rotary_pos_emb(
     q: torch.Tensor, k: torch.Tensor | None, cos: torch.Tensor, sin: torch.Tensor
 ):
     """Delegate to HuggingFace Phi-3 rotary helper when available.
 
-    This function is a thin compatibility helper that prefers HF's
-    `apply_rotary_pos_emb` implementation. It accepts `q, k, cos, sin` to match
-    the HF API. If HF helper is not available, falls back to a conservative
-    rotate-half implementation applied to `q` (and `k` if provided).
+    Prefers HF's `apply_rotary_pos_emb(q, k, cos, sin)` if provided; otherwise
+    falls back to a conservative rotate-half implementation applied to `q` and
+    optionally `k`.
     """
     try:
         import transformers.models.phi3.modeling_phi3 as hf_phi3
@@ -181,7 +200,6 @@ def apply_rotary_pos_emb(
         if hasattr(hf_phi3, "apply_rotary_pos_emb"):
             return hf_phi3.apply_rotary_pos_emb(q, k, cos, sin)
     except Exception:
-        # Transformers not available or function missing - fallthrough
         pass
 
     # Fallback rotate-half applied elementwise (conservative)

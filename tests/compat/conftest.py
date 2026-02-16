@@ -13,9 +13,10 @@ from opaque import clipped_grad, make_functional
 
 
 def pytest_runtest_setup(item):
-    """Auto-skip GPU tests if CUDA is not available."""
-    if "gpu" in item.keywords and not torch.cuda.is_available():
-        pytest.skip("CUDA not available - skipping GPU tests")
+    """Auto-skip GPU tests if no GPU (CUDA/MPS) is available."""
+    if "gpu" in item.keywords:
+        if not (torch.cuda.is_available() or torch.backends.mps.is_available()):
+            pytest.skip("No GPU available (CUDA or MPS) - skipping GPU tests")
 
 
 def has_hf_token() -> bool:
