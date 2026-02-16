@@ -214,6 +214,7 @@ def apply_rotary_pos_emb(
     k_out = k * cos + rotate_half(k) * sin
     return q_out, k_out
 
+
 def vmap_phi3_attention_forward(
     module: torch.nn.Module,
     hidden_states: torch.Tensor,
