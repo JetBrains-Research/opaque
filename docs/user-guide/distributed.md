@@ -21,8 +21,9 @@ Each device adds different noise before aggregation (better privacy via amplific
 ```python
 import torch.distributed as dist
 from opaque.clipping import clipped_grad
-from opaque.distributed import average_gradients, get_rank
+from opaque.distributed import all_reduce_gradients, get_rank
 from opaque.noise import gaussian_noise
+from opaque.sampling import PoissonSampler
 
 # Initialize distributed
 dist.init_process_group(backend="nccl")
@@ -37,11 +38,14 @@ clipped_grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0)
 # Independent noise: OFFSET seed by rank
 noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42 + rank)
 
+# Independent Poisson sampling (required for privacy amplification)
+sampler = PoissonSampler(dataset, sample_rate=0.01, distributed=False)
+
 # Training loop
 for batch in dataloader:
     grads, clip_state = clipped_grad_fn(params, batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)  # Noise FIRST
-    noisy_grads = average_gradients(noisy_grads)              # Aggregate SECOND
+    noisy_grads = all_reduce_gradients(noisy_grads, op="sum") # Sum (not average!)
     params = optimizer_update(params, noisy_grads)
 ```
 
@@ -53,10 +57,13 @@ All devices use same noise after aggregation (standard DP-SGD accounting):
 # Shared noise: SAME seed on all ranks (no +rank)
 noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42)
 
+# Independent Poisson sampling
+sampler = PoissonSampler(dataset, sample_rate=0.01, distributed=False)
+
 # Training loop
 for batch in dataloader:
     grads, clip_state = clipped_grad_fn(params, batch, state=clip_state)
-    grads = average_gradients(grads)                          # Aggregate FIRST
+    grads = all_reduce_gradients(grads, op="sum")            # Sum FIRST
     noisy_grads, noise_state = noise_fn(grads, noise_state)  # Noise SECOND
     params = optimizer_update(params, noisy_grads)
 ```
@@ -129,6 +136,103 @@ For example:
 - 4 GPUs × 8 samples/GPU = 32 effective batch size
 - This is what you use for privacy accounting
 
+### Gradient Flow with Poisson Sampling
+
+**What `clipped_grad` returns:**
+```python
+grads = clipped_grad_fn(params, batch)  # batch has B examples
+
+# Internally:
+# 1. Compute B per-example gradients (via vmap)
+# 2. Clip each to L2 norm ≤ C
+# 3. SUM the B clipped gradients
+# Result: grads = SUM of B clipped gradients (not average!)
+```
+
+#### Poisson Sampling: Variable Batch Sizes (Required for Privacy Amplification)
+
+**For proper differential privacy with Poisson sampling**, each device must sample independently:
+
+```python
+# Each device samples different data → different batch sizes
+# This is REQUIRED for privacy amplification guarantees
+sampler = PoissonSampler(dataset, sample_rate=0.01, distributed=False)
+
+# Device 0: batch_size=6  → grads_0 = sum of 6 clipped grads
+# Device 1: batch_size=10 → grads_1 = sum of 10 clipped grads
+# Device 2: batch_size=7  → grads_2 = sum of 7 clipped grads
+# Device 3: batch_size=9  → grads_3 = sum of 9 clipped grads
+# Total: 32 examples across all devices
+```
+
+**⚠️ Problem with `average_gradients()`:**
+
+`average_gradients()` divides by world_size=4, NOT by total examples=32!
+
+```python
+# WRONG for Poisson sampling:
+grads = average_gradients(grads)
+# This gives: (sum of 32 clipped grads) / 4
+# Not the average per example!
+```
+
+**✅ Solution: Use sum (recommended for Poisson sampling):**
+
+```python
+# Independent Poisson sampling on each device
+for batch in dataloader:
+    grads = clipped_grad_fn(params, batch)
+    noisy_grads = noise_fn(grads, noise_state)
+    
+    # Sum across devices (no division!)
+    noisy_grads = all_reduce_gradients(noisy_grads, op="sum")
+    
+    # Update: effective LR varies per step based on total batch size
+    # This is acceptable for DP-SGD with Poisson sampling
+    params = params - lr * noisy_grads
+```
+
+**Why this works:**
+- Total gradient = sum of all per-device clipped+noisy grads
+- Effective step size = `lr × (sum of B clipped grads)` where B varies
+- Privacy amplification from independent Poisson sampling is preserved
+- Learning rate can be tuned to account for expected batch size
+
+**Alternative: Normalize by total batch size (optional, more communication):**
+
+```python
+import torch
+from opaque.distributed import all_reduce_gradients, sync_scalar
+
+# Count examples on this device
+batch_size = len(batch)
+
+# Sum gradients and batch sizes
+grads = all_reduce_gradients(grads, op="sum")
+total_batch_size = sync_scalar(batch_size, op="sum", device=device)
+
+# Divide by actual total count
+grads = {k: v / total_batch_size for k, v in grads.items()}
+
+# Update with fixed effective LR per example
+params = params - lr * grads
+```
+
+!!! warning "Don't Use Fixed Batch Sizes for Poisson Sampling"
+    **Coordinated sampling** (where all devices get the same batch) **breaks privacy amplification guarantees**:
+    
+    ```python
+    # ❌ BAD: Fixed batch size per step
+    sampler = PoissonSampler(dataset, distributed=True)  # All get same indices
+    # or DistributedSampler
+    
+    # This removes the independent sampling property needed for
+    # privacy amplification. There are no known tight privacy bounds
+    # for synchronized Poisson sampling in distributed settings.
+    ```
+    
+    **Use independent sampling** (`distributed=False`) with variable batch sizes for proper DP guarantees.
+
 ## API Reference
 
 ### Gradient Aggregation
@@ -160,8 +264,24 @@ from opaque.distributed import all_reduce_gradients
 summed_grads = all_reduce_gradients(noisy_grads)
 ```
 
-!!! tip "Which to use?"
-    Use `average_gradients()` for most cases. It's equivalent to single-GPU training with larger batch size.
+!!! tip "Sum (Not Average) for Poisson Sampling"
+    **For proper Poisson sampling privacy amplification**, use `all_reduce_gradients(op="sum")`:
+    
+    - **`all_reduce_gradients(op="sum")`** (recommended for Poisson sampling):
+        - No division by world_size
+        - `params -= lr * (sum of all clipped grads)`
+        - ✅ Preserves independent Poisson sampling property
+        - ✅ Correct for variable batch sizes
+        - Effective LR varies per step (acceptable for DP-SGD)
+    
+    - **`average_gradients()`** is WRONG for independent Poisson sampling:
+        - Divides by world_size (not total examples)
+        - ❌ Breaks gradient scaling when batch sizes differ
+        - Only use if all devices have exact same batch size (not recommended for DP)
+    
+    **Privacy accounting:** Use total examples across all devices per step.
+    
+    **What `clipped_grad` returns:** The **SUM** of clipped per-example gradients from the local batch (B examples → sum of B clipped grads).
 
 ### State Synchronization
 

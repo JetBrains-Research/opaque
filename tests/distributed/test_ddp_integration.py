@@ -267,7 +267,7 @@ class TestEndToEndDPTraining:
     def test_dp_training_step(self, device, simple_model):
         """Test a single DP training step with DDP."""
         from opaque.clipping import clipped_grad
-        from opaque.distributed import average_gradients, get_rank
+        from opaque.distributed import all_reduce_gradients, get_rank
         from opaque.noise import gaussian_noise
 
         if not is_distributed():
@@ -308,8 +308,8 @@ class TestEndToEndDPTraining:
         # Add noise BEFORE aggregation (different per device)
         noisy_grads, noise_state = noise_fn(grads, noise_state)
 
-        # Average noisy gradients across devices
-        noisy_grads = average_gradients(noisy_grads)
+        # Sum noisy gradients across devices (NOT average for Poisson sampling!)
+        noisy_grads, _ = all_reduce_gradients(noisy_grads, op="sum")
 
         # Verify gradients are reasonable
         for param_name, grad in noisy_grads.items():
@@ -321,7 +321,7 @@ class TestEndToEndDPTraining:
     def test_dp_training_step_shared_noise(self, device, simple_model):
         """Test DP training with shared noise (mixture Gaussian accounting)."""
         from opaque.clipping import clipped_grad
-        from opaque.distributed import average_gradients, get_rank
+        from opaque.distributed import all_reduce_gradients, get_rank
         from opaque.noise import gaussian_noise
 
         if not is_distributed():
@@ -359,8 +359,8 @@ class TestEndToEndDPTraining:
         # Compute clipped gradients (per-device)
         grads, clip_state = grad_fn(params, x, y, state=clip_state)
 
-        # Aggregate gradients FIRST
-        grads = average_gradients(grads)
+        # Sum gradients FIRST (before noise)
+        grads, _ = all_reduce_gradients(grads, op="sum")
 
         # Add noise AFTER aggregation (same seed → same noise on all devices)
         noisy_grads, noise_state = noise_fn(grads, noise_state)

@@ -73,12 +73,14 @@ def main():
     # Create dataset and dataloader
     dataset = create_dataset(n_samples=1000)
     
-    # Use distributed Poisson sampler (rank 0 samples, broadcasts to all)
+    # Use distributed Poisson sampler
+    # distributed=False: each device samples independently (required for privacy amplification)
+    # Variable batch sizes preserve Poisson sampling property
     sampler = opaque.PoissonSampler(
         dataset,
         sample_rate=0.01,
         num_epochs=1,
-        distributed=True,  # Coordinated sampling
+        distributed=False,  # Independent sampling for privacy amplification
     )
     
     # DataLoader with batch_sampler
@@ -144,18 +146,18 @@ def main():
         # Step 2: Add noise BEFORE aggregation (different seed per device)
         noisy_grads, noise_state = noise_fn(grads, noise_state)
         
-        # Step 3: Average noisy gradients across devices
-        # Independent noise samples → privacy amplification
-        noisy_grads = dist_utils.average_gradients(noisy_grads)
+        # Step 3: Sum noisy gradients across devices (NOT average!)
+        # For Poisson sampling with variable batch sizes, use sum
+        noisy_grads = dist_utils.all_reduce_gradients(noisy_grads, op="sum")
         
-        # Step 4: Update parameters (all devices have same noisy gradient)
+        # Step 4: Update parameters (all devices have same noisy gradient sum)
         lr = 0.01
         for key in params:
             params[key] = params[key] - lr * noisy_grads[key]
         
         # APPROACH 2 ALTERNATIVE (shared noise):
         # grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
-        # grads = dist_utils.average_gradients(grads)  # Aggregate first
+        # grads = dist_utils.all_reduce_gradients(grads, op="sum")  # Sum first
         # noisy_grads, noise_state = noise_fn(grads, noise_state)  # Same seed → same noise
         # for key in params:
         #     params[key] = params[key] - lr * noisy_grads[key]
