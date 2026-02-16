@@ -191,7 +191,7 @@ def adaptive_clipped_grad(
         ... )
         >>>
         >>> # Use Poisson sampling (different batch sizes on each device)
-        >>> sampler = PoissonSampler(dataset, sample_rate=0.01, distributed=False)
+        >>> sampler = PoissonSampler(dataset, sample_rate=0.01, mode=SamplingMode.INDEPENDENT)
         >>>
         >>> for batch_x, batch_y in dataloader:
         ...     # Each device: compute clipped gradients on local batch
@@ -319,6 +319,19 @@ def adaptive_clipped_grad(
             new_clip_norm = max(
                 config["clip_norm_min"], min(config["clip_norm_max"], new_clip_norm)
             )
+
+            # In distributed mode, synchronize clip_norm across all devices
+            # so they all adapt identically
+            try:
+                from opaque.distributed import is_distributed, reduce_scalar
+
+                if is_distributed():
+                    # Use mean to synchronize clip norm (all devices should have the same value)
+                    new_clip_norm = reduce_scalar(
+                        new_clip_norm, device=None
+                    )  # Returns mean by default
+            except ImportError:
+                pass
         else:
             # No norms available (shouldn't happen)
             new_clip_norm = state.clip_norm

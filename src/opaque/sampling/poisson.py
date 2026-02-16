@@ -87,12 +87,14 @@ class PoissonSampler(Sampler):
         if num_epochs < 1:
             raise ValueError(f"num_epochs must be >= 1, got {num_epochs}")
 
-        # Auto-detect distributed environment from environment variables
-        rank, world_size = _detect_distributed_env()
+        # Get rank and world size from distributed module
+        rank = get_rank()
+        world_size = get_world_size()
+        dist_initialized = is_distributed()
 
         # Smart default: SHARDED for distributed, INDEPENDENT for single device
         if mode is None:
-            if world_size is not None and world_size > 1:
+            if dist_initialized:
                 mode = SamplingMode.SHARDED
                 warnings.warn(
                     f"Detected distributed environment (world_size={world_size}). "
@@ -105,11 +107,11 @@ class PoissonSampler(Sampler):
 
         # Validate distributed parameters
         if mode == SamplingMode.SHARDED:
-            if rank is None or world_size is None:
+            if not dist_initialized:
                 raise ValueError(
-                    f"SHARDED mode requires distributed environment with RANK and WORLD_SIZE env vars. "
-                    f"Detected rank={rank}, world_size={world_size}. "
-                    f"Are you running with torchrun or torch.distributed.launch?"
+                    f"SHARDED mode requires distributed training to be initialized. "
+                    f"Initialize with torch.distributed.init_process_group() "
+                    f"or use torch.distributed.launch / torchrun."
                 )
             if not 0 <= rank < world_size:
                 raise ValueError(
