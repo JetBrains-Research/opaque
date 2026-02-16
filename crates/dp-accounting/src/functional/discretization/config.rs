@@ -58,8 +58,17 @@ pub struct DiscretizationConfig {
     /// base `discretization`, the effective discretization is automatically coarsened
     /// to `discretization * 2^k` (smallest power-of-2 multiplier that fits).
     ///
-    /// Default: 1,000,000. Set to `usize::MAX` to disable adaptive coarsening.
+    /// Default: 10,000,000. Set to `usize::MAX` to disable adaptive coarsening.
     pub max_grid_size: usize,
+
+    /// Total tail mass budget for Chernoff truncation during composition.
+    ///
+    /// During `self_compose()`, the composed PLD is truncated using Chernoff bounds
+    /// with this total budget split equally between left and right tails.
+    /// Smaller values preserve more tail precision at the cost of larger composed grids.
+    ///
+    /// Default: 1e-15, matching Google dp_accounting's `tail_mass_truncation`.
+    pub tail_mass_truncation: f64,
 }
 
 impl DiscretizationConfig {
@@ -100,6 +109,7 @@ impl DiscretizationConfig {
             log_mass_truncation_bound,
             pessimistic_estimate,
             max_grid_size: 10_000_000,
+            tail_mass_truncation: 1e-15,
         })
     }
 
@@ -132,6 +142,7 @@ impl Default for DiscretizationConfig {
             log_mass_truncation_bound: -50.0,
             pessimistic_estimate: true,
             max_grid_size: 10_000_000,
+            tail_mass_truncation: 1e-15,
         }
     }
 }

@@ -294,8 +294,8 @@ fn truncated_epsilon_bounds(
     sensitivity: f64,
     rate: f64,
     adjacency: Adjacency,
-    min_delta: f64,
-    min_beta: f64,
+    target_delta: f64,
+    target_beta: f64,
     p_trunc: f64,
     q_cond: f64,
 ) -> EpsilonBounds {
@@ -306,8 +306,8 @@ fn truncated_epsilon_bounds(
     // use that for the widest possible range.
     let delta_tilde_comp2 = sensitivity / (sigma / 2.0); // = 2/sigma
     let delta_tilde_base = sensitivity / sigma;
-    let hi_init = gaussian_epsilon_for_delta(delta_tilde_comp2, min_delta)
-        .max(gaussian_epsilon_for_delta(delta_tilde_base, min_delta));
+    let hi_init = gaussian_epsilon_for_delta(delta_tilde_comp2, target_delta)
+        .max(gaussian_epsilon_for_delta(delta_tilde_base, target_delta));
 
     // Bisect on the actual truncated delta for epsilon_upper
     let mut lo = 0.0_f64;
@@ -315,7 +315,7 @@ fn truncated_epsilon_bounds(
     for _ in 0..100 {
         let mid = (lo + hi) / 2.0;
         let d = truncated_get_delta(mid, adjacency, sigma, sensitivity, rate, p_trunc, q_cond);
-        if d > min_delta {
+        if d > target_delta {
             lo = mid;
         } else {
             hi = mid;
@@ -329,8 +329,8 @@ fn truncated_epsilon_bounds(
         Adjacency::Remove => Adjacency::Add,
         Adjacency::Replace => Adjacency::Replace,
     };
-    let hi_init_beta = gaussian_epsilon_for_delta(delta_tilde_comp2, min_beta)
-        .max(gaussian_epsilon_for_delta(delta_tilde_base, min_beta));
+    let hi_init_beta = gaussian_epsilon_for_delta(delta_tilde_comp2, target_beta)
+        .max(gaussian_epsilon_for_delta(delta_tilde_base, target_beta));
     let mut lo = 0.0_f64;
     let mut hi = hi_init_beta;
     for _ in 0..100 {
@@ -344,7 +344,7 @@ fn truncated_epsilon_bounds(
             p_trunc,
             q_cond,
         );
-        if d > min_beta {
+        if d > target_beta {
             lo = mid;
         } else {
             hi = mid;
@@ -386,15 +386,15 @@ impl TruncatedPoissonEvidence<Gaussian> for TightGaussianTruncatedPoissonEvidenc
         // Epsilon bounds: bisect on the actual truncated delta function.
         // Standard Poisson bounds are too narrow because component 2 uses
         // sigma/2 (doubled sensitivity), which has a wider epsilon range.
-        let min_delta = inner.min_delta;
-        let min_beta = inner.min_beta;
+        // Derive bisection targets from log_mass_truncation_bound.
+        let tail_mass = config.log_mass_truncation_bound.exp();
         let bounds_remove = truncated_epsilon_bounds(
             sigma,
             sensitivity,
             rate,
             Adjacency::Remove,
-            min_delta,
-            min_beta,
+            tail_mass,
+            tail_mass,
             p_trunc,
             q_cond,
         );
@@ -403,12 +403,13 @@ impl TruncatedPoissonEvidence<Gaussian> for TightGaussianTruncatedPoissonEvidenc
             sensitivity,
             rate,
             Adjacency::Add,
-            min_delta,
-            min_beta,
+            tail_mass,
+            tail_mass,
             p_trunc,
             q_cond,
         );
 
+        let tail_budget = config.tail_mass_truncation / 2.0;
         discretize_asymmetric_mechanism(config, bounds_remove, bounds_add, |epsilon, adj| {
             Ok(truncated_get_delta(
                 epsilon,
@@ -420,7 +421,7 @@ impl TruncatedPoissonEvidence<Gaussian> for TightGaussianTruncatedPoissonEvidenc
                 q_cond,
             ))
         })
-        .map(|pld| pld.with_tail_budgets(min_delta, min_beta))
+        .map(|pld| pld.with_tail_budgets(tail_budget, tail_budget))
     }
 }
 

@@ -57,48 +57,6 @@ pub(crate) fn gaussian_epsilon_for_delta(delta_tilde: f64, target: f64) -> f64 {
     hi
 }
 
-/// Find the epsilon where the Gaussian beta function equals `target`.
-///
-/// The beta function (reverse hockey-stick divergence) is:
-/// ```text
-/// β(ε) = δ_reverse(ε) = gaussian_delta_at(Δ̃, −ε)
-/// ```
-/// This governs the left tail of the PLD and determines accuracy of
-/// `beta_at()` and `risk_at()` metrics.
-///
-/// Uses the same bisection approach as [`gaussian_epsilon_for_delta`],
-/// searching for positive `E` where `gaussian_delta_at(Δ̃, −E) = target`,
-/// then returning `−E` as the epsilon lower bound.
-///
-/// # Arguments
-///
-/// * `delta_tilde` - Standardized sensitivity Δ/σ (= 1/σ for unit sensitivity)
-/// * `target` - Target beta value (left tail mass threshold)
-///
-/// # Returns
-///
-/// The negative epsilon (left bound) where `β(|ε|) ≤ target`.
-pub(crate) fn gaussian_epsilon_for_beta(delta_tilde: f64, target: f64) -> f64 {
-    let standard_normal = Normal::new(0.0, 1.0).unwrap();
-    let z_tail = standard_normal.inverse_cdf(target);
-
-    // Same analytic upper bound works: beta is symmetric to delta
-    let hi_init = 0.5 * delta_tilde * delta_tilde - delta_tilde * z_tail;
-
-    // Bisect: find positive E where gaussian_delta_at(dt, -E) = target
-    let mut lo = 0.0_f64;
-    let mut hi = hi_init;
-    for _ in 0..100 {
-        let mid = (lo + hi) / 2.0;
-        if gaussian_delta_at(delta_tilde, -mid) > target {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    -hi // Return as negative epsilon (left bound)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,47 +96,5 @@ mod tests {
         // And delta just above should exceed target
         let actual_delta_below = gaussian_delta_at(dt, eps - 1.0);
         assert!(actual_delta_below > target);
-    }
-
-    #[test]
-    fn test_gaussian_epsilon_for_beta_is_negative() {
-        let dt = 2.0;
-        let eps = gaussian_epsilon_for_beta(dt, 1e-6);
-        assert!(eps < 0.0, "beta bound should be negative, got {}", eps);
-    }
-
-    #[test]
-    fn test_gaussian_epsilon_for_beta_accuracy() {
-        // eps = gaussian_epsilon_for_beta(dt, target) returns a negative value.
-        // It was found by bisecting for positive E where gaussian_delta_at(dt, -E) = target.
-        // The returned eps = -E, so to verify: gaussian_delta_at(dt, -eps) <= target.
-        let dt = 10.0;
-        let target = 1e-6;
-        let eps = gaussian_epsilon_for_beta(dt, target);
-        let actual_beta = gaussian_delta_at(dt, -eps);
-        assert!(
-            actual_beta <= target,
-            "beta at eps={} is {}, should be <= {}",
-            eps,
-            actual_beta,
-            target
-        );
-        // And slightly inside should exceed target
-        let actual_beta_inside = gaussian_delta_at(dt, -eps - 1.0);
-        assert!(actual_beta_inside > target);
-    }
-
-    #[test]
-    fn test_gaussian_epsilon_for_beta_monotone() {
-        // Smaller target -> more negative epsilon (wider left bound)
-        let dt = 2.0;
-        let e1 = gaussian_epsilon_for_beta(dt, 1e-4);
-        let e2 = gaussian_epsilon_for_beta(dt, 1e-8);
-        assert!(
-            e2 < e1,
-            "smaller target should give more negative bound: {} vs {}",
-            e2,
-            e1
-        );
     }
 }

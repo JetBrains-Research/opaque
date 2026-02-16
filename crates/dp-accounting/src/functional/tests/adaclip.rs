@@ -340,7 +340,7 @@ fn test_reference_base_nm10() {
     assert_abs_eq(pld.epsilon_at(1e-8), 5.7764197920330371e0, tol, "nm=1.0 eps(1e-8)");
     assert_abs_eq(pld.delta_at(1.0), 1.2695434065505284e-1, tol, "nm=1.0 delta(1)");
     assert_abs_eq(pld.advantage(), 3.8294252526436207e-1, tol, "nm=1.0 advantage");
-    assert_abs_eq(pld.beta_at(0.01), 9.0762947479971801e-1, tol, "nm=1.0 beta(0.01)");
+    assert_abs_eq(pld.beta_at(0.01), 9.0762958193778230e-1, tol, "nm=1.0 beta(0.01)");
     assert_abs_eq(pld.risk_at(0.5), 3.0852873736826070e-1, tol, "nm=1.0 risk(0.5)");
 }
 

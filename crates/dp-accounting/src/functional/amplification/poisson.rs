@@ -523,20 +523,15 @@ impl PoissonEvidence<Gaussian> for TightGaussianPoissonEvidence {
         .map(|mut pld| {
             // Chernoff truncation budgets for composition.
             //
-            // Use symmetric budgets matching Google dp_accounting's default
-            // tail_mass_truncation=1e-15 (split equally between left and right).
-            // Google uses log(2/tail_mass) in the Chernoff bound, which is
-            // equivalent to per-side budgets of tail_mass/2 with log(1/budget).
-            //
-            // Decoupled from min_delta (which controls grid extent for
-            // epsilon_at/delta_at accuracy) to match Google's FFT behavior
-            // during composition, ensuring accurate beta computation.
-            const COMPOSE_TAIL_BUDGET: f64 = 5e-16; // 1e-15 / 2
-            pld.pmf_remove.right_tail_budget = COMPOSE_TAIL_BUDGET;
-            pld.pmf_remove.left_tail_budget = COMPOSE_TAIL_BUDGET;
+            // Tail budgets from config.tail_mass_truncation, split equally
+            // between left and right. Matches Google dp_accounting's
+            // tail_mass_truncation parameter (default 1e-15).
+            let tail_budget = config.tail_mass_truncation / 2.0;
+            pld.pmf_remove.right_tail_budget = tail_budget;
+            pld.pmf_remove.left_tail_budget = tail_budget;
             if let Some(ref mut pmf_add) = pld.pmf_add {
-                pmf_add.right_tail_budget = COMPOSE_TAIL_BUDGET;
-                pmf_add.left_tail_budget = COMPOSE_TAIL_BUDGET;
+                pmf_add.right_tail_budget = tail_budget;
+                pmf_add.left_tail_budget = tail_budget;
             }
             pld
         })

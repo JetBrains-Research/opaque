@@ -10,8 +10,8 @@ use crate::math_helpers::{fft, truncation};
 /// Combine two tail budgets during heterogeneous composition.
 ///
 /// Tail budgets control how much mass Chernoff truncation may discard during
-/// `self_compose`. They originate from the user's `min_delta` / `min_beta`
-/// parameters on each mechanism, so they encode the user's accuracy intent.
+/// `self_compose`. They originate from `config.tail_mass_truncation`, split
+/// equally between right and left tails.
 ///
 /// When composing two mechanisms with different budgets, we take the **minimum**
 /// (tightest) budget. This is conservative: the composed PLD will never
@@ -86,7 +86,7 @@ pub struct Pmf {
     ///
     /// Truncated right-tail mass is added to `infinity_mass`, setting a floor
     /// on the smallest delta that can be accurately measured. Derived from
-    /// `min_delta` on the originating mechanism.
+    /// `config.tail_mass_truncation / 2`.
     ///
     /// `0.0` means no truncation (exact mechanism or tiny grid).
     pub right_tail_budget: f64,
@@ -94,8 +94,7 @@ pub struct Pmf {
     /// Mass budget for left-tail Chernoff truncation during `self_compose`.
     ///
     /// Truncated left-tail mass is added to `negative_infinity_mass`, keeping
-    /// beta estimates conservative. Derived from `min_beta` on the originating
-    /// mechanism.
+    /// beta estimates conservative. Derived from `config.tail_mass_truncation / 2`.
     ///
     /// `0.0` means no truncation (exact mechanism or tiny grid).
     pub left_tail_budget: f64,
@@ -138,10 +137,8 @@ impl Pmf {
 
     /// Set the Chernoff tail budgets for composition truncation.
     ///
-    /// * `right` — max mass to truncate from the right tail (added to `infinity_mass`,
-    ///   derived from `min_delta`)
-    /// * `left` — max mass to truncate from the left tail (discarded,
-    ///   derived from `min_beta`)
+    /// * `right` — max mass to truncate from the right tail (added to `infinity_mass`)
+    /// * `left` — max mass to truncate from the left tail (added to `negative_infinity_mass`)
     pub fn with_tail_budgets(mut self, right: f64, left: f64) -> Self {
         self.right_tail_budget = right;
         self.left_tail_budget = left;
@@ -290,7 +287,7 @@ impl Pmf {
     /// The effective left budget is reduced by already-accumulated
     /// `negative_infinity_mass`, so the total never exceeds `left_tail_budget`.
     /// This prevents repeated composition (e.g., via caching) from exceeding
-    /// the promised `min_beta` accuracy contract.
+    /// the promised accuracy contract.
     ///
     /// If both effective budgets are `0.0`, no Chernoff truncation is applied.
     ///
@@ -306,9 +303,9 @@ impl Pmf {
             return self;
         }
         // Budget-aware Chernoff truncation:
-        // - Right budget is used directly (min_delta is tiny, accumulation negligible)
+        // - Right budget is used directly (budget is tiny, accumulation negligible)
         // - Left budget is reduced by already-consumed negative_infinity_mass,
-        //   ensuring total never exceeds the promised min_beta.
+        //   ensuring total never exceeds the promised tail_mass_truncation / 2.
         let effective_left_budget =
             (self.left_tail_budget - self.negative_infinity_mass).max(0.0);
         let effective_right_budget = self.right_tail_budget;
@@ -326,7 +323,7 @@ impl Pmf {
             (0, self.probs.len() * count - count)
         };
 
-        let mut result_probs =
+        let result_probs =
             fft::self_convolve_with_bounds(&self.probs, count, Some((lower_bound, upper_bound)));
 
         // The lower_loss_index scales by count AND shifts by the truncation offset

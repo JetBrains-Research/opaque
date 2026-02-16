@@ -569,15 +569,14 @@ fn mixture_epsilon_for_beta(adj: Adjacency, c: &MixtureConstants, target: f64) -
 /// Compute epsilon bounds for the mixture Gaussian mechanism
 ///
 /// Uses bisection on the mixture delta and beta functions directly,
-/// giving tight bounds that match the `min_delta`/`min_beta` semantics.
+/// with targets derived from `log_mass_truncation_bound`.
 fn mixture_gaussian_epsilon_bounds(
     adj: Adjacency,
     c: &MixtureConstants,
-    min_delta: f64,
-    min_beta: f64,
+    tail_mass: f64,
 ) -> Result<EpsilonBounds> {
-    let epsilon_upper = mixture_epsilon_for_delta(adj, c, min_delta)?;
-    let epsilon_lower = mixture_epsilon_for_beta(adj, c, min_beta)?;
+    let epsilon_upper = mixture_epsilon_for_delta(adj, c, tail_mass)?;
+    let epsilon_lower = mixture_epsilon_for_beta(adj, c, tail_mass)?;
 
     Ok(EpsilonBounds {
         epsilon_lower,
@@ -606,18 +605,18 @@ impl AccumulateEvidence<Gaussian, TightGaussianPoissonEvidence>
             return inner.evidence.compute_pld(&inner.inner, rate);
         }
 
-        let min_delta = inner.inner.min_delta;
-        let min_beta = inner.inner.min_beta;
+        let tail_mass = config.log_mass_truncation_bound.exp();
+        let tail_budget = config.tail_mass_truncation / 2.0;
         let c = MixtureConstants::new(sigma, microbatches, rate);
 
         let bounds_remove =
-            mixture_gaussian_epsilon_bounds(Adjacency::Remove, &c, min_delta, min_beta)?;
-        let bounds_add = mixture_gaussian_epsilon_bounds(Adjacency::Add, &c, min_delta, min_beta)?;
+            mixture_gaussian_epsilon_bounds(Adjacency::Remove, &c, tail_mass)?;
+        let bounds_add = mixture_gaussian_epsilon_bounds(Adjacency::Add, &c, tail_mass)?;
 
         discretize_asymmetric_mechanism(config, bounds_remove, bounds_add, |epsilon, adj| {
             mixture_gaussian_get_delta(epsilon, adj, &c)
         })
-        .map(|pld| pld.with_tail_budgets(min_delta, min_beta))
+        .map(|pld| pld.with_tail_budgets(tail_budget, tail_budget))
     }
 }
 

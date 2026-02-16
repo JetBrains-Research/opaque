@@ -157,8 +157,8 @@ impl PrivacyLossDistribution {
     /// Propagates the budgets to both the REMOVE and ADD (if present) PMFs.
     /// This controls how much mass may be truncated during `self_compose`:
     ///
-    /// * `right` — right-tail budget (added to `infinity_mass`, derived from `min_delta`)
-    /// * `left` — left-tail budget (discarded, derived from `min_beta`)
+    /// * `right` — right-tail budget (added to `infinity_mass`)
+    /// * `left` — left-tail budget (added to `negative_infinity_mass`)
     pub fn with_tail_budgets(mut self, right: f64, left: f64) -> Self {
         self.pmf_remove.right_tail_budget = right;
         self.pmf_remove.left_tail_budget = left;

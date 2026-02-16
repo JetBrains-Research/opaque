@@ -13,7 +13,7 @@
 //!
 //! // Standard DP-SGD: Poisson-subsampled Gaussian, 1000 rounds
 //! let step = poisson(gaussian(1.1).unwrap(), 0.01);
-//! let training = repeat(step, 1000);
+//! let training = repeat(step, 1000).unwrap();
 //! let epsilon = training.epsilon_at(1e-5).unwrap();
 //! ```
 //!

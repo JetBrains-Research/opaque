@@ -25,7 +25,6 @@
 //!   of Privacy Loss Distributions." PETS 2022.
 
 use crate::error::{PldError, Result};
-use crate::functional::adjacency::Adjacency;
 use crate::functional::amplification::{PoissonAmplifiable, TightGaussianPoissonEvidence};
 use crate::functional::discretization::{
     discretize_symmetric_mechanism, DiscretizationConfig, EpsilonBounds,
@@ -45,23 +44,6 @@ pub(crate) const MIN_NOISE_MULTIPLIER: f64 = 0.1;
 /// (x-to-ε compression artifacts, unreliable beta/risk metrics).
 pub(crate) const MAX_NOISE_MULTIPLIER: f64 = 1.2;
 
-/// Default minimum delta for PLD right-bound truncation.
-///
-/// Controls how far the PLD grid extends into the right tail. Smaller values
-/// give wider grids with better tail precision. Set to 1e-25 to ensure the
-/// grid covers enough tail mass for accurate `beta_at()` / `risk_at()`
-/// queries after multi-step composition, matching the precision of
-/// Google dp_accounting's default `log_mass_truncation_bound = -50`.
-///
-/// This determines accuracy of `delta_at()`, `epsilon_at()`, and `beta_at()`.
-pub(crate) const DEFAULT_MIN_DELTA: f64 = 1e-25;
-
-/// Default minimum beta for PLD left-bound truncation.
-///
-/// Set to 1e-6, sufficient for practical `beta_at()` and `risk_at()` queries
-/// which typically use thresholds of 1e-4 or larger.
-pub(crate) const DEFAULT_MIN_BETA: f64 = 1e-6;
-
 /// Gaussian mechanism with fixed noise multiplier
 ///
 /// The Gaussian mechanism achieves differential privacy by adding noise drawn from
@@ -79,15 +61,11 @@ pub(crate) const DEFAULT_MIN_BETA: f64 = 1e-6;
 /// - Smaller σ means less noise and weaker privacy (larger ε for fixed δ)
 /// - Larger σ means more noise and stronger privacy (smaller ε for fixed δ)
 ///
-/// # Tail bounds
+/// # Truncation
 ///
-/// The PLD is truncated based on `min_delta` (right tail) and `min_beta` (left tail):
-/// - `min_delta` controls accuracy of `epsilon_at()` and `delta_at()` queries.
-///   Default: ~6.2e-15 (supports datasets up to ~4T records).
-/// - `min_beta` controls accuracy of `beta_at()` and `risk_at()` queries.
-///   Default: 1e-6 (supports beta queries down to 1e-6).
-///
-/// Use builder methods to customize: `gaussian(0.5)?.with_min_delta(1e-10).with_min_beta(1e-4)`
+/// The PLD grid extent is controlled by `config.log_mass_truncation_bound` (default -50),
+/// matching Google dp_accounting's x-space truncation approach. Composition truncation
+/// is controlled by `config.tail_mass_truncation` (default 1e-15).
 ///
 /// # Parameters
 ///
@@ -107,9 +85,6 @@ pub(crate) const DEFAULT_MIN_BETA: f64 = 1e-6;
 /// // Query for privacy parameters
 /// let epsilon = pld.epsilon_at(1e-5);  // ε for δ = 10⁻⁵
 /// let delta = pld.delta_at(1.0);        // δ for ε = 1.0
-///
-/// // Custom tail bounds for higher precision
-/// let g = gaussian(0.5)?.with_min_delta(1e-20).with_min_beta(1e-8);
 /// ```
 ///
 /// # References
@@ -124,10 +99,6 @@ pub struct Gaussian {
     pub noise_multiplier: f64,
     /// Discretization configuration
     pub config: DiscretizationConfig,
-    /// Minimum delta for right-bound truncation (controls epsilon_at/delta_at accuracy)
-    pub min_delta: f64,
-    /// Minimum beta for left-bound truncation (controls beta_at/risk_at accuracy)
-    pub min_beta: f64,
 }
 
 impl Eq for Gaussian {}
@@ -142,65 +113,43 @@ impl Gaussian {
         Self {
             noise_multiplier,
             config,
-            min_delta: DEFAULT_MIN_DELTA,
-            min_beta: DEFAULT_MIN_BETA,
         }
     }
 
-    /// Set a custom minimum delta for right-bound truncation.
+    /// Compute epsilon bounds using x-space truncation (matching Google dp_accounting).
     ///
-    /// Controls accuracy of `epsilon_at()` and `delta_at()` queries.
-    /// Smaller values extend the PLD grid further right, giving higher accuracy
-    /// for very small delta queries at the cost of a larger grid.
-    pub fn with_min_delta(mut self, min_delta: f64) -> Self {
-        self.min_delta = min_delta;
-        self
-    }
-
-    /// Set a custom minimum beta for left-bound truncation.
+    /// Finds x-space truncation points from the Gaussian tail via
+    /// `ppf(0.5 * exp(log_mass_truncation_bound))`, then evaluates the privacy loss
+    /// function at those points to get epsilon bounds.
     ///
-    /// Controls accuracy of `beta_at()` and `risk_at()` queries.
-    /// Smaller values extend the PLD grid further left, giving higher accuracy
-    /// for very small beta queries at the cost of a larger grid.
-    pub fn with_min_beta(mut self, min_beta: f64) -> Self {
-        self.min_beta = min_beta;
-        self
-    }
+    /// For the non-subsampled Gaussian with sensitivity Δ = 1:
+    /// - `lower_x = σ · ppf(half_mass) - 1`  (shift for REMOVE mu_upper)
+    /// - `upper_x = -σ · ppf(half_mass)`
+    /// - `epsilon_upper = L(lower_x) = (0.5 - σ·ppf(half_mass)) / σ²`
+    /// - `epsilon_lower = L(upper_x) = -epsilon_upper`  (symmetric)
+    fn epsilon_bounds(&self) -> EpsilonBounds {
+        use statrs::distribution::{ContinuousCDF, Normal};
 
-    /// Compute epsilon bounds for Connect-the-Dots discretization
-    ///
-    /// For the Gaussian mechanism with noise multiplier σ and sensitivity Δ = 1,
-    /// computes the privacy loss range [ε_lower, ε_upper] where discretization
-    /// should be performed.
-    ///
-    /// The right bound (epsilon_upper) is computed by bisection on the analytic
-    /// delta function at `min_delta`. The left bound (epsilon_lower) is computed
-    /// by bisection on the beta function at `min_beta`.
-    fn epsilon_bounds(&self, adjacency: Adjacency) -> Result<EpsilonBounds> {
-        use crate::math_helpers::gaussian::{
-            gaussian_epsilon_for_beta, gaussian_epsilon_for_delta,
-        };
+        let sigma = self.noise_multiplier;
+        let sensitivity = 1.0;
+        let log_mass = self.config.log_mass_truncation_bound;
 
-        if adjacency == Adjacency::Replace {
-            return Err(crate::error::PldError::InvalidParameter(
-                "Use pld_replace() for Replace adjacency".into(),
-            ));
-        }
+        let standard_normal = Normal::new(0.0, 1.0).unwrap();
+        let half_mass = 0.5 * log_mass.exp();
+        let z = standard_normal.inverse_cdf(half_mass); // very negative
 
-        let delta_tilde = 1.0 / self.noise_multiplier;
+        // For the symmetric Gaussian, REMOVE bounds:
+        // lower_x = sigma * z - sensitivity
+        // epsilon_upper = sensitivity * (-0.5*sensitivity - lower_x) / sigma^2
+        //               = sensitivity * (0.5*sensitivity - sigma*z) / sigma^2
+        let epsilon_upper =
+            sensitivity * (0.5 * sensitivity - sigma * z) / (sigma * sigma);
 
-        // epsilon_upper: bisection on the analytic delta curve.
-        // Finds the smallest ε where δ(ε) ≤ min_delta.
-        let epsilon_upper = gaussian_epsilon_for_delta(delta_tilde, self.min_delta);
-
-        // epsilon_lower: bisection on the beta (reverse hockey-stick) curve.
-        // Finds the most negative ε where β(|ε|) ≤ min_beta.
-        let epsilon_lower = gaussian_epsilon_for_beta(delta_tilde, self.min_beta);
-
-        Ok(EpsilonBounds {
-            epsilon_lower,
+        // Symmetric: epsilon_lower = -epsilon_upper
+        EpsilonBounds {
+            epsilon_lower: -epsilon_upper,
             epsilon_upper,
-        })
+        }
     }
 }
 
@@ -212,28 +161,22 @@ impl Gaussian {
     /// the PLD for a Gaussian mechanism with `noise_multiplier / 2` under
     /// Add/Remove adjacency.
     pub fn pld_replace(&self) -> Result<PrivacyLossDistribution> {
-        let equivalent = Gaussian::new_unchecked(self.noise_multiplier / 2.0, self.config.clone())
-            .with_min_delta(self.min_delta)
-            .with_min_beta(self.min_beta);
+        let equivalent = Gaussian::new_unchecked(self.noise_multiplier / 2.0, self.config.clone());
         equivalent.pld()
     }
 }
 
 impl Process for Gaussian {
     fn pld(&self) -> Result<PrivacyLossDistribution> {
-        // The Gaussian delta function is symmetric in ADD/REMOVE, and with
-        // delta-space bisection the epsilon bounds are also identical for both.
-        // A single symmetric PLD evaluation suffices.
-        let bounds = self.epsilon_bounds(Adjacency::Add)?;
+        let bounds = self.epsilon_bounds();
         let delta_tilde = 1.0 / self.noise_multiplier;
+
+        let tail_budget = self.config.tail_mass_truncation / 2.0;
 
         discretize_symmetric_mechanism(&self.config, bounds, |epsilon| {
             crate::math_helpers::gaussian::gaussian_delta_at(delta_tilde, epsilon)
         })
-        // Tail budgets for Chernoff truncation during composition:
-        // - Right budget = min_delta (truncated mass → infinity_mass → delta floor)
-        // - Left budget = min_beta (the promised beta accuracy contract)
-        .map(|pld| pld.with_tail_budgets(self.min_delta, self.min_beta))
+        .map(|pld| pld.with_tail_budgets(tail_budget, tail_budget))
     }
 }
 
@@ -248,7 +191,7 @@ impl PoissonAmplifiable for Gaussian {
 
 /// Constructor for Gaussian mechanism with default discretization
 ///
-/// Uses default discretization config (discretization=1e-4, log_mass=-32.0).
+/// Uses default discretization config (discretization=1e-4, log_mass_truncation_bound=-50).
 ///
 /// # Arguments
 ///
@@ -272,8 +215,6 @@ pub fn gaussian(noise_multiplier: f64) -> Result<Gaussian> {
     Ok(Gaussian {
         noise_multiplier,
         config: DiscretizationConfig::default(),
-        min_delta: DEFAULT_MIN_DELTA,
-        min_beta: DEFAULT_MIN_BETA,
     })
 }
 
@@ -302,8 +243,6 @@ pub fn gaussian_with(noise_multiplier: f64, config: DiscretizationConfig) -> Res
     Ok(Gaussian {
         noise_multiplier,
         config,
-        min_delta: DEFAULT_MIN_DELTA,
-        min_beta: DEFAULT_MIN_BETA,
     })
 }
 
@@ -368,23 +307,9 @@ mod tests {
     }
 
     #[test]
-    fn test_gaussian_builder_min_delta() {
-        let g = gaussian(0.5).unwrap().with_min_delta(1e-20);
-        assert_eq!(g.min_delta, 1e-20);
-        assert_eq!(g.min_beta, DEFAULT_MIN_BETA); // unchanged
-    }
-
-    #[test]
-    fn test_gaussian_builder_min_beta() {
-        let g = gaussian(0.5).unwrap().with_min_beta(1e-8);
-        assert_eq!(g.min_beta, 1e-8);
-        assert_eq!(g.min_delta, DEFAULT_MIN_DELTA); // unchanged
-    }
-
-    #[test]
-    fn test_gaussian_defaults() {
+    fn test_gaussian_default_config() {
         let g = gaussian(1.0).unwrap();
-        assert_eq!(g.min_delta, DEFAULT_MIN_DELTA);
-        assert_eq!(g.min_beta, DEFAULT_MIN_BETA);
+        assert_eq!(g.config.log_mass_truncation_bound, -50.0);
+        assert_eq!(g.config.tail_mass_truncation, 1e-15);
     }
 }
