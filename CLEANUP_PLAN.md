@@ -434,3 +434,30 @@ TENTATIVE: Keep for now, revisit when multi-epoch BandMF needs per-row variation
 - [ ] Drop `ColumnNormalizedBanded` or keep?
 - [ ] The `add_gaussian_noise` references in examples/adaptive.py — fix or ignore?
       (They reference a function that doesn't exist)
+
+---
+
+## Appendix: Distributed Matrix Factorization (Phase 5)
+
+New documentation for distributed training with matrix factorization mechanisms:
+
+### ✅ DISTRIBUTED_MF_PLAN.md
+- **Purpose**: Comprehensive research and implementation plan for distributed MF
+- **Status**: CREATED
+- **Contents**: 
+  - Scientific literature review (DP-FTRL, BandMF, BLT, scaling papers)
+  - Distributed training challenges and solutions
+  - Implementation plan for Phase 5 (4-6 weeks)
+  - API design decisions and testing strategy
+  - Open research questions (FSDP, multi-epoch, cyclic sampling)
+
+### ✅ DISTRIBUTED_MF_QUICKREF.md
+- **Purpose**: Quick reference guide for distributed MF implementation
+- **Status**: CREATED
+- **Contents**:
+  - TL;DR: Synchronized PRNG seeding approach (zero communication overhead)
+  - Week-by-week implementation checklist
+  - Code examples and testing strategy
+  - Success criteria and immediate next actions
+
+These documents prepare for Phase 5: Distributed Training (post-Phase 3 completion).
