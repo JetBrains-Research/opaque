@@ -74,84 +74,73 @@ def vmap_phi3_eager_attention_forward(
     Under vmap (3D): hidden_states shape (seq_len, hidden_dim)
                      returns attn_output (seq_len, hidden_dim)
     """
-    # Compute query, key, value with fused projection
-    qkv = module.qkv_proj(hidden_states)
+    # Non-invasive wrapper: add/remove a leading batch dim for vmap and
+    # delegate to the model's original attention/forward implementation.
+    added_batch = False
+    if hidden_states.ndim == 2:
+        # vmap case: (seq_len, hidden_dim) -> add batch dim
+        hidden_states = hidden_states.unsqueeze(0)
+        added_batch = True
 
-    # Unfuse QKV: reshape to (batch*seq, num_heads, head_dim) for each of Q, K, V
-    # Under vmap: hidden_states (seq, dim) -> qkv (seq, 3*num_heads*head_dim)
-    # Reshape: (seq, 3*num_heads*head_dim) -> (seq, 3, num_heads, head_dim)
+    # Wrap past_key_value for safe access without mutating original
+    if past_key_value is not None and not isinstance(
+        past_key_value, VmapCompatibleDynamicCache
+    ):
+        past_key_value = VmapCompatibleDynamicCache(past_key_value)
 
-    batch_seq_len = qkv.shape[0]
+    # Prefer the module's saved original forward if present
+    if hasattr(module, "_phi3_original_forward"):
+        out = module._phi3_original_forward(
+            hidden_states,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_value=past_key_value,
+            output_attentions=output_attentions,
+            use_cache=use_cache,
+            cache_position=cache_position,
+            **kwargs,
+        )
+    else:
+        # Fall back to best-effort calls: try eager_attention_forward then forward
+        if hasattr(module, "eager_attention_forward"):
+            out = module.eager_attention_forward(
+                hidden_states,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_value=past_key_value,
+                output_attentions=output_attentions,
+                use_cache=use_cache,
+                cache_position=cache_position,
+                **kwargs,
+            )
+        else:
+            # Last resort: call module.forward with provided args (may raise)
+            out = module.forward(
+                hidden_states,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_value=past_key_value,
+                output_attentions=output_attentions,
+                use_cache=use_cache,
+                cache_position=cache_position,
+                **kwargs,
+            )
 
-    # Reshape to separate Q, K, V
-    qkv = qkv.reshape(batch_seq_len, -1, module.num_heads, module.head_dim)
-
-    # Split into Q, K, V
-    # Shape after split: (seq, num_heads, head_dim) for each
-    query = qkv[:, 0]  # (seq, num_heads, head_dim)
-    key = qkv[:, 1]  # (seq, num_heads, head_dim)
-    value = qkv[:, 2]  # (seq, num_heads, head_dim)
-
-    # Add batch dimension back under vmap (if needed)
-    if query.ndim == 2:
-        # Under vmap: (seq, head_dim) -> (1, seq, head_dim)
-        query = query.unsqueeze(0)
-        key = key.unsqueeze(0)
-        value = value.unsqueeze(0)
-    # Add num_heads dimension
-    if query.shape[-1] != module.num_heads:
-        # Reshape if needed
+    # If we added a batch dim, remove it from the primary tensor in the output
+    try:
+        if isinstance(out, (tuple, list)):
+            attn_output = out[0]
+            if added_batch and attn_output.shape[0] == 1:
+                attn_output = attn_output.squeeze(0)
+                out = (attn_output,) + tuple(out[1:])
+        else:
+            if added_batch and out.shape[0] == 1:
+                out = out.squeeze(0)
+    except Exception:
+        # Best-effort only; don't fail here
         pass
 
-    # Handle RoPE (Rotary Position Embeddings)
-    if hasattr(module, "rotary_emb"):
-        q_pos_emb, k_pos_emb = module.rotary_emb(value, position_ids)
-        query = apply_rotary_pos_emb(query, q_pos_emb)
-        key = apply_rotary_pos_emb(key, k_pos_emb)
-
-    # Reuse key/value from past if available
-    if past_key_value is not None:
-        # Wrap cache for compatibility
-        if not isinstance(past_key_value, VmapCompatibleDynamicCache):
-            past_key_value = VmapCompatibleDynamicCache(past_key_value)
-
-        key = torch.cat([past_key_value.key_cache[0], key], dim=-2)
-        value = torch.cat([past_key_value.value_cache[0], value], dim=-2)
-
-    # Standard attention computation
-    key_states = vmap_repeat_kv(key, module.num_key_value_groups)
-    value_states = vmap_repeat_kv(value, module.num_key_value_groups)
-
-    # Attention weights
-    scaling = module.head_dim**-0.5
-    attn_weights = torch.matmul(query, key_states.transpose(-2, -1)) * scaling
-
-    if attention_mask is not None:
-        q_len = query.shape[-2]
-        kv_len = key_states.shape[-2]
-        causal_mask = attention_mask[..., :q_len, :kv_len]
-        attn_weights = attn_weights + causal_mask
-
-    attn_weights = torch.nn.functional.softmax(
-        attn_weights, dim=-1, dtype=torch.float32
-    ).to(query.dtype)
-
-    if module.training:
-        attn_weights = torch.nn.functional.dropout(
-            attn_weights, p=module.attention_dropout, training=True
-        )
-
-    attn_output = torch.matmul(attn_weights, value_states)
-    # Transpose: (..., num_heads, seq, head_dim) -> (..., seq, num_heads, head_dim)
-    attn_output = attn_output.transpose(-3, -2).contiguous()
-
-    # Remove batch dimension if added for vmap
-    if attn_output.shape[0] == 1:
-        attn_output = attn_output.squeeze(0)
-
-    # Return (attn_output, attn_weights_or_None, past_key_value) to match
-    # the standard attention forward signature that some Phi-3 variants expect.
-    return attn_output, (attn_weights if output_attentions else None), past_key_value
+    return out
 
 
 def apply_rotary_pos_emb(
@@ -175,7 +164,37 @@ def apply_rotary_pos_emb(
     out1 = x1 * cos - x2 * sin
     out2 = x1 * sin + x2 * cos
     return torch.cat([out1, out2], dim=-1)
+)
+def apply_rotary_pos_emb(
+    q: torch.Tensor, k: torch.Tensor | None, cos: torch.Tensor, sin: torch.Tensor
+):
+    """Delegate to HuggingFace Phi-3 rotary helper when available.
 
+    This function is a thin compatibility helper that prefers HF's
+    `apply_rotary_pos_emb` implementation. It accepts `q, k, cos, sin` to match
+    the HF API. If HF helper is not available, falls back to a conservative
+    rotate-half implementation applied to `q` (and `k` if provided).
+    """
+    try:
+        import transformers.models.phi3.modeling_phi3 as hf_phi3
+
+        if hasattr(hf_phi3, "apply_rotary_pos_emb"):
+            return hf_phi3.apply_rotary_pos_emb(q, k, cos, sin)
+    except Exception:
+        # Transformers not available or function missing - fallthrough
+        pass
+
+    # Fallback rotate-half applied elementwise (conservative)
+    def rotate_half(x: torch.Tensor) -> torch.Tensor:
+        x1 = x[..., : x.shape[-1] // 2]
+        x2 = x[..., x.shape[-1] // 2 :]
+        return torch.cat((-x2, x1), dim=-1)
+
+    q_out = q * cos + rotate_half(q) * sin
+    if k is None:
+        return q_out
+    k_out = k * cos + rotate_half(k) * sin
+    return q_out, k_out
 
 def vmap_phi3_attention_forward(
     module: torch.nn.Module,
