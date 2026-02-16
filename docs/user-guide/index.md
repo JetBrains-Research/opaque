@@ -6,7 +6,7 @@ to use Opaque effectively.
 ## Overview
 
 Opaque provides a functional API for training PyTorch models with differential privacy (DP). The library is organized
-around seven core concepts:
+around eight core concepts:
 
 1. **[Per-Sample Gradient Clipping](clipping.md)** - Bound sensitivity by clipping gradients
 2. **[Noise Addition](noise.md)** - Add calibrated Gaussian noise for privacy

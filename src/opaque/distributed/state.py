@@ -154,12 +154,12 @@ def sync_state(
     state_fields = {f.name for f in fields(state)}
 
     if sync_fields is None:
-        # Sync all float/int fields by default
-        sync_fields = [
-            f.name
-            for f in fields(state)
-            if isinstance(getattr(state, f.name), (float, int))
-        ]
+        # Sync all numeric (float/int) fields by default, but exclude bools
+        sync_fields = []
+        for f in fields(state):
+            val = getattr(state, f.name)
+            if isinstance(val, (float, int)) and not isinstance(val, bool):
+                sync_fields.append(f.name)
     else:
         # Validate sync_fields
         invalid_fields = set(sync_fields) - state_fields
