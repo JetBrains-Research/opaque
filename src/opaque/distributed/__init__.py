@@ -27,18 +27,18 @@ Example - Independent Noise (Privacy Amplification):
     >>> noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42 + rank)
     >>>
     >>> # Training: Noise BEFORE aggregation
-    >>> grads = clipped_grad_fn(params, batch)
-    >>> noisy_grads, noise_state = noise_fn(grads, noise_state)
-    >>> noisy_grads = dist_utils.average_gradients(noisy_grads)
+    >>> grads = clipped_grad_fn(params, batch)  # Sum of local clipped grads
+    >>> noisy_grads, noise_state = noise_fn(grads, noise_state)  # Add noise locally
+    >>> noisy_grads = dist_utils.all_reduce_gradients(noisy_grads, op="sum")  # Sum across devices
 
 Example - Shared Noise (Mixture Gaussian):
     >>> # Shared noise: same seed on all ranks
     >>> noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42)
     >>>
     >>> # Training: Aggregate BEFORE noise
-    >>> grads = clipped_grad_fn(params, batch)
-    >>> grads = dist_utils.average_gradients(grads)
-    >>> noisy_grads, noise_state = noise_fn(grads, noise_state)
+    >>> grads = clipped_grad_fn(params, batch)  # Sum of local clipped grads
+    >>> grads = dist_utils.all_reduce_gradients(grads, op="sum")  # Sum across devices
+    >>> noisy_grads, noise_state = noise_fn(grads, noise_state)  # Add noise once
 """
 
 from typing import Optional
