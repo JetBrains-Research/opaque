@@ -73,7 +73,7 @@ def sync_scalar(
                     raise RuntimeError(
                         "Distributed backend is 'nccl' but CUDA is not available; "
                         "provide an explicit `device` to `sync_scalar` or initialize "
-                        "with a CUDA-capable process." 
+                        "with a CUDA-capable process."
                     )
                 # Use the currently selected CUDA device for this process.
                 device = torch.device(f"cuda:{torch.cuda.current_device()}")
