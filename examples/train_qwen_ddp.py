@@ -184,11 +184,10 @@ def main():
         return_values=True,
     )
     # Same seed on all devices for sharded Poisson sampling
-    # Each device independently applies noise with this seed
-    noise_gen = torch.Generator().manual_seed(42)  # Same seed (no +rank offset)
+    # When distributed is detected, noise automatically uses the same seed everywhere
+    # (no need to manually shift by rank!)
     noise_fn, noise_state = gaussian_noise(
         stddev=noise_multiplier * clip_state.sensitivity(),
-        generator=noise_gen,
     )
 
     opt = torchopt.sgd(lr=learning_rate)

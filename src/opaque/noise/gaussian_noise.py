@@ -7,9 +7,16 @@ The API returns ``(noise_fn, state)`` where state is always immutable:
 
     >>> noise_fn, state = gaussian_noise(stddev=1.0, generator=42)
     >>> noisy_grads, state = noise_fn(grads, state)
+
+Auto-distributed support:
+- When distributed mode is detected (RANK/WORLD_SIZE env vars), and no generator
+  is provided, all devices automatically use the SAME seed for synchronized noise.
+- This prevents model divergence while keeping the API simple - just pass generator=None.
 """
 
 import dataclasses
+import os
+import warnings
 from collections.abc import Callable
 from typing import Any
 
@@ -33,6 +40,25 @@ class GaussianNoiseState:
     rng_state: torch.Generator
 
 
+def _detect_distributed_env() -> tuple[int | None, int | None]:
+    """Detect distributed training environment from environment variables.
+    
+    Returns:
+        Tuple of (rank, world_size) if distributed environment detected,
+        otherwise (None, None).
+    """
+    rank = os.environ.get("RANK") or os.environ.get("LOCAL_RANK")
+    world_size = os.environ.get("WORLD_SIZE")
+    
+    if rank is not None and world_size is not None:
+        try:
+            return int(rank), int(world_size)
+        except ValueError:
+            pass
+    
+    return None, None
+
+
 def _resolve_generator(
     generator: None | int | torch.Generator,
 ) -> torch.Generator:
@@ -40,13 +66,23 @@ def _resolve_generator(
 
     Args:
         generator: One of:
-            - ``None``: create a new unseeded generator (non-reproducible)
+            - ``None``: In distributed mode, creates a generator seeded with
+              a fixed seed (same across all devices). In single device mode,
+              creates an unseeded generator (non-reproducible).
             - ``int``: create a generator seeded with this value (reproducible)
             - ``torch.Generator``: use directly
     """
     if generator is None:
-        gen = torch.Generator()
-        gen.seed()
+        # Auto-detect distributed mode for synchronized noise
+        rank, world_size = _detect_distributed_env()
+        if world_size is not None and world_size > 1:
+            # Distributed mode: use same seed everywhere for synchronized noise
+            # Use a fixed seed (e.g., 0) that doesn't depend on rank
+            gen = torch.Generator().manual_seed(0)
+        else:
+            # Single device: unseeded generator (non-reproducible)
+            gen = torch.Generator()
+            gen.seed()
         return gen
     elif isinstance(generator, int):
         return torch.Generator().manual_seed(generator)
@@ -71,13 +107,20 @@ def gaussian_noise(
     Returns ``(noise_fn, state)`` where ``noise_fn`` adds calibrated Gaussian
     noise N(0, stddev²) to gradients and returns updated state.
 
+    **Automatic distributed support**: When ``generator=None`` and distributed
+    mode is detected (via RANK/WORLD_SIZE env vars), automatically uses the SAME
+    seed across all devices. This provides synchronized noise for model convergence.
+
     Args:
         stddev: Standard deviation of Gaussian noise
             (usually ``noise_multiplier * clip_norm``).
         generator: RNG configuration:
-            - ``None``: new unseeded generator (non-reproducible)
-            - ``int``: seeded generator (reproducible)
-            - ``torch.Generator``: use directly
+            - ``None``: 
+              - **Distributed (world_size > 1)**: Use fixed seed (seed=0) across all devices
+                for synchronized noise. Prevents model divergence.
+              - **Single device**: Unseeded generator (non-reproducible)
+            - ``int``: Seeded generator (reproducible, used as-is)
+            - ``torch.Generator``: Use directly
 
     Returns:
         A tuple ``(noise_fn, state)`` where:
@@ -85,12 +128,18 @@ def gaussian_noise(
         - ``noise_fn(grads, state) -> (noisy_grads, new_state)``
         - ``state`` is a :class:`GaussianNoiseState`
 
-    Example:
+    Example (typical use - no seed management needed):
         >>> import torch
         >>> from opaque.noise import gaussian_noise
         >>>
-        >>> noise_fn, state = gaussian_noise(stddev=1.1, generator=42)
+        >>> # When distributed is detected, automatically synchronizes noise across devices
+        >>> noise_fn, state = gaussian_noise(stddev=1.1)  # No seed needed!
         >>> grads = torch.zeros(10)
+        >>> noisy_grads, state = noise_fn(grads, state)
+
+    Example (reproducible):
+        >>> # Provide explicit seed for reproducibility
+        >>> noise_fn, state = gaussian_noise(stddev=1.1, generator=42)
         >>> noisy_grads, state = noise_fn(grads, state)
     """
     if stddev < 0:

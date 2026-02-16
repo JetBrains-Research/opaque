@@ -59,7 +59,11 @@ class PoissonSampler(Sampler):
         data_source: Dataset to sample from (any object with __len__)
         sample_rate: Probability of including each example (0 < p <= 1)
         num_epochs: Number of epochs to iterate over
-        generator: Optional numpy random generator for reproducibility
+        generator: Optional random generator or seed for reproducibility. Can be:
+            - ``None``: Uses unseeded generator (non-reproducible)
+            - ``int``: Seeds the generator. In distributed mode, automatically shifts by rank
+              to ensure different samples per device (e.g., seed=42 becomes 42, 43, 44, ... per rank)
+            - ``np.random.Generator``: Uses provided generator directly (user responsible for seeding)
         mode: Sampling mode for distributed training. If None (default), automatically
             selects SHARDED for distributed (world_size > 1) or INDEPENDENT for single device
 
@@ -75,7 +79,9 @@ class PoissonSampler(Sampler):
 
     Example (distributed - automatic):
         >>> # When running with torchrun, automatically uses SHARDED mode
-        >>> sampler = PoissonSampler(dataset, sample_rate=0.01, num_epochs=10)
+        >>> # Seed is automatically shifted by rank for diversity:
+        >>> sampler = PoissonSampler(dataset, sample_rate=0.01, num_epochs=10, generator=42)
+        >>> # Device 0: seed=42, Device 1: seed=43, Device 2: seed=44, ...
         >>> loader = DataLoader(dataset, batch_sampler=sampler)
 
     Note:
@@ -84,6 +90,7 @@ class PoissonSampler(Sampler):
         - Variance: len(dataset) * sample_rate * (1 - sample_rate)
         - Use with DataLoader's batch_sampler parameter (not sampler)
         - **Auto mode selection**: Detects distributed env and uses SHARDED by default
+        - **Auto seed shifting**: When int seed is provided in distributed mode, shifts by rank
         - SHARDED mode: Each worker samples from its shard only (zero communication overhead)
         - INDEPENDENT mode: Use mixture Gaussian accounting (future work)
     """
@@ -93,7 +100,7 @@ class PoissonSampler(Sampler):
         data_source,
         sample_rate: float,
         num_epochs: int = 1,
-        generator: np.random.Generator | None = None,
+        generator: np.random.Generator | int | None = None,
         mode: SamplingMode | None = None,
     ):
         super().__init__()
@@ -153,8 +160,20 @@ class PoissonSampler(Sampler):
 
         self._num_samples = len(data_source)
 
-        # RNG setup - always use provided or default generator
-        self.generator = generator if generator is not None else np.random.default_rng()
+        # RNG setup: auto-shift seed by rank for sampling diversity in distributed mode
+        if isinstance(generator, int):
+            # Seed is an integer: shift by rank for diversity across devices
+            if rank is not None and rank > 0:
+                shifted_seed = generator + rank
+            else:
+                shifted_seed = generator
+            self.generator = np.random.default_rng(shifted_seed)
+        elif generator is not None:
+            # Generator object provided: use as-is
+            self.generator = generator
+        else:
+            # No seed specified: use unseeded default generator
+            self.generator = np.random.default_rng()
 
     def _should_warn_mixture_gaussian(
         self, mode: SamplingMode, rank: int | None, world_size: int | None

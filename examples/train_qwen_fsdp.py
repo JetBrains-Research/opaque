@@ -313,14 +313,14 @@ def main():
     if is_main:
         print(f"   Created in {time.time() - t0:.1f}s")
     
-    # Create noise function (same seed on all ranks for standard DP-SGD)
-    # Each device independently applies noise with the same seed
+    # Create noise function
+    # When distributed is detected, automatically uses same seed across all ranks
+    # (no need to manually manage seed per rank!)
     if is_main:
         print("\n   Creating noise function...")
     
     stddev = noise_multiplier * initial_clip_norm
-    noise_gen = torch.Generator().manual_seed(42)  # Same seed (no +rank offset)
-    noise_fn, noise_state = gaussian_noise(stddev=stddev, generator=noise_gen)
+    noise_fn, noise_state = gaussian_noise(stddev=stddev)
     
     # Training loop
     if is_main:

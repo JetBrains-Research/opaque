@@ -12,14 +12,13 @@ Distributed training with DP requires careful handling because:
 
 Opaque provides utilities for distributed DP-SGD that maintain privacy guarantees while scaling to multiple GPUs.
 
-!!! danger "Critical: Noise Must Be Applied on EVERY Device"
+!!! danger "Critical: Noise Must Be Applied on EVERY Device with SAME Seed"
     
-    For DP guarantees to hold in distributed training, **every device must independently apply noise**:
+    For DP guarantees to hold, **every device must independently apply noise with the SAME seed**:
     
     ```python
-    # ✅ CORRECT: Each device creates and applies its own noise function
-    noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42 + rank)
-    # Each rank now has its own noise_fn that it will apply
+    # ✅ CORRECT: All devices use SAME seed (prevents model divergence)
+    noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42)  # SAME seed
     
     for batch in dataloader:
         grads = clipped_grad_fn(params, batch)
@@ -29,7 +28,13 @@ Opaque provides utilities for distributed DP-SGD that maintain privacy guarantee
     ```
     
     ```python
-    # ❌ WRONG: Only rank 0 applies noise (breaks DP for other devices)
+    # ❌ WRONG #1: Different noise per device (causes model divergence)
+    noise_fn = gaussian_noise(stddev=1.1, generator=42 + rank)
+    # Models diverge because each device computes differently with different noise!
+    ```
+    
+    ```python
+    # ❌ WRONG #2: Only rank 0 applies noise (breaks DP for other devices)
     if rank == 0:
         noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42)
         noisy_grads, noise_state = noise_fn(grads, noise_state)
@@ -39,15 +44,16 @@ Opaque provides utilities for distributed DP-SGD that maintain privacy guarantee
     
     **Why this matters:**
     - DP guarantees are **per-device per-batch**
-    - If device i doesn't apply noise, batch i has **zero privacy**
-    - Noise must be applied independently (different seed) or synchronized (same seed), but always locally on every device
+    - Every device must call `noise_fn()` in its own training loop
+    - Same seed ensures all devices generate identical noise (synchronized, not broadcast)
+    - Different seeds cause model divergence (training failure)
     - Never compute noise on rank 0 and broadcast it
 
 ## Quick Start
 
-### Recommended: Sharded Poisson Sampling + Shared Noise
+### Recommended: Sharded Poisson Sampling
 
-**This is the standard approach for distributed DP-SGD training:**
+**Standard approach with simple accounting and automatic seed management:**
 
 ```python
 import torch.distributed as dist
@@ -66,16 +72,15 @@ model = MyModel().to(device)
 fmodel, params = make_functional(model)
 clipped_grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0)
 
-# Shared noise: SAME seed (no +rank offset)
-# Each device independently applies noise with this seed → same noise everywhere
-noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42)
+# Noise: automatically synchronized across devices when distributed
+# No seed management needed - all devices use same seed!
+noise_fn, noise_state = gaussian_noise(stddev=1.1)
 
-# SHARDED Poisson sampling (automatic for distributed training)
-# Each device samples from its own disjoint data partition
-# Automatically enabled when world_size > 1
-sampler = PoissonSampler(dataset, sample_rate=0.01)  # Auto-detects distributed env
+# Sampling: automatically detects distributed and uses SHARDED mode
+# Seed is automatically shifted by rank for sampling diversity
+sampler = PoissonSampler(dataset, sample_rate=0.01, generator=42)
 
-# Training loop (standard DP-SGD)
+# Training loop
 for batch in dataloader:
     # 1. Compute clipped gradients on each device's shard
     grads, clip_state = clipped_grad_fn(params, batch, state=clip_state)
@@ -83,65 +88,49 @@ for batch in dataloader:
     # 2. Aggregate across devices
     grads = all_reduce_gradients(grads, op="sum")
     
-    # 3. Add noise on ALL devices (each independently with same seed → same noise)
+    # 3. Add synchronized noise on ALL devices (no manual seed management)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
     
     # 4. Update parameters
     params = optimizer_update(params, noisy_grads)
 ```
 
-**Why this approach:**
-- ✅ **Standard DP-SGD**: Proven privacy accounting, matches textbook algorithms
-- ✅ **Sharded data**: Each device processes disjoint data (zero communication overhead)
-- ✅ **Shared noise**: All devices apply identical noise (deterministic, reproducible)
-- ✅ **Automatic**: `PoissonSampler` auto-enables SHARDED mode in distributed settings
+**Advantages:**
+- ✅ **Simple accounting**: Standard DP-SGD, textbook algorithms
+- ✅ **No duplicates**: Sharded data ensures examples don't repeat across devices
+- ✅ **Automatic**: Both sampler and noise auto-detect distributed mode
+- ✅ **No seed management**: Just pass `generator=None` (or omit it) and it works across all devices
 
-### Advanced: Strategy 1 - Independent Noise (Privacy Amplification)
+### Advanced: Independent Poisson Sampling
 
-Each device adds **different noise** before aggregation (better privacy bounds):
+**No synchronization needed, but requires mixture Gaussian accounting:**
 
 ```python
-# Independent noise: OFFSET seed by rank for different noise per device
-noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42 + rank)
+from opaque.sampling import PoissonSampler, SamplingMode
 
-# INDEPENDENT Poisson sampling (each device samples full dataset)
-sampler = PoissonSampler(dataset, sample_rate=0.01, mode=SamplingMode.INDEPENDENT)
+# Noise: automatically synchronized across devices when distributed
+# No seed management needed!
+noise_fn, noise_state = gaussian_noise(stddev=1.1)
 
-# Training loop
+# INDEPENDENT sampling: each device samples full dataset
+# Seed shifted by rank for independent RNG streams (if provided)
+sampler = PoissonSampler(dataset, sample_rate=0.01, mode=SamplingMode.INDEPENDENT, generator=42)
+
+# Training loop (same as sharded)
 for batch in dataloader:
     grads, clip_state = clipped_grad_fn(params, batch, state=clip_state)
-    noisy_grads, noise_state = noise_fn(grads, noise_state)  # Noise FIRST
-    noisy_grads = all_reduce_gradients(noisy_grads, op="sum") # Sum AFTER
+    grads = all_reduce_gradients(grads, op="sum")
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = optimizer_update(params, noisy_grads)
 ```
 
-**Trade-offs:**
-- ⬆️ **Better privacy**: Privacy amplification via parallel composition
-- ⬇️ **More complex accounting**: Requires different privacy accounting
-- ⬇️ **More communication**: NO data sharding (each device sees full dataset)
+**Advantages:**
+- ✅ **No synchronization**: Each device samples independently (no sharding coordination)
+- ✅ **Limited privacy cost**: Mixture Gaussian accounting adds minimal privacy overhead in practice
+- ✅ **Simple setup**: No need to partition dataset across devices
 
-### Advanced: Strategy 2 - INDEPENDENT Sampling + Shared Noise
-
-Each device samples full dataset, but adds same noise:
-
-```python
-# Shared noise: SAME seed on all ranks
-noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42)
-
-# INDEPENDENT Poisson sampling (each device samples full dataset)
-sampler = PoissonSampler(dataset, sample_rate=0.01, mode=SamplingMode.INDEPENDENT)
-
-# Training loop
-for batch in dataloader:
-    grads, clip_state = clipped_grad_fn(params, batch, state=clip_state)
-    grads = all_reduce_gradients(grads, op="sum")            # Aggregate FIRST
-    noisy_grads, noise_state = noise_fn(grads, noise_state)  # Noise SECOND
-    params = optimizer_update(params, noisy_grads)
-```
-
-**Trade-offs:**
-- ✅ **Standard accounting**: Same as recommended approach
-- ⬇️ **No data sharding**: Each device sees full dataset (more communication)
+**Trade-off:**
+- Examples may appear multiple times across devices (handled by mixture Gaussian accounting)
 ```
 
 **Launch with**:
@@ -151,89 +140,132 @@ torchrun --nproc_per_node=4 train.py
 
 ## Key Concepts
 
-### Two Distributed DP-SGD Strategies
+### Automatic Seed Management in Distributed Training
 
-There are **two valid approaches** for distributed DP training, with different privacy accounting:
+Opaque automatically handles seed management to prevent common distributed training issues:
 
-#### Strategy 1: Independent Noise (Privacy Amplification)
+**When no seed is provided** (`generator=None`):
+- **Sampler**: Uses unseeded RNG (different samples per run)
+- **Noise**: Auto-detects distributed mode and uses **same seed (0)** across all devices for synchronized noise
 
-**Order**: Clip → Noise → Aggregate
+**When seed is provided** (e.g., `generator=42`):
+- **Sampler**: Automatically shifts seed by rank (42 → 42, 43, 44, ...) for independent sampling
+- **Noise**: Uses seed as-is (user responsible for consistency)
+
+**Result**: The API is simple - just pass `generator=None` (or omit it) and everything works:
+- ✅ Sampler gives different data per device (rank shifting)
+- ✅ Noise is synchronized across devices (same seed)
+- ✅ No model divergence, no data duplication
+
+### Two Poisson Sampling Strategies for Distributed DP
+
+The choice is **NOT between different vs same noise** (both use same noise to avoid model divergence), but between **sampling strategies**:
+
+#### Strategy 1: Sharded Poisson Sampling (Recommended)
+
+**Data partitioning**: Each device samples from disjoint data partition
 
 ```python
-grads = clipped_grad_fn(params, batch)
-noisy_grads = noise_fn(grads, noise_state)  # Different seed per device
-noisy_grads = average_gradients(noisy_grads)
+# Noise: automatically synchronized when distributed (no seed needed)
+noise_fn, noise_state = gaussian_noise(stddev=1.1)
+
+# Sampler: seed automatically shifted by rank (42 → 42, 43, 44, ...)
+sampler = PoissonSampler(dataset, sample_rate=0.01, mode=SamplingMode.SHARDED, generator=42)
+
+# Device 0: samples with seed 42, gets examples 0-49999 (5% of shard)
+# Device 1: samples with seed 43, gets examples 50000-99999 (different 5%)
+# → No duplication, independent sampling, synchronized noise
+
+for batch in dataloader:
+    grads = clipped_grad_fn(params, batch)
+    grads = all_reduce_gradients(grads)  # Aggregate across devices
+    noisy_grads = noise_fn(grads, noise_state)  # Synchronized noise
 ```
 
-- Each device adds **different noise** (offset seed by rank: `generator=seed + rank`)
-- Noise added **before** aggregation
-- **Better privacy bounds** via parallel composition (privacy amplification)
-- Works with **all noise functions** (gaussian, bounded, matrix factorization)
+**Characteristics:**
+- Each device processes **disjoint data** (no duplicates across devices)
+- Guaranteed to see different data across training
+- Requires synchronization to partition dataset
+- **Simple accounting**: Standard DP-SGD (no mixture Gaussian needed)
 
-#### Strategy 2: Shared Noise (Mixture Gaussian)
+#### Strategy 2: Independent Poisson Sampling (Advanced)
 
-**Order**: Clip → Aggregate → Noise
+**Independent sampling**: Each device samples full dataset independently
 
 ```python
-grads = clipped_grad_fn(params, batch)
-grads = average_gradients(grads)  # Aggregate first
-noisy_grads = noise_fn(grads, noise_state)  # Same seed on all devices
+# Noise: automatically synchronized when distributed (no seed needed)
+noise_fn, noise_state = gaussian_noise(stddev=1.1)
+
+# Sampler: seed automatically shifted by rank (42 → 42, 43, 44, ...)
+sampler = PoissonSampler(dataset, sample_rate=0.01, mode=SamplingMode.INDEPENDENT, generator=42)
+
+# Device 0: samples with seed 42: examples 0, 15, 42, ... (5% of 1M)
+# Device 1: samples with seed 43: examples 3, 12, 100, ... (5% of 1M, different)
+# → Some examples may appear in both device 0 and device 1 (handled by mixture Gaussian)
+
+for batch in dataloader:
+    grads = clipped_grad_fn(params, batch)
+    grads = all_reduce_gradients(grads)  # Aggregate across devices
+    noisy_grads = noise_fn(grads, noise_state)  # Synchronized noise
+    # (no sharding synchronization needed!)
 ```
 
-- All devices use **same noise** (same seed on all ranks: `generator=seed`)
-- **IMPORTANT**: Each device independently generates the noise with the same seed
-- Each device applies `noise_fn()` locally (not rank 0 broadcasting to others)
-- Noise added **after** aggregation
-- **Standard DP-SGD accounting** (mixture Gaussian)
-- Works with **all noise functions**
+**Characteristics:**
+- Each device samples **independently from full dataset**
+- Examples may appear in **multiple devices** (mixture Gaussian property)
+- **No synchronization needed** for data partitioning
+- **Mixture Gaussian accounting**: Handles duplicate examples across devices
+- **Limited privacy cost** in practice despite duplicates
 
-!!! info "What 'Shared Noise' Really Means"
+!!! warning "Noise Synchronization: Automatic with Sensible Defaults"
     
-    **Shared seed ≠ Centralized generation**
+    By default, **noise is automatically synchronized across devices**:
     
     ```python
-    # ✅ CORRECT: Each device uses same seed, independently applies noise
-    seed = 42
-    noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=seed)
-    #                                                        ↑
-    #                                    SAME SEED on all devices
-    
-    for batch in dataloader:
-        grads = clipped_grad_fn(params, batch)
-        grads = all_reduce_gradients(grads)  # Aggregate first
-        
-        # Each device independently applies the same noise function
-        noisy_grads, noise_state = noise_fn(grads, noise_state)
-        # ↓ Device 0, 1, 2, 3 all call this, with same seed → same noise
-        
-        params = optimizer_update(params, noisy_grads)
+    # ✅ DEFAULT (no seed needed): All devices use same seed (0)
+    noise_fn, noise_state = gaussian_noise(stddev=1.1)
     ```
     
-    Because all devices use the same seed, they independently generate **the same noise**. This is different from (and better than) broadcasting rank 0's noise to all ranks.
-
-!!! tip "Which Approach?"
-    **Recommended: Sharded Poisson + Shared Noise**
-    - Standard DP-SGD with proven privacy accounting
-    - Data sharding eliminates communication overhead
-    - Automatic in distributed settings via `PoissonSampler`
+    If you provide an explicit seed, it's used as-is:
     
-    **Advanced alternatives:**
-    - **Strategy 1** (Independent Noise): Better privacy via amplification, but more complex accounting and communication
-    - **Strategy 2** (INDEPENDENT Sampling): Same accounting as recommended, but less efficient (no data sharding)
+    ```python
+    # ✅ EXPLICIT SEED: Same seed on all devices (user provides it)
+    noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42)
+    
+    # ❌ DIFFERENT PER DEVICE (causes model divergence - avoid!)
+    # Don't manually shift by rank for noise:
+    noise_fn = gaussian_noise(stddev=1.1, generator=42 + rank)  # Wrong!
+    ```
+
+!!! tip "Which Sampling Strategy?"
+    
+    **Choose SHARDED if:**
+    - Simple accounting is preferred (standard DP-SGD)
+    - You can coordinate dataset partitioning
+    - You need predictable data distribution
+    
+    **Choose INDEPENDENT if:**
+    - Avoiding synchronization complexity is important
+    - Mixture Gaussian accounting is acceptable
+    - Very limited privacy overhead in practice
 
 ### Privacy Guarantees
 
-Both strategies maintain DP guarantees **only if noise is applied on every device**:
+Both sampling strategies maintain DP guarantees only if:
 
-- **Per-device DP**: Each GPU must independently apply DP mechanisms
-  - Device i: Compute clipped grads on batch i → Apply noise on batch i → Contributes to aggregate
-  - If device i skips noise: **Batch i has zero privacy** (breaks DP!)
-- Each GPU processes **disjoint batches** (no data overlap)
-- Clipping happens **per-example** before aggregation
-- Noise scale is appropriate for effective batch size
-- Gradient aggregation is **post-processing** (doesn't affect privacy)
+1. **Same noise is applied on every device** (not different noise per device!)
+   - Different noise per device causes model divergence
+   - All devices must independently call `noise_fn()` with same seed
 
-**Critical Implementation Detail**: The noise function `noise_fn()` must be called on **every** device in the training loop. It is **never** called on rank 0 and broadcast to others.
+2. **Noise is applied on every device** in the training loop
+   - Never compute noise on rank 0 and broadcast
+   - Each device executes `noisy_grads = noise_fn(grads, noise_state)`
+
+3. **Strategy-specific requirements:**
+   - **Sharded**: Each device processes disjoint data (no duplicates)
+   - **Independent**: Examples may appear in multiple devices (handled by mixture Gaussian)
+
+**Critical Implementation Detail**: The noise function `noise_fn()` must be called on **every** device with the **same seed**. It is **never** computed on rank 0 and broadcast to others.
 
 The effective batch size for accounting: `local_batch_size × num_gpus`
 
@@ -262,87 +294,88 @@ grads = clipped_grad_fn(params, batch)  # batch has B examples
 # Result: grads = SUM of B clipped gradients (not average!)
 ```
 
-#### Poisson Sampling: Variable Batch Sizes (Required for Privacy Amplification)
+#### Poisson Sampling: Variable Batch Sizes
 
-**For proper differential privacy with Poisson sampling**, each device must sample independently:
+**What `clipped_grad` returns:**
+```python
+grads = clipped_grad_fn(params, batch)  # batch has B examples
+
+# Internally:
+# 1. Compute B per-example gradients (via vmap)
+# 2. Clip each to L2 norm ≤ C
+# 3. SUM the B clipped gradients
+# Result: grads = SUM of B clipped gradients (scaled by sampling ratio!)
+```
+
+**Batch sizes are variable** due to independent Poisson sampling on each device:
 
 ```python
-# Each device samples different data → different batch sizes
-# This is REQUIRED for privacy amplification guarantees
-sampler = PoissonSampler(dataset, sample_rate=0.01, distributed=False)
+# PoissonSampler auto-detects distributed environment
+# In distributed: automatically uses SHARDED mode
+# In single device: uses INDEPENDENT mode
+sampler = PoissonSampler(dataset, sample_rate=0.01)
 
 # Device 0: batch_size=6  → grads_0 = sum of 6 clipped grads
 # Device 1: batch_size=10 → grads_1 = sum of 10 clipped grads
 # Device 2: batch_size=7  → grads_2 = sum of 7 clipped grads
 # Device 3: batch_size=9  → grads_3 = sum of 9 clipped grads
-# Total: 32 examples across all devices
+# Total across devices: 32 examples, but not synchronized
 ```
 
-**⚠️ Problem with `average_gradients()`:**
-
-`average_gradients()` divides by world_size=4, NOT by total examples=32!
-
-```python
-# WRONG for Poisson sampling:
-grads = average_gradients(grads)
-# This gives: (sum of 32 clipped grads) / 4
-# Not the average per example!
-```
-
-**✅ Solution: Use sum (recommended for Poisson sampling):**
+**For SHARDED mode** (data partitioning):
+- Each device sees different examples
+- Batch sizes vary per step on each device
+- Grid search recommended for learning rates
 
 ```python
-# Independent Poisson sampling on each device
+# Sharded Poisson sampling (default in distributed)
+sampler = PoissonSampler(dataset, sample_rate=0.01)  # Auto SHARDED
+
 for batch in dataloader:
     grads = clipped_grad_fn(params, batch)
+    grads = all_reduce_gradients(grads, op="sum")  # Sum across devices
+    
+    # All devices use same noise (synchronized)
     noisy_grads = noise_fn(grads, noise_state)
     
-    # Sum across devices (no division!)
-    noisy_grads = all_reduce_gradients(noisy_grads, op="sum")
-    
-    # Update: effective LR varies per step based on total batch size
-    # This is acceptable for DP-SGD with Poisson sampling
+    # Update with fixed learning rate
     params = params - lr * noisy_grads
 ```
 
-**Why this works:**
-- Total gradient = sum of all per-device clipped+noisy grads
-- Effective step size = `lr × (sum of B clipped grads)` where B varies
-- Privacy amplification from independent Poisson sampling is preserved
-- Learning rate can be tuned to account for expected batch size
-
-**Alternative: Normalize by total batch size (optional, more communication):**
+**For INDEPENDENT mode** (full dataset per device):
+- Each device sees full dataset but samples independently
+- Requires mixture Gaussian accounting for handling duplicates
 
 ```python
-import torch
-from opaque.distributed import all_reduce_gradients, sync_scalar
+from opaque.sampling import SamplingMode
 
-# Count examples on this device
-batch_size = len(batch)
+# Independent sampling (each device sees full dataset)
+sampler = PoissonSampler(dataset, sample_rate=0.01, mode=SamplingMode.INDEPENDENT)
 
-# Sum gradients and batch sizes
-grads = all_reduce_gradients(grads, op="sum")
-total_batch_size = sync_scalar(batch_size, op="sum", device=device)
-
-# Divide by actual total count
-grads = {k: v / total_batch_size for k, v in grads.items()}
-
-# Update with fixed effective LR per example
-params = params - lr * grads
+for batch in dataloader:
+    grads = clipped_grad_fn(params, batch)
+    grads = all_reduce_gradients(grads, op="sum")
+    
+    # All devices use same noise (synchronized)
+    noisy_grads = noise_fn(grads, noise_state)
+    
+    # Update
+    params = params - lr * noisy_grads
 ```
 
-!!! warning "Don't Use Fixed Batch Sizes for Poisson Sampling"
-    **Coordinated sampling** (where all devices get the same batch) **breaks privacy amplification guarantees**:
-    
-    ```python
-    # ❌ BAD: Fixed batch size per step
-    sampler = PoissonSampler(dataset, distributed=True)  # All get same indices
-    # or DistributedSampler
-    
-    # This removes the independent sampling property needed for
-    # privacy amplification. There are no known tight privacy bounds
-    # for synchronized Poisson sampling in distributed settings.
-    ```
+**⚠️ Important: Use `sum`, NOT `average_gradients()`**
+
+`average_gradients()` divides by `world_size`, but Poisson sampling creates **different total batch sizes per step**:
+
+```python
+# WRONG: Dividing by world_size instead of total batch size
+grads = average_gradients(grads)  # Divides by 4
+# Effective update: (sum of 6+10+7+9=32 clipped grads) / 4
+
+# ✅ CORRECT: Sum without dividing
+grads = all_reduce_gradients(grads, op="sum")
+# Effective update: sum of all clipped grads (not normalized)
+```
     
     **Use independent sampling** (`distributed=False`) with variable batch sizes for proper DP guarantees.
 
