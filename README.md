@@ -124,8 +124,8 @@ Core DP-SGD primitives are implemented and validated:
 - **Noise**: `gaussian()`, `gaussian_stateful()` — Stateless and reproducible noise injection
 - **Sampling**: `PoissonSampler`, `TruncatedPoissonSampler` — Batch selection mechanisms
 - **Optimizers**: `adaptive_clipping()` — TorchOpt wrapper with adaptive clipping
-- **Accounting**: Functional privacy accounting API
-- **Validation**: 111 tests passing, numerical equivalence with JAX-Privacy (atol=1e-5)
+- **Accounting**: Functional privacy accounting API + **Rust-based PLD engine** (`opaque_dp_accounting`) with tight bounds
+- **Validation**: 111 tests passing, numerical equivalence with JAX-Privacy (atol=1e-5), 40 cross-validation tests against Google's `dp-accounting`
 - **Integration**: GPT-2 (124M) validated with HuggingFace models
 
 ### 🎯 Phase 1A: LoRA Validation at 8B Scale (Current)
@@ -159,6 +159,12 @@ Validate Opaque on production workload before adding advanced features:
 
 - [Tutorial 01: Gradient Clipping from Basics](docs/tutorials/01_gradient_clipping_from_basics.ipynb) — Learn gradient clipping with `clipped_grad()`
 - [Tutorial 02: Differential Privacy - Noise and Accounting](docs/tutorials/02_differential_privacy_noise_and_accounting.ipynb) — Complete DP-SGD with noise injection and privacy accounting
+
+### Privacy Accounting
+
+- [Crate README](crates/dp-accounting/README.md) — PLD accounting engine with Python bindings
+- [API Reference](docs/api/accounting.md) — Full API documentation
+- [User Guide](docs/user-guide/accounting.md) — Concepts, examples, and best practices
 
 ### Development Documentation
 
