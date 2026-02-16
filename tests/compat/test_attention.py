@@ -44,7 +44,11 @@ class TestAttentionImplementations:
             grads, _ = run_clipped_grad_test(model, qwen2_tokenizer)
 
     def test_flex_attention(self, qwen2_config, qwen2_tokenizer, device):
-        """Test flex_attention - currently incompatible with vmap. Works on CPU and CUDA."""
+        """Test flex_attention - currently incompatible with vmap. Only works on CPU and CUDA."""
+        # FlexAttention only supports CUDA, CPU, or HPU devices
+        if device.type not in ("cpu", "cuda"):
+            pytest.skip(f"FlexAttention not supported on {device.type}")
+
         # flex_attention has vmap compatibility issues with tensor metadata
         try:
             qwen2_config._attn_implementation = "flex_attention"

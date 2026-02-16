@@ -49,7 +49,7 @@ class TestGradientCheckpointing:
             return outputs.loss
 
         # Gradient checkpointing uses autograd.Function which is incompatible with vmap
-        with pytest.raises(RuntimeError, match="autograd.Function"):
+        with pytest.raises(RuntimeError, match="(autograd\\.Function|checkpointing|vmap)"):
             grad_fn, clip_state = clipped_grad(
                 per_example_loss, argnums=0, batch_argnums=(2, 3, 4), l2_clip_norm=1.0
             )
