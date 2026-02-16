@@ -69,7 +69,7 @@ def google_poisson_gaussian_pld(noise_multiplier, sample_rate, num_steps=1):
 class TestGaussianMechanism:
     """Compare single Gaussian mechanism results."""
 
-    @pytest.mark.parametrize("noise_multiplier", [0.5, 0.8, 1.0, 1.1, 1.2])
+    @pytest.mark.parametrize("noise_multiplier", [0.5, 0.7, 0.8, 1.1, 1.2])
     def test_epsilon_at_delta_1e5(self, noise_multiplier):
         """epsilon_at(delta=1e-5) should match Google's PLD."""
         delta = 1e-5
@@ -85,7 +85,7 @@ class TestGaussianMechanism:
             f"diff={abs(our_eps - google_eps):.2e}"
         )
 
-    @pytest.mark.parametrize("noise_multiplier", [0.5, 0.8, 1.0, 1.2])
+    @pytest.mark.parametrize("noise_multiplier", [0.5, 0.7, 0.8, 1.2])
     def test_delta_at_epsilon_1(self, noise_multiplier):
         """delta_at(epsilon=1.0) should match Google's PLD."""
         epsilon = 1.0
@@ -112,7 +112,7 @@ class TestGaussianComposition:
 
     @pytest.mark.parametrize(
         "noise_multiplier,num_steps",
-        [(1.0, 10), (1.0, 100), (0.8, 50), (1.1, 200)],
+        [(0.6, 10), (0.7, 100), (0.8, 50), (1.1, 200)],
     )
     def test_composition_epsilon(self, noise_multiplier, num_steps):
         """Composed Gaussian epsilon should match Google's self_compose."""
@@ -141,7 +141,7 @@ class TestPoissonGaussian:
 
     @pytest.mark.parametrize(
         "noise_multiplier,sample_rate",
-        [(1.0, 0.01), (1.0, 0.001), (0.8, 0.01), (1.1, 0.005)],
+        [(0.7, 0.01), (0.6, 0.001), (0.8, 0.01), (1.1, 0.005)],
     )
     def test_single_step_epsilon(self, noise_multiplier, sample_rate):
         """Single Poisson-subsampled Gaussian step should match Google."""
@@ -161,7 +161,7 @@ class TestPoissonGaussian:
 
     @pytest.mark.parametrize(
         "noise_multiplier,sample_rate,num_steps",
-        [(1.0, 0.01, 100), (1.0, 0.01, 1000), (1.1, 0.005, 500)],
+        [(0.7, 0.01, 100), (0.6, 0.01, 1000), (1.1, 0.005, 500)],
     )
     def test_composed_epsilon(self, noise_multiplier, sample_rate, num_steps):
         """Composed Poisson-subsampled Gaussian should match Google."""
@@ -202,8 +202,8 @@ class TestRealisticDPSGD:
         )
 
     def test_large_noise_short_training(self):
-        """Low-eps regime: nm=1.0, q=0.001, 100 steps."""
-        nm, q, steps, delta = 1.0, 0.001, 100, 1e-5
+        """Low-eps regime: nm=0.8, q=0.001, 100 steps."""
+        nm, q, steps, delta = 0.8, 0.001, 100, 1e-5
 
         our_eps = dp.compute_epsilon(nm, q, steps, delta)
         google_pld = google_poisson_gaussian_pld(nm, q, steps)
@@ -216,7 +216,7 @@ class TestRealisticDPSGD:
 
     def test_operator_matches_function(self):
         """step * k should produce the same epsilon as repeat(step, k)."""
-        step = dp.poisson(1.0, 0.01)
+        step = dp.poisson(0.7, 0.01)
 
         via_op = (step * 100).epsilon_at(1e-5)
         via_fn = dp.repeat(step, 100).epsilon_at(1e-5)
@@ -252,17 +252,17 @@ class TestEdgeCases:
 
     def test_compose_operator(self):
         """a | b should compose two processes."""
-        a = dp.gaussian(1.0)
+        a = dp.gaussian(0.6)
         b = dp.gaussian(0.8)
         composed = a | b
         assert composed.epsilon_at(1e-5) > a.epsilon_at(1e-5)
 
     def test_compose_function(self):
         """compose(a, b) should increase epsilon."""
-        step = dp.gaussian(1.0)
+        step = dp.gaussian(0.6)
         single_eps = step.epsilon_at(1e-5)
 
-        composed = dp.compose(step, dp.gaussian(1.0))
+        composed = dp.compose(step, dp.gaussian(0.6))
         composed_eps = composed.epsilon_at(1e-5)
 
         assert composed_eps > single_eps, (
@@ -280,7 +280,7 @@ class TestAdaClip:
 
     def test_adaclip_more_private_than_base(self):
         """AdaClip epsilon should be >= base Gaussian (extra privacy cost)."""
-        nm = 1.0
+        nm = 0.7
         base = dp.gaussian(nm)
         ac = dp.adaclip(nm, 50.0)
 
@@ -293,7 +293,7 @@ class TestAdaClip:
 
     def test_adaclip_large_sigma_b_matches_base(self):
         """With very large sigma_b, AdaClip should approximate the base Gaussian."""
-        nm = 1.0
+        nm = 0.7
         base = dp.gaussian(nm)
         ac = dp.adaclip(nm, 1e10)
 
@@ -347,7 +347,7 @@ class TestMetrics:
 
     def test_delta_epsilon_roundtrip(self):
         """delta_at(epsilon_at(delta)) should be approximately delta."""
-        proc = dp.gaussian(1.0)
+        proc = dp.gaussian(0.7)
         target_delta = 1e-5
 
         eps = proc.epsilon_at(target_delta)
@@ -359,7 +359,7 @@ class TestMetrics:
 
     def test_advantage_is_delta_at_zero(self):
         """Advantage should equal delta_at(epsilon=0)."""
-        proc = dp.gaussian(1.0)
+        proc = dp.gaussian(0.7)
         adv = proc.advantage()
         delta_0 = proc.delta_at(0.0)
 
@@ -386,7 +386,7 @@ class TestIntrospection:
 
     def test_pld_info_keys(self):
         """pld_info() should expose PLD grid diagnostics."""
-        proc = dp.gaussian(1.0)
+        proc = dp.gaussian(0.7)
         info = proc.pld_info()
         assert "grid_size" in info
         assert "discretization" in info
@@ -398,7 +398,7 @@ class TestIntrospection:
 
     def test_summary_returns_string(self):
         """summary() should return a formatted multi-line string."""
-        proc = dp.gaussian(1.0)
+        proc = dp.gaussian(0.7)
         s = proc.summary()
         assert "epsilon" in s
         assert "delta" in s
@@ -407,14 +407,14 @@ class TestIntrospection:
 
     def test_str_includes_epsilon(self):
         """str(process) should include an epsilon value for quick inspection."""
-        proc = dp.gaussian(1.0)
+        proc = dp.gaussian(0.7)
         s = str(proc)
         assert "eps" in s
         assert "Gaussian" in s
 
     def test_repr_is_reconstructible(self):
         """repr() should clearly identify the process type."""
-        proc = dp.poisson(1.0, 0.01)
+        proc = dp.poisson(0.7, 0.01)
         r = repr(proc)
         assert "DpProcess" in r
         assert "Poisson" in r

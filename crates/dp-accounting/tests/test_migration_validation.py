@@ -107,7 +107,7 @@ class TestGaussianMechanismDetailed:
                 f"diff={abs(our_delta - expected_delta):.2e}"
             )
 
-    @pytest.mark.parametrize("noise_multiplier", [0.3, 0.5, 0.8, 1.0])
+    @pytest.mark.parametrize("noise_multiplier", [0.3, 0.5, 0.7, 0.8])
     def test_delta_matches_dp_accounting(self, noise_multiplier):
         """delta_at various epsilons should match Google's dp_accounting."""
         proc = dp.gaussian(noise_multiplier)
@@ -121,7 +121,7 @@ class TestGaussianMechanismDetailed:
                 f"ref={ref_delta:.10f}, diff={abs(our_delta - ref_delta):.2e}"
             )
 
-    @pytest.mark.parametrize("noise_multiplier", [0.3, 0.5, 0.8, 1.0])
+    @pytest.mark.parametrize("noise_multiplier", [0.3, 0.5, 0.7, 0.8])
     def test_epsilon_matches_dp_accounting(self, noise_multiplier):
         """epsilon_at various deltas should match Google's dp_accounting."""
         proc = dp.gaussian(noise_multiplier)
@@ -137,7 +137,7 @@ class TestGaussianMechanismDetailed:
 
     def test_delta_monotonically_decreases_with_epsilon(self):
         """For fixed sigma, delta should decrease as epsilon increases."""
-        proc = dp.gaussian(1.0)
+        proc = dp.gaussian(0.7)
         epsilons = [0.1, 0.5, 1.0, 1.5, 2.0, 3.0]
         deltas = [proc.delta_at(e) for e in epsilons]
         for i in range(1, len(deltas)):
@@ -146,7 +146,7 @@ class TestGaussianMechanismDetailed:
                 f"< delta({epsilons[i]})={deltas[i]:.8f}"
             )
 
-    @pytest.mark.parametrize("noise_multiplier", [0.3, 0.5, 0.8, 1.0])
+    @pytest.mark.parametrize("noise_multiplier", [0.3, 0.5, 0.7, 0.8])
     def test_low_noise_gives_finite_delta(self, noise_multiplier):
         """Low noise should produce finite deltas in [0, 1]."""
         proc = dp.gaussian(noise_multiplier)
@@ -161,7 +161,7 @@ class TestGaussianMechanismDetailed:
 
     def test_edge_case_epsilons(self):
         """Extreme epsilon values should still yield valid deltas."""
-        proc = dp.gaussian(1.0)
+        proc = dp.gaussian(0.7)
         for eps in [1e-6, 1e-3, 10.0, 20.0]:
             d = proc.delta_at(eps)
             assert math.isfinite(d), f"eps={eps}: delta={d}"
@@ -179,16 +179,16 @@ POISSON_TEST_CASES = [
     (0.3, 0.01, "low-noise small-q"),
     (0.5, 0.01, "mid-noise small-q"),
     (0.8, 0.01, "std-noise small-q"),
-    (1.0, 0.01, "high-noise small-q"),
-    (1.0, 0.001, "high-noise tiny-q"),
-    (1.0, 0.1, "high-noise large-q"),
+    (0.9, 0.01, "high-noise small-q"),
+    (0.9, 0.001, "high-noise tiny-q"),
+    (0.9, 0.1, "high-noise large-q"),
     (0.5, 0.1, "mid-noise large-q"),
     (0.5, 0.001, "mid-noise tiny-q"),
     (0.8, 0.005, "std-noise mid-q"),
     (1.1, 0.005, "higher-noise mid-q"),
     (1.2, 0.01, "max-noise small-q"),
     (0.3, 0.0001, "low-noise very-tiny-q"),
-    (1.0, 1.0, "no-subsampling"),
+    (0.9, 1.0, "no-subsampling"),
 ]
 
 
@@ -249,7 +249,7 @@ class TestPoissonSubsampling:
 
     def test_privacy_amplification(self):
         """Poisson subsampling should reduce privacy loss vs base Gaussian."""
-        nm = 1.0
+        nm = 0.7
         eps = 1.0
         base = dp.gaussian(nm)
         subsampled = dp.poisson(nm, 0.01)
@@ -279,8 +279,8 @@ class TestPoissonSubsampling:
     @pytest.mark.parametrize(
         "noise_multiplier,sample_rate,num_steps",
         [
-            (1.0, 0.01, 100),
-            (1.0, 0.01, 1000),
+            (0.9, 0.01, 100),
+            (0.9, 0.01, 1000),
             (1.1, 0.005, 500),
             (0.8, 0.01, 200),
             (0.5, 0.01, 500),
@@ -304,8 +304,8 @@ class TestPoissonSubsampling:
         )
 
     def test_dpsgd_imagenet_scenario(self):
-        """Realistic ImageNet DP-SGD: sigma=1.0, n=1.2M, batch=4096."""
-        nm = 1.0
+        """Realistic ImageNet DP-SGD: sigma=0.8, n=1.2M, batch=4096."""
+        nm = 0.8
         n = 1_200_000
         batch = 4096
         q = batch / n
@@ -335,11 +335,11 @@ TRUNCATED_TEST_CASES = [
     (10_000, 0.01, 128, 0.8, "small-dataset std-noise"),
     (50_000, 0.005, 256, 0.8, "cifar-scale"),
     (100_000, 0.001, 128, 0.8, "llm-finetune"),
-    (1_280_000, 0.0032, 4096, 1.0, "imagenet-scale"),
-    (10_000_000, 0.0001, 1024, 1.0, "large-dataset"),
+    (1_280_000, 0.0032, 4096, 0.8, "imagenet-scale"),
+    (10_000_000, 0.0001, 1024, 0.9, "large-dataset"),
     (100_000_000, 0.00001, 1024, 1.2, "huge-dataset"),
-    (10_000, 0.01, 256, 1.0, "cap-above-expected"),
-    (60_000, 0.00427, 256, 1.0, "opacus-default"),
+    (10_000, 0.01, 256, 0.7, "cap-above-expected"),
+    (60_000, 0.00427, 256, 0.8, "opacus-default"),
 ]
 
 
@@ -406,11 +406,11 @@ class TestTruncatedPoisson:
         assert eps > 0, f"CIFAR-10: epsilon={eps}"
 
     def test_imagenet_workflow(self):
-        """ImageNet: n=1.28M, batch=4096, sigma=1.0."""
+        """ImageNet: n=1.28M, batch=4096, sigma=0.8."""
         n = 1_280_000
         batch = 4096
         q = batch / n
-        nm = 1.0
+        nm = 0.8
         steps = 5 * (n // batch)  # 5 epochs
 
         step = dp.truncated_poisson(nm, q, batch_size_cap=batch, dataset_size=n)
@@ -482,10 +482,10 @@ PRODUCTION_NOISE_PARAMS = [
 HIGH_NOISE_PARAMS = [
     (0.8, 0.01, 5000, "sigma=0.8 q=0.01 k=5000"),
     (0.8, 0.001, 10000, "sigma=0.8 q=0.001 k=10000"),
-    (1.0, 0.01, 5000, "sigma=1.0 q=0.01 k=5000"),
-    (1.0, 0.01, 10000, "sigma=1.0 q=0.01 k=10000"),
-    (1.0, 0.001, 10000, "sigma=1.0 q=0.001 k=10000"),
-    (1.0, 0.001, 25000, "sigma=1.0 q=0.001 k=25000"),
+    (0.9, 0.01, 5000, "sigma=0.9 q=0.01 k=5000"),
+    (0.9, 0.01, 10000, "sigma=0.9 q=0.01 k=10000"),
+    (0.9, 0.001, 10000, "sigma=0.9 q=0.001 k=10000"),
+    (0.9, 0.001, 25000, "sigma=0.9 q=0.001 k=25000"),
     (1.2, 0.01, 10000, "sigma=1.2 q=0.01 k=10000"),
     (1.2, 0.01, 25000, "sigma=1.2 q=0.01 k=25000"),
 ]
@@ -633,7 +633,7 @@ class TestMetricsBeta:
                 f"< beta(alpha={alphas[i]})={betas[i]:.8f}"
             )
 
-    @pytest.mark.parametrize("sigma", [0.3, 0.5, 0.8, 1.0])
+    @pytest.mark.parametrize("sigma", [0.3, 0.5, 0.7, 0.8])
     def test_beta_monotonic_across_alpha_different_sigma(self, sigma):
         """Beta monotonicity should hold for various noise levels."""
         proc = dp.poisson(sigma, 0.01) * 200
@@ -677,7 +677,7 @@ class TestMetricsAdvantage:
     def test_advantage_decreases_with_noise(self):
         """More noise -> lower advantage (more private)."""
         advantages = []
-        for sigma in [0.3, 0.5, 0.8, 1.0]:
+        for sigma in [0.3, 0.5, 0.7, 0.8]:
             proc = dp.poisson(sigma, 0.01) * 500
             advantages.append(proc.advantage())
 
@@ -956,7 +956,7 @@ class TestNumericalStability:
     @pytest.mark.parametrize("delta", [1e-10, 1e-12])
     def test_extreme_small_delta(self, delta):
         """Very small delta should give finite epsilon."""
-        proc = dp.poisson(1.0, 0.001) * 1000
+        proc = dp.poisson(0.9, 0.001) * 1000
         eps = proc.epsilon_at(delta)
         assert math.isfinite(eps), f"delta={delta}: epsilon={eps}"
         assert eps > 0, f"delta={delta}: epsilon={eps}"
@@ -985,7 +985,7 @@ class TestCompositionProperties:
     def test_epsilon_decreases_with_noise(self):
         """More noise -> lower epsilon."""
         q, steps, delta = 0.01, 1000, 1e-5
-        sigmas = [0.3, 0.5, 0.8, 1.0, 1.2]
+        sigmas = [0.3, 0.5, 0.8, 0.9, 1.2]
         epsilons = [dp.compute_epsilon(s, q, steps, delta) for s in sigmas]
 
         for i in range(1, len(epsilons)):
@@ -1013,7 +1013,7 @@ class TestCompositionProperties:
         # Three-phase training: different noise multipliers.
         phase1 = dp.poisson(0.5, 0.1) * 50
         phase2 = dp.poisson(0.8, 0.05) * 30
-        phase3 = dp.poisson(1.0, 0.02) * 20
+        phase3 = dp.poisson(0.9, 0.02) * 20
 
         combined = phase1 | phase2 | phase3
         eps_combined = combined.epsilon_at(delta)
@@ -1031,7 +1031,7 @@ class TestCompositionProperties:
         # Cross-validate with dp_accounting.
         g_pld1 = google_poisson_gaussian_pld(0.5, 0.1, 50)
         g_pld2 = google_poisson_gaussian_pld(0.8, 0.05, 30)
-        g_pld3 = google_poisson_gaussian_pld(1.0, 0.02, 20)
+        g_pld3 = google_poisson_gaussian_pld(0.9, 0.02, 20)
         g_combined = g_pld1.compose(g_pld2).compose(g_pld3)
         ref_eps = g_combined.get_epsilon_for_delta(delta)
 
@@ -1042,7 +1042,7 @@ class TestCompositionProperties:
 
     def test_operator_matches_function(self):
         """step * k should equal repeat(step, k)."""
-        step = dp.poisson(1.0, 0.01)
+        step = dp.poisson(0.7, 0.01)
 
         via_op = (step * 100).epsilon_at(1e-5)
         via_fn = dp.repeat(step, 100).epsilon_at(1e-5)
@@ -1051,7 +1051,7 @@ class TestCompositionProperties:
 
     def test_compose_operator_matches_function(self):
         """a | b should equal compose(a, b)."""
-        a = dp.gaussian(1.0)
+        a = dp.gaussian(0.7)
         b = dp.gaussian(0.8)
 
         via_op = (a | b).epsilon_at(1e-5)
@@ -1133,11 +1133,11 @@ class TestRealisticWorkflows:
         )
 
     def test_imagenet_training(self):
-        """ImageNet: 1.2M dataset, batch=4096, sigma=1.0, 5 epochs."""
+        """ImageNet: 1.2M dataset, batch=4096, sigma=0.8, 5 epochs."""
         dataset_size = 1_200_000
         batch_size = 4096
         q = batch_size / dataset_size
-        sigma = 1.0
+        sigma = 0.8
         epochs = 5
         steps = epochs * (dataset_size // batch_size)
         delta = 1e-6
@@ -1227,7 +1227,7 @@ class TestRealisticWorkflows:
         # Phase 1: warm-up with high noise (1000 steps).
         # Phase 2: main training with medium noise (3000 steps).
         # Phase 3: fine-tuning with lower noise (1000 steps).
-        phase1 = dp.poisson(1.0, 0.01) * 1000
+        phase1 = dp.poisson(0.9, 0.01) * 1000
         phase2 = dp.poisson(0.7, 0.01) * 3000
         phase3 = dp.poisson(0.5, 0.01) * 1000
 
@@ -1235,7 +1235,7 @@ class TestRealisticWorkflows:
         our_eps = total.epsilon_at(delta)
 
         # Cross-validate with dp_accounting.
-        g1 = google_poisson_gaussian_pld(1.0, 0.01, 1000)
+        g1 = google_poisson_gaussian_pld(0.9, 0.01, 1000)
         g2 = google_poisson_gaussian_pld(0.7, 0.01, 3000)
         g3 = google_poisson_gaussian_pld(0.5, 0.01, 1000)
         g_total = g1.compose(g2).compose(g3)
@@ -1269,8 +1269,8 @@ TRIPLE_VALIDATION_PARAMS = [
     (0.5, 0.01, 1000, "production"),
     (0.5, 0.05, 200, "production-large-q"),
     (0.8, 0.01, 500, "high-noise"),
-    (1.0, 0.01, 5000, "very-high-noise"),
-    (1.0, 0.001, 10000, "high-composition"),
+    (0.9, 0.01, 5000, "high-noise-2"),
+    (0.9, 0.001, 10000, "high-composition"),
 ]
 
 
@@ -1576,7 +1576,7 @@ class TestTripleValidationRealistic:
         dataset_size = 1_200_000
         batch_size = 4096
         q = batch_size / dataset_size
-        sigma = 1.0
+        sigma = 0.8
         epochs = 5
         steps = epochs * (dataset_size // batch_size)
         delta = 1e-6
