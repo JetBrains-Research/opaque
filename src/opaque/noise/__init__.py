@@ -6,7 +6,6 @@ from opaque.noise.bounded_gaussian_noise import bounded_gaussian_noise
 from opaque.noise.custom_mf_noise import custom_mf_noise
 from opaque.noise.dense_mf_noise import dense_mf_noise
 from opaque.noise.gaussian_noise import gaussian_noise
-from opaque.noise.gaussian_stateful import gaussian_stateful
 from opaque.noise.identity_mf_noise import identity_mf_noise
 
 __all__ = [
@@ -16,6 +15,5 @@ __all__ = [
     "custom_mf_noise",
     "dense_mf_noise",
     "gaussian_noise",
-    "gaussian_stateful",
     "identity_mf_noise",
 ]

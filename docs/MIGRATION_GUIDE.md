@@ -16,7 +16,7 @@ Opaque 0.2.0 introduces a simplified functional API that removes wrapper classes
 ## Quick Migration Checklist
 
 - [ ] Replace `.sensitivity()` calls with `.clip_norm` attribute
-- [ ] Replace `add_gaussian_noise()` with `gaussian()` or `gaussian_stateful()`
+- [ ] Replace `add_gaussian_noise()` with `gaussian()` or `gaussian_noise()`
 - [ ] Update noise calibration to use explicit multiplication
 - [ ] Remove `BoundedSensitivityCallable` imports (if any)
 - [ ] Test your code - all old API calls will emit deprecation warnings
@@ -157,14 +157,14 @@ for batch in dataloader:
 **New API**:
 
 ```python
-from opaque import gaussian_stateful
+from opaque.noise import gaussian_noise
 
-# Create function with explicit state
-noise_fn, state = gaussian_stateful(stddev=1.1, seed=42)
+# Create function with explicit generator (reproducible)
+noise_fn, state = gaussian_noise(stddev=1.1, generator=42)
 
 for batch in dataloader:
     grads = compute_gradients(params, batch)
-    noisy = noise_fn(grads, state)  # Reproducible
+    noisy, state = noise_fn(grads, state)  # Reproducible
     params = update(params, noisy)
 ```
 
@@ -216,7 +216,7 @@ clip_norm_unit = grad_fn_unit.clip_norm  # 1.0 (rescaled)
 
 The following functions are **deprecated** but still work (with warnings):
 
-1. **`add_gaussian_noise()`** - Use `gaussian()` or `gaussian_stateful()`
+1. **`add_gaussian_noise()`** - Use `gaussian()` or `gaussian_noise()`
 2. **`.sensitivity()` method** - Use `.clip_norm` attribute
 
 ### Deprecation Timeline
@@ -241,7 +241,7 @@ You should see warnings like:
 
 ```
 DeprecationWarning: add_gaussian_noise() is deprecated and will be removed in version 1.0.0.
-Use gaussian() for stateless noise or gaussian_stateful() for reproducible noise.
+Use `gaussian_noise()` for stateless noise; for reproducible noise pass an explicit `generator` (e.g., `generator=42`) to `gaussian_noise()`.
 ```
 
 ---
@@ -254,8 +254,7 @@ Use gaussian() for stateless noise or gaussian_stateful() for reproducible noise
 
 ### New Exports
 
-- `gaussian(stddev)` - Stateless noise function factory
-- `gaussian_stateful(stddev, seed)` - Stateful noise function factory
+- `gaussian_noise(stddev, generator=None)` - Stateless (or reproducible with `generator`) noise function factory
 
 ### Modified Behavior
 
@@ -292,10 +291,10 @@ for batch in dataloader:
 
 **New (efficient)**:
 ```python
-noise_fn = gaussian(stddev=1.1)  # Configure once
+noise_fn, _ = gaussian_noise(stddev=1.1)  # Configure once (generator optional)
 for batch in dataloader:
     grads = grad_fn(params, batch)
-    noisy = noise_fn(grads)  # Reuse
+    noisy, _ = noise_fn(grads, _)  # Reuse; pass/receive state when using a generator
 ```
 
 ### Pitfall 3: Importing `BoundedSensitivityCallable`
@@ -331,7 +330,7 @@ from opaque.clipping import BoundedSensitivityCallable  # ImportError!
 
 **Key changes**:
 1. Replace `.sensitivity()` → `.clip_norm`
-2. Replace `add_gaussian_noise()` → `gaussian()` or `gaussian_stateful()`
+2. Replace `add_gaussian_noise()` → `gaussian_noise()`
 3. Configure noise functions once, reuse in loops
 
 **Migration effort**: Low (mostly find-and-replace)

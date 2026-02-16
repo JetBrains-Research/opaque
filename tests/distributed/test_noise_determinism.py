@@ -7,7 +7,7 @@ generates deterministic seed-based noise for each device.
 import pytest
 import torch
 
-from opaque.noise import gaussian_stateful
+from opaque.noise import gaussian_noise
 
 
 class TestDistributedNoise:
@@ -18,15 +18,14 @@ class TestDistributedNoise:
         stddev = 1.0
         seed = 42
 
-        # Create two noise functions
-        noise_fn1, state1 = gaussian_stateful(stddev, seed, distributed=False)
-        noise_fn2, state2 = gaussian_stateful(stddev, seed)
+        # Create two noise functions (functional API)
+        noise_fn1, state1 = gaussian_noise(stddev, generator=seed)
+        noise_fn2, state2 = gaussian_noise(stddev, generator=seed)
 
-        # Both should use same seed
         grads = {"weight": torch.randn(10, 5), "bias": torch.randn(5)}
 
-        noisy1 = noise_fn1(grads, state1)
-        noisy2 = noise_fn2(grads, state2)
+        noisy1, state1 = noise_fn1(grads, state1)
+        noisy2, state2 = noise_fn2(grads, state2)
 
         # Should produce same noise
         assert torch.allclose(noisy1["weight"], noisy2["weight"])
@@ -34,16 +33,7 @@ class TestDistributedNoise:
 
     def test_distributed_true_without_init_raises(self):
         """distributed=True raises RuntimeError when torch.distributed not initialized."""
-        import opaque.distributed as dist_utils
-
-        if dist_utils.is_initialized():
-            pytest.skip("Distributed already initialized")
-
-        stddev = 1.0
-        seed = 42
-
-        with pytest.raises(RuntimeError, match="not initialized"):
-            gaussian_stateful(stddev, seed, distributed=True)
+        pytest.skip("gaussian_stateful removed; distributed-specific behavior is handled by passing generator offset by rank")
 
     def test_distributed_noise_is_deterministic(self):
         """Noise with same seed+rank is reproducible across resets."""
@@ -51,14 +41,14 @@ class TestDistributedNoise:
         seed = 123
 
         # Create two separate noise functions with same seed
-        noise_fn1, state1 = gaussian_stateful(stddev, seed, distributed=False)
-        noise_fn2, state2 = gaussian_stateful(stddev, seed, distributed=False)
+        noise_fn1, state1 = gaussian_noise(stddev, generator=seed)
+        noise_fn2, state2 = gaussian_noise(stddev, generator=seed)
 
         grads = {"weight": torch.randn(10, 5), "bias": torch.randn(5)}
 
         # Apply noise with both functions (reset generator)
-        noisy1 = noise_fn1(grads, state1)
-        noisy2 = noise_fn2(grads, state2)
+        noisy1, state1 = noise_fn1(grads, state1)
+        noisy2, state2 = noise_fn2(grads, state2)
 
         # Should produce same noise (deterministic from same seed)
         assert torch.allclose(noisy1["weight"], noisy2["weight"])
@@ -69,11 +59,11 @@ class TestDistributedNoise:
         stddev = 1.0
         grads = {"weight": torch.randn(10, 5)}
 
-        noise_fn1, state1 = gaussian_stateful(stddev, seed=42, distributed=False)
-        noise_fn2, state2 = gaussian_stateful(stddev, seed=43, distributed=False)
+        noise_fn1, state1 = gaussian_noise(stddev, generator=42)
+        noise_fn2, state2 = gaussian_noise(stddev, generator=43)
 
-        noisy1 = noise_fn1(grads, state1)
-        noisy2 = noise_fn2(grads, state2)
+        noisy1, state1 = noise_fn1(grads, state1)
+        noisy2, state2 = noise_fn2(grads, state2)
 
         # Should produce different noise
         assert not torch.allclose(noisy1["weight"], noisy2["weight"], atol=1e-3)
@@ -84,16 +74,12 @@ class TestDistributedNoise:
         grads = {"weight": torch.randn(10, 5)}
 
         # Small stddev
-        noise_fn_small, state_small = gaussian_stateful(
-            stddev=0.1, seed=seed, distributed=False
-        )
-        noisy_small = noise_fn_small(grads, state_small)
+        noise_fn_small, state_small = gaussian_noise(stddev=0.1, generator=seed)
+        noisy_small, state_small = noise_fn_small(grads, state_small)
 
         # Large stddev
-        noise_fn_large, state_large = gaussian_stateful(
-            stddev=10.0, seed=seed, distributed=False
-        )
-        noisy_large = noise_fn_large(grads, state_large)
+        noise_fn_large, state_large = gaussian_noise(stddev=10.0, generator=seed)
+        noisy_large, state_large = noise_fn_large(grads, state_large)
 
         # Noise magnitude should differ significantly
         diff_small = (noisy_small["weight"] - grads["weight"]).abs().mean()
@@ -106,8 +92,8 @@ class TestDistributedNoise:
         seed = 42
         grads = {"weight": torch.randn(10, 5), "bias": torch.randn(5)}
 
-        noise_fn, state = gaussian_stateful(stddev=0.0, seed=seed, distributed=False)
-        noisy = noise_fn(grads, state)
+        noise_fn, state = gaussian_noise(stddev=0.0, generator=seed)
+        noisy, state = noise_fn(grads, state)
 
         # Should be unchanged
         assert torch.allclose(noisy["weight"], grads["weight"])
@@ -116,7 +102,7 @@ class TestDistributedNoise:
     def test_negative_stddev_raises(self):
         """Negative stddev raises ValueError."""
         with pytest.raises(ValueError, match="must be non-negative"):
-            gaussian_stateful(stddev=-1.0, seed=42)
+            gaussian_noise(stddev=-1.0, generator=42)
 
 
 class TestDistributedNoiseWithPyTree:
@@ -132,8 +118,8 @@ class TestDistributedNoiseWithPyTree:
             "layer2": {"weight": torch.randn(5, 3), "bias": torch.randn(3)},
         }
 
-        noise_fn, state = gaussian_stateful(stddev, seed, distributed=False)
-        noisy = noise_fn(grads, state)
+        noise_fn, state = gaussian_noise(stddev, generator=seed)
+        noisy, state = noise_fn(grads, state)
 
         # Should preserve structure
         assert "layer1" in noisy
@@ -151,8 +137,8 @@ class TestDistributedNoiseWithPyTree:
 
         grads = [torch.randn(10, 5), torch.randn(5)]
 
-        noise_fn, state = gaussian_stateful(stddev, seed, distributed=False)
-        noisy = noise_fn(grads, state)
+        noise_fn, state = gaussian_noise(stddev, generator=seed)
+        noisy, state = noise_fn(grads, state)
 
         # Should preserve structure
         assert len(noisy) == 2
@@ -166,8 +152,8 @@ class TestDistributedNoiseWithPyTree:
 
         grad = torch.randn(10, 5)
 
-        noise_fn, state = gaussian_stateful(stddev, seed, distributed=False)
-        noisy = noise_fn(grad, state)
+        noise_fn, state = gaussian_noise(stddev, generator=seed)
+        noisy, state = noise_fn(grad, state)
 
         # Should add noise
         assert not torch.allclose(noisy, grad)
@@ -183,8 +169,8 @@ class TestDistributedNoiseWithPyTree:
             "float64": torch.randn(5, dtype=torch.float64),
         }
 
-        noise_fn, state = gaussian_stateful(stddev, seed, distributed=False)
-        noisy = noise_fn(grads, state)
+        noise_fn, state = gaussian_noise(stddev, generator=seed)
+        noisy, state = noise_fn(grads, state)
 
         assert noisy["float32"].dtype == torch.float32
         assert noisy["float64"].dtype == torch.float64
@@ -193,7 +179,7 @@ class TestDistributedNoiseWithPyTree:
         """Distributed noise preserves tensor device."""
         # Skip CUDA test - generator device mismatch is known limitation
         if device.type == "cuda":
-            pytest.skip("CUDA generator not supported in gaussian_stateful yet")
+            pytest.skip("CUDA generator not supported in gaussian_noise generator usage yet")
 
         stddev = 1.0
         seed = 42
@@ -203,8 +189,8 @@ class TestDistributedNoiseWithPyTree:
             "bias": torch.randn(5, device=device),
         }
 
-        noise_fn, state = gaussian_stateful(stddev, seed, distributed=False)
-        noisy = noise_fn(grads, state)
+        noise_fn, state = gaussian_noise(stddev, generator=seed)
+        noisy, state = noise_fn(grads, state)
 
         assert noisy["weight"].device.type == device.type
         assert noisy["bias"].device.type == device.type
@@ -221,8 +207,8 @@ class TestNoiseCalibration:
 
         # Generate large sample of noise
         grad = torch.zeros(n_samples)
-        noise_fn, state = gaussian_stateful(stddev, seed, distributed=False)
-        noisy = noise_fn(grad, state)
+        noise_fn, state = gaussian_noise(stddev, generator=seed)
+        noisy, state = noise_fn(grad, state)
 
         # Noise should have mean ≈ 0 and std ≈ stddev
         noise = noisy - grad  # Extract noise

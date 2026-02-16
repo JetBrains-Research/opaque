@@ -1,3 +1,4 @@
+
 """Example: Distributed DP training with DDP (DistributedDataParallel).
 
 This example demonstrates how to use Opaque's distributed primitives for
@@ -67,7 +68,7 @@ def main():
     
     # Create model and make it functional
     model = create_model(device)
-    params, func_model = opaque.make_functional(model)
+    func_model, params = opaque.make_functional(model)
     
     # Create dataset and dataloader
     dataset = create_dataset(n_samples=1000)
@@ -98,12 +99,11 @@ def main():
         distributed=True,  # Auto-sync clip_norm across devices
     )
     
-    # Create deterministic noise function
-    noise_fn, noise_state = opaque.gaussian_stateful(
-        stddev=1.1,
-        seed=42,
-        distributed=True,  # Each rank gets seed + rank
-    )
+    # Create deterministic noise function (functional API)
+    # Offset seed by rank for per-rank determinism
+    seed = 42
+    gen = seed + rank if isinstance(seed, int) else seed
+    noise_fn, noise_state = opaque.gaussian_noise(stddev=1.1, generator=gen)
     
     # Privacy accounting (same on all ranks)
     epsilon_target = 3.0
@@ -134,7 +134,7 @@ def main():
         
         # Step 3: Add noise (deterministic, different per device)
         # Each device adds different noise (privacy preserving)
-        noisy_grads = noise_fn(grads, noise_state)
+        noisy_grads, noise_state = noise_fn(grads, noise_state)
         
         # Step 4: Update parameters (same update on all devices)
         lr = 0.01

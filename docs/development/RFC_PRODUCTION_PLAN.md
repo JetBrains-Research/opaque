@@ -356,7 +356,7 @@ src/opaque/
 │   ├── microbatching.py     # NEW: Microbatching implementation
 │   └── strategies.py        # NEW: per_layer_clipper, adaptive_clipper
 ├── noise/                   # Noise injection
-│   ├── __init__.py          # gaussian, laplace, gaussian_stateful
+│   ├── __init__.py          # gaussian, laplace, gaussian_noise
 │   ├── gaussian.py          # Gaussian noise (stateless + stateful)
 │   └── laplace.py           # NEW: Laplace noise (pure DP)
 ├── sampling/                # Batch sampling

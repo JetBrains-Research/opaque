@@ -375,9 +375,9 @@ from opaque.noise.matrix_factorization.streaming_matrix import (
 | `opaque/noise/gaussian.py`                | `opaque/noise/gaussian_noise.py`                |
 | `opaque/noise/bounded_gaussian.py`        | `opaque/noise/bounded_gaussian_noise.py`        |
 | `gaussian()`                              | `gaussian_noise()`                              |
-| `gaussian_stateful()`                     | `gaussian_noise_stateful()`                     |
+| `gaussian_stateful()`                     | `gaussian_noise()`                              |
 | `bounded_gaussian()`                      | `bounded_gaussian_noise()`                      |
-| `bounded_gaussian_stateful()`             | `bounded_gaussian_noise_stateful()`             |
+| `bounded_gaussian_stateful()`             | `bounded_gaussian_noise()`                      |
 | `opaque/matrix_factorization/`            | `opaque/noise/matrix_factorization/`            |
 | `opaque/noise/matrix_factorization.py`    | `opaque/noise/matrix_factorization/noise.py`    |
 | `noising_matrix` param in noise.py        | `noising`                                       |

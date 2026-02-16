@@ -4,7 +4,7 @@ Based on review of `feat/privacy-auditing` branch. To be applied after merging t
 
 ## Issues Found
 
-1. **Built against old API** — `__init__.py` imports `gaussian, gaussian_stateful` (old names)
+1. **Built against old API** — `__init__.py` imports `gaussian, gaussian_noise` (old names)
 2. **`AuditResult` is a `namedtuple`** — should be frozen dataclass (our convention)
 3. **`Scores` type alias** — `Sequence[float] | np.ndarray` is not useful, remove
 4. **`threshold.py` is dead code** — strategies defined but never wired into epsilon functions

@@ -233,15 +233,16 @@ class TestDeterministicNoise:
     def test_different_noise_per_rank(self, device):
         """Test that each rank gets different noise."""
         from opaque.distributed import get_rank
-        from opaque.noise import gaussian_stateful
+        from opaque.noise import gaussian_noise
 
         if not is_distributed():
             pytest.skip("Requires distributed setup")
 
         seed = 42
 
-        # Create noise function with distributed=True
-        noise_fn, state = gaussian_stateful(1.0, seed, distributed=True)
+        # Create noise function (offset seed by rank for per-rank determinism)
+        gen = seed + get_rank() if isinstance(seed, int) else seed
+        noise_fn, state = gaussian_noise(1.0, generator=gen)
 
         grads = {
             "weight": torch.zeros(10, 5, device=device),
@@ -267,7 +268,7 @@ class TestEndToEndDPTraining:
         """Test a single DP training step with DDP."""
         from opaque.clipping import clipped_grad
         from opaque.distributed import average_gradients, get_rank
-        from opaque.noise import gaussian_stateful
+        from opaque.noise import gaussian_noise
 
         if not is_distributed():
             pytest.skip("Requires distributed setup")
@@ -291,9 +292,7 @@ class TestEndToEndDPTraining:
         grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2))
 
         # Create deterministic noise
-        noise_fn, noise_state = gaussian_stateful(
-            stddev=1.1, seed=42 + rank, distributed=False
-        )
+        noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42 + rank)
 
         # Generate batch (different on each rank)
         batch_size = 8
@@ -307,7 +306,7 @@ class TestEndToEndDPTraining:
         grads = average_gradients(grads)
 
         # Add noise
-        noisy_grads = noise_fn(grads, noise_state)
+        noisy_grads, noise_state = noise_fn(grads, noise_state)
 
         # Verify gradients are reasonable
         for param_name, grad in noisy_grads.items():
