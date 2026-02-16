@@ -29,8 +29,14 @@ test = [
 validation = [
     "numpy>=1.20",
     "scipy>=1.7",
-    "dp-accounting>=0.5.1",
+    "dp-accounting>=0.4.4",
     "riskcal>=1.2.0",
+]
+
+[tool.uv]
+package = true
+override-dependencies = [
+    "dp-accounting>=0.4.4",
 ]
 
 [tool.pytest.ini_options]

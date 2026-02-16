@@ -194,7 +194,6 @@ name = "opaque-dp-accounting"
 version = "0.1.0"
 dependencies = [
  "approx",
- "once_cell",
  "pyo3",
  "rayon",
  "realfft",
