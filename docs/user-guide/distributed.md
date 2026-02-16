@@ -23,7 +23,7 @@ import torch.distributed as dist
 from opaque.clipping import clipped_grad
 from opaque.distributed import all_reduce_gradients, get_rank
 from opaque.noise import gaussian_noise
-from opaque.sampling import PoissonSampler
+from opaque.sampling import PoissonSampler, SamplingMode
 
 # Initialize distributed
 dist.init_process_group(backend="nccl")
@@ -39,7 +39,8 @@ clipped_grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0)
 noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42 + rank)
 
 # Independent Poisson sampling (required for privacy amplification)
-sampler = PoissonSampler(dataset, sample_rate=0.01, distributed=False)
+# Each device samples independently with different random seed
+sampler = PoissonSampler(dataset, sample_rate=0.01, mode=SamplingMode.INDEPENDENT)
 
 # Training loop
 for batch in dataloader:
@@ -57,8 +58,9 @@ All devices use same noise after aggregation (standard DP-SGD accounting):
 # Shared noise: SAME seed on all ranks (no +rank)
 noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42)
 
-# Independent Poisson sampling
-sampler = PoissonSampler(dataset, sample_rate=0.01, distributed=False)
+# Independent Poisson sampling (required for privacy amplification)
+# Each device samples independently with different random seed
+sampler = PoissonSampler(dataset, sample_rate=0.01, mode=SamplingMode.INDEPENDENT)
 
 # Training loop
 for batch in dataloader:
