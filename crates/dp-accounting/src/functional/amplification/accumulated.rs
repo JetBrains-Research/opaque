@@ -505,44 +505,39 @@ fn mixture_gaussian_get_delta(epsilon: f64, adj: Adjacency, c: &MixtureConstants
 // Math: epsilon bounds
 // ---------------------------------------------------------------------------
 
-/// Find epsilon_upper: smallest ε where `mixture_delta(ε, adj) ≤ target`.
+/// Compute epsilon bounds for the mixture Gaussian mechanism using x-space truncation.
 ///
-/// Bisects on the mixture Gaussian delta function directly.
-/// Initial upper bound from the base Gaussian analytic formula with
-/// max_sensitivity, capped at the theoretical Poisson limit for ADD.
-fn mixture_epsilon_for_delta(adj: Adjacency, c: &MixtureConstants, target: f64) -> Result<f64> {
-    use crate::math_helpers::gaussian::gaussian_epsilon_for_delta;
+/// Finds x-space truncation points from the Gaussian tail (shifted by max sensitivity
+/// to cover the widest mixture component), then evaluates the mixture privacy loss
+/// at those points.
+///
+/// For REMOVE: mu_upper = sum_k probs[k] * N(x+k, sigma²), left tail dominated by k=m
+///   → lower_x = sigma * ppf(half_mass) - m, upper_x = -sigma * ppf(half_mass)
+///
+/// For ADD: mu_lower = sum_k probs[k] * N(x-k, sigma²), right tail dominated by k=m
+///   → lower_x = sigma * ppf(half_mass), upper_x = -sigma * ppf(half_mass) + m
+///
+/// Privacy loss L(x) is monotone decreasing in x for both adjacencies, so:
+///   epsilon_upper = L(lower_x), epsilon_lower = L(upper_x)
+fn mixture_gaussian_epsilon_bounds(
+    adj: Adjacency,
+    c: &MixtureConstants,
+    log_mass_truncation_bound: f64,
+) -> Result<EpsilonBounds> {
+    let standard_normal = Normal::new(0.0, 1.0).unwrap();
+    let half_mass = 0.5 * log_mass_truncation_bound.exp();
+    let z = standard_normal.inverse_cdf(half_mass); // very negative
+    let m = c.max_sensitivity();
 
-    // Use base Gaussian bound at max sensitivity as initial overshoot
-    let delta_tilde_max = c.max_sensitivity() / c.sigma;
-    let mut hi = gaussian_epsilon_for_delta(delta_tilde_max, target);
-
-    // For ADD with subsampling, epsilon is bounded by -log(1-q)
-    if adj == Adjacency::Add && c.sampling_prob < 1.0 {
-        hi = hi.min(-(1.0 - c.sampling_prob).ln());
-    }
-
-    let mut lo = 0.0_f64;
-    for _ in 0..100 {
-        let mid = (lo + hi) / 2.0;
-        if mixture_gaussian_get_delta(mid, adj, c)? > target {
-            lo = mid;
-        } else {
-            hi = mid;
+    let (lower_x, upper_x) = match adj {
+        Adjacency::Remove => {
+            // mu_upper left tail dominated by k=m component (shifted right by m)
+            (c.sigma * z - m, -c.sigma * z)
         }
-    }
-    Ok(hi)
-}
-
-/// Find epsilon_lower: most negative ε where `mixture_beta(|ε|, adj) ≤ target`.
-///
-/// Beta for adjacency A = delta for opposite adjacency at −ε.
-fn mixture_epsilon_for_beta(adj: Adjacency, c: &MixtureConstants, target: f64) -> Result<f64> {
-    use crate::math_helpers::gaussian::gaussian_epsilon_for_delta;
-
-    let opposite_adj = match adj {
-        Adjacency::Add => Adjacency::Remove,
-        Adjacency::Remove => Adjacency::Add,
+        Adjacency::Add => {
+            // mu_lower right tail dominated by k=m component (shifted right by m)
+            (c.sigma * z, -c.sigma * z + m)
+        }
         Adjacency::Replace => {
             return Err(PldError::InvalidParameter(
                 "REPLACE adjacency is not supported for mixture Gaussian".into(),
@@ -550,33 +545,8 @@ fn mixture_epsilon_for_beta(adj: Adjacency, c: &MixtureConstants, target: f64) -
         }
     };
 
-    let delta_tilde_max = c.max_sensitivity() / c.sigma;
-    let hi_init = gaussian_epsilon_for_delta(delta_tilde_max, target);
-
-    let mut lo = 0.0_f64;
-    let mut hi = hi_init;
-    for _ in 0..100 {
-        let mid = (lo + hi) / 2.0;
-        if mixture_gaussian_get_delta(-mid, opposite_adj, c)? > target {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    Ok(-hi)
-}
-
-/// Compute epsilon bounds for the mixture Gaussian mechanism
-///
-/// Uses bisection on the mixture delta and beta functions directly,
-/// with targets derived from `log_mass_truncation_bound`.
-fn mixture_gaussian_epsilon_bounds(
-    adj: Adjacency,
-    c: &MixtureConstants,
-    tail_mass: f64,
-) -> Result<EpsilonBounds> {
-    let epsilon_upper = mixture_epsilon_for_delta(adj, c, tail_mass)?;
-    let epsilon_lower = mixture_epsilon_for_beta(adj, c, tail_mass)?;
+    let epsilon_upper = mixture_privacy_loss(lower_x, adj, c)?;
+    let epsilon_lower = mixture_privacy_loss(upper_x, adj, c)?;
 
     Ok(EpsilonBounds {
         epsilon_lower,
@@ -605,13 +575,13 @@ impl AccumulateEvidence<Gaussian, TightGaussianPoissonEvidence>
             return inner.evidence.compute_pld(&inner.inner, rate);
         }
 
-        let tail_mass = config.log_mass_truncation_bound.exp();
+        let log_mass = config.log_mass_truncation_bound;
         let tail_budget = config.tail_mass_truncation / 2.0;
         let c = MixtureConstants::new(sigma, microbatches, rate);
 
         let bounds_remove =
-            mixture_gaussian_epsilon_bounds(Adjacency::Remove, &c, tail_mass)?;
-        let bounds_add = mixture_gaussian_epsilon_bounds(Adjacency::Add, &c, tail_mass)?;
+            mixture_gaussian_epsilon_bounds(Adjacency::Remove, &c, log_mass)?;
+        let bounds_add = mixture_gaussian_epsilon_bounds(Adjacency::Add, &c, log_mass)?;
 
         discretize_asymmetric_mechanism(config, bounds_remove, bounds_add, |epsilon, adj| {
             mixture_gaussian_get_delta(epsilon, adj, &c)

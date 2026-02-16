@@ -41,7 +41,8 @@ use crate::functional::process::Process;
 use statrs::distribution::{Binomial, DiscreteCDF};
 
 use super::poisson::{
-    poisson_gaussian_get_delta, PoissonEvidence, TightGaussianPoissonEvidence,
+    poisson_gaussian_epsilon_bounds, poisson_gaussian_get_delta, PoissonEvidence,
+    TightGaussianPoissonEvidence,
 };
 use crate::functional::discretization::config::EpsilonBounds;
 
@@ -282,79 +283,68 @@ pub(crate) fn truncated_get_delta(
 // Epsilon bounds for truncated mechanism
 // ---------------------------------------------------------------------------
 
-/// Compute epsilon bounds for the truncated Poisson mechanism by bisecting
-/// on the actual `truncated_get_delta` function.
+/// Compute epsilon bounds for the truncated Poisson mechanism using x-space
+/// truncation on each mixture component.
 ///
-/// The standard Poisson bounds are too narrow because component 2 uses
-/// sigma/2 (doubled sensitivity), which has a much wider epsilon range.
-/// Using the standard Poisson bounds causes the infinity_mass on the ADD
-/// side to be large, making epsilon_at return infinity.
+/// The truncated mechanism is a mixture of two Poisson-subsampled Gaussians:
+/// - Component 1 (prob 1-p_trunc): Standard Poisson at rate q, pessimistic max(ADD, REMOVE)
+/// - Component 2 (prob p_trunc): Poisson REPLACE at rate q_cond, sigma/2
+///
+/// Each component is a Poisson-subsampled Gaussian, so we compute x-space
+/// truncation bounds per component via `poisson_gaussian_epsilon_bounds()`
+/// and take the union (widest range).
 fn truncated_epsilon_bounds(
     sigma: f64,
     sensitivity: f64,
     rate: f64,
     adjacency: Adjacency,
-    target_delta: f64,
-    target_beta: f64,
-    p_trunc: f64,
+    log_mass_truncation_bound: f64,
     q_cond: f64,
 ) -> EpsilonBounds {
-    use crate::math_helpers::gaussian::gaussian_epsilon_for_delta;
-
-    // Use the base Gaussian bound (always wider than any subsampled variant)
-    // as the initial bisection interval. Component 2 uses sigma/2, so we
-    // use that for the widest possible range.
-    let delta_tilde_comp2 = sensitivity / (sigma / 2.0); // = 2/sigma
-    let delta_tilde_base = sensitivity / sigma;
-    let hi_init = gaussian_epsilon_for_delta(delta_tilde_comp2, target_delta)
-        .max(gaussian_epsilon_for_delta(delta_tilde_base, target_delta));
-
-    // Bisect on the actual truncated delta for epsilon_upper
-    let mut lo = 0.0_f64;
-    let mut hi = hi_init;
-    for _ in 0..100 {
-        let mid = (lo + hi) / 2.0;
-        let d = truncated_get_delta(mid, adjacency, sigma, sensitivity, rate, p_trunc, q_cond);
-        if d > target_delta {
-            lo = mid;
-        } else {
-            hi = mid;
+    // Component 1: standard Poisson, pessimistic max(ADD, REMOVE) for ADD/REMOVE
+    let bounds1 = match adjacency {
+        Adjacency::Add | Adjacency::Remove => {
+            let b_add = poisson_gaussian_epsilon_bounds(
+                sigma,
+                sensitivity,
+                rate,
+                Adjacency::Add,
+                log_mass_truncation_bound,
+            );
+            let b_rem = poisson_gaussian_epsilon_bounds(
+                sigma,
+                sensitivity,
+                rate,
+                Adjacency::Remove,
+                log_mass_truncation_bound,
+            );
+            EpsilonBounds {
+                epsilon_lower: b_add.epsilon_lower.min(b_rem.epsilon_lower),
+                epsilon_upper: b_add.epsilon_upper.max(b_rem.epsilon_upper),
+            }
         }
-    }
-    let epsilon_upper = hi;
-
-    // Bisect for epsilon_lower (beta side): beta_adj(E) = delta_opposite(-E)
-    let opposite_adj = match adjacency {
-        Adjacency::Add => Adjacency::Remove,
-        Adjacency::Remove => Adjacency::Add,
-        Adjacency::Replace => Adjacency::Replace,
-    };
-    let hi_init_beta = gaussian_epsilon_for_delta(delta_tilde_comp2, target_beta)
-        .max(gaussian_epsilon_for_delta(delta_tilde_base, target_beta));
-    let mut lo = 0.0_f64;
-    let mut hi = hi_init_beta;
-    for _ in 0..100 {
-        let mid = (lo + hi) / 2.0;
-        let d = truncated_get_delta(
-            -mid,
-            opposite_adj,
+        Adjacency::Replace => poisson_gaussian_epsilon_bounds(
             sigma,
             sensitivity,
             rate,
-            p_trunc,
-            q_cond,
-        );
-        if d > target_beta {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    let epsilon_lower = -hi;
+            Adjacency::Replace,
+            log_mass_truncation_bound,
+        ),
+    };
 
+    // Component 2: Poisson REPLACE, sigma/2 (doubled sensitivity), rate q_cond
+    let bounds2 = poisson_gaussian_epsilon_bounds(
+        sigma / 2.0,
+        sensitivity,
+        q_cond,
+        Adjacency::Replace,
+        log_mass_truncation_bound,
+    );
+
+    // Union of bounds (widest range covers both components)
     EpsilonBounds {
-        epsilon_lower,
-        epsilon_upper,
+        epsilon_lower: bounds1.epsilon_lower.min(bounds2.epsilon_lower),
+        epsilon_upper: bounds1.epsilon_upper.max(bounds2.epsilon_upper),
     }
 }
 
@@ -383,19 +373,14 @@ impl TruncatedPoissonEvidence<Gaussian> for TightGaussianTruncatedPoissonEvidenc
 
         let q_cond = conditional_sampling_probability(dataset_size, rate, batch_size_max, p_trunc);
 
-        // Epsilon bounds: bisect on the actual truncated delta function.
-        // Standard Poisson bounds are too narrow because component 2 uses
-        // sigma/2 (doubled sensitivity), which has a wider epsilon range.
-        // Derive bisection targets from log_mass_truncation_bound.
-        let tail_mass = config.log_mass_truncation_bound.exp();
+        // Epsilon bounds: x-space truncation on each mixture component.
+        let log_mass = config.log_mass_truncation_bound;
         let bounds_remove = truncated_epsilon_bounds(
             sigma,
             sensitivity,
             rate,
             Adjacency::Remove,
-            tail_mass,
-            tail_mass,
-            p_trunc,
+            log_mass,
             q_cond,
         );
         let bounds_add = truncated_epsilon_bounds(
@@ -403,9 +388,7 @@ impl TruncatedPoissonEvidence<Gaussian> for TightGaussianTruncatedPoissonEvidenc
             sensitivity,
             rate,
             Adjacency::Add,
-            tail_mass,
-            tail_mass,
-            p_trunc,
+            log_mass,
             q_cond,
         );
 

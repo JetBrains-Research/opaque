@@ -21,42 +21,6 @@ pub(crate) fn gaussian_delta_at(delta_tilde: f64, epsilon: f64) -> f64 {
         .max(0.0)
 }
 
-/// Find the epsilon where the Gaussian delta function equals `target`.
-///
-/// Uses bisection on [`gaussian_delta_at`] to find the tight upper bound
-/// on the epsilon range needed for PLD discretization. The analytic
-/// approximation `ε_safe = 0.5Δ̃² − Δ̃·Φ⁻¹(target)` provides the
-/// initial upper bound for the search.
-///
-/// # Arguments
-///
-/// * `delta_tilde` - Standardized sensitivity Δ/σ (= 1/σ for unit sensitivity)
-/// * `target` - Target delta value (tail mass threshold)
-///
-/// # Returns
-///
-/// The smallest epsilon where `delta(ε) ≤ target`.
-pub(crate) fn gaussian_epsilon_for_delta(delta_tilde: f64, target: f64) -> f64 {
-    let standard_normal = Normal::new(0.0, 1.0).unwrap();
-    let z_tail = standard_normal.inverse_cdf(target);
-
-    // Analytic upper bound (from dropping the second term in delta formula)
-    let hi_init = 0.5 * delta_tilde * delta_tilde - delta_tilde * z_tail;
-
-    // Bisect between 0 and the analytic bound
-    let mut lo = 0.0_f64;
-    let mut hi = hi_init;
-    for _ in 0..100 {
-        let mid = (lo + hi) / 2.0;
-        if gaussian_delta_at(delta_tilde, mid) > target {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    hi
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -74,27 +38,5 @@ mod tests {
         // For large epsilon, delta should be near zero
         let d = gaussian_delta_at(1.0, 10.0);
         assert!(d < 1e-10);
-    }
-
-    #[test]
-    fn test_gaussian_epsilon_for_delta_monotone() {
-        // Smaller target -> larger epsilon
-        let dt = 2.0;
-        let e1 = gaussian_epsilon_for_delta(dt, 1e-6);
-        let e2 = gaussian_epsilon_for_delta(dt, 1e-10);
-        assert!(e2 > e1);
-    }
-
-    #[test]
-    fn test_gaussian_epsilon_for_delta_accuracy() {
-        // The returned epsilon should satisfy delta(eps) <= target
-        let dt = 10.0; // sigma=0.1
-        let target = 0.5 * (-32.0_f64).exp();
-        let eps = gaussian_epsilon_for_delta(dt, target);
-        let actual_delta = gaussian_delta_at(dt, eps);
-        assert!(actual_delta <= target);
-        // And delta just above should exceed target
-        let actual_delta_below = gaussian_delta_at(dt, eps - 1.0);
-        assert!(actual_delta_below > target);
     }
 }
