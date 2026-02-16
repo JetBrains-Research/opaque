@@ -32,6 +32,11 @@ pld_lib = pytest.importorskip(
     reason="dp_accounting not installed",
 )
 
+# riskcal library -- skip riskcal-specific tests if not installed.
+riskcal = pytest.importorskip("riskcal", reason="riskcal not installed")
+from riskcal.accountants import CTDAccountant as RiskcalAccountant
+from riskcal.calibration.dpsgd import create_dpsgd_evaluator
+
 
 # =============================================================================
 # Helpers
@@ -1241,6 +1246,351 @@ class TestRealisticWorkflows:
         assert abs(our_eps - ref_eps) < tol, (
             f"Multi-phase: ours={our_eps:.6f}, ref={ref_eps:.6f}"
         )
+
+
+# =============================================================================
+# 11. Triple validation -- ours vs dp_accounting vs riskcal
+# =============================================================================
+
+# Riskcal helper: mirrors the old create_riskcal_accountant pattern.
+
+
+def create_riskcal_accountant(sigma, q, steps):
+    """Create a riskcal CTDAccountant for reference comparison."""
+    acct = RiskcalAccountant()
+    for _ in range(steps):
+        acct.step(noise_multiplier=sigma, sample_rate=q)
+    return acct
+
+
+# Representative subset of composition params for triple-validation (fast).
+TRIPLE_VALIDATION_PARAMS = [
+    (0.3, 0.01, 200, "low-noise"),
+    (0.5, 0.01, 1000, "production"),
+    (0.5, 0.05, 200, "production-large-q"),
+    (0.8, 0.01, 500, "high-noise"),
+    (1.0, 0.01, 5000, "very-high-noise"),
+    (1.0, 0.001, 10000, "high-composition"),
+]
+
+
+class TestTripleValidationEpsilon:
+    """Validate epsilon against both dp_accounting AND riskcal.
+
+    Ported from test_dual_validation.py::TestDualValidationBasic.
+    """
+
+    @pytest.mark.parametrize(
+        "sigma,q,steps,desc",
+        TRIPLE_VALIDATION_PARAMS,
+        ids=[c[3] for c in TRIPLE_VALIDATION_PARAMS],
+    )
+    def test_epsilon_matches_riskcal(self, sigma, q, steps, desc):
+        """Our epsilon should match riskcal."""
+        delta = 1e-5
+
+        our_eps = dp.compute_epsilon(sigma, q, steps, delta)
+
+        acct_riskcal = create_riskcal_accountant(sigma, q, steps)
+        eps_riskcal = acct_riskcal.get_epsilon(delta=delta)
+
+        assert math.isfinite(our_eps), f"{desc}: our epsilon not finite"
+        assert math.isfinite(eps_riskcal), f"{desc}: riskcal epsilon not finite"
+
+        # Max observed error in old tests: 2.75e-05
+        assert rel_error(our_eps, eps_riskcal) < 1e-3, (
+            f"{desc}: ours={our_eps:.10f}, riskcal={eps_riskcal:.10f}, "
+            f"rel_err={rel_error(our_eps, eps_riskcal):.2e}"
+        )
+
+    @pytest.mark.parametrize(
+        "sigma,q,steps,desc",
+        TRIPLE_VALIDATION_PARAMS,
+        ids=[c[3] for c in TRIPLE_VALIDATION_PARAMS],
+    )
+    def test_all_three_epsilon_agree(self, sigma, q, steps, desc):
+        """ours, dp_accounting, and riskcal should all agree on epsilon."""
+        delta = 1e-5
+
+        our_eps = dp.compute_epsilon(sigma, q, steps, delta)
+
+        google_pld = google_poisson_gaussian_pld(sigma, q, steps)
+        eps_dp = google_pld.get_epsilon_for_delta(delta)
+
+        acct_riskcal = create_riskcal_accountant(sigma, q, steps)
+        eps_riskcal = acct_riskcal.get_epsilon(delta=delta)
+
+        epsilons = [our_eps, eps_dp, eps_riskcal]
+        assert all(math.isfinite(e) for e in epsilons), (
+            f"{desc}: not all finite: {epsilons}"
+        )
+
+        mean_eps = sum(epsilons) / len(epsilons)
+        for label, eps in [
+            ("ours", our_eps),
+            ("dp_accounting", eps_dp),
+            ("riskcal", eps_riskcal),
+        ]:
+            assert rel_error(eps, mean_eps) < 1e-3, (
+                f"{desc}: {label}={eps:.10f} deviates from mean={mean_eps:.10f}"
+            )
+
+
+class TestTripleValidationBeta:
+    """Validate beta (trade-off function) against riskcal.
+
+    Ported from test_dual_validation.py::TestDualValidationMetrics
+    and accountants/test_validation.py::TestBetaValidationVsRiskcal.
+    """
+
+    @pytest.mark.parametrize("alpha", [0.01, 0.05, 0.1, 0.2, 0.5])
+    def test_beta_matches_riskcal(self, alpha):
+        """Beta at various alphas should match riskcal."""
+        sigma, q, steps = 0.8, 0.01, 500
+
+        proc = dp.poisson(sigma, q) * steps
+        beta_ours = proc.beta_at(alpha)
+
+        evaluator = create_dpsgd_evaluator(
+            sample_rate=q,
+            num_steps=steps,
+            grid_step=1e-4,
+            target_alpha=alpha,
+        )
+        metrics_ref = evaluator(sigma)
+        beta_ref = metrics_ref.beta
+
+        # Max observed error in old tests: 3.91e-05
+        assert rel_error(beta_ours, beta_ref) < 1e-3, (
+            f"alpha={alpha}: ours={beta_ours:.10f}, riskcal={beta_ref:.10f}, "
+            f"rel_err={rel_error(beta_ours, beta_ref):.2e}"
+        )
+
+    @pytest.mark.parametrize("sigma", [0.3, 0.5, 0.8])
+    def test_beta_low_noise_matches_riskcal(self, sigma):
+        """Beta for low-noise scenarios should match riskcal."""
+        q, steps = 0.05, 200
+
+        proc = dp.poisson(sigma, q) * steps
+
+        for alpha in [0.01, 0.05, 0.1, 0.3, 0.5]:
+            beta_ours = proc.beta_at(alpha)
+
+            evaluator = create_dpsgd_evaluator(
+                sample_rate=q,
+                num_steps=steps,
+                grid_step=1e-4,
+                target_alpha=alpha,
+            )
+            metrics_ref = evaluator(sigma)
+            beta_ref = metrics_ref.beta
+
+            assert rel_error(beta_ours, beta_ref) < 1e-3, (
+                f"sigma={sigma}, alpha={alpha}: "
+                f"ours={beta_ours:.10f}, riskcal={beta_ref:.10f}, "
+                f"rel_err={rel_error(beta_ours, beta_ref):.2e}"
+            )
+
+    def test_regression_bug2_beta_high_alpha(self):
+        """REGRESSION: Bug #2 - beta at high alpha was up to 33% wrong.
+
+        Ported from test_dual_validation.py::TestDualValidationRegressions.
+        """
+        sigma, q, steps = 0.5, 0.0016, 1000
+
+        proc = dp.poisson(sigma, q) * steps
+
+        for alpha in [0.3, 0.4, 0.5, 0.6]:
+            beta_ours = proc.beta_at(alpha)
+
+            evaluator = create_dpsgd_evaluator(
+                sample_rate=q,
+                num_steps=steps,
+                grid_step=1e-4,
+                target_alpha=alpha,
+            )
+            metrics_ref = evaluator(sigma)
+            beta_ref = metrics_ref.beta
+
+            # Was up to 33% error before fix; now must be < 0.1%.
+            assert rel_error(beta_ours, beta_ref) < 1e-3, (
+                f"Bug#2 regression alpha={alpha}: "
+                f"ours={beta_ours:.10f}, riskcal={beta_ref:.10f}, "
+                f"rel_err={rel_error(beta_ours, beta_ref):.2e} "
+                f"(was up to 33% before fix)"
+            )
+
+
+class TestTripleValidationAdvantage:
+    """Validate advantage metric against riskcal.
+
+    Ported from test_dual_validation.py::TestDualValidationMetrics.
+    """
+
+    def test_advantage_matches_riskcal(self):
+        """Advantage should match riskcal."""
+        sigma, q, steps = 0.5, 0.01, 1000
+
+        proc = dp.poisson(sigma, q) * steps
+        advantage_ours = proc.advantage()
+
+        evaluator = create_dpsgd_evaluator(
+            sample_rate=q,
+            num_steps=steps,
+            grid_step=1e-4,
+        )
+        metrics_ref = evaluator(sigma)
+        advantage_ref = metrics_ref.advantage
+
+        # Max observed error in old tests: 5.38e-10
+        assert rel_error(advantage_ours, advantage_ref) < 1e-6, (
+            f"advantage: ours={advantage_ours:.12f}, "
+            f"riskcal={advantage_ref:.12f}, "
+            f"rel_err={rel_error(advantage_ours, advantage_ref):.2e}"
+        )
+
+    @pytest.mark.parametrize("sigma", [0.3, 0.5, 0.8])
+    def test_advantage_different_noise_matches_riskcal(self, sigma):
+        """Advantage at different noise levels should match riskcal."""
+        q, steps = 0.0016, 1000
+
+        proc = dp.poisson(sigma, q) * steps
+        advantage_ours = proc.advantage()
+
+        evaluator = create_dpsgd_evaluator(
+            sample_rate=q,
+            num_steps=steps,
+            grid_step=1e-4,
+        )
+        metrics_ref = evaluator(sigma)
+        advantage_ref = metrics_ref.advantage
+
+        assert rel_error(advantage_ours, advantage_ref) < 1e-4, (
+            f"sigma={sigma}: advantage ours={advantage_ours:.10f}, "
+            f"riskcal={advantage_ref:.10f}"
+        )
+
+
+class TestTripleValidationCalibration:
+    """Cross-validate calibration results with riskcal.
+
+    Ported from test_dual_validation.py::TestDualValidationCalibration.
+    """
+
+    def test_calibrate_epsilon_validates_with_riskcal(self):
+        """Calibrated noise checked with riskcal epsilon."""
+        q, steps = 0.01, 1000
+        target_eps = 8.0
+        delta = 1e-5
+
+        nm = dp.calibrate_noise(
+            target_epsilon=target_eps,
+            target_delta=delta,
+            sample_rate=q,
+            num_steps=steps,
+        )
+
+        # Verify using riskcal.
+        acct_riskcal = create_riskcal_accountant(nm, q, steps)
+        eps_riskcal = acct_riskcal.get_epsilon(delta=delta)
+
+        assert eps_riskcal <= target_eps * 1.1, (
+            f"riskcal check: nm={nm:.4f}, eps_riskcal={eps_riskcal:.6f}, "
+            f"target={target_eps}"
+        )
+
+
+class TestTripleValidationRealistic:
+    """Realistic workflows validated against both references.
+
+    Ported from test_dual_validation.py::TestDualValidationRealistic.
+    """
+
+    def test_llm_finetuning_triple(self):
+        """LLM fine-tuning: validate epsilon vs dp_accounting, advantage vs riskcal."""
+        dataset_size = 10_000
+        batch_size = 16
+        q = batch_size / dataset_size
+        sigma = 0.5
+        epochs = 3
+        steps = epochs * (dataset_size // batch_size)
+        delta = 1e-4
+
+        # Our implementation.
+        proc = dp.poisson(sigma, q) * steps
+        our_eps = proc.epsilon_at(delta)
+        our_advantage = proc.advantage()
+
+        # dp_accounting.
+        ref_pld = google_poisson_gaussian_pld(sigma, q, steps)
+        eps_dp = ref_pld.get_epsilon_for_delta(delta)
+
+        # riskcal.
+        acct_riskcal = create_riskcal_accountant(sigma, q, steps)
+        eps_riskcal = acct_riskcal.get_epsilon(delta=delta)
+
+        evaluator = create_dpsgd_evaluator(
+            sample_rate=q,
+            num_steps=steps,
+            grid_step=1e-4,
+        )
+        metrics_riskcal = evaluator(sigma)
+
+        # All epsilons should agree.
+        assert rel_error(our_eps, eps_dp) < 1e-3, (
+            f"LLM: ours vs dp_accounting: {our_eps:.6f} vs {eps_dp:.6f}"
+        )
+        assert rel_error(our_eps, eps_riskcal) < 1e-3, (
+            f"LLM: ours vs riskcal: {our_eps:.6f} vs {eps_riskcal:.6f}"
+        )
+
+        # Advantage should match riskcal.
+        assert rel_error(our_advantage, metrics_riskcal.advantage) < 1e-4, (
+            f"LLM: advantage ours={our_advantage:.10f}, "
+            f"riskcal={metrics_riskcal.advantage:.10f}"
+        )
+
+    def test_cifar10_triple(self):
+        """CIFAR-10: triple validation."""
+        dataset_size = 50_000
+        batch_size = 500
+        q = batch_size / dataset_size
+        sigma = 0.8
+        epochs = 10
+        steps = epochs * (dataset_size // batch_size)
+        delta = 1e-5
+
+        our_eps = dp.compute_epsilon(sigma, q, steps, delta)
+
+        ref_pld = google_poisson_gaussian_pld(sigma, q, steps)
+        eps_dp = ref_pld.get_epsilon_for_delta(delta)
+
+        acct_riskcal = create_riskcal_accountant(sigma, q, steps)
+        eps_riskcal = acct_riskcal.get_epsilon(delta=delta)
+
+        assert rel_error(our_eps, eps_dp) < 1e-3
+        assert rel_error(our_eps, eps_riskcal) < 1e-3
+
+    def test_imagenet_triple(self):
+        """ImageNet: triple validation."""
+        dataset_size = 1_200_000
+        batch_size = 4096
+        q = batch_size / dataset_size
+        sigma = 1.0
+        epochs = 5
+        steps = epochs * (dataset_size // batch_size)
+        delta = 1e-6
+
+        our_eps = dp.compute_epsilon(sigma, q, steps, delta)
+
+        ref_pld = google_poisson_gaussian_pld(sigma, q, steps)
+        eps_dp = ref_pld.get_epsilon_for_delta(delta)
+
+        acct_riskcal = create_riskcal_accountant(sigma, q, steps)
+        eps_riskcal = acct_riskcal.get_epsilon(delta=delta)
+
+        assert rel_error(our_eps, eps_dp) < 1e-3
+        assert rel_error(our_eps, eps_riskcal) < 1e-3
 
 
 if __name__ == "__main__":

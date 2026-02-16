@@ -16,6 +16,31 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Security",
 ]
+dependencies = []
+
+[dependency-groups]
+dev = [
+    { include-group = "test" },
+    { include-group = "validation" },
+]
+test = [
+    "pytest>=7.0",
+]
+validation = [
+    "numpy>=1.20",
+    "scipy>=1.7",
+    "dp-accounting>=0.5.1",
+    "riskcal>=1.2.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+markers = [
+    "validation: Validation against dp_accounting and riskcal (requires numpy, scipy, dp_accounting, riskcal)",
+]
 
 [tool.maturin]
 features = ["python-extension"]
