@@ -359,6 +359,9 @@ def main():
                 )
                 
                 # 2. Add noise (different noise per rank)
+                # ⚠️ CRITICAL: This noise injection happens on EVERY rank
+                #    (rank 0, 1, 2, etc.). Not just on the main/rank-0 process!
+                #    This is essential for differential privacy to be applied globally.
                 noisy_grads, noise_state = noise_fn(grads_tuple, noise_state)
                 
                 # 3. If distributed, average gradients across ranks

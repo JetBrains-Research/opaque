@@ -144,6 +144,9 @@ def main():
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
         
         # Step 2: Add noise BEFORE aggregation (different seed per device)
+        # ⚠️ CRITICAL: noise_fn() is called on EVERY device (rank 0, 1, 2, ...)
+        #    NOT just rank 0! This ensures DP is applied on all devices.
+        #    Each device independently generates noise using its own seed (42 + rank).
         noisy_grads, noise_state = noise_fn(grads, noise_state)
         
         # Step 3: Sum noisy gradients across devices (NOT average!)

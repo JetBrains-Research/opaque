@@ -209,6 +209,9 @@ def main():
                 stddev=noise_multiplier * clip_state.sensitivity(),
                 generator=noise_state.rng_state,
             )
+            # ⚠️ CRITICAL: noise_fn() is called on EVERY device in the distributed setting
+            #    NOT just the main rank! This ensures differential privacy is applied
+            #    on all participant nodes.
             noisy_grads, noise_state = noise_fn(grads, noise_state)
             if distributed:
                 noisy_grads = sum_gradients(noisy_grads)
