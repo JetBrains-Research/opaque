@@ -267,7 +267,7 @@ class TestEndToEndDPTraining:
     def test_dp_training_step(self, device, simple_model):
         """Test a single DP training step with DDP."""
         from opaque.clipping import clipped_grad
-        from opaque.distributed import sum_gradients, get_rank
+        from opaque.distributed import get_rank, sum_gradients
         from opaque.noise import gaussian_noise
 
         if not is_distributed():
@@ -321,7 +321,7 @@ class TestEndToEndDPTraining:
     def test_dp_training_step_shared_noise(self, device, simple_model):
         """Test DP training with shared noise (mixture Gaussian accounting)."""
         from opaque.clipping import clipped_grad
-        from opaque.distributed import sum_gradients, get_rank
+        from opaque.distributed import get_rank, sum_gradients
         from opaque.noise import gaussian_noise
 
         if not is_distributed():
