@@ -25,8 +25,12 @@ Example::
     print(f"Achieved epsilon: {result.achieved:.6f}")
 """
 
+from __future__ import annotations
+
+import math
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Protocol
 
 from opaque.accounting import DpProcess
 
@@ -62,10 +66,20 @@ class Target(Protocol):
 
 @dataclass
 class EpsilonTarget:
-    """Target for (ε, δ)-DP: find noise achieving target epsilon at given delta."""
+    """Target for (ε, δ)-DP: find noise achieving target epsilon at given delta.
+    
+    Parameters must satisfy: epsilon > 0 and delta in (0, 1).
+    """
 
     epsilon: float
     delta: float
+
+    def __post_init__(self) -> None:
+        """Validate target parameters."""
+        if self.epsilon <= 0:
+            raise ValueError(f"epsilon must be > 0, got {self.epsilon}")
+        if not (0 < self.delta < 1):
+            raise ValueError(f"delta must be in (0, 1), got {self.delta}")
 
     @property
     def value(self) -> float:
@@ -82,10 +96,20 @@ class EpsilonTarget:
 
 @dataclass
 class DeltaTarget:
-    """Target for (ε, δ)-DP: find noise achieving target delta at given epsilon."""
+    """Target for (ε, δ)-DP: find noise achieving target delta at given epsilon.
+    
+    Parameters must satisfy: delta in (0, 1) and epsilon > 0.
+    """
 
     delta: float
     epsilon: float
+
+    def __post_init__(self) -> None:
+        """Validate target parameters."""
+        if not (0 < self.delta < 1):
+            raise ValueError(f"delta must be in (0, 1), got {self.delta}")
+        if self.epsilon <= 0:
+            raise ValueError(f"epsilon must be > 0, got {self.epsilon}")
 
     @property
     def value(self) -> float:
@@ -102,9 +126,18 @@ class DeltaTarget:
 
 @dataclass
 class AdvantageTarget:
-    """Target for f-DP: find noise achieving target advantage."""
+    """Target for f-DP: find noise achieving target advantage.
+    
+    Advantage must be in (0, 1) — represents total-variation distance between
+    neighboring dataset distributions.
+    """
 
     advantage: float
+
+    def __post_init__(self) -> None:
+        """Validate target parameter."""
+        if not (0 < self.advantage < 1):
+            raise ValueError(f"advantage must be in (0, 1), got {self.advantage}")
 
     @property
     def value(self) -> float:
@@ -121,10 +154,20 @@ class AdvantageTarget:
 
 @dataclass
 class BetaTarget:
-    """Target for (α, β) error rates: find noise achieving target beta at given alpha."""
+    """Target for (α, β) error rates: find noise achieving target beta at given alpha.
+    
+    Parameters must satisfy: 0 < alpha < 1 and 0 < beta < 1.
+    """
 
     beta: float
     alpha: float
+
+    def __post_init__(self) -> None:
+        """Validate target parameters."""
+        if not (0 < self.beta < 1):
+            raise ValueError(f"beta must be in (0, 1), got {self.beta}")
+        if not (0 < self.alpha < 1):
+            raise ValueError(f"alpha must be in (0, 1), got {self.alpha}")
 
     @property
     def value(self) -> float:
@@ -141,10 +184,20 @@ class BetaTarget:
 
 @dataclass
 class RiskTarget:
-    """Target for Bayes risk: find noise achieving target risk at given prior."""
+    """Target for Bayes risk: find noise achieving target risk at given prior.
+    
+    Parameters must satisfy: risk in (0, 1) and prior in (0, 1).
+    """
 
     risk: float
     prior: float
+
+    def __post_init__(self) -> None:
+        """Validate target parameters."""
+        if not (0 < self.risk < 1):
+            raise ValueError(f"risk must be in (0, 1), got {self.risk}")
+        if not (0 < self.prior < 1):
+            raise ValueError(f"prior must be in (0, 1), got {self.prior}")
 
     @property
     def value(self) -> float:
@@ -295,52 +348,112 @@ def calibrate(
 ) -> CalibrateResult:
     """Binary search for parameter achieving target privacy metric.
 
-    Searches for ``param`` in ``[param_min, param_max]`` such that:
-        ``target.evaluate(build(param)) ≈ target.value``
+    Finds the value of a parameter (e.g., noise_multiplier) such that
+    the resulting DpProcess achieves a target privacy guarantee.
 
-    The search assumes:
-    - Metric **decreases** as param increases (e.g., epsilon vs noise_multiplier)
-    - If your metric increases, swap param_min/param_max or invert the metric
+    **Metric Assumption:**
+    The search assumes the metric **decreases** as the parameter increases
+    (e.g., epsilon decreases as noise increases). If your metric has the
+    opposite behavior, either swap param_min/param_max or reformulate.
+
+    **Parameters:**
 
     Args:
-        target: Calibration target (created with epsilon(), beta(), etc.).
-        build: Function taking parameter value and returning a DpProcess.
+        target: Calibration target (created with epsilon(), delta(), etc.)
+            - Must have: target.value (float), target.evaluate(process) → float
+            - Common targets: epsilon(3.0, 1e-5), delta(1e-5, 3.0), advantage(0.1)
+            - Targets validate themselves: epsilon(-1.0) raises ValueError
+
+        build: Callable taking a float parameter and returning a DpProcess.
+            Must be deterministic (same input → same process).
             Example: ``lambda nm: acc.poisson(nm, 0.01) * 1000``
-        param_min: Lower bound for parameter search.
-        param_max: Upper bound for parameter search.
-        tolerance: Stop when ``|achieved - target| < tolerance``. Default: 1e-6.
-        max_iterations: Maximum number of binary search iterations. Default: 100.
+            
+            Important: If build() raises an exception, it propagates immediately.
+
+        param_min: Lower bound for search (usually produces more private result)
+            - Assumed to satisfy: metric(param_min) > target.value
+            - Example: 0.5 for noise_multiplier at high privacy
+
+        param_max: Upper bound for search (usually produces less private result)
+            - Assumed to satisfy: metric(param_max) < target.value
+            - Example: 3.0 for noise_multiplier at lower privacy
+
+        tolerance: Convergence threshold
+            - Stops early when |achieved - target.value| < tolerance
+            - Default: 1e-6 (very tight, suitable for most applications)
+            - Use 1e-2 for faster convergence, 1e-8 for maximum precision
+
+        max_iterations: Maximum binary search iterations
+            - Each iteration halves the search space
+            - 100 iterations gives ~1e-30 precision (rarely needed)
+            - If not converged after max_iterations, returns False for converged
 
     Returns:
-        CalibrateResult with found parameter and achieved value.
+        CalibrateResult with:
+        - param: Found parameter value
+        - achieved: Metric value at found parameter
+        - target: Target metric value (for comparison)
+        - iterations: Number of iterations performed
+        - converged: True if |achieved - target| < tolerance
 
     Raises:
-        ValueError: If param_min >= param_max or if bounds bracket the target incorrectly.
+        ValueError: If param_min >= param_max
+        ValueError: If bounds don't bracket the target (both val_min/val_max above or below target)
+        ValueError: If target evaluation returns inf or nan at the bounds
+        Exception: If build() or target.evaluate() raises an exception
 
-    Example::
+    **Examples:**
 
-        # Find noise multiplier for (ε=3.0, δ=1e-5)
+    **Example 1: Standard (ε, δ)-DP**::
+
+        import opaque.accounting as acc
+        from opaque.accounting import calibration as cal
+
         def build(nm):
             return acc.poisson(nm, sample_rate=0.01) * 1000
 
         target = cal.epsilon(3.0, delta=1e-5)
-        result = cal.calibrate(target, build, param_min=0.1, param_max=5.0)
-
-        print(f"Use noise_multiplier = {result.param:.3f}")
+        result = cal.calibrate(target, build, param_min=0.7, param_max=1.2)
+        
+        print(f"Use noise_multiplier = {result.param:.4f}")
         print(f"Achieves epsilon = {result.achieved:.6f}")
+        print(f"Converged: {result.converged}")
 
-        # Multi-phase training
+    **Example 2: Multi-phase training**::
+
         def build_multiphase(nm):
             phase1 = acc.poisson(nm, 0.01) * 500
             phase2 = acc.poisson(nm * 0.8, 0.01) * 500
-            return phase1 | phase2
+            phase3 = acc.poisson(nm * 0.5, 0.01) * 500
+            return phase1 | phase2 | phase3
 
         result = cal.calibrate(
             cal.epsilon(5.0, delta=1e-5),
             build_multiphase,
             param_min=0.5,
             param_max=3.0,
+            tolerance=0.01,
         )
+
+    **Example 3: Different privacy metrics**::
+
+        # f-DP advantage
+        result = cal.calibrate(cal.advantage(0.1), build, 0.5, 2.0)
+        
+        # (α, β) error rates
+        result = cal.calibrate(cal.beta(0.05, alpha=0.01), build, 0.5, 2.0)
+        
+        # Bayes risk
+        result = cal.calibrate(cal.risk(0.1, prior=0.5), build, 0.5, 2.0)
+
+    **Troubleshooting:**
+
+    - *ValueError: bounds don't bracket target*
+      → Try expanding param_min/param_max range
+    - *ValueError: target evaluation returned infinity*
+      → Privacy target may be impossible with your mechanism; try higher param_min or lower target
+    - *Not converging within max_iterations*
+      → Increase tolerance or max_iterations; check that param changes actually affect metric
     """
     if param_min >= param_max:
         raise ValueError(
@@ -352,6 +465,22 @@ def calibrate(
     proc_max = build(param_max)
     val_min = target.evaluate(proc_min)
     val_max = target.evaluate(proc_max)
+
+    # Validate bounds don't return inf/nan
+    if math.isnan(val_min) or math.isnan(val_max):
+        raise ValueError(
+            f"Target evaluation returned NaN at bounds: "
+            f"at param_min={param_min}: {val_min}, at param_max={param_max}: {val_max}. "
+            f"This usually indicates an issue with the build() function or the process itself."
+        )
+
+    if math.isinf(val_min) or math.isinf(val_max):
+        raise ValueError(
+            f"Target evaluation returned infinity at bounds: "
+            f"at param_min={param_min}: {val_min}, at param_max={param_max}: {val_max}. "
+            f"This typically means the privacy target is unreachable with these parameter bounds. "
+            f"Try expanding the search range or checking that build() produces valid processes."
+        )
 
     # We assume metric decreases as param increases
     # (e.g., epsilon decreases as noise_multiplier increases)
