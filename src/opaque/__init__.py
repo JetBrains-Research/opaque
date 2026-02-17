@@ -30,7 +30,7 @@ from opaque.noise import (
     identity_mf_noise,
 )
 from opaque.sampling import (
-    CyclicPoissonSampling,
+    CyclicPoissonSampler,
     PoissonSampler,
     TruncatedPoissonSampler,
 )
@@ -68,7 +68,7 @@ __all__ = [
     "sampling",
     "PoissonSampler",
     "TruncatedPoissonSampler",
-    "CyclicPoissonSampling",
+    "CyclicPoissonSampler",
     # Noise
     "gaussian_noise",
     "bounded_gaussian_noise",

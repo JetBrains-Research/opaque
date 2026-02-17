@@ -8,18 +8,12 @@ Supports distributed training with two sampling modes:
 - INDEPENDENT: Each worker samples independently (default for single device)
 - SHARDED: Workers sample from disjoint shards (default for distributed, ensures "single Poisson")
 
-Note: PoissonSampler and TruncatedPoissonSampler support distributed training
-with automatic environment detection. CyclicPoissonSampling is for BandMF and
-does not currently support distributed training.
+Note: PoissonSampler, TruncatedPoissonSampler, and CyclicPoissonSampler support
+distributed training with automatic environment detection.
 """
 
-from opaque.sampling.cyclic_poisson import (
-    BatchSelectionStrategy,
-    CyclicPoissonSampling,
-    PartitionType,
-    pad_to_multiple_of,
-    split_and_pad_global_batch,
-)
+from opaque.sampling._utils import PartitionType
+from opaque.sampling.cyclic_poisson import CyclicPoissonSampler
 from opaque.sampling.poisson import PoissonSampler
 from opaque.sampling.truncated_poisson import TruncatedPoissonSampler
 from opaque.sampling.types import SamplingMode
@@ -27,10 +21,7 @@ from opaque.sampling.types import SamplingMode
 __all__ = [
     "PoissonSampler",
     "TruncatedPoissonSampler",
+    "CyclicPoissonSampler",
     "SamplingMode",
-    "BatchSelectionStrategy",
-    "CyclicPoissonSampling",
     "PartitionType",
-    "split_and_pad_global_batch",
-    "pad_to_multiple_of",
 ]

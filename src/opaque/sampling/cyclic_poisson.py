@@ -1,269 +1,294 @@
-"""Cyclic Poisson sampling for BandMF privacy amplification.
+"""Cyclic Poisson sampler for BandMF with DDP support.
 
-Implements cyclic Poisson sampling, which generalizes several sampling
-strategies. In cyclic Poisson sampling, examples are partitioned into
-``cycle_length`` groups. Each iteration samples from one group in a
-round-robin fashion. This is required for BandMF amplified privacy.
+Cyclic Poisson sampling creates batches by cycling through partitioned groups
+of the dataset. This enables privacy amplification via correlated noise mechanisms
+like BandMF.
+
+Supports distributed training with automatic environment detection:
+- INDEPENDENT: Single device (each rank cycles independently through full dataset)
+- SHARDED: Distributed training (each rank cycles through its shard)
 
 References:
-    - Fixed order: https://arxiv.org/abs/2211.06530
-    - Poisson sampling: https://arxiv.org/abs/1607.00133
-    - BandMF sampling: https://arxiv.org/abs/2306.08153
-
-Example:
-    >>> rng = np.random.default_rng(0)
-    >>> sampler = CyclicPoissonSampling(
-    ...     sampling_prob=0.5, iterations=6, cycle_length=2
-    ... )
-    >>> batches = list(sampler.batch_iterator(12, rng=rng))
+    - BandMF: https://arxiv.org/abs/2306.08153
+    - Cyclic sampling: https://arxiv.org/abs/2211.06530
 """
 
-from __future__ import annotations
-
-import abc
-import dataclasses
-import enum
+import warnings
 from collections.abc import Iterator
 
 import numpy as np
+from torch.utils.data import Sampler
 
-RngType = np.random.Generator | int | None
-
-
-class PartitionType(enum.Enum):
-    """Specifies how examples should be assigned to groups."""
-
-    INDEPENDENT = enum.auto()
-    """Each example assigned to a group independently at random."""
-    EQUAL_SPLIT = enum.auto()
-    """Examples shuffled and split into groups of equal size."""
+from opaque.distributed import get_rank, get_world_size, is_distributed
+from opaque.sampling._utils import (
+    PartitionType,
+    _equal_split_partition,
+    _independent_partition,
+)
 
 
-def _independent_partition(
-    num_examples: int,
-    num_groups: int,
-    rng: np.random.Generator,
-    dtype: np.typing.DTypeLike,
-) -> list[np.ndarray]:
-    """Partition examples independently (multinomial assignment)."""
-    sizes = rng.multinomial(num_examples, np.ones(num_groups) / num_groups)
-    boundaries = np.cumsum(sizes)[:-1]
-    indices = rng.permutation(num_examples).astype(dtype)
-    return np.split(indices, boundaries)
+class CyclicPoissonSampler(Sampler):
+    """Cyclic Poisson sampler for BandMF privacy amplification with DDP support.
 
+    This sampler implements cyclic Poisson sampling, which generalizes several
+    common sampling strategies:
 
-def _equal_split_partition(
-    num_examples: int,
-    num_groups: int,
-    rng: np.random.Generator,
-    dtype: np.typing.DTypeLike,
-) -> list[np.ndarray]:
-    """Partition examples by shuffling then splitting equally."""
-    indices = rng.permutation(num_examples).astype(dtype)
-    group_size = num_examples // num_groups
-    groups = np.array_split(indices, num_groups)
-    return [g[:group_size] for g in groups]
+    - **Standard Poisson** (cycle_length=1): Each example independently included
+      with probability ``sampling_prob`` (standard DP-SGD).
+    - **Fixed-order** (sampling_prob=1.0, cycle_length=n//b): Deterministic
+      multi-epoch order, each example in a group seen once per cycle.
+    - **BandMF** (cycle_length > 1, 0 < sampling_prob < 1): Cyclic sampling for
+      correlated noise mechanisms (10-50% utility gain over independent noise).
 
+    Examples partition the dataset into ``cycle_length`` groups. At iteration i,
+    the sampler yields a batch from group (i % cycle_length). This creates
+    predictable structure for matrix factorization noise mechanisms.
 
-class BatchSelectionStrategy(abc.ABC):
-    """Abstract base class for batch selection strategies.
+    Supports distributed training with automatic environment detection:
+    - **INDEPENDENT**: Single device (default for world_size=1)
+    - **SHARDED**: Distributed training (default for world_size > 1)
+      Each rank cycles through its assigned shard independently.
 
-    Produces indices into a dataset, not example elements themselves.
-    Relies on random access to individual examples by index.
+    Args:
+        data_source: Dataset to sample from (any object with __len__)
+        sampling_prob: Probability of including each eligible example (0 < p <= 1)
+        cycle_length: Number of groups. Defaults to 1 (standard Poisson)
+            - cycle_length=1: Each example independently sampled (standard Poisson)
+            - cycle_length=N: Examples split into N groups, cyclic round-robin
+        iterations: Total number of batches to yield. Defaults to None (use 1 epoch)
+        truncated_batch_size: If set, cap each batch size at this value
+        partition_type: How to partition into groups
+            - EQUAL_SPLIT: Shuffle and split into equal-sized groups (default)
+            - INDEPENDENT: Multinomial group assignment (random sizes)
+        generator: Optional random seed or generator:
+            - None: Unseeded (non-reproducible)
+            - int: Random seed. Auto-shifts by rank in distributed mode.
+            - np.random.Generator: Use provided generator directly
+
+    Example (single device):
+        >>> dataset = MyDataset(size=1000)
+        >>> sampler = CyclicPoissonSampler(
+        ...     dataset,
+        ...     sampling_prob=0.5,
+        ...     cycle_length=3,
+        ...     iterations=20,
+        ... )
+        >>> loader = DataLoader(dataset, batch_sampler=sampler)
+        >>> # Cycles through groups: 0,1,2,0,1,2,... for 20 iterations
+
+    Example (distributed - automatic):
+        >>> # Run with: torchrun --nproc_per_node=4 train.py
+        >>> dataset = MyDataset(size=1000)
+        >>> sampler = CyclicPoissonSampler(
+        ...     dataset,
+        ...     sampling_prob=0.5,
+        ...     cycle_length=3,
+        ...     iterations=20,
+        ...     generator=42,  # Auto-shifts by rank: 42, 43, 44, 45
+        ... )
+        >>> loader = DataLoader(dataset, batch_sampler=sampler)
+        >>> # Device 0: partition [0:250], cycle through its groups
+        >>> # Device 1: partition [250:500], cycle through its groups
+        >>> # Each yields 20 batches independently
+
+    Note:
+        - Batch sizes are variable (Poisson property)
+        - Expected batch size per iteration: |group| * sampling_prob
+        - Use with DataLoader's batch_sampler parameter (not sampler)
+        - Auto mode selection: Detects distributed and uses SHARDED by default
+        - Auto seed shifting: Integer seeds automatically shift by rank in distributed mode
+        - SHARDED mode: Zero communication overhead (no AllReduce)
     """
 
-    @abc.abstractmethod
-    def batch_iterator(
-        self, num_examples: int, rng: RngType = None
-    ) -> Iterator[np.ndarray]:
-        """Yields 1D batches of data indices.
+    def __init__(
+        self,
+        data_source,
+        sampling_prob: float,
+        cycle_length: int = 1,
+        iterations: int | None = None,
+        truncated_batch_size: int | None = None,
+        partition_type: PartitionType = PartitionType.EQUAL_SPLIT,
+        generator: np.random.Generator | int | None = None,
+    ):
+        """Initialize cyclic Poisson sampler with DDP awareness."""
+        super().__init__()
 
-        Args:
-            num_examples: Total number of examples in the dataset.
-            rng: Random seed or random number generator.
-
-        Yields:
-            Arrays of indices for each batch.
-        """
-
-
-@dataclasses.dataclass(frozen=True)
-class CyclicPoissonSampling(BatchSelectionStrategy):
-    """Cyclic Poisson sampling for DP with correlated noise mechanisms.
-
-    Generalizes several common sampling strategies:
-
-    - **Fixed order** (sampling_prob=1, cycle_length=n//b): Deterministic
-      multi-epoch order, each example seen exactly once per epoch.
-    - **Standard Poisson** (cycle_length=1): Each example independently
-      included with probability ``sampling_prob``.
-    - **BandMF-style** (cycle_length>1, 0<sampling_prob<1): Cyclic Poisson
-      sampling required for BandMF privacy amplification.
-
-    Formal guarantees:
-        - All batches consist of indices in [0, num_examples).
-        - Each example only appears in batches i where
-          ``i % cycle_length == j`` for some fixed j per example.
-        - Without truncation, each eligible index appears independently
-          with probability ``sampling_prob``.
-        - With truncation, excess examples are uniformly subsampled.
-        - With EQUAL_SPLIT, ``num_examples % cycle_length`` examples may
-          be discarded.
-
-    Attributes:
-        sampling_prob: Probability of sampling an eligible example.
-        iterations: Total number of iterations/batches.
-        truncated_batch_size: If set, cap batch size at this value.
-        cycle_length: Number of groups (cycle_length=1 = standard Poisson).
-        partition_type: How to partition examples into groups.
-    """
-
-    sampling_prob: float
-    iterations: int
-    truncated_batch_size: int | None = None
-    cycle_length: int = 1
-    partition_type: PartitionType = PartitionType.EQUAL_SPLIT
-
-    def batch_iterator(
-        self, num_examples: int, rng: RngType = None
-    ) -> Iterator[np.ndarray]:
-        """Yields 1D batches of data indices.
-
-        Args:
-            num_examples: Total number of examples in the dataset.
-            rng: Random seed or random number generator.
-
-        Yields:
-            Arrays of indices for each batch.
-        """
-        rng = np.random.default_rng(rng)
-        dtype = np.min_scalar_type(-num_examples)
-
-        if self.partition_type == PartitionType.INDEPENDENT:
-            partition_fn = _independent_partition
-        elif self.partition_type == PartitionType.EQUAL_SPLIT:
-            partition_fn = _equal_split_partition
-        else:
-            raise ValueError(f"Unsupported partition type: {self.partition_type}")
-
-        partition = partition_fn(num_examples, self.cycle_length, rng, dtype)
-
-        for i in range(self.iterations):
-            current_group = partition[i % self.cycle_length]
-            sample_size = rng.binomial(n=len(current_group), p=self.sampling_prob)
-            if self.truncated_batch_size is not None:
-                sample_size = min(sample_size, self.truncated_batch_size)
-            yield rng.choice(
-                current_group,
-                size=sample_size,
-                replace=False,
-                shuffle=False,
+        # ============ Validate inputs ============
+        if len(data_source) == 0:
+            raise ValueError("data_source must not be empty")
+        if not 0 < sampling_prob <= 1:
+            raise ValueError(
+                f"sampling_prob must be in (0, 1], got {sampling_prob}"
+            )
+        if cycle_length < 1:
+            raise ValueError(f"cycle_length must be >= 1, got {cycle_length}")
+        if truncated_batch_size is not None and truncated_batch_size < 1:
+            raise ValueError(
+                f"truncated_batch_size must be >= 1, got {truncated_batch_size}"
             )
 
+        # ============ Distributed detection ============
+        self.rank = get_rank()
+        self.world_size = get_world_size()
+        self.is_distributed = is_distributed()
 
-def split_and_pad_global_batch(
-    indices: np.ndarray,
-    minibatch_size: int,
-    microbatch_size: int | None = None,
-) -> list[np.ndarray]:
-    """Split a global batch into fixed-size minibatches with -1 padding.
+        # Auto-select mode based on distributed status
+        if self.is_distributed:
+            self.mode = "SHARDED"
+            warnings.warn(
+                f"Detected distributed environment (world_size={self.world_size}). "
+                f"Using SHARDED mode: each rank cycles through its shard independently.",
+                UserWarning,
+                stacklevel=2,
+            )
+        else:
+            self.mode = "INDEPENDENT"
 
-    The last minibatch is padded with ``-1`` indices. Downstream users must
-    account for this by zeroing out gradients for padding examples.
+        # ============ Compute data partition for this rank ============
+        self.num_total_examples = len(data_source)
 
-    Example:
-        >>> indices = np.arange(10)
-        >>> split_and_pad_global_batch(indices, minibatch_size=4)
-        [array([0, 1, 2, 3]), array([4, 5, 6, 7]), array([ 8,  9, -1, -1])]
+        if self.mode == "SHARDED":
+            # Each rank gets a shard of the dataset
+            self.shard_size = self.num_total_examples // self.world_size
+            self.start_idx = self.rank * self.shard_size
 
-    Args:
-        indices: A 1D or 2D array of indices.
-        minibatch_size: Desired size of each minibatch.
-        microbatch_size: Optional microbatch size for early stopping order.
+            # Last rank gets the remainder
+            if self.rank == self.world_size - 1:
+                self.end_idx = self.num_total_examples
+            else:
+                self.end_idx = self.start_idx + self.shard_size
 
-    Returns:
-        List of minibatches, each of size exactly ``minibatch_size``.
+            self.num_examples_local = self.end_idx - self.start_idx
+        else:
+            # Single device: use full dataset
+            self.shard_size = self.num_total_examples
+            self.start_idx = 0
+            self.end_idx = self.num_total_examples
+            self.num_examples_local = self.num_total_examples
 
-    Raises:
-        ValueError: If minibatch_size is not positive.
-    """
-    if minibatch_size <= 0:
-        raise ValueError(f"minibatch_size must be positive, got {minibatch_size}")
-    sections = range(minibatch_size, indices.shape[0], minibatch_size)
-    minibatches = np.array_split(indices, sections, axis=0)
-    minibatch_shape = (minibatch_size,) + indices.shape[1:]
-    last_minibatch = np.full(minibatch_shape, -1, dtype=indices.dtype)
-    last_minibatch[: minibatches[-1].shape[0]] = minibatches[-1]
+        # ============ RNG setup (with rank-based seed shifting) ============
+        # Auto-shift seed by rank for diversity in distributed mode
+        if isinstance(generator, int):
+            if self.rank > 0:
+                rng_seed = generator + self.rank
+            else:
+                rng_seed = generator
+            self.rng_seed = rng_seed
+            self.rng_generator = None
+        elif isinstance(generator, np.random.Generator):
+            self.rng_seed = None
+            self.rng_generator = generator
+        else:
+            self.rng_seed = None
+            self.rng_generator = None
 
-    if microbatch_size is not None and microbatch_size > 0:
-        # Reorder so padding is in early-stopping-friendly positions
-        permutation = _compute_early_stopping_order(minibatch_size, microbatch_size)
-        last_minibatch = last_minibatch[permutation]
+        # ============ Pre-compute partition ============
+        # Create RNG for partition
+        if self.rng_seed is not None:
+            partition_rng = np.random.default_rng(self.rng_seed)
+        elif self.rng_generator is not None:
+            partition_rng = self.rng_generator
+        else:
+            partition_rng = np.random.default_rng()
 
-    minibatches[-1] = last_minibatch
-    return minibatches
+        # Determine partition function
+        if partition_type == PartitionType.INDEPENDENT:
+            partition_fn = _independent_partition
+        elif partition_type == PartitionType.EQUAL_SPLIT:
+            partition_fn = _equal_split_partition
+        else:
+            raise ValueError(f"Unsupported partition_type: {partition_type}")
 
+        # Partition the local dataset (or full dataset if single device)
+        dtype = np.min_scalar_type(-self.num_examples_local)
+        local_partition = partition_fn(
+            self.num_examples_local, cycle_length, partition_rng, dtype
+        )
 
-def pad_to_multiple_of(indices: np.ndarray, multiple: int) -> np.ndarray:
-    """Pad the last dimension of indices to a multiple of ``multiple``.
+        # Convert local indices to global indices (for distributed case)
+        self.partition = [indices + self.start_idx for indices in local_partition]
 
-    Example:
-        >>> indices = np.arange(10)
-        >>> pad_to_multiple_of(indices, multiple=4)
-        array([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, -1, -1])
+        # ============ Store parameters ============
+        self.data_source = data_source
+        self.sampling_prob = sampling_prob
+        self.cycle_length = cycle_length
+        self.truncated_batch_size = truncated_batch_size
+        self.partition_type = partition_type
 
-    Args:
-        indices: A 1D array of batch indices.
-        multiple: Positive integer to pad to.
+        # Compute iterations
+        if iterations is None:
+            self.iterations = 1
+        else:
+            if iterations < 1:
+                raise ValueError(f"iterations must be >= 1, got {iterations}")
+            self.iterations = iterations
 
-    Returns:
-        Padded array with -1 values.
-    """
-    if indices.ndim > 1:
-        raise ValueError("pad_to_multiple_of expects 1D indices.")
-    if multiple <= 0:
-        raise ValueError(f"multiple must be positive, got {multiple}")
-    curr_size = indices.shape[0]
-    pad_size = (multiple - curr_size) % multiple
-    new_indices = np.full(curr_size + pad_size, -1, dtype=indices.dtype)
-    new_indices[:curr_size] = indices
-    return new_indices
+    def __iter__(self) -> Iterator[list[int]]:
+        """Yield cyclic batches as lists of indices.
 
+        For each iteration, samples from the group (step % cycle_length).
+        Each example in the group is included independently with probability
+        sampling_prob, then optionally truncated.
 
-def _compute_early_stopping_order(
-    minibatch_size: int, microbatch_size: int
-) -> np.ndarray:
-    """Compute reordering for padding-aware early stopping.
+        In SHARDED mode, all indices are from this rank's assigned shard.
+        In INDEPENDENT mode, indices are from the full dataset.
 
-    Reorders indices so that padding (-1) values are concentrated at
-    the end of the last microbatch, enabling early exit when the last
-    microbatch contains only padding.
+        Yields:
+            Variable-size lists of indices
+        """
+        # Create fresh RNG for iteration
+        if self.rng_seed is not None:
+            rng = np.random.default_rng(self.rng_seed)
+        elif self.rng_generator is not None:
+            rng = self.rng_generator
+        else:
+            rng = np.random.default_rng()
 
-    Args:
-        minibatch_size: Total minibatch size.
-        microbatch_size: Microbatch size.
+        for step in range(self.iterations):
+            # Get the group for this iteration
+            group_idx = step % self.cycle_length
+            group = self.partition[group_idx]
 
-    Returns:
-        Permutation array of length ``minibatch_size``.
-    """
-    if microbatch_size is None or microbatch_size <= 0:
-        return np.arange(minibatch_size)
+            # Sample binomially: each example included with probability sampling_prob
+            sample_size = rng.binomial(
+                n=len(group), p=self.sampling_prob
+            )
 
-    if minibatch_size <= 0:
-        return np.arange(minibatch_size)
+            # Cap at truncated_batch_size if specified
+            if self.truncated_batch_size is not None:
+                sample_size = min(sample_size, self.truncated_batch_size)
 
-    num_microbatches = int(np.ceil(minibatch_size / microbatch_size))
-    full_size = num_microbatches * microbatch_size
+            # Sample without replacement
+            if sample_size > 0:
+                batch = rng.choice(
+                    group, size=sample_size, replace=False, shuffle=False
+                )
+            else:
+                batch = np.array([], dtype=group.dtype)
 
-    grid = np.arange(full_size, dtype=int).reshape(num_microbatches, microbatch_size)
+            # Yield as list of Python ints
+            yield batch.tolist()
 
-    if num_microbatches == 1:
-        order_full = grid.ravel()
-    else:
-        # All rows except the last first, then the last row.
-        # Padding sits at the end of the minibatch, so after splitting
-        # into microbatches it lands in the final microbatch.
-        order_full = np.concatenate([grid[:-1].ravel(), grid[-1]])
+    def __len__(self) -> int:
+        """Return total number of batches (iterations)."""
+        return self.iterations
 
-    # Only keep positions that correspond to actual minibatch elements.
-    return order_full[order_full < minibatch_size]
+    @property
+    def expected_batch_size(self) -> float:
+        """Expected batch size across all iterations.
+
+        Returns the average expected size: (total possible samples / num_iterations) * sampling_prob.
+        """
+        # Average group size * sampling_prob
+        avg_group_size = self.num_examples_local / self.cycle_length
+        return avg_group_size * self.sampling_prob
+
+    @property
+    def batch_size_variance(self) -> float:
+        """Variance of batch size (Poisson property).
+
+        Returns the average variance across groups.
+        """
+        # Average: group_size * p * (1 - p)
+        avg_group_size = self.num_examples_local / self.cycle_length
+        return avg_group_size * self.sampling_prob * (1 - self.sampling_prob)
