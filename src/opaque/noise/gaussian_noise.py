@@ -15,7 +15,6 @@ Auto-distributed support:
 """
 
 import dataclasses
-import warnings
 from collections.abc import Callable
 from typing import Any
 
@@ -95,7 +94,7 @@ def gaussian_noise(
         stddev: Standard deviation of Gaussian noise
             (usually ``noise_multiplier * clip_norm``).
         generator: RNG configuration:
-            - ``None``: 
+            - ``None``:
               - **Distributed (world_size > 1)**: Use fixed seed (seed=0) across all devices
                 for synchronized noise. Prevents model divergence.
               - **Single device**: Unseeded generator (non-reproducible)

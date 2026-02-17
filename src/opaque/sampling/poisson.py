@@ -109,9 +109,9 @@ class PoissonSampler(Sampler):
         if mode == SamplingMode.SHARDED:
             if not dist_initialized:
                 raise ValueError(
-                    f"SHARDED mode requires distributed training to be initialized. "
-                    f"Initialize with torch.distributed.init_process_group() "
-                    f"or use torch.distributed.launch / torchrun."
+                    "SHARDED mode requires distributed training to be initialized. "
+                    "Initialize with torch.distributed.init_process_group() "
+                    "or use torch.distributed.launch / torchrun."
                 )
             if not 0 <= rank < world_size:
                 raise ValueError(

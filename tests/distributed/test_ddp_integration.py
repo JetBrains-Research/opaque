@@ -232,21 +232,21 @@ class TestDeterministicNoise:
 
     def test_different_noise_per_rank(self, device):
         """Test that each rank independently applies noise (critical for DP).
-        
+
         This test verifies that noise is applied independently on every device,
         not just rank 0. This is CRITICAL for DP guarantees to hold.
-        
+
         Pattern (CORRECT):
             Each device creates its own noise_fn and applies it independently
             noise_fn = gaussian_noise(stddev, generator=seed + rank)
             noisy = noise_fn(grads)  # <- Applied on ALL devices
-        
+
         Anti-pattern (WRONG - breaks DP):
             Only rank 0 applies noise and broadcasts to others
             if rank == 0:
                 noisy = noise_fn(grads)
                 broadcast(noisy)  # <- Other devices have NO DP!
-        
+
         Reference: docs/user-guide/distributed.md "Critical: Noise Must Be Applied on EVERY Device"
         """
         from opaque.distributed import get_rank
@@ -272,10 +272,12 @@ class TestDeterministicNoise:
         noisy, state = noise_fn(grads, state)
 
         # Verify noise was actually added on this rank
-        assert not torch.allclose(noisy["weight"], torch.zeros_like(noisy["weight"])), \
+        assert not torch.allclose(noisy["weight"], torch.zeros_like(noisy["weight"])), (
             f"Rank {get_rank()}: Noise was not applied! DP guarantee broken!"
-        assert not torch.allclose(noisy["bias"], torch.zeros_like(noisy["bias"])), \
+        )
+        assert not torch.allclose(noisy["bias"], torch.zeros_like(noisy["bias"])), (
             f"Rank {get_rank()}: Noise was not applied! DP guarantee broken!"
+        )
 
 
 class TestEndToEndDPTraining:
