@@ -104,9 +104,7 @@ def _gaussian_linear_combination(
     for idx in range(first, last):
         coef = matrix_row[idx].to(dtype)
         try:
-            noise = torch.randn(
-                shape, dtype=dtype, device=device, generator=generator
-            )
+            noise = torch.randn(shape, dtype=dtype, device=device, generator=generator)
         except RuntimeError as exc:
             if "Expected a 'cuda' device type for generator" in str(exc):
                 noise = torch.randn(shape, dtype=dtype, generator=generator).to(

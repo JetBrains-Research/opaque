@@ -256,9 +256,7 @@ def _worker_mf_shared_noise(rank: int, world_size: int, port: int) -> None:
     try:
         device = torch.device(f"cuda:{rank}")
         grad_template = {"weight": torch.zeros(4, device=device)}
-        noise_fn, state = identity_mf_noise(
-            grad_template, stddev=1.0, generator=None
-        )
+        noise_fn, state = identity_mf_noise(grad_template, stddev=1.0, generator=None)
         grads = {"weight": torch.zeros(4, device=device)}
         noisy, _ = noise_fn(grads, state)
 

@@ -38,12 +38,14 @@ from tests.conftest import (
 # Check if HuggingFace dependencies are available (required for LoRA tests)
 try:
     import transformers
+
     HAS_TRANSFORMERS = True
 except ImportError:
     HAS_TRANSFORMERS = False
 
 try:
     import peft
+
     HAS_PEFT = True
 except ImportError:
     HAS_PEFT = False
@@ -223,7 +225,9 @@ def _run_ddp_quick_sanity(rank, world_size, port):
 
         config = MODEL_CONFIGS["qwen2-0.5b"]
         model, tokenizer = load_model_with_lora(config, device=device)
-        base_model = model.get_base_model() if hasattr(model, "get_base_model") else model
+        base_model = (
+            model.get_base_model() if hasattr(model, "get_base_model") else model
+        )
         if hasattr(base_model, "model") and hasattr(base_model.model, "layers"):
             base_model.model.layers = base_model.model.layers[:2]
         elif hasattr(base_model, "layers"):

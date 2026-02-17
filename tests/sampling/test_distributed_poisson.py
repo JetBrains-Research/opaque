@@ -33,7 +33,9 @@ class TestSamplingModeValidation:
                     with pytest.raises(
                         ValueError, match="SHARDED mode requires distributed training"
                     ):
-                        PoissonSampler(dataset, sample_rate=0.1, mode=SamplingMode.SHARDED)
+                        PoissonSampler(
+                            dataset, sample_rate=0.1, mode=SamplingMode.SHARDED
+                        )
 
     def test_independent_mode_with_distributed_params_warns(self, monkeypatch):
         """Test INDEPENDENT mode with world_size > 1 emits warning."""
@@ -79,13 +81,17 @@ class TestShardedMode:
             # Mock distributed environment for this rank
             with patch("opaque.sampling.poisson.is_distributed", return_value=True):
                 with patch("opaque.sampling.poisson.get_rank", return_value=rank):
-                    with patch("opaque.sampling.poisson.get_world_size", return_value=4):
+                    with patch(
+                        "opaque.sampling.poisson.get_world_size", return_value=4
+                    ):
                         sampler = PoissonSampler(
                             dataset,
                             sample_rate=sample_rate,
                             num_epochs=num_epochs,
                             mode=SamplingMode.SHARDED,
-                            generator=np.random.default_rng(42 + rank),  # Different seeds
+                            generator=np.random.default_rng(
+                                42 + rank
+                            ),  # Different seeds
                         )
                         batches = list(sampler)
                         all_worker_indices.append(batches[0])
@@ -110,7 +116,10 @@ class TestShardedMode:
             # Mock distributed environment for this rank
             with patch("opaque.sampling.poisson.is_distributed", return_value=True):
                 with patch("opaque.sampling.poisson.get_rank", return_value=rank):
-                    with patch("opaque.sampling.poisson.get_world_size", return_value=world_size):
+                    with patch(
+                        "opaque.sampling.poisson.get_world_size",
+                        return_value=world_size,
+                    ):
                         sampler = PoissonSampler(
                             dataset,
                             sample_rate=sample_rate,
@@ -122,7 +131,9 @@ class TestShardedMode:
                         # Compute expected shard boundaries
                         shard_size = 1000 // world_size
                         start_idx = rank * shard_size
-                        end_idx = start_idx + shard_size if rank < world_size - 1 else 1000
+                        end_idx = (
+                            start_idx + shard_size if rank < world_size - 1 else 1000
+                        )
 
                         # All indices should be in this worker's shard
                         assert all(start_idx <= idx < end_idx for idx in batch), (
@@ -138,7 +149,9 @@ class TestShardedMode:
         # Last worker should get largest shard
         with patch("opaque.sampling.poisson.is_distributed", return_value=True):
             with patch("opaque.sampling.poisson.get_rank", return_value=3):
-                with patch("opaque.sampling.poisson.get_world_size", return_value=world_size):
+                with patch(
+                    "opaque.sampling.poisson.get_world_size", return_value=world_size
+                ):
                     sampler_last = PoissonSampler(
                         dataset,
                         sample_rate=sample_rate,
@@ -162,7 +175,10 @@ class TestShardedMode:
             # Mock distributed environment for this rank
             with patch("opaque.sampling.poisson.is_distributed", return_value=True):
                 with patch("opaque.sampling.poisson.get_rank", return_value=rank):
-                    with patch("opaque.sampling.poisson.get_world_size", return_value=world_size):
+                    with patch(
+                        "opaque.sampling.poisson.get_world_size",
+                        return_value=world_size,
+                    ):
                         sampler = PoissonSampler(
                             dataset,
                             sample_rate=sample_rate,
@@ -298,7 +314,10 @@ class TestTruncatedPoissonDistributed:
             # Mock distributed environment for this rank
             with patch("opaque.sampling.poisson.is_distributed", return_value=True):
                 with patch("opaque.sampling.poisson.get_rank", return_value=rank):
-                    with patch("opaque.sampling.poisson.get_world_size", return_value=world_size):
+                    with patch(
+                        "opaque.sampling.poisson.get_world_size",
+                        return_value=world_size,
+                    ):
                         sampler = TruncatedPoissonSampler(
                             dataset,
                             sample_rate=0.5,
@@ -349,7 +368,7 @@ class TestEdgeCases:
     def test_single_worker_sharded_mode(self, monkeypatch):
         """Test SHARDED mode with world_size=1."""
         dataset = TensorDataset(torch.randn(100, 10))
-        
+
         with patch("opaque.sampling.poisson.is_distributed", return_value=True):
             with patch("opaque.sampling.poisson.get_rank", return_value=0):
                 with patch("opaque.sampling.poisson.get_world_size", return_value=1):
@@ -380,7 +399,10 @@ class TestEdgeCases:
             # Mock distributed environment for this rank
             with patch("opaque.sampling.poisson.is_distributed", return_value=True):
                 with patch("opaque.sampling.poisson.get_rank", return_value=rank):
-                    with patch("opaque.sampling.poisson.get_world_size", return_value=world_size):
+                    with patch(
+                        "opaque.sampling.poisson.get_world_size",
+                        return_value=world_size,
+                    ):
                         sampler = PoissonSampler(
                             dataset,
                             sample_rate=0.5,

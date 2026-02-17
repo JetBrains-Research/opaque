@@ -104,9 +104,7 @@ def _worker_reduce_scalar(rank: int, world_size: int, port: int) -> None:
         _cleanup_ddp()
 
 
-def _worker_sync_adaptive_clip_state(
-    rank: int, world_size: int, port: int
-) -> None:
+def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> None:
     from opaque.clipping import AdaptiveClipState
     from opaque.distributed import sync_state
 

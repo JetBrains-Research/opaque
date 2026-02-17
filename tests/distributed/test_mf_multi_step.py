@@ -43,15 +43,6 @@ def _cleanup_ddp() -> None:
         dist.destroy_process_group()
 
 
-
-
-
-
-
-
-
-
-
 # ============================================================================
 # Multi-step Identity MF tests (standard Gaussian, DP-SGD equivalent)
 # ============================================================================
@@ -61,7 +52,7 @@ def _worker_identity_mf_three_steps(rank: int, world_size: int, port: int) -> No
     """Worker for identity_mf_noise over 3 training steps.
 
     Identity MF is equivalent to standard DP-SGD (independent noise at each step).
-    
+
     Verifies:
     1. Each step produces different noise
     2. All ranks produce same noise with shared seed
@@ -77,9 +68,7 @@ def _worker_identity_mf_three_steps(rank: int, world_size: int, port: int) -> No
         grad_template = {"weight": torch.zeros(batch_size, param_dim, device=device)}
 
         # Initialize identity MF (standard Gaussian noise)
-        noise_fn, state = identity_mf_noise(
-            grad_template, stddev=1.0, generator=None
-        )
+        noise_fn, state = identity_mf_noise(grad_template, stddev=1.0, generator=None)
 
         # Run 3 training steps
         step_noise_values = []
@@ -108,9 +97,9 @@ def _worker_identity_mf_three_steps(rank: int, world_size: int, port: int) -> No
             dist.all_gather(gathered, noise_val)
             if rank == 0:
                 for other in gathered[1:]:
-                    assert torch.allclose(
-                        gathered[0], other, atol=1e-6
-                    ), f"Step {step_idx}: rank 0 and other ranks disagree"
+                    assert torch.allclose(gathered[0], other, atol=1e-6), (
+                        f"Step {step_idx}: rank 0 and other ranks disagree"
+                    )
 
     finally:
         _cleanup_ddp()
@@ -125,6 +114,3 @@ class TestIdentityMFMultiStep:
             pytest.skip("Requires >= 2 CUDA devices")
         port = _find_free_port()
         mp.spawn(_worker_identity_mf_three_steps, args=(2, port), nprocs=2, join=True)
-
-
-
