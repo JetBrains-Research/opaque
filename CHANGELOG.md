@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Custom calibration: `find_noise_multiplier_for_epsilon_delta()`
   - Re-exported calibration: `find_noise_multiplier_for_advantage()`, `find_noise_multiplier_for_err_rates()`
 - **Noise Injection** (`opaque.noise`)
-  - `add_gaussian_noise()` - Stateless Gaussian noise generation
+  - `gaussian_noise()` - Stateful Gaussian noise injection with reproducible RNG
   - Support for noise multiplier calibration
 - **Sampling Mechanisms** (`opaque.sampling`)
   - `PoissonSampler` - Standard Poisson sampling for privacy amplification

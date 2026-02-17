@@ -39,7 +39,7 @@ from peft import LoraConfig, get_peft_model
 from transformers import AutoConfig, AutoModelForCausalLM
 
 from opaque.clipping import clipped_grad
-from opaque.noise import add_gaussian_noise
+from opaque.noise import gaussian_noise
 from opaque.utils import make_functional
 
 
@@ -378,9 +378,8 @@ def main():
 
                 # 2. Add Gaussian noise for DP
                 stddev = noise_multiplier * current_clip_norm
-                noisy_grads = add_gaussian_noise(
-                    grads_tuple, stddev=stddev, generator=rng
-                )
+                noise_fn, noise_state = gaussian_noise(stddev=stddev, generator=rng)
+                noisy_grads, _ = noise_fn(grads_tuple, noise_state)
 
                 # 3. Optimizer step
                 if use_adaptive_clipping:

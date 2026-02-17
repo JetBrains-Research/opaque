@@ -121,7 +121,7 @@ Differential privacy (DP) provides mathematical guarantees that a model doesn't 
 Core DP-SGD primitives are implemented and validated:
 
 - **Clipping**: `clip_pytree()`, `clipped_fun()`, `clipped_grad()` — Full JAX-Privacy API parity
-- **Noise**: `gaussian()`, `gaussian_stateful()` — Stateless and reproducible noise injection
+- **Noise**: `gaussian_noise()` — Stateful Gaussian noise injection with reproducible RNG
 - **Sampling**: `PoissonSampler`, `TruncatedPoissonSampler` — Batch selection mechanisms
 - **Optimizers**: `adaptive_clipping()` — TorchOpt wrapper with adaptive clipping
 - **Accounting**: Functional privacy accounting API + **Rust-based PLD engine** (`opaque_dp_accounting`) with tight bounds

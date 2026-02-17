@@ -375,9 +375,9 @@ from opaque.noise.matrix_factorization.streaming_matrix import (
 | `opaque/noise/gaussian.py`                | `opaque/noise/gaussian_noise.py`                |
 | `opaque/noise/bounded_gaussian.py`        | `opaque/noise/bounded_gaussian_noise.py`        |
 | `gaussian()`                              | `gaussian_noise()`                              |
-| `gaussian_stateful()`                     | `gaussian_noise_stateful()`                     |
+| `gaussian_stateful()`                     | `gaussian_noise()` (returns stateful tuple)     |
 | `bounded_gaussian()`                      | `bounded_gaussian_noise()`                      |
-| `bounded_gaussian_stateful()`             | `bounded_gaussian_noise_stateful()`             |
+| `bounded_gaussian_stateful()`             | `bounded_gaussian_noise()` (returns stateful tuple) |
 | `opaque/matrix_factorization/`            | `opaque/noise/matrix_factorization/`            |
 | `opaque/noise/matrix_factorization.py`    | `opaque/noise/matrix_factorization/noise.py`    |
 | `noising_matrix` param in noise.py        | `noising`                                       |
@@ -432,5 +432,4 @@ TENTATIVE: Keep for now, revisit when multi-epoch BandMF needs per-row variation
 ## Open questions
 
 - [ ] Drop `ColumnNormalizedBanded` or keep?
-- [ ] The `add_gaussian_noise` references in examples/adaptive.py — fix or ignore?
-      (They reference a function that doesn't exist)
+- [x] The `add_gaussian_noise` references in examples — fixed to use `gaussian_noise()`
