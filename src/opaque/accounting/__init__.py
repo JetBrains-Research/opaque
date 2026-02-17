@@ -131,6 +131,19 @@ from opaque.accounting.composition import (
     repeat,
 )
 
+# Import Accountant
+from opaque.accounting.accountant import Accountant
+
+# Import calibration utilities
+from opaque.accounting.calibration import (
+    epsilon,
+    delta,
+    advantage,
+    beta,
+    risk,
+    calibrate,
+)
+
 __all__ = [
     # Types
     "DpProcess",
@@ -149,4 +162,14 @@ __all__ = [
     # Composition
     "repeat",
     "compose",
+    # Accounting
+    "Accountant",
+    # Calibration targets
+    "epsilon",
+    "delta",
+    "advantage",
+    "beta",
+    "risk",
+    # Calibration functions
+    "calibrate",
 ]
