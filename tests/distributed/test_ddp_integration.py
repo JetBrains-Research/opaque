@@ -108,6 +108,7 @@ class TestDistributedUtilities:
 class TestGradientAggregation:
     """Test gradient aggregation across devices."""
 
+
 class TestStateSynchronization:
     """Test state synchronization across devices."""
 
