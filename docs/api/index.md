@@ -50,7 +50,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `bootstrap()` - Confidence intervals
 
 - **[Distributed](distributed.md)**: Multi-GPU training with DDP
-  - `sum_gradients()` - Sum clipped gradients across GPUs (recommended for DP)
+  - `sum_gradients()` - Sum clipped gradients across GPUs (for DP training)
   - `reduce_pytree()` - Generic PyTree reduction
   - `sync_state()` - Synchronize adaptive clipping state
   - `is_initialized()`, `get_rank()`, `get_world_size()` - Distributed utilities
@@ -175,8 +175,6 @@ epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
 | `is_initialized()`     | Check if DDP is active      | [Guide](../user-guide/distributed.md)      |
 | `get_rank()`           | Get current GPU index       | [Guide](../user-guide/distributed.md)      |
 | `get_world_size()`     | Get total number of GPUs    | [Guide](../user-guide/distributed.md)      |
-| ~~`average_gradients()`~~ | **Deprecated** (use `sum_gradients`)    | [Guide](../user-guide/distributed.md)      |
-| ~~`all_reduce_gradients()`~~ | **Deprecated** (use `reduce_pytree`)  | [Guide](../user-guide/distributed.md)      |
 
 ## Type Hints
 

@@ -80,8 +80,8 @@ for batch in dataloader:
 
 ## Gradient Aggregation
 
-!!! info "Recommended API"
-    Use `sum_gradients()` for DP training (sums clipped gradients across devices).
+!!! tip "DP Training"
+    Use `sum_gradients()` for DP training - it sums clipped gradients across devices.
     For generic PyTree reduction, use `reduce_pytree()`.
 
 ::: opaque.distributed.sum_gradients
@@ -93,22 +93,6 @@ for batch in dataloader:
     options:
         show_source: true
         heading_level: 3
-
-### Deprecated Functions
-
-!!! warning "Deprecated"
-    The following functions are deprecated and will be removed in v3.0.0.
-    Use `sum_gradients()` or `reduce_pytree()` instead.
-
-::: opaque.distributed.all_reduce_gradients
-    options:
-        show_source: true
-        heading_level: 4
-
-::: opaque.distributed.average_gradients
-    options:
-        show_source: true
-        heading_level: 4
 
 ## State Synchronization
 

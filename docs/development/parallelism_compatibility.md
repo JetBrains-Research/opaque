@@ -32,7 +32,7 @@
 
 ### Implementation
 - **Module**: `src/opaque/distributed/gradients.py`
-- **APIs**: `sum_gradients()`, `reduce_pytree()` (deprecated: `average_gradients`, `all_reduce_gradients`)
+- **APIs**: `sum_gradients()`, `reduce_pytree()`
 - **Tests**: 
   - `tests/distributed/test_ddp_integration.py` - DDP primitives
   - `tests/distributed/test_ddp_models.py` - Integration with real models
