@@ -346,7 +346,7 @@ params = dp_optimizer.step(params, noisy_grads)
 
 ## Distributed Training
 
-TorchOpt optimizers work seamlessly with DDP/FSDP distributed training—**no changes needed**.
+TorchOpt optimizers work seamlessly with DDP distributed training—**no changes needed**.
 
 ### Optimizer States in DDP
 
@@ -394,7 +394,7 @@ for step, batch in enumerate(dataloader):
 **❌ Don't use `torchopt.distributed` for DDP:**
 
 - `torchopt.distributed` is for **RPC-based parameter server parallelism** (different paradigm)
-- For DDP/FSDP, use `opaque.distributed` utilities (`sum_gradients`, etc.)
+- For DDP, use `opaque.distributed` utilities (`sum_gradients`, etc.)
 - See [Distributed Training](distributed.md#torchoptdistributed-vs-opaquedistributed) for details
 
 **⚠️ Optimizer state drift:**

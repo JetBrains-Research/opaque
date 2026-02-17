@@ -22,7 +22,7 @@ Opaque provides utilities for distributed DP-SGD that maintain privacy guarantee
     
     for batch in dataloader:
         grads = clipped_grad_fn(params, batch)
-        grads = all_reduce_gradients(grads, op="sum")  # Aggregate FIRST
+        grads = sum_gradients(grads)  # Aggregate FIRST
         noisy_grads, noise_state = noise_fn(grads, noise_state)  # Then add noise
         params = optimizer_update(params, noisy_grads)
     ```
@@ -62,7 +62,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.func import functional_call
 from opaque.clipping import clipped_grad
-from opaque.distributed import all_reduce_gradients
+from opaque.distributed import sum_gradients
 from opaque.noise import gaussian_noise
 from opaque.sampling import PoissonSampler
 
@@ -114,7 +114,7 @@ for epoch in range(num_epochs):
         grads, clip_state = clipped_grad_fn(params, batch, state=clip_state)
         
         # 2. Aggregate gradients across devices (SUM)
-        grads = all_reduce_gradients(grads, op="sum")
+        grads = sum_gradients(grads)
         
         # 3. Add noise (same noise on all devices - no manual seed management!)
         noisy_grads, noise_state = noise_fn(grads, noise_state)
@@ -143,7 +143,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.func import functional_call
 from opaque.clipping import clipped_grad
-from opaque.distributed import all_reduce_gradients
+from opaque.distributed import sum_gradients
 from opaque.noise import band_mf_noise  # ← Only difference!
 from opaque.sampling import PoissonSampler
 
@@ -201,7 +201,7 @@ for epoch in range(num_epochs):
         grads, clip_state = clipped_grad_fn(params, batch, state=clip_state)
         
         # 2. Aggregate across devices (SUM)
-        grads = all_reduce_gradients(grads, op="sum")
+        grads = sum_gradients(grads)
         
         # 3. Add correlated noise (same noise on all devices!)
         noisy_grads, noise_state = noise_fn(grads, noise_state)
@@ -276,7 +276,7 @@ for batch in dataloader:
     grads, clip_state = clipped_grad_fn(params, batch, state=clip_state)
     
     # 2. Aggregate
-    grads = all_reduce_gradients(grads, op="sum")
+    grads = sum_gradients(grads)
     
     # 3. Add noise (mechanism determined by initialization above)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
@@ -317,7 +317,7 @@ See [Matrix Factorization Guide](matrix-factorization.md) for detailed explanati
 ```python
 import torch.distributed as dist
 from opaque.clipping import clipped_grad
-from opaque.distributed import all_reduce_gradients, get_rank
+from opaque.distributed import sum_gradients, get_rank
 from opaque.noise import gaussian_noise
 from opaque.sampling import PoissonSampler
 
@@ -345,7 +345,7 @@ for batch in dataloader:
     grads, clip_state = clipped_grad_fn(params, batch, state=clip_state)
     
     # 2. Aggregate across devices
-    grads = all_reduce_gradients(grads, op="sum")
+    grads = sum_gradients(grads)
     
     # 3. Add synchronized noise on ALL devices (no manual seed management)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
@@ -378,7 +378,7 @@ sampler = PoissonSampler(dataset, sample_rate=0.01, mode=SamplingMode.INDEPENDEN
 # Training loop (same as sharded)
 for batch in dataloader:
     grads, clip_state = clipped_grad_fn(params, batch, state=clip_state)
-    grads = all_reduce_gradients(grads, op="sum")
+    grads = sum_gradients(grads, op="sum")
     noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = optimizer_update(params, noisy_grads)
 ```
@@ -545,7 +545,7 @@ sampler = PoissonSampler(dataset, sample_rate=0.01, mode=SamplingMode.SHARDED, g
 
 for batch in dataloader:
     grads = clipped_grad_fn(params, batch)
-    grads = all_reduce_gradients(grads)  # Aggregate across devices
+    grads = sum_gradients(grads)  # Aggregate across devices
     noisy_grads = noise_fn(grads, noise_state)  # Synchronized noise
 ```
 
@@ -572,7 +572,7 @@ sampler = PoissonSampler(dataset, sample_rate=0.01, mode=SamplingMode.INDEPENDEN
 
 for batch in dataloader:
     grads = clipped_grad_fn(params, batch)
-    grads = all_reduce_gradients(grads)  # Aggregate across devices
+    grads = sum_gradients(grads)  # Aggregate across devices
     noisy_grads = noise_fn(grads, noise_state)  # Synchronized noise
     # (no sharding synchronization needed!)
 ```
@@ -700,7 +700,7 @@ sampler = PoissonSampler(dataset, sample_rate=0.01)  # Auto SHARDED
 
 for batch in dataloader:
     grads = clipped_grad_fn(params, batch)
-    grads = all_reduce_gradients(grads, op="sum")  # Sum across devices
+    grads = sum_gradients(grads)  # Sum across devices
     
     # All devices use same noise (synchronized)
     noisy_grads = noise_fn(grads, noise_state)
@@ -721,26 +721,26 @@ sampler = PoissonSampler(dataset, sample_rate=0.01, mode=SamplingMode.INDEPENDEN
 
 for batch in dataloader:
     grads = clipped_grad_fn(params, batch)
-    grads = all_reduce_gradients(grads, op="sum")
+    grads = sum_gradients(grads)
     
     # All devices use same noise (synchronized)
     noisy_grads = noise_fn(grads, noise_state)
     
     # Update
-    params = params - lr * noisy_grads
+    params = params - lr *noisy_grads
 ```
 
-**⚠️ Important: Use `sum`, NOT `average_gradients()`**
+**⚠️ Important: Use `sum`, NOT `average`**
 
-`average_gradients()` divides by `world_size`, but Poisson sampling creates **different total batch sizes per step**:
+`reduce_pytree(op="mean")` divides by `world_size`, but Poisson sampling creates **different total batch sizes per step**:
 
 ```python
 # WRONG: Dividing by world_size instead of total batch size
-grads = average_gradients(grads)  # Divides by 4
+grads, _ = reduce_pytree(grads, op="mean")  # Divides by 4
 # Effective update: (sum of 6+10+7+9=32 clipped grads) / 4
 
 # ✅ CORRECT: Sum without dividing
-grads = all_reduce_gradients(grads, op="sum")
+grads = sum_gradients(grads)
 # Effective update: sum of all clipped grads (not normalized)
 ```
     
@@ -750,47 +750,61 @@ grads = all_reduce_gradients(grads, op="sum")
 
 ### Gradient Aggregation
 
-Opaque provides two functions for gradient aggregation:
+Opaque provides two functions for gradient aggregation across GPUs:
 
-#### `average_gradients()`
+#### `sum_gradients()`
 
-Average gradients across all GPUs (most common):
-
-```python
-from opaque.distributed import average_gradients
-
-# After computing local noisy gradients
-noisy_grads = noise_fn(clipped_grads)
-
-# Average across all GPUs
-avg_grads = average_gradients(noisy_grads)
-```
-
-#### `all_reduce_gradients()`
-
-Sum gradients across all GPUs (no averaging):
+**Primary function** for DP training - sums clipped gradients across devices:
 
 ```python
-from opaque.distributed import all_reduce_gradients
+from opaque.distributed import sum_gradients
 
-# Sum across all GPUs (no division by world_size)
-summed_grads = all_reduce_gradients(noisy_grads)
+# After computing local clipped gradients
+clipped_grads = clipped_grad_fn(params, batch)
+
+# Sum across all GPUs
+grads = sum_gradients(clipped_grads)
 ```
 
-!!! tip "Sum (Not Average) for Poisson Sampling"
-    **For proper Poisson sampling privacy amplification**, use `all_reduce_gradients(op="sum")`:
+**Why sum, not average?**
+- DP-SGD needs total of clipped gradients before noise
+- Sensitivity is C (clip norm), not C/world_size
+- Noise calibration: σ = noise_multiplier * C
+
+#### `reduce_pytree()`
+
+**Generic reduction** for any PyTree of tensors (not just gradients):
+
+```python
+from opaque.distributed import reduce_pytree
+
+# Sum operation (default)
+result, _ = reduce_pytree(pytree, op="sum")
+
+# Mean operation
+result, _ = reduce_pytree(pytree, op="mean")
+
+# Other operations: "max", "min", "product"
+```
+
+**Use `reduce_pytree` when you need:**
+- Averaging metrics or scalars
+- Custom reduction operations
+- Non-gradient aggregation
+
+!!! tip "Use `sum_gradients()` for DP Training"
+    **For differential privacy**, always use `sum_gradients()`:
     
-    - **`all_reduce_gradients(op="sum")`** (recommended for Poisson sampling):
+    - ✅ **`sum_gradients(grads)`**: Correct for DP-SGD
         - No division by world_size
-        - `params -= lr * (sum of all clipped grads)`
-        - ✅ Preserves independent Poisson sampling property
-        - ✅ Correct for variable batch sizes
-        - Effective LR varies per step (acceptable for DP-SGD)
+        - Preserves DP sensitivity (C, not C/world_size)
+        - Works with variable batch sizes (Poisson sampling)
+        - Standard privacy accounting
     
-    - **`average_gradients()`** is WRONG for independent Poisson sampling:
-        - Divides by world_size (not total examples)
-        - ❌ Breaks gradient scaling when batch sizes differ
-        - Only use if all devices have exact same batch size (not recommended for DP)
+    - ❌ **Averaging is WRONG for DP**:
+        - Changes gradient scaling incorrectly
+        - Breaks privacy sensitivity calculations
+        - Incompatible with proper noise calibration
     
     **Privacy accounting:** Use total examples across all devices per step.
     
@@ -868,7 +882,7 @@ if step % 100 == 0 and distributed:
 
 ### TorchOpt.distributed vs opaque.distributed
 
-**Important:** TorchOpt has a `torchopt.distributed` module—this is **NOT for DDP/FSDP training**.
+**Important:** TorchOpt has a `torchopt.distributed` module—this is **NOT for DDP training**.
 
 #### TorchOpt.distributed (RPC-based)
 
@@ -886,7 +900,7 @@ def distributed_forward(params, batch):
 
 **Use case:** Synchronous distributed function evaluation with custom reducers (research/experimental)
 
-#### opaque.distributed (DDP/FSDP-focused)
+#### opaque.distributed (DDP-focused)
 
 **Design:** Peer-to-peer AllReduce with NCCL backend (production standard)
 
@@ -898,7 +912,7 @@ from opaque.distributed import sum_gradients, reduce_pytree, sync_state
 grads = sum_gradients(grads)  # Uses dist.all_reduce under the hood
 ```
 
-**Use case:** Standard data-parallel DDP/FSDP training (recommended for DP-SGD)
+**Use case:** Standard data-parallel DDP training (recommended for DP-SGD)
 
 #### Why We Don't Integrate TorchOpt.distributed
 
@@ -913,7 +927,7 @@ grads = sum_gradients(grads)  # Uses dist.all_reduce under the hood
 - **Simplicity:** DDP is standard practice; RPC requires complex orchestration
 - **DP-SGD patterns:** Gradient summing + noise injection fits naturally with AllReduce
 
-**User takeaway:** Use `opaque.distributed` for DDP/FSDP training, ignore `torchopt.distributed` (it's for different use cases).
+**User takeaway:** Use `opaque.distributed` for DDP training, ignore `torchopt.distributed` (it's for different use cases).
 
 ### Distributed Utilities
 
@@ -940,8 +954,8 @@ from transformers import AutoModelForCausalLM
 from peft import get_peft_model, LoraConfig
 
 from opaque.clipping import adaptive_clipped_grad
-from opaque.distributed import average_gradients, is_initialized, get_rank
-from opaque.noise import gaussian
+from opaque.distributed import sum_gradients, get_rank
+from opaque.noise import gaussian_noise
 from opaque.utils import make_functional, merge
 
 
@@ -996,9 +1010,8 @@ def main():
         microbatch_size=2,
     )
     
-    # Independent noise: offset seed by rank for privacy amplification
-    from opaque.noise import gaussian_noise
-    noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42 + rank)
+    # Noise: Same seed on all devices for synchronized noise
+    noise_fn, noise_state = gaussian_noise(stddev=1.1)
     
     # Training loop
     for epoch in range(num_epochs):
@@ -1011,12 +1024,12 @@ def main():
                 trainable, batch, state=clip_state
             )
             
-            # 2. Add noise locally (different per device)
-            noisy_grads, noise_state = noise_fn(grads, noise_state)
-            
-            # 3. Average across GPUs
+            # 2. Sum gradients across GPUs
             if distributed:
-                noisy_grads = average_gradients(noisy_grads)
+                grads = sum_gradients(grads)
+            
+            # 3. Add noise (same noise on all devices!)
+            noisy_grads, noise_state = noise_fn(grads, noise_state)
             
             # 4. Update parameters
             trainable = optimizer_update(trainable, noisy_grads)
@@ -1300,9 +1313,9 @@ See working examples in the repository:
 
 Current DDP support limitations:
 
-1. **No FSDP support** - Fully Sharded Data Parallel not yet supported (coming soon)
-2. **Single-node only** - Multi-node DDP not tested (but should work)
-3. **NCCL backend only** - Other backends (Gloo, MPI) not tested
+1. **Single-node only** - Multi-node DDP not extensively tested (but should work)
+2. **NCCL backend recommended** - Other backends (Gloo, MPI) may work but are not tested
+3. **FSDP not yet supported** - Fully Sharded Data Parallel requires additional implementation
 
 ## Next Steps
 

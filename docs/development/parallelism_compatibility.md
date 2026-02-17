@@ -1,34 +1,43 @@
 # Parallelism Strategies: vmap Compatibility Investigation
 
+**⚠️ RESEARCH DOCUMENT**: This document describes compatibility investigations, not current implementation status.
+
 **Summary**: Investigation of PyTorch parallelism strategies (DDP, FSDP, TP, SP, PP) for compatibility with Opaque's per-example gradient computation via `torch.func.vmap`.
 
 **Date**: February 15, 2026  
 **Hardware**: 4x NVIDIA L4 GPUs (23GB each)  
 **PyTorch**: 2.10.0+cu128
 
+**Current Implementation Status (as of Feb 2026):**
+- ✅ **DDP**: Fully implemented and production-ready  
+- ❌ **FSDP**: Investigated as compatible, but **NOT YET IMPLEMENTED**  
+- ❌ **TP/PP**: Blocked by vmap incompatibilities
+
 ---
 
 ## Quick Reference
 
-| Strategy | vmap Compatible? | Status | Use Case |
-|----------|-----------------|---------|----------|
-| **DDP** | ✅ Yes | Implemented | Multi-GPU data parallelism |
-| **FSDP** | ✅ Yes | Implemented | 8B-13B models (parameter sharding) |
-| **Tensor Parallelism** | ❌ No | Blocked | 70B+ models (layer sharding) |
-| **Pipeline Parallelism** | ❌ No | Incompatible | Not applicable to DP-SGD |
+| Strategy | vmap Compatible? | Implementation Status | Use Case |
+|----------|-----------------|----------------------|----------|
+| **DDP** | ✅ Yes | ✅ **Implemented** | Multi-GPU data parallelism |
+| **FSDP** | ✅ Yes | ⏳ **Not Implemented** (compatible, planned) | 8B-13B models (parameter sharding) |
+| **Tensor Parallelism** | ❌ No | ❌ **Blocked** | 70B+ models (layer sharding) |
+| **Pipeline Parallelism** | ❌ No | ❌ **Incompatible** | Not applicable to DP-SGD |
 
 ---
 
 ## 1. Data Parallelism (DDP)
 
-### Status: ✅ **FULLY COMPATIBLE**
+### Status: ✅ **FULLY IMPLEMENTED & PRODUCTION READY**
 
 ### Implementation
 - **Module**: `src/opaque/distributed/gradients.py`
-- **APIs**: `average_gradients()`, `all_reduce_gradients()`
+- **APIs**: `sum_gradients()`, `reduce_pytree()` (deprecated: `average_gradients`, `all_reduce_gradients`)
 - **Tests**: 
   - `tests/distributed/test_ddp_integration.py` - DDP primitives
   - `tests/distributed/test_ddp_models.py` - Integration with real models
+- **Examples**:
+  - `examples/train_qwen_ddp.py` - Complete DDP training script
 
 ### How It Works
 1. Each GPU has a full copy of the model
@@ -41,11 +50,13 @@ Per-example gradients can be computed independently on each GPU, then aggregated
 
 ---
 
-## 2. Fully Sharded Data Parallelism (FSDP)
+## 2. Fully ⏳ **COMPATIBLE BUT NOT YET IMPLEMENTED**
 
-### Status: ✅ **FULLY COMPATIBLE**
+**Investigation Results:** FSDP is confirmed compatible with vmap (tests passed), but the production implementation in `src/opaque/distributed/` has not been completed yet.
 
-### Investigation
+### Investigation (Proof of Concept)
+- **Script**: `examples/fsdp_vmap_compatibility.py` (if exists - research only)
+- **Documentation**: `docs/development/fsdp_investigation.md` (if exists)
 - **Script**: `examples/fsdp_vmap_compatibility.py`
 - **Documentation**: `docs/development/fsdp_investigation.md`
 - **Implementation**: `src/opaque/distributed/fsdp.py`
