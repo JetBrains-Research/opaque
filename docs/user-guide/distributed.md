@@ -810,6 +810,111 @@ clip_state = sync_state(clip_state)
 clip_norm = sync_scalar(clip_norm)
 ```
 
+### Optimizer State Synchronization (TorchOpt)
+
+**TL;DR:** TorchOpt optimizer states stay synchronized automatically in DDP—no manual sync needed.
+
+#### How It Works
+
+TorchOpt follows JAX's Optax functional design:
+
+```python
+import torchopt
+
+# Initialize optimizer and state
+opt = torchopt.adam(lr=1e-3)
+opt_state = opt.init(params)  # State: (ScaleByAdamState(mu, nu, count), EmptyState())
+
+# Update step (pure function)
+updates, opt_state = opt.update(grads, opt_state, params=params)
+params = torchopt.apply_updates(params, updates)
+```
+
+**Key property:** `opt.update()` is a **pure function**—given the same inputs (grads, state, params), it always produces the same outputs.
+
+#### Why States Stay Synchronized in DDP
+
+1. **Identical initial states:** All devices call `opt.init(params)` with the same parameters → identical `opt_state` on all devices
+2. **Identical gradients:** After `sum_gradients()` and noise injection (same seed), all devices have identical `noisy_grads`
+3. **Deterministic updates:** `opt.update(noisy_grads, opt_state)` is pure → produces identical `opt_state` on all devices
+
+**Result:** Optimizer states evolve identically across all devices without explicit synchronization.
+
+#### Validation
+
+This assumption is theoretically sound but **never empirically validated** in Opaque's test suite. Key risks:
+
+- **Floating-point drift:** Accumulation errors over many steps (especially with FP16)
+- **Non-determinism:** If any device computes gradients differently (rare with DDP)
+- **Bugs:** Implementation errors in gradient aggregation or noise injection
+
+**Recommendation:** For production use, consider adding validation by:
+
+```python
+# Periodically check optimizer state drift across devices
+if step % 100 == 0 and distributed:
+    from opaque.distributed import gather_tensors
+    
+    # Gather first momentum tensor from all devices
+    local_mu = opt_state[0].mu[0]  # First parameter's momentum
+    all_mus = gather_tensors(local_mu, rank, world_size)
+    
+    if rank == 0:
+        # Check if all devices have identical state
+        max_diff = max(torch.max(torch.abs(all_mus[i] - all_mus[0])) for i in range(1, world_size))
+        if max_diff > 1e-5:
+            print(f"⚠️ Warning: Optimizer state drift detected: {max_diff:.2e}")
+```
+
+### TorchOpt.distributed vs opaque.distributed
+
+**Important:** TorchOpt has a `torchopt.distributed` module—this is **NOT for DDP/FSDP training**.
+
+#### TorchOpt.distributed (RPC-based)
+
+**Design:** Master-worker parameter server parallelism via PyTorch RPC
+
+**API:**
+```python
+from torchopt.distributed import parallelize, mean_reducer, sum_reducer
+
+# Parallelize a function across RPC workers
+@parallelize(partitioner=batch_partitioner, reducer=mean_reducer)
+def distributed_forward(params, batch):
+    return model(params, batch)
+```
+
+**Use case:** Synchronous distributed function evaluation with custom reducers (research/experimental)
+
+#### opaque.distributed (DDP/FSDP-focused)
+
+**Design:** Peer-to-peer AllReduce with NCCL backend (production standard)
+
+**API:**
+```python
+from opaque.distributed import sum_gradients, reduce_pytree, sync_state
+
+# Aggregate gradients across all GPUs
+grads = sum_gradients(grads)  # Uses dist.all_reduce under the hood
+```
+
+**Use case:** Standard data-parallel DDP/FSDP training (recommended for DP-SGD)
+
+#### Why We Don't Integrate TorchOpt.distributed
+
+**Architectural mismatch:**
+
+- **TorchOpt.distributed:** Targets function-level parallelization with RPC (like JAX's `pmap` with explicit device assignment)
+- **opaque.distributed:** Targets gradient-level synchronization with AllReduce (like PyTorch's native DDP)
+
+**Practical reasons:**
+
+- **Performance:** AllReduce (NCCL) is optimized for gradient aggregation; RPC adds overhead
+- **Simplicity:** DDP is standard practice; RPC requires complex orchestration
+- **DP-SGD patterns:** Gradient summing + noise injection fits naturally with AllReduce
+
+**User takeaway:** Use `opaque.distributed` for DDP/FSDP training, ignore `torchopt.distributed` (it's for different use cases).
+
 ### Distributed Utilities
 
 ```python

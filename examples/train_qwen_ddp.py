@@ -35,7 +35,9 @@ def compute_causal_lm_loss(logits, targets):
 
     shift_logits = logits[:, :-1, :].contiguous()
     shift_targets = targets[:, 1:].contiguous()
-    return F.cross_entropy(shift_logits.view(-1, logits.size(-1)), shift_targets.view(-1))
+    return F.cross_entropy(
+        shift_logits.view(-1, logits.size(-1)), shift_targets.view(-1)
+    )
 
 
 def setup_distributed():
@@ -190,8 +192,13 @@ def main():
         stddev=noise_multiplier * clip_state.sensitivity(),
     )
 
+    # TorchOpt functional optimizer (same initialization on all devices)
     opt = torchopt.sgd(lr=learning_rate)
     opt_state = opt.init(trainable)
+    # ℹ️ Optimizer state stays synchronized automatically:
+    #    - opt.update() is a pure function (same inputs → same outputs)
+    #    - After sum_gradients() + noise (same seed), all devices have identical noisy_grads
+    #    - Therefore, opt_state evolves identically on all devices (no explicit sync needed)
 
     if distributed:
         dist.barrier()
@@ -205,12 +212,12 @@ def main():
             print(f"Epoch {epoch + 1}/{num_epochs}")
         for batch in batches:
             (grads, aux), clip_state = grad_fn(trainable, batch, state=clip_state)
-            
+
             # Standard DP-SGD with sharded Poisson sampling:
             # 1. Aggregate clipped gradients across devices
             if distributed:
                 grads = sum_gradients(grads)  # Sum before noise
-            
+
             # 2. Add noise on EVERY device (all with same seed → same noise)
             # ⚠️ CRITICAL: noise_fn() is called on EVERY device in the distributed setting
             #    NOT just the main rank! Each device independently applies the same noise.
@@ -219,10 +226,14 @@ def main():
             # 3. Update parameters with noisy aggregated gradients
             updates, opt_state = opt.update(noisy_grads, opt_state, params=trainable)
             trainable = torchopt.apply_updates(trainable, updates)
+            # ℹ️ opt_state is now identical on all devices (pure function property)
+            # No explicit synchronization needed!
 
             if is_main and global_step % 20 == 0:
                 loss_val = aux.loss_values.mean().item()
-                clip_rate = (aux.grad_norms > clip_state.clip_norm).float().mean().item()
+                clip_rate = (
+                    (aux.grad_norms > clip_state.clip_norm).float().mean().item()
+                )
                 print(
                     f"Step {global_step:4d}: loss={loss_val:.4f}, "
                     f"clip_rate={clip_rate:.1%}, clip_norm={clip_state.clip_norm:.3f}"
