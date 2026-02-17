@@ -602,8 +602,7 @@ See DESIGN_COMPARISON_EXAMPLES.md for detailed code examples. Key functional pat
 
 **Prerequisite**: Phase 1A complete - we know what patterns users actually need
 
-**Note**: Batch selection strategies DEFERRED - only needed for BandMF (Phase 3). Not implementing until then:
-- ~~CyclicPoissonSampling~~ (defer to Phase 3 when implementing BandMF)
+**Note**: Batch selection strategies are now implemented. Not implementing (out of scope for BandMF):
 - ~~BallsInBinsSampling~~ (defer - unclear if needed)
 - ~~FixedBatchSampling~~ (users can use standard PyTorch DataLoader)
 - ~~UserSelectionStrategy~~ (federated learning out of scope for v1.0)
@@ -647,15 +646,15 @@ See DESIGN_COMPARISON_EXAMPLES.md for detailed code examples. Key functional pat
 
 **Goal**: Implement correlated noise mechanisms (BandMF, DP-FTRL) for 10-50% utility improvement
 
-**Note**: NOW we implement batch selection strategies (CyclicPoissonSampling) - required for BandMF amplification
+**Note**: Batch sampling strategies (CyclicPoissonSampler) are now complete with DDP support
 
 **Week 1-2: Batch Selection for BandMF + Matrix Core**
-- [ ] **Implement `opaque.sampling` module** (only what BandMF needs)
-  - `CyclicPoissonSampling` - Required for BandMF privacy amplification
+- [x] **Implement `opaque.sampling` module** (only what BandMF needs)
+  - [x] `CyclicPoissonSampler` - PyTorch Sampler for BandMF privacy amplification with DDP support
   - `split_and_pad_global_batch()` - Split with padding (-1 indices)
   - **Skip** BallsInBinsSampling, FixedBatchSampling, UserSelectionStrategy (not needed for BandMF)
-  - Integration with PyTorch DataLoader
-  - Tests: Validate cyclic sampling distribution
+  - [x] Integration with PyTorch DataLoader
+  - [x] Tests: Validate cyclic sampling distribution with DDP modes
 - [ ] **Implement `opaque.matrix_factorization` module structure**
   - `streaming_matrix.py` - Abstract interface for matrix multiplication
   - `dense.py` - Small-scale exact factorizations (start here)
