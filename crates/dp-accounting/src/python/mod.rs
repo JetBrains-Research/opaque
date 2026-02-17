@@ -1,7 +1,7 @@
 //! PyO3 Python bindings for the functional DP accounting API.
 //!
 //! This module exposes the Rust-based PLD accounting engine to Python as
-//! `opaque_dp_accounting`. The API is designed to feel native to Python:
+//! `opaque_accounting`. The API is designed to feel native to Python:
 //!
 //! - **Natural names**: `gaussian`, `poisson`, `compose` (no `py_` prefix)
 //! - **Operator overloads**: `step * 1000` for repetition, `a | b` for composition
@@ -21,15 +21,15 @@ use pyo3::types::PyDict;
 use std::time::Instant;
 
 use crate::error::PldError;
-use crate::functional::amplification::{accumulate, poisson, truncated_poisson};
-use crate::functional::composition::{compose, repeat};
-use crate::functional::discretization::DiscretizationConfig;
-use crate::functional::mechanisms::eps_delta::{eps_delta, eps_delta_with};
-use crate::functional::mechanisms::gaussian::{gaussian, gaussian_with};
-use crate::functional::mechanisms::identity::{identity, identity_with};
-use crate::functional::pld::PrivacyLossDistribution;
-use crate::functional::process::Process;
-use crate::functional::transforms::adaclip::adaclip;
+use crate::amplification::{accumulate, poisson, truncated_poisson};
+use crate::composition::{compose, repeat};
+use crate::discretization::DiscretizationConfig;
+use crate::mechanisms::eps_delta::{eps_delta, eps_delta_with};
+use crate::mechanisms::gaussian::{gaussian, gaussian_with};
+use crate::mechanisms::identity::{identity, identity_with};
+use crate::pld::PrivacyLossDistribution;
+use crate::process::Process;
+use crate::transforms::adaclip::adaclip;
 
 // ---------------------------------------------------------------------------
 // Error conversion
@@ -88,7 +88,7 @@ impl Process for ProcessWrapper {
 
 /// A differential privacy process that can be queried for privacy guarantees.
 ///
-/// ``DpProcess`` is the central class in ``opaque_dp_accounting``.  Every
+/// ``DpProcess`` is the central class in ``opaque_accounting``.  Every
 /// mechanism constructor (``gaussian``, ``poisson``, ``adaclip``, ...) returns
 /// a ``DpProcess``, and composition operators produce new ``DpProcess`` instances.
 ///
@@ -101,7 +101,6 @@ impl Process for ProcessWrapper {
 /// - :func:`eps_delta` -- fixed (epsilon, delta) guarantee
 /// - :func:`identity` -- zero privacy loss
 /// - :func:`adaclip` -- adaptive clipping (Andrew et al. 2021)
-/// - :func:`poisson_adaclip` -- Poisson + AdaClip combined
 ///
 /// **Composition**:
 ///
@@ -125,7 +124,7 @@ impl Process for ProcessWrapper {
 ///
 /// Example::
 ///
-///     import opaque_dp_accounting as dp
+///     import opaque_accounting as dp
 ///
 ///     step = dp.poisson(1.1, 0.01)
 ///     training = step * 1000
@@ -544,7 +543,7 @@ impl PyDiscretizationConfig {
 fn make_gaussian(
     noise_multiplier: f64,
     config: Option<&PyDiscretizationConfig>,
-) -> Result<crate::functional::mechanisms::Gaussian, PldError> {
+) -> Result<crate::mechanisms::Gaussian, PldError> {
     match config {
         Some(c) => gaussian_with(noise_multiplier, c.inner.clone()),
         None => gaussian(noise_multiplier),
@@ -698,12 +697,8 @@ fn py_identity(config: Option<PyDiscretizationConfig>) -> PyResult<PyDpProcess> 
 ///     training = step * 1000
 ///     eps = training.epsilon_at(1e-5)
 ///
-///     # One-liner equivalent
-///     eps = dp.compute_epsilon(1.1, 0.01, 1000, 1e-5)
-///
 /// See Also:
 ///     :func:`truncated_poisson` for capped batch sizes (tighter bounds).
-///     :func:`compute_epsilon` for a one-liner.
 #[pyfunction]
 #[pyo3(name = "poisson", signature = (noise_multiplier, sample_rate, config=None))]
 fn py_poisson(
@@ -858,8 +853,6 @@ fn py_accumulate(
 ///     step = dp.adaclip(1.1, quantile_noise_std=50.0)
 ///     eps = step.epsilon_at(1e-5)
 ///
-/// See Also:
-///     :func:`poisson_adaclip` for the subsampled variant.
 #[pyfunction]
 #[pyo3(name = "adaclip", signature = (noise_multiplier, quantile_noise_std, config=None))]
 fn py_adaclip(
@@ -878,51 +871,6 @@ fn py_adaclip(
         vec![
             ("noise_multiplier", ParamValue::Float(noise_multiplier)),
             ("quantile_noise_std", ParamValue::Float(quantile_noise_std)),
-        ],
-    ))
-}
-
-/// Poisson-subsampled AdaClip Gaussian.
-///
-/// Convenience wrapper combining adaptive clipping with Poisson subsampling.
-/// Equivalent to ``dp.poisson(dp.adaclip(nm, sigma_b), sample_rate)`` but
-/// constructed in a single call.
-///
-/// Args:
-///     noise_multiplier (float): Gradient noise multiplier.
-///     quantile_noise_std (float): AdaClip quantile noise std.
-///     sample_rate (float): Poisson sampling rate q = batch_size / dataset_size.
-///     config (DiscretizationConfig, optional): Override default PLD precision.
-///
-/// Returns:
-///     DpProcess: A single Poisson-subsampled AdaClip step.
-///
-/// Example::
-///
-///     step = dp.poisson_adaclip(1.1, quantile_noise_std=50.0, sample_rate=0.01)
-///     training = step * 1000
-///     eps = training.epsilon_at(1e-5)
-#[pyfunction]
-#[pyo3(name = "poisson_adaclip", signature = (noise_multiplier, quantile_noise_std, sample_rate, config=None))]
-fn py_poisson_adaclip(
-    noise_multiplier: f64,
-    quantile_noise_std: f64,
-    sample_rate: f64,
-    config: Option<PyDiscretizationConfig>,
-) -> PyResult<PyDpProcess> {
-    let g = make_gaussian(noise_multiplier, config.as_ref()).map_err(to_py_err)?;
-    let ac = adaclip(g, quantile_noise_std);
-    let p = poisson(ac, sample_rate);
-    Ok(PyDpProcess::new(
-        Box::new(p),
-        format!(
-            "PoissonAdaClip(noise_multiplier={}, quantile_noise_std={}, sample_rate={})",
-            noise_multiplier, quantile_noise_std, sample_rate
-        ),
-        vec![
-            ("noise_multiplier", ParamValue::Float(noise_multiplier)),
-            ("quantile_noise_std", ParamValue::Float(quantile_noise_std)),
-            ("sample_rate", ParamValue::Float(sample_rate)),
         ],
     ))
 }
@@ -964,120 +912,6 @@ fn py_compose(left: &PyDpProcess, right: &PyDpProcess) -> PyResult<PyDpProcess> 
 }
 
 // ---------------------------------------------------------------------------
-// Module-level functions — convenience / calibration
-// ---------------------------------------------------------------------------
-
-/// Compute epsilon for a standard DP-SGD training run (one-liner).
-///
-/// This is a convenience function equivalent to::
-///
-///     (dp.poisson(noise_multiplier, sample_rate) * num_steps).epsilon_at(delta)
-///
-/// Use this for quick privacy analysis without constructing intermediate
-/// process objects.  For more control (custom config, different mechanisms),
-/// build the process explicitly.
-///
-/// Args:
-///     noise_multiplier (float): Gaussian noise std / sensitivity.
-///     sample_rate (float): batch_size / dataset_size (Poisson sampling rate).
-///     num_steps (int): Number of DP-SGD training steps.
-///     delta (float): Target delta for (epsilon, delta)-DP.
-///
-/// Returns:
-///     float: The epsilon value for the full training run.
-///
-/// Raises:
-///     ValueError: If parameters are out of range.
-///
-/// Example::
-///
-///     # Quick privacy check for a training run
-///     eps = dp.compute_epsilon(1.1, 0.01, 1000, delta=1e-5)
-///     print(f"Training gives epsilon={eps:.2f}")  # ~3.73
-#[pyfunction]
-#[pyo3(name = "compute_epsilon", signature = (noise_multiplier, sample_rate, num_steps, delta))]
-fn py_compute_epsilon(
-    noise_multiplier: f64,
-    sample_rate: f64,
-    num_steps: usize,
-    delta: f64,
-) -> PyResult<f64> {
-    let g = gaussian(noise_multiplier).map_err(to_py_err)?;
-    let step = poisson(g, sample_rate);
-    let training = repeat(step, num_steps).map_err(to_py_err)?;
-    training.epsilon_at(delta).map_err(to_py_err)
-}
-
-/// Calibrate the noise multiplier to achieve a target (epsilon, delta) guarantee.
-///
-/// Uses bisection search: higher noise_multiplier = lower epsilon.  The search
-/// finds the **smallest** noise_multiplier such that the composed epsilon is
-/// at most ``target_epsilon``.
-///
-/// This is the inverse of :func:`compute_epsilon`: given a privacy target,
-/// find the noise level needed to achieve it.
-///
-/// Args:
-///     target_epsilon (float): Desired maximum epsilon.
-///     target_delta (float): Delta for the (epsilon, delta) guarantee.
-///     sample_rate (float): Poisson sampling rate q = batch_size / dataset_size.
-///     num_steps (int): Number of DP-SGD training steps.
-///     param_min (float): Lower bound on noise multiplier search (default 0.1).
-///     param_max (float): Upper bound on noise multiplier search (default 1.2).
-///     tolerance (float): Bisection convergence tolerance (default 1e-6).
-///     max_iterations (int): Maximum bisection iterations (default 100).
-///
-/// Returns:
-///     float: Calibrated noise multiplier.
-///
-/// Example::
-///
-///     nm = dp.calibrate_noise(
-///         target_epsilon=8.0,
-///         target_delta=1e-5,
-///         sample_rate=0.01,
-///         num_steps=1000,
-///     )
-///     # Verify
-///     actual_eps = dp.compute_epsilon(nm, 0.01, 1000, 1e-5)
-///     assert abs(actual_eps - 8.0) < 0.1
-#[pyfunction]
-#[pyo3(name = "calibrate_noise", signature = (target_epsilon, target_delta, sample_rate, num_steps, param_min=0.1, param_max=1.2, tolerance=1e-6, max_iterations=100))]
-fn py_calibrate_noise(
-    target_epsilon: f64,
-    target_delta: f64,
-    sample_rate: f64,
-    num_steps: usize,
-    param_min: f64,
-    param_max: f64,
-    tolerance: f64,
-    max_iterations: usize,
-) -> PyResult<f64> {
-    let mut lo = param_min;
-    let mut hi = param_max;
-
-    for _ in 0..max_iterations {
-        let mid = (lo + hi) / 2.0;
-        if (hi - lo) / 2.0 < tolerance {
-            return Ok(mid);
-        }
-
-        let g = gaussian(mid).map_err(to_py_err)?;
-        let step = poisson(g, sample_rate);
-        let training = repeat(step, num_steps).map_err(to_py_err)?;
-        let eps = training.epsilon_at(target_delta).map_err(to_py_err)?;
-
-        if eps > target_epsilon {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-
-    Ok((lo + hi) / 2.0)
-}
-
-// ---------------------------------------------------------------------------
 // Module registration
 // ---------------------------------------------------------------------------
 
@@ -1098,15 +932,10 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Transforms
     m.add_function(wrap_pyfunction!(py_adaclip, m)?)?;
-    m.add_function(wrap_pyfunction!(py_poisson_adaclip, m)?)?;
 
     // Composition
     m.add_function(wrap_pyfunction!(py_repeat, m)?)?;
     m.add_function(wrap_pyfunction!(py_compose, m)?)?;
-
-    // Convenience
-    m.add_function(wrap_pyfunction!(py_compute_epsilon, m)?)?;
-    m.add_function(wrap_pyfunction!(py_calibrate_noise, m)?)?;
 
     Ok(())
 }

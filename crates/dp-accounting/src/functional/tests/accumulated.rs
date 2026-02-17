@@ -19,7 +19,7 @@
 //! - Pre-training (1M dataset): q=0.000032 (batch 32), m=16, sigma=0.5
 
 use super::*;
-use crate::functional::composition::repeat;
+use crate::composition::repeat;
 
 // =========================================================================
 // Test configuration

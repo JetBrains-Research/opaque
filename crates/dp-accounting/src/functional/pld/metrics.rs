@@ -429,7 +429,7 @@ fn pmf_beta_symmetrized(pmf_remove: &Pmf, pmf_add: &Pmf, target_alpha: f64) -> f
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::functional::pld::pmf::Pmf;
+    use crate::pld::pmf::Pmf;
     use std::collections::BTreeMap;
 
     /// Helper: build a symmetric PLD from a Pmf

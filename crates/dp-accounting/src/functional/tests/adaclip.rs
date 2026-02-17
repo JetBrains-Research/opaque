@@ -9,8 +9,8 @@
 //! - Smaller `sigma_b` → worse privacy (more budget on quantile estimation)
 
 use super::*;
-use crate::functional::composition::repeat;
-use crate::functional::discretization::DiscretizationConfig;
+use crate::composition::repeat;
+use crate::discretization::DiscretizationConfig;
 
 // =========================================================================
 // Test configuration

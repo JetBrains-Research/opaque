@@ -38,10 +38,10 @@
 //!   with Adaptive Clipping." NeurIPS 2021.
 
 use crate::error::Result;
-use crate::functional::amplification::{PoissonAmplifiable, TruncatedPoissonAmplifiable};
-use crate::functional::mechanisms::Gaussian;
-use crate::functional::pld::PrivacyLossDistribution;
-use crate::functional::process::Process;
+use crate::amplification::{PoissonAmplifiable, TruncatedPoissonAmplifiable};
+use crate::mechanisms::Gaussian;
+use crate::pld::PrivacyLossDistribution;
+use crate::process::Process;
 
 // ---------------------------------------------------------------------------
 // Core traits
@@ -53,7 +53,7 @@ use crate::functional::process::Process;
 /// justified. Mechanisms without proven AdaClip analysis simply don't have an
 /// evidence type — compile error prevents invalid combinations.
 ///
-/// This mirrors [`PoissonEvidence`](crate::functional::amplification::PoissonEvidence):
+/// This mirrors [`PoissonEvidence`](crate::amplification::PoissonEvidence):
 /// the evidence system models scarcity of proven combinations, not generic
 /// improvement.
 pub trait AdaClipEvidence<P>: Clone {
@@ -258,7 +258,7 @@ impl AdaClipable for Gaussian {
 
 /// Wrap a mechanism with adaptive clipping (Andrew et al. 2021).
 ///
-/// Follows the same combinator pattern as [`poisson()`](crate::functional::amplification::poisson):
+/// Follows the same combinator pattern as [`poisson()`](crate::amplification::poisson):
 /// the inner mechanism must implement [`AdaClipable`], which proves the
 /// combination is mathematically valid.
 ///
@@ -322,8 +322,8 @@ pub fn combined_sensitivity(noise_multiplier: f64, quantile_noise_std: f64) -> f
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::functional::discretization::DiscretizationConfig;
-    use crate::functional::mechanisms::gaussian::gaussian;
+    use crate::discretization::DiscretizationConfig;
+    use crate::mechanisms::gaussian::gaussian;
 
     #[test]
     fn test_adaclip_constructor() {

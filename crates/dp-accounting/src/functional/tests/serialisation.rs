@@ -4,11 +4,11 @@
 //! JSON and deserialized back with full fidelity. Uses `serde_json` which is
 //! already in dev-dependencies.
 
-use crate::functional::calibrate::{
+use crate::calibrate::{
     target_advantage, target_beta_at, target_delta_at, target_epsilon_at, target_risk_at,
     CalibrateConfig, CalibrateResult, Target,
 };
-use crate::functional::*;
+use crate::*;
 
 /// Round-trip helper: serialize to JSON then deserialize back
 fn roundtrip<T: serde::Serialize + serde::de::DeserializeOwned + std::fmt::Debug + PartialEq>(
@@ -72,7 +72,7 @@ fn test_discretization_config_roundtrip() {
 
 #[test]
 fn test_adjacency_roundtrip() {
-    use crate::functional::adjacency::Adjacency;
+    use crate::adjacency::Adjacency;
     for adj in [Adjacency::Remove, Adjacency::Add, Adjacency::Replace] {
         roundtrip(&adj, &format!("Adjacency::{:?}", adj));
     }

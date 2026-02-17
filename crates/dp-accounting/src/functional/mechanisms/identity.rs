@@ -6,10 +6,10 @@
 use std::collections::BTreeMap;
 
 use crate::error::Result;
-use crate::functional::discretization::DiscretizationConfig;
-use crate::functional::pld::pmf::Pmf;
-use crate::functional::pld::PrivacyLossDistribution;
-use crate::functional::process::Process;
+use crate::discretization::DiscretizationConfig;
+use crate::pld::pmf::Pmf;
+use crate::pld::PrivacyLossDistribution;
+use crate::process::Process;
 
 /// Identity process (zero privacy loss)
 ///

@@ -33,18 +33,18 @@
 //! - \[CGK+24\]: "Scalable DP-SGD: shuffling vs. poisson subsampling" (NeurIPS 2024)
 
 use crate::error::Result;
-use crate::functional::adjacency::Adjacency;
-use crate::functional::discretization::discretize_asymmetric_mechanism;
-use crate::functional::mechanisms::Gaussian;
-use crate::functional::pld::PrivacyLossDistribution;
-use crate::functional::process::Process;
+use crate::adjacency::Adjacency;
+use crate::discretization::discretize_asymmetric_mechanism;
+use crate::mechanisms::Gaussian;
+use crate::pld::PrivacyLossDistribution;
+use crate::process::Process;
 use statrs::distribution::{Binomial, DiscreteCDF};
 
 use super::poisson::{
     poisson_gaussian_epsilon_bounds, poisson_gaussian_get_delta, PoissonEvidence,
     TightGaussianPoissonEvidence,
 };
-use crate::functional::discretization::config::EpsilonBounds;
+use crate::discretization::config::EpsilonBounds;
 
 // ---------------------------------------------------------------------------
 // Trait + types
@@ -523,7 +523,7 @@ pub fn truncated_poisson_with<P, E>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::functional::gaussian;
+    use crate::gaussian;
 
     #[test]
     fn test_truncated_poisson_constructor() {

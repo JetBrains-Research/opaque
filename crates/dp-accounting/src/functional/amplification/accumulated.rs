@@ -27,11 +27,11 @@
 //! - Google dp_accounting: `MixtureGaussianPrivacyLoss` class
 
 use crate::error::{PldError, Result};
-use crate::functional::adjacency::Adjacency;
-use crate::functional::discretization::{discretize_asymmetric_mechanism, EpsilonBounds};
-use crate::functional::mechanisms::Gaussian;
-use crate::functional::pld::PrivacyLossDistribution;
-use crate::functional::process::Process;
+use crate::adjacency::Adjacency;
+use crate::discretization::{discretize_asymmetric_mechanism, EpsilonBounds};
+use crate::mechanisms::Gaussian;
+use crate::pld::PrivacyLossDistribution;
+use crate::process::Process;
 use crate::math_helpers::logspace::log_sumexp;
 use crate::math_helpers::special::gaussian_log_cdf;
 use statrs::distribution::{ContinuousCDF, Normal};

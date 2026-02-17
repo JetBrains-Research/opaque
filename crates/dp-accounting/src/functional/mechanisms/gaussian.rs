@@ -25,12 +25,12 @@
 //!   of Privacy Loss Distributions." PETS 2022.
 
 use crate::error::{PldError, Result};
-use crate::functional::amplification::{PoissonAmplifiable, TightGaussianPoissonEvidence};
-use crate::functional::discretization::{
+use crate::amplification::{PoissonAmplifiable, TightGaussianPoissonEvidence};
+use crate::discretization::{
     discretize_symmetric_mechanism, DiscretizationConfig, EpsilonBounds,
 };
-use crate::functional::pld::PrivacyLossDistribution;
-use crate::functional::process::Process;
+use crate::pld::PrivacyLossDistribution;
+use crate::process::Process;
 
 /// Minimum supported noise multiplier for the functional API.
 ///

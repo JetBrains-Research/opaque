@@ -6,7 +6,7 @@
 //! Property tests: monotonicity (stricter target -> more noise).
 
 use super::*;
-use crate::functional::calibrate::{self, CalibrateConfig};
+use crate::calibrate::{self, CalibrateConfig};
 
 // =========================================================================
 // Round-trip helpers: calibrate -> verify process satisfies constraint

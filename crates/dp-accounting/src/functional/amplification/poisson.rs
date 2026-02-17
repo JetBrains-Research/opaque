@@ -18,11 +18,11 @@
 //! - Doroshenko et al. (2022). "Connect the Dots." PETS 2022.
 
 use crate::error::Result;
-use crate::functional::adjacency::Adjacency;
-use crate::functional::discretization::{discretize_asymmetric_mechanism, EpsilonBounds};
-use crate::functional::mechanisms::Gaussian;
-use crate::functional::pld::PrivacyLossDistribution;
-use crate::functional::process::Process;
+use crate::adjacency::Adjacency;
+use crate::discretization::{discretize_asymmetric_mechanism, EpsilonBounds};
+use crate::mechanisms::Gaussian;
+use crate::pld::PrivacyLossDistribution;
+use crate::process::Process;
 use crate::math_helpers::logspace::{log_a_times_exp_b_plus_c, log_add};
 use crate::math_helpers::special::{arcsinh_exp, gaussian_log_cdf, log_sinh};
 use statrs::distribution::{ContinuousCDF, Normal};
@@ -616,7 +616,7 @@ pub fn poisson_with<P, E>(inner: P, rate: f64, evidence: E) -> Poisson<P, E> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::functional::gaussian;
+    use crate::gaussian;
 
     #[test]
     fn test_poisson_constructor() {

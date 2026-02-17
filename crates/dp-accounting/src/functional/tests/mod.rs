@@ -3,7 +3,7 @@
 //! This module provides common utilities used across multiple integration test files,
 //! including pre-computed PLDs cached via LazyLock for expensive test cases.
 
-use crate::functional::*;
+use crate::*;
 use std::sync::LazyLock;
 
 // =========================================================================

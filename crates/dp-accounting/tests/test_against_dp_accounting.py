@@ -1,4 +1,4 @@
-"""Validation tests comparing opaque_dp_accounting against Google's dp_accounting.
+"""Validation tests comparing opaque_accounting against Google's dp_accounting.
 
 This test suite ensures that the Rust-based functional API produces results
 consistent with the reference Python implementation (Google's dp-accounting).
@@ -19,7 +19,7 @@ import math
 
 import pytest
 
-import opaque_dp_accounting as dp
+import opaque_accounting as dp
 
 # Google's dp_accounting library - skip tests if not installed
 pld_lib = pytest.importorskip(
@@ -59,6 +59,41 @@ def google_poisson_gaussian_pld(noise_multiplier, sample_rate, num_steps=1):
     if num_steps > 1:
         pld = pld.self_compose(num_steps)
     return pld
+
+
+def compute_epsilon(noise_multiplier, sample_rate, num_steps, delta):
+    """Compute epsilon for a Poisson-subsampled Gaussian training run."""
+    step = dp.poisson(noise_multiplier, sample_rate)
+    training = step * num_steps
+    return training.epsilon_at(delta)
+
+
+def calibrate_noise(
+    target_epsilon,
+    target_delta,
+    sample_rate,
+    num_steps,
+    param_min=0.1,
+    param_max=1.2,
+    tolerance=1e-6,
+    max_iterations=100,
+):
+    """Binary search for noise multiplier achieving target (epsilon, delta)."""
+    lo = param_min
+    hi = param_max
+
+    for _ in range(max_iterations):
+        mid = (lo + hi) / 2.0
+        if (hi - lo) / 2.0 < tolerance:
+            return mid
+
+        eps = compute_epsilon(mid, sample_rate, num_steps, target_delta)
+        if eps > target_epsilon:
+            lo = mid
+        else:
+            hi = mid
+
+    return (lo + hi) / 2.0
 
 
 # =============================================================================
@@ -167,7 +202,7 @@ class TestPoissonGaussian:
         """Composed Poisson-subsampled Gaussian should match Google."""
         delta = 1e-5
 
-        our_eps = dp.compute_epsilon(noise_multiplier, sample_rate, num_steps, delta)
+        our_eps = compute_epsilon(noise_multiplier, sample_rate, num_steps, delta)
 
         google_pld = google_poisson_gaussian_pld(noise_multiplier, sample_rate, num_steps)
         google_eps = google_pld.get_epsilon_for_delta(delta)
@@ -192,7 +227,7 @@ class TestRealisticDPSGD:
         """Standard DP-SGD: nm=1.1, q=0.01, 1000 steps."""
         nm, q, steps, delta = 1.1, 0.01, 1000, 1e-5
 
-        our_eps = dp.compute_epsilon(nm, q, steps, delta)
+        our_eps = compute_epsilon(nm, q, steps, delta)
         google_pld = google_poisson_gaussian_pld(nm, q, steps)
         google_eps = google_pld.get_epsilon_for_delta(delta)
 
@@ -205,7 +240,7 @@ class TestRealisticDPSGD:
         """Low-eps regime: nm=0.8, q=0.001, 100 steps."""
         nm, q, steps, delta = 0.8, 0.001, 100, 1e-5
 
-        our_eps = dp.compute_epsilon(nm, q, steps, delta)
+        our_eps = compute_epsilon(nm, q, steps, delta)
         google_pld = google_poisson_gaussian_pld(nm, q, steps)
         google_eps = google_pld.get_epsilon_for_delta(delta)
 
@@ -321,7 +356,7 @@ class TestCalibration:
         steps = 1000
 
         # noise_multiplier range is [0.1, 1.2] due to numerical stability
-        nm = dp.calibrate_noise(
+        nm = calibrate_noise(
             target_epsilon=target_eps,
             target_delta=delta,
             sample_rate=q,
@@ -331,7 +366,7 @@ class TestCalibration:
         )
 
         # Verify the calibrated noise achieves the target
-        actual_eps = dp.compute_epsilon(nm, q, steps, delta)
+        actual_eps = compute_epsilon(nm, q, steps, delta)
         assert abs(actual_eps - target_eps) < 0.1, (
             f"Calibrated nm={nm:.4f} gives eps={actual_eps:.6f}, target={target_eps}"
         )

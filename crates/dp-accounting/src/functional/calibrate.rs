@@ -28,7 +28,7 @@
 //! ```
 
 use crate::error::{PldError, Result};
-use crate::functional::process::Process;
+use crate::process::Process;
 
 /// Type alias for the metric evaluation closure used in calibration
 type MetricEvaluator<P> = Box<dyn Fn(&P) -> Result<f64>>;
@@ -410,7 +410,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::functional::gaussian;
+    use crate::gaussian;
 
     #[test]
     fn test_epsilon_target_constructor() {

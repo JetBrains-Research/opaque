@@ -29,8 +29,8 @@
 use std::any::Any;
 
 use crate::error::{PldError, Result};
-use crate::functional::pld::PrivacyLossDistribution;
-use crate::functional::process::Process;
+use crate::pld::PrivacyLossDistribution;
+use crate::process::Process;
 
 // =========================================================================
 // Internal trait: Flatten (on Repeated only, never on leaf types)
@@ -394,7 +394,7 @@ pub fn compose<L: Process, R: Process>(left: L, right: R) -> Composed<L, R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::functional::mechanisms::gaussian;
+    use crate::mechanisms::gaussian;
 
     #[test]
     fn test_repeat_basic() {

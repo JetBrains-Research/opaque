@@ -3,7 +3,7 @@ requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "opaque-dp-accounting"
+name = "opaque-accounting"
 version = "0.1.0"
 description = "High-performance differential privacy accounting using Privacy Loss Distributions"
 license = { text = "Apache-2.0" }
@@ -50,4 +50,4 @@ markers = [
 
 [tool.maturin]
 features = ["python-extension"]
-module-name = "opaque_dp_accounting"
+module-name = "opaque_accounting"

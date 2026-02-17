@@ -1,5 +1,5 @@
 [package]
-name = "opaque-dp-accounting"
+name = "opaque-accounting"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.70"
@@ -10,7 +10,7 @@ keywords = ["differential-privacy", "privacy", "pld", "dp-sgd", "machine-learnin
 categories = ["science", "mathematics", "algorithms"]
 
 [lib]
-name = "opaque_dp_accounting"
+name = "opaque_accounting"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]

@@ -11,9 +11,9 @@
 
 use super::config::{DiscretizationConfig, EpsilonBounds};
 use crate::error::{PldError, Result};
-use crate::functional::adjacency::Adjacency;
-use crate::functional::pld::pmf::Pmf;
-use crate::functional::pld::PrivacyLossDistribution;
+use crate::adjacency::Adjacency;
+use crate::pld::pmf::Pmf;
+use crate::pld::PrivacyLossDistribution;
 use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};

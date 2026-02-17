@@ -27,8 +27,8 @@ use std::fmt;
 use std::sync::{Arc, OnceLock};
 
 use crate::error::Result;
-use crate::functional::pld::PrivacyLossDistribution;
-use crate::functional::process::Process;
+use crate::pld::PrivacyLossDistribution;
+use crate::process::Process;
 
 /// Opt-in PLD caching wrapper
 ///
@@ -135,7 +135,7 @@ pub fn cached<P: Process>(process: P) -> Cached<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::functional::mechanisms::gaussian;
+    use crate::mechanisms::gaussian;
 
     #[test]
     fn test_cache_hit() {

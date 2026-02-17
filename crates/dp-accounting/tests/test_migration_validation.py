@@ -1,7 +1,7 @@
 """Cross-validation tests ported from jbr-fed-privacy/packages/dp-accounting/.
 
 These tests reproduce the test cases from the old Python binding (jbr.fed.accounting)
-against the new Rust-based functional API (opaque_dp_accounting). The goal is to
+against the new Rust-based functional API (opaque_accounting). The goal is to
 verify that numbers match, ensuring nothing degraded during the migration.
 
 The old API used PLDAccountant / EventAccountant classes. The new API uses a
@@ -24,7 +24,7 @@ import math
 
 import pytest
 
-import opaque_dp_accounting as dp
+import opaque_accounting as dp
 
 # Google's dp_accounting library -- skip tests if not installed.
 pld_lib = pytest.importorskip(
@@ -76,6 +76,54 @@ def rel_error(ours, ref):
     if ref == 0:
         return abs(ours)
     return abs(ours - ref) / abs(ref)
+
+
+def compute_epsilon(noise_multiplier, sample_rate, num_steps, delta):
+    """Compute epsilon for a Poisson-subsampled Gaussian training run.
+    
+    This helper replaces the removed dp.compute_epsilon() convenience function.
+    It uses the compositional API: step * num_steps -> .epsilon_at(delta).
+    """
+    step = dp.poisson(noise_multiplier, sample_rate)
+    training = step * num_steps
+    return training.epsilon_at(delta)
+
+
+def calibrate_noise(
+    target_epsilon,
+    target_delta,
+    sample_rate,
+    num_steps,
+    param_min=0.1,
+    param_max=1.2,
+    tolerance=1e-6,
+    max_iterations=100,
+):
+    """Binary search for noise multiplier achieving target (epsilon, delta).
+    
+    This helper replaces the removed dp.calibrate_noise() convenience function.
+    It searches for noise_multiplier such that:
+        compute_epsilon(nm, sample_rate, num_steps, target_delta) ≈ target_epsilon
+    """
+    lo = param_min
+    hi = param_max
+
+    for _ in range(max_iterations):
+        mid = (lo + hi) / 2
+        current_eps = compute_epsilon(mid, sample_rate, num_steps, target_delta)
+
+        if abs(current_eps - target_epsilon) < tolerance:
+            return mid
+
+        if current_eps > target_epsilon:
+            # Too much privacy loss, need more noise
+            lo = mid
+        else:
+            # Too little privacy loss, can use less noise
+            hi = mid
+
+    # Return best estimate after max_iterations
+    return (lo + hi) / 2
 
 
 # =============================================================================
@@ -290,7 +338,7 @@ class TestPoissonSubsampling:
         """Composed Poisson-Gaussian epsilon should match dp_accounting."""
         delta = 1e-5
 
-        our_eps = dp.compute_epsilon(noise_multiplier, sample_rate, num_steps, delta)
+        our_eps = compute_epsilon(noise_multiplier, sample_rate, num_steps, delta)
         google_pld = google_poisson_gaussian_pld(
             noise_multiplier, sample_rate, num_steps
         )
@@ -507,7 +555,7 @@ class TestCompositionSweep:
         """Composed Poisson-Gaussian epsilon should match dp_accounting."""
         delta = 1e-5
 
-        our_eps = dp.compute_epsilon(sigma, q, steps, delta)
+        our_eps = compute_epsilon(sigma, q, steps, delta)
         google_pld = google_poisson_gaussian_pld(sigma, q, steps)
         ref_eps = google_pld.get_epsilon_for_delta(delta)
 
@@ -761,14 +809,14 @@ class TestCalibration:
         q = 0.01
         steps = 1000
 
-        nm = dp.calibrate_noise(
+        nm = calibrate_noise(
             target_epsilon=target_eps,
             target_delta=delta,
             sample_rate=q,
             num_steps=steps,
         )
 
-        actual_eps = dp.compute_epsilon(nm, q, steps, delta)
+        actual_eps = compute_epsilon(nm, q, steps, delta)
         assert abs(actual_eps - target_eps) < 0.1, (
             f"Calibrated nm={nm:.4f} gives eps={actual_eps:.6f}, target={target_eps}"
         )
@@ -780,14 +828,14 @@ class TestCalibration:
         q = 0.01
         steps = 1000
 
-        nm = dp.calibrate_noise(
+        nm = calibrate_noise(
             target_epsilon=target_eps,
             target_delta=delta,
             sample_rate=q,
             num_steps=steps,
         )
 
-        actual_eps = dp.compute_epsilon(nm, q, steps, delta)
+        actual_eps = compute_epsilon(nm, q, steps, delta)
         assert abs(actual_eps - target_eps) < 0.5, (
             f"High privacy: nm={nm:.4f}, eps={actual_eps:.6f}, target={target_eps}"
         )
@@ -799,14 +847,14 @@ class TestCalibration:
         q = 0.01
         steps = 1000
 
-        nm = dp.calibrate_noise(
+        nm = calibrate_noise(
             target_epsilon=target_eps,
             target_delta=delta,
             sample_rate=q,
             num_steps=steps,
         )
 
-        actual_eps = dp.compute_epsilon(nm, q, steps, delta)
+        actual_eps = compute_epsilon(nm, q, steps, delta)
         assert abs(actual_eps - target_eps) < 1.0, (
             f"Low privacy: nm={nm:.4f}, eps={actual_eps:.6f}, target={target_eps}"
         )
@@ -817,11 +865,11 @@ class TestCalibration:
         q = 0.01
         steps = 1000
 
-        nm_loose = dp.calibrate_noise(
+        nm_loose = calibrate_noise(
             target_epsilon=12.0, target_delta=delta,
             sample_rate=q, num_steps=steps,
         )
-        nm_strict = dp.calibrate_noise(
+        nm_strict = calibrate_noise(
             target_epsilon=6.0, target_delta=delta,
             sample_rate=q, num_steps=steps,
         )
@@ -842,14 +890,14 @@ class TestCalibration:
         target_eps = 10.0
         delta = 1e-4
 
-        nm = dp.calibrate_noise(
+        nm = calibrate_noise(
             target_epsilon=target_eps,
             target_delta=delta,
             sample_rate=q,
             num_steps=steps,
         )
 
-        actual_eps = dp.compute_epsilon(nm, q, steps, delta)
+        actual_eps = compute_epsilon(nm, q, steps, delta)
         assert abs(actual_eps - target_eps) < 1.0, (
             f"batch={batch_size}: nm={nm:.4f}, eps={actual_eps:.6f}"
         )
@@ -861,7 +909,7 @@ class TestCalibration:
         target_eps = 8.0
         delta = 1e-5
 
-        nm = dp.calibrate_noise(
+        nm = calibrate_noise(
             target_epsilon=target_eps,
             target_delta=delta,
             sample_rate=q,
@@ -986,7 +1034,7 @@ class TestCompositionProperties:
         """More steps -> higher epsilon."""
         q, sigma, delta = 0.01, 0.8, 1e-5
         step_counts = [1, 5, 10, 50, 100]
-        epsilons = [dp.compute_epsilon(sigma, q, k, delta) for k in step_counts]
+        epsilons = [compute_epsilon(sigma, q, k, delta) for k in step_counts]
 
         for i in range(1, len(epsilons)):
             assert epsilons[i] > epsilons[i - 1], (
@@ -998,7 +1046,7 @@ class TestCompositionProperties:
         """More noise -> lower epsilon."""
         q, steps, delta = 0.01, 1000, 1e-5
         sigmas = [0.3, 0.5, 0.8, 0.9, 1.2]
-        epsilons = [dp.compute_epsilon(s, q, steps, delta) for s in sigmas]
+        epsilons = [compute_epsilon(s, q, steps, delta) for s in sigmas]
 
         for i in range(1, len(epsilons)):
             assert epsilons[i] < epsilons[i - 1], (
@@ -1010,7 +1058,7 @@ class TestCompositionProperties:
         """Lower q -> lower epsilon (more privacy amplification)."""
         sigma, steps, delta = 0.5, 100, 1e-5
         sample_rates = [0.1, 0.01, 0.001]
-        epsilons = [dp.compute_epsilon(sigma, q, steps, delta) for q in sample_rates]
+        epsilons = [compute_epsilon(sigma, q, steps, delta) for q in sample_rates]
 
         for i in range(1, len(epsilons)):
             assert epsilons[i] < epsilons[i - 1], (
@@ -1075,8 +1123,8 @@ class TestCompositionProperties:
         """10x more steps should give < 10x more epsilon."""
         sigma, q, delta = 0.5, 0.01, 1e-5
 
-        eps_1k = dp.compute_epsilon(sigma, q, 1000, delta)
-        eps_10k = dp.compute_epsilon(sigma, q, 10000, delta)
+        eps_1k = compute_epsilon(sigma, q, 1000, delta)
+        eps_10k = compute_epsilon(sigma, q, 10000, delta)
 
         growth = eps_10k / eps_1k
         assert 1.5 < growth < 10.0, (
@@ -1116,7 +1164,7 @@ class TestRealisticWorkflows:
         steps = epochs * (dataset_size // batch_size)
         delta = 1e-4
 
-        our_eps = dp.compute_epsilon(sigma, q, steps, delta)
+        our_eps = compute_epsilon(sigma, q, steps, delta)
         ref_pld = google_poisson_gaussian_pld(sigma, q, steps)
         ref_eps = ref_pld.get_epsilon_for_delta(delta)
 
@@ -1135,7 +1183,7 @@ class TestRealisticWorkflows:
         steps = epochs * (dataset_size // batch_size)
         delta = 1e-5
 
-        our_eps = dp.compute_epsilon(sigma, q, steps, delta)
+        our_eps = compute_epsilon(sigma, q, steps, delta)
         ref_pld = google_poisson_gaussian_pld(sigma, q, steps)
         ref_eps = ref_pld.get_epsilon_for_delta(delta)
 
@@ -1154,7 +1202,7 @@ class TestRealisticWorkflows:
         steps = epochs * (dataset_size // batch_size)
         delta = 1e-6
 
-        our_eps = dp.compute_epsilon(sigma, q, steps, delta)
+        our_eps = compute_epsilon(sigma, q, steps, delta)
         ref_pld = google_poisson_gaussian_pld(sigma, q, steps)
         ref_eps = ref_pld.get_epsilon_for_delta(delta)
 
@@ -1170,7 +1218,7 @@ class TestRealisticWorkflows:
         steps = 7812
         delta = 1e-5
 
-        our_eps = dp.compute_epsilon(sigma, q, steps, delta)
+        our_eps = compute_epsilon(sigma, q, steps, delta)
         ref_pld = google_poisson_gaussian_pld(sigma, q, steps)
         ref_eps = ref_pld.get_epsilon_for_delta(delta)
 
@@ -1187,7 +1235,7 @@ class TestRealisticWorkflows:
         steps = 3750
         delta = 1e-5
 
-        our_eps = dp.compute_epsilon(sigma, q, steps, delta)
+        our_eps = compute_epsilon(sigma, q, steps, delta)
         ref_pld = google_poisson_gaussian_pld(sigma, q, steps)
         ref_eps = ref_pld.get_epsilon_for_delta(delta)
 
@@ -1301,7 +1349,7 @@ class TestTripleValidationEpsilon:
         """Our epsilon should match riskcal."""
         delta = 1e-5
 
-        our_eps = dp.compute_epsilon(sigma, q, steps, delta)
+        our_eps = compute_epsilon(sigma, q, steps, delta)
 
         acct_riskcal = create_riskcal_accountant(sigma, q, steps)
         eps_riskcal = acct_riskcal.get_epsilon(delta=delta)
@@ -1324,7 +1372,7 @@ class TestTripleValidationEpsilon:
         """ours, dp_accounting, and riskcal should all agree on epsilon."""
         delta = 1e-5
 
-        our_eps = dp.compute_epsilon(sigma, q, steps, delta)
+        our_eps = compute_epsilon(sigma, q, steps, delta)
 
         google_pld = google_poisson_gaussian_pld(sigma, q, steps)
         eps_dp = google_pld.get_epsilon_for_delta(delta)
@@ -1495,7 +1543,7 @@ class TestTripleValidationCalibration:
         target_eps = 8.0
         delta = 1e-5
 
-        nm = dp.calibrate_noise(
+        nm = calibrate_noise(
             target_epsilon=target_eps,
             target_delta=delta,
             sample_rate=q,
@@ -1572,7 +1620,7 @@ class TestTripleValidationRealistic:
         steps = epochs * (dataset_size // batch_size)
         delta = 1e-5
 
-        our_eps = dp.compute_epsilon(sigma, q, steps, delta)
+        our_eps = compute_epsilon(sigma, q, steps, delta)
 
         ref_pld = google_poisson_gaussian_pld(sigma, q, steps)
         eps_dp = ref_pld.get_epsilon_for_delta(delta)
@@ -1593,7 +1641,7 @@ class TestTripleValidationRealistic:
         steps = epochs * (dataset_size // batch_size)
         delta = 1e-6
 
-        our_eps = dp.compute_epsilon(sigma, q, steps, delta)
+        our_eps = compute_epsilon(sigma, q, steps, delta)
 
         ref_pld = google_poisson_gaussian_pld(sigma, q, steps)
         eps_dp = ref_pld.get_epsilon_for_delta(delta)
