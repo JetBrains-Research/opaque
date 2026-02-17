@@ -61,12 +61,7 @@ class TestAllReduceValidation:
 
     def test_invalid_op_raises(self):
         """all_reduce() raises ValueError for invalid op."""
-        # Mock initialization check by testing with a tensor
         tensor = torch.tensor([1.0])
-
-        # Skip if not initialized (would get RuntimeError before ValueError)
-        if not dist_utils.is_distributed():
-            pytest.skip("Distributed not initialized")
 
         with pytest.raises(ValueError, match="Invalid reduction operation"):
             dist_utils.all_reduce(tensor, op="invalid_op")

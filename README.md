@@ -46,7 +46,7 @@ pip install torchvision         # For CV
 git clone https://github.com/JetBrains-Research/opaque.git
 cd opaque
 uv sync --group dev  # Core tests
-uv sync --group dev --group compat  # + HF tests
+uv sync --group dev --group test  # + HF tests
 ```
 
 **Philosophy**: Opaque provides DP-SGD primitives. You bring the models.
@@ -271,8 +271,8 @@ uv sync --all-groups
 
 #### Selective Installation
 ```bash
-# Just compatibility testing
-uv sync --group compat
+# Just HuggingFace testing
+uv sync --group test
 
 # Run examples and tutorials
 uv sync --group examples
@@ -284,7 +284,7 @@ uv sync --group docs
 uv sync --group benchmark
 
 # Multiple groups
-uv sync --group dev --group compat --group examples
+uv sync --group dev --group test --group examples
 ```
 
 ### Common Workflows
@@ -309,7 +309,7 @@ uv sync --group dev
 pytest tests/  # Core tests only
 
 # Optional: Test HuggingFace compatibility
-uv sync --group compat
+uv sync --group test
 pytest tests/compat/
 ```
 

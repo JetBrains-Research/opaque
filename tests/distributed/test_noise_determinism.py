@@ -4,14 +4,19 @@ These tests verify that gaussian_stateful() with distributed=True properly
 generates deterministic seed-based noise for each device.
 """
 
+import os
+import socket
+
 import pytest
 import torch
+import torch.distributed as dist
+import torch.multiprocessing as mp
 
-from opaque.noise import gaussian_noise
+from opaque.noise import gaussian_noise, identity_mf_noise
 
 
 class TestDistributedNoise:
-    """Tests for gaussian_stateful() with distributed parameter."""
+    """Tests for gaussian_noise() behavior."""
 
     def test_distributed_false_matches_single_device(self):
         """distributed=False behaves same as no distributed parameter."""
@@ -31,11 +36,23 @@ class TestDistributedNoise:
         assert torch.allclose(noisy1["weight"], noisy2["weight"])
         assert torch.allclose(noisy1["bias"], noisy2["bias"])
 
-    def test_distributed_true_without_init_raises(self):
-        """distributed=True raises RuntimeError when torch.distributed not initialized."""
-        pytest.skip(
-            "gaussian_stateful removed; distributed-specific behavior is handled by passing generator offset by rank"
-        )
+    def test_distributed_true_without_init_raises(self, monkeypatch):
+        """generator=None uses deterministic seed when distributed is detected."""
+        import importlib
+
+        gaussian_noise_module = importlib.import_module("opaque.noise.gaussian_noise")
+        monkeypatch.setattr(gaussian_noise_module, "is_distributed", lambda: True)
+
+        noise_fn1, state1 = gaussian_noise(1.0, generator=None)
+        noise_fn2, state2 = gaussian_noise(1.0, generator=None)
+
+        grads = {"weight": torch.zeros(4)}
+
+        noisy1, state1 = noise_fn1(grads, state1)
+        noisy2, state2 = noise_fn2(grads, state2)
+
+        # Deterministic seed should produce identical noise.
+        assert torch.allclose(noisy1["weight"], noisy2["weight"])
 
     def test_distributed_noise_is_deterministic(self):
         """Noise with same seed+rank is reproducible across resets."""
@@ -179,12 +196,6 @@ class TestDistributedNoiseWithPyTree:
 
     def test_preserves_device(self, device):
         """Distributed noise preserves tensor device."""
-        # Skip CUDA test - generator device mismatch is known limitation
-        if device.type == "cuda":
-            pytest.skip(
-                "CUDA generator not supported in gaussian_noise generator usage yet"
-            )
-
         stddev = 1.0
         seed = 42
 
@@ -218,3 +229,53 @@ class TestNoiseCalibration:
         noise = noisy - grad  # Extract noise
         assert abs(noise.mean().item()) < 0.1  # Mean close to 0
         assert abs(noise.std().item() - stddev) < 0.1  # Std close to stddev
+
+
+def _find_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _setup_ddp(rank: int, world_size: int, port: int) -> None:
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
+    os.environ["RANK"] = str(rank)
+    os.environ["WORLD_SIZE"] = str(world_size)
+    torch.cuda.set_device(rank)
+    dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+
+
+def _cleanup_ddp() -> None:
+    if dist.is_initialized():
+        dist.destroy_process_group()
+
+
+def _worker_mf_shared_noise(rank: int, world_size: int, port: int) -> None:
+    _setup_ddp(rank, world_size, port)
+    try:
+        device = torch.device(f"cuda:{rank}")
+        grad_template = {"weight": torch.zeros(4, device=device)}
+        noise_fn, state = identity_mf_noise(
+            grad_template, stddev=1.0, generator=None
+        )
+        grads = {"weight": torch.zeros(4, device=device)}
+        noisy, _ = noise_fn(grads, state)
+
+        gathered = [torch.zeros_like(noisy["weight"]) for _ in range(world_size)]
+        dist.all_gather(gathered, noisy["weight"])
+        if rank == 0:
+            for other in gathered[1:]:
+                assert torch.allclose(gathered[0], other)
+    finally:
+        _cleanup_ddp()
+
+
+class TestDistributedMFNoise:
+    """Tests for MF noise determinism in distributed mode."""
+
+    def test_mf_noise_shared_seed(self):
+        if not torch.cuda.is_available() or torch.cuda.device_count() < 2:
+            pytest.skip("Requires >= 2 CUDA devices")
+        port = _find_free_port()
+        mp.spawn(_worker_mf_shared_noise, args=(2, port), nprocs=2, join=True)

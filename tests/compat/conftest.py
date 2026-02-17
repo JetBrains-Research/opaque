@@ -6,6 +6,10 @@ import os
 
 import pytest
 import torch
+
+transformers = pytest.importorskip("transformers")
+peft = pytest.importorskip("peft")
+
 from peft import LoraConfig, get_peft_model
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 

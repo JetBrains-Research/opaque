@@ -43,7 +43,15 @@ def apply_phi3_patches() -> None:
                 # Add get_usable_length method if not present
                 if not hasattr(self, "get_usable_length"):
 
-                    def get_usable_length(layer_idx: int) -> int:
+                    def get_usable_length(
+                        kv_seq_len: int | None = None,
+                        layer_idx: int | None = None,
+                    ) -> int:
+                        # Signature matches newer Phi-3 usage:
+                        # get_usable_length(kv_seq_len, layer_idx)
+                        # kv_seq_len is unused for cache length derivation here.
+                        if layer_idx is None:
+                            return 0
                         if (
                             hasattr(self, "key_cache")
                             and len(self.key_cache) > layer_idx

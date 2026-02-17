@@ -17,6 +17,7 @@ Run with:
 """
 
 import os
+import socket
 import sys
 import unittest
 
@@ -34,6 +35,21 @@ from tests.conftest import (
     load_model_with_lora,
 )
 
+# Check if HuggingFace dependencies are available (required for LoRA tests)
+try:
+    import transformers
+    HAS_TRANSFORMERS = True
+except ImportError:
+    HAS_TRANSFORMERS = False
+
+try:
+    import peft
+    HAS_PEFT = True
+except ImportError:
+    HAS_PEFT = False
+
+HAS_HF = HAS_TRANSFORMERS and HAS_PEFT
+
 TRAINING_STEPS = 3
 LEARNING_RATE = 1e-3
 L2_CLIP_NORM = 1.0
@@ -49,13 +65,19 @@ def _rank():
     return 0
 
 
-def _setup_ddp(rank, world_size):
+def _find_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _setup_ddp(rank, world_size, port):
     """Setup DDP process group."""
     if sys.platform == "win32":
         raise ValueError("Windows is not supported for multi-GPU tests")
 
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12355"
+    os.environ["MASTER_PORT"] = str(port)
     os.environ["RANK"] = str(rank)
     os.environ["WORLD_SIZE"] = str(world_size)
 
@@ -74,6 +96,7 @@ def _cleanup_ddp():
 def _run_ddp_scaling_test(
     rank,
     world_size,
+    port,
     model_key,
     batch_size,
     max_length,
@@ -95,7 +118,7 @@ def _run_ddp_scaling_test(
     torch.cuda.set_device(rank)
 
     try:
-        _setup_ddp(rank, world_size)
+        _setup_ddp(rank, world_size, port)
         device = torch.device(f"cuda:{rank}")
 
         # Load model using shared utility
@@ -189,53 +212,27 @@ def _run_ddp_scaling_test(
         _cleanup_ddp()
 
 
-def _run_multi_gpu_wrapper(
-    rank,
-    world_size,
-    model_key,
-    batch_size,
-    max_length,
-    accum_steps,
-    result_dict,
-):
-    """Wrapper for mp.spawn."""
-    _run_ddp_scaling_test(
-        rank,
-        world_size,
-        model_key,
-        batch_size,
-        max_length,
-        accum_steps,
-        result_dict,
-    )
+def _run_ddp_quick_sanity(rank, world_size, port):
+    """Run quick DDP sanity step in spawned workers."""
+    torch.manual_seed(42 + rank)
+    torch.cuda.set_device(rank)
 
+    try:
+        _setup_ddp(rank, world_size, port)
+        device = torch.device(f"cuda:{rank}")
 
-@pytest.mark.compat
-@pytest.mark.slow
-@pytest.mark.gpu
-class TestDDPQuickSanity:
-    """Quick DDP sanity check - minimal config for fast feedback."""
-
-    def test_ddp_qwen2_0_5b_basic(self):
-        """Quick DDP test with Qwen2-0.5B, reduced layers, 2 training steps."""
-        if not _is_distributed():
-            pytest.skip("Requires DDP (torch.distributed initialized)")
-
-        if not has_min_gpu_memory(12):
-            pytest.skip("Requires CUDA GPU with >= 12GB memory")
-
-        # Use shared config with modifications for speed
         config = MODEL_CONFIGS["qwen2-0.5b"]
-        model, tokenizer = load_model_with_lora(config, device="cuda")
-
-        # Reduce layers for speed
-        model.model.layers = model.model.layers[:2]
+        model, tokenizer = load_model_with_lora(config, device=device)
+        base_model = model.get_base_model() if hasattr(model, "get_base_model") else model
+        if hasattr(base_model, "model") and hasattr(base_model.model, "layers"):
+            base_model.model.layers = base_model.model.layers[:2]
+        elif hasattr(base_model, "layers"):
+            base_model.layers = base_model.layers[:2]
 
         batch_size = 4
         max_length = 512
         accum_steps = 8
         training_steps = 2
-        lr = 1e-3
 
         texts = build_text_batch(batch_size)
         inputs = tokenizer(
@@ -245,7 +242,6 @@ class TestDDPQuickSanity:
             max_length=max_length,
             truncation=True,
         )
-        device = next(model.parameters()).device
         input_ids = inputs["input_ids"].to(device)
         attention_mask = inputs["attention_mask"].to(device)
         labels = input_ids.clone()
@@ -299,24 +295,70 @@ class TestDDPQuickSanity:
                     accumulated = tree_map(lambda x, y: x + y, accumulated, grads)
 
             scale = 1.0 / float(accum_steps)
-            accumulated = tree_map(lambda x, s=scale: x * s, accumulated)
+            accumulated = tree_map(lambda x: x * scale, accumulated)
 
-            trainable_params = tree_map(
-                lambda param, grad: param - lr * grad,
-                trainable_params,
-                accumulated,
-            )
+            for name, param in trainable_params.items():
+                param.grad = accumulated[name].to(param.dtype)
 
-        # Synchronize across ranks
         if _is_distributed():
             dist.barrier()
 
-        assert trainable_params is not None
+    finally:
+        _cleanup_ddp()
+
+
+def _run_multi_gpu_wrapper(
+    rank,
+    world_size,
+    port,
+    model_key,
+    batch_size,
+    max_length,
+    accum_steps,
+    result_dict,
+):
+    """Wrapper for mp.spawn."""
+    _run_ddp_scaling_test(
+        rank,
+        world_size,
+        port,
+        model_key,
+        batch_size,
+        max_length,
+        accum_steps,
+        result_dict,
+    )
+
+
+@pytest.mark.test
+@pytest.mark.slow
+@pytest.mark.gpu
+@pytest.mark.skipif(
+    not HAS_HF,
+    reason="transformers/peft libraries not installed",
+)
+class TestDDPQuickSanity:
+    """Quick DDP sanity check - minimal config for fast feedback."""
+
+    def test_ddp_qwen2_0_5b_basic(self):
+        """Quick DDP test with Qwen2-0.5B, reduced layers, 2 training steps."""
+        if torch.cuda.device_count() < 2:
+            pytest.skip("Need at least 2 GPUs for DDP quick sanity")
+
+        if not has_min_gpu_memory(12):
+            pytest.skip("Requires CUDA GPU with >= 12GB memory")
+
+        port = _find_free_port()
+        mp.spawn(_run_ddp_quick_sanity, args=(2, port), nprocs=2, join=True)
 
 
 @unittest.skipIf(
     torch.cuda.device_count() < 2,
     "Need at least 2 GPUs for DDP scaling tests",
+)
+@unittest.skipIf(
+    not HAS_HF,
+    "transformers/peft libraries not installed",
 )
 class TestDDPMultiGPUScaling(unittest.TestCase):
     """DDP multi-GPU scaling tests to detect memory degradation and OOM issues."""
@@ -329,10 +371,12 @@ class TestDDPMultiGPUScaling(unittest.TestCase):
         with mp.Manager() as manager:
             result_dict = manager.dict()
 
+            port = _find_free_port()
             mp.spawn(
                 _run_multi_gpu_wrapper,
                 args=(
                     world_size,
+                    port,
                     model_key,
                     config["batch_size"],
                     config["max_length"],

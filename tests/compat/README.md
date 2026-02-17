@@ -9,7 +9,7 @@ These tests verify that our automatic vmap patches work correctly with various H
 ## Installation
 
 ```bash
-uv sync --group compat
+uv sync --group test
 ```
 
 This installs:
@@ -69,8 +69,8 @@ pytest tests/compat/test_attention.py -v
 pytest tests/compat/test_peft.py::TestPEFTMethods::test_lora -v
 
 # With markers
-pytest -m compat -v                    # Only compat tests
-pytest -m "compat and not slow" -v     # Fast compat tests only
+pytest -m test -v                    # Only HuggingFace tests
+pytest -m "test and not slow" -v     # Fast HuggingFace tests only
 
 # Include skipped tests (large downloads)
 pytest tests/compat/ -v --run-slow

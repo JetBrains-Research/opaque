@@ -5,7 +5,7 @@ This directory contains tests for Opaque's distributed training primitives.
 ## Test Structure
 
 - `test_core_utilities.py` - Core distributed utilities (is_distributed, get_rank, etc.)
-- `test_ddp_integration.py` - DDP integration tests (reduce_pytree, sum_gradients, sync_state)
+- `test_ddp_integration.py` - DDP integration tests (spawned internally)
 - `test_noise_determinism.py` - Deterministic noise generation in distributed mode
 - `test_ddp_models.py` - DDP with real HuggingFace models (requires multi-GPU, uses mp.spawn)
 
@@ -25,14 +25,14 @@ uv run pytest tests/distributed/test_core_utilities.py -v
 
 ### Multi-GPU Tests
 
-The DDP integration tests require actual multi-GPU setup. On the machine with 4 L4 GPUs:
+The DDP integration tests spawn worker processes internally, so `torchrun` is
+not required:
 
 ```bash
-# DDP primitives integration (torchrun)
-torchrun --nproc_per_node=4 -m pytest tests/distributed/test_ddp_integration.py -v
-torchrun --nproc_per_node=2 -m pytest tests/distributed/test_ddp_integration.py -v
+# DDP primitives integration (mp.spawn inside tests)
+pytest tests/distributed/test_ddp_integration.py -v
 
-# DDP with real models (uses mp.spawn internally, no torchrun needed)
+# DDP with real models (uses mp.spawn internally)
 pytest tests/distributed/test_ddp_models.py -v -s
 
 # Run specific model test
@@ -69,7 +69,7 @@ pytest tests/distributed/test_ddp_models.py::TestDDPMultiGPUScaling::test_qwen2_
 ✅ **DDP Integration** (6 tests) - requires GPU
 - Multi-GPU gradient aggregation
 - State synchronization validation
-- Deterministic noise per rank
+- Deterministic shared noise across ranks
 - End-to-end DP training step
 
 ✅ **DDP with Real Models** (5 tests) - requires multi-GPU

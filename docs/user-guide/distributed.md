@@ -12,6 +12,12 @@ Distributed training with DP requires careful handling because:
 
 Opaque provides utilities for distributed DP-SGD that maintain privacy guarantees while scaling to multiple GPUs.
 
+## Supported Parallelism
+
+Opaque supports **DDP only** today. FSDP/TP/PP are not supported yet. See
+[docs/development/parallelism_compatibility.md](../development/parallelism_compatibility.md)
+for compatibility research and current limitations.
+
 !!! danger "Critical: Noise Must Be Applied on EVERY Device with SAME Seed"
     
     For DP guarantees to hold, **every device must independently apply noise with the SAME seed**:
@@ -46,6 +52,7 @@ Opaque provides utilities for distributed DP-SGD that maintain privacy guarantee
     - DP guarantees are **per-device per-batch**
     - Every device must call `noise_fn()` in its own training loop
     - Same seed ensures all devices generate identical noise (synchronized, not broadcast)
+    - When `generator=None`, Opaque auto-selects a deterministic shared seed
     - Different seeds cause model divergence (training failure)
     - Never compute noise on rank 0 and broadcast it
 

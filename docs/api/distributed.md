@@ -16,36 +16,82 @@ The `opaque.distributed` module provides composable primitives for distributed D
 ## Design Philosophy
 
 1. **Composable primitives**, not heavyweight abstractions
-2. **PyTorch-native patterns** (DDP/FSDP/DTensor)
+2. **PyTorch-native patterns** (DDP)
 3. **No backward hooks** (functional API already produces clipped gradients)
 4. **Explicit control** over when gradients are aggregated
 
+## Supported Parallelism
+
+**Opaque supports DDP only.** FSDP, Tensor Parallelism, and Pipeline Parallelism are not supported.
+
+| Strategy | Status | Notes |
+|----------|--------|-------|
+| **DDP** | ✅ Fully Supported | Multi-GPU data parallelism with synchronized noise |
+| **FSDP** | ❌ Not Supported | Parameter sharding not compatible, may be explored in future |
+| **TP/PP** | ❌ Not Supported | Tensor/Pipeline parallelism incompatible with vmap-based per-example gradients |
+
+For current distributed training capabilities, see
+[docs/development/parallelism_compatibility.md](../development/parallelism_compatibility.md).
+
 ## Quick Start
+
+### Critical Requirement: Deterministic Synchronized Noise
+
+**Opaque uses deterministic noise generation to keep distributed processes synchronized.** When `generator=None` or a fixed seed is provided to `gaussian_noise()`, all processes generate **identical noise from the same seed**. This is essential for:
+
+1. **Maintaining DP guarantees** - Each device must apply the same noise to ensure privacy bounds hold
+2. **Preventing model divergence** - Different noise per device causes training to diverge
+3. **Correct privacy accounting** - Accounting assumes synchronized noise across all devices
+
+**Pattern:**
+```python
+# ✅ CORRECT: All devices use SAME seed
+import torch.distributed as dist
+from opaque.noise import gaussian_noise
+
+noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42)  # Same seed on ALL devices
+
+for batch in dataloader:
+    grads = clipped_grad_fn(...)
+    grads = sum_gradients(grads)  # Aggregate first
+    noisy_grads, noise_state = noise_fn(grads, noise_state)  # Then add synchronized noise
+    optimizer.update(params, noisy_grads)
+```
+
+**Why synchronization matters:**
+- Each device independently computes noise with the same seed → identical values
+- This is not broadcasting (which would be inefficient); it's deterministic generation
+- `generator=None` automatically selects a deterministic shared seed when distributed training is detected
+- Different seeds per device will cause training failure (model divergence)
+
+See [docs/user-guide/distributed.md](../user-guide/distributed.md) for detailed examples.
+
+## Quick Start (Legacy Section)
 
 ```python
 import torch.distributed as dist
 import opaque.distributed as dist_utils
 from opaque.clipping import clipped_grad
-from opaque.noise import gaussian
+from opaque.noise import gaussian_noise
 
 # Initialize PyTorch distributed
 dist.init_process_group(backend='nccl')
 
 # Create DP gradient function
 clipped_grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0)
-noise_fn = gaussian(stddev=1.1)
+noise_fn, noise_state = gaussian_noise(stddev=1.1)
 
 # Training loop
 for batch in dataloader:
     # 1. Compute clipped gradients (local)
     grads = clipped_grad_fn(params, batch)
     
-    # 2. Add noise (local)
-    noisy_grads = noise_fn(grads)
+    # 2. Aggregate across GPUs (SUM)
+    if dist_utils.is_distributed():
+        grads = dist_utils.sum_gradients(grads)
     
-    # 3. Sum across GPUs
-    if dist_utils.is_initialized():
-        noisy_grads = dist_utils.sum_gradients(noisy_grads)
+    # 3. Add noise (same deterministic seed on every device by default)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
     
     # 4. Update parameters
     params = optimizer_update(params, noisy_grads)
@@ -53,7 +99,7 @@ for batch in dataloader:
 
 ## Core Utilities
 
-::: opaque.distributed.is_initialized
+::: opaque.distributed.is_distributed
     options:
         show_source: true
         heading_level: 3
@@ -117,7 +163,7 @@ for batch in dataloader:
 import torch
 import torch.distributed as dist
 from opaque.clipping import clipped_grad
-from opaque.noise import gaussian
+from opaque.noise import gaussian_noise
 import opaque.distributed as dist_utils
 
 # Initialize distributed
@@ -127,7 +173,7 @@ device = torch.device(f'cuda:{rank}')
 
 # Setup DP-SGD
 clipped_grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0)
-noise_fn = gaussian(stddev=1.1)
+noise_fn, noise_state = gaussian_noise(stddev=1.1)
 
 # Training loop
 for batch in dataloader:
@@ -136,11 +182,11 @@ for batch in dataloader:
     # Compute clipped gradients
     grads = clipped_grad_fn(params, batch)
     
-    # Add noise
-    noisy_grads = noise_fn(grads)
-    
     # Sum across GPUs
-    noisy_grads = dist_utils.sum_gradients(noisy_grads)
+    grads = dist_utils.sum_gradients(grads)
+    
+    # Add noise (same deterministic seed on every device by default)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
     
     # Update
     params = optimizer_update(params, noisy_grads)
@@ -166,7 +212,7 @@ for batch in dataloader:
     )
     
     # Synchronize clip state across GPUs
-    if dist_utils.is_initialized():
+    if dist_utils.is_distributed():
         new_clip_state = dist_utils.sync_state(
             new_clip_state,
             sync_fields=["clip_norm", "clipping_rate"],
@@ -175,10 +221,12 @@ for batch in dataloader:
     
     clip_state = new_clip_state
     
-    # Add noise and sum
-    noise_fn = gaussian(stddev=1.1 * clip_state.sensitivity())
-    noisy_grads = noise_fn(grads)
-    noisy_grads = dist_utils.sum_gradients(noisy_grads)
+    # Sum first, then add noise (same seed across devices by default)
+    grads = dist_utils.sum_gradients(grads)
+    noise_fn, noise_state = gaussian_noise(
+        stddev=1.1 * clip_state.sensitivity()
+    )
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
     
     # Update
     params = optimizer_update(params, noisy_grads)
@@ -201,8 +249,8 @@ With DDP, privacy guarantees are maintained because:
 
 1. **Each GPU processes disjoint batches** (no data overlap)
 2. **Clipping happens per-example** before aggregation
-3. **Noise is added locally** with appropriate scale
-4. **Gradient averaging is post-processing** (doesn't affect privacy)
+3. **Gradients are summed across devices** before noise is applied
+4. **Noise is added on every device** with the same deterministic seed by default
 
 ### Effective Batch Size
 
@@ -237,15 +285,15 @@ The order of operations is **critical** for privacy:
 ✅ **Correct** (privacy-preserving):
 ```python
 grads = clipped_grad_fn(params, batch)       # 1. Clip
-noisy_grads = noise_fn(grads)                 # 2. Noise
-noisy_grads = sum_gradients(noisy_grads)      # 3. Sum
+grads = sum_gradients(grads)                  # 2. Sum
+noisy_grads, state = noise_fn(grads, state)   # 3. Noise (same seed on each device)
 ```
 
-❌ **Wrong** (violates privacy):
+❌ **Wrong** (violates privacy / causes divergence):
 ```python
 grads = clipped_grad_fn(params, batch)       # 1. Clip
-grads = sum_gradients(grads)                  # 2. Sum (too early!)
-noisy_grads = noise_fn(grads)                 # 3. Noise (too late!)
+noisy_grads, state = noise_fn(grads, state)  # 2. Noise (too early!)
+noisy_grads = sum_gradients(noisy_grads)     # 3. Sum (after noise)
 ```
 
 ## Best Practices
@@ -266,7 +314,7 @@ sample_rate = effective_batch_size / dataset_size
 
 ```python
 # After each gradient computation
-if dist_utils.is_initialized():
+if dist_utils.is_distributed():
     clip_state = dist_utils.sync_state(
         clip_state,
         sync_fields=["clip_norm"],  # Don't sync step count!
@@ -278,7 +326,7 @@ if dist_utils.is_initialized():
 
 ```python
 # Wait for all GPUs to finish training
-if dist_utils.is_initialized():
+if dist_utils.is_distributed():
     dist_utils.barrier()
 
 # Only main process validates
@@ -294,12 +342,11 @@ if dist_utils.get_rank() == 0:
     torch.save(model.state_dict(), 'checkpoint.pt')
 ```
 
-### 5. Set Different Seeds Per Rank
+### 5. Keep Noise Deterministic Across Ranks
 
 ```python
-# Ensure different noise on each GPU
-rank = dist_utils.get_rank()
-torch.manual_seed(42 + rank)
+# Use generator=None to get the same deterministic seed on every device
+noise_fn, noise_state = gaussian_noise(stddev=1.1)
 ```
 
 ## Troubleshooting
@@ -317,14 +364,11 @@ dataloader = DataLoader(dataset, sampler=sampler)
 
 ### Different Results Across Runs
 
-**Cause**: Non-deterministic noise generation
+**Cause**: Noise seed mismatch across devices
 
-**Solution**: Seed RNG per rank:
+**Solution**: Use the default generator (same seed on each device):
 ```python
-def setup_seed(rank, base_seed=42):
-    torch.manual_seed(base_seed + rank)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(base_seed + rank)
+noise_fn, noise_state = gaussian_noise(stddev=1.1)
 ```
 
 ### Out of Memory

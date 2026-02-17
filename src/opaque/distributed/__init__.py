@@ -9,7 +9,7 @@ This module provides PyTorch-native distributed primitives for DP training:
 
 Design Philosophy:
     - Composable primitives, not heavyweight abstractions
-    - PyTorch-native patterns (DDP/FSDP/DTensor)
+    - PyTorch-native patterns (DDP)
     - No custom backward hooks (functional API already produces clipped gradients)
     - Automatic distributed detection (no manual configuration)
 
@@ -30,7 +30,8 @@ Example - Standard DP-SGD with Poisson Sampling:
     >>> grads = dist_utils.sum_gradients(grads)
     >>>
     >>> # Add noise (sensitivity = C, NOT batch-dependent!)
-    >>> noisy_grads = gaussian_noise(grads, sigma=1.1)
+    >>> noise_fn, noise_state = gaussian_noise(stddev=1.1)
+    >>> noisy_grads, noise_state = noise_fn(grads, noise_state)
 
 Example - Adaptive Clipping (Automatic Distributed Detection):
     >>> from opaque.clipping import adaptive_clipped_grad
@@ -171,12 +172,6 @@ def all_reduce(
         >>> dist_utils.all_reduce(t, op="mean")
         >>> print(t)  # [1.0, 2.0, 3.0] (average of rank 0 and rank 1)
     """
-    if not is_distributed():
-        raise RuntimeError(
-            "torch.distributed is not initialized. "
-            "Call torch.distributed.init_process_group() first."
-        )
-
     # Map string to ReduceOp
     op_map = {
         "sum": dist.ReduceOp.SUM,
@@ -189,6 +184,12 @@ def all_reduce(
     if op not in op_map:
         raise ValueError(
             f"Invalid reduction operation: {op}. Must be one of: {list(op_map.keys())}"
+        )
+
+    if not is_distributed():
+        raise RuntimeError(
+            "torch.distributed is not initialized. "
+            "Call torch.distributed.init_process_group() first."
         )
 
     return dist.all_reduce(tensor, op=op_map[op], async_op=async_op)

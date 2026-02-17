@@ -36,7 +36,7 @@ tests/
 - `test_architectures.py` - Multi-architecture tests
 - `conftest.py` - Shared fixtures and helpers
 
-**Dependencies**: Install with `uv sync --group compat`
+**Dependencies**: Install with `uv sync --group test`
 - Requires: `transformers>=4.57.0`, `peft>=0.18.0`
 
 **What it tests**:
@@ -61,11 +61,11 @@ tests/
 # Standard run
 pytest tests/compat/ -v
 
-# Run only compat tests (skip others)
-pytest -m compat -v
+# Run only HuggingFace tests (skip others)
+pytest -m test -v
 
-# Skip compat tests (for CI without transformers installed)
-pytest -m "not compat" -v
+# Skip HuggingFace tests (for CI without transformers installed)
+pytest -m "not test" -v
 ```
 
 **Results**: 15 passing, 2 skipped (large model downloads)
@@ -178,7 +178,7 @@ pytest tests/compat/test_transformers_patches.py::TestAttentionImplementations -
 
 The test suite is organized to support different CI strategies:
 
-- **PR checks**: Run fast compat tests only (`tests/compat/`)
+- **PR checks**: Run fast HuggingFace tests only (`tests/compat/`)
 - **Nightly builds**: Run full validation suite including large models
 - **Release checks**: Run everything with `--run-slow`
 
@@ -202,8 +202,8 @@ The project uses dependency groups to keep optional test dependencies separate:
 # Core development (required for basic tests)
 uv sync --group dev
 
-# Compatibility testing (HuggingFace ecosystem)
-uv sync --group compat
+# HuggingFace testing
+uv sync --group test
 
 # Documentation building
 uv sync --group docs
@@ -227,5 +227,5 @@ uv sync --all-groups
 3. ~~Eliminated duplicate fixtures~~ → Single source of truth in `tests/conftest.py`
 
 ### Future Work
-1. Add CI configuration to skip compat tests when dependencies not installed
+1. Add CI configuration to skip HuggingFace tests when dependencies not installed
 2. Add more multi-GPU scaling tests for larger models

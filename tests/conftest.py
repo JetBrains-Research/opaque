@@ -34,7 +34,7 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers",
-        "compat: marks tests requiring HuggingFace ecosystem (install with 'uv sync --group compat')",
+        "test: marks tests requiring HuggingFace ecosystem (install with 'uv sync --group test')",
     )
 
 
