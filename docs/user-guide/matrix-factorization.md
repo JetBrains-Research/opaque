@@ -206,7 +206,7 @@ for batch in dataloader:
 ```python
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
-from opaque.distributed import all_reduce_gradients
+from opaque.distributed import sum_gradients
 from opaque.noise import gaussian_noise, band_mf_noise, blt_mf_noise
 
 # Initialize distributed
@@ -252,7 +252,7 @@ for batch in dataloader:
     grads, clip_state = clipped_grad_fn(params, batch, state=clip_state)
     
     # 2. Aggregate across devices
-    grads = all_reduce_gradients(grads, op="sum")
+    grads = sum_gradients(grads)
     
     # 3. Add noise (same on all devices - automatically synchronized!)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
@@ -445,7 +445,7 @@ for batch in dataloader:
     clipped_grad = compute_clipped_grad(model, batch)
     
     # 2. Aggregate across devices
-    clipped_grad = all_reduce_gradients(clipped_grad, op="sum")
+    clipped_grad = sum_gradients(clipped_grad)
     
     # 3. Add correlated noise (same API as gaussian_noise)
     noisy_grad, noise_state = noise_fn(clipped_grad, noise_state)

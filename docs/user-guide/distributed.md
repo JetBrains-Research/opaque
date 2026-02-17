@@ -415,7 +415,7 @@ torchrun --nproc_per_node=4 train.py
     # Training loop identical to Gaussian noise
     for batch in dataloader:
         grads = clipped_grad_fn(params, batch)
-        grads = all_reduce_gradients(grads)
+        grads = sum_gradients(grads)
         noisy_grads, noise_state = noise_fn(grads, noise_state)
         params = optimizer_update(params, noisy_grads)
     ```
@@ -1154,7 +1154,7 @@ Adaptive clipping requires state synchronization across GPUs:
 
 ```python
 from opaque.clipping import adaptive_clipped_grad
-from opaque.distributed import average_gradients
+from opaque.distributed import sum_gradients
 
 # Create adaptive clipping function
 grad_fn, clip_state = adaptive_clipped_grad(
@@ -1169,10 +1169,10 @@ for batch in dataloader:
         params, batch, state=clip_state
     )
     
-    # Add noise and average
+    # Add noise and sum
     noisy_grads = noise_fn(grads)
     if distributed:
-        noisy_grads = average_gradients(noisy_grads)
+        noisy_grads = sum_gradients(noisy_grads)
     
     # Synchronize clip state across GPUs
     if distributed:

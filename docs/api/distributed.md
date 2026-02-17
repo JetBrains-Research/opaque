@@ -43,9 +43,9 @@ for batch in dataloader:
     # 2. Add noise (local)
     noisy_grads = noise_fn(grads)
     
-    # 3. Average across GPUs
+    # 3. Sum across GPUs
     if dist_utils.is_initialized():
-        noisy_grads = dist_utils.average_gradients(noisy_grads)
+        noisy_grads = dist_utils.sum_gradients(noisy_grads)
     
     # 4. Update parameters
     params = optimizer_update(params, noisy_grads)
@@ -80,15 +80,35 @@ for batch in dataloader:
 
 ## Gradient Aggregation
 
-::: opaque.distributed.all_reduce_gradients
+!!! info "Recommended API"
+    Use `sum_gradients()` for DP training (sums clipped gradients across devices).
+    For generic PyTree reduction, use `reduce_pytree()`.
+
+::: opaque.distributed.sum_gradients
     options:
         show_source: true
         heading_level: 3
 
-::: opaque.distributed.average_gradients
+::: opaque.distributed.reduce_pytree
     options:
         show_source: true
         heading_level: 3
+
+### Deprecated Functions
+
+!!! warning "Deprecated"
+    The following functions are deprecated and will be removed in v3.0.0.
+    Use `sum_gradients()` or `reduce_pytree()` instead.
+
+::: opaque.distributed.all_reduce_gradients
+    options:
+        show_source: true
+        heading_level: 4
+
+::: opaque.distributed.average_gradients
+    options:
+        show_source: true
+        heading_level: 4
 
 ## State Synchronization
 
@@ -132,8 +152,8 @@ for batch in dataloader:
     # Add noise
     noisy_grads = noise_fn(grads)
     
-    # Average across GPUs
-    noisy_grads = dist_utils.average_gradients(noisy_grads)
+    # Sum across GPUs
+    noisy_grads = dist_utils.sum_gradients(noisy_grads)
     
     # Update
     params = optimizer_update(params, noisy_grads)
@@ -168,10 +188,10 @@ for batch in dataloader:
     
     clip_state = new_clip_state
     
-    # Add noise and average
+    # Add noise and sum
     noise_fn = gaussian(stddev=1.1 * clip_state.sensitivity())
     noisy_grads = noise_fn(grads)
-    noisy_grads = dist_utils.average_gradients(noisy_grads)
+    noisy_grads = dist_utils.sum_gradients(noisy_grads)
     
     # Update
     params = optimizer_update(params, noisy_grads)
@@ -231,13 +251,13 @@ The order of operations is **critical** for privacy:
 ```python
 grads = clipped_grad_fn(params, batch)       # 1. Clip
 noisy_grads = noise_fn(grads)                 # 2. Noise
-noisy_grads = average_gradients(noisy_grads)  # 3. Average
+noisy_grads = sum_gradients(noisy_grads)      # 3. Sum
 ```
 
 ❌ **Wrong** (violates privacy):
 ```python
 grads = clipped_grad_fn(params, batch)       # 1. Clip
-grads = average_gradients(grads)              # 2. Average (too early!)
+grads = sum_gradients(grads)                  # 2. Sum (too early!)
 noisy_grads = noise_fn(grads)                 # 3. Noise (too late!)
 ```
 
