@@ -815,13 +815,13 @@ result, _ = reduce_pytree(pytree, op="mean")
 Synchronize optimizer state or other values across GPUs:
 
 ```python
-from opaque.distributed import sync_state, sync_scalar
+from opaque.distributed import sync_state, reduce_scalar
 
 # Synchronize dataclass state (e.g., adaptive clipping)
 clip_state = sync_state(clip_state)
 
-# Synchronize single scalar value
-clip_norm = sync_scalar(clip_norm)
+# Reduce single scalar value
+clip_norm = reduce_scalar(clip_norm)
 ```
 
 ### Optimizer State Synchronization (TorchOpt)

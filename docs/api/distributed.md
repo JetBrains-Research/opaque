@@ -96,7 +96,10 @@ for batch in dataloader:
 
 ## State Synchronization
 
-::: opaque.distributed.sync_scalar
+!!! tip "Scalar Reduction"
+    Use `reduce_scalar()` to reduce scalar values across devices.
+
+::: opaque.distributed.reduce_scalar
     options:
         show_source: true
         heading_level: 3

@@ -170,8 +170,9 @@ epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
 |------------------------|-----------------------------|--------------------------------------------|
 | `sum_gradients()`      | Sum clipped gradients (DP-specific) | [Guide](../user-guide/distributed.md) |
 | `reduce_pytree()`      | Generic PyTree reduction    | [Guide](../user-guide/distributed.md)      |
+| `reduce_scalar()`      | Reduce scalar across devices | [Guide](../user-guide/distributed.md)      |
+| `gather_tensors()`     | Gather tensors from all ranks | [Guide](../user-guide/distributed.md)      |
 | `sync_state()`         | Sync adaptive clip state    | [Guide](../user-guide/distributed.md)      |
-| `sync_scalar()`        | Sync single scalar value    | [Guide](../user-guide/distributed.md)      |
 | `is_initialized()`     | Check if DDP is active      | [Guide](../user-guide/distributed.md)      |
 | `get_rank()`           | Get current GPU index       | [Guide](../user-guide/distributed.md)      |
 | `get_world_size()`     | Get total number of GPUs    | [Guide](../user-guide/distributed.md)      |
