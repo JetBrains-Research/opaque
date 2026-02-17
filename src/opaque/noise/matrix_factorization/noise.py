@@ -112,6 +112,14 @@ def _matrix_factorization_noise(
 
     Returns:
         ``(noise_fn, state)`` where ``noise_fn(grads, state) -> (noisy, state)``.
+
+    Note:
+        In distributed settings, the generator uses the **same seed** across all
+        devices (centralized pattern). This matches Opaque's standard DDP approach
+        where noise is conceptually added after gradient aggregation.
+        
+        The ``gen`` parameter is expected to be pre-resolved via
+        ``_resolve_generator()`` which handles distributed mode automatically.
     """
     if isinstance(noising, torch.Tensor):
         return _dense_mf_noise(
