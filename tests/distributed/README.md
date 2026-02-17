@@ -4,11 +4,9 @@ This directory contains tests for Opaque's distributed training primitives.
 
 ## Test Structure
 
-- `test_core_utilities.py` - Core distributed utilities (is_initialized, get_rank, etc.)
-- `test_gradient_aggregation.py` - Gradient aggregation (all_reduce_gradients, average_gradients)
-- `test_state_synchronization.py` - State synchronization (sync_scalar, sync_state)
+- `test_core_utilities.py` - Core distributed utilities (is_distributed, get_rank, etc.)
+- `test_ddp_integration.py` - DDP integration tests (reduce_pytree, sum_gradients, sync_state)
 - `test_noise_determinism.py` - Deterministic noise generation in distributed mode
-- `test_ddp_integration.py` - DDP primitives integration (requires GPU)
 - `test_ddp_models.py` - DDP with real HuggingFace models (requires multi-GPU, uses mp.spawn)
 
 ## Running Tests

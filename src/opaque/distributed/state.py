@@ -145,27 +145,6 @@ def gather_tensors(
     return torch.cat(gathered_tensors, dim=dim)
 
 
-# Deprecated alias for backward compatibility
-def sync_scalar(
-    value: float,
-    op: str = "mean",
-    device: torch.device | None = None,
-) -> float:
-    """Deprecated: Use reduce_scalar instead.
-
-    .. deprecated:: 2.0.0
-        Use :func:`reduce_scalar` instead. This will be removed in v3.0.0.
-    """
-    import warnings
-
-    warnings.warn(
-        "sync_scalar is deprecated, use reduce_scalar instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return reduce_scalar(value, op=op, device=device)
-
-
 def sync_state(
     state: Any,
     sync_fields: list[str] | None = None,
