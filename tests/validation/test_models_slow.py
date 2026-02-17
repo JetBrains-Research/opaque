@@ -7,15 +7,15 @@ Tests use shared model configs and utilities from tests/conftest.py to avoid dup
 
 import pytest
 
-transformers = pytest.importorskip("transformers")
-peft = pytest.importorskip("peft")
-
 from tests.conftest import (
     MODEL_CONFIGS,
     has_min_gpu_memory,
     load_model_with_lora,
     run_dp_training_step,
 )
+
+transformers = pytest.importorskip("transformers")
+peft = pytest.importorskip("peft")
 
 
 @pytest.mark.test

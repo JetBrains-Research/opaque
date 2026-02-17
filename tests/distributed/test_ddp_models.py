@@ -299,7 +299,7 @@ def _run_ddp_quick_sanity(rank, world_size, port):
                     accumulated = tree_map(lambda x, y: x + y, accumulated, grads)
 
             scale = 1.0 / float(accum_steps)
-            accumulated = tree_map(lambda x: x * scale, accumulated)
+            accumulated = tree_map(lambda x, s=scale: x * s, accumulated)
 
             for name, param in trainable_params.items():
                 param.grad = accumulated[name].to(param.dtype)

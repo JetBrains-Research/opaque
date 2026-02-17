@@ -178,7 +178,9 @@ def _worker_dp_training_step(rank: int, world_size: int, port: int) -> None:
         grads = sum_gradients(grads)
         noisy_grads, noise_state = noise_fn(grads, noise_state)
 
-        for grad, param in zip(tree_leaves(noisy_grads), tree_leaves(params)):
+        for grad, param in zip(
+            tree_leaves(noisy_grads), tree_leaves(params), strict=True
+        ):
             assert grad.shape == param.shape
             assert grad.device == device
             assert not torch.isnan(grad).any()

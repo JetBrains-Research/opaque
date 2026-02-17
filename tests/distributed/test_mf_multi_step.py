@@ -73,7 +73,7 @@ def _worker_identity_mf_three_steps(rank: int, world_size: int, port: int) -> No
         # Run 3 training steps
         step_noise_values = []
         step_stds = []
-        for step in range(3):
+        for _step in range(3):
             grads = {"weight": torch.zeros(batch_size, param_dim, device=device)}
             noisy, state = noise_fn(grads, state)
             step_noise_values.append(noisy["weight"].clone())

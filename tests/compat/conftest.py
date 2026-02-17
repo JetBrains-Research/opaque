@@ -6,14 +6,13 @@ import os
 
 import pytest
 import torch
-
-transformers = pytest.importorskip("transformers")
-peft = pytest.importorskip("peft")
-
 from peft import LoraConfig, get_peft_model
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 from opaque import clipped_grad, make_functional
+
+transformers = pytest.importorskip("transformers")
+peft = pytest.importorskip("peft")
 
 
 def pytest_runtest_setup(item):
