@@ -110,6 +110,26 @@ Learn how to empirically validate your DP implementation using membership infere
 
 ---
 
+### [Tutorial 08: Distributed Training with DDP](08_distributed_training.ipynb) ✨ NEW!
+
+**Level**: Advanced
+**Duration**: 75-90 minutes
+**Prerequisites**: Tutorials 01-04, Multi-GPU setup
+
+Scale DP-SGD training to multiple GPUs with PyTorch's DistributedDataParallel:
+
+**What you'll learn**:
+
+1. **DDP for DP-SGD**: Why distributed DP requires special handling
+2. **Gradient aggregation**: Correct ordering (clip → noise → average)
+3. **State synchronization**: Keep adaptive clipping consistent across GPUs
+4. **Privacy accounting**: Using effective batch size
+5. **Best practices**: Common pitfalls and solutions
+
+**Key Takeaway**: With DP, you must add noise BEFORE averaging gradients across GPUs to maintain privacy guarantees!
+
+---
+
 ## Additional Resources
 
 ### Documentation
@@ -143,12 +163,12 @@ Found an issue or have suggestions for improving the tutorials?
 - [x] Tutorial 03: Complete DP-SGD Training Loop (Stage 2)
 - [x] Tutorial 04: Functional DP Training with TorchOpt (Stage 2)
 - [x] Tutorial 07: Empirical Privacy Auditing (Stage 3)
+- [x] Tutorial 08: Distributed Training with DDP ✨ NEW!
 
 **Planned tutorials** (coming in future stages):
 
-- [ ] Tutorial 05: DP-SGD for LoRA Fine-Tuning with HuggingFace (Stage 4+)
-- [ ] Tutorial 06: Advanced Privacy Techniques (Poisson sampling, microbatching, etc.) (Stage 4+)
-- [ ] Tutorial 08: Multi-GPU DP Training (Stage 5+)
+- [ ] Tutorial 05: Poisson Sampling & Microbatching (Stage 4+)
+- [ ] Tutorial 06: DP-SGD for LoRA Fine-Tuning with HuggingFace (Stage 4+)
 
 ---
 

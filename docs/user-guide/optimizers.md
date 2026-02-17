@@ -344,6 +344,73 @@ params = dp_optimizer.step(params, noisy_grads)
 
 **Why TorchOpt?** Functional optimizers fit naturally with Opaque's functional design, avoiding mutable optimizer state.
 
+## Distributed Training
+
+TorchOpt optimizers work seamlessly with DDP distributed training—**no changes needed**.
+
+### Optimizer States in DDP
+
+**TL;DR:** Optimizer states stay synchronized automatically across all GPUs when using TorchOpt's functional optimizers with DP-SGD.
+
+#### How It Works
+
+```python
+import torchopt
+from opaque.distributed import sum_gradients
+from opaque.noise import gaussian_noise
+
+# 1. Initialize optimizer (same on all devices)
+opt = torchopt.adam(lr=1e-3)
+opt_state = opt.init(params)
+
+# 2. Training loop
+for step, batch in enumerate(dataloader):
+    # Get per-device clipped gradients
+    grads, clip_state = grad_fn(params, batch, state=clip_state)
+    
+    # Aggregate across devices (all devices get same result)
+    if distributed:
+        grads = sum_gradients(grads)
+    
+    # Add noise (same seed → same noise on all devices)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
+    
+    # Update (pure function → same result on all devices)
+    updates, opt_state = opt.update(noisy_grads, opt_state, params=params)
+    params = torchopt.apply_updates(params, updates)
+    # ✅ opt_state is now identical on all devices (implicitly synchronized)
+```
+
+**Why it works:**
+
+1. **Pure functions:** `opt.update()` is deterministic—same inputs always produce same outputs
+2. **Identical gradients:** After `sum_gradients()` and noise (same seed), all devices have identical `noisy_grads`
+3. **Identical updates:** All devices compute identical `opt_state` and `params` updates
+
+**Result:** No explicit state synchronization needed—optimizer states evolve identically on all devices.
+
+### Important Notes
+
+**❌ Don't use `torchopt.distributed` for DDP:**
+
+- `torchopt.distributed` is for **RPC-based parameter server parallelism** (different paradigm)
+- For DDP, use `opaque.distributed` utilities (`sum_gradients`, etc.)
+- See [Distributed Training](distributed.md#torchoptdistributed-vs-opaquedistributed) for details
+
+**⚠️ Optimizer state drift:**
+
+- Theoretical guarantee is sound, but **not empirically validated** in Opaque's tests
+- For production, consider periodically checking state consistency (see [Optimizer State Validation](distributed.md#optimizer-state-synchronization-torchopt))
+
+### Complete DDP Example
+
+See [`examples/train_qwen_ddp.py`](https://github.com/evgri243/opaque/blob/main/examples/train_qwen_ddp.py) for a full working example:
+
+```bash
+# Launch DDP training on 4 GPUs
+uv run python -m torch.distributed.run --nproc_per_node=4 examples/train_qwen_ddp.py
+```
+
 ## See Also
 
 - **[Tutorial 04](../tutorials/04_dp_optimizers.ipynb)**: Interactive tutorial on DP optimizers

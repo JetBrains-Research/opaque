@@ -46,7 +46,7 @@ pip install torchvision         # For CV
 git clone https://github.com/JetBrains-Research/opaque.git
 cd opaque
 uv sync --group dev  # Core tests
-uv sync --group dev --group compat  # + HF tests
+uv sync --group dev --group test  # + HF tests
 ```
 
 **Philosophy**: Opaque provides DP-SGD primitives. You bring the models.
@@ -121,7 +121,7 @@ Differential privacy (DP) provides mathematical guarantees that a model doesn't 
 Core DP-SGD primitives are implemented and validated:
 
 - **Clipping**: `clip_pytree()`, `clipped_fun()`, `clipped_grad()` — Full JAX-Privacy API parity
-- **Noise**: `gaussian()`, `gaussian_stateful()` — Stateless and reproducible noise injection
+- **Noise**: `gaussian()`, `gaussian_noise()` — Stateless and reproducible noise injection
 - **Sampling**: `PoissonSampler`, `TruncatedPoissonSampler` — Batch selection mechanisms
 - **Optimizers**: `adaptive_clipping()` — TorchOpt wrapper with adaptive clipping
 - **Accounting**: Functional privacy accounting API
@@ -271,8 +271,8 @@ uv sync --all-groups
 
 #### Selective Installation
 ```bash
-# Just compatibility testing
-uv sync --group compat
+# Just HuggingFace testing
+uv sync --group test
 
 # Run examples and tutorials
 uv sync --group examples
@@ -284,7 +284,7 @@ uv sync --group docs
 uv sync --group benchmark
 
 # Multiple groups
-uv sync --group dev --group compat --group examples
+uv sync --group dev --group test --group examples
 ```
 
 ### Common Workflows
@@ -309,7 +309,7 @@ uv sync --group dev
 pytest tests/  # Core tests only
 
 # Optional: Test HuggingFace compatibility
-uv sync --group compat
+uv sync --group test
 pytest tests/compat/
 ```
 

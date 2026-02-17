@@ -49,6 +49,12 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `attack_auroc()`, `tpr_at_fpr()` - Attack utility metrics
   - `bootstrap()` - Confidence intervals
 
+- **[Distributed](distributed.md)**: Multi-GPU training with DDP
+  - `sum_gradients()` - Sum clipped gradients across GPUs (for DP training)
+  - `reduce_pytree()` - Generic PyTree reduction
+  - `sync_state()` - Synchronize adaptive clipping state
+  - `is_initialized()`, `get_rank()`, `get_world_size()` - Distributed utilities
+
 ## Quick Reference
 
 ### Typical DP-SGD Workflow
@@ -157,6 +163,19 @@ epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
 | `attack_auroc()`            | Membership inference AUROC      | [Guide](../user-guide/auditing.md)             |
 | `tpr_at_fpr()`              | TPR at given FPR                | [Guide](../user-guide/auditing.md)             |
 | `bootstrap()`               | Bootstrap confidence intervals  | [Guide](../user-guide/auditing.md)             |
+
+### Distributed
+
+| Function               | Purpose                     | User Guide                                 |
+|------------------------|-----------------------------|--------------------------------------------|
+| `sum_gradients()`      | Sum clipped gradients (DP-specific) | [Guide](../user-guide/distributed.md) |
+| `reduce_pytree()`      | Generic PyTree reduction    | [Guide](../user-guide/distributed.md)      |
+| `reduce_scalar()`      | Reduce scalar across devices | [Guide](../user-guide/distributed.md)      |
+| `gather_tensors()`     | Gather tensors from all ranks | [Guide](../user-guide/distributed.md)      |
+| `sync_state()`         | Sync adaptive clip state    | [Guide](../user-guide/distributed.md)      |
+| `is_initialized()`     | Check if DDP is active      | [Guide](../user-guide/distributed.md)      |
+| `get_rank()`           | Get current GPU index       | [Guide](../user-guide/distributed.md)      |
+| `get_world_size()`     | Get total number of GPUs    | [Guide](../user-guide/distributed.md)      |
 
 ## Type Hints
 

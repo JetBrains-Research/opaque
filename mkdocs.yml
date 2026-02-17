@@ -82,6 +82,8 @@ nav:
     - 04 - Functional DP with TorchOpt: tutorials/04_dp_optimizers.ipynb
     - 05 - Sampling and Microbatching: tutorials/05_sampling_and_microbatching.ipynb
     - 06 - LoRA HuggingFace Training: tutorials/06_lora_huggingface_dp_training.ipynb
+    - 07 - Privacy Auditing: tutorials/07_privacy_auditing.ipynb
+    # Distributed training notebook removed: do not reference 08
   - User Guide:
     - Overview: user-guide/index.md
     - Differential Privacy Basics: user-guide/dp-basics.md
@@ -92,6 +94,7 @@ nav:
     - Poisson Sampling & Microbatching: user-guide/sampling.md
     - Memory Profiling: user-guide/memory-profiling.md
     - LoRA Fine-tuning: user-guide/lora.md
+    - Distributed Training: user-guide/distributed.md
     - Known Limitations: limitations.md
   - API Reference:
     - Overview: api/index.md
@@ -103,6 +106,7 @@ nav:
     - Accounting: api/accounting.md
     - Optimizers: api/optimizers.md
     - Sampling: api/sampling.md
+    - Distributed: api/distributed.md
   - Development:
     - Contributing: development/contributing.md
     - TDD Workflow: development/tdd-workflow.md

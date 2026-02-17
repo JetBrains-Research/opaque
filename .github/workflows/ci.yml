@@ -76,7 +76,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --group dev --group compat
+          uv sync --group dev --group test
 
       - name: Run all compat tests (including GPU-specific)
         run: |

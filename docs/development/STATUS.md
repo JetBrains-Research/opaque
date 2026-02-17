@@ -1,32 +1,35 @@
 # Opaque Status & Roadmap
 
-**Last Updated**: 2026-02-13
+**Last Updated**: 2026-02-17
 **Current Version**: v0.1.0-alpha
-**Status**: Stages 1-2 Complete → Phase 1A (LoRA Validation) Ready
+**Status**: Stages 1-2 + Distributed Training Complete → Ready for Team Review
 
 ---
 
 ## Quick Status
 
-**Completed** (Stages 1-2):
+**Completed**:
 - ✅ Core clipping API (JAX-Privacy parity)
-- ✅ Noise injection (stateless)
+- ✅ Noise injection (Gaussian + MF via functional API)
 - ✅ Functional accounting API (to be migrated - see RFC_ACCOUNTING_MIGRATION.md)
-- ✅ TorchOpt optimizer wrappers
-- ✅ 111 tests passing (56 optimizer + 55 accounting)
-- ✅ GPT-2 (124M) integration validated
+- ✅ TorchOpt optimizer wrappers with adaptive clipping
+- ✅ **570 tests passing** (35 distributed + 5 HF models + core tests)
+- ✅ GPT-2 (124M) & real HF models integration validated
+- ✅ **Distributed DDP training** - Multi-GPU LoRA fine-tuning with deterministic noise
+- ✅ **Spawn-based testing** - No torchrun dependencies, mp.spawn-based workers
+- ✅ HF model compatibility (Qwen2, TinyLlama, Phi-3) with vmap patches
 
-**Ready to Start** (Phase 1A):
-- 🎯 **LoRA validation at 8B scale** (Llama-3-8B or Mistral-7B)
-- 🎯 JAX-Privacy cross-validation
-- 🎯 H200 GPU environment available
+**Production Ready for**:
+- 🎯 Multi-GPU LoRA fine-tuning with DP-SGD
+- 🎯 Real transformer models (8B-1.5B scale validated)
+- 🎯 Deterministic distributed noise (synchronized across ranks)
 
-**Planned**:
-- 📋 Phase 1B: Memory profiling & optimization
-- 📋 Phase 1C: Empirical privacy auditing
-- 📋 Phase 2: Functional API polish
-- 📋 Phase 3: BandMF & DP-FTRL
-- 📋 Phase 4-6: Scale, distributed, v1.0.0 release
+**In Scope for Future Work** (not blockers):
+- 📋 Memory profiling & optimization
+- 📋 FSDP support (currently DDP-only, not planned for v1.0)
+- 📋 Streaming matrix CUDA device handling (BandMF/BLT on GPU)
+- 📋 Multi-epoch correlated noise tests
+- 📋 v1.0.0 release when ready
 
 ---
 

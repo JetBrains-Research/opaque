@@ -49,10 +49,31 @@ def _iid_normal_noise(
 ) -> Any:
     """Generate IID normal noise matching the structure of target_tree."""
 
+    def _randn_on_device(
+        shape: tuple[int, ...],
+        *,
+        noise_dtype: torch.dtype,
+        device: torch.device,
+        generator: torch.Generator | None,
+    ) -> torch.Tensor:
+        try:
+            return torch.randn(
+                shape, dtype=noise_dtype, device=device, generator=generator
+            )
+        except RuntimeError as exc:
+            if "Expected a 'cuda' device type for generator" in str(exc):
+                return torch.randn(shape, dtype=noise_dtype, generator=generator).to(
+                    device=device
+                )
+            raise
+
     def make_noise(t):
         noise_dtype = dtype or t.dtype
-        noise = torch.randn(
-            t.shape, dtype=noise_dtype, device=t.device, generator=generator
+        noise = _randn_on_device(
+            t.shape,
+            noise_dtype=noise_dtype,
+            device=t.device,
+            generator=generator,
         )
         return noise * stddev
 
@@ -82,7 +103,15 @@ def _gaussian_linear_combination(
     result = torch.zeros(shape, dtype=dtype, device=device)
     for idx in range(first, last):
         coef = matrix_row[idx].to(dtype)
-        noise = torch.randn(shape, dtype=dtype, device=device, generator=generator)
+        try:
+            noise = torch.randn(shape, dtype=dtype, device=device, generator=generator)
+        except RuntimeError as exc:
+            if "Expected a 'cuda' device type for generator" in str(exc):
+                noise = torch.randn(shape, dtype=dtype, generator=generator).to(
+                    device=device
+                )
+            else:
+                raise
         result = result + coef * noise
     return result
 
@@ -112,6 +141,14 @@ def _matrix_factorization_noise(
 
     Returns:
         ``(noise_fn, state)`` where ``noise_fn(grads, state) -> (noisy, state)``.
+
+    Note:
+        In distributed settings, the generator uses the **same seed** across all
+        devices (centralized pattern). This matches Opaque's standard DDP approach
+        where noise is conceptually added after gradient aggregation.
+
+        The ``gen`` parameter is expected to be pre-resolved via
+        ``_resolve_generator()`` which handles distributed mode automatically.
     """
     if isinstance(noising, torch.Tensor):
         return _dense_mf_noise(

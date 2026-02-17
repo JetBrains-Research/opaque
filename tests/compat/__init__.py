@@ -9,7 +9,7 @@ Test Structure:
 - test_peft.py: PEFT methods (LoRA, IA3, Prefix, P-Tuning, Prompt)
 - test_architectures.py: Model architectures (Qwen2, Gemma2, DeepSeek, Phi2)
 
-Install: uv sync --group compat
+Install: uv sync --group test
 Run: pytest tests/compat/ -v
 
 Platform Support:

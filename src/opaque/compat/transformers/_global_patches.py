@@ -16,6 +16,7 @@ To add support for a new model with custom requirements:
 """
 
 from opaque.compat.transformers._gemma2 import apply_gemma2_patches
+from opaque.compat.transformers._phi3 import apply_phi3_patches
 from opaque.compat.transformers._shared import apply_shared_patches
 from opaque.compat.transformers._standard_models import apply_standard_model_patches
 
@@ -46,6 +47,7 @@ def apply_global_patches() -> None:
 
     # Layer 3: Patch custom models (independent from each other)
     apply_gemma2_patches()
+    apply_phi3_patches()
     # Future custom models: add apply_*_patches() calls here
 
     _is_patched = True
