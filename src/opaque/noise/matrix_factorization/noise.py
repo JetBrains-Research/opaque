@@ -117,7 +117,7 @@ def _matrix_factorization_noise(
         In distributed settings, the generator uses the **same seed** across all
         devices (centralized pattern). This matches Opaque's standard DDP approach
         where noise is conceptually added after gradient aggregation.
-        
+
         The ``gen`` parameter is expected to be pre-resolved via
         ``_resolve_generator()`` which handles distributed mode automatically.
     """
