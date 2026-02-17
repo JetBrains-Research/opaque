@@ -13,10 +13,10 @@ import opaque.distributed as dist_utils
 class TestNonDistributed:
     """Tests for behavior when distributed is not initialized."""
 
-    def test_is_initialized_false(self):
-        """is_initialized() returns False when not initialized."""
+    def test_is_distributed_false(self):
+        """is_distributed() returns False when not initialized."""
         # Note: In CI, distributed might be initialized, so we just check it's callable
-        result = dist_utils.is_initialized()
+        result = dist_utils.is_distributed()
         assert isinstance(result, bool)
 
     def test_get_rank_returns_zero(self):
@@ -40,7 +40,7 @@ class TestNonDistributed:
         tensor = torch.tensor([1.0, 2.0, 3.0])
 
         # Skip if distributed is initialized (e.g., in multi-GPU CI)
-        if dist_utils.is_initialized():
+        if dist_utils.is_distributed():
             pytest.skip("Distributed already initialized")
 
         with pytest.raises(RuntimeError, match="not initialized"):
@@ -49,7 +49,7 @@ class TestNonDistributed:
     def test_barrier_no_op_without_init(self):
         """barrier() is no-op when not initialized."""
         # Skip if distributed is initialized
-        if dist_utils.is_initialized():
+        if dist_utils.is_distributed():
             pytest.skip("Distributed already initialized")
 
         # Should not raise
@@ -65,7 +65,7 @@ class TestAllReduceValidation:
         tensor = torch.tensor([1.0])
 
         # Skip if not initialized (would get RuntimeError before ValueError)
-        if not dist_utils.is_initialized():
+        if not dist_utils.is_distributed():
             pytest.skip("Distributed not initialized")
 
         with pytest.raises(ValueError, match="Invalid reduction operation"):
@@ -80,7 +80,7 @@ class TestAllReduceValidation:
         for op in valid_ops:
             tensor = torch.tensor([1.0])
 
-            if dist_utils.is_initialized():
+            if dist_utils.is_distributed():
                 # Actually execute if initialized
                 dist_utils.all_reduce(tensor, op=op)
             else:
@@ -98,14 +98,15 @@ class TestModuleExports:
     def test_all_functions_exported(self):
         """All expected functions are exported."""
         expected_exports = [
-            "is_initialized",
+            "is_distributed",
             "get_rank",
             "get_world_size",
             "all_reduce",
             "barrier",
-            "all_reduce_gradients",
-            "average_gradients",
-            "sync_scalar",
+            "reduce_pytree",
+            "sum_gradients",
+            "reduce_scalar",
+            "gather_tensors",
             "sync_state",
         ]
 

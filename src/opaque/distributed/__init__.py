@@ -67,10 +67,7 @@ __all__ = [
     "reduce_scalar",
     # Tensor gathering
     "gather_tensors",
-    # Deprecated aliases (will be removed in v3.0)
-    "all_reduce_gradients",
-    "average_gradients",
-    "sync_scalar",
+    # State synchronization
     "sync_state",
 ]
 
@@ -221,9 +218,7 @@ def barrier() -> None:
 
 # Import submodules AFTER core functions are defined (avoid circular import)
 from .gradients import (  # noqa: E402
-    all_reduce_gradients,
-    average_gradients,
     reduce_pytree,
     sum_gradients,
 )
-from .state import gather_tensors, reduce_scalar, sync_scalar, sync_state  # noqa: E402
+from .state import gather_tensors, reduce_scalar, sync_state  # noqa: E402

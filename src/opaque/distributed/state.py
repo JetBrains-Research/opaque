@@ -17,8 +17,7 @@ from . import get_world_size, is_distributed
 __all__ = [
     "reduce_scalar",
     "gather_tensors",
-    "sync_scalar",  # Deprecated alias
-    "sync_state",  # Deprecated - will be removed
+    "sync_state",
 ]
 
 

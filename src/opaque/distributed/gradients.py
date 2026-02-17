@@ -20,8 +20,6 @@ from . import get_world_size, is_distributed
 __all__ = [
     "reduce_pytree",
     "sum_gradients",
-    "all_reduce_gradients",  # Deprecated alias
-    "average_gradients",  # Deprecated - will be removed
 ]
 
 
@@ -129,82 +127,4 @@ def sum_gradients(gradients: Any) -> Any:
         - If distributed is not initialized, returns input unchanged
     """
     gradients, _ = reduce_pytree(gradients, op="sum", async_op=False)
-    return gradients
-
-
-# Deprecated alias for backward compatibility
-def all_reduce_gradients(
-    gradients: Any,
-    op: str = "sum",
-    async_op: bool = False,
-) -> tuple[Any, list[Any] | None]:
-    """Deprecated: Use reduce_pytree instead.
-
-    .. deprecated:: 2.0.0
-        Use :func:`reduce_pytree` instead. This will be removed in v3.0.0.
-    """
-    import warnings
-
-    warnings.warn(
-        "all_reduce_gradients is deprecated, use reduce_pytree instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return reduce_pytree(gradients, op=op, async_op=async_op)
-
-
-def average_gradients(
-    gradients: Any,
-    world_size: int | None = None,
-) -> Any:
-    """Deprecated: No valid use case in DP-only library.
-
-    .. deprecated:: 2.0.0
-        This function will be removed in v3.0.0. For DP training, use
-        :func:`sum_gradients` instead. Averaging vs summing only affects
-        the effective learning rate, not the privacy guarantees.
-
-    Average a PyTree of gradients across all processes.
-
-    This is equivalent to reduce_pytree(op="sum") followed by division
-    by world_size. Useful when you want the mean gradient instead of sum.
-
-    Args:
-        gradients: PyTree (nested dict/list/tuple) of tensors to average.
-        world_size: Number of processes. If None, uses get_world_size().
-            Default: None.
-
-    Returns:
-        gradients: PyTree with averaged tensors (modified in-place).
-
-    Notes:
-        - If distributed is not initialized, returns input unchanged
-        - Operates in-place for memory efficiency
-    """
-    import warnings
-
-    warnings.warn(
-        "average_gradients is deprecated and will be removed in v3.0.0. "
-        "Use sum_gradients for DP training.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-
-    if not is_distributed():
-        return gradients
-
-    if world_size is None:
-        world_size = get_world_size()
-
-    # Sum across devices
-    gradients, _ = reduce_pytree(gradients, op="sum", async_op=False)
-
-    # Divide by world_size
-    def average_leaf(tensor: torch.Tensor) -> torch.Tensor:
-        if isinstance(tensor, torch.Tensor):
-            tensor.div_(world_size)
-        return tensor
-
-    tree_map(average_leaf, gradients)
-
     return gradients

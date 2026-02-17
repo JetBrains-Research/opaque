@@ -108,71 +108,12 @@ class TestDistributedUtilities:
 class TestGradientAggregation:
     """Test gradient aggregation across devices."""
 
-    def test_all_reduce_gradients_sum(self, device):
-        """Test that gradients are summed across devices."""
-        from opaque.distributed import all_reduce_gradients, get_rank, get_world_size
-
-        if not is_distributed():
-            pytest.skip("Requires distributed setup")
-
-        rank = get_rank()
-        world_size = get_world_size()
-
-        # Each rank has different gradients
-        grads = {
-            "weight": torch.ones(5, 3, device=device) * (rank + 1),
-            "bias": torch.ones(3, device=device) * (rank + 1),
-        }
-
-        # Sum across all devices
-        result, _ = reduce_pytree(grads, op="sum")
-
-        # Expected: sum of 1 + 2 + ... + world_size = world_size * (world_size + 1) / 2
-        expected_sum = sum(range(1, world_size + 1))
-
-        assert torch.allclose(
-            result["weight"], torch.ones(5, 3, device=device) * expected_sum
-        )
-        assert torch.allclose(
-            result["bias"], torch.ones(3, device=device) * expected_sum
-        )
-
-    def test_average_gradients(self, device):
-        """Test that gradients are averaged across devices."""
-        from opaque.distributed import average_gradients, get_rank, get_world_size
-
-        if not is_distributed():
-            pytest.skip("Requires distributed setup")
-
-        rank = get_rank()
-        world_size = get_world_size()
-
-        # Each rank has different gradients
-        grads = {
-            "weight": torch.ones(5, 3, device=device) * (rank + 1),
-            "bias": torch.ones(3, device=device) * (rank + 1),
-        }
-
-        # Average across all devices
-        result = average_gradients(grads)
-
-        # Expected: average of 1 + 2 + ... + world_size
-        expected_avg = sum(range(1, world_size + 1)) / world_size
-
-        assert torch.allclose(
-            result["weight"], torch.ones(5, 3, device=device) * expected_avg, atol=1e-5
-        )
-        assert torch.allclose(
-            result["bias"], torch.ones(3, device=device) * expected_avg, atol=1e-5
-        )
-
-
 class TestStateSynchronization:
     """Test state synchronization across devices."""
 
-    def test_sync_scalar(self, device):
-        """Test scalar synchronization across devices."""
-        from opaque.distributed import get_rank, get_world_size, sync_scalar
+    def test_reduce_scalar(self, device):
+        """Test scalar reduction across devices."""
+        from opaque.distributed import get_rank, get_world_size, reduce_scalar
 
         if not is_distributed():
             pytest.skip("Requires distributed setup")
