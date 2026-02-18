@@ -22,6 +22,7 @@ use std::time::Instant;
 
 use crate::error::PldError;
 use crate::amplification::{accumulate, poisson, truncated_poisson};
+use crate::cached::cached;
 use crate::composition::{compose, repeat};
 use crate::discretization::DiscretizationConfig;
 use crate::mechanisms::eps_delta::{eps_delta, eps_delta_with};
@@ -876,6 +877,50 @@ fn py_adaclip(
 }
 
 // ---------------------------------------------------------------------------
+// Module-level functions — caching
+// ---------------------------------------------------------------------------
+
+/// Wrap a process in a PLD cache for efficient repeated queries.
+///
+/// The returned process computes its Privacy Loss Distribution on first
+/// access and caches the result.  Subsequent calls to ``epsilon_at``,
+/// ``delta_at``, etc. reuse the cached PLD instead of recomputing it.
+///
+/// This is useful in accounting loops where the same step process is
+/// composed many times — caching avoids redundant PLD computation.
+///
+/// **Note:** Clones of a cached process share the same cache.
+///
+/// Args:
+///     process (DpProcess): The process to cache.
+///
+/// Returns:
+///     DpProcess: A new process that caches its PLD after first computation.
+///
+/// Example::
+///
+///     # Without caching: PLD recomputed on every query
+///     step = dp.poisson(1.1, 0.01)
+///
+///     # With caching: PLD computed once, reused for all queries
+///     step = dp.cached(dp.poisson(1.1, 0.01))
+///     eps = step.epsilon_at(1e-5)   # computes PLD
+///     adv = step.advantage()         # reuses cached PLD
+#[pyfunction]
+#[pyo3(name = "cached", text_signature = "(process)")]
+fn py_cached(process: &PyDpProcess) -> PyDpProcess {
+    let wrapper = ProcessWrapper(process.inner.clone());
+    let c = cached(wrapper);
+    PyDpProcess::new(
+        Box::new(c),
+        format!("Cached({})", process.label),
+        vec![
+            ("inner", ParamValue::Str(process.label.clone())),
+        ],
+    )
+}
+
+// ---------------------------------------------------------------------------
 // Module-level functions — composition
 // ---------------------------------------------------------------------------
 
@@ -932,6 +977,9 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Transforms
     m.add_function(wrap_pyfunction!(py_adaclip, m)?)?;
+
+    // Caching
+    m.add_function(wrap_pyfunction!(py_cached, m)?)?;
 
     // Composition
     m.add_function(wrap_pyfunction!(py_repeat, m)?)?;
