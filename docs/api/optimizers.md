@@ -1,43 +1,36 @@
-# DP Optimizers
+# Adaptive Clipping
 
-The `opaque.optimizers` module provides DP-aware optimizer wrappers that integrate with TorchOpt functional optimizers.
+The `opaque.clipping` module provides `adaptive_clipped_grad()`, which computes per-example clipped gradients with an automatically tuned clip norm.
 
 ## Overview
 
-DP optimization requires:
+Adaptive clipping automatically adjusts the clip norm `C` so that a target fraction of gradients are clipped each step (Andrew et al. 2021). This removes the need to manually tune `C`.
 
-1. Computing clipped per-example gradients
-2. Adding calibrated noise
-3. Updating parameters
-
-Opaque provides **adaptive clipping** that automatically tunes the clip norm during training, improving the
-privacy-utility tradeoff without weakening privacy guarantees.
-
-**Key function**: `adaptive_clipping()` - Wrap any TorchOpt optimizer with adaptive clipping
+**Key function**: `adaptive_clipped_grad()` - Returns `(grad_fn, clip_state)` with auto-tuning clip norm
 
 **Features**:
 
-- **Automatic clip norm tuning**: Tracks gradient statistics to adjust clipping
-- **Works with any TorchOpt optimizer**: SGD, Adam, AdamW, RMSprop, etc.
-- **Optional LR scaling**: Compensate for heavy clipping
-- **Same privacy**: No weakening of guarantees
+- **Automatic clip norm tuning**: Targets a quantile of gradient norms
+- **State-based API**: Clip norm adapts via `clip_state` across steps
+- **Configurable quantile**: `target_quantile=0.5` clips at the median
+- **Privacy-accounted**: Use `acc.adaclip()` to account for quantile estimation cost
 
-**See also**: [Optimizers & Adaptive Clipping User Guide](../user-guide/optimizers.md)
+**See also**: [Adaptive Clipping User Guide](../user-guide/optimizers.md)
 
-<!-- TODO: Uncomment when optimizers module is implemented
-## Adaptive Clipping
+## API
 
-::: opaque.optimizers.adaptive
+```python
+from opaque.clipping import adaptive_clipped_grad
 
-## Supporting Classes
+grad_fn, clip_state = adaptive_clipped_grad(
+    loss_fn,
+    initial_clip_norm=1.0,
+    target_quantile=0.5,
+    learning_rate=0.2,
+    batch_argnums=1,
+)
 
-::: opaque.optimizers.adaptive.clip_buffer
-options:
-members:
-- ClipBuffer
-
-::: opaque.optimizers.adaptive.lr_scheduler
-options:
-members:
-- LRScheduler
--->
+# Training step
+grads, clip_state = grad_fn(params, batch, state=clip_state)
+print(f"Current clip norm: {clip_state.clip_norm:.4f}")
+```

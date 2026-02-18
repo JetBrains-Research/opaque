@@ -98,24 +98,25 @@ import opaque.accounting as acc
 from opaque import clipped_grad, gaussian_noise
 
 # 1. Calibrate noise
-noise_multiplier = acc.find_noise_multiplier_for_epsilon_delta(
-    epsilon=3.0, delta=1e-5, sample_rate=0.01, num_steps=1000
-)
+def build(nm):
+    return acc.poisson(nm, sample_rate=0.01) * 1000
+
+result = acc.calibrate(acc.epsilon(3.0, delta=1e-5), build, 0.1, 10.0)
+noise_multiplier = result.param
 
 # 2. Create clipped gradient function
-clipped_grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0, ...)
+grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=1)
 
 # 3. Training loop
 noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier)
-privacy_state = acc.create()
 for step in range(1000):
-    grads = clipped_grad_fn(params, batch)
+    grads, clip_state = grad_fn(params, batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = update(params, noisy_grads)
-    privacy_state = acc.compose_poisson_gaussian(privacy_state, ...)
 
 # 4. Check final privacy
-epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
+training = acc.poisson(noise_multiplier, sample_rate=0.01) * 1000
+epsilon = training.epsilon_at(1e-5)
 ```
 
 **See**: [Quick Start](../getting-started/quickstart.md) for complete example
@@ -124,22 +125,23 @@ epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
 
 ```python
 from peft import get_peft_model, LoraConfig
-from opaque.optimizers import adaptive_clipping
+from opaque.clipping import adaptive_clipped_grad
 import torchopt
 
 # 1. Add LoRA adapters
 lora_config = LoraConfig(r=8, lora_alpha=16, target_modules=["q_proj", "v_proj"])
 model = get_peft_model(base_model, lora_config)
 
-# 2. Use adaptive clipping optimizer
-base_opt = torchopt.sgd(lr=0.01)
-optimizer = adaptive_clipping(
-    base_opt,
+# 2. Use adaptive clipping
+grad_fn, clip_state = adaptive_clipped_grad(
+    loss_fn,
     initial_clip_norm=1.0,
     target_quantile=0.5,
+    batch_argnums=1,
 )
 
 # 3. Train only LoRA parameters (much faster!)
+grads, clip_state = grad_fn(params, batch, state=clip_state)
 ```
 
 **See**: [LoRA Guide](lora.md) and [Tutorial 06](../tutorials/06_lora_huggingface_dp_training.ipynb)
@@ -153,7 +155,7 @@ Opaque supports three privacy metrics:
 **Standard metric** from [Dwork et al. 2006](https://link.springer.com/chapter/10.1007/11681878_14)
 
 ```python
-epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
+epsilon = training.epsilon_at(delta=1e-5)
 ```
 
 ### 2. f-DP Advantage
@@ -161,7 +163,7 @@ epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
 **Tighter bound** from [Dong et al. 2019](https://arxiv.org/abs/1905.02383)
 
 ```python
-advantage = acc.get_advantage(privacy_state)
+advantage = training.advantage()
 ```
 
 ### 3. (α, β) Error Rates
@@ -169,7 +171,7 @@ advantage = acc.get_advantage(privacy_state)
 **Hypothesis testing interpretation** from [Wasserman & Zhou 2010](https://www.stat.cmu.edu/~arinaldo/Fang_Zhou.pdf)
 
 ```python
-beta = acc.get_beta(privacy_state, alpha=0.01)
+beta = training.beta_at(alpha=0.01)
 ```
 
 ## Best Practices
@@ -182,15 +184,13 @@ Start with ε=10, get your model working, then tighten to ε=3 or ε=1
 ### 2. Use Calibration
 
 !!! success "Let Opaque find the right noise"
-Use `find_noise_multiplier_for_epsilon_delta()` instead of guessing
+    Use `acc.calibrate()` instead of guessing
 
 ### 3. Monitor Privacy During Training
 
 ```python
-if step % 100 == 0:
-    current_eps = acc.get_epsilon(privacy_state, delta=delta)
-    print(f"Step {step}: ε={current_eps:.2f}")
-```
+training = acc.poisson(noise_multiplier, sample_rate) * step
+print(f"Step {step}: ε={training.epsilon_at(delta):.2f}")
 
 ### 4. Use LoRA for LLMs
 

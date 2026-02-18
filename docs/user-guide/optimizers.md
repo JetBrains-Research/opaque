@@ -11,73 +11,80 @@ and changes during training:
 - **Early training**: Gradients are large → need higher clip norm
 - **Late training**: Gradients are small → can use lower clip norm
 
-**Adaptive clipping solves this** by automatically adjusting the clip norm based on gradient statistics (e.g., median
-gradient norm).
+**Adaptive clipping solves this** by automatically adjusting the clip norm based on gradient statistics.
+The clip threshold adapts geometrically: `C_{t+1} = C_t * exp(η * sign(ρ_t - γ))` where `ρ_t` is the clipping rate and `γ` is the target quantile.
 
 ### Benefits
 
 ✅ **Better accuracy**: Automatically finds optimal clip norm
 ✅ **Less tuning**: No manual hyperparameter search
 ✅ **Stable training**: Adapts to changing gradient magnitudes
-✅ **Same privacy**: No weakening of privacy guarantees
+✅ **Same privacy**: Formal privacy cost tracked via `acc.adaclip()`
 
-## The `adaptive_clipping()` Wrapper
+## The `adaptive_clipped_grad()` Function
 
-Opaque provides a **wrapper** that adds adaptive clipping to any TorchOpt optimizer:
+Opaque provides `adaptive_clipped_grad()` for DP gradients with adaptive clip norm tracking:
 
 ```python
-from opaque.optimizers import adaptive_clipping
+from opaque.clipping import adaptive_clipped_grad
+from opaque import gaussian_noise
 import torchopt
 
-# 1. Choose base optimizer (any TorchOpt optimizer!)
-base_optimizer = torchopt.sgd(lr=0.01)
-
-# 2. Wrap with adaptive clipping
-optimizer = adaptive_clipping(
-    base_optimizer,
-    initial_clip_norm=1.0,  # Starting clip norm
-    target_quantile=0.5,  # Adapt to median gradient norm
+# 1. Create adaptive gradient function with initial state
+grad_fn, clip_state = adaptive_clipped_grad(
+    loss_fn,
+    initial_clip_norm=1.0,     # Starting clip norm
+    target_quantile=0.5,       # Adapt to median gradient norm
+    learning_rate=0.2,         # Clip norm adaptation speed
+    batch_argnums=1,
 )
 
-# 3. Use like any optimizer
-noise_fn, noise_state = gaussian_noise(stddev=noise_mult * clip_norm_initial)
-for step in range(num_steps):
-    # Get gradients (clipped with current adaptive norm)
-    grads, current_clip_norm = optimizer.compute_clipped_grads(
-        params, loss_fn, batch
-    )
+# 2. Setup optimizer and noise
+optimizer = torchopt.adam(lr=0.001)
+opt_state = optimizer.init(params)
+noise_fn, noise_state = gaussian_noise(
+    stddev=noise_multiplier * clip_state.sensitivity()
+)
 
-    # Add noise
+# 3. Training loop with explicit state-passing
+for step in range(num_steps):
+    # Compute clipped gradients — state passed explicitly
+    grads, clip_state = grad_fn(params, batch, state=clip_state)
+
+    # Add noise scaled to current sensitivity
     noisy_grads, noise_state = noise_fn(grads, noise_state)
 
     # Update parameters
-    params = optimizer.step(params, noisy_grads)
+    updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
+    params = torchopt.apply_updates(params, updates)
 
-    # Optimizer automatically updates clip norm for next step!
+    # Monitor adaptation
+    if step % 100 == 0:
+        print(f"Step {step}: C={clip_state.clip_norm:.4f}, "
+              f"ρ={clip_state.clipping_rate:.2%}")
 ```
 
 ### Key Parameters
 
-**`initial_clip_norm`**: Starting clip norm (default: 1.0)
+**`initial_clip_norm`**: Starting clip norm (default: 0.1)
 
 - Use same value you'd use for fixed clipping
 
-**`target_quantile`**: Gradient norm quantile to track (default: 0.5)
+**`target_quantile`**: Target fraction of gradients to clip (default: 0.5)
 
-- 0.5 = median (recommended)
-- 0.75 = 75th percentile (more aggressive clipping)
-- 0.25 = 25th percentile (less aggressive clipping)
+- 0.5 = median (recommended, from Andrew et al. 2021)
+- 0.75 = clip more aggressively
+- 0.25 = clip less aggressively
 
-**`ema_decay`**: Exponential moving average decay (default: 0.9)
+**`learning_rate`**: Adaptation speed for clip norm (default: 0.2)
 
-- Controls how fast clip norm adapts
-- Higher = slower adaptation, more stable
-- Lower = faster adaptation, more reactive
+- Controls how fast the clip norm updates geometrically
+- Higher = faster adaptation, potentially less stable
+- Lower = slower adaptation, more stable
 
-**`lr_scale_factor`**: Learning rate scaling (default: 1.0)
+**`clip_norm_min` / `clip_norm_max`**: Bounds on clip norm (default: 0.01 / 100.0)
 
-- Optionally scale LR when gradients are heavily clipped
-- See "Learning Rate Scaling" below
+- Prevents clip norm from becoming too small or too large
 
 ## Complete Example with TorchOpt
 
@@ -86,98 +93,80 @@ Here's a full training loop using adaptive clipping:
 ```python
 import torch
 import opaque.accounting as acc
-from opaque import clipped_grad, gaussian_noise
-from opaque.optimizers import adaptive_clipping
+from opaque.clipping import adaptive_clipped_grad
+from opaque import gaussian_noise
 import torchopt
 
 # Setup
-clip_norm_initial = 1.0
 batch_size = 32
 dataset_size = 10000
 sample_rate = batch_size / dataset_size
 num_steps = 1000
+noise_multiplier = 1.2
 
-# Calibrate noise (use initial clip norm)
-noise_multiplier = acc.find_noise_multiplier_for_epsilon_delta(
-    epsilon=3.0,
-    delta=1e-5,
-    sample_rate=sample_rate,
-    num_steps=num_steps,
-)
-
-# Create adaptive clipping optimizer
-base_opt = torchopt.adam(lr=0.001, betas=(0.9, 0.999))
-optimizer = adaptive_clipping(
-    base_opt,
-    initial_clip_norm=clip_norm_initial,
+# Create adaptive gradient function
+grad_fn, clip_state = adaptive_clipped_grad(
+    loss_fn,
+    initial_clip_norm=1.0,
     target_quantile=0.5,
+    batch_argnums=1,
 )
 
-# Define per-example loss
-def loss_fn(params, example):
-    x, y = example
-    pred = model(params, x)
-    return (pred - y) ** 2
+# Create optimizer and noise
+optimizer = torchopt.adam(lr=0.001, betas=(0.9, 0.999))
+opt_state = optimizer.init(params)
+noise_fn, noise_state = gaussian_noise(
+    stddev=noise_multiplier * clip_state.sensitivity()
+)
 
 # Training loop
-noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_norm_initial)
-privacy_state = acc.create()
-
 for step in range(num_steps):
     # Compute clipped gradients with adaptive norm
-    grads, current_clip_norm = optimizer.compute_clipped_grads(
-        params, loss_fn, batch
-    )
+    grads, clip_state = grad_fn(params, batch, state=clip_state)
 
-    # Add calibrated noise (using current clip norm)
+    # Add calibrated noise
     noisy_grads, noise_state = noise_fn(grads, noise_state)
 
     # Update parameters
-    params = optimizer.step(params, noisy_grads)
-
-    # Track privacy
-    privacy_state = acc.compose_poisson_gaussian(
-        privacy_state,
-        noise_multiplier=noise_multiplier,
-        sample_rate=sample_rate,
-        count=1,
-    )
+    updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
+    params = torchopt.apply_updates(params, updates)
 
     if step % 100 == 0:
-        eps = acc.get_epsilon(privacy_state, delta=1e-5)
-        print(f"Step {step}: ε={eps:.2f}, clip_norm={current_clip_norm:.3f}")
+        print(f"Step {step}: clip_norm={clip_state.clip_norm:.3f}, "
+              f"clipping_rate={clip_state.clipping_rate:.2%}")
+
+# Check privacy (adaclip accounts for the quantile estimation cost)
+training = acc.adaclip(
+    noise_multiplier=noise_multiplier,
+    quantile_noise_std=50.0,
+) * num_steps
+eps = training.epsilon_at(1e-5)
+print(f"Final privacy: (ε={eps:.2f}, δ=1e-5)")
 ```
 
 ## Supported TorchOpt Optimizers
 
-Opaque's `adaptive_clipping()` works with **any** TorchOpt optimizer:
+`adaptive_clipped_grad()` computes the clipped gradients — you can then use **any** TorchOpt optimizer for the update:
 
 ### SGD
 
 ```python
-base_opt = torchopt.sgd(lr=0.01, momentum=0.9)
-optimizer = adaptive_clipping(base_opt, initial_clip_norm=1.0)
+optimizer = torchopt.sgd(lr=0.01, momentum=0.9)
+opt_state = optimizer.init(params)
 ```
 
 ### Adam
 
 ```python
-base_opt = torchopt.adam(lr=0.001, betas=(0.9, 0.999))
-optimizer = adaptive_clipping(base_opt, initial_clip_norm=1.0)
+optimizer = torchopt.adam(lr=0.001, betas=(0.9, 0.999))
+opt_state = optimizer.init(params)
 ```
 
 ### AdamW
 
 ```python
-base_opt = torchopt.adamw(lr=0.001, weight_decay=0.01)
-optimizer = adaptive_clipping(base_opt, initial_clip_norm=1.0)
-```
-
-### RMSprop
-
-```python
-base_opt = torchopt.rmsprop(lr=0.001, alpha=0.99)
-optimizer = adaptive_clipping(base_opt, initial_clip_norm=1.0)
+optimizer = torchopt.adamw(lr=0.001, weight_decay=0.01)
+opt_state = optimizer.init(params)
 ```
 
 !!! tip "Try different optimizers"
@@ -195,9 +184,9 @@ Adaptive clipping maintains a **clip buffer** that tracks gradient norm statisti
 ### Example Evolution
 
 ```
-Step 0: clip_norm=1.000 (initial)
-Step 100: clip_norm=1.234 (gradients larger than expected)
-Step 500: clip_norm=0.876 (gradients getting smaller)
+Step 0:    clip_norm=1.000 (initial)
+Step 100:  clip_norm=1.234 (gradients larger than expected)
+Step 500:  clip_norm=0.876 (gradients getting smaller)
 Step 1000: clip_norm=0.543 (converged, small gradients)
 ```
 
@@ -205,24 +194,16 @@ The clip norm automatically **increases** when gradients are large and **decreas
 
 ## Learning Rate Scaling (Optional)
 
-When gradients are heavily clipped, the effective learning rate is reduced. You can **compensate** by scaling the LR:
+When gradients are heavily clipped, the effective learning rate may need adjustment. Handle this by adjusting the optimizer LR based on the `clip_state`:
 
 ```python
-optimizer = adaptive_clipping(
-    base_opt,
-    initial_clip_norm=1.0,
-    lr_scale_factor=2.0,  # Scale LR when clipping is high
-)
+if clip_state.clipping_rate > 0.8:
+    # Most gradients are being clipped — consider a higher LR
+    print(f"High clipping rate: {clip_state.clipping_rate:.0%}")
 ```
 
-**How it works**:
-
-- If 80% of gradients are clipped → scale LR by `lr_scale_factor`
-- If 20% of gradients are clipped → use original LR
-- Smooth interpolation in between
-
 !!! warning "Use with caution"
-LR scaling can help but may make training unstable. Start with `lr_scale_factor=1.0` (disabled).
+    LR scaling when combined with DP noise is experimental. Start simple and adjust only if needed.
 
 ## Comparison: Fixed vs Adaptive Clipping
 
@@ -238,17 +219,18 @@ LR scaling can help but may make training unstable. Start with `lr_scale_factor=
 
 ## Monitoring Adaptive Clipping
 
-Track how the clip norm evolves:
+Track how the clip norm evolves via the `clip_state`:
 
 ```python
 clip_norms = []
 
 for step in range(num_steps):
-    grads, current_clip_norm = optimizer.compute_clipped_grads(params, loss_fn, batch)
-    clip_norms.append(current_clip_norm)
+    grads, clip_state = grad_fn(params, batch, state=clip_state)
+    clip_norms.append(clip_state.clip_norm)
 
     noisy_grads, noise_state = noise_fn(grads, noise_state)
-    params = optimizer.step(params, noisy_grads)
+    updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
+    params = torchopt.apply_updates(params, updates)
 
 # Plot clip norm evolution
 import matplotlib.pyplot as plt
@@ -264,14 +246,13 @@ plt.show()
 For comparison, here's standard DP-SGD with **fixed clipping**:
 
 ```python
-import opaque.accounting as acc
 from opaque import clipped_grad, gaussian_noise
 
 # Fixed clip norm
 clip_norm = 1.0
 
 # Create clipped gradient function
-dp_grad_fn = clipped_grad(
+dp_grad_fn, clip_state = clipped_grad(
     loss_fn,
     l2_clip_norm=clip_norm,  # Fixed!
     argnums=0,
@@ -281,7 +262,7 @@ dp_grad_fn = clipped_grad(
 # Training loop
 noise_fn, noise_state = gaussian_noise(stddev=noise_mult * clip_norm)
 for step in range(num_steps):
-    grads = dp_grad_fn(params, batch)
+    grads, clip_state = dp_grad_fn(params, batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = update(params, noisy_grads)
 ```
@@ -297,32 +278,32 @@ for step in range(num_steps):
 ### 1. Start with Median Quantile
 
 ```python
-optimizer = adaptive_clipping(base_opt, target_quantile=0.5)  # Recommended
+grad_fn, clip_state = adaptive_clipped_grad(loss_fn, target_quantile=0.5, batch_argnums=1)  # Recommended
 ```
 
 ### 2. Monitor Clip Norm
 
 ```python
 if step % 100 == 0:
-    print(f"Current clip norm: {current_clip_norm:.3f}")
+    print(f"Current clip norm: {clip_state.clip_norm:.3f}")
 ```
 
 ### 3. Use Adam for DP Training
 
 ```python
 # Adam often works better than SGD for DP
-base_opt = torchopt.adam(lr=0.001)
-optimizer = adaptive_clipping(base_opt, initial_clip_norm=1.0)
+optimizer = torchopt.adam(lr=0.001)
+opt_state = optimizer.init(params)
 ```
 
-### 4. Tune EMA Decay for Stability
+### 4. Tune Adaptation Speed
 
 ```python
 # More stable (slower adaptation)
-optimizer = adaptive_clipping(base_opt, ema_decay=0.99)
+grad_fn, state = adaptive_clipped_grad(loss_fn, learning_rate=0.1, batch_argnums=1)
 
 # More reactive (faster adaptation)
-optimizer = adaptive_clipping(base_opt, ema_decay=0.7)
+grad_fn, state = adaptive_clipped_grad(loss_fn, learning_rate=0.5, batch_argnums=1)
 ```
 
 ## Integration with TorchOpt
@@ -331,18 +312,22 @@ Opaque's functional API integrates seamlessly with TorchOpt's functional optimiz
 
 ```python
 import torchopt
+from opaque.clipping import adaptive_clipped_grad
 
-# TorchOpt optimizer (functional!)
-base_opt = torchopt.adam(lr=0.001)
+# Functional gradient computation
+grad_fn, clip_state = adaptive_clipped_grad(loss_fn, batch_argnums=1)
 
-# Add adaptive clipping
-dp_optimizer = adaptive_clipping(base_opt, initial_clip_norm=1.0)
+# Functional optimizer
+optimizer = torchopt.adam(lr=0.001)
+opt_state = optimizer.init(params)
 
-# Use functional update
-params = dp_optimizer.step(params, noisy_grads)
+# Functional update
+grads, clip_state = grad_fn(params, batch, state=clip_state)
+updates, opt_state = optimizer.update(grads, opt_state, params=params)
+params = torchopt.apply_updates(params, updates)
 ```
 
-**Why TorchOpt?** Functional optimizers fit naturally with Opaque's functional design, avoiding mutable optimizer state.
+**Why TorchOpt?** Functional optimizers fit naturally with Opaque's functional design — no mutable optimizer state.
 
 ## See Also
 

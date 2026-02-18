@@ -60,15 +60,15 @@ def per_example_fn(params, example):
     """Any function that returns PyTree (e.g., gradients)."""
     return compute_gradient(params, example)
 
-# Create clipped version
-clipped_fn = clipped_fun(
+# Create clipped version (returns (fn, state) tuple)
+clipped_fn, clip_state = clipped_fun(
     per_example_fn,
     batch_argnums=1,  # Argument 1 (example) is batched
     l2_clip_norm=1.0,
 )
 
 # Automatically clips per-example outputs and sums
-summed_output = clipped_fn(params, batch_of_examples)
+summed_output, clip_state = clipped_fn(params, batch_of_examples, state=clip_state)
 ```
 
 **Use when**: You have a function that processes single examples and want automatic batching + clipping.
@@ -88,8 +88,8 @@ def loss_fn(params, example):
     pred = model(params, x)
     return (pred - y) ** 2
 
-# Create DP gradient function
-dp_grad_fn = clipped_grad(
+# Create DP gradient function (returns (fn, state) tuple)
+grad_fn, clip_state = clipped_grad(
     loss_fn,
     argnums=0,  # Differentiate w.r.t. first argument (params)
     batch_argnums=1,  # Second argument (example) is batched
@@ -97,7 +97,7 @@ dp_grad_fn = clipped_grad(
 )
 
 # Use like torch.func.grad, but with clipping!
-grads = dp_grad_fn(params, (X_batch, y_batch))
+grads, clip_state = grad_fn(params, (X_batch, y_batch), state=clip_state)
 ```
 
 **Use when**: You want to differentiate a loss function with DP guarantees (most common case).
@@ -138,18 +138,21 @@ This is a reasonable default for normalized data. Adjust based on results.
 Instead of fixed `C`, use **adaptive clipping** to automatically adjust based on gradient statistics:
 
 ```python
-from opaque.optimizers import adaptive_clipping
-import torchopt
+from opaque.clipping import adaptive_clipped_grad
 
-base_optimizer = torchopt.sgd(lr=0.01)
-optimizer = adaptive_clipping(
-    base_optimizer,
+grad_fn, clip_state = adaptive_clipped_grad(
+    loss_fn,
     initial_clip_norm=1.0,
     target_quantile=0.5,  # Clip at median gradient norm
+    batch_argnums=1,
 )
+
+# Clip norm adapts automatically each step
+grads, clip_state = grad_fn(params, batch, state=clip_state)
+print(f"Current clip norm: {clip_state.clip_norm:.4f}")
 ```
 
-**See**: [Optimizers Guide](optimizers.md) for details
+**See**: [Adaptive Clipping Guide](optimizers.md) for details
 
 ## Per-Example Gradients with `vmap`
 
@@ -184,11 +187,11 @@ def loss_fn(params, example):
     logits = model(params, x.unsqueeze(0)).squeeze(0)
     return F.cross_entropy(logits.unsqueeze(0), y.unsqueeze(0))
 
-dp_grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0, argnums=0, batch_argnums=1)
+grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, argnums=0, batch_argnums=1)
 
 # Training loop
 for X_batch, y_batch in dataloader:
-    grads = dp_grad_fn(params, (X_batch, y_batch))
+    grads, clip_state = grad_fn(params, (X_batch, y_batch), state=clip_state)
     # ... add noise and update params
 ```
 
@@ -202,7 +205,7 @@ def loss_fn(params, example):
     aux_info = {"prediction": pred}
     return loss, aux_info
 
-dp_grad_fn = clipped_grad(
+grad_fn, clip_state = clipped_grad(
     loss_fn,
     l2_clip_norm=1.0,
     argnums=0,
@@ -210,8 +213,8 @@ dp_grad_fn = clipped_grad(
     has_aux=True,  # Return auxiliary outputs
 )
 
-grads, aux = dp_grad_fn(params, (X_batch, y_batch))
-# aux.values contains {"prediction": ...}
+(grads, aux), clip_state = grad_fn(params, (X_batch, y_batch), state=clip_state)
+# aux contains auxiliary output data
 ```
 
 ### Pattern 3: Multiple Arguments
@@ -224,14 +227,16 @@ def loss_fn(model_params, feature_params, example):
     pred = model(model_params, features)
     return (pred - y) ** 2
 
-dp_grad_fn = clipped_grad(
+grad_fn, clip_state = clipped_grad(
     loss_fn,
     l2_clip_norm=1.0,
     argnums=(0, 1),  # Clip gradients for both parameter sets
     batch_argnums=2,  # Third argument is batched
 )
 
-model_grads, feature_grads = dp_grad_fn(model_params, feature_params, (X_batch, y_batch))
+(model_grads, feature_grads), clip_state = grad_fn(
+    model_params, feature_params, (X_batch, y_batch), state=clip_state
+)
 ```
 
 ## Advanced Features
@@ -241,9 +246,11 @@ model_grads, feature_grads = dp_grad_fn(model_params, feature_params, (X_batch, 
 Useful for debugging and adaptive clipping:
 
 ```python
-dp_grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0, return_grad_norms=True, ...)
+grad_fn, clip_state = clipped_grad(
+    loss_fn, l2_clip_norm=1.0, return_grad_norms=True, batch_argnums=1,
+)
 
-grads, aux = dp_grad_fn(params, batch)
+(grads, aux), clip_state = grad_fn(params, batch, state=clip_state)
 print(f"Gradient norms: {aux.grad_norms}")  # See which examples were clipped
 ```
 
@@ -252,13 +259,13 @@ print(f"Gradient norms: {aux.grad_norms}")  # See which examples were clipped
 By default, Opaque uses NaN-safe clipping (replaces NaN/inf gradients with zeros):
 
 ```python
-dp_grad_fn = clipped_grad(loss_fn, nan_safe=True, ...)  # Default
+grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, nan_safe=True, ...)  # Default
 ```
 
 Disable for debugging:
 
 ```python
-dp_grad_fn = clipped_grad(loss_fn, nan_safe=False, ...)  # Will error on NaN
+grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, nan_safe=False, ...)  # Will error on NaN
 ```
 
 ### Pre-Clipping Transformation
@@ -270,10 +277,11 @@ def normalize_grads(grads):
     """Normalize each layer's gradients independently."""
     return {k: v / (v.norm() + 1e-8) for k, v in grads.items()}
 
-dp_grad_fn = clipped_grad(
+grad_fn, clip_state = clipped_grad(
     loss_fn,
     l2_clip_norm=1.0,
     pre_clipping_transform=normalize_grads,
+    batch_argnums=1,
 )
 ```
 
@@ -282,23 +290,14 @@ dp_grad_fn = clipped_grad(
 Computing per-example gradients requires more memory than standard batching. Use microbatching to reduce memory usage:
 
 ```python
-# Instead of processing entire batch at once:
-# grads = dp_grad_fn(params, large_batch)  # OOM!
+# Option 1: Use built-in microbatching
+grad_fn, clip_state = clipped_grad(
+    loss_fn, l2_clip_norm=1.0, batch_argnums=1,
+    microbatch_size=8,  # Process 8 examples at a time
+)
 
-# Process in smaller microbatches:
-microbatch_size = 8
-total_grads = None
-
-for i in range(0, len(batch), microbatch_size):
-    microbatch = batch[i:i+microbatch_size]
-    grads = dp_grad_fn(params, microbatch)
-
-    if total_grads is None:
-        total_grads = grads
-    else:
-        total_grads = {k: total_grads[k] + grads[k] for k in grads}
-
-# total_grads now contains sum of all clipped gradients
+# Same call pattern, memory-efficient internally
+grads, clip_state = grad_fn(params, large_batch, state=clip_state)
 ```
 
 **Note**: Microbatching doesn't change privacy guarantees! Each example is still clipped individually.
@@ -307,7 +306,7 @@ for i in range(0, len(batch), microbatch_size):
 
 | Feature       | Standard `torch.func.grad`     | Opaque `clipped_grad`                       |
 |---------------|--------------------------------|---------------------------------------------|
-| **API**       | `grad(loss_fn)(params, batch)` | `clipped_grad(loss_fn, ...)(params, batch)` |
+| **API**       | `grad(loss_fn)(params, batch)` | `grad_fn, state = clipped_grad(loss_fn, ...); grad_fn(params, batch, state=state)` |
 | **Gradients** | Batch-average                  | Per-example, clipped, summed                |
 | **Memory**    | Low (batch-level)              | High (per-example)                          |
 | **Privacy**   | ❌ None                         | ✅ Bounded sensitivity                       |

@@ -14,7 +14,7 @@ import torch
 import torch.nn.functional as F
 import torchopt
 from datasets import load_dataset
-from opaque.optimizers import adaptive_clipping
+from opaque.clipping import adaptive_clipped_grad
 from peft import LoraConfig, get_peft_model
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
@@ -298,17 +298,24 @@ def main():
         base_opt = torchopt.adam(lr=args.learning_rate)
 
     if args.use_adaptive_clipping:
-        init_fn, step_fn = adaptive_clipping(
-            base_opt,
+        grad_fn, clip_state = adaptive_clipped_grad(
+            per_example_loss_fn,
+            argnums=0,
+            batch_argnums=(1,),
             initial_clip_norm=args.clip_norm,
-            target_clip_rate=args.target_clip_rate,
+            target_quantile=1.0 - args.target_clip_rate,
             clip_norm_max=args.clip_norm_max,
+            microbatch_size=args.microbatch_size,
+            keep_batch_dim=False,
+            return_grad_norms=True,
+            return_values=True,
         )
-        opt_state = init_fn(params)
+        opt_state = base_opt.init(params)
         fixed_clip_norm = None
     else:
         opt_state = base_opt.init(params)
         fixed_clip_norm = args.clip_norm
+        clip_state = None
 
     # Setup RNG
     if device.type == "cpu":
@@ -319,7 +326,7 @@ def main():
     # Pre-create clipped_grad function for fixed clipping
     if not args.use_adaptive_clipping:
         print("Creating clipped_grad function...")
-        fixed_clipped_grad_fn = clipped_grad(
+        fixed_clipped_grad_fn, clip_state = clipped_grad(
             per_example_loss_fn,
             argnums=0,
             batch_argnums=(1,),
@@ -352,53 +359,43 @@ def main():
             current_clip_norm = (
                 fixed_clip_norm
                 if fixed_clip_norm is not None
-                else opt_state.current_clip_norm
+                else clip_state.clip_norm
             )
 
-            # Compute clipped gradients
+            # Compute clipped gradients (with state passing)
             if fixed_clipped_grad_fn is not None:
-                grads_tuple, aux = fixed_clipped_grad_fn(params, tokens)
-            else:
-                clipped_grad_fn = clipped_grad(
-                    per_example_loss_fn,
-                    argnums=0,
-                    batch_argnums=(1,),
-                    l2_clip_norm=current_clip_norm,
-                    microbatch_size=args.microbatch_size,
-                    keep_batch_dim=False,
-                    return_grad_norms=True,
-                    return_values=True,
+                (grads_tuple, aux), clip_state = fixed_clipped_grad_fn(
+                    params, tokens, state=clip_state
                 )
-                grads_tuple, aux = clipped_grad_fn(params, tokens)
+            else:
+                # Adaptive: grad_fn already handles adaptive clipping
+                (grads_tuple, aux), clip_state = grad_fn(
+                    params, tokens, state=clip_state
+                )
 
             # Add Gaussian noise
-            stddev = args.noise_multiplier * current_clip_norm
+            stddev = args.noise_multiplier * clip_state.sensitivity()
             noise_fn, noise_state = gaussian_noise(stddev=stddev, generator=rng)
             noisy_grads, _ = noise_fn(grads_tuple, noise_state)
 
-            # Optimizer step
-            if args.use_adaptive_clipping:
-                updates, opt_state, metrics = step_fn(
-                    noisy_grads, aux.grad_norms, opt_state, params=params
-                )
-            else:
-                updates, opt_state = base_opt.update(
-                    noisy_grads, opt_state, params=params
-                )
-                clip_rate = (aux.grad_norms > current_clip_norm).float().mean().item()
-                metrics = {
-                    "clip_norm": current_clip_norm,
-                    "clip_rate": clip_rate,
-                }
+            # Optimizer step (no adapter wrapper - optimizer used directly)
+            updates, opt_state = base_opt.update(
+                noisy_grads, opt_state, params=params
+            )
+            metrics = {
+                "clip_norm": current_clip_norm if fixed_clip_norm is not None else clip_state.clip_norm,
+                "clip_rate": clip_state.clipping_rate if hasattr(clip_state, 'clipping_rate')
+                    else (aux.grad_norms > current_clip_norm).float().mean().item(),
+            }
 
             # Apply updates
             params = torchopt.apply_updates(params, updates)
 
             # Track metrics
-            avg_loss = aux.values.mean().item()
-            min_loss = aux.values.min().item()
-            max_loss = aux.values.max().item()
-            loss_std = aux.values.std().item()
+            avg_loss = aux.loss_values.mean().item()
+            min_loss = aux.loss_values.min().item()
+            max_loss = aux.loss_values.max().item()
+            loss_std = aux.loss_values.std().item()
 
             min_grad_norm = aux.grad_norms.min().item()
             max_grad_norm = aux.grad_norms.max().item()
@@ -442,7 +439,7 @@ def main():
     if args.use_adaptive_clipping:
         print("\nAdaptive clipping:")
         print(f"  Initial clip norm: {args.clip_norm:.3f}")
-        print(f"  Final clip norm: {clip_norms_history[-1]:.3f}")
+        print(f"  Final clip norm: {clip_state.clip_norm:.3f}")
         print(
             f"  Clip norm range: [{min(clip_norms_history):.3f}, {max(clip_norms_history):.3f}]"
         )

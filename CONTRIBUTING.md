@@ -43,7 +43,7 @@ Opaque follows a Test-Driven Development workflow:
 4. **Refactor**: Improve code quality and structure
 5. **Verify**: Run full test suite with coverage
 
-**See**: [Detailed TDD Workflow](docs/development/tdd-workflow.md)
+**See**: [Contributing Guide](docs/development/contributing.md)
 
 ---
 
@@ -57,7 +57,7 @@ uv run pytest
 uv run pytest --cov=opaque --cov-report=html
 
 # Specific test
-uv run pytest tests/core/test_clipped_fun.py::test_clip_pytree -v
+uv run pytest tests/clipping/test_clipped_fun.py -v
 ```
 
 **Requirements**:
@@ -166,8 +166,6 @@ uv run mkdocs build
 **For comprehensive guides, see:**
 
 - [Contributing Guide](docs/development/contributing.md) - Full contribution guidelines
-- [TDD Workflow](docs/development/tdd-workflow.md) - Step-by-step development process
-- [Roadmap](docs/development/roadmap.md) - Project timeline and status
 
 ---
 

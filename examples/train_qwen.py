@@ -13,7 +13,7 @@ IMPORTANT - Adaptive Clipping Performance:
 - By default: use_adaptive_clipping=False (fast, fixed clip norm)
 - Optional: use_adaptive_clipping=True (slow but adaptive)
 - Fixed clipping: creates clipped_grad ONCE and reuses it (fast!)
-- Adaptive clipping: must recreate clipped_grad each step (slow!)
+- Adaptive clipping: uses adaptive_clipped_grad (state-passing API)
 - This is a known limitation of PyTorch's vmap with changing parameters
 
 Expected timing (on H200 GPU):
@@ -34,7 +34,7 @@ import torch
 import torch.nn.functional as F
 import torchopt
 from datasets import load_dataset
-from opaque.optimizers import adaptive_clipping
+from opaque.clipping import adaptive_clipped_grad
 from peft import LoraConfig, get_peft_model
 from transformers import AutoConfig, AutoModelForCausalLM
 
@@ -262,23 +262,30 @@ def main():
     print(f"   Batches per epoch: {len(batches)}")
     print(f"   Total training steps: {num_epochs * len(batches)}")
 
-    # Create base optimizer and optionally wrap with adaptive clipping
+    # Create base optimizer
     base_opt = torchopt.sgd(lr=learning_rate)
 
     if use_adaptive_clipping:
-        init_fn, step_fn = adaptive_clipping(
-            base_opt,
+        grad_fn, clip_state = adaptive_clipped_grad(
+            per_example_loss_fn,
+            argnums=0,
+            batch_argnums=(1,),
             initial_clip_norm=initial_clip_norm,
-            target_clip_rate=target_clip_rate,
+            target_quantile=1.0 - target_clip_rate,
             clip_norm_max=10000,
+            microbatch_size=1,  # Microbatch size of 1 for 7B model
+            keep_batch_dim=False,
+            return_grad_norms=True,
+            return_values=True,
         )
-        opt_state = init_fn(params)
-        fixed_clip_norm = None  # Will use adaptive norm from state
+        opt_state = base_opt.init(params)
+        fixed_clip_norm = None  # Will use adaptive norm from clip_state
     else:
         # Use base optimizer directly (no adaptive clipping wrapper)
         # This avoids recompilation since clip_norm stays constant
         opt_state = base_opt.init(params)
         fixed_clip_norm = initial_clip_norm  # Use constant clip norm
+        clip_state = None
         print(f"   Using fixed clip norm (no adaptation): {fixed_clip_norm}")
 
     # RNG for noise
@@ -293,7 +300,7 @@ def main():
             "\n   Creating clipped_grad function (one-time setup for fixed clipping)..."
         )
         t0 = time.time()
-        fixed_clipped_grad_fn = clipped_grad(
+        fixed_clipped_grad_fn, clip_state = clipped_grad(
             per_example_loss_fn,
             argnums=0,
             batch_argnums=(1,),
@@ -337,7 +344,7 @@ def main():
                 current_clip_norm = (
                     fixed_clip_norm
                     if fixed_clip_norm is not None
-                    else opt_state.current_clip_norm
+                    else clip_state.clip_norm
                 )
 
                 # 1. Compute clipped gradients
@@ -347,51 +354,41 @@ def main():
                 if fixed_clipped_grad_fn is not None:
                     # Use pre-created function (fixed clipping - no recreation!)
                     grad_compute_start = time.time()
-                    grads_tuple, aux = fixed_clipped_grad_fn(params, tokens)
+                    (grads_tuple, aux), clip_state = fixed_clipped_grad_fn(
+                        params, tokens, state=clip_state
+                    )
                     grad_compute_time = time.time() - grad_compute_start
                     if global_step <= 2:
                         print(
                             f"    gradient computation (reusing fn): {grad_compute_time:.1f}s"
                         )
                 else:
-                    # Adaptive clipping - must recreate with new clip_norm
-                    fn_create_start = time.time()
-                    clipped_grad_fn = clipped_grad(
-                        per_example_loss_fn,
-                        argnums=0,
-                        batch_argnums=(1,),
-                        l2_clip_norm=current_clip_norm,
-                        microbatch_size=1,  # Microbatch size of 1 for 7B model
-                        keep_batch_dim=False,
-                        return_grad_norms=True,
-                        return_values=True,
-                    )
-                    fn_create_time = time.time() - fn_create_start
-                    if global_step <= 2:
-                        print(f"    clipped_grad creation: {fn_create_time:.1f}s")
-
+                    # Adaptive clipping - use adaptive_clipped_grad function
                     grad_compute_start = time.time()
-                    grads_tuple, aux = clipped_grad_fn(params, tokens)
+                    (grads_tuple, aux), clip_state = grad_fn(
+                        params, tokens, state=clip_state
+                    )
                     grad_compute_time = time.time() - grad_compute_start
                     if global_step <= 2:
                         print(f"    gradient computation: {grad_compute_time:.1f}s")
 
                 # 2. Add Gaussian noise for DP
-                stddev = noise_multiplier * current_clip_norm
+                stddev = noise_multiplier * clip_state.sensitivity()
                 noise_fn, noise_state = gaussian_noise(stddev=stddev, generator=rng)
                 noisy_grads, _ = noise_fn(grads_tuple, noise_state)
 
-                # 3. Optimizer step
+                # 3. Optimizer step (direct, no wrapper)
+                updates, opt_state = base_opt.update(
+                    noisy_grads, opt_state, params=params
+                )
+                # Compute metrics
                 if use_adaptive_clipping:
-                    # Use adaptive clipping wrapper
-                    updates, opt_state, metrics = step_fn(
-                        noisy_grads, aux.grad_norms, opt_state, params=params
-                    )
+                    metrics = {
+                        "clip_norm": clip_state.clip_norm,
+                        "clip_rate": clip_state.clipping_rate,
+                        "step": global_step + 1,
+                    }
                 else:
-                    # Use base optimizer directly (fixed clipping)
-                    updates, opt_state = base_opt.update(
-                        noisy_grads, opt_state, params=params
-                    )
                     # Manually compute metrics
                     clip_rate = (
                         (aux.grad_norms > current_clip_norm).float().mean().item()
@@ -406,7 +403,7 @@ def main():
                 params = torchopt.apply_updates(params, updates)
 
                 # Track metrics
-                avg_loss = aux.values.mean().item()
+                avg_loss = aux.loss_values.mean().item()
                 losses.append(avg_loss)
                 epoch_losses.append(avg_loss)
                 clip_norms_history.append(metrics["clip_norm"])
@@ -458,9 +455,9 @@ def main():
         if use_adaptive_clipping:
             print("\nAdaptive clipping:")
             print(f"  Initial clip norm: {initial_clip_norm:.3f}")
-            print(f"  Final clip norm: {clip_norms_history[-1]:.3f}")
+            print(f"  Final clip norm: {clip_state.clip_norm:.3f}")
             print(f"  Target clip rate: {target_clip_rate:.1%}")
-            print(f"  Final clip rate: {clip_rates_history[-1]:.1%}")
+            print(f"  Final clip rate: {clip_state.clipping_rate:.1%}")
             print(
                 f"  Clip norm range: [{min(clip_norms_history):.3f}, {max(clip_norms_history):.3f}]"
             )

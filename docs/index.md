@@ -13,41 +13,34 @@ Opaque is a PyTorch port of Google's [JAX-Privacy](https://github.com/google-dee
 
 ## Status
 
-!!! success "Stage 1 & 2 Complete!"
-🎉 DP-SGD is ready! All core components implemented:
+!!! success "Production-Ready Core"
+    🎉 DP-SGD is ready! All core components implemented:
 
-    - ✅ **Stage 1**: Gradient clipping with `clipped_grad()`
-    - ✅ **Stage 2**: Noise injection and functional privacy accounting
-    - ✅ **111 tests passing** (55 accounting + 56 optimizer tests)
+    - ✅ **Gradient clipping** with `clipped_grad()`
+    - ✅ **Noise injection** with `gaussian_noise()`
+    - ✅ **Privacy accounting** via Rust PLD engine (`DpProcess` composition)
+    - ✅ **Adaptive clipping** with `adaptive_clipped_grad()`
+    - ✅ **Privacy auditing** for empirical validation
     - ✅ **Numerical equivalence** with JAX-Privacy confirmed
-    - ✅ **Functional API**: Immutable state, composable privacy accounting
-
-    🔜 Next: Stage 3 (Additional Optimizer Features)
-
-## Quick Example: Complete DP-SGD
 
 ```python
 import torch
 import opaque.accounting as acc
-from opaque import (
-    clipped_grad,
-    gaussian_noise,
-)
+from opaque import clipped_grad, gaussian_noise
 
 # 1. Calibrate noise for target privacy
 sample_rate = 0.01  # batch_size / dataset_size
 num_steps = 1000
 
-noise_multiplier = acc.find_noise_multiplier_for_epsilon_delta(
-    epsilon=3.0,
-    delta=1e-5,
-    sample_rate=sample_rate,
-    num_steps=num_steps,
-)
+def build(nm):
+    return acc.poisson(nm, sample_rate=sample_rate) * num_steps
+
+result = acc.calibrate(acc.epsilon(3.0, delta=1e-5), build, 0.1, 10.0)
+noise_multiplier = result.param
 
 # 2. Create clipped gradient function
 clip_norm = 1.0
-clipped_grad_fn = clipped_grad(
+grad_fn, clip_state = clipped_grad(
     loss_fn,
     l2_clip_norm=clip_norm,
     argnums=0,
@@ -56,23 +49,15 @@ clipped_grad_fn = clipped_grad(
 
 # 3. Create noise function and training loop
 noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_norm)
-privacy_state = acc.create()
 
 for step in range(num_steps):
-    grads = clipped_grad_fn(params, batch)
+    grads, clip_state = grad_fn(params, batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = update(params, noisy_grads)
 
-    # Compose privacy
-    privacy_state = acc.compose_poisson_gaussian(
-        privacy_state,
-        noise_multiplier=noise_multiplier,
-        sample_rate=sample_rate,
-        count=1,
-    )
-
 # 4. Get final privacy guarantee
-epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
+training = acc.poisson(noise_multiplier, sample_rate=sample_rate) * num_steps
+epsilon = training.epsilon_at(1e-5)
 print(f"Privacy: (ε={epsilon:.2f}, δ=1e-5)")
 ```
 

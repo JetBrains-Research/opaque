@@ -57,17 +57,17 @@ def main():
     print(f"   - L2 clip norm: {l2_clip_norm}")
     print(f"   - Noise multiplier: {noise_multiplier}")
 
-    # Step 1: Configure gradient clipping
-    grad_fn = clipped_grad(
+    # Step 1: Configure gradient clipping (returns function + state)
+    grad_fn, clip_state = clipped_grad(
         loss_fn,
         l2_clip_norm=l2_clip_norm,
-        batch_argnums=1,  # x and y have batch dimension
+        batch_argnums=(1, 2),  # x and y have batch dimension
     )
-    print(f"   - Clip norm from grad_fn: {grad_fn.clip_norm}")
+    print(f"   - Sensitivity from clip_state: {clip_state.sensitivity()}")
 
-    # Step 2: Configure noise based on clip_norm
-    noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * grad_fn.clip_norm)
-    print(f"   - Noise stddev: {noise_multiplier * grad_fn.clip_norm:.3f}")
+    # Step 2: Configure noise based on sensitivity
+    noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_state.sensitivity())
+    print(f"   - Noise stddev: {noise_multiplier * clip_state.sensitivity():.3f}")
 
     # Training loop
     print(f"\n3. Training for {epochs} epochs...")
@@ -76,8 +76,8 @@ def main():
         n_batches = 0
 
         for batch_x, batch_y in dataloader:
-            # Compute clipped gradients
-            grads = grad_fn(params, batch_x, batch_y)
+            # Compute clipped gradients (pass state, receive updated state)
+            grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
             # Add noise (natural composition!)
             noisy_grads, noise_state = noise_fn(grads, noise_state)
@@ -124,32 +124,32 @@ def demo_research_flexibility():
 
     # Example 1: Standard DP-SGD
     print("\n1. Standard DP-SGD:")
-    grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0)
-    _noise_fn, _state = gaussian_noise(stddev=1.1 * grad_fn.clip_norm)
-    print(f"   ✓ Clip norm: {grad_fn.clip_norm}")
-    print(f"   ✓ Noise: Gaussian(stddev={1.1 * grad_fn.clip_norm})")
+    _grad_fn, _state = clipped_grad(loss_fn, l2_clip_norm=1.0)
+    _noise_fn, _nstate = gaussian_noise(stddev=1.1 * _state.sensitivity())
+    print(f"   ✓ Sensitivity: {_state.sensitivity()}")
+    print(f"   ✓ Noise: Gaussian(stddev={1.1 * _state.sensitivity()})")
 
     # Example 2: Different clip norm
     print("\n2. Higher clip norm:")
-    grad_fn_2 = clipped_grad(loss_fn, l2_clip_norm=2.0)
-    _noise_fn, _state = gaussian_noise(stddev=1.1 * grad_fn_2.clip_norm)
-    print(f"   ✓ Clip norm: {grad_fn_2.clip_norm}")
-    print(f"   ✓ Noise: Gaussian(stddev={1.1 * grad_fn_2.clip_norm})")
+    _grad_fn_2, _state_2 = clipped_grad(loss_fn, l2_clip_norm=2.0)
+    _noise_fn, _nstate = gaussian_noise(stddev=1.1 * _state_2.sensitivity())
+    print(f"   ✓ Sensitivity: {_state_2.sensitivity()}")
+    print(f"   ✓ Noise: Gaussian(stddev={1.1 * _state_2.sensitivity()})")
 
     # Example 3: Rescale to unit norm
     print("\n3. Unit norm (rescale_to_unit_norm=True):")
-    grad_fn_3 = clipped_grad(loss_fn, l2_clip_norm=5.0, rescale_to_unit_norm=True)
-    _noise_fn, _state = gaussian_noise(stddev=1.1 * grad_fn_3.clip_norm)
-    print(f"   ✓ Clip norm: {grad_fn_3.clip_norm}")  # Should be 1.0
-    print(f"   ✓ Noise: Gaussian(stddev={1.1 * grad_fn_3.clip_norm})")
+    _grad_fn_3, _state_3 = clipped_grad(loss_fn, l2_clip_norm=5.0, rescale_to_unit_norm=True)
+    _noise_fn, _nstate = gaussian_noise(stddev=1.1 * _state_3.sensitivity())
+    print(f"   ✓ Sensitivity: {_state_3.sensitivity()}")  # Should be 1.0
+    print(f"   ✓ Noise: Gaussian(stddev={1.1 * _state_3.sensitivity()})")
 
     # Example 4: Bounded Gaussian noise (truncated normal)
     print("\n4. Bounded Gaussian (Chen & Hale, 2024):")
-    _noise_fn, _state = bounded_gaussian_noise(
-        stddev=1.1 * grad_fn.clip_norm, bounds=(-3.0, 3.0)
+    _noise_fn, _nstate = bounded_gaussian_noise(
+        stddev=1.1 * _state.sensitivity(), bounds=(-3.0, 3.0)
     )
     print(
-        f"   ✓ Noise: BoundedGaussian(stddev={1.1 * grad_fn.clip_norm}, bounds=(-3, 3))"
+        f"   ✓ Noise: BoundedGaussian(stddev={1.1 * _state.sensitivity()}, bounds=(-3, 3))"
     )
     print("   → Outputs guaranteed in [-3.0, 3.0]")
 

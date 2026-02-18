@@ -15,13 +15,15 @@ stronger guarantees for the same noise).
 Training on a **subset** of data provides better privacy than training on **all** data:
 
 ```python
+import opaque.accounting as acc
+
 # No sampling (full dataset)
-state = acc.compose_gaussian(state, noise_mult=1.0, count=1)
-epsilon = acc.get_epsilon(state, delta=1e-5)  # ε ≈ 15.0
+training = acc.gaussian(noise_multiplier=1.0)
+epsilon = training.epsilon_at(1e-5)  # ε ≈ 15.0
 
 # With Poisson sampling (sample_rate=0.01)
-state = acc.compose_poisson_gaussian(state, noise_mult=1.0, rate=0.01, count=1)
-epsilon = acc.get_epsilon(state, delta=1e-5)  # ε ≈ 0.1  (150x better!)
+training = acc.poisson(noise_multiplier=1.0, sample_rate=0.01)
+epsilon = training.epsilon_at(1e-5)  # ε ≈ 0.1  (150x better!)
 ```
 
 **Why?** Attackers can't be sure if a specific person's data was in the sampled batch.
@@ -72,17 +74,13 @@ for step in range(num_steps):
     batch = dataset[indices]
 
     # Compute gradients
-    grads = dp_grad_fn(params, batch)
+    grads, clip_state = dp_grad_fn(params, batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = update(params, noisy_grads)
 
-    # Track privacy with Poisson composition
-    privacy_state = acc.compose_poisson_gaussian(
-        privacy_state,
-        noise_multiplier=noise_mult,
-        sample_rate=0.01,
-        count=1,
-    )
+# Track privacy (compose all steps)
+training = acc.poisson(noise_multiplier=noise_mult, sample_rate=0.01) * num_steps
+epsilon = training.epsilon_at(delta=1e-5)
 ```
 
 ## Truncated Poisson Sampling ⭐
@@ -118,19 +116,18 @@ for step in range(num_steps):
     # len(indices) ≈ 32, always in reasonable range
 
     batch = dataset[indices]
-    grads = dp_grad_fn(params, batch)
+    grads, clip_state = dp_grad_fn(params, batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = update(params, noisy_grads)
 
-    # Track privacy with TRUNCATED Poisson composition
-    privacy_state = acc.compose_truncated_poisson_gaussian(
-        privacy_state,
-        noise_multiplier=noise_mult,
-        sample_rate=0.01,
-        truncated_batch_size=32,
-        dataset_size=10000,
-        count=1,
-    )
+# Track privacy (compose all steps)
+training = acc.truncated_poisson(
+    noise_multiplier=noise_mult,
+    sample_rate=0.01,
+    batch_size_cap=32,
+    dataset_size=10000,
+) * num_steps
+epsilon = training.epsilon_at(delta=1e-5)
 ```
 
 ### Advantages
@@ -226,11 +223,11 @@ Microbatching is just a memory optimization. Privacy guarantees are unchanged.
 # These are equivalent for privacy:
 
 # (1) Full batch
-grads = dp_grad_fn(params, batch_of_32)
+grads, clip_state = dp_grad_fn(params, batch_of_32, state=clip_state)
 
 # (2) Microbatched
-grads_mb1 = dp_grad_fn(params, batch[:16])
-grads_mb2 = dp_grad_fn(params, batch[16:])
+grads_mb1, clip_state = dp_grad_fn(params, batch[:16], state=clip_state)
+grads_mb2, clip_state = dp_grad_fn(params, batch[16:], state=clip_state)
 grads = {k: grads_mb1[k] + grads_mb2[k] for k in grads_mb1}
 
 # Same clipped sum of per-example gradients!
@@ -262,21 +259,19 @@ sampler = TruncatedPoissonSampler(
 )
 
 # Calibrate noise
-noise_multiplier = acc.find_noise_multiplier_for_epsilon_delta(
-    epsilon=3.0,
-    delta=1e-5,
-    sample_rate=sample_rate,
-    num_steps=num_steps,
-)
+def build(nm):
+    return acc.truncated_poisson(
+        nm, sample_rate, batch_size_cap=batch_size, dataset_size=dataset_size
+    ) * num_steps
+
+result = acc.calibrate(acc.epsilon(3.0, delta=1e-5), build, 0.1, 10.0)
+noise_multiplier = result.param
 
 # Create DP gradient function
-dp_grad_fn = clipped_grad(loss_fn, l2_clip_norm=clip_norm, ...)
+dp_grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=clip_norm, batch_argnums=1)
 
 # Create noise function
-noise_fn, noise_state = gaussian_noise(stddev=noise_mult * clip_norm)
-
-# Training loop
-privacy_state = acc.create()
+noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_norm)
 
 for step in range(num_steps):
     # Sample batch with truncated Poisson
@@ -287,7 +282,7 @@ for step in range(num_steps):
     total_grads = None
     for i in range(0, len(batch), microbatch_size):
         microbatch = batch[i : i + microbatch_size]
-        grads = dp_grad_fn(params, microbatch)
+        grads, clip_state = dp_grad_fn(params, microbatch, state=clip_state)
 
         if total_grads is None:
             total_grads = grads
@@ -300,19 +295,14 @@ for step in range(num_steps):
     # Update
     params = update(params, noisy_grads)
 
-    # Track privacy
-    privacy_state = acc.compose_truncated_poisson_gaussian(
-        privacy_state,
-        noise_multiplier=noise_mult,
-        sample_rate=sample_rate,
-        truncated_batch_size=batch_size,
-        dataset_size=dataset_size,
-        count=1,
-    )
-
-    if step % 100 == 0:
-        eps = acc.get_epsilon(privacy_state, delta=1e-5)
-        print(f"Step {step}: ε={eps:.2f}, batch_size={len(batch)}")
+# Check final privacy
+training = acc.truncated_poisson(
+    noise_multiplier=noise_multiplier,
+    sample_rate=sample_rate,
+    batch_size_cap=batch_size,
+    dataset_size=dataset_size,
+) * num_steps
+print(f"Final privacy: ε={training.epsilon_at(1e-5):.2f}")
 ```
 
 ## Sampling Methods Comparison
@@ -330,12 +320,12 @@ Smaller sample rates provide stronger amplification:
 
 ```python
 # Large batches (sample_rate=0.1)
-state_large = acc.compose_poisson_gaussian(state, noise=1.0, rate=0.1, count=100)
-eps_large = acc.get_epsilon(state_large, delta=1e-5)  # ε ≈ 1.5
+training_large = acc.poisson(noise_multiplier=1.0, sample_rate=0.1) * 100
+eps_large = training_large.epsilon_at(1e-5)  # ε ≈ 1.5
 
 # Small batches (sample_rate=0.01)
-state_small = acc.compose_poisson_gaussian(state, noise=1.0, rate=0.01, count=100)
-eps_small = acc.get_epsilon(state_small, delta=1e-5)  # ε ≈ 0.15
+training_small = acc.poisson(noise_multiplier=1.0, sample_rate=0.01) * 100
+eps_small = training_small.epsilon_at(1e-5)  # ε ≈ 0.15
 
 print(f"Large batches: ε={eps_large:.2f}")
 print(f"Small batches: ε={eps_small:.2f}")  # 10x better!
