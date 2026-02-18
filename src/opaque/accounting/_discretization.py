@@ -2,13 +2,7 @@
 
 from typing import Optional, Union
 
-try:
-    import opaque_accounting as _native
-except ImportError as e:
-    raise ImportError(
-        "opaque-accounting native module not found. "
-        "Install with: maturin develop -m crates/dp-accounting/Cargo.toml"
-    ) from e
+import opaque_accounting as _native
 
 DiscretizationConfig = _native.DiscretizationConfig
 

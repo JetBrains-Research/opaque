@@ -1,12 +1,6 @@
 """Composition operators for combining DP processes."""
 
-try:
-    import opaque_accounting as _native
-except ImportError as e:
-    raise ImportError(
-        "opaque-accounting native module not found. "
-        "Install with: maturin develop -m crates/dp-accounting/Cargo.toml"
-    ) from e
+import opaque_accounting as _native
 
 DpProcess = _native.DpProcess
 
@@ -53,3 +47,31 @@ def compose(left: DpProcess, right: DpProcess) -> DpProcess:
         eps = total.epsilon_at(1e-5)
     """
     return _native.compose(left, right)
+
+
+def cached(process: DpProcess) -> DpProcess:
+    """Wrap a process in a PLD cache for efficient repeated queries.
+
+    The returned process computes its Privacy Loss Distribution on first
+    access and caches the result. Subsequent calls to ``epsilon_at()``,
+    ``delta_at()``, etc. reuse the cached PLD instead of recomputing it.
+
+    Useful in accounting loops where the same step process is composed many
+    times — caching avoids redundant PLD computation.
+
+    Note:
+        Clones of a cached process share the same cache.
+
+    Args:
+        process: The process to cache.
+
+    Returns:
+        A new process that caches its PLD after first computation.
+
+    Example::
+
+        step = acc.cached(acc.poisson(1.1, 0.01))
+        eps = step.epsilon_at(1e-5)   # computes PLD
+        adv = step.advantage()         # reuses cached PLD
+    """
+    return _native.cached(process)

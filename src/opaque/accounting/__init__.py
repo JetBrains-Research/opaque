@@ -33,7 +33,7 @@ try:
 except ImportError as e:
     raise ImportError(
         "opaque-accounting native module not found. "
-        "Install with: maturin develop -m crates/dp-accounting/Cargo.toml"
+        "Install with: uv sync  (or: uv pip install -e crates/dp-accounting/)"
     ) from e
 
 # Re-export types
@@ -127,6 +127,7 @@ from opaque.accounting.mechanisms import (
 
 # Import composition operators
 from opaque.accounting.composition import (
+    cached,
     compose,
     repeat,
 )
@@ -162,6 +163,7 @@ __all__ = [
     # Composition
     "repeat",
     "compose",
+    "cached",
     # Accounting
     "Accountant",
     # Calibration targets
