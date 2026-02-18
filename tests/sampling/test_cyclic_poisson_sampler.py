@@ -23,14 +23,14 @@ class TestCyclicPoissonSamplerBasic:
             iterations=10,
             generator=42,
         )
-        
+
         batches = list(sampler)
         assert len(batches) == 10
-        
+
         # All indices should be valid
         for batch in batches:
             assert all(0 <= idx < dataset_size for idx in batch)
-        
+
         # In standard Poisson, should get some variation in batch sizes
         batch_sizes = [len(b) for b in batches]
         assert len(set(batch_sizes)) > 1  # Not all same size
@@ -45,10 +45,10 @@ class TestCyclicPoissonSamplerBasic:
             iterations=8,
             generator=42,
         )
-        
+
         batches = list(sampler)
         assert len(batches) == 8
-        
+
         # With prob=1, each batch should have all its group's elements
         group_size = dataset_size / 4
         for batch in batches:
@@ -64,9 +64,9 @@ class TestCyclicPoissonSamplerBasic:
             iterations=6,
             generator=42,
         )
-        
+
         batches = list(sampler)
-        
+
         # Batches 0 and 3 should have same elements (same group)
         assert set(batches[0]) == set(batches[3])
         # Batches 1 and 4 should have same elements
@@ -86,7 +86,7 @@ class TestCyclicPoissonSamplerBasic:
             truncated_batch_size=max_batch_size,
             generator=42,
         )
-        
+
         batches = list(sampler)
         for batch in batches:
             assert len(batch) <= max_batch_size
@@ -103,7 +103,7 @@ class TestCyclicPoissonSamplerBasic:
             partition_type=PartitionType.EQUAL_SPLIT,
             generator=42,
         )
-        
+
         batches = list(sampler)
         # Each batch should have size dataset_size / cycle_length
         expected_size = dataset_size // cycle_length
@@ -122,10 +122,10 @@ class TestCyclicPoissonSamplerBasic:
             partition_type=PartitionType.INDEPENDENT,
             generator=42,
         )
-        
+
         batches = list(sampler)
         assert len(batches) == 8
-        
+
         # Groups may have different sizes with INDEPENDENT
         # Just verify all indices are valid
         for batch in batches:
@@ -134,7 +134,7 @@ class TestCyclicPoissonSamplerBasic:
     def test_reproducibility(self):
         """Same seed produces same batches."""
         dataset_size = 100
-        
+
         def create_sampler():
             return CyclicPoissonSampler(
                 range(dataset_size),
@@ -143,16 +143,16 @@ class TestCyclicPoissonSamplerBasic:
                 iterations=10,
                 generator=42,
             )
-        
+
         batches1 = [b.copy() for b in create_sampler()]
         batches2 = [b.copy() for b in create_sampler()]
-        
+
         assert batches1 == batches2
 
     def test_different_seeds_different_batches(self):
         """Different seeds produce different batches."""
         dataset_size = 100
-        
+
         sampler1 = CyclicPoissonSampler(
             range(dataset_size),
             sampling_prob=0.5,
@@ -160,7 +160,7 @@ class TestCyclicPoissonSamplerBasic:
             iterations=10,
             generator=42,
         )
-        
+
         sampler2 = CyclicPoissonSampler(
             range(dataset_size),
             sampling_prob=0.5,
@@ -168,10 +168,10 @@ class TestCyclicPoissonSamplerBasic:
             iterations=10,
             generator=123,
         )
-        
+
         batches1 = list(sampler1)
         batches2 = list(sampler2)
-        
+
         # With high probability, should get different batches
         assert batches1 != batches2
 
@@ -179,7 +179,7 @@ class TestCyclicPoissonSamplerBasic:
         """Can use np.random.Generator directly."""
         dataset_size = 100
         gen = np.random.default_rng(42)
-        
+
         sampler = CyclicPoissonSampler(
             range(dataset_size),
             sampling_prob=0.5,
@@ -187,7 +187,7 @@ class TestCyclicPoissonSamplerBasic:
             iterations=5,
             generator=gen,
         )
-        
+
         batches = list(sampler)
         assert len(batches) == 5
 
@@ -200,18 +200,18 @@ class TestCyclicPoissonSamplerProperties:
         dataset_size = 1000
         sampling_prob = 0.1
         cycle_length = 5
-        
+
         sampler = CyclicPoissonSampler(
             range(dataset_size),
             sampling_prob=sampling_prob,
             cycle_length=cycle_length,
             iterations=1,
         )
-        
+
         # Expected: avg_group_size * sampling_prob
         group_size = dataset_size / cycle_length
         expected = group_size * sampling_prob
-        
+
         assert abs(sampler.expected_batch_size - expected) < 1e-6
 
     def test_batch_size_variance(self):
@@ -219,32 +219,32 @@ class TestCyclicPoissonSamplerProperties:
         dataset_size = 1000
         sampling_prob = 0.1
         cycle_length = 5
-        
+
         sampler = CyclicPoissonSampler(
             range(dataset_size),
             sampling_prob=sampling_prob,
             cycle_length=cycle_length,
             iterations=1,
         )
-        
+
         # Variance: avg_group_size * p * (1 - p)
         group_size = dataset_size / cycle_length
         expected_var = group_size * sampling_prob * (1 - sampling_prob)
-        
+
         assert abs(sampler.batch_size_variance - expected_var) < 1e-6
 
     def test_len(self):
         """__len__ returns iterations."""
         dataset_size = 100
         iterations = 25
-        
+
         sampler = CyclicPoissonSampler(
             range(dataset_size),
             sampling_prob=0.5,
             cycle_length=2,
             iterations=iterations,
         )
-        
+
         assert len(sampler) == iterations
 
 
@@ -265,7 +265,7 @@ class TestCyclicPoissonSamplerEdgeCases:
             iterations=3,
             generator=42,
         )
-        
+
         batches = list(sampler)
         assert len(batches) == 3
         # With prob=1.0, should always get [0]
@@ -281,7 +281,7 @@ class TestCyclicPoissonSamplerEdgeCases:
             iterations=20,
             generator=42,
         )
-        
+
         batches = list(sampler)
         assert len(batches) == 20
         # All indices valid
@@ -291,7 +291,7 @@ class TestCyclicPoissonSamplerEdgeCases:
     def test_sampling_prob_edge_values(self):
         """Test sampling_prob near 0 and 1."""
         dataset_size = 100
-        
+
         # Near 1
         sampler_high = CyclicPoissonSampler(
             range(dataset_size),
@@ -302,7 +302,7 @@ class TestCyclicPoissonSamplerEdgeCases:
         )
         batches_high = list(sampler_high)
         assert all(len(b) > 0.9 * dataset_size for b in batches_high)
-        
+
         # Near 0
         sampler_low = CyclicPoissonSampler(
             range(dataset_size),
@@ -318,7 +318,7 @@ class TestCyclicPoissonSamplerEdgeCases:
         """Invalid sampling_prob raises ValueError."""
         with pytest.raises(ValueError):
             CyclicPoissonSampler(range(10), sampling_prob=0.0)
-        
+
         with pytest.raises(ValueError):
             CyclicPoissonSampler(range(10), sampling_prob=1.5)
 
@@ -345,14 +345,16 @@ class TestCyclicPoissonSamplerDistributedSimulation:
         # Mock distributed functions
         with patch("opaque.sampling.cyclic_poisson.is_distributed", return_value=True):
             with patch("opaque.sampling.cyclic_poisson.get_rank", return_value=0):
-                with patch("opaque.sampling.cyclic_poisson.get_world_size", return_value=4):
+                with patch(
+                    "opaque.sampling.cyclic_poisson.get_world_size", return_value=4
+                ):
                     sampler = CyclicPoissonSampler(
                         range(100),
                         sampling_prob=0.5,
                         cycle_length=2,
                         iterations=5,
                     )
-                    
+
                     assert sampler.is_distributed
                     assert sampler.world_size == 4
                     assert sampler.rank == 0
@@ -362,7 +364,9 @@ class TestCyclicPoissonSamplerDistributedSimulation:
         """Rank 0 gets correct shard."""
         with patch("opaque.sampling.cyclic_poisson.is_distributed", return_value=True):
             with patch("opaque.sampling.cyclic_poisson.get_rank", return_value=0):
-                with patch("opaque.sampling.cyclic_poisson.get_world_size", return_value=4):
+                with patch(
+                    "opaque.sampling.cyclic_poisson.get_world_size", return_value=4
+                ):
                     dataset_size = 100
                     sampler = CyclicPoissonSampler(
                         range(dataset_size),
@@ -371,11 +375,11 @@ class TestCyclicPoissonSamplerDistributedSimulation:
                         iterations=1,
                         generator=42,
                     )
-                    
+
                     # Rank 0: [0, 25)
                     assert sampler.start_idx == 0
                     assert sampler.end_idx == 25
-                    
+
                     batches = list(sampler)
                     assert all(0 <= idx < 25 for batch in batches for idx in batch)
 
@@ -383,7 +387,9 @@ class TestCyclicPoissonSamplerDistributedSimulation:
         """Last rank gets remainder."""
         with patch("opaque.sampling.cyclic_poisson.is_distributed", return_value=True):
             with patch("opaque.sampling.cyclic_poisson.get_rank", return_value=3):
-                with patch("opaque.sampling.cyclic_poisson.get_world_size", return_value=4):
+                with patch(
+                    "opaque.sampling.cyclic_poisson.get_world_size", return_value=4
+                ):
                     dataset_size = 100
                     sampler = CyclicPoissonSampler(
                         range(dataset_size),
@@ -392,11 +398,11 @@ class TestCyclicPoissonSamplerDistributedSimulation:
                         iterations=1,
                         generator=42,
                     )
-                    
+
                     # Rank 3: [75, 100)
                     assert sampler.start_idx == 75
                     assert sampler.end_idx == 100
-                    
+
                     batches = list(sampler)
                     assert all(75 <= idx < 100 for batch in batches for idx in batch)
 
@@ -405,7 +411,9 @@ class TestCyclicPoissonSamplerDistributedSimulation:
         # Rank 0: seed=42
         with patch("opaque.sampling.cyclic_poisson.is_distributed", return_value=True):
             with patch("opaque.sampling.cyclic_poisson.get_rank", return_value=0):
-                with patch("opaque.sampling.cyclic_poisson.get_world_size", return_value=4):
+                with patch(
+                    "opaque.sampling.cyclic_poisson.get_world_size", return_value=4
+                ):
                     sampler0 = CyclicPoissonSampler(
                         range(100),
                         sampling_prob=0.5,
@@ -413,13 +421,15 @@ class TestCyclicPoissonSamplerDistributedSimulation:
                         iterations=5,
                         generator=42,
                     )
-                    
+
                     batches0 = list(sampler0)
-        
+
         # Rank 1: seed should be 43
         with patch("opaque.sampling.cyclic_poisson.is_distributed", return_value=True):
             with patch("opaque.sampling.cyclic_poisson.get_rank", return_value=1):
-                with patch("opaque.sampling.cyclic_poisson.get_world_size", return_value=4):
+                with patch(
+                    "opaque.sampling.cyclic_poisson.get_world_size", return_value=4
+                ):
                     sampler1 = CyclicPoissonSampler(
                         range(100),
                         sampling_prob=0.5,
@@ -427,9 +437,9 @@ class TestCyclicPoissonSamplerDistributedSimulation:
                         iterations=5,
                         generator=42,
                     )
-                    
+
                     batches1 = list(sampler1)
-        
+
         # Different ranks should get different batches (with high probability)
         assert batches0 != batches1
 
@@ -438,7 +448,9 @@ class TestCyclicPoissonSamplerDistributedSimulation:
         # Rank 0
         with patch("opaque.sampling.cyclic_poisson.is_distributed", return_value=True):
             with patch("opaque.sampling.cyclic_poisson.get_rank", return_value=0):
-                with patch("opaque.sampling.cyclic_poisson.get_world_size", return_value=2):
+                with patch(
+                    "opaque.sampling.cyclic_poisson.get_world_size", return_value=2
+                ):
                     dataset_size = 100
                     sampler0 = CyclicPoissonSampler(
                         range(dataset_size),
@@ -447,10 +459,10 @@ class TestCyclicPoissonSamplerDistributedSimulation:
                         iterations=4,
                         generator=42,
                     )
-                    
+
                     batches0 = list(sampler0)
                     # Rank 0 cycles: [0-50) → groups 0,1,0,1
-                    
+
                     # Check all indices are in shard 0: [0, 50)
                     for batch in batches0:
                         assert all(0 <= idx < 50 for idx in batch)  # Rank 0's shard
@@ -469,15 +481,15 @@ class TestCyclicPoissonSamplerDataLoader:
             iterations=10,
             generator=42,
         )
-        
+
         loader = torch.utils.data.DataLoader(
             dataset,
             batch_sampler=sampler,
         )
-        
+
         batches = list(loader)
         assert len(batches) == 10
-        
+
         # Each batch should be a tensor of valid indices
         for batch in batches:
             assert isinstance(batch, torch.Tensor)
@@ -493,12 +505,12 @@ class TestCyclicPoissonSamplerDataLoader:
             iterations=20,
             generator=42,
         )
-        
+
         loader = torch.utils.data.DataLoader(
             dataset,
             batch_sampler=sampler,
         )
-        
+
         batch_sizes = [len(batch) for batch in loader]
         # Poisson property: sizes should vary
         assert len(set(batch_sizes)) > 1
@@ -509,16 +521,17 @@ class TestCyclicPoissonSamplerRangeDataset:
 
     def test_with_torch_dataset(self):
         """Works with torch.utils.data.Dataset."""
+
         class SimpleDataset(torch.utils.data.Dataset):
             def __init__(self, size):
                 self.size = size
-            
+
             def __len__(self):
                 return self.size
-            
+
             def __getitem__(self, idx):
                 return idx
-        
+
         dataset = SimpleDataset(100)
         sampler = CyclicPoissonSampler(
             dataset,
@@ -527,10 +540,10 @@ class TestCyclicPoissonSamplerRangeDataset:
             iterations=9,
             generator=42,
         )
-        
+
         batches = list(sampler)
         assert len(batches) == 9
-        
+
         # All indices valid
         for batch in batches:
             assert all(0 <= idx < 100 for idx in batch)

@@ -117,9 +117,7 @@ class CyclicPoissonSampler(Sampler):
         if len(data_source) == 0:
             raise ValueError("data_source must not be empty")
         if not 0 < sampling_prob <= 1:
-            raise ValueError(
-                f"sampling_prob must be in (0, 1], got {sampling_prob}"
-            )
+            raise ValueError(f"sampling_prob must be in (0, 1], got {sampling_prob}")
         if cycle_length < 1:
             raise ValueError(f"cycle_length must be >= 1, got {cycle_length}")
         if truncated_batch_size is not None and truncated_batch_size < 1:
@@ -250,9 +248,7 @@ class CyclicPoissonSampler(Sampler):
             group = self.partition[group_idx]
 
             # Sample binomially: each example included with probability sampling_prob
-            sample_size = rng.binomial(
-                n=len(group), p=self.sampling_prob
-            )
+            sample_size = rng.binomial(n=len(group), p=self.sampling_prob)
 
             # Cap at truncated_batch_size if specified
             if self.truncated_batch_size is not None:
