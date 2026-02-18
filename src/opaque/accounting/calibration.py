@@ -47,10 +47,15 @@ class Target(Protocol):
     - **evaluate(process)**: Compute metric value for a process
     - **value**: Target value to achieve
     - **name**: Human-readable name for debugging
+    - **decreasing**: Whether the metric decreases as the calibrated parameter
+      increases.  For noise_multiplier calibration this is ``True`` for
+      privacy-loss metrics (epsilon, delta, advantage) and ``False`` for
+      privacy-gain metrics (beta, risk) which *increase* with noise.
     """
 
     value: float
     name: str
+    decreasing: bool
 
     def evaluate(self, process: DpProcess) -> float:
         """Evaluate the metric on a DP process.
@@ -89,6 +94,10 @@ class EpsilonTarget:
     def name(self) -> str:
         return f"epsilon({self.epsilon}, delta={self.delta})"
 
+    @property
+    def decreasing(self) -> bool:
+        return True
+
     def evaluate(self, process: DpProcess) -> float:
         """Get epsilon at the target delta."""
         return process.epsilon_at(self.delta)
@@ -119,6 +128,10 @@ class DeltaTarget:
     def name(self) -> str:
         return f"delta({self.delta}, epsilon={self.epsilon})"
 
+    @property
+    def decreasing(self) -> bool:
+        return True
+
     def evaluate(self, process: DpProcess) -> float:
         """Get delta at the target epsilon."""
         return process.delta_at(self.epsilon)
@@ -146,6 +159,10 @@ class AdvantageTarget:
     @property
     def name(self) -> str:
         return f"advantage({self.advantage})"
+
+    @property
+    def decreasing(self) -> bool:
+        return True
 
     def evaluate(self, process: DpProcess) -> float:
         """Get f-DP advantage."""
@@ -177,6 +194,10 @@ class BetaTarget:
     def name(self) -> str:
         return f"beta({self.beta}, alpha={self.alpha})"
 
+    @property
+    def decreasing(self) -> bool:
+        return False
+
     def evaluate(self, process: DpProcess) -> float:
         """Get beta at the target alpha."""
         return process.beta_at(self.alpha)
@@ -206,6 +227,10 @@ class RiskTarget:
     @property
     def name(self) -> str:
         return f"risk({self.risk}, prior={self.prior})"
+
+    @property
+    def decreasing(self) -> bool:
+        return False
 
     def evaluate(self, process: DpProcess) -> float:
         """Get Bayes risk at the target prior."""
@@ -351,10 +376,11 @@ def calibrate(
     Finds the value of a parameter (e.g., noise_multiplier) such that
     the resulting DpProcess achieves a target privacy guarantee.
 
-    **Metric Assumption:**
-    The search assumes the metric **decreases** as the parameter increases
-    (e.g., epsilon decreases as noise increases). If your metric has the
-    opposite behavior, either swap param_min/param_max or reformulate.
+    **Metric Direction:**
+    Each target declares a ``decreasing`` property that tells the search
+    whether the metric decreases (True) or increases (False) as the
+    calibrated parameter grows.  Epsilon/delta/advantage are decreasing;
+    beta/risk are increasing.  The binary search adapts automatically.
 
     **Parameters:**
 
@@ -482,14 +508,21 @@ def calibrate(
             f"Try expanding the search range or checking that build() produces valid processes."
         )
 
-    # We assume metric decreases as param increases
-    # (e.g., epsilon decreases as noise_multiplier increases)
-    if not (val_max <= target.value <= val_min):
+    # Determine search direction from the target
+    decreasing = target.decreasing
+    if decreasing:
+        # metric decreases with param: val_min is high, val_max is low
+        lo_val, hi_val = val_min, val_max
+    else:
+        # metric increases with param: val_min is low, val_max is high
+        lo_val, hi_val = val_max, val_min
+
+    if not (hi_val <= target.value <= lo_val):
         raise ValueError(
             f"Target {target.name}={target.value:.6f} not in range "
-            f"[{val_max:.6f}, {val_min:.6f}] for param range [{param_min}, {param_max}]. "
-            f"The target may be unreachable with these bounds, or the metric may "
-            f"increase (not decrease) with parameter."
+            f"[{min(val_min, val_max):.6f}, {max(val_min, val_max):.6f}] "
+            f"for param range [{param_min}, {param_max}]. "
+            f"The target may be unreachable with these bounds."
         )
 
     # Binary search
@@ -513,12 +546,10 @@ def calibrate(
                 converged=True,
             )
 
-        # Update bounds (assuming metric decreases with param)
-        if current > target.value:
-            # Too much privacy loss, need more noise (increase param)
+        # Update bounds using target's declared direction
+        if (current > target.value) == decreasing:
             lo = mid
         else:
-            # Too little privacy loss, can use less noise (decrease param)
             hi = mid
 
     # Max iterations reached - return best estimate

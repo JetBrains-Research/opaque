@@ -1,13 +1,18 @@
-"""Private module for discretization configuration management."""
+"""Private module for PLD discretization configuration management."""
+
+from __future__ import annotations
 
 from typing import Optional, Union
 
 import opaque_accounting as _native
 
-DiscretizationConfig = _native.DiscretizationConfig
+PldConfig = _native.PldConfig
+
+# Legacy alias for backward compatibility
+DiscretizationConfig = PldConfig
 
 # Module-level discretization default
-_default_discretization: Optional[DiscretizationConfig] = None
+_default_config: Optional[PldConfig] = None
 
 
 def set_discretization(
@@ -27,9 +32,9 @@ def set_discretization(
             Error scales as O(disc^2). Default: 1e-4.
         log_mass_truncation_bound: Tails with probability below exp(bound) are
             truncated. Default: -50 (matching Google).
-        pessimistic_estimate: If True (default), round probabilities upward to produce
-            an **upper bound** on privacy loss (safe for guarantees). If False, round
-            downward (optimistic estimate, useful for debugging only).
+        pessimistic_estimate: If True (default), round probabilities upward to
+            produce an **upper bound** on privacy loss (safe for guarantees). If
+            False, round downward (optimistic estimate, useful for debugging only).
         max_grid_size: If grid exceeds this many bins, coarsen discretization
             automatically. Default: 10,000,000.
 
@@ -41,8 +46,8 @@ def set_discretization(
         # Use maximum precision
         acc.set_discretization(discretization=1e-5, max_grid_size=100_000_000)
     """
-    global _default_discretization
-    _default_discretization = DiscretizationConfig(
+    global _default_config
+    _default_config = PldConfig(
         discretization=discretization,
         log_mass_truncation_bound=log_mass_truncation_bound,
         pessimistic_estimate=pessimistic_estimate,
@@ -50,37 +55,34 @@ def set_discretization(
     )
 
 
-def get_discretization() -> Optional[DiscretizationConfig]:
+def get_discretization() -> Optional[PldConfig]:
     """Get the current module-level default discretization config.
 
     Returns:
-        Current discretization config, or None if using native defaults.
+        Current PldConfig, or None if using native defaults.
     """
-    return _default_discretization
+    return _default_config
 
 
-def resolve_discretization(
-    config: Union[None, float, DiscretizationConfig]
-) -> Optional[DiscretizationConfig]:
-    """Resolve discretization parameter to a config object.
+def resolve_pld_config(
+    config: Union[None, float, PldConfig],
+) -> Optional[PldConfig]:
+    """Resolve discretization parameter to a PldConfig object.
 
     Args:
         config: None (use module default), float (use as discretization value),
-            or DiscretizationConfig (use as-is).
+            or PldConfig (use as-is).
 
     Returns:
-        Resolved DiscretizationConfig or None (use Rust defaults).
+        Resolved PldConfig or None (use Rust defaults).
     """
     if config is None:
-        return _default_discretization
+        return _default_config
     elif isinstance(config, (int, float)):
-        # Convert float to DiscretizationConfig using current defaults
-        base = _default_discretization or DiscretizationConfig()
-        return DiscretizationConfig(
-            discretization=float(config),
-            log_mass_truncation_bound=base.log_mass_truncation_bound,
-            pessimistic_estimate=base.pessimistic_estimate,
-            max_grid_size=base.max_grid_size,
-        )
+        return PldConfig(discretization=float(config))
     else:
         return config
+
+
+# Legacy alias
+resolve_discretization = resolve_pld_config

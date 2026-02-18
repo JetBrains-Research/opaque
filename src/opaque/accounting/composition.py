@@ -1,8 +1,13 @@
-"""Composition operators for combining DP processes."""
+"""Composition operators for combining DP processes.
 
-import opaque_accounting as _native
+These are convenience functions wrapping the PLD composition operators.
+Most users should prefer the operator syntax: ``step * 1000`` or ``a | b``.
+"""
 
-DpProcess = _native.DpProcess
+from __future__ import annotations
+
+from opaque.accounting.base import DpProcess
+from opaque.accounting.nodes import CachedProcess
 
 
 def repeat(process: DpProcess, count: int) -> DpProcess:
@@ -23,7 +28,7 @@ def repeat(process: DpProcess, count: int) -> DpProcess:
         training = acc.repeat(step, 1000)  # same as: step * 1000
         eps = training.epsilon_at(1e-5)
     """
-    return _native.repeat(process, count)
+    return process * count
 
 
 def compose(left: DpProcess, right: DpProcess) -> DpProcess:
@@ -46,32 +51,32 @@ def compose(left: DpProcess, right: DpProcess) -> DpProcess:
         total = acc.compose(phase1, phase2)  # same as: phase1 | phase2
         eps = total.epsilon_at(1e-5)
     """
-    return _native.compose(left, right)
+    return left | right
 
 
-def cached(process: DpProcess) -> DpProcess:
-    """Wrap a process in a PLD cache for efficient repeated queries.
+def cached(process: DpProcess) -> CachedProcess:
+    """Wrap a process so that its PLD is computed once and cached.
 
-    The returned process computes its Privacy Loss Distribution on first
-    access and caches the result. Subsequent calls to ``epsilon_at()``,
-    ``delta_at()``, etc. reuse the cached PLD instead of recomputing it.
+    Returns a :class:`~opaque.accounting.nodes.CachedProcess` that
+    computes the PLD lazily on the first :meth:`pld` call and caches
+    the result for all subsequent calls.
 
-    Useful in accounting loops where the same step process is composed many
-    times — caching avoids redundant PLD computation.
+    ``CachedProcess`` also acts as an **opaque merge barrier**: the
+    composition optimizer will not look through a cached node, so
+    the cached PLD is reused as-is during further composition.
 
-    Note:
-        Clones of a cached process share the same cache.
+    Example::
+
+        training = acc.cached(acc.poisson(acc.gaussian(1.1), 0.01) * 1000)
+        eps = training.epsilon_at(1e-5)   # PLD computed here, cached
+        adv = training.advantage()         # reuses cached PLD (free)
 
     Args:
         process: The process to cache.
 
     Returns:
-        A new process that caches its PLD after first computation.
-
-    Example::
-
-        step = acc.cached(acc.poisson(acc.gaussian(1.1), 0.01))
-        eps = step.epsilon_at(1e-5)   # computes PLD
-        adv = step.advantage()         # reuses cached PLD
+        A :class:`~opaque.accounting.nodes.CachedProcess` wrapping *process*.
     """
-    return _native.cached(process)
+    if isinstance(process, CachedProcess):
+        return process
+    return CachedProcess(process)

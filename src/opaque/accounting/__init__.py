@@ -27,88 +27,42 @@ For calibration (finding noise for target privacy budget), use the
 :mod:`opaque.accounting.calibration` submodule.
 """
 
-# Import native module and types
+# Import native module
 try:
     import opaque_accounting as _native
 except ImportError as e:
     raise ImportError(
         "opaque-accounting native module not found. "
-        "Install with: uv sync  (or: uv pip install -e crates/dp-accounting/)"
     ) from e
 
-# Re-export types
-DpProcess = _native.DpProcess
-"""A differential privacy process that can be queried for privacy guarantees.
+# Base class
+from opaque.accounting.base import DpProcess
 
-This is the central class in ``opaque.accounting``. Every mechanism constructor
-(``gaussian``, ``poisson``, etc.) returns a ``DpProcess``, and composition
-operators produce new ``DpProcess`` instances.
+# Config types
+from opaque.accounting.discretization import PldConfig
 
-All privacy metrics are derived from the same Privacy Loss Distribution (PLD):
-
-- **epsilon_at(delta)**: Get epsilon for given delta (ε,δ-DP)
-- **delta_at(epsilon)**: Get delta for given epsilon (ε,δ-DP)
-- **advantage()**: Get f-DP total-variation advantage
-- **beta_at(alpha)**: Get Type-II error at given Type-I error (hypothesis testing)
-- **risk_at(prior)**: Get Bayes risk at given prior
-
-Composition operators:
-
-- **step * 1000**: Repeat a process 1000 times (homogeneous composition)
-- **a | b**: Compose two different processes (heterogeneous composition)
-
-Debugging:
-
-- **print(proc)**: One-line summary with epsilon
-- **pld_info()**: PLD grid diagnostics with timing
-- **summary()**: Multi-line formatted privacy report
-
-Example::
-
-    step = acc.poisson(acc.gaussian(1.1), 0.01)
-    training = step * 1000
-    eps = training.epsilon_at(1e-5)
-    print(training.summary())  # detailed report
-"""
-
-DiscretizationConfig = _native.DiscretizationConfig
+# Legacy alias: code that imports DiscretizationConfig still works
+DiscretizationConfig = PldConfig
 """Configuration controlling PLD discretization precision.
 
 The PLD is represented as a discrete probability mass function (PMF) on a
-regular grid. These parameters control grid resolution, tail truncation,
-and rounding direction.
-
-Defaults are chosen for high accuracy (discretization=1e-4 gives ~1e-8 error
-per composition step). Coarser grids are faster but less precise.
+regular grid. The ``PldConfig`` (aliased as ``DiscretizationConfig``) controls
+grid resolution and tail truncation.
 
 Args:
     discretization: Grid spacing for PLD PMF. Default: 1e-4.
         Smaller = more precise, larger grid. Error scales as O(disc^2).
     log_mass_truncation_bound: Tails with probability below exp(bound) are
         truncated. Default: -50 (matching Google's dp_accounting).
-    pessimistic_estimate: If True (default), round probabilities upward to
-        produce an **upper bound** on privacy loss. If False, round downward
-        (optimistic estimate - not safe for guarantees).
-    max_grid_size: If grid exceeds this many bins, coarsen discretization
-        automatically. Default: 10,000,000.
 
 Example::
 
-    # Faster but less precise
-    cfg = acc.DiscretizationConfig(discretization=1e-3)
-
-    # Maximum precision
-    cfg = acc.DiscretizationConfig(
-        discretization=1e-5,
-        log_mass_truncation_bound=-50.0,
-    )
-
-    # Use with any mechanism
+    cfg = acc.PldConfig(discretization=1e-3)
     proc = acc.gaussian(1.1, discretization=cfg)
 """
 
 # Import discretization utilities
-from opaque.accounting._discretization import (
+from opaque.accounting.discretization import (
     get_discretization,
     set_discretization,
 )
@@ -147,6 +101,7 @@ from opaque.accounting.calibration import (
 __all__ = [
     # Types
     "DpProcess",
+    "PldConfig",
     "DiscretizationConfig",
     # Module defaults
     "set_discretization",

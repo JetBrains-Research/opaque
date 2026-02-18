@@ -2,18 +2,22 @@
 
 An Accountant tracks the accumulated privacy loss from composed DP processes.
 It provides a functional API: composing a new process returns a fresh Accountant.
+
+Merge optimization is handled entirely by :meth:`DpProcess.__or__`:
+identical steps are collapsed using structural equality (``==``), so
+``acct | step`` in a loop produces ``Repeated(step, n)`` — one
+``self_compose(n)`` (2 FFTs) instead of *n* heterogeneous composes.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
-import opaque_accounting as _native
+from opaque.accounting.base import DpProcess
+from opaque.accounting.nodes import Identity
 
 if TYPE_CHECKING:
     from opaque.accounting.calibration import Target
-
-DpProcess = _native.DpProcess
 
 
 class Accountant:
@@ -52,7 +56,7 @@ class Accountant:
                 break
     """
 
-    def __init__(self, budget: Optional[Target] = None) -> None:
+    def __init__(self, budget: Target | None = None) -> None:
         """Initialize an Accountant.
 
         Args:
@@ -60,14 +64,18 @@ class Accountant:
                 budget_exceeded checks. Should be a Target from the
                 calibration module (e.g., epsilon(3.0, delta=1e-5)).
         """
-        self._process: DpProcess = _native.identity()
-        self._budget: Optional[Target] = budget
+        self._process: DpProcess = Identity()
+        self._budget: Target | None = budget
 
     def __or__(self, process: DpProcess) -> Accountant:
         """Compose a new process onto this accountant.
 
-        Returns a new Accountant with the composed process. This maintains
-        functional semantics: the original accountant is not modified.
+        Returns a new Accountant with the composed process.  The original
+        accountant is not modified.
+
+        Merge optimization is automatic: ``DpProcess.__or__`` uses
+        structural equality to collapse identical steps into a single
+        :class:`~opaque.accounting.nodes.Repeated` node.
 
         Args:
             process: DpProcess to compose (e.g., from poisson(), gaussian(), etc.)
@@ -80,7 +88,7 @@ class Accountant:
             acct = Accountant()
             step = poisson(gaussian(1.1), 0.01)
             acct = acct | step  # One step
-            acct = acct | step  # Another step
+            acct = acct | step  # Collapsed into Repeated(step, 2)
         """
         new_acct = Accountant(budget=self._budget)
         new_acct._process = self._process | process
@@ -96,9 +104,6 @@ class Accountant:
 
         Returns:
             Privacy budget epsilon. Lower is more private.
-
-        Raises:
-            RuntimeError: If privacy computation fails.
 
         Example::
 
@@ -122,15 +127,6 @@ class Accountant:
 
         Returns:
             Failure probability delta. Lower is better.
-
-        Example::
-
-            acct = Accountant()
-            step = poisson(gaussian(1.1), 0.01)
-            for i in range(1000):
-                acct = acct | step
-
-            delta = acct.delta_at(1.0)
         """
         return self._process.delta_at(epsilon)
 
@@ -142,20 +138,11 @@ class Accountant:
 
         Returns:
             Advantage in [0, 1].
-
-        Example::
-
-            adv = acct.advantage()
-            print(f"f-DP advantage: {adv:.6f}")
         """
         return self._process.advantage()
 
     def beta_at(self, alpha: float) -> float:
         """Get Type-II error rate (hypothesis testing interpretation).
-
-        For the optimal hypothesis test distinguishing neighboring datasets,
-        returns the Type-II error (false negative rate) at a given Type-I
-        error rate (false positive rate).
 
         Args:
             alpha: Type-I error rate (false positive). Must be in [0, 1].
@@ -163,19 +150,11 @@ class Accountant:
         Returns:
             Type-II error rate (false negative) in [0, 1].
             Higher is more private (attacker makes more mistakes).
-
-        Example::
-
-            beta = acct.beta_at(alpha=0.05)
-            print(f"At α=0.05: β={beta:.3f}")
         """
         return self._process.beta_at(alpha)
 
     def risk_at(self, prior: float) -> float:
         """Get Bayes risk under an optimal adversary.
-
-        Computes the minimum expected loss of any decision rule trying to
-        distinguish neighboring datasets, weighted by prior probability.
 
         Args:
             prior: Prior probability that data came from D (vs D').
@@ -183,11 +162,6 @@ class Accountant:
 
         Returns:
             Bayes risk in [0, 0.5]. Higher is more private.
-
-        Example::
-
-            risk = acct.risk_at(prior=0.5)
-            print(f"Bayes risk: {risk:.4f}")
         """
         return self._process.risk_at(prior)
 
@@ -199,40 +173,14 @@ class Accountant:
         target metric on the accumulated process and checks if it violates
         the budget bound.
 
-        For monotonic-increasing metrics (epsilon, advantage): budget is
-        exceeded when achieved > target.
-
-        For monotonic-decreasing metrics (beta, risk): budget is exceeded
-        when achieved < target (because higher beta/risk is better).
-
         Returns:
             True if privacy budget is violated, False otherwise.
-
-        Example::
-
-            from opaque.accounting import calibration as cal
-
-            budget = cal.epsilon(3.0, delta=1e-5)
-            acct = Accountant(budget=budget)
-
-            for step in range(num_steps):
-                acct = acct | acc.poisson(acc.gaussian(nm), sr)
-
-                if acct.budget_exceeded:
-                    print("Stop training: budget exhausted")
-                    break
         """
         if self._budget is None:
             return False
 
         try:
             achieved = self._budget.evaluate(self._process)
-            # For epsilon/delta/advantage: lower is better (more private)
-            # Budget exceeded when achieved > target
-            # For beta/risk: higher is better (more private)
-            # Budget exceeded when achieved < target
-            # We use the simple > comparison which works for epsilon/delta/advantage
-            # For beta/risk, the user provides a minimum target, so > still applies
             return achieved > self._budget.value
         except Exception:
             # If metric computation fails, don't violate budget by accident

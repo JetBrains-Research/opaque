@@ -1,9 +1,18 @@
-"""Tests for the Accountant class."""
+"""Tests for the Accountant class.
+
+Covers construction, metrics, budget tracking, functional properties,
+realistic training-loop patterns, calibration integration, and API consistency.
+"""
 
 import pytest
 
 import opaque.accounting as acc
 from opaque.accounting.calibration import epsilon
+
+
+# ============================================================================
+# Construction & composition
+# ============================================================================
 
 
 class TestAccountantBasics:
@@ -37,6 +46,17 @@ class TestAccountantBasics:
         eps1 = acct1.epsilon_at(1e-5)
         eps2 = acct2.epsilon_at(1e-5)
         assert eps2 > eps1
+
+    def test_composition_returns_accountant(self):
+        """Composition always returns Accountant instance."""
+        acct = acc.Accountant()
+        result = acct | acc.gaussian(1.0)
+        assert isinstance(result, acc.Accountant)
+
+
+# ============================================================================
+# Metric queries
+# ============================================================================
 
 
 class TestAccountantMetrics:
@@ -83,6 +103,21 @@ class TestAccountantMetrics:
         risk = acct.risk_at(0.5)
         assert 0 <= risk <= 0.5
 
+    def test_metrics_delegate_to_process(self):
+        """Verify metrics delegate to underlying process."""
+        acct = acc.Accountant()
+        acct = acct | acc.gaussian(1.0)
+
+        eps_from_acct = acct.epsilon_at(1e-5)
+        eps_from_process = acct._process.epsilon_at(1e-5)
+
+        assert eps_from_acct == eps_from_process
+
+
+# ============================================================================
+# Budget tracking
+# ============================================================================
+
 
 class TestAccountantBudget:
     """Test budget tracking in Accountant."""
@@ -112,6 +147,20 @@ class TestAccountantBudget:
 
         # Should exceed the budget
         assert acct.budget_exceeded
+
+    def test_non_epsilon_budget(self):
+        """Budget works with non-epsilon targets (advantage)."""
+        budget = acc.advantage(0.5)
+        acct = acc.Accountant(budget=budget)
+        acct = acct | (acc.gaussian(0.5) * 50)
+
+        # Should not raise
+        _ = acct.budget_exceeded
+
+
+# ============================================================================
+# Functional properties & API consistency
+# ============================================================================
 
 
 class TestAccountantFunctional:
@@ -167,3 +216,79 @@ class TestAccountantFunctional:
         assert acct1._budget is budget
         assert acct2._budget is budget
         assert acct3._budget is budget
+
+    def test_or_operator_associativity(self):
+        """| operator is associative for privacy accounting."""
+        acct1 = acc.Accountant()
+        step1 = acc.gaussian(1.0)
+        step2 = acc.gaussian(0.5)
+
+        acct2 = (acct1 | step1) | step2
+        acct3 = acct1 | (step1 | step2)
+
+        eps2 = acct2.epsilon_at(1e-5)
+        eps3 = acct3.epsilon_at(1e-5)
+
+        assert abs(eps2 - eps3) < 1e-10
+
+
+# ============================================================================
+# Realistic training-loop patterns
+# ============================================================================
+
+
+class TestAccountantTrainingLoop:
+    """Realistic end-to-end Accountant usage patterns."""
+
+    def test_batch_composition(self):
+        """Simulate training loop: compose all steps at once."""
+        target = acc.epsilon(5.0, delta=1e-5)
+        acct = acc.Accountant(budget=target)
+
+        acct = acct | (acc.poisson(acc.gaussian(1.1), 0.01) * 10)
+
+        assert not acct.budget_exceeded
+
+    def test_incremental_composition(self):
+        """Simulate training loop: compose one step at a time."""
+        target = acc.epsilon(10.0, delta=1e-5)
+        acct = acc.Accountant(budget=target)
+
+        step_process = acc.poisson(acc.gaussian(1.1), 0.01)
+
+        for _ in range(5):
+            acct_new = acct | step_process
+            if acct_new.budget_exceeded:
+                break
+            acct = acct_new
+
+        assert not acct.budget_exceeded
+
+    def test_calibration_then_train(self):
+        """Calibrate noise, then use Accountant to track budget."""
+        target = acc.epsilon(2.0, delta=1e-5)
+
+        result = acc.calibrate(
+            target=target,
+            build=lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 100,
+            param_min=0.1,
+            param_max=1.2,
+        )
+
+        acct = acc.Accountant(budget=target)
+        acct = acct | (acc.poisson(acc.gaussian(result.param), 0.01) * 100)
+
+        achieved = acct.epsilon_at(1e-5)
+        assert abs(achieved - target.value) < 0.5
+
+    def test_mixed_mechanisms(self):
+        """Accountant with mixed mechanism types."""
+        budget = acc.epsilon(5.0, delta=1e-5)
+        acct = acc.Accountant(budget=budget)
+
+        acct = acct | acc.gaussian(0.5)
+        acct = acct | (acc.poisson(acc.gaussian(1.0), 0.01) * 20)
+        acct = acct | acc.gaussian(0.3)
+
+        eps = acct.epsilon_at(1e-5)
+        assert eps > 0.5

@@ -107,7 +107,7 @@ class TestAccountantAPIConsistency:
         acct = acc.Accountant()
         acct = acct | acc.gaussian(1.0)
 
-        # Get epsilon from accountant and process directly
+        # Get epsilon from accountant and from the underlying process directly
         eps_from_acct = acct.epsilon_at(1e-5)
         eps_from_process = acct._process.epsilon_at(1e-5)
 

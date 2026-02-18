@@ -1911,6 +1911,13 @@ compat = [
     { name = "transformers" },
     { name = "typeguard" },
 ]
+cross-validation = [
+    { name = "dp-accounting" },
+    { name = "numpy" },
+    { name = "pytest" },
+    { name = "riskcal" },
+    { name = "scipy" },
+]
 dev = [
     { name = "hypothesis" },
     { name = "pytest" },
@@ -1951,6 +1958,13 @@ compat = [
     { name = "pytest", specifier = ">=7.0.0" },
     { name = "transformers", specifier = ">=4.57.0" },
     { name = "typeguard", specifier = ">=4.0.0" },
+]
+cross-validation = [
+    { name = "dp-accounting", specifier = ">=0.4.4" },
+    { name = "numpy", specifier = ">=1.20" },
+    { name = "pytest", specifier = ">=7.0.0" },
+    { name = "riskcal", specifier = ">=1.2.0" },
+    { name = "scipy", specifier = ">=1.7" },
 ]
 dev = [
     { name = "hypothesis", specifier = ">=6.0.0" },

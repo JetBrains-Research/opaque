@@ -1,31 +1,29 @@
-"""DP-SGD mechanisms: composable typed subclasses of DpProcess."""
+"""Mechanism constructors: convenience functions that build typed DpProcess nodes.
 
-from typing import Union
+Each constructor validates inputs, resolves discretization config, and returns
+the appropriate frozen dataclass from :mod:`opaque.accounting.types`.
+"""
+
+from __future__ import annotations
 
 import opaque_accounting as _native
 
-from opaque.accounting._discretization import (
-    DiscretizationConfig,
-    resolve_discretization,
+from opaque.accounting.base import DpProcess, PldConfig
+from opaque.accounting.discretization import resolve_pld_config
+from opaque.accounting.nodes import Identity
+from opaque.accounting.types import (
+    Accumulated,
+    EpsDelta,
+    Gaussian,
+    Poisson,
+    TruncatedPoisson,
 )
-
-# Base class
-DpProcess = _native.DpProcess
-
-# Typed subclasses (re-exported from native module)
-Gaussian = _native.Gaussian
-EpsDelta = _native.EpsDelta
-Identity = _native.Identity
-Poisson = _native.Poisson
-TruncatedPoisson = _native.TruncatedPoisson
-Accumulated = _native.Accumulated
-AdaClip = _native.AdaClip
 
 
 def gaussian(
     noise_multiplier: float,
     *,
-    discretization: Union[None, float, DiscretizationConfig] = None,
+    discretization: None | float | PldConfig = None,
 ) -> Gaussian:
     """Gaussian mechanism with noise multiplier σ.
 
@@ -38,10 +36,10 @@ def gaussian(
         discretization: PLD precision config (keyword-only). Can be:
             - None: use module default (see :func:`set_discretization`)
             - float: use as grid spacing
-            - DiscretizationConfig: full config
+            - PldConfig: full config
 
     Returns:
-        A :class:`Gaussian` process (typed ``DpProcess`` subclass).
+        A :class:`Gaussian` process.
 
     Example::
 
@@ -53,8 +51,8 @@ def gaussian(
         training = acc.gaussian(1.1) * 1000
         eps = training.epsilon_at(1e-5)
     """
-    config = resolve_discretization(discretization)
-    return _native.gaussian(noise_multiplier, discretization=config)
+    config = resolve_pld_config(discretization)
+    return Gaussian(noise_multiplier, config=config)
 
 
 def poisson(
@@ -69,11 +67,11 @@ def poisson(
     This is the **standard DP-SGD mechanism** used in most deep learning privacy work.
 
     Args:
-        inner: The base :class:`Gaussian` mechanism (from :func:`gaussian`).
+        inner: The base Gaussian mechanism (from :func:`gaussian`).
         sample_rate: Probability of including each example (batch_size / dataset_size).
 
     Returns:
-        A :class:`Poisson` process (typed ``DpProcess`` subclass).
+        A :class:`Poisson` process.
 
     Example::
 
@@ -84,7 +82,12 @@ def poisson(
         training = step * 1000
         eps = training.epsilon_at(1e-5)
     """
-    return _native.poisson(inner, sample_rate)
+    if not isinstance(inner, Gaussian):
+        raise TypeError(
+            f"poisson() requires a Gaussian inner mechanism, got {type(inner).__name__}. "
+            "Use: acc.poisson(acc.gaussian(noise_multiplier), sample_rate)"
+        )
+    return Poisson(inner.noise_multiplier, sample_rate, config=inner.config)
 
 
 def truncated_poisson(
@@ -92,7 +95,7 @@ def truncated_poisson(
     sample_rate: float,
     batch_size_cap: int,
     dataset_size: int,
-) -> TruncatedPoisson:
+) -> DpProcess:
     """Truncated Poisson sampling (production DP-SGD with capped batch size).
 
     In real systems, batch size is capped at ``batch_size_cap`` even though Poisson
@@ -102,13 +105,13 @@ def truncated_poisson(
     **Use this for production DP-SGD** when you have a fixed batch size limit.
 
     Args:
-        inner: The base :class:`Gaussian` mechanism (from :func:`gaussian`).
+        inner: The base Gaussian mechanism (from :func:`gaussian`).
         sample_rate: Probability of including each example (batch_size / dataset_size).
         batch_size_cap: Maximum batch size (actual batches are capped at this value).
         dataset_size: Total number of examples in the dataset.
 
     Returns:
-        A :class:`TruncatedPoisson` process (typed ``DpProcess`` subclass).
+        A :class:`TruncatedPoisson` process.
 
     Example::
 
@@ -120,13 +123,23 @@ def truncated_poisson(
         training = step * 1000
         eps = training.epsilon_at(1e-5)
     """
-    return _native.truncated_poisson(inner, sample_rate, batch_size_cap, dataset_size)
+    if not isinstance(inner, Gaussian):
+        raise TypeError(
+            f"truncated_poisson() requires a Gaussian inner mechanism, got {type(inner).__name__}."
+        )
+    return TruncatedPoisson(
+        inner.noise_multiplier,
+        sample_rate,
+        batch_size_cap,
+        dataset_size,
+        config=inner.config,
+    )
 
 
 def accumulate(
     inner: Poisson,
     microbatches: int,
-) -> Accumulated:
+) -> DpProcess:
     """Gradient accumulation (microbatching) mechanism.
 
     Process gradients in ``microbatches`` sub-batches, accumulate clipped gradients,
@@ -134,11 +147,11 @@ def accumulate(
     per microbatch while maintaining the same privacy guarantee.
 
     Args:
-        inner: A :class:`Poisson` process (from :func:`poisson`).
+        inner: A Poisson process (from :func:`poisson`).
         microbatches: Number of microbatches to accumulate before noising.
 
     Returns:
-        An :class:`Accumulated` process (typed ``DpProcess`` subclass).
+        An :class:`Accumulated` process.
 
     Example::
 
@@ -150,46 +163,69 @@ def accumulate(
         training = step * 500
         eps = training.epsilon_at(1e-5)
     """
-    return _native.accumulate(inner, microbatches)
+    if not isinstance(inner, Poisson):
+        raise TypeError(
+            f"accumulate() requires a Poisson inner mechanism, got {type(inner).__name__}. "
+            "Use: acc.accumulate(acc.poisson(acc.gaussian(nm), rate), microbatches=k)"
+        )
+    return Accumulated(
+        inner.noise_multiplier,
+        inner.sample_rate,
+        microbatches,
+        config=inner.config,
+    )
 
 
 def adaclip(
     inner: Gaussian,
     quantile_noise_std: float,
-) -> AdaClip:
+) -> Gaussian:
     """Adaptive clipping mechanism (Andrew et al. 2021).
 
     Adaptive clipping adjusts the clipping threshold based on the empirical
     distribution of gradient norms. The quantile estimation uses a noisy mechanism,
     adding extra privacy cost.
 
-    The total privacy cost is the composition of:
+    The total privacy cost uses the combined sensitivity formula:
+    ``z_eff = 1 / sqrt(1/z² + 1/(4·σ_b²))``
 
-    - Base Gaussian mechanism (``inner``)
-    - Quantile estimation mechanism (``quantile_noise_std``)
+    where z is the base noise multiplier and σ_b is the quantile noise std.
+
+    The result is a Gaussian mechanism with the effective noise multiplier,
+    so it can be composed with :func:`poisson` or :func:`truncated_poisson`::
+
+        step = acc.poisson(acc.adaclip(acc.gaussian(1.1), 50.0), 0.01)
 
     Args:
-        inner: The base :class:`Gaussian` mechanism (from :func:`gaussian`).
+        inner: The base Gaussian mechanism (from :func:`gaussian`).
         quantile_noise_std: Noise std for quantile estimation.
             Larger = more private quantile, less accurate clipping.
 
     Returns:
-        An :class:`AdaClip` process (typed ``DpProcess`` subclass).
+        A :class:`Gaussian` with the effective (reduced) noise multiplier.
 
     Example::
 
         step = acc.adaclip(acc.gaussian(1.1), quantile_noise_std=50.0)
         eps = step.epsilon_at(1e-5)
     """
-    return _native.adaclip(inner, quantile_noise_std)
+    if not isinstance(inner, Gaussian):
+        raise TypeError(
+            f"adaclip() requires a Gaussian inner mechanism, got {type(inner).__name__}."
+        )
+    # Compute effective noise multiplier: z_eff = 1 / combined_sensitivity
+    s = _native.combined_sensitivity(inner.noise_multiplier, quantile_noise_std)
+    z_eff = 1.0 / s
+    # Return Gaussian so the result can be fed into poisson()/truncated_poisson()
+    return Gaussian(z_eff, config=inner.config)
 
 
 def eps_delta(
     epsilon: float,
     delta: float = 0.0,
     *,
-    discretization: Union[None, float, DiscretizationConfig] = None,
-) -> EpsDelta:
+    discretization: None | float | PldConfig = None,
+) -> DpProcess:
     """Fixed (ε, δ)-DP guarantee (for composition with other mechanisms).
 
     Useful when you have an external mechanism with known privacy parameters
@@ -201,7 +237,7 @@ def eps_delta(
         discretization: PLD precision config (keyword-only).
 
     Returns:
-        An :class:`EpsDelta` process (typed ``DpProcess`` subclass).
+        A :class:`DpProcess` wrapping an (ε, δ) PLD.
 
     Example::
 
@@ -213,14 +249,14 @@ def eps_delta(
         total = external | training
         eps = total.epsilon_at(1e-5)
     """
-    config = resolve_discretization(discretization)
-    return _native.eps_delta(epsilon, delta, discretization=config)
+    config = resolve_pld_config(discretization)
+    return EpsDelta(epsilon, delta, config=config)
 
 
 def identity(
     *,
-    discretization: Union[None, float, DiscretizationConfig] = None,
-) -> Identity:
+    discretization: None | float | PldConfig = None,
+) -> DpProcess:
     """Identity mechanism (zero privacy loss).
 
     Useful as a placeholder or identity element in composition.
@@ -229,7 +265,7 @@ def identity(
         discretization: PLD precision config (keyword-only).
 
     Returns:
-        An :class:`Identity` process (typed ``DpProcess`` subclass).
+        An :class:`~opaque.accounting.nodes.Identity` process (ε=0 for any δ).
 
     Example::
 
@@ -237,5 +273,5 @@ def identity(
         proc = acc.identity()
         eps = proc.epsilon_at(1e-5)  # ~0
     """
-    config = resolve_discretization(discretization)
-    return _native.identity(discretization=config)
+    config = resolve_pld_config(discretization)
+    return Identity(config=config)

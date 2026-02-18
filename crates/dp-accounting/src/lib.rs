@@ -3,74 +3,57 @@
 //! Privacy Loss Distribution (PLD) accounting for differential privacy.
 //!
 //! This crate provides privacy accounting using the Privacy Loss Distribution
-//! framework with Connect-the-Dots discretization. It is a functional,
-//! composable API for building and analyzing differential privacy mechanisms.
+//! framework with Connect-the-Dots discretization.
 //!
-//! ## Quick Start (Functional API)
+//! ## Architecture
+//!
+//! Rust is a **PLD computation engine**: flat functions that take scalar
+//! parameters and return opaque PLD handles. Python owns composition,
+//! repetition, caching, and calibration.
+//!
+//! ## Rust API
 //!
 //! ```rust
-//! use opaque_accounting::*;
+//! use opaque_accounting::mechanisms::gaussian_pld;
+//! use opaque_accounting::amplification::poisson_gaussian_pld;
+//! use opaque_accounting::DiscretizationConfig;
 //!
-//! // Standard DP-SGD: Poisson-subsampled Gaussian, 1000 rounds
-//! let step = poisson(gaussian(1.1).unwrap(), 0.01);
-//! let training = repeat(step, 1000).unwrap();
-//! let epsilon = training.epsilon_at(1e-5).unwrap();
+//! let config = DiscretizationConfig::default();
+//! let pld = gaussian_pld(1.1, &config).unwrap();
+//! let epsilon = pld.epsilon_at(1e-5);
 //! ```
 //!
 //! ## Module Overview
 //!
-//! - Composable functional API for privacy accounting
+//! - [`mechanisms`]: Gaussian, (ε,δ), identity PLD constructors
+//! - [`amplification`]: Poisson, truncated Poisson, accumulated PLDs
+//! - [`adaclip`]: Adaptive clipping sensitivity formula
+//! - [`pld`]: The `PrivacyLossDistribution` type and metrics
+//! - [`discretization`]: Connect-the-Dots discretization
 //! - [`error`]: Error types
-//! - [`math_helpers`]: Numerical primitives (FFT, log-space arithmetic)
+//! - [`math_helpers`]: Numerical primitives
 
 pub mod error;
 pub mod math_helpers;
 
+// --- Core infrastructure (kept from functional/) ---
 #[path = "functional/adjacency.rs"]
-pub mod adjacency;
-#[path = "functional/amplification/mod.rs"]
-pub mod amplification;
-#[path = "functional/cached.rs"]
-pub mod cached;
-#[path = "functional/calibrate.rs"]
-pub mod calibrate;
-#[path = "functional/composition.rs"]
-pub mod composition;
+pub(crate) mod adjacency;
 #[path = "functional/discretization/mod.rs"]
-pub mod discretization;
-#[path = "functional/mechanisms/mod.rs"]
-pub mod mechanisms;
+pub(crate) mod discretization;
 #[path = "functional/pld/mod.rs"]
 pub mod pld;
-#[path = "functional/process.rs"]
-pub mod process;
-#[path = "functional/transforms/mod.rs"]
-pub mod transforms;
 
-pub use adjacency::Adjacency;
-pub use amplification::{
-    accumulate, accumulate_with, poisson, poisson_with, truncated_poisson, truncated_poisson_with,
-    AccumulateAmplifiable, AccumulateEvidence, Accumulated, Poisson, PoissonAmplifiable,
-    PoissonEvidence, TightGaussianAccumulateEvidence, TightGaussianPoissonEvidence,
-    TightGaussianTruncatedPoissonEvidence, TruncatedPoisson, TruncatedPoissonAmplifiable,
-    TruncatedPoissonEvidence,
-};
-pub use cached::{cached, Cached};
-pub use calibrate::{
-    calibrate, target_advantage, target_beta_at, target_delta_at, target_epsilon_at,
-    target_risk_at, CalibrateConfig, CalibrateResult, Target,
-};
-pub use composition::{compose, repeat, repeat_flat, Composed, Repeated};
+// --- New flat-function modules ---
+pub mod adaclip;
+pub mod amplification;
+pub mod mechanisms;
+
+// --- Public re-exports ---
 pub use discretization::DiscretizationConfig;
-pub use mechanisms::{
-    eps_delta, eps_delta_with, gaussian, gaussian_with, identity, identity_with, EpsDelta,
-    Gaussian, Identity,
-};
-pub use pld::PrivacyLossDistribution;
-pub use process::Process;
-pub use transforms::{adaclip, AdaClip, AdaClipEvidence, AdaClipable, GaussianAdaClipEvidence};
-
 pub use error::{PldError, Result};
+pub use pld::PrivacyLossDistribution;
+pub use adjacency::Adjacency;
 
 #[cfg(feature = "python-extension")]
 mod python;

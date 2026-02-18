@@ -298,34 +298,6 @@ print(repr(proc))
 # Poisson(Gaussian(noise_multiplier=1.1), sample_rate=0.01)
 ```
 
-### PLD Grid Diagnostics
-
-Inspect the internal PLD representation for debugging numerical precision:
-
-```python
-info = proc.pld_info()
-print(f"Grid size: {info['grid_size']} bins")
-print(f"Discretization: {info['discretization']}")
-print(f"Total mass: {info['total_mass']}")    # should be ~1.0
-print(f"Inf mass: {info['infinity_mass']:.2e}")
-print(f"Computed in {info['elapsed_ms']:.1f} ms")
-```
-
-### Full Summary
-
-```python
-print(proc.summary(delta=1e-5))
-# --- Poisson(noise_multiplier=1.1, sample_rate=0.01) ---
-# epsilon(delta=1e-5)  = 3.73
-# delta(epsilon=1)     = 2.1e-02
-# advantage            = 4.5e-01
-# beta(alpha=0.05)     = 0.12
-# risk(prior=0.5)      = 0.38
-# ---
-# PLD grid: 84001 bins, disc=0.0001, inf_mass=1.2e-10
-# PLD computed in 42.3 ms
-```
-
 ## Custom Precision
 
 Override default PLD discretization for faster or more precise computation:
@@ -472,12 +444,13 @@ print(f"advantage           = {proc.advantage():.4f}")
 print(f"beta(alpha=0.05)    = {proc.beta_at(0.05):.4f}")
 ```
 
-### 4. Use Introspection for Debugging
+### 4. Query Multiple Metrics
 
 ```python
-# Check PLD grid for numerical issues
-info = proc.pld_info()
-assert abs(info['total_mass'] - 1.0) < 1e-8, "PLD mass not conserved!"
+proc = acc.poisson(acc.gaussian(1.1), 0.01) * 1000
+print(f"epsilon(delta=1e-5) = {proc.epsilon_at(1e-5):.2f}")
+print(f"advantage           = {proc.advantage():.4f}")
+print(f"beta(alpha=0.05)    = {proc.beta_at(0.05):.4f}")
 ```
 
 ## See Also

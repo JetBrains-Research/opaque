@@ -69,6 +69,16 @@ compat = [
   "typeguard>=4.0.0",
 ]
 
+# Cross-validation against reference DP accounting libraries
+# Install with: uv sync --group cross-validation
+cross-validation = [
+  "dp-accounting>=0.4.4",
+  "riskcal>=1.2.0",
+  "numpy>=1.20",
+  "scipy>=1.7",
+  "pytest>=7.0.0",
+]
+
 # Benchmarking against other DP libraries
 # Install with: uv sync --group benchmark
 benchmark = [
@@ -115,6 +125,7 @@ markers = [
   "jax_validation: Tests that validate against JAX-Privacy (optional dependency)",
   "slow: Tests that take a long time to run",
   "compat: HuggingFace compatibility tests (requires transformers, peft - install with 'uv sync --group compat')",
+  "cross_validation: Cross-validation tests against dp_accounting and riskcal (requires dp-accounting, riskcal)",
 ]
 
 [tool.coverage.run]

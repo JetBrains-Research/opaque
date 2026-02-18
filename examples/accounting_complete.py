@@ -163,45 +163,35 @@ print("-" * 70)
 
 # Default precision (1e-4, high accuracy)
 default = acc.poisson(acc.gaussian(1.0), 0.01)
-info_default = default.pld_info()
-print(f"Default:  disc={info_default['discretization']}, "
-      f"grid_size={info_default['grid_size']:,}, "
-      f"time={info_default['elapsed_ms']:.1f}ms")
+eps_default = default.epsilon_at(1e-5)
+print(f"Default (disc=1e-4): eps={eps_default:.6f}")
 
 # Coarse precision (1e-3, faster)
 coarse = acc.poisson(acc.gaussian(1.0, discretization=1e-3), 0.01)
-info_coarse = coarse.pld_info()
-print(f"Coarse:   disc={info_coarse['discretization']}, "
-      f"grid_size={info_coarse['grid_size']:,}, "
-      f"time={info_coarse['elapsed_ms']:.1f}ms")
+eps_coarse = coarse.epsilon_at(1e-5)
+print(f"Coarse  (disc=1e-3): eps={eps_coarse:.6f}")
 
 # Fine precision (1e-5, maximum accuracy)
 cfg_fine = acc.DiscretizationConfig(discretization=1e-5, max_grid_size=1_000_000)
 fine = acc.poisson(acc.gaussian(1.0, discretization=cfg_fine), 0.01)
-info_fine = fine.pld_info()
-print(f"Fine:     disc={info_fine['discretization']}, "
-      f"grid_size={info_fine['grid_size']:,}, "
-      f"time={info_fine['elapsed_ms']:.1f}ms")
+eps_fine = fine.epsilon_at(1e-5)
+print(f"Fine    (disc=1e-5): eps={eps_fine:.6f}")
 
 # Module-level defaults
 acc.set_discretization(discretization=1e-3)
 module_default = acc.poisson(acc.gaussian(1.0), 0.01)
-print(f"\nModule default set to 1e-3: {module_default}")
+print(f"\nModule default set to 1e-3: eps={module_default.epsilon_at(1e-5):.6f}")
 
 # =============================================================================
-# 8. Debugging and introspection
+# 8. Quick inspection
 # =============================================================================
-print("\n8️⃣  DEBUGGING")
+print("\n8️⃣  QUICK INSPECTION")
 print("-" * 70)
 
 step = acc.poisson(acc.gaussian(1.1), 0.01) * 1000
-
-# Quick summary
-print(f"Quick: {step}")
-
-# Full privacy report
-print("\nSummary:")
-print(step.summary())
+print(f"Training: {step}")
+print(f"  epsilon(1e-5) = {step.epsilon_at(1e-5):.4f}")
+print(f"  advantage     = {step.advantage():.4e}")
 
 print("=" * 70)
 print("✅ END OF DEMONSTRATION")

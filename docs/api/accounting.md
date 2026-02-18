@@ -38,8 +38,6 @@ Central class representing a differential privacy process. Constructed via modul
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `pld_info` | `() -> dict` | PLD grid diagnostics + timing |
-| `summary` | `(delta=1e-5, epsilon=1.0, alpha=0.05, prior=0.5) -> str` | Formatted privacy report |
 | `__str__` | `() -> str` | One-line summary with epsilon |
 | `__repr__` | `() -> str` | Reconstructible representation |
 
