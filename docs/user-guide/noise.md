@@ -70,7 +70,7 @@ sample_rate = batch_size / dataset_size
 
 # Define what "training" looks like as a function of noise_multiplier
 def build(noise_multiplier):
-    return acc.poisson(noise_multiplier, sample_rate) * total_training_steps
+    return acc.poisson(acc.gaussian(noise_multiplier), sample_rate) * total_training_steps
 
 # Find minimum noise for target privacy
 result = acc.calibrate(
@@ -179,7 +179,7 @@ num_steps = 1000
 
 # 2. Calibrate noise
 def build(nm):
-    return acc.poisson(nm, sample_rate) * num_steps
+    return acc.poisson(acc.gaussian(nm), sample_rate) * num_steps
 
 result = acc.calibrate(acc.epsilon(3.0, delta=1e-5), build, 0.1, 10.0)
 noise_multiplier = result.param
@@ -207,7 +207,7 @@ for step in range(num_steps):
     params = update(params, noisy_grads)
 
 # 6. Verify privacy
-training = acc.poisson(noise_multiplier, sample_rate) * num_steps
+training = acc.poisson(acc.gaussian(noise_multiplier), sample_rate) * num_steps
 final_epsilon = training.epsilon_at(1e-5)
 print(f"Final privacy: (ε={final_epsilon:.2f}, δ=1e-5)")
 ```
@@ -271,7 +271,7 @@ for step in range(num_steps):
     params = update(params, noisy_grads)
 
     # Important: Track with actual noise used!
-    training = training | acc.poisson(current_noise, sample_rate)
+    training = training | acc.poisson(acc.gaussian(current_noise), sample_rate)
 
 final_epsilon = training.epsilon_at(1e-5)
 print(f"Final privacy: (ε={final_epsilon:.2f}, δ=1e-5)")

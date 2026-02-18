@@ -20,7 +20,7 @@ class TestAccountantIntegration:
         steps = 10  # Fewer steps to stay within budget
 
         # Compose all steps at once
-        acct = acct | (acc.poisson(noise_multiplier, sample_rate) * steps)
+        acct = acct | (acc.poisson(acc.gaussian(noise_multiplier), sample_rate) * steps)
 
         # With modest steps, budget should not be exceeded
         assert not acct.budget_exceeded
@@ -32,7 +32,7 @@ class TestAccountantIntegration:
 
         noise_multiplier = 1.1
         sample_rate = 0.01
-        step_process = acc.poisson(noise_multiplier, sample_rate)
+        step_process = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
 
         # Simulate incremental training steps
         for i in range(5):
@@ -53,14 +53,14 @@ class TestAccountantIntegration:
         # Build function that creates a poisson(nm, rate) process repeated 100 times
         result = acc.calibrate(
             target=target,
-            build=lambda nm: acc.poisson(nm, 0.01) * 100,
+            build=lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 100,
             param_min=0.1,   # Must be >= 0.1 (Rust constraint)
             param_max=1.2,   # Must be <= 1.2 (Rust constraint)
         )
 
         # Create accountant with calibrated noise
         acct = acc.Accountant(budget=target)
-        acct = acct | (acc.poisson(result.param, 0.01) * 100)
+        acct = acct | (acc.poisson(acc.gaussian(result.param), 0.01) * 100)
 
         # After calibration, achieved epsilon should be close to target
         achieved = acct.epsilon_at(1e-5)
@@ -73,7 +73,7 @@ class TestAccountantIntegration:
 
         # Mix different mechanisms
         acct = acct | acc.gaussian(0.5)
-        acct = acct | (acc.poisson(1.0, 0.01) * 20)
+        acct = acct | (acc.poisson(acc.gaussian(1.0), 0.01) * 20)
         acct = acct | acc.gaussian(0.3)
 
         # Verify we can query metrics

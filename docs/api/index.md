@@ -29,7 +29,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `identity_mf_noise()`, `custom_mf_noise()` - MF API utilities
 
 - **[Accounting](accounting.md)**: Privacy budget tracking
-  - `gaussian()`, `poisson()`, `truncated_poisson()` - Mechanism constructors → `DpProcess`
+  - `gaussian()`, `poisson()`, `truncated_poisson()` - Mechanism constructors → typed subclasses
   - `DpProcess` operators: `*` (repeat), `|` (compose)
   - `.epsilon_at()`, `.delta_at()`, `.advantage()`, `.beta_at()` - Privacy metrics
   - `calibrate()` - Binary-search noise multiplier for target privacy
@@ -60,7 +60,7 @@ from opaque import clipped_grad, gaussian_noise
 
 # 1. Calibrate noise
 def build(nm):
-    return acc.poisson(nm, sample_rate=0.01) * 1000
+    return acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000
 
 result = acc.calibrate(acc.epsilon(3.0, delta=1e-5), build, 0.1, 10.0)
 noise_multiplier = result.param
@@ -79,7 +79,7 @@ for step in range(1000):
     params = update(params, noisy_grads)
 
 # 4. Check final privacy
-training = acc.poisson(noise_multiplier, sample_rate=0.01) * 1000
+training = acc.poisson(acc.gaussian(noise_multiplier), sample_rate=0.01) * 1000
 epsilon = training.epsilon_at(1e-5)
 ```
 
@@ -173,7 +173,7 @@ import opaque.accounting as acc
 PyTree = dict[str, torch.Tensor] | tuple[torch.Tensor, ...]
 
 # DpProcess: Composable privacy process (from Rust PLD engine)
-process: acc.DpProcess = acc.poisson(1.1, 0.01) * 1000
+process: acc.DpProcess = acc.poisson(acc.gaussian(1.1), 0.01) * 1000
 
 # Generator for reproducible noise
 Generator = torch.Generator | None

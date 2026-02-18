@@ -27,13 +27,14 @@ class Accountant:
         import opaque.accounting as acc
 
         acct = acc.Accountant()
+        step = acc.poisson(acc.gaussian(1.1), 0.01)
 
-        for step in range(num_steps):
-            acct = acct | acc.poisson(nm, sr)
+        for i in range(num_steps):
+            acct = acct | step
 
-            if step % 100 == 0:
+            if i % 100 == 0:
                 eps = acct.epsilon_at(1e-5)
-                print(f"Step {step}: ε={eps:.2f}")
+                print(f"Step {i}: ε={eps:.2f}")
 
     With an optional privacy budget::
 
@@ -41,9 +42,10 @@ class Accountant:
 
         budget = cal.epsilon(3.0, delta=1e-5)
         acct = acc.Accountant(budget=budget)
+        step = acc.poisson(acc.gaussian(1.1), 0.01)
 
-        for step in range(num_steps):
-            acct = acct | acc.poisson(nm, sr)
+        for i in range(num_steps):
+            acct = acct | step
 
             if acct.budget_exceeded:
                 print("Privacy budget exhausted!")
@@ -76,8 +78,9 @@ class Accountant:
         Example::
 
             acct = Accountant()
-            acct = acct | poisson(1.1, 0.01)  # One step
-            acct = acct | poisson(1.1, 0.01)  # Another step
+            step = poisson(gaussian(1.1), 0.01)
+            acct = acct | step  # One step
+            acct = acct | step  # Another step
         """
         new_acct = Accountant(budget=self._budget)
         new_acct._process = self._process | process
@@ -100,8 +103,9 @@ class Accountant:
         Example::
 
             acct = Accountant()
-            for step in range(1000):
-                acct = acct | poisson(1.1, 0.01)
+            step = poisson(gaussian(1.1), 0.01)
+            for i in range(1000):
+                acct = acct | step
 
             eps = acct.epsilon_at(1e-5)
             print(f"Privacy: (ε={eps:.2f}, δ=1e-5)")
@@ -122,8 +126,9 @@ class Accountant:
         Example::
 
             acct = Accountant()
-            for step in range(1000):
-                acct = acct | poisson(1.1, 0.01)
+            step = poisson(gaussian(1.1), 0.01)
+            for i in range(1000):
+                acct = acct | step
 
             delta = acct.delta_at(1.0)
         """
@@ -211,7 +216,7 @@ class Accountant:
             acct = Accountant(budget=budget)
 
             for step in range(num_steps):
-                acct = acct | poisson(nm, sr)
+                acct = acct | acc.poisson(acc.gaussian(nm), sr)
 
                 if acct.budget_exceeded:
                     print("Stop training: budget exhausted")

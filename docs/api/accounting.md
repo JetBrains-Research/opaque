@@ -38,7 +38,6 @@ Central class representing a differential privacy process. Constructed via modul
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `describe` | `() -> dict` | Constructor parameters |
 | `pld_info` | `() -> dict` | PLD grid diagnostics + timing |
 | `summary` | `(delta=1e-5, epsilon=1.0, alpha=0.05, prior=0.5) -> str` | Formatted privacy report |
 | `__str__` | `() -> str` | One-line summary with epsilon |
@@ -65,61 +64,54 @@ cfg = acc.DiscretizationConfig(
 
 ## Mechanism Functions
 
-### `gaussian(noise_multiplier, discretization=None) -> DpProcess`
+### `gaussian(noise_multiplier, discretization=None) -> Gaussian`
 
 Gaussian mechanism with sensitivity 1. Building block for DP-SGD.
 
 - `noise_multiplier` (float): Ratio of noise std to sensitivity
 - `discretization` (DiscretizationConfig, optional): Custom precision
 
-### `poisson(noise_multiplier, sample_rate, discretization=None) -> DpProcess`
+### `poisson(inner, sample_rate) -> Poisson`
 
-Poisson-subsampled Gaussian. Standard DP-SGD step where `sample_rate = batch_size / dataset_size`.
+Poisson-subsampled mechanism. Standard DP-SGD step where `sample_rate = batch_size / dataset_size`.
 
-- `noise_multiplier` (float): Gaussian noise std / sensitivity
+- `inner` (Gaussian | AdaClip): Base mechanism (from `gaussian()` or `adaclip()`)
 - `sample_rate` (float): Poisson probability q in (0, 1]
-- `discretization` (DiscretizationConfig, optional): Custom precision
 
-### `truncated_poisson(noise_multiplier, sample_rate, batch_size_cap, dataset_size, discretization=None) -> DpProcess`
+### `truncated_poisson(inner, sample_rate, batch_size_cap, dataset_size) -> TruncatedPoisson`
 
-Truncated Poisson-subsampled Gaussian. Production DP-SGD with capped batch size. Provides tighter bounds than standard Poisson (up to 20% epsilon improvement).
+Truncated Poisson-subsampled mechanism. Production DP-SGD with capped batch size. Provides tighter bounds than standard Poisson (up to 20% epsilon improvement).
 
-- `noise_multiplier` (float): Gaussian noise std / sensitivity
+- `inner` (Gaussian | AdaClip): Base mechanism (from `gaussian()` or `adaclip()`)
 - `sample_rate` (float): Expected sampling rate
 - `batch_size_cap` (int): Maximum batch size
 - `dataset_size` (int): Total dataset size
-- `discretization` (DiscretizationConfig, optional): Custom precision
 
-### `accumulate(noise_multiplier, sample_rate, microbatches, discretization=None) -> DpProcess`
+### `accumulate(inner, microbatches) -> Accumulated`
 
-Gradient accumulation with microbatching. Models multiple micro-batches accumulated before a single noise addition (Mixture-of-Gaussians framework).
+Gradient accumulation with microbatching. Models multiple micro-batches accumulated before a single noise addition.
 
-- `noise_multiplier` (float): Gaussian noise std / sensitivity
-- `sample_rate` (float): Per-microbatch Poisson rate
+- `inner` (Poisson): Poisson-subsampled process (from `poisson()`)
 - `microbatches` (int): Number of micro-batches per step
-- `discretization` (DiscretizationConfig, optional): Custom precision
 
-### `adaclip(noise_multiplier, quantile_noise_std, discretization=None) -> DpProcess`
+### `adaclip(inner, quantile_noise_std) -> AdaClip`
 
 Adaptive clipping mechanism (Andrew et al. 2021). Accounts for both the main Gaussian mechanism and the quantile-estimation noise.
 
-- `noise_multiplier` (float): Main mechanism noise
+- `inner` (Gaussian): Base Gaussian mechanism (from `gaussian()`)
 - `quantile_noise_std` (float): Quantile estimation noise
-- `discretization` (DiscretizationConfig, optional): Custom precision
 
-### `eps_delta(epsilon, delta=0, discretization=None) -> DpProcess`
+### `eps_delta(epsilon, delta=0, discretization=None) -> EpsDelta`
 
 Fixed (epsilon, delta)-DP mechanism. Useful for composing non-Gaussian mechanisms.
 
 - `epsilon` (float): Privacy parameter (>= 0)
 - `delta` (float): Failure probability (default 0)
-- `config` (DiscretizationConfig, optional): Custom precision
+- `discretization` (DiscretizationConfig, optional): Custom precision
 
-### `identity(discretization=None) -> DpProcess`
+### `identity(discretization=None) -> Identity`
 
 Identity mechanism with zero privacy loss. Neutral element for composition.
-
-- `discretization` (DiscretizationConfig, optional): Custom precision
 
 ---
 
@@ -152,9 +144,7 @@ Returns `CalibrateResult` with `.param` (noise multiplier) and `.achieved` (actu
 
 Example:
 
-```python
-def build(nm):
-    return acc.poisson(nm, sample_rate=0.01) * 1000
+```python\ndef build(nm):\n    return acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000", "oldString": "```python\ndef build(nm):\n    return acc.poisson(nm, sample_rate=0.01) * 1000
 
 result = acc.calibrate(acc.epsilon(3.0, delta=1e-5), build, 0.1, 10.0)
 print(f"Noise: {result.param:.3f}, ε: {result.achieved:.2f}")

@@ -22,7 +22,7 @@ training = acc.gaussian(noise_multiplier=1.0)
 epsilon = training.epsilon_at(1e-5)  # ε ≈ 15.0
 
 # With Poisson sampling (sample_rate=0.01)
-training = acc.poisson(noise_multiplier=1.0, sample_rate=0.01)
+training = acc.poisson(acc.gaussian(1.0), sample_rate=0.01)
 epsilon = training.epsilon_at(1e-5)  # ε ≈ 0.1  (150x better!)
 ```
 
@@ -79,7 +79,7 @@ for step in range(num_steps):
     params = update(params, noisy_grads)
 
 # Track privacy (compose all steps)
-training = acc.poisson(noise_multiplier=noise_mult, sample_rate=0.01) * num_steps
+training = acc.poisson(acc.gaussian(noise_mult), sample_rate=0.01) * num_steps
 epsilon = training.epsilon_at(delta=1e-5)
 ```
 
@@ -122,7 +122,7 @@ for step in range(num_steps):
 
 # Track privacy (compose all steps)
 training = acc.truncated_poisson(
-    noise_multiplier=noise_mult,
+    acc.gaussian(noise_mult),
     sample_rate=0.01,
     batch_size_cap=32,
     dataset_size=10000,
@@ -261,7 +261,7 @@ sampler = TruncatedPoissonSampler(
 # Calibrate noise
 def build(nm):
     return acc.truncated_poisson(
-        nm, sample_rate, batch_size_cap=batch_size, dataset_size=dataset_size
+        acc.gaussian(nm), sample_rate, batch_size_cap=batch_size, dataset_size=dataset_size
     ) * num_steps
 
 result = acc.calibrate(acc.epsilon(3.0, delta=1e-5), build, 0.1, 10.0)
@@ -297,7 +297,7 @@ for step in range(num_steps):
 
 # Check final privacy
 training = acc.truncated_poisson(
-    noise_multiplier=noise_multiplier,
+    acc.gaussian(noise_multiplier),
     sample_rate=sample_rate,
     batch_size_cap=batch_size,
     dataset_size=dataset_size,
@@ -320,11 +320,11 @@ Smaller sample rates provide stronger amplification:
 
 ```python
 # Large batches (sample_rate=0.1)
-training_large = acc.poisson(noise_multiplier=1.0, sample_rate=0.1) * 100
+training_large = acc.poisson(acc.gaussian(1.0), sample_rate=0.1) * 100
 eps_large = training_large.epsilon_at(1e-5)  # ε ≈ 1.5
 
 # Small batches (sample_rate=0.01)
-training_small = acc.poisson(noise_multiplier=1.0, sample_rate=0.01) * 100
+training_small = acc.poisson(acc.gaussian(1.0), sample_rate=0.01) * 100
 eps_small = training_small.epsilon_at(1e-5)  # ε ≈ 0.15
 
 print(f"Large batches: ε={eps_large:.2f}")

@@ -14,7 +14,7 @@ Example::
     import opaque.accounting as acc
 
     # Create a DP-SGD step
-    step = acc.poisson(noise_multiplier=1.1, sample_rate=0.01)
+    step = acc.poisson(acc.gaussian(1.1), sample_rate=0.01)
 
     # Compose 1000 steps
     training = step * 1000
@@ -60,13 +60,12 @@ Composition operators:
 Debugging:
 
 - **print(proc)**: One-line summary with epsilon
-- **describe()**: Constructor parameters as dict
 - **pld_info()**: PLD grid diagnostics with timing
 - **summary()**: Multi-line formatted privacy report
 
 Example::
 
-    step = acc.poisson(1.1, 0.01)
+    step = acc.poisson(acc.gaussian(1.1), 0.01)
     training = step * 1000
     eps = training.epsilon_at(1e-5)
     print(training.summary())  # detailed report

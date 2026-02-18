@@ -47,7 +47,7 @@ print(proc.epsilon_at(1e-5))   # epsilon for this noise level
 print(proc.delta_at(1.0))      # delta at epsilon=1.0
 
 # --- Standard DP-SGD (Poisson-subsampled Gaussian, 1000 steps) ---
-step = dp.poisson(noise_multiplier=1.1, sample_rate=0.01)
+step = dp.poisson(dp.gaussian(1.1), sample_rate=0.01)
 training = step * 1000                     # repeat 1000 times
 eps = training.epsilon_at(delta=1e-5)      # query epsilon
 print(f"DP-SGD: epsilon={eps:.2f}")
@@ -83,14 +83,13 @@ println!("epsilon = {epsilon:.4}");
 
 | Function | Description |
 |----------|-------------|
-| `gaussian(noise_multiplier, config=None)` | Gaussian mechanism (sensitivity=1) |
-| `poisson(noise_multiplier, sample_rate, config=None)` | Poisson-subsampled Gaussian |
-| `truncated_poisson(noise_multiplier, sample_rate, batch_size_cap, dataset_size, config=None)` | Truncated Poisson (capped batch size) |
-| `accumulate(noise_multiplier, sample_rate, microbatches, config=None)` | Gradient accumulation (mixture of Gaussians) |
-| `eps_delta(epsilon, delta=0, config=None)` | Fixed (epsilon, delta)-DP mechanism |
-| `identity(config=None)` | Zero privacy loss |
-| `adaclip(noise_multiplier, quantile_noise_std, config=None)` | Adaptive clipping ([Andrew et al. 2021](https://arxiv.org/abs/2106.07136)) |
-| `poisson_adaclip(noise_multiplier, quantile_noise_std, sample_rate, config=None)` | Poisson + AdaClip combined |
+| `gaussian(noise_multiplier, discretization=None)` | Gaussian mechanism (sensitivity=1) → `Gaussian` |
+| `poisson(inner, sample_rate)` | Poisson-subsampled mechanism → `Poisson` |
+| `truncated_poisson(inner, sample_rate, batch_size_cap, dataset_size)` | Truncated Poisson (capped batch) → `TruncatedPoisson` |
+| `accumulate(inner, microbatches)` | Gradient accumulation → `Accumulated` |
+| `eps_delta(epsilon, delta=0, discretization=None)` | Fixed (ε, δ)-DP mechanism → `EpsDelta` |
+| `identity(discretization=None)` | Zero privacy loss → `Identity` |
+| `adaclip(inner, quantile_noise_std)` | Adaptive clipping → `AdaClip` |
 
 ### Composition
 
@@ -123,15 +122,11 @@ All metrics are computed from the same PLD — no redundant computation.
 ### Debugging & Introspection
 
 ```python
-proc = dp.poisson(1.1, 0.01) * 1000
+proc = dp.poisson(dp.gaussian(1.1), 0.01) * 1000
 
 # Quick display
 print(proc)
-# Poisson(noise_multiplier=1.1, sample_rate=0.01) | eps(delta=1e-5)=3.73
-
-# Constructor parameters
-proc.describe()
-# {'type': 'Repeat(...)', 'inner': 'Poisson(...)', 'count': 1000}
+# Repeated(Poisson(Gaussian(noise_multiplier=1.1), sample_rate=0.01), count=1000)
 
 # PLD grid diagnostics
 info = proc.pld_info()
@@ -163,7 +158,7 @@ cfg = dp.DiscretizationConfig(
     max_grid_size=1_000_000,    # limit memory
 )
 
-proc = dp.gaussian(1.1, config=cfg)
+proc = dp.gaussian(1.1, discretization=cfg)
 ```
 
 | Parameter | Default | Description |

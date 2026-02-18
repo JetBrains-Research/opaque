@@ -3,14 +3,14 @@
 ``opaque_accounting`` is a PyO3-based native extension providing
 Privacy Loss Distribution (PLD) accounting for differential privacy.
 
-All mechanism constructors return :class:`DpProcess` instances.
+All mechanism constructors return typed :class:`DpProcess` subclasses.
 Processes compose with ``*`` (repeat) and ``|`` (compose) operators.
 
 Example::
 
     import opaque_accounting as dp
 
-    step = dp.poisson(1.1, 0.01)
+    step = dp.poisson(dp.gaussian(1.1), 0.01)
     training = step * 1000
     print(training.epsilon_at(1e-5))
 """
@@ -20,31 +20,30 @@ from __future__ import annotations
 from typing import Any
 
 # ---------------------------------------------------------------------------
-# Classes
+# Base class
 # ---------------------------------------------------------------------------
 
 
 class DpProcess:
     """A differential privacy process that can be queried for privacy guarantees.
 
-    ``DpProcess`` is the central class in ``opaque_accounting``.  Every
-    mechanism constructor (``gaussian``, ``poisson``, ``adaclip``, …) returns
-    a ``DpProcess``, and composition operators produce new instances.
+    ``DpProcess`` is the base class.  Every mechanism constructor returns a
+    typed subclass, and composition operators produce new subclass instances.
 
     **Constructors** (module-level functions):
 
-    - :func:`gaussian` — Gaussian mechanism
-    - :func:`poisson` — Poisson-subsampled Gaussian
-    - :func:`truncated_poisson` — production DP-SGD with capped batch size
-    - :func:`accumulate` — gradient accumulation (microbatching)
-    - :func:`eps_delta` — fixed (ε, δ) guarantee
-    - :func:`identity` — zero privacy loss
-    - :func:`adaclip` — adaptive clipping (Andrew et al. 2021)
+    - :func:`gaussian` → :class:`Gaussian`
+    - :func:`poisson` → :class:`Poisson`
+    - :func:`truncated_poisson` → :class:`TruncatedPoisson`
+    - :func:`accumulate` → :class:`Accumulated`
+    - :func:`eps_delta` → :class:`EpsDelta`
+    - :func:`identity` → :class:`Identity`
+    - :func:`adaclip` → :class:`AdaClip`
 
     **Composition**:
 
-    - ``step * 1000`` or ``dp.repeat(step, 1000)`` — homogeneous k-fold
-    - ``a | b`` or ``dp.compose(a, b)`` — heterogeneous two-process
+    - ``step * 1000`` or ``dp.repeat(step, 1000)`` → :class:`Repeated`
+    - ``a | b`` or ``dp.compose(a, b)`` → :class:`Composed`
 
     **Privacy metrics** (all derived from the same PLD):
 
@@ -57,7 +56,6 @@ class DpProcess:
     **Debugging**:
 
     - ``print(proc)`` — one-line summary with epsilon
-    - :meth:`describe` — constructor parameters as dict
     - :meth:`pld_info` — PLD grid diagnostics with timing
     - :meth:`summary` — formatted multi-line privacy report
 
@@ -65,9 +63,9 @@ class DpProcess:
 
         import opaque_accounting as dp
 
-        step = dp.poisson(1.1, 0.01)
+        step = dp.poisson(dp.gaussian(1.1), 0.01)
         training = step * 1000
-        print(training.epsilon_at(1e-5))    # ~3.73
+        print(training.epsilon_at(1e-5))    # ~1.52
         print(training.summary())            # full report
     """
 
@@ -76,13 +74,9 @@ class DpProcess:
     def epsilon_at(self, delta: float) -> float:
         """Compute the smallest ε such that the mechanism satisfies (ε, δ)-DP.
 
-        Solves: find min ε s.t.
-        ``P[M(D) ∈ S] ≤ exp(ε) · P[M(D') ∈ S] + δ``
-        for all neighboring datasets D, D' and all output sets S.
-
         Args:
             delta: Failure probability (typically 1e-5 to 1e-7).
-                Must be in [0, 1).  Smaller δ → stricter guarantee.
+                Must be in [0, 1).
 
         Returns:
             The smallest ε achieving (ε, δ)-DP.
@@ -90,18 +84,15 @@ class DpProcess:
         Example::
 
             proc = dp.gaussian(1.1)
-            eps = proc.epsilon_at(1e-5)  # ~3.73
+            eps = proc.epsilon_at(1e-5)
         """
         ...
 
     def delta_at(self, epsilon: float) -> float:
         """Compute the smallest δ such that the mechanism satisfies (ε, δ)-DP.
 
-        Inverse of :meth:`epsilon_at`: given an ε budget, find δ.
-
         Args:
             epsilon: Privacy budget.  Must be ≥ 0.
-                ε = 0 gives δ = advantage (worst-case distinguishing probability).
 
         Returns:
             The δ value at the given ε.
@@ -116,28 +107,21 @@ class DpProcess:
     def advantage(self) -> float:
         """Total-variation advantage: max probability of distinguishing neighbors.
 
-        Equivalent to ``delta_at(0.0)`` — the hockey-stick divergence at ε = 0.
-        This is the f-DP advantage metric from Dong et al. (2019).
-
         Returns:
             Advantage in [0, 1].  Lower → more private.
 
         Example::
 
             proc = dp.gaussian(1.0)
-            adv = proc.advantage()  # ~0.31
+            adv = proc.advantage()
         """
         ...
 
     def beta_at(self, alpha: float) -> float:
         """Type-II error (β) at a given Type-I error (α).
 
-        In the hypothesis-testing interpretation of DP, an adversary tries to
-        distinguish D from D'.  α is the false-positive rate and β is the
-        false-negative rate.  Higher β → harder to detect → more private.
-
         Args:
-            alpha: Type-I error rate (false positive).  Must be in [0, 1].
+            alpha: Type-I error rate. Must be in [0, 1].
 
         Returns:
             Type-II error rate (β) in [0, 1].
@@ -152,16 +136,11 @@ class DpProcess:
     def risk_at(self, prior: float) -> float:
         """Bayes risk under an optimal adversary with a given prior.
 
-        The risk is the minimum expected loss of any decision rule trying to
-        distinguish D from D', weighted by the prior probability.
-        ``risk = prior · β + (1 − prior) · α`` at the optimal threshold.
-
         Args:
-            prior: Prior probability that the data came from D (vs D').
-                Typically 0.5 for a balanced prior.
+            prior: Prior probability. Typically 0.5.
 
         Returns:
-            Bayes risk in [0, 0.5].  Higher → more private.
+            Bayes risk in [0, 0.5]. Higher → more private.
 
         Example::
 
@@ -172,60 +151,43 @@ class DpProcess:
 
     # -- operators -----------------------------------------------------------
 
-    def __mul__(self, count: int) -> DpProcess:
+    def __mul__(self, count: int) -> Repeated:
         """``process * k`` is shorthand for ``repeat(process, k)``.
 
         Args:
             count: Number of repetitions.
 
         Returns:
-            New DpProcess representing *k*-fold homogeneous composition.
+            A :class:`Repeated` process.
         """
         ...
 
-    def __rmul__(self, count: int) -> DpProcess:
+    def __rmul__(self, count: int) -> Repeated:
         """``k * process`` also works (reflected multiply).
 
         Args:
             count: Number of repetitions.
 
         Returns:
-            New DpProcess representing *k*-fold homogeneous composition.
+            A :class:`Repeated` process.
         """
         ...
 
-    def __or__(self, other: DpProcess) -> DpProcess:
+    def __or__(self, other: DpProcess) -> Composed:
         """``a | b`` is shorthand for ``compose(a, b)``.
 
         Args:
             other: Second process.
 
         Returns:
-            New DpProcess representing heterogeneous composition.
+            A :class:`Composed` process.
         """
         ...
 
     # -- introspection / debugging -------------------------------------------
 
-    def describe(self) -> dict[str, Any]:
-        """Return constructor parameters as a dict.
-
-        Returns:
-            Dict with ``'type'`` key (label string) plus original constructor
-            keyword arguments.
-
-        Example::
-
-            >>> dp.poisson(1.1, 0.01).describe()
-            {'type': 'Poisson(...)', 'noise_multiplier': 1.1, 'sample_rate': 0.01}
-        """
-        ...
-
     def pld_info(self) -> dict[str, Any]:
         """Compute the PLD and return diagnostic info about the internal grid.
-
-        Useful for understanding numerical precision and debugging unexpected
-        results.
 
         Returns:
             Dict with keys: ``grid_size``, ``discretization``,
@@ -259,33 +221,279 @@ class DpProcess:
     def __str__(self) -> str: ...
 
 
+# ---------------------------------------------------------------------------
+# Typed subclasses — mechanisms
+# ---------------------------------------------------------------------------
+
+
+class Gaussian(DpProcess):
+    """Gaussian mechanism (typed :class:`DpProcess` subclass).
+
+    Created by :func:`gaussian`.  Exposes the noise multiplier as a property.
+
+    Example::
+
+        g = dp.gaussian(1.1)
+        g.noise_multiplier  # 1.1
+        isinstance(g, dp.DpProcess)  # True
+    """
+
+    @property
+    def noise_multiplier(self) -> float:
+        """Ratio of noise std to sensitivity (σ / Δ)."""
+        ...
+
+    def __repr__(self) -> str: ...
+
+
+class EpsDelta(DpProcess):
+    """Fixed (ε, δ)-DP mechanism (typed :class:`DpProcess` subclass).
+
+    Created by :func:`eps_delta`.
+
+    Example::
+
+        ed = dp.eps_delta(1.0, 1e-5)
+        ed.epsilon  # 1.0
+        ed.delta    # 1e-5
+    """
+
+    @property
+    def epsilon(self) -> float:
+        """Privacy parameter ε."""
+        ...
+
+    @property
+    def delta(self) -> float:
+        """Failure probability δ."""
+        ...
+
+    def __repr__(self) -> str: ...
+
+
+class Identity(DpProcess):
+    """Identity mechanism with zero privacy loss (typed :class:`DpProcess` subclass).
+
+    Created by :func:`identity`.
+    """
+
+    def __repr__(self) -> str: ...
+
+
+# ---------------------------------------------------------------------------
+# Typed subclasses — amplification
+# ---------------------------------------------------------------------------
+
+
+class Poisson(DpProcess):
+    """Poisson-subsampled mechanism (typed :class:`DpProcess` subclass).
+
+    Created by :func:`poisson`.
+
+    Example::
+
+        p = dp.poisson(dp.gaussian(1.1), 0.01)
+        p.inner        # Gaussian(noise_multiplier=1.1)
+        p.sample_rate  # 0.01
+    """
+
+    @property
+    def inner(self) -> DpProcess:
+        """The inner (base) mechanism."""
+        ...
+
+    @property
+    def sample_rate(self) -> float:
+        """Poisson sampling probability."""
+        ...
+
+    def __repr__(self) -> str: ...
+
+
+class TruncatedPoisson(DpProcess):
+    """Truncated-Poisson-subsampled mechanism (typed :class:`DpProcess` subclass).
+
+    Created by :func:`truncated_poisson`.
+
+    Example::
+
+        tp = dp.truncated_poisson(dp.gaussian(1.1), 0.01, 100, 10000)
+        tp.inner           # Gaussian(noise_multiplier=1.1)
+        tp.sample_rate     # 0.01
+        tp.batch_size_cap  # 100
+        tp.dataset_size    # 10000
+    """
+
+    @property
+    def inner(self) -> DpProcess:
+        """The inner (base) mechanism."""
+        ...
+
+    @property
+    def sample_rate(self) -> float:
+        """Poisson sampling probability."""
+        ...
+
+    @property
+    def batch_size_cap(self) -> int:
+        """Maximum batch size."""
+        ...
+
+    @property
+    def dataset_size(self) -> int:
+        """Total dataset size."""
+        ...
+
+    def __repr__(self) -> str: ...
+
+
+class Accumulated(DpProcess):
+    """Gradient-accumulated mechanism (typed :class:`DpProcess` subclass).
+
+    Created by :func:`accumulate`.
+
+    Example::
+
+        a = dp.accumulate(dp.poisson(dp.gaussian(1.1), 0.01), 4)
+        a.inner         # Poisson(...)
+        a.microbatches  # 4
+    """
+
+    @property
+    def inner(self) -> DpProcess:
+        """The inner Poisson-subsampled mechanism."""
+        ...
+
+    @property
+    def microbatches(self) -> int:
+        """Number of micro-batches per step."""
+        ...
+
+    def __repr__(self) -> str: ...
+
+
+# ---------------------------------------------------------------------------
+# Typed subclasses — transforms
+# ---------------------------------------------------------------------------
+
+
+class AdaClip(DpProcess):
+    """Adaptive clipping mechanism (typed :class:`DpProcess` subclass).
+
+    Created by :func:`adaclip`.
+
+    Example::
+
+        ac = dp.adaclip(dp.gaussian(1.1), 50.0)
+        ac.inner               # Gaussian(noise_multiplier=1.1)
+        ac.quantile_noise_std  # 50.0
+    """
+
+    @property
+    def inner(self) -> DpProcess:
+        """The inner Gaussian mechanism."""
+        ...
+
+    @property
+    def quantile_noise_std(self) -> float:
+        """Noise std for quantile estimation."""
+        ...
+
+    def __repr__(self) -> str: ...
+
+
+# ---------------------------------------------------------------------------
+# Typed subclasses — composition
+# ---------------------------------------------------------------------------
+
+
+class Repeated(DpProcess):
+    """Repeated process (typed :class:`DpProcess` subclass).
+
+    Created by ``process * count`` or :func:`repeat`.
+
+    Example::
+
+        r = dp.gaussian(1.1) * 1000
+        r.inner  # Gaussian(noise_multiplier=1.1)
+        r.count  # 1000
+    """
+
+    @property
+    def inner(self) -> DpProcess:
+        """The repeated process."""
+        ...
+
+    @property
+    def count(self) -> int:
+        """Number of repetitions."""
+        ...
+
+    def __repr__(self) -> str: ...
+
+
+class Composed(DpProcess):
+    """Composed process (typed :class:`DpProcess` subclass).
+
+    Created by ``a | b`` or :func:`compose`.
+
+    Example::
+
+        c = dp.gaussian(1.0) | dp.eps_delta(0.5)
+        c.left   # Gaussian(noise_multiplier=1.0)
+        c.right  # EpsDelta(epsilon=0.5, delta=0)
+    """
+
+    @property
+    def left(self) -> DpProcess:
+        """First process."""
+        ...
+
+    @property
+    def right(self) -> DpProcess:
+        """Second process."""
+        ...
+
+    def __repr__(self) -> str: ...
+
+
+class Cached(DpProcess):
+    """Cached process (typed :class:`DpProcess` subclass).
+
+    Created by :func:`cached`.  PLD is computed once and reused.
+
+    Example::
+
+        c = dp.cached(dp.poisson(dp.gaussian(1.1), 0.01))
+        c.inner  # Poisson(...)
+    """
+
+    @property
+    def inner(self) -> DpProcess:
+        """The wrapped process."""
+        ...
+
+    def __repr__(self) -> str: ...
+
+
+# ---------------------------------------------------------------------------
+# DiscretizationConfig
+# ---------------------------------------------------------------------------
+
+
 class DiscretizationConfig:
     """Configuration controlling PLD discretization precision.
 
-    The PLD is represented as a discrete probability mass function (PMF) on a
-    regular grid.  These parameters control the grid resolution, tail
-    truncation, and rounding direction.
-
-    **Defaults are chosen for high accuracy** (discretization=1e-4 gives ~1e-8
-    error per composition step).  Coarser grids are faster but less precise;
-    finer grids are more precise but use more memory.
-
     Args:
-        discretization: Grid spacing for the PLD PMF.  Default: 1e-4.
-            Smaller → more precise, larger grid.  Error scales as O(disc²).
-        log_mass_truncation_bound: Tails with probability below exp(bound)
-            are truncated.  Default: −50 (matching Google dp_accounting).
-        pessimistic_estimate: If ``True`` (default), round probabilities
-            to produce an **upper bound** on privacy loss.  Set to ``False``
-            for an optimistic (lower-bound) estimate — useful for debugging
-            but not safe for privacy guarantees.
-        max_grid_size: If the grid exceeds this many bins, the discretization
-            is automatically coarsened.  Default: 10,000,000.
+        discretization: Grid spacing for the PLD PMF. Default: 1e-4.
+        log_mass_truncation_bound: Tails below exp(bound) are truncated. Default: -50.
+        pessimistic_estimate: If True, upper bound on privacy loss. Default: True.
+        max_grid_size: Max bins before automatic coarsening. Default: 10,000,000.
 
     Example::
 
         cfg = dp.DiscretizationConfig(discretization=1e-3)
-        proc = dp.gaussian(1.1, config=cfg)
+        proc = dp.gaussian(1.1, discretization=cfg)
     """
 
     def __init__(
@@ -327,29 +535,22 @@ class DiscretizationConfig:
 
 def gaussian(
     noise_multiplier: float,
-    config: DiscretizationConfig | None = None,
-) -> DpProcess:
+    discretization: DiscretizationConfig | None = None,
+) -> Gaussian:
     """Create a Gaussian mechanism with sensitivity 1.
-
-    The Gaussian mechanism adds N(0, σ²) noise to a function with L2
-    sensitivity 1.  This is the building block for DP-SGD: after clipping
-    gradients to norm C, the effective noise std is ``noise_multiplier × C``.
 
     Args:
         noise_multiplier: Ratio of noise std to sensitivity (σ / Δ).
-            Typical range for DP-SGD is [0.5, 2.0].  Higher → more private.
-        config: Override default PLD precision.
+        discretization: Override default PLD precision.
 
     Returns:
-        A process representing a single Gaussian mechanism application.
-
-    Raises:
-        ValueError: If *noise_multiplier* is out of the supported range.
+        A :class:`Gaussian` process.
 
     Example::
 
         proc = dp.gaussian(1.1)
-        proc.epsilon_at(1e-5)  # ~3.73
+        proc.epsilon_at(1e-5)    # ~3.92
+        proc.noise_multiplier   # 1.1
     """
     ...
 
@@ -357,49 +558,36 @@ def gaussian(
 def eps_delta(
     epsilon: float,
     delta: float = 0.0,
-    config: DiscretizationConfig | None = None,
-) -> DpProcess:
+    discretization: DiscretizationConfig | None = None,
+) -> EpsDelta:
     """Create a mechanism with a fixed (ε, δ)-DP guarantee.
-
-    Represents a mechanism whose privacy loss is known analytically
-    (e.g., randomized response, Laplace mechanism).  The resulting PLD is a
-    two-point distribution capturing the worst-case privacy loss.
-
-    Useful for composing non-Gaussian mechanisms with Gaussian ones.
 
     Args:
         epsilon: Privacy parameter (must be ≥ 0).
-        delta: Failure probability (default 0, must be in [0, 1)).
-        config: Override default PLD precision.
+        delta: Failure probability (default 0).
+        discretization: Override default PLD precision.
 
     Returns:
-        A process with the given (ε, δ) guarantee.
+        An :class:`EpsDelta` process.
 
     Example::
 
-        # Pure ε-DP mechanism
         proc = dp.eps_delta(1.0)
-
-        # Compose with a Gaussian
         combined = dp.gaussian(1.1) | dp.eps_delta(0.5)
     """
     ...
 
 
 def identity(
-    config: DiscretizationConfig | None = None,
-) -> DpProcess:
+    discretization: DiscretizationConfig | None = None,
+) -> Identity:
     """Create an identity mechanism with zero privacy loss.
 
-    The identity process represents a computation that reveals no information
-    about the dataset (e.g., returning a constant).  Its PLD is a point mass
-    at privacy loss = 0.  Composing with identity has no effect.
-
     Args:
-        config: Override default PLD precision.
+        discretization: Override default PLD precision.
 
     Returns:
-        A process with ε = 0, δ = 0 for all queries.
+        An :class:`Identity` process (ε = 0, δ = 0).
     """
     ...
 
@@ -410,28 +598,23 @@ def identity(
 
 
 def poisson(
-    noise_multiplier: float,
+    inner: Gaussian | AdaClip,
     sample_rate: float,
-    config: DiscretizationConfig | None = None,
-) -> DpProcess:
-    """Poisson-subsampled Gaussian mechanism (standard DP-SGD step).
+) -> Poisson:
+    """Poisson-subsampled mechanism (standard DP-SGD step).
 
-    Each record is included independently with probability ``sample_rate``,
-    providing **privacy amplification by subsampling**.  Standard model for
-    DP-SGD: ``sample_rate = batch_size / dataset_size``.
+    Wraps an inner process with Poisson subsampling for privacy amplification.
 
     Args:
-        noise_multiplier: Gaussian noise std / sensitivity.
+        inner: The base mechanism (Gaussian or AdaClip).
         sample_rate: Poisson sampling probability q = batch_size / dataset_size.
-            Must be in (0, 1].
-        config: Override default PLD precision.
 
     Returns:
-        A single Poisson-subsampled Gaussian step.
+        A :class:`Poisson` process.
 
     Example::
 
-        step = dp.poisson(1.1, 0.01)
+        step = dp.poisson(dp.gaussian(1.1), 0.01)
         training = step * 1000
         eps = training.epsilon_at(1e-5)
 
@@ -442,68 +625,53 @@ def poisson(
 
 
 def truncated_poisson(
-    noise_multiplier: float,
+    inner: Gaussian | AdaClip,
     sample_rate: float,
     batch_size_cap: int,
     dataset_size: int,
-    config: DiscretizationConfig | None = None,
-) -> DpProcess:
-    """Truncated-Poisson-subsampled Gaussian (production DP-SGD).
+) -> TruncatedPoisson:
+    """Truncated-Poisson-subsampled mechanism (production DP-SGD).
 
-    Like :func:`poisson` but caps the batch at *batch_size_cap*.  This models
-    what production DP-SGD frameworks actually do: sample a random batch, but
-    truncate if it exceeds a maximum.
-
-    Provides **tighter privacy bounds** than standard (worst-case) Poisson —
-    up to 20 % improvement in ε for the same noise level.
+    Like :func:`poisson` but caps the batch at *batch_size_cap*.
+    Provides tighter privacy bounds — up to 20% improvement in ε.
 
     Args:
-        noise_multiplier: Gaussian noise std / sensitivity.
-        sample_rate: Expected sampling rate q = batch_size / dataset_size.
-        batch_size_cap: Maximum batch size B_max.
-        dataset_size: Total dataset size n.
-        config: Override default PLD precision.
+        inner: The base mechanism (Gaussian or AdaClip).
+        sample_rate: Expected sampling rate.
+        batch_size_cap: Maximum batch size.
+        dataset_size: Total dataset size.
 
     Returns:
-        A single truncated-Poisson step.
+        A :class:`TruncatedPoisson` process.
 
     Example::
 
-        step = dp.truncated_poisson(1.1, 0.01, batch_size_cap=100, dataset_size=10000)
+        step = dp.truncated_poisson(dp.gaussian(1.1), 0.01, 100, 10000)
         training = step * 1000
         eps = training.epsilon_at(1e-5)
-
-    See Also:
-        :func:`poisson` for standard (non-truncated) analysis.
     """
     ...
 
 
 def accumulate(
-    noise_multiplier: float,
-    sample_rate: float,
+    inner: Poisson,
     microbatches: int,
-    config: DiscretizationConfig | None = None,
-) -> DpProcess:
-    """Gradient-accumulated Poisson-subsampled Gaussian.
+) -> Accumulated:
+    """Gradient-accumulated Poisson-subsampled mechanism.
 
     Models *microbatches* micro-batches accumulated before a single noise
-    addition step.  Uses the Mixture-of-Gaussians framework: privacy analysis
-    is exact over the possible numbers of records contributed by the
-    micro-batches.
+    addition step.
 
     Args:
-        noise_multiplier: Gaussian noise std / sensitivity.
-        sample_rate: Per-microbatch Poisson sampling rate.
-        microbatches: Number of micro-batches accumulated per step.
-        config: Override default PLD precision.
+        inner: A Poisson-subsampled process (from :func:`poisson`).
+        microbatches: Number of micro-batches per step.
 
     Returns:
-        A single accumulated step.
+        An :class:`Accumulated` process.
 
     Example::
 
-        step = dp.accumulate(1.1, sample_rate=0.01, microbatches=4)
+        step = dp.accumulate(dp.poisson(dp.gaussian(1.1), 0.01), 4)
         training = step * 500
         eps = training.epsilon_at(1e-5)
     """
@@ -516,28 +684,21 @@ def accumulate(
 
 
 def adaclip(
-    noise_multiplier: float,
+    inner: Gaussian,
     quantile_noise_std: float,
-    config: DiscretizationConfig | None = None,
-) -> DpProcess:
+) -> AdaClip:
     """Gaussian mechanism with adaptive clipping (Andrew et al. 2021).
 
-    Adaptive clipping adjusts the clipping threshold based on the empirical
-    distribution of gradient norms.  The total privacy cost is the composition
-    of the base Gaussian mechanism and the quantile-estimation mechanism.
-
     Args:
-        noise_multiplier: Gradient noise multiplier for the main mechanism.
-        quantile_noise_std: Noise std for the quantile estimation.
-            Larger → more private quantile estimation, less accurate clipping.
-        config: Override default PLD precision.
+        inner: The base Gaussian mechanism.
+        quantile_noise_std: Noise std for quantile estimation.
 
     Returns:
-        A single AdaClip step.
+        An :class:`AdaClip` process.
 
     Example::
 
-        step = dp.adaclip(1.1, quantile_noise_std=50.0)
+        step = dp.adaclip(dp.gaussian(1.1), 50.0)
         eps = step.epsilon_at(1e-5)
     """
     ...
@@ -548,28 +709,18 @@ def adaclip(
 # ---------------------------------------------------------------------------
 
 
-def cached(process: DpProcess) -> DpProcess:
+def cached(process: DpProcess) -> Cached:
     """Wrap a process in a PLD cache for efficient repeated queries.
-
-    The returned process computes its Privacy Loss Distribution on first
-    access and caches the result.  Subsequent calls to ``epsilon_at``,
-    ``delta_at``, etc. reuse the cached PLD instead of recomputing it.
-
-    Useful in accounting loops where the same step process is composed many
-    times — caching avoids redundant PLD computation.
-
-    Note:
-        Clones of a cached process share the same cache.
 
     Args:
         process: The process to cache.
 
     Returns:
-        A new DpProcess that caches its PLD after first computation.
+        A :class:`Cached` process.
 
     Example::
 
-        step = dp.cached(dp.poisson(1.1, 0.01))
+        step = dp.cached(dp.poisson(dp.gaussian(1.1), 0.01))
         eps = step.epsilon_at(1e-5)   # computes PLD
         adv = step.advantage()         # reuses cached PLD
     """
@@ -581,7 +732,7 @@ def cached(process: DpProcess) -> DpProcess:
 # ---------------------------------------------------------------------------
 
 
-def repeat(process: DpProcess, count: int) -> DpProcess:
+def repeat(process: DpProcess, count: int) -> Repeated:
     """Homogeneous k-fold composition (repeat a process *count* times).
 
     Equivalent to ``process * count``.
@@ -591,12 +742,12 @@ def repeat(process: DpProcess, count: int) -> DpProcess:
         count: Number of repetitions.
 
     Returns:
-        Composed DpProcess.
+        A :class:`Repeated` process.
     """
     ...
 
 
-def compose(left: DpProcess, right: DpProcess) -> DpProcess:
+def compose(left: DpProcess, right: DpProcess) -> Composed:
     """Heterogeneous composition of two processes.
 
     Equivalent to ``left | right``.
@@ -606,6 +757,6 @@ def compose(left: DpProcess, right: DpProcess) -> DpProcess:
         right: Second process.
 
     Returns:
-        Composed DpProcess.
+        A :class:`Composed` process.
     """
     ...

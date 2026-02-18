@@ -58,7 +58,7 @@ num_steps = num_epochs * (n_samples // batch_size)
 # 4. Calibrate noise multiplier for target privacy
 result = acc.calibrate(
     target=acc.epsilon(epsilon, delta=delta),
-    build=lambda nm: acc.poisson(nm, sample_rate) * num_steps,
+    build=lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps,
     param_min=0.1,
     param_max=100.0,
 )
@@ -101,7 +101,7 @@ for epoch in range(num_epochs):
         params = tuple(p - learning_rate * g for p, g in zip(params, noisy_grads))
 
 # 7. Final privacy guarantee (computed from composition)
-training = acc.poisson(noise_multiplier, sample_rate) * num_steps
+training = acc.poisson(acc.gaussian(noise_multiplier), sample_rate) * num_steps
 final_epsilon = training.epsilon_at(delta)
 print(f"\nTraining complete!")
 print(f"Final privacy guarantee: (ε={final_epsilon:.2f}, δ={delta})")
@@ -150,7 +150,7 @@ example.
 ```python
 result = acc.calibrate(
     target=acc.epsilon(3.0, delta=1e-5),
-    build=lambda nm: acc.poisson(nm, sample_rate) * num_steps,
+    build=lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps,
     param_min=0.1,
     param_max=100.0,
 )
@@ -181,7 +181,7 @@ Call it with explicit state: `grads, clip_state = grad_fn(params, batch, state=c
 
 ```python
 # Compose a full training run
-step = acc.poisson(noise_multiplier, sample_rate)
+step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
 training = step * num_steps
 
 # Query privacy
@@ -198,9 +198,10 @@ For training loops, use the `Accountant` class for step-by-step tracking:
 
 ```python
 accountant = acc.Accountant()
-for step in range(num_steps):
+step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
+for i in range(num_steps):
     # ... train ...
-    accountant = accountant | acc.poisson(noise_multiplier, sample_rate)
+    accountant = accountant | step
     if accountant.epsilon_at(delta) > epsilon:
         break  # budget exhausted
 ```

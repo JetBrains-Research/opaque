@@ -5,17 +5,15 @@
 //!
 //! - **Natural names**: `gaussian`, `poisson`, `compose` (no `py_` prefix)
 //! - **Operator overloads**: `step * 1000` for repetition, `a | b` for composition
-//! - **Rich introspection**: typed subclasses with properties for debugging
+//! - **Rich introspection**: `describe()`, `pld_info()`, `summary()` for debugging
+//! - **Type erasure**: All mechanism types are presented as a single `DpProcess` class
 //!
 //! # Design
 //!
 //! Rust mechanisms are heterogeneous types (`Gaussian`, `Poisson<Gaussian>`, etc.).
-//! Python sees typed subclasses of `DpProcess` — each with getters exposing
-//! constructor parameters for debugger-friendly introspection.
-//!
-//! The [`DynProcess`] trait-object pattern provides type erasure:
-//! each mechanism is boxed behind `Box<dyn DynProcess>`, and [`ProcessWrapper`]
-//! bridges this back to the `Process` trait so Rust composition still works.
+//! Python sees a single `DpProcess` class via the [`DynProcess`] trait-object pattern:
+//! each mechanism is boxed behind `Box<dyn DynProcess>`, and [`ProcessWrapper`] bridges
+//! this back to the `Process` trait so Rust composition still works.
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -38,8 +36,11 @@ use crate::transforms::adaclip::adaclip;
 
 // Concrete types for downcasting through as_any()
 use crate::{
-    AdaClip as RustAdaClip, Gaussian as RustGaussian, GaussianAdaClipEvidence,
-    Poisson as RustPoisson, TightGaussianPoissonEvidence,
+    Gaussian as RustGaussian,
+    Poisson as RustPoisson,
+    AdaClip as RustAdaClip,
+    TightGaussianPoissonEvidence,
+    GaussianAdaClipEvidence,
 };
 
 // ---------------------------------------------------------------------------
@@ -80,7 +81,7 @@ impl Clone for Box<dyn DynProcess> {
 }
 
 // ---------------------------------------------------------------------------
-// ProcessWrapper: bridges DynProcess -> Process trait
+// ProcessWrapper: bridges DynProcess → Process trait
 // ---------------------------------------------------------------------------
 
 #[derive(Clone)]
@@ -99,30 +100,29 @@ impl Process for ProcessWrapper {
 }
 
 // ---------------------------------------------------------------------------
-// PyDpProcess -- base class
+// PyDpProcess
 // ---------------------------------------------------------------------------
 
 /// A differential privacy process that can be queried for privacy guarantees.
 ///
 /// ``DpProcess`` is the central class in ``opaque_accounting``.  Every
 /// mechanism constructor (``gaussian``, ``poisson``, ``adaclip``, ...) returns
-/// a typed subclass of ``DpProcess``, and composition operators produce new
-/// ``DpProcess`` instances.
+/// a ``DpProcess``, and composition operators produce new ``DpProcess`` instances.
 ///
 /// **Constructors** (module-level functions):
 ///
-/// - :func:`gaussian` -> :class:`Gaussian`
-/// - :func:`poisson` -> :class:`Poisson`
-/// - :func:`truncated_poisson` -> :class:`TruncatedPoisson`
-/// - :func:`accumulate` -> :class:`Accumulated`
-/// - :func:`eps_delta` -> :class:`EpsDelta`
-/// - :func:`identity` -> :class:`Identity`
-/// - :func:`adaclip` -> :class:`AdaClip`
+/// - :func:`gaussian` -- Gaussian mechanism
+/// - :func:`poisson` -- Poisson-subsampled Gaussian
+/// - :func:`truncated_poisson` -- production DP-SGD with capped batch size
+/// - :func:`accumulate` -- gradient accumulation (microbatching)
+/// - :func:`eps_delta` -- fixed (epsilon, delta) guarantee
+/// - :func:`identity` -- zero privacy loss
+/// - :func:`adaclip` -- adaptive clipping (Andrew et al. 2021)
 ///
 /// **Composition**:
 ///
-/// - ``step * 1000`` or ``dp.repeat(step, 1000)`` -> :class:`Repeated`
-/// - ``a | b`` or ``dp.compose(a, b)`` -> :class:`Composed`
+/// - ``step * 1000`` or ``dp.repeat(step, 1000)`` -- homogeneous k-fold
+/// - ``a | b`` or ``dp.compose(a, b)`` -- heterogeneous two-process
 ///
 /// **Privacy metrics** (all derived from the same PLD):
 ///
@@ -135,6 +135,7 @@ impl Process for ProcessWrapper {
 /// **Debugging**:
 ///
 /// - ``print(proc)`` -- one-line summary with epsilon
+/// - :meth:`describe` -- constructor parameters as dict
 /// - :meth:`pld_info` -- PLD grid diagnostics with timing
 /// - :meth:`summary` -- formatted multi-line privacy report
 ///
@@ -150,6 +151,38 @@ impl Process for ProcessWrapper {
 #[derive(Clone)]
 struct PyDpProcess {
     inner: Box<dyn DynProcess>,
+    /// Machine-readable tag, e.g. "Gaussian(noise_multiplier=1.1)"
+    label: String,
+    /// Preserved kwargs from the constructor for introspection.
+    params: Vec<(String, ParamValue)>,
+}
+
+/// Parameter values that can be stored for introspection.
+#[derive(Clone, Debug)]
+enum ParamValue {
+    Float(f64),
+    Int(usize),
+    Str(String),
+}
+
+impl IntoPy<PyObject> for ParamValue {
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        match self {
+            ParamValue::Float(f) => f.into_py(py),
+            ParamValue::Int(i) => i.into_py(py),
+            ParamValue::Str(s) => s.into_py(py),
+        }
+    }
+}
+
+impl PyDpProcess {
+    fn new(inner: Box<dyn DynProcess>, label: String, params: Vec<(&str, ParamValue)>) -> Self {
+        Self {
+            inner,
+            label,
+            params: params.into_iter().map(|(k, v)| (k.to_string(), v)).collect(),
+        }
+    }
 }
 
 #[pymethods]
@@ -158,8 +191,12 @@ impl PyDpProcess {
 
     /// Compute the smallest epsilon such that the mechanism satisfies (epsilon, delta)-DP.
     ///
+    /// This solves: find min epsilon s.t. ``P[M(D) in S] <= exp(epsilon) * P[M(D') in S] + delta``
+    /// for all neighboring datasets D, D' and all output sets S.
+    ///
     /// Args:
     ///     delta (float): Failure probability (typically 1e-5 to 1e-7).
+    ///         Must be in [0, 1). Smaller delta = stricter guarantee.
     ///
     /// Returns:
     ///     float: The smallest epsilon achieving (epsilon, delta)-DP.
@@ -176,8 +213,12 @@ impl PyDpProcess {
 
     /// Compute the smallest delta such that the mechanism satisfies (epsilon, delta)-DP.
     ///
+    /// This is the inverse of :meth:`epsilon_at`: given an epsilon budget,
+    /// find the failure probability delta.
+    ///
     /// Args:
     ///     epsilon (float): Privacy budget. Must be >= 0.
+    ///         epsilon=0 gives delta = advantage (worst-case distinguishing probability).
     ///
     /// Returns:
     ///     float: The delta value at the given epsilon.
@@ -185,17 +226,25 @@ impl PyDpProcess {
     /// Example::
     ///
     ///     proc = dp.gaussian(1.1)
-    ///     delta = proc.delta_at(1.0)
+    ///     delta = proc.delta_at(1.0)  # delta when epsilon=1
     #[pyo3(text_signature = "(self, epsilon)")]
     fn delta_at(&self, epsilon: f64) -> PyResult<f64> {
         let pld = self.inner.compute_pld().map_err(to_py_err)?;
         Ok(pld.delta_at(epsilon))
     }
 
-    /// Total-variation advantage: max probability of distinguishing neighbors.
+    /// Total-variation advantage: max probability of distinguishing neighboring datasets.
+    ///
+    /// Equivalent to ``delta_at(0.0)`` — the hockey-stick divergence at epsilon=0.
+    /// This is the f-DP advantage metric from Dong et al. (2019).
     ///
     /// Returns:
     ///     float: Advantage in [0, 1]. Lower = more private.
+    ///
+    /// Example::
+    ///
+    ///     proc = dp.gaussian(1.0)
+    ///     adv = proc.advantage()  # ~0.31
     fn advantage(&self) -> PyResult<f64> {
         let pld = self.inner.compute_pld().map_err(to_py_err)?;
         Ok(pld.advantage())
@@ -203,11 +252,20 @@ impl PyDpProcess {
 
     /// Type-II error (beta) at a given Type-I error (alpha).
     ///
+    /// In the hypothesis testing interpretation of DP, an adversary tries
+    /// to distinguish D from D'. Alpha is the false-positive rate and beta
+    /// is the false-negative rate. Higher beta = harder to detect = more private.
+    ///
     /// Args:
-    ///     alpha (float): Type-I error rate. Must be in [0, 1].
+    ///     alpha (float): Type-I error rate (false positive). Must be in [0, 1].
     ///
     /// Returns:
     ///     float: Type-II error rate (beta) in [0, 1].
+    ///
+    /// Example::
+    ///
+    ///     proc = dp.gaussian(1.0)
+    ///     beta = proc.beta_at(0.05)  # Type-II error at alpha=0.05
     #[pyo3(text_signature = "(self, alpha)")]
     fn beta_at(&self, alpha: f64) -> PyResult<f64> {
         let pld = self.inner.compute_pld().map_err(to_py_err)?;
@@ -216,11 +274,21 @@ impl PyDpProcess {
 
     /// Bayes risk under an optimal adversary with a given prior.
     ///
+    /// The risk is the minimum expected loss of any decision rule trying to
+    /// distinguish D from D', weighted by the prior probability.
+    /// ``risk = prior * beta + (1 - prior) * alpha`` at the optimal threshold.
+    ///
     /// Args:
-    ///     prior (float): Prior probability. Typically 0.5.
+    ///     prior (float): Prior probability that the data came from D (vs D').
+    ///         Typically 0.5 for a balanced prior.
     ///
     /// Returns:
     ///     float: Bayes risk in [0, 0.5]. Higher = more private.
+    ///
+    /// Example::
+    ///
+    ///     proc = dp.gaussian(1.0)
+    ///     risk = proc.risk_at(0.5)  # risk under uniform prior
     #[pyo3(text_signature = "(self, prior)")]
     fn risk_at(&self, prior: f64) -> PyResult<f64> {
         let pld = self.inner.compute_pld().map_err(to_py_err)?;
@@ -230,47 +298,58 @@ impl PyDpProcess {
     // ---- operators --------------------------------------------------------
 
     /// ``process * k`` is shorthand for ``repeat(process, k)``.
-    fn __mul__(slf: &Bound<'_, Self>, count: usize) -> PyResult<PyObject> {
-        let py = slf.py();
-        let self_ = slf.borrow();
-        let wrapper = ProcessWrapper(self_.inner.clone());
+    fn __mul__(&self, count: usize) -> PyResult<PyDpProcess> {
+        let wrapper = ProcessWrapper(self.inner.clone());
         let r = repeat(wrapper, count).map_err(to_py_err)?;
-        let self_obj: PyObject = slf.as_any().clone().unbind();
-        drop(self_);
-
-        let base = PyDpProcess { inner: Box::new(r) };
-        let init = PyClassInitializer::from(base)
-            .add_subclass(PyRepeated { inner_obj: self_obj, count_val: count });
-        Ok(Py::new(py, init)?.into_any())
+        Ok(PyDpProcess::new(
+            Box::new(r),
+            format!("Repeat({}, k={})", self.label, count),
+            vec![
+                ("inner", ParamValue::Str(self.label.clone())),
+                ("count", ParamValue::Int(count)),
+            ],
+        ))
     }
 
     /// ``k * process`` also works (reflected multiply).
-    fn __rmul__(slf: &Bound<'_, Self>, count: usize) -> PyResult<PyObject> {
-        Self::__mul__(slf, count)
+    fn __rmul__(&self, count: usize) -> PyResult<PyDpProcess> {
+        self.__mul__(count)
     }
 
     /// ``a | b`` is shorthand for ``compose(a, b)``.
-    fn __or__(slf: &Bound<'_, Self>, other: &Bound<'_, PyDpProcess>) -> PyResult<PyObject> {
-        let py = slf.py();
-        let left = slf.borrow();
-        let right = other.borrow();
-        let lw = ProcessWrapper(left.inner.clone());
-        let rw = ProcessWrapper(right.inner.clone());
+    fn __or__(&self, other: &PyDpProcess) -> PyResult<PyDpProcess> {
+        let lw = ProcessWrapper(self.inner.clone());
+        let rw = ProcessWrapper(other.inner.clone());
         let c = compose(lw, rw);
-        let left_obj: PyObject = slf.as_any().clone().unbind();
-        let right_obj: PyObject = other.as_any().clone().unbind();
-        drop(left);
-        drop(right);
-
-        let base = PyDpProcess { inner: Box::new(c) };
-        let init = PyClassInitializer::from(base)
-            .add_subclass(PyComposed { left_obj, right_obj });
-        Ok(Py::new(py, init)?.into_any())
+        Ok(PyDpProcess::new(
+            Box::new(c),
+            format!("Compose({}, {})", self.label, other.label),
+            vec![
+                ("left", ParamValue::Str(self.label.clone())),
+                ("right", ParamValue::Str(other.label.clone())),
+            ],
+        ))
     }
 
     // ---- introspection / debugging ----------------------------------------
 
+    /// Return constructor parameters as a dict.
+    ///
+    /// >>> dp.poisson(dp.gaussian(1.1), 0.01).describe()
+    /// {'type': 'Poisson', 'noise_multiplier': 1.1, 'sample_rate': 0.01}
+    fn describe(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let dict = PyDict::new(py);
+        dict.set_item("type", &self.label)?;
+        for (k, v) in &self.params {
+            dict.set_item(k, v.clone().into_py(py))?;
+        }
+        Ok(dict.into())
+    }
+
     /// Compute the PLD and return diagnostic info about the internal grid.
+    ///
+    /// This is useful for understanding numerical precision and debugging
+    /// unexpected results.
     ///
     /// Returns:
     ///     dict with keys: ``grid_size``, ``discretization``, ``lower_index``,
@@ -312,18 +391,9 @@ impl PyDpProcess {
     /// Returns:
     ///     str: Formatted multi-line summary.
     #[pyo3(signature = (delta=1e-5, epsilon=1.0, alpha=0.05, prior=0.5))]
-    fn summary(
-        slf: &Bound<'_, Self>,
-        delta: f64,
-        epsilon: f64,
-        alpha: f64,
-        prior: f64,
-    ) -> PyResult<String> {
-        let label = slf.repr()?.to_string();
-        let self_ = slf.borrow();
-
+    fn summary(&self, delta: f64, epsilon: f64, alpha: f64, prior: f64) -> PyResult<String> {
         let start = Instant::now();
-        let pld = self_.inner.compute_pld().map_err(to_py_err)?;
+        let pld = self.inner.compute_pld().map_err(to_py_err)?;
         let pld_ms = start.elapsed().as_secs_f64() * 1000.0;
 
         let eps_val = pld.epsilon_at(delta);
@@ -347,7 +417,7 @@ impl PyDpProcess {
                 "PLD grid: {grid} bins, disc={disc}, inf_mass={inf:.2e}\n",
                 "PLD computed in {ms:.1} ms\n",
             ),
-            label = label,
+            label = self.label,
             delta = delta,
             eps = eps_val,
             epsilon = epsilon,
@@ -367,29 +437,30 @@ impl PyDpProcess {
     // ---- dunder -----------------------------------------------------------
 
     fn __repr__(&self) -> String {
-        "DpProcess()".to_string()
+        format!("DpProcess({})", self.label)
     }
 
-    fn __str__(slf: &Bound<'_, Self>) -> PyResult<String> {
-        let label = slf.repr()?.to_string();
-        let self_ = slf.borrow();
-        match self_.inner.compute_pld() {
+    fn __str__(&self) -> String {
+        // Quick summary: try to compute epsilon cheaply.
+        // If PLD computation is too heavy we fall back to label only.
+        match self.inner.compute_pld() {
             Ok(pld) => {
                 let eps = pld.epsilon_at(1e-5);
-                Ok(format!("{} | eps(delta=1e-5)={:.6}", label, eps))
+                format!("{} | eps(delta=1e-5)={:.6}", self.label, eps)
             }
-            Err(_) => Ok(label),
+            Err(_) => self.label.clone(),
         }
     }
 }
 
 // ---------------------------------------------------------------------------
-// Typed subclasses -- mechanisms
+// Typed subclasses of DpProcess
 // ---------------------------------------------------------------------------
 
 /// Gaussian mechanism (typed ``DpProcess`` subclass).
 ///
-/// Created by :func:`gaussian`.  Exposes the noise multiplier as a property.
+/// Created by :func:`gaussian`.  Exposes the noise multiplier as a property
+/// for debugger-friendly introspection.
 ///
 /// Example::
 ///
@@ -409,12 +480,12 @@ impl PyGaussian {
         self.noise_multiplier_val
     }
 
-    fn __repr__(&self) -> String {
-        format!("Gaussian(noise_multiplier={})", self.noise_multiplier_val)
+    fn __repr__(self_: PyRef<'_, Self>) -> String {
+        self_.as_ref().label.clone()
     }
 }
 
-/// Fixed (epsilon, delta)-DP mechanism (typed ``DpProcess`` subclass).
+/// Fixed (ε, δ)-DP mechanism (typed ``DpProcess`` subclass).
 ///
 /// Created by :func:`eps_delta`.
 #[pyclass(name = "EpsDelta", extends = PyDpProcess)]
@@ -436,8 +507,8 @@ impl PyEpsDelta {
         self.delta_val
     }
 
-    fn __repr__(&self) -> String {
-        format!("EpsDelta(epsilon={}, delta={})", self.epsilon_val, self.delta_val)
+    fn __repr__(self_: PyRef<'_, Self>) -> String {
+        self_.as_ref().label.clone()
     }
 }
 
@@ -450,14 +521,10 @@ struct PyIdentity {}
 
 #[pymethods]
 impl PyIdentity {
-    fn __repr__(&self) -> String {
-        "Identity()".to_string()
+    fn __repr__(self_: PyRef<'_, Self>) -> String {
+        self_.as_ref().label.clone()
     }
 }
-
-// ---------------------------------------------------------------------------
-// Typed subclasses -- amplification
-// ---------------------------------------------------------------------------
 
 /// Poisson-subsampled mechanism (typed ``DpProcess`` subclass).
 ///
@@ -469,6 +536,7 @@ impl PyIdentity {
 ///     p.inner           # Gaussian(noise_multiplier=1.1)
 ///     p.sample_rate     # 0.01
 #[pyclass(name = "Poisson", extends = PyDpProcess)]
+#[derive(Clone)]
 struct PyPoisson {
     inner_obj: PyObject,
     sample_rate_val: f64,
@@ -476,8 +544,8 @@ struct PyPoisson {
 
 #[pymethods]
 impl PyPoisson {
-    #[getter]
-    fn inner(&self, py: Python<'_>) -> PyObject {
+    #[getter(name = "inner")]
+    fn get_inner(&self, py: Python<'_>) -> PyObject {
         self.inner_obj.clone_ref(py)
     }
 
@@ -486,9 +554,8 @@ impl PyPoisson {
         self.sample_rate_val
     }
 
-    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
-        let inner_repr = self.inner_obj.bind(py).repr()?.to_string();
-        Ok(format!("Poisson({}, sample_rate={})", inner_repr, self.sample_rate_val))
+    fn __repr__(self_: PyRef<'_, Self>) -> String {
+        self_.as_ref().label.clone()
     }
 }
 
@@ -504,6 +571,7 @@ impl PyPoisson {
 ///     tp.batch_size_cap   # 100
 ///     tp.dataset_size     # 10000
 #[pyclass(name = "TruncatedPoisson", extends = PyDpProcess)]
+#[derive(Clone)]
 struct PyTruncatedPoisson {
     inner_obj: PyObject,
     sample_rate_val: f64,
@@ -513,8 +581,8 @@ struct PyTruncatedPoisson {
 
 #[pymethods]
 impl PyTruncatedPoisson {
-    #[getter]
-    fn inner(&self, py: Python<'_>) -> PyObject {
+    #[getter(name = "inner")]
+    fn get_inner(&self, py: Python<'_>) -> PyObject {
         self.inner_obj.clone_ref(py)
     }
 
@@ -533,12 +601,8 @@ impl PyTruncatedPoisson {
         self.dataset_size_val
     }
 
-    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
-        let inner_repr = self.inner_obj.bind(py).repr()?.to_string();
-        Ok(format!(
-            "TruncatedPoisson({}, sample_rate={}, batch_size_cap={}, dataset_size={})",
-            inner_repr, self.sample_rate_val, self.batch_size_cap_val, self.dataset_size_val
-        ))
+    fn __repr__(self_: PyRef<'_, Self>) -> String {
+        self_.as_ref().label.clone()
     }
 }
 
@@ -552,6 +616,7 @@ impl PyTruncatedPoisson {
 ///     a.inner         # Poisson(...)
 ///     a.microbatches  # 4
 #[pyclass(name = "Accumulated", extends = PyDpProcess)]
+#[derive(Clone)]
 struct PyAccumulated {
     inner_obj: PyObject,
     microbatches_val: usize,
@@ -559,8 +624,8 @@ struct PyAccumulated {
 
 #[pymethods]
 impl PyAccumulated {
-    #[getter]
-    fn inner(&self, py: Python<'_>) -> PyObject {
+    #[getter(name = "inner")]
+    fn get_inner(&self, py: Python<'_>) -> PyObject {
         self.inner_obj.clone_ref(py)
     }
 
@@ -569,15 +634,10 @@ impl PyAccumulated {
         self.microbatches_val
     }
 
-    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
-        let inner_repr = self.inner_obj.bind(py).repr()?.to_string();
-        Ok(format!("Accumulated({}, microbatches={})", inner_repr, self.microbatches_val))
+    fn __repr__(self_: PyRef<'_, Self>) -> String {
+        self_.as_ref().label.clone()
     }
 }
-
-// ---------------------------------------------------------------------------
-// Typed subclasses -- transforms
-// ---------------------------------------------------------------------------
 
 /// Adaptive clipping mechanism (typed ``DpProcess`` subclass).
 ///
@@ -589,6 +649,7 @@ impl PyAccumulated {
 ///     ac.inner               # Gaussian(noise_multiplier=1.1)
 ///     ac.quantile_noise_std  # 50.0
 #[pyclass(name = "AdaClip", extends = PyDpProcess)]
+#[derive(Clone)]
 struct PyAdaClip {
     inner_obj: PyObject,
     quantile_noise_std_val: f64,
@@ -596,8 +657,8 @@ struct PyAdaClip {
 
 #[pymethods]
 impl PyAdaClip {
-    #[getter]
-    fn inner(&self, py: Python<'_>) -> PyObject {
+    #[getter(name = "inner")]
+    fn get_inner(&self, py: Python<'_>) -> PyObject {
         self.inner_obj.clone_ref(py)
     }
 
@@ -606,109 +667,8 @@ impl PyAdaClip {
         self.quantile_noise_std_val
     }
 
-    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
-        let inner_repr = self.inner_obj.bind(py).repr()?.to_string();
-        Ok(format!(
-            "AdaClip({}, quantile_noise_std={})",
-            inner_repr, self.quantile_noise_std_val
-        ))
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Typed subclasses -- composition
-// ---------------------------------------------------------------------------
-
-/// Repeated process (typed ``DpProcess`` subclass).
-///
-/// Created by ``process * count`` or :func:`repeat`.
-///
-/// Example::
-///
-///     r = dp.gaussian(1.1) * 1000
-///     r.inner   # Gaussian(noise_multiplier=1.1)
-///     r.count   # 1000
-#[pyclass(name = "Repeated", extends = PyDpProcess)]
-struct PyRepeated {
-    inner_obj: PyObject,
-    count_val: usize,
-}
-
-#[pymethods]
-impl PyRepeated {
-    #[getter]
-    fn inner(&self, py: Python<'_>) -> PyObject {
-        self.inner_obj.clone_ref(py)
-    }
-
-    #[getter]
-    fn count(&self) -> usize {
-        self.count_val
-    }
-
-    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
-        let inner_repr = self.inner_obj.bind(py).repr()?.to_string();
-        Ok(format!("Repeated({}, count={})", inner_repr, self.count_val))
-    }
-}
-
-/// Composed process (typed ``DpProcess`` subclass).
-///
-/// Created by ``a | b`` or :func:`compose`.
-///
-/// Example::
-///
-///     c = dp.gaussian(1.0) | dp.eps_delta(0.5)
-///     c.left    # Gaussian(noise_multiplier=1.0)
-///     c.right   # EpsDelta(epsilon=0.5, delta=0)
-#[pyclass(name = "Composed", extends = PyDpProcess)]
-struct PyComposed {
-    left_obj: PyObject,
-    right_obj: PyObject,
-}
-
-#[pymethods]
-impl PyComposed {
-    #[getter]
-    fn left(&self, py: Python<'_>) -> PyObject {
-        self.left_obj.clone_ref(py)
-    }
-
-    #[getter]
-    fn right(&self, py: Python<'_>) -> PyObject {
-        self.right_obj.clone_ref(py)
-    }
-
-    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
-        let left_repr = self.left_obj.bind(py).repr()?.to_string();
-        let right_repr = self.right_obj.bind(py).repr()?.to_string();
-        Ok(format!("Composed({}, {})", left_repr, right_repr))
-    }
-}
-
-/// Cached process (typed ``DpProcess`` subclass).
-///
-/// Created by :func:`cached`.  PLD is computed once and reused.
-///
-/// Example::
-///
-///     c = dp.cached(dp.poisson(dp.gaussian(1.1), 0.01))
-///     c.inner   # Poisson(...)
-#[pyclass(name = "Cached", extends = PyDpProcess)]
-struct PyCached {
-    inner_obj: PyObject,
-}
-
-#[pymethods]
-impl PyCached {
-    #[getter]
-    fn inner(&self, py: Python<'_>) -> PyObject {
-        self.inner_obj.clone_ref(py)
-    }
-
-    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
-        let inner_repr = self.inner_obj.bind(py).repr()?.to_string();
-        Ok(format!("Cached({})", inner_repr))
+    fn __repr__(self_: PyRef<'_, Self>) -> String {
+        self_.as_ref().label.clone()
     }
 }
 
@@ -740,7 +700,16 @@ impl PyCached {
 ///
 /// Example::
 ///
+///     # Faster but less precise
 ///     cfg = dp.DiscretizationConfig(discretization=1e-3)
+///
+///     # Maximum precision
+///     cfg = dp.DiscretizationConfig(
+///         discretization=1e-5,
+///         log_mass_truncation_bound=-50.0,
+///     )
+///
+///     # Use with any mechanism
 ///     proc = dp.gaussian(1.1, discretization=cfg)
 #[pyclass(name = "DiscretizationConfig")]
 #[derive(Clone)]
@@ -818,7 +787,7 @@ fn make_gaussian(
 }
 
 // ---------------------------------------------------------------------------
-// Module-level functions -- mechanisms
+// Module-level functions — mechanisms
 // ---------------------------------------------------------------------------
 
 /// Create a Gaussian mechanism with sensitivity 1.
@@ -836,11 +805,13 @@ fn make_gaussian(
 /// Returns:
 ///     Gaussian: A typed process representing a single Gaussian mechanism application.
 ///
+/// Raises:
+///     ValueError: If noise_multiplier is out of the supported range.
+///
 /// Example::
 ///
 ///     proc = dp.gaussian(1.1)
 ///     proc.epsilon_at(1e-5)  # ~3.73
-///     proc.noise_multiplier  # 1.1
 ///
 ///     # With custom precision
 ///     cfg = dp.DiscretizationConfig(discretization=1e-3)
@@ -853,13 +824,21 @@ fn py_gaussian(
     discretization: Option<PyDiscretizationConfig>,
 ) -> PyResult<PyObject> {
     let g = make_gaussian(noise_multiplier, discretization.as_ref()).map_err(to_py_err)?;
-    let base = PyDpProcess { inner: Box::new(g) };
+    let base = PyDpProcess::new(
+        Box::new(g),
+        format!("Gaussian(noise_multiplier={})", noise_multiplier),
+        vec![("noise_multiplier", ParamValue::Float(noise_multiplier))],
+    );
     let init = PyClassInitializer::from(base)
         .add_subclass(PyGaussian { noise_multiplier_val: noise_multiplier });
     Ok(Py::new(py, init)?.into_any())
 }
 
 /// Create a mechanism with a fixed (epsilon, delta)-DP guarantee.
+///
+/// This represents a mechanism whose privacy loss is known analytically
+/// (e.g., randomized response, Laplace mechanism).  The resulting PLD is
+/// a two-point distribution capturing the worst-case privacy loss.
 ///
 /// Useful for composing non-Gaussian mechanisms with Gaussian ones.
 ///
@@ -873,7 +852,13 @@ fn py_gaussian(
 ///
 /// Example::
 ///
+///     # Pure epsilon-DP mechanism
 ///     proc = dp.eps_delta(1.0)
+///
+///     # Approximate DP
+///     proc = dp.eps_delta(1.0, delta=1e-5)
+///
+///     # Compose with a Gaussian
 ///     combined = dp.gaussian(1.1) | dp.eps_delta(0.5)
 #[pyfunction]
 #[pyo3(name = "eps_delta", signature = (epsilon, delta=0.0, discretization=None))]
@@ -887,13 +872,25 @@ fn py_eps_delta(
         Some(c) => eps_delta_with(epsilon, delta, c.inner).map_err(to_py_err)?,
         None => eps_delta(epsilon, delta).map_err(to_py_err)?,
     };
-    let base = PyDpProcess { inner: Box::new(e) };
+    let base = PyDpProcess::new(
+        Box::new(e),
+        format!("EpsDelta(epsilon={}, delta={})", epsilon, delta),
+        vec![
+            ("epsilon", ParamValue::Float(epsilon)),
+            ("delta", ParamValue::Float(delta)),
+        ],
+    );
     let init = PyClassInitializer::from(base)
         .add_subclass(PyEpsDelta { epsilon_val: epsilon, delta_val: delta });
     Ok(Py::new(py, init)?.into_any())
 }
 
 /// Create an identity mechanism with zero privacy loss.
+///
+/// The identity process represents a computation that reveals no
+/// information about the dataset (e.g., returning a constant).
+/// Its PLD is a point mass at privacy loss = 0.  Composing with
+/// identity has no effect: ``proc | dp.identity() == proc``.
 ///
 /// Args:
 ///     discretization (DiscretizationConfig, optional): Override default PLD precision.
@@ -910,20 +907,28 @@ fn py_identity(
         Some(c) => identity_with(c.inner),
         None => identity(),
     };
-    let base = PyDpProcess { inner: Box::new(i) };
+    let base = PyDpProcess::new(
+        Box::new(i),
+        "Identity()".to_string(),
+        vec![],
+    );
     let init = PyClassInitializer::from(base)
         .add_subclass(PyIdentity {});
     Ok(Py::new(py, init)?.into_any())
 }
 
 // ---------------------------------------------------------------------------
-// Module-level functions -- amplification
+// Module-level functions — amplification
 // ---------------------------------------------------------------------------
 
 /// Poisson-subsampled mechanism (standard DP-SGD step).
 ///
 /// Wraps an inner process (typically a :func:`gaussian`) with Poisson
-/// subsampling, providing **privacy amplification by subsampling**.
+/// subsampling: each record is included independently with probability
+/// ``sample_rate``, providing **privacy amplification by subsampling**.
+///
+/// This is the standard model for DP-SGD:
+/// ``sample_rate = batch_size / dataset_size``.
 ///
 /// Args:
 ///     inner (Gaussian | AdaClip): The base mechanism to subsample.
@@ -935,6 +940,7 @@ fn py_identity(
 ///
 /// Example::
 ///
+///     # Standard DP-SGD: 1000 steps
 ///     step = dp.poisson(dp.gaussian(1.1), 0.01)
 ///     training = step * 1000
 ///     eps = training.epsilon_at(1e-5)
@@ -954,22 +960,38 @@ fn py_poisson(
     // Try Gaussian
     if let Some(g) = dp_ref.inner.as_any().downcast_ref::<RustGaussian>() {
         let p = poisson(g.clone(), sample_rate);
+        let label = format!("Poisson(inner={}, sample_rate={})", dp_ref.label, sample_rate);
+        let inner_label = dp_ref.label.clone();
         drop(dp_ref);
-        let base = PyDpProcess { inner: Box::new(p) };
+
+        let base = PyDpProcess::new(
+            Box::new(p),
+            label,
+            vec![
+                ("inner", ParamValue::Str(inner_label)),
+                ("sample_rate", ParamValue::Float(sample_rate)),
+            ],
+        );
         let init = PyClassInitializer::from(base)
             .add_subclass(PyPoisson { inner_obj, sample_rate_val: sample_rate });
         return Ok(Py::new(py, init)?.into_any());
     }
 
     // Try AdaClip<Gaussian>
-    if let Some(ac) = dp_ref
-        .inner
-        .as_any()
-        .downcast_ref::<RustAdaClip<RustGaussian, GaussianAdaClipEvidence>>()
-    {
+    if let Some(ac) = dp_ref.inner.as_any().downcast_ref::<RustAdaClip<RustGaussian, GaussianAdaClipEvidence>>() {
         let p = poisson(ac.clone(), sample_rate);
+        let label = format!("Poisson(inner={}, sample_rate={})", dp_ref.label, sample_rate);
+        let inner_label = dp_ref.label.clone();
         drop(dp_ref);
-        let base = PyDpProcess { inner: Box::new(p) };
+
+        let base = PyDpProcess::new(
+            Box::new(p),
+            label,
+            vec![
+                ("inner", ParamValue::Str(inner_label)),
+                ("sample_rate", ParamValue::Float(sample_rate)),
+            ],
+        );
         let init = PyClassInitializer::from(base)
             .add_subclass(PyPoisson { inner_obj, sample_rate_val: sample_rate });
         return Ok(Py::new(py, init)?.into_any());
@@ -982,14 +1004,18 @@ fn py_poisson(
 
 /// Truncated-Poisson-subsampled mechanism (production DP-SGD).
 ///
-/// Like :func:`poisson` but caps the batch at ``batch_size_cap``.
-/// Provides **tighter privacy bounds** -- up to 20% improvement in epsilon.
+/// Like :func:`poisson` but caps the batch at ``batch_size_cap``.  This models
+/// what production DP-SGD frameworks actually do: sample a random batch, but
+/// truncate if it exceeds a maximum.
+///
+/// Provides **tighter privacy bounds** than standard Poisson — up to 20%
+/// improvement in epsilon for the same noise level.
 ///
 /// Args:
 ///     inner (Gaussian | AdaClip): The base mechanism.
-///     sample_rate (float): Expected sampling rate.
-///     batch_size_cap (int): Maximum batch size.
-///     dataset_size (int): Total dataset size.
+///     sample_rate (float): Expected sampling rate q = batch_size / dataset_size.
+///     batch_size_cap (int): Maximum batch size B_max.
+///     dataset_size (int): Total dataset size n.
 ///
 /// Returns:
 ///     TruncatedPoisson: A single truncated-Poisson step.
@@ -999,6 +1025,9 @@ fn py_poisson(
 ///     step = dp.truncated_poisson(dp.gaussian(1.1), 0.01, batch_size_cap=100, dataset_size=10000)
 ///     training = step * 1000
 ///     eps = training.epsilon_at(1e-5)
+///
+/// See Also:
+///     :func:`poisson` for standard (non-truncated) analysis.
 #[pyfunction]
 #[pyo3(name = "truncated_poisson", signature = (inner, sample_rate, batch_size_cap, dataset_size))]
 fn py_truncated_poisson(
@@ -1014,32 +1043,60 @@ fn py_truncated_poisson(
     // Try Gaussian
     if let Some(g) = dp_ref.inner.as_any().downcast_ref::<RustGaussian>() {
         let tp = truncated_poisson(g.clone(), sample_rate, batch_size_cap, dataset_size);
+        let label = format!(
+            "TruncatedPoisson(inner={}, sample_rate={}, batch_size_cap={}, dataset_size={})",
+            dp_ref.label, sample_rate, batch_size_cap, dataset_size
+        );
+        let inner_label = dp_ref.label.clone();
         drop(dp_ref);
-        let base = PyDpProcess { inner: Box::new(tp) };
-        let init = PyClassInitializer::from(base).add_subclass(PyTruncatedPoisson {
-            inner_obj,
-            sample_rate_val: sample_rate,
-            batch_size_cap_val: batch_size_cap,
-            dataset_size_val: dataset_size,
-        });
+
+        let base = PyDpProcess::new(
+            Box::new(tp),
+            label,
+            vec![
+                ("inner", ParamValue::Str(inner_label)),
+                ("sample_rate", ParamValue::Float(sample_rate)),
+                ("batch_size_cap", ParamValue::Int(batch_size_cap)),
+                ("dataset_size", ParamValue::Int(dataset_size)),
+            ],
+        );
+        let init = PyClassInitializer::from(base)
+            .add_subclass(PyTruncatedPoisson {
+                inner_obj,
+                sample_rate_val: sample_rate,
+                batch_size_cap_val: batch_size_cap,
+                dataset_size_val: dataset_size,
+            });
         return Ok(Py::new(py, init)?.into_any());
     }
 
     // Try AdaClip<Gaussian>
-    if let Some(ac) = dp_ref
-        .inner
-        .as_any()
-        .downcast_ref::<RustAdaClip<RustGaussian, GaussianAdaClipEvidence>>()
-    {
+    if let Some(ac) = dp_ref.inner.as_any().downcast_ref::<RustAdaClip<RustGaussian, GaussianAdaClipEvidence>>() {
         let tp = truncated_poisson(ac.clone(), sample_rate, batch_size_cap, dataset_size);
+        let label = format!(
+            "TruncatedPoisson(inner={}, sample_rate={}, batch_size_cap={}, dataset_size={})",
+            dp_ref.label, sample_rate, batch_size_cap, dataset_size
+        );
+        let inner_label = dp_ref.label.clone();
         drop(dp_ref);
-        let base = PyDpProcess { inner: Box::new(tp) };
-        let init = PyClassInitializer::from(base).add_subclass(PyTruncatedPoisson {
-            inner_obj,
-            sample_rate_val: sample_rate,
-            batch_size_cap_val: batch_size_cap,
-            dataset_size_val: dataset_size,
-        });
+
+        let base = PyDpProcess::new(
+            Box::new(tp),
+            label,
+            vec![
+                ("inner", ParamValue::Str(inner_label)),
+                ("sample_rate", ParamValue::Float(sample_rate)),
+                ("batch_size_cap", ParamValue::Int(batch_size_cap)),
+                ("dataset_size", ParamValue::Int(dataset_size)),
+            ],
+        );
+        let init = PyClassInitializer::from(base)
+            .add_subclass(PyTruncatedPoisson {
+                inner_obj,
+                sample_rate_val: sample_rate,
+                batch_size_cap_val: batch_size_cap,
+                dataset_size_val: dataset_size,
+            });
         return Ok(Py::new(py, init)?.into_any());
     }
 
@@ -1051,17 +1108,19 @@ fn py_truncated_poisson(
 /// Gradient-accumulated Poisson-subsampled mechanism.
 ///
 /// Models ``microbatches`` micro-batches accumulated before a single noise
-/// addition step.
+/// addition step.  Uses the Mixture-of-Gaussians framework: privacy analysis
+/// is exact over the possible numbers of records contributed.
 ///
 /// Args:
 ///     inner (Poisson): A Poisson-subsampled process (from :func:`poisson`).
-///     microbatches (int): Number of micro-batches accumulated per step.
+///     microbatches (int): Number of micro-batches m accumulated per step.
 ///
 /// Returns:
 ///     Accumulated: A single accumulated step.
 ///
 /// Example::
 ///
+///     # 4 microbatches accumulated per noise step
 ///     step = dp.accumulate(dp.poisson(dp.gaussian(1.1), 0.01), microbatches=4)
 ///     training = step * 500
 ///     eps = training.epsilon_at(1e-5)
@@ -1075,14 +1134,24 @@ fn py_accumulate(
     let inner_obj: PyObject = inner.clone_ref(py).into_any();
     let dp_ref = inner.borrow(py);
 
-    if let Some(p) = dp_ref
-        .inner
-        .as_any()
-        .downcast_ref::<RustPoisson<RustGaussian, TightGaussianPoissonEvidence>>()
-    {
+    // Try Poisson<Gaussian, TightGaussianPoissonEvidence>
+    if let Some(p) = dp_ref.inner.as_any().downcast_ref::<RustPoisson<RustGaussian, TightGaussianPoissonEvidence>>() {
         let acc = accumulate(p.clone(), microbatches).map_err(to_py_err)?;
+        let label = format!(
+            "Accumulated(inner={}, microbatches={})",
+            dp_ref.label, microbatches
+        );
+        let inner_label = dp_ref.label.clone();
         drop(dp_ref);
-        let base = PyDpProcess { inner: Box::new(acc) };
+
+        let base = PyDpProcess::new(
+            Box::new(acc),
+            label,
+            vec![
+                ("inner", ParamValue::Str(inner_label)),
+                ("microbatches", ParamValue::Int(microbatches)),
+            ],
+        );
         let init = PyClassInitializer::from(base)
             .add_subclass(PyAccumulated { inner_obj, microbatches_val: microbatches });
         return Ok(Py::new(py, init)?.into_any());
@@ -1094,14 +1163,19 @@ fn py_accumulate(
 }
 
 // ---------------------------------------------------------------------------
-// Module-level functions -- transforms
+// Module-level functions — transforms
 // ---------------------------------------------------------------------------
 
 /// Gaussian mechanism with adaptive clipping (Andrew et al. 2021).
 ///
+/// Adaptive clipping adjusts the clipping threshold based on the
+/// empirical distribution of gradient norms.  The quantile estimation
+/// itself uses a noisy mechanism, adding extra privacy cost.
+///
 /// Args:
 ///     inner (Gaussian): The base Gaussian mechanism.
 ///     quantile_noise_std (float): Noise std for the quantile estimation.
+///         Larger values = more private quantile estimation, less accurate clipping.
 ///
 /// Returns:
 ///     AdaClip: A single AdaClip step.
@@ -1110,6 +1184,7 @@ fn py_accumulate(
 ///
 ///     step = dp.adaclip(dp.gaussian(1.1), quantile_noise_std=50.0)
 ///     eps = step.epsilon_at(1e-5)
+///
 #[pyfunction]
 #[pyo3(name = "adaclip", signature = (inner, quantile_noise_std))]
 fn py_adaclip(
@@ -1122,8 +1197,21 @@ fn py_adaclip(
 
     if let Some(g) = dp_ref.inner.as_any().downcast_ref::<RustGaussian>() {
         let ac = adaclip(g.clone(), quantile_noise_std);
+        let label = format!(
+            "AdaClip(inner={}, quantile_noise_std={})",
+            dp_ref.label, quantile_noise_std
+        );
+        let inner_label = dp_ref.label.clone();
         drop(dp_ref);
-        let base = PyDpProcess { inner: Box::new(ac) };
+
+        let base = PyDpProcess::new(
+            Box::new(ac),
+            label,
+            vec![
+                ("inner", ParamValue::Str(inner_label)),
+                ("quantile_noise_std", ParamValue::Float(quantile_noise_std)),
+            ],
+        );
         let init = PyClassInitializer::from(base)
             .add_subclass(PyAdaClip { inner_obj, quantile_noise_std_val: quantile_noise_std });
         return Ok(Py::new(py, init)?.into_any());
@@ -1135,39 +1223,51 @@ fn py_adaclip(
 }
 
 // ---------------------------------------------------------------------------
-// Module-level functions -- caching
+// Module-level functions — caching
 // ---------------------------------------------------------------------------
 
 /// Wrap a process in a PLD cache for efficient repeated queries.
+///
+/// The returned process computes its Privacy Loss Distribution on first
+/// access and caches the result.  Subsequent calls to ``epsilon_at``,
+/// ``delta_at``, etc. reuse the cached PLD instead of recomputing it.
+///
+/// This is useful in accounting loops where the same step process is
+/// composed many times — caching avoids redundant PLD computation.
+///
+/// **Note:** Clones of a cached process share the same cache.
 ///
 /// Args:
 ///     process (DpProcess): The process to cache.
 ///
 /// Returns:
-///     Cached: A new process that caches its PLD after first computation.
+///     DpProcess: A new process that caches its PLD after first computation.
 ///
 /// Example::
 ///
-///     step = dp.cached(dp.poisson(dp.gaussian(1.1), 0.01))
+///     # Without caching: PLD recomputed on every query
+///     step = dp.poisson(1.1, 0.01)
+///
+///     # With caching: PLD computed once, reused for all queries
+///     step = dp.cached(dp.poisson(1.1, 0.01))
 ///     eps = step.epsilon_at(1e-5)   # computes PLD
 ///     adv = step.advantage()         # reuses cached PLD
 #[pyfunction]
-#[pyo3(name = "cached", signature = (process))]
-fn py_cached(py: Python<'_>, process: &Bound<'_, PyDpProcess>) -> PyResult<PyObject> {
-    let self_ = process.borrow();
-    let wrapper = ProcessWrapper(self_.inner.clone());
+#[pyo3(name = "cached", text_signature = "(process)")]
+fn py_cached(process: &PyDpProcess) -> PyDpProcess {
+    let wrapper = ProcessWrapper(process.inner.clone());
     let c = cached(wrapper);
-    let process_obj: PyObject = process.as_any().clone().unbind();
-    drop(self_);
-
-    let base = PyDpProcess { inner: Box::new(c) };
-    let init = PyClassInitializer::from(base)
-        .add_subclass(PyCached { inner_obj: process_obj });
-    Ok(Py::new(py, init)?.into_any())
+    PyDpProcess::new(
+        Box::new(c),
+        format!("Cached({})", process.label),
+        vec![
+            ("inner", ParamValue::Str(process.label.clone())),
+        ],
+    )
 }
 
 // ---------------------------------------------------------------------------
-// Module-level functions -- composition
+// Module-level functions — composition
 // ---------------------------------------------------------------------------
 
 /// Homogeneous k-fold composition (repeat a process *count* times).
@@ -1179,11 +1279,11 @@ fn py_cached(py: Python<'_>, process: &Bound<'_, PyDpProcess>) -> PyResult<PyObj
 ///     count (int): Number of repetitions.
 ///
 /// Returns:
-///     Repeated: Composed DpProcess.
+///     DpProcess
 #[pyfunction]
-#[pyo3(name = "repeat", signature = (process, count))]
-fn py_repeat(process: &Bound<'_, PyDpProcess>, count: usize) -> PyResult<PyObject> {
-    PyDpProcess::__mul__(process, count)
+#[pyo3(name = "repeat", text_signature = "(process, count)")]
+fn py_repeat(process: &PyDpProcess, count: usize) -> PyResult<PyDpProcess> {
+    process.__mul__(count)
 }
 
 /// Heterogeneous composition of two processes.
@@ -1195,14 +1295,11 @@ fn py_repeat(process: &Bound<'_, PyDpProcess>, count: usize) -> PyResult<PyObjec
 ///     right (DpProcess): Second process.
 ///
 /// Returns:
-///     Composed: Composed DpProcess.
+///     DpProcess
 #[pyfunction]
-#[pyo3(name = "compose", signature = (left, right))]
-fn py_compose(
-    left: &Bound<'_, PyDpProcess>,
-    right: &Bound<'_, PyDpProcess>,
-) -> PyResult<PyObject> {
-    PyDpProcess::__or__(left, right)
+#[pyo3(name = "compose", text_signature = "(left, right)")]
+fn py_compose(left: &PyDpProcess, right: &PyDpProcess) -> PyResult<PyDpProcess> {
+    left.__or__(right)
 }
 
 // ---------------------------------------------------------------------------
@@ -1210,45 +1307,36 @@ fn py_compose(
 // ---------------------------------------------------------------------------
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // Base class
+    // Classes
     m.add_class::<PyDpProcess>()?;
     m.add_class::<PyDiscretizationConfig>()?;
 
-    // Typed subclasses -- mechanisms
+    // Typed subclasses
     m.add_class::<PyGaussian>()?;
     m.add_class::<PyEpsDelta>()?;
     m.add_class::<PyIdentity>()?;
-
-    // Typed subclasses -- amplification
     m.add_class::<PyPoisson>()?;
     m.add_class::<PyTruncatedPoisson>()?;
     m.add_class::<PyAccumulated>()?;
-
-    // Typed subclasses -- transforms
     m.add_class::<PyAdaClip>()?;
 
-    // Typed subclasses -- composition
-    m.add_class::<PyRepeated>()?;
-    m.add_class::<PyComposed>()?;
-    m.add_class::<PyCached>()?;
-
-    // Functions -- mechanisms
+    // Mechanisms
     m.add_function(wrap_pyfunction!(py_gaussian, m)?)?;
     m.add_function(wrap_pyfunction!(py_eps_delta, m)?)?;
     m.add_function(wrap_pyfunction!(py_identity, m)?)?;
 
-    // Functions -- amplification
+    // Amplification
     m.add_function(wrap_pyfunction!(py_poisson, m)?)?;
     m.add_function(wrap_pyfunction!(py_truncated_poisson, m)?)?;
     m.add_function(wrap_pyfunction!(py_accumulate, m)?)?;
 
-    // Functions -- transforms
+    // Transforms
     m.add_function(wrap_pyfunction!(py_adaclip, m)?)?;
 
-    // Functions -- caching
+    // Caching
     m.add_function(wrap_pyfunction!(py_cached, m)?)?;
 
-    // Functions -- composition
+    // Composition
     m.add_function(wrap_pyfunction!(py_repeat, m)?)?;
     m.add_function(wrap_pyfunction!(py_compose, m)?)?;
 

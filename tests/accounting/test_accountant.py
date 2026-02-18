@@ -26,7 +26,7 @@ class TestAccountantBasics:
     def test_composition_via_or(self):
         """Composing processes via | returns new Accountant."""
         acct1 = acc.Accountant()
-        step = acc.poisson(1.1, 0.01)
+        step = acc.poisson(acc.gaussian(1.1), 0.01)
 
         acct2 = acct1 | step
 
@@ -45,7 +45,7 @@ class TestAccountantMetrics:
     def test_epsilon_at(self):
         """epsilon_at() returns reasonable values."""
         acct = acc.Accountant()
-        acct = acct | (acc.poisson(1.1, 0.01) * 100)
+        acct = acct | (acc.poisson(acc.gaussian(1.1), 0.01) * 100)
 
         eps = acct.epsilon_at(1e-5)
         assert eps > 0
@@ -54,7 +54,7 @@ class TestAccountantMetrics:
     def test_delta_at(self):
         """delta_at() returns reasonable values."""
         acct = acc.Accountant()
-        acct = acct | (acc.poisson(1.1, 0.01) * 100)
+        acct = acct | (acc.poisson(acc.gaussian(1.1), 0.01) * 100)
 
         delta = acct.delta_at(1.0)
         assert 0 <= delta <= 1
@@ -108,7 +108,7 @@ class TestAccountantBudget:
         """budget_exceeded is True when privacy cost exceeds budget."""
         budget = epsilon(0.1, delta=1e-5)  # Very tight budget
         acct = acc.Accountant(budget=budget)
-        acct = acct | (acc.poisson(1.0, 0.01) * 1000)
+        acct = acct | (acc.poisson(acc.gaussian(1.0), 0.01) * 1000)
 
         # Should exceed the budget
         assert acct.budget_exceeded
@@ -120,7 +120,7 @@ class TestAccountantFunctional:
     def test_composition_immutability(self):
         """Composing doesn't mutate original Accountant."""
         acct1 = acc.Accountant()
-        step = acc.poisson(1.1, 0.01)
+        step = acc.poisson(acc.gaussian(1.1), 0.01)
 
         eps1_before = acct1.epsilon_at(1e-5)
 
@@ -134,7 +134,7 @@ class TestAccountantFunctional:
     def test_chained_composition(self):
         """Can chain multiple compositions."""
         acct = acc.Accountant()
-        step = acc.poisson(1.1, 0.01)
+        step = acc.poisson(acc.gaussian(1.1), 0.01)
 
         for _ in range(10):
             acct = acct | step
@@ -148,7 +148,7 @@ class TestAccountantFunctional:
         """Can compose different mechanism types."""
         acct = acc.Accountant()
         acct = acct | acc.gaussian(1.0)
-        acct = acct | (acc.poisson(1.1, 0.01) * 10)
+        acct = acct | (acc.poisson(acc.gaussian(1.1), 0.01) * 10)
         acct = acct | acc.gaussian(0.5)
 
         eps = acct.epsilon_at(1e-5)

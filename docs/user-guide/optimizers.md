@@ -137,7 +137,7 @@ for step in range(num_steps):
 
 # Check privacy (adaclip accounts for the quantile estimation cost)
 training = acc.adaclip(
-    noise_multiplier=noise_multiplier,
+    acc.gaussian(noise_multiplier),
     quantile_noise_std=50.0,
 ) * num_steps
 eps = training.epsilon_at(1e-5)

@@ -23,7 +23,7 @@ print("\n1️⃣  BASIC DP-SGD")
 print("-" * 70)
 
 # Standard DP-SGD step
-step = acc.poisson(noise_multiplier=1.1, sample_rate=0.01)
+step = acc.poisson(acc.gaussian(1.1), sample_rate=0.01)
 print(f"Single step: {step}")
 
 # Compose 1000 training steps
@@ -47,7 +47,7 @@ epochs = 10
 steps = epochs * (n // batch)
 
 step = acc.truncated_poisson(
-    noise_multiplier=0.8,
+    acc.gaussian(0.8),
     sample_rate=batch / n,
     batch_size_cap=batch,
     dataset_size=n,
@@ -64,7 +64,7 @@ print(f"  Privacy: (ε={eps:.6f}, δ=1e-5)")
 print("\n3️⃣  PRIVACY METRICS")
 print("-" * 70)
 
-proc = acc.poisson(1.0, 0.01) * 500
+proc = acc.poisson(acc.gaussian(1.0), 0.01) * 500
 
 print("Same process, different metrics:")
 print(f"  (ε, δ)-DP:     ε={proc.epsilon_at(1e-5):.6f} at δ=1e-5")
@@ -82,7 +82,7 @@ print("-" * 70)
 
 def build_training(nm):
     """Build a 1000-step DP-SGD training run with given noise multiplier."""
-    return acc.poisson(nm, sample_rate=0.01) * 1000
+    return acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000
 
 
 # Find noise for (ε=3.0, δ=1e-5)
@@ -107,9 +107,9 @@ print("\n5️⃣  MULTI-PHASE TRAINING")
 print("-" * 70)
 
 # Three-phase curriculum: warm-up → main training → fine-tuning
-warmup = acc.poisson(0.9, 0.01) * 200
-main = acc.poisson(0.7, 0.01) * 600
-finetune = acc.poisson(0.5, 0.01) * 200
+warmup = acc.poisson(acc.gaussian(0.9), 0.01) * 200
+main = acc.poisson(acc.gaussian(0.7), 0.01) * 600
+finetune = acc.poisson(acc.gaussian(0.5), 0.01) * 200
 
 # Compose with | operator
 total = warmup | main | finetune
@@ -132,19 +132,19 @@ gauss = acc.gaussian(1.0)
 print(f"Gaussian:           {gauss}")
 
 # Poisson-subsampled Gaussian (standard DP-SGD)
-poiss = acc.poisson(1.0, 0.01)
+poiss = acc.poisson(acc.gaussian(1.0), 0.01)
 print(f"Poisson:            {poiss}")
 
 # Truncated Poisson (production DP-SGD)
-trunc = acc.truncated_poisson(1.0, 0.01, batch_size_cap=256, dataset_size=10000)
+trunc = acc.truncated_poisson(acc.gaussian(1.0), 0.01, batch_size_cap=256, dataset_size=10000)
 print(f"Truncated Poisson:  {trunc}")
 
 # Gradient accumulation (microbatching)
-accum = acc.accumulate(1.0, 0.01, microbatches=4)
+accum = acc.accumulate(acc.poisson(acc.gaussian(1.0), 0.01), microbatches=4)
 print(f"Accumulate:         {accum}")
 
 # Adaptive clipping (Andrew et al. 2021)
-adaclip = acc.adaclip(1.0, quantile_noise_std=50.0)
+adaclip = acc.adaclip(acc.gaussian(1.0), quantile_noise_std=50.0)
 print(f"AdaClip:            {adaclip}")
 
 # Fixed (ε, δ) guarantee (for composition with external mechanisms)
@@ -162,14 +162,14 @@ print("\n7️⃣  DISCRETIZATION CONTROL")
 print("-" * 70)
 
 # Default precision (1e-4, high accuracy)
-default = acc.poisson(1.0, 0.01)
+default = acc.poisson(acc.gaussian(1.0), 0.01)
 info_default = default.pld_info()
 print(f"Default:  disc={info_default['discretization']}, "
       f"grid_size={info_default['grid_size']:,}, "
       f"time={info_default['elapsed_ms']:.1f}ms")
 
 # Coarse precision (1e-3, faster)
-coarse = acc.poisson(1.0, 0.01, discretization=1e-3)
+coarse = acc.poisson(acc.gaussian(1.0, discretization=1e-3), 0.01)
 info_coarse = coarse.pld_info()
 print(f"Coarse:   disc={info_coarse['discretization']}, "
       f"grid_size={info_coarse['grid_size']:,}, "
@@ -177,7 +177,7 @@ print(f"Coarse:   disc={info_coarse['discretization']}, "
 
 # Fine precision (1e-5, maximum accuracy)
 cfg_fine = acc.DiscretizationConfig(discretization=1e-5, max_grid_size=1_000_000)
-fine = acc.poisson(1.0, 0.01, discretization=cfg_fine)
+fine = acc.poisson(acc.gaussian(1.0, discretization=cfg_fine), 0.01)
 info_fine = fine.pld_info()
 print(f"Fine:     disc={info_fine['discretization']}, "
       f"grid_size={info_fine['grid_size']:,}, "
@@ -185,7 +185,7 @@ print(f"Fine:     disc={info_fine['discretization']}, "
 
 # Module-level defaults
 acc.set_discretization(discretization=1e-3)
-module_default = acc.poisson(1.0, 0.01)
+module_default = acc.poisson(acc.gaussian(1.0), 0.01)
 print(f"\nModule default set to 1e-3: {module_default}")
 
 # =============================================================================
@@ -194,23 +194,10 @@ print(f"\nModule default set to 1e-3: {module_default}")
 print("\n8️⃣  DEBUGGING")
 print("-" * 70)
 
-step = acc.poisson(1.1, 0.01) * 1000
+step = acc.poisson(acc.gaussian(1.1), 0.01) * 1000
 
 # Quick summary
 print(f"Quick: {step}")
-
-# Constructor parameters
-desc = step.describe()
-print(f"\nDescribe: {desc}")
-
-# PLD grid diagnostics
-info = step.pld_info()
-print(f"\nPLD info:")
-print(f"  Grid size:      {info['grid_size']:,}")
-print(f"  Discretization: {info['discretization']}")
-print(f"  Infinity mass:  {info['infinity_mass']:.2e}")
-print(f"  Is symmetric:   {info['is_symmetric']}")
-print(f"  Compute time:   {info['elapsed_ms']:.1f}ms")
 
 # Full privacy report
 print("\nSummary:")

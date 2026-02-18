@@ -80,7 +80,7 @@ for batch_x, batch_y in dataloader:
     params = params - learning_rate * noisy_grads
 
 # 4. Privacy accounting
-step = acc.poisson(noise_multiplier=1.1, sample_rate=0.01)
+step = acc.poisson(acc.gaussian(1.1), sample_rate=0.01)
 training = step * num_steps
 epsilon = training.epsilon_at(1e-5)
 print(f"Privacy: (ε={epsilon:.2f}, δ=1e-5)")

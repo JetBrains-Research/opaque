@@ -18,7 +18,7 @@ Every time you train on data with DP-SGD, you "spend" some privacy budget. Once 
 import opaque.accounting as acc
 
 # Build a DP-SGD process: Poisson-subsampled Gaussian, 1000 steps
-step = acc.poisson(noise_multiplier=1.1, sample_rate=0.01)
+step = acc.poisson(acc.gaussian(1.1), sample_rate=0.01)
 training = step * 1000
 
 # Query privacy
@@ -36,9 +36,9 @@ Every mechanism constructor returns a `DpProcess`, and composition operators pro
 import opaque.accounting as acc
 
 # Mechanisms
-g = acc.gaussian(1.1)                     # Gaussian mechanism
-p = acc.poisson(1.1, 0.01)               # Poisson-subsampled Gaussian
-tp = acc.truncated_poisson(1.1, 0.01,    # Truncated Poisson (production DP-SGD)
+g = acc.gaussian(1.1)                                # Gaussian mechanism
+p = acc.poisson(acc.gaussian(1.1), 0.01)              # Poisson-subsampled Gaussian
+tp = acc.truncated_poisson(acc.gaussian(1.1), 0.01,   # Truncated Poisson (production DP-SGD)
          batch_size_cap=100, dataset_size=10000)
 
 # Composition
@@ -68,7 +68,7 @@ risk = training.risk_at(0.5)             # Bayes risk
 
 ```python
 step = acc.poisson(
-    noise_multiplier=1.2,           # noise stddev / clip_norm
+    acc.gaussian(1.2),
     sample_rate=32 / 10000,         # batch_size / dataset_size
 )
 training = step * 1000              # 1000 training steps
@@ -83,7 +83,7 @@ eps = training.epsilon_at(1e-5)
 
 ```python
 step = acc.truncated_poisson(
-    noise_multiplier=1.2,
+    acc.gaussian(1.2),
     sample_rate=32 / 10000,
     batch_size_cap=32,              # maximum batch size
     dataset_size=10000,
@@ -113,8 +113,7 @@ eps = proc.epsilon_at(1e-5)
 
 ```python
 step = acc.accumulate(
-    noise_multiplier=1.1,
-    sample_rate=0.01,
+    acc.poisson(acc.gaussian(1.1), 0.01),
     microbatches=4,                 # 4 microbatches per noise step
 )
 training = step * 500
@@ -127,7 +126,7 @@ eps = training.epsilon_at(1e-5)
 
 ```python
 step = acc.adaclip(
-    noise_multiplier=1.1,
+    acc.gaussian(1.1),
     quantile_noise_std=50.0,        # noise for quantile estimation
 )
 eps = step.epsilon_at(1e-5)
@@ -158,7 +157,7 @@ assert proc.epsilon_at(1e-5) < 1e-10
 Use `*` or `acc.repeat()` for k-fold composition of the same mechanism:
 
 ```python
-step = acc.poisson(1.1, 0.01)
+step = acc.poisson(acc.gaussian(1.1), 0.01)
 
 # These are equivalent
 training = step * 1000
@@ -189,7 +188,7 @@ All metrics are computed from the same Privacy Loss Distribution — no redundan
 The **standard metric** used in most DP papers:
 
 ```python
-proc = acc.poisson(1.1, 0.01) * 1000
+proc = acc.poisson(acc.gaussian(1.1), 0.01) * 1000
 eps = proc.epsilon_at(delta=1e-5)
 delta = proc.delta_at(epsilon=1.0)
 print(f"Privacy: (epsilon={eps:.2f}, delta=1e-5)")
@@ -249,7 +248,7 @@ num_steps = 1000
 
 # Define how training depends on the noise multiplier
 def build(nm):
-    return acc.poisson(nm, sample_rate) * num_steps
+    return acc.poisson(acc.gaussian(nm), sample_rate) * num_steps
 
 # Calibrate for target (epsilon, delta)
 result = acc.calibrate(
@@ -273,7 +272,7 @@ For one-off privacy checks:
 
 ```python
 training = acc.poisson(
-    noise_multiplier=1.1,
+    acc.gaussian(1.1),
     sample_rate=0.01,
 ) * 1000
 
@@ -286,17 +285,17 @@ print(f"epsilon = {eps:.4f}")
 ### Quick Display
 
 ```python
-proc = acc.poisson(1.1, 0.01) * 1000
+proc = acc.poisson(acc.gaussian(1.1), 0.01) * 1000
 print(proc)
-# Repeat(Poisson(noise_multiplier=1.1, sample_rate=0.01), k=1000) | eps(delta=1e-5)=3.73
+# Repeat(Poisson(Gaussian(noise_multiplier=1.1), sample_rate=0.01), count=1000)
 ```
 
-### Constructor Parameters
+### Process Structure
 
 ```python
-proc = acc.poisson(1.1, 0.01)
-proc.describe()
-# {'type': 'Poisson(...)', 'noise_multiplier': 1.1, 'sample_rate': 0.01}
+proc = acc.poisson(acc.gaussian(1.1), 0.01)
+print(repr(proc))
+# Poisson(Gaussian(noise_multiplier=1.1), sample_rate=0.01)
 ```
 
 ### PLD Grid Diagnostics
@@ -376,7 +375,7 @@ num_steps = num_epochs * steps_per_epoch
 
 # Calibrate noise
 def build(nm):
-    return acc.poisson(nm, sample_rate) * num_steps
+    return acc.poisson(acc.gaussian(nm), sample_rate) * num_steps
 
 result = acc.calibrate(acc.epsilon(target_epsilon, delta=target_delta), build, 0.1, 10.0)
 noise_multiplier = result.param
@@ -396,7 +395,7 @@ for epoch in range(num_epochs):
 
     # Check privacy at end of each epoch
     steps_so_far = (epoch + 1) * steps_per_epoch
-    current_eps = (acc.poisson(noise_multiplier, sample_rate) * steps_so_far).epsilon_at(target_delta)
+    current_eps = (acc.poisson(acc.gaussian(noise_multiplier), sample_rate) * steps_so_far).epsilon_at(target_delta)
     print(f"Epoch {epoch+1}: epsilon={current_eps:.2f}/{target_epsilon:.2f}")
 
 # Verify final privacy
@@ -411,7 +410,7 @@ Privacy degrades as you train more:
 ```python
 # Compare epsilon at different training durations
 for steps in [100, 1000, 10000]:
-    eps = (acc.poisson(1.2, 0.01) * steps).epsilon_at(1e-5)
+    eps = (acc.poisson(acc.gaussian(1.2), 0.01) * steps).epsilon_at(1e-5)
     print(f"After {steps:>5} steps: epsilon={eps:.2f}")
 ```
 
@@ -427,7 +426,7 @@ Subsampling **amplifies privacy** -- you get stronger guarantees for the same no
 eps_full = acc.gaussian(1.0).epsilon_at(1e-5)
 
 # With Poisson sampling (sample_rate=0.01)
-eps_sampled = acc.poisson(1.0, 0.01).epsilon_at(1e-5)
+eps_sampled = acc.poisson(acc.gaussian(1.0), 0.01).epsilon_at(1e-5)
 
 print(f"Full batch:  epsilon={eps_full:.2f}")
 print(f"Sampled:     epsilon={eps_sampled:.4f}")  # Much smaller!
@@ -458,16 +457,16 @@ delta is the **failure probability** -- the probability that the privacy guarant
 
 ```python
 # Tighter bounds (preferred)
-step = acc.truncated_poisson(nm, rate, batch_size_cap=B, dataset_size=n)
+step = acc.truncated_poisson(acc.gaussian(nm), rate, batch_size_cap=B, dataset_size=n)
 
 # vs standard Poisson
-step = acc.poisson(nm, rate)
+step = acc.poisson(acc.gaussian(nm), rate)
 ```
 
 ### 3. Query Multiple Metrics
 
 ```python
-proc = acc.poisson(1.1, 0.01) * 1000
+proc = acc.poisson(acc.gaussian(1.1), 0.01) * 1000
 print(f"epsilon(delta=1e-5) = {proc.epsilon_at(1e-5):.2f}")
 print(f"advantage           = {proc.advantage():.4f}")
 print(f"beta(alpha=0.05)    = {proc.beta_at(0.05):.4f}")

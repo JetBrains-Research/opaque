@@ -5,7 +5,7 @@ against the new Rust-based functional API (opaque_accounting). The goal is to
 verify that numbers match, ensuring nothing degraded during the migration.
 
 The old API used PLDAccountant / EventAccountant classes. The new API uses a
-functional style:  dp.poisson(nm, q) * steps  ->  .epsilon_at(delta).
+functional style:  dp.poisson(dp.gaussian(nm), q) * steps  ->  .epsilon_at(delta).
 
 Test categories:
   1. Gaussian mechanism -- detailed reference values
@@ -84,7 +84,7 @@ def compute_epsilon(noise_multiplier, sample_rate, num_steps, delta):
     This helper replaces the removed dp.compute_epsilon() convenience function.
     It uses the compositional API: step * num_steps -> .epsilon_at(delta).
     """
-    step = dp.poisson(noise_multiplier, sample_rate)
+    step = dp.poisson(dp.gaussian(noise_multiplier), sample_rate)
     training = step * num_steps
     return training.epsilon_at(delta)
 
@@ -252,7 +252,7 @@ class TestPoissonSubsampling:
         self, noise_multiplier, sample_rate, desc
     ):
         """Single Poisson step delta should match dp_accounting."""
-        proc = dp.poisson(noise_multiplier, sample_rate)
+        proc = dp.poisson(dp.gaussian(noise_multiplier), sample_rate)
         google_pld = google_poisson_gaussian_pld(noise_multiplier, sample_rate)
 
         for eps in [0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0]:
@@ -281,7 +281,7 @@ class TestPoissonSubsampling:
         self, noise_multiplier, sample_rate, desc
     ):
         """Single Poisson step epsilon should match dp_accounting."""
-        proc = dp.poisson(noise_multiplier, sample_rate)
+        proc = dp.poisson(dp.gaussian(noise_multiplier), sample_rate)
         google_pld = google_poisson_gaussian_pld(noise_multiplier, sample_rate)
 
         for delta in [1e-3, 1e-4, 1e-5]:
@@ -300,7 +300,7 @@ class TestPoissonSubsampling:
         nm = 0.7
         eps = 1.0
         base = dp.gaussian(nm)
-        subsampled = dp.poisson(nm, 0.01)
+        subsampled = dp.poisson(dp.gaussian(nm), 0.01)
 
         base_delta = base.delta_at(eps)
         sub_delta = subsampled.delta_at(eps)
@@ -312,7 +312,7 @@ class TestPoissonSubsampling:
     def test_no_amplification_when_q_one(self):
         """q=1 (full batch) should give approximately base Gaussian privacy."""
         nm = 0.5
-        proc_full = dp.poisson(nm, 1.0)
+        proc_full = dp.poisson(dp.gaussian(nm), 1.0)
         base = dp.gaussian(nm)
 
         delta = 1e-5
@@ -358,7 +358,7 @@ class TestPoissonSubsampling:
         batch = 4096
         q = batch / n
 
-        proc = dp.poisson(nm, q)
+        proc = dp.poisson(dp.gaussian(nm), q)
         google_pld = google_poisson_gaussian_pld(nm, q)
 
         for eps in [1.0, 2.0, 5.0, 10.0]:
@@ -401,7 +401,7 @@ class TestTruncatedPoisson:
     )
     def test_truncated_valid_output(self, n, q, b_max, nm, desc):
         """Truncated Poisson should produce valid finite deltas."""
-        proc = dp.truncated_poisson(nm, q, batch_size_cap=b_max, dataset_size=n)
+        proc = dp.truncated_poisson(dp.gaussian(nm), q, batch_size_cap=b_max, dataset_size=n)
         for eps in [0.5, 1.0, 2.0, 5.0, 10.0]:
             d = proc.delta_at(eps)
             assert math.isfinite(d), f"{desc}, eps={eps}: delta={d}"
@@ -412,8 +412,8 @@ class TestTruncatedPoisson:
         nm, q, n = 0.8, 0.1, 100
         b_max = 100  # cap = dataset size -> no truncation
 
-        trunc = dp.truncated_poisson(nm, q, batch_size_cap=b_max, dataset_size=n)
-        standard = dp.poisson(nm, q)
+        trunc = dp.truncated_poisson(dp.gaussian(nm), q, batch_size_cap=b_max, dataset_size=n)
+        standard = dp.poisson(dp.gaussian(nm), q)
 
         delta = 1e-5
         eps_trunc = trunc.epsilon_at(delta)
@@ -428,7 +428,7 @@ class TestTruncatedPoisson:
         nm, q, n = 0.8, 0.01, 10_000
         b_max = 128  # expected batch ~ 100, some truncation at 128
 
-        trunc = dp.truncated_poisson(nm, q, batch_size_cap=b_max, dataset_size=n)
+        trunc = dp.truncated_poisson(dp.gaussian(nm), q, batch_size_cap=b_max, dataset_size=n)
 
         delta = 1e-5
         eps_trunc = trunc.epsilon_at(delta)
@@ -446,7 +446,7 @@ class TestTruncatedPoisson:
         steps_per_epoch = n // batch
         total_steps = 100 * steps_per_epoch
 
-        step = dp.truncated_poisson(nm, q, batch_size_cap=batch, dataset_size=n)
+        step = dp.truncated_poisson(dp.gaussian(nm), q, batch_size_cap=batch, dataset_size=n)
         training = step * total_steps
 
         eps = training.epsilon_at(1e-5)
@@ -461,7 +461,7 @@ class TestTruncatedPoisson:
         nm = 1.1
         steps = 5 * (n // batch)  # 5 epochs
 
-        step = dp.truncated_poisson(nm, q, batch_size_cap=batch, dataset_size=n)
+        step = dp.truncated_poisson(dp.gaussian(nm), q, batch_size_cap=batch, dataset_size=n)
         training = step * steps
 
         eps = training.epsilon_at(1e-6)
@@ -476,7 +476,7 @@ class TestTruncatedPoisson:
         nm = 0.8
         steps = 3 * (n // batch)  # 3 epochs
 
-        step = dp.truncated_poisson(nm, q, batch_size_cap=batch, dataset_size=n)
+        step = dp.truncated_poisson(dp.gaussian(nm), q, batch_size_cap=batch, dataset_size=n)
         training = step * steps
 
         for delta in [1e-5, 1e-6]:
@@ -491,7 +491,7 @@ class TestTruncatedPoisson:
         b_max = 1024
         nm = 1.2
 
-        proc = dp.truncated_poisson(nm, q, batch_size_cap=b_max, dataset_size=n)
+        proc = dp.truncated_poisson(dp.gaussian(nm), q, batch_size_cap=b_max, dataset_size=n)
         d = proc.delta_at(1.0)
         assert math.isfinite(d), f"100M dataset: delta={d}"
         assert 0.0 <= d <= 1.0, f"100M dataset: delta={d}"
@@ -588,7 +588,7 @@ class TestDeltaQueries:
     def test_delta_values_match_dp_accounting(self):
         """Delta at various epsilons should match dp_accounting."""
         sigma, q, steps = 0.5, 0.1, 100
-        proc = dp.poisson(sigma, q) * steps
+        proc = dp.poisson(dp.gaussian(sigma), q) * steps
         google_pld = google_poisson_gaussian_pld(sigma, q, steps)
 
         for eps in [0.0, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0]:
@@ -613,7 +613,7 @@ class TestDeltaQueries:
     def test_high_epsilon_delta_queries(self, epsilon):
         """Very high epsilon values should return valid (tiny) deltas."""
         sigma, q, steps = 0.5, 0.01, 1000
-        proc = dp.poisson(sigma, q) * steps
+        proc = dp.poisson(dp.gaussian(sigma), q) * steps
         google_pld = google_poisson_gaussian_pld(sigma, q, steps)
 
         our_delta = proc.delta_at(epsilon)
@@ -637,14 +637,14 @@ class TestDeltaQueries:
 
     def test_delta_in_valid_range_for_all_epsilons(self):
         """Delta should be in [0, 1] for a sweep of epsilons including negative."""
-        proc = dp.poisson(0.5, 0.1) * 100
+        proc = dp.poisson(dp.gaussian(0.5), 0.1) * 100
         for eps in [-10.0, -1.0, 0.0, 1.0, 5.0, 10.0, 50.0, 100.0]:
             d = proc.delta_at(eps)
             assert 0.0 <= d <= 1.0, f"eps={eps}: delta={d}"
 
     def test_boundary_epsilon_queries(self):
         """Epsilon at various deltas should be finite and monotonically decreasing."""
-        proc = dp.poisson(0.5, 0.1) * 100
+        proc = dp.poisson(dp.gaussian(0.5), 0.1) * 100
         deltas = [1e-10, 1e-8, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 0.1, 0.5]
         epsilons = []
         for d in deltas:
@@ -672,13 +672,13 @@ class TestMetricsBeta:
     @pytest.mark.parametrize("alpha", [0.01, 0.05, 0.1, 0.2, 0.5])
     def test_beta_in_valid_range(self, alpha):
         """Beta should be in [0, 1]."""
-        proc = dp.poisson(0.5, 0.1) * 100
+        proc = dp.poisson(dp.gaussian(0.5), 0.1) * 100
         beta = proc.beta_at(alpha)
         assert 0.0 <= beta <= 1.0, f"alpha={alpha}: beta={beta}"
 
     def test_beta_monotonic_across_alpha(self):
         """Beta should be non-increasing as alpha increases."""
-        proc = dp.poisson(0.8, 0.01) * 500
+        proc = dp.poisson(dp.gaussian(0.8), 0.01) * 500
         alphas = [0.01, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 0.9]
         betas = [proc.beta_at(a) for a in alphas]
         for i in range(1, len(betas)):
@@ -690,7 +690,7 @@ class TestMetricsBeta:
     @pytest.mark.parametrize("sigma", [0.3, 0.5, 0.7, 0.8])
     def test_beta_monotonic_across_alpha_different_sigma(self, sigma):
         """Beta monotonicity should hold for various noise levels."""
-        proc = dp.poisson(sigma, 0.01) * 200
+        proc = dp.poisson(dp.gaussian(sigma), 0.01) * 200
         alphas = [0.01, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 0.9]
         betas = [proc.beta_at(a) for a in alphas]
         for i in range(1, len(betas)):
@@ -703,7 +703,7 @@ class TestMetricsBeta:
     @pytest.mark.parametrize("alpha", [0.80, 0.90, 0.95, 0.99])
     def test_beta_high_alpha_valid(self, alpha):
         """Beta should be valid even for high alpha values."""
-        proc = dp.poisson(0.8, 0.01) * 100
+        proc = dp.poisson(dp.gaussian(0.8), 0.01) * 100
         beta = proc.beta_at(alpha)
         assert 0.0 <= beta <= 1.0, f"alpha={alpha}: beta={beta}"
         assert math.isfinite(beta), f"alpha={alpha}: beta={beta}"
@@ -714,14 +714,14 @@ class TestMetricsAdvantage:
 
     def test_advantage_in_valid_range(self):
         """Advantage should be in [0, 1]."""
-        proc = dp.poisson(0.5, 0.1) * 100
+        proc = dp.poisson(dp.gaussian(0.5), 0.1) * 100
         adv = proc.advantage()
         assert 0.0 <= adv <= 1.0, f"advantage={adv}"
         assert adv > 0, "advantage should be > 0 for non-trivial mechanism"
 
     def test_advantage_equals_delta_at_zero(self):
         """Advantage should equal delta_at(0)."""
-        proc = dp.poisson(0.8, 0.01) * 500
+        proc = dp.poisson(dp.gaussian(0.8), 0.01) * 500
         adv = proc.advantage()
         delta_0 = proc.delta_at(0.0)
         assert abs(adv - delta_0) < 1e-6, (
@@ -732,7 +732,7 @@ class TestMetricsAdvantage:
         """More noise -> lower advantage (more private)."""
         advantages = []
         for sigma in [0.3, 0.5, 0.7, 0.8]:
-            proc = dp.poisson(sigma, 0.01) * 500
+            proc = dp.poisson(dp.gaussian(sigma), 0.01) * 500
             advantages.append(proc.advantage())
 
         for i in range(1, len(advantages)):
@@ -937,7 +937,7 @@ class TestNumericalStability:
     @pytest.mark.parametrize("sigma", [0.3, 0.4, 0.5, 0.6, 0.8])
     def test_low_noise_finite_epsilon(self, sigma):
         """Low noise should give finite, positive epsilon (Bug #1 regression)."""
-        proc = dp.poisson(sigma, 0.1) * 100
+        proc = dp.poisson(dp.gaussian(sigma), 0.1) * 100
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps), f"sigma={sigma}: epsilon={eps} (should be finite)"
         assert eps > 0, f"sigma={sigma}: epsilon={eps} (should be positive)"
@@ -946,7 +946,7 @@ class TestNumericalStability:
     def test_low_noise_matches_dp_accounting(self, sigma):
         """Low noise epsilon should match dp_accounting (regression check)."""
         q, steps = 0.1, 100
-        proc = dp.poisson(sigma, q) * steps
+        proc = dp.poisson(dp.gaussian(sigma), q) * steps
         google_pld = google_poisson_gaussian_pld(sigma, q, steps)
 
         eps_ours = proc.epsilon_at(1e-5)
@@ -960,7 +960,7 @@ class TestNumericalStability:
         """Bug #1: infinity mass should not cause infinite epsilon."""
         sigma, q = 0.5, 0.1
         for steps in [1, 5, 10, 20, 50, 100]:
-            proc = dp.poisson(sigma, q) * steps
+            proc = dp.poisson(dp.gaussian(sigma), q) * steps
             eps = proc.epsilon_at(1e-5)
             assert math.isfinite(eps), (
                 f"Infinity mass bug: sigma={sigma}, q={q}, k={steps}, epsilon={eps}"
@@ -974,21 +974,21 @@ class TestNumericalStability:
 
     def test_very_small_sampling_rate(self):
         """Very small q should give finite epsilon."""
-        proc = dp.poisson(0.8, 0.0001) * 10000
+        proc = dp.poisson(dp.gaussian(0.8), 0.0001) * 10000
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps), f"tiny q: epsilon={eps}"
         assert eps > 0, f"tiny q: epsilon={eps}"
 
     def test_near_full_batch(self):
         """q close to 1 should work."""
-        proc = dp.poisson(0.5, 0.99) * 10
+        proc = dp.poisson(dp.gaussian(0.5), 0.99) * 10
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps), f"near-full batch: epsilon={eps}"
         assert eps > 0, f"near-full batch: epsilon={eps}"
 
     def test_many_composition_steps(self):
         """Large k should give finite epsilon."""
-        proc = dp.poisson(0.8, 0.001) * 50000
+        proc = dp.poisson(dp.gaussian(0.8), 0.001) * 50000
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps), f"50k steps: epsilon={eps}"
         assert eps > 0, f"50k steps: epsilon={eps}"
@@ -998,7 +998,7 @@ class TestNumericalStability:
         sigma, q = 0.5, 0.1
         epsilons = []
         for steps in [1, 10, 50, 100, 200]:
-            proc = dp.poisson(sigma, q) * steps
+            proc = dp.poisson(dp.gaussian(sigma), q) * steps
             epsilons.append(proc.epsilon_at(1e-5))
 
         # Growth from 1->200 steps should be << 200x (sublinear).
@@ -1016,7 +1016,7 @@ class TestNumericalStability:
         accumulates to ~6e-12 after 1000 steps, exceeding the 1e-12 threshold.
         This is expected behavior for finite-grid PLD accounting.
         """
-        proc = dp.poisson(1.1, 0.001) * 1000
+        proc = dp.poisson(dp.gaussian(1.1), 0.001) * 1000
         eps = proc.epsilon_at(delta)
         assert math.isfinite(eps), f"delta={delta}: epsilon={eps}"
         assert eps > 0, f"delta={delta}: epsilon={eps}"
@@ -1071,9 +1071,9 @@ class TestCompositionProperties:
         delta = 1e-5
 
         # Three-phase training: different noise multipliers.
-        phase1 = dp.poisson(0.5, 0.1) * 50
-        phase2 = dp.poisson(0.8, 0.05) * 30
-        phase3 = dp.poisson(0.9, 0.02) * 20
+        phase1 = dp.poisson(dp.gaussian(0.5), 0.1) * 50
+        phase2 = dp.poisson(dp.gaussian(0.8), 0.05) * 30
+        phase3 = dp.poisson(dp.gaussian(0.9), 0.02) * 20
 
         combined = phase1 | phase2 | phase3
         eps_combined = combined.epsilon_at(delta)
@@ -1102,7 +1102,7 @@ class TestCompositionProperties:
 
     def test_operator_matches_function(self):
         """step * k should equal repeat(step, k)."""
-        step = dp.poisson(0.7, 0.01)
+        step = dp.poisson(dp.gaussian(0.7), 0.01)
 
         via_op = (step * 100).epsilon_at(1e-5)
         via_fn = dp.repeat(step, 100).epsilon_at(1e-5)
@@ -1139,7 +1139,7 @@ class TestCompositionProperties:
 
     def test_subsampled_gaussian_pld_asymmetric(self):
         """Poisson-subsampled Gaussian PLD should be asymmetric."""
-        proc = dp.poisson(0.5, 0.01)
+        proc = dp.poisson(dp.gaussian(0.5), 0.01)
         info = proc.pld_info()
         assert info["is_symmetric"] is False, (
             "Poisson-subsampled Gaussian PLD should be asymmetric"
@@ -1248,7 +1248,7 @@ class TestRealisticWorkflows:
     def test_all_metrics_consistent_workflow(self):
         """All metrics should be consistent for a single training run."""
         sigma, q, steps, delta_target = 0.5, 0.05, 200, 1e-5
-        proc = dp.poisson(sigma, q) * steps
+        proc = dp.poisson(dp.gaussian(sigma), q) * steps
 
         eps = proc.epsilon_at(delta_target)
         delta = proc.delta_at(eps)
@@ -1287,9 +1287,9 @@ class TestRealisticWorkflows:
         # Phase 1: warm-up with high noise (1000 steps).
         # Phase 2: main training with medium noise (3000 steps).
         # Phase 3: fine-tuning with lower noise (1000 steps).
-        phase1 = dp.poisson(0.9, 0.01) * 1000
-        phase2 = dp.poisson(0.7, 0.01) * 3000
-        phase3 = dp.poisson(0.5, 0.01) * 1000
+        phase1 = dp.poisson(dp.gaussian(0.9), 0.01) * 1000
+        phase2 = dp.poisson(dp.gaussian(0.7), 0.01) * 3000
+        phase3 = dp.poisson(dp.gaussian(0.5), 0.01) * 1000
 
         total = phase1 | phase2 | phase3
         our_eps = total.epsilon_at(delta)
@@ -1408,7 +1408,7 @@ class TestTripleValidationBeta:
         """Beta at various alphas should match riskcal."""
         sigma, q, steps = 0.8, 0.01, 500
 
-        proc = dp.poisson(sigma, q) * steps
+        proc = dp.poisson(dp.gaussian(sigma), q) * steps
         beta_ours = proc.beta_at(alpha)
 
         evaluator = create_dpsgd_evaluator(
@@ -1431,7 +1431,7 @@ class TestTripleValidationBeta:
         """Beta for low-noise scenarios should match riskcal."""
         q, steps = 0.05, 200
 
-        proc = dp.poisson(sigma, q) * steps
+        proc = dp.poisson(dp.gaussian(sigma), q) * steps
 
         for alpha in [0.01, 0.05, 0.1, 0.3, 0.5]:
             beta_ours = proc.beta_at(alpha)
@@ -1458,7 +1458,7 @@ class TestTripleValidationBeta:
         """
         sigma, q, steps = 0.5, 0.0016, 1000
 
-        proc = dp.poisson(sigma, q) * steps
+        proc = dp.poisson(dp.gaussian(sigma), q) * steps
 
         for alpha in [0.3, 0.4, 0.5, 0.6]:
             beta_ours = proc.beta_at(alpha)
@@ -1491,7 +1491,7 @@ class TestTripleValidationAdvantage:
         """Advantage should match riskcal."""
         sigma, q, steps = 0.5, 0.01, 1000
 
-        proc = dp.poisson(sigma, q) * steps
+        proc = dp.poisson(dp.gaussian(sigma), q) * steps
         advantage_ours = proc.advantage()
 
         evaluator = create_dpsgd_evaluator(
@@ -1514,7 +1514,7 @@ class TestTripleValidationAdvantage:
         """Advantage at different noise levels should match riskcal."""
         q, steps = 0.0016, 1000
 
-        proc = dp.poisson(sigma, q) * steps
+        proc = dp.poisson(dp.gaussian(sigma), q) * steps
         advantage_ours = proc.advantage()
 
         evaluator = create_dpsgd_evaluator(
@@ -1577,7 +1577,7 @@ class TestTripleValidationRealistic:
         delta = 1e-4
 
         # Our implementation.
-        proc = dp.poisson(sigma, q) * steps
+        proc = dp.poisson(dp.gaussian(sigma), q) * steps
         our_eps = proc.epsilon_at(delta)
         our_advantage = proc.advantage()
 

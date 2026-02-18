@@ -33,7 +33,7 @@ sample_rate = 0.01  # batch_size / dataset_size
 num_steps = 1000
 
 def build(nm):
-    return acc.poisson(nm, sample_rate=sample_rate) * num_steps
+    return acc.poisson(acc.gaussian(nm), sample_rate=sample_rate) * num_steps
 
 result = acc.calibrate(acc.epsilon(3.0, delta=1e-5), build, 0.1, 10.0)
 noise_multiplier = result.param
@@ -56,7 +56,7 @@ for step in range(num_steps):
     params = update(params, noisy_grads)
 
 # 4. Get final privacy guarantee
-training = acc.poisson(noise_multiplier, sample_rate=sample_rate) * num_steps
+training = acc.poisson(acc.gaussian(noise_multiplier), sample_rate=sample_rate) * num_steps
 epsilon = training.epsilon_at(1e-5)
 print(f"Privacy: (ε={epsilon:.2f}, δ=1e-5)")
 ```

@@ -19,7 +19,7 @@ def repeat(process: DpProcess, count: int) -> DpProcess:
 
     Example::
 
-        step = acc.poisson(1.1, 0.01)
+        step = acc.poisson(acc.gaussian(1.1), 0.01)
         training = acc.repeat(step, 1000)  # same as: step * 1000
         eps = training.epsilon_at(1e-5)
     """
@@ -41,8 +41,8 @@ def compose(left: DpProcess, right: DpProcess) -> DpProcess:
     Example::
 
         # Multi-phase training with different noise
-        phase1 = acc.poisson(0.9, 0.01) * 500
-        phase2 = acc.poisson(0.7, 0.01) * 500
+        phase1 = acc.poisson(acc.gaussian(0.9), 0.01) * 500
+        phase2 = acc.poisson(acc.gaussian(0.7), 0.01) * 500
         total = acc.compose(phase1, phase2)  # same as: phase1 | phase2
         eps = total.epsilon_at(1e-5)
     """
@@ -70,7 +70,7 @@ def cached(process: DpProcess) -> DpProcess:
 
     Example::
 
-        step = acc.cached(acc.poisson(1.1, 0.01))
+        step = acc.cached(acc.poisson(acc.gaussian(1.1), 0.01))
         eps = step.epsilon_at(1e-5)   # computes PLD
         adv = step.advantage()         # reuses cached PLD
     """

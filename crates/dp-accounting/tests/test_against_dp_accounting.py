@@ -63,7 +63,7 @@ def google_poisson_gaussian_pld(noise_multiplier, sample_rate, num_steps=1):
 
 def compute_epsilon(noise_multiplier, sample_rate, num_steps, delta):
     """Compute epsilon for a Poisson-subsampled Gaussian training run."""
-    step = dp.poisson(noise_multiplier, sample_rate)
+    step = dp.poisson(dp.gaussian(noise_multiplier), sample_rate)
     training = step * num_steps
     return training.epsilon_at(delta)
 
@@ -182,7 +182,7 @@ class TestPoissonGaussian:
         """Single Poisson-subsampled Gaussian step should match Google."""
         delta = 1e-5
 
-        proc = dp.poisson(noise_multiplier, sample_rate)
+        proc = dp.poisson(dp.gaussian(noise_multiplier), sample_rate)
         our_eps = proc.epsilon_at(delta)
 
         google_pld = google_poisson_gaussian_pld(noise_multiplier, sample_rate)
@@ -251,7 +251,7 @@ class TestRealisticDPSGD:
 
     def test_operator_matches_function(self):
         """step * k should produce the same epsilon as repeat(step, k)."""
-        step = dp.poisson(0.7, 0.01)
+        step = dp.poisson(dp.gaussian(0.7), 0.01)
 
         via_op = (step * 100).epsilon_at(1e-5)
         via_fn = dp.repeat(step, 100).epsilon_at(1e-5)
@@ -317,7 +317,7 @@ class TestAdaClip:
         """AdaClip epsilon should be >= base Gaussian (extra privacy cost)."""
         nm = 0.7
         base = dp.gaussian(nm)
-        ac = dp.adaclip(nm, 50.0)
+        ac = dp.adaclip(dp.gaussian(nm), 50.0)
 
         base_eps = base.epsilon_at(1e-5)
         ac_eps = ac.epsilon_at(1e-5)
@@ -330,7 +330,7 @@ class TestAdaClip:
         """With very large sigma_b, AdaClip should approximate the base Gaussian."""
         nm = 0.7
         base = dp.gaussian(nm)
-        ac = dp.adaclip(nm, 1e10)
+        ac = dp.adaclip(dp.gaussian(nm), 1e10)
 
         base_eps = base.epsilon_at(1e-5)
         ac_eps = ac.epsilon_at(1e-5)
@@ -411,13 +411,14 @@ class TestMetrics:
 class TestIntrospection:
     """Test debugging and introspection features."""
 
-    def test_describe_returns_dict(self):
-        """describe() should return a dict with the constructor params."""
-        proc = dp.poisson(1.1, 0.01)
-        d = proc.describe()
-        assert isinstance(d, dict)
-        assert d["noise_multiplier"] == 1.1
-        assert d["sample_rate"] == 0.01
+    def test_typed_subclass_properties(self):
+        """Typed subclasses expose constructor params as properties."""
+        proc = dp.poisson(dp.gaussian(1.1), 0.01)
+        assert isinstance(proc, dp.Poisson)
+        assert proc.sample_rate == pytest.approx(0.01)
+        inner = proc.inner
+        assert isinstance(inner, dp.Gaussian)
+        assert inner.noise_multiplier == pytest.approx(1.1)
 
     def test_pld_info_keys(self):
         """pld_info() should expose PLD grid diagnostics."""
@@ -449,10 +450,10 @@ class TestIntrospection:
 
     def test_repr_is_reconstructible(self):
         """repr() should clearly identify the process type."""
-        proc = dp.poisson(0.7, 0.01)
+        proc = dp.poisson(dp.gaussian(0.7), 0.01)
         r = repr(proc)
-        assert "DpProcess" in r
         assert "Poisson" in r
+        assert "Gaussian" in r
 
     def test_config_properties(self):
         """DiscretizationConfig should expose properties."""

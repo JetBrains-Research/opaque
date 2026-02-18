@@ -16,7 +16,7 @@ Example::
 
     # Find noise multiplier for target privacy budget
     def build(nm):
-        return acc.poisson(nm, sample_rate=0.01) * 1000
+        return acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000
 
     target = cal.epsilon(3.0, delta=1e-5)
     result = cal.calibrate(target, build, param_min=0.1, param_max=5.0)
@@ -366,7 +366,7 @@ def calibrate(
 
         build: Callable taking a float parameter and returning a DpProcess.
             Must be deterministic (same input → same process).
-            Example: ``lambda nm: acc.poisson(nm, 0.01) * 1000``
+            Example: ``lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000``
             
             Important: If build() raises an exception, it propagates immediately.
 
@@ -410,7 +410,7 @@ def calibrate(
         from opaque.accounting import calibration as cal
 
         def build(nm):
-            return acc.poisson(nm, sample_rate=0.01) * 1000
+            return acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000
 
         target = cal.epsilon(3.0, delta=1e-5)
         result = cal.calibrate(target, build, param_min=0.7, param_max=1.2)
@@ -422,9 +422,9 @@ def calibrate(
     **Example 2: Multi-phase training**::
 
         def build_multiphase(nm):
-            phase1 = acc.poisson(nm, 0.01) * 500
-            phase2 = acc.poisson(nm * 0.8, 0.01) * 500
-            phase3 = acc.poisson(nm * 0.5, 0.01) * 500
+            phase1 = acc.poisson(acc.gaussian(nm), 0.01) * 500
+            phase2 = acc.poisson(acc.gaussian(nm * 0.8), 0.01) * 500
+            phase3 = acc.poisson(acc.gaussian(nm * 0.5), 0.01) * 500
             return phase1 | phase2 | phase3
 
         result = cal.calibrate(

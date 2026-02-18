@@ -99,7 +99,7 @@ from opaque import clipped_grad, gaussian_noise
 
 # 1. Calibrate noise
 def build(nm):
-    return acc.poisson(nm, sample_rate=0.01) * 1000
+    return acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000
 
 result = acc.calibrate(acc.epsilon(3.0, delta=1e-5), build, 0.1, 10.0)
 noise_multiplier = result.param
@@ -115,7 +115,7 @@ for step in range(1000):
     params = update(params, noisy_grads)
 
 # 4. Check final privacy
-training = acc.poisson(noise_multiplier, sample_rate=0.01) * 1000
+training = acc.poisson(acc.gaussian(noise_multiplier), sample_rate=0.01) * 1000
 epsilon = training.epsilon_at(1e-5)
 ```
 
@@ -189,7 +189,7 @@ Start with ε=10, get your model working, then tighten to ε=3 or ε=1
 ### 3. Monitor Privacy During Training
 
 ```python
-training = acc.poisson(noise_multiplier, sample_rate) * step
+training = acc.poisson(acc.gaussian(noise_multiplier), sample_rate) * step
 print(f"Step {step}: ε={training.epsilon_at(delta):.2f}")
 
 ### 4. Use LoRA for LLMs

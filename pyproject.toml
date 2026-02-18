@@ -44,7 +44,7 @@ dependencies = [
 members = ["crates/dp-accounting"]
 
 [tool.uv.sources]
-opaque-accounting = { workspace = true }
+opaque-accounting = { workspace = true, editable = true }
 
 # No optional dependencies - users choose their own ML stack
 # Opaque only provides DP-SGD primitives (clipped_grad, noise, accounting)

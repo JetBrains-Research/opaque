@@ -50,4 +50,4 @@ markers = [
 
 [tool.maturin]
 features = ["python-extension"]
-module-name = "opaque_accounting"
+module-name = "opaque_accounting.opaque_accounting"
