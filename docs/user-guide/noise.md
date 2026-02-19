@@ -66,29 +66,33 @@ noise_fn, state = gaussian_noise(stddev=1.0, generator=gen)
 ```python
 import opaque.accounting as acc
 
+sample_rate = batch_size / dataset_size
+
 # Find minimum noise for target privacy
-noise_multiplier = acc.find_noise_multiplier_for_epsilon_delta(
-    epsilon=3.0,  # Target privacy loss
-    delta=1e-5,  # Failure probability
-    sample_rate=batch_size / dataset_size,
-    num_steps=total_training_steps,
+result = acc.calibrate(
+    acc.epsilon_budget(3.0, delta=1e-5),
+    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * total_training_steps,
+    param_min=0.1,
+    param_max=10.0,
 )
 
+noise_multiplier = result.param
 print(f"Use noise multiplier: {noise_multiplier:.3f}")
-# Example output: Use noise multiplier: 1.234
+print(f"Achieved epsilon: {result.achieved:.4f}")
 ```
 
-**Result**: Training with this noise will give you *exactly* (ε=3.0, δ=1e-5) privacy after `num_steps` steps.
+**Result**: Training with this noise will give you *exactly* (ε=3.0, δ=1e-5) privacy after `total_training_steps` steps.
 
 ### Calibration for f-DP Advantage
 
 For tighter bounds using f-DP:
 
 ```python
-noise_multiplier = acc.find_noise_multiplier_for_advantage(
-    advantage=0.1,  # Target advantage (lower = stronger privacy)
-    sample_rate=batch_size / dataset_size,
-    num_steps=total_training_steps,
+result = acc.calibrate(
+    acc.advantage_budget(0.1),  # Target advantage (lower = stronger privacy)
+    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * total_training_steps,
+    param_min=0.1,
+    param_max=10.0,
 )
 ```
 
@@ -97,11 +101,11 @@ noise_multiplier = acc.find_noise_multiplier_for_advantage(
 For hypothesis testing interpretation:
 
 ```python
-noise_multiplier = acc.find_noise_multiplier_for_err_rates(
-    alpha=1e-4,  # False positive rate
-    beta=0.8,  # True positive rate (1 - power)
-    sample_rate=batch_size / dataset_size,
-    num_steps=total_training_steps,
+result = acc.calibrate(
+    acc.beta_budget(0.8, alpha=1e-4),  # Target Type-II error at Type-I error
+    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * total_training_steps,
+    param_min=0.1,
+    param_max=10.0,
 )
 ```
 
@@ -170,18 +174,18 @@ sample_rate = batch_size / dataset_size
 num_steps = 1000
 
 # 2. Calibrate noise
-noise_multiplier = acc.find_noise_multiplier_for_epsilon_delta(
-    epsilon=3.0,
-    delta=1e-5,
-    sample_rate=sample_rate,
-    num_steps=num_steps,
+result = acc.calibrate(
+    acc.epsilon_budget(3.0, delta=1e-5),
+    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps,
+    0.1, 10.0,
 )
+noise_multiplier = result.param
 
 # 3. Create noise function
 noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_norm)
 
 # 4. Create DP gradient function
-dp_grad_fn = clipped_grad(
+dp_grad_fn, clip_state = clipped_grad(
     loss_fn,
     l2_clip_norm=clip_norm,
     argnums=0,
@@ -189,11 +193,9 @@ dp_grad_fn = clipped_grad(
 )
 
 # 5. Training loop
-privacy_state = acc.create()
-
 for step in range(num_steps):
     # Compute clipped gradients
-    grads = dp_grad_fn(params, batch)
+    grads, clip_state = dp_grad_fn(params, batch, state=clip_state)
 
     # Add calibrated noise
     noisy_grads, noise_state = noise_fn(grads, noise_state)
@@ -201,16 +203,9 @@ for step in range(num_steps):
     # Update parameters
     params = update(params, noisy_grads)
 
-    # Track privacy
-    privacy_state = acc.compose_poisson_gaussian(
-        privacy_state,
-        noise_multiplier=noise_multiplier,
-        sample_rate=sample_rate,
-        count=1,
-    )
-
 # 6. Verify privacy
-final_epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
+training = acc.poisson(acc.gaussian(noise_multiplier), sample_rate) * num_steps
+final_epsilon = training.epsilon_at(1e-5)
 print(f"Final privacy: (ε={final_epsilon:.2f}, δ=1e-5)")
 ```
 
@@ -260,8 +255,11 @@ def noise_schedule(step, total_steps):
     progress = step / total_steps
     return initial_noise + progress * (final_noise - initial_noise)
 
+# Track composed privacy across steps with Accountant
+acct = acc.Accountant()
+
 for step in range(num_steps):
-    grads = dp_grad_fn(params, batch)
+    grads, clip_state = dp_grad_fn(params, batch, state=clip_state)
 
     current_noise = noise_schedule(step, num_steps)
     noise_fn, noise_state = gaussian_noise(stddev=current_noise * clip_norm)
@@ -270,12 +268,10 @@ for step in range(num_steps):
     params = update(params, noisy_grads)
 
     # Important: Track with actual noise used!
-    privacy_state = acc.compose_poisson_gaussian(
-        privacy_state,
-        noise_multiplier=current_noise,
-        sample_rate=sample_rate,
-        count=1,
-    )
+    acct = acct | acc.poisson(acc.gaussian(current_noise), sample_rate)
+
+final_epsilon = acct.epsilon_at(1e-5)
+print(f"Final privacy: (ε={final_epsilon:.2f}, δ=1e-5)")
 ```
 
 !!! warning "Use with caution"

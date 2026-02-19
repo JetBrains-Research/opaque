@@ -16,7 +16,7 @@
 **Completed (Stages 1-2)**:
 
 - ✅ **Stage 1**: Full clipping API (clip_pytree, clipped_fun, clipped_grad)
-- ✅ **Stage 2**: Noise injection (add_gaussian_noise) and functional privacy accounting
+- ✅ **Stage 2**: Noise injection (gaussian_noise) and functional privacy accounting
 - **Modules**: Modularized into `utils/`, `clipping/`, `noise/`, `accounting/`, `optimizers/` packages
 - **API Parity**: All single-device parameters except microbatch_size and spmd_axis_name (tech debt)
 - **Tests**: 111 tests passing (55 accounting + 56 optimizer tests), parallel execution enabled
@@ -39,7 +39,7 @@
    - Choose LoRA model: Llama-3-8B or Mistral-7B
    - Task: Instruction tuning (Alpaca/Dolly)
    - Get non-DP LoRA baseline working
-   - Add Opaque DP training (`clipped_grad()` + `add_gaussian_noise()`)
+   - Add Opaque DP training (`clipped_grad()` + `gaussian_noise()`)
 
 2. **Week 3-4: Debugging & JAX-Privacy Validation**
    - Debug all issues (API friction, memory, numerical stability, LoRA integration)

@@ -9,64 +9,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- User guide documentation for all major concepts
-- API reference structure for all modules
+- Comprehensive documentation refresh for all user-facing docs
 - Cross-linking between documentation sections
 
 ## [0.2.0] - 2025-11-14
 
-**Stage 2 Complete**: Privacy accounting, noise injection, optimizer integration, and sampling mechanisms.
+**Complete DP-SGD library with functional API, Rust-based accounting, and HuggingFace integration.**
 
 ### Added
 
 - **Privacy Accounting** (`opaque.accounting`)
-  - Functional API with immutable state (`create()`, `compose_*()`, `get_*()`)
-  - Support for (ε, δ)-DP, f-DP advantage, and (α, β) error rates
-  - Composition methods: `compose_gaussian()`, `compose_poisson_gaussian()`, `compose_sampled_gaussian()`,
-    `compose_truncated_poisson_gaussian()`
-  - Privacy queries: `get_epsilon()`, `get_beta()`, `get_advantage()`
-  - Calibration using riskcal.calibration.core primitives
-  - Custom calibration: `find_noise_multiplier_for_epsilon_delta()`
-  - Re-exported calibration: `find_noise_multiplier_for_advantage()`, `find_noise_multiplier_for_err_rates()`
+  - Rust-based PLD engine (`opaque_accounting` via PyO3)
+  - Mechanism constructors: `gaussian()`, `poisson()`, `truncated_poisson()`, `accumulate()`, `adaclip()`, `eps_delta()`, `identity()`
+  - Composition via `*` (repeat) and `|` (compose) operators on `DpProcess` objects
+  - Privacy metrics: `.epsilon_at()`, `.delta_at()`, `.advantage()`, `.beta_at()`, `.risk_at()`
+  - `Accountant` class for training-loop integration with optional budget checking
+  - Calibration: `calibrate()` with target factories `epsilon()`, `delta()`, `advantage()`, `beta()`, `risk()`
+  - Configurable PLD precision via `DiscretizationConfig`
 - **Noise Injection** (`opaque.noise`)
-  - `add_gaussian_noise()` - Stateless Gaussian noise generation
-  - Support for noise multiplier calibration
+  - `gaussian_noise()` — Stateful Gaussian noise with reproducible RNG
+  - `bounded_gaussian_noise()` — Truncated Gaussian within bounds
+  - Matrix factorization noise: `band_mf_noise()`, `blt_mf_noise()`, `dense_mf_noise()`, `custom_mf_noise()`, `identity_mf_noise()`
 - **Sampling Mechanisms** (`opaque.sampling`)
-  - `PoissonSampler` - Standard Poisson sampling for privacy amplification
-  - `TruncatedPoissonSampler` - Bounded batch sizes for variable-length datasets
-  - Solves variable batch size problem in DP-SGD
-- **DP Optimizers** (`opaque.optimizers`)
-  - `adaptive_clipping()` - Adaptive gradient clipping wrapper for any TorchOpt optimizer
-  - `ClipBuffer` - Maintains clipping norm statistics with exponential moving average
-  - `LRScheduler` - Learning rate scaling based on clipping statistics
-  - Works with any TorchOpt optimizer (SGD, Adam, AdamW, etc.)
-  - Integration with functional clipping and accounting APIs
+  - `PoissonSampler` — Standard Poisson sampling for privacy amplification
+  - `TruncatedPoissonSampler` — Bounded batch sizes
+  - `CyclicPoissonSampling` — Cyclic Poisson for BandMF amplification
+- **Adaptive Clipping** (`opaque.clipping.adaptive`)
+  - `adaptive_clipped_grad()` — Adaptive gradient clipping with explicit state-passing
+  - `AdaptiveClipState` — Immutable state with sensitivity computation
+- **Privacy Auditing** (`opaque.auditing`)
+  - `setup()` / `evaluate()` convenience API
+  - `AuditResult` with epsilon estimation, AUROC, bootstrap confidence intervals
+  - `CoinFlipExperiment` for membership inference
+- **Memory Profiling** (`opaque.profiling`)
+  - `MemoryProfiler`, `profile_memory()`, `find_max_microbatch_size()`
+- **HuggingFace Compatibility** (`opaque.compat`)
+  - Auto-patching for vmap-compatible forward passes
+  - Supported: LLaMA, Mistral, Qwen2, Phi, OLMo, Gemma2
 
 ### Changed
 
 - **Modular Architecture**: Split clipping module into proper package structure
-  - `clipping/types.py` - Type definitions (`BoundedSensitivityCallable`, `AuxiliaryOutput`)
-  - `clipping/pytree.py` - Low-level PyTree clipping
-  - `clipping/clipped_fun.py` - Primary clipping API
-  - `clipping/clipped_grad.py` - Gradient clipping wrapper
-  - `clipping/_helpers.py` - Internal utilities
+  - `clipping/types.py` — Type definitions (`ClipState`, `FixedClipState`, `AdaptiveClipState`, auxiliary outputs)
+  - `clipping/pytree.py` — Low-level PyTree clipping
+  - `clipping/clipped_fun.py` — Primary clipping API
+  - `clipping/clipped_grad.py` — Gradient clipping wrapper
+  - `clipping/adaptive.py` — Adaptive clipping with explicit state
 - **API Organization**: Reorganized package exports for clarity
-  - Top-level exports: `clip_pytree`, `clipped_fun`, `clipped_grad`
-  - Submodule exports: `opaque.accounting`, `opaque.noise`, `opaque.sampling`, `opaque.optimizers`
+  - Top-level exports: `clip_pytree`, `clipped_fun`, `clipped_grad`, `adaptive_clipped_grad`
+  - Submodule exports: `opaque.accounting`, `opaque.noise`, `opaque.sampling`, `opaque.auditing`
 
 ### Tests
 
-- **111 tests passing** (55 accounting + 56 optimizer tests)
-- **Parallel execution** with pytest-xdist (~3.17x speedup, 12 workers)
-- **Accounting tests** (55 total):
-  - 13 composition tests
-  - 16 privacy query tests
-  - 21 calibration tests
-  - 5 JAX validation tests (cross-framework numerical equivalence)
-- **Optimizer tests** (56 total):
-  - 37 adaptive clipping tests
-  - 19 DP optimizer integration tests
-- **76% coverage** for accounting module
+- **458 tests passing** (108 auditing + 55 accounting + 56 optimizer + 239 other)
+- **Parallel execution** with pytest-xdist (~3.17x speedup)
+- Numerical equivalence with JAX-Privacy confirmed (atol=1e-5)
 
 ### Documentation
 

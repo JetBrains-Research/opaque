@@ -1,15 +1,21 @@
 """Opaque: Differentially Private Training for PyTorch.
 
 This package provides differentially private training utilities for PyTorch,
-inspired by JAX-Privacy. Includes standard DP-SGD as well as correlated noise
-mechanisms (BandMF, BLT, DP-FTRL) for improved utility.
+inspired by JAX-Privacy. Includes standard DP-SGD, correlated noise mechanisms
+(BandMF, BLT, DP-FTRL), and PLD-based privacy accounting.
 
-Note: Privacy accounting is provided by jbr-fed-accounting (external library).
+Key modules:
+
+- **opaque.clipping**: Per-example gradient clipping (clipped_grad, clipped_fun)
+- **opaque.noise**: Noise injection (gaussian_noise, band_mf_noise, etc.)
+- **opaque.accounting**: Privacy accounting via PLD (compositional API)
+- **opaque.sampling**: Batch sampling strategies (Poisson, truncated Poisson)
+- **opaque.auditing**: Empirical privacy auditing
 """
 
 import os
 
-from opaque import auditing, distributed, sampling
+from opaque import accounting, auditing, distributed, sampling
 from opaque.clipping import (
     AdaptiveClipState,
     ClipState,
@@ -77,6 +83,8 @@ __all__ = [
     "custom_mf_noise",
     "dense_mf_noise",
     "identity_mf_noise",
+    # Accounting
+    "accounting",
     # Auditing
     "auditing",
     # Distributed

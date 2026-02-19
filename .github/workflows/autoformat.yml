@@ -10,8 +10,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  autoformat:
-    name: Auto-format with Ruff
+  autoformat-python:
+    name: Auto-format Python (Ruff)
     runs-on: ubuntu-latest
 
     permissions:
@@ -69,3 +69,49 @@ jobs:
       - name: Fail if unfixable issues remain
         run: |
           uv run ruff check src/ tests/
+
+  autoformat-rust:
+    name: Auto-format Rust (fmt + clippy)
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Run cargo fmt
+        run: cargo fmt --manifest-path crates/dp-accounting/Cargo.toml
+
+      - name: Run clippy with autofixes
+        run: cargo clippy --manifest-path crates/dp-accounting/Cargo.toml --fix --allow-dirty || true
+
+      - name: Check for changes
+        id: git-check
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "changes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit and push changes
+        if: steps.git-check.outputs.changes == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add -A
+          git commit -m "Auto-format Rust with cargo fmt + clippy\n\n🦀 Automated formatting by GitHub Actions"
+          git push
+
+      - name: Fail if unfixable clippy warnings remain
+        run: cargo clippy --manifest-path crates/dp-accounting/Cargo.toml -- -D warnings

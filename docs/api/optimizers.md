@@ -1,43 +1,92 @@
-# DP Optimizers
+# Optimizers
 
-The `opaque.optimizers` module provides DP-aware optimizer wrappers that integrate with TorchOpt functional optimizers.
+Opaque does **not** bundle optimizers. Use [TorchOpt](https://torchopt.readthedocs.io/)
+functional optimizers for the parameter-update step.
 
-## Overview
+---
 
-DP optimization requires:
+## Why TorchOpt?
 
-1. Computing clipped per-example gradients
-2. Adding calibrated noise
-3. Updating parameters
+TorchOpt provides **functional** optimizers: no hidden mutable state, explicit
+`(updates, new_state) = optimizer.update(grads, state)` interface.  This matches
+Opaque's functional gradient pipeline (`clipped_grad → noise_fn → optimizer`).
 
-Opaque provides **adaptive clipping** that automatically tunes the clip norm during training, improving the
-privacy-utility tradeoff without weakening privacy guarantees.
+```python
+import torchopt
 
-**Key function**: `adaptive_clipping()` - Wrap any TorchOpt optimizer with adaptive clipping
+optimizer = torchopt.adam(lr=1e-3)
+opt_state = optimizer.init(params)
 
-**Features**:
+# Explicit state in, state out
+updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
+params = torchopt.apply_updates(params, updates)
+```
 
-- **Automatic clip norm tuning**: Tracks gradient statistics to adjust clipping
-- **Works with any TorchOpt optimizer**: SGD, Adam, AdamW, RMSprop, etc.
-- **Optional LR scaling**: Compensate for heavy clipping
-- **Same privacy**: No weakening of guarantees
+---
 
-**See also**: [Optimizers & Adaptive Clipping User Guide](../user-guide/optimizers.md)
+## Supported Optimizers
 
-<!-- TODO: Uncomment when optimizers module is implemented
-## Adaptive Clipping
+Any TorchOpt functional optimizer works. The most common choices for DP training:
 
-::: opaque.optimizers.adaptive
+### SGD
 
-## Supporting Classes
+```python
+optimizer = torchopt.sgd(lr=0.01, momentum=0.9)
+```
 
-::: opaque.optimizers.adaptive.clip_buffer
-options:
-members:
-- ClipBuffer
+### Adam
 
-::: opaque.optimizers.adaptive.lr_scheduler
-options:
-members:
-- LRScheduler
--->
+```python
+optimizer = torchopt.adam(lr=1e-3)
+```
+
+### AdamW
+
+```python
+optimizer = torchopt.adamw(lr=1e-3, weight_decay=0.01)
+```
+
+---
+
+## Complete Pattern
+
+```python
+import torchopt
+from opaque.clipping import clipped_grad
+from opaque.noise import gaussian_noise
+
+# Gradient pipeline
+grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=1)
+noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * 1.0)
+
+# Optimizer
+optimizer = torchopt.adam(lr=1e-3)
+opt_state = optimizer.init(params)
+
+for step in range(num_steps):
+    grads, clip_state = grad_fn(params, batch, state=clip_state)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
+    updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
+    params = torchopt.apply_updates(params, updates)
+```
+
+---
+
+## DDP Compatibility
+
+When using `torch.nn.parallel.DistributedDataParallel`, Opaque's functional
+gradient pipeline runs *inside* each rank.  DDP handles the all-reduce of noisy
+gradients across ranks.  No changes to the clipping, noise, or optimizer API are
+needed.
+
+Use `PoissonSampler(distributed=True)` or set `RANK`/`WORLD_SIZE` environment
+variables so that each rank samples from its shard of the dataset.
+
+---
+
+## See Also
+
+- [Gradient Clipping API](core/clipping.md) — includes `adaptive_clipped_grad()`
+- [Optimizers User Guide](../user-guide/optimizers.md)
+- [Tutorial 04: DP Optimizers](../tutorials/04_dp_optimizers.ipynb)
+- [TorchOpt Documentation](https://torchopt.readthedocs.io/)

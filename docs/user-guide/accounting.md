@@ -1,414 +1,288 @@
 # Privacy Accounting
 
-Privacy accounting is how we **track and query the privacy budget** consumed during DP training. Opaque uses a *
-*functional API** with immutable state for composable, principled privacy tracking.
+Privacy accounting tracks how much privacy budget is consumed during DP
+training. Opaque uses Privacy Loss Distributions (PLD) for tight composition
+bounds.
 
-## Why Accounting Matters
-
-Every time you train on data with DP-SGD, you "spend" some privacy budget. Once you've spent your budget (ε, δ), you
-cannot train more without weakening your privacy guarantee.
-
-**Privacy accounting answers**:
-
-- How much privacy have I spent so far?
-- How many more training steps can I afford?
-- What noise level do I need for my target privacy?
-
-## The Functional Accounting API
-
-Opaque's accounting uses **immutable state** and **pure functions**:
+## Quick Start
 
 ```python
 import opaque.accounting as acc
 
-# 1. Create initial state (immutable)
-privacy_state = acc.create()
-
-# 2. Compose privacy over training steps (returns NEW state)
-privacy_state = acc.compose_poisson_gaussian(
-    privacy_state,
-    noise_multiplier=1.2,
-    sample_rate=0.01,
-    count=100,  # 100 training steps
-)
-
-# 3. Query current privacy (pure function)
-epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
-print(f"Privacy spent: ε={epsilon:.2f}")
+step = acc.poisson(acc.gaussian(0.8), sample_rate=0.01)
+training = step * 1000
+eps = training.epsilon_at(delta=1e-5)
 ```
 
-### Key Principles
+## Core Concepts
 
-1. **Immutable state**: `compose_*()` functions return NEW states, don't modify existing
-2. **Pure functions**: Same inputs → same outputs, no side effects
-3. **Composable**: Chain multiple mechanisms naturally
+### DpProcess
 
-## Composition Functions
-
-### `compose_poisson_gaussian()`
-
-**Use when**: Training with Poisson sampling (batch size ≈ sample_rate × dataset_size)
+Every mechanism constructor returns a `DpProcess`. Composition operators
+produce new `DpProcess` instances. Privacy metrics are computed on demand
+from the underlying PLD.
 
 ```python
-privacy_state = acc.compose_poisson_gaussian(
-    privacy_state,
-    noise_multiplier=1.2,  # Noise stddev / clip_norm
-    sample_rate=32 / 10000,  # batch_size / dataset_size
-    count=1000,  # Number of training steps
-)
-```
-
-**Why Poisson?** Each example is sampled independently with probability `sample_rate`, providing **privacy amplification
-** through subsampling.
-
-### `compose_truncated_poisson_gaussian()` ⭐
-
-**Use when**: You want tight privacy bounds with bounded batch sizes
-
-```python
-privacy_state = acc.compose_truncated_poisson_gaussian(
-    privacy_state,
-    noise_multiplier=1.2,
-    sample_rate=32 / 10000,
-    truncated_batch_size=32,  # Maximum batch size
-    dataset_size=10000,
-    count=1000,
-)
-```
-
-**Advantage**: Tighter privacy bounds than standard Poisson (up to 20% improvement)!
-
-**When to use**: Always, unless you have a specific reason not to
-
-### `compose_sampled_gaussian()`
-
-**Use when**: Fixed batch sizes without Poisson sampling
-
-```python
-privacy_state = acc.compose_sampled_gaussian(
-    privacy_state,
-    noise_multiplier=1.2,
-    sample_rate=0.01,
-    count=1000,
-)
-```
-
-**Note**: Provides weaker privacy bounds than Poisson sampling
-
-### `compose_gaussian()`
-
-**Use when**: No sampling (e.g., processing entire dataset)
-
-```python
-privacy_state = acc.compose_gaussian(
-    privacy_state,
-    noise_multiplier=1.2,
-    count=1,
-)
-```
-
-**Rarely used** in practice since DP-SGD almost always uses sampling
-
-## Privacy Queries
-
-Opaque supports three privacy metrics. You can query any of them from the same privacy state!
-
-### 1. (ε, δ)-Differential Privacy
-
-The **standard metric** used in most DP papers:
-
-```python
-epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
-print(f"Privacy: (ε={epsilon:.2f}, δ=1e-5)")
-```
-
-**Interpretation**: Adding/removing any single person changes the model with probability ≤ e^ε with probability 1-δ
-
-**Typical values**:
-
-- Strong privacy: ε ≤ 1
-- Moderate privacy: ε ∈ [1, 3]
-- Weak privacy: ε > 10
-
-### 2. f-DP Advantage
-
-A **tighter bound** than (ε, δ)-DP, from [Dong et al. 2019](https://arxiv.org/abs/1905.02383):
-
-```python
-advantage = acc.get_advantage(privacy_state)
-print(f"f-DP advantage: {advantage:.4f}")
-```
-
-**Interpretation**: Maximum advantage in distinguishing neighboring datasets
-
-**Advantage**: Can be 10-30% tighter than ε for same noise level
-
-### 3. (α, β) Error Rates
-
-**Hypothesis testing** interpretation:
-
-```python
-beta = acc.get_beta(privacy_state, alpha=0.01)
-print(f"Error rates: (α={0.01}, β={beta:.3f})")
-```
-
-**Interpretation**:
-
-- α: Probability of false positive (detecting person when not present)
-- β: Probability of false negative (missing person when present)
-
-## Calibration: Finding the Right Noise
-
-Instead of guessing noise levels, **calibrate** to find the minimum noise for your target privacy:
-
-### Calibrate for (ε, δ)
-
-```python
-noise_multiplier = acc.find_noise_multiplier_for_epsilon_delta(
-    epsilon=3.0,  # Target privacy
-    delta=1e-5,  # Failure probability
-    sample_rate=32 / 10000,
-    num_steps=1000,
-)
-
-print(f"Use noise multiplier: {noise_multiplier:.3f}")
-```
-
-### Calibrate for Advantage
-
-```python
-noise_multiplier = acc.find_noise_multiplier_for_advantage(
-    advantage=0.1,  # Target advantage
-    sample_rate=0.01,
-    num_steps=1000,
-)
-```
-
-### Calibrate for Error Rates
-
-```python
-noise_multiplier = acc.find_noise_multiplier_for_err_rates(
-    alpha=1e-4,  # False positive rate
-    beta=0.8,  # True positive rate (1 - power)
-    sample_rate=0.01,
-    num_steps=1000,
-)
-```
-
-## Complete Training Example
-
-Here's a full DP-SGD training loop with accounting:
-
-```python
-import torch
 import opaque.accounting as acc
-from opaque import clipped_grad, gaussian_noise
 
-# Setup
-clip_norm = 1.0
-batch_size = 32
-dataset_size = 10000
-sample_rate = batch_size / dataset_size
-target_epsilon = 3.0
-target_delta = 1e-5
-num_epochs = 10
-steps_per_epoch = dataset_size // batch_size
-num_steps = num_epochs * steps_per_epoch
-
-# Calibrate noise
-noise_multiplier = acc.find_noise_multiplier_for_epsilon_delta(
-    epsilon=target_epsilon,
-    delta=target_delta,
-    sample_rate=sample_rate,
-    num_steps=num_steps,
+# Mechanism constructors
+g = acc.gaussian(0.8)
+p = acc.poisson(acc.gaussian(0.8), 0.01)
+tp = acc.truncated_poisson(
+    acc.gaussian(0.8), 0.01, batch_size_cap=100, dataset_size=10000
 )
 
-# Create DP gradient function
-dp_grad_fn = clipped_grad(loss_fn, l2_clip_norm=clip_norm, ...)
+# Composition
+training = p * 1000
+combined = acc.gaussian(0.3) | acc.gaussian(0.5)
 
-# Initialize noise and privacy state
-noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_norm)
-privacy_state = acc.create()
-
-# Training loop
-for epoch in range(num_epochs):
-    for batch in dataloader:
-        # Compute noisy gradients
-        grads = dp_grad_fn(params, batch)
-        noisy_grads, noise_state = noise_fn(grads, noise_state)
-
-        # Update parameters
-        params = update(params, noisy_grads)
-
-        # Update privacy accounting
-        privacy_state = acc.compose_poisson_gaussian(
-            privacy_state,
-            noise_multiplier=noise_multiplier,
-            sample_rate=sample_rate,
-            count=1,
-        )
-
-    # Check privacy at end of each epoch
-    current_epsilon = acc.get_epsilon(privacy_state, delta=target_delta)
-    print(f"Epoch {epoch+1}: ε={current_epsilon:.2f}/{target_epsilon:.2f}")
-
-# Verify final privacy
-final_epsilon = acc.get_epsilon(privacy_state, delta=target_delta)
-assert final_epsilon <= target_epsilon + 0.1, "Privacy budget exceeded!"
-print(f"Training complete! Final privacy: (ε={final_epsilon:.2f}, δ={target_delta})")
+# Privacy metrics (all derived from the same PLD)
+eps = training.epsilon_at(1e-5)
+delta = training.delta_at(1.0)
+adv = training.advantage()
+beta = training.beta_at(0.05)
+risk = training.risk_at(0.5)
 ```
 
-## Privacy Composition Basics
+### Composition Operators
 
-Privacy degrades as you train more:
+| Operator     | Description                     | Equivalent             |
+|--------------|---------------------------------|------------------------|
+| `proc * k`   | Repeat k times (homogeneous)   | `acc.repeat(proc, k)`  |
+| `a \| b`     | Compose two processes           | `acc.compose(a, b)`    |
 
 ```python
-# After 100 steps
-privacy_state = acc.compose_poisson_gaussian(state, noise=1.2, rate=0.01, count=100)
-epsilon_100 = acc.get_epsilon(privacy_state, delta=1e-5)  # ε ≈ 0.3
+step = acc.poisson(acc.gaussian(0.5), 0.01)
 
-# After 1000 steps
-privacy_state = acc.compose_poisson_gaussian(state, noise=1.2, rate=0.01, count=1000)
-epsilon_1000 = acc.get_epsilon(privacy_state, delta=1e-5)  # ε ≈ 3.0
+# Homogeneous
+training = step * 1000
 
-# After 10000 steps
-privacy_state = acc.compose_poisson_gaussian(state, noise=1.2, rate=0.01, count=10000)
-epsilon_10000 = acc.get_epsilon(privacy_state, delta=1e-5)  # ε ≈ 30.0
+# Heterogeneous (multi-phase)
+warmup = acc.poisson(acc.gaussian(0.3), 0.01) * 100
+main = acc.poisson(acc.gaussian(0.5), 0.01) * 900
+total = warmup | main
 ```
 
-!!! warning "Privacy degrades with training"
-More training steps → higher ε → weaker privacy. Plan your training budget carefully!
+## Mechanisms
+
+### `acc.poisson()` -- Standard DP-SGD
+
+Poisson-subsampled Gaussian mechanism. Each example is included independently
+with probability `sample_rate`. This provides privacy amplification through
+subsampling.
+
+```python
+step = acc.poisson(acc.gaussian(0.8), sample_rate=256 / 50_000)
+training = step * 1000
+eps = training.epsilon_at(1e-5)
+```
+
+### `acc.truncated_poisson()` -- Bounded Batch Size
+
+Tighter privacy bounds than standard Poisson by capping the batch size.
+Gives up to 20% improvement in epsilon.
+
+```python
+n = 50_000
+batch = 256
+step = acc.truncated_poisson(
+    acc.gaussian(0.8), batch / n, batch_size_cap=batch, dataset_size=n
+)
+training = step * 1000
+```
+
+### `acc.gaussian()` -- No Sampling
+
+Gaussian mechanism without subsampling. Rarely used directly since DP-SGD
+almost always uses Poisson sampling.
+
+```python
+proc = acc.gaussian(0.5)
+eps = proc.epsilon_at(1e-5)
+```
+
+### `acc.accumulate()` -- Gradient Accumulation
+
+Microbatching: process gradients in sub-batches, accumulate clipped gradients,
+add noise once.
+
+```python
+step = acc.accumulate(
+    acc.poisson(acc.gaussian(0.5), 0.01),
+    microbatches=4,
+)
+```
+
+### `acc.adaclip()` -- Adaptive Clipping
+
+Accounts for the extra privacy cost of noisy quantile estimation (Andrew et
+al. 2021). Returns a Gaussian with reduced effective noise multiplier.
+
+```python
+step = acc.poisson(
+    acc.adaclip(acc.gaussian(0.5), quantile_noise_std=1.0),
+    sample_rate=0.01,
+)
+```
+
+### `acc.eps_delta()` -- Fixed Guarantee
+
+Compose an external mechanism with known (epsilon, delta) into the privacy
+process tree.
+
+```python
+external = acc.eps_delta(1.0, delta=1e-5)
+total = external | (acc.poisson(acc.gaussian(0.5), 0.01) * 1000)
+```
+
+## Privacy Metrics
+
+All metrics are computed from the same PLD. No redundant computation.
+
+| Method              | Metric                        |
+|---------------------|-------------------------------|
+| `epsilon_at(delta)` | (epsilon, delta)-DP           |
+| `delta_at(epsilon)` | delta for given epsilon        |
+| `advantage()`       | f-DP total-variation advantage |
+| `beta_at(alpha)`    | Type-II error at given alpha   |
+| `risk_at(prior)`    | Bayes risk                     |
+
+```python
+proc = acc.poisson(acc.gaussian(0.5), 0.01) * 1000
+eps = proc.epsilon_at(1e-5)
+adv = proc.advantage()
+beta = proc.beta_at(alpha=0.01)
+```
+
+## Accountant
+
+The `Accountant` class tracks accumulated privacy loss across a training loop.
+Each compose operation returns a new `Accountant` (the original is unchanged).
+
+```python
+import opaque.accounting as acc
+
+step = acc.poisson(acc.gaussian(0.5), 0.01)
+acct = acc.Accountant()
+
+for i in range(num_steps):
+    acct = acct | step
+    if i % 100 == 0:
+        eps = acct.epsilon_at(1e-5)
+        print(f"Step {i}: eps={eps:.2f}")
+```
+
+### Budget Tracking
+
+Pass a calibration budget to enable automatic budget checking:
+
+```python
+from opaque.accounting import calibration as cal
+
+budget = cal.epsilon_budget(3.0, delta=1e-5)
+acct = acc.Accountant(budget=budget)
+step = acc.poisson(acc.gaussian(0.5), 0.01)
+
+for i in range(num_steps):
+    acct = acct | step
+    if acct.budget_exceeded:
+        print(f"Budget exhausted at step {i}")
+        break
+```
+
+### Multi-Phase Training
+
+Compose different phases in a single accounting session:
+
+```python
+acct = acc.Accountant()
+
+warmup_step = acc.poisson(acc.gaussian(0.3), 0.01)
+for _ in range(100):
+    acct = acct | warmup_step
+
+main_step = acc.poisson(acc.gaussian(0.5), 0.01)
+for _ in range(900):
+    acct = acct | main_step
+
+eps = acct.epsilon_at(1e-5)
+```
+
+## Calibration
+
+Find the noise multiplier (or any other parameter) that achieves a target
+privacy budget:
+
+```python
+from opaque.accounting import calibration as cal
+
+result = cal.calibrate(
+    cal.epsilon_budget(3.0, delta=1e-5),
+    lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000,
+    param_min=0.1,
+    param_max=5.0,
+)
+noise_multiplier = result.param
+```
+
+Calibrate sample rate instead:
+
+```python
+result = cal.calibrate(
+    cal.epsilon_budget(3.0, delta=1e-5),
+    lambda q: acc.poisson(acc.gaussian(0.5), sample_rate=q) * 1000,
+    param_min=1e-4,
+    param_max=0.1,
+)
+```
+
+### Budget Types
+
+| Factory                          | Metric                  | Decreasing with noise |
+|----------------------------------|-------------------------|-----------------------|
+| `cal.epsilon_budget(eps, delta)` | epsilon at given delta  | Yes                   |
+| `cal.delta_budget(delta, eps)`   | delta at given epsilon  | Yes                   |
+| `cal.advantage_budget(adv)`      | f-DP advantage          | Yes                   |
+| `cal.beta_budget(beta, alpha)`   | Type-II error           | No                    |
+| `cal.risk_budget(risk, prior)`   | Bayes risk              | No                    |
+
+"Decreasing with noise" indicates whether the metric decreases as the
+calibrated parameter (typically noise multiplier) increases. The binary search
+direction adapts automatically.
 
 ## Privacy Amplification Through Sampling
 
-Subsampling **amplifies privacy** — you get stronger guarantees for the same noise:
+Subsampling amplifies privacy -- the same noise gives stronger guarantees:
 
 ```python
-# No sampling (full batch)
-state_full = acc.compose_gaussian(state, noise_multiplier=1.0, count=100)
-eps_full = acc.get_epsilon(state_full, delta=1e-5)  # ε ≈ 15
-
-# With sampling (sample_rate=0.01)
-state_sample = acc.compose_poisson_gaussian(state, noise=1.0, rate=0.01, count=100)
-eps_sample = acc.get_epsilon(state_sample, delta=1e-5)  # ε ≈ 0.1
-
-print(f"Full batch: ε={eps_full:.1f}")
-print(f"Sampled: ε={eps_sample:.1f}")  # 150x better!
+eps_full = acc.gaussian(0.5).epsilon_at(1e-5)
+eps_sampled = acc.poisson(acc.gaussian(0.5), 0.01).epsilon_at(1e-5)
+print(f"Full batch: eps={eps_full:.2f}")
+print(f"Sampled:    eps={eps_sampled:.4f}")
 ```
 
-**Key insight**: Larger batches (higher sample rate) provide less amplification but enable more stable training.
+Lower sample rates provide more amplification but may require more training
+steps.
 
-## Monitoring Privacy During Training
+## Custom Precision
 
-Track privacy consumption in real-time:
+Override default PLD discretization for faster or more precise computation:
 
 ```python
-noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_norm)
-privacy_state = acc.create()
-
-for step in range(num_steps):
-    # Training step
-    grads = dp_grad_fn(params, batch)
-    noisy_grads, noise_state = noise_fn(grads, noise_state)
-    params = update(params, noisy_grads)
-
-    # Update privacy
-    privacy_state = acc.compose_poisson_gaussian(
-        privacy_state, noise_multiplier=noise_multiplier, sample_rate=sample_rate, count=1
-    )
-
-    # Log every 100 steps
-    if step % 100 == 0:
-        eps = acc.get_epsilon(privacy_state, delta=1e-5)
-        advantage = acc.get_advantage(privacy_state)
-        print(f"Step {step}: ε={eps:.2f}, advantage={advantage:.4f}")
-
-        # Early stop if budget exceeded
-        if eps > target_epsilon:
-            print(f"Privacy budget exceeded at step {step}!")
-            break
+cfg = acc.DiscretizationConfig(discretization=1e-3)  # faster, coarser
+proc = acc.gaussian(0.5, discretization=cfg)
 ```
 
-## Understanding δ (Delta)
-
-δ is the **failure probability** — the probability that privacy guarantee fails:
-
-**Typical values**:
-
-- δ = 1/n (inverse of dataset size)
-- δ = 1/n² (more conservative)
-- δ = 1e-5 or 1e-6 (fixed small value)
-
-**Guideline**: Set δ much smaller than 1/dataset_size
-
-```python
-dataset_size = 10000
-delta = 1 / dataset_size  # δ = 1e-4
-# Or more conservatively:
-delta = 1 / (dataset_size ** 2)  # δ = 1e-8
-```
-
-## Best Practices
-
-### 1. Always Calibrate Noise
-
-!!! success "Use calibration functions"
-Don't guess noise multipliers! Use `find_noise_multiplier_for_epsilon_delta()`.
-
-### 2. Monitor Privacy During Training
-
-```python
-if step % 100 == 0:
-    current_eps = acc.get_epsilon(privacy_state, delta)
-    if current_eps > target_epsilon * 1.1:  # 10% buffer
-        raise RuntimeError("Privacy budget exceeded!")
-```
-
-### 3. Use Truncated Poisson When Possible
-
-```python
-# Tighter bounds (preferred)
-privacy_state = acc.compose_truncated_poisson_gaussian(
-    privacy_state, noise, rate, truncated_batch_size, dataset_size, count
-)
-
-# vs standard Poisson
-privacy_state = acc.compose_poisson_gaussian(privacy_state, noise, rate, count)
-```
-
-### 4. Query Multiple Metrics
-
-```python
-# Compare different privacy metrics
-epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
-advantage = acc.get_advantage(privacy_state)
-beta = acc.get_beta(privacy_state, alpha=1e-4)
-
-print(f"(ε, δ)-DP: (ε={epsilon:.2f}, δ=1e-5)")
-print(f"f-DP advantage: {advantage:.4f}")
-print(f"Error rates: (α=1e-4, β={beta:.3f})")
-```
-
-## Comparison with OOP Accountants
-
-Opaque v0.1.0 used OOP accountants (`PLDAccountant`, `RDPAccountant`). The functional API is now **preferred**:
-
-| Feature           | OOP API (deprecated)            | Functional API (current)                           |
-|-------------------|---------------------------------|----------------------------------------------------|
-| **State**         | Mutable object                  | Immutable                                          |
-| **Composition**   | `accountant.step_poisson(...)`  | `state = acc.compose_poisson_gaussian(state, ...)` |
-| **Queries**       | `accountant.get_epsilon(delta)` | `acc.get_epsilon(state, delta)`                    |
-| **Immutability**  | ❌ Modifies object               | ✅ Returns new state                                |
-| **Concurrency**   | ⚠️ Not thread-safe              | ✅ Thread-safe                                      |
-| **Composability** | ⚠️ Limited                      | ✅ Highly composable                                |
+| Parameter                   | Default      | Description                          |
+|-----------------------------|--------------|--------------------------------------|
+| `discretization`            | `1e-4`       | Grid spacing. Error scales as O(d^2) |
+| `log_mass_truncation_bound` | `-32.0`      | Tails below 2^bound are truncated    |
+| `pessimistic_estimate`      | `True`       | Upper-bound rounding (safe)          |
+| `max_grid_size`             | `10_000_000` | Auto-coarsen if grid exceeds this    |
 
 ## See Also
 
-- **[Tutorial 02](../tutorials/02_differential_privacy_noise_and_accounting.ipynb)**: Interactive accounting tutorial
-- **[Tutorial 03](../tutorials/03_complete_dp_sgd_training.ipynb)**: Complete DP-SGD with accounting
-- **[API Reference](../api/accounting.md)**: Detailed function documentation
-- **[Noise Addition](noise.md)**: How noise and accounting work together
-
----
-
-**Next**: Explore [Optimizers & Adaptive Clipping](optimizers.md) for better utility
+- [API Reference: Accounting](../api/accounting.md)
+- [Tutorial 02: Noise and Accounting](../tutorials/02_differential_privacy_noise_and_accounting.ipynb)
+- [Tutorial 03: Complete DP-SGD](../tutorials/03_complete_dp_sgd_training.ipynb)
+- [Noise Addition](noise.md)

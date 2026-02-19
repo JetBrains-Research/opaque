@@ -12,6 +12,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  test-rust:
+    name: Rust Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run Rust tests
+        run: cargo test --manifest-path crates/dp-accounting/Cargo.toml
+
   test-core:
     name: Core Tests - Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
@@ -38,9 +52,9 @@ jobs:
         run: |
           uv sync --group dev
 
-      - name: Run core tests (clipping, noise, sampling, utils, profiling)
+      - name: Run core tests
         run: |
-          uv run pytest tests/clipping tests/noise tests/sampling tests/utils tests/profiling --cov=opaque --cov-report=xml --cov-report=term
+          uv run pytest tests/clipping tests/noise tests/sampling tests/utils tests/profiling tests/auditing tests/matrix_factorization tests/test_dp_ftrl.py --cov=opaque --cov-report=xml --cov-report=term
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -50,8 +64,49 @@ jobs:
           name: codecov-core-py${{ matrix.python-version }}
           fail_ci_if_error: false
 
-  test-compat-gpu:
-    name: Compat Tests (GPU) - Python ${{ matrix.python-version }}
+  test-accounting:
+    name: Accounting Tests - Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ "3.11", "3.12" ]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          uv sync --group dev --group cross-validation
+
+      - name: Run accounting tests (including cross-validation)
+        run: |
+          uv run pytest tests/accounting -m "not slow" --cov=opaque --cov-report=xml --cov-report=term
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          flags: accounting
+          name: codecov-accounting-py${{ matrix.python-version }}
+          fail_ci_if_error: false
+
+  test-hf-gpu:
+    name: HF Ecosystem Tests (GPU) - Python ${{ matrix.python-version }}
     runs-on: GPU-runner-001
     if: github.event_name == 'push' || github.event.pull_request.draft == false
     strategy:
@@ -78,7 +133,7 @@ jobs:
         run: |
           uv sync --group dev --group test
 
-      - name: Run all compat tests (including GPU-specific)
+      - name: Run HF ecosystem tests (including GPU-specific)
         run: |
           uv run pytest tests/compat tests/validation --cov=opaque --cov-report=xml --cov-report=term
 
@@ -86,8 +141,8 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
-          flags: compat-gpu
-          name: codecov-compat-gpu-py${{ matrix.python-version }}
+          flags: hf-gpu
+          name: codecov-hf-gpu-py${{ matrix.python-version }}
           fail_ci_if_error: false
 
   build:

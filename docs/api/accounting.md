@@ -1,35 +1,387 @@
-# Privacy Accounting
+# opaque.accounting
 
-The `opaque.accounting` module provides a functional API for tracking and querying privacy budgets during DP training.
+Differential privacy accounting using Privacy Loss Distributions (PLD).
 
-## Overview
+This module provides a compositional API for tracking privacy guarantees.
+Mechanism constructors return `DpProcess` objects that compose with `*` (repeat)
+and `|` (heterogeneous compose). Privacy metrics are queried directly on the
+resulting process.
 
-Privacy accounting tracks how privacy degrades across training steps. Opaque uses:
+```python
+import opaque.accounting as acc
 
-- **Immutable state**: Privacy state is never modified, only new states created
-- **Functional composition**: Pure functions compose privacy guarantees
-- **Multiple metrics**: Query (ε, δ)-DP, f-DP advantage, or (α, β) error rates
-- **Tight bounds**: Privacy Loss Distribution (PLD) accounting for optimal bounds
+step = acc.poisson(acc.gaussian(0.8), sample_rate=0.01)
+training = step * 1000
+epsilon = training.epsilon_at(1e-5)
+```
 
-**Key functions**:
-
-- `create()` - Initialize privacy state
-- `compose_*()` - Compose privacy over training steps
-- `get_*()` - Query privacy guarantees
-- `find_noise_multiplier_for_*()` - Calibrate noise for target privacy
+The underlying implementation uses Google's PLD accounting via the
+`opaque-accounting` Rust crate (PyO3 bindings).
 
 **See also**: [Privacy Accounting User Guide](../user-guide/accounting.md)
 
-<!-- TODO: Uncomment when accounting module is implemented
+---
+
+## Classes
+
+### `DpProcess`
+
+Abstract base class for all privacy processes. Subclasses implement `pld()` to
+compute the Privacy Loss Distribution on demand. Each call recomputes; use
+[`cached()`](#cached) for memoization.
+
+**Privacy metrics:**
+
+| Method               | Returns                                         |
+|----------------------|-------------------------------------------------|
+| `epsilon_at(delta)`  | Smallest epsilon achieving (epsilon, delta)-DP   |
+| `delta_at(epsilon)`  | Smallest delta achieving (epsilon, delta)-DP     |
+| `advantage()`        | Total-variation advantage (f-DP)                 |
+| `beta_at(alpha)`     | Type-II error at given Type-I error alpha        |
+| `risk_at(prior)`     | Bayes risk under optimal adversary               |
+
+**Composition operators:**
+
+| Operator     | Description                                  | Equivalent             |
+|--------------|----------------------------------------------|------------------------|
+| `proc * k`   | Homogeneous k-fold composition (repeat)      | `acc.repeat(proc, k)`  |
+| `k * proc`   | Same (reflected multiply)                    | `acc.repeat(proc, k)`  |
+| `a \| b`     | Heterogeneous composition                    | `acc.compose(a, b)`    |
+
+Composition is optimized at construction time: identical steps are collapsed
+via structural equality, nested repeats are flattened, and identity processes
+are elided. Composing the same step in a loop produces a single `Repeated` node
+with one `self_compose` call (2 FFTs), not `n` heterogeneous composes.
+
+```python
+step = acc.poisson(acc.gaussian(0.5), 0.01)
+
+# Homogeneous composition
+training = step * 1000
+
+# Heterogeneous composition (multi-phase)
+phase1 = acc.poisson(acc.gaussian(0.5), 0.01) * 500
+phase2 = acc.poisson(acc.gaussian(0.3), 0.01) * 500
+total = phase1 | phase2
+
+eps = total.epsilon_at(1e-5)
+```
+
+### `DiscretizationConfig`
+
+Controls PLD discretization precision.
+
+| Parameter                   | Default      | Description                                      |
+|-----------------------------|--------------|--------------------------------------------------|
+| `discretization`            | `1e-4`       | Grid spacing for PLD PMF. Error scales as O(d^2) |
+| `log_mass_truncation_bound` | `-50`        | Tails below exp(bound) are truncated             |
+| `pessimistic_estimate`      | `True`       | Round upward for safe upper bounds               |
+| `max_grid_size`             | `10_000_000` | Coarsen grid if it exceeds this many bins        |
+
+```python
+cfg = acc.DiscretizationConfig(discretization=1e-3)
+proc = acc.gaussian(0.8, discretization=cfg)
+```
+
+**Module-level discretization defaults:**
+
+- `acc.set_discretization(discretization=1e-4, ...)` -- Set default config for
+  all mechanism constructors when `discretization=None`.
+- `acc.get_discretization()` -- Return current default `DiscretizationConfig` or `None`.
+
+---
+
+## Mechanism Functions
+
+All mechanism constructors return a `DpProcess`. They validate inputs and
+resolve discretization config from the module default when not specified.
+
+### `gaussian(noise_multiplier, *, discretization=None) -> DpProcess`
+
+Gaussian mechanism with noise multiplier sigma. Adds noise N(0, sigma^2) to
+sensitivity-1 queries. Base mechanism for DP-SGD.
+
+- `noise_multiplier` (float): Ratio of noise std to sensitivity. Larger = more private.
+- `discretization` (float | DiscretizationConfig | None): PLD precision config (keyword-only).
+
+### `poisson(inner, sample_rate) -> DpProcess`
+
+Poisson-subsampled Gaussian mechanism (standard DP-SGD step). `inner` must be
+a `Gaussian` process. `sample_rate` is `batch_size / dataset_size`.
+
+- `inner` (Gaussian): Base Gaussian mechanism (from `gaussian()`)
+- `sample_rate` (float): Probability of including each example, in (0, 1]
+
+```python
+step = acc.poisson(acc.gaussian(0.5), sample_rate=256 / 50_000)
+```
+
+### `truncated_poisson(inner, sample_rate, batch_size_cap, dataset_size) -> DpProcess`
+
+Truncated Poisson sampling with capped batch size. Gives tighter privacy bounds
+than standard Poisson subsampling. Use this for production DP-SGD with a fixed
+batch size limit.
+
+- `inner` (Gaussian): Base Gaussian mechanism (from `gaussian()`)
+- `sample_rate` (float): Expected sampling rate
+- `batch_size_cap` (int): Maximum batch size
+- `dataset_size` (int): Total dataset size
+
+```python
+n = 50_000
+batch = 256
+step = acc.truncated_poisson(acc.gaussian(0.8), batch / n, batch, n)
+```
+
+### `accumulate(inner, microbatches) -> DpProcess`
+
+Gradient accumulation (microbatching). Processes gradients in `microbatches`
+sub-batches, accumulates clipped gradients, then adds noise once. `inner` must
+be a `Poisson` process.
+
+- `inner` (Poisson): Poisson-subsampled process (from `poisson()`)
+- `microbatches` (int): Number of micro-batches per step
+
+```python
+step = acc.accumulate(
+    acc.poisson(acc.gaussian(0.5), 0.01),
+    microbatches=4,
+)
+```
+
+### `adaclip(inner, quantile_noise_std) -> DpProcess`
+
+Adaptive clipping (Andrew et al. 2021). Accounts for the extra privacy cost of
+noisy quantile estimation using the combined sensitivity formula. Returns a
+`Gaussian` with the effective (reduced) noise multiplier, composable with
+`poisson()` or `truncated_poisson()`.
+
+- `inner` (Gaussian): Base Gaussian mechanism (from `gaussian()`)
+- `quantile_noise_std` (float): Noise std for quantile estimation. Larger = more private quantile, less accurate clipping.
+
+```python
+step = acc.poisson(acc.adaclip(acc.gaussian(0.5), quantile_noise_std=50.0), 0.01)
+```
+
+### `eps_delta(epsilon, delta=0.0, *, discretization=None) -> DpProcess`
+
+Fixed (epsilon, delta)-DP guarantee. Useful for composing an external mechanism
+with known privacy parameters into tracked processes.
+
+- `epsilon` (float): Privacy parameter (>= 0)
+- `delta` (float): Failure probability (default 0.0)
+- `discretization` (float | DiscretizationConfig | None): PLD precision config (keyword-only).
+
+```python
+external = acc.eps_delta(3.0, 1e-5)
+total = external | (acc.poisson(acc.gaussian(0.5), 0.01) * 1000)
+```
+
+### `identity(*, discretization=None) -> DpProcess`
+
+Identity mechanism (zero privacy loss). Acts as the identity element in
+composition: `identity() | a` returns `a`.
+
+- `discretization` (float | DiscretizationConfig | None): PLD precision config (keyword-only).
+
+---
+
 ## Composition Functions
 
-::: opaque.accounting.composition
+Functional equivalents of the `*` and `|` operators. Most users should prefer
+the operator syntax.
 
-## Privacy Queries
+### `repeat(process, count) -> DpProcess`
 
-::: opaque.accounting.queries
+Homogeneous k-fold composition. Equivalent to `process * count`.
 
-## Calibration Functions
+### `compose(left, right) -> DpProcess`
 
-::: opaque.accounting.calibration
--->
+Heterogeneous two-process composition. Equivalent to `left | right`.
+
+### `cached(process) -> DpProcess`
+
+Wraps a process so its PLD is computed once on first access and cached for all
+subsequent metric queries. Also acts as an opaque merge barrier: the composition
+optimizer will not look through a cached node.
+
+```python
+training = acc.cached(acc.poisson(acc.gaussian(0.5), 0.01) * 1000)
+eps = training.epsilon_at(1e-5)   # PLD computed here, cached
+adv = training.advantage()         # reuses cached PLD
+```
+
+---
+
+## Accountant
+
+The `Accountant` class tracks accumulated privacy loss across a training loop.
+It provides a functional API: composing a new process returns a fresh
+`Accountant` (the original is not modified).
+
+Merge optimization is automatic. Composing the same `step` repeatedly in a loop
+produces a single `Repeated` node internally.
+
+```python
+acct = acc.Accountant()
+step = acc.poisson(acc.gaussian(0.5), 0.01)
+
+for i in range(num_steps):
+    acct = acct | step
+
+    if i % 100 == 0:
+        eps = acct.epsilon_at(1e-5)
+        print(f"Step {i}: eps={eps:.2f}")
+```
+
+### Budget tracking
+
+Pass an optional `Budget` from the calibration module to enable budget checking:
+
+```python
+from opaque.accounting import calibration as cal
+
+budget = cal.epsilon_budget(3.0, delta=1e-5)
+acct = acc.Accountant(budget=budget)
+step = acc.poisson(acc.gaussian(0.5), 0.01)
+
+for i in range(num_steps):
+    acct = acct | step
+    if acct.budget_exceeded:
+        print("Privacy budget exhausted.")
+        break
+```
+
+**Methods:** `epsilon_at(delta)`, `delta_at(epsilon)`, `advantage()`,
+`beta_at(alpha)`, `risk_at(prior)`, `budget_exceeded` (property).
+
+---
+
+## Calibration
+
+Submodule: `opaque.accounting.calibration`
+
+```python
+from opaque.accounting import calibration as cal
+```
+
+Binary search for finding parameter values that achieve a target privacy budget.
+
+### `calibrate(budget, process, param_min, param_max, tolerance=1e-6, max_iterations=100) -> CalibrateResult`
+
+Binary search for a parameter value such that `process(param)` produces a
+`DpProcess` achieving the given privacy budget.
+
+| Parameter        | Default | Description                                              |
+|------------------|---------|----------------------------------------------------------|
+| `budget`         |         | A `Budget` object from a budget factory (see below)      |
+| `process`        |         | Callable: `float -> DpProcess`                           |
+| `param_min`      |         | Lower bound for search                                   |
+| `param_max`      |         | Upper bound for search                                   |
+| `tolerance`      | `1e-6`  | Convergence threshold on `abs(achieved - target)`        |
+| `max_iterations` | `100`   | Maximum binary search iterations                         |
+
+The `process` callable takes a single float parameter and returns a `DpProcess`.
+The default parameter range is tuned for noise_multiplier search, but
+`calibrate()` is general: it can calibrate any float parameter in a process
+against any budget.
+
+```python
+import opaque.accounting as acc
+from opaque.accounting import calibration as cal
+
+budget = cal.epsilon_budget(3.0, delta=1e-5)
+result = cal.calibrate(
+    budget,
+    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000,
+    param_min=0.1,
+    param_max=5.0,
+)
+print(f"noise_multiplier = {result.param:.4f}, epsilon = {result.achieved:.6f}")
+```
+
+Calibrating a different parameter (e.g., sample rate):
+
+```python
+result = cal.calibrate(
+    cal.epsilon_budget(3.0, delta=1e-5),
+    lambda q: acc.poisson(acc.gaussian(0.5), sample_rate=q) * 1000,
+    param_min=1e-4,
+    param_max=0.1,
+)
+```
+
+Multi-phase training:
+
+```python
+result = cal.calibrate(
+    cal.epsilon_budget(5.0, delta=1e-5),
+    lambda nm: (
+        acc.poisson(acc.gaussian(nm), 0.01) * 500
+        | acc.poisson(acc.gaussian(nm * 0.8), 0.01) * 500
+        | acc.poisson(acc.gaussian(nm * 0.5), 0.01) * 500
+    ),
+    param_min=0.2,
+    param_max=3.0,
+    tolerance=0.01,
+)
+```
+
+### `CalibrateResult`
+
+Returned by `calibrate()`.
+
+| Attribute   | Type    | Description                                      |
+|-------------|---------|--------------------------------------------------|
+| `param`     | `float` | Found parameter value                            |
+| `achieved`  | `float` | Achieved metric value at `param`                 |
+| `target`    | `float` | Target metric value                              |
+| `iterations`| `int`   | Number of binary search iterations               |
+| `converged` | `bool`  | Whether convergence was reached within tolerance |
+
+### Budget Factories
+
+Budget factories create `Budget` objects that define what privacy metric to
+optimize and what value to achieve.
+
+| Factory                             | Metric being calibrated                 | Decreasing with noise |
+|-------------------------------------|-----------------------------------------|-----------------------|
+| `cal.epsilon_budget(eps, delta)`    | epsilon at given delta                  | Yes                   |
+| `cal.delta_budget(delta, epsilon)`  | delta at given epsilon                  | Yes                   |
+| `cal.advantage_budget(advantage)`   | f-DP total-variation advantage          | Yes                   |
+| `cal.beta_budget(beta, alpha)`      | Type-II error at given Type-I error     | No                    |
+| `cal.risk_budget(risk, prior)`      | Bayes risk under optimal adversary      | No                    |
+
+"Decreasing with noise" indicates whether the metric decreases as the
+calibrated parameter (typically noise_multiplier) increases. The binary search
+adapts direction automatically based on the budget's `decreasing` property.
+
+```python
+# (epsilon, delta)-DP
+result = cal.calibrate(
+    cal.epsilon_budget(3.0, delta=1e-5),
+    lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000,
+    0.1, 5.0,
+)
+
+# f-DP advantage
+result = cal.calibrate(
+    cal.advantage_budget(0.1),
+    lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000,
+    0.2, 3.0,
+)
+
+# (alpha, beta) error rates
+result = cal.calibrate(
+    cal.beta_budget(0.05, alpha=0.01),
+    lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000,
+    0.2, 3.0,
+)
+
+# Bayes risk
+result = cal.calibrate(
+    cal.risk_budget(0.1, prior=0.5),
+    lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000,
+    0.2, 3.0,
+)
+```

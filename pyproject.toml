@@ -35,7 +35,16 @@ dependencies = [
   "torch>=2.10.0",      # Core PyTorch with vmap/functorch
   "optree>=0.17.0",     # PyTree manipulation for functional conversion
   "scipy>=1.11.0",      # L-BFGS optimization, Toeplitz matrix construction
+  "opaque-accounting",  # Rust-based PLD privacy accounting (local crate)
 ]
+
+[tool.uv]
+# Enable workspace so uv resolves crates/dp-accounting from source
+[tool.uv.workspace]
+members = ["crates/dp-accounting"]
+
+[tool.uv.sources]
+opaque-accounting = { workspace = true, editable = true }
 
 # No optional dependencies - users choose their own ML stack
 # Opaque only provides DP-SGD primitives (clipped_grad, noise, accounting)
@@ -58,6 +67,16 @@ test = [
   "peft>=0.18.0",
   "pytest>=7.0.0",
   "typeguard>=4.0.0",
+]
+
+# Cross-validation against reference DP accounting libraries
+# Install with: uv sync --group cross-validation
+cross-validation = [
+  "dp-accounting>=0.4.4",
+  "riskcal>=1.2.0",
+  "numpy>=1.20",
+  "scipy>=1.7",
+  "pytest>=7.0.0",
 ]
 
 # Benchmarking against other DP libraries
@@ -106,6 +125,7 @@ markers = [
   "jax_validation: Tests that validate against JAX-Privacy (optional dependency)",
   "slow: Tests that take a long time to run",
   "test: HuggingFace compatibility tests (requires transformers, peft - install with 'uv sync --group test')",
+  "cross_validation: Cross-validation tests against dp_accounting and riskcal (requires dp-accounting, riskcal)",
 ]
 
 [tool.coverage.run]

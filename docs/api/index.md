@@ -17,10 +17,11 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 ### DP-SGD Components
 
-- **[Clipping](core/clipping.md)**: Per-sample gradient clipping ⭐
+- **[Clipping](core/clipping.md)**: Per-sample gradient clipping
   - `clipped_grad()` - High-level gradient clipping (recommended)
   - `clipped_fun()` - Clip and sum function outputs
   - `clip_pytree()` - Low-level PyTree clipping
+  - `adaptive_clipped_grad()` - Clipped gradients with auto-tuned clip norm
 
 - **[Noise](noise.md)**: Noise injection for DP
   - `gaussian_noise()` - Standard Gaussian noise
@@ -29,13 +30,10 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `identity_mf_noise()`, `custom_mf_noise()` - MF API utilities
 
 - **[Accounting](accounting.md)**: Privacy budget tracking
-  - `create()` - Initialize privacy state
-  - `compose_poisson_gaussian()`, `compose_truncated_poisson_gaussian()` - Compose privacy
-  - `get_epsilon()`, `get_beta()`, `get_advantage()` - Query privacy
-  - `find_noise_multiplier_for_epsilon_delta()` - Calibrate noise
-
-- **[Optimizers](optimizers.md)**: DP-aware optimizers
-  - `adaptive_clipping()` - Adaptive clipping wrapper for TorchOpt
+  - `gaussian()`, `poisson()`, `truncated_poisson()` - Mechanism constructors → typed subclasses
+  - `DpProcess` operators: `*` (repeat), `|` (compose)
+  - `.epsilon_at()`, `.delta_at()`, `.advantage()`, `.beta_at()` - Privacy metrics
+  - `calibrate()` - Binary-search noise multiplier for target privacy
 
 - **[Sampling](sampling.md)**: Privacy-amplifying sampling
   - `PoissonSampler` - Standard Poisson sampling
@@ -62,33 +60,35 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 ```python
 import torch
 import opaque.accounting as acc
+from opaque.accounting import calibration as cal
 from opaque import clipped_grad, gaussian_noise
 
 # 1. Calibrate noise
-noise_multiplier = acc.find_noise_multiplier_for_epsilon_delta(
-    epsilon=3.0, delta=1e-5, sample_rate=0.01, num_steps=1000
+result = cal.calibrate(
+    cal.epsilon_budget(3.0, delta=1e-5),
+    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000,
+    param_min=0.1,
+    param_max=5.0,
 )
+noise_multiplier = result.param
 
 # 2. Create clipped gradient function
-dp_grad_fn = clipped_grad(
+grad_fn, clip_state = clipped_grad(
     loss_fn, l2_clip_norm=1.0, argnums=0, batch_argnums=1
 )
 
-# 3. Training loop
-privacy_state = acc.create()
-
+# 3. Training loop with per-step accounting
 noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier)
+step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate=0.01)
+accountant = acc.Accountant(budget=cal.epsilon_budget(3.0, delta=1e-5))
 
-for step in range(1000):
-    grads = dp_grad_fn(params, batch)
+for i in range(1000):
+    grads, clip_state = grad_fn(params, batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = update(params, noisy_grads)
-    privacy_state = acc.compose_poisson_gaussian(
-        privacy_state, noise_multiplier, sample_rate=0.01, count=1
-    )
+    accountant = accountant | step
 
-# 4. Check final privacy
-epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
+epsilon = accountant.epsilon_at(1e-5)
 ```
 
 ## Function Index
@@ -113,37 +113,39 @@ epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
 | `identity_mf_noise()`               | Identity noise via MF API                    | [Guide](../user-guide/noise.md) |
 | `custom_mf_noise()`                 | Bring-your-own noising matrix                | [Guide](../user-guide/noise.md) |
 
-### Accounting (Composition)
+### Accounting (Mechanisms)
 
-| Function                               | Purpose                     | User Guide                                                              |
-|----------------------------------------|-----------------------------|-------------------------------------------------------------------------|
-| `create()`                             | Initialize privacy state    | [Guide](../user-guide/accounting.md#the-functional-accounting-api)      |
-| `compose_poisson_gaussian()`           | Compose Poisson sampling    | [Guide](../user-guide/accounting.md#compose_poisson_gaussian)           |
-| `compose_truncated_poisson_gaussian()` | Compose truncated Poisson   | [Guide](../user-guide/accounting.md#compose_truncated_poisson_gaussian) |
-| `compose_sampled_gaussian()`           | Compose fixed-size sampling | [Guide](../user-guide/accounting.md#compose_sampled_gaussian)           |
-| `compose_gaussian()`                   | Compose without sampling    | [Guide](../user-guide/accounting.md#compose_gaussian)                   |
+| Function                  | Purpose                           | User Guide                                                              |
+|---------------------------|-----------------------------------|-------------------------------------------------------------------------|
+| `gaussian()`              | Gaussian mechanism                | [Guide](../user-guide/accounting.md#mechanisms)                         |
+| `poisson()`               | Poisson-subsampled Gaussian       | [Guide](../user-guide/accounting.md#mechanisms)                         |
+| `truncated_poisson()`     | Truncated Poisson Gaussian        | [Guide](../user-guide/accounting.md#mechanisms)                         |
+| `accumulate()`            | Gradient accumulation             | [Guide](../user-guide/accounting.md#mechanisms)                         |
+| `adaclip()`               | Adaptive clipping mechanism       | [Guide](../user-guide/accounting.md#mechanisms)                         |
+| `eps_delta()`             | Fixed (ε, δ) guarantee            | [Guide](../user-guide/accounting.md#mechanisms)                         |
+| `identity()`              | Zero privacy loss                 | [Guide](../user-guide/accounting.md#mechanisms)                         |
 
-### Accounting (Queries)
+### Accounting (Composition & Metrics)
 
-| Function          | Purpose                  | User Guide                                                  |
-|-------------------|--------------------------|-------------------------------------------------------------|
-| `get_epsilon()`   | Query (ε, δ)-DP          | [Guide](../user-guide/accounting.md#1-differential-privacy) |
-| `get_beta()`      | Query (α, β) error rates | [Guide](../user-guide/accounting.md#3-error-rates)          |
-| `get_advantage()` | Query f-DP advantage     | [Guide](../user-guide/accounting.md#2-f-dp-advantage)       |
+| Method / Operator         | Purpose                           | User Guide                                                              |
+|---------------------------|-----------------------------------|-------------------------------------------------------------------------|
+| `process * k`             | Repeat k times                    | [Guide](../user-guide/accounting.md#composition)                        |
+| `a \| b`                  | Heterogeneous composition         | [Guide](../user-guide/accounting.md#composition)                        |
+| `.epsilon_at(delta)`      | Query (ε, δ)-DP                   | [Guide](../user-guide/accounting.md#1-differential-privacy)             |
+| `.delta_at(epsilon)`      | Query δ for given ε               | [Guide](../user-guide/accounting.md#1-differential-privacy)             |
+| `.advantage()`            | Query f-DP advantage              | [Guide](../user-guide/accounting.md#2-f-dp-advantage)                   |
+| `.beta_at(alpha)`         | Query (α, β) error rates          | [Guide](../user-guide/accounting.md#3-error-rates)                      |
 
-### Accounting (Calibration)
+### Calibration
 
-| Function                                    | Purpose                  | User Guide                                                     |
-|---------------------------------------------|--------------------------|----------------------------------------------------------------|
-| `find_noise_multiplier_for_epsilon_delta()` | Find noise for (ε, δ)    | [Guide](../user-guide/accounting.md#calibrate-for)             |
-| `find_noise_multiplier_for_advantage()`     | Find noise for advantage | [Guide](../user-guide/accounting.md#calibrate-for-advantage)   |
-| `find_noise_multiplier_for_err_rates()`     | Find noise for (α, β)    | [Guide](../user-guide/accounting.md#calibrate-for-error-rates) |
-
-### Optimizers
-
-| Function              | Purpose                               | User Guide                           |
-|-----------------------|---------------------------------------|--------------------------------------|
-| `adaptive_clipping()` | Wrap optimizer with adaptive clipping | [Guide](../user-guide/optimizers.md) |
+| Function                  | Purpose                           | User Guide                                                              |
+|---------------------------|-----------------------------------|-------------------------------------------------------------------------|
+| `calibrate()`             | Find noise for target privacy     | [Guide](../user-guide/accounting.md#calibration)                        |
+| `epsilon_budget()`        | Budget for (ε, δ) calibration     | [Guide](../user-guide/accounting.md#calibration)                        |
+| `delta_budget()`          | Budget for δ calibration           | [Guide](../user-guide/accounting.md#calibration)                        |
+| `advantage_budget()`      | Budget for advantage calibration  | [Guide](../user-guide/accounting.md#calibration)                        |
+| `beta_budget()`           | Budget for (α, β) calibration     | [Guide](../user-guide/accounting.md#calibration)                        |
+| `risk_budget()`           | Budget for Bayes risk calibration | [Guide](../user-guide/accounting.md#calibration)                        |
 
 ### Sampling
 
@@ -182,11 +184,13 @@ epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
 Opaque uses type hints throughout. Key types:
 
 ```python
+import opaque.accounting as acc
+
 # PyTree: Nested structure of tensors
 PyTree = dict[str, torch.Tensor] | tuple[torch.Tensor, ...]
 
-# Privacy state (immutable)
-PrivacyState = dp_accounting.pld.PrivacyLoss
+# DpProcess: Composable privacy process (from Rust PLD engine)
+process: acc.DpProcess = acc.poisson(acc.gaussian(1.1), 0.01) * 1000
 
 # Generator for reproducible noise
 Generator = torch.Generator | None

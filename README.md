@@ -10,8 +10,7 @@ Opaque is a PyTorch port of Google's [JAX-Privacy](https://github.com/google-dee
 [![CI](https://github.com/JetBrains-Research/opaque/actions/workflows/ci.yml/badge.svg)](https://github.com/JetBrains-Research/opaque/actions/workflows/ci.yml)
 [![Docs](https://github.com/JetBrains-Research/opaque/actions/workflows/docs.yml/badge.svg)](https://github.com/JetBrains-Research/opaque/actions/workflows/docs.yml)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
-[![Tests](https://img.shields.io/badge/tests-111%20passing-brightgreen.svg)](https://github.com/JetBrains-Research/opaque)
-[![Status](https://img.shields.io/badge/status-Phase%201A%20Ready-blue.svg)](https://github.com/JetBrains-Research/opaque)
+[![Tests](https://img.shields.io/badge/tests-458%20passing-brightgreen.svg)](https://github.com/JetBrains-Research/opaque)
 
 ---
 
@@ -23,8 +22,6 @@ Bring production-quality differential privacy to PyTorch's LLM fine-tuning ecosy
 - **LoRA-First**: Optimized for parameter-efficient fine-tuning
 - **PyTorch Native**: Built on `torch.func` (functional transformations)
 - **Zero Surprises**: Fail-fast error handling for security-critical DP training
-
-**Status**: Foundation complete (clipping, noise, accounting, optimizers) — Ready for Phase 1A: LoRA validation at 8B scale
 
 ---
 
@@ -57,6 +54,7 @@ See [Installation Guide](#installation-guide) for detailed instructions.
 
 ```python
 import torch
+import opaque.accounting as acc
 from opaque import clipped_grad, gaussian_noise
 
 # 1. Define your loss function
@@ -65,26 +63,30 @@ def loss_fn(params, x, y):
     return ((predictions - y) ** 2).sum()
 
 # 2. Configure DP-SGD components (once, outside loop)
-grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=1)
-noise_fn = gaussian_noise(stddev=1.1 * grad_fn.clip_norm)
+grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2))
+noise_fn, noise_state = gaussian_noise(stddev=1.1 * clip_state.sensitivity())
 
 # 3. Training loop - clean functional composition!
 params = torch.randn(10, requires_grad=False)
 
 for batch_x, batch_y in dataloader:
-    # Compute clipped gradients
-    grads = grad_fn(params, batch_x, batch_y)
+    # Compute clipped gradients (state flows through)
+    grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
-    # Add noise - natural composition!
-    noisy_grads = noise_fn(grads)
+    # Add noise
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
 
     # Update parameters
     params = params - learning_rate * noisy_grads
 
-# Privacy accounting handled externally (dp_accounting or jbr-fed-accounting)
+# 4. Privacy accounting
+step = acc.poisson(acc.gaussian(1.1), sample_rate=0.01)
+training = step * num_steps
+epsilon = training.epsilon_at(1e-5)
+print(f"Privacy: (ε={epsilon:.2f}, δ=1e-5)")
 ```
 
-**See**: [Tutorial 02](docs/tutorials/02_differential_privacy_noise_and_accounting.ipynb) for complete walkthrough
+**See**: [Quick Start Guide](docs/getting-started/quickstart.md) for complete walkthrough
 
 ---
 
@@ -114,42 +116,19 @@ Differential privacy (DP) provides mathematical guarantees that a model doesn't 
 
 ---
 
-## Project Status & Roadmap
-
-### ✅ Foundation Complete
+## Project Status
 
 Core DP-SGD primitives are implemented and validated:
 
-- **Clipping**: `clip_pytree()`, `clipped_fun()`, `clipped_grad()` — Full JAX-Privacy API parity
-- **Noise**: `gaussian()`, `gaussian_noise()` — Stateless and reproducible noise injection
-- **Sampling**: `PoissonSampler`, `TruncatedPoissonSampler` — Batch selection mechanisms
-- **Optimizers**: `adaptive_clipping()` — TorchOpt wrapper with adaptive clipping
-- **Accounting**: Functional privacy accounting API
-- **Validation**: 111 tests passing, numerical equivalence with JAX-Privacy (atol=1e-5)
-- **Integration**: GPT-2 (124M) validated with HuggingFace models
-
-### 🎯 Phase 1A: LoRA Validation at 8B Scale (Current)
-
-Validate Opaque on production workload before adding advanced features:
-
-- [ ] LoRA fine-tuning with DP on Llama-3-8B or Mistral-7B
-- [ ] Cross-validation with JAX-Privacy (gradient + utility equivalence)
-- [ ] End-to-end tutorial notebook
-- [ ] Basic microbatching if needed for memory
-
-### Upcoming Phases
-
-| Phase | Focus | Key Deliverables |
-|-------|-------|------------------|
-| **1B** | Memory Optimization | Microbatching, memory profiler |
-| **1C** | Empirical Auditing | Privacy auditing module |
-| **2** | API Polish | Refinements based on Phase 1A learnings |
-| **3** | BandMF & DP-FTRL | Correlated noise mechanisms (10-50% utility improvement) |
-| **4** | Scale (optional) | 13B+ validation if needed |
-| **5** | Distributed | Multi-GPU/multi-node training |
-| **6** | Release | Documentation, v1.0.0 |
-
-**Timeline**: ~6-9 months to v1.0.0 | [Full Plan](docs/development/RFC_PRODUCTION_PLAN.md) | [Status](docs/development/STATUS.md)
+- **Clipping**: `clip_pytree()`, `clipped_fun()`, `clipped_grad()`, `adaptive_clipped_grad()` — Per-example gradient clipping with functional state
+- **Noise**: `gaussian_noise()`, `bounded_gaussian_noise()`, plus matrix factorization noise (`band_mf_noise`, `blt_mf_noise`, `dense_mf_noise`, `custom_mf_noise`, `identity_mf_noise`)
+- **Sampling**: `PoissonSampler`, `TruncatedPoissonSampler`, `CyclicPoissonSampler` — Privacy-amplified batch selection
+- **Accounting**: Rust-based PLD engine with tight composition bounds, calibration, and the `Accountant` training-loop helper
+- **Auditing**: Empirical privacy auditing via membership inference
+- **Distributed**: DDP-compatible training with Poisson subsampling
+- **Profiling**: Memory tracking and microbatch size auto-tuning
+- **HuggingFace Compatibility**: Auto-patching for vmap-compatible forward passes (LLaMA, Mistral, Qwen2, Phi, OLMo, Gemma2)
+- **Validation**: 458 tests passing, numerical equivalence with JAX-Privacy (atol=1e-5)
 
 ---
 
@@ -157,26 +136,27 @@ Validate Opaque on production workload before adding advanced features:
 
 ### Tutorials
 
-- [Tutorial 01: Gradient Clipping from Basics](docs/tutorials/01_gradient_clipping_from_basics.ipynb) — Learn gradient clipping with `clipped_grad()`
-- [Tutorial 02: Differential Privacy - Noise and Accounting](docs/tutorials/02_differential_privacy_noise_and_accounting.ipynb) — Complete DP-SGD with noise injection and privacy accounting
+- [Tutorial 01: Gradient Clipping from Basics](docs/tutorials/01_gradient_clipping_from_basics.ipynb) — Learn per-example gradient clipping
+- [Tutorial 02: Noise and Accounting](docs/tutorials/02_differential_privacy_noise_and_accounting.ipynb) — Noise injection and privacy accounting
+- [Tutorial 03: Complete DP-SGD Training](docs/tutorials/03_complete_dp_sgd_training.ipynb) — End-to-end training loop
+- [Tutorial 04: DP Optimizers](docs/tutorials/04_dp_optimizers.ipynb) — TorchOpt integration and adaptive clipping
+- [Tutorial 05: Sampling and Microbatching](docs/tutorials/05_sampling_and_microbatching.ipynb) — Poisson sampling strategies
+- [Tutorial 06: LoRA HuggingFace Training](docs/tutorials/06_lora_huggingface_dp_training.ipynb) — Fine-tune LLMs with DP
+- [Tutorial 07: Privacy Auditing](docs/tutorials/07_privacy_auditing.ipynb) — Empirical privacy validation
 
-### Development Documentation
+### Guides
 
-- [Status & Roadmap](docs/development/STATUS.md) — Current status and what's next
-- [Production Plan (RFC)](docs/development/RFC_PRODUCTION_PLAN.md) — Full implementation plan to v1.0.0
+- [Quick Start](docs/getting-started/quickstart.md) — Train your first DP model in 5 minutes
+- [User Guide](docs/user-guide/index.md) — Concepts and best practices
+- [API Reference](docs/api/index.md) — Full API documentation
+
+### Development
+
 - [Contributing Guide](CONTRIBUTING.md) — Development workflow
 
 ---
 
-## Development Workflow (TDD-Inspired)
-
-We follow a rigorous test-driven approach:
-
-1. **Test First**: Write failing test that defines the API
-2. **Implement**: Make the test pass (minimal code)
-3. **Document**: Add docstrings and API reference
-4. **Refactor**: Improve code quality
-5. **Verify**: Run full test suite
+## Development
 
 ```bash
 # Run all tests
@@ -184,6 +164,10 @@ uv run pytest
 
 # Run with coverage
 uv run pytest --cov=opaque --cov-report=html
+
+# Format & lint
+uv run ruff format src/ tests/
+uv run ruff check src/ tests/
 ```
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for detailed guidelines.
@@ -201,31 +185,6 @@ We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for:
 
 **Good First Issues**: Check the [issue tracker](https://github.com/JetBrains-Research/opaque/issues) for beginner-friendly tasks.
 
----
-
-## Comparison with Alternatives
-
-| Feature | Opaque | [Opacus](https://opacus.ai/) | [JAX-Privacy](https://github.com/google-deepmind/jax_privacy) |
-|---------|--------|--------|-------------|
-| **Framework** | PyTorch | PyTorch | JAX |
-| **API Style** | Functional | Object-oriented | Functional (new) + OOP (old) |
-| **LoRA Focus** |  Yes | � Possible |  Yes |
-| **torch.func** |  Yes | L Custom hooks | N/A |
-| **Maturity** | =� Alpha |  Production |  Production |
-| **LLM Examples** | Coming soon | Limited | Gemma, Llama |
-
-**Why Opaque?**
-- **Modern PyTorch**: Built on `torch.func` (functional transformations)
-- **Composability**: Separate clipping, noise, accounting modules
-- **LoRA-Optimized**: Exploits low-rank structure for efficiency
-- **JAX-Inspired**: Proven functional API design
-
-**Why Not Opaque? (Yet)**
-- **Maturity**: Opacus is battle-tested, Opaque is experimental
-- **Coverage**: Opacus supports conv layers, batchnorm, etc.
-- **If you need production DP today, use Opacus!**
-
----
 
 ## Installation Guide
 

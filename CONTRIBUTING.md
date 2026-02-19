@@ -43,28 +43,80 @@ Opaque follows a Test-Driven Development workflow:
 4. **Refactor**: Improve code quality and structure
 5. **Verify**: Run full test suite with coverage
 
-**See**: [Detailed TDD Workflow](docs/development/tdd-workflow.md)
+**See**: [Contributing Guide](docs/development/contributing.md)
 
 ---
 
 ## Testing
 
+### Dependency Groups
+
+Opaque uses `uv` dependency groups to separate test dependencies:
+
 ```bash
-# Run all tests
+uv sync                          # Core only (clipping, noise, accounting)
+uv sync --group dev              # + pytest, ruff, hypothesis, scipy
+uv sync --group test             # + transformers, peft (HuggingFace tests)
+uv sync --group cross-validation # + dp-accounting, riskcal (reference comparison)
+uv sync --group benchmark        # + opacus, torchvision (benchmarking)
+uv sync --group examples         # + datasets, torchopt, jupyter, matplotlib
+uv sync --group docs             # + mkdocs
+uv sync --all-groups             # Everything
+```
+
+### Running Tests
+
+```bash
+# Run all unit tests
 uv run pytest
 
 # With coverage
 uv run pytest --cov=opaque --cov-report=html
 
-# Specific test
-uv run pytest tests/core/test_clipped_fun.py::test_clip_pytree -v
+# Specific test file
+uv run pytest tests/clipping/test_clipped_fun.py -v
 ```
 
-**Requirements**:
-- ✅ Tests for all new functionality
-- ✅ Maintain >80% coverage
-- ✅ Pass all existing tests
-- ✅ Include docstring examples
+### Test Markers and Filtering
+
+Tests are organized with pytest markers. Markers are enforced with `--strict-markers`:
+
+```bash
+# HuggingFace compatibility (requires --group test)
+uv run pytest -m test
+
+# Cross-validation against dp-accounting/riskcal (requires --group cross-validation)
+uv run pytest -m cross_validation
+
+# Slow tests (typically model loading / multi-step training)
+uv run pytest -m slow
+
+# Exclude slow tests
+uv run pytest -m "not slow"
+
+# JAX validation tests
+uv run pytest -m jax_validation
+```
+
+Marker filtering is automatic: tests marked `test` are skipped when
+`transformers` is not installed, and `cross_validation` tests are skipped when
+`dp-accounting` is not installed. No manual marker exclusion required.
+
+### GPU and Multi-GPU Tests
+
+Some tests require a CUDA GPU. These are located in `tests/distributed/` and
+use `torch.distributed` with NCCL backend:
+
+```bash
+# Run distributed tests (requires 2+ GPUs)
+uv run pytest tests/distributed/ -v
+
+# Run HuggingFace model validation (requires GPU + --group test)
+uv run pytest tests/validation/ -v -m slow
+```
+
+GPU tests use `@pytest.mark.skipif(not torch.cuda.is_available(), ...)`
+and are automatically skipped on CPU-only machines.
 
 ---
 
@@ -166,8 +218,6 @@ uv run mkdocs build
 **For comprehensive guides, see:**
 
 - [Contributing Guide](docs/development/contributing.md) - Full contribution guidelines
-- [TDD Workflow](docs/development/tdd-workflow.md) - Step-by-step development process
-- [Roadmap](docs/development/roadmap.md) - Project timeline and status
 
 ---
 

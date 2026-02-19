@@ -1,231 +1,266 @@
 # User Guide
 
-Welcome to the Opaque user guide! This guide will help you understand the core concepts of differential privacy and how
-to use Opaque effectively.
+Opaque provides a functional API for training PyTorch models with differential
+privacy (DP).
 
-## Overview
+## End-to-End DP Training
 
-Opaque provides a functional API for training PyTorch models with differential privacy (DP). The library is organized
-around eight core concepts:
+A complete DP-SGD training loop has five parts: calibration, clipping, noise,
+sampling, and accounting. Here is a minimal working example:
 
-1. **[Per-Sample Gradient Clipping](clipping.md)** - Bound sensitivity by clipping gradients
-2. **[Noise Addition](noise.md)** - Add calibrated Gaussian noise for privacy
-3. **[Privacy Accounting](accounting.md)** - Track and query privacy budgets
-4. **[Optimizers & Adaptive Clipping](optimizers.md)** - Adaptive clipping with TorchOpt integration
-5. **[Poisson Sampling & Microbatching](sampling.md)** - Privacy amplification through sampling
-6. **[LoRA Fine-tuning](lora.md)** - Parameter-efficient DP training for LLMs
-7. **[Privacy Auditing](auditing.md)** - Empirically validate DP guarantees
-8. **[Distributed Training](distributed.md)** - Multi-GPU training with DDP
+```python
+import torch
+import torchopt
+import opaque.accounting as acc
+from opaque.accounting import calibration as cal
+from opaque import clipped_grad, gaussian_noise
+from opaque.sampling import PoissonSampler
 
-## Learning Path
+# --- Calibrate noise multiplier for target privacy ---
+dataset_size = 50_000
+sample_rate = 256 / dataset_size
+num_steps = 1000
 
-### Beginners
+result = cal.calibrate(
+    cal.epsilon_budget(3.0, delta=1e-5),
+    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps,
+    param_min=0.1,
+    param_max=5.0,
+)
+noise_multiplier = result.param
 
-If you're new to differential privacy, start here:
+# --- Set up gradient clipping, noise, optimizer ---
+grad_fn, clip_state = clipped_grad(
+    loss_fn, l2_clip_norm=1.0, argnums=0, batch_argnums=1,
+)
+noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier)
 
-1. **[Differential Privacy Basics](dp-basics.md)** - Understand what DP is and why it matters
-2. **[Per-Sample Gradient Clipping](clipping.md)** - Learn how gradients are clipped
-3. **[Quick Start Guide](../getting-started/quickstart.md)** - Train your first DP model
-4. **[Tutorial 01](../tutorials/01_gradient_clipping_from_basics.ipynb)** - Interactive gradient clipping tutorial
+optimizer = torchopt.adam(lr=1e-3)
+opt_state = optimizer.init(params)
 
-### Intermediate
+# --- Set up privacy-amplifying sampling ---
+sampler = PoissonSampler(dataset_size, sample_rate=sample_rate)
+dataloader = torch.utils.data.DataLoader(dataset, batch_sampler=sampler)
 
-Once you understand the basics:
+# --- Training loop with per-step accounting ---
+step_proc = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
+acct = acc.Accountant(budget=cal.epsilon_budget(3.0, delta=1e-5))
 
-1. **[Noise Addition](noise.md)** - Understand noise calibration
-2. **[Privacy Accounting](accounting.md)** - Learn to track privacy budgets
-3. **[Tutorial 02](../tutorials/02_differential_privacy_noise_and_accounting.ipynb)** - Complete DP-SGD walkthrough
-4. **[Tutorial 03](../tutorials/03_complete_dp_sgd_training.ipynb)** - End-to-end training example
+for batch in dataloader:
+    grads, clip_state = grad_fn(params, batch, state=clip_state)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
 
-### Advanced
+    updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
+    params = torchopt.apply_updates(params, updates)
 
-For production use and optimization:
+    acct = acct | step_proc
+    if acct.budget_exceeded:
+        break
 
-1. **[Optimizers & Adaptive Clipping](optimizers.md)** - Use adaptive clipping for better utility
-2. **[Poisson Sampling & Microbatching](sampling.md)** - Optimize privacy-utility tradeoffs
-3. **[LoRA Fine-tuning](lora.md)** - Train large language models efficiently
-4. **[Privacy Auditing](auditing.md)** - Validate your DP implementation empirically
-5. **[Distributed Training](distributed.md)** - Scale to multiple GPUs with DDP
-6. **[Tutorial 04](../tutorials/04_dp_optimizers.ipynb)** - TorchOpt integration
-6. **[Tutorial 05](../tutorials/05_sampling_and_microbatching.ipynb)** - Advanced sampling techniques
-7. **[Tutorial 06](../tutorials/06_lora_huggingface_dp_training.ipynb)** - Real-world LLM fine-tuning
+eps = acct.epsilon_at(1e-5)
+```
 
-## Key Concepts Summary
+The sections below explain each part in detail.
 
-### Differential Privacy (DP)
+## Core Concepts
 
-DP provides mathematically rigorous privacy guarantees. A mechanism is (ε, δ)-differentially private if:
+### Per-Sample Gradient Clipping
 
-> Adding or removing any single training example changes the output distribution by at most e^ε with probability 1-δ
+DP-SGD computes *per-example* gradients and clips each to a maximum L2 norm
+before summing. This bounds the sensitivity of the gradient query.
 
-**Smaller ε = stronger privacy** (but potentially lower model utility)
+```python
+from opaque import clipped_grad
 
-### DP-SGD Algorithm
+grad_fn, clip_state = clipped_grad(
+    loss_fn,
+    l2_clip_norm=1.0,
+    argnums=0,        # differentiate w.r.t. first arg (params)
+    batch_argnums=1,  # second arg is the batched input
+)
 
-The DP-SGD algorithm ([Abadi et al. 2016](https://arxiv.org/abs/1607.00133)) has three key steps:
+grads, clip_state = grad_fn(params, batch, state=clip_state)
+```
 
-1. **Clip** per-example gradients to bounded L2 norm
-2. **Add** calibrated Gaussian noise to summed gradients
-3. **Update** model parameters
+See [Gradient Clipping](clipping.md) for details on `clipped_grad`,
+`clipped_fun`, and `clip_pytree`.
 
-### Privacy Budget
+### Noise Addition
 
-Your **privacy budget** is the total privacy loss across all training steps:
+After clipping and summing, Gaussian noise scaled to the sensitivity is added:
 
-- **ε (epsilon)**: Privacy loss parameter (lower = more private)
-- **δ (delta)**: Failure probability (typically 1/n or 1/n²)
+```python
+from opaque import gaussian_noise
 
-!!! warning "Budget Exhaustion"
-Once you've spent your privacy budget, you cannot train more without weakening guarantees!
+noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier)
+noisy_grads, noise_state = noise_fn(grads, noise_state)
+```
 
-### Privacy-Utility Tradeoff
+The noise standard deviation is `noise_multiplier * l2_clip_norm` in absolute
+terms. When `l2_clip_norm=1.0`, the noise multiplier is used directly as
+`stddev`.
 
-There's a fundamental tradeoff between privacy and model utility:
+See [Noise](noise.md) for bounded Gaussian noise and matrix-factorization
+correlated noise (DP-FTRL).
 
-- **Stronger privacy** (lower ε) → More noise → Lower accuracy
-- **Weaker privacy** (higher ε) → Less noise → Higher accuracy
+### Calibration
 
-Opaque helps you navigate this tradeoff through:
+Use binary search to find the noise multiplier achieving a target privacy
+budget:
 
-- **Calibration**: Find minimum noise for target privacy
-- **Adaptive clipping**: Reduce gradient clipping impact
-- **LoRA**: Train only a small subset of parameters
+```python
+from opaque.accounting import calibration as cal
 
-## Common Workflows
+result = cal.calibrate(
+    cal.epsilon_budget(3.0, delta=1e-5),
+    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps,
+    param_min=0.1,
+    param_max=5.0,
+)
+noise_multiplier = result.param
+```
 
-### Basic DP-SGD Training
+`calibrate()` works with any float parameter, not just noise multiplier. Pass a
+different `process` lambda to calibrate sample rate, number of steps, or any
+other quantity.
+
+See [Privacy Accounting](accounting.md) for all target types and calibration
+options.
+
+### Privacy Accounting
+
+Build composable privacy processes and query metrics:
 
 ```python
 import opaque.accounting as acc
-from opaque import clipped_grad, gaussian_noise
 
-# 1. Calibrate noise
-noise_multiplier = acc.find_noise_multiplier_for_epsilon_delta(
-    epsilon=3.0, delta=1e-5, sample_rate=0.01, num_steps=1000
-)
-
-# 2. Create clipped gradient function
-clipped_grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0, ...)
-
-# 3. Training loop
-noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier)
-privacy_state = acc.create()
-for step in range(1000):
-    grads = clipped_grad_fn(params, batch)
-    noisy_grads, noise_state = noise_fn(grads, noise_state)
-    params = update(params, noisy_grads)
-    privacy_state = acc.compose_poisson_gaussian(privacy_state, ...)
-
-# 4. Check final privacy
-epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
+step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
+training = step * num_steps
+eps = training.epsilon_at(1e-5)
+adv = training.advantage()
 ```
 
-**See**: [Quick Start](../getting-started/quickstart.md) for complete example
+Use `Accountant` to track privacy spend per step during training:
 
-### LoRA Fine-tuning with DP
+```python
+acct = acc.Accountant(budget=cal.epsilon_budget(3.0, delta=1e-5))
+for batch in dataloader:
+    # ... train ...
+    acct = acct | step
+    if acct.budget_exceeded:
+        break
+```
+
+See [Privacy Accounting](accounting.md) and the
+[API reference](../api/accounting.md).
+
+### Poisson Sampling
+
+Poisson subsampling amplifies privacy: each example is included independently
+with probability `sample_rate = expected_batch_size / dataset_size`.
+
+```python
+from opaque.sampling import PoissonSampler
+
+sampler = PoissonSampler(dataset_size, sample_rate=sample_rate)
+dataloader = torch.utils.data.DataLoader(dataset, batch_sampler=sampler)
+```
+
+See [Sampling](sampling.md) for `TruncatedPoissonSampler`, `CyclicPoissonSampler`,
+distributed modes, and microbatching.
+
+### TorchOpt Optimizers
+
+Opaque does not bundle optimizers. Use any TorchOpt functional optimizer:
+
+```python
+import torchopt
+
+optimizer = torchopt.adam(lr=1e-3)
+opt_state = optimizer.init(params)
+
+updates, opt_state = optimizer.update(noisy_grads, opt_state, params=params)
+params = torchopt.apply_updates(params, updates)
+```
+
+`torchopt.sgd`, `torchopt.adam`, and `torchopt.adamw` all work.
+
+### Adaptive Clipping
+
+`adaptive_clipped_grad()` auto-tunes the clip norm using the geometric
+adaptation rule from Andrew et al. 2021. This replaces manual clip norm tuning
+with a target quantile:
+
+```python
+from opaque.clipping import adaptive_clipped_grad
+
+grad_fn, clip_state = adaptive_clipped_grad(
+    loss_fn,
+    initial_clip_norm=1.0,
+    target_quantile=0.5,
+    batch_argnums=1,
+)
+```
+
+See [Adaptive Clipping](optimizers.md) for parameters and privacy accounting
+with `acc.adaclip()`.
+
+## LoRA Fine-tuning
+
+LoRA (Low-Rank Adaptation) is particularly effective for DP training because
+LoRA adapters have far fewer parameters, which means per-example gradient norms
+are naturally smaller. Lower gradient norms mean less clipping distortion and
+less noise needed to achieve the same privacy guarantee.
 
 ```python
 from peft import get_peft_model, LoraConfig
-from opaque.optimizers import adaptive_clipping
-import torchopt
+from opaque.clipping import adaptive_clipped_grad
 
-# 1. Add LoRA adapters
 lora_config = LoraConfig(r=8, lora_alpha=16, target_modules=["q_proj", "v_proj"])
 model = get_peft_model(base_model, lora_config)
 
-# 2. Use adaptive clipping optimizer
-base_opt = torchopt.sgd(lr=0.01)
-optimizer = adaptive_clipping(
-    base_opt,
+grad_fn, clip_state = adaptive_clipped_grad(
+    loss_fn,
     initial_clip_norm=1.0,
     target_quantile=0.5,
+    batch_argnums=1,
 )
-
-# 3. Train only LoRA parameters (much faster!)
 ```
 
-**See**: [LoRA Guide](lora.md) and [Tutorial 06](../tutorials/06_lora_huggingface_dp_training.ipynb)
+See [LoRA Guide](lora.md) and
+[Tutorial 06](../tutorials/06_lora_huggingface_dp_training.ipynb).
 
 ## Privacy Metrics
 
-Opaque supports three privacy metrics:
+Opaque supports three families of privacy metrics on any `DpProcess`:
 
-### 1. (ε, δ)-Differential Privacy
-
-**Standard metric** from [Dwork et al. 2006](https://link.springer.com/chapter/10.1007/11681878_14)
-
-```python
-epsilon = acc.get_epsilon(privacy_state, delta=1e-5)
-```
-
-### 2. f-DP Advantage
-
-**Tighter bound** from [Dong et al. 2019](https://arxiv.org/abs/1905.02383)
+| Method              | Metric                        | Reference              |
+|---------------------|-------------------------------|------------------------|
+| `epsilon_at(delta)` | (epsilon, delta)-DP            | Dwork et al. 2006      |
+| `advantage()`       | f-DP total-variation advantage | Dong et al. 2019       |
+| `beta_at(alpha)`    | (alpha, beta) error rates      | Wasserman & Zhou 2010  |
 
 ```python
-advantage = acc.get_advantage(privacy_state)
+training = acc.poisson(acc.gaussian(noise_multiplier), sample_rate) * num_steps
+eps = training.epsilon_at(1e-5)
+adv = training.advantage()
+beta = training.beta_at(alpha=0.01)
 ```
-
-### 3. (α, β) Error Rates
-
-**Hypothesis testing interpretation** from [Wasserman & Zhou 2010](https://www.stat.cmu.edu/~arinaldo/Fang_Zhou.pdf)
-
-```python
-beta = acc.get_beta(privacy_state, alpha=0.01)
-```
-
-## Best Practices
-
-### 1. Start with High Privacy Budget
-
-!!! tip "Iterate on privacy later"
-Start with ε=10, get your model working, then tighten to ε=3 or ε=1
-
-### 2. Use Calibration
-
-!!! success "Let Opaque find the right noise"
-Use `find_noise_multiplier_for_epsilon_delta()` instead of guessing
-
-### 3. Monitor Privacy During Training
-
-```python
-if step % 100 == 0:
-    current_eps = acc.get_epsilon(privacy_state, delta=delta)
-    print(f"Step {step}: ε={current_eps:.2f}")
-```
-
-### 4. Use LoRA for LLMs
-
-!!! info "LoRA makes DP practical"
-Full fine-tuning of 7B model: ~10x slower with DP
-LoRA fine-tuning of 7B model: ~2x slower with DP
 
 ## Troubleshooting
 
-### Model doesn't train (accuracy stuck at chance)
+**Model does not train (accuracy at chance)**: The noise multiplier may be too
+large for the number of training steps, or `l2_clip_norm` is too small.
+Increase epsilon or increase the number of steps.
 
-- **Too much noise**: Increase ε or decrease training steps
-- **Clipping too aggressive**: Increase `clip_norm` from 1.0 to 5.0
-- **Learning rate too low**: Try 2-5x higher than non-DP training
+**Privacy budget exceeded early**: Use `TruncatedPoissonSampler` for tighter
+bounds or increase the target epsilon.
 
-### Privacy budget exceeded
-
-- **Reduce training steps**: Train for fewer epochs
-- **Increase ε**: Accept weaker privacy guarantees
-- **Use truncated Poisson sampling**: Get tighter privacy bounds
-
-### Out of memory
-
-- **Use microbatching**: Process mini-batches sequentially
-- **Use LoRA**: Train only adapter weights
-- **Reduce batch size**: Lower `batch_size` (but increases privacy cost!)
+**Out of memory**: Use LoRA to reduce parameter count, or use microbatching
+(see [Sampling](sampling.md)).
 
 ## Next Steps
 
-- **[API Reference](../api/index.md)**: Detailed function documentation
-- **[Tutorials](../tutorials/README.md)**: Interactive Jupyter notebooks
-- **[Development](../development/contributing.md)**: Contribute to Opaque
-
----
-
-**Questions?** Open an issue on [GitHub](https://github.com/JetBrains-Research/opaque/issues)
+- [API Reference](../api/index.md) -- Detailed function documentation
+- [Tutorials](../tutorials/README.md) -- Interactive Jupyter notebooks
+- [Contributing](../development/contributing.md) -- Contribute to Opaque
