@@ -71,17 +71,18 @@ grad_fn, clip_state = clipped_grad(
     loss_fn, l2_clip_norm=1.0, argnums=0, batch_argnums=1
 )
 
-# 3. Training loop
+# 3. Training loop with per-step accounting
 noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier)
+step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate=0.01)
+accountant = acc.Accountant(budget=cal.epsilon_budget(3.0, delta=1e-5))
 
-for step in range(1000):
+for i in range(1000):
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = update(params, noisy_grads)
+    accountant = accountant | step
 
-# 4. Check final privacy
-training = acc.poisson(acc.gaussian(noise_multiplier), sample_rate=0.01) * 1000
-epsilon = training.epsilon_at(1e-5)
+epsilon = accountant.epsilon_at(1e-5)
 ```
 
 ## Function Index

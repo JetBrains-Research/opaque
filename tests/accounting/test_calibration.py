@@ -117,18 +117,18 @@ class TestRiskTarget:
 
 
 class TestCalibrateErrors:
-    def _build(self, nm):
+    def _process(self, nm):
         return acc.poisson(acc.gaussian(nm), 0.01) * 1000
 
     def test_param_min_ge_max(self):
         with pytest.raises(ValueError, match="param_min"):
-            cal.calibrate(cal.epsilon_budget(3.0, delta=1e-5), self._build, 0.8, 0.5)
+            cal.calibrate(cal.epsilon_budget(3.0, delta=1e-5), self._process, 0.8, 0.5)
 
     def test_target_outside_bracket(self):
         """Target not achievable within bounds → ValueError."""
         with pytest.raises(ValueError):
             cal.calibrate(
-                cal.epsilon_budget(0.001, delta=1e-5), self._build, 0.5, 0.6
+                cal.epsilon_budget(0.001, delta=1e-5), self._process, 0.5, 0.6
             )
 
 
@@ -138,12 +138,12 @@ class TestCalibrateErrors:
 class TestCalibrateEpsilon:
     """Calibrate noise multiplier for target epsilon — verify roundtrip."""
 
-    def _build(self, nm):
+    def _process(self, nm):
         return acc.poisson(acc.gaussian(nm), 0.01) * 1000
 
     def test_basic(self):
         result = cal.calibrate(
-            cal.epsilon_budget(5.0, delta=1e-5), self._build, 0.3, 1.2
+            cal.epsilon_budget(5.0, delta=1e-5), self._process, 0.3, 1.2
         )
         assert isinstance(result, CalibrateResult)
         assert result.converged
@@ -151,14 +151,14 @@ class TestCalibrateEpsilon:
 
     def test_strict_epsilon(self):
         result = cal.calibrate(
-            cal.epsilon_budget(4.0, delta=1e-5), self._build, 0.3, 1.2
+            cal.epsilon_budget(4.0, delta=1e-5), self._process, 0.3, 1.2
         )
         assert result.converged
         assert abs(result.achieved - 4.0) < 1e-4
 
     def test_loose_epsilon(self):
         result = cal.calibrate(
-            cal.epsilon_budget(8.0, delta=1e-5), self._build, 0.1, 1.0
+            cal.epsilon_budget(8.0, delta=1e-5), self._process, 0.1, 1.0
         )
         assert result.converged
         assert abs(result.achieved - 8.0) < 1e-4
@@ -166,10 +166,10 @@ class TestCalibrateEpsilon:
     def test_monotonicity(self):
         """Stricter target → more noise."""
         result_loose = cal.calibrate(
-            cal.epsilon_budget(8.0, delta=1e-5), self._build, 0.1, 1.0
+            cal.epsilon_budget(8.0, delta=1e-5), self._process, 0.1, 1.0
         )
         result_strict = cal.calibrate(
-            cal.epsilon_budget(4.0, delta=1e-5), self._build, 0.3, 1.2
+            cal.epsilon_budget(4.0, delta=1e-5), self._process, 0.3, 1.2
         )
         # stricter (lower) epsilon requires higher noise_multiplier
         assert result_strict.param > result_loose.param
@@ -183,10 +183,10 @@ class TestCalibrateDifferentBatchSizes:
         n = 10_000
         q = batch_size / n
 
-        build = lambda nm: acc.poisson(acc.gaussian(nm), q) * 1000
-
         result = cal.calibrate(
-            cal.epsilon_budget(5.0, delta=1e-4), build, 0.1, 1.2
+            cal.epsilon_budget(5.0, delta=1e-4),
+            lambda nm: acc.poisson(acc.gaussian(nm), q) * 1000,
+            0.1, 1.2,
         )
         assert result.converged
         assert abs(result.achieved - 5.0) < 1e-3
@@ -196,10 +196,10 @@ class TestCalibrateAdvantage:
     """Calibrate for f-DP advantage target."""
 
     def test_roundtrip(self):
-        build = lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 500
-
         result = cal.calibrate(
-            cal.advantage_budget(0.1), build, 0.3, 1.2
+            cal.advantage_budget(0.1),
+            lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 500,
+            0.3, 1.2,
         )
         assert result.converged
         assert abs(result.achieved - 0.1) < 1e-4
@@ -214,23 +214,23 @@ class TestCalibrateBeta:
     """
 
     def test_roundtrip(self):
-        build = lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 500
-
         result = cal.calibrate(
-            cal.beta_budget(0.5, alpha=0.1), build, 0.3, 1.2
+            cal.beta_budget(0.5, alpha=0.1),
+            lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 500,
+            0.3, 1.2,
         )
         assert result.converged
         assert abs(result.achieved - 0.5) < 1e-3
 
     def test_monotonicity(self):
         """Stricter (higher) beta target → more noise."""
-        build = lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 500
+        process = lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 500
 
         result_low = cal.calibrate(
-            cal.beta_budget(0.3, alpha=0.1), build, 0.3, 1.2
+            cal.beta_budget(0.3, alpha=0.1), process, 0.3, 1.2
         )
         result_high = cal.calibrate(
-            cal.beta_budget(0.7, alpha=0.1), build, 0.3, 1.2
+            cal.beta_budget(0.7, alpha=0.1), process, 0.3, 1.2
         )
         # Higher beta (more privacy) requires more noise
         assert result_high.param > result_low.param

@@ -267,21 +267,21 @@ from opaque.accounting import calibration as cal
 
 Binary search for finding parameter values that achieve a target privacy budget.
 
-### `calibrate(target, build, param_min, param_max, tolerance=1e-6, max_iterations=100) -> CalibrateResult`
+### `calibrate(target, process, param_min, param_max, tolerance=1e-6, max_iterations=100) -> CalibrateResult`
 
-Binary search for a parameter value such that `build(param)` produces a
+Binary search for a parameter value such that `process(param)` produces a
 `DpProcess` achieving the given privacy target.
 
 | Parameter        | Default | Description                                              |
 |------------------|---------|----------------------------------------------------------|
 | `target`         |         | A `Target` object from a target factory (see below)      |
-| `build`          |         | Callable: `float -> DpProcess`                           |
+| `process`        |         | Callable: `float -> DpProcess`                           |
 | `param_min`      |         | Lower bound for search                                   |
 | `param_max`      |         | Upper bound for search                                   |
 | `tolerance`      | `1e-6`  | Convergence threshold on `abs(achieved - target)`        |
 | `max_iterations` | `100`   | Maximum binary search iterations                         |
 
-The `build` callable takes a single float parameter and returns a `DpProcess`.
+The `process` callable takes a single float parameter and returns a `DpProcess`.
 The default parameter range is tuned for noise_multiplier search, but
 `calibrate()` is general: it can calibrate any float parameter in a process
 against any target.

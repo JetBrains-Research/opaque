@@ -121,7 +121,7 @@ noise_multiplier = result.param
 ```
 
 `calibrate()` works with any float parameter, not just noise multiplier. Pass a
-different `build` lambda to calibrate sample rate, number of steps, or any
+different `process` lambda to calibrate sample rate, number of steps, or any
 other quantity.
 
 See [Privacy Accounting](accounting.md) for all target types and calibration

@@ -34,7 +34,7 @@ tp = acc.truncated_poisson(
 
 # Composition
 training = p * 1000
-combined = g | acc.eps_delta(0.5)
+combined = acc.gaussian(0.3) | acc.gaussian(0.5)
 
 # Privacy metrics (all derived from the same PLD)
 eps = training.epsilon_at(1e-5)
@@ -120,7 +120,7 @@ al. 2021). Returns a Gaussian with reduced effective noise multiplier.
 
 ```python
 step = acc.poisson(
-    acc.adaclip(acc.gaussian(0.5), quantile_noise_std=50.0),
+    acc.adaclip(acc.gaussian(0.5), quantile_noise_std=1.0),
     sample_rate=0.01,
 )
 ```

@@ -518,15 +518,17 @@ class TestCalibrationCrossValidation:
     """Verify calibration results match dp_accounting reference."""
 
     def test_calibrate_epsilon_roundtrip(self):
-        """Calibrated noise → build process → check epsilon against reference."""
+        """Calibrated noise → check epsilon against reference."""
         target_eps = 5.0
         delta = 1e-5
         q = 0.01
         steps = 1000
 
-        build = lambda nm: acc.poisson(acc.gaussian(nm), q) * steps
-
-        result = cal.calibrate(cal.epsilon_budget(target_eps, delta=delta), build, 0.1, 1.2)
+        result = cal.calibrate(
+            cal.epsilon_budget(target_eps, delta=delta),
+            lambda nm: acc.poisson(acc.gaussian(nm), q) * steps,
+            0.1, 1.2,
+        )
         assert result.converged
 
         # Verify with dp_accounting
@@ -534,10 +536,12 @@ class TestCalibrationCrossValidation:
         assert ref_eps == pytest.approx(target_eps, abs=1e-3)
 
     def test_calibrate_advantage_roundtrip(self):
-        """Calibrated noise → build process → check advantage against riskcal."""
-        build = lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 500
-
-        result = cal.calibrate(cal.advantage_budget(0.15), build, 0.3, 1.2)
+        """Calibrated noise → check advantage against riskcal."""
+        result = cal.calibrate(
+            cal.advantage_budget(0.15),
+            lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 500,
+            0.3, 1.2,
+        )
         assert result.converged
 
         # Verify with riskcal

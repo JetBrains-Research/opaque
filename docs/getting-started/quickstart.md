@@ -57,8 +57,8 @@ num_steps = num_epochs * (n_samples // batch_size)
 
 # 4. Calibrate noise multiplier for target privacy
 result = acc.calibrate(
-    target=acc.epsilon(epsilon, delta=delta),
-    build=lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps,
+    target=acc.epsilon_budget(epsilon, delta=delta),
+    process=lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps,
     param_min=0.1,
     param_max=100.0,
 )
@@ -74,11 +74,14 @@ grad_fn, clip_state = clipped_grad(
     l2_clip_norm=clip_norm,
 )
 
-# 6. Training loop with noise
+# 6. Training loop with noise and per-step accounting
 noise_fn, noise_state = gaussian_noise(
     stddev=noise_multiplier * clip_state.sensitivity()
 )
 learning_rate = 0.01
+
+accountant = acc.Accountant(budget=acc.epsilon_budget(epsilon, delta=delta))
+step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
 
 for epoch in range(num_epochs):
     # Shuffle data
@@ -100,11 +103,14 @@ for epoch in range(num_epochs):
         # Update parameters
         params = tuple(p - learning_rate * g for p, g in zip(params, noisy_grads))
 
-# 7. Final privacy guarantee (computed from composition)
-training = acc.poisson(acc.gaussian(noise_multiplier), sample_rate) * num_steps
-final_epsilon = training.epsilon_at(delta)
+        # Track privacy
+        accountant = accountant | step
+
+    eps = accountant.epsilon_at(delta)
+    print(f"Epoch {epoch+1}/{num_epochs} - Privacy: ε={eps:.2f}")
+
 print(f"\nTraining complete!")
-print(f"Final privacy guarantee: (ε={final_epsilon:.2f}, δ={delta})")
+print(f"Final privacy: (ε={accountant.epsilon_at(delta):.2f}, δ={delta})")
 ```
 
 ### Expected Output
@@ -113,13 +119,11 @@ print(f"Final privacy guarantee: (ε={final_epsilon:.2f}, δ={delta})")
 Using noise multiplier: 1.234
 Epoch 1/10 - Privacy: ε=0.32
 Epoch 2/10 - Privacy: ε=0.64
-Epoch 3/10 - Privacy: ε=0.96
 ...
 Epoch 10/10 - Privacy: ε=3.00
 
 Training complete!
-Final privacy guarantee: (ε=3.00, δ=1e-05)
-Target privacy budget: (ε=3.00, δ=1e-05)
+Final privacy: (ε=3.00, δ=1e-05)
 ```
 
 ## Understanding the Code
@@ -149,15 +153,15 @@ example.
 
 ```python
 result = acc.calibrate(
-    target=acc.epsilon(3.0, delta=1e-5),
-    build=lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps,
+    target=acc.epsilon_budget(3.0, delta=1e-5),
+    process=lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps,
     param_min=0.1,
     param_max=100.0,
 )
 noise_multiplier = result.param
 ```
 
-Calibration binary-searches for the minimum noise multiplier needed to achieve your target privacy guarantee. It composes a full training run as a `DpProcess` and queries its epsilon.
+Calibration binary-searches for the noise multiplier that achieves a target privacy guarantee. It composes a full training run as a `DpProcess` and queries its epsilon. The `process` lambda describes how the training run depends on the noise multiplier.
 
 ### 4. Clipped Gradients
 
@@ -180,12 +184,14 @@ Call it with explicit state: `grads, clip_state = grad_fn(params, batch, state=c
 ### 5. Privacy Accounting
 
 ```python
-# Compose a full training run
+# Compose a single step
 step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
-training = step * num_steps
 
-# Query privacy
-epsilon = training.epsilon_at(delta)
+# Track during training with Accountant
+accountant = acc.Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))
+for i in range(num_steps):
+    accountant = accountant | step
+    eps = accountant.epsilon_at(delta)
 ```
 
 Opaque's accounting uses **composable `DpProcess` objects**:
@@ -194,16 +200,18 @@ Opaque's accounting uses **composable `DpProcess` objects**:
 - **Composition**: `*` repeats a process, `|` composes different processes
 - **Metrics**: `.epsilon_at()`, `.delta_at()`, `.advantage()`, `.beta_at()`, `.risk_at()`
 
-For training loops, use the `Accountant` class for step-by-step tracking:
+The `Accountant` class provides step-by-step tracking with optional budget checking:
 
 ```python
-accountant = acc.Accountant()
+accountant = acc.Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))
 step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
+
 for i in range(num_steps):
     # ... train ...
     accountant = accountant | step
-    if accountant.epsilon_at(delta) > epsilon:
-        break  # budget exhausted
+    if accountant.budget_exceeded:
+        print("Privacy budget exhausted!")
+        break
 ```
 
 ## What's Next?

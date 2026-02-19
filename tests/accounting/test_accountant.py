@@ -270,7 +270,7 @@ class TestAccountantTrainingLoop:
 
         result = acc.calibrate(
             target=target,
-            build=lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 100,
+            process=lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 100,
             param_min=0.1,
             param_max=1.2,
         )

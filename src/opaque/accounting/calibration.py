@@ -256,7 +256,11 @@ def epsilon_budget(epsilon: float, delta: float) -> EpsilonTarget:
     Example::
 
         target = cal.epsilon_budget(3.0, delta=1e-5)
-        result = cal.calibrate(target, build_fn, 0.1, 5.0)
+        result = cal.calibrate(
+            target,
+            lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000,
+            0.1, 5.0,
+        )
     """
     return EpsilonTarget(epsilon=epsilon, delta=delta)
 
@@ -274,7 +278,11 @@ def delta_budget(delta: float, epsilon: float) -> DeltaTarget:
     Example::
 
         target = cal.delta_budget(1e-6, epsilon=3.0)
-        result = cal.calibrate(target, build_fn, 0.1, 5.0)
+        result = cal.calibrate(
+            target,
+            lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000,
+            0.1, 5.0,
+        )
     """
     return DeltaTarget(delta=delta, epsilon=epsilon)
 
@@ -291,7 +299,11 @@ def advantage_budget(advantage: float) -> AdvantageTarget:
     Example::
 
         target = cal.advantage_budget(0.1)
-        result = cal.calibrate(target, build_fn, 0.1, 5.0)
+        result = cal.calibrate(
+            target,
+            lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000,
+            0.1, 5.0,
+        )
     """
     return AdvantageTarget(advantage=advantage)
 
@@ -309,7 +321,11 @@ def beta_budget(beta: float, alpha: float) -> BetaTarget:
     Example::
 
         target = cal.beta_budget(0.05, alpha=0.01)
-        result = cal.calibrate(target, build_fn, 0.1, 5.0)
+        result = cal.calibrate(
+            target,
+            lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000,
+            0.1, 5.0,
+        )
     """
     return BetaTarget(beta=beta, alpha=alpha)
 
@@ -327,7 +343,11 @@ def risk_budget(risk: float, prior: float) -> RiskTarget:
     Example::
 
         target = cal.risk_budget(0.1, prior=0.5)
-        result = cal.calibrate(target, build_fn, 0.1, 5.0)
+        result = cal.calibrate(
+            target,
+            lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000,
+            0.1, 5.0,
+        )
     """
     return RiskTarget(risk=risk, prior=prior)
 

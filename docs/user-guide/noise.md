@@ -174,9 +174,11 @@ sample_rate = batch_size / dataset_size
 num_steps = 1000
 
 # 2. Calibrate noise
-build = lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps
-
-result = acc.calibrate(acc.epsilon_budget(3.0, delta=1e-5), build, 0.1, 10.0)
+result = acc.calibrate(
+    acc.epsilon_budget(3.0, delta=1e-5),
+    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps,
+    0.1, 10.0,
+)
 noise_multiplier = result.param
 
 # 3. Create noise function
@@ -253,8 +255,8 @@ def noise_schedule(step, total_steps):
     progress = step / total_steps
     return initial_noise + progress * (final_noise - initial_noise)
 
-# Track composed privacy across steps
-training = acc.identity()  # start with no-op
+# Track composed privacy across steps with Accountant
+acct = acc.Accountant()
 
 for step in range(num_steps):
     grads, clip_state = dp_grad_fn(params, batch, state=clip_state)
@@ -266,9 +268,9 @@ for step in range(num_steps):
     params = update(params, noisy_grads)
 
     # Important: Track with actual noise used!
-    training = training | acc.poisson(acc.gaussian(current_noise), sample_rate)
+    acct = acct | acc.poisson(acc.gaussian(current_noise), sample_rate)
 
-final_epsilon = training.epsilon_at(1e-5)
+final_epsilon = acct.epsilon_at(1e-5)
 print(f"Final privacy: (ε={final_epsilon:.2f}, δ=1e-5)")
 ```
 

@@ -83,7 +83,7 @@ training = acc.poisson(acc.gaussian(noise_mult), sample_rate=0.01) * num_steps
 epsilon = training.epsilon_at(delta=1e-5)
 ```
 
-## Truncated Poisson Sampling ⭐
+## Truncated Poisson Sampling
 
 **Problem**: Standard Poisson sampling has variable batch sizes (can be 0 or very large!)
 
@@ -132,12 +132,11 @@ epsilon = training.epsilon_at(delta=1e-5)
 
 ### Advantages
 
-✅ **Consistent batch sizes**: No empty or huge batches
-✅ **Tighter privacy bounds**: Up to 20% better than standard Poisson
-✅ **Better training dynamics**: More stable convergence
+- **Consistent batch sizes**: No empty or huge batches
+- **Tighter privacy bounds**: Up to 20% better than standard Poisson
+- **More stable training dynamics**
 
-!!! tip "Use truncated Poisson by default"
-Unless you have a specific reason not to, use truncated Poisson for best results.
+Truncated Poisson is a reasonable default for most DP-SGD workloads.
 
 ## Microbatching for Memory Efficiency
 
@@ -216,8 +215,7 @@ for mbs in microbatch_sizes:
 
 ### Privacy Guarantees with Microbatching
 
-!!! success "Microbatching doesn't affect privacy!"
-Microbatching is just a memory optimization. Privacy guarantees are unchanged.
+Microbatching is a memory optimization. Privacy guarantees are identical.
 
 ```python
 # These are equivalent for privacy:
@@ -259,11 +257,13 @@ sampler = TruncatedPoissonSampler(
 )
 
 # Calibrate noise
-build = lambda nm: acc.truncated_poisson(
-    acc.gaussian(nm), sample_rate, batch_size_cap=batch_size, dataset_size=dataset_size
-) * num_steps
-
-result = acc.calibrate(acc.epsilon_budget(3.0, delta=1e-5), build, 0.1, 10.0)
+result = acc.calibrate(
+    acc.epsilon_budget(3.0, delta=1e-5),
+    lambda nm: acc.truncated_poisson(
+        acc.gaussian(nm), sample_rate, batch_size_cap=batch_size, dataset_size=dataset_size
+    ) * num_steps,
+    0.1, 10.0,
+)
 noise_multiplier = result.param
 
 # Create DP gradient function
