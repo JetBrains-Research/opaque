@@ -1,5 +1,6 @@
+from . import opaque_accounting as _oa
 from .opaque_accounting import *
 
-__doc__ = opaque_accounting.__doc__
-if hasattr(opaque_accounting, "__all__"):
-    __all__ = opaque_accounting.__all__
+__doc__ = _oa.__doc__
+if hasattr(_oa, "__all__"):
+    __all__ = _oa.__all__

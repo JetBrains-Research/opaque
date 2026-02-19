@@ -1,10 +1,17 @@
-# opaque-dp-accounting
+# opaque-accounting
 
-High-performance differential privacy accounting using Privacy Loss Distributions (PLD), implemented in Rust with Python bindings via PyO3.
+PLD computation engine for differential privacy accounting, implemented in Rust with Python bindings via PyO3.
 
 ## Overview
 
-`opaque_dp_accounting` provides tight privacy accounting for DP-SGD and related mechanisms using the PLD framework with Connect-the-Dots discretization ([Doroshenko et al., 2022](https://arxiv.org/abs/2207.04380)). It computes (epsilon, delta)-DP, f-DP advantage, (alpha, beta) error rates, and Bayes risk — all from a single PLD computation.
+`opaque_accounting` is the numerical backend for `opaque.accounting`. It provides
+flat functions that take scalar parameters and return opaque `Pld` handles.
+Python owns composition, repetition, caching, and calibration.
+
+The engine uses the Privacy Loss Distribution (PLD) framework with
+Connect-the-Dots discretization ([Doroshenko et al., 2022](https://arxiv.org/abs/2207.04380)).
+It computes (epsilon, delta)-DP, f-DP advantage, (alpha, beta) error rates,
+and Bayes risk — all from a single PLD computation.
 
 ### Why PLD?
 
@@ -14,206 +21,120 @@ High-performance differential privacy accounting using Privacy Loss Distribution
 | Renyi DP (RDP) | Good | Moment-based | Fast |
 | **PLD (this crate)** | **Tight** | **FFT convolution** | **O(n log n)** |
 
-PLD gives the **tightest known bounds** for composed mechanisms via FFT-based convolution in O(n log n) time.
+PLD gives the tightest known bounds for composed mechanisms via
+FFT-based convolution in O(n log n) time.
 
-## Installation
+## Building
 
-### Python (via maturin)
+### As part of Opaque (recommended)
 
 ```bash
-cd crates/dp-accounting
-python -m venv .venv && source .venv/bin/activate
-pip install maturin dp-accounting  # dp-accounting for cross-validation
-maturin develop --release
+uv run maturin develop --release -m crates/dp-accounting/Cargo.toml
 ```
 
-### Rust
+### Standalone Rust
 
 ```toml
 [dependencies]
-opaque-dp-accounting = { path = "crates/dp-accounting" }
+opaque-accounting = { path = "crates/dp-accounting" }
 ```
 
 ## Quick Start
 
-### Python
+### Python (via `opaque.accounting`)
+
+Users interact through the Python wrapper, not the native module directly:
 
 ```python
-import opaque_dp_accounting as dp
+import opaque.accounting as acc
 
-# --- Single mechanism ---
-proc = dp.gaussian(1.1)
-print(proc.epsilon_at(1e-5))   # epsilon for this noise level
-print(proc.delta_at(1.0))      # delta at epsilon=1.0
+# Single Gaussian mechanism
+step = acc.gaussian(0.5)
+print(step.epsilon_at(1e-5))
 
-# --- Standard DP-SGD (Poisson-subsampled Gaussian, 1000 steps) ---
-step = dp.poisson(dp.gaussian(1.1), sample_rate=0.01)
-training = step * 1000                     # repeat 1000 times
-eps = training.epsilon_at(delta=1e-5)      # query epsilon
+# DP-SGD: Poisson-subsampled Gaussian, 1000 steps
+training = acc.poisson(acc.gaussian(0.5), sample_rate=0.01) * 1000
+eps = training.epsilon_at(delta=1e-5)
 print(f"DP-SGD: epsilon={eps:.2f}")
 
-# --- One-liner ---
-eps = dp.compute_epsilon(1.1, 0.01, 1000, delta=1e-5)
-
-# --- Calibrate noise for target privacy ---
-nm = dp.calibrate_noise(
-    target_epsilon=8.0,
-    target_delta=1e-5,
-    sample_rate=0.01,
-    num_steps=1000,
-)
-print(f"Use noise_multiplier={nm:.4f}")
+# Heterogeneous composition (warmup + training)
+warmup = acc.poisson(acc.gaussian(0.15), 0.001) * 100
+training = acc.poisson(acc.gaussian(0.25), 0.001) * 400
+total = warmup | training
+print(total.epsilon_at(1e-5))
 ```
 
 ### Rust
 
 ```rust
-use opaque_dp_accounting::functional::*;
+use opaque_accounting::mechanisms::gaussian_pld;
+use opaque_accounting::amplification::poisson_gaussian_pld;
+use opaque_accounting::DiscretizationConfig;
 
-// Poisson-subsampled Gaussian, 1000 steps
-let step = poisson(gaussian(1.1)?, 0.01);
-let training = repeat(step, 1000)?;
-let epsilon = training.epsilon_at(1e-5)?;
-println!("epsilon = {epsilon:.4}");
+let config = DiscretizationConfig::default();
+let pld = gaussian_pld(0.5, &config)?;
+let eps = pld.epsilon_at(1e-5);
+println!("epsilon = {eps:.4}");
+
+// Poisson-subsampled, self-composed 1000 times
+let step = poisson_gaussian_pld(0.5, 0.01, &config)?;
+let training = step.self_compose(1000);
+println!("epsilon = {:.4}", training.epsilon_at(1e-5));
 ```
 
-## Python API Reference
+## Architecture
 
-### Mechanisms
+Rust is a PLD computation engine: flat functions that take scalar
+parameters and return opaque `Pld` handles.
 
-| Function | Description |
-|----------|-------------|
-| `gaussian(noise_multiplier, discretization=None)` | Gaussian mechanism (sensitivity=1) → `Gaussian` |
-| `poisson(inner, sample_rate)` | Poisson-subsampled mechanism → `Poisson` |
-| `truncated_poisson(inner, sample_rate, batch_size_cap, dataset_size)` | Truncated Poisson (capped batch) → `TruncatedPoisson` |
-| `accumulate(inner, microbatches)` | Gradient accumulation → `Accumulated` |
-| `eps_delta(epsilon, delta=0, discretization=None)` | Fixed (ε, δ)-DP mechanism → `EpsDelta` |
-| `identity(discretization=None)` | Zero privacy loss → `Identity` |
-| `adaclip(inner, quantile_noise_std)` | Adaptive clipping → `AdaClip` |
+```
+opaque_accounting (Rust crate)
+├── mechanisms/       # gaussian_pld, eps_delta_pld, identity_pld
+├── amplification/    # poisson_gaussian_pld, truncated_poisson_gaussian_pld, accumulated_poisson_gaussian_pld
+├── transformations/  # combined_sensitivity (adaptive clipping)
+├── pld/              # PrivacyLossDistribution: metrics, compose, self_compose
+├── discretization/   # Connect-the-Dots algorithm, DiscretizationConfig
+├── numerics/         # FFT, log-space arithmetic, special functions
+├── adjacency.rs      # Add/remove adjacency relation
+├── error.rs          # Error types
+└── python/           # PyO3 bindings (flat module, no sub-modules)
+```
 
-### Composition
+### Pld type
 
-| Function / Operator | Description |
-|---------------------|-------------|
-| `process * k` | Repeat a process k times (homogeneous composition) |
-| `a \| b` | Compose two processes (heterogeneous composition) |
-| `repeat(process, count)` | Functional form of `process * count` |
-| `compose(left, right)` | Functional form of `left \| right` |
-
-### Privacy Metrics
-
-All metrics are computed from the same PLD — no redundant computation.
+All functions return `PrivacyLossDistribution` (exposed as `Pld` in Python):
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `proc.epsilon_at(delta)` | float | Smallest epsilon for (epsilon, delta)-DP |
-| `proc.delta_at(epsilon)` | float | Smallest delta for (epsilon, delta)-DP |
-| `proc.advantage()` | float | f-DP advantage (= delta_at(0)) |
-| `proc.beta_at(alpha)` | float | Type-II error at given Type-I error |
-| `proc.risk_at(prior)` | float | Bayes risk under optimal adversary |
+| `epsilon_at(delta)` | float | Smallest epsilon for (epsilon, delta)-DP |
+| `delta_at(epsilon)` | float | Smallest delta for (epsilon, delta)-DP |
+| `advantage()` | float | f-DP advantage (= delta_at(0)) |
+| `beta_at(alpha)` | float | Type-II error at given Type-I error |
+| `risk_at(prior)` | float | Bayes risk under optimal adversary |
+| `compose(other)` | Pld | Heterogeneous composition (FFT convolution) |
+| `self_compose(count)` | Pld | Homogeneous k-fold composition |
 
-### Convenience
-
-| Function | Description |
-|----------|-------------|
-| `compute_epsilon(noise_multiplier, sample_rate, num_steps, delta)` | One-liner for DP-SGD epsilon |
-| `calibrate_noise(target_epsilon, target_delta, sample_rate, num_steps, ...)` | Find noise for target privacy |
-
-### Debugging & Introspection
-
-```python
-proc = dp.poisson(dp.gaussian(1.1), 0.01) * 1000
-
-# Quick display
-print(proc)
-# Repeated(Poisson(Gaussian(noise_multiplier=1.1), sample_rate=0.01), count=1000)
-
-# PLD grid diagnostics
-info = proc.pld_info()
-# {'grid_size': 84001, 'discretization': 0.0001, 'infinity_mass': 1.2e-10,
-#  'total_mass': 1.0, 'elapsed_ms': 42.3, ...}
-
-# Full privacy summary
-print(proc.summary(delta=1e-5))
-# --- Repeat(Poisson(...), k=1000) ---
-# epsilon(delta=1e-5)  = 3.73
-# delta(epsilon=1)     = 2.1e-02
-# advantage            = 4.5e-01
-# beta(alpha=0.05)     = 0.12
-# risk(prior=0.5)      = 0.38
-# ---
-# PLD grid: 84001 bins, disc=0.0001, inf_mass=1.2e-10
-# PLD computed in 42.3 ms
-```
+Operators: `pld * k` (self_compose), `a \| b` (compose).
 
 ### DiscretizationConfig
 
 Fine-tune numerical precision when defaults are insufficient:
 
-```python
-cfg = dp.DiscretizationConfig(
-    discretization=1e-3,        # coarser grid (faster, less precise)
-    log_mass_truncation_bound=-50.0,  # wider tails
-    pessimistic_estimate=False,  # optimistic (lower-bound) rounding
-    max_grid_size=1_000_000,    # limit memory
-)
-
-proc = dp.gaussian(1.1, discretization=cfg)
-```
-
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `discretization` | 1e-4 | Grid spacing for PLD discretization |
-| `log_mass_truncation_bound` | -32.0 | log2 tail truncation threshold |
+| `log_mass_truncation_bound` | -50.0 | Log tail truncation threshold |
 | `pessimistic_estimate` | True | Upper-bound rounding (safe for privacy) |
 | `max_grid_size` | 10,000,000 | Auto-coarsen if grid exceeds this |
 
-## Architecture
-
-```
-opaque_dp_accounting
-├── functional/           # Core functional API
-│   ├── mechanisms/       # Gaussian, EpsDelta, Identity
-│   ├── amplification/    # Poisson, TruncatedPoisson, Accumulated
-│   ├── transforms/       # AdaClip
-│   ├── composition.rs    # compose(), repeat()
-│   ├── calibrate.rs      # Binary search calibration
-│   ├── discretization/   # Connect-the-Dots algorithm
-│   ├── pld/              # Privacy Loss Distribution + PMF
-│   └── process.rs        # Process trait (core abstraction)
-├── math_helpers/         # FFT, log-space arithmetic, special functions
-├── python/               # PyO3 bindings
-└── error.rs              # Error types
-```
-
-### The `Process` Trait
-
-Every privacy mechanism implements the `Process` trait:
-
-```rust
-pub trait Process {
-    fn pld(&self) -> Result<PrivacyLossDistribution>;
-}
-```
-
-This single method produces a PLD from which all privacy metrics are derived. Composition works by convolving PLDs via FFT — no approximation needed.
-
 ## Validation
 
-The crate is validated at two levels:
-
-- **371 Rust unit tests** covering mechanisms, composition, calibration, amplification, and edge cases
-- **40 Python cross-validation tests** comparing against Google's `dp-accounting` library with conservative tolerances derived from Connect-the-Dots discretization error
-
-Run the tests:
-
 ```bash
-# Rust
+# Rust unit tests
 cargo test
 
-# Python (requires dp-accounting in venv)
-source .venv/bin/activate
-pytest tests/test_against_dp_accounting.py -v
+# Python cross-validation (requires dp-accounting)
+pytest tests/ -v
 ```
 
 ## References

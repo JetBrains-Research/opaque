@@ -31,7 +31,11 @@ For calibration (finding noise for target privacy budget), use the
 try:
     import opaque_accounting as _native
 except ImportError as e:
-    raise ImportError("opaque-accounting native module not found. ") from e
+    raise ImportError(
+        "opaque-accounting native module not found. "
+        "Build with: uv run maturin develop --release "
+        "-m crates/dp-accounting/Cargo.toml"
+    ) from e
 
 # Base
 from opaque.accounting.base import DpProcess

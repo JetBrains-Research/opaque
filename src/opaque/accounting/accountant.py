@@ -181,12 +181,8 @@ class Accountant:
         if self._budget is None:
             return False
 
-        try:
-            achieved = self._budget.evaluate(self._process)
-            return achieved > self._budget.value
-        except Exception:
-            # If metric computation fails, don't violate budget by accident
-            return False
+        achieved = self._budget.evaluate(self._process)
+        return achieved > self._budget.value
 
     # -- Serialization -------------------------------------------------------
 

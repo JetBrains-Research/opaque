@@ -112,7 +112,20 @@ class DpProcess(ABC):
         """Repeat this process *count* times: ``step * 1000``.
 
         Flattens nested repeats: ``(step * n) * m`` → ``step * (n * m)``.
+
+        Args:
+            count: Number of repetitions. Must be positive.
+                Use ``count=0`` is not allowed (use :func:`identity` instead).
+
+        Raises:
+            ValueError: If count < 1.
         """
+        if count < 1:
+            raise ValueError(
+                f"Repeat count must be >= 1, got {count}. "
+                "Use identity() for zero privacy loss."
+            )
+
         from opaque.accounting.composition import Repeated
 
         leaf, existing = self._leaf_and_count()
