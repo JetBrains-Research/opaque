@@ -7,6 +7,11 @@ The API returns ``(noise_fn, state)`` where state is always immutable:
 
     >>> noise_fn, state = gaussian_noise(stddev=1.0, generator=42)
     >>> noisy_grads, state = noise_fn(grads, state)
+
+Auto-distributed support:
+- When distributed mode is detected (via torch.distributed.is_initialized()), and no
+  generator is provided, all devices automatically use the SAME seed for synchronized noise.
+- This prevents model divergence while keeping the API simple - just pass generator=None.
 """
 
 import dataclasses
@@ -15,6 +20,7 @@ from typing import Any
 
 import torch
 
+from opaque.distributed import is_distributed
 from opaque.utils.pytree import tree_map
 
 
@@ -40,13 +46,22 @@ def _resolve_generator(
 
     Args:
         generator: One of:
-            - ``None``: create a new unseeded generator (non-reproducible)
+            - ``None``: In distributed mode, creates a generator seeded with
+              a fixed seed (same across all devices). In single device mode,
+              creates an unseeded generator (non-reproducible).
             - ``int``: create a generator seeded with this value (reproducible)
             - ``torch.Generator``: use directly
     """
     if generator is None:
-        gen = torch.Generator()
-        gen.seed()
+        # Auto-detect distributed mode for synchronized noise
+        if is_distributed():
+            # Distributed mode: use same seed everywhere for synchronized noise
+            # Use a fixed seed (e.g., 0) that doesn't depend on rank
+            gen = torch.Generator().manual_seed(0)
+        else:
+            # Single device: unseeded generator (non-reproducible)
+            gen = torch.Generator()
+            gen.seed()
         return gen
     elif isinstance(generator, int):
         return torch.Generator().manual_seed(generator)
@@ -71,13 +86,21 @@ def gaussian_noise(
     Returns ``(noise_fn, state)`` where ``noise_fn`` adds calibrated Gaussian
     noise N(0, stddev²) to gradients and returns updated state.
 
+    **Automatic distributed support**: When ``generator=None`` and distributed
+    mode is detected (via ``torch.distributed.is_initialized()``), automatically
+    uses the SAME seed across all devices. This provides synchronized noise for
+    model convergence.
+
     Args:
         stddev: Standard deviation of Gaussian noise
             (usually ``noise_multiplier * clip_norm``).
         generator: RNG configuration:
-            - ``None``: new unseeded generator (non-reproducible)
-            - ``int``: seeded generator (reproducible)
-            - ``torch.Generator``: use directly
+            - ``None``:
+              - **Distributed (world_size > 1)**: Use fixed seed (seed=0) across all devices
+                for synchronized noise. Prevents model divergence.
+              - **Single device**: Unseeded generator (non-reproducible)
+            - ``int``: Seeded generator (reproducible, used as-is)
+            - ``torch.Generator``: Use directly
 
     Returns:
         A tuple ``(noise_fn, state)`` where:
@@ -85,12 +108,18 @@ def gaussian_noise(
         - ``noise_fn(grads, state) -> (noisy_grads, new_state)``
         - ``state`` is a :class:`GaussianNoiseState`
 
-    Example:
+    Example (typical use - no seed management needed):
         >>> import torch
         >>> from opaque.noise import gaussian_noise
         >>>
-        >>> noise_fn, state = gaussian_noise(stddev=1.1, generator=42)
+        >>> # When distributed is detected, automatically synchronizes noise across devices
+        >>> noise_fn, state = gaussian_noise(stddev=1.1)  # No seed needed!
         >>> grads = torch.zeros(10)
+        >>> noisy_grads, state = noise_fn(grads, state)
+
+    Example (reproducible):
+        >>> # Provide explicit seed for reproducibility
+        >>> noise_fn, state = gaussian_noise(stddev=1.1, generator=42)
         >>> noisy_grads, state = noise_fn(grads, state)
     """
     if stddev < 0:

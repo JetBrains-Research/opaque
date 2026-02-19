@@ -1,52 +1,64 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Shared fixtures for compatibility tests.
+"""Shared fixtures and helpers for compatibility tests."""
 
-Dependencies: Install with `uv sync --group compat`
-"""
+import os
 
 import pytest
 import torch
-
-pytest.importorskip("peft", reason="peft not installed, run `uv sync --group compat`")
-pytest.importorskip("transformers", reason="transformers not installed")
-
 from peft import LoraConfig, get_peft_model
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 from opaque import clipped_grad, make_functional
 
-# Mark entire compat directory as requiring compat dependencies
-pytestmark = pytest.mark.compat
+transformers = pytest.importorskip("transformers")
+peft = pytest.importorskip("peft")
 
 
-# device fixture is inherited from tests/conftest.py
-# It automatically selects: CUDA > MPS > CPU
+def pytest_runtest_setup(item):
+    """Auto-skip GPU tests if no GPU (CUDA/MPS) is available."""
+    if "gpu" in item.keywords:
+        if not (torch.cuda.is_available() or torch.backends.mps.is_available()):
+            pytest.skip("No GPU available (CUDA or MPS) - skipping GPU tests")
 
 
-@pytest.fixture
+def has_hf_token() -> bool:
+    """Return True when a Hugging Face token is available via env vars."""
+    return any(
+        os.getenv(name)
+        for name in ("HF_TOKEN", "HUGGINGFACEHUB_API_TOKEN", "HUGGINGFACE_TOKEN")
+    )
+
+
+@pytest.fixture(scope="module")
 def qwen2_config():
-    """Small Qwen2 config for testing."""
+    """Small Qwen2 config for fast testing."""
     config = AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
     config.num_hidden_layers = 2
-    config.num_attention_heads = 4
-    config.num_key_value_heads = 2  # GQA
+    config._attn_implementation = "eager"
     return config
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def qwen2_tokenizer():
     """Qwen2 tokenizer."""
     return AutoTokenizer.from_pretrained("Qwen/Qwen2-0.5B")
 
 
 def prepare_lora_model(config, target_modules=None):
-    """Helper to create a model with LoRA applied."""
-    model = AutoModelForCausalLM.from_config(config)
+    """Helper to create LoRA models.
 
+    Args:
+        config: Model config from AutoConfig
+        target_modules: List of target modules for LoRA (default: ["q_proj", "v_proj"])
+
+    Returns:
+        Model with LoRA applied
+    """
     if target_modules is None:
-        target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
+        target_modules = ["q_proj", "v_proj"]
 
+    model = AutoModelForCausalLM.from_config(config)
     lora_config = LoraConfig(
         r=8,
         lora_alpha=16,
@@ -56,16 +68,20 @@ def prepare_lora_model(config, target_modules=None):
     return get_peft_model(model, lora_config)
 
 
-def run_clipped_grad_test(model, tokenizer):
-    """Helper to run a basic clipped_grad test.
+def run_clipped_grad_test(model, tokenizer, device=None):
+    """Helper to run clipped gradient tests.
+
+    Args:
+        model: Model to test (should already be on device)
+        tokenizer: Tokenizer for the model
+        device: Device to use (if None, inferred from model)
 
     Returns:
-        tuple: (gradients_dict, clip_state)
+        Tuple of (grads, clip_state)
     """
-    # Determine device from model
-    device = next(model.parameters()).device
+    if device is None:
+        device = next(model.parameters()).device
 
-    # Prepare batch
     texts = ["Hello world test", "Another example", "Third sample", "Final one"]
     inputs = tokenizer(
         texts, return_tensors="pt", padding=True, max_length=16, truncation=True
@@ -74,41 +90,19 @@ def run_clipped_grad_test(model, tokenizer):
     attention_mask = inputs["attention_mask"].to(device)
     labels = input_ids.clone()
 
-    # Convert to functional
     fmodel, trainable, frozen = make_functional(
-        model,
-        disable_autograd_tracking=True,
-        partition_trainable=True,
+        model, disable_autograd_tracking=True, partition_trainable=True
     )
 
-    def per_example_loss(
-        trainable_params, frozen_params, input_ids_single, mask_single, labels_single
-    ):
+    def per_example_loss(trainable_params, frozen_params, ids, mask, lbls):
         all_params = {**frozen_params, **trainable_params}
-        outputs = fmodel(
-            all_params,
-            input_ids_single,
-            attention_mask=mask_single,
-            labels=labels_single,
-        )
+        outputs = fmodel(all_params, ids, attention_mask=mask, labels=lbls)
         return outputs.loss
 
-    # Create clipped gradient function
     grad_fn, clip_state = clipped_grad(
-        per_example_loss,
-        argnums=0,
-        batch_argnums=(2, 3, 4),
-        l2_clip_norm=1.0,
+        per_example_loss, argnums=0, batch_argnums=(2, 3, 4), l2_clip_norm=1.0
     )
-
-    # Compute gradients
-    grads, new_state = grad_fn(
-        trainable,
-        frozen,
-        input_ids,
-        attention_mask,
-        labels,
-        state=clip_state,
+    grads, state = grad_fn(
+        trainable, frozen, input_ids, attention_mask, labels, state=clip_state
     )
-
-    return grads, new_state
+    return grads, state

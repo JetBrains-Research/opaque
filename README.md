@@ -43,7 +43,7 @@ pip install torchvision         # For CV
 git clone https://github.com/JetBrains-Research/opaque.git
 cd opaque
 uv sync --group dev  # Core tests
-uv sync --group dev --group compat  # + HF tests
+uv sync --group dev --group test  # + HF tests
 ```
 
 **Philosophy**: Opaque provides DP-SGD primitives. You bring the models.
@@ -122,9 +122,10 @@ Core DP-SGD primitives are implemented and validated:
 
 - **Clipping**: `clip_pytree()`, `clipped_fun()`, `clipped_grad()`, `adaptive_clipped_grad()` — Per-example gradient clipping with functional state
 - **Noise**: `gaussian_noise()`, `bounded_gaussian_noise()`, plus matrix factorization noise (`band_mf_noise`, `blt_mf_noise`, `dense_mf_noise`, `custom_mf_noise`, `identity_mf_noise`)
-- **Sampling**: `PoissonSampler`, `TruncatedPoissonSampler`, `CyclicPoissonSampling` — Privacy-amplified batch selection
+- **Sampling**: `PoissonSampler`, `TruncatedPoissonSampler`, `CyclicPoissonSampler` — Privacy-amplified batch selection
 - **Accounting**: Rust-based PLD engine with tight composition bounds, calibration, and the `Accountant` training-loop helper
 - **Auditing**: Empirical privacy auditing via membership inference
+- **Distributed**: DDP-compatible training with Poisson subsampling
 - **Profiling**: Memory tracking and microbatch size auto-tuning
 - **HuggingFace Compatibility**: Auto-patching for vmap-compatible forward passes (LLaMA, Mistral, Qwen2, Phi, OLMo, Gemma2)
 - **Validation**: 458 tests passing, numerical equivalence with JAX-Privacy (atol=1e-5)
@@ -229,8 +230,8 @@ uv sync --all-groups
 
 #### Selective Installation
 ```bash
-# Just compatibility testing
-uv sync --group compat
+# Just HuggingFace testing
+uv sync --group test
 
 # Run examples and tutorials
 uv sync --group examples
@@ -242,7 +243,7 @@ uv sync --group docs
 uv sync --group benchmark
 
 # Multiple groups
-uv sync --group dev --group compat --group examples
+uv sync --group dev --group test --group examples
 ```
 
 ### Common Workflows
@@ -267,7 +268,7 @@ uv sync --group dev
 pytest tests/  # Core tests only
 
 # Optional: Test HuggingFace compatibility
-uv sync --group compat
+uv sync --group test
 pytest tests/compat/
 ```
 

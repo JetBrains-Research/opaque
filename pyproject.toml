@@ -60,9 +60,9 @@ dev = [
   "scipy>=1.11.0",         # Statistical tests
 ]
 
-# Compatibility testing with HuggingFace ecosystem
-# Install with: uv sync --group compat
-compat = [
+# Optional test dependencies (HuggingFace ecosystem)
+# Install with: uv sync --group test
+test = [
   "transformers>=4.57.0",
   "peft>=0.18.0",
   "pytest>=7.0.0",

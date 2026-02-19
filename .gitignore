@@ -60,3 +60,4 @@ dmypy.json
 
 # Logs
 *.log
+.temp/

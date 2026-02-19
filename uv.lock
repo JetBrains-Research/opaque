@@ -1905,12 +1905,6 @@ benchmark = [
     { name = "opacus" },
     { name = "torchvision" },
 ]
-compat = [
-    { name = "peft" },
-    { name = "pytest" },
-    { name = "transformers" },
-    { name = "typeguard" },
-]
 cross-validation = [
     { name = "dp-accounting" },
     { name = "numpy" },
@@ -1939,6 +1933,12 @@ examples = [
     { name = "torchopt" },
     { name = "transformers" },
 ]
+test = [
+    { name = "peft" },
+    { name = "pytest" },
+    { name = "transformers" },
+    { name = "typeguard" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -1952,12 +1952,6 @@ requires-dist = [
 benchmark = [
     { name = "opacus", specifier = ">=1.5.4" },
     { name = "torchvision", specifier = ">=0.24.0" },
-]
-compat = [
-    { name = "peft", specifier = ">=0.18.0" },
-    { name = "pytest", specifier = ">=7.0.0" },
-    { name = "transformers", specifier = ">=4.57.0" },
-    { name = "typeguard", specifier = ">=4.0.0" },
 ]
 cross-validation = [
     { name = "dp-accounting", specifier = ">=0.4.4" },
@@ -1986,6 +1980,12 @@ examples = [
     { name = "peft", specifier = ">=0.18.0" },
     { name = "torchopt", specifier = ">=0.7.3" },
     { name = "transformers", specifier = ">=4.57.0" },
+]
+test = [
+    { name = "peft", specifier = ">=0.18.0" },
+    { name = "pytest", specifier = ">=7.0.0" },
+    { name = "transformers", specifier = ">=4.57.0" },
+    { name = "typeguard", specifier = ">=4.0.0" },
 ]
 
 [[package]]

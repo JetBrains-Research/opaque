@@ -15,7 +15,7 @@ Key modules:
 
 import os
 
-from opaque import accounting, auditing, sampling
+from opaque import accounting, auditing, distributed, sampling
 from opaque.clipping import (
     AdaptiveClipState,
     ClipState,
@@ -36,7 +36,7 @@ from opaque.noise import (
     identity_mf_noise,
 )
 from opaque.sampling import (
-    CyclicPoissonSampling,
+    CyclicPoissonSampler,
     PoissonSampler,
     TruncatedPoissonSampler,
 )
@@ -74,7 +74,7 @@ __all__ = [
     "sampling",
     "PoissonSampler",
     "TruncatedPoissonSampler",
-    "CyclicPoissonSampling",
+    "CyclicPoissonSampler",
     # Noise
     "gaussian_noise",
     "bounded_gaussian_noise",
@@ -87,6 +87,8 @@ __all__ = [
     "accounting",
     # Auditing
     "auditing",
+    # Distributed
+    "distributed",
     # Utils
     "make_functional",
 ]
