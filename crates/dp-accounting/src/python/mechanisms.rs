@@ -9,11 +9,11 @@ use super::pld::PyPld;
 ///
 /// The Bounded Gaussian Mechanism (Chen & Hale, 2024) adds truncated Gaussian
 /// noise to keep outputs in a bounded domain.  Under Replace adjacency,
-/// sensitivity is 2Δ, so the PLD equals that of a Gaussian with
-/// ``effective_σ = noise_multiplier / 2``.
+/// sensitivity is 2Δ, which is accounted for internally.  The `noise_multiplier`
+/// parameter has the same meaning and valid range as for `gaussian_pld`.
 ///
 /// Args:
-///     noise_multiplier (float): σ/Δ ratio, in [0.1, 2.4].
+///     noise_multiplier (float): σ/Δ ratio, in [0.1, 1.2] — same as gaussian_pld.
 ///     config (DiscretizationConfig, optional): Discretization configuration.
 ///
 /// Returns:

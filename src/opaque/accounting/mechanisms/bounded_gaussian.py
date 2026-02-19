@@ -37,14 +37,16 @@ def bounded_gaussian(
     The Bounded Gaussian Mechanism (Chen & Hale, 2024) adds noise from a
     truncated normal distribution, bounding outputs to a fixed domain.
     Under **Replace** adjacency (one record swapped), sensitivity is 2Δ,
-    making the PLD equivalent to a Gaussian with ``noise_multiplier / 2``.
+    which is accounted for internally.
 
-    Use this when you call :func:`~opaque.noise.bounded_gaussian_noise` to
-    add noise — it gives the correct privacy accounting for that mechanism.
+    The ``noise_multiplier`` parameter has the same meaning and valid range
+    as for :func:`gaussian`: σ/Δ with Δ = 1 (unit sensitivity).  For the same
+    ``noise_multiplier``, this mechanism has higher ε than :func:`gaussian`
+    because Replace adjacency doubles the effective sensitivity.
 
     Args:
         noise_multiplier: Noise standard deviation divided by sensitivity (σ/Δ).
-            Valid range: [0.1, 2.4].  Larger values = more privacy, less utility.
+            Valid range: [0.1, 1.2] — same as :func:`gaussian`.
         discretization: PLD precision config (keyword-only). Can be:
             - None: use module default (see :func:`set_discretization`)
             - float: use as grid spacing

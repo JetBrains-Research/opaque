@@ -5,6 +5,10 @@
 //! (changing one record changes the query answer by at most 2Δ), its PLD
 //! is equivalent to the standard Gaussian with noise multiplier halved.
 //!
+//! The `noise_multiplier` parameter has the same meaning as for `gaussian_pld`:
+//! σ/Δ with Δ = 1 (unit sensitivity).  Replace adjacency is handled internally
+//! by halving the effective noise multiplier; users should not adjust the value.
+//!
 //! # References
 //!
 //! Bo Chen and Matthew Hale, "The Bounded Gaussian Mechanism for Differential
@@ -17,23 +21,19 @@ use crate::pld::PrivacyLossDistribution;
 
 use super::{MAX_NOISE_MULTIPLIER, MIN_NOISE_MULTIPLIER};
 
-/// Maximum supported noise multiplier for the bounded Gaussian mechanism.
-///
-/// Under Replace adjacency the effective σ is `noise_multiplier / 2`, so the
-/// allowed input range is widened to `[MIN_NOISE_MULTIPLIER, 2 * MAX_NOISE_MULTIPLIER]`.
-pub(crate) const BOUNDED_GAUSSIAN_MAX_NOISE_MULTIPLIER: f64 = 2.0 * MAX_NOISE_MULTIPLIER;
-
 /// Compute the PLD for the Bounded Gaussian mechanism (Replace adjacency).
 ///
 /// The Bounded Gaussian Mechanism adds noise from a truncated normal to keep
 /// outputs within a bounded domain.  Under **Replace** adjacency (one record
-/// swapped), sensitivity is 2Δ, equivalent to halving the noise multiplier.
-/// The PLD is therefore that of a Gaussian with `effective_σ = noise_multiplier / 2`.
+/// swapped), sensitivity is 2Δ, which is accounted for internally by halving
+/// the effective noise multiplier.
+///
+/// The `noise_multiplier` parameter has the same meaning and the same valid
+/// range as for [`gaussian_pld`]: the σ/Δ ratio with Δ = 1.
 ///
 /// # Arguments
 ///
-/// * `noise_multiplier` — σ/Δ ratio, must be in
-///   `[MIN_NOISE_MULTIPLIER, 2 × MAX_NOISE_MULTIPLIER]` = `[0.1, 2.4]`
+/// * `noise_multiplier` — σ/Δ ratio, must be in [`MIN_NOISE_MULTIPLIER`, `MAX_NOISE_MULTIPLIER`]
 /// * `config` — discretization configuration for PLD grid
 ///
 /// # Errors
@@ -43,11 +43,10 @@ pub fn bounded_gaussian_pld(
     noise_multiplier: f64,
     config: &DiscretizationConfig,
 ) -> Result<PrivacyLossDistribution> {
-    if !(MIN_NOISE_MULTIPLIER..=BOUNDED_GAUSSIAN_MAX_NOISE_MULTIPLIER).contains(&noise_multiplier)
-    {
+    if !(MIN_NOISE_MULTIPLIER..=MAX_NOISE_MULTIPLIER).contains(&noise_multiplier) {
         return Err(PldError::InvalidParameter(format!(
             "noise_multiplier must be in [{}, {}], got {}",
-            MIN_NOISE_MULTIPLIER, BOUNDED_GAUSSIAN_MAX_NOISE_MULTIPLIER, noise_multiplier
+            MIN_NOISE_MULTIPLIER, MAX_NOISE_MULTIPLIER, noise_multiplier
         )));
     }
     super::gaussian::gaussian_replace_pld(noise_multiplier, config)
@@ -68,7 +67,7 @@ mod tests {
 
     #[test]
     fn test_bounded_gaussian_rejects_above_max() {
-        assert!(bounded_gaussian_pld(2.41, &default_config()).is_err());
+        assert!(bounded_gaussian_pld(1.21, &default_config()).is_err());
     }
 
     #[test]
@@ -78,9 +77,7 @@ mod tests {
 
     #[test]
     fn test_bounded_gaussian_boundary_max() {
-        assert!(
-            bounded_gaussian_pld(BOUNDED_GAUSSIAN_MAX_NOISE_MULTIPLIER, &default_config()).is_ok()
-        );
+        assert!(bounded_gaussian_pld(MAX_NOISE_MULTIPLIER, &default_config()).is_ok());
     }
 
     /// bounded_gaussian_pld(σ) == gaussian_pld(σ/2) for the same config.
@@ -93,7 +90,7 @@ mod tests {
         use approx::assert_abs_diff_eq;
 
         let config = default_config();
-        for &nm in &[0.2, 0.5, 1.0, 1.5, 2.0, 2.4] {
+        for &nm in &[0.2, 0.5, 0.8, 1.0, 1.2] {
             let bpld = bounded_gaussian_pld(nm, &config).unwrap();
             let gpld = gaussian_pld(nm / 2.0, &config).unwrap();
             let b_eps = bpld.epsilon_at(1e-5);
@@ -105,7 +102,7 @@ mod tests {
     /// Monotonicity: higher noise → lower epsilon for fixed delta.
     #[test]
     fn test_bounded_gaussian_epsilon_decreases_with_noise() {
-        let sigmas = [0.2, 0.5, 0.8, 1.2, 1.6, 2.0, 2.4];
+        let sigmas = [0.2, 0.5, 0.8, 1.0, 1.2];
         let cfg = default_config();
         let epsilons: Vec<f64> = sigmas
             .iter()

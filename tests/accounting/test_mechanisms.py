@@ -220,21 +220,15 @@ class TestBoundedGaussianDataclass:
         g_half_eps = Gaussian(1.1 / 2.0).epsilon_at(1e-5)
         assert bg_eps == pytest.approx(g_half_eps, rel=1e-6)
 
-    def test_wide_noise_multiplier_range(self):
-        """Accepts noise_multiplier up to 2.4 (vs 1.2 for Gaussian)."""
-        bg = BoundedGaussian(2.0)
-        eps = bg.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
-
     def test_rejects_out_of_range(self):
         """noise_multiplier=0.05 is below minimum — should raise."""
         with pytest.raises(ValueError):
             BoundedGaussian(0.05).pld()
 
     def test_rejects_above_max(self):
-        """noise_multiplier=2.5 is above maximum — should raise."""
+        """noise_multiplier=1.21 is above maximum — should raise."""
         with pytest.raises(ValueError):
-            BoundedGaussian(2.5).pld()
+            BoundedGaussian(1.21).pld()
 
 
 class TestBoundedGaussianConstructor:
