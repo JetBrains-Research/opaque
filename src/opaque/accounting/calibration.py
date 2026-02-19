@@ -35,7 +35,6 @@ from typing import Protocol
 
 from opaque.accounting import DpProcess
 
-
 # =============================================================================
 # Target protocol and implementations
 # =============================================================================
@@ -73,7 +72,7 @@ class Target(Protocol):
 @dataclass
 class EpsilonTarget:
     """Target for (ε, δ)-DP: find noise achieving target epsilon at given delta.
-    
+
     Parameters must satisfy: epsilon > 0 and delta in (0, 1).
     """
 
@@ -107,7 +106,7 @@ class EpsilonTarget:
 @dataclass
 class DeltaTarget:
     """Target for (ε, δ)-DP: find noise achieving target delta at given epsilon.
-    
+
     Parameters must satisfy: delta in (0, 1) and epsilon > 0.
     """
 
@@ -141,7 +140,7 @@ class DeltaTarget:
 @dataclass
 class AdvantageTarget:
     """Target for f-DP: find noise achieving target advantage.
-    
+
     Advantage must be in (0, 1) — represents total-variation distance between
     neighboring dataset distributions.
     """
@@ -173,7 +172,7 @@ class AdvantageTarget:
 @dataclass
 class BetaTarget:
     """Target for (α, β) error rates: find noise achieving target beta at given alpha.
-    
+
     Parameters must satisfy: 0 < alpha < 1 and 0 < beta < 1.
     """
 
@@ -207,7 +206,7 @@ class BetaTarget:
 @dataclass
 class RiskTarget:
     """Target for Bayes risk: find noise achieving target risk at given prior.
-    
+
     Parameters must satisfy: risk in (0, 1) and prior in (0, 1).
     """
 
@@ -414,7 +413,7 @@ def calibrate(
         process: Callable taking a float parameter and returning a DpProcess.
             Must be deterministic (same input → same process).
             Example: ``lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000``
-            
+
             Important: If process() raises an exception, it propagates immediately.
 
         param_min: Lower bound for search (usually produces more private result)
@@ -463,7 +462,7 @@ def calibrate(
             param_min=0.7,
             param_max=1.2,
         )
-        
+
         print(f"Use noise_multiplier = {result.param:.4f}")
         print(f"Achieves epsilon = {result.achieved:.6f}")
         print(f"Converged: {result.converged}")
@@ -490,10 +489,10 @@ def calibrate(
 
         # f-DP advantage
         result = cal.calibrate(cal.advantage_budget(0.1), process, 0.5, 2.0)
-        
+
         # (α, β) error rates
         result = cal.calibrate(cal.beta_budget(0.05, alpha=0.01), process, 0.5, 2.0)
-        
+
         # Bayes risk
         result = cal.calibrate(cal.risk_budget(0.1, prior=0.5), process, 0.5, 2.0)
 
@@ -507,9 +506,7 @@ def calibrate(
       → Increase tolerance or max_iterations; check that param changes actually affect metric
     """
     if param_min >= param_max:
-        raise ValueError(
-            f"param_min ({param_min}) must be < param_max ({param_max})"
-        )
+        raise ValueError(f"param_min ({param_min}) must be < param_max ({param_max})")
 
     # Check bounds bracket the target
     proc_min = process(param_min)

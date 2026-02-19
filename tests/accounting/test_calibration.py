@@ -15,7 +15,6 @@ from opaque.accounting.calibration import (
     RiskTarget,
 )
 
-
 # -- Target validation -------------------------------------------------------
 
 
@@ -186,7 +185,8 @@ class TestCalibrateDifferentBatchSizes:
         result = cal.calibrate(
             cal.epsilon_budget(5.0, delta=1e-4),
             lambda nm: acc.poisson(acc.gaussian(nm), q) * 1000,
-            0.1, 1.2,
+            0.1,
+            1.2,
         )
         assert result.converged
         assert abs(result.achieved - 5.0) < 1e-3
@@ -199,7 +199,8 @@ class TestCalibrateAdvantage:
         result = cal.calibrate(
             cal.advantage_budget(0.1),
             lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 500,
-            0.3, 1.2,
+            0.3,
+            1.2,
         )
         assert result.converged
         assert abs(result.achieved - 0.1) < 1e-4
@@ -217,7 +218,8 @@ class TestCalibrateBeta:
         result = cal.calibrate(
             cal.beta_budget(0.5, alpha=0.1),
             lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 500,
-            0.3, 1.2,
+            0.3,
+            1.2,
         )
         assert result.converged
         assert abs(result.achieved - 0.5) < 1e-3
@@ -226,12 +228,8 @@ class TestCalibrateBeta:
         """Stricter (higher) beta target → more noise."""
         process = lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 500
 
-        result_low = cal.calibrate(
-            cal.beta_budget(0.3, alpha=0.1), process, 0.3, 1.2
-        )
-        result_high = cal.calibrate(
-            cal.beta_budget(0.7, alpha=0.1), process, 0.3, 1.2
-        )
+        result_low = cal.calibrate(cal.beta_budget(0.3, alpha=0.1), process, 0.3, 1.2)
+        result_high = cal.calibrate(cal.beta_budget(0.7, alpha=0.1), process, 0.3, 1.2)
         # Higher beta (more privacy) requires more noise
         assert result_high.param > result_low.param
 

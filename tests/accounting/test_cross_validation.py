@@ -23,8 +23,8 @@ import pytest
 dp_accounting = pytest.importorskip("dp_accounting")
 riskcal = pytest.importorskip("riskcal")
 
-from dp_accounting.pld import privacy_loss_distribution as pld_lib  # noqa: E402
 import riskcal.analysis as rc_analysis  # noqa: E402
+from dp_accounting.pld import privacy_loss_distribution as pld_lib  # noqa: E402
 
 import opaque.accounting as acc  # noqa: E402
 from opaque.accounting import calibration as cal  # noqa: E402
@@ -53,7 +53,9 @@ def _ref_gaussian_pld(sigma: float, sampling_prob: float = 1.0):
     return pld_lib.from_gaussian_mechanism(sigma, sampling_prob=sampling_prob)
 
 
-def _ref_epsilon(sigma: float, delta: float, sampling_prob: float = 1.0, steps: int = 1):
+def _ref_epsilon(
+    sigma: float, delta: float, sampling_prob: float = 1.0, steps: int = 1
+):
     """Reference epsilon from dp_accounting."""
     pld = _ref_gaussian_pld(sigma, sampling_prob)
     if steps > 1:
@@ -61,7 +63,9 @@ def _ref_epsilon(sigma: float, delta: float, sampling_prob: float = 1.0, steps: 
     return pld.get_epsilon_for_delta(delta)
 
 
-def _ref_delta(sigma: float, epsilon: float, sampling_prob: float = 1.0, steps: int = 1):
+def _ref_delta(
+    sigma: float, epsilon: float, sampling_prob: float = 1.0, steps: int = 1
+):
     """Reference delta from dp_accounting."""
     pld = _ref_gaussian_pld(sigma, sampling_prob)
     if steps > 1:
@@ -293,7 +297,9 @@ class TestTruncatedPoissonValidity:
         g = acc.gaussian(sigma)
         epsilons = []
         for steps in [10, 100, 500, 1000]:
-            eps = (acc.truncated_poisson(g, 0.005, 250, 50_000) * steps).epsilon_at(1e-5)
+            eps = (acc.truncated_poisson(g, 0.005, 250, 50_000) * steps).epsilon_at(
+                1e-5
+            )
             epsilons.append(eps)
         for i in range(len(epsilons) - 1):
             assert epsilons[i] < epsilons[i + 1]
@@ -309,7 +315,9 @@ class TestTruncatedPoissonValidity:
         # expected_batch = 100000 * 0.001 = 100, cap = 100000 (no truncation)
         g = acc.gaussian(0.8)
         steps = 500
-        eps_trunc = (acc.truncated_poisson(g, 0.001, 100_000, 100_000) * steps).epsilon_at(1e-5)
+        eps_trunc = (
+            acc.truncated_poisson(g, 0.001, 100_000, 100_000) * steps
+        ).epsilon_at(1e-5)
         eps_poisson = (acc.poisson(g, 0.001) * steps).epsilon_at(1e-5)
         assert eps_trunc == pytest.approx(eps_poisson, rel=1e-6)
 
@@ -349,12 +357,15 @@ class TestAccumulatedCrossValidation:
 class TestAdaClipCrossValidation:
     """AdaClip: verify combined_sensitivity formula matches expected z_eff."""
 
-    @pytest.mark.parametrize("sigma,sigma_b", [
-        (1.0, 50.0),
-        (1.1, 50.0),
-        (0.5, 10.0),
-        (1.2, 100.0),
-    ])
+    @pytest.mark.parametrize(
+        "sigma,sigma_b",
+        [
+            (1.0, 50.0),
+            (1.1, 50.0),
+            (0.5, 10.0),
+            (1.2, 100.0),
+        ],
+    )
     def test_adaclip_effective_noise(self, sigma, sigma_b):
         """adaclip(gaussian(σ), σ_b) → Gaussian(z_eff) where z_eff = 1/combined_sensitivity."""
         import opaque_accounting as _native
@@ -367,6 +378,7 @@ class TestAdaClipCrossValidation:
 
         # Verify it's a Gaussian
         from opaque.accounting.types import Gaussian
+
         assert isinstance(proc, Gaussian)
 
     @pytest.mark.parametrize("sigma_b", [10.0, 50.0, 100.0])
@@ -440,7 +452,7 @@ class TestMetricsConsistency:
             r1 = proc.risk_at(prior)
             r2 = proc.risk_at(1.0 - prior)
             assert r1 == pytest.approx(r2, abs=1e-10), (
-                f"Risk asymmetry: risk({prior})={r1}, risk({1-prior})={r2}"
+                f"Risk asymmetry: risk({prior})={r1}, risk({1 - prior})={r2}"
             )
 
     @pytest.mark.parametrize("sigma", [0.5, 0.8, 1.2])
@@ -451,7 +463,7 @@ class TestMetricsConsistency:
         betas = [proc.beta_at(a) for a in alphas]
         for i in range(len(betas) - 1):
             assert betas[i] >= betas[i + 1] - 1e-10, (
-                f"Beta not monotone: β({alphas[i]})={betas[i]} > β({alphas[i+1]})={betas[i+1]}"
+                f"Beta not monotone: β({alphas[i]})={betas[i]} > β({alphas[i + 1]})={betas[i + 1]}"
             )
 
     def test_identity_zero_epsilon(self):
@@ -502,7 +514,9 @@ class TestCompositionCrossValidation:
 
     def test_compose_same_mechanism(self):
         """Compose same Poisson steps — should equal repeat."""
-        proc_compose = acc.poisson(acc.gaussian(0.8), 0.001) | acc.poisson(acc.gaussian(0.8), 0.001)
+        proc_compose = acc.poisson(acc.gaussian(0.8), 0.001) | acc.poisson(
+            acc.gaussian(0.8), 0.001
+        )
         proc_repeat = acc.poisson(acc.gaussian(0.8), 0.001) * 2
         eps_compose = proc_compose.epsilon_at(1e-5)
         eps_repeat = proc_repeat.epsilon_at(1e-5)
@@ -527,7 +541,8 @@ class TestCalibrationCrossValidation:
         result = cal.calibrate(
             cal.epsilon_budget(target_eps, delta=delta),
             lambda nm: acc.poisson(acc.gaussian(nm), q) * steps,
-            0.1, 1.2,
+            0.1,
+            1.2,
         )
         assert result.converged
 
@@ -540,7 +555,8 @@ class TestCalibrationCrossValidation:
         result = cal.calibrate(
             cal.advantage_budget(0.15),
             lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 500,
-            0.3, 1.2,
+            0.3,
+            1.2,
         )
         assert result.converged
 

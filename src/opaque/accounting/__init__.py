@@ -31,9 +31,7 @@ For calibration (finding noise for target privacy budget), use the
 try:
     import opaque_accounting as _native
 except ImportError as e:
-    raise ImportError(
-        "opaque-accounting native module not found. "
-    ) from e
+    raise ImportError("opaque-accounting native module not found. ") from e
 
 # Base class
 from opaque.accounting.base import DpProcess
@@ -62,6 +60,25 @@ Example::
 """
 
 # Import discretization utilities
+# Import Accountant
+from opaque.accounting.accountant import Accountant
+
+# Import calibration utilities
+from opaque.accounting.calibration import (
+    advantage_budget,
+    beta_budget,
+    calibrate,
+    delta_budget,
+    epsilon_budget,
+    risk_budget,
+)
+
+# Import composition operators
+from opaque.accounting.composition import (
+    cached,
+    compose,
+    repeat,
+)
 from opaque.accounting.discretization import (
     get_discretization,
     set_discretization,
@@ -76,26 +93,6 @@ from opaque.accounting.mechanisms import (
     identity,
     poisson,
     truncated_poisson,
-)
-
-# Import composition operators
-from opaque.accounting.composition import (
-    cached,
-    compose,
-    repeat,
-)
-
-# Import Accountant
-from opaque.accounting.accountant import Accountant
-
-# Import calibration utilities
-from opaque.accounting.calibration import (
-    epsilon_budget,
-    delta_budget,
-    advantage_budget,
-    beta_budget,
-    risk_budget,
-    calibrate,
 )
 
 __all__ = [

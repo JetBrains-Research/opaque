@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import opaque_accounting as _native
 
-from opaque.accounting.base import DpProcess, DiscretizationConfig
+from opaque.accounting.base import DiscretizationConfig, DpProcess
 from opaque.accounting.discretization import resolve_pld_config
 from opaque.accounting.nodes import Identity
 from opaque.accounting.types import (

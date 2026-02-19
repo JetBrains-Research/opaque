@@ -6,7 +6,7 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 import opaque.accounting as acc
-from opaque.accounting.base import DpProcess, DiscretizationConfig
+from opaque.accounting.base import DiscretizationConfig, DpProcess
 from opaque.accounting.types import (
     Accumulated,
     EpsDelta,

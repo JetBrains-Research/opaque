@@ -9,7 +9,6 @@ import pytest
 import opaque.accounting as acc
 from opaque.accounting.calibration import epsilon_budget
 
-
 # ============================================================================
 # Construction & composition
 # ============================================================================

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional, Union
-
 import opaque_accounting as _native
 
 DiscretizationConfig = _native.DiscretizationConfig
@@ -12,7 +10,7 @@ DiscretizationConfig = _native.DiscretizationConfig
 PldConfig = DiscretizationConfig
 
 # Module-level discretization default
-_default_config: Optional[DiscretizationConfig] = None
+_default_config: DiscretizationConfig | None = None
 
 
 def set_discretization(
@@ -55,7 +53,7 @@ def set_discretization(
     )
 
 
-def get_discretization() -> Optional[DiscretizationConfig]:
+def get_discretization() -> DiscretizationConfig | None:
     """Get the current module-level default discretization config.
 
     Returns:
@@ -65,8 +63,8 @@ def get_discretization() -> Optional[DiscretizationConfig]:
 
 
 def resolve_pld_config(
-    config: Union[None, float, DiscretizationConfig],
-) -> Optional[DiscretizationConfig]:
+    config: None | float | DiscretizationConfig,
+) -> DiscretizationConfig | None:
     """Resolve discretization parameter to a DiscretizationConfig object.
 
     Args:

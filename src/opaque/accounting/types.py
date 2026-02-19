@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 import opaque_accounting as _native
 
-from opaque.accounting.base import DpProcess, Pld, DiscretizationConfig
+from opaque.accounting.base import DiscretizationConfig, DpProcess, Pld
 
 
 @dataclass(frozen=True, slots=True)

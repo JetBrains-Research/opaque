@@ -144,8 +144,7 @@ class TestCompositionProperties:
         """More noise → lower epsilon."""
         sigmas = [0.3, 0.5, 0.8, 1.2]
         epsilons = [
-            (acc.poisson(acc.gaussian(s), 0.01) * 100).epsilon_at(1e-5)
-            for s in sigmas
+            (acc.poisson(acc.gaussian(s), 0.01) * 100).epsilon_at(1e-5) for s in sigmas
         ]
         for i in range(1, len(epsilons)):
             assert epsilons[i] < epsilons[i - 1]
@@ -154,8 +153,7 @@ class TestCompositionProperties:
         """Lower q → lower epsilon (privacy amplification)."""
         rates = [0.01, 0.001, 0.0001]
         epsilons = [
-            (acc.poisson(acc.gaussian(0.8), q) * 100).epsilon_at(1e-5)
-            for q in rates
+            (acc.poisson(acc.gaussian(0.8), q) * 100).epsilon_at(1e-5) for q in rates
         ]
         for i in range(1, len(epsilons)):
             assert epsilons[i] < epsilons[i - 1]
