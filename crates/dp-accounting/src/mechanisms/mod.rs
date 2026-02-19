@@ -4,7 +4,7 @@
 //! and returns a `PrivacyLossDistribution`. No structs, no traits.
 //!
 //! - [`gaussian`]: Gaussian mechanism (base noise for DP-SGD)
-//! - [`bounded_gaussian`]: Bounded Gaussian mechanism (Replace adjacency)
+//! - [`bounded_gaussian`]: Bounded Gaussian mechanism (Add/Remove adjacency)
 //! - [`eps_delta`]: Fixed (ε, δ)-DP mechanism
 //! - [`identity`]: Identity (zero privacy loss) mechanism
 
@@ -36,6 +36,4 @@ pub(crate) const MAX_NOISE_MULTIPLIER: f64 = 1.2;
 pub use bounded_gaussian::bounded_gaussian_pld;
 pub use eps_delta::eps_delta_pld;
 pub use gaussian::gaussian_pld;
-#[allow(unused_imports)] // used by bounded-Gaussian adjacency
-pub(crate) use gaussian::gaussian_replace_pld;
 pub use identity::identity_pld;
