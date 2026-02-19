@@ -73,6 +73,7 @@ from opaque.accounting.discretization import (
 
 # Mechanisms
 from opaque.accounting.mechanisms import (
+    bounded_gaussian,
     eps_delta,
     gaussian,
     identity,
@@ -88,6 +89,7 @@ __all__ = [
     "set_discretization",
     "get_discretization",
     # Mechanisms (factories only; classes via subpackage import)
+    "bounded_gaussian",
     "gaussian",
     "eps_delta",
     "identity",

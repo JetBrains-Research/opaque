@@ -192,6 +192,32 @@ class DiscretizationConfig:
 # ---------------------------------------------------------------------------
 
 
+def bounded_gaussian_pld(
+    noise_multiplier: float,
+    config: DiscretizationConfig | None = None,
+) -> Pld:
+    """Compute the PLD for the Bounded Gaussian mechanism (Replace adjacency).
+
+    The Bounded Gaussian Mechanism (Chen & Hale, 2024) adds truncated Gaussian
+    noise to keep outputs in a bounded domain.  Under Replace adjacency,
+    sensitivity is 2Δ, so the PLD equals that of a Gaussian with
+    ``effective_σ = noise_multiplier / 2``.
+
+    Args:
+        noise_multiplier: Ratio of noise std to sensitivity (σ/Δ), in [0.1, 2.4].
+        config: Override default PLD precision.
+
+    Returns:
+        The privacy loss distribution.
+
+    Example::
+
+        pld = dp.bounded_gaussian_pld(1.1)
+        pld.epsilon_at(1e-5)
+    """
+    ...
+
+
 def gaussian_pld(
     noise_multiplier: float,
     config: DiscretizationConfig | None = None,

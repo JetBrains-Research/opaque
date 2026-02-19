@@ -1,4 +1,4 @@
-"""Tests for opaque.accounting.mechanisms — Gaussian, EpsDelta, Identity."""
+"""Tests for opaque.accounting.mechanisms — Gaussian, EpsDelta, Identity, BoundedGaussian."""
 
 import math
 from dataclasses import FrozenInstanceError
@@ -8,6 +8,7 @@ import pytest
 import opaque.accounting as acc
 from opaque.accounting.base import DiscretizationConfig, DpProcess
 from opaque.accounting.mechanisms import (
+    BoundedGaussian,
     EpsDelta,
     Gaussian,
     Identity,
@@ -165,3 +166,102 @@ class TestIdentityDataclass:
 
     def test_equality(self):
         assert Identity() == Identity()
+
+
+# ── BoundedGaussian dataclass and constructor tests ──────────────────
+
+
+class TestBoundedGaussianDataclass:
+    """BoundedGaussian frozen dataclass."""
+
+    def test_fields(self):
+        bg = BoundedGaussian(1.1)
+        assert bg.noise_multiplier == pytest.approx(1.1)
+        assert bg.config is None
+
+    def test_frozen(self):
+        bg = BoundedGaussian(1.1)
+        with pytest.raises(FrozenInstanceError):
+            bg.noise_multiplier = 2.0  # type: ignore[misc]
+
+    def test_is_dp_process(self):
+        assert isinstance(BoundedGaussian(1.0), DpProcess)
+
+    def test_equality(self):
+        assert BoundedGaussian(1.0) == BoundedGaussian(1.0)
+        assert BoundedGaussian(1.0) != BoundedGaussian(1.1)
+
+    def test_config_participates_in_equality_and_hash(self):
+        a = BoundedGaussian(1.0, config=None)
+        b = BoundedGaussian(1.0, config=DiscretizationConfig(discretization=1e-3))
+        assert a != b
+        c = BoundedGaussian(1.0, config=None)
+        assert a == c
+        assert hash(a) == hash(c)
+
+    def test_config_excluded_from_repr(self):
+        bg = BoundedGaussian(1.0, config=DiscretizationConfig(discretization=1e-3))
+        assert "config" not in repr(bg)
+
+    def test_pld_returns_valid(self):
+        pld = BoundedGaussian(1.1).pld()
+        eps = pld.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
+
+    def test_higher_epsilon_than_gaussian(self):
+        """Replace adjacency doubles sensitivity → higher epsilon than Gaussian."""
+        bg_eps = BoundedGaussian(1.1).epsilon_at(1e-5)
+        g_eps = Gaussian(1.1).epsilon_at(1e-5)
+        assert bg_eps > g_eps
+
+    def test_equals_gaussian_with_half_noise_multiplier(self):
+        """bounded_gaussian(σ) has the same PLD as gaussian(σ/2)."""
+        bg_eps = BoundedGaussian(1.1).epsilon_at(1e-5)
+        g_half_eps = Gaussian(1.1 / 2.0).epsilon_at(1e-5)
+        assert bg_eps == pytest.approx(g_half_eps, rel=1e-6)
+
+    def test_wide_noise_multiplier_range(self):
+        """Accepts noise_multiplier up to 2.4 (vs 1.2 for Gaussian)."""
+        bg = BoundedGaussian(2.0)
+        eps = bg.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
+
+    def test_rejects_out_of_range(self):
+        """noise_multiplier=0.05 is below minimum — should raise."""
+        with pytest.raises(ValueError):
+            BoundedGaussian(0.05).pld()
+
+    def test_rejects_above_max(self):
+        """noise_multiplier=2.5 is above maximum — should raise."""
+        with pytest.raises(ValueError):
+            BoundedGaussian(2.5).pld()
+
+
+class TestBoundedGaussianConstructor:
+    """acc.bounded_gaussian() returns BoundedGaussian with correct config."""
+
+    def test_returns_bounded_gaussian(self):
+        bg = acc.bounded_gaussian(1.1)
+        assert isinstance(bg, BoundedGaussian)
+        assert bg.noise_multiplier == pytest.approx(1.1)
+
+    def test_default_config_none(self):
+        bg = acc.bounded_gaussian(1.1)
+        eps = bg.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
+
+    def test_float_discretization(self):
+        bg = acc.bounded_gaussian(1.1, discretization=1e-3)
+        assert bg.config is not None
+        assert bg.config.discretization == pytest.approx(1e-3)
+
+    def test_config_discretization(self):
+        cfg = DiscretizationConfig(discretization=1e-3)
+        bg = acc.bounded_gaussian(1.1, discretization=cfg)
+        assert bg.config is cfg
+
+    def test_composition(self):
+        """BoundedGaussian can be composed like any DpProcess."""
+        training = acc.bounded_gaussian(1.1) * 1000
+        eps = training.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
