@@ -6,6 +6,22 @@ This example is designed as a production-style script (not a tutorial):
 - noise multiplier calibrated from target privacy budget
 - privacy and grad-norm telemetry reported every eval_steps
 - optional empirical privacy auditing
+- optional W&B experiment tracking (--wandb flag)
+
+Usage::
+
+    # Quick smoke test (GPT-2, ~5 min)
+    python train_causal_lm.py --model_name gpt2
+
+    # With W&B tracking
+    pip install wandb
+    python train_causal_lm.py --model_name gpt2 --wandb --wandb_project my-dp-experiments
+
+    # Post-training privacy audit
+    python train_causal_lm.py --model_name gpt2 --audit
+
+    # Production run (Qwen-7B, multi-hour)
+    python train_causal_lm.py --model_name Qwen/Qwen2.5-7B --num_train_samples 2000 --num_epochs 80
 """
 
 import argparse
@@ -154,6 +170,16 @@ def parse_args():
         help="Maximum clip norm in adaptive mode",
     )
     dp_group.add_argument(
+        "--quantile_noise_std",
+        type=float,
+        default=50.0,
+        help=(
+            "Noise std for private quantile estimation in adaptive clipping accounting. "
+            "Larger values = less accounting cost for the clip-norm adaptation. "
+            "Only used when --adaptive_clipping is enabled."
+        ),
+    )
+    dp_group.add_argument(
         "--microbatch_size",
         type=int,
         default=1,
@@ -214,6 +240,28 @@ def parse_args():
         help="Batch size used in auditing evaluate()",
     )
 
+    wandb_group = parser.add_argument_group(
+        "wandb", "Weights & Biases experiment tracking (optional)"
+    )
+    wandb_group.add_argument(
+        "--wandb",
+        action="store_true",
+        default=False,
+        help="Enable W&B logging (requires: pip install wandb)",
+    )
+    wandb_group.add_argument(
+        "--wandb_project",
+        type=str,
+        default="opaque-dp-training",
+        help="W&B project name",
+    )
+    wandb_group.add_argument(
+        "--wandb_entity",
+        type=str,
+        default=None,
+        help="W&B entity (team or username)",
+    )
+
     return parser.parse_args()
 
 
@@ -239,6 +287,26 @@ def main():
 
     # Set seed
     torch.manual_seed(args.seed)
+
+    # Initialize W&B (optional — only if --wandb is set)
+    _wandb = None
+    if args.wandb:
+        try:
+            import wandb as _wandb_module
+
+            _wandb = _wandb_module
+            _wandb.init(
+                project=args.wandb_project,
+                entity=args.wandb_entity,
+                config=vars(args),
+            )
+            print(f"\nW&B tracking enabled: project={args.wandb_project}")
+        except ImportError:
+            print(
+                "\nWarning: --wandb was set but wandb is not installed. "
+                "Run `pip install wandb` to enable W&B logging. Continuing without tracking."
+            )
+            _wandb = None
 
     # Auto-detect eager attention for MPS
     use_eager = args.use_eager_attention or device.type == "mps"
@@ -458,9 +526,25 @@ def main():
     sample_rate = args.batch_size / len(train_tokens_for_loop)
     total_steps = args.num_epochs * num_batches
     budget = cal.epsilon_budget(args.target_epsilon, delta=args.target_delta)
+
+    def _make_step_process(nm):
+        """Build per-step accounting process.
+
+        Uses acc.adaclip() when adaptive clipping is enabled to account for
+        the additional privacy cost of the clip-norm adaptation mechanism.
+        See acc.adaclip() docs and Andrew et al. (2021) for details.
+        """
+        if args.adaptive_clipping:
+            inner = acc.adaclip(
+                acc.gaussian(nm), quantile_noise_std=args.quantile_noise_std
+            )
+        else:
+            inner = acc.gaussian(nm)
+        return acc.poisson(inner, sample_rate=sample_rate) * total_steps
+
     calibration = cal.calibrate(
         budget,
-        lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=sample_rate) * total_steps,
+        _make_step_process,
         param_min=args.calibration_min,
         param_max=args.calibration_max,
         tolerance=args.calibration_tolerance,
@@ -476,10 +560,28 @@ def main():
         f"  Noise multiplier: {noise_multiplier:.4f} "
         f"(iterations={calibration.iterations}, converged={calibration.converged})"
     )
+    if args.adaptive_clipping:
+        print(f"  Accounting: adaclip (quantile_noise_std={args.quantile_noise_std})")
 
     # Accounting (cached per-step process for efficient repeated composition)
+    if args.adaptive_clipping:
+        _inner_mech = acc.adaclip(
+            acc.gaussian(noise_multiplier), quantile_noise_std=args.quantile_noise_std
+        )
+    else:
+        _inner_mech = acc.gaussian(noise_multiplier)
     accounting = acc.Accountant()
-    step_process = acc.cached(acc.poisson(acc.gaussian(noise_multiplier), sample_rate))
+    step_process = acc.cached(acc.poisson(_inner_mech, sample_rate))
+
+    # Log hyperparameters to W&B
+    if _wandb is not None:
+        _wandb.config.update(
+            {
+                "noise_multiplier_calibrated": noise_multiplier,
+                "sample_rate": sample_rate,
+                "total_steps": total_steps,
+            }
+        )
 
     # Training loop
     print("\n" + "=" * 80)
@@ -502,13 +604,13 @@ def main():
             batch_indices = indices[
                 batch_idx * args.batch_size : (batch_idx + 1) * args.batch_size
             ]
-            tokens = train_tokens_for_loop[batch_indices.to(train_tokens_for_loop.device)]
+            tokens = train_tokens_for_loop[
+                batch_indices.to(train_tokens_for_loop.device)
+            ]
 
             # Determine clip norm
             current_clip_norm = (
-                fixed_clip_norm
-                if fixed_clip_norm is not None
-                else clip_state.clip_norm
+                fixed_clip_norm if fixed_clip_norm is not None else clip_state.clip_norm
             )
 
             # Compute clipped gradients (with state passing)
@@ -532,9 +634,12 @@ def main():
                 noisy_grads, opt_state, params=trainable_params
             )
             metrics = {
-                "clip_norm": current_clip_norm if fixed_clip_norm is not None else clip_state.clip_norm,
-                "clip_rate": clip_state.clipping_rate if hasattr(clip_state, 'clipping_rate')
-                    else (aux.grad_norms > current_clip_norm).float().mean().item(),
+                "clip_norm": current_clip_norm
+                if fixed_clip_norm is not None
+                else clip_state.clip_norm,
+                "clip_rate": clip_state.clipping_rate
+                if hasattr(clip_state, "clipping_rate")
+                else (aux.grad_norms > current_clip_norm).float().mean().item(),
             }
 
             # Apply updates
@@ -575,10 +680,46 @@ def main():
                     f"min={min_grad_norm:.3f}, max={max_grad_norm:.3f} | "
                     f"Noise: σ={stddev:.4f}"
                 )
+                if _wandb is not None:
+                    _wandb.log(
+                        {
+                            "train/loss": avg_loss,
+                            "train/loss_min": min_loss,
+                            "train/loss_max": max_loss,
+                            "train/loss_std": loss_std,
+                            "train/eval_loss": current_eval_loss,
+                            "train/grad_norm_mean": mean_grad_norm,
+                            "train/grad_norm_median": median_grad_norm,
+                            "train/grad_norm_min": min_grad_norm,
+                            "train/grad_norm_max": max_grad_norm,
+                            "train/clip_norm": metrics["clip_norm"],
+                            "train/clip_rate": metrics["clip_rate"],
+                            "train/noise_std": stddev,
+                            "privacy/epsilon": epsilon,
+                            "privacy/delta": args.target_delta,
+                            "step": global_step,
+                        }
+                    )
 
         # Epoch summary
         epoch_avg_loss = sum(epoch_losses) / len(epoch_losses)
-        print(f"Epoch {epoch + 1} avg loss: {epoch_avg_loss:.4f}")
+        epsilon_epoch = accounting.epsilon_at(args.target_delta)
+        print(
+            f"Epoch {epoch + 1} avg loss: {epoch_avg_loss:.4f} | ε={epsilon_epoch:.3f}"
+        )
+        if _wandb is not None:
+            epoch_log = {
+                "epoch/avg_loss": epoch_avg_loss,
+                "epoch/epsilon": epsilon_epoch,
+                "epoch/delta": args.target_delta,
+                "epoch/advantage": accounting.advantage(),
+                "epoch": epoch + 1,
+            }
+            if args.adaptive_clipping:
+                epoch_log["epoch/clip_norm"] = clip_state.clip_norm
+            else:
+                epoch_log["epoch/clip_norm"] = fixed_clip_norm
+            _wandb.log(epoch_log)
 
     # Final summary
     print("\n" + "=" * 80)
@@ -622,10 +763,26 @@ def main():
             batch_size=args.audit_batch_size,
         )
         print(audit_result.summary(delta=args.target_delta))
+        theoretical_eps = accounting.epsilon_at(args.target_delta)
+        empirical_eps = audit_result.epsilon_at(delta=args.target_delta)
         print(
-            f"Theoretical ε={accounting.epsilon_at(args.target_delta):.3f} | "
-            f"Empirical ε(lower bound)={audit_result.epsilon_at(delta=args.target_delta):.3f}"
+            f"Theoretical ε={theoretical_eps:.3f} | "
+            f"Empirical ε(lower bound)={empirical_eps:.3f}"
         )
+        if _wandb is not None:
+            _wandb.log(
+                {
+                    "audit/theoretical_epsilon": theoretical_eps,
+                    "audit/empirical_epsilon_lower_bound": empirical_eps,
+                    "audit/auroc": audit_result.auroc(),
+                    "audit/tpr_at_1pct_fpr": audit_result.tpr_at_fpr(fpr=0.01),
+                    "audit/n_canaries_in": audit_result.n_in,
+                    "audit/n_canaries_out": audit_result.n_out,
+                }
+            )
+
+    if _wandb is not None:
+        _wandb.finish()
 
     return 0
 

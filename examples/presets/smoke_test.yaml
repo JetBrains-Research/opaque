@@ -1,0 +1,44 @@
+# Smoke test preset for train_causal_lm.py
+#
+# Completes in ~5 minutes on a single GPU.
+# Suitable for CI and quick sanity checks.
+#
+# Usage:
+#   uv run --extra examples python examples/train_causal_lm.py \
+#       --model_name gpt2 \
+#       --num_train_samples 300 \
+#       --batch_size 16 \
+#       --num_epochs 3 \
+#       --lora_r 4 \
+#       --lora_alpha 8 \
+#       --target_epsilon 3.0 \
+#       --target_delta 1e-5
+
+description: "5-minute smoke test on GPT-2 + AG News"
+
+args:
+  model_name: gpt2
+  dataset: ag_news
+  num_train_samples: 300
+  num_eval_samples: 64
+  batch_size: 16
+  num_epochs: 3
+  learning_rate: 1.0e-5
+  optimizer: adam
+  eval_steps: 10
+  lora_r: 4
+  lora_alpha: 8
+  lora_budget_modules:
+    - c_attn
+    - c_proj
+  adaptive_clipping: true
+  target_clip_rate: 0.5
+  clip_norm: 0.15
+  clip_norm_max: 10.0
+  target_epsilon: 3.0
+  target_delta: 1.0e-5
+
+expected:
+  runtime_minutes: 5
+  gpu_memory_gb: 4
+  final_epsilon_approx: 3.0

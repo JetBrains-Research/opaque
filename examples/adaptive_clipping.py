@@ -3,10 +3,36 @@
 This example shows the functional API for adaptive gradient clipping where state is
 passed explicitly as a parameter and returned as part of the output. This design
 avoids mutable closures and works seamlessly with distributed training.
+
+Privacy accounting with adaclip
+--------------------------------
+When using :func:`~opaque.clipping.adaptive_clipped_grad`, use
+:func:`opaque.accounting.adaclip` in your accounting to accurately reflect the
+extra privacy cost of the clip-norm adaptation mechanism::
+
+    import opaque.accounting as acc
+
+    noise_multiplier = 1.1
+    sample_rate = 0.01
+
+    # Standard Gaussian step (fixed clipping):
+    step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
+
+    # Adaptive clipping step (use adaclip wrapper):
+    step_adaptive = acc.poisson(
+        acc.adaclip(acc.gaussian(noise_multiplier), quantile_noise_std=50.0),
+        sample_rate,
+    )
+
+The ``quantile_noise_std`` parameter controls how much privacy budget is spent on
+estimating the gradient-norm quantile.  A large value (e.g. 50.0) means the
+clip-norm adaptation uses negligible extra budget, while a small value means it
+is more private but also more noisy.  See Andrew et al. (2021) for details.
 """
 
 import torch
 
+import opaque.accounting as acc
 from opaque.clipping import adaptive_clipped_grad
 
 
@@ -88,6 +114,44 @@ def main():
     print("✓ Works with DDP/FSDP (synchronize state explicitly)")
     print("✓ Easy to save/restore training state")
     print("✓ Pure functional - no side effects")
+    print("=" * 70)
+
+    # ------------------------------------------------------------------
+    # Privacy accounting with adaclip
+    # ------------------------------------------------------------------
+    print("\n" + "=" * 70)
+    print("Privacy Accounting with adaclip()")
+    print("=" * 70)
+    print(
+        "\nUse acc.adaclip() to account for the extra privacy cost of adaptive clipping."
+    )
+
+    noise_multiplier = 1.1
+    sample_rate = 0.01
+    num_steps = 1000
+
+    # Standard Gaussian (fixed clipping)
+    step_fixed = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
+    eps_fixed = (step_fixed * num_steps).epsilon_at(1e-5)
+
+    # Adaptive clipping: adaclip wraps the Gaussian before passing to poisson()
+    # quantile_noise_std=50.0 means the clip-norm adaptation uses negligible extra budget
+    step_adaptive = acc.poisson(
+        acc.adaclip(acc.gaussian(noise_multiplier), quantile_noise_std=50.0),
+        sample_rate,
+    )
+    eps_adaptive = (step_adaptive * num_steps).epsilon_at(1e-5)
+
+    print(
+        f"\nFixed clipping:    ε={eps_fixed:.4f}  (acc.poisson(acc.gaussian({noise_multiplier}), {sample_rate}) × {num_steps})"
+    )
+    print(
+        f"Adaptive clipping: ε={eps_adaptive:.4f}  (acc.poisson(acc.adaclip(acc.gaussian({noise_multiplier}), 50.0), {sample_rate}) × {num_steps})"
+    )
+    print(
+        "\nThe adaptive clipping step has a slightly higher epsilon because adaclip\n"
+        "reduces the effective noise multiplier to account for the quantile estimation."
+    )
     print("=" * 70)
 
 
