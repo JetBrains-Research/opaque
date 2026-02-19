@@ -56,7 +56,7 @@ Opaque uses `uv` dependency groups to separate test dependencies:
 ```bash
 uv sync                          # Core only (clipping, noise, accounting)
 uv sync --group dev              # + pytest, ruff, hypothesis, scipy
-uv sync --group compat           # + transformers, peft (HuggingFace tests)
+uv sync --group test             # + transformers, peft (HuggingFace tests)
 uv sync --group cross-validation # + dp-accounting, riskcal (reference comparison)
 uv sync --group benchmark        # + opacus, torchvision (benchmarking)
 uv sync --group examples         # + datasets, torchopt, jupyter, matplotlib
@@ -82,8 +82,8 @@ uv run pytest tests/clipping/test_clipped_fun.py -v
 Tests are organized with pytest markers. Markers are enforced with `--strict-markers`:
 
 ```bash
-# HuggingFace compatibility (requires --group compat)
-uv run pytest -m compat
+# HuggingFace compatibility (requires --group test)
+uv run pytest -m test
 
 # Cross-validation against dp-accounting/riskcal (requires --group cross-validation)
 uv run pytest -m cross_validation
@@ -98,7 +98,7 @@ uv run pytest -m "not slow"
 uv run pytest -m jax_validation
 ```
 
-Marker filtering is automatic: tests marked `compat` are skipped when
+Marker filtering is automatic: tests marked `test` are skipped when
 `transformers` is not installed, and `cross_validation` tests are skipped when
 `dp-accounting` is not installed. No manual marker exclusion required.
 
@@ -111,7 +111,7 @@ use `torch.distributed` with NCCL backend:
 # Run distributed tests (requires 2+ GPUs)
 uv run pytest tests/distributed/ -v
 
-# Run HuggingFace model validation (requires GPU + --group compat)
+# Run HuggingFace model validation (requires GPU + --group test)
 uv run pytest tests/validation/ -v -m slow
 ```
 

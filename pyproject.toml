@@ -124,7 +124,7 @@ addopts = "-v --strict-markers"
 markers = [
   "jax_validation: Tests that validate against JAX-Privacy (optional dependency)",
   "slow: Tests that take a long time to run",
-  "compat: HuggingFace compatibility tests (requires transformers, peft - install with 'uv sync --group compat')",
+  "test: HuggingFace compatibility tests (requires transformers, peft - install with 'uv sync --group test')",
   "cross_validation: Cross-validation tests against dp_accounting and riskcal (requires dp-accounting, riskcal)",
 ]
 
