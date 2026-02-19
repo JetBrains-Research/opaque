@@ -138,3 +138,76 @@ class TestAccumulateConstructor:
     def test_rejects_non_poisson(self):
         with pytest.raises(TypeError, match="Poisson"):
             acc.accumulate(acc.gaussian(0.8), 4)  # type: ignore[arg-type]
+
+
+# ── BoundedGaussian + amplification tests ───────────────────────────
+
+
+class TestPoissonWithBoundedGaussian:
+    """poisson() accepts BoundedGaussian and computes correct PLD."""
+
+    def test_accepts_bounded_gaussian(self):
+        """poisson(bounded_gaussian(nm), q) should not raise."""
+        import math
+
+        step = acc.poisson(acc.bounded_gaussian(1.1), 0.01)
+        assert isinstance(step, Poisson)
+        eps = step.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
+
+    def test_equivalent_to_poisson_gaussian_half_nm(self):
+        """poisson(bounded_gaussian(nm), q) == poisson(gaussian(nm/2), q)."""
+        nm = 1.0
+        q = 0.01
+        bg_step = acc.poisson(acc.bounded_gaussian(nm), q)
+        g_step = acc.poisson(acc.gaussian(nm / 2.0), q)
+        assert bg_step.epsilon_at(1e-5) == pytest.approx(g_step.epsilon_at(1e-5), rel=1e-6)
+
+    def test_propagates_config(self):
+        """Config is propagated from BoundedGaussian to Poisson."""
+        cfg = DiscretizationConfig(discretization=1e-3)
+        bg = acc.bounded_gaussian(0.8, discretization=cfg)
+        step = acc.poisson(bg, 0.01)
+        assert step.config is cfg
+
+    def test_stored_nm_is_halved(self):
+        """Poisson.noise_multiplier stores nm/2 (effective Remove-adjacency nm)."""
+        bg = acc.bounded_gaussian(1.0)
+        step = acc.poisson(bg, 0.01)
+        assert step.noise_multiplier == pytest.approx(0.5)
+
+    def test_rejects_eps_delta(self):
+        """Non-Gaussian, non-BoundedGaussian inner still raises TypeError."""
+        with pytest.raises(TypeError, match="Gaussian"):
+            acc.poisson(acc.eps_delta(1.0, 1e-5), 0.01)  # type: ignore[arg-type]
+
+
+class TestTruncatedPoissonWithBoundedGaussian:
+    """truncated_poisson() accepts BoundedGaussian and computes correct PLD."""
+
+    def test_accepts_bounded_gaussian(self):
+        """truncated_poisson(bounded_gaussian(nm), ...) should not raise."""
+        import math
+
+        step = acc.truncated_poisson(acc.bounded_gaussian(1.0), 0.01, 128, 10_000)
+        assert isinstance(step, TruncatedPoisson)
+        eps = step.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
+
+    def test_equivalent_to_truncated_poisson_gaussian_half_nm(self):
+        """truncated_poisson(bounded_gaussian(nm), ...) == truncated_poisson(gaussian(nm/2), ...)."""
+        nm = 1.0
+        bg_step = acc.truncated_poisson(acc.bounded_gaussian(nm), 0.01, 128, 10_000)
+        g_step = acc.truncated_poisson(acc.gaussian(nm / 2.0), 0.01, 128, 10_000)
+        assert bg_step.epsilon_at(1e-5) == pytest.approx(g_step.epsilon_at(1e-5), rel=1e-6)
+
+    def test_stored_nm_is_halved(self):
+        """TruncatedPoisson.noise_multiplier stores nm/2 (effective nm)."""
+        bg = acc.bounded_gaussian(1.0)
+        step = acc.truncated_poisson(bg, 0.01, 128, 10_000)
+        assert step.noise_multiplier == pytest.approx(0.5)
+
+    def test_rejects_eps_delta(self):
+        """Non-Gaussian, non-BoundedGaussian inner still raises TypeError."""
+        with pytest.raises(TypeError, match="Gaussian"):
+            acc.truncated_poisson(acc.eps_delta(1.0), 0.01, 128, 10_000)  # type: ignore[arg-type]

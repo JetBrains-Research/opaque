@@ -27,6 +27,22 @@ def adaclip(
 
         step = acc.poisson(acc.adaclip(acc.gaussian(1.1), 50.0), 0.01)
 
+    Note:
+        **BoundedGaussian is not currently supported** as the inner mechanism.
+        The combined sensitivity formula above was derived for the standard Gaussian
+        under Add/Remove adjacency (gradient sensitivity = 1).  For the Bounded
+        Gaussian (Replace adjacency, effective sensitivity = 2), a new derivation
+        is required.  The needed research is:
+
+        1. Re-derive the combined sensitivity formula for Replace adjacency, where
+           the gradient channel has sensitivity 2Δ instead of 1Δ.  A candidate
+           formula is ``z̃ = sqrt(4/z² + 1/(4·σ_b²))``, but this needs formal proof.
+        2. Determine how to convert the resulting combined sensitivity back to an
+           effective ``BoundedGaussian`` noise multiplier for composition with
+           :func:`poisson` / :func:`truncated_poisson`.
+        3. Verify that the quantile estimator (Add/Remove, binary sensitivity 1/2)
+           can be consistently combined with the gradient channel (Replace, sensitivity 2).
+
     Args:
         inner: The base Gaussian mechanism (from :func:`gaussian`).
         quantile_noise_std: Noise std for quantile estimation.

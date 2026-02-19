@@ -44,8 +44,16 @@ def truncated_poisson(
 
     **Use this for production DP-SGD** when you have a fixed batch size limit.
 
+    Also accepts :class:`~opaque.accounting.mechanisms.BoundedGaussian` as ``inner``.
+    The bounded Gaussian mechanism (Replace adjacency) has the same PLD as a standard
+    Gaussian with ``noise_multiplier / 2``, so
+    ``truncated_poisson(bounded_gaussian(nm), ...)`` is equivalent to
+    ``truncated_poisson(gaussian(nm / 2), ...)``.
+
     Args:
-        inner: The base Gaussian mechanism (from :func:`gaussian`).
+        inner: The base Gaussian mechanism (from :func:`gaussian`), or a
+            :class:`~opaque.accounting.mechanisms.BoundedGaussian` mechanism
+            (from :func:`~opaque.accounting.mechanisms.bounded_gaussian`).
         sample_rate: Probability of including each example (batch_size / dataset_size).
         batch_size_cap: Maximum batch size (actual batches are capped at this value).
         dataset_size: Total number of examples in the dataset.
@@ -62,10 +70,27 @@ def truncated_poisson(
         step = acc.truncated_poisson(g, batch / n, batch, n)
         training = step * 1000
         eps = training.epsilon_at(1e-5)
+
+        # Also works with bounded Gaussian (Replace adjacency)
+        bg = acc.bounded_gaussian(0.8)
+        step = acc.truncated_poisson(bg, batch / n, batch, n)
     """
+    from opaque.accounting.mechanisms.bounded_gaussian import BoundedGaussian
+
+    if isinstance(inner, BoundedGaussian):
+        # BoundedGaussian(nm) has the same PLD as Gaussian(nm/2), so
+        # TruncatedPoisson(BoundedGaussian(nm), ...) == TruncatedPoisson(Gaussian(nm/2), ...).
+        return TruncatedPoisson(
+            inner.noise_multiplier / 2.0,
+            sample_rate,
+            batch_size_cap,
+            dataset_size,
+            config=inner.config,
+        )
     if not isinstance(inner, Gaussian):
         raise TypeError(
-            f"truncated_poisson() requires a Gaussian inner mechanism, got {type(inner).__name__}."
+            f"truncated_poisson() requires a Gaussian or BoundedGaussian inner mechanism, "
+            f"got {type(inner).__name__}."
         )
     return TruncatedPoisson(
         inner.noise_multiplier,
