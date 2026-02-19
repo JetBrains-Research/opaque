@@ -6,12 +6,12 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 import opaque.accounting as acc
-from opaque.accounting.base import DiscretizationConfig, DpProcess
 from opaque.accounting.amplification import (
     Accumulated,
     Poisson,
     TruncatedPoisson,
 )
+from opaque.accounting.base import DiscretizationConfig, DpProcess
 
 # ── Amplification dataclass tests ────────────────────────────────────
 

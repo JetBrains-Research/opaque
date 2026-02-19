@@ -27,7 +27,6 @@ from typing import Protocol
 
 from opaque.accounting.base import DpProcess
 
-
 # =============================================================================
 # Budget protocol
 # =============================================================================

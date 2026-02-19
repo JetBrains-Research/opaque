@@ -251,15 +251,15 @@ def _deserialize_config(data: dict[str, Any] | None) -> Any:
 
 def _serialize_process(process: DpProcess) -> dict[str, Any]:
     """Recursively serialize a DpProcess tree to a dict."""
-    from opaque.accounting.composition import (
-        CachedProcess,
-        Composed,
-        Repeated,
-    )
     from opaque.accounting.amplification import (
         Accumulated,
         Poisson,
         TruncatedPoisson,
+    )
+    from opaque.accounting.composition import (
+        CachedProcess,
+        Composed,
+        Repeated,
     )
     from opaque.accounting.mechanisms import (
         EpsDelta,
@@ -328,15 +328,15 @@ def _serialize_process(process: DpProcess) -> dict[str, Any]:
 
 def _deserialize_process(data: dict[str, Any]) -> DpProcess:
     """Recursively deserialize a DpProcess tree from a dict."""
-    from opaque.accounting.composition import (
-        CachedProcess,
-        Composed,
-        Repeated,
-    )
     from opaque.accounting.amplification import (
         Accumulated,
         Poisson,
         TruncatedPoisson,
+    )
+    from opaque.accounting.composition import (
+        CachedProcess,
+        Composed,
+        Repeated,
     )
     from opaque.accounting.mechanisms import (
         EpsDelta,

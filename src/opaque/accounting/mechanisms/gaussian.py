@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 import opaque_accounting as _native
 
 from opaque.accounting.base import DiscretizationConfig, DpProcess, Pld
-
 from opaque.accounting.discretization import resolve_pld_config
 
 

@@ -25,7 +25,6 @@ from opaque.accounting.mechanisms.identity import (
     identity,
 )
 
-
 __all__ = [
     # Dataclass types
     "Gaussian",
