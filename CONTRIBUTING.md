@@ -58,6 +58,7 @@ uv sync                          # Core only (clipping, noise, accounting)
 uv sync --group dev              # + pytest, ruff, hypothesis, scipy
 uv sync --group compat           # + transformers, peft (HuggingFace tests)
 uv sync --group cross-validation # + dp-accounting, riskcal (reference comparison)
+uv sync --group benchmark        # + opacus, torchvision (benchmarking)
 uv sync --group examples         # + datasets, torchopt, jupyter, matplotlib
 uv sync --group docs             # + mkdocs
 uv sync --all-groups             # Everything
