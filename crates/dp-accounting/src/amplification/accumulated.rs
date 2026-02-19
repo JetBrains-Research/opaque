@@ -1,9 +1,7 @@
 //! Accumulated (gradient accumulation) Poisson-subsampled Gaussian mechanism PLD.
 
 use crate::adjacency::Adjacency;
-use crate::discretization::{
-    discretize_asymmetric_mechanism, DiscretizationConfig, EpsilonBounds,
-};
+use crate::discretization::{discretize_asymmetric_mechanism, DiscretizationConfig, EpsilonBounds};
 use crate::error::{PldError, Result};
 use crate::numerics::logspace::log_sumexp;
 use crate::numerics::special::gaussian_log_cdf;

@@ -407,8 +407,8 @@ fn pmf_beta_symmetrized(pmf_remove: &Pmf, pmf_add: &Pmf, target_alpha: f64) -> f
     let y0 = pmf_remove.lower_loss_index;
     let end_idx = ((-y0 + 1) as usize).min(n_y);
     let mut f_alpha_bar = 0.0;
-    for j in 0..end_idx {
-        f_alpha_bar += probs_y[j];
+    for prob in probs_y.iter().take(end_idx) {
+        f_alpha_bar += prob;
     }
 
     if alpha_bar <= f_alpha_bar {

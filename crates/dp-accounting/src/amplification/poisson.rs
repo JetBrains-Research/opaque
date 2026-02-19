@@ -1,9 +1,7 @@
 //! Poisson-subsampled Gaussian mechanism PLD.
 
 use crate::adjacency::Adjacency;
-use crate::discretization::{
-    discretize_asymmetric_mechanism, DiscretizationConfig, EpsilonBounds,
-};
+use crate::discretization::{discretize_asymmetric_mechanism, DiscretizationConfig, EpsilonBounds};
 use crate::error::Result;
 use crate::numerics::logspace::{log_a_times_exp_b_plus_c, log_add};
 use crate::numerics::special::{arcsinh_exp, gaussian_log_cdf, log_sinh};
@@ -46,7 +44,11 @@ pub fn poisson_gaussian_pld(
 
     discretize_asymmetric_mechanism(config, bounds_remove, bounds_add, |epsilon, adj| {
         Ok(poisson_gaussian_get_delta(
-            epsilon, adj, sigma, sensitivity, rate,
+            epsilon,
+            adj,
+            sigma,
+            sensitivity,
+            rate,
         ))
     })
     .map(|pld| pld.with_tail_budgets(tail_budget, tail_budget))
@@ -142,7 +144,11 @@ pub(super) fn poisson_gaussian_epsilon_bounds(
 // ===========================================================================
 
 /// Inverse privacy loss for ADD/REMOVE (Gaussian base).
-pub(super) fn inverse_privacy_loss_gaussian(privacy_loss: f64, sigma: f64, sensitivity: f64) -> f64 {
+pub(super) fn inverse_privacy_loss_gaussian(
+    privacy_loss: f64,
+    sigma: f64,
+    sensitivity: f64,
+) -> f64 {
     let sigma_sq = sigma * sigma;
     0.5 * sensitivity - privacy_loss * (sigma_sq / sensitivity)
 }
@@ -343,11 +349,7 @@ mod tests {
         let rates = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0];
         let epsilons: Vec<f64> = rates
             .iter()
-            .map(|&q| {
-                poisson_gaussian_pld(0.5, q, &cfg)
-                    .unwrap()
-                    .epsilon_at(1e-5)
-            })
+            .map(|&q| poisson_gaussian_pld(0.5, q, &cfg).unwrap().epsilon_at(1e-5))
             .collect();
 
         for w in epsilons.windows(2) {

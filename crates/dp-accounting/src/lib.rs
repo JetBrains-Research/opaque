@@ -47,10 +47,10 @@ pub mod mechanisms;
 pub mod transformations;
 
 // --- Public re-exports ---
+pub use adjacency::Adjacency;
 pub use discretization::DiscretizationConfig;
 pub use error::{PldError, Result};
 pub use pld::PrivacyLossDistribution;
-pub use adjacency::Adjacency;
 
 #[cfg(feature = "python-extension")]
 mod python;

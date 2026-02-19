@@ -33,5 +33,6 @@ pub(crate) const MAX_NOISE_MULTIPLIER: f64 = 1.2;
 
 pub use eps_delta::eps_delta_pld;
 pub use gaussian::gaussian_pld;
+#[allow(unused_imports)] // used by future bounded-Gaussian adjacency (issue #73)
 pub(crate) use gaussian::gaussian_replace_pld;
 pub use identity::identity_pld;

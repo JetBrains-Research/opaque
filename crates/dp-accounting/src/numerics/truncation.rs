@@ -258,12 +258,14 @@ mod tests {
         assert_eq!(upper, full_upper);
 
         // Only right budget → lower stays at full range, upper is truncated
-        let (lower_r, upper_r) = compute_self_convolve_bounds_asymmetric(&probs, num_times, 1e-10, 0.0);
+        let (lower_r, upper_r) =
+            compute_self_convolve_bounds_asymmetric(&probs, num_times, 1e-10, 0.0);
         assert_eq!(lower_r, 0); // no left truncation
         assert!(upper_r < full_upper); // right is truncated
 
         // Only left budget → upper stays at full range, lower is truncated
-        let (lower_l, upper_l) = compute_self_convolve_bounds_asymmetric(&probs, num_times, 0.0, 1e-10);
+        let (lower_l, upper_l) =
+            compute_self_convolve_bounds_asymmetric(&probs, num_times, 0.0, 1e-10);
         assert!(lower_l > 0); // left is truncated
         assert_eq!(upper_l, full_upper); // no right truncation
     }

@@ -1,9 +1,7 @@
 //! Truncated Poisson-subsampled Gaussian mechanism PLD.
 
 use crate::adjacency::Adjacency;
-use crate::discretization::{
-    discretize_asymmetric_mechanism, DiscretizationConfig, EpsilonBounds,
-};
+use crate::discretization::{discretize_asymmetric_mechanism, DiscretizationConfig, EpsilonBounds};
 use crate::error::{PldError, Result};
 use crate::pld::PrivacyLossDistribution;
 use statrs::distribution::{Binomial, DiscreteCDF};
@@ -49,7 +47,9 @@ pub fn truncated_poisson_gaussian_pld(
         ));
     }
     if dataset_size == 0 {
-        return Err(PldError::InvalidParameter("dataset_size must be > 0".into()));
+        return Err(PldError::InvalidParameter(
+            "dataset_size must be > 0".into(),
+        ));
     }
 
     let sigma = noise_multiplier;
@@ -73,14 +73,8 @@ pub fn truncated_poisson_gaussian_pld(
         log_mass,
         q_cond,
     );
-    let bounds_add = truncated_epsilon_bounds(
-        sigma,
-        sensitivity,
-        rate,
-        Adjacency::Add,
-        log_mass,
-        q_cond,
-    );
+    let bounds_add =
+        truncated_epsilon_bounds(sigma, sensitivity, rate, Adjacency::Add, log_mass, q_cond);
 
     discretize_asymmetric_mechanism(config, bounds_remove, bounds_add, |epsilon, adj| {
         Ok(truncated_get_delta(

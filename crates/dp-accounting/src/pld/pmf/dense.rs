@@ -249,8 +249,7 @@ impl Pmf {
         // Compose negative infinity masses: P(Λ₁ + Λ₂ = -∞).
         // Since -∞ + finite = -∞, the composed loss is -∞ when AT LEAST ONE
         // step has -∞ loss → union formula (same as infinity_mass).
-        let result_negative_infinity_mass = lhs.negative_infinity_mass
-            + rhs.negative_infinity_mass
+        let result_negative_infinity_mass = lhs.negative_infinity_mass + rhs.negative_infinity_mass
             - lhs.negative_infinity_mass * rhs.negative_infinity_mass;
 
         let result = Pmf {
@@ -261,14 +260,8 @@ impl Pmf {
             negative_infinity_mass: result_negative_infinity_mass,
             pessimistic_estimate: lhs.pessimistic_estimate,
             max_grid_size: lhs.max_grid_size.max(rhs.max_grid_size),
-            right_tail_budget: combine_budgets(
-                lhs.right_tail_budget,
-                rhs.right_tail_budget,
-            ),
-            left_tail_budget: combine_budgets(
-                lhs.left_tail_budget,
-                rhs.left_tail_budget,
-            ),
+            right_tail_budget: combine_budgets(lhs.right_tail_budget, rhs.right_tail_budget),
+            left_tail_budget: combine_budgets(lhs.left_tail_budget, rhs.left_tail_budget),
         };
         Ok(result.maybe_coarsen())
     }
@@ -306,8 +299,7 @@ impl Pmf {
         // - Right budget is used directly (budget is tiny, accumulation negligible)
         // - Left budget is reduced by already-consumed negative_infinity_mass,
         //   ensuring total never exceeds the promised tail_mass_truncation / 2.
-        let effective_left_budget =
-            (self.left_tail_budget - self.negative_infinity_mass).max(0.0);
+        let effective_left_budget = (self.left_tail_budget - self.negative_infinity_mass).max(0.0);
         let effective_right_budget = self.right_tail_budget;
 
         let use_chernoff = effective_right_budget > 0.0 || effective_left_budget > 0.0;

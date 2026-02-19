@@ -46,6 +46,7 @@ pub fn gaussian_pld(
 /// and adding another, doubling the sensitivity. This is equivalent to
 /// `gaussian_pld(noise_multiplier / 2, config)` — but bypasses the range
 /// check because `noise_multiplier / 2` may fall below `MIN_NOISE_MULTIPLIER`.
+#[allow(dead_code)] // used by future bounded-Gaussian adjacency (issue #73)
 pub(crate) fn gaussian_replace_pld(
     noise_multiplier: f64,
     config: &DiscretizationConfig,
@@ -62,10 +63,7 @@ pub(crate) fn gaussian_replace_pld(
 }
 
 /// X-space truncation → epsilon bounds for a Gaussian mechanism.
-fn gaussian_epsilon_bounds(
-    noise_multiplier: f64,
-    log_mass_truncation_bound: f64,
-) -> EpsilonBounds {
+fn gaussian_epsilon_bounds(noise_multiplier: f64, log_mass_truncation_bound: f64) -> EpsilonBounds {
     use statrs::distribution::{ContinuousCDF, Normal};
 
     let sigma = noise_multiplier;
@@ -155,8 +153,7 @@ mod tests {
             let dt = 1.0 / sigma; // Δ/σ
             for &eps in &[0.1, 0.5, 1.0, 3.0] {
                 let analytical =
-                    (n.cdf(dt / 2.0 - eps / dt) - eps.exp() * n.cdf(-dt / 2.0 - eps / dt))
-                        .max(0.0);
+                    (n.cdf(dt / 2.0 - eps / dt) - eps.exp() * n.cdf(-dt / 2.0 - eps / dt)).max(0.0);
                 let numerical = pld.delta_at(eps);
                 let err = (numerical - analytical).abs();
                 assert!(

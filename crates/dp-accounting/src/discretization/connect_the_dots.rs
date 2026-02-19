@@ -10,8 +10,8 @@
 //! > <https://arxiv.org/abs/2207.04380>
 
 use super::config::{DiscretizationConfig, EpsilonBounds};
-use crate::error::{PldError, Result};
 use crate::adjacency::Adjacency;
+use crate::error::{PldError, Result};
 use crate::pld::pmf::Pmf;
 use crate::pld::PrivacyLossDistribution;
 use rayon::prelude::*;
@@ -24,6 +24,7 @@ static PARALLEL_THRESHOLD: AtomicUsize = AtomicUsize::new(10_000);
 /// Set the parallel threshold for discretization
 ///
 /// Controls when to parallelize delta computation. Default: 10,000.
+#[allow(dead_code)] // used in tests
 pub fn set_parallel_threshold(threshold: usize) {
     PARALLEL_THRESHOLD.store(threshold, Ordering::Relaxed);
 }
