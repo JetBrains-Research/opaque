@@ -172,7 +172,7 @@ class TestAccountantFunctional:
 
         eps1_before = acct1.epsilon_at(1e-5)
 
-        acct2 = acct1 | step
+        _ = acct1 | step
 
         eps1_after = acct1.epsilon_at(1e-5)
 

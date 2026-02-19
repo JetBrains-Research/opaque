@@ -226,7 +226,9 @@ class TestCalibrateBeta:
 
     def test_monotonicity(self):
         """Stricter (higher) beta target → more noise."""
-        process = lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 500
+
+        def process(nm):
+            return acc.poisson(acc.gaussian(nm), 0.01) * 500
 
         result_low = cal.calibrate(cal.beta_budget(0.3, alpha=0.1), process, 0.3, 1.2)
         result_high = cal.calibrate(cal.beta_budget(0.7, alpha=0.1), process, 0.3, 1.2)

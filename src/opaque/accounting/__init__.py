@@ -34,10 +34,37 @@ except ImportError as e:
     raise ImportError("opaque-accounting native module not found. ") from e
 
 # Base class
+from opaque.accounting.accountant import Accountant
 from opaque.accounting.base import DpProcess
+from opaque.accounting.calibration import (
+    advantage_budget,
+    beta_budget,
+    calibrate,
+    delta_budget,
+    epsilon_budget,
+    risk_budget,
+)
+from opaque.accounting.composition import (
+    cached,
+    compose,
+    repeat,
+)
 
 # Config types
-from opaque.accounting.discretization import DiscretizationConfig
+from opaque.accounting.discretization import (
+    DiscretizationConfig,
+    get_discretization,
+    set_discretization,
+)
+from opaque.accounting.mechanisms import (
+    accumulate,
+    adaclip,
+    eps_delta,
+    gaussian,
+    identity,
+    poisson,
+    truncated_poisson,
+)
 
 # Legacy alias: code that imports PldConfig still works
 PldConfig = DiscretizationConfig
@@ -58,42 +85,6 @@ Example::
     cfg = acc.DiscretizationConfig(discretization=1e-3)
     proc = acc.gaussian(1.1, discretization=cfg)
 """
-
-# Import discretization utilities
-# Import Accountant
-from opaque.accounting.accountant import Accountant
-
-# Import calibration utilities
-from opaque.accounting.calibration import (
-    advantage_budget,
-    beta_budget,
-    calibrate,
-    delta_budget,
-    epsilon_budget,
-    risk_budget,
-)
-
-# Import composition operators
-from opaque.accounting.composition import (
-    cached,
-    compose,
-    repeat,
-)
-from opaque.accounting.discretization import (
-    get_discretization,
-    set_discretization,
-)
-
-# Import mechanism constructors
-from opaque.accounting.mechanisms import (
-    accumulate,
-    adaclip,
-    eps_delta,
-    gaussian,
-    identity,
-    poisson,
-    truncated_poisson,
-)
 
 __all__ = [
     # Types
