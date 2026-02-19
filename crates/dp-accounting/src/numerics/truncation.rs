@@ -9,7 +9,7 @@
 //! - Google dp_accounting: `pld/common.py:compute_self_convolve_bounds()`
 //! - Chernoff bounds: <https://en.wikipedia.org/wiki/Chernoff_bound>
 
-use crate::math_helpers::logspace::log_sumexp;
+use crate::numerics::logspace::log_sumexp;
 
 /// Compute optimal truncation bounds for self-convolution using Chernoff bounds
 ///
@@ -43,7 +43,7 @@ use crate::math_helpers::logspace::log_sumexp;
 /// # Example
 ///
 /// ```
-/// use opaque_dp_accounting::math_helpers::truncation::compute_self_convolve_bounds;
+/// use opaque_accounting::numerics::truncation::compute_self_convolve_bounds;
 ///
 /// let probs = vec![0.1, 0.3, 0.4, 0.2];
 /// let (lower, upper) = compute_self_convolve_bounds(&probs, 100, 1e-10);

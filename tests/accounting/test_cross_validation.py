@@ -377,7 +377,7 @@ class TestAdaClipCrossValidation:
         assert proc.noise_multiplier == pytest.approx(z_eff, abs=1e-12)
 
         # Verify it's a Gaussian
-        from opaque.accounting.types import Gaussian
+        from opaque.accounting.mechanisms import Gaussian
 
         assert isinstance(proc, Gaussian)
 

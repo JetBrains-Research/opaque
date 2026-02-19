@@ -7,21 +7,21 @@ import pytest
 import opaque.accounting as acc
 from opaque.accounting import calibration as cal
 from opaque.accounting.calibration import (
-    AdvantageTarget,
-    BetaTarget,
+    AdvantageBudget,
+    BetaBudget,
     CalibrateResult,
-    DeltaTarget,
-    EpsilonTarget,
-    RiskTarget,
+    DeltaBudget,
+    EpsilonBudget,
+    RiskBudget,
 )
 
-# -- Target validation -------------------------------------------------------
+# -- Budget validation -------------------------------------------------------
 
 
-class TestEpsilonTarget:
+class TestEpsilonBudget:
     def test_valid(self):
         t = cal.epsilon_budget(3.0, delta=1e-5)
-        assert isinstance(t, EpsilonTarget)
+        assert isinstance(t, EpsilonBudget)
         assert t.value == 3.0
         assert "epsilon" in t.name
 
@@ -46,10 +46,10 @@ class TestEpsilonTarget:
             cal.epsilon_budget(3.0, delta=1.0)
 
 
-class TestDeltaTarget:
+class TestDeltaBudget:
     def test_valid(self):
         t = cal.delta_budget(1e-5, epsilon=3.0)
-        assert isinstance(t, DeltaTarget)
+        assert isinstance(t, DeltaBudget)
         assert t.value == pytest.approx(1e-5)
 
     def test_decreasing(self):
@@ -62,10 +62,10 @@ class TestDeltaTarget:
             cal.delta_budget(1e-5, epsilon=-1.0)
 
 
-class TestAdvantageTarget:
+class TestAdvantageBudget:
     def test_valid(self):
         t = cal.advantage_budget(0.1)
-        assert isinstance(t, AdvantageTarget)
+        assert isinstance(t, AdvantageBudget)
         assert t.value == pytest.approx(0.1)
 
     def test_decreasing(self):
@@ -78,10 +78,10 @@ class TestAdvantageTarget:
             cal.advantage_budget(1.0)
 
 
-class TestBetaTarget:
+class TestBetaBudget:
     def test_valid(self):
         t = cal.beta_budget(0.05, alpha=0.01)
-        assert isinstance(t, BetaTarget)
+        assert isinstance(t, BetaBudget)
         assert t.value == pytest.approx(0.05)
 
     def test_decreasing(self):
@@ -95,10 +95,10 @@ class TestBetaTarget:
             cal.beta_budget(0.5, alpha=0.0)
 
 
-class TestRiskTarget:
+class TestRiskBudget:
     def test_valid(self):
         t = cal.risk_budget(0.1, prior=0.5)
-        assert isinstance(t, RiskTarget)
+        assert isinstance(t, RiskBudget)
         assert t.value == pytest.approx(0.1)
 
     def test_decreasing(self):
@@ -123,7 +123,7 @@ class TestCalibrateErrors:
         with pytest.raises(ValueError, match="param_min"):
             cal.calibrate(cal.epsilon_budget(3.0, delta=1e-5), self._process, 0.8, 0.5)
 
-    def test_target_outside_bracket(self):
+    def test_budget_outside_bracket(self):
         """Target not achievable within bounds → ValueError."""
         with pytest.raises(ValueError):
             cal.calibrate(

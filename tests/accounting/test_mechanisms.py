@@ -1,19 +1,90 @@
-"""Tests for opaque.accounting.mechanisms — constructor functions."""
+"""Tests for opaque.accounting.mechanisms — Gaussian, EpsDelta, Identity."""
 
 import math
+from dataclasses import FrozenInstanceError
 
 import pytest
 
 import opaque.accounting as acc
-from opaque.accounting.base import DiscretizationConfig
-from opaque.accounting.nodes import Identity
-from opaque.accounting.types import (
-    Accumulated,
+from opaque.accounting.base import DiscretizationConfig, DpProcess
+from opaque.accounting.mechanisms import (
     EpsDelta,
     Gaussian,
-    Poisson,
-    TruncatedPoisson,
+    Identity,
 )
+
+# ── Mechanism dataclass tests ────────────────────────────────────────
+
+
+class TestGaussianDataclass:
+    """Gaussian frozen dataclass."""
+
+    def test_fields(self):
+        g = Gaussian(1.1)
+        assert g.noise_multiplier == pytest.approx(1.1)
+        assert g.config is None
+
+    def test_frozen(self):
+        g = Gaussian(1.1)
+        with pytest.raises(FrozenInstanceError):
+            g.noise_multiplier = 2.0  # type: ignore[misc]
+
+    def test_is_dp_process(self):
+        assert isinstance(Gaussian(1.0), DpProcess)
+
+    def test_equality(self):
+        assert Gaussian(1.0) == Gaussian(1.0)
+        assert Gaussian(1.0) != Gaussian(1.1)
+
+    def test_config_participates_in_equality_and_hash(self):
+        """Config participates in both __eq__ and __hash__."""
+        a = Gaussian(1.0, config=None)
+        b = Gaussian(1.0, config=DiscretizationConfig(discretization=1e-3))
+        # same nm + different config → NOT equal
+        assert a != b
+        # same nm + same config → equal and same hash
+        c = Gaussian(1.0, config=None)
+        assert a == c
+        assert hash(a) == hash(c)
+
+    def test_config_excluded_from_repr(self):
+        """Config field has repr=False."""
+        g = Gaussian(1.0, config=DiscretizationConfig(discretization=1e-3))
+        assert "config" not in repr(g)
+
+    def test_pld_returns_valid(self):
+        pld = Gaussian(0.8).pld()
+        eps = pld.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
+
+
+class TestEpsDeltaDataclass:
+    """EpsDelta frozen dataclass."""
+
+    def test_fields(self):
+        e = EpsDelta(1.0, 1e-5)
+        assert e.epsilon == pytest.approx(1.0)
+        assert e.delta == pytest.approx(1e-5)
+
+    def test_frozen(self):
+        e = EpsDelta(1.0, 1e-5)
+        with pytest.raises(FrozenInstanceError):
+            e.epsilon = 2.0  # type: ignore[misc]
+
+    def test_is_dp_process(self):
+        assert isinstance(EpsDelta(1.0, 1e-5), DpProcess)
+
+    def test_equality(self):
+        assert EpsDelta(1.0, 1e-5) == EpsDelta(1.0, 1e-5)
+        assert EpsDelta(1.0, 1e-5) != EpsDelta(2.0, 1e-5)
+
+    def test_pld_returns_valid(self):
+        pld = EpsDelta(1.0, 1e-5).pld()
+        d = pld.delta_at(1.0)
+        assert math.isfinite(d)
+
+
+# ── Constructor function tests ───────────────────────────────────────
 
 
 class TestGaussianConstructor:
@@ -35,88 +106,10 @@ class TestGaussianConstructor:
         assert g.config is not None
         assert g.config.discretization == pytest.approx(1e-3)
 
-    def test_pldconfig_discretization(self):
+    def test_config_discretization(self):
         cfg = DiscretizationConfig(discretization=1e-3)
         g = acc.gaussian(0.8, discretization=cfg)
         assert g.config is cfg
-
-
-class TestPoissonConstructor:
-    """acc.poisson() validates inner type and returns Poisson."""
-
-    def test_returns_poisson(self):
-        p = acc.poisson(acc.gaussian(0.8), 0.01)
-        assert isinstance(p, Poisson)
-        assert p.noise_multiplier == pytest.approx(0.8)
-        assert p.sample_rate == pytest.approx(0.01)
-
-    def test_rejects_non_gaussian(self):
-        with pytest.raises(TypeError, match="Gaussian"):
-            acc.poisson(acc.eps_delta(1.0, 1e-5), 0.01)  # type: ignore[arg-type]
-
-    def test_propagates_config(self):
-        cfg = DiscretizationConfig(discretization=1e-3)
-        g = acc.gaussian(0.8, discretization=cfg)
-        p = acc.poisson(g, 0.01)
-        assert p.config is cfg
-
-
-class TestTruncatedPoissonConstructor:
-    """acc.truncated_poisson() validates inner type."""
-
-    def test_returns_truncated_poisson(self):
-        t = acc.truncated_poisson(acc.gaussian(0.8), 0.01, 128, 10_000)
-        assert isinstance(t, TruncatedPoisson)
-        assert t.batch_size_cap == 128
-        assert t.dataset_size == 10_000
-
-    def test_rejects_non_gaussian(self):
-        with pytest.raises(TypeError, match="Gaussian"):
-            acc.truncated_poisson(acc.eps_delta(1.0), 0.01, 128, 10_000)  # type: ignore[arg-type]
-
-
-class TestAccumulateConstructor:
-    """acc.accumulate() validates inner type (must be Poisson)."""
-
-    def test_returns_accumulated(self):
-        p = acc.poisson(acc.gaussian(0.8), 0.01)
-        a = acc.accumulate(p, 4)
-        assert isinstance(a, Accumulated)
-        assert a.microbatches == 4
-
-    def test_rejects_non_poisson(self):
-        with pytest.raises(TypeError, match="Poisson"):
-            acc.accumulate(acc.gaussian(0.8), 4)  # type: ignore[arg-type]
-
-
-class TestAdaclipConstructor:
-    """acc.adaclip() returns Gaussian with effective noise multiplier."""
-
-    def test_returns_gaussian(self):
-        result = acc.adaclip(acc.gaussian(0.8), 50.0)
-        assert isinstance(result, Gaussian)
-
-    def test_effective_noise_differs_from_base(self):
-        result = acc.adaclip(acc.gaussian(0.8), 50.0)
-        # effective noise should be lower than base (more privacy cost)
-        assert result.noise_multiplier != pytest.approx(0.8)
-
-    def test_large_quantile_noise_approaches_base(self):
-        """Very large σ_b → z_eff ≈ z (quantile adds negligible cost)."""
-        result = acc.adaclip(acc.gaussian(1.0), 1e10)
-        assert result.noise_multiplier == pytest.approx(1.0, rel=1e-6)
-
-    def test_rejects_non_gaussian(self):
-        with pytest.raises(TypeError, match="Gaussian"):
-            acc.adaclip(acc.eps_delta(1.0), 50.0)  # type: ignore[arg-type]
-
-    def test_more_privacy_cost_than_base(self):
-        """AdaClip ε ≥ base ε (extra cost from quantile noise)."""
-        base = acc.gaussian(0.8)
-        ac = acc.adaclip(acc.gaussian(0.8), 50.0)
-        eps_base = base.epsilon_at(1e-5)
-        eps_ac = ac.epsilon_at(1e-5)
-        assert eps_ac >= eps_base - 1e-6
 
 
 class TestEpsDeltaConstructor:
@@ -149,3 +142,26 @@ class TestIdentityConstructor:
         i = acc.identity()
         eps = i.epsilon_at(1e-5)
         assert eps == pytest.approx(0.0, abs=1e-10)
+
+
+class TestIdentityDataclass:
+    """Identity node — zero privacy loss."""
+
+    def test_is_dp_process(self):
+        assert isinstance(Identity(), DpProcess)
+
+    def test_frozen(self):
+        i = Identity()
+        with pytest.raises(FrozenInstanceError):
+            i.config = None  # type: ignore[misc]
+
+    def test_zero_epsilon(self):
+        eps = Identity().epsilon_at(1e-5)
+        assert eps == pytest.approx(0.0, abs=1e-10)
+
+    def test_zero_advantage(self):
+        adv = Identity().advantage()
+        assert adv == pytest.approx(0.0, abs=1e-10)
+
+    def test_equality(self):
+        assert Identity() == Identity()

@@ -6,8 +6,12 @@ import opaque_accounting as _native
 
 DiscretizationConfig = _native.DiscretizationConfig
 
-# Legacy alias for backward compatibility
-PldConfig = DiscretizationConfig
+__all__ = [
+    "DiscretizationConfig",
+    "set_discretization",
+    "get_discretization",
+    "resolve_pld_config",
+]
 
 # Module-level discretization default
 _default_config: DiscretizationConfig | None = None
@@ -77,10 +81,14 @@ def resolve_pld_config(
     if config is None:
         return _default_config
     elif isinstance(config, (int, float)):
+        # Use module default as base (if set), overriding only discretization.
+        if _default_config is not None:
+            return DiscretizationConfig(
+                discretization=float(config),
+                log_mass_truncation_bound=_default_config.log_mass_truncation_bound,
+                pessimistic_estimate=_default_config.pessimistic_estimate,
+                max_grid_size=_default_config.max_grid_size,
+            )
         return DiscretizationConfig(discretization=float(config))
     else:
         return config
-
-
-# Legacy alias
-resolve_discretization = resolve_pld_config

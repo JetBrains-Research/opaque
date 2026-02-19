@@ -33,9 +33,42 @@ try:
 except ImportError as e:
     raise ImportError("opaque-accounting native module not found. ") from e
 
-# Base class
-from opaque.accounting.accountant import Accountant
+# Base
 from opaque.accounting.base import DpProcess
+from opaque.accounting.discretization import (
+    DiscretizationConfig,
+    get_discretization,
+    set_discretization,
+)
+
+# Mechanisms
+from opaque.accounting.mechanisms import (
+    eps_delta,
+    gaussian,
+    identity,
+)
+
+# Amplification
+from opaque.accounting.amplification import (
+    accumulate,
+    poisson,
+    truncated_poisson,
+)
+
+# Transformations
+from opaque.accounting.transformations import adaclip
+
+# Composition
+from opaque.accounting.composition import (
+    cached,
+    compose,
+    repeat,
+)
+
+# Accountant
+from opaque.accounting.accountant import Accountant
+
+# Calibration
 from opaque.accounting.calibration import (
     advantage_budget,
     beta_budget,
@@ -44,76 +77,34 @@ from opaque.accounting.calibration import (
     epsilon_budget,
     risk_budget,
 )
-from opaque.accounting.composition import (
-    cached,
-    compose,
-    repeat,
-)
-
-# Config types
-from opaque.accounting.discretization import (
-    DiscretizationConfig,
-    get_discretization,
-    set_discretization,
-)
-from opaque.accounting.mechanisms import (
-    accumulate,
-    adaclip,
-    eps_delta,
-    gaussian,
-    identity,
-    poisson,
-    truncated_poisson,
-)
-
-# Legacy alias: code that imports PldConfig still works
-PldConfig = DiscretizationConfig
-"""Configuration controlling PLD discretization precision.
-
-The PLD is represented as a discrete probability mass function (PMF) on a
-regular grid. The ``DiscretizationConfig`` (aliased as ``PldConfig``) controls
-grid resolution and tail truncation.
-
-Args:
-    discretization: Grid spacing for PLD PMF. Default: 1e-4.
-        Smaller = more precise, larger grid. Error scales as O(disc^2).
-    log_mass_truncation_bound: Tails with probability below exp(bound) are
-        truncated. Default: -50 (matching Google's dp_accounting).
-
-Example::
-
-    cfg = acc.DiscretizationConfig(discretization=1e-3)
-    proc = acc.gaussian(1.1, discretization=cfg)
-"""
 
 __all__ = [
-    # Types
+    # Base
     "DpProcess",
     "DiscretizationConfig",
-    "PldConfig",
-    # Module defaults
     "set_discretization",
     "get_discretization",
-    # Mechanisms
+    # Mechanisms (factories only; classes via subpackage import)
     "gaussian",
+    "eps_delta",
+    "identity",
+    # Amplification
     "poisson",
     "truncated_poisson",
     "accumulate",
+    # Transformations
     "adaclip",
-    "eps_delta",
-    "identity",
     # Composition
     "repeat",
     "compose",
     "cached",
-    # Accounting
+    # Accountant
     "Accountant",
-    # Calibration targets
+    # Calibration
     "epsilon_budget",
     "delta_budget",
     "advantage_budget",
     "beta_budget",
     "risk_budget",
-    # Calibration functions
     "calibrate",
 ]

@@ -19,7 +19,7 @@ use std::f64;
 /// # Examples
 ///
 /// ```
-/// use opaque_dp_accounting::math_helpers::logspace::log_add;
+/// use opaque_accounting::numerics::logspace::log_add;
 ///
 /// let result = log_add(100.0, 101.0);
 /// // exp(100) + exp(101) = exp(100) * (1 + e)
@@ -75,7 +75,7 @@ pub fn log_add(log_x: f64, log_y: f64) -> f64 {
 /// # Examples
 ///
 /// ```
-/// use opaque_dp_accounting::math_helpers::logspace::log_sub;
+/// use opaque_accounting::numerics::logspace::log_sub;
 ///
 /// let result = log_sub(101.0, 100.0).unwrap();
 /// // exp(101) - exp(100) = exp(100) * (e - 1)
@@ -131,7 +131,7 @@ pub fn log_sub(log_x: f64, log_y: f64) -> Result<f64, &'static str> {
 /// # Examples
 ///
 /// ```
-/// use opaque_dp_accounting::math_helpers::logspace::log_a_times_exp_b_plus_c;
+/// use opaque_accounting::numerics::logspace::log_a_times_exp_b_plus_c;
 ///
 /// let result = log_a_times_exp_b_plus_c(2.0, 1.0, 3.0);
 /// // 2 * e^1 + 3 = 2 * 2.718 + 3 ≈ 8.436
@@ -185,7 +185,7 @@ pub fn log_a_times_exp_b_plus_c(a: f64, b: f64, c: f64) -> f64 {
 /// # Examples
 ///
 /// ```
-/// use opaque_dp_accounting::math_helpers::logspace::log_sumexp;
+/// use opaque_accounting::numerics::logspace::log_sumexp;
 ///
 /// let values = vec![0.0, 1.0, 2.0];
 /// let result = log_sumexp(&values);

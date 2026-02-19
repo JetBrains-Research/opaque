@@ -42,6 +42,8 @@ import opaque_accounting as _native
 Pld = _native.Pld
 DiscretizationConfig = _native.DiscretizationConfig
 
+__all__ = ["DpProcess", "Pld", "DiscretizationConfig"]
+
 
 class DpProcess(ABC):
     """A differential privacy process backed by a PLD.
@@ -111,7 +113,7 @@ class DpProcess(ABC):
 
         Flattens nested repeats: ``(step * n) * m`` → ``step * (n * m)``.
         """
-        from opaque.accounting.nodes import Repeated
+        from opaque.accounting.composition import Repeated
 
         leaf, existing = self._leaf_and_count()
         return Repeated(leaf, existing * count)
@@ -126,7 +128,8 @@ class DpProcess(ABC):
         Applies identity elision, direct merge, and right-spine merge
         using structural equality (``==``).
         """
-        from opaque.accounting.nodes import Composed, Identity, Repeated
+        from opaque.accounting.composition import Composed, Repeated
+        from opaque.accounting.mechanisms import Identity
 
         # Identity elision
         if isinstance(self, Identity):

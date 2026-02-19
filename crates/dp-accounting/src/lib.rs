@@ -27,27 +27,24 @@
 //!
 //! - [`mechanisms`]: Gaussian, (ε,δ), identity PLD constructors
 //! - [`amplification`]: Poisson, truncated Poisson, accumulated PLDs
-//! - [`adaclip`]: Adaptive clipping sensitivity formula
+//! - [`transformations`]: Adaptive clipping sensitivity formula
 //! - [`pld`]: The `PrivacyLossDistribution` type and metrics
 //! - [`discretization`]: Connect-the-Dots discretization
 //! - [`error`]: Error types
-//! - [`math_helpers`]: Numerical primitives
+//! - [`numerics`]: Numerical primitives
 
 pub mod error;
-pub mod math_helpers;
+pub mod numerics;
 
-// --- Core infrastructure (kept from functional/) ---
-#[path = "functional/adjacency.rs"]
+// --- Core infrastructure ---
 pub(crate) mod adjacency;
-#[path = "functional/discretization/mod.rs"]
 pub(crate) mod discretization;
-#[path = "functional/pld/mod.rs"]
 pub mod pld;
 
 // --- New flat-function modules ---
-pub mod adaclip;
 pub mod amplification;
 pub mod mechanisms;
+pub mod transformations;
 
 // --- Public re-exports ---
 pub use discretization::DiscretizationConfig;

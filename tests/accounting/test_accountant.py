@@ -148,7 +148,7 @@ class TestAccountantBudget:
         assert acct.budget_exceeded
 
     def test_non_epsilon_budget(self):
-        """Budget works with non-epsilon targets (advantage)."""
+        """Budget works with non-epsilon budgets (advantage)."""
         budget = acc.advantage_budget(0.5)
         acct = acc.Accountant(budget=budget)
         acct = acct | (acc.gaussian(0.5) * 50)
@@ -241,8 +241,8 @@ class TestAccountantTrainingLoop:
 
     def test_batch_composition(self):
         """Simulate training loop: compose all steps at once."""
-        target = acc.epsilon_budget(5.0, delta=1e-5)
-        acct = acc.Accountant(budget=target)
+        budget = acc.epsilon_budget(5.0, delta=1e-5)
+        acct = acc.Accountant(budget=budget)
 
         acct = acct | (acc.poisson(acc.gaussian(1.1), 0.01) * 10)
 
@@ -250,8 +250,8 @@ class TestAccountantTrainingLoop:
 
     def test_incremental_composition(self):
         """Simulate training loop: compose one step at a time."""
-        target = acc.epsilon_budget(10.0, delta=1e-5)
-        acct = acc.Accountant(budget=target)
+        budget = acc.epsilon_budget(10.0, delta=1e-5)
+        acct = acc.Accountant(budget=budget)
 
         step_process = acc.poisson(acc.gaussian(1.1), 0.01)
 
@@ -265,20 +265,20 @@ class TestAccountantTrainingLoop:
 
     def test_calibration_then_train(self):
         """Calibrate noise, then use Accountant to track budget."""
-        target = acc.epsilon_budget(2.0, delta=1e-5)
+        budget = acc.epsilon_budget(2.0, delta=1e-5)
 
         result = acc.calibrate(
-            target=target,
+            budget=budget,
             process=lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 100,
             param_min=0.1,
             param_max=1.2,
         )
 
-        acct = acc.Accountant(budget=target)
+        acct = acc.Accountant(budget=budget)
         acct = acct | (acc.poisson(acc.gaussian(result.param), 0.01) * 100)
 
         achieved = acct.epsilon_at(1e-5)
-        assert abs(achieved - target.value) < 0.5
+        assert abs(achieved - budget.value) < 0.5
 
     def test_mixed_mechanisms(self):
         """Accountant with mixed mechanism types."""

@@ -88,4 +88,14 @@ impl PyDiscretizationConfig {
             && self.inner.pessimistic_estimate == other.inner.pessimistic_estimate
             && self.inner.max_grid_size == other.inner.max_grid_size
     }
+
+    fn __hash__(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.inner.discretization.to_bits().hash(&mut hasher);
+        self.inner.log_mass_truncation_bound.to_bits().hash(&mut hasher);
+        self.inner.pessimistic_estimate.hash(&mut hasher);
+        self.inner.max_grid_size.hash(&mut hasher);
+        hasher.finish()
+    }
 }

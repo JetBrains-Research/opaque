@@ -84,7 +84,7 @@ class TestResolveDiscretizationConfig:
         assert isinstance(result, DiscretizationConfig)
         assert result.discretization == pytest.approx(1.0)
 
-    def test_pldconfig_passthrough(self):
+    def test_config_passthrough(self):
         """DiscretizationConfig → returned as-is."""
         cfg = DiscretizationConfig(discretization=1e-3)
         result = resolve_pld_config(cfg)

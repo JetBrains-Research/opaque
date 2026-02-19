@@ -1,23 +1,106 @@
-"""Mechanism constructors: convenience functions that build typed DpProcess nodes.
+"""Mechanism types and constructors for DP processes.
 
-Each constructor validates inputs, resolves discretization config, and returns
-the appropriate frozen dataclass from :mod:`opaque.accounting.types`.
+Each mechanism is a frozen dataclass (:class:`DpProcess` subclass) storing
+its parameters.  The PLD is computed on demand via ``pld()`` — each call
+recomputes from scratch.  Use :func:`~opaque.accounting.composition.cached`
+to memoize.
+
+Constructor functions (e.g. ``gaussian()``, ``poisson()``) validate inputs,
+resolve discretization config, and return the appropriate type.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 import opaque_accounting as _native
 
-from opaque.accounting.base import DiscretizationConfig, DpProcess
+from opaque.accounting.base import DiscretizationConfig, DpProcess, Pld
 from opaque.accounting.discretization import resolve_pld_config
-from opaque.accounting.nodes import Identity
-from opaque.accounting.types import (
-    Accumulated,
-    EpsDelta,
-    Gaussian,
-    Poisson,
-    TruncatedPoisson,
-)
+
+# =============================================================================
+# Mechanism dataclass types
+# =============================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class Gaussian(DpProcess):
+    """Gaussian mechanism — stores noise_multiplier, computes PLD on demand."""
+
+    noise_multiplier: float
+    config: DiscretizationConfig | None = field(default=None, repr=False)
+
+    def pld(self) -> Pld:
+        return _native.gaussian_pld(self.noise_multiplier, config=self.config)
+
+
+@dataclass(frozen=True, slots=True)
+class Poisson(DpProcess):
+    """Poisson-subsampled Gaussian mechanism."""
+
+    noise_multiplier: float
+    sample_rate: float
+    config: DiscretizationConfig | None = field(default=None, repr=False)
+
+    def pld(self) -> Pld:
+        return _native.poisson_gaussian_pld(
+            self.noise_multiplier, self.sample_rate, config=self.config
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TruncatedPoisson(DpProcess):
+    """Truncated Poisson-subsampled Gaussian mechanism."""
+
+    noise_multiplier: float
+    sample_rate: float
+    batch_size_cap: int
+    dataset_size: int
+    config: DiscretizationConfig | None = field(default=None, repr=False)
+
+    def pld(self) -> Pld:
+        return _native.truncated_poisson_gaussian_pld(
+            self.noise_multiplier,
+            self.sample_rate,
+            self.batch_size_cap,
+            self.dataset_size,
+            config=self.config,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class Accumulated(DpProcess):
+    """Accumulated (microbatched) Poisson-subsampled Gaussian mechanism."""
+
+    noise_multiplier: float
+    sample_rate: float
+    microbatches: int
+    config: DiscretizationConfig | None = field(default=None, repr=False)
+
+    def pld(self) -> Pld:
+        return _native.accumulated_poisson_gaussian_pld(
+            self.noise_multiplier,
+            self.sample_rate,
+            self.microbatches,
+            config=self.config,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class EpsDelta(DpProcess):
+    """Fixed (ε, δ) mechanism."""
+
+    epsilon: float
+    delta: float
+    config: DiscretizationConfig | None = field(default=None, repr=False)
+
+    def pld(self) -> Pld:
+        return _native.eps_delta_pld(self.epsilon, self.delta, config=self.config)
+
+
+# =============================================================================
+# Constructor functions
+# =============================================================================
 
 
 def gaussian(
@@ -265,7 +348,7 @@ def identity(
         discretization: PLD precision config (keyword-only).
 
     Returns:
-        An :class:`~opaque.accounting.nodes.Identity` process (ε=0 for any δ).
+        An :class:`~opaque.accounting.composition.Identity` process (ε=0 for any δ).
 
     Example::
 
@@ -273,5 +356,7 @@ def identity(
         proc = acc.identity()
         eps = proc.epsilon_at(1e-5)  # ~0
     """
+    from opaque.accounting.composition import Identity
+
     config = resolve_pld_config(discretization)
     return Identity(config=config)

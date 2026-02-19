@@ -50,7 +50,7 @@ use std::f64::consts::LN_2;
 /// # Examples
 ///
 /// ```
-/// use opaque_dp_accounting::math_helpers::special::log_sinh;
+/// use opaque_accounting::numerics::special::log_sinh;
 ///
 /// let result = log_sinh(1.0);
 /// assert!((result - 1.0_f64.sinh().ln()).abs() < 1e-10);
@@ -89,7 +89,7 @@ pub fn log_sinh(x: f64) -> f64 {
 /// # Examples
 ///
 /// ```
-/// use opaque_dp_accounting::math_helpers::special::arcsinh;
+/// use opaque_accounting::numerics::special::arcsinh;
 ///
 /// assert!((arcsinh(0.0)).abs() < 1e-10);
 /// assert!((arcsinh(1.0) - 0.881373587).abs() < 1e-6);
@@ -136,7 +136,7 @@ pub fn arcsinh(x: f64) -> f64 {
 /// # Examples
 ///
 /// ```
-/// use opaque_dp_accounting::math_helpers::special::arcsinh_exp;
+/// use opaque_accounting::numerics::special::arcsinh_exp;
 ///
 /// // For small values, should match direct computation
 /// let result = arcsinh_exp(0.0, 1.0);
@@ -197,7 +197,7 @@ pub fn arcsinh_exp(a: f64, b: f64) -> f64 {
 /// # Examples
 ///
 /// ```
-/// use opaque_dp_accounting::math_helpers::special::gaussian_log_cdf;
+/// use opaque_accounting::numerics::special::gaussian_log_cdf;
 ///
 /// // At z=0, Φ(0) = 0.5, so log(Φ(0)) = -ln(2)
 /// assert!((gaussian_log_cdf(0.0) - (-0.693)).abs() < 0.001);

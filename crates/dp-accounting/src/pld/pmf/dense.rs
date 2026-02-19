@@ -5,7 +5,7 @@
 
 use super::{floor_div, truncate_tails, CoarsenAction};
 use crate::error::{PldError, Result};
-use crate::math_helpers::{fft, truncation};
+use crate::numerics::{fft, truncation};
 
 /// Combine two tail budgets during heterogeneous composition.
 ///

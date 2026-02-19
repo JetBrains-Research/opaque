@@ -27,7 +27,12 @@
         "ms-python.python",
         "ms-python.vscode-pylance",
         "charliermarsh.ruff",
-        "ms-python.pytest"
+        "ms-python.pytest",
+        "rust-lang.rust-analyzer",
+        "GitHub.copilot-chat",
+        "github.vscode-github-actions",
+        "GitHub.vscode-pull-request-github",
+        "ms-vscode.vscode-github-issue-notebooks"
       ]
     }
   },

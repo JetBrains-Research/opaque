@@ -13,5 +13,5 @@ use pyo3::prelude::*;
 #[pyfunction]
 #[pyo3(name = "combined_sensitivity")]
 pub fn py_combined_sensitivity(l2_clip_norm: f64, quantile_noise: f64) -> f64 {
-    crate::adaclip::combined_sensitivity(l2_clip_norm, quantile_noise)
+    crate::transformations::adaclip::combined_sensitivity(l2_clip_norm, quantile_noise)
 }

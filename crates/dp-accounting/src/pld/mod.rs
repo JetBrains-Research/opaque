@@ -42,7 +42,7 @@ use crate::error::Result;
 /// ## From a Gaussian mechanism
 ///
 /// ```rust,ignore
-/// use opaque_dp_accounting::functional::{gaussian, Process};
+/// use opaque_accounting::mechanisms::gaussian_pld;
 ///
 /// let pld = gaussian(1.1).pld()?;
 ///
@@ -76,8 +76,8 @@ impl PrivacyLossDistribution {
     ///
     /// ```rust,ignore
     /// use std::collections::BTreeMap;
-    /// use opaque_dp_accounting::functional::PrivacyLossDistribution;
-    /// use opaque_dp_accounting::functional::pmf::Pmf;
+    /// use opaque_accounting::PrivacyLossDistribution;
+    /// use opaque_accounting::pld::pmf::Pmf;
     ///
     /// let mut masses = BTreeMap::new();
     /// masses.insert(0, 0.5);
@@ -109,8 +109,8 @@ impl PrivacyLossDistribution {
     ///
     /// ```rust,ignore
     /// use std::collections::BTreeMap;
-    /// use opaque_dp_accounting::functional::PrivacyLossDistribution;
-    /// use opaque_dp_accounting::functional::pmf::Pmf;
+    /// use opaque_accounting::PrivacyLossDistribution;
+    /// use opaque_accounting::pld::pmf::Pmf;
     ///
     /// let mut masses_remove = BTreeMap::new();
     /// masses_remove.insert(0, 0.3);
@@ -142,7 +142,7 @@ impl PrivacyLossDistribution {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use opaque_dp_accounting::functional::*;
+    /// use opaque_accounting::pld::*;
     ///
     /// // Gaussian is symmetric (same PLD for ADD and REMOVE)
     /// let pld = gaussian(1.1).pld()?;
@@ -200,7 +200,7 @@ impl PrivacyLossDistribution {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use opaque_dp_accounting::functional::{gaussian, Process};
+    /// use opaque_accounting::mechanisms::gaussian_pld;
     ///
     /// let pld = gaussian(1.1).pld()?;
     /// let delta = pld.delta_at(1.0);
@@ -226,7 +226,7 @@ impl PrivacyLossDistribution {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use opaque_dp_accounting::functional::{gaussian, Process};
+    /// use opaque_accounting::mechanisms::gaussian_pld;
     ///
     /// let pld = gaussian(1.1).pld()?;
     /// let epsilon = pld.epsilon_at(1e-5);
@@ -256,7 +256,7 @@ impl PrivacyLossDistribution {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use opaque_dp_accounting::functional::{gaussian, Process};
+    /// use opaque_accounting::mechanisms::gaussian_pld;
     ///
     /// let pld = gaussian(1.1).pld()?;
     /// let advantage = pld.advantage();
@@ -288,7 +288,7 @@ impl PrivacyLossDistribution {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use opaque_dp_accounting::functional::{gaussian, Process};
+    /// use opaque_accounting::mechanisms::gaussian_pld;
     ///
     /// let pld = gaussian(1.1).pld()?;
     ///
@@ -333,7 +333,7 @@ impl PrivacyLossDistribution {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use opaque_dp_accounting::functional::{gaussian, Process};
+    /// use opaque_accounting::mechanisms::gaussian_pld;
     ///
     /// let pld = gaussian(1.1).pld()?;
     ///
@@ -370,7 +370,7 @@ impl PrivacyLossDistribution {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use opaque_dp_accounting::functional::{gaussian, Process};
+    /// use opaque_accounting::mechanisms::gaussian_pld;
     ///
     /// let pld1 = gaussian(1.1).pld()?;
     /// let pld2 = gaussian(0.8).pld()?;
@@ -436,7 +436,7 @@ impl PrivacyLossDistribution {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use opaque_dp_accounting::functional::{gaussian, Process};
+    /// use opaque_accounting::mechanisms::gaussian_pld;
     ///
     /// let pld = gaussian(1.1).pld()?;
     ///

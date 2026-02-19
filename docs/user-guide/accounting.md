@@ -174,7 +174,7 @@ for i in range(num_steps):
 
 ### Budget Tracking
 
-Pass a calibration target to enable automatic budget checking:
+Pass a calibration budget to enable automatic budget checking:
 
 ```python
 from opaque.accounting import calibration as cal
@@ -236,7 +236,7 @@ result = cal.calibrate(
 )
 ```
 
-### Target Types
+### Budget Types
 
 | Factory                          | Metric                  | Decreasing with noise |
 |----------------------------------|-------------------------|-----------------------|

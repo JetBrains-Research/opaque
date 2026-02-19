@@ -236,7 +236,7 @@ for i in range(num_steps):
 
 ### Budget tracking
 
-Pass an optional `Target` from the calibration module to enable budget checking:
+Pass an optional `Budget` from the calibration module to enable budget checking:
 
 ```python
 from opaque.accounting import calibration as cal
@@ -267,14 +267,14 @@ from opaque.accounting import calibration as cal
 
 Binary search for finding parameter values that achieve a target privacy budget.
 
-### `calibrate(target, process, param_min, param_max, tolerance=1e-6, max_iterations=100) -> CalibrateResult`
+### `calibrate(budget, process, param_min, param_max, tolerance=1e-6, max_iterations=100) -> CalibrateResult`
 
 Binary search for a parameter value such that `process(param)` produces a
-`DpProcess` achieving the given privacy target.
+`DpProcess` achieving the given privacy budget.
 
 | Parameter        | Default | Description                                              |
 |------------------|---------|----------------------------------------------------------|
-| `target`         |         | A `Target` object from a target factory (see below)      |
+| `budget`         |         | A `Budget` object from a budget factory (see below)      |
 | `process`        |         | Callable: `float -> DpProcess`                           |
 | `param_min`      |         | Lower bound for search                                   |
 | `param_max`      |         | Upper bound for search                                   |
@@ -284,15 +284,15 @@ Binary search for a parameter value such that `process(param)` produces a
 The `process` callable takes a single float parameter and returns a `DpProcess`.
 The default parameter range is tuned for noise_multiplier search, but
 `calibrate()` is general: it can calibrate any float parameter in a process
-against any target.
+against any budget.
 
 ```python
 import opaque.accounting as acc
 from opaque.accounting import calibration as cal
 
-target = cal.epsilon_budget(3.0, delta=1e-5)
+budget = cal.epsilon_budget(3.0, delta=1e-5)
 result = cal.calibrate(
-    target,
+    budget,
     lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000,
     param_min=0.1,
     param_max=5.0,
@@ -339,9 +339,9 @@ Returned by `calibrate()`.
 | `iterations`| `int`   | Number of binary search iterations               |
 | `converged` | `bool`  | Whether convergence was reached within tolerance |
 
-### Target Factories
+### Budget Factories
 
-Target factories create `Target` objects that define what privacy metric to
+Budget factories create `Budget` objects that define what privacy metric to
 optimize and what value to achieve.
 
 | Factory                             | Metric being calibrated                 | Decreasing with noise |
@@ -354,7 +354,7 @@ optimize and what value to achieve.
 
 "Decreasing with noise" indicates whether the metric decreases as the
 calibrated parameter (typically noise_multiplier) increases. The binary search
-adapts direction automatically based on the target's `decreasing` property.
+adapts direction automatically based on the budget's `decreasing` property.
 
 ```python
 # (epsilon, delta)-DP

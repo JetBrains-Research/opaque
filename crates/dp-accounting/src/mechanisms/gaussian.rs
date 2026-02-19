@@ -1,34 +1,10 @@
-//! Privacy mechanisms: flat functions producing PLDs.
-//!
-//! Each function takes scalar parameters and a discretization config,
-//! and returns a `PrivacyLossDistribution`. No structs, no traits.
-
-use std::collections::BTreeMap;
+//! Gaussian mechanism PLD constructor.
 
 use crate::discretization::{discretize_symmetric_mechanism, DiscretizationConfig, EpsilonBounds};
 use crate::error::{PldError, Result};
-use crate::pld::pmf::Pmf;
 use crate::pld::PrivacyLossDistribution;
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-/// Minimum supported noise multiplier.
-///
-/// Values below this threshold cause numerical instability in discretization
-/// (grid explosion, unreliable epsilon bounds).
-pub(crate) const MIN_NOISE_MULTIPLIER: f64 = 0.1;
-
-/// Maximum supported noise multiplier.
-///
-/// Values above this threshold cause numerical instability
-/// (x-to-ε compression artifacts, unreliable beta/risk metrics).
-pub(crate) const MAX_NOISE_MULTIPLIER: f64 = 1.2;
-
-// ---------------------------------------------------------------------------
-// gaussian_pld
-// ---------------------------------------------------------------------------
+use super::{MAX_NOISE_MULTIPLIER, MIN_NOISE_MULTIPLIER};
 
 /// Compute the PLD for a Gaussian mechanism.
 ///
@@ -59,7 +35,7 @@ pub fn gaussian_pld(
     let tail_budget = config.tail_mass_truncation / 2.0;
 
     discretize_symmetric_mechanism(config, bounds, |epsilon| {
-        crate::math_helpers::gaussian::gaussian_delta_at(delta_tilde, epsilon)
+        crate::numerics::gaussian::gaussian_delta_at(delta_tilde, epsilon)
     })
     .map(|pld| pld.with_tail_budgets(tail_budget, tail_budget))
 }
@@ -80,7 +56,7 @@ pub(crate) fn gaussian_replace_pld(
     let tail_budget = config.tail_mass_truncation / 2.0;
 
     discretize_symmetric_mechanism(config, bounds, |epsilon| {
-        crate::math_helpers::gaussian::gaussian_delta_at(delta_tilde, epsilon)
+        crate::numerics::gaussian::gaussian_delta_at(delta_tilde, epsilon)
     })
     .map(|pld| pld.with_tail_budgets(tail_budget, tail_budget))
 }
@@ -107,71 +83,6 @@ fn gaussian_epsilon_bounds(
     }
 }
 
-// ---------------------------------------------------------------------------
-// eps_delta_pld
-// ---------------------------------------------------------------------------
-
-/// Compute the PLD for a mechanism with a known (ε, δ) guarantee.
-///
-/// Constructs a worst-case PLD: mass `(1 - δ)` at privacy loss `ε`,
-/// infinity mass `δ`.
-///
-/// # Arguments
-///
-/// * `epsilon` — privacy loss, must be ≥ 0
-/// * `delta` — failure probability, must be in \[0, 1\]
-/// * `config` — discretization configuration
-///
-/// # Errors
-///
-/// Returns `InvalidParameter` if `epsilon < 0` or `delta ∉ [0, 1]`.
-pub fn eps_delta_pld(
-    epsilon: f64,
-    delta: f64,
-    config: &DiscretizationConfig,
-) -> Result<PrivacyLossDistribution> {
-    if epsilon < 0.0 {
-        return Err(PldError::InvalidParameter(format!(
-            "epsilon must be non-negative, got {}",
-            epsilon
-        )));
-    }
-    if !(0.0..=1.0).contains(&delta) {
-        return Err(PldError::InvalidParameter(format!(
-            "delta must be in [0, 1], got {}",
-            delta
-        )));
-    }
-
-    let disc = config.discretization;
-    let index = (epsilon / disc).round() as i64;
-    let mut masses = BTreeMap::new();
-    masses.insert(index, 1.0 - delta);
-
-    let pmf = Pmf::from_sparse(disc, masses, delta, true, config.max_grid_size);
-    Ok(PrivacyLossDistribution::new_symmetric(pmf))
-}
-
-// ---------------------------------------------------------------------------
-// identity_pld
-// ---------------------------------------------------------------------------
-
-/// Compute the PLD for the identity (zero privacy loss) mechanism.
-///
-/// This is the neutral element for composition: composing any PLD with
-/// the identity PLD yields the same privacy guarantee.
-pub fn identity_pld(config: &DiscretizationConfig) -> Result<PrivacyLossDistribution> {
-    let mut masses = BTreeMap::new();
-    masses.insert(0, 1.0);
-
-    let pmf = Pmf::from_sparse(config.discretization, masses, 0.0, true, config.max_grid_size);
-    Ok(PrivacyLossDistribution::new_symmetric(pmf))
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,8 +90,6 @@ mod tests {
     fn default_config() -> DiscretizationConfig {
         DiscretizationConfig::default()
     }
-
-    // ---- gaussian_pld ----
 
     #[test]
     fn test_gaussian_rejects_below_min() {
@@ -261,66 +170,5 @@ mod tests {
                 );
             }
         }
-    }
-
-    // ---- eps_delta_pld ----
-
-    #[test]
-    fn test_eps_delta_rejects_negative_epsilon() {
-        assert!(eps_delta_pld(-0.1, 1e-5, &default_config()).is_err());
-    }
-
-    #[test]
-    fn test_eps_delta_rejects_invalid_delta() {
-        assert!(eps_delta_pld(1.0, 1.1, &default_config()).is_err());
-        assert!(eps_delta_pld(1.0, -0.1, &default_config()).is_err());
-    }
-
-    #[test]
-    fn test_eps_delta_round_trip() {
-        let pld = eps_delta_pld(1.0, 1e-5, &default_config()).unwrap();
-        let eps = pld.epsilon_at(1e-5);
-        assert!(
-            (eps - 1.0).abs() < 0.001,
-            "epsilon_at(1e-5) = {}, expected ~1.0",
-            eps
-        );
-    }
-
-    #[test]
-    fn test_eps_delta_pure_dp() {
-        let pld = eps_delta_pld(1.0, 0.0, &default_config()).unwrap();
-        assert_eq!(pld.delta_at(1.0), 0.0);
-    }
-
-    #[test]
-    fn test_eps_delta_zero_is_identity() {
-        let pld = eps_delta_pld(0.0, 0.0, &default_config()).unwrap();
-        assert_eq!(pld.epsilon_at(1e-5), 0.0);
-        assert_eq!(pld.delta_at(0.0), 0.0);
-    }
-
-    // ---- identity_pld ----
-
-    #[test]
-    fn test_identity_epsilon_zero() {
-        let pld = identity_pld(&default_config()).unwrap();
-        for &delta in &[1e-10, 1e-5, 0.1, 0.5] {
-            assert_eq!(pld.epsilon_at(delta), 0.0, "delta={}", delta);
-        }
-    }
-
-    #[test]
-    fn test_identity_delta_zero() {
-        let pld = identity_pld(&default_config()).unwrap();
-        for &eps in &[0.0, 0.1, 1.0, 10.0] {
-            assert_eq!(pld.delta_at(eps), 0.0, "eps={}", eps);
-        }
-    }
-
-    #[test]
-    fn test_identity_advantage_zero() {
-        let pld = identity_pld(&default_config()).unwrap();
-        assert_eq!(pld.advantage(), 0.0);
     }
 }

@@ -29,7 +29,7 @@ fn get_planner() -> &'static Mutex<RealFftPlanner<f64>> {
 /// # Example
 ///
 /// ```
-/// use opaque_dp_accounting::math_helpers::fft::convolve;
+/// use opaque_accounting::numerics::fft::convolve;
 ///
 /// let a = vec![1.0, 2.0, 3.0];
 /// let b = vec![4.0, 5.0];
@@ -125,7 +125,7 @@ pub fn convolve(a: &[f64], b: &[f64]) -> Vec<f64> {
 /// # Example
 ///
 /// ```
-/// use opaque_dp_accounting::math_helpers::fft::self_convolve;
+/// use opaque_accounting::numerics::fft::self_convolve;
 ///
 /// let a = vec![1.0, 2.0, 3.0];
 /// let result = self_convolve(&a, 3);

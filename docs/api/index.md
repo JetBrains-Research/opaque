@@ -141,11 +141,11 @@ epsilon = accountant.epsilon_at(1e-5)
 | Function                  | Purpose                           | User Guide                                                              |
 |---------------------------|-----------------------------------|-------------------------------------------------------------------------|
 | `calibrate()`             | Find noise for target privacy     | [Guide](../user-guide/accounting.md#calibration)                        |
-| `epsilon_budget()`        | Target for (ε, δ) calibration     | [Guide](../user-guide/accounting.md#calibration)                        |
-| `delta_budget()`          | Target for δ calibration           | [Guide](../user-guide/accounting.md#calibration)                        |
-| `advantage_budget()`      | Target for advantage calibration  | [Guide](../user-guide/accounting.md#calibration)                        |
-| `beta_budget()`           | Target for (α, β) calibration     | [Guide](../user-guide/accounting.md#calibration)                        |
-| `risk_budget()`           | Target for Bayes risk calibration | [Guide](../user-guide/accounting.md#calibration)                        |
+| `epsilon_budget()`        | Budget for (ε, δ) calibration     | [Guide](../user-guide/accounting.md#calibration)                        |
+| `delta_budget()`          | Budget for δ calibration           | [Guide](../user-guide/accounting.md#calibration)                        |
+| `advantage_budget()`      | Budget for advantage calibration  | [Guide](../user-guide/accounting.md#calibration)                        |
+| `beta_budget()`           | Budget for (α, β) calibration     | [Guide](../user-guide/accounting.md#calibration)                        |
+| `risk_budget()`           | Budget for Bayes risk calibration | [Guide](../user-guide/accounting.md#calibration)                        |
 
 ### Sampling
 

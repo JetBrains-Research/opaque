@@ -57,7 +57,7 @@ num_steps = num_epochs * (n_samples // batch_size)
 
 # 4. Calibrate noise multiplier for target privacy
 result = acc.calibrate(
-    target=acc.epsilon_budget(epsilon, delta=delta),
+    budget=acc.epsilon_budget(epsilon, delta=delta),
     process=lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps,
     param_min=0.1,
     param_max=100.0,
@@ -153,7 +153,7 @@ example.
 
 ```python
 result = acc.calibrate(
-    target=acc.epsilon_budget(3.0, delta=1e-5),
+    budget=acc.epsilon_budget(3.0, delta=1e-5),
     process=lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps,
     param_min=0.1,
     param_max=100.0,

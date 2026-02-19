@@ -11,13 +11,15 @@ identical steps are collapsed using structural equality (``==``), so
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from opaque.accounting.base import DpProcess
-from opaque.accounting.nodes import Identity
+from opaque.accounting.mechanisms import Identity
 
 if TYPE_CHECKING:
-    from opaque.accounting.calibration import Target
+    from opaque.accounting.calibration import Budget
+
+__all__ = ["Accountant"]
 
 
 class Accountant:
@@ -56,16 +58,16 @@ class Accountant:
                 break
     """
 
-    def __init__(self, budget: Target | None = None) -> None:
+    def __init__(self, budget: Budget | None = None) -> None:
         """Initialize an Accountant.
 
         Args:
-            budget: Optional privacy budget target. If provided, enables
-                budget_exceeded checks. Should be a Target from the
-                calibration module (e.g., epsilon(3.0, delta=1e-5)).
+            budget: Optional privacy budget. If provided, enables
+                budget_exceeded checks. Should be a Budget from the
+                budgets module (e.g., epsilon_budget(3.0, delta=1e-5)).
         """
         self._process: DpProcess = Identity()
-        self._budget: Target | None = budget
+        self._budget: Budget | None = budget
 
     def __or__(self, process: DpProcess) -> Accountant:
         """Compose a new process onto this accountant.
@@ -75,7 +77,7 @@ class Accountant:
 
         Merge optimization is automatic: ``DpProcess.__or__`` uses
         structural equality to collapse identical steps into a single
-        :class:`~opaque.accounting.nodes.Repeated` node.
+        :class:`~opaque.accounting.composition.Repeated` node.
 
         Args:
             process: DpProcess to compose (e.g., from poisson(), gaussian(), etc.)
@@ -185,3 +187,214 @@ class Accountant:
         except Exception:
             # If metric computation fails, don't violate budget by accident
             return False
+
+    # -- Serialization -------------------------------------------------------
+
+    def state_dict(self) -> dict[str, Any]:
+        """Serialize accountant state to a plain dict.
+
+        Returns a JSON-compatible dictionary that captures the full process
+        tree.  Restore with :meth:`from_state_dict`.
+
+        Example::
+
+            state = acct.state_dict()
+            # ... save to disk, send over network, etc.
+            acct2 = Accountant.from_state_dict(state)
+            assert acct2.epsilon_at(1e-5) == acct.epsilon_at(1e-5)
+        """
+        return {"process": _serialize_process(self._process)}
+
+    @classmethod
+    def from_state_dict(cls, state: dict[str, Any]) -> Accountant:
+        """Restore an Accountant from a serialized state dict.
+
+        Args:
+            state: Dictionary produced by :meth:`state_dict`.
+
+        Returns:
+            Reconstructed Accountant (without budget — attach separately).
+        """
+        acct = cls()
+        acct._process = _deserialize_process(state["process"])
+        return acct
+
+
+# =============================================================================
+# Process tree serialization helpers
+# =============================================================================
+
+
+def _serialize_config(
+    config: Any,
+) -> dict[str, Any] | None:
+    """Serialize a DiscretizationConfig to a dict, or None."""
+    if config is None:
+        return None
+    return {
+        "discretization": config.discretization,
+        "log_mass_truncation_bound": config.log_mass_truncation_bound,
+        "pessimistic_estimate": config.pessimistic_estimate,
+        "max_grid_size": config.max_grid_size,
+    }
+
+
+def _deserialize_config(data: dict[str, Any] | None) -> Any:
+    """Deserialize a DiscretizationConfig from a dict, or return None."""
+    if data is None:
+        return None
+    from opaque.accounting.base import DiscretizationConfig
+
+    return DiscretizationConfig(
+        discretization=data["discretization"],
+        log_mass_truncation_bound=data["log_mass_truncation_bound"],
+        pessimistic_estimate=data["pessimistic_estimate"],
+        max_grid_size=data["max_grid_size"],
+    )
+
+
+def _serialize_process(process: DpProcess) -> dict[str, Any]:
+    """Recursively serialize a DpProcess tree to a dict."""
+    from opaque.accounting.composition import (
+        CachedProcess,
+        Composed,
+        Repeated,
+    )
+    from opaque.accounting.amplification import (
+        Accumulated,
+        Poisson,
+        TruncatedPoisson,
+    )
+    from opaque.accounting.mechanisms import (
+        EpsDelta,
+        Gaussian,
+    )
+
+    if isinstance(process, Identity):
+        return {"type": "Identity", "config": _serialize_config(process.config)}
+    elif isinstance(process, Gaussian):
+        return {
+            "type": "Gaussian",
+            "noise_multiplier": process.noise_multiplier,
+            "config": _serialize_config(process.config),
+        }
+    elif isinstance(process, Poisson):
+        return {
+            "type": "Poisson",
+            "noise_multiplier": process.noise_multiplier,
+            "sample_rate": process.sample_rate,
+            "config": _serialize_config(process.config),
+        }
+    elif isinstance(process, TruncatedPoisson):
+        return {
+            "type": "TruncatedPoisson",
+            "noise_multiplier": process.noise_multiplier,
+            "sample_rate": process.sample_rate,
+            "batch_size_cap": process.batch_size_cap,
+            "dataset_size": process.dataset_size,
+            "config": _serialize_config(process.config),
+        }
+    elif isinstance(process, Accumulated):
+        return {
+            "type": "Accumulated",
+            "noise_multiplier": process.noise_multiplier,
+            "sample_rate": process.sample_rate,
+            "microbatches": process.microbatches,
+            "config": _serialize_config(process.config),
+        }
+    elif isinstance(process, EpsDelta):
+        return {
+            "type": "EpsDelta",
+            "epsilon": process.epsilon,
+            "delta": process.delta,
+            "config": _serialize_config(process.config),
+        }
+    elif isinstance(process, Repeated):
+        return {
+            "type": "Repeated",
+            "inner": _serialize_process(process.inner),
+            "count": process.count,
+        }
+    elif isinstance(process, Composed):
+        return {
+            "type": "Composed",
+            "left": _serialize_process(process.left),
+            "right": _serialize_process(process.right),
+        }
+    elif isinstance(process, CachedProcess):
+        return {
+            "type": "CachedProcess",
+            "inner": _serialize_process(process.inner),
+        }
+    else:
+        raise TypeError(f"Cannot serialize {type(process).__name__}")
+
+
+def _deserialize_process(data: dict[str, Any]) -> DpProcess:
+    """Recursively deserialize a DpProcess tree from a dict."""
+    from opaque.accounting.composition import (
+        CachedProcess,
+        Composed,
+        Repeated,
+    )
+    from opaque.accounting.amplification import (
+        Accumulated,
+        Poisson,
+        TruncatedPoisson,
+    )
+    from opaque.accounting.mechanisms import (
+        EpsDelta,
+        Gaussian,
+    )
+
+    t = data["type"]
+    if t == "Identity":
+        return Identity(config=_deserialize_config(data.get("config")))
+    elif t == "Gaussian":
+        return Gaussian(
+            noise_multiplier=data["noise_multiplier"],
+            config=_deserialize_config(data.get("config")),
+        )
+    elif t == "Poisson":
+        return Poisson(
+            noise_multiplier=data["noise_multiplier"],
+            sample_rate=data["sample_rate"],
+            config=_deserialize_config(data.get("config")),
+        )
+    elif t == "TruncatedPoisson":
+        return TruncatedPoisson(
+            noise_multiplier=data["noise_multiplier"],
+            sample_rate=data["sample_rate"],
+            batch_size_cap=data["batch_size_cap"],
+            dataset_size=data["dataset_size"],
+            config=_deserialize_config(data.get("config")),
+        )
+    elif t == "Accumulated":
+        return Accumulated(
+            noise_multiplier=data["noise_multiplier"],
+            sample_rate=data["sample_rate"],
+            microbatches=data["microbatches"],
+            config=_deserialize_config(data.get("config")),
+        )
+    elif t == "EpsDelta":
+        return EpsDelta(
+            epsilon=data["epsilon"],
+            delta=data["delta"],
+            config=_deserialize_config(data.get("config")),
+        )
+    elif t == "Repeated":
+        return Repeated(
+            inner=_deserialize_process(data["inner"]),
+            count=data["count"],
+        )
+    elif t == "Composed":
+        return Composed(
+            left=_deserialize_process(data["left"]),
+            right=_deserialize_process(data["right"]),
+        )
+    elif t == "CachedProcess":
+        return CachedProcess(
+            inner=_deserialize_process(data["inner"]),
+        )
+    else:
+        raise ValueError(f"Unknown process type: {t}")
