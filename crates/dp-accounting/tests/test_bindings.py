@@ -125,11 +125,11 @@ class TestPldMetrics:
         assert 0 <= risk <= 0.5
 
 
-class TestPldConfig:
-    """PldConfig (DiscretizationConfig) roundtrips."""
+class TestDiscretizationConfig:
+    """DiscretizationConfig (DiscretizationConfig) roundtrips."""
 
     def test_properties(self):
-        cfg = dp.PldConfig(
+        cfg = dp.DiscretizationConfig(
             discretization=1e-3,
             log_mass_truncation_bound=-50.0,
             pessimistic_estimate=False,
@@ -141,14 +141,14 @@ class TestPldConfig:
         assert cfg.max_grid_size == 1_000_000
 
     def test_equality(self):
-        a = dp.PldConfig(discretization=1e-3)
-        b = dp.PldConfig(discretization=1e-3)
-        c = dp.PldConfig(discretization=1e-4)
+        a = dp.DiscretizationConfig(discretization=1e-3)
+        b = dp.DiscretizationConfig(discretization=1e-3)
+        c = dp.DiscretizationConfig(discretization=1e-4)
         assert a == b
         assert a != c
 
     def test_gaussian_accepts_config(self):
-        cfg = dp.PldConfig(discretization=1e-3)
+        cfg = dp.DiscretizationConfig(discretization=1e-3)
         pld = dp.gaussian_pld(0.8, config=cfg)
         eps = pld.epsilon_at(1e-5)
         assert math.isfinite(eps)

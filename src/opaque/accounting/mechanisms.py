@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import opaque_accounting as _native
 
-from opaque.accounting.base import DpProcess, PldConfig
+from opaque.accounting.base import DpProcess, DiscretizationConfig
 from opaque.accounting.discretization import resolve_pld_config
 from opaque.accounting.nodes import Identity
 from opaque.accounting.types import (
@@ -23,7 +23,7 @@ from opaque.accounting.types import (
 def gaussian(
     noise_multiplier: float,
     *,
-    discretization: None | float | PldConfig = None,
+    discretization: None | float | DiscretizationConfig = None,
 ) -> Gaussian:
     """Gaussian mechanism with noise multiplier σ.
 
@@ -36,7 +36,7 @@ def gaussian(
         discretization: PLD precision config (keyword-only). Can be:
             - None: use module default (see :func:`set_discretization`)
             - float: use as grid spacing
-            - PldConfig: full config
+            - DiscretizationConfig: full config
 
     Returns:
         A :class:`Gaussian` process.
@@ -224,7 +224,7 @@ def eps_delta(
     epsilon: float,
     delta: float = 0.0,
     *,
-    discretization: None | float | PldConfig = None,
+    discretization: None | float | DiscretizationConfig = None,
 ) -> DpProcess:
     """Fixed (ε, δ)-DP guarantee (for composition with other mechanisms).
 
@@ -255,7 +255,7 @@ def eps_delta(
 
 def identity(
     *,
-    discretization: None | float | PldConfig = None,
+    discretization: None | float | DiscretizationConfig = None,
 ) -> DpProcess:
     """Identity mechanism (zero privacy loss).
 

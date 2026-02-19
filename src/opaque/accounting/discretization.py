@@ -6,13 +6,13 @@ from typing import Optional, Union
 
 import opaque_accounting as _native
 
-PldConfig = _native.PldConfig
+DiscretizationConfig = _native.DiscretizationConfig
 
 # Legacy alias for backward compatibility
-DiscretizationConfig = PldConfig
+PldConfig = DiscretizationConfig
 
 # Module-level discretization default
-_default_config: Optional[PldConfig] = None
+_default_config: Optional[DiscretizationConfig] = None
 
 
 def set_discretization(
@@ -47,7 +47,7 @@ def set_discretization(
         acc.set_discretization(discretization=1e-5, max_grid_size=100_000_000)
     """
     global _default_config
-    _default_config = PldConfig(
+    _default_config = DiscretizationConfig(
         discretization=discretization,
         log_mass_truncation_bound=log_mass_truncation_bound,
         pessimistic_estimate=pessimistic_estimate,
@@ -55,31 +55,31 @@ def set_discretization(
     )
 
 
-def get_discretization() -> Optional[PldConfig]:
+def get_discretization() -> Optional[DiscretizationConfig]:
     """Get the current module-level default discretization config.
 
     Returns:
-        Current PldConfig, or None if using native defaults.
+        Current DiscretizationConfig, or None if using native defaults.
     """
     return _default_config
 
 
 def resolve_pld_config(
-    config: Union[None, float, PldConfig],
-) -> Optional[PldConfig]:
-    """Resolve discretization parameter to a PldConfig object.
+    config: Union[None, float, DiscretizationConfig],
+) -> Optional[DiscretizationConfig]:
+    """Resolve discretization parameter to a DiscretizationConfig object.
 
     Args:
         config: None (use module default), float (use as discretization value),
-            or PldConfig (use as-is).
+            or DiscretizationConfig (use as-is).
 
     Returns:
-        Resolved PldConfig or None (use Rust defaults).
+        Resolved DiscretizationConfig or None (use Rust defaults).
     """
     if config is None:
         return _default_config
     elif isinstance(config, (int, float)):
-        return PldConfig(discretization=float(config))
+        return DiscretizationConfig(discretization=float(config))
     else:
         return config
 

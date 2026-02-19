@@ -184,31 +184,6 @@ We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for:
 
 **Good First Issues**: Check the [issue tracker](https://github.com/JetBrains-Research/opaque/issues) for beginner-friendly tasks.
 
----
-
-## Comparison with Alternatives
-
-| Feature | Opaque | [Opacus](https://opacus.ai/) | [JAX-Privacy](https://github.com/google-deepmind/jax_privacy) |
-|---------|--------|--------|-------------|
-| **Framework** | PyTorch | PyTorch | JAX |
-| **API Style** | Functional | Object-oriented | Functional (new) + OOP (old) |
-| **LoRA Focus** |  Yes | � Possible |  Yes |
-| **torch.func** |  Yes | L Custom hooks | N/A |
-| **Maturity** | Alpha |  Production |  Production |
-| **LLM Examples** | LoRA tutorials | Limited | Gemma, Llama |
-
-**Why Opaque?**
-- **Modern PyTorch**: Built on `torch.func` (functional transformations)
-- **Composability**: Separate clipping, noise, accounting modules
-- **LoRA-Optimized**: Exploits low-rank structure for efficiency
-- **JAX-Inspired**: Proven functional API design
-
-**Why Not Opaque? (Yet)**
-- **Maturity**: Opacus is battle-tested, Opaque is experimental
-- **Coverage**: Opacus supports conv layers, batchnorm, etc.
-- **If you need production DP today, use Opacus!**
-
----
 
 ## Installation Guide
 

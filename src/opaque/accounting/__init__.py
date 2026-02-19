@@ -39,14 +39,14 @@ except ImportError as e:
 from opaque.accounting.base import DpProcess
 
 # Config types
-from opaque.accounting.discretization import PldConfig
+from opaque.accounting.discretization import DiscretizationConfig
 
-# Legacy alias: code that imports DiscretizationConfig still works
-DiscretizationConfig = PldConfig
+# Legacy alias: code that imports PldConfig still works
+PldConfig = DiscretizationConfig
 """Configuration controlling PLD discretization precision.
 
 The PLD is represented as a discrete probability mass function (PMF) on a
-regular grid. The ``PldConfig`` (aliased as ``DiscretizationConfig``) controls
+regular grid. The ``DiscretizationConfig`` (aliased as ``PldConfig``) controls
 grid resolution and tail truncation.
 
 Args:
@@ -57,7 +57,7 @@ Args:
 
 Example::
 
-    cfg = acc.PldConfig(discretization=1e-3)
+    cfg = acc.DiscretizationConfig(discretization=1e-3)
     proc = acc.gaussian(1.1, discretization=cfg)
 """
 
@@ -90,19 +90,19 @@ from opaque.accounting.accountant import Accountant
 
 # Import calibration utilities
 from opaque.accounting.calibration import (
-    epsilon,
-    delta,
-    advantage,
-    beta,
-    risk,
+    epsilon_budget,
+    delta_budget,
+    advantage_budget,
+    beta_budget,
+    risk_budget,
     calibrate,
 )
 
 __all__ = [
     # Types
     "DpProcess",
-    "PldConfig",
     "DiscretizationConfig",
+    "PldConfig",
     # Module defaults
     "set_discretization",
     "get_discretization",
@@ -121,11 +121,11 @@ __all__ = [
     # Accounting
     "Accountant",
     # Calibration targets
-    "epsilon",
-    "delta",
-    "advantage",
-    "beta",
-    "risk",
+    "epsilon_budget",
+    "delta_budget",
+    "advantage_budget",
+    "beta_budget",
+    "risk_budget",
     # Calibration functions
     "calibrate",
 ]

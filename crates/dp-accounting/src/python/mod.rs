@@ -15,7 +15,7 @@ use pyo3::prelude::*;
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Classes
     m.add_class::<pld::PyPld>()?;
-    m.add_class::<config::PyPldConfig>()?;
+    m.add_class::<config::PyDiscretizationConfig>()?;
 
     // Mechanisms
     m.add_function(wrap_pyfunction!(mechanisms::py_gaussian_pld, m)?)?;

@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 import opaque_accounting as _native
 
-from opaque.accounting.base import DpProcess, Pld, PldConfig
+from opaque.accounting.base import DpProcess, Pld, DiscretizationConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,7 +22,7 @@ class Identity(DpProcess):
     ``Identity() | a`` → ``a`` and ``a | Identity()`` → ``a``.
     """
 
-    config: PldConfig | None = field(default=None, hash=False, repr=False)
+    config: DiscretizationConfig | None = field(default=None, hash=False, repr=False)
 
     def pld(self) -> Pld:
         return _native.identity_pld(config=self.config)

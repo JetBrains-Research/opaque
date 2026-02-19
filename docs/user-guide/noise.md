@@ -68,14 +68,10 @@ import opaque.accounting as acc
 
 sample_rate = batch_size / dataset_size
 
-# Define what "training" looks like as a function of noise_multiplier
-def build(noise_multiplier):
-    return acc.poisson(acc.gaussian(noise_multiplier), sample_rate) * total_training_steps
-
 # Find minimum noise for target privacy
 result = acc.calibrate(
-    acc.epsilon(3.0, delta=1e-5),   # Target: ε=3.0 at δ=1e-5
-    build,
+    acc.epsilon_budget(3.0, delta=1e-5),
+    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * total_training_steps,
     param_min=0.1,
     param_max=10.0,
 )
@@ -93,8 +89,8 @@ For tighter bounds using f-DP:
 
 ```python
 result = acc.calibrate(
-    acc.advantage(0.1),  # Target advantage (lower = stronger privacy)
-    build,
+    acc.advantage_budget(0.1),  # Target advantage (lower = stronger privacy)
+    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * total_training_steps,
     param_min=0.1,
     param_max=10.0,
 )
@@ -106,8 +102,8 @@ For hypothesis testing interpretation:
 
 ```python
 result = acc.calibrate(
-    acc.beta(0.8, alpha=1e-4),  # Target Type-II error at Type-I error
-    build,
+    acc.beta_budget(0.8, alpha=1e-4),  # Target Type-II error at Type-I error
+    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * total_training_steps,
     param_min=0.1,
     param_max=10.0,
 )
@@ -178,10 +174,9 @@ sample_rate = batch_size / dataset_size
 num_steps = 1000
 
 # 2. Calibrate noise
-def build(nm):
-    return acc.poisson(acc.gaussian(nm), sample_rate) * num_steps
+build = lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps
 
-result = acc.calibrate(acc.epsilon(3.0, delta=1e-5), build, 0.1, 10.0)
+result = acc.calibrate(acc.epsilon_budget(3.0, delta=1e-5), build, 0.1, 10.0)
 noise_multiplier = result.param
 
 # 3. Create noise function

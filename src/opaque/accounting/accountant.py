@@ -44,7 +44,7 @@ class Accountant:
 
         from opaque.accounting import calibration as cal
 
-        budget = cal.epsilon(3.0, delta=1e-5)
+        budget = cal.epsilon_budget(3.0, delta=1e-5)
         acct = acc.Accountant(budget=budget)
         step = acc.poisson(acc.gaussian(1.1), 0.01)
 

@@ -1,4 +1,4 @@
-//! PyPldConfig: discretization configuration for PLD computation.
+//! PyDiscretizationConfig: discretization configuration for PLD computation.
 
 use pyo3::prelude::*;
 
@@ -17,16 +17,16 @@ fn to_py_err(e: PldError) -> PyErr {
 ///
 /// Example::
 ///
-///     config = dp.PldConfig(discretization=0.001)
+///     config = dp.DiscretizationConfig(discretization=0.001)
 ///     pld = dp.gaussian_pld(1.1, config=config)
-#[pyclass(name = "PldConfig")]
+#[pyclass(name = "DiscretizationConfig")]
 #[derive(Clone)]
-pub struct PyPldConfig {
+pub struct PyDiscretizationConfig {
     pub(super) inner: DiscretizationConfig,
 }
 
-impl PyPldConfig {
-    pub(super) fn resolve(config: Option<&PyPldConfig>) -> DiscretizationConfig {
+impl PyDiscretizationConfig {
+    pub(super) fn resolve(config: Option<&PyDiscretizationConfig>) -> DiscretizationConfig {
         match config {
             Some(c) => c.inner.clone(),
             None => DiscretizationConfig::default(),
@@ -35,7 +35,7 @@ impl PyPldConfig {
 }
 
 #[pymethods]
-impl PyPldConfig {
+impl PyDiscretizationConfig {
     #[new]
     #[pyo3(signature = (discretization=1e-4, log_mass_truncation_bound=-50.0, pessimistic_estimate=true, max_grid_size=10_000_000))]
     fn new(
@@ -76,13 +76,13 @@ impl PyPldConfig {
 
     fn __repr__(&self) -> String {
         format!(
-            "PldConfig(discretization={}, log_mass_truncation_bound={}, pessimistic_estimate={}, max_grid_size={})",
+            "DiscretizationConfig(discretization={}, log_mass_truncation_bound={}, pessimistic_estimate={}, max_grid_size={})",
             self.inner.discretization, self.inner.log_mass_truncation_bound,
             self.inner.pessimistic_estimate, self.inner.max_grid_size,
         )
     }
 
-    fn __eq__(&self, other: &PyPldConfig) -> bool {
+    fn __eq__(&self, other: &PyDiscretizationConfig) -> bool {
         self.inner.discretization == other.inner.discretization
             && self.inner.log_mass_truncation_bound == other.inner.log_mass_truncation_bound
             && self.inner.pessimistic_estimate == other.inner.pessimistic_estimate

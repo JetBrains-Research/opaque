@@ -17,10 +17,11 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 ### DP-SGD Components
 
-- **[Clipping](core/clipping.md)**: Per-sample gradient clipping ⭐
+- **[Clipping](core/clipping.md)**: Per-sample gradient clipping
   - `clipped_grad()` - High-level gradient clipping (recommended)
   - `clipped_fun()` - Clip and sum function outputs
   - `clip_pytree()` - Low-level PyTree clipping
+  - `adaptive_clipped_grad()` - Clipped gradients with auto-tuned clip norm
 
 - **[Noise](noise.md)**: Noise injection for DP
   - `gaussian_noise()` - Standard Gaussian noise
@@ -33,9 +34,6 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `DpProcess` operators: `*` (repeat), `|` (compose)
   - `.epsilon_at()`, `.delta_at()`, `.advantage()`, `.beta_at()` - Privacy metrics
   - `calibrate()` - Binary-search noise multiplier for target privacy
-
-- **[Adaptive Clipping](optimizers.md)**: Adaptive clip norm tuning
-  - `adaptive_clipped_grad()` - Clipped gradient function with auto-tuned clip norm
 
 - **[Sampling](sampling.md)**: Privacy-amplifying sampling
   - `PoissonSampler` - Standard Poisson sampling
@@ -56,13 +54,16 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 ```python
 import torch
 import opaque.accounting as acc
+from opaque.accounting import calibration as cal
 from opaque import clipped_grad, gaussian_noise
 
 # 1. Calibrate noise
-def build(nm):
-    return acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000
-
-result = acc.calibrate(acc.epsilon(3.0, delta=1e-5), build, 0.1, 10.0)
+result = cal.calibrate(
+    cal.epsilon_budget(3.0, delta=1e-5),
+    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000,
+    param_min=0.1,
+    param_max=5.0,
+)
 noise_multiplier = result.param
 
 # 2. Create clipped gradient function
@@ -133,15 +134,11 @@ epsilon = training.epsilon_at(1e-5)
 | Function                  | Purpose                           | User Guide                                                              |
 |---------------------------|-----------------------------------|-------------------------------------------------------------------------|
 | `calibrate()`             | Find noise for target privacy     | [Guide](../user-guide/accounting.md#calibration)                        |
-| `epsilon()`               | Target for (ε, δ) calibration     | [Guide](../user-guide/accounting.md#calibration)                        |
-| `advantage()`             | Target for advantage calibration  | [Guide](../user-guide/accounting.md#calibration)                        |
-| `beta()`                  | Target for (α, β) calibration     | [Guide](../user-guide/accounting.md#calibration)                        |
-
-### Adaptive Clipping
-
-| Function                  | Purpose                                      | User Guide                           |
-|---------------------------|----------------------------------------------|--------------------------------------|
-| `adaptive_clipped_grad()` | Clipped gradients with auto-tuned clip norm  | [Guide](../user-guide/optimizers.md) |
+| `epsilon_budget()`        | Target for (ε, δ) calibration     | [Guide](../user-guide/accounting.md#calibration)                        |
+| `delta_budget()`          | Target for δ calibration           | [Guide](../user-guide/accounting.md#calibration)                        |
+| `advantage_budget()`      | Target for advantage calibration  | [Guide](../user-guide/accounting.md#calibration)                        |
+| `beta_budget()`           | Target for (α, β) calibration     | [Guide](../user-guide/accounting.md#calibration)                        |
+| `risk_budget()`           | Target for Bayes risk calibration | [Guide](../user-guide/accounting.md#calibration)                        |
 
 ### Sampling
 

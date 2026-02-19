@@ -3,11 +3,11 @@
 This module provides a binary search framework for calibrating noise multipliers
 to achieve specific privacy targets:
 
-- **epsilon(...)**: Calibrate for (ε, δ)-DP
-- **delta(...)**: Calibrate for (ε, δ)-DP (inverse direction)
-- **advantage(...)**: Calibrate for f-DP advantage
-- **beta(...)**: Calibrate for (α, β) error rates
-- **risk(...)**: Calibrate for Bayes risk
+- **epsilon_budget(...)**: Calibrate for (ε, δ)-DP
+- **delta_budget(...)**: Calibrate for (ε, δ)-DP (inverse direction)
+- **advantage_budget(...)**: Calibrate for f-DP advantage
+- **beta_budget(...)**: Calibrate for (α, β) error rates
+- **risk_budget(...)**: Calibrate for Bayes risk
 
 Example::
 
@@ -15,11 +15,12 @@ Example::
     import opaque.accounting as acc
 
     # Find noise multiplier for target privacy budget
-    def build(nm):
-        return acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000
-
-    target = cal.epsilon(3.0, delta=1e-5)
-    result = cal.calibrate(target, build, param_min=0.1, param_max=5.0)
+    target = cal.epsilon_budget(3.0, delta=1e-5)
+    result = cal.calibrate(
+        target,
+        lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000,
+        param_min=0.1, param_max=5.0,
+    )
 
     print(f"Noise multiplier: {result.param:.3f}")
     print(f"Achieved epsilon: {result.achieved:.6f}")
@@ -242,7 +243,7 @@ class RiskTarget:
 # =============================================================================
 
 
-def epsilon(epsilon: float, delta: float) -> EpsilonTarget:
+def epsilon_budget(epsilon: float, delta: float) -> EpsilonTarget:
     """Create a target for (ε, δ)-DP: find noise achieving target epsilon.
 
     Args:
@@ -254,13 +255,13 @@ def epsilon(epsilon: float, delta: float) -> EpsilonTarget:
 
     Example::
 
-        target = cal.epsilon(3.0, delta=1e-5)
+        target = cal.epsilon_budget(3.0, delta=1e-5)
         result = cal.calibrate(target, build_fn, 0.1, 5.0)
     """
     return EpsilonTarget(epsilon=epsilon, delta=delta)
 
 
-def delta(delta: float, epsilon: float) -> DeltaTarget:
+def delta_budget(delta: float, epsilon: float) -> DeltaTarget:
     """Create a target for (ε, δ)-DP: find noise achieving target delta.
 
     Args:
@@ -272,13 +273,13 @@ def delta(delta: float, epsilon: float) -> DeltaTarget:
 
     Example::
 
-        target = cal.delta(1e-6, epsilon=3.0)
+        target = cal.delta_budget(1e-6, epsilon=3.0)
         result = cal.calibrate(target, build_fn, 0.1, 5.0)
     """
     return DeltaTarget(delta=delta, epsilon=epsilon)
 
 
-def advantage(advantage: float) -> AdvantageTarget:
+def advantage_budget(advantage: float) -> AdvantageTarget:
     """Create a target for f-DP: find noise achieving target advantage.
 
     Args:
@@ -289,13 +290,13 @@ def advantage(advantage: float) -> AdvantageTarget:
 
     Example::
 
-        target = cal.advantage(0.1)
+        target = cal.advantage_budget(0.1)
         result = cal.calibrate(target, build_fn, 0.1, 5.0)
     """
     return AdvantageTarget(advantage=advantage)
 
 
-def beta(beta: float, alpha: float) -> BetaTarget:
+def beta_budget(beta: float, alpha: float) -> BetaTarget:
     """Create a target for (α, β) error rates: find noise achieving target beta.
 
     Args:
@@ -307,13 +308,13 @@ def beta(beta: float, alpha: float) -> BetaTarget:
 
     Example::
 
-        target = cal.beta(0.05, alpha=0.01)
+        target = cal.beta_budget(0.05, alpha=0.01)
         result = cal.calibrate(target, build_fn, 0.1, 5.0)
     """
     return BetaTarget(beta=beta, alpha=alpha)
 
 
-def risk(risk: float, prior: float) -> RiskTarget:
+def risk_budget(risk: float, prior: float) -> RiskTarget:
     """Create a target for Bayes risk: find noise achieving target risk.
 
     Args:
@@ -325,7 +326,7 @@ def risk(risk: float, prior: float) -> RiskTarget:
 
     Example::
 
-        target = cal.risk(0.1, prior=0.5)
+        target = cal.risk_budget(0.1, prior=0.5)
         result = cal.calibrate(target, build_fn, 0.1, 5.0)
     """
     return RiskTarget(risk=risk, prior=prior)
@@ -365,7 +366,7 @@ class CalibrateResult:
 
 def calibrate(
     target: Target,
-    build: Callable[[float], DpProcess],
+    process: Callable[[float], DpProcess],
     param_min: float,
     param_max: float,
     tolerance: float = 1e-6,
@@ -390,11 +391,11 @@ def calibrate(
             - Common targets: epsilon(3.0, 1e-5), delta(1e-5, 3.0), advantage(0.1)
             - Targets validate themselves: epsilon(-1.0) raises ValueError
 
-        build: Callable taking a float parameter and returning a DpProcess.
+        process: Callable taking a float parameter and returning a DpProcess.
             Must be deterministic (same input → same process).
             Example: ``lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000``
             
-            Important: If build() raises an exception, it propagates immediately.
+            Important: If process() raises an exception, it propagates immediately.
 
         param_min: Lower bound for search (usually produces more private result)
             - Assumed to satisfy: metric(param_min) > target.value
@@ -426,7 +427,7 @@ def calibrate(
         ValueError: If param_min >= param_max
         ValueError: If bounds don't bracket the target (both val_min/val_max above or below target)
         ValueError: If target evaluation returns inf or nan at the bounds
-        Exception: If build() or target.evaluate() raises an exception
+        Exception: If process() or target.evaluate() raises an exception
 
     **Examples:**
 
@@ -435,11 +436,13 @@ def calibrate(
         import opaque.accounting as acc
         from opaque.accounting import calibration as cal
 
-        def build(nm):
-            return acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000
-
-        target = cal.epsilon(3.0, delta=1e-5)
-        result = cal.calibrate(target, build, param_min=0.7, param_max=1.2)
+        target = cal.epsilon_budget(3.0, delta=1e-5)
+        result = cal.calibrate(
+            target,
+            lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000,
+            param_min=0.7,
+            param_max=1.2,
+        )
         
         print(f"Use noise_multiplier = {result.param:.4f}")
         print(f"Achieves epsilon = {result.achieved:.6f}")
@@ -447,15 +450,15 @@ def calibrate(
 
     **Example 2: Multi-phase training**::
 
-        def build_multiphase(nm):
+        def multiphase(nm):
             phase1 = acc.poisson(acc.gaussian(nm), 0.01) * 500
             phase2 = acc.poisson(acc.gaussian(nm * 0.8), 0.01) * 500
             phase3 = acc.poisson(acc.gaussian(nm * 0.5), 0.01) * 500
             return phase1 | phase2 | phase3
 
         result = cal.calibrate(
-            cal.epsilon(5.0, delta=1e-5),
-            build_multiphase,
+            cal.epsilon_budget(5.0, delta=1e-5),
+            multiphase,
             param_min=0.5,
             param_max=3.0,
             tolerance=0.01,
@@ -463,14 +466,16 @@ def calibrate(
 
     **Example 3: Different privacy metrics**::
 
+        process = lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000
+
         # f-DP advantage
-        result = cal.calibrate(cal.advantage(0.1), build, 0.5, 2.0)
+        result = cal.calibrate(cal.advantage_budget(0.1), process, 0.5, 2.0)
         
         # (α, β) error rates
-        result = cal.calibrate(cal.beta(0.05, alpha=0.01), build, 0.5, 2.0)
+        result = cal.calibrate(cal.beta_budget(0.05, alpha=0.01), process, 0.5, 2.0)
         
         # Bayes risk
-        result = cal.calibrate(cal.risk(0.1, prior=0.5), build, 0.5, 2.0)
+        result = cal.calibrate(cal.risk_budget(0.1, prior=0.5), process, 0.5, 2.0)
 
     **Troubleshooting:**
 
@@ -487,8 +492,8 @@ def calibrate(
         )
 
     # Check bounds bracket the target
-    proc_min = build(param_min)
-    proc_max = build(param_max)
+    proc_min = process(param_min)
+    proc_max = process(param_max)
     val_min = target.evaluate(proc_min)
     val_max = target.evaluate(proc_max)
 
@@ -497,7 +502,7 @@ def calibrate(
         raise ValueError(
             f"Target evaluation returned NaN at bounds: "
             f"at param_min={param_min}: {val_min}, at param_max={param_max}: {val_max}. "
-            f"This usually indicates an issue with the build() function or the process itself."
+            f"This usually indicates an issue with the process() function."
         )
 
     if math.isinf(val_min) or math.isinf(val_max):
@@ -505,7 +510,7 @@ def calibrate(
             f"Target evaluation returned infinity at bounds: "
             f"at param_min={param_min}: {val_min}, at param_max={param_max}: {val_max}. "
             f"This typically means the privacy target is unreachable with these parameter bounds. "
-            f"Try expanding the search range or checking that build() produces valid processes."
+            f"Try expanding the search range or checking that process() produces valid DpProcess objects."
         )
 
     # Determine search direction from the target
@@ -533,7 +538,7 @@ def calibrate(
     for iteration in range(max_iterations):
         iterations = iteration + 1
         mid = (lo + hi) / 2
-        proc = build(mid)
+        proc = process(mid)
         current = target.evaluate(proc)
 
         # Check convergence
@@ -554,7 +559,7 @@ def calibrate(
 
     # Max iterations reached - return best estimate
     mid = (lo + hi) / 2
-    proc = build(mid)
+    proc = process(mid)
     current = target.evaluate(proc)
 
     return CalibrateResult(
@@ -579,11 +584,11 @@ __all__ = [
     "BetaTarget",
     "RiskTarget",
     # Target factories
-    "epsilon",
-    "delta",
-    "advantage",
-    "beta",
-    "risk",
+    "epsilon_budget",
+    "delta_budget",
+    "advantage_budget",
+    "beta_budget",
+    "risk_budget",
     # Calibration
     "calibrate",
     "CalibrateResult",

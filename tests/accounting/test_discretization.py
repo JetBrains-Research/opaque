@@ -4,7 +4,7 @@ import pytest
 
 import opaque.accounting as acc
 from opaque.accounting.discretization import (
-    PldConfig,
+    DiscretizationConfig,
     get_discretization,
     resolve_pld_config,
     set_discretization,
@@ -57,7 +57,7 @@ class TestSetGetDiscretization:
         assert cfg.discretization == pytest.approx(1e-5)
 
 
-class TestResolvePldConfig:
+class TestResolveDiscretizationConfig:
     """resolve_pld_config() dispatches correctly."""
 
     def test_none_returns_module_default(self):
@@ -73,20 +73,20 @@ class TestResolvePldConfig:
         assert result.discretization == pytest.approx(1e-3)
 
     def test_float_creates_config(self):
-        """Float value → PldConfig with that discretization."""
+        """Float value → DiscretizationConfig with that discretization."""
         result = resolve_pld_config(1e-3)
-        assert isinstance(result, PldConfig)
+        assert isinstance(result, DiscretizationConfig)
         assert result.discretization == pytest.approx(1e-3)
 
     def test_int_creates_config(self):
-        """Int value → PldConfig (coerced to float)."""
+        """Int value → DiscretizationConfig (coerced to float)."""
         result = resolve_pld_config(1)
-        assert isinstance(result, PldConfig)
+        assert isinstance(result, DiscretizationConfig)
         assert result.discretization == pytest.approx(1.0)
 
     def test_pldconfig_passthrough(self):
-        """PldConfig → returned as-is."""
-        cfg = PldConfig(discretization=1e-3)
+        """DiscretizationConfig → returned as-is."""
+        cfg = DiscretizationConfig(discretization=1e-3)
         result = resolve_pld_config(cfg)
         assert result is cfg
 

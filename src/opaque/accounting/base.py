@@ -40,7 +40,7 @@ from abc import ABC, abstractmethod
 import opaque_accounting as _native
 
 Pld = _native.Pld
-PldConfig = _native.PldConfig
+DiscretizationConfig = _native.DiscretizationConfig
 
 
 class DpProcess(ABC):

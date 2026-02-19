@@ -1,4 +1,4 @@
-//! Unified error types for the jbr-fed-accounting library
+//! Unified error types for the opaque-accounting library
 //!
 //! This module provides a single error type [`PldError`] that covers all error
 //! conditions in the library, including PLD operations, calibration, mechanisms,

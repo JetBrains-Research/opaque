@@ -5,7 +5,7 @@ use pyo3::prelude::*;
 use crate::error::PldError;
 use crate::pld::PrivacyLossDistribution;
 
-use super::config::PyPldConfig;
+use super::config::PyDiscretizationConfig;
 
 fn to_py_err(e: PldError) -> PyErr {
     pyo3::exceptions::PyValueError::new_err(e.to_string())

@@ -259,12 +259,11 @@ sampler = TruncatedPoissonSampler(
 )
 
 # Calibrate noise
-def build(nm):
-    return acc.truncated_poisson(
-        acc.gaussian(nm), sample_rate, batch_size_cap=batch_size, dataset_size=dataset_size
-    ) * num_steps
+build = lambda nm: acc.truncated_poisson(
+    acc.gaussian(nm), sample_rate, batch_size_cap=batch_size, dataset_size=dataset_size
+) * num_steps
 
-result = acc.calibrate(acc.epsilon(3.0, delta=1e-5), build, 0.1, 10.0)
+result = acc.calibrate(acc.epsilon_budget(3.0, delta=1e-5), build, 0.1, 10.0)
 noise_multiplier = result.param
 
 # Create DP gradient function

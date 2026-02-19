@@ -6,7 +6,7 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 import opaque.accounting as acc
-from opaque.accounting.base import DpProcess, PldConfig
+from opaque.accounting.base import DpProcess, DiscretizationConfig
 from opaque.accounting.types import (
     Accumulated,
     EpsDelta,
@@ -39,7 +39,7 @@ class TestGaussian:
     def test_config_excluded_from_hash(self):
         """Config has hash=False — excluded from __hash__ but still in __eq__."""
         a = Gaussian(1.0, config=None)
-        b = Gaussian(1.0, config=PldConfig(discretization=1e-3))
+        b = Gaussian(1.0, config=DiscretizationConfig(discretization=1e-3))
         # config is NOT excluded from __eq__ (only from __hash__)
         # so same nm + different config → NOT equal
         assert a != b
@@ -50,7 +50,7 @@ class TestGaussian:
 
     def test_config_excluded_from_repr(self):
         """Config field has repr=False."""
-        g = Gaussian(1.0, config=PldConfig(discretization=1e-3))
+        g = Gaussian(1.0, config=DiscretizationConfig(discretization=1e-3))
         assert "config" not in repr(g)
 
     def test_pld_returns_valid(self):

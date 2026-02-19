@@ -3,7 +3,7 @@
 ``opaque_accounting`` provides flat PLD-based privacy accounting.
 Rust computes PLDs; Python owns composition and dispatch.
 
-The extension exports two classes (:class:`Pld` and :class:`PldConfig`)
+The extension exports two classes (:class:`Pld` and :class:`DiscretizationConfig`)
 and seven functions for creating PLDs from mechanism parameters.
 
 Example::
@@ -131,11 +131,11 @@ class Pld:
 
 
 # ---------------------------------------------------------------------------
-# PldConfig — discretization configuration
+# DiscretizationConfig — discretization configuration
 # ---------------------------------------------------------------------------
 
 
-class PldConfig:
+class DiscretizationConfig:
     """Discretization configuration for PLD computation.
 
     Args:
@@ -150,7 +150,7 @@ class PldConfig:
 
     Example::
 
-        config = dp.PldConfig(discretization=0.001)
+        config = dp.DiscretizationConfig(discretization=0.001)
         pld = dp.gaussian_pld(1.1, config=config)
     """
 
@@ -193,7 +193,7 @@ class PldConfig:
 
 def gaussian_pld(
     noise_multiplier: float,
-    config: PldConfig | None = None,
+    config: DiscretizationConfig | None = None,
 ) -> Pld:
     """Compute the PLD for a Gaussian mechanism with sensitivity 1.
 
@@ -215,7 +215,7 @@ def gaussian_pld(
 def eps_delta_pld(
     epsilon: float,
     delta: float,
-    config: PldConfig | None = None,
+    config: DiscretizationConfig | None = None,
 ) -> Pld:
     """Compute the PLD for a fixed (ε, δ)-mechanism.
 
@@ -231,7 +231,7 @@ def eps_delta_pld(
 
 
 def identity_pld(
-    config: PldConfig | None = None,
+    config: DiscretizationConfig | None = None,
 ) -> Pld:
     """Compute the PLD for the identity (zero-privacy-loss) mechanism.
 
@@ -252,7 +252,7 @@ def identity_pld(
 def poisson_gaussian_pld(
     noise_multiplier: float,
     rate: float,
-    config: PldConfig | None = None,
+    config: DiscretizationConfig | None = None,
 ) -> Pld:
     """Compute the PLD for a Poisson-subsampled Gaussian mechanism.
 
@@ -278,7 +278,7 @@ def truncated_poisson_gaussian_pld(
     rate: float,
     batch_size_max: int,
     dataset_size: int,
-    config: PldConfig | None = None,
+    config: DiscretizationConfig | None = None,
 ) -> Pld:
     """Compute the PLD for a truncated Poisson-subsampled Gaussian mechanism.
 
@@ -302,7 +302,7 @@ def accumulated_poisson_gaussian_pld(
     noise_multiplier: float,
     rate: float,
     microbatches: int,
-    config: PldConfig | None = None,
+    config: DiscretizationConfig | None = None,
 ) -> Pld:
     """Compute the PLD for an accumulated Poisson-subsampled Gaussian mechanism.
 

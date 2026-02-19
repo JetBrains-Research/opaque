@@ -86,7 +86,7 @@ def build_training(nm):
 
 
 # Find noise for (ε=3.0, δ=1e-5)
-target = cal.epsilon(3.0, delta=1e-5)
+target = cal.epsilon_budget(3.0, delta=1e-5)
 result = cal.calibrate(target, build_training, param_min=0.7, param_max=1.0, tolerance=0.01)
 
 print(f"Target:   (ε=3.0, δ=1e-5)")
@@ -95,7 +95,7 @@ print(f"Achieved: ε={result.achieved:.6f}")
 print(f"Converged: {result.converged} ({result.iterations} iterations)")
 
 # Calibrate for f-DP advantage
-target_adv = cal.advantage(0.1)
+target_adv = cal.advantage_budget(0.1)
 result_adv = cal.calibrate(target_adv, build_training, 0.7, 1.0, tolerance=0.001)
 print(f"\nTarget:   f-DP advantage=0.1")
 print(f"Solution: nm={result_adv.param:.4f}, achieved={result_adv.achieved:.6f}")

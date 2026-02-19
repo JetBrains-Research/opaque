@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 import opaque_accounting as _native
 
-from opaque.accounting.base import DpProcess, Pld, PldConfig
+from opaque.accounting.base import DpProcess, Pld, DiscretizationConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,7 +22,7 @@ class Gaussian(DpProcess):
     """Gaussian mechanism — stores noise_multiplier, computes PLD on demand."""
 
     noise_multiplier: float
-    config: PldConfig | None = field(default=None, hash=False, repr=False)
+    config: DiscretizationConfig | None = field(default=None, hash=False, repr=False)
 
     def pld(self) -> Pld:
         return _native.gaussian_pld(self.noise_multiplier, config=self.config)
@@ -34,7 +34,7 @@ class Poisson(DpProcess):
 
     noise_multiplier: float
     sample_rate: float
-    config: PldConfig | None = field(default=None, hash=False, repr=False)
+    config: DiscretizationConfig | None = field(default=None, hash=False, repr=False)
 
     def pld(self) -> Pld:
         return _native.poisson_gaussian_pld(
@@ -50,7 +50,7 @@ class TruncatedPoisson(DpProcess):
     sample_rate: float
     batch_size_cap: int
     dataset_size: int
-    config: PldConfig | None = field(default=None, hash=False, repr=False)
+    config: DiscretizationConfig | None = field(default=None, hash=False, repr=False)
 
     def pld(self) -> Pld:
         return _native.truncated_poisson_gaussian_pld(
@@ -69,7 +69,7 @@ class Accumulated(DpProcess):
     noise_multiplier: float
     sample_rate: float
     microbatches: int
-    config: PldConfig | None = field(default=None, hash=False, repr=False)
+    config: DiscretizationConfig | None = field(default=None, hash=False, repr=False)
 
     def pld(self) -> Pld:
         return _native.accumulated_poisson_gaussian_pld(
@@ -86,7 +86,7 @@ class EpsDelta(DpProcess):
 
     epsilon: float
     delta: float
-    config: PldConfig | None = field(default=None, hash=False, repr=False)
+    config: DiscretizationConfig | None = field(default=None, hash=False, repr=False)
 
     def pld(self) -> Pld:
         return _native.eps_delta_pld(self.epsilon, self.delta, config=self.config)

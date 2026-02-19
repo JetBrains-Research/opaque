@@ -5,7 +5,7 @@ import math
 import pytest
 
 import opaque.accounting as acc
-from opaque.accounting.base import PldConfig
+from opaque.accounting.base import DiscretizationConfig
 from opaque.accounting.nodes import Identity
 from opaque.accounting.types import (
     Accumulated,
@@ -36,7 +36,7 @@ class TestGaussianConstructor:
         assert g.config.discretization == pytest.approx(1e-3)
 
     def test_pldconfig_discretization(self):
-        cfg = PldConfig(discretization=1e-3)
+        cfg = DiscretizationConfig(discretization=1e-3)
         g = acc.gaussian(0.8, discretization=cfg)
         assert g.config is cfg
 
@@ -55,7 +55,7 @@ class TestPoissonConstructor:
             acc.poisson(acc.eps_delta(1.0, 1e-5), 0.01)  # type: ignore[arg-type]
 
     def test_propagates_config(self):
-        cfg = PldConfig(discretization=1e-3)
+        cfg = DiscretizationConfig(discretization=1e-3)
         g = acc.gaussian(0.8, discretization=cfg)
         p = acc.poisson(g, 0.01)
         assert p.config is cfg

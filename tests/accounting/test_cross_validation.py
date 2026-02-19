@@ -524,10 +524,9 @@ class TestCalibrationCrossValidation:
         q = 0.01
         steps = 1000
 
-        def build(nm):
-            return acc.poisson(acc.gaussian(nm), q) * steps
+        build = lambda nm: acc.poisson(acc.gaussian(nm), q) * steps
 
-        result = cal.calibrate(cal.epsilon(target_eps, delta=delta), build, 0.1, 1.2)
+        result = cal.calibrate(cal.epsilon_budget(target_eps, delta=delta), build, 0.1, 1.2)
         assert result.converged
 
         # Verify with dp_accounting
@@ -536,10 +535,9 @@ class TestCalibrationCrossValidation:
 
     def test_calibrate_advantage_roundtrip(self):
         """Calibrated noise → build process → check advantage against riskcal."""
-        def build(nm):
-            return acc.poisson(acc.gaussian(nm), 0.01) * 500
+        build = lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 500
 
-        result = cal.calibrate(cal.advantage(0.15), build, 0.3, 1.2)
+        result = cal.calibrate(cal.advantage_budget(0.15), build, 0.3, 1.2)
         assert result.converged
 
         # Verify with riskcal
