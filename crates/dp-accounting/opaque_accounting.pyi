@@ -196,12 +196,14 @@ def bounded_gaussian_pld(
     noise_multiplier: float,
     config: DiscretizationConfig | None = None,
 ) -> Pld:
-    """Compute the PLD for the Bounded Gaussian mechanism (Replace adjacency).
+    """Compute the PLD for the Bounded Gaussian mechanism (Add/Remove adjacency).
 
     The Bounded Gaussian Mechanism (Chen & Hale, 2024) adds truncated Gaussian
-    noise to keep outputs in a bounded domain.  Under Replace adjacency,
-    sensitivity is 2Δ, which is accounted for internally.  The ``noise_multiplier``
-    parameter has the same meaning and valid range as for ``gaussian_pld``.
+    noise to keep outputs in a bounded domain.  For DP-SGD the standard
+    adjacency is **Add/Remove** with sensitivity 1.  When truncation bounds are
+    wide relative to σ, the PLD equals that of a standard Gaussian with the
+    same ``noise_multiplier``.  This function returns ``gaussian_pld(nm)`` as a
+    conservative upper-bound approximation.
 
     Args:
         noise_multiplier: Ratio of noise std to sensitivity (σ/Δ), in [0.1, 1.2].

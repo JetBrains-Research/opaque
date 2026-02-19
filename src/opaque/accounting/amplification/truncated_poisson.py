@@ -78,10 +78,10 @@ def truncated_poisson(
     from opaque.accounting.mechanisms.bounded_gaussian import BoundedGaussian
 
     if isinstance(inner, BoundedGaussian):
-        # BoundedGaussian(nm) has the same PLD as Gaussian(nm/2), so
-        # TruncatedPoisson(BoundedGaussian(nm), ...) == TruncatedPoisson(Gaussian(nm/2), ...).
+        # For wide truncation bounds the bounded Gaussian's PLD ≈ standard Gaussian
+        # under Add/Remove adjacency with the same noise multiplier.
         return TruncatedPoisson(
-            inner.noise_multiplier / 2.0,
+            inner.noise_multiplier,
             sample_rate,
             batch_size_cap,
             dataset_size,

@@ -64,9 +64,9 @@ def poisson(
     from opaque.accounting.mechanisms.bounded_gaussian import BoundedGaussian
 
     if isinstance(inner, BoundedGaussian):
-        # BoundedGaussian(nm) has the same PLD as Gaussian(nm/2), so
-        # Poisson(BoundedGaussian(nm), q) == Poisson(Gaussian(nm/2), q).
-        return Poisson(inner.noise_multiplier / 2.0, sample_rate, config=inner.config)
+        # For wide truncation bounds the bounded Gaussian's PLD ≈ standard Gaussian
+        # under Add/Remove adjacency with the same noise multiplier.
+        return Poisson(inner.noise_multiplier, sample_rate, config=inner.config)
     if not isinstance(inner, Gaussian):
         raise TypeError(
             f"poisson() requires a Gaussian or BoundedGaussian inner mechanism, "

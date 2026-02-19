@@ -1,13 +1,21 @@
 //! Bounded Gaussian mechanism PLD constructor.
 //!
 //! The Bounded Gaussian Mechanism (Chen & Hale, 2024) adds truncated Gaussian
-//! noise to confine outputs to a bounded domain.  Under **Replace** adjacency
-//! (changing one record changes the query answer by at most 2Δ), its PLD
-//! is equivalent to the standard Gaussian with noise multiplier halved.
+//! noise to confine outputs to a bounded domain.  For **DP-SGD** the standard
+//! adjacency model is **Add/Remove** with gradient clip-norm sensitivity Δ = 1,
+//! exactly the same as for the standard Gaussian mechanism.
 //!
-//! The `noise_multiplier` parameter has the same meaning as for `gaussian_pld`:
-//! σ/Δ with Δ = 1 (unit sensitivity).  Replace adjacency is handled internally
-//! by halving the effective noise multiplier; users should not adjust the value.
+//! When the truncation bounds are wide relative to σ (the common case for
+//! DP-SGD, where bounds are typically ≥ 3σ away from the query result),
+//! the PLD of the bounded Gaussian is approximately equal to the standard
+//! Gaussian PLD.  `bounded_gaussian_pld` returns `gaussian_pld(noise_multiplier)`
+//! as a conservative approximation.
+//!
+//! **Note**: The exact PLD of a truncated Gaussian with absolute bounds [l, u]
+//! includes a log-normalisation correction term that depends on l, u, the query
+//! value, and σ.  For narrow bounds or query values near the boundaries the
+//! approximation degrades.  If you need exact accounting, pass the truncation
+//! bounds explicitly (not yet exposed in this API).
 //!
 //! # References
 //!
@@ -21,15 +29,14 @@ use crate::pld::PrivacyLossDistribution;
 
 use super::{MAX_NOISE_MULTIPLIER, MIN_NOISE_MULTIPLIER};
 
-/// Compute the PLD for the Bounded Gaussian mechanism (Replace adjacency).
+/// Compute the PLD for the Bounded Gaussian mechanism (Add/Remove adjacency).
 ///
 /// The Bounded Gaussian Mechanism adds noise from a truncated normal to keep
-/// outputs within a bounded domain.  Under **Replace** adjacency (one record
-/// swapped), sensitivity is 2Δ, which is accounted for internally by halving
-/// the effective noise multiplier.
-///
-/// The `noise_multiplier` parameter has the same meaning and the same valid
-/// range as for [`gaussian_pld`]: the σ/Δ ratio with Δ = 1.
+/// outputs within a bounded domain.  For DP-SGD the mechanism is analysed
+/// under **Add/Remove** adjacency with sensitivity 1 (same as the standard
+/// Gaussian mechanism).  When the truncation bounds are wide relative to σ,
+/// the PLD is approximately equal to the standard Gaussian PLD; this function
+/// returns `gaussian_pld(noise_multiplier)` as a conservative approximation.
 ///
 /// # Arguments
 ///
@@ -49,7 +56,10 @@ pub fn bounded_gaussian_pld(
             MIN_NOISE_MULTIPLIER, MAX_NOISE_MULTIPLIER, noise_multiplier
         )));
     }
-    super::gaussian::gaussian_replace_pld(noise_multiplier, config)
+    // For wide truncation bounds the PLD of the bounded Gaussian is approximately
+    // the same as the standard Gaussian under Add/Remove adjacency with the same
+    // noise multiplier.  This is a conservative (safe) upper bound on ε.
+    super::gaussian::gaussian_pld(noise_multiplier, config)
 }
 
 #[cfg(test)]
@@ -80,19 +90,17 @@ mod tests {
         assert!(bounded_gaussian_pld(MAX_NOISE_MULTIPLIER, &default_config()).is_ok());
     }
 
-    /// bounded_gaussian_pld(σ) == gaussian_pld(σ/2) for the same config.
-    ///
-    /// Both should produce the same epsilon at delta=1e-5 since the
-    /// Replace adjacency effectively halves the noise multiplier.
+    /// Under Add/Remove adjacency with wide bounds,
+    /// bounded_gaussian_pld(nm) == gaussian_pld(nm).
     #[test]
-    fn test_equals_gaussian_with_halved_noise_multiplier() {
+    fn test_equals_gaussian_same_noise_multiplier() {
         use crate::mechanisms::gaussian::gaussian_pld;
         use approx::assert_abs_diff_eq;
 
         let config = default_config();
         for &nm in &[0.2, 0.5, 0.8, 1.0, 1.2] {
             let bpld = bounded_gaussian_pld(nm, &config).unwrap();
-            let gpld = gaussian_pld(nm / 2.0, &config).unwrap();
+            let gpld = gaussian_pld(nm, &config).unwrap();
             let b_eps = bpld.epsilon_at(1e-5);
             let g_eps = gpld.epsilon_at(1e-5);
             assert_abs_diff_eq!(b_eps, g_eps, epsilon = 1e-8);

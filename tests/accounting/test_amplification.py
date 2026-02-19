@@ -155,12 +155,12 @@ class TestPoissonWithBoundedGaussian:
         eps = step.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
-    def test_equivalent_to_poisson_gaussian_half_nm(self):
-        """poisson(bounded_gaussian(nm), q) == poisson(gaussian(nm/2), q)."""
+    def test_equivalent_to_poisson_gaussian_same_nm(self):
+        """poisson(bounded_gaussian(nm), q) == poisson(gaussian(nm), q) for wide bounds."""
         nm = 1.0
         q = 0.01
         bg_step = acc.poisson(acc.bounded_gaussian(nm), q)
-        g_step = acc.poisson(acc.gaussian(nm / 2.0), q)
+        g_step = acc.poisson(acc.gaussian(nm), q)
         assert bg_step.epsilon_at(1e-5) == pytest.approx(g_step.epsilon_at(1e-5), rel=1e-6)
 
     def test_propagates_config(self):
@@ -170,11 +170,11 @@ class TestPoissonWithBoundedGaussian:
         step = acc.poisson(bg, 0.01)
         assert step.config is cfg
 
-    def test_stored_nm_is_halved(self):
-        """Poisson.noise_multiplier stores nm/2 (effective Remove-adjacency nm)."""
+    def test_stored_nm_is_unchanged(self):
+        """Poisson.noise_multiplier stores nm unchanged (Add/Remove adjacency)."""
         bg = acc.bounded_gaussian(1.0)
         step = acc.poisson(bg, 0.01)
-        assert step.noise_multiplier == pytest.approx(0.5)
+        assert step.noise_multiplier == pytest.approx(1.0)
 
     def test_rejects_eps_delta(self):
         """Non-Gaussian, non-BoundedGaussian inner still raises TypeError."""
@@ -194,18 +194,18 @@ class TestTruncatedPoissonWithBoundedGaussian:
         eps = step.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
-    def test_equivalent_to_truncated_poisson_gaussian_half_nm(self):
-        """truncated_poisson(bounded_gaussian(nm), ...) == truncated_poisson(gaussian(nm/2), ...)."""
+    def test_equivalent_to_truncated_poisson_gaussian_same_nm(self):
+        """truncated_poisson(bounded_gaussian(nm), ...) == truncated_poisson(gaussian(nm), ...) for wide bounds."""
         nm = 1.0
         bg_step = acc.truncated_poisson(acc.bounded_gaussian(nm), 0.01, 128, 10_000)
-        g_step = acc.truncated_poisson(acc.gaussian(nm / 2.0), 0.01, 128, 10_000)
+        g_step = acc.truncated_poisson(acc.gaussian(nm), 0.01, 128, 10_000)
         assert bg_step.epsilon_at(1e-5) == pytest.approx(g_step.epsilon_at(1e-5), rel=1e-6)
 
-    def test_stored_nm_is_halved(self):
-        """TruncatedPoisson.noise_multiplier stores nm/2 (effective nm)."""
+    def test_stored_nm_is_unchanged(self):
+        """TruncatedPoisson.noise_multiplier stores nm unchanged (Add/Remove adjacency)."""
         bg = acc.bounded_gaussian(1.0)
         step = acc.truncated_poisson(bg, 0.01, 128, 10_000)
-        assert step.noise_multiplier == pytest.approx(0.5)
+        assert step.noise_multiplier == pytest.approx(1.0)
 
     def test_rejects_eps_delta(self):
         """Non-Gaussian, non-BoundedGaussian inner still raises TypeError."""

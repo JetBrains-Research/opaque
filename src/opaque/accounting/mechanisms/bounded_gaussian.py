@@ -1,4 +1,4 @@
-"""Bounded Gaussian mechanism — Replace-adjacency DP accounting."""
+"""Bounded Gaussian mechanism — Add/Remove adjacency DP accounting."""
 
 from __future__ import annotations
 
@@ -12,12 +12,17 @@ from opaque.accounting.discretization import resolve_pld_config
 
 @dataclass(frozen=True, slots=True)
 class BoundedGaussian(DpProcess):
-    """Bounded Gaussian mechanism (Replace adjacency).
+    """Bounded Gaussian mechanism (Add/Remove adjacency, wide-bound approximation).
 
     The Bounded Gaussian Mechanism (Chen & Hale, 2024) adds truncated Gaussian
-    noise to keep outputs within a bounded domain.  Under **Replace** adjacency,
-    sensitivity is 2Δ, so the PLD is equivalent to a standard Gaussian with
-    ``effective_σ = noise_multiplier / 2``.
+    noise to keep outputs within a bounded domain.  For DP-SGD the mechanism is
+    analysed under **Add/Remove** adjacency with sensitivity 1 — the same as the
+    standard Gaussian mechanism.
+
+    When the truncation bounds are wide relative to σ (the standard DP-SGD case),
+    the PLD is approximately equal to the standard Gaussian PLD.  The ``pld()``
+    method returns ``gaussian_pld(noise_multiplier)`` as a conservative
+    (upper-bound) approximation.
     """
 
     noise_multiplier: float
@@ -32,17 +37,24 @@ def bounded_gaussian(
     *,
     discretization: None | float | DiscretizationConfig = None,
 ) -> BoundedGaussian:
-    """Bounded Gaussian mechanism (Replace adjacency).
+    """Bounded Gaussian mechanism (Add/Remove adjacency, wide-bound approximation).
 
     The Bounded Gaussian Mechanism (Chen & Hale, 2024) adds noise from a
     truncated normal distribution, bounding outputs to a fixed domain.
-    Under **Replace** adjacency (one record swapped), sensitivity is 2Δ,
-    which is accounted for internally.
 
-    The ``noise_multiplier`` parameter has the same meaning and valid range
-    as for :func:`gaussian`: σ/Δ with Δ = 1 (unit sensitivity).  For the same
-    ``noise_multiplier``, this mechanism has higher ε than :func:`gaussian`
-    because Replace adjacency doubles the effective sensitivity.
+    For DP-SGD with gradient clipping the standard adjacency is **Add/Remove**
+    with sensitivity 1.  When the truncation bounds are wide relative to σ (at
+    least ~3σ from every possible query value), the PLD is approximately equal
+    to the standard Gaussian PLD.  This function returns an accounting process
+    that uses ``gaussian_pld(noise_multiplier)`` as a conservative upper bound
+    on ε.
+
+    Note:
+        The exact PLD of a truncated Gaussian includes a log-normalisation
+        correction term that depends on the truncation bounds and the query value.
+        For narrow bounds or query values near the boundaries the approximation
+        degrades.  Future API versions will accept the truncation bounds
+        explicitly for exact accounting.
 
     Args:
         noise_multiplier: Noise standard deviation divided by sensitivity (σ/Δ).

@@ -208,17 +208,11 @@ class TestBoundedGaussianDataclass:
         eps = pld.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
-    def test_higher_epsilon_than_gaussian(self):
-        """Replace adjacency doubles sensitivity → higher epsilon than Gaussian."""
+    def test_equals_gaussian_same_noise_multiplier(self):
+        """Add/Remove adjacency, wide bounds → same PLD as standard Gaussian."""
         bg_eps = BoundedGaussian(1.1).epsilon_at(1e-5)
         g_eps = Gaussian(1.1).epsilon_at(1e-5)
-        assert bg_eps > g_eps
-
-    def test_equals_gaussian_with_half_noise_multiplier(self):
-        """bounded_gaussian(σ) has the same PLD as gaussian(σ/2)."""
-        bg_eps = BoundedGaussian(1.1).epsilon_at(1e-5)
-        g_half_eps = Gaussian(1.1 / 2.0).epsilon_at(1e-5)
-        assert bg_eps == pytest.approx(g_half_eps, rel=1e-6)
+        assert bg_eps == pytest.approx(g_eps, rel=1e-6)
 
     def test_rejects_out_of_range(self):
         """noise_multiplier=0.05 is below minimum — should raise."""
