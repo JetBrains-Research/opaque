@@ -3,9 +3,10 @@
 End-to-end one-run auditing (Steinke et al. 2023)::
 
     import opaque.auditing as auditing
+    from opaque.random import key
 
     # Start: set up canaries and coin flips
-    experiment = auditing.setup(dataset, num_canaries=1000, seed=42)
+    experiment = auditing.setup(dataset, num_canaries=1000, key=key(42))
     train_loader = DataLoader(experiment.subset(dataset), ...)
 
     # ... train model ...
@@ -35,6 +36,7 @@ import numpy as np
 from opaque.auditing.audit import AuditResult, CoinFlipExperiment
 from opaque.auditing.bootstrap import BootstrapParams
 from opaque.auditing.scoring import score_by_loss
+from opaque.random import RngKey, fold_in
 
 __all__ = [
     "AuditResult",
@@ -50,7 +52,7 @@ def setup(
     dataset: Any,
     *,
     num_canaries: int,
-    seed: int | None = None,
+    key: RngKey,
 ) -> CoinFlipExperiment:
     """Set up a one-run privacy audit experiment.
 
@@ -61,7 +63,7 @@ def setup(
     Args:
         dataset: A PyTorch-style dataset with ``len()``.
         num_canaries: Number of canary examples to designate.
-        seed: Random seed for reproducible canary selection and coin flips.
+        key: RNG key for reproducible canary selection and coin flips.
 
     Returns:
         A :class:`CoinFlipExperiment` managing the canary assignment.
@@ -69,8 +71,9 @@ def setup(
     Example::
 
         import opaque.auditing as auditing
+        from opaque.random import key
 
-        experiment = auditing.setup(dataset, num_canaries=1000, seed=42)
+        experiment = auditing.setup(dataset, num_canaries=1000, key=key(42))
         train_data = experiment.subset(dataset)
     """
     dataset_size = len(dataset)
@@ -79,10 +82,10 @@ def setup(
             f"num_canaries ({num_canaries}) exceeds dataset size ({dataset_size})"
         )
 
-    rng = np.random.default_rng(seed)
+    rng = np.random.default_rng(key.seed)
     canary_indices = rng.choice(dataset_size, size=num_canaries, replace=False)
-    coin_seed = int(rng.integers(0, 2**31))
-    return CoinFlipExperiment(canary_indices, seed=coin_seed)
+    coin_key = fold_in(key, 1)  # Derive separate key for coin flips
+    return CoinFlipExperiment(canary_indices, key=coin_key)
 
 
 def evaluate(

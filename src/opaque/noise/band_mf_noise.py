@@ -33,7 +33,7 @@ def band_mf_noise(
     n_steps: int,
     *,
     stddev: float,
-    key: RngKey | None = None,
+    key: RngKey,
     synchronized: str | bool = "auto",
     bands: int | None = None,
 ) -> tuple[
@@ -50,10 +50,7 @@ def band_mf_noise(
             gradients that will be passed to ``noise_fn``.
         n_steps: Number of training iterations.
         stddev: Standard deviation for the base noise.
-                key: Optional RNG key (primary API) for explicit functional randomness.
-                        - ``None``: Non-deterministic in single-device mode; fixed key in
-                            distributed mode with ``synchronized="auto"``
-                        - ``RngKey``: Explicit key for reproducibility
+        key: Explicit RNG key for deterministic, functional randomness.
         synchronized: Synchronization mode for distributed training:
             - ``"auto"`` (default): Auto-detect and sync if distributed
             - ``True``: Force synchronized noise (same seed across devices)
@@ -79,7 +76,14 @@ def band_mf_noise(
     coefs = optimize_toeplitz(n_steps, bands)
     noising = inverse_as_streaming_matrix(coefs)
     gen, resolved_seed, is_sync = _create_rng_state(key, synchronized)
-    return _matrix_factorization_noise(grad_template, noising, stddev=stddev, gen=gen, seed=resolved_seed, synchronized=is_sync)
+    return _matrix_factorization_noise(
+        grad_template,
+        noising,
+        stddev=stddev,
+        gen=gen,
+        seed=resolved_seed,
+        synchronized=is_sync,
+    )
 
 
 __all__ = ["band_mf_noise"]

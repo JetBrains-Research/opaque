@@ -14,13 +14,13 @@ class TestGaussian:
 
     def test_returns_tuple(self):
         """gaussian_noise() should return (noise_fn, state) tuple."""
-        noise_fn, state = gaussian_noise(stddev=1.0)
+        noise_fn, state = gaussian_noise(stddev=1.0, key=key(0))
         assert callable(noise_fn)
         assert isinstance(state, GaussianNoiseState)
 
     def test_adds_noise_to_tensor(self):
         """Noise function should add noise to a tensor."""
-        noise_fn, state = gaussian_noise(stddev=1.0)
+        noise_fn, state = gaussian_noise(stddev=1.0, key=key(0))
         grad = torch.zeros(10, 5)
         noisy, state = noise_fn(grad, state)
 
@@ -30,7 +30,7 @@ class TestGaussian:
 
     def test_adds_noise_to_pytree(self):
         """Noise function should work with PyTrees."""
-        noise_fn, state = gaussian_noise(stddev=1.0)
+        noise_fn, state = gaussian_noise(stddev=1.0, key=key(0))
         grads = {
             "weight": torch.zeros(10, 5),
             "bias": torch.zeros(10),
@@ -44,7 +44,7 @@ class TestGaussian:
 
     def test_zero_stddev(self):
         """stddev=0 should return original gradients."""
-        noise_fn, state = gaussian_noise(stddev=0.0)
+        noise_fn, state = gaussian_noise(stddev=0.0, key=key(0))
         grad = torch.randn(5, 3)
         noisy, state = noise_fn(grad, state)
         assert torch.equal(noisy, grad)
@@ -52,11 +52,11 @@ class TestGaussian:
     def test_negative_stddev_raises(self):
         """Negative stddev should raise ValueError."""
         with pytest.raises(ValueError, match="stddev must be non-negative"):
-            gaussian_noise(stddev=-1.0)
+            gaussian_noise(stddev=-1.0, key=key(0))
 
     def test_dtype_preservation(self):
         """Noise function should preserve dtype."""
-        noise_fn, state = gaussian_noise(stddev=1.0)
+        noise_fn, state = gaussian_noise(stddev=1.0, key=key(0))
 
         grad_f32 = torch.randn(5, 3, dtype=torch.float32)
         noisy_f32, state = noise_fn(grad_f32, state)
@@ -68,7 +68,7 @@ class TestGaussian:
 
     def test_device_preservation(self):
         """Noise function should preserve device."""
-        noise_fn, state = gaussian_noise(stddev=1.0)
+        noise_fn, state = gaussian_noise(stddev=1.0, key=key(0))
 
         grad_cpu = torch.randn(5, 3)
         noisy_cpu, state = noise_fn(grad_cpu, state)
@@ -91,7 +91,7 @@ class TestGaussian:
     def test_noise_stddev(self):
         """Noise should have correct stddev."""
         target_stddev = 2.5
-        noise_fn, state = gaussian_noise(stddev=target_stddev)
+        noise_fn, state = gaussian_noise(stddev=target_stddev, key=key(0))
         zeros = torch.zeros(10000)
         noisy, state = noise_fn(zeros, state)
 
@@ -100,7 +100,7 @@ class TestGaussian:
 
     def test_uniqueness(self):
         """Successive calls should produce different noise."""
-        noise_fn, state = gaussian_noise(stddev=1.0)
+        noise_fn, state = gaussian_noise(stddev=1.0, key=key(0))
         grad = torch.zeros(100)
 
         noisy1, state = noise_fn(grad, state)
@@ -110,7 +110,7 @@ class TestGaussian:
 
     def test_nested_pytree(self):
         """Works with nested PyTree structures."""
-        noise_fn, state = gaussian_noise(stddev=1.0)
+        noise_fn, state = gaussian_noise(stddev=1.0, key=key(0))
         grads = {
             "layer1": {"w": torch.zeros(10, 5), "b": torch.zeros(10)},
             "layer2": {"w": torch.zeros(5, 3), "b": torch.zeros(3)},
@@ -122,7 +122,7 @@ class TestGaussian:
 
     def test_tuple_pytree(self):
         """Works with tuple PyTrees."""
-        noise_fn, state = gaussian_noise(stddev=1.0)
+        noise_fn, state = gaussian_noise(stddev=1.0, key=key(0))
         grads = (torch.zeros(10, 5), torch.zeros(10))
         noisy, state = noise_fn(grads, state)
 
@@ -131,15 +131,12 @@ class TestGaussian:
 
 
 class TestGaussianKey:
-    """Tests for key parameter."""
+    """Tests for required key parameter."""
 
-    def test_generator_none(self):
-        """key=None should create non-reproducible noise."""
-        noise_fn, state = gaussian_noise(stddev=1.0, key=None)
-        assert isinstance(state, GaussianNoiseState)
-        grad = torch.zeros(10)
-        noisy, state = noise_fn(grad, state)
-        assert not torch.allclose(noisy, grad)
+    def test_key_required(self):
+        """Missing key should raise TypeError."""
+        with pytest.raises(TypeError, match="missing 1 required keyword-only argument"):
+            gaussian_noise(stddev=1.0)
 
     def test_generator_int_reproducible(self):
         """key(42) should produce reproducible noise."""

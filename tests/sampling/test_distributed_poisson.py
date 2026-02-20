@@ -8,6 +8,7 @@ import pytest
 import torch
 from torch.utils.data import TensorDataset
 
+from opaque.random import key
 from opaque.sampling import PoissonSampler, TruncatedPoissonSampler
 
 
@@ -17,7 +18,7 @@ class TestSamplingModeValidation:
     def test_independent_mode_no_rank_or_world_size(self):
         """Test distributed=False works without rank/world_size."""
         dataset = TensorDataset(torch.randn(100, 10))
-        sampler = PoissonSampler(dataset, sample_rate=0.1, distributed=False)
+        sampler = PoissonSampler(dataset, sample_rate=0.1, distributed=False, key=key(0))
         assert sampler._use_sharded is False
 
     def test_sharded_mode_requires_rank_and_world_size(self, monkeypatch):
@@ -32,7 +33,7 @@ class TestSamplingModeValidation:
                         RuntimeError,
                         match="distributed=True requested but torch.distributed is not initialized",
                     ):
-                        PoissonSampler(dataset, sample_rate=0.1, distributed=True)
+                        PoissonSampler(dataset, sample_rate=0.1, distributed=True, key=key(0))
 
     def test_independent_mode_with_distributed_params_warns(self, monkeypatch):
         """Test distributed=False with world_size > 1 emits warning."""
@@ -46,6 +47,7 @@ class TestSamplingModeValidation:
                             dataset,
                             sample_rate=0.1,
                             distributed=False,
+                            key=key(0),
                         )
 
 
@@ -72,9 +74,7 @@ class TestShardedMode:
                             sample_rate=sample_rate,
                             num_epochs=num_epochs,
                             distributed=True,
-                            generator=np.random.default_rng(
-                                42 + rank
-                            ),  # Different seeds
+                            key=key(42 + rank),  # Different seeds
                         )
                         batches = list(sampler)
                         all_worker_indices.append(batches[0])
@@ -108,6 +108,7 @@ class TestShardedMode:
                             sample_rate=sample_rate,
                             num_epochs=1,
                             distributed=True,
+                            key=key(0),
                         )
                         batch = list(sampler)[0]
 
@@ -140,6 +141,7 @@ class TestShardedMode:
                         sample_rate=sample_rate,
                         num_epochs=1,
                         distributed=True,
+                        key=key(0),
                     )
                     batch_last = list(sampler_last)[0]
 
@@ -167,7 +169,7 @@ class TestShardedMode:
                             sample_rate=sample_rate,
                             num_epochs=100,
                             distributed=True,
-                            generator=np.random.default_rng(100 + rank),
+                            key=key(100 + rank),
                         )
 
                         batch_sizes = [len(batch) for batch in sampler]
@@ -198,7 +200,7 @@ class TestShardedMode:
                         sample_rate=sample_rate,
                         num_epochs=20,
                         distributed=True,
-                        generator=np.random.default_rng(42),
+                        key=key(42),
                     )
                     sizes0 = [len(batch) for batch in sampler0]
 
@@ -209,7 +211,7 @@ class TestShardedMode:
                         sample_rate=sample_rate,
                         num_epochs=20,
                         distributed=True,
-                        generator=np.random.default_rng(43),
+                        key=key(43),
                     )
                     sizes1 = [len(batch) for batch in sampler1]
 
@@ -223,7 +225,7 @@ class TestIndependentMode:
     def test_independent_mode_is_default(self):
         """Test that independent sampling is the default when not distributed."""
         dataset = TensorDataset(torch.randn(100, 10))
-        sampler = PoissonSampler(dataset, sample_rate=0.1)
+        sampler = PoissonSampler(dataset, sample_rate=0.1, key=key(0))
         assert sampler._use_sharded is False
 
     def test_independent_mode_different_batches_across_workers(self):
@@ -237,14 +239,14 @@ class TestIndependentMode:
             sample_rate=sample_rate,
             num_epochs=10,
             distributed=False,
-            generator=np.random.default_rng(42),
+            key=key(42),
         )
         sampler1 = PoissonSampler(
             dataset,
             sample_rate=sample_rate,
             num_epochs=10,
             distributed=False,
-            generator=np.random.default_rng(43),
+            key=key(43),
         )
 
         batches0 = list(sampler0)
@@ -264,7 +266,7 @@ class TestIndependentMode:
             dataset,
             sample_rate=sample_rate,
             num_epochs=5,
-            generator=np.random.default_rng(seed),
+            key=key(seed),
         )
 
         # New-style explicit independent
@@ -273,7 +275,7 @@ class TestIndependentMode:
             sample_rate=sample_rate,
             num_epochs=5,
             distributed=False,
-            generator=np.random.default_rng(seed),
+            key=key(seed),
         )
 
         batches_old = list(sampler_old)
@@ -307,7 +309,7 @@ class TestTruncatedPoissonDistributed:
                             max_batch_size=max_batch_size,
                             num_epochs=1,
                             distributed=True,
-                            generator=np.random.default_rng(rank + 100),
+                            key=key(rank + 100),
                         )
                         batch = list(sampler)[0]
                         all_indices.append(batch)
@@ -333,7 +335,7 @@ class TestTruncatedPoissonDistributed:
             sample_rate=sample_rate,
             max_batch_size=max_batch_size,
             num_epochs=5,
-            generator=np.random.default_rng(seed),
+            key=key(seed),
         )
 
         assert sampler._use_sharded is False
@@ -360,7 +362,7 @@ class TestEdgeCases:
                         sample_rate=0.5,
                         num_epochs=5,
                         distributed=True,
-                        generator=np.random.default_rng(42),
+                        key=key(42),
                     )
 
                     batches = list(sampler)
@@ -391,7 +393,7 @@ class TestEdgeCases:
                             sample_rate=0.5,
                             num_epochs=10,
                             distributed=True,
-                            generator=np.random.default_rng(rank),
+                            key=key(rank),
                         )
                         # Should not crash
                         batches = list(sampler)

@@ -14,13 +14,13 @@ class TestBoundedGaussian:
 
     def test_returns_tuple(self):
         """bounded_gaussian_noise() should return (noise_fn, state) tuple."""
-        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-3.0, 3.0))
+        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-3.0, 3.0), key=key(0))
         assert callable(noise_fn)
         assert isinstance(state, GaussianNoiseState)
 
     def test_adds_noise_to_tensor(self):
         """Noise function should add noise to a tensor."""
-        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-5.0, 5.0))
+        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-5.0, 5.0), key=key(0))
         grad = torch.zeros(10, 5)
         noisy, state = noise_fn(grad, state)
 
@@ -30,7 +30,7 @@ class TestBoundedGaussian:
 
     def test_adds_noise_to_pytree(self):
         """Noise function should work with PyTrees."""
-        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-5.0, 5.0))
+        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-5.0, 5.0), key=key(0))
         grads = {
             "weight": torch.zeros(10, 5),
             "bias": torch.zeros(10),
@@ -45,7 +45,7 @@ class TestBoundedGaussian:
     def test_output_within_bounds(self):
         """All outputs must lie within the specified bounds."""
         lower, upper = -2.0, 2.0
-        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(lower, upper))
+        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(lower, upper), key=key(0))
         grad = torch.zeros(10000)
         noisy, state = noise_fn(grad, state)
 
@@ -55,7 +55,7 @@ class TestBoundedGaussian:
     def test_output_within_bounds_nonzero_center(self):
         """Bounds are respected even when input values are nonzero."""
         lower, upper = -3.0, 3.0
-        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(lower, upper))
+        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(lower, upper), key=key(0))
         grad = torch.tensor([2.5, -2.5, 0.0, 1.0, -1.0]).repeat(2000)
         noisy, state = noise_fn(grad, state)
 
@@ -65,7 +65,7 @@ class TestBoundedGaussian:
     def test_output_within_tight_bounds(self):
         """Tight bounds are respected (high stddev relative to bound width)."""
         lower, upper = -0.5, 0.5
-        noise_fn, state = bounded_gaussian_noise(stddev=5.0, bounds=(lower, upper))
+        noise_fn, state = bounded_gaussian_noise(stddev=5.0, bounds=(lower, upper), key=key(0))
         grad = torch.zeros(10000)
         noisy, state = noise_fn(grad, state)
 
@@ -74,14 +74,14 @@ class TestBoundedGaussian:
 
     def test_zero_stddev(self):
         """stddev=0 should clamp to bounds without adding noise."""
-        noise_fn, state = bounded_gaussian_noise(stddev=0.0, bounds=(-1.0, 1.0))
+        noise_fn, state = bounded_gaussian_noise(stddev=0.0, bounds=(-1.0, 1.0), key=key(0))
         grad = torch.tensor([0.5, -0.5, 0.0])
         noisy, state = noise_fn(grad, state)
         assert torch.equal(noisy, grad)
 
     def test_zero_stddev_clamps(self):
         """stddev=0 with out-of-bounds input should clamp."""
-        noise_fn, state = bounded_gaussian_noise(stddev=0.0, bounds=(-1.0, 1.0))
+        noise_fn, state = bounded_gaussian_noise(stddev=0.0, bounds=(-1.0, 1.0), key=key(0))
         grad = torch.tensor([2.0, -2.0, 0.5])
         noisy, state = noise_fn(grad, state)
         expected = torch.tensor([1.0, -1.0, 0.5])
@@ -90,18 +90,18 @@ class TestBoundedGaussian:
     def test_negative_stddev_raises(self):
         """Negative stddev should raise ValueError."""
         with pytest.raises(ValueError, match="stddev must be non-negative"):
-            bounded_gaussian_noise(stddev=-1.0, bounds=(-1.0, 1.0))
+            bounded_gaussian_noise(stddev=-1.0, bounds=(-1.0, 1.0), key=key(0))
 
     def test_invalid_bounds_raises(self):
         """lower >= upper should raise ValueError."""
         with pytest.raises(ValueError, match="bounds must satisfy lower < upper"):
-            bounded_gaussian_noise(stddev=1.0, bounds=(1.0, 1.0))
+            bounded_gaussian_noise(stddev=1.0, bounds=(1.0, 1.0), key=key(0))
         with pytest.raises(ValueError, match="bounds must satisfy lower < upper"):
-            bounded_gaussian_noise(stddev=1.0, bounds=(2.0, 1.0))
+            bounded_gaussian_noise(stddev=1.0, bounds=(2.0, 1.0), key=key(0))
 
     def test_dtype_preservation(self):
         """Noise function should preserve dtype."""
-        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-5.0, 5.0))
+        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-5.0, 5.0), key=key(0))
 
         grad_f32 = torch.randn(5, 3, dtype=torch.float32)
         noisy_f32, state = noise_fn(grad_f32, state)
@@ -113,7 +113,7 @@ class TestBoundedGaussian:
 
     def test_device_preservation(self):
         """Noise function should preserve device."""
-        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-5.0, 5.0))
+        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-5.0, 5.0), key=key(0))
 
         grad_cpu = torch.randn(5, 3)
         noisy_cpu, state = noise_fn(grad_cpu, state)
@@ -145,7 +145,7 @@ class TestBoundedGaussian:
 
     def test_noise_mean_approximately_zero(self):
         """For symmetric bounds and zero-centered input, mean should be ~0."""
-        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-5.0, 5.0))
+        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-5.0, 5.0), key=key(0))
         zeros = torch.zeros(50000)
         noisy, state = noise_fn(zeros, state)
 
@@ -155,7 +155,7 @@ class TestBoundedGaussian:
         """Bounded Gaussian should have lower variance than unbounded."""
         stddev = 1.0
         bounds = (-2.0, 2.0)
-        noise_fn, state = bounded_gaussian_noise(stddev=stddev, bounds=bounds)
+        noise_fn, state = bounded_gaussian_noise(stddev=stddev, bounds=bounds, key=key(0))
         zeros = torch.zeros(50000)
         noisy, state = noise_fn(zeros, state)
 
@@ -164,7 +164,7 @@ class TestBoundedGaussian:
 
     def test_uniqueness(self):
         """Successive calls should produce different noise."""
-        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-5.0, 5.0))
+        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-5.0, 5.0), key=key(0))
         grad = torch.zeros(100)
 
         noisy1, state = noise_fn(grad, state)
@@ -174,7 +174,7 @@ class TestBoundedGaussian:
 
     def test_nested_pytree(self):
         """Works with nested PyTree structures."""
-        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-5.0, 5.0))
+        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-5.0, 5.0), key=key(0))
         grads = {
             "layer1": {"w": torch.zeros(10, 5), "b": torch.zeros(10)},
             "layer2": {"w": torch.zeros(5, 3), "b": torch.zeros(3)},
@@ -186,7 +186,7 @@ class TestBoundedGaussian:
 
     def test_tuple_pytree(self):
         """Works with tuple PyTrees."""
-        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-5.0, 5.0))
+        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-5.0, 5.0), key=key(0))
         grads = (torch.zeros(10, 5), torch.zeros(10))
         noisy, state = noise_fn(grads, state)
 
@@ -196,7 +196,7 @@ class TestBoundedGaussian:
     def test_asymmetric_bounds(self):
         """Works with asymmetric bounds."""
         lower, upper = -1.0, 5.0
-        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(lower, upper))
+        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(lower, upper), key=key(0))
         grad = torch.ones(10000) * 2.0
         noisy, state = noise_fn(grad, state)
 
@@ -206,7 +206,7 @@ class TestBoundedGaussian:
     def test_input_at_boundary(self):
         """Input values at the boundary should produce valid outputs."""
         lower, upper = -2.0, 2.0
-        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(lower, upper))
+        noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(lower, upper), key=key(0))
         grad = torch.tensor([lower, upper, lower, upper]).repeat(1000)
         noisy, state = noise_fn(grad, state)
 

@@ -97,7 +97,7 @@ def bounded_gaussian_noise(
     stddev: float,
     bounds: tuple[float, float],
     *,
-    key: RngKey | None = None,
+    key: RngKey,
     synchronized: str | bool = "auto",
 ) -> tuple[
     Callable[[Any, GaussianNoiseState], tuple[Any, GaussianNoiseState]],
@@ -115,10 +115,7 @@ def bounded_gaussian_noise(
             (usually ``noise_multiplier * clip_norm``).
         bounds: ``(lower, upper)`` bounds for the noisy output domain.
             Must satisfy ``lower < upper``.
-                key: Optional RNG key (primary API) for explicit functional randomness.
-                        - ``None``: Non-deterministic in single-device mode; fixed key in
-                            distributed mode with ``synchronized="auto"``
-                        - ``RngKey``: Explicit key for reproducibility
+        key: Explicit RNG key for deterministic, functional randomness.
         synchronized: Synchronization mode for distributed training:
             - ``"auto"`` (default): Auto-detect and sync if distributed
             - ``True``: Force synchronized noise (same seed across devices)

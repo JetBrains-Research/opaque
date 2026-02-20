@@ -37,15 +37,16 @@ class TestDistributedNoise:
         assert torch.allclose(noisy1["weight"], noisy2["weight"])
         assert torch.allclose(noisy1["bias"], noisy2["bias"])
 
-    def test_distributed_true_without_init_raises(self, monkeypatch):
-        """key=None uses deterministic seed when distributed is detected."""
+    def test_rank_fold_in_when_unsynchronized(self, monkeypatch):
+        """Unsynchronized mode folds rank into key and produces distinct streams."""
         import importlib
 
         gaussian_noise_module = importlib.import_module("opaque.noise.gaussian_noise")
         monkeypatch.setattr(gaussian_noise_module, "is_distributed", lambda: True)
+        monkeypatch.setattr(gaussian_noise_module, "get_rank", lambda: 7)
 
-        noise_fn1, state1 = gaussian_noise(1.0, key=None)
-        noise_fn2, state2 = gaussian_noise(1.0, key=None)
+        noise_fn1, state1 = gaussian_noise(1.0, key=key(42), synchronized=False)
+        noise_fn2, state2 = gaussian_noise(1.0, key=key(42), synchronized=False)
 
         grads = {"weight": torch.zeros(4)}
 
@@ -257,7 +258,7 @@ def _worker_mf_shared_noise(rank: int, world_size: int, port: int) -> None:
     try:
         device = torch.device(f"cuda:{rank}")
         grad_template = {"weight": torch.zeros(4, device=device)}
-        noise_fn, state = identity_mf_noise(grad_template, stddev=1.0, key=None)
+        noise_fn, state = identity_mf_noise(grad_template, stddev=1.0, key=key(0))
         grads = {"weight": torch.zeros(4, device=device)}
         noisy, _ = noise_fn(grads, state)
 

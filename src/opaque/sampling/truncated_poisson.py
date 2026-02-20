@@ -13,6 +13,7 @@ from typing import Literal
 
 import numpy as np
 
+from opaque.random import RngKey
 from opaque.sampling.poisson import PoissonSampler
 
 
@@ -34,19 +35,21 @@ class TruncatedPoissonSampler(PoissonSampler):
         sample_rate: Probability of including each example (0 < p <= 1)
         max_batch_size: Maximum batch size (caps Poisson samples)
         num_epochs: Number of epochs to iterate over
-        generator: Optional numpy random generator for reproducibility
+        key: RNG key for reproducibility. Use ``key()`` or ``training_key()`` helpers.
         distributed: Distributed handling mode:
             - "auto": auto-select based on dist init
             - True: force sharded sampling (requires torch.distributed initialized)
             - False: force independent sampling (even if distributed is initialized)
 
     Example:
+        >>> from opaque.random import key
         >>> dataset = MyDataset(...)
         >>> sampler = TruncatedPoissonSampler(
         ...     dataset,
         ...     sample_rate=0.01,
         ...     max_batch_size=128,
         ...     num_epochs=10,
+        ...     key=key(42),
         ... )
         >>> loader = DataLoader(dataset, batch_sampler=sampler)
         >>>
@@ -69,15 +72,16 @@ class TruncatedPoissonSampler(PoissonSampler):
         sample_rate: float,
         max_batch_size: int,
         num_epochs: int = 1,
-        generator: np.random.Generator | None = None,
+        *,
+        key: RngKey,
         distributed: Literal["auto"] | bool = "auto",
     ):
         super().__init__(
             data_source,
             sample_rate,
             num_epochs,
-            generator,
-            distributed,
+            key=key,
+            distributed=distributed,
         )
 
         if max_batch_size < 1:

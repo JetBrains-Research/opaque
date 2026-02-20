@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 import torch
 
+from opaque.random import key
 from opaque.sampling import CyclicPoissonSampler, PartitionType
 
 
@@ -21,7 +22,7 @@ class TestCyclicPoissonSamplerBasic:
             sampling_prob=0.5,
             cycle_length=1,
             iterations=10,
-            generator=42,
+            key=key(42),
         )
 
         batches = list(sampler)
@@ -43,7 +44,7 @@ class TestCyclicPoissonSamplerBasic:
             sampling_prob=1.0,
             cycle_length=4,
             iterations=8,
-            generator=42,
+            key=key(42),
         )
 
         batches = list(sampler)
@@ -62,7 +63,7 @@ class TestCyclicPoissonSamplerBasic:
             sampling_prob=1.0,
             cycle_length=3,
             iterations=6,
-            generator=42,
+            key=key(42),
         )
 
         batches = list(sampler)
@@ -84,7 +85,7 @@ class TestCyclicPoissonSamplerBasic:
             cycle_length=1,
             iterations=10,
             truncated_batch_size=max_batch_size,
-            generator=42,
+            key=key(42),
         )
 
         batches = list(sampler)
@@ -101,7 +102,7 @@ class TestCyclicPoissonSamplerBasic:
             cycle_length=cycle_length,
             iterations=cycle_length,
             partition_type=PartitionType.EQUAL_SPLIT,
-            generator=42,
+            key=key(42),
         )
 
         batches = list(sampler)
@@ -120,7 +121,7 @@ class TestCyclicPoissonSamplerBasic:
             cycle_length=cycle_length,
             iterations=8,
             partition_type=PartitionType.INDEPENDENT,
-            generator=42,
+            key=key(42),
         )
 
         batches = list(sampler)
@@ -141,7 +142,7 @@ class TestCyclicPoissonSamplerBasic:
                 sampling_prob=0.5,
                 cycle_length=3,
                 iterations=10,
-                generator=42,
+                key=key(42),
             )
 
         batches1 = [b.copy() for b in create_sampler()]
@@ -158,7 +159,7 @@ class TestCyclicPoissonSamplerBasic:
             sampling_prob=0.5,
             cycle_length=3,
             iterations=10,
-            generator=42,
+            key=key(42),
         )
 
         sampler2 = CyclicPoissonSampler(
@@ -166,7 +167,7 @@ class TestCyclicPoissonSamplerBasic:
             sampling_prob=0.5,
             cycle_length=3,
             iterations=10,
-            generator=123,
+            key=key(123),
         )
 
         batches1 = list(sampler1)
@@ -175,17 +176,17 @@ class TestCyclicPoissonSamplerBasic:
         # With high probability, should get different batches
         assert batches1 != batches2
 
-    def test_generator_object(self):
-        """Can use np.random.Generator directly."""
+    def test_key_object(self):
+        """Can pass RngKey directly."""
         dataset_size = 100
-        gen = np.random.default_rng(42)
+        k = key(42)
 
         sampler = CyclicPoissonSampler(
             range(dataset_size),
             sampling_prob=0.5,
             cycle_length=2,
             iterations=5,
-            generator=gen,
+            key=k,
         )
 
         batches = list(sampler)
@@ -206,6 +207,7 @@ class TestCyclicPoissonSamplerProperties:
             sampling_prob=sampling_prob,
             cycle_length=cycle_length,
             iterations=1,
+            key=key(0),
         )
 
         # Expected: avg_group_size * sampling_prob
@@ -225,6 +227,7 @@ class TestCyclicPoissonSamplerProperties:
             sampling_prob=sampling_prob,
             cycle_length=cycle_length,
             iterations=1,
+            key=key(0),
         )
 
         # Variance: avg_group_size * p * (1 - p)
@@ -243,6 +246,7 @@ class TestCyclicPoissonSamplerProperties:
             sampling_prob=0.5,
             cycle_length=2,
             iterations=iterations,
+            key=key(0),
         )
 
         assert len(sampler) == iterations
@@ -254,7 +258,7 @@ class TestCyclicPoissonSamplerEdgeCases:
     def test_empty_dataset_raises(self):
         """Empty dataset raises error."""
         with pytest.raises(ValueError):
-            CyclicPoissonSampler([], sampling_prob=0.5)
+            CyclicPoissonSampler([], sampling_prob=0.5, key=key(0))
 
     def test_single_example(self):
         """Single example dataset works."""
@@ -263,7 +267,7 @@ class TestCyclicPoissonSamplerEdgeCases:
             sampling_prob=1.0,
             cycle_length=1,
             iterations=3,
-            generator=42,
+            key=key(42),
         )
 
         batches = list(sampler)
@@ -279,7 +283,7 @@ class TestCyclicPoissonSamplerEdgeCases:
             sampling_prob=0.5,
             cycle_length=20,
             iterations=20,
-            generator=42,
+            key=key(42),
         )
 
         batches = list(sampler)
@@ -298,7 +302,7 @@ class TestCyclicPoissonSamplerEdgeCases:
             sampling_prob=0.99,
             cycle_length=1,
             iterations=5,
-            generator=42,
+            key=key(42),
         )
         batches_high = list(sampler_high)
         assert all(len(b) > 0.9 * dataset_size for b in batches_high)
@@ -309,7 +313,7 @@ class TestCyclicPoissonSamplerEdgeCases:
             sampling_prob=0.01,
             cycle_length=1,
             iterations=20,
-            generator=42,
+            key=key(42),
         )
         batches_low = list(sampler_low)
         assert all(len(b) < 0.1 * dataset_size for b in batches_low)
@@ -317,15 +321,15 @@ class TestCyclicPoissonSamplerEdgeCases:
     def test_invalid_sampling_prob_raises(self):
         """Invalid sampling_prob raises ValueError."""
         with pytest.raises(ValueError):
-            CyclicPoissonSampler(range(10), sampling_prob=0.0)
+            CyclicPoissonSampler(range(10), sampling_prob=0.0, key=key(0))
 
         with pytest.raises(ValueError):
-            CyclicPoissonSampler(range(10), sampling_prob=1.5)
+            CyclicPoissonSampler(range(10), sampling_prob=1.5, key=key(0))
 
     def test_invalid_cycle_length_raises(self):
         """Invalid cycle_length raises ValueError."""
         with pytest.raises(ValueError):
-            CyclicPoissonSampler(range(10), sampling_prob=0.5, cycle_length=0)
+            CyclicPoissonSampler(range(10), sampling_prob=0.5, cycle_length=0, key=key(0))
 
     def test_invalid_truncated_batch_size_raises(self):
         """Invalid truncated_batch_size raises ValueError."""
@@ -334,6 +338,7 @@ class TestCyclicPoissonSamplerEdgeCases:
                 range(10),
                 sampling_prob=0.5,
                 truncated_batch_size=0,
+                key=key(0),
             )
 
 
@@ -353,6 +358,7 @@ class TestCyclicPoissonSamplerDistributedSimulation:
                         sampling_prob=0.5,
                         cycle_length=2,
                         iterations=5,
+                        key=key(0),
                     )
 
                     assert sampler.is_distributed
@@ -373,7 +379,7 @@ class TestCyclicPoissonSamplerDistributedSimulation:
                         sampling_prob=1.0,
                         cycle_length=1,
                         iterations=1,
-                        generator=42,
+                        key=key(42),
                     )
 
                     # Rank 0: [0, 25)
@@ -396,7 +402,7 @@ class TestCyclicPoissonSamplerDistributedSimulation:
                         sampling_prob=1.0,
                         cycle_length=1,
                         iterations=1,
-                        generator=42,
+                        key=key(42),
                     )
 
                     # Rank 3: [75, 100)
@@ -419,12 +425,12 @@ class TestCyclicPoissonSamplerDistributedSimulation:
                         sampling_prob=0.5,
                         cycle_length=1,
                         iterations=5,
-                        generator=42,
+                        key=key(42),
                     )
 
                     batches0 = list(sampler0)
 
-        # Rank 1: seed should be 43
+        # Rank 1: seed should be different via fold_in
         with patch("opaque.sampling.cyclic_poisson.is_distributed", return_value=True):
             with patch("opaque.sampling.cyclic_poisson.get_rank", return_value=1):
                 with patch(
@@ -435,7 +441,7 @@ class TestCyclicPoissonSamplerDistributedSimulation:
                         sampling_prob=0.5,
                         cycle_length=1,
                         iterations=5,
-                        generator=42,
+                        key=key(42),
                     )
 
                     batches1 = list(sampler1)
@@ -457,7 +463,7 @@ class TestCyclicPoissonSamplerDistributedSimulation:
                         sampling_prob=1.0,
                         cycle_length=2,
                         iterations=4,
-                        generator=42,
+                        key=key(42),
                     )
 
                     batches0 = list(sampler0)
@@ -479,7 +485,7 @@ class TestCyclicPoissonSamplerDataLoader:
             sampling_prob=0.5,
             cycle_length=2,
             iterations=10,
-            generator=42,
+            key=key(42),
         )
 
         loader = torch.utils.data.DataLoader(
@@ -503,7 +509,7 @@ class TestCyclicPoissonSamplerDataLoader:
             sampling_prob=0.3,
             cycle_length=1,
             iterations=20,
-            generator=42,
+            key=key(42),
         )
 
         loader = torch.utils.data.DataLoader(
@@ -538,7 +544,7 @@ class TestCyclicPoissonSamplerRangeDataset:
             sampling_prob=0.5,
             cycle_length=3,
             iterations=9,
-            generator=42,
+            key=key(42),
         )
 
         batches = list(sampler)

@@ -17,6 +17,7 @@ import numpy as np
 from torch.utils.data import Sampler
 
 from opaque.distributed import get_rank, get_world_size, is_distributed
+from opaque.random import RngKey, fold_in
 
 
 class PoissonSampler(Sampler):
@@ -36,19 +37,18 @@ class PoissonSampler(Sampler):
         data_source: Dataset to sample from (any object with __len__)
         sample_rate: Probability of including each example (0 < p <= 1)
         num_epochs: Number of epochs to iterate over
-        generator: Optional random generator or seed for reproducibility. Can be:
-            - ``None``: Uses unseeded generator (non-reproducible)
-            - ``int``: Seeds the generator. In distributed mode, automatically shifts by rank
-              to ensure different samples per device (e.g., seed=42 becomes 42, 43, 44, ... per rank)
-            - ``np.random.Generator``: Uses provided generator directly (user responsible for seeding)
+        key: RNG key for reproducibility. Use ``key()`` or ``training_key()`` helpers.
+            In distributed SHARDED mode, automatically applies ``fold_in(key, rank)`` for
+            per-rank diversity while maintaining reproducibility.
         distributed: Distributed handling mode:
             - "auto": auto-select based on dist init
             - True: force SHARDED mode (requires torch.distributed initialized)
             - False: force INDEPENDENT mode (even if distributed is initialized)
 
     Example (single device):
+        >>> from opaque.random import key
         >>> dataset = MyDataset(...)
-        >>> sampler = PoissonSampler(dataset, sample_rate=0.01, num_epochs=10)
+        >>> sampler = PoissonSampler(dataset, sample_rate=0.01, num_epochs=10, key=key(42))
         >>> loader = DataLoader(dataset, batch_sampler=sampler)
         >>>
         >>> for batch in loader:
@@ -56,23 +56,32 @@ class PoissonSampler(Sampler):
         ...     # Expected size: len(dataset) * sample_rate
         ...     pass
 
-    Example (distributed - automatic):
-        >>> # When running with torchrun, automatically uses SHARDED mode
-        >>> # Seed is automatically shifted by rank for diversity:
-        >>> sampler = PoissonSampler(dataset, sample_rate=0.01, num_epochs=10, generator=42)
-        >>> # Device 0: seed=42, Device 1: seed=43, Device 2: seed=44, ...
+    Example (distributed - automatic rank shifting):
+        >>> from opaque.random import key, fold_in
+        >>> # Rank shifting happens automatically in SHARDED mode:
+        >>> sampler = PoissonSampler(dataset, sample_rate=0.01, num_epochs=10, key=key(42))
+        >>> # Rank 0: uses key(42), Rank 1: uses fold_in(key(42), 1), etc.
         >>> loader = DataLoader(dataset, batch_sampler=sampler)
+
+    Example (training loop):
+        >>> from opaque.random import training_key
+        >>> for epoch in range(epochs):
+        ...     k = training_key(base_seed=42, step=epoch)
+        ...     sampler = PoissonSampler(dataset, sample_rate=0.01, key=k)
+        ...     loader = DataLoader(dataset, batch_sampler=sampler)
+        ...     for batch in loader:
+        ...         # train ...
 
     Note:
         - Batch sizes are variable (Poisson property)
         - Expected batch size: len(dataset) * sample_rate
         - Variance: len(dataset) * sample_rate * (1 - sample_rate)
-                - Use with DataLoader's batch_sampler parameter (not sampler)
-                - **Auto mode selection**: Detects distributed env and uses sharded sampling by default
-                - **Auto seed shifting**: When int seed is provided in distributed mode, shifts by rank
-                - Sharded sampling: Each worker samples from its shard only (zero communication overhead)
-                - Independent sampling in distributed training: model as parallel Poisson sampling
-                    (use acc.parallel_poisson(acc.poisson(acc.gaussian(nm), rate), num_workers=world_size))
+        - Use with DataLoader's batch_sampler parameter (not sampler)
+        - **Auto mode selection**: Detects distributed env and uses sharded sampling by default
+        - **Auto rank shifting**: In SHARDED mode, applies fold_in(key, rank) automatically
+        - Sharded sampling: Each worker samples from its shard only (zero communication overhead)
+        - Independent sampling in distributed training: model as parallel Poisson sampling
+            (use acc.parallel_poisson(acc.poisson(acc.gaussian(nm), rate), num_workers=world_size))
     """
 
     def __init__(
@@ -80,7 +89,8 @@ class PoissonSampler(Sampler):
         data_source,
         sample_rate: float,
         num_epochs: int = 1,
-        generator: np.random.Generator | int | None = None,
+        *,
+        key: RngKey,
         distributed: Literal["auto"] | bool = "auto",
     ):
         super().__init__()
@@ -156,20 +166,16 @@ class PoissonSampler(Sampler):
 
         self._num_samples = len(data_source)
 
-        # RNG setup: auto-shift seed by rank for sampling diversity in distributed mode
-        if isinstance(generator, int):
-            # Seed is an integer: shift by rank for diversity across devices
-            if rank is not None and rank > 0:
-                shifted_seed = generator + rank
-            else:
-                shifted_seed = generator
-            self.generator = np.random.default_rng(shifted_seed)
-        elif generator is not None:
-            # Generator object provided: use as-is
-            self.generator = generator
+        # RNG setup: fold in rank for diversity in SHARDED distributed mode
+        if self._use_sharded and dist_initialized and self.rank > 0:
+            # Fold rank into key for per-rank diversity
+            rank_key = fold_in(key, self.rank)
         else:
-            # No seed specified: use unseeded default generator
-            self.generator = np.random.default_rng()
+            # Use key as-is for single device or INDEPENDENT mode
+            rank_key = key
+
+        # Convert RngKey to numpy generator
+        self.generator = np.random.default_rng(rank_key.seed)
 
     def _should_warn_parallel_poisson(
         self, use_sharded: bool, dist_initialized: bool, world_size: int | None

@@ -23,7 +23,7 @@ def identity_mf_noise(
     grad_template: Any,
     *,
     stddev: float,
-    key: RngKey | None = None,
+    key: RngKey,
     synchronized: str | bool = "auto",
 ) -> tuple[
     Callable[[Any, MFNoiseState], tuple[Any, MFNoiseState]],
@@ -40,10 +40,7 @@ def identity_mf_noise(
         grad_template: A pytree with the same structure and shapes as the
             gradients that will be passed to ``noise_fn``.
         stddev: Standard deviation for the base noise.
-                key: Optional RNG key (primary API) for explicit functional randomness.
-                        - ``None``: Non-deterministic in single-device mode; fixed key in
-                            distributed mode with ``synchronized="auto"``
-                        - ``RngKey``: Explicit key for reproducibility
+        key: Explicit RNG key for deterministic, functional randomness.
         synchronized: Synchronization mode for distributed training:
             - ``"auto"`` (default): Auto-detect and sync if distributed
             - ``True``: Force synchronized noise (same seed across devices)

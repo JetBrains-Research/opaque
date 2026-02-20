@@ -8,8 +8,9 @@ For end-to-end auditing with a single training run, use
 :func:`opaque.auditing.setup` and :func:`opaque.auditing.evaluate`::
 
     import opaque.auditing as auditing
+    from opaque.random import key
 
-    experiment = auditing.setup(dataset, num_canaries=1000, seed=42)
+    experiment = auditing.setup(dataset, num_canaries=1000, key=key(42))
     train_loader = DataLoader(experiment.subset(dataset), ...)
     # ... train model ...
     audit = auditing.evaluate(experiment, loss_fn, params, dataset)
@@ -35,6 +36,7 @@ from opaque.auditing.helpers import (
     _one_run_p_value,
     _tpr_at_given_fpr,
 )
+from opaque.random import RngKey
 
 __all__ = ["AuditResult", "CoinFlipExperiment"]
 
@@ -296,14 +298,15 @@ class AuditResult:
 
         Example:
             >>> result = AuditResult(in_scores, out_scores)
-            >>> params = BootstrapParams(num_samples=1000, seed=42)
+            >>> from opaque.random import key
+            >>> params = BootstrapParams(num_samples=1000, key=key(42))
             >>> auroc_ci = result.bootstrap(AuditResult.auroc, params)
             >>> eps_ci = result.bootstrap(
             ...     lambda r: r.epsilon_clopper_pearson(significance=0.05),
             ...     params,
             ... )
         """
-        rng = np.random.default_rng(seed=params.seed)
+        rng = np.random.default_rng(seed=params.key.seed if params.key else None)
 
         values = np.empty(params.num_samples)
         for i in range(params.num_samples):
@@ -400,7 +403,8 @@ class CoinFlipExperiment:
     automatically::
 
         import opaque.auditing as auditing
-        experiment = auditing.setup(dataset, num_canaries=1000, seed=42)
+        from opaque.random import key
+        experiment = auditing.setup(dataset, num_canaries=1000, key=key(42))
 
     Attributes:
         num_canaries: Total number of canary examples.
@@ -416,19 +420,19 @@ class CoinFlipExperiment:
         self,
         canary_indices: np.ndarray,
         *,
-        seed: int | None = None,
+        key: RngKey,
     ) -> None:
         """Flip coins for each canary to decide inclusion/exclusion.
 
         Args:
             canary_indices: Array of dataset indices designated as canaries.
-            seed: Random seed for reproducible coin flips.
+            key: RNG key for reproducible coin flips.
         """
         canary_indices = np.asarray(canary_indices)
         if canary_indices.ndim != 1 or canary_indices.size == 0:
             raise ValueError("canary_indices must be a non-empty 1-D array")
 
-        rng = np.random.default_rng(seed)
+        rng = np.random.default_rng(key.seed)
         in_mask = rng.random(len(canary_indices)) < 0.5
 
         self.num_canaries = len(canary_indices)

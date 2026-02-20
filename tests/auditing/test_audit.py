@@ -5,6 +5,7 @@ import pytest
 
 import opaque.auditing as auditing
 from opaque.auditing import AuditResult, CoinFlipExperiment
+from opaque.random import key
 
 
 class TestConstruction:
@@ -218,7 +219,7 @@ class TestBootstrap:
         rng = np.random.default_rng(42)
         result = AuditResult(rng.normal(2.0, 1.0, 100), rng.normal(0.0, 1.0, 100))
 
-        params = BootstrapParams(num_samples=50, seed=42)
+        params = BootstrapParams(num_samples=50, key=key(42))
         ci = result.bootstrap(AuditResult.auroc, params)
 
         assert isinstance(ci, np.ndarray)
@@ -230,7 +231,7 @@ class TestBootstrap:
         from opaque.auditing import BootstrapParams
 
         result = AuditResult(np.arange(50, 100), np.arange(0, 50))
-        params = BootstrapParams(num_samples=20, seed=42)
+        params = BootstrapParams(num_samples=20, key=key(42))
 
         ci1 = result.bootstrap(AuditResult.auroc, params)
         ci2 = result.bootstrap(AuditResult.auroc, params)
@@ -244,7 +245,7 @@ class TestBootstrap:
         rng = np.random.default_rng(42)
         result = AuditResult(rng.normal(2.0, 1.0, 100), rng.normal(0.0, 1.0, 100))
 
-        params = BootstrapParams(num_samples=50, quantiles=(0.1, 0.5, 0.9), seed=42)
+        params = BootstrapParams(num_samples=50, quantiles=(0.1, 0.5, 0.9), key=key(42))
         ci = result.bootstrap(AuditResult.auroc, params)
 
         assert len(ci) == 3
@@ -255,7 +256,7 @@ class TestBootstrap:
         from opaque.auditing import BootstrapParams
 
         result = AuditResult(np.arange(50, 100), np.arange(0, 50))
-        params = BootstrapParams(num_samples=20, seed=42)
+        params = BootstrapParams(num_samples=20, key=key(42))
 
         ci = result.bootstrap(
             lambda r: r.epsilon_clopper_pearson(significance=0.05), params
@@ -269,7 +270,7 @@ class TestCoinFlipExperiment:
     def test_basic_construction(self):
         """Test constructing experiment with canary indices."""
         canary_idx = np.arange(100)
-        exp = CoinFlipExperiment(canary_idx, seed=42)
+        exp = CoinFlipExperiment(canary_idx, key=key(42))
 
         assert exp.num_canaries == 100
         assert len(exp.in_indices) + len(exp.out_indices) == 100
@@ -280,8 +281,8 @@ class TestCoinFlipExperiment:
     def test_coin_flip_reproducibility(self):
         """Test that same seed gives same coin flips."""
         canary_idx = np.arange(200)
-        exp1 = CoinFlipExperiment(canary_idx, seed=42)
-        exp2 = CoinFlipExperiment(canary_idx, seed=42)
+        exp1 = CoinFlipExperiment(canary_idx, key=key(42))
+        exp2 = CoinFlipExperiment(canary_idx, key=key(42))
 
         np.testing.assert_array_equal(exp1.in_indices, exp2.in_indices)
         np.testing.assert_array_equal(exp1.out_indices, exp2.out_indices)
@@ -289,8 +290,8 @@ class TestCoinFlipExperiment:
     def test_different_seeds_give_different_splits(self):
         """Test that different seeds give different splits."""
         canary_idx = np.arange(200)
-        exp1 = CoinFlipExperiment(canary_idx, seed=42)
-        exp2 = CoinFlipExperiment(canary_idx, seed=99)
+        exp1 = CoinFlipExperiment(canary_idx, key=key(42))
+        exp2 = CoinFlipExperiment(canary_idx, key=key(99))
 
         # Extremely unlikely to be identical with different seeds
         assert not np.array_equal(exp1.in_indices, exp2.in_indices)
@@ -298,7 +299,7 @@ class TestCoinFlipExperiment:
     def test_indices_are_subset_of_canaries(self):
         """Test that in/out indices are subsets of canary indices."""
         canary_idx = np.array([10, 20, 30, 40, 50])
-        exp = CoinFlipExperiment(canary_idx, seed=42)
+        exp = CoinFlipExperiment(canary_idx, key=key(42))
 
         for idx in exp.in_indices:
             assert idx in canary_idx
@@ -308,7 +309,7 @@ class TestCoinFlipExperiment:
     def test_no_overlap(self):
         """Test that in and out indices don't overlap."""
         canary_idx = np.arange(100)
-        exp = CoinFlipExperiment(canary_idx, seed=42)
+        exp = CoinFlipExperiment(canary_idx, key=key(42))
 
         in_set = set(exp.in_indices.tolist())
         out_set = set(exp.out_indices.tolist())
@@ -317,7 +318,7 @@ class TestCoinFlipExperiment:
     def test_train_indices(self):
         """Test train_indices excludes out canaries."""
         canary_idx = np.array([5, 15, 25])
-        exp = CoinFlipExperiment(canary_idx, seed=42)
+        exp = CoinFlipExperiment(canary_idx, key=key(42))
 
         train_idx = exp.train_indices(dataset_size=30)
         train_set = set(train_idx.tolist())
@@ -338,7 +339,7 @@ class TestCoinFlipExperiment:
     def test_audit_produces_audit_result(self):
         """Test that audit() returns correct AuditResult."""
         canary_idx = np.arange(100)
-        exp = CoinFlipExperiment(canary_idx, seed=42)
+        exp = CoinFlipExperiment(canary_idx, key=key(42))
 
         # Simulate: in-canaries get high scores, out-canaries get low
         scores = np.zeros(100)
@@ -356,7 +357,7 @@ class TestCoinFlipExperiment:
     def test_audit_wrong_length_raises(self):
         """Test that wrong-length scores raise ValueError."""
         canary_idx = np.arange(100)
-        exp = CoinFlipExperiment(canary_idx, seed=42)
+        exp = CoinFlipExperiment(canary_idx, key=key(42))
 
         with pytest.raises(ValueError, match="Expected 100 scores"):
             exp.audit(np.zeros(50))
@@ -364,7 +365,7 @@ class TestCoinFlipExperiment:
     def test_empty_canaries_raises(self):
         """Test that empty canary indices raise ValueError."""
         with pytest.raises(ValueError, match="non-empty"):
-            CoinFlipExperiment(np.array([]))
+            CoinFlipExperiment(np.array([]), key=key(42))
 
     def test_end_to_end_one_run_audit(self):
         """Test complete one-run auditing workflow with simulated scores."""
@@ -372,7 +373,7 @@ class TestCoinFlipExperiment:
 
         # Setup: 500 canaries from a 10k dataset
         canary_idx = rng.choice(10000, size=500, replace=False)
-        exp = CoinFlipExperiment(canary_idx, seed=42)
+        exp = CoinFlipExperiment(canary_idx, key=key(42))
 
         # Simulate membership scores: in-canaries score higher
         scores = np.empty(500)
@@ -388,7 +389,7 @@ class TestCoinFlipExperiment:
 
     def test_repr(self):
         """Test CoinFlipExperiment repr."""
-        exp = CoinFlipExperiment(np.arange(100), seed=42)
+        exp = CoinFlipExperiment(np.arange(100), key=key(42))
         r = repr(exp)
         assert "CoinFlipExperiment" in r
         assert "num_canaries=100" in r
@@ -402,7 +403,7 @@ class TestCoinFlipExperiment:
 
         dataset = TensorDataset(torch.arange(50), torch.arange(50))
         canary_idx = np.array([5, 15, 25, 35, 45])
-        exp = CoinFlipExperiment(canary_idx, seed=42)
+        exp = CoinFlipExperiment(canary_idx, key=key(42))
 
         sub = exp.subset(dataset)
         assert len(sub) == 50 - len(exp.out_indices)
@@ -423,7 +424,7 @@ class TestCoinFlipExperiment:
 
         dataset = TensorDataset(torch.arange(50), torch.arange(50))
         canary_idx = np.array([5, 15, 25, 35, 45])
-        exp = CoinFlipExperiment(canary_idx, seed=42)
+        exp = CoinFlipExperiment(canary_idx, key=key(42))
 
         sub = exp.canary_subset(dataset)
         assert len(sub) == 5
@@ -455,7 +456,7 @@ class TestAuditResultRepr:
 
     def test_summary_coin_flip_shows_one_run(self):
         """Test summary shows one-run epsilon when from coin flip."""
-        exp = CoinFlipExperiment(np.arange(100), seed=42)
+        exp = CoinFlipExperiment(np.arange(100), key=key(42))
         scores = np.zeros(100)
         scores[exp._in_mask] = 10.0
         result = exp.audit(scores)
@@ -489,7 +490,7 @@ class TestEpsilonAt:
 
     def test_coin_flip_defaults_to_one_run(self):
         """Test that coin-flip AuditResult uses one_run."""
-        exp = CoinFlipExperiment(np.arange(100), seed=42)
+        exp = CoinFlipExperiment(np.arange(100), key=key(42))
         scores = np.zeros(100)
         scores[exp._in_mask] = 10.0
         result = exp.audit(scores)
@@ -529,7 +530,7 @@ class TestSetup:
     def test_basic_setup(self):
         """Test setup creates experiment from dataset."""
         dataset = list(range(1000))  # Anything with len()
-        exp = auditing.setup(dataset, num_canaries=100, seed=42)
+        exp = auditing.setup(dataset, num_canaries=100, key=key(42))
 
         assert isinstance(exp, CoinFlipExperiment)
         assert exp.num_canaries == 100
@@ -538,8 +539,8 @@ class TestSetup:
     def test_setup_reproducibility(self):
         """Test setup is reproducible with same seed."""
         dataset = list(range(1000))
-        exp1 = auditing.setup(dataset, num_canaries=100, seed=42)
-        exp2 = auditing.setup(dataset, num_canaries=100, seed=42)
+        exp1 = auditing.setup(dataset, num_canaries=100, key=key(42))
+        exp2 = auditing.setup(dataset, num_canaries=100, key=key(42))
 
         np.testing.assert_array_equal(exp1._canary_indices, exp2._canary_indices)
         np.testing.assert_array_equal(exp1.in_indices, exp2.in_indices)
@@ -547,8 +548,8 @@ class TestSetup:
     def test_setup_different_seeds(self):
         """Test different seeds give different experiments."""
         dataset = list(range(1000))
-        exp1 = auditing.setup(dataset, num_canaries=100, seed=42)
-        exp2 = auditing.setup(dataset, num_canaries=100, seed=99)
+        exp1 = auditing.setup(dataset, num_canaries=100, key=key(42))
+        exp2 = auditing.setup(dataset, num_canaries=100, key=key(99))
 
         assert not np.array_equal(exp1._canary_indices, exp2._canary_indices)
 
@@ -556,12 +557,12 @@ class TestSetup:
         """Test that requesting more canaries than dataset size raises."""
         dataset = list(range(10))
         with pytest.raises(ValueError, match="exceeds dataset size"):
-            auditing.setup(dataset, num_canaries=20, seed=42)
+            auditing.setup(dataset, num_canaries=20, key=key(42))
 
     def test_setup_canaries_are_valid_indices(self):
         """Test all canary indices are valid for the dataset."""
         dataset = list(range(500))
-        exp = auditing.setup(dataset, num_canaries=100, seed=42)
+        exp = auditing.setup(dataset, num_canaries=100, key=key(42))
 
         assert np.all(exp._canary_indices >= 0)
         assert np.all(exp._canary_indices < 500)

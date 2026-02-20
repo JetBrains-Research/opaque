@@ -16,6 +16,7 @@ import torch
 
 from opaque.clipping.clipped_grad import ClippedGradAux, clipped_grad
 from opaque.clipping.types import ClipState, NeighboringRelation
+from opaque.random import RngKey, fold_in
 
 
 class AdaptiveClippedGradAux(NamedTuple):
@@ -47,11 +48,15 @@ class AdaptiveClipState(ClipState):
         clip_norm: Current clipping threshold C_t.
         clipping_rate: Fraction of gradients clipped in last call (for monitoring).
         rescale_to_unit_norm: Whether gradients were rescaled to unit norm.
+        key: RNG key for quantile noise (None if no noise).
+        step: Step counter for key derivation.
     """
 
     clip_norm: float
     clipping_rate: float = 0.0
     rescale_to_unit_norm: bool = False
+    key: RngKey | None = None
+    step: int = 0
 
     def __post_init__(self):
         """Validate state values."""
@@ -110,6 +115,8 @@ def adaptive_clipped_grad(
     learning_rate: float = 0.2,
     clip_norm_min: float = 0.01,
     clip_norm_max: float = 100.0,
+    quantile_noise_std: float | None = None,
+    key: RngKey | None = None,
     return_aux: bool = False,
     distributed: Literal["auto"] | bool = "auto",
     **clipped_grad_kwargs: Any,
@@ -142,6 +149,12 @@ def adaptive_clipped_grad(
             (as used in Andrew et al. 2021). Controls adaptation speed.
         clip_norm_min: Minimum allowed clipping threshold. Default: 0.01.
         clip_norm_max: Maximum allowed clipping threshold. Default: 100.0.
+        quantile_noise_std: Standard deviation of Gaussian noise added to the
+            clipping rate for differential privacy. If None (default), no noise
+            is added. When set, must also provide `key`. Larger values provide
+            more privacy but less accurate threshold adaptation.
+        key: RNG key for quantile noise generation. Required if `quantile_noise_std`
+            is set, otherwise should be None.
         return_aux: If True, return a per-example aux NamedTuple with loss values,
             gradient norms, loss aux, and adaptive fields.
         distributed: Distributed handling mode:
@@ -259,6 +272,21 @@ def adaptive_clipped_grad(
         raise ValueError(
             f"clip_norm_max ({clip_norm_max}) must be > clip_norm_min ({clip_norm_min})"
         )
+    if quantile_noise_std is not None:
+        if quantile_noise_std <= 0:
+            raise ValueError(
+                f"quantile_noise_std must be positive, got {quantile_noise_std}"
+            )
+        if key is None:
+            raise ValueError(
+                "key must be provided when quantile_noise_std is set. "
+                "Use: key=key(seed) from opaque.random"
+            )
+    elif key is not None:
+        raise ValueError(
+            "key provided but quantile_noise_std is None. "
+            "Either set both or neither."
+        )
 
     # Extract rescale_to_unit_norm from kwargs for state initialization
     rescale_to_unit_norm = clipped_grad_kwargs.get("rescale_to_unit_norm", False)
@@ -269,6 +297,7 @@ def adaptive_clipped_grad(
         "learning_rate": learning_rate,
         "clip_norm_min": clip_norm_min,
         "clip_norm_max": clip_norm_max,
+        "quantile_noise_std": quantile_noise_std,
     }
 
     def _use_distributed() -> bool:
@@ -350,8 +379,18 @@ def adaptive_clipped_grad(
             local_num_clipped = float(num_clipped)
             local_total = float(total)
 
-            # Geometric update: C_{t+1} = C_t * exp(η * sign(ρ_t - γ))
-            if clipping_rate > config["target_quantile"]:
+            # Add Gaussian noise for differential privacy if configured
+            noisy_clipping_rate = clipping_rate
+            if config["quantile_noise_std"] is not None and state.key is not None:
+                # Derive per-step key for noise generation
+                step_key = fold_in(state.key, state.step)
+                # Generate Gaussian noise
+                noise = torch.randn(1, generator=torch.Generator().manual_seed(step_key.seed)).item()
+                noise *= config["quantile_noise_std"]
+                noisy_clipping_rate = clipping_rate + noise
+
+            # Geometric update: C_{t+1} = C_t * exp(η * sign(ρ_noisy - γ))
+            if noisy_clipping_rate > config["target_quantile"]:
                 # Too many gradients clipped → increase threshold
                 direction = 1.0
             else:
@@ -371,11 +410,13 @@ def adaptive_clipped_grad(
             new_clip_norm = state.clip_norm
             clipping_rate = 0.0
 
-        # Create new state (IMMUTABLE)
+        # Create new state (IMMUTABLE) with incremented step
         new_state = AdaptiveClipState(
             clip_norm=new_clip_norm,
             clipping_rate=clipping_rate,
             rescale_to_unit_norm=state.rescale_to_unit_norm,
+            key=state.key,
+            step=state.step + 1,
         )
 
         if distributed_active:
@@ -424,6 +465,8 @@ def adaptive_clipped_grad(
         clip_norm=initial_clip_norm,
         clipping_rate=0.0,
         rescale_to_unit_norm=rescale_to_unit_norm,
+        key=key,
+        step=0,
     )
 
     return grad_fn, initial_state
@@ -466,6 +509,8 @@ def sync_adaptive_clip_state(
         clip_norm=synced_clip_norm,
         clipping_rate=float(global_rate),
         rescale_to_unit_norm=state.rescale_to_unit_norm,
+        key=state.key,
+        step=state.step,
     )
 
 

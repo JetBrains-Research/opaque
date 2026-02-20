@@ -8,6 +8,7 @@ from torch.utils.data import TensorDataset
 
 import opaque.auditing as auditing
 from opaque.auditing import AuditResult, CoinFlipExperiment, score_by_loss
+from opaque.random import key
 
 
 @pytest.fixture()
@@ -79,7 +80,7 @@ class TestEvaluate:
     def test_evaluate_returns_audit_result(self, linear_setup):
         """Test that evaluate returns an AuditResult."""
         params, dataset, loss_fn = linear_setup
-        exp = auditing.setup(dataset, num_canaries=50, seed=42)
+        exp = auditing.setup(dataset, num_canaries=50, key=key(42))
 
         # Train briefly (just use the true params as "trained")
         audit = auditing.evaluate(exp, loss_fn, params, dataset)
@@ -90,7 +91,7 @@ class TestEvaluate:
     def test_evaluate_from_coin_flip(self, linear_setup):
         """Test that evaluate result defaults to one_run method."""
         params, dataset, loss_fn = linear_setup
-        exp = auditing.setup(dataset, num_canaries=50, seed=42)
+        exp = auditing.setup(dataset, num_canaries=50, key=key(42))
 
         audit = auditing.evaluate(exp, loss_fn, params, dataset)
 
@@ -104,7 +105,7 @@ class TestEvaluate:
         _, dataset, loss_fn = linear_setup
 
         # Setup
-        experiment = auditing.setup(dataset, num_canaries=50, seed=42)
+        experiment = auditing.setup(dataset, num_canaries=50, key=key(42))
         train_data = experiment.subset(dataset)
         assert len(train_data) == 200 - len(experiment.out_indices)
 

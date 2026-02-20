@@ -2,7 +2,7 @@
 
 This example demonstrates:
 1. Natural composition of clipped_grad() and gaussian_noise()
-2. Using .clip_norm attribute for noise calibration
+2. Using training_key() helper for ergonomic RNG handling
 3. Full DP-SGD training loop with the simplified API
 4. Swapping in bounded_gaussian_noise() for bounded-domain noise
 
@@ -16,6 +16,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
 from opaque import bounded_gaussian_noise, clipped_grad, gaussian_noise
+from opaque.random import training_key
 
 
 def main():
@@ -65,17 +66,23 @@ def main():
     )
     print(f"   - Sensitivity from clip_state: {clip_state.sensitivity()}")
 
-    # Step 2: Configure noise based on sensitivity
-    noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_state.sensitivity())
-    print(f"   - Noise stddev: {noise_multiplier * clip_state.sensitivity():.3f}")
-
     # Training loop
     print(f"\n3. Training for {epochs} epochs...")
+    step = 0  # Global step counter for RNG derivation
     for epoch in range(epochs):
         epoch_loss = 0.0
         n_batches = 0
 
         for batch_x, batch_y in dataloader:
+            # Step 2: Create key for this step (deterministic based on step counter)
+            key = training_key(base_seed=42, step=step)
+
+            # Step 3: Configure noise based on sensitivity + key
+            noise_fn, noise_state = gaussian_noise(
+                stddev=noise_multiplier * clip_state.sensitivity(),
+                key=key,
+            )
+
             # Compute clipped gradients (pass state, receive updated state)
             grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
@@ -90,6 +97,8 @@ def main():
                 batch_loss = loss_fn(params, batch_x, batch_y)
                 epoch_loss += batch_loss.item()
                 n_batches += 1
+
+            step += 1  # Increment step counter
 
         avg_loss = epoch_loss / n_batches
         print(f"   Epoch {epoch + 1}/{epochs} - Avg Loss: {avg_loss:.4f}")
@@ -125,28 +134,32 @@ def demo_research_flexibility():
     # Example 1: Standard DP-SGD
     print("\n1. Standard DP-SGD:")
     _grad_fn, _state = clipped_grad(loss_fn, l2_clip_norm=1.0)
-    _noise_fn, _nstate = gaussian_noise(stddev=1.1 * _state.sensitivity())
+    key = training_key(base_seed=42, step=0)
+    _noise_fn, _nstate = gaussian_noise(stddev=1.1 * _state.sensitivity(), key=key)
     print(f"   ✓ Sensitivity: {_state.sensitivity()}")
     print(f"   ✓ Noise: Gaussian(stddev={1.1 * _state.sensitivity()})")
 
     # Example 2: Different clip norm
     print("\n2. Higher clip norm:")
     _grad_fn_2, _state_2 = clipped_grad(loss_fn, l2_clip_norm=2.0)
-    _noise_fn, _nstate = gaussian_noise(stddev=1.1 * _state_2.sensitivity())
+    key = training_key(base_seed=42, step=1)
+    _noise_fn, _nstate = gaussian_noise(stddev=1.1 * _state_2.sensitivity(), key=key)
     print(f"   ✓ Sensitivity: {_state_2.sensitivity()}")
     print(f"   ✓ Noise: Gaussian(stddev={1.1 * _state_2.sensitivity()})")
 
     # Example 3: Rescale to unit norm
     print("\n3. Unit norm (rescale_to_unit_norm=True):")
     _grad_fn_3, _state_3 = clipped_grad(loss_fn, l2_clip_norm=5.0, rescale_to_unit_norm=True)
-    _noise_fn, _nstate = gaussian_noise(stddev=1.1 * _state_3.sensitivity())
+    key = training_key(base_seed=42, step=2)
+    _noise_fn, _nstate = gaussian_noise(stddev=1.1 * _state_3.sensitivity(), key=key)
     print(f"   ✓ Sensitivity: {_state_3.sensitivity()}")  # Should be 1.0
     print(f"   ✓ Noise: Gaussian(stddev={1.1 * _state_3.sensitivity()})")
 
     # Example 4: Bounded Gaussian noise (truncated normal)
     print("\n4. Bounded Gaussian (Chen & Hale, 2024):")
+    key = training_key(base_seed=42, step=3)
     _noise_fn, _nstate = bounded_gaussian_noise(
-        stddev=1.1 * _state.sensitivity(), bounds=(-3.0, 3.0)
+        stddev=1.1 * _state.sensitivity(), bounds=(-3.0, 3.0), key=key
     )
     print(
         f"   ✓ Noise: BoundedGaussian(stddev={1.1 * _state.sensitivity()}, bounds=(-3, 3))"
@@ -155,7 +168,8 @@ def demo_research_flexibility():
 
     # Example 5: Future - swap clipping mechanism
     print("\n5. Future: Swappable mechanisms:")
-    print("   # noise_fn = correlated_gaussian_noise(stddev=1.1, rank=10)")
+    print("   # key = training_key(base_seed=42, step=step)")
+    print("   # noise_fn = correlated_gaussian_noise(stddev=1.1, rank=10, key=key)")
     print("   # grad_fn = per_layer_clipped_grad(loss_fn, clip_norms={...})")
     print("   # grad_fn = adaptive_clipper(loss_fn, target_quantile=0.5)")
 

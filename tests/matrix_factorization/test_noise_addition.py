@@ -36,7 +36,7 @@ class TestDenseMatrixFactorizationNoise:
     def test_invalid_ndim(self):
         grad = torch.zeros(10)
         with pytest.raises(ValueError, match="2D"):
-            custom_mf_noise(grad, torch.ones(5), stddev=1.0)
+            custom_mf_noise(grad, torch.ones(5), stddev=1.0, key=key(42))
 
 
 class TestStreamingMatrixFactorizationNoise:

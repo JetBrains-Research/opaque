@@ -6,6 +6,7 @@ import pytest
 import torch
 
 from opaque.clipping.adaptive import adaptive_clipped_grad
+from opaque.random import key
 
 
 class TestAdaptiveClippedGrad:
@@ -345,7 +346,10 @@ class TestAdaptiveClippedGrad:
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Add noise scaled to current clip norm
-        noise_fn, noise_state = gaussian_noise(stddev=1.1 * clip_state.clip_norm)
+        noise_fn, noise_state = gaussian_noise(
+            stddev=1.1 * clip_state.clip_norm,
+            key=key(0),
+        )
         noisy_grads, noise_state = noise_fn(grads, noise_state)
 
         assert noisy_grads.shape == grads.shape
