@@ -9,11 +9,11 @@ Supports distributed training with automatic environment detection:
 """
 
 from collections.abc import Iterator
+from typing import Literal
 
 import numpy as np
 
 from opaque.sampling.poisson import PoissonSampler
-from opaque.sampling.types import SamplingMode
 
 
 class TruncatedPoissonSampler(PoissonSampler):
@@ -35,8 +35,10 @@ class TruncatedPoissonSampler(PoissonSampler):
         max_batch_size: Maximum batch size (caps Poisson samples)
         num_epochs: Number of epochs to iterate over
         generator: Optional numpy random generator for reproducibility
-        mode: Sampling mode for distributed training. If None (default), automatically
-            selects SHARDED for distributed (world_size > 1) or INDEPENDENT for single device
+        distributed: Distributed handling mode:
+            - "auto": auto-select based on dist init
+            - True: force sharded sampling (requires torch.distributed initialized)
+            - False: force independent sampling (even if distributed is initialized)
 
     Example:
         >>> dataset = MyDataset(...)
@@ -57,8 +59,8 @@ class TruncatedPoissonSampler(PoissonSampler):
         - Provides tighter privacy bounds than standard Poisson
         - Use opaque.accounting.compose_truncated_poisson_gaussian() for accounting
         - If sample_rate * len(dataset) << max_batch_size, rarely truncates
-        - **Auto mode selection**: Detects distributed env and uses SHARDED by default
-        - In SHARDED mode, each worker truncates its shard sample independently
+        - **Auto mode selection**: Detects distributed env and uses sharded sampling by default
+        - In sharded sampling, each worker truncates its shard sample independently
     """
 
     def __init__(
@@ -68,9 +70,15 @@ class TruncatedPoissonSampler(PoissonSampler):
         max_batch_size: int,
         num_epochs: int = 1,
         generator: np.random.Generator | None = None,
-        mode: SamplingMode | None = None,
+        distributed: Literal["auto"] | bool = "auto",
     ):
-        super().__init__(data_source, sample_rate, num_epochs, generator, mode)
+        super().__init__(
+            data_source,
+            sample_rate,
+            num_epochs,
+            generator,
+            distributed,
+        )
 
         if max_batch_size < 1:
             raise ValueError(f"max_batch_size must be >= 1, got {max_batch_size}")

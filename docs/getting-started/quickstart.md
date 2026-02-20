@@ -80,7 +80,9 @@ noise_fn, noise_state = gaussian_noise(
 )
 learning_rate = 0.01
 
-accountant = acc.Accountant(budget=acc.epsilon_budget(epsilon, delta=delta))
+from opaque.accounting.accountant import Accountant
+
+accountant = Accountant(budget=acc.epsilon_budget(epsilon, delta=delta))
 step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
 
 for epoch in range(num_epochs):
@@ -188,7 +190,9 @@ Call it with explicit state: `grads, clip_state = grad_fn(params, batch, state=c
 step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
 
 # Track during training with Accountant
-accountant = acc.Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))
+from opaque.accounting.accountant import Accountant
+
+accountant = Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))
 for i in range(num_steps):
     accountant = accountant | step
     eps = accountant.epsilon_at(delta)
@@ -203,7 +207,9 @@ Opaque's accounting uses **composable `DpProcess` objects**:
 The `Accountant` class provides step-by-step tracking with optional budget checking:
 
 ```python
-accountant = acc.Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))
+from opaque.accounting.accountant import Accountant
+
+accountant = Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))
 step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
 
 for i in range(num_steps):

@@ -1,7 +1,6 @@
 """Type definitions for clipping operations."""
 
 from abc import ABC, abstractmethod
-from collections import namedtuple
 from dataclasses import dataclass
 from enum import Enum
 
@@ -133,39 +132,8 @@ class FixedClipState(ClipState):
                 )
 
 
-ClipPytreeAux = namedtuple("ClipPytreeAux", ["norm"])
-"""Auxiliary outputs from clip_pytree.
-
-Fields:
-    norm: The L2 norm of the original (unclipped) pytree.
-"""
-
-ClippedFunAux = namedtuple("ClippedFunAux", ["user_aux", "norms"])
-"""Auxiliary outputs from clipped_fun.
-
-Fields:
-    user_aux: Auxiliary data returned by the user's function (if has_aux=True), else None.
-    norms: Per-example L2 norms before clipping (if return_norms=True), else None.
-"""
-
-ClippedGradAux = namedtuple("ClippedGradAux", ["loss_values", "grad_norms", "user_aux"])
-"""Auxiliary outputs from clipped_grad and adaptive_clipped_grad.
-
-Fields:
-    loss_values: Per-example loss values (if return_values=True), else None.
-    grad_norms: Per-example gradient L2 norms before clipping (if return_grad_norms=True), else None.
-    user_aux: Auxiliary data returned by the user's loss function (if has_aux=True), else None.
-"""
-
-# Legacy alias for backward compatibility during migration
-AuxiliaryOutput = ClippedGradAux
-
 __all__ = [
     "ClipState",
     "FixedClipState",
     "NeighboringRelation",
-    "ClipPytreeAux",
-    "ClippedFunAux",
-    "ClippedGradAux",
-    "AuxiliaryOutput",  # Legacy alias
 ]

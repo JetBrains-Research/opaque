@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import functools
+from dataclasses import dataclass
+
 from opaque.accounting.base import DpProcess, Pld
 
 
+@dataclass(frozen=True, slots=True)
 class CachedProcess(DpProcess):
-    """Mutable caching wrapper around a :class:`DpProcess`.
+    """Caching wrapper around a :class:`DpProcess`.
 
     Created by :func:`~opaque.accounting.composition.cached`.
     Computes the PLD on the first :meth:`pld` call and caches it.
@@ -14,25 +18,19 @@ class CachedProcess(DpProcess):
 
     Acts as an **opaque barrier** for merge optimization:
     :meth:`_leaf_and_count` returns ``(self, 1)``, preventing the
-    optimizer from looking through the cache boundary.
-
-    This is the only mutable :class:`DpProcess` subclass.
+    optimizer from looking through the cache boundary. Cached wrappers
+    can still merge via structural equality of their inner processes.
     """
 
-    def __init__(self, inner: DpProcess) -> None:
-        self.inner = inner
-        self._cached_pld: Pld | None = None
+    inner: DpProcess
 
+    @functools.lru_cache(maxsize=1)
     def pld(self) -> Pld:
-        if self._cached_pld is None:
-            self._cached_pld = self.inner.pld()
-        return self._cached_pld
+        return self.inner.pld()
 
-    def __eq__(self, other: object) -> bool:
-        return self is other
+    def state_dict(self) -> dict[str, object]:
+        return {
+            "type": "CachedProcess",
+            "inner": self.inner.state_dict(),
+        }
 
-    def __hash__(self) -> int:
-        return id(self)
-
-    def __repr__(self) -> str:
-        return f"CachedProcess({self.inner!r})"

@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 import opaque_accounting as _native
 
-from opaque.accounting.base import DiscretizationConfig, DpProcess, Pld
-from opaque.accounting.discretization import resolve_pld_config
+from opaque.accounting.base import (
+    DiscretizationConfig,
+    DpProcess,
+    Pld,
+)
+from opaque.accounting.discretization import (
+    resolve_pld_config,
+    serialize_config,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +26,12 @@ class Gaussian(DpProcess):
 
     def pld(self) -> Pld:
         return _native.gaussian_pld(self.noise_multiplier, config=self.config)
+
+    def state_dict(self) -> dict[str, object]:
+        d = asdict(self)
+        d["type"] = "Gaussian"
+        d["config"] = serialize_config(self.config)
+        return d
 
 
 def gaussian(

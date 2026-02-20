@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 import opaque_accounting as _native
 
-from opaque.accounting.base import DiscretizationConfig, DpProcess, Pld
-from opaque.accounting.discretization import resolve_pld_config
+from opaque.accounting.base import (
+    DiscretizationConfig,
+    DpProcess,
+    Pld,
+)
+from opaque.accounting.discretization import (
+    resolve_pld_config,
+    serialize_config,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +29,12 @@ class Identity(DpProcess):
 
     def pld(self) -> Pld:
         return _native.identity_pld(config=self.config)
+
+    def state_dict(self) -> dict[str, object]:
+        d = asdict(self)
+        d["type"] = "Identity"
+        d["config"] = serialize_config(self.config)
+        return d
 
 
 def identity(

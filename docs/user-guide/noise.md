@@ -256,7 +256,9 @@ def noise_schedule(step, total_steps):
     return initial_noise + progress * (final_noise - initial_noise)
 
 # Track composed privacy across steps with Accountant
-acct = acc.Accountant()
+from opaque.accounting.accountant import Accountant
+
+acct = Accountant()
 
 for step in range(num_steps):
     grads, clip_state = dp_grad_fn(params, batch, state=clip_state)

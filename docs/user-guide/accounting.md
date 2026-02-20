@@ -8,6 +8,7 @@ bounds.
 
 ```python
 import opaque.accounting as acc
+from opaque.accounting.accountant import Accountant
 
 step = acc.poisson(acc.gaussian(0.8), sample_rate=0.01)
 training = step * 1000
@@ -101,22 +102,22 @@ proc = acc.gaussian(0.5)
 eps = proc.epsilon_at(1e-5)
 ```
 
-### `acc.accumulate()` -- Gradient Accumulation
+### `acc.parallel_poisson()` -- Parallel Poisson Sampling
 
-Microbatching: process gradients in sub-batches, accumulate clipped gradients,
-add noise once.
+Parallel Poisson sampling models independent Poisson sampling on multiple
+workers, where the same example can appear on multiple devices.
 
 ```python
-step = acc.accumulate(
+step = acc.parallel_poisson(
     acc.poisson(acc.gaussian(0.5), 0.01),
-    microbatches=4,
+    num_workers=4,
 )
 ```
 
 ### `acc.adaclip()` -- Adaptive Clipping
 
 Accounts for the extra privacy cost of noisy quantile estimation (Andrew et
-al. 2021). Returns a Gaussian with reduced effective noise multiplier.
+al. 2021). Returns an AdaClip process with reduced effective noise multiplier.
 
 ```python
 step = acc.poisson(
@@ -163,7 +164,7 @@ Each compose operation returns a new `Accountant` (the original is unchanged).
 import opaque.accounting as acc
 
 step = acc.poisson(acc.gaussian(0.5), 0.01)
-acct = acc.Accountant()
+acct = Accountant()
 
 for i in range(num_steps):
     acct = acct | step
@@ -178,9 +179,10 @@ Pass a calibration budget to enable automatic budget checking:
 
 ```python
 from opaque.accounting import calibration as cal
+from opaque.accounting.accountant import Accountant
 
 budget = cal.epsilon_budget(3.0, delta=1e-5)
-acct = acc.Accountant(budget=budget)
+acct = Accountant(budget=budget)
 step = acc.poisson(acc.gaussian(0.5), 0.01)
 
 for i in range(num_steps):
@@ -195,7 +197,7 @@ for i in range(num_steps):
 Compose different phases in a single accounting session:
 
 ```python
-acct = acc.Accountant()
+acct = Accountant()
 
 warmup_step = acc.poisson(acc.gaussian(0.3), 0.01)
 for _ in range(100):
@@ -250,6 +252,15 @@ result = cal.calibrate(
 calibrated parameter (typically noise multiplier) increases. The binary search
 direction adapts automatically.
 
+## Serialization
+
+Processes expose `state_dict()` for JSON-friendly serialization:
+
+```python
+step = acc.poisson(acc.gaussian(0.5), 0.01)
+state = step.state_dict()
+```
+
 ## Privacy Amplification Through Sampling
 
 Subsampling amplifies privacy -- the same noise gives stronger guarantees:
@@ -269,7 +280,9 @@ steps.
 Override default PLD discretization for faster or more precise computation:
 
 ```python
-cfg = acc.DiscretizationConfig(discretization=1e-3)  # faster, coarser
+from opaque.accounting.discretization import DiscretizationConfig
+
+cfg = DiscretizationConfig(discretization=1e-3)  # faster, coarser
 proc = acc.gaussian(0.5, discretization=cfg)
 ```
 

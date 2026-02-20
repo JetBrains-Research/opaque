@@ -19,3 +19,10 @@ class Repeated(DpProcess):
 
     def pld(self) -> Pld:
         return self.inner.pld().self_compose(self.count)
+
+    def state_dict(self) -> dict[str, object]:
+        return {
+            "type": "Repeated",
+            "count": self.count,
+            "inner": self.inner.state_dict(),
+        }

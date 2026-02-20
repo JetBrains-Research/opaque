@@ -11,6 +11,7 @@ This example shows:
 
 import opaque.accounting as acc
 from opaque.accounting import calibration as cal
+from opaque.accounting.discretization import DiscretizationConfig
 
 print("=" * 70)
 print("OPAQUE ACCOUNTING: Complete API Demonstration")
@@ -139,9 +140,9 @@ print(f"Poisson:            {poiss}")
 trunc = acc.truncated_poisson(acc.gaussian(1.0), 0.01, batch_size_cap=256, dataset_size=10000)
 print(f"Truncated Poisson:  {trunc}")
 
-# Gradient accumulation (microbatching)
-accum = acc.accumulate(acc.poisson(acc.gaussian(1.0), 0.01), microbatches=4)
-print(f"Accumulate:         {accum}")
+# Parallel Poisson (multi-worker sampling)
+parallel = acc.parallel_poisson(acc.poisson(acc.gaussian(1.0), 0.01), num_workers=4)
+print(f"Parallel Poisson:   {parallel}")
 
 # Adaptive clipping (Andrew et al. 2021)
 adaclip = acc.adaclip(acc.gaussian(1.0), quantile_noise_std=50.0)
@@ -172,7 +173,7 @@ eps_coarse = coarse.epsilon_at(1e-5)
 print(f"Coarse  (disc=1e-3): eps={eps_coarse:.6f}")
 
 # Fine precision (1e-5, maximum accuracy)
-cfg_fine = acc.DiscretizationConfig(discretization=1e-5, max_grid_size=1_000_000)
+cfg_fine = DiscretizationConfig(discretization=1e-5, max_grid_size=1_000_000)
 fine = acc.poisson(acc.gaussian(1.0, discretization=cfg_fine), 0.01)
 eps_fine = fine.epsilon_at(1e-5)
 print(f"Fine    (disc=1e-5): eps={eps_fine:.6f}")

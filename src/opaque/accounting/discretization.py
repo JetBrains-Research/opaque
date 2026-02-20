@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import opaque_accounting as _native
 
 DiscretizationConfig = _native.DiscretizationConfig
@@ -11,6 +13,8 @@ __all__ = [
     "set_discretization",
     "get_discretization",
     "resolve_pld_config",
+    "serialize_config",
+    "deserialize_config",
 ]
 
 # Module-level discretization default
@@ -92,3 +96,30 @@ def resolve_pld_config(
         return DiscretizationConfig(discretization=float(config))
     else:
         return config
+
+def serialize_config(
+    config: DiscretizationConfig | None,
+) -> dict[str, float | int | bool] | None:
+    """Serialize a DiscretizationConfig to a plain dict, or None."""
+    if config is None:
+        return None
+    return {
+        "discretization": config.discretization,
+        "log_mass_truncation_bound": config.log_mass_truncation_bound,
+        "pessimistic_estimate": config.pessimistic_estimate,
+        "max_grid_size": config.max_grid_size,
+    }
+
+
+def deserialize_config(
+    data: Mapping[str, float | int | bool] | None,
+) -> DiscretizationConfig | None:
+    """Deserialize a DiscretizationConfig from a dict, or return None."""
+    if data is None:
+        return None
+    return DiscretizationConfig(
+        discretization=float(data["discretization"]),
+        log_mass_truncation_bound=float(data["log_mass_truncation_bound"]),
+        pessimistic_estimate=bool(data["pessimistic_estimate"]),
+        max_grid_size=int(data["max_grid_size"]),
+    )

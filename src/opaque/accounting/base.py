@@ -36,13 +36,20 @@ be reduced to cheaper operations using structural equality (``==``):
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import TypeAlias
 
 import opaque_accounting as _native
 
-Pld = _native.Pld
-DiscretizationConfig = _native.DiscretizationConfig
+from opaque.accounting.discretization import deserialize_config
+
+Pld: TypeAlias = _native.Pld
+DiscretizationConfig: TypeAlias = _native.DiscretizationConfig
 
 __all__ = ["DpProcess", "Pld", "DiscretizationConfig"]
+
+# Global registry of DpProcess subclasses for polymorphic deserialization.
+# Automatically populated when each subclass is defined via __init_subclass__.
+_PROCESS_REGISTRY: dict[str, type[DpProcess]] = {}
 
 
 class DpProcess(ABC):
@@ -67,6 +74,11 @@ class DpProcess(ABC):
         eps = training.epsilon_at(1e-5)
     """
 
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        """Auto-register subclass in the global DpProcess registry."""
+        super().__init_subclass__(**kwargs)
+        _PROCESS_REGISTRY[cls.__name__] = cls
+
     @abstractmethod
     def pld(self) -> Pld:
         """Compute the Privacy Loss Distribution.
@@ -75,6 +87,52 @@ class DpProcess(ABC):
         :func:`~opaque.accounting.composition.cached` to memoize.
         """
         ...
+
+    @abstractmethod
+    def state_dict(self) -> dict[str, object]:
+        """Serialize this process into a plain dict.
+
+        The returned structure should be JSON-serializable and must not
+        include cached or computed values (e.g., PLDs).
+        """
+        ...
+
+    @classmethod
+    def load_state_dict(cls, data: dict[str, object]) -> DpProcess:
+        """Deserialize a DpProcess from a state dict.
+
+        Recursively reconstructs the process tree using the auto-populated
+        _PROCESS_REGISTRY. Each subclass registers itself via __init_subclass__.
+
+        Args:
+            data: Dictionary produced by :meth:`state_dict`.
+
+        Returns:
+            Reconstructed DpProcess (any subclass).
+
+        Raises:
+            ValueError: If type tag is unknown.
+        """
+        # Extract type tag and make mutable copy
+        data = dict(data)
+        t = data.pop("type")
+
+        # Look up constructor
+        process_cls = _PROCESS_REGISTRY.get(t)
+        if process_cls is None:
+            raise ValueError(f"Unknown process type: {t}")
+
+        # Recursively deserialize nested processes
+        for key in ["inner", "left", "right"]:
+            if key in data and isinstance(data[key], dict):
+                data[key] = cls.load_state_dict(data[key])
+
+        # Deserialize config if present
+        if "config" in data and data["config"] is not None:
+            data["config"] = deserialize_config(data["config"])
+
+        # Instantiate using dataclass constructor
+        return process_cls(**data)
 
     # -- Privacy metrics (compute PLD each time) -----------------------------
 

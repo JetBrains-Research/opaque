@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 import opaque_accounting as _native
 
-from opaque.accounting.base import DiscretizationConfig, DpProcess, Pld
-from opaque.accounting.discretization import resolve_pld_config
+from opaque.accounting.base import (
+    DiscretizationConfig,
+    DpProcess,
+    Pld,
+)
+from opaque.accounting.discretization import (
+    resolve_pld_config,
+    serialize_config,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +27,12 @@ class EpsDelta(DpProcess):
 
     def pld(self) -> Pld:
         return _native.eps_delta_pld(self.epsilon, self.delta, config=self.config)
+
+    def state_dict(self) -> dict[str, object]:
+        d = asdict(self)
+        d["type"] = "EpsDelta"
+        d["config"] = serialize_config(self.config)
+        return d
 
 
 def eps_delta(

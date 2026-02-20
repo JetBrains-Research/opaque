@@ -68,6 +68,8 @@ __all__ = [
     "reduce_scalar",
     # Tensor gathering
     "gather_tensors",
+    "gather_pytree",
+    "gather_pytree_tensors",
     # State synchronization
     "sync_state",
 ]
@@ -222,4 +224,10 @@ from .gradients import (  # noqa: E402
     reduce_pytree,
     sum_gradients,
 )
-from .state import gather_tensors, reduce_scalar, sync_state  # noqa: E402
+from .state import (  # noqa: E402
+    gather_pytree,
+    gather_pytree_tensors,
+    gather_tensors,
+    reduce_scalar,
+    sync_state,
+)

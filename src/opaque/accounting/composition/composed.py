@@ -16,3 +16,10 @@ class Composed(DpProcess):
 
     def pld(self) -> Pld:
         return self.left.pld().compose(self.right.pld())
+
+    def state_dict(self) -> dict[str, object]:
+        return {
+            "type": "Composed",
+            "left": self.left.state_dict(),
+            "right": self.right.state_dict(),
+        }

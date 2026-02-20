@@ -43,8 +43,10 @@ sampler = PoissonSampler(dataset_size, sample_rate=sample_rate)
 dataloader = torch.utils.data.DataLoader(dataset, batch_sampler=sampler)
 
 # --- Training loop with per-step accounting ---
+from opaque.accounting.accountant import Accountant
+
 step_proc = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
-acct = acc.Accountant(budget=cal.epsilon_budget(3.0, delta=1e-5))
+acct = Accountant(budget=cal.epsilon_budget(3.0, delta=1e-5))
 
 for batch in dataloader:
     grads, clip_state = grad_fn(params, batch, state=clip_state)
@@ -143,7 +145,9 @@ adv = training.advantage()
 Use `Accountant` to track privacy spend per step during training:
 
 ```python
-acct = acc.Accountant(budget=cal.epsilon_budget(3.0, delta=1e-5))
+from opaque.accounting.accountant import Accountant
+
+acct = Accountant(budget=cal.epsilon_budget(3.0, delta=1e-5))
 for batch in dataloader:
     # ... train ...
     acct = acct | step

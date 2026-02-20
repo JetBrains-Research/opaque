@@ -5,33 +5,33 @@ to bounded L2 sensitivity, a key requirement for DP-SGD.
 """
 
 from opaque.clipping.adaptive import (
+    AdaptiveClippedGradAux,
     AdaptiveClipState,
     adaptive_clipped_grad,
+    sync_adaptive_clip_state,
 )
-from opaque.clipping.clipped_fun import clipped_fun
-from opaque.clipping.clipped_grad import clipped_grad
+from opaque.clipping.clipped_fun import ClippedFunAux, clipped_fun
+from opaque.clipping.clipped_grad import ClippedGradAux, clipped_grad, sync_clip_state
 from opaque.clipping.pytree import clip_pytree
-from opaque.clipping.types import (
-    AuxiliaryOutput,
-    ClippedFunAux,
-    ClippedGradAux,
-    ClipPytreeAux,
-    ClipState,
-    FixedClipState,
-    NeighboringRelation,
-)
+from opaque.clipping.types import ClipState, FixedClipState, NeighboringRelation
 
 __all__ = [
+    # Core clipping functions
     "clip_pytree",
     "clipped_fun",
     "clipped_grad",
     "adaptive_clipped_grad",
+    # State types
     "ClipState",
     "FixedClipState",
     "AdaptiveClipState",
-    "ClipPytreeAux",
+    # Auxiliary outputs
     "ClippedFunAux",
     "ClippedGradAux",
-    "AuxiliaryOutput",  # Legacy alias
+    "AdaptiveClippedGradAux",
+    # Synchronization helpers
+    "sync_clip_state",
+    "sync_adaptive_clip_state",
+    # Types
     "NeighboringRelation",
 ]

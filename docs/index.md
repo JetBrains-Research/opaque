@@ -50,8 +50,10 @@ sampler = PoissonSampler(dataset_size, sample_rate=sample_rate)
 dataloader = torch.utils.data.DataLoader(dataset, batch_sampler=sampler)
 
 # 4. Training loop with per-step accounting
+from opaque.accounting.accountant import Accountant
+
 step_proc = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
-acct = acc.Accountant(budget=cal.epsilon_budget(3.0, delta=1e-5))
+acct = Accountant(budget=cal.epsilon_budget(3.0, delta=1e-5))
 
 for batch in dataloader:
     grads, clip_state = grad_fn(params, batch, state=clip_state)

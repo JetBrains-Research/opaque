@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive documentation refresh for all user-facing docs
 - Cross-linking between documentation sections
 
+### Changed
+
+- Accounting: removed `accumulate()` in favor of `parallel_poisson()`
+- Accounting: `adaclip()` now returns an `AdaClip` process (class in transformations submodule)
+- Accounting: all DP processes implement `state_dict()` for serialization
+- Accounting: top-level `opaque.accounting` exports functions only
+
 ## [0.2.0] - 2025-11-14
 
 **Complete DP-SGD library with functional API, Rust-based accounting, and HuggingFace integration.**

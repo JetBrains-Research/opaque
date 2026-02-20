@@ -79,7 +79,9 @@ Controls PLD discretization precision.
 | `max_grid_size`             | `10_000_000` | Coarsen grid if it exceeds this many bins        |
 
 ```python
-cfg = acc.DiscretizationConfig(discretization=1e-3)
+from opaque.accounting.discretization import DiscretizationConfig
+
+cfg = DiscretizationConfig(discretization=1e-3)
 proc = acc.gaussian(0.8, discretization=cfg)
 ```
 
@@ -133,27 +135,27 @@ batch = 256
 step = acc.truncated_poisson(acc.gaussian(0.8), batch / n, batch, n)
 ```
 
-### `accumulate(inner, microbatches) -> DpProcess`
+### `parallel_poisson(inner, num_workers) -> DpProcess`
 
-Gradient accumulation (microbatching). Processes gradients in `microbatches`
-sub-batches, accumulates clipped gradients, then adds noise once. `inner` must
-be a `Poisson` process.
+Parallel Poisson subsampling. Models independent Poisson sampling on
+multiple workers, where the same example can appear on multiple devices.
+`inner` must be a `Poisson` process.
 
 - `inner` (Poisson): Poisson-subsampled process (from `poisson()`)
-- `microbatches` (int): Number of micro-batches per step
+- `num_workers` (int): Number of parallel workers sampling independently
 
 ```python
-step = acc.accumulate(
+step = acc.parallel_poisson(
     acc.poisson(acc.gaussian(0.5), 0.01),
-    microbatches=4,
+    num_workers=4,
 )
 ```
 
 ### `adaclip(inner, quantile_noise_std) -> DpProcess`
 
 Adaptive clipping (Andrew et al. 2021). Accounts for the extra privacy cost of
-noisy quantile estimation using the combined sensitivity formula. Returns a
-`Gaussian` with the effective (reduced) noise multiplier, composable with
+noisy quantile estimation using the combined sensitivity formula. Returns an
+`AdaClip` process with the effective noise multiplier, composable with
 `poisson()` or `truncated_poisson()`.
 
 - `inner` (Gaussian): Base Gaussian mechanism (from `gaussian()`)
@@ -213,6 +215,17 @@ adv = training.advantage()         # reuses cached PLD
 
 ---
 
+## Serialization
+
+All processes implement `state_dict()` for JSON-friendly serialization.
+
+```python
+step = acc.poisson(acc.gaussian(0.5), 0.01)
+state = step.state_dict()
+```
+
+---
+
 ## Accountant
 
 The `Accountant` class tracks accumulated privacy loss across a training loop.
@@ -223,7 +236,9 @@ Merge optimization is automatic. Composing the same `step` repeatedly in a loop
 produces a single `Repeated` node internally.
 
 ```python
-acct = acc.Accountant()
+from opaque.accounting.accountant import Accountant
+
+acct = Accountant()
 step = acc.poisson(acc.gaussian(0.5), 0.01)
 
 for i in range(num_steps):
@@ -240,9 +255,10 @@ Pass an optional `Budget` from the calibration module to enable budget checking:
 
 ```python
 from opaque.accounting import calibration as cal
+from opaque.accounting.accountant import Accountant
 
 budget = cal.epsilon_budget(3.0, delta=1e-5)
-acct = acc.Accountant(budget=budget)
+acct = Accountant(budget=budget)
 step = acc.poisson(acc.gaussian(0.5), 0.01)
 
 for i in range(num_steps):

@@ -1,9 +1,17 @@
 """Core clipping operations for PyTrees."""
 
+from collections import namedtuple
+
 import torch
 
-from opaque.clipping.types import ClipPytreeAux
 from opaque.utils.pytree import global_norm, tree_map
+
+ClipPytreeAux = namedtuple("ClipPytreeAux", ["norm"])
+"""Auxiliary outputs from clip_pytree.
+
+Fields:
+    norm: The L2 norm of the original (unclipped) pytree.
+"""
 
 
 def clip_pytree(
@@ -85,4 +93,4 @@ def clip_pytree(
     return clipped, ClipPytreeAux(norm=orig_norm)
 
 
-__all__ = ["clip_pytree"]
+__all__ = ["clip_pytree", "ClipPytreeAux"]

@@ -5,6 +5,6 @@ mechanism with adjusted parameters. Unlike amplification (which wraps a
 mechanism with subsampling), transformations change the mechanism itself.
 """
 
-from opaque.accounting.transformations.adaclip import adaclip
+from opaque.accounting.transformations.adaclip import AdaClip, adaclip
 
-__all__ = ["adaclip"]
+__all__ = ["AdaClip", "adaclip"]

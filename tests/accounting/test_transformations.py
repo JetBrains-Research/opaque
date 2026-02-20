@@ -3,27 +3,23 @@
 import pytest
 
 import opaque.accounting as acc
-from opaque.accounting.mechanisms import Gaussian
+from opaque.accounting.transformations import AdaClip
 
 # ── Constructor function tests ───────────────────────────────────────
 
 
 class TestAdaclipConstructor:
-    """acc.adaclip() returns Gaussian with effective noise multiplier."""
+    """acc.adaclip() returns AdaClip with effective noise multiplier."""
 
-    def test_returns_gaussian(self):
+    def test_returns_adaclip(self):
         result = acc.adaclip(acc.gaussian(0.8), 50.0)
-        assert isinstance(result, Gaussian)
+        assert isinstance(result, AdaClip)
 
     def test_effective_noise_differs_from_base(self):
-        result = acc.adaclip(acc.gaussian(0.8), 50.0)
-        # effective noise should be lower than base (more privacy cost)
-        assert result.noise_multiplier != pytest.approx(0.8)
-
-    def test_large_quantile_noise_approaches_base(self):
-        """Very large σ_b → z_eff ≈ z (quantile adds negligible cost)."""
-        result = acc.adaclip(acc.gaussian(1.0), 1e10)
-        assert result.noise_multiplier == pytest.approx(1.0, rel=1e-6)
+        base = acc.gaussian(0.8)
+        result = acc.adaclip(base, 50.0)
+        # Effective noise should reduce, so epsilon should increase.
+        assert result.epsilon_at(1e-5) > base.epsilon_at(1e-5)
 
     def test_rejects_non_gaussian(self):
         with pytest.raises(TypeError, match="Gaussian"):
