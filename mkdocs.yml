@@ -87,6 +87,8 @@ nav:
   - User Guide:
     - Overview: user-guide/index.md
     - Differential Privacy Basics: user-guide/dp-basics.md
+    - Random Number Generation: user-guide/rng-key.md
+    - RngKey Quick Reference: user-guide/rng-key-quickref.md
     - Per-Sample Gradient Clipping: user-guide/clipping.md
     - Noise Addition: user-guide/noise.md
     - Privacy Accounting: user-guide/accounting.md
