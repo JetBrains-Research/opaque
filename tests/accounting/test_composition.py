@@ -77,19 +77,19 @@ class TestRepeated:
 
 
 class TestCachedProcess:
-    """CachedProcess — mutable caching wrapper."""
+    """CachedProcess — caching wrapper."""
 
     def test_identity_equality(self):
-        """Two CachedProcesses with same inner are NOT equal."""
+        """Two CachedProcesses with same inner are equal."""
         inner = acc.gaussian(0.8)
         a = CachedProcess(inner)
         b = CachedProcess(inner)
-        assert a != b
-        assert a == a  # identity
+        assert a == b
 
-    def test_hash_is_id(self):
+    def test_frozen(self):
         cp = CachedProcess(acc.gaussian(0.8))
-        assert hash(cp) == id(cp)
+        with pytest.raises(FrozenInstanceError):
+            cp.inner = acc.gaussian(1.0)  # type: ignore[misc]
 
     def test_caches_pld(self):
         """Second pld() call returns cached result."""
@@ -104,13 +104,13 @@ class TestCachedProcess:
         assert math.isfinite(eps) and eps > 0
 
     def test_opaque_merge_barrier(self):
-        """CachedProcess prevents merge optimization."""
+        """CachedProcess merges equal inner via structural equality."""
         step = acc.gaussian(0.8)
         cached_a = CachedProcess(step)
         cached_b = CachedProcess(step)
         result = cached_a | cached_b
-        # Should NOT merge into Repeated because CachedProcess uses identity equality
-        assert isinstance(result, Composed)
+        assert isinstance(result, Repeated)
+        assert result.count == 2
 
     def test_repr(self):
         cp = CachedProcess(acc.gaussian(0.8))

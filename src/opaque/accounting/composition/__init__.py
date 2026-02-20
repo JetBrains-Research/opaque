@@ -68,7 +68,9 @@ def cached(process: DpProcess) -> CachedProcess:
 
     ``CachedProcess`` also acts as an **opaque merge barrier**: the
     composition optimizer will not look through a cached node, so
-    the cached PLD is reused as-is during further composition.
+    the cached PLD is reused as-is during further composition. Cached
+    wrappers can still merge via structural equality of their inner
+    processes.
 
     Example::
 

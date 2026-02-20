@@ -60,6 +60,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 ```python
 import torch
 import opaque.accounting as acc
+from opaque.accounting.base import DpProcess
 from opaque.accounting import calibration as cal
 from opaque import clipped_grad, gaussian_noise
 
@@ -79,8 +80,10 @@ grad_fn, clip_state = clipped_grad(
 
 # 3. Training loop with per-step accounting
 noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier)
+from opaque.accounting.accountant import Accountant
+
 step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate=0.01)
-accountant = acc.Accountant(budget=cal.epsilon_budget(3.0, delta=1e-5))
+accountant = Accountant(budget=cal.epsilon_budget(3.0, delta=1e-5))
 
 for i in range(1000):
     grads, clip_state = grad_fn(params, batch, state=clip_state)
@@ -120,7 +123,7 @@ epsilon = accountant.epsilon_at(1e-5)
 | `gaussian()`              | Gaussian mechanism                | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `poisson()`               | Poisson-subsampled Gaussian       | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `truncated_poisson()`     | Truncated Poisson Gaussian        | [Guide](../user-guide/accounting.md#mechanisms)                         |
-| `accumulate()`            | Gradient accumulation             | [Guide](../user-guide/accounting.md#mechanisms)                         |
+| `parallel_poisson()`      | Parallel Poisson subsampling      | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `adaclip()`               | Adaptive clipping mechanism       | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `eps_delta()`             | Fixed (ε, δ) guarantee            | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `identity()`              | Zero privacy loss                 | [Guide](../user-guide/accounting.md#mechanisms)                         |
@@ -190,7 +193,7 @@ import opaque.accounting as acc
 PyTree = dict[str, torch.Tensor] | tuple[torch.Tensor, ...]
 
 # DpProcess: Composable privacy process (from Rust PLD engine)
-process: acc.DpProcess = acc.poisson(acc.gaussian(1.1), 0.01) * 1000
+process: DpProcess = acc.poisson(acc.gaussian(1.1), 0.01) * 1000
 
 # Generator for reproducible noise
 Generator = torch.Generator | None

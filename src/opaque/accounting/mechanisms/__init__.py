@@ -8,14 +8,10 @@ to memoize.
 Constructor functions (e.g. ``gaussian()``) validate inputs,
 resolve discretization config, and return the appropriate type.
 
-For subsampling amplification (Poisson, truncated Poisson, accumulated),
+For subsampling amplification (Poisson, truncated Poisson, parallel Poisson),
 see :mod:`opaque.accounting.amplification`.
 """
 
-from opaque.accounting.mechanisms.bounded_gaussian import (
-    BoundedGaussian,
-    bounded_gaussian,
-)
 from opaque.accounting.mechanisms.eps_delta import (
     EpsDelta,
     eps_delta,
@@ -31,12 +27,10 @@ from opaque.accounting.mechanisms.identity import (
 
 __all__ = [
     # Dataclass types
-    "BoundedGaussian",
     "Gaussian",
     "EpsDelta",
     "Identity",
     # Constructor functions
-    "bounded_gaussian",
     "gaussian",
     "eps_delta",
     "identity",

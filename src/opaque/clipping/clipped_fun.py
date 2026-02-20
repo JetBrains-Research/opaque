@@ -1,14 +1,31 @@
 """Per-example clipping and summing for arbitrary functions."""
 
 from collections.abc import Callable
+from typing import Any, Literal, NamedTuple
 
 import torch
 from torch.func import vmap as _vmap
 
 from opaque.clipping._helpers import normalize_to_tuple
 from opaque.clipping.pytree import clip_pytree
-from opaque.clipping.types import ClipPytreeAux, FixedClipState
-from opaque.utils.pytree import tree_map
+from opaque.clipping.types import FixedClipState
+from opaque.utils.pytree import global_norm, tree_map
+
+
+class ClippedFunAux(NamedTuple):
+    """Function-level auxiliary outputs from clipped_fun.
+
+    Fields:
+        values: Per-example function values before clipping.
+        norms: Per-example L2 norms before clipping.
+        clipped_norms: Per-example L2 norms after clipping.
+        aux: Per-example auxiliary payload returned by the wrapped function.
+    """
+
+    values: Any | None
+    norms: Any | None
+    clipped_norms: Any | None
+    aux: Any | None
 
 
 def _with_extra_batch_axis(fun, batch_argnums):
@@ -32,16 +49,15 @@ def _microbatch_accumulate(
     batch_argnums,
     in_dims,
     microbatch_size,
-    has_aux,
+    return_aux,
     dtype,
 ):
     """Process batch in microbatches, accumulating results without materializing full batch.
 
     This implementation processes the batch in chunks of `microbatch_size`, accumulating
     results according to their type:
-    - Clipped gradients: SUM (accumulate in-place, don't keep all per-example grads)
+    - Clipped values: SUM (accumulate in-place, don't keep all per-example values)
     - Auxiliary outputs: CONCAT (keep per-example for privacy analysis)
-    - Norms: CONCAT (keep per-example for privacy analysis)
 
     Args:
         per_example_fn: Function to vmap over each example
@@ -49,11 +65,11 @@ def _microbatch_accumulate(
         batch_argnums: Which arguments contain batch dimension
         in_dims: Input dimensions for vmap
         microbatch_size: Size of each microbatch
-        has_aux: Whether function returns auxiliary outputs
+        return_aux: Whether function returns auxiliary outputs
         dtype: Optional dtype for accumulated gradients
 
     Returns:
-        Tuple of (accumulated_grads, concatenated_aux, concatenated_norms)
+        Tuple of (accumulated_values, concatenated_aux)
     """
     # Get batch size from first batch argument
     first_batch_idx = batch_argnums[0]
@@ -88,7 +104,6 @@ def _microbatch_accumulate(
     # Initialize accumulators
     accumulated_grads = None
     aux_list = []
-    norms_list = []
 
     # Process each microbatch
     for start_idx in range(0, batch_size, microbatch_size):
@@ -105,14 +120,25 @@ def _microbatch_accumulate(
             )
 
         # vmap over microbatch
-        out_dims = (0, None if not has_aux else 0, 0)  # (clipped_value, aux, norm)
-        vmapped = _vmap(
-            per_example_fn,
-            in_dims=in_dims,
-            out_dims=out_dims,
-            randomness="same",
-        )
-        clipped_values, aux, norms = vmapped(*microbatch_args)
+        if return_aux:
+            out_dims = (0, 0)  # (clipped_value, aux)
+            vmapped = _vmap(
+                per_example_fn,
+                in_dims=in_dims,
+                out_dims=out_dims,
+                randomness="same",
+            )
+            clipped_values, aux = vmapped(*microbatch_args)
+        else:
+            out_dims = 0  # clipped_value
+            vmapped = _vmap(
+                per_example_fn,
+                in_dims=in_dims,
+                out_dims=out_dims,
+                randomness="same",
+            )
+            clipped_values = vmapped(*microbatch_args)
+            aux = ()
 
         # Accumulate clipped gradients (SUM)
         microbatch_sum = tree_map(
@@ -126,14 +152,11 @@ def _microbatch_accumulate(
             )
 
         # Collect aux outputs (CONCAT) - keep per-example
-        if has_aux:
+        if return_aux:
             aux_list.append(aux)
 
-        # Collect norms (CONCAT) - keep per-example
-        norms_list.append(norms)
-
-    # Concatenate aux and norms across all microbatches
-    if has_aux:
+    # Concatenate aux across all microbatches
+    if return_aux:
         # Concatenate aux outputs along batch dimension
         # Need to handle the list structure properly - transpose list of pytrees into pytree of lists
         def concat_leaves(*leaf_values):
@@ -148,11 +171,7 @@ def _microbatch_accumulate(
     else:
         aux = ()
 
-    # Concatenate norms (extract .norm field from ClipPytreeAux namedtuples)
-    norm_tensors = [n.norm for n in norms_list]
-    norms = ClipPytreeAux(norm=torch.cat(norm_tensors, dim=0))
-
-    return accumulated_grads, aux, norms
+    return accumulated_grads, aux
 
 
 def clipped_fun(
@@ -164,12 +183,13 @@ def clipped_fun(
     l2_clip_norm: float = 1.0,
     rescale_to_unit_norm: bool = False,
     normalize_by: float = 1.0,
-    return_norms: bool = False,
+    return_aux: bool = False,
     microbatch_size: int | None = None,
     nan_safe: bool = True,
     dtype: torch.dtype | None = None,
     spmd_axis_name: str | None = None,
-) -> Callable:
+    distributed: Literal["auto"] | bool = "auto",
+) -> tuple[Callable, FixedClipState]:
     """Transform a function to clip its output and sum across a batch.
 
     This is the primary API for per-example clipping in DP-SGD. It wraps a function
@@ -197,8 +217,8 @@ def clipped_fun(
 
     Args:
         fun: The function to be clipped.
-        has_aux: If True, `fun` is expected to return a tuple `(value, aux)`. Only
-            the value will be clipped + aggregated, `aux` will be returned on a
+        has_aux: If True, `fun` is expected to return a tuple `(value, loss_aux)`. Only
+            the value will be clipped + aggregated, `loss_aux` will be returned on a
             per-example basis. Exercise caution when using this as the sensitivity
             guarantees of the returned Callable are only provided w.r.t. `value`.
         batch_argnums: Specifies which argument(s) of `fun` contain the batch
@@ -212,9 +232,9 @@ def clipped_fun(
             / clip_norm` after potential clipping. If False, the output PyTree has
             norm at most `clip_norm`.
         normalize_by: Divide the clipped output by this value before returning.
-        return_norms: If True, the returned Callable will return the l2_norms of the
-            per-example values before clipping. These values should be handled with
-            care, see the formal guarantees above.
+        return_aux: If True, the returned Callable will return a per-example aux
+            NamedTuple containing the original per-example values, per-example norms
+            before clipping, and any auxiliary data returned by `fun`.
         microbatch_size: If set, the batch is split up into microbatches of this
             size for memory-efficient processing. Processes each microbatch separately
             and accumulates results without materializing the full batch of gradients.
@@ -225,23 +245,20 @@ def clipped_fun(
             will be the same as the dtypes of the function output.
         spmd_axis_name: See torch.vmap. **Currently not implemented** - parameter
             accepted for API compatibility.
+        distributed: Distributed handling mode:
+            - "auto": enable distributed reductions if torch.distributed is initialized
+            - True: require distributed mode and perform internal reductions
+            - False: do not perform any distributed reductions
 
     Returns:
         A new function `clip_fn` that clips the output of `fun` and sums across
         the batch. `clip_fn` takes the same arguments as `fun`. The exact output
-        signature depends on `has_aux` and `return_norms`:
+        signature depends on `return_aux`:
 
-        | `has_aux` | `return_norms` | `clipped_fn` returns  |
-        | :-------- | :--------------| :-------------------- |
-        | `False`   | `False`        | `value`               |
-        | `True`    | `False`        | `value, aux`          |
-        | `False`   | `True`         | `value, norms`        |
-        | `True`    | `True`         | `value, (aux, norms)` |
-
-    Note:
-        The output signature for `has_aux=True, return_norms=True` differs from
-        the older `clip_sum()` function (which returns `value, aux, norms`).
-        This matches JAX-Privacy main branch API.
+        | `return_aux` | `clipped_fn` returns  |
+        | :----------- | :-------------------- |
+        | `False`      | `value`               |
+        | `True`       | `value, aux`          |
     """
     # Warn about unimplemented parameters
     if spmd_axis_name is not None:
@@ -255,6 +272,30 @@ def clipped_fun(
 
     # Normalize batch_argnums to tuple
     batch_argnums = normalize_to_tuple(batch_argnums)
+
+    def _use_distributed() -> bool:
+        if distributed not in ("auto", True, False):
+            raise ValueError(
+                f"distributed must be one of {{'auto', True, False}}, got {distributed!r}"
+            )
+
+        try:
+            from opaque.distributed import is_distributed
+        except ImportError:
+            if distributed is True:
+                raise RuntimeError(
+                    "distributed=True requested but opaque.distributed is unavailable."
+                ) from None
+            return False
+
+        active = is_distributed()
+        if distributed is True and not active:
+            raise RuntimeError(
+                "distributed=True requested but torch.distributed is not initialized."
+            )
+        if distributed is False:
+            return False
+        return active
 
     # Wrap function to handle has_aux - use empty tuple () not None!
     if not has_aux:
@@ -278,19 +319,54 @@ def clipped_fun(
                 rescale_to_unit_norm=rescale_to_unit_norm,
                 nan_safe=nan_safe,
             )
-            return clipped_value, aux, norm
+            if return_aux:
+                # Build aux dict with clipping metadata
+                aux_dict = {
+                    "norms": norm.norm,
+                    "clipped_norms": global_norm(clipped_value),
+                }
+
+                # Extract nested values and aux from wrapped functions (e.g., grad_fn)
+                # aux may be a dict like {"values": loss, "aux": user_aux} or just user_aux
+                if isinstance(aux, dict):
+                    # Preserve "values" from nested dict if present (e.g., loss from grad_and_value)
+                    if "values" in aux:
+                        aux_dict["values"] = aux["values"]
+                    else:
+                        # No nested "values", use function output
+                        aux_dict["values"] = value
+
+                    # Extract user aux from nested dict if present
+                    if has_aux:
+                        if "aux" in aux:
+                            aux_dict["aux"] = aux["aux"]
+                        else:
+                            # aux is already the user aux (not nested)
+                            aux_dict["aux"] = aux
+                else:
+                    # aux is not a dict (direct user aux or None)
+                    aux_dict["values"] = value
+                    if has_aux:
+                        aux_dict["aux"] = aux
+
+                return clipped_value, aux_dict
+            return clipped_value
 
         # Choose execution path based on microbatch_size
         if microbatch_size is None:
             # Fast path: vmap entire batch at once
-            out_dims = (0, None if not has_aux else 0, 0)  # (clipped_value, aux, norm)
+            out_dims = 0 if not return_aux else (0, 0)  # (clipped_value, aux)
             vmapped = _vmap(
                 per_example_fn,
                 in_dims=in_dims,
                 out_dims=out_dims,
                 randomness="same",
             )
-            clipped_values, aux, norms = vmapped(*args)
+            if return_aux:
+                clipped_values, aux = vmapped(*args)
+            else:
+                clipped_values = vmapped(*args)
+                aux = ()
 
             # Sum clipped values across batch dimension
             result = tree_map(
@@ -298,13 +374,13 @@ def clipped_fun(
             )
         else:
             # Manual microbatch accumulation: process in chunks, accumulate as we go
-            result, aux, norms = _microbatch_accumulate(
+            result, aux = _microbatch_accumulate(
                 per_example_fn=per_example_fn,
                 args=args,
                 batch_argnums=batch_argnums,
                 in_dims=in_dims,
                 microbatch_size=microbatch_size,
-                has_aux=has_aux,
+                return_aux=return_aux,
                 dtype=dtype,
             )
 
@@ -312,17 +388,29 @@ def clipped_fun(
         if normalize_by != 1.0:
             result = tree_map(lambda x: x / normalize_by, result)
 
-        # Return based on flags (matching JAX-Privacy main branch output signature)
-        if not has_aux and not return_norms:
+        distributed_active = _use_distributed()
+        if distributed_active:
+            from opaque.distributed import sum_gradients
+
+            result = sum_gradients(result)
+
+        if not return_aux:
             return result
-        elif has_aux and not return_norms:
-            return result, aux
-        elif not has_aux and return_norms:
-            # JAX-Privacy main: return (value, (aux, norms)) where aux=()
-            return result, ((), norms)
-        else:  # has_aux and return_norms
-            # JAX-Privacy main: return (value, (aux, norms))
-            return result, (aux, norms)
+
+        if distributed_active:
+            from opaque.distributed import gather_pytree
+
+            aux = gather_pytree(aux)
+
+        aux_dict = aux if isinstance(aux, dict) else {}
+        aux = ClippedFunAux(
+            values=aux_dict.get("values"),
+            norms=aux_dict.get("norms"),
+            clipped_norms=aux_dict.get("clipped_norms"),
+            aux=aux_dict.get("aux"),
+        )
+
+        return result, aux
 
     # Apply keep_batch_dim wrapper if needed
     if keep_batch_dim:
@@ -346,4 +434,4 @@ def clipped_fun(
     return stateful_clipped_fn, clip_state
 
 
-__all__ = ["clipped_fun"]
+__all__ = ["clipped_fun", "ClippedFunAux"]

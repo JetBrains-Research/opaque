@@ -40,6 +40,28 @@ pub fn gaussian_pld(
     .map(|pld| pld.with_tail_budgets(tail_budget, tail_budget))
 }
 
+/// Compute the PLD for a Gaussian mechanism under Replace adjacency.
+///
+/// Under Replace adjacency, changing one record is equivalent to removing one
+/// and adding another, doubling the sensitivity. This is equivalent to
+/// `gaussian_pld(noise_multiplier / 2, config)` — but bypasses the range
+/// check because `noise_multiplier / 2` may fall below `MIN_NOISE_MULTIPLIER`.
+#[allow(dead_code)] // used by future bounded-Gaussian adjacency (issue #73)
+pub(crate) fn gaussian_replace_pld(
+    noise_multiplier: f64,
+    config: &DiscretizationConfig,
+) -> Result<PrivacyLossDistribution> {
+    let effective_nm = noise_multiplier / 2.0;
+    let bounds = gaussian_epsilon_bounds(effective_nm, config.log_mass_truncation_bound);
+    let delta_tilde = 1.0 / effective_nm;
+    let tail_budget = config.tail_mass_truncation / 2.0;
+
+    discretize_symmetric_mechanism(config, bounds, |epsilon| {
+        crate::numerics::gaussian::gaussian_delta_at(delta_tilde, epsilon)
+    })
+    .map(|pld| pld.with_tail_budgets(tail_budget, tail_budget))
+}
+
 /// X-space truncation → epsilon bounds for a Gaussian mechanism.
 fn gaussian_epsilon_bounds(noise_multiplier: f64, log_mass_truncation_bound: f64) -> EpsilonBounds {
     use statrs::distribution::{ContinuousCDF, Normal};

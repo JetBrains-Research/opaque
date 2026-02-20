@@ -4,7 +4,8 @@ import pytest
 import torch
 from torch.func import grad
 
-from opaque.clipping import clip_pytree, clipped_fun
+from opaque.clipping.clipped_fun import clipped_fun
+from opaque.clipping.pytree import clip_pytree
 
 
 @pytest.fixture(params=["cpu", "cuda", "mps"])
@@ -108,7 +109,7 @@ def test_clipped_fun_scalar_basic():
 
 
 def test_clipped_fun_return_norms():
-    """Test return_norms returns per-example norms before clipping."""
+    """Test return_aux returns per-example values and norms before clipping."""
 
     def loss_fn(param, data):
         return 0.5 * ((data - param) ** 2).mean()
@@ -118,21 +119,19 @@ def test_clipped_fun_return_norms():
         batch_argnums=1,
         l2_clip_norm=1.0,
         normalize_by=3.0,
-        return_norms=True,
+        return_aux=True,
     )
 
     param = torch.tensor(3.0, requires_grad=True)
     data = torch.tensor([0.0, 7.0, -2.0])
 
-    (clipped_grad, (user_aux, clip_aux)), _ = clipped_grad_fn(
-        param, data, state=clip_state
-    )
+    (clipped_grad, aux), _ = clipped_grad_fn(param, data, state=clip_state)
     assert isinstance(clipped_grad, torch.Tensor)
-    assert user_aux == ()  # user_aux should be empty tuple for has_aux=False
-    # clip_aux is ClipPytreeAux with .norm attribute containing per-example norms
-    assert isinstance(clip_aux.norm, torch.Tensor)
-    assert clip_aux.norm.shape == (3,)  # One norm per example
-    assert all(clip_aux.norm >= 0)
+    assert aux.aux is None
+    assert aux.norms is not None
+    assert aux.clipped_norms is not None
+    assert aux.norms.shape == (3,)  # One norm per example
+    assert all(aux.norms >= 0)
 
 
 def test_clipped_fun_keep_batch_dim_true():
@@ -187,19 +186,19 @@ def test_clipped_fun_has_aux_true():
         return value, user_aux
 
     clipped_fn, clip_state = clipped_fun(
-        fn_with_aux, batch_argnums=1, l2_clip_norm=1.0, has_aux=True
+        fn_with_aux, batch_argnums=1, l2_clip_norm=1.0, has_aux=True, return_aux=True
     )
 
     x = torch.tensor([1.0])
     data = torch.tensor([0.0, 1.0, 2.0])
 
-    (clipped_value, user_aux_list), _ = clipped_fn(x, data, state=clip_state)
+    (clipped_value, aux), _ = clipped_fn(x, data, state=clip_state)
     assert isinstance(clipped_value, torch.Tensor)
-    # user_aux_list contains per-example aux values
+    assert aux.aux is not None
 
 
 def test_clipped_fun_has_aux_with_return_norms():
-    """Test has_aux=True and return_norms=True together."""
+    """Test has_aux=True and return_aux=True together."""
 
     def fn_with_aux(x, data):
         value = x + data
@@ -207,18 +206,17 @@ def test_clipped_fun_has_aux_with_return_norms():
         return value, user_aux
 
     clipped_fn, clip_state = clipped_fun(
-        fn_with_aux, batch_argnums=1, l2_clip_norm=1.0, has_aux=True, return_norms=True
+        fn_with_aux, batch_argnums=1, l2_clip_norm=1.0, has_aux=True, return_aux=True
     )
 
     x = torch.tensor([1.0])
     data = torch.tensor([0.0, 1.0, 2.0])
 
-    (clipped_value, (user_aux_list, clip_aux)), _ = clipped_fn(
-        x, data, state=clip_state
-    )
+    (clipped_value, aux), _ = clipped_fn(x, data, state=clip_state)
     assert isinstance(clipped_value, torch.Tensor)
-    assert isinstance(clip_aux.norm, torch.Tensor)
-    assert clip_aux.norm.shape == (3,)
+    assert aux.aux is not None
+    assert aux.norms is not None
+    assert aux.norms.shape == (3,)
 
 
 def test_clipped_fun_nan_safe_replaces_nans():
@@ -472,25 +470,29 @@ def test_clipped_fun_microbatching_with_aux():
 
     # Without microbatching
     clipped_fn_no_mb, clip_state_no_mb = clipped_fun(
-        fn_with_aux, has_aux=True, l2_clip_norm=1.0, microbatch_size=None
+        fn_with_aux,
+        has_aux=True,
+        l2_clip_norm=1.0,
+        microbatch_size=None,
+        return_aux=True,
     )
-    (clipped_no_mb, user_aux_no_mb), _ = clipped_fn_no_mb(data, state=clip_state_no_mb)
+    (clipped_no_mb, aux_no_mb), _ = clipped_fn_no_mb(data, state=clip_state_no_mb)
 
     # With microbatching
     clipped_fn_mb, clip_state_mb = clipped_fun(
-        fn_with_aux, has_aux=True, l2_clip_norm=1.0, microbatch_size=6
+        fn_with_aux, has_aux=True, l2_clip_norm=1.0, microbatch_size=6, return_aux=True
     )
-    (clipped_mb, user_aux_mb), _ = clipped_fn_mb(data, state=clip_state_mb)
+    (clipped_mb, aux_mb), _ = clipped_fn_mb(data, state=clip_state_mb)
 
     # Primary results should be identical
     assert torch.allclose(clipped_no_mb, clipped_mb, atol=1e-6)
 
     # Auxiliary outputs should be identical (per-example)
-    assert torch.allclose(user_aux_no_mb, user_aux_mb, atol=1e-6)
+    assert torch.allclose(aux_no_mb.aux, aux_mb.aux, atol=1e-6)
 
 
 def test_clipped_fun_microbatching_with_return_norms():
-    """Test microbatching with return_norms=True."""
+    """Test microbatching with return_aux=True (norms included)."""
 
     def square_fn(x):
         return x**2
@@ -500,20 +502,18 @@ def test_clipped_fun_microbatching_with_return_norms():
 
     # Without microbatching
     clipped_fn_no_mb, clip_state_no_mb = clipped_fun(
-        square_fn, l2_clip_norm=1.0, return_norms=True, microbatch_size=None
+        square_fn, l2_clip_norm=1.0, return_aux=True, microbatch_size=None
     )
-    (clipped_no_mb, (_, clip_aux_no_mb)), _ = clipped_fn_no_mb(
-        data, state=clip_state_no_mb
-    )
+    (clipped_no_mb, aux_no_mb), _ = clipped_fn_no_mb(data, state=clip_state_no_mb)
 
     # With microbatching
     clipped_fn_mb, clip_state_mb = clipped_fun(
-        square_fn, l2_clip_norm=1.0, return_norms=True, microbatch_size=8
+        square_fn, l2_clip_norm=1.0, return_aux=True, microbatch_size=8
     )
-    (clipped_mb, (_, clip_aux_mb)), _ = clipped_fn_mb(data, state=clip_state_mb)
+    (clipped_mb, aux_mb), _ = clipped_fn_mb(data, state=clip_state_mb)
 
     # Primary results should be identical
     assert torch.allclose(clipped_no_mb, clipped_mb, atol=1e-6)
 
     # Norms should be identical (per-example)
-    assert torch.allclose(clip_aux_no_mb.norm, clip_aux_mb.norm, atol=1e-6)
+    assert torch.allclose(aux_no_mb.norms, aux_mb.norms, atol=1e-6)

@@ -28,6 +28,7 @@ from dp_accounting.pld import privacy_loss_distribution as pld_lib  # noqa: E402
 
 import opaque.accounting as acc  # noqa: E402
 from opaque.accounting import calibration as cal  # noqa: E402
+from opaque.accounting.discretization import get_discretization  # noqa: E402
 
 pytestmark = pytest.mark.cross_validation
 
@@ -323,26 +324,28 @@ class TestTruncatedPoissonValidity:
 
 
 # ============================================================================
-# 5. Accumulated (microbatch) — cross-validation
+# 5. Parallel Poisson — cross-validation
 # ============================================================================
 
 
-class TestAccumulatedCrossValidation:
-    """Accumulated mechanism: verify against dp_accounting equivalent."""
+class TestParallelPoissonCrossValidation:
+    """ParallelPoisson mechanism: verify against dp_accounting equivalent."""
 
     @pytest.mark.parametrize("sigma", [0.5, 0.8, 1.2])
     @pytest.mark.parametrize("q", [0.001, 0.0005])
-    @pytest.mark.parametrize("microbatches", [2, 4])
-    def test_accumulate_vs_reference(self, sigma, q, microbatches):
-        """Accumulated(Poisson(G(σ), q), k) should give sensible epsilon."""
-        proc = acc.accumulate(acc.poisson(acc.gaussian(sigma), q), microbatches) * 500
+    @pytest.mark.parametrize("num_workers", [2, 4])
+    def test_parallel_poisson_vs_reference(self, sigma, q, num_workers):
+        """ParallelPoisson(Poisson(G(σ), q), k) should give sensible epsilon."""
+        proc = (
+            acc.parallel_poisson(acc.poisson(acc.gaussian(sigma), q), num_workers) * 500
+        )
         eps = proc.epsilon_at(1e-5)
 
         # Must be finite and positive
         assert math.isfinite(eps) and eps > 0
 
-        # Compare with non-accumulated: accumulation should NOT increase privacy cost
-        # (accumulation improves gradient quality, not privacy)
+        # Compare with non-parallel: parallel sampling should account for duplication
+        # (when same example appears in multiple workers)
         proc_no_acc = acc.poisson(acc.gaussian(sigma), q) * 500
         eps_no_acc = proc_no_acc.epsilon_at(1e-5)
         # Both should be reasonable
@@ -367,19 +370,21 @@ class TestAdaClipCrossValidation:
         ],
     )
     def test_adaclip_effective_noise(self, sigma, sigma_b):
-        """adaclip(gaussian(σ), σ_b) → Gaussian(z_eff) where z_eff = 1/combined_sensitivity."""
+        """adaclip(gaussian(σ), σ_b) → AdaClip with z_eff = 1/combined_sensitivity."""
         import opaque_accounting as _native
 
         proc = acc.adaclip(acc.gaussian(sigma), sigma_b)
         s = _native.combined_sensitivity(sigma, sigma_b)
         z_eff = 1.0 / s
 
-        assert proc.noise_multiplier == pytest.approx(z_eff, abs=1e-12)
+        # Verify effective noise via PLD
+        config = get_discretization()
+        ref = _native.gaussian_pld(z_eff, config.to_native())
+        assert proc.epsilon_at(1e-5) == pytest.approx(ref.epsilon_at(1e-5), rel=1e-12)
 
-        # Verify it's a Gaussian
-        from opaque.accounting.mechanisms import Gaussian
+        from opaque.accounting.transformations import AdaClip
 
-        assert isinstance(proc, Gaussian)
+        assert isinstance(proc, AdaClip)
 
     @pytest.mark.parametrize("sigma_b", [10.0, 50.0, 100.0])
     def test_adaclip_increases_privacy_cost(self, sigma_b):
@@ -387,7 +392,6 @@ class TestAdaClipCrossValidation:
         g = acc.gaussian(1.0)
         a = acc.adaclip(g, sigma_b)
         # z_eff < sigma so epsilon should be larger
-        assert a.noise_multiplier < g.noise_multiplier
         assert a.epsilon_at(1e-5) > g.epsilon_at(1e-5)
 
     def test_adaclip_composed_with_poisson(self):

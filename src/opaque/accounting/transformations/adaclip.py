@@ -2,15 +2,56 @@
 
 from __future__ import annotations
 
+import functools
+from dataclasses import dataclass
+
 import opaque_accounting as _native
 
+from opaque.accounting.base import DpProcess, Pld
 from opaque.accounting.mechanisms.gaussian import Gaussian
+
+
+@dataclass(frozen=True, slots=True)
+class AdaClip(DpProcess):
+    """Adaptive clipping transformation (Andrew et al. 2021)."""
+
+    inner: Gaussian
+    quantile_noise_std: float
+
+    @functools.lru_cache(maxsize=8)
+    def pld(
+        self,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+    ) -> Pld:
+        from opaque.accounting.discretization import get_discretization
+
+        config = get_discretization(
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+        )
+
+        match self.inner:
+            case Gaussian(noise_multiplier=nm):
+                s = _native.combined_sensitivity(nm, self.quantile_noise_std)
+                z_eff = 1.0 / s
+                return _native.gaussian_pld(z_eff, config.to_native())
+            case _:
+                raise TypeError(
+                    "AdaClip requires a Gaussian inner mechanism, got "
+                    f"{type(self.inner).__name__}."
+                )
 
 
 def adaclip(
     inner: Gaussian,
     quantile_noise_std: float,
-) -> Gaussian:
+) -> AdaClip:
     """Adaptive clipping mechanism (Andrew et al. 2021).
 
     Adaptive clipping adjusts the clipping threshold based on the empirical
@@ -22,29 +63,10 @@ def adaclip(
 
     where z is the base noise multiplier and σ_b is the quantile noise std.
 
-    The result is a Gaussian mechanism with the effective noise multiplier,
+    The result is an :class:`AdaClip` process with the effective noise multiplier,
     so it can be composed with :func:`poisson` or :func:`truncated_poisson`::
 
         step = acc.poisson(acc.adaclip(acc.gaussian(1.1), 50.0), 0.01)
-
-    Note:
-        **BoundedGaussian is not currently supported** as the inner mechanism.
-        The combined sensitivity formula above was derived for the standard Gaussian
-        under Add/Remove adjacency (gradient sensitivity = 1).  For the Bounded
-        Gaussian the truncation adds a log-normalisation correction term to the
-        privacy loss, and an exact accounting formula is not yet available.
-        The needed research is:
-
-        1. Derive the combined sensitivity formula for the bounded Gaussian with
-           truncation correction.  The bounded Gaussian under Add/Remove adjacency
-           has the same approximate PLD as the standard Gaussian for wide bounds,
-           but the interaction with the binary quantile estimator requires careful
-           treatment.
-        2. Determine how to compute the effective noise multiplier for the combined
-           (gradient + quantile) mechanism to plug into
-           :func:`poisson` / :func:`truncated_poisson`.
-        3. Verify the approximation error introduced by ignoring the log-normalisation
-           correction in typical DP-SGD settings.
 
     Args:
         inner: The base Gaussian mechanism (from :func:`gaussian`).
@@ -52,7 +74,7 @@ def adaclip(
             Larger = more private quantile, less accurate clipping.
 
     Returns:
-        A :class:`Gaussian` with the effective (reduced) noise multiplier.
+        An :class:`AdaClip` process.
 
     Example::
 
@@ -63,8 +85,4 @@ def adaclip(
         raise TypeError(
             f"adaclip() requires a Gaussian inner mechanism, got {type(inner).__name__}."
         )
-    # Compute effective noise multiplier: z_eff = 1 / combined_sensitivity
-    s = _native.combined_sensitivity(inner.noise_multiplier, quantile_noise_std)
-    z_eff = 1.0 / s
-    # Return Gaussian so the result can be fed into poisson()/truncated_poisson()
-    return Gaussian(z_eff, config=inner.config)
+    return AdaClip(inner=inner, quantile_noise_std=quantile_noise_std)

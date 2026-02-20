@@ -1,14 +1,31 @@
 """Per-example gradient clipping for differential privacy."""
 
 from collections.abc import Callable
+from typing import Any, Literal, NamedTuple
 
 import torch
 from torch.func import grad_and_value
 
 from opaque.clipping._helpers import normalize_fun_to_return_aux, normalize_to_tuple
 from opaque.clipping.clipped_fun import clipped_fun
-from opaque.clipping.types import ClippedGradAux
-from opaque.utils.pytree import global_norm
+
+
+class ClippedGradAux(NamedTuple):
+    """Loss-aware auxiliary outputs from clipped_grad.
+
+    Attributes:
+        loss_values: Per-example loss values (if return_aux=True).
+        grad_norms: Per-example gradient L2 norms before clipping (if return_aux=True).
+        clipped_grad_norms: Per-example gradient L2 norms after clipping (if return_aux=True).
+        loss_aux: Per-example auxiliary outputs from loss function (if has_aux=True).
+        clipping_norm: The L2 clipping norm used for this computation.
+    """
+
+    loss_values: Any | None
+    grad_norms: Any | None
+    clipped_grad_norms: Any | None
+    loss_aux: Any | None
+    clipping_norm: float
 
 
 def _validate_static_args(argnums, batch_argnums, normalize_by):
@@ -32,7 +49,7 @@ def _validate_static_args(argnums, batch_argnums, normalize_by):
 
 
 def clipped_grad(
-    fun: Callable,
+    loss_fn: Callable,
     argnums: int | tuple[int, ...] = 0,
     has_aux: bool = False,
     *,
@@ -41,28 +58,28 @@ def clipped_grad(
     normalize_by: float = 1.0,
     batch_argnums: int | tuple[int, ...] = 1,
     keep_batch_dim: bool = True,
-    return_values: bool = False,
-    return_grad_norms: bool = False,
+    return_aux: bool = False,
     pre_clipping_transform: Callable = lambda x: x,
     microbatch_size: int | None = None,
     nan_safe: bool = True,
     dtype: torch.dtype | None = None,
     spmd_axis_name: str | None = None,
+    distributed: Literal["auto"] | bool = "auto",
+    _force_grad_norms: bool = False,
 ) -> Callable:
-    """Create a function to compute the sum of clipped gradients of fun.
+    """Create a function to compute the sum of clipped gradients of loss_fn.
 
     This function acts as a transformation similar to `torch.func.grad`, but with added
     functionality for gradient clipping applied on a per-example (or per-group)
-    basis before summation. It computes the gradient of `fun` with respect to
+    basis before summation. It computes the gradient of `loss_fn` with respect to
     `argnums`, calculates the L2 norm of the gradient for each example slice
     along the first axis of the `batch_argnums` args, clips each per-example
     gradient to have a norm of at most `l2_clip_norm`, and finally sums these
     clipped gradients.
 
-    Non-grad outputs of the returned function (aux, values, grad_norms) may
-    optionally be returned by setting the arguments `has_aux`, `return_values`,
-    and/or `return_grad_norms` to True. These outputs are per-example, and hence
-    have a batch axis. It is up to the caller to handle these as necessary.
+    Non-grad outputs of the returned function (aux) may optionally be returned
+    by setting `return_aux=True`. These outputs are per-example, and hence have
+    a batch axis. It is up to the caller to handle these as necessary.
 
     Example Usage:
         >>> import torch
@@ -74,10 +91,10 @@ def clipped_grad(
 
     Example Usage (with Auxiliary Output):
         >>> g = clipped_grad(
-        ...     f, l2_clip_norm=float('inf'), return_values=True, return_grad_norms=True
+        ...     f, l2_clip_norm=float('inf'), return_aux=True
         ... )
         >>> _, aux = g(torch.tensor(3.0), torch.tensor([0.0, 7.0, -2.0]))
-        >>> aux.values
+        >>> aux.loss_values
         tensor([4.5000, 8.0000, 12.5000])
         >>> aux.grad_norms
         tensor([3., 4., 5.])
@@ -97,13 +114,13 @@ def clipped_grad(
           mechanism).
 
     Args:
-        fun: The function to be differentiated, which should return a scalar loss
-            value. If `has_aux` is True, it should return a tuple `(value, aux)`.
-        argnums: Specifies which argument(s) of `fun` to differentiate with respect
+        loss_fn: The loss function to be differentiated, which should return a scalar
+            value. If `has_aux` is True, it should return a tuple `(value, loss_aux)`.
+        argnums: Specifies which argument(s) of `loss_fn` to differentiate with respect
             to. Can be an integer or a sequence of integers. These arguments should
             *not* have a batch dimension.
-        has_aux: If True, `fun` is expected to return a tuple `(value, aux)`. The
-            auxiliary data `aux` will be returned by the transformed function.
+        has_aux: If True, `loss_fn` is expected to return a tuple `(value, loss_aux)`.
+            The auxiliary data `loss_aux` will be returned by the transformed function.
             Exercise caution when using this as no DP sensitivity guarantees are
             provided for the auxiliary data.
         l2_clip_norm: The maximum L2 norm for each per-example gradient. Gradients
@@ -113,19 +130,17 @@ def clipped_grad(
             are only scaled down if their norm exceeds `l2_clip_norm`, resulting in a
             sensitivity of `l2_clip_norm`.
         normalize_by: Divide the clipped output by this value before returning.
-        batch_argnums: Specifies which argument(s) of `fun` contain the batch
+        batch_argnums: Specifies which argument(s) of `loss_fn` contain the batch
             dimension (usually the data and labels). Can be an integer or a sequence
             of integers. All arguments specified here must have the same size along
             their first dimension (the batch dimension). The default value of 1 assumes
-            the signature of fun is `fun(params, batch)`.
-        keep_batch_dim: If True, batch inputs will be passed to `fun` with a leading
+            the signature of loss_fn is `loss_fn(params, batch)`.
+        keep_batch_dim: If True, batch inputs will be passed to `loss_fn` with a leading
             batch axis of size 1. If False, this size 1 axis will be dropped
             (reducing the rank of the batch args by 1 before passing to `fun`). The
             default value of True assumes that `fun` expects inputs with a batch axis.
-        return_values: If True, the transformed function will also return the
-            per-example values, before clipping.
-        return_grad_norms: If True, the transformed function will also return the
-            per-example gradient norms, before clipping.
+        return_aux: If True, the transformed function will also return a per-example
+            aux NamedTuple containing loss values, gradient norms, and loss aux.
         pre_clipping_transform: An optional function to apply to the per-example
             gradients before clipping. The function should consume the gradient pytree
             for a single example and return a new pytree (possibly with different
@@ -144,6 +159,10 @@ def clipped_grad(
             computes a sum over a potentially large batch.
         spmd_axis_name: Axis name for SPMD distributed training. Not yet implemented
             in PyTorch version (tech debt).
+        distributed: Distributed handling mode:
+            - "auto": enable distributed reductions if torch.distributed is initialized
+            - True: require distributed mode and perform internal reductions
+            - False: do not perform any distributed reductions
 
     Returns:
         Tuple of (clipped_grad_fn, clip_state) where:
@@ -153,69 +172,115 @@ def clipped_grad(
         - clip_state: Initial FixedClipState containing sensitivity information
 
         The grad_aux output (when requested) is a ClippedGradAux named tuple with fields:
-            - loss_values: Per-example function values (if return_values=True), else None
-            - grad_norms: Per-example gradient norms (if return_grad_norms=True), else None
-            - user_aux: Per-example auxiliary data (if has_aux=True), else None
+            - loss_values: Per-example function values (if return_aux=True)
+            - grad_norms: Per-example gradient norms (if return_aux=True)
+            - loss_aux: Per-example auxiliary data (if has_aux=True)
     """
     _validate_static_args(argnums, batch_argnums, normalize_by)
-    fun = normalize_fun_to_return_aux(fun, has_aux)
+    loss_fn = normalize_fun_to_return_aux(loss_fn, has_aux)
 
     # Use PyTorch's grad_and_value (returns (grad, value) or (grad, (value, aux)))
-    grad_and_value_fn = grad_and_value(fun, argnums=argnums, has_aux=True)
+    grad_and_value_fn = grad_and_value(loss_fn, argnums=argnums, has_aux=True)
 
     def grad_fn(*args, **kwargs):
         grad, value_and_aux = grad_and_value_fn(*args, **kwargs)
         result = pre_clipping_transform(grad)
-        if has_aux or return_values or return_grad_norms:
-            # Return a dict instead of AuxiliaryOutput to avoid vmap issues with None values
+        if return_aux or _force_grad_norms:
+            # Return dict aux from per-example grad_fn; clipping-related norms are
+            # produced by clipped_fun to avoid duplicating norm computation logic.
             # PyTorch vmap cannot handle namedtuples with None values when out_dims != None
             aux_dict = {}
-            if return_values:
+            if return_aux:
                 aux_dict["values"] = value_and_aux[0]
-            if return_grad_norms:
-                aux_dict["grad_norms"] = global_norm(grad)
-            if has_aux:
+            if return_aux and has_aux:
                 aux_dict["aux"] = value_and_aux[1]
             return result, aux_dict
         return result
 
     clipped_grad_fn, clip_state = clipped_fun(
         grad_fn,
-        has_aux=has_aux or return_values or return_grad_norms,
+        has_aux=return_aux or _force_grad_norms,
         batch_argnums=batch_argnums,
         l2_clip_norm=l2_clip_norm,
         keep_batch_dim=keep_batch_dim,
         rescale_to_unit_norm=rescale_to_unit_norm,
         normalize_by=normalize_by,
+        return_aux=return_aux or _force_grad_norms,
         microbatch_size=microbatch_size,
         nan_safe=nan_safe,
         dtype=dtype,
         spmd_axis_name=spmd_axis_name,
+        distributed=distributed,
     )
 
     # clipped_grad_fn is now a callable, clip_state is a FixedClipState
-    # Wrap the result to convert dict to AuxiliaryOutput
-    if not (has_aux or return_values or return_grad_norms):
+    # Wrap the result to convert dict to ClippedGradAux
+    if not return_aux:
         # No aux, return wrapped directly with state-passing signature
         def grad_fn_wrapper(*args, state, **kwargs):
             (result, returned_state) = clipped_grad_fn(*args, state=state, **kwargs)
+            if _force_grad_norms:
+                if isinstance(result, tuple):
+                    clipped_grads, aux = result
+                    grad_aux = ClippedGradAux(
+                        loss_values=None,
+                        grad_norms=aux.norms,
+                        clipped_grad_norms=aux.clipped_norms,
+                        loss_aux=None,
+                        clipping_norm=l2_clip_norm,
+                    )
+                    return (clipped_grads, grad_aux), returned_state
+                return result, returned_state
+            if isinstance(result, tuple):
+                result = result[0]
             return result, returned_state
 
         return grad_fn_wrapper, clip_state
     else:
         # Need to convert aux_dict to ClippedGradAux
         def grad_fn_wrapper(*args, state, **kwargs):
-            (clipped_grads, aux_dict), returned_state = clipped_grad_fn(
+            (clipped_grads, aux), returned_state = clipped_grad_fn(
                 *args, state=state, **kwargs
             )
             grad_aux = ClippedGradAux(
-                loss_values=aux_dict.get("values"),
-                grad_norms=aux_dict.get("grad_norms"),
-                user_aux=aux_dict.get("aux"),
+                loss_values=aux.values,
+                grad_norms=aux.norms,
+                clipped_grad_norms=aux.clipped_norms,
+                loss_aux=aux.aux,
+                clipping_norm=l2_clip_norm,
             )
             return (clipped_grads, grad_aux), returned_state
 
         return grad_fn_wrapper, clip_state
 
 
-__all__ = ["clipped_grad"]
+def sync_clip_state(state: Any) -> Any:
+    """Synchronize fixed clipping state across processes.
+
+    For FixedClipState, synchronizes l2_norm_bound using mean reduction.
+
+    Args:
+        state: Fixed clipping state (FixedClipState).
+
+    Returns:
+        New synchronized state.
+    """
+    from opaque.distributed import is_distributed, reduce_scalar
+
+    if not is_distributed():
+        return state
+
+    from opaque.clipping.types import FixedClipState
+
+    if not isinstance(state, FixedClipState):
+        raise TypeError(f"Expected FixedClipState, got {type(state)}")
+
+    synced_l2_norm_bound = reduce_scalar(state.l2_norm_bound, op="mean")
+
+    return FixedClipState(
+        l2_norm_bound=synced_l2_norm_bound,
+        rescale_to_unit_norm=state.rescale_to_unit_norm,
+    )
+
+
+__all__ = ["clipped_grad", "ClippedGradAux", "sync_clip_state"]

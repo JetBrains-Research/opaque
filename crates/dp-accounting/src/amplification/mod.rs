@@ -4,13 +4,13 @@
 //!
 //! - [`poisson_gaussian_pld`] — Poisson-subsampled Gaussian
 //! - [`truncated_poisson_gaussian_pld`] — Truncated Poisson-subsampled Gaussian
-//! - [`accumulated_poisson_gaussian_pld`] — Gradient-accumulated Poisson Gaussian
+//! - [`parallel_poisson_gaussian_pld`] — Parallel Poisson Gaussian (gradient accumulation or parallel workers)
 
-mod accumulated;
+mod parallel_poisson;
 mod poisson;
 mod truncated_poisson;
 
-pub use accumulated::accumulated_poisson_gaussian_pld;
+pub use parallel_poisson::parallel_poisson_gaussian_pld;
 pub use poisson::poisson_gaussian_pld;
 pub use truncated_poisson::truncated_poisson_gaussian_pld;
 

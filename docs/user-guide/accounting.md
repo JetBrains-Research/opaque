@@ -8,6 +8,7 @@ bounds.
 
 ```python
 import opaque.accounting as acc
+from opaque.accounting.accountant import Accountant
 
 step = acc.poisson(acc.gaussian(0.8), sample_rate=0.01)
 training = step * 1000
@@ -101,22 +102,22 @@ proc = acc.gaussian(0.5)
 eps = proc.epsilon_at(1e-5)
 ```
 
-### `acc.accumulate()` -- Gradient Accumulation
+### `acc.parallel_poisson()` -- Parallel Poisson Sampling
 
-Microbatching: process gradients in sub-batches, accumulate clipped gradients,
-add noise once.
+Parallel Poisson sampling models independent Poisson sampling on multiple
+workers, where the same example can appear on multiple devices.
 
 ```python
-step = acc.accumulate(
+step = acc.parallel_poisson(
     acc.poisson(acc.gaussian(0.5), 0.01),
-    microbatches=4,
+    num_workers=4,
 )
 ```
 
 ### `acc.adaclip()` -- Adaptive Clipping
 
 Accounts for the extra privacy cost of noisy quantile estimation (Andrew et
-al. 2021). Returns a Gaussian with reduced effective noise multiplier.
+al. 2021). Returns an AdaClip process with reduced effective noise multiplier.
 
 ```python
 step = acc.poisson(
@@ -163,7 +164,7 @@ Each compose operation returns a new `Accountant` (the original is unchanged).
 import opaque.accounting as acc
 
 step = acc.poisson(acc.gaussian(0.5), 0.01)
-acct = acc.Accountant()
+acct = Accountant()
 
 for i in range(num_steps):
     acct = acct | step
@@ -178,9 +179,10 @@ Pass a calibration budget to enable automatic budget checking:
 
 ```python
 from opaque.accounting import calibration as cal
+from opaque.accounting.accountant import Accountant
 
 budget = cal.epsilon_budget(3.0, delta=1e-5)
-acct = acc.Accountant(budget=budget)
+acct = Accountant(budget=budget)
 step = acc.poisson(acc.gaussian(0.5), 0.01)
 
 for i in range(num_steps):
@@ -195,7 +197,7 @@ for i in range(num_steps):
 Compose different phases in a single accounting session:
 
 ```python
-acct = acc.Accountant()
+acct = Accountant()
 
 warmup_step = acc.poisson(acc.gaussian(0.3), 0.01)
 for _ in range(100):
@@ -250,6 +252,123 @@ result = cal.calibrate(
 calibrated parameter (typically noise multiplier) increases. The binary search
 direction adapts automatically.
 
+## Serialization
+
+Processes expose `state_dict()` for JSON-friendly serialization:
+
+```python
+step = acc.poisson(acc.gaussian(0.5), 0.01)
+state = step.state_dict()
+```
+
+## PLD Caching
+
+PLD computation (FFT-based convolution) is the most expensive operation in
+privacy accounting. To improve performance, **all `pld()` methods are
+automatically cached** via `@functools.lru_cache(maxsize=8)`.
+
+### Automatic Caching
+
+Every privacy query reuses cached PLDs when called with the same discretization
+parameters:
+
+```python
+step = acc.poisson(acc.gaussian(0.8), 0.01)
+
+# First call computes PLD (cache miss)
+eps1 = step.epsilon_at(1e-5)
+
+# Subsequent calls reuse cached PLD (cache hit)
+eps2 = step.epsilon_at(1e-5)
+delta = step.delta_at(1.0)
+adv = step.advantage()
+
+# Cache info shows hits/misses
+print(step.pld.cache_info())  # CacheInfo(hits=3, misses=1, maxsize=8, currsize=1)
+```
+
+**Cache key**: `(frozen dataclass instance, discretization params)`
+
+Changing discretization creates a new cache entry:
+
+```python
+step = acc.gaussian(1.0)
+
+eps_fine = step.epsilon_at(1e-5, discretization=1e-5)    # miss
+eps_coarse = step.epsilon_at(1e-5, discretization=1e-3)  # miss (different config)
+eps_fine2 = step.epsilon_at(1e-5, discretization=1e-5)   # hit
+
+print(step.pld.cache_info())  # currsize=2 (two configs cached)
+```
+
+### Cache Size
+
+Default cache size is **8 entries per process**. With ~10MB per PLD worst case:
+- Per process: 8 × 10MB = **80MB max**
+- 10 process types: **~800MB total worst case**
+
+This is conservative for typical usage (usually 1-2 discretization configs).
+
+### The `cached()` Wrapper
+
+Use `acc.cached()` when you need:
+
+1. **Larger cache** (16 entries instead of 8)
+2. **Merge barrier** to prevent composition optimizations
+
+```python
+# Standard usage (maxsize=8 automatic)
+step = acc.poisson(acc.gaussian(0.8), 0.01)
+training = step * 1000
+
+# With cached() wrapper (maxsize=16 + merge barrier)
+training = acc.cached(step * 1000)
+```
+
+**Merge barrier**: Composition optimizer won't look inside `cached()` nodes.
+This prevents structural optimizations like:
+
+```python
+step = acc.gaussian(1.0)
+
+# Without cached: optimizer merges these into single Repeated(step, 2000)
+a = step * 1000
+b = step * 1000
+total = a | b  # Optimized to: step * 2000
+
+# With cached: optimizer treats as opaque
+a = acc.cached(step * 1000)
+b = acc.cached(step * 1000)
+total = a | b  # NOT merged (two separate cached nodes)
+```
+
+**When to use `cached()`**:
+- Deep composition trees where you want explicit boundaries
+- Profiling shows you need larger cache for specific nodes
+- Preventing unwanted optimizations for testing
+
+**Most users don't need `cached()`** - automatic caching is sufficient.
+
+### Transitive Caching
+
+Composed processes benefit from transitive caching:
+
+```python
+step = acc.poisson(acc.gaussian(1.1), 0.01)
+warmup = step * 100
+main = step * 900
+total = warmup | main  # Composed process
+
+# Computing total's PLD calls warmup.pld() and main.pld()
+# which in turn call step.pld() -- all get cached!
+eps = total.epsilon_at(1e-5)
+
+# Second query reuses ALL cached PLDs
+delta = total.delta_at(1.0)  # No PLD recomputation
+```
+
+This makes repeated privacy queries very fast after the first computation.
+
 ## Privacy Amplification Through Sampling
 
 Subsampling amplifies privacy -- the same noise gives stronger guarantees:
@@ -266,19 +385,32 @@ steps.
 
 ## Custom Precision
 
-Override default PLD discretization for faster or more precise computation:
+Override discretization at query time for faster or more precise computation:
 
 ```python
-cfg = acc.DiscretizationConfig(discretization=1e-3)  # faster, coarser
-proc = acc.gaussian(0.5, discretization=cfg)
+# Create process without config
+proc = acc.gaussian(0.5)
+
+# Apply different configs at query time
+eps_coarse = proc.epsilon_at(1e-5, discretization=1e-3)  # faster, coarser
+eps_fine = proc.epsilon_at(1e-5, discretization=1e-5)    # slower, more accurate
 ```
 
-| Parameter                   | Default      | Description                          |
-|-----------------------------|--------------|--------------------------------------|
-| `discretization`            | `1e-4`       | Grid spacing. Error scales as O(d^2) |
-| `log_mass_truncation_bound` | `-32.0`      | Tails below 2^bound are truncated    |
-| `pessimistic_estimate`      | `True`       | Upper-bound rounding (safe)          |
-| `max_grid_size`             | `10_000_000` | Auto-coarsen if grid exceeds this    |
+Or set a module-level default:
+
+```python
+# All queries use this default unless overridden
+acc.set_discretization(discretization=1e-3)
+proc = acc.gaussian(0.5)
+eps = proc.epsilon_at(1e-5)  # Uses 1e-3 default
+```
+
+| Parameter                      | Default      | Description                          |
+|--------------------------------|--------------|--------------------------------------|
+| `discretization`               | `1e-4`       | Grid spacing. Error scales as O(d^2) |
+| `log_x_mass_truncation_bound`  | `-32.0`      | Tails below 2^bound are truncated    |
+| `pessimistic_estimate`         | `True`       | Upper-bound rounding (safe)          |
+| `max_grid_size`                | `10_000_000` | Auto-coarsen if grid exceeds this    |
 
 ## See Also
 
