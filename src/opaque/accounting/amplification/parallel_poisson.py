@@ -49,7 +49,7 @@ class ParallelPoisson(DpProcess):
                 inner=Gaussian(noise_multiplier=nm),
                 sample_rate=rate,
             ):
-                return _native.accumulated_poisson_gaussian_pld(
+                return _native.parallel_poisson_gaussian_pld(
                     nm,
                     rate,
                     self.num_workers,
@@ -64,7 +64,7 @@ class ParallelPoisson(DpProcess):
             ):
                 s = _native.combined_sensitivity(nm, quantile_noise_std)
                 z_eff = 1.0 / s
-                return _native.accumulated_poisson_gaussian_pld(
+                return _native.parallel_poisson_gaussian_pld(
                     z_eff,
                     rate,
                     self.num_workers,

@@ -299,21 +299,21 @@ def truncated_poisson_gaussian_pld(
     ...
 
 
-def accumulated_poisson_gaussian_pld(
+def parallel_poisson_gaussian_pld(
     noise_multiplier: float,
     rate: float,
     microbatches: int,
     config: DiscretizationConfig,
 ) -> Pld:
-    """Compute the PLD for an accumulated Poisson-subsampled Gaussian mechanism.
+    """Compute the PLD for a parallel Poisson-subsampled Gaussian mechanism.
 
-    Models gradient accumulation: *microbatches* micro-batches,
-    Poisson-sampled, clipped gradients summed, noise added once.
+    Models summing multiple independent Poisson samples before adding noise once.
+    Use cases: gradient accumulation (m microbatches) or parallel workers (K workers).
 
     Args:
         noise_multiplier: σ/Δ ratio.
         rate: Poisson sampling probability, in (0, 1].
-        microbatches: Number of microbatches, > 0.
+        microbatches: Number of independent samples, > 0.
         config: PLD discretization configuration.
 
     Returns:

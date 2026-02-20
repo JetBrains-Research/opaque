@@ -28,6 +28,7 @@ from dp_accounting.pld import privacy_loss_distribution as pld_lib  # noqa: E402
 
 import opaque.accounting as acc  # noqa: E402
 from opaque.accounting import calibration as cal  # noqa: E402
+from opaque.accounting.discretization import get_discretization  # noqa: E402
 
 pytestmark = pytest.mark.cross_validation
 
@@ -377,7 +378,8 @@ class TestAdaClipCrossValidation:
         z_eff = 1.0 / s
 
         # Verify effective noise via PLD
-        ref = _native.gaussian_pld(z_eff)
+        config = get_discretization()
+        ref = _native.gaussian_pld(z_eff, config.to_native())
         assert proc.epsilon_at(1e-5) == pytest.approx(ref.epsilon_at(1e-5), rel=1e-12)
 
         from opaque.accounting.transformations import AdaClip

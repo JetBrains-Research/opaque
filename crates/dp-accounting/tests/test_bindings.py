@@ -34,8 +34,8 @@ class TestPldConstructors:
         eps = pld.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
-    def test_accumulated_poisson_gaussian_pld(self):
-        pld = dp.accumulated_poisson_gaussian_pld(0.8, 0.01, 4)
+    def test_parallel_poisson_gaussian_pld(self):
+        pld = dp.parallel_poisson_gaussian_pld(0.8, 0.01, 4)
         assert isinstance(pld, dp.Pld)
         eps = pld.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0

@@ -61,28 +61,28 @@ pub fn py_truncated_poisson_gaussian_pld(
     Ok(PyPld::new(pld))
 }
 
-/// Compute the PLD for an accumulated Poisson-subsampled Gaussian mechanism.
+/// Compute the PLD for a parallel Poisson-subsampled Gaussian mechanism.
 ///
-/// Models gradient accumulation: m microbatches, Poisson-sampled, clipped
-/// gradients summed, noise added once.
+/// Models summing multiple independent Poisson samples before adding noise once.
+/// Use cases: gradient accumulation (m microbatches) or parallel workers (K workers).
 ///
 /// Args:
 ///     noise_multiplier (float): σ/Δ ratio, in [0.1, 1.2].
 ///     rate (float): Poisson sampling probability, in (0, 1].
-///     microbatches (int): Number of microbatches, > 0.
+///     microbatches (int): Number of independent samples, > 0.
 ///     config (DiscretizationConfig): Discretization configuration.
 ///
 /// Returns:
 ///     Pld: The amplified privacy loss distribution.
 #[pyfunction]
-#[pyo3(name = "accumulated_poisson_gaussian_pld", signature = (noise_multiplier, rate, microbatches, config))]
-pub fn py_accumulated_poisson_gaussian_pld(
+#[pyo3(name = "parallel_poisson_gaussian_pld", signature = (noise_multiplier, rate, microbatches, config))]
+pub fn py_parallel_poisson_gaussian_pld(
     noise_multiplier: f64,
     rate: f64,
     microbatches: usize,
     config: &PyDiscretizationConfig,
 ) -> PyResult<PyPld> {
-    let pld = crate::amplification::accumulated_poisson_gaussian_pld(
+    let pld = crate::amplification::parallel_poisson_gaussian_pld(
         noise_multiplier,
         rate,
         microbatches,
