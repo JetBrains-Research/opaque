@@ -62,9 +62,7 @@ class TestTruncatedPoissonDataclass:
             t.batch_size_cap = 256  # type: ignore[misc]
 
     def test_is_dp_process(self):
-        assert isinstance(
-            TruncatedPoisson(Gaussian(0.8), 0.01, 128, 10_000), DpProcess
-        )
+        assert isinstance(TruncatedPoisson(Gaussian(0.8), 0.01, 128, 10_000), DpProcess)
 
     def test_pld_returns_valid(self):
         pld = TruncatedPoisson(Gaussian(0.8), 0.01, 128, 10_000).pld()

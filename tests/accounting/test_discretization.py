@@ -31,7 +31,9 @@ class TestSetGetDiscretization:
         cfg = get_discretization()
         assert cfg is not None
         assert cfg.discretization == pytest.approx(1e-4)  # Library default
-        assert cfg.log_x_mass_truncation_bound == pytest.approx(-50.0)  # Library default
+        assert cfg.log_x_mass_truncation_bound == pytest.approx(
+            -50.0
+        )  # Library default
         assert cfg.pessimistic_estimate is True
         assert cfg.max_grid_size == 10_000_000
 
@@ -82,11 +84,11 @@ class TestQueryTimeOverrides:
 
         # Set global default
         set_discretization(discretization=1e-3)
-        
+
         # Query-time override should take precedence
         cfg = get_discretization(discretization=1e-5)
         assert cfg.discretization == pytest.approx(1e-5)
-        
+
         # Global default unchanged
         global_cfg = get_discretization()
         assert global_cfg.discretization == pytest.approx(1e-3)
@@ -95,11 +97,11 @@ class TestQueryTimeOverrides:
         """Query-time log_x_mass_truncation_bound override works."""
         # Set global default
         set_discretization(log_x_mass_truncation_bound=-50.0)
-        
+
         # Query-time override
         cfg = get_discretization(log_x_mass_truncation_bound=-30.0)
         assert cfg.log_x_mass_truncation_bound == pytest.approx(-30.0)
-        
+
         # Global default unchanged
         global_cfg = get_discretization()
         assert global_cfg.log_x_mass_truncation_bound == pytest.approx(-50.0)
@@ -107,20 +109,20 @@ class TestQueryTimeOverrides:
     def test_pessimistic_estimate_override(self):
         """Query-time pessimistic_estimate override works."""
         set_discretization(pessimistic_estimate=True)
-        
+
         cfg = get_discretization(pessimistic_estimate=False)
         assert cfg.pessimistic_estimate is False
-        
+
         global_cfg = get_discretization()
         assert global_cfg.pessimistic_estimate is True
 
     def test_max_grid_size_override(self):
         """Query-time max_grid_size override works."""
         set_discretization(max_grid_size=10_000_000)
-        
+
         cfg = get_discretization(max_grid_size=5_000_000)
         assert cfg.max_grid_size == 5_000_000
-        
+
         global_cfg = get_discretization()
         assert global_cfg.max_grid_size == 10_000_000
 
@@ -132,16 +134,16 @@ class TestQueryTimeOverrides:
             pessimistic_estimate=True,
             max_grid_size=10_000_000,
         )
-        
+
         cfg = get_discretization(
             discretization=1e-5,
             log_x_mass_truncation_bound=-30.0,
         )
-        
+
         # Overridden values
         assert cfg.discretization == pytest.approx(1e-5)
         assert cfg.log_x_mass_truncation_bound == pytest.approx(-30.0)
-        
+
         # Non-overridden values from global default
         assert cfg.pessimistic_estimate is True
         assert cfg.max_grid_size == 10_000_000
@@ -151,15 +153,14 @@ class TestQueryTimeOverrides:
         from opaque.accounting import discretization
 
         discretization._default_config = None  # Clear global default
-        
+
         cfg = get_discretization(
             discretization=1e-5,
             log_x_mass_truncation_bound=-30.0,
         )
-        
+
         assert cfg.discretization == pytest.approx(1e-5)
         assert cfg.log_x_mass_truncation_bound == pytest.approx(-30.0)
         # Library defaults for rest
         assert cfg.pessimistic_estimate is True
         assert cfg.max_grid_size == 10_000_000
-

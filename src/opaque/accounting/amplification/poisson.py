@@ -29,14 +29,14 @@ class Poisson(DpProcess):
         max_grid_size: int | None = None,
     ) -> Pld:
         from opaque.accounting.discretization import get_discretization
-        
+
         config = get_discretization(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         )
-        
+
         match self.inner:
             case Gaussian(noise_multiplier=nm):
                 return _native.poisson_gaussian_pld(

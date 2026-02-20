@@ -41,7 +41,9 @@ class TestSamplingModeValidation:
         with patch("opaque.sampling.poisson.is_distributed", return_value=True):
             with patch("opaque.sampling.poisson.get_rank", return_value=0):
                 with patch("opaque.sampling.poisson.get_world_size", return_value=4):
-                    with pytest.warns(UserWarning, match="accumulated Poisson sampling"):
+                    with pytest.warns(
+                        UserWarning, match="accumulated Poisson sampling"
+                    ):
                         PoissonSampler(
                             dataset,
                             sample_rate=0.1,

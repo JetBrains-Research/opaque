@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import functools
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
 
 import opaque_accounting as _native
 

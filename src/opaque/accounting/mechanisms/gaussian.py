@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import functools
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
 
 import opaque_accounting as _native
 
@@ -62,7 +62,7 @@ def gaussian(noise_multiplier: float) -> Gaussian:
         # Composed 1000 times
         training = acc.gaussian(1.1) * 1000
         eps = training.epsilon_at(1e-5)
-        
+
         # Query-time discretization override
         eps = proc.epsilon_at(1e-5, discretization=1e-3)
     """

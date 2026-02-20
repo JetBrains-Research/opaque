@@ -135,7 +135,9 @@ class PoissonSampler(Sampler):
                 raise ValueError(f"world_size must be >= 1, got {world_size}")
 
         # Warn about parallel Poisson accounting in independent sampling with distributed
-        if self._should_warn_parallel_poisson(use_sharded, dist_initialized, world_size):
+        if self._should_warn_parallel_poisson(
+            use_sharded, dist_initialized, world_size
+        ):
             warnings.warn(
                 "Using independent sampling in distributed training (world_size > 1) "
                 "uses parallel Poisson sampling. Account with acc.parallel_poisson("

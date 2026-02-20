@@ -15,10 +15,7 @@ use super::pld::PyPld;
 ///     Pld: The privacy loss distribution.
 #[pyfunction]
 #[pyo3(name = "gaussian_pld", signature = (noise_multiplier, config))]
-pub fn py_gaussian_pld(
-    noise_multiplier: f64,
-    config: &PyDiscretizationConfig,
-) -> PyResult<PyPld> {
+pub fn py_gaussian_pld(noise_multiplier: f64, config: &PyDiscretizationConfig) -> PyResult<PyPld> {
     let pld = crate::mechanisms::gaussian_pld(noise_multiplier, &config.inner)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
     Ok(PyPld::new(pld))

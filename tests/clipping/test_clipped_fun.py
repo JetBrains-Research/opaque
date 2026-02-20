@@ -470,7 +470,11 @@ def test_clipped_fun_microbatching_with_aux():
 
     # Without microbatching
     clipped_fn_no_mb, clip_state_no_mb = clipped_fun(
-        fn_with_aux, has_aux=True, l2_clip_norm=1.0, microbatch_size=None, return_aux=True
+        fn_with_aux,
+        has_aux=True,
+        l2_clip_norm=1.0,
+        microbatch_size=None,
+        return_aux=True,
     )
     (clipped_no_mb, aux_no_mb), _ = clipped_fn_no_mb(data, state=clip_state_no_mb)
 

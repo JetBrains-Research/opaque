@@ -135,6 +135,7 @@ class TestIdentityDataclass:
         """Identity is a dataclass."""
         i = Identity()
         import dataclasses
+
         assert dataclasses.is_dataclass(i)
 
     def test_zero_epsilon(self):

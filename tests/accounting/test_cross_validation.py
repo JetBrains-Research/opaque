@@ -335,7 +335,9 @@ class TestParallelPoissonCrossValidation:
     @pytest.mark.parametrize("num_workers", [2, 4])
     def test_parallel_poisson_vs_reference(self, sigma, q, num_workers):
         """ParallelPoisson(Poisson(G(σ), q), k) should give sensible epsilon."""
-        proc = acc.parallel_poisson(acc.poisson(acc.gaussian(sigma), q), num_workers) * 500
+        proc = (
+            acc.parallel_poisson(acc.poisson(acc.gaussian(sigma), q), num_workers) * 500
+        )
         eps = proc.epsilon_at(1e-5)
 
         # Must be finite and positive

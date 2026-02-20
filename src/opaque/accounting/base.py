@@ -110,6 +110,7 @@ class DpProcess(ABC):
         Default implementation extracts dataclass fields and recursively
         converts nested DpProcess instances to state dicts.
         """
+
         def _serialize_value(value: object) -> object:
             """Recursively serialize DpProcess fields to state dicts."""
             if isinstance(value, DpProcess):
@@ -123,12 +124,12 @@ class DpProcess(ABC):
 
         # Start with type tag for readability
         data = {"type": self.__class__.__name__}
-        
+
         # Extract all dataclass fields manually
         for field in fields(self):
             value = getattr(self, field.name)
             data[field.name] = _serialize_value(value)
-        
+
         return data
 
     @classmethod

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import functools
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
 
 import opaque_accounting as _native
 
@@ -40,7 +40,6 @@ class Identity(DpProcess):
             max_grid_size=max_grid_size,
         )
         return _native.identity_pld(config.to_native())
-
 
 
 def identity() -> DpProcess:

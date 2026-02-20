@@ -129,16 +129,20 @@ def get_discretization(
 
     # Apply query-time overrides
     return DiscretizationConfig(
-        discretization=discretization if discretization is not None else base.discretization,
+        discretization=discretization
+        if discretization is not None
+        else base.discretization,
         log_x_mass_truncation_bound=(
             log_x_mass_truncation_bound
             if log_x_mass_truncation_bound is not None
             else base.log_x_mass_truncation_bound
         ),
         pessimistic_estimate=(
-            pessimistic_estimate if pessimistic_estimate is not None else base.pessimistic_estimate
+            pessimistic_estimate
+            if pessimistic_estimate is not None
+            else base.pessimistic_estimate
         ),
-        max_grid_size=max_grid_size if max_grid_size is not None else base.max_grid_size,
+        max_grid_size=max_grid_size
+        if max_grid_size is not None
+        else base.max_grid_size,
     )
-
-

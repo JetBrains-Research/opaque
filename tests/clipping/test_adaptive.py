@@ -181,7 +181,7 @@ class TestAdaptiveClippedGrad:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        for i in range(1, 6):
+        for _i in range(1, 6):
             _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
     def test_with_aux_output(self):
@@ -382,7 +382,7 @@ class TestAdaptiveClippedGrad:
         batch_x = torch.randn(32, 10)
         batch_y = torch.randn(32)
 
-        for step in range(3):
+        for _step in range(3):
             grads_no_mb, state_no_mb = grad_fn_no_mb(
                 params, batch_x, batch_y, state=state_no_mb
             )

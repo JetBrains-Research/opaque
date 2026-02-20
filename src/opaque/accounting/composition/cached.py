@@ -43,4 +43,3 @@ class CachedProcess(DpProcess):
             pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         )
-
