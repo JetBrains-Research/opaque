@@ -99,7 +99,7 @@ jobs:
   test-gpu:
     name: GPU Tests - Python ${{ matrix.python-version }}
     runs-on: GPU-runner-001
-    needs: [test-core, test-accounting]
+    needs: [test-core]
     if: github.event_name == 'push' || github.event.pull_request.draft == false
     strategy:
       fail-fast: false
