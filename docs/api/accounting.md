@@ -27,8 +27,9 @@ The underlying implementation uses Google's PLD accounting via the
 ### `DpProcess`
 
 Abstract base class for all privacy processes. Subclasses implement `pld()` to
-compute the Privacy Loss Distribution on demand. Each call recomputes; use
-[`cached()`](#cached) for memoization.
+compute the Privacy Loss Distribution on demand. Results are automatically
+cached via `@lru_cache` (maxsize=8). Use [`cached()`](#cached) for larger cache
+size (16) or as an opaque merge barrier.
 
 **Privacy metrics:**
 
@@ -69,42 +70,54 @@ eps = total.epsilon_at(1e-5)
 
 ### `DiscretizationConfig`
 
-Controls PLD discretization precision.
+Controls PLD discretization precision. Configuration is applied at **query time**
+when computing privacy metrics via `pld()`, not stored in process structure.
 
-| Parameter                   | Default      | Description                                      |
-|-----------------------------|--------------|--------------------------------------------------|
-| `discretization`            | `1e-4`       | Grid spacing for PLD PMF. Error scales as O(d^2) |
-| `log_mass_truncation_bound` | `-50`        | Tails below exp(bound) are truncated             |
-| `pessimistic_estimate`      | `True`       | Round upward for safe upper bounds               |
-| `max_grid_size`             | `10_000_000` | Coarsen grid if it exceeds this many bins        |
+| Parameter                      | Default      | Description                                      |
+|--------------------------------|--------------|--------------------------------------------------|
+| `discretization`               | `1e-4`       | Grid spacing for PLD PMF. Error scales as O(d^2) |
+| `log_x_mass_truncation_bound`  | `-50`        | Tails below exp(bound) are truncated             |
+| `pessimistic_estimate`         | `True`       | Round upward for safe upper bounds               |
+| `max_grid_size`                | `10_000_000` | Coarsen grid if it exceeds this many bins        |
+
+**Query-time configuration (recommended):**
 
 ```python
-from opaque.accounting.discretization import DiscretizationConfig
+# Create processes without config
+proc = acc.poisson(acc.gaussian(0.8), 0.01)
 
-cfg = DiscretizationConfig(discretization=1e-3)
-proc = acc.gaussian(0.8, discretization=cfg)
+# Apply config at query time
+eps_coarse = proc.epsilon_at(1e-5, discretization=1e-3)  # faster, less accurate
+eps_fine = proc.epsilon_at(1e-5, discretization=1e-5)    # slower, more accurate
 ```
 
 **Module-level discretization defaults:**
 
-- `acc.set_discretization(discretization=1e-4, ...)` -- Set default config for
-  all mechanism constructors when `discretization=None`.
-- `acc.get_discretization()` -- Return current default `DiscretizationConfig` or `None`.
+Set default config for all queries when not overridden:
+
+```python
+acc.set_discretization(discretization=1e-4)  # Apply to all queries
+proc = acc.poisson(acc.gaussian(0.8), 0.01)
+eps = proc.epsilon_at(1e-5)  # Uses 1e-4 default
+```
+
+- `acc.set_discretization(discretization=1e-4, ...)` -- Set global default
+- `acc.get_discretization()` -- Return current default `DiscretizationConfig` or `None`
 
 ---
 
 ## Mechanism Functions
 
-All mechanism constructors return a `DpProcess`. They validate inputs and
-resolve discretization config from the module default when not specified.
+All mechanism constructors return a `DpProcess`. Discretization is configured
+at query time via `epsilon_at(..., discretization=...)` or module-level via
+`set_discretization()`.
 
-### `gaussian(noise_multiplier, *, discretization=None) -> DpProcess`
+### `gaussian(noise_multiplier) -> DpProcess`
 
 Gaussian mechanism with noise multiplier sigma. Adds noise N(0, sigma^2) to
 sensitivity-1 queries. Base mechanism for DP-SGD.
 
 - `noise_multiplier` (float): Ratio of noise std to sensitivity. Larger = more private.
-- `discretization` (float | DiscretizationConfig | None): PLD precision config (keyword-only).
 
 ### `poisson(inner, sample_rate) -> DpProcess`
 
@@ -165,26 +178,23 @@ noisy quantile estimation using the combined sensitivity formula. Returns an
 step = acc.poisson(acc.adaclip(acc.gaussian(0.5), quantile_noise_std=50.0), 0.01)
 ```
 
-### `eps_delta(epsilon, delta=0.0, *, discretization=None) -> DpProcess`
+### `eps_delta(epsilon, delta=0.0) -> DpProcess`
 
 Fixed (epsilon, delta)-DP guarantee. Useful for composing an external mechanism
 with known privacy parameters into tracked processes.
 
 - `epsilon` (float): Privacy parameter (>= 0)
 - `delta` (float): Failure probability (default 0.0)
-- `discretization` (float | DiscretizationConfig | None): PLD precision config (keyword-only).
 
 ```python
 external = acc.eps_delta(3.0, 1e-5)
 total = external | (acc.poisson(acc.gaussian(0.5), 0.01) * 1000)
 ```
 
-### `identity(*, discretization=None) -> DpProcess`
+### `identity() -> DpProcess`
 
 Identity mechanism (zero privacy loss). Acts as the identity element in
 composition: `identity() | a` returns `a`.
-
-- `discretization` (float | DiscretizationConfig | None): PLD precision config (keyword-only).
 
 ---
 
@@ -203,14 +213,23 @@ Heterogeneous two-process composition. Equivalent to `left | right`.
 
 ### `cached(process) -> DpProcess`
 
-Wraps a process so its PLD is computed once on first access and cached for all
-subsequent metric queries. Also acts as an opaque merge barrier: the composition
-optimizer will not look through a cached node.
+Increases the LRU cache size from 8 to 16 entries and acts as an opaque merge
+barrier: the composition optimizer will not look through a cached node.
+
+**Note**: All `pld()` methods are automatically cached with `maxsize=8` via
+`@lru_cache`. Use `cached()` when you need:
+- A larger cache (16 entries instead of 8)
+- An explicit merge barrier to prevent composition optimizations
 
 ```python
-training = acc.cached(acc.poisson(acc.gaussian(0.5), 0.01) * 1000)
-eps = training.epsilon_at(1e-5)   # PLD computed here, cached
-adv = training.advantage()         # reuses cached PLD
+# All queries automatically cached (maxsize=8)
+step = acc.poisson(acc.gaussian(0.5), 0.01)
+eps = step.epsilon_at(1e-5)   # Cached automatically
+adv = step.advantage()         # Cache hit
+
+# Use cached() for merge barrier or larger cache
+training = acc.cached(step * 1000)
+eps = training.epsilon_at(1e-5)   # Cached with maxsize=16
 ```
 
 ---

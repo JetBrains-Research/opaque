@@ -62,7 +62,11 @@ from opaque.accounting.composition import (
     compose,
     repeat,
 )
-from opaque.accounting.discretization import get_discretization, set_discretization
+from opaque.accounting.discretization import (
+    DiscretizationConfig,
+    get_discretization,
+    set_discretization,
+)
 
 # Mechanisms
 from opaque.accounting.mechanisms import (
@@ -76,6 +80,7 @@ from opaque.accounting.transformations import adaclip
 
 __all__ = [
     # Discretization
+    "DiscretizationConfig",
     "set_discretization",
     "get_discretization",
     # Mechanisms (factories only; classes via subpackage import)

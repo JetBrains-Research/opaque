@@ -12,7 +12,6 @@ def test_gaussian_state_dict_structure():
     state = cast(dict[str, object], proc.state_dict())
     assert state["type"] == "Gaussian"
     assert state["noise_multiplier"] == 1.1
-    assert "config" in state
 
 
 def test_eps_delta_state_dict_structure():
@@ -27,7 +26,6 @@ def test_identity_state_dict_structure():
     proc = acc.identity()
     state = cast(dict[str, object], proc.state_dict())
     assert state["type"] == "Identity"
-    assert "config" in state
 
 
 def test_poisson_state_dict_structure():

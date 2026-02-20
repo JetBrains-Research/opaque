@@ -11,9 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Comprehensive documentation refresh for all user-facing docs
 - Cross-linking between documentation sections
+- **Privacy Accounting**: Universal `@lru_cache` on all `pld()` implementations (maxsize=8) for automatic memoization
 
 ### Changed
 
+- **Privacy Accounting**: Discretization config now required at Rust FFI boundary (no implicit defaults)
+- **Privacy Accounting**: `cached()` now primarily serves as merge barrier with increased cache size (maxsize=16, up from 8)
 - Accounting: removed `accumulate()` in favor of `parallel_poisson()`
 - Accounting: `adaclip()` now returns an `AdaClip` process (class in transformations submodule)
 - Accounting: all DP processes implement `state_dict()` for serialization

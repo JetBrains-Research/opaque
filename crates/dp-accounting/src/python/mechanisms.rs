@@ -9,18 +9,17 @@ use super::pld::PyPld;
 ///
 /// Args:
 ///     noise_multiplier (float): σ/Δ ratio, in [0.1, 1.2].
-///     config (DiscretizationConfig, optional): Discretization configuration.
+///     config (DiscretizationConfig): Discretization configuration.
 ///
 /// Returns:
 ///     Pld: The privacy loss distribution.
 #[pyfunction]
-#[pyo3(name = "gaussian_pld", signature = (noise_multiplier, config=None))]
+#[pyo3(name = "gaussian_pld", signature = (noise_multiplier, config))]
 pub fn py_gaussian_pld(
     noise_multiplier: f64,
-    config: Option<&PyDiscretizationConfig>,
+    config: &PyDiscretizationConfig,
 ) -> PyResult<PyPld> {
-    let cfg = PyDiscretizationConfig::resolve(config);
-    let pld = crate::mechanisms::gaussian_pld(noise_multiplier, &cfg)
+    let pld = crate::mechanisms::gaussian_pld(noise_multiplier, &config.inner)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
     Ok(PyPld::new(pld))
 }
@@ -30,19 +29,18 @@ pub fn py_gaussian_pld(
 /// Args:
 ///     epsilon (float): Privacy loss, >= 0.
 ///     delta (float): Failure probability, in [0, 1].
-///     config (DiscretizationConfig, optional): Discretization configuration.
+///     config (DiscretizationConfig): Discretization configuration.
 ///
 /// Returns:
 ///     Pld: The privacy loss distribution.
 #[pyfunction]
-#[pyo3(name = "eps_delta_pld", signature = (epsilon, delta, config=None))]
+#[pyo3(name = "eps_delta_pld", signature = (epsilon, delta, config))]
 pub fn py_eps_delta_pld(
     epsilon: f64,
     delta: f64,
-    config: Option<&PyDiscretizationConfig>,
+    config: &PyDiscretizationConfig,
 ) -> PyResult<PyPld> {
-    let cfg = PyDiscretizationConfig::resolve(config);
-    let pld = crate::mechanisms::eps_delta_pld(epsilon, delta, &cfg)
+    let pld = crate::mechanisms::eps_delta_pld(epsilon, delta, &config.inner)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
     Ok(PyPld::new(pld))
 }
@@ -50,15 +48,14 @@ pub fn py_eps_delta_pld(
 /// Compute the PLD for the identity (zero-privacy-loss) mechanism.
 ///
 /// Args:
-///     config (DiscretizationConfig, optional): Discretization configuration.
+///     config (DiscretizationConfig): Discretization configuration.
 ///
 /// Returns:
 ///     Pld: The identity PLD (neutral element for composition).
 #[pyfunction]
-#[pyo3(name = "identity_pld", signature = (config=None))]
-pub fn py_identity_pld(config: Option<&PyDiscretizationConfig>) -> PyResult<PyPld> {
-    let cfg = PyDiscretizationConfig::resolve(config);
-    let pld = crate::mechanisms::identity_pld(&cfg)
+#[pyo3(name = "identity_pld", signature = (config))]
+pub fn py_identity_pld(config: &PyDiscretizationConfig) -> PyResult<PyPld> {
+    let pld = crate::mechanisms::identity_pld(&config.inner)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
     Ok(PyPld::new(pld))
 }

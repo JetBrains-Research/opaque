@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass
 
 import opaque_accounting as _native
@@ -17,24 +18,34 @@ class AdaClip(DpProcess):
     inner: Gaussian
     quantile_noise_std: float
 
-    def pld(self) -> Pld:
+    @functools.lru_cache(maxsize=8)
+    def pld(
+        self,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+    ) -> Pld:
+        from opaque.accounting.discretization import get_discretization
+        
+        config = get_discretization(
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+        )
+        
         match self.inner:
-            case Gaussian(noise_multiplier=nm, config=cfg):
+            case Gaussian(noise_multiplier=nm):
                 s = _native.combined_sensitivity(nm, self.quantile_noise_std)
                 z_eff = 1.0 / s
-                return _native.gaussian_pld(z_eff, config=cfg)
+                return _native.gaussian_pld(z_eff, config.to_native())
             case _:
                 raise TypeError(
                     "AdaClip requires a Gaussian inner mechanism, got "
                     f"{type(self.inner).__name__}."
                 )
-
-    def state_dict(self) -> dict[str, object]:
-        return {
-            "type": "AdaClip",
-            "quantile_noise_std": self.quantile_noise_std,
-            "inner": self.inner.state_dict(),
-        }
 
 
 def adaclip(

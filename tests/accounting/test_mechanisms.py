@@ -6,7 +6,8 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 import opaque.accounting as acc
-from opaque.accounting.base import DiscretizationConfig, DpProcess
+from opaque.accounting.base import DpProcess
+from opaque.accounting.discretization import DiscretizationConfig
 from opaque.accounting.mechanisms import (
     EpsDelta,
     Gaussian,
@@ -22,7 +23,6 @@ class TestGaussianDataclass:
     def test_fields(self):
         g = Gaussian(1.1)
         assert g.noise_multiplier == pytest.approx(1.1)
-        assert g.config is None
 
     def test_frozen(self):
         g = Gaussian(1.1)
@@ -36,21 +36,16 @@ class TestGaussianDataclass:
         assert Gaussian(1.0) == Gaussian(1.0)
         assert Gaussian(1.0) != Gaussian(1.1)
 
-    def test_config_participates_in_equality_and_hash(self):
-        """Config participates in both __eq__ and __hash__."""
-        a = Gaussian(1.0, config=None)
-        b = Gaussian(1.0, config=DiscretizationConfig(discretization=1e-3))
-        # same nm + different config → NOT equal
-        assert a != b
-        # same nm + same config → equal and same hash
-        c = Gaussian(1.0, config=None)
-        assert a == c
-        assert hash(a) == hash(c)
-
-    def test_config_excluded_from_repr(self):
-        """Config field has repr=False."""
-        g = Gaussian(1.0, config=DiscretizationConfig(discretization=1e-3))
-        assert "config" not in repr(g)
+    def test_pld_with_query_config(self):
+        """Config is now query-time - test pld() with different discretization."""
+        g = Gaussian(1.0)
+        # Both should compute successfully with different query configs
+        pld1 = g.pld(discretization=1e-3)
+        pld2 = g.pld(discretization=1e-4)
+        eps1 = pld1.epsilon_at(1e-5)
+        eps2 = pld2.epsilon_at(1e-5)
+        assert math.isfinite(eps1) and eps1 > 0
+        assert math.isfinite(eps2) and eps2 > 0
 
     def test_pld_returns_valid(self):
         pld = Gaussian(0.8).pld()
@@ -101,16 +96,6 @@ class TestGaussianConstructor:
         eps = g.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
-    def test_float_discretization(self):
-        g = acc.gaussian(0.8, discretization=1e-3)
-        assert g.config is not None
-        assert g.config.discretization == pytest.approx(1e-3)
-
-    def test_config_discretization(self):
-        cfg = DiscretizationConfig(discretization=1e-3)
-        g = acc.gaussian(0.8, discretization=cfg)
-        assert g.config is cfg
-
 
 class TestEpsDeltaConstructor:
     """acc.eps_delta() returns EpsDelta."""
@@ -125,10 +110,6 @@ class TestEpsDeltaConstructor:
         """Default delta=0 → pure ε-DP."""
         e = acc.eps_delta(1.0)
         assert e.delta == pytest.approx(0.0)
-
-    def test_float_discretization(self):
-        e = acc.eps_delta(1.0, discretization=1e-3)
-        assert e.config is not None
 
 
 class TestIdentityConstructor:
@@ -150,10 +131,11 @@ class TestIdentityDataclass:
     def test_is_dp_process(self):
         assert isinstance(Identity(), DpProcess)
 
-    def test_frozen(self):
+    def test_is_dataclass(self):
+        """Identity is a dataclass."""
         i = Identity()
-        with pytest.raises(FrozenInstanceError):
-            i.config = None  # type: ignore[misc]
+        import dataclasses
+        assert dataclasses.is_dataclass(i)
 
     def test_zero_epsilon(self):
         eps = Identity().epsilon_at(1e-5)

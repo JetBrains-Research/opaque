@@ -11,7 +11,8 @@ from opaque.accounting.amplification import (
     Poisson,
     TruncatedPoisson,
 )
-from opaque.accounting.base import DiscretizationConfig, DpProcess
+from opaque.accounting.base import DpProcess
+from opaque.accounting.discretization import DiscretizationConfig
 from opaque.accounting.mechanisms import Gaussian
 
 # ── Amplification dataclass tests ────────────────────────────────────
@@ -117,10 +118,17 @@ class TestPoissonConstructor:
         assert math.isfinite(eps) and eps > 0
 
     def test_propagates_config(self):
-        cfg = DiscretizationConfig(discretization=1e-3)
-        g = acc.gaussian(0.8, discretization=cfg)
+        """Config is now query-time, so this test verifies pld() accepts discretization."""
+        g = acc.gaussian(0.8)
         p = acc.poisson(g, 0.01)
-        assert p.inner.config is cfg
+        # Config is query-time - verify pld() accepts discretization parameter
+        pld1 = p.pld(discretization=1e-3)
+        pld2 = p.pld(discretization=1e-4)
+        # Both should compute successfully (different discretizations)
+        eps1 = pld1.epsilon_at(1e-5)
+        eps2 = pld2.epsilon_at(1e-5)
+        assert math.isfinite(eps1) and eps1 > 0
+        assert math.isfinite(eps2) and eps2 > 0
 
 
 class TestTruncatedPoissonConstructor:

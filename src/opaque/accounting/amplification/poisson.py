@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass
 
 import opaque_accounting as _native
@@ -18,33 +19,43 @@ class Poisson(DpProcess):
     inner: Gaussian | AdaClip
     sample_rate: float
 
-    def pld(self) -> Pld:
+    @functools.lru_cache(maxsize=8)
+    def pld(
+        self,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+    ) -> Pld:
+        from opaque.accounting.discretization import get_discretization
+        
+        config = get_discretization(
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+        )
+        
         match self.inner:
-            case Gaussian(noise_multiplier=nm, config=cfg):
+            case Gaussian(noise_multiplier=nm):
                 return _native.poisson_gaussian_pld(
-                    nm, self.sample_rate, config=cfg
+                    nm, self.sample_rate, config.to_native()
                 )
             case AdaClip(
-                inner=Gaussian(noise_multiplier=nm, config=cfg),
+                inner=Gaussian(noise_multiplier=nm),
                 quantile_noise_std=quantile_noise_std,
             ):
                 s = _native.combined_sensitivity(nm, quantile_noise_std)
                 z_eff = 1.0 / s
                 return _native.poisson_gaussian_pld(
-                    z_eff, self.sample_rate, config=cfg
+                    z_eff, self.sample_rate, config.to_native()
                 )
             case _:
                 raise TypeError(
                     "Poisson requires a Gaussian or AdaClip inner mechanism, got "
                     f"{type(self.inner).__name__}."
                 )
-
-    def state_dict(self) -> dict[str, object]:
-        return {
-            "type": "Poisson",
-            "sample_rate": self.sample_rate,
-            "inner": self.inner.state_dict(),
-        }
 
 
 def poisson(

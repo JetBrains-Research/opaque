@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass
 
 from opaque.accounting.base import DpProcess, Pld
@@ -17,12 +18,18 @@ class Repeated(DpProcess):
     def _leaf_and_count(self) -> tuple[DpProcess, int]:
         return (self.inner, self.count)
 
-    def pld(self) -> Pld:
-        return self.inner.pld().self_compose(self.count)
-
-    def state_dict(self) -> dict[str, object]:
-        return {
-            "type": "Repeated",
-            "count": self.count,
-            "inner": self.inner.state_dict(),
-        }
+    @functools.lru_cache(maxsize=8)
+    def pld(
+        self,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+    ) -> Pld:
+        return self.inner.pld(
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+        ).self_compose(self.count)

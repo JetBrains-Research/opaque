@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
+import functools
 from dataclasses import asdict, dataclass, field
 
 import opaque_accounting as _native
 
 from opaque.accounting.base import (
-    DiscretizationConfig,
     DpProcess,
     Pld,
 )
 from opaque.accounting.discretization import (
-    resolve_pld_config,
-    serialize_config,
+    get_discretization,
 )
 
 
@@ -23,24 +22,26 @@ class EpsDelta(DpProcess):
 
     epsilon: float
     delta: float
-    config: DiscretizationConfig | None = field(default=None, repr=False)
 
-    def pld(self) -> Pld:
-        return _native.eps_delta_pld(self.epsilon, self.delta, config=self.config)
+    @functools.lru_cache(maxsize=8)
+    def pld(
+        self,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+    ) -> Pld:
+        config = get_discretization(
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+        )
+        return _native.eps_delta_pld(self.epsilon, self.delta, config.to_native())
 
-    def state_dict(self) -> dict[str, object]:
-        d = asdict(self)
-        d["type"] = "EpsDelta"
-        d["config"] = serialize_config(self.config)
-        return d
 
-
-def eps_delta(
-    epsilon: float,
-    delta: float = 0.0,
-    *,
-    discretization: None | float | DiscretizationConfig = None,
-) -> DpProcess:
+def eps_delta(epsilon: float, delta: float = 0.0) -> DpProcess:
     """Fixed (ε, δ)-DP guarantee (for composition with other mechanisms).
 
     Useful when you have an external mechanism with known privacy parameters
@@ -49,7 +50,6 @@ def eps_delta(
     Args:
         epsilon: Privacy parameter ε.
         delta: Privacy parameter δ. Default: 0.0 (pure ε-DP).
-        discretization: PLD precision config (keyword-only).
 
     Returns:
         A :class:`DpProcess` wrapping an (ε, δ) PLD.
@@ -64,5 +64,4 @@ def eps_delta(
         total = external | training
         eps = total.epsilon_at(1e-5)
     """
-    config = resolve_pld_config(discretization)
-    return EpsDelta(epsilon, delta, config=config)
+    return EpsDelta(epsilon, delta)

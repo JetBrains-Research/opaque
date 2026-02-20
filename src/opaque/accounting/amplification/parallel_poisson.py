@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass
 
 import opaque_accounting as _native
@@ -25,21 +26,38 @@ class ParallelPoisson(DpProcess):
     inner: Poisson
     num_workers: int
 
-    def pld(self) -> Pld:
+    @functools.lru_cache(maxsize=8)
+    def pld(
+        self,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+    ) -> Pld:
+        from opaque.accounting.discretization import get_discretization
+        
+        config = get_discretization(
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+        )
+        
         match self.inner:
             case Poisson(
-                inner=Gaussian(noise_multiplier=nm, config=cfg),
+                inner=Gaussian(noise_multiplier=nm),
                 sample_rate=rate,
             ):
                 return _native.accumulated_poisson_gaussian_pld(
                     nm,
                     rate,
                     self.num_workers,
-                    config=cfg,
+                    config.to_native(),
                 )
             case Poisson(
                 inner=AdaClip(
-                    inner=Gaussian(noise_multiplier=nm, config=cfg),
+                    inner=Gaussian(noise_multiplier=nm),
                     quantile_noise_std=quantile_noise_std,
                 ),
                 sample_rate=rate,
@@ -50,20 +68,13 @@ class ParallelPoisson(DpProcess):
                     z_eff,
                     rate,
                     self.num_workers,
-                    config=cfg,
+                    config.to_native(),
                 )
             case _:
                 raise TypeError(
                     "ParallelPoisson requires a Poisson inner mechanism, got "
                     f"{type(self.inner).__name__}."
                 )
-
-    def state_dict(self) -> dict[str, object]:
-        return {
-            "type": "ParallelPoisson",
-            "num_workers": self.num_workers,
-            "inner": self.inner.state_dict(),
-        }
 
 
 def parallel_poisson(

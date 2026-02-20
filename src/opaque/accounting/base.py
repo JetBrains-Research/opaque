@@ -1,9 +1,10 @@
 """DpProcess: stateless composable DP process algebra.
 
 Mechanism constructors store parameters as frozen-dataclass fields.
-The PLD is computed on demand via the ``pld()`` method — each call
-recomputes from scratch.  Use :func:`~opaque.accounting.composition.cached`
-to memoize.
+The PLD is computed on demand via the ``pld()`` method, which is automatically
+cached via ``@lru_cache`` on each implementation.  Use
+:func:`~opaque.accounting.composition.cached` to increase cache size or as
+a merge barrier.
 
 Composition Optimizations
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -36,16 +37,14 @@ be reduced to cheaper operations using structural equality (``==``):
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import fields
 from typing import TypeAlias
 
 import opaque_accounting as _native
 
-from opaque.accounting.discretization import deserialize_config
-
 Pld: TypeAlias = _native.Pld
-DiscretizationConfig: TypeAlias = _native.DiscretizationConfig
 
-__all__ = ["DpProcess", "Pld", "DiscretizationConfig"]
+__all__ = ["DpProcess", "Pld"]
 
 # Global registry of DpProcess subclasses for polymorphic deserialization.
 # Automatically populated when each subclass is defined via __init_subclass__.
@@ -57,8 +56,8 @@ class DpProcess(ABC):
 
     Abstract base class for all mechanisms.  Subclasses implement
     :meth:`pld` to compute the Privacy Loss Distribution on demand.
-    Each call recomputes; use :func:`~opaque.accounting.composition.cached`
-    for memoization.
+    Results are automatically cached via ``@lru_cache`` on each
+    implementation.
 
     Supports:
 
@@ -80,22 +79,57 @@ class DpProcess(ABC):
         _PROCESS_REGISTRY[cls.__name__] = cls
 
     @abstractmethod
-    def pld(self) -> Pld:
+    def pld(
+        self,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+    ) -> Pld:
         """Compute the Privacy Loss Distribution.
 
-        Each call recomputes from scratch.  Use
-        :func:`~opaque.accounting.composition.cached` to memoize.
+        Results are automatically cached via ``@lru_cache`` on each
+        implementation.  Use :func:`~opaque.accounting.composition.cached`
+        to increase cache size or as a merge barrier.
+
+        Args:
+            discretization: Grid spacing for PLD (query-time override).
+            log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
+            pessimistic_estimate: Whether to use pessimistic rounding (query-time override).
+            max_grid_size: Maximum grid size before coarsening (query-time override).
         """
         ...
 
-    @abstractmethod
     def state_dict(self) -> dict[str, object]:
         """Serialize this process into a plain dict.
 
         The returned structure should be JSON-serializable and must not
         include cached or computed values (e.g., PLDs).
+
+        Default implementation extracts dataclass fields and recursively
+        converts nested DpProcess instances to state dicts.
         """
-        ...
+        def _serialize_value(value: object) -> object:
+            """Recursively serialize DpProcess fields to state dicts."""
+            if isinstance(value, DpProcess):
+                return value.state_dict()
+            elif isinstance(value, dict):
+                return {k: _serialize_value(v) for k, v in value.items()}
+            elif isinstance(value, (list, tuple)):
+                return type(value)(_serialize_value(item) for item in value)
+            else:
+                return value
+
+        # Start with type tag for readability
+        data = {"type": self.__class__.__name__}
+        
+        # Extract all dataclass fields manually
+        for field in fields(self):
+            value = getattr(self, field.name)
+            data[field.name] = _serialize_value(value)
+        
+        return data
 
     @classmethod
     def load_state_dict(cls, data: dict[str, object]) -> DpProcess:
@@ -127,34 +161,133 @@ class DpProcess(ABC):
             if key in data and isinstance(data[key], dict):
                 data[key] = cls.load_state_dict(data[key])
 
-        # Deserialize config if present
-        if "config" in data and data["config"] is not None:
-            data["config"] = deserialize_config(data["config"])
-
         # Instantiate using dataclass constructor
         return process_cls(**data)
 
     # -- Privacy metrics (compute PLD each time) -----------------------------
 
-    def epsilon_at(self, delta: float) -> float:
-        """Smallest ε achieving (ε, δ)-DP."""
-        return self.pld().epsilon_at(delta)
+    def epsilon_at(
+        self,
+        delta: float,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+    ) -> float:
+        """Smallest ε achieving (ε, δ)-DP.
 
-    def delta_at(self, epsilon: float) -> float:
-        """Smallest δ achieving (ε, δ)-DP."""
-        return self.pld().delta_at(epsilon)
+        Args:
+            delta: Failure probability.
+            discretization: Grid spacing (query-time override).
+            log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
+            pessimistic_estimate: Whether to use pessimistic rounding (query-time override).
+            max_grid_size: Maximum grid size before coarsening (query-time override).
+        """
+        return self.pld(
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+        ).epsilon_at(delta)
 
-    def advantage(self) -> float:
-        """Total-variation advantage (f-DP)."""
-        return self.pld().advantage()
+    def delta_at(
+        self,
+        epsilon: float,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+    ) -> float:
+        """Smallest δ achieving (ε, δ)-DP.
 
-    def beta_at(self, alpha: float) -> float:
-        """Type-II error at given Type-I error α."""
-        return self.pld().beta_at(alpha)
+        Args:
+            epsilon: Privacy budget.
+            discretization: Grid spacing (query-time override).
+            log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
+            pessimistic_estimate: Whether to use pessimistic rounding (query-time override).
+            max_grid_size: Maximum grid size before coarsening (query-time override).
+        """
+        return self.pld(
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+        ).delta_at(epsilon)
 
-    def risk_at(self, prior: float) -> float:
-        """Bayes risk under optimal adversary."""
-        return self.pld().risk_at(prior)
+    def advantage(
+        self,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+    ) -> float:
+        """Total-variation advantage (f-DP).
+
+        Args:
+            discretization: Grid spacing (query-time override).
+            log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
+            pessimistic_estimate: Whether to use pessimistic rounding (query-time override).
+            max_grid_size: Maximum grid size before coarsening (query-time override).
+        """
+        return self.pld(
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+        ).advantage()
+
+    def beta_at(
+        self,
+        alpha: float,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+    ) -> float:
+        """Type-II error at given Type-I error α.
+
+        Args:
+            alpha: Type-I error rate.
+            discretization: Grid spacing (query-time override).
+            log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
+            pessimistic_estimate: Whether to use pessimistic rounding (query-time override).
+            max_grid_size: Maximum grid size before coarsening (query-time override).
+        """
+        return self.pld(
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+        ).beta_at(alpha)
+
+    def risk_at(
+        self,
+        prior: float,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+    ) -> float:
+        """Bayes risk under optimal adversary.
+
+        Args:
+            prior: Prior probability.
+            discretization: Grid spacing (query-time override).
+            log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
+            pessimistic_estimate: Whether to use pessimistic rounding (query-time override).
+            max_grid_size: Maximum grid size before coarsening (query-time override).
+        """
+        return self.pld(
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+        ).risk_at(prior)
 
     # -- Composition operators -----------------------------------------------
 

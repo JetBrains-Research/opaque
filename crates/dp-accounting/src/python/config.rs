@@ -25,15 +25,6 @@ pub struct PyDiscretizationConfig {
     pub(super) inner: DiscretizationConfig,
 }
 
-impl PyDiscretizationConfig {
-    pub(super) fn resolve(config: Option<&PyDiscretizationConfig>) -> DiscretizationConfig {
-        match config {
-            Some(c) => c.inner.clone(),
-            None => DiscretizationConfig::default(),
-        }
-    }
-}
-
 #[pymethods]
 impl PyDiscretizationConfig {
     #[new]

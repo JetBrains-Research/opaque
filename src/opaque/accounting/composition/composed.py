@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass
 
 from opaque.accounting.base import DpProcess, Pld
@@ -14,12 +15,25 @@ class Composed(DpProcess):
     left: DpProcess
     right: DpProcess
 
-    def pld(self) -> Pld:
-        return self.left.pld().compose(self.right.pld())
-
-    def state_dict(self) -> dict[str, object]:
-        return {
-            "type": "Composed",
-            "left": self.left.state_dict(),
-            "right": self.right.state_dict(),
-        }
+    @functools.lru_cache(maxsize=8)
+    def pld(
+        self,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+    ) -> Pld:
+        left_pld = self.left.pld(
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+        )
+        right_pld = self.right.pld(
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+        )
+        return left_pld.compose(right_pld)

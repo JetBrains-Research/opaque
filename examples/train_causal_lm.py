@@ -478,7 +478,8 @@ def main():
         f"(iterations={calibration.iterations}, converged={calibration.converged})"
     )
 
-    # Accounting (cached per-step process for efficient repeated composition)
+    # Accounting (all pld() calls automatically cached with maxsize=8)
+    # Using acc.cached() here increases cache to maxsize=16 and creates merge barrier
     accounting = Accountant()
     step_process = acc.cached(acc.poisson(acc.gaussian(noise_multiplier), sample_rate))
 

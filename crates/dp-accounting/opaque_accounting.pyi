@@ -194,20 +194,20 @@ class DiscretizationConfig:
 
 def gaussian_pld(
     noise_multiplier: float,
-    config: DiscretizationConfig | None = None,
+    config: DiscretizationConfig,
 ) -> Pld:
     """Compute the PLD for a Gaussian mechanism with sensitivity 1.
 
     Args:
         noise_multiplier: Ratio of noise std to sensitivity (σ/Δ).
-        config: Override default PLD precision.
+        config: PLD discretization configuration.
 
     Returns:
         The privacy loss distribution.
 
     Example::
 
-        pld = dp.gaussian_pld(1.1)
+        pld = dp.gaussian_pld(1.1, config)
         pld.epsilon_at(1e-5)  # ~3.92
     """
     ...
@@ -216,14 +216,14 @@ def gaussian_pld(
 def eps_delta_pld(
     epsilon: float,
     delta: float,
-    config: DiscretizationConfig | None = None,
+    config: DiscretizationConfig,
 ) -> Pld:
     """Compute the PLD for a fixed (ε, δ)-mechanism.
 
     Args:
         epsilon: Privacy loss, >= 0.
         delta: Failure probability, in [0, 1].
-        config: Override default PLD precision.
+        config: PLD discretization configuration.
 
     Returns:
         The privacy loss distribution.
@@ -232,12 +232,12 @@ def eps_delta_pld(
 
 
 def identity_pld(
-    config: DiscretizationConfig | None = None,
+    config: DiscretizationConfig,
 ) -> Pld:
     """Compute the PLD for the identity (zero-privacy-loss) mechanism.
 
     Args:
-        config: Override default PLD precision.
+        config: PLD discretization configuration.
 
     Returns:
         The identity PLD (neutral element for composition).
@@ -253,21 +253,21 @@ def identity_pld(
 def poisson_gaussian_pld(
     noise_multiplier: float,
     rate: float,
-    config: DiscretizationConfig | None = None,
+    config: DiscretizationConfig,
 ) -> Pld:
     """Compute the PLD for a Poisson-subsampled Gaussian mechanism.
 
     Args:
         noise_multiplier: σ/Δ ratio.
         rate: Poisson sampling probability, in (0, 1].
-        config: Override default PLD precision.
+        config: PLD discretization configuration.
 
     Returns:
         The amplified privacy loss distribution.
 
     Example::
 
-        pld = dp.poisson_gaussian_pld(1.1, 0.01)
+        pld = dp.poisson_gaussian_pld(1.1, 0.01, config)
         training = pld.self_compose(1000)
         training.epsilon_at(1e-5)
     """
@@ -279,7 +279,7 @@ def truncated_poisson_gaussian_pld(
     rate: float,
     batch_size_max: int,
     dataset_size: int,
-    config: DiscretizationConfig | None = None,
+    config: DiscretizationConfig,
 ) -> Pld:
     """Compute the PLD for a truncated Poisson-subsampled Gaussian mechanism.
 
@@ -291,7 +291,7 @@ def truncated_poisson_gaussian_pld(
         rate: Poisson sampling probability, in (0, 1].
         batch_size_max: Maximum batch size.
         dataset_size: Total dataset size.
-        config: Override default PLD precision.
+        config: PLD discretization configuration.
 
     Returns:
         The amplified privacy loss distribution.
@@ -303,7 +303,7 @@ def accumulated_poisson_gaussian_pld(
     noise_multiplier: float,
     rate: float,
     microbatches: int,
-    config: DiscretizationConfig | None = None,
+    config: DiscretizationConfig,
 ) -> Pld:
     """Compute the PLD for an accumulated Poisson-subsampled Gaussian mechanism.
 
@@ -314,7 +314,7 @@ def accumulated_poisson_gaussian_pld(
         noise_multiplier: σ/Δ ratio.
         rate: Poisson sampling probability, in (0, 1].
         microbatches: Number of microbatches, > 0.
-        config: Override default PLD precision.
+        config: PLD discretization configuration.
 
     Returns:
         The amplified privacy loss distribution.
