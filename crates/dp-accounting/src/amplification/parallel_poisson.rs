@@ -1,4 +1,7 @@
-//! Accumulated (gradient accumulation) Poisson-subsampled Gaussian mechanism PLD.
+//! Parallel Poisson-subsampled Gaussian mechanism PLD.
+//!
+//! Models scenarios where multiple independent Poisson samples are summed before
+//! adding noise once. Use cases: gradient accumulation, parallel workers.
 
 use crate::adjacency::Adjacency;
 use crate::discretization::{discretize_asymmetric_mechanism, DiscretizationConfig, EpsilonBounds};
@@ -11,27 +14,31 @@ use statrs::distribution::{ContinuousCDF, Normal};
 use super::poisson::poisson_gaussian_pld;
 use super::{validate_noise_multiplier, validate_rate};
 
-/// Compute the PLD for an accumulated Poisson-subsampled Gaussian mechanism.
+/// Compute the PLD for a parallel Poisson-subsampled Gaussian mechanism.
 ///
-/// Models gradient accumulation: `microbatches` independent Poisson-sampled
-/// batches, clipped gradients summed, noise added **once**. A single example
-/// appears K ~ Binomial(m, q) times, creating a Mixture of Gaussians.
+/// Models summing `microbatches` independent Poisson-sampled batches with noise
+/// added **once** after summation. Examples appear K ~ Binomial(m, q) times,
+/// creating a Mixture of Gaussians.
+///
+/// **Use cases**:
+/// - **Gradient accumulation**: Split batch, sum clipped gradients, add noise
+/// - **Parallel workers**: Independent Poisson sampling on K workers, aggregate
 ///
 /// This is mathematically different from composing `m` independent Poisson
-/// steps: accumulation adds noise once (less total noise, worse privacy) but
-/// produces larger effective batch sizes for better ML utility.
+/// steps: parallel composition adds noise once (less total noise, worse privacy)
+/// but produces larger effective batch sizes for better ML utility.
 ///
 /// # Arguments
 ///
 /// * `noise_multiplier` — σ/Δ, must be in \[0.1, 1.2\]
 /// * `rate` — Poisson sampling probability q ∈ (0, 1\]
-/// * `microbatches` — number of microbatches m > 0
+/// * `microbatches` — number of independent samples m > 0
 /// * `config` — discretization configuration
 ///
 /// # Errors
 ///
 /// Returns `InvalidParameter` if parameters are out of range.
-pub fn accumulated_poisson_gaussian_pld(
+pub fn parallel_poisson_gaussian_pld(
     noise_multiplier: f64,
     rate: f64,
     microbatches: usize,
@@ -345,14 +352,14 @@ mod tests {
 
     #[test]
     fn test_accumulated_rejects_zero_microbatches() {
-        assert!(accumulated_poisson_gaussian_pld(0.5, 0.01, 0, &default_config()).is_err());
+        assert!(parallel_poisson_gaussian_pld(0.5, 0.01, 0, &default_config()).is_err());
     }
 
     #[test]
     fn test_accumulated_m1_matches_poisson() {
         let cfg = default_config();
         let pld_poisson = poisson_gaussian_pld(0.5, 0.01, &cfg).unwrap();
-        let pld_acc = accumulated_poisson_gaussian_pld(0.5, 0.01, 1, &cfg).unwrap();
+        let pld_acc = parallel_poisson_gaussian_pld(0.5, 0.01, 1, &cfg).unwrap();
 
         let eps_p = pld_poisson.epsilon_at(1e-5);
         let eps_a = pld_acc.epsilon_at(1e-5);
@@ -367,13 +374,13 @@ mod tests {
     #[test]
     fn test_accumulated_more_microbatches_higher_epsilon() {
         let cfg = default_config();
-        let eps2 = accumulated_poisson_gaussian_pld(0.5, 0.01, 2, &cfg)
+        let eps2 = parallel_poisson_gaussian_pld(0.5, 0.01, 2, &cfg)
             .unwrap()
             .epsilon_at(1e-5);
-        let eps4 = accumulated_poisson_gaussian_pld(0.5, 0.01, 4, &cfg)
+        let eps4 = parallel_poisson_gaussian_pld(0.5, 0.01, 4, &cfg)
             .unwrap()
             .epsilon_at(1e-5);
-        let eps8 = accumulated_poisson_gaussian_pld(0.5, 0.01, 8, &cfg)
+        let eps8 = parallel_poisson_gaussian_pld(0.5, 0.01, 8, &cfg)
             .unwrap()
             .epsilon_at(1e-5);
 

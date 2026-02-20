@@ -105,7 +105,7 @@ def _worker_reduce_scalar(rank: int, world_size: int, port: int) -> None:
 
 
 def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> None:
-    from opaque.clipping import AdaptiveClipState
+    from opaque.clipping.adaptive import AdaptiveClipState
     from opaque.distributed import sync_state
 
     _setup_ddp(rank, world_size, port)
@@ -119,8 +119,7 @@ def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> N
         )
         synced = sync_state(
             state,
-            sync_fields=["clip_norm", "clipping_rate"],
-            op="mean",
+            field_ops={"clip_norm": "mean", "clipping_rate": "mean"},
             device=device,
         )
         expected_clip_norm = sum(range(1, world_size + 1)) / world_size
@@ -166,7 +165,7 @@ def _worker_dp_training_step(rank: int, world_size: int, port: int) -> None:
             return ((pred - y) ** 2).mean()
 
         grad_fn, clip_state = clipped_grad(
-            loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2)
+            loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2), distributed=False
         )
         noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=None)
 
@@ -215,8 +214,7 @@ def _worker_adaptive_clipping(rank: int, world_size: int, port: int) -> None:
 
         new_state = sync_state(
             new_state,
-            sync_fields=["clip_norm", "clipping_rate"],
-            op="mean",
+            field_ops={"clip_norm": "mean", "clipping_rate": "mean"},
             device=device,
         )
 

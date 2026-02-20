@@ -10,19 +10,18 @@ use super::pld::PyPld;
 /// Args:
 ///     noise_multiplier (float): σ/Δ ratio, in [0.1, 1.2].
 ///     rate (float): Poisson sampling probability, in (0, 1].
-///     config (DiscretizationConfig, optional): Discretization configuration.
+///     config (DiscretizationConfig): Discretization configuration.
 ///
 /// Returns:
 ///     Pld: The amplified privacy loss distribution.
 #[pyfunction]
-#[pyo3(name = "poisson_gaussian_pld", signature = (noise_multiplier, rate, config=None))]
+#[pyo3(name = "poisson_gaussian_pld", signature = (noise_multiplier, rate, config))]
 pub fn py_poisson_gaussian_pld(
     noise_multiplier: f64,
     rate: f64,
-    config: Option<&PyDiscretizationConfig>,
+    config: &PyDiscretizationConfig,
 ) -> PyResult<PyPld> {
-    let cfg = PyDiscretizationConfig::resolve(config);
-    let pld = crate::amplification::poisson_gaussian_pld(noise_multiplier, rate, &cfg)
+    let pld = crate::amplification::poisson_gaussian_pld(noise_multiplier, rate, &config.inner)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
     Ok(PyPld::new(pld))
 }
@@ -38,58 +37,56 @@ pub fn py_poisson_gaussian_pld(
 ///     rate (float): Poisson sampling probability, in (0, 1].
 ///     batch_size_max (int): Maximum batch size.
 ///     dataset_size (int): Total dataset size.
-///     config (DiscretizationConfig, optional): Discretization configuration.
+///     config (DiscretizationConfig): Discretization configuration.
 ///
 /// Returns:
 ///     Pld: The amplified privacy loss distribution.
 #[pyfunction]
-#[pyo3(name = "truncated_poisson_gaussian_pld", signature = (noise_multiplier, rate, batch_size_max, dataset_size, config=None))]
+#[pyo3(name = "truncated_poisson_gaussian_pld", signature = (noise_multiplier, rate, batch_size_max, dataset_size, config))]
 pub fn py_truncated_poisson_gaussian_pld(
     noise_multiplier: f64,
     rate: f64,
     batch_size_max: usize,
     dataset_size: usize,
-    config: Option<&PyDiscretizationConfig>,
+    config: &PyDiscretizationConfig,
 ) -> PyResult<PyPld> {
-    let cfg = PyDiscretizationConfig::resolve(config);
     let pld = crate::amplification::truncated_poisson_gaussian_pld(
         noise_multiplier,
         rate,
         batch_size_max,
         dataset_size,
-        &cfg,
+        &config.inner,
     )
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
     Ok(PyPld::new(pld))
 }
 
-/// Compute the PLD for an accumulated Poisson-subsampled Gaussian mechanism.
+/// Compute the PLD for a parallel Poisson-subsampled Gaussian mechanism.
 ///
-/// Models gradient accumulation: m microbatches, Poisson-sampled, clipped
-/// gradients summed, noise added once.
+/// Models summing multiple independent Poisson samples before adding noise once.
+/// Use cases: gradient accumulation (m microbatches) or parallel workers (K workers).
 ///
 /// Args:
 ///     noise_multiplier (float): σ/Δ ratio, in [0.1, 1.2].
 ///     rate (float): Poisson sampling probability, in (0, 1].
-///     microbatches (int): Number of microbatches, > 0.
-///     config (DiscretizationConfig, optional): Discretization configuration.
+///     microbatches (int): Number of independent samples, > 0.
+///     config (DiscretizationConfig): Discretization configuration.
 ///
 /// Returns:
 ///     Pld: The amplified privacy loss distribution.
 #[pyfunction]
-#[pyo3(name = "accumulated_poisson_gaussian_pld", signature = (noise_multiplier, rate, microbatches, config=None))]
-pub fn py_accumulated_poisson_gaussian_pld(
+#[pyo3(name = "parallel_poisson_gaussian_pld", signature = (noise_multiplier, rate, microbatches, config))]
+pub fn py_parallel_poisson_gaussian_pld(
     noise_multiplier: f64,
     rate: f64,
     microbatches: usize,
-    config: Option<&PyDiscretizationConfig>,
+    config: &PyDiscretizationConfig,
 ) -> PyResult<PyPld> {
-    let cfg = PyDiscretizationConfig::resolve(config);
-    let pld = crate::amplification::accumulated_poisson_gaussian_pld(
+    let pld = crate::amplification::parallel_poisson_gaussian_pld(
         noise_multiplier,
         rate,
         microbatches,
-        &cfg,
+        &config.inner,
     )
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
     Ok(PyPld::new(pld))

@@ -6,12 +6,12 @@ participates with probability < 1.
 
 - :func:`poisson` — standard Poisson subsampling (each record sampled independently)
 - :func:`truncated_poisson` — production DP-SGD with capped batch size
-- :func:`accumulate` — gradient accumulation (microbatching)
+- :func:`parallel_poisson` — Poisson subsampling under parallel worker execution
 """
 
-from opaque.accounting.amplification.accumulated import (
-    Accumulated,
-    accumulate,
+from opaque.accounting.amplification.parallel_poisson import (
+    ParallelPoisson,
+    parallel_poisson,
 )
 from opaque.accounting.amplification.poisson import (
     Poisson,
@@ -26,9 +26,9 @@ __all__ = [
     # Dataclass types
     "Poisson",
     "TruncatedPoisson",
-    "Accumulated",
+    "ParallelPoisson",
     # Constructor functions
     "poisson",
     "truncated_poisson",
-    "accumulate",
+    "parallel_poisson",
 ]

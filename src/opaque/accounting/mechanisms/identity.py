@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import functools
+from dataclasses import dataclass
 
 import opaque_accounting as _native
 
-from opaque.accounting.base import DiscretizationConfig, DpProcess, Pld
-from opaque.accounting.discretization import resolve_pld_config
+from opaque.accounting.base import (
+    DpProcess,
+    Pld,
+)
+from opaque.accounting.discretization import (
+    get_discretization,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,22 +24,28 @@ class Identity(DpProcess):
     ``Identity() | a`` → ``a`` and ``a | Identity()`` → ``a``.
     """
 
-    config: DiscretizationConfig | None = field(default=None, repr=False)
+    @functools.lru_cache(maxsize=8)
+    def pld(
+        self,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+    ) -> Pld:
+        config = get_discretization(
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+        )
+        return _native.identity_pld(config.to_native())
 
-    def pld(self) -> Pld:
-        return _native.identity_pld(config=self.config)
 
-
-def identity(
-    *,
-    discretization: None | float | DiscretizationConfig = None,
-) -> DpProcess:
+def identity() -> DpProcess:
     """Identity mechanism (zero privacy loss).
 
     Useful as a placeholder or identity element in composition.
-
-    Args:
-        discretization: PLD precision config (keyword-only).
 
     Returns:
         An :class:`Identity` process (ε=0 for any δ).
@@ -44,5 +56,4 @@ def identity(
         proc = acc.identity()
         eps = proc.epsilon_at(1e-5)  # ~0
     """
-    config = resolve_pld_config(discretization)
-    return Identity(config=config)
+    return Identity()

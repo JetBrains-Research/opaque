@@ -1,4 +1,4 @@
-"""Tests for opaque.accounting.amplification — Poisson, TruncatedPoisson, Accumulated."""
+"""Tests for opaque.accounting.amplification — Poisson, TruncatedPoisson, ParallelPoisson."""
 
 import math
 from dataclasses import FrozenInstanceError
@@ -7,11 +7,13 @@ import pytest
 
 import opaque.accounting as acc
 from opaque.accounting.amplification import (
-    Accumulated,
+    ParallelPoisson,
     Poisson,
     TruncatedPoisson,
 )
-from opaque.accounting.base import DiscretizationConfig, DpProcess
+from opaque.accounting.base import DpProcess
+from opaque.accounting.discretization import DiscretizationConfig
+from opaque.accounting.mechanisms import Gaussian
 
 # ── Amplification dataclass tests ────────────────────────────────────
 
@@ -20,24 +22,25 @@ class TestPoissonDataclass:
     """Poisson frozen dataclass."""
 
     def test_fields(self):
-        p = Poisson(0.8, 0.01)
-        assert p.noise_multiplier == pytest.approx(0.8)
+        g = Gaussian(0.8)
+        p = Poisson(g, 0.01)
+        assert p.inner is g
         assert p.sample_rate == pytest.approx(0.01)
 
     def test_frozen(self):
-        p = Poisson(0.8, 0.01)
+        p = Poisson(Gaussian(0.8), 0.01)
         with pytest.raises(FrozenInstanceError):
             p.sample_rate = 0.1  # type: ignore[misc]
 
     def test_is_dp_process(self):
-        assert isinstance(Poisson(0.8, 0.01), DpProcess)
+        assert isinstance(Poisson(Gaussian(0.8), 0.01), DpProcess)
 
     def test_equality(self):
-        assert Poisson(0.8, 0.01) == Poisson(0.8, 0.01)
-        assert Poisson(0.8, 0.01) != Poisson(0.8, 0.02)
+        assert Poisson(Gaussian(0.8), 0.01) == Poisson(Gaussian(0.8), 0.01)
+        assert Poisson(Gaussian(0.8), 0.01) != Poisson(Gaussian(0.8), 0.02)
 
     def test_pld_returns_valid(self):
-        pld = Poisson(0.8, 0.01).pld()
+        pld = Poisson(Gaussian(0.8), 0.01).pld()
         eps = pld.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
@@ -46,45 +49,46 @@ class TestTruncatedPoissonDataclass:
     """TruncatedPoisson frozen dataclass."""
 
     def test_fields(self):
-        t = TruncatedPoisson(0.8, 0.01, 128, 10_000)
-        assert t.noise_multiplier == pytest.approx(0.8)
+        g = Gaussian(0.8)
+        t = TruncatedPoisson(g, 0.01, 128, 10_000)
+        assert t.inner is g
         assert t.sample_rate == pytest.approx(0.01)
         assert t.batch_size_cap == 128
         assert t.dataset_size == 10_000
 
     def test_frozen(self):
-        t = TruncatedPoisson(0.8, 0.01, 128, 10_000)
+        t = TruncatedPoisson(Gaussian(0.8), 0.01, 128, 10_000)
         with pytest.raises(FrozenInstanceError):
             t.batch_size_cap = 256  # type: ignore[misc]
 
     def test_is_dp_process(self):
-        assert isinstance(TruncatedPoisson(0.8, 0.01, 128, 10_000), DpProcess)
+        assert isinstance(TruncatedPoisson(Gaussian(0.8), 0.01, 128, 10_000), DpProcess)
 
     def test_pld_returns_valid(self):
-        pld = TruncatedPoisson(0.8, 0.01, 128, 10_000).pld()
+        pld = TruncatedPoisson(Gaussian(0.8), 0.01, 128, 10_000).pld()
         eps = pld.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
 
-class TestAccumulatedDataclass:
-    """Accumulated frozen dataclass."""
+class TestParallelPoissonDataclass:
+    """ParallelPoisson frozen dataclass."""
 
     def test_fields(self):
-        a = Accumulated(0.8, 0.01, 4)
-        assert a.noise_multiplier == pytest.approx(0.8)
-        assert a.sample_rate == pytest.approx(0.01)
-        assert a.microbatches == 4
+        inner = Poisson(Gaussian(0.8), 0.01)
+        a = ParallelPoisson(inner, 4)
+        assert a.inner is inner
+        assert a.num_workers == 4
 
     def test_frozen(self):
-        a = Accumulated(0.8, 0.01, 4)
+        a = ParallelPoisson(Poisson(Gaussian(0.8), 0.01), 4)
         with pytest.raises(FrozenInstanceError):
-            a.microbatches = 8  # type: ignore[misc]
+            a.num_workers = 8  # type: ignore[misc]
 
     def test_is_dp_process(self):
-        assert isinstance(Accumulated(0.8, 0.01, 4), DpProcess)
+        assert isinstance(ParallelPoisson(Poisson(Gaussian(0.8), 0.01), 4), DpProcess)
 
     def test_pld_returns_valid(self):
-        pld = Accumulated(0.8, 0.01, 4).pld()
+        pld = ParallelPoisson(Poisson(Gaussian(0.8), 0.01), 4).pld()
         eps = pld.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
@@ -98,18 +102,31 @@ class TestPoissonConstructor:
     def test_returns_poisson(self):
         p = acc.poisson(acc.gaussian(0.8), 0.01)
         assert isinstance(p, Poisson)
-        assert p.noise_multiplier == pytest.approx(0.8)
+        assert isinstance(p.inner, Gaussian)
+        assert p.inner.noise_multiplier == pytest.approx(0.8)
         assert p.sample_rate == pytest.approx(0.01)
 
     def test_rejects_non_gaussian(self):
-        with pytest.raises(TypeError, match="Gaussian"):
+        with pytest.raises(TypeError, match="Gaussian|AdaClip"):
             acc.poisson(acc.eps_delta(1.0, 1e-5), 0.01)  # type: ignore[arg-type]
 
+    def test_accepts_adaclip(self):
+        step = acc.poisson(acc.adaclip(acc.gaussian(0.8), 50.0), 0.01)
+        eps = step.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
+
     def test_propagates_config(self):
-        cfg = DiscretizationConfig(discretization=1e-3)
-        g = acc.gaussian(0.8, discretization=cfg)
+        """Config is now query-time, so this test verifies pld() accepts discretization."""
+        g = acc.gaussian(0.8)
         p = acc.poisson(g, 0.01)
-        assert p.config is cfg
+        # Config is query-time - verify pld() accepts discretization parameter
+        pld1 = p.pld(discretization=1e-3)
+        pld2 = p.pld(discretization=1e-4)
+        # Both should compute successfully (different discretizations)
+        eps1 = pld1.epsilon_at(1e-5)
+        eps2 = pld2.epsilon_at(1e-5)
+        assert math.isfinite(eps1) and eps1 > 0
+        assert math.isfinite(eps2) and eps2 > 0
 
 
 class TestTruncatedPoissonConstructor:
@@ -122,19 +139,29 @@ class TestTruncatedPoissonConstructor:
         assert t.dataset_size == 10_000
 
     def test_rejects_non_gaussian(self):
-        with pytest.raises(TypeError, match="Gaussian"):
+        with pytest.raises(TypeError, match="Gaussian|AdaClip"):
             acc.truncated_poisson(acc.eps_delta(1.0), 0.01, 128, 10_000)  # type: ignore[arg-type]
 
+    def test_accepts_adaclip(self):
+        step = acc.truncated_poisson(
+            acc.adaclip(acc.gaussian(0.8), 50.0),
+            0.01,
+            128,
+            10_000,
+        )
+        eps = step.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
 
-class TestAccumulateConstructor:
-    """acc.accumulate() validates inner type (must be Poisson)."""
 
-    def test_returns_accumulated(self):
+class TestParallelPoissonConstructor:
+    """acc.parallel_poisson() validates inner type (must be Poisson)."""
+
+    def test_returns_parallel_poisson(self):
         p = acc.poisson(acc.gaussian(0.8), 0.01)
-        a = acc.accumulate(p, 4)
-        assert isinstance(a, Accumulated)
-        assert a.microbatches == 4
+        a = acc.parallel_poisson(p, 4)
+        assert isinstance(a, ParallelPoisson)
+        assert a.num_workers == 4
 
     def test_rejects_non_poisson(self):
         with pytest.raises(TypeError, match="Poisson"):
-            acc.accumulate(acc.gaussian(0.8), 4)  # type: ignore[arg-type]
+            acc.parallel_poisson(acc.gaussian(0.8), 4)  # type: ignore[arg-type]

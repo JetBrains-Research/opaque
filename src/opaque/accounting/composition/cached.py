@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import functools
+from dataclasses import dataclass
+
 from opaque.accounting.base import DpProcess, Pld
 
 
+@dataclass(frozen=True, slots=True)
 class CachedProcess(DpProcess):
-    """Mutable caching wrapper around a :class:`DpProcess`.
+    """Caching wrapper around a :class:`DpProcess`.
 
     Created by :func:`~opaque.accounting.composition.cached`.
     Computes the PLD on the first :meth:`pld` call and caches it.
@@ -14,25 +18,28 @@ class CachedProcess(DpProcess):
 
     Acts as an **opaque barrier** for merge optimization:
     :meth:`_leaf_and_count` returns ``(self, 1)``, preventing the
-    optimizer from looking through the cache boundary.
+    optimizer from looking through the cache boundary. Cached wrappers
+    can still merge via structural equality of their inner processes.
 
-    This is the only mutable :class:`DpProcess` subclass.
+    Note: All DpProcess.pld() methods now have automatic caching.
+    This wrapper's primary purpose is to serve as a merge barrier,
+    not to add caching (though it does increase the cache size to 16).
     """
 
-    def __init__(self, inner: DpProcess) -> None:
-        self.inner = inner
-        self._cached_pld: Pld | None = None
+    inner: DpProcess
 
-    def pld(self) -> Pld:
-        if self._cached_pld is None:
-            self._cached_pld = self.inner.pld()
-        return self._cached_pld
-
-    def __eq__(self, other: object) -> bool:
-        return self is other
-
-    def __hash__(self) -> int:
-        return id(self)
-
-    def __repr__(self) -> str:
-        return f"CachedProcess({self.inner!r})"
+    @functools.lru_cache(maxsize=16)
+    def pld(
+        self,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+    ) -> Pld:
+        return self.inner.pld(
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+        )

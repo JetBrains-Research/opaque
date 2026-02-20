@@ -210,7 +210,7 @@ class TestGPT2LoRADPTraining:
             argnums=0,
             batch_argnums=(2, 3, 4),
             l2_clip_norm=1.0,
-            return_values=True,
+            return_aux=True,
         )
 
         (grads, grad_aux), _ = grad_fn(
@@ -256,7 +256,7 @@ class TestGPT2LoRADPTraining:
             argnums=0,
             batch_argnums=(2, 3, 4),
             l2_clip_norm=clip_norm,
-            return_grad_norms=True,
+            return_aux=True,
         )
 
         (grads, grad_aux), _ = grad_fn(
@@ -816,7 +816,7 @@ class TestEndToEndDPTraining:
                 argnums=0,
                 batch_argnums=(2, 3, 4),
                 l2_clip_norm=clip_norm,
-                return_values=True,
+                return_aux=True,
             )
 
             (grads, grad_aux), _ = grad_fn(

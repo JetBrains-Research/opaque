@@ -21,6 +21,7 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 import opaque.accounting as acc
 import opaque.auditing as auditing
 from opaque.accounting import calibration as cal
+from opaque.accounting.accountant import Accountant
 from opaque.clipping import adaptive_clipped_grad, clipped_grad
 from opaque.noise import gaussian_noise
 from opaque.utils import make_functional
@@ -477,8 +478,9 @@ def main():
         f"(iterations={calibration.iterations}, converged={calibration.converged})"
     )
 
-    # Accounting (cached per-step process for efficient repeated composition)
-    accounting = acc.Accountant()
+    # Accounting (all pld() calls automatically cached with maxsize=8)
+    # Using acc.cached() here increases cache to maxsize=16 and creates merge barrier
+    accounting = Accountant()
     step_process = acc.cached(acc.poisson(acc.gaussian(noise_multiplier), sample_rate))
 
     # Training loop

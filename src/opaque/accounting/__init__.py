@@ -38,16 +38,13 @@ except ImportError as e:
     ) from e
 
 # Base
-# Accountant
-from opaque.accounting.accountant import Accountant
 
 # Amplification
 from opaque.accounting.amplification import (
-    accumulate,
+    parallel_poisson,
     poisson,
     truncated_poisson,
 )
-from opaque.accounting.base import DpProcess
 
 # Calibration
 from opaque.accounting.calibration import (
@@ -82,8 +79,7 @@ from opaque.accounting.mechanisms import (
 from opaque.accounting.transformations import adaclip
 
 __all__ = [
-    # Base
-    "DpProcess",
+    # Discretization
     "DiscretizationConfig",
     "set_discretization",
     "get_discretization",
@@ -94,15 +90,13 @@ __all__ = [
     # Amplification
     "poisson",
     "truncated_poisson",
-    "accumulate",
+    "parallel_poisson",
     # Transformations
     "adaclip",
     # Composition
     "repeat",
     "compose",
     "cached",
-    # Accountant
-    "Accountant",
     # Calibration
     "epsilon_budget",
     "delta_budget",

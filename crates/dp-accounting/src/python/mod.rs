@@ -29,7 +29,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_function(wrap_pyfunction!(
-        amplification::py_accumulated_poisson_gaussian_pld,
+        amplification::py_parallel_poisson_gaussian_pld,
         m
     )?)?;
 

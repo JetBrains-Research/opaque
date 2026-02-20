@@ -7,6 +7,7 @@ realistic training-loop patterns, calibration integration, and API consistency.
 import pytest
 
 import opaque.accounting as acc
+from opaque.accounting.accountant import Accountant
 from opaque.accounting.calibration import epsilon_budget
 
 # ============================================================================
@@ -19,7 +20,7 @@ class TestAccountantBasics:
 
     def test_init_default(self):
         """Accountant initializes with identity process."""
-        acct = acc.Accountant()
+        acct = Accountant()
 
         # Should have zero privacy cost (identity process)
         eps = acct.epsilon_at(1e-5)
@@ -28,12 +29,12 @@ class TestAccountantBasics:
     def test_init_with_budget(self):
         """Accountant accepts optional budget."""
         budget = epsilon_budget(3.0, delta=1e-5)
-        acct = acc.Accountant(budget=budget)
+        acct = Accountant(budget=budget)
         assert acct._budget is not None
 
     def test_composition_via_or(self):
         """Composing processes via | returns new Accountant."""
-        acct1 = acc.Accountant()
+        acct1 = Accountant()
         step = acc.poisson(acc.gaussian(1.1), 0.01)
 
         acct2 = acct1 | step
@@ -48,9 +49,9 @@ class TestAccountantBasics:
 
     def test_composition_returns_accountant(self):
         """Composition always returns Accountant instance."""
-        acct = acc.Accountant()
+        acct = Accountant()
         result = acct | acc.gaussian(1.0)
-        assert isinstance(result, acc.Accountant)
+        assert isinstance(result, Accountant)
 
 
 # ============================================================================
@@ -63,7 +64,7 @@ class TestAccountantMetrics:
 
     def test_epsilon_at(self):
         """epsilon_at() returns reasonable values."""
-        acct = acc.Accountant()
+        acct = Accountant()
         acct = acct | (acc.poisson(acc.gaussian(1.1), 0.01) * 100)
 
         eps = acct.epsilon_at(1e-5)
@@ -72,7 +73,7 @@ class TestAccountantMetrics:
 
     def test_delta_at(self):
         """delta_at() returns reasonable values."""
-        acct = acc.Accountant()
+        acct = Accountant()
         acct = acct | (acc.poisson(acc.gaussian(1.1), 0.01) * 100)
 
         delta = acct.delta_at(1.0)
@@ -80,7 +81,7 @@ class TestAccountantMetrics:
 
     def test_advantage(self):
         """advantage() returns f-DP advantage."""
-        acct = acc.Accountant()
+        acct = Accountant()
         acct = acct | acc.gaussian(1.0)
 
         adv = acct.advantage()
@@ -88,7 +89,7 @@ class TestAccountantMetrics:
 
     def test_beta_at(self):
         """beta_at() returns Type-II error rate."""
-        acct = acc.Accountant()
+        acct = Accountant()
         acct = acct | (acc.gaussian(1.0) * 10)
 
         beta = acct.beta_at(0.05)
@@ -96,7 +97,7 @@ class TestAccountantMetrics:
 
     def test_risk_at(self):
         """risk_at() returns Bayes risk."""
-        acct = acc.Accountant()
+        acct = Accountant()
         acct = acct | (acc.gaussian(1.0) * 10)
 
         risk = acct.risk_at(0.5)
@@ -104,7 +105,7 @@ class TestAccountantMetrics:
 
     def test_metrics_delegate_to_process(self):
         """Verify metrics delegate to underlying process."""
-        acct = acc.Accountant()
+        acct = Accountant()
         acct = acct | acc.gaussian(1.0)
 
         eps_from_acct = acct.epsilon_at(1e-5)
@@ -123,7 +124,7 @@ class TestAccountantBudget:
 
     def test_no_budget(self):
         """Accountant without budget never exceeds."""
-        acct = acc.Accountant()
+        acct = Accountant()
         acct = acct | (acc.gaussian(0.5) * 100)
 
         assert not acct.budget_exceeded
@@ -132,7 +133,7 @@ class TestAccountantBudget:
         """budget_exceeded is False when within budget."""
         # Create a very loose budget with high epsilon
         budget = epsilon_budget(100.0, delta=1e-5)
-        acct = acc.Accountant(budget=budget)
+        acct = Accountant(budget=budget)
         # Use gaussian with reasonable noise and few steps
         acct = acct | (acc.gaussian(1.0) * 5)
 
@@ -141,7 +142,7 @@ class TestAccountantBudget:
     def test_budget_exceeded(self):
         """budget_exceeded is True when privacy cost exceeds budget."""
         budget = epsilon_budget(0.1, delta=1e-5)  # Very tight budget
-        acct = acc.Accountant(budget=budget)
+        acct = Accountant(budget=budget)
         acct = acct | (acc.poisson(acc.gaussian(1.0), 0.01) * 1000)
 
         # Should exceed the budget
@@ -150,7 +151,7 @@ class TestAccountantBudget:
     def test_non_epsilon_budget(self):
         """Budget works with non-epsilon budgets (advantage)."""
         budget = acc.advantage_budget(0.5)
-        acct = acc.Accountant(budget=budget)
+        acct = Accountant(budget=budget)
         acct = acct | (acc.gaussian(0.5) * 50)
 
         # Should not raise
@@ -167,7 +168,7 @@ class TestAccountantFunctional:
 
     def test_composition_immutability(self):
         """Composing doesn't mutate original Accountant."""
-        acct1 = acc.Accountant()
+        acct1 = Accountant()
         step = acc.poisson(acc.gaussian(1.1), 0.01)
 
         eps1_before = acct1.epsilon_at(1e-5)
@@ -181,7 +182,7 @@ class TestAccountantFunctional:
 
     def test_chained_composition(self):
         """Can chain multiple compositions."""
-        acct = acc.Accountant()
+        acct = Accountant()
         step = acc.poisson(acc.gaussian(1.1), 0.01)
 
         for _ in range(10):
@@ -194,7 +195,7 @@ class TestAccountantFunctional:
 
     def test_different_mechanisms_compose(self):
         """Can compose different mechanism types."""
-        acct = acc.Accountant()
+        acct = Accountant()
         acct = acct | acc.gaussian(1.0)
         acct = acct | (acc.poisson(acc.gaussian(1.1), 0.01) * 10)
         acct = acct | acc.gaussian(0.5)
@@ -205,7 +206,7 @@ class TestAccountantFunctional:
     def test_budget_persists_through_composition(self):
         """Budget is preserved when creating new Accountant via composition."""
         budget = epsilon_budget(5.0, delta=1e-5)
-        acct1 = acc.Accountant(budget=budget)
+        acct1 = Accountant(budget=budget)
 
         # Compose multiple times
         acct2 = acct1 | acc.gaussian(0.1)
@@ -218,7 +219,7 @@ class TestAccountantFunctional:
 
     def test_or_operator_associativity(self):
         """| operator is associative for privacy accounting."""
-        acct1 = acc.Accountant()
+        acct1 = Accountant()
         step1 = acc.gaussian(1.0)
         step2 = acc.gaussian(0.5)
 
@@ -242,7 +243,7 @@ class TestAccountantTrainingLoop:
     def test_batch_composition(self):
         """Simulate training loop: compose all steps at once."""
         budget = acc.epsilon_budget(5.0, delta=1e-5)
-        acct = acc.Accountant(budget=budget)
+        acct = Accountant(budget=budget)
 
         acct = acct | (acc.poisson(acc.gaussian(1.1), 0.01) * 10)
 
@@ -251,7 +252,7 @@ class TestAccountantTrainingLoop:
     def test_incremental_composition(self):
         """Simulate training loop: compose one step at a time."""
         budget = acc.epsilon_budget(10.0, delta=1e-5)
-        acct = acc.Accountant(budget=budget)
+        acct = Accountant(budget=budget)
 
         step_process = acc.poisson(acc.gaussian(1.1), 0.01)
 
@@ -274,7 +275,7 @@ class TestAccountantTrainingLoop:
             param_max=1.2,
         )
 
-        acct = acc.Accountant(budget=budget)
+        acct = Accountant(budget=budget)
         acct = acct | (acc.poisson(acc.gaussian(result.param), 0.01) * 100)
 
         achieved = acct.epsilon_at(1e-5)
@@ -283,7 +284,7 @@ class TestAccountantTrainingLoop:
     def test_mixed_mechanisms(self):
         """Accountant with mixed mechanism types."""
         budget = acc.epsilon_budget(5.0, delta=1e-5)
-        acct = acc.Accountant(budget=budget)
+        acct = Accountant(budget=budget)
 
         acct = acct | acc.gaussian(0.5)
         acct = acct | (acc.poisson(acc.gaussian(1.0), 0.01) * 20)

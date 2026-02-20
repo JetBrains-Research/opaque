@@ -161,6 +161,10 @@ select = [
 ignore = [
   "E501",  # line-too-long (handled by formatter)
   "B008",  # function-call-in-default-argument (common in dataclasses)
+  "B019",  # cached-instance-method: Intentional for immutable frozen dataclasses.
+           # The pld() methods are cached with bounded maxsize (8-16 entries).
+           # Composition inherently requires holding references to sub-processes,
+           # and typical usage patterns reuse process instances naturally.
 ]
 
 [tool.ruff.lint.per-file-ignores]

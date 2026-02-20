@@ -5,20 +5,58 @@ across devices. Particularly useful for adaptive clipping where per-example
 norms need to be gathered from all devices.
 """
 
+from collections.abc import Callable, Mapping
 from dataclasses import fields, is_dataclass
 from typing import Any
 
 import torch
 import torch.distributed as dist
 
+from opaque.utils.pytree import tree_map
+
 from . import all_reduce as all_reduce_tensor
 from . import get_world_size, is_distributed
 
 __all__ = [
-    "reduce_scalar",
+    "gather_pytree",
+    "gather_pytree_tensors",
     "gather_tensors",
+    "reduce_scalar",
     "sync_state",
 ]
+
+
+def gather_pytree(pytree: Any) -> Any:
+    """Gather tensor leaves from all devices and concatenate along batch dimension.
+
+    This is a best-effort helper for per-example auxiliary outputs. Leaves that
+    are None are preserved. Non-tensor, non-None leaves are not supported in
+    distributed mode and will raise a TypeError.
+
+    Args:
+        pytree: PyTree with tensor leaves or None leaves.
+
+    Returns:
+        PyTree with gathered tensor leaves.
+    """
+    if not is_distributed():
+        return pytree
+
+    def gather_leaf(leaf: Any) -> Any:
+        if leaf is None:
+            return None
+        if isinstance(leaf, torch.Tensor):
+            return gather_tensors(leaf, dim=0)
+        raise TypeError(
+            f"Distributed aux gathering supports tensor leaves only; got {type(leaf)}."
+        )
+
+    return tree_map(gather_leaf, pytree)
+
+
+def gather_pytree_tensors(pytree: Any) -> Any:
+    """Backward-compatible alias for gather_pytree."""
+    return gather_pytree(pytree)
 
 
 def reduce_scalar(
@@ -141,14 +179,15 @@ def gather_tensors(
     dist.all_gather_object(gathered, tensor.cpu())
 
     # Concatenate along specified dimension
-    gathered_tensors = [t.to(tensor.device) for t in gathered]
+    gathered_tensors: list[torch.Tensor] = [
+        t.to(tensor.device) for t in gathered if t is not None
+    ]
     return torch.cat(gathered_tensors, dim=dim)
 
 
 def sync_state(
     state: Any,
-    sync_fields: list[str] | None = None,
-    op: str = "mean",
+    field_ops: Mapping[str, str | Callable[..., float]] | None = None,
     device: torch.device | None = None,
 ) -> Any:
     """Synchronize scalar fields in a dataclass state object across processes.
@@ -158,9 +197,14 @@ def sync_state(
 
     Args:
         state: Dataclass instance with scalar fields to synchronize.
-        sync_fields: List of field names to synchronize. If None, syncs all
-            float/int fields. Default: None.
-        op: Reduction operation for synchronization. Default: "mean".
+                field_ops: Per-field reduction operations. Keys are field names.
+                        Values can be either:
+                        - an op string accepted by `reduce_scalar` ("sum", "mean", "max",
+                            "min", "product"), or
+                        - a callable for custom reduction. Callable can be either
+                            `fn(value)` or `fn(value, device)` and must return a synchronized
+                            scalar float value.
+                        If None, all numeric fields are synchronized with "mean".
         device: Device to place tensors on. If None, uses CPU. Default: None.
 
     Returns:
@@ -168,7 +212,7 @@ def sync_state(
 
     Raises:
         TypeError: If state is not a dataclass.
-        ValueError: If sync_fields contains non-existent field names.
+        ValueError: If field_ops contains non-existent field names.
 
     Example:
         >>> from dataclasses import dataclass
@@ -186,8 +230,7 @@ def sync_state(
         >>> # Synchronize clip_norm and clipping_rate (but not step)
         >>> state = dist_state.sync_state(
         ...     state,
-        ...     sync_fields=["clip_norm", "clipping_rate"],
-        ...     op="mean"
+        ...     field_ops={"clip_norm": "mean", "clipping_rate": "mean"}
         ... )
         >>> # state.clip_norm and state.clipping_rate now averaged across devices
         >>> # state.step unchanged (not synchronized)
@@ -196,7 +239,7 @@ def sync_state(
         - Returns a NEW state object (immutable update)
         - If distributed is not initialized, returns input unchanged
         - Only synchronizes numeric (float/int) fields
-        - Step counters typically should NOT be synchronized (use sync_fields)
+        - Step counters typically should NOT be synchronized unless explicitly requested
     """
     if not is_distributed():
         return state
@@ -204,31 +247,42 @@ def sync_state(
     if not is_dataclass(state):
         raise TypeError(f"state must be a dataclass, got {type(state)}")
 
-    # Determine which fields to sync
     state_fields = {f.name for f in fields(state)}
 
-    if sync_fields is None:
-        # Sync all numeric (float/int) fields by default, but exclude bools
-        sync_fields = []
+    if field_ops is None:
+        # Default: sync all numeric (float/int) fields with mean, excluding bools
+        field_ops = {}
         for f in fields(state):
             val = getattr(state, f.name)
             if isinstance(val, (float, int)) and not isinstance(val, bool):
-                sync_fields.append(f.name)
+                field_ops[f.name] = "mean"
     else:
-        # Validate sync_fields
-        invalid_fields = set(sync_fields) - state_fields
+        invalid_fields = set(field_ops) - state_fields
         if invalid_fields:
             raise ValueError(
-                f"sync_fields contains non-existent fields: {invalid_fields}. "
+                f"field_ops contains non-existent fields: {invalid_fields}. "
                 f"Available fields: {state_fields}"
             )
 
     # Synchronize each field
     updates = {}
-    for field_name in sync_fields:
+    for field_name, field_op in field_ops.items():
         value = getattr(state, field_name)
         if isinstance(value, (float, int)):
-            synced_value = reduce_scalar(value, op=op, device=device)
+            if isinstance(field_op, str):
+                synced_value = reduce_scalar(value, op=field_op, device=device)
+            elif callable(field_op):
+                numeric_value = float(value)
+                try:
+                    synced_value = field_op(numeric_value, device)
+                except TypeError:
+                    synced_value = field_op(numeric_value)
+            else:
+                raise TypeError(
+                    f"field_ops[{field_name}] must be str or callable, "
+                    f"got {type(field_op)}"
+                )
+
             # Preserve type (int stays int, float stays float)
             if isinstance(value, int):
                 synced_value = int(synced_value)
@@ -242,3 +296,88 @@ def sync_state(
         )
 
     return state
+
+
+def sync_clip_state(
+    state: Any,
+    device: torch.device | None = None,
+) -> Any:
+    """Synchronize clipping-related dataclass state fields across processes.
+
+    This helper is aware of common clipping state field names and applies sensible
+    per-field reductions:
+    - `l2_norm_bound`: mean
+    - `clip_norm`: mean
+    - `clipping_rate`: mean
+    - `step`: max
+
+    Non-existent fields are ignored.
+    """
+    if not is_distributed():
+        return state
+
+    if not is_dataclass(state):
+        raise TypeError(f"state must be a dataclass, got {type(state)}")
+
+    available = {f.name for f in fields(state)}
+    field_ops = {
+        name: ("max" if name == "step" else "mean")
+        for name in ("l2_norm_bound", "clip_norm", "clipping_rate", "step")
+        if name in available
+    }
+
+    return sync_state(state, field_ops=field_ops, device=device)
+
+
+def sync_adaptive_clip_state(
+    state: Any,
+    local_num_clipped: float | int,
+    local_total: float | int,
+    device: torch.device | None = None,
+) -> Any:
+    """Synchronize adaptive clipping state using global clipped counts.
+
+    This first synchronizes clip-related fields (`clip_norm`, `step`) and then
+    computes a globally consistent clipping rate from reduced counts:
+
+        global_rate = sum(local_num_clipped) / max(1, sum(local_total))
+
+    Args:
+        state: Adaptive clipping state dataclass (expects `clipping_rate` field).
+        local_num_clipped: Number of locally clipped examples at this step.
+        local_total: Number of local examples considered at this step.
+        device: Device to use for reductions.
+
+    Returns:
+        New synchronized state with globally consistent `clipping_rate`.
+    """
+    if not is_distributed():
+        return state
+
+    if not is_dataclass(state):
+        raise TypeError(f"state must be a dataclass, got {type(state)}")
+
+    available = {f.name for f in fields(state)}
+    field_ops = {
+        name: ("max" if name == "step" else "mean")
+        for name in ("clip_norm", "step")
+        if name in available
+    }
+
+    synced = sync_state(state, field_ops=field_ops, device=device)
+
+    global_num_clipped = reduce_scalar(
+        float(local_num_clipped), op="sum", device=device
+    )
+    global_total = reduce_scalar(float(local_total), op="sum", device=device)
+    global_rate = global_num_clipped / max(1.0, global_total)
+
+    if "clipping_rate" in available:
+        synced = type(synced)(
+            **{
+                **{f.name: getattr(synced, f.name) for f in fields(synced)},
+                "clipping_rate": float(global_rate),
+            }
+        )
+
+    return synced

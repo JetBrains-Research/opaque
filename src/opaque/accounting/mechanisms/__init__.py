@@ -8,7 +8,7 @@ to memoize.
 Constructor functions (e.g. ``gaussian()``) validate inputs,
 resolve discretization config, and return the appropriate type.
 
-For subsampling amplification (Poisson, truncated Poisson, accumulated),
+For subsampling amplification (Poisson, truncated Poisson, parallel Poisson),
 see :mod:`opaque.accounting.amplification`.
 """
 

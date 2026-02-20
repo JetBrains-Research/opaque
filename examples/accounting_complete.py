@@ -11,6 +11,7 @@ This example shows:
 
 import opaque.accounting as acc
 from opaque.accounting import calibration as cal
+from opaque.accounting.discretization import DiscretizationConfig
 
 print("=" * 70)
 print("OPAQUE ACCOUNTING: Complete API Demonstration")
@@ -139,9 +140,9 @@ print(f"Poisson:            {poiss}")
 trunc = acc.truncated_poisson(acc.gaussian(1.0), 0.01, batch_size_cap=256, dataset_size=10000)
 print(f"Truncated Poisson:  {trunc}")
 
-# Gradient accumulation (microbatching)
-accum = acc.accumulate(acc.poisson(acc.gaussian(1.0), 0.01), microbatches=4)
-print(f"Accumulate:         {accum}")
+# Parallel Poisson (multi-worker sampling)
+parallel = acc.parallel_poisson(acc.poisson(acc.gaussian(1.0), 0.01), num_workers=4)
+print(f"Parallel Poisson:   {parallel}")
 
 # Adaptive clipping (Andrew et al. 2021)
 adaclip = acc.adaclip(acc.gaussian(1.0), quantile_noise_std=50.0)
@@ -161,23 +162,22 @@ print(f"Identity:           {ident}")
 print("\n7️⃣  DISCRETIZATION CONTROL")
 print("-" * 70)
 
-# Default precision (1e-4, high accuracy)
-default = acc.poisson(acc.gaussian(1.0), 0.01)
-eps_default = default.epsilon_at(1e-5)
-print(f"Default (disc=1e-4): eps={eps_default:.6f}")
+# Query-time discretization (recommended approach)
+proc = acc.poisson(acc.gaussian(1.0), 0.01)
+
+# Default precision (Rust default, high accuracy)
+eps_default = proc.epsilon_at(1e-5)
+print(f"Default (Rust): eps={eps_default:.6f}")
 
 # Coarse precision (1e-3, faster)
-coarse = acc.poisson(acc.gaussian(1.0, discretization=1e-3), 0.01)
-eps_coarse = coarse.epsilon_at(1e-5)
+eps_coarse = proc.epsilon_at(1e-5, discretization=1e-3)
 print(f"Coarse  (disc=1e-3): eps={eps_coarse:.6f}")
 
 # Fine precision (1e-5, maximum accuracy)
-cfg_fine = acc.DiscretizationConfig(discretization=1e-5, max_grid_size=1_000_000)
-fine = acc.poisson(acc.gaussian(1.0, discretization=cfg_fine), 0.01)
-eps_fine = fine.epsilon_at(1e-5)
+eps_fine = proc.epsilon_at(1e-5, discretization=1e-5)
 print(f"Fine    (disc=1e-5): eps={eps_fine:.6f}")
 
-# Module-level defaults
+# Module-level defaults (alternative approach)
 acc.set_discretization(discretization=1e-3)
 module_default = acc.poisson(acc.gaussian(1.0), 0.01)
 print(f"\nModule default set to 1e-3: eps={module_default.epsilon_at(1e-5):.6f}")

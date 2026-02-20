@@ -112,9 +112,45 @@ dataloader = torch.utils.data.DataLoader(
 # Optimizer
 optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
 
+# Privacy accounting (calibrate noise for target epsilon)
+import opaque.accounting as acc
+from opaque.accounting import calibration as cal
+from opaque.accounting.accountant import Accountant
+
+dataset_size = len(dataset)
+sample_rate = 0.01
+num_steps = num_epochs * (dataset_size * sample_rate // 32)  # Approx steps
+
+# Find noise multiplier for (ε=3.0, δ=1e-5)
+if rank == 0:
+    budget = cal.epsilon_budget(3.0, delta=1e-5)
+    result = cal.calibrate(
+        budget,
+        lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps,
+        param_min=0.5,
+        param_max=5.0,
+    )
+    noise_multiplier = result.param
+    print(f"Noise multiplier: {noise_multiplier:.3f}")
+    
+    # Track privacy during training
+    from opaque.accounting.accountant import Accountant
+
+    step_process = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
+    acct = Accountant()
+
+# Broadcast noise multiplier to all devices
+if world_size > 1:
+    noise_tensor = torch.tensor([noise_multiplier], device=device)
+    dist.broadcast(noise_tensor, src=0)
+    noise_multiplier = noise_tensor.item()
+
+# Update noise function with calibrated multiplier
+noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier)
+
 # Training loop
 for epoch in range(num_epochs):
-    for batch in dataloader:
+    for step_idx, batch in enumerate(dataloader):
         batch = tuple(t.to(device) for t in batch)
         
         # 1. Compute per-example clipped gradients (local data)
@@ -135,6 +171,13 @@ for epoch in range(num_epochs):
         
         # Update params dict for next iteration
         params = {k: v.detach() for k, v in model.named_parameters()}
+        
+        # Track privacy (only on main process)
+        if rank == 0:
+            acct = acct | step_process
+            if step_idx % 100 == 0:
+                eps = acct.epsilon_at(1e-5)
+                print(f"Step {step_idx}: ε={eps:.2f} (budget: 3.0)")
 
 dist.destroy_process_group()
 ```
@@ -219,7 +262,7 @@ for epoch in range(num_epochs):
         
         optimizer.step()
         optimizer.zero_grad()
-        params = {k: v.detach() for k, v in model.module.module.named_parameters()}
+        params = {k: v.detach() for k, v in model.module.named_parameters()}
 
 dist.destroy_process_group()
 ```
@@ -367,20 +410,28 @@ for batch in dataloader:
 - ✅ **Automatic**: Both sampler and noise auto-detect distributed mode
 - ✅ **No seed management**: Just pass `generator=None` (or omit it) and it works across all devices
 
+!!! abstract "See Also: Privacy Accounting"
+    For complete accounting example, see [Privacy Accounting](#privacy-accounting) section below.
+
 ### Advanced: Independent Poisson Sampling
 
-**No synchronization needed, but requires mixture Gaussian accounting:**
+**No synchronization needed, but requires parallel Poisson accounting:**
 
 ```python
-from opaque.sampling import PoissonSampler, SamplingMode
+from opaque.sampling import PoissonSampler
 
 # Noise: automatically synchronized across devices when distributed
 # No seed management needed!
 noise_fn, noise_state = gaussian_noise(stddev=1.1)
 
-# INDEPENDENT sampling: each device samples full dataset
+# Independent sampling: each device samples full dataset
 # Seed shifted by rank for independent RNG streams (if provided)
-sampler = PoissonSampler(dataset, sample_rate=0.01, mode=SamplingMode.INDEPENDENT, generator=42)
+sampler = PoissonSampler(
+    dataset,
+    sample_rate=0.01,
+    distributed=False,
+    generator=42,
+)
 
 # Training loop (same as sharded)
 for batch in dataloader:
@@ -392,11 +443,27 @@ for batch in dataloader:
 
 **Advantages:**
 - ✅ **No synchronization**: Each device samples independently (no sharding coordination)
-- ✅ **Limited privacy cost**: Mixture Gaussian accounting adds minimal privacy overhead in practice
+- ✅ **Limited privacy cost**: Parallel Poisson accounting adds minimal privacy overhead in practice
 - ✅ **Simple setup**: No need to partition dataset across devices
 
 **Trade-off:**
-- Examples may appear multiple times across devices (handled by mixture Gaussian accounting)
+- Examples may appear multiple times across devices (handled by parallel Poisson accounting)
+
+!!! warning "Advanced Feature - Requires Parallel Poisson Accounting"
+    Independent sampling uses **parallel Poisson accounting** to handle examples appearing on multiple devices:
+    
+    ```python
+    # Standard (sharded): One chance per example
+    step = acc.poisson(acc.gaussian(noise_mult), sample_rate)
+    
+    # Independent (parallel): world_size chances per example
+    step = acc.parallel_poisson(
+        acc.poisson(acc.gaussian(noise_mult), sample_rate),
+        num_workers=world_size,
+    )
+    ```
+    
+    See [Privacy Accounting](#privacy-accounting) section for complete calibration example.
 ```
 
 **Launch with**:
@@ -433,7 +500,7 @@ torchrun --nproc_per_node=4 train.py
 
 ### How Distributed DP-SGD Works
 
-**Critical insight**: All devices generate **the SAME noise** and add it to their local copy of the **aggregated** gradient. The noise is **not accumulated** across devices.
+**Critical insight**: All devices generate **the SAME noise** and add it to their local copy of the **aggregated** gradient. The noise is **not summed** across devices.
 
 **Step-by-step example with 2 GPUs:**
 
@@ -462,7 +529,7 @@ Device 1: noisy_grad = [5.1, 7.2, 9.3]  # (identical)
 **Key points:**
 
 - ✅ **Same noise everywhere** - Prevents model divergence (parameters stay synchronized)
-- ✅ **Noise NOT accumulated** - We don't sum noise across devices (would give √k scaling)
+- ✅ **Noise NOT summed** - We don't sum noise across devices (would give √k scaling)
 - ✅ **Conceptually noise after aggregation** - But physically added on each device
 - ✅ **Standard privacy accounting** - Noise magnitude is exactly as calibrated
 
@@ -492,7 +559,7 @@ aggregated = [6.0, 8.0, 10.0]  # Combined gradient + noise
 
 # Problem: Noise magnitude scales by √k where k = num devices
 # With 4 GPUs: noise is 2x larger, with 16 GPUs: 4x larger!
-# Privacy accounting must use "mixture Gaussian" (more complex)
+# Privacy accounting must use parallel Poisson (more complex)
 ```
 
 **Our approach (centralized pattern)** ✅
@@ -510,7 +577,7 @@ both_devices: noisy = [5.0, 7.0, 9.0] + [0.1, 0.2, 0.3] = [5.1, 7.2, 9.3]
 
 # Benefits:
 # ✅ Noise magnitude is exactly as calibrated (no scaling)
-# ✅ Standard DP-SGD accounting (no mixture Gaussian needed)
+# ✅ Standard DP-SGD accounting (no parallel Poisson needed)
 # ✅ Parameters stay synchronized (no divergence)
 ```
 
@@ -544,7 +611,12 @@ The choice is **NOT between different vs same noise** (both use same noise to av
 noise_fn, noise_state = gaussian_noise(stddev=1.1)
 
 # Sampler: seed automatically shifted by rank (42 → 42, 43, 44, ...)
-sampler = PoissonSampler(dataset, sample_rate=0.01, mode=SamplingMode.SHARDED, generator=42)
+sampler = PoissonSampler(
+    dataset,
+    sample_rate=0.01,
+    distributed=True,
+    generator=42,
+)
 
 # Device 0: samples with seed 42, gets examples 0-49999 (5% of shard)
 # Device 1: samples with seed 43, gets examples 50000-99999 (different 5%)
@@ -560,7 +632,8 @@ for batch in dataloader:
 - Each device processes **disjoint data** (no duplicates across devices)
 - Guaranteed to see different data across training
 - Requires synchronization to partition dataset
-- **Simple accounting**: Standard DP-SGD (no mixture Gaussian needed)
+- **Simple accounting**: Standard DP-SGD (no parallel Poisson needed)
+- **[See accounting example →](#privacy-accounting)**
 
 #### Strategy 2: Independent Poisson Sampling (Advanced)
 
@@ -571,11 +644,16 @@ for batch in dataloader:
 noise_fn, noise_state = gaussian_noise(stddev=1.1)
 
 # Sampler: seed automatically shifted by rank (42 → 42, 43, 44, ...)
-sampler = PoissonSampler(dataset, sample_rate=0.01, mode=SamplingMode.INDEPENDENT, generator=42)
+sampler = PoissonSampler(
+    dataset,
+    sample_rate=0.01,
+    distributed=False,
+    generator=42,
+)
 
 # Device 0: samples with seed 42: examples 0, 15, 42, ... (5% of 1M)
 # Device 1: samples with seed 43: examples 3, 12, 100, ... (5% of 1M, different)
-# → Some examples may appear in both device 0 and device 1 (handled by mixture Gaussian)
+# → Some examples may appear in both device 0 and device 1 (handled by parallel Poisson)
 
 for batch in dataloader:
     grads = clipped_grad_fn(params, batch)
@@ -586,10 +664,11 @@ for batch in dataloader:
 
 **Characteristics:**
 - Each device samples **independently from full dataset**
-- Examples may appear in **multiple devices** (mixture Gaussian property)
+- Examples may appear in **multiple devices** (parallel Poisson property)
 - **No synchronization needed** for data partitioning
-- **Mixture Gaussian accounting**: Handles duplicate examples across devices
+- **Parallel Poisson accounting**: Handles duplicate examples across devices
 - **Limited privacy cost** in practice despite duplicates
+- **[See accounting example →](#privacy-accounting)**
 
 !!! warning "Noise Synchronization: Automatic with Sensible Defaults"
     
@@ -620,8 +699,10 @@ for batch in dataloader:
     
     **Choose INDEPENDENT if:**
     - Avoiding synchronization complexity is important
-    - Mixture Gaussian accounting is acceptable
+    - Parallel Poisson accounting is acceptable
     - Very limited privacy overhead in practice
+    
+    **For accounting details**, see the [Privacy Accounting](#privacy-accounting) section below.
 
 ### Privacy Guarantees
 
@@ -637,7 +718,7 @@ Both sampling strategies maintain DP guarantees only if:
 
 3. **Strategy-specific requirements:**
    - **Sharded**: Each device processes disjoint data (no duplicates)
-   - **Independent**: Examples may appear in multiple devices (handled by mixture Gaussian)
+    - **Independent**: Examples may appear in multiple devices (handled by parallel Poisson)
 
 **Critical Implementation Detail**: The noise function `noise_fn()` must be called on **every** device with the **same seed**. It is **never** computed on rank 0 and broadcast to others.
 
@@ -716,15 +797,13 @@ for batch in dataloader:
     params = params - lr * noisy_grads
 ```
 
-**For INDEPENDENT mode** (full dataset per device):
+**For independent sampling** (full dataset per device):
 - Each device sees full dataset but samples independently
-- Requires mixture Gaussian accounting for handling duplicates
+- Requires parallel Poisson accounting for handling duplicates
 
 ```python
-from opaque.sampling import SamplingMode
-
 # Independent sampling (each device sees full dataset)
-sampler = PoissonSampler(dataset, sample_rate=0.01, mode=SamplingMode.INDEPENDENT)
+sampler = PoissonSampler(dataset, sample_rate=0.01, distributed=False)
 
 for batch in dataloader:
     grads = clipped_grad_fn(params, batch)
@@ -1112,48 +1191,108 @@ sample_rate = effective_batch_size / len(dataset)
 
 ## Privacy Accounting
 
-Privacy accounting with DDP is the **same as single-GPU** using the **effective batch size**:
+Privacy accounting is the same for DDP as single-device training—use the same `sample_rate` for accounting regardless of how data is distributed.
+
+### Sharded Sampling (Recommended)
+
+**Standard DP-SGD accounting** - identical to single-device:
 
 ```python
 import opaque.accounting as acc
+from opaque.accounting import calibration as cal
 
-# Calculate effective batch size
-effective_batch_size = local_batch_size * world_size
-sample_rate = effective_batch_size / len(dataset)
+sample_rate = 0.01  # Same rate used in sampler
+num_steps = 1000
 
-# Calibrate noise (only on main process)
-if is_main:
-    noise_multiplier = acc.find_noise_multiplier_for_epsilon_delta(
-        epsilon=3.0,
-        delta=1e-5,
-        sample_rate=sample_rate,
-        num_steps=num_steps,
+# Calibrate noise for target (ε, δ)
+if rank == 0:
+    budget = cal.epsilon_budget(3.0, delta=1e-5)
+    result = cal.calibrate(
+        budget,
+        lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps,
+        param_min=0.5, param_max=5.0,
     )
-    print(f"Using noise_multiplier={noise_multiplier:.3f}")
+    noise_multiplier = result.param
+    step_process = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
+    acct = Accountant()
 
-# Broadcast noise_multiplier to all GPUs if needed
-if distributed:
+# Broadcast noise multiplier to all devices
+if world_size > 1:
     noise_tensor = torch.tensor([noise_multiplier], device=device)
     dist.broadcast(noise_tensor, src=0)
     noise_multiplier = noise_tensor.item()
 
-# Track privacy during training
-privacy_state = acc.create()
-for step in range(num_steps):
-    # ... training ...
+# Training loop with privacy tracking
+for step_idx, batch in enumerate(dataloader):
+    # ... clip → aggregate → add noise → update ...
     
-    # Compose privacy
-    privacy_state = acc.compose_poisson_gaussian(
-        privacy_state,
-        noise_multiplier=noise_multiplier,
-        sample_rate=sample_rate,
-    )
-    
-    # Check privacy (only on main)
-    if is_main and step % 100 == 0:
-        eps = acc.get_epsilon(privacy_state, delta=1e-5)
-        print(f"Step {step}: ε={eps:.2f}")
+    # Track privacy (only on main)
+    if rank == 0:
+        acct = acct | step_process
+        if step_idx % 100 == 0:
+            eps = acct.epsilon_at(1e-5)
+            print(f"Step {step_idx}: ε={eps:.2f}")
 ```
+
+**Why it's the same:** Sharded sampling means each example appears on exactly one device, so from the DP perspective it's identical to single-device sampling at `sample_rate`.
+
+### Independent Sampling (Advanced)
+
+**Parallel Poisson accounting** - models sampling each example multiple times:
+
+```python
+# Each device samples full dataset independently
+# Example may appear on k devices (k ∈ [0, world_size])
+
+from opaque.accounting.accountant import Accountant
+
+if rank == 0:
+    # Binary search for noise multiplier
+    budget = cal.epsilon_budget(3.0, delta=1e-5)
+    result = cal.calibrate(
+        budget,
+        lambda nm: acc.parallel_poisson(
+            acc.poisson(acc.gaussian(nm), sample_rate),
+            num_workers=world_size
+        ) * num_steps,
+        param_min=0.5, param_max=5.0,
+    )
+    noise_multiplier = result.param
+    
+    # Track with parallel Poisson process
+    step_process = acc.parallel_poisson(
+        acc.poisson(acc.gaussian(noise_multiplier), sample_rate),
+        num_workers=world_size
+    )
+    acct = Accountant()
+
+# Training loop
+for step_idx, batch in enumerate(dataloader):
+    # ... training ...
+    if rank == 0:
+        acct = acct | step_process
+        if step_idx % 100 == 0:
+            eps = acct.epsilon_at(1e-5)
+            print(f"Step {step_idx}: ε={eps:.2f}")
+```
+
+**Trade-off:** Parallel Poisson accounting is slightly more conservative (higher ε for same noise) because examples can be selected by multiple devices.
+
+!!! warning "Matrix Factorization (BandMF, BLT, etc.)"
+    **Privacy accounting for MF noise mechanisms is not yet implemented.** Use MF for improved utility, but track privacy using Gaussian accounting with the same noise multiplier as a conservative estimate.
+    
+    ```python
+    # For MF noise
+    noise_fn = band_mf_noise(grad_template, n=1000, bands=4, stddev=1.1)
+    
+    # Track privacy using Gaussian mechanism (conservative)
+    from opaque.accounting.accountant import Accountant
+
+    step_process = acc.poisson(acc.gaussian(1.1), sample_rate)
+    acct = Accountant()
+    for step in training:
+        acct = acct | step_process  # Conservative bound
+    ```
 
 ## Adaptive Clipping with DDP
 

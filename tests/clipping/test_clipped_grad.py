@@ -118,7 +118,7 @@ def test_clipped_grad_with_pytree_params():
 
 
 def test_clipped_grad_return_grad_norms():
-    """Test clipped_grad with return_grad_norms=True."""
+    """Test clipped_grad with return_aux=True (grad norms included)."""
 
     def loss(param, data):
         return 0.5 * ((data - param) ** 2).mean()
@@ -128,7 +128,7 @@ def test_clipped_grad_return_grad_norms():
         argnums=0,
         batch_argnums=1,
         l2_clip_norm=10.0,
-        return_grad_norms=True,
+        return_aux=True,
     )
 
     param = torch.tensor(3.0, requires_grad=True)
@@ -147,7 +147,7 @@ def test_clipped_grad_return_grad_norms():
 
 
 def test_clipped_grad_return_values():
-    """Test clipped_grad with return_values=True."""
+    """Test clipped_grad with return_aux=True (loss values included)."""
 
     def loss(param, data):
         return 0.5 * ((data - param) ** 2).mean()
@@ -157,7 +157,7 @@ def test_clipped_grad_return_values():
         argnums=0,
         batch_argnums=1,
         l2_clip_norm=10.0,
-        return_values=True,
+        return_aux=True,
     )
 
     param = torch.tensor(3.0, requires_grad=True)
@@ -188,6 +188,7 @@ def test_clipped_grad_has_aux():
         has_aux=True,
         batch_argnums=1,
         l2_clip_norm=10.0,
+        return_aux=True,
     )
 
     param = torch.tensor(3.0, requires_grad=True)
@@ -199,10 +200,10 @@ def test_clipped_grad_has_aux():
     assert isinstance(grad, torch.Tensor)
     assert grad.shape == param.shape
 
-    # Check grad_aux has user_aux data
-    assert grad_aux.user_aux is not None
-    assert isinstance(grad_aux.user_aux, dict)
-    assert "mean_data" in grad_aux.user_aux
+    # Check grad_aux has loss_aux data
+    assert grad_aux.loss_aux is not None
+    assert isinstance(grad_aux.loss_aux, dict)
+    assert "mean_data" in grad_aux.loss_aux
 
 
 def test_clipped_grad_with_normalize_by():
@@ -244,7 +245,7 @@ def test_clipped_grad_actual_clipping():
         argnums=0,
         batch_argnums=1,
         l2_clip_norm=clip_norm,
-        return_grad_norms=True,
+        return_aux=True,
     )
 
     param = torch.tensor(0.0)
@@ -270,7 +271,7 @@ def test_clipped_grad_preserves_direction():
         argnums=0,
         batch_argnums=1,
         l2_clip_norm=1.0,  # Small clip norm
-        return_grad_norms=True,
+        return_aux=True,
     )
 
     # Compute unclipped gradient for single example
@@ -309,7 +310,7 @@ def test_clipped_grad_no_clipping_below_threshold():
         argnums=0,
         batch_argnums=1,
         l2_clip_norm=large_clip_norm,
-        return_grad_norms=True,
+        return_aux=True,
     )
 
     param = torch.tensor(1.0)
@@ -336,7 +337,7 @@ def test_clipped_grad_zero_gradients():
         argnums=0,
         batch_argnums=1,
         l2_clip_norm=1.0,
-        return_grad_norms=True,
+        return_aux=True,
     )
 
     # Zero data and zero param -> zero gradients
@@ -438,6 +439,7 @@ def test_clipped_grad_microbatching_with_aux():
         batch_argnums=(1, 2),
         l2_clip_norm=1.0,
         has_aux=True,
+        return_aux=True,  # Need to explicitly request aux outputs
         microbatch_size=None,
     )
     (grads_no_mb, grad_aux_no_mb), _ = grad_fn_no_mb(
@@ -451,6 +453,7 @@ def test_clipped_grad_microbatching_with_aux():
         batch_argnums=(1, 2),
         l2_clip_norm=1.0,
         has_aux=True,
+        return_aux=True,  # Need to explicitly request aux outputs
         microbatch_size=8,
     )
     (grads_mb, grad_aux_mb), _ = grad_fn_mb(params, x, y, state=clip_state_mb)
@@ -459,26 +462,26 @@ def test_clipped_grad_microbatching_with_aux():
     torch.testing.assert_close(grads_mb, grads_no_mb, rtol=1e-5, atol=1e-6)
 
     # Auxiliary outputs should be identical (per-example)
-    assert grad_aux_mb.user_aux is not None
-    assert grad_aux_no_mb.user_aux is not None
-    assert grad_aux_mb.user_aux["pred_sum"].shape == (batch_size,)
-    assert grad_aux_no_mb.user_aux["pred_sum"].shape == (batch_size,)
+    assert grad_aux_mb.loss_aux is not None
+    assert grad_aux_no_mb.loss_aux is not None
+    assert grad_aux_mb.loss_aux["pred_sum"].shape == (batch_size,)
+    assert grad_aux_no_mb.loss_aux["pred_sum"].shape == (batch_size,)
     torch.testing.assert_close(
-        grad_aux_mb.user_aux["pred_sum"],
-        grad_aux_no_mb.user_aux["pred_sum"],
+        grad_aux_mb.loss_aux["pred_sum"],
+        grad_aux_no_mb.loss_aux["pred_sum"],
         rtol=1e-5,
         atol=1e-6,
     )
     torch.testing.assert_close(
-        grad_aux_mb.user_aux["y_sum"],
-        grad_aux_no_mb.user_aux["y_sum"],
+        grad_aux_mb.loss_aux["y_sum"],
+        grad_aux_no_mb.loss_aux["y_sum"],
         rtol=1e-5,
         atol=1e-6,
     )
 
 
 def test_clipped_grad_microbatching_with_return_values_and_norms():
-    """Test microbatching with return_values and return_grad_norms."""
+    """Test microbatching with return_aux (values and norms)."""
 
     def loss_fn(params, x, y):
         return ((x @ params - y) ** 2).mean()
@@ -494,8 +497,7 @@ def test_clipped_grad_microbatching_with_return_values_and_norms():
         argnums=0,
         batch_argnums=(1, 2),
         l2_clip_norm=1.0,
-        return_values=True,
-        return_grad_norms=True,
+        return_aux=True,
         microbatch_size=None,
     )
     (grads_no_mb, grad_aux_no_mb), _ = grad_fn_no_mb(
@@ -508,8 +510,7 @@ def test_clipped_grad_microbatching_with_return_values_and_norms():
         argnums=0,
         batch_argnums=(1, 2),
         l2_clip_norm=1.0,
-        return_values=True,
-        return_grad_norms=True,
+        return_aux=True,
         microbatch_size=12,
     )
     (grads_mb, grad_aux_mb), _ = grad_fn_mb(params, x, y, state=clip_state_mb)

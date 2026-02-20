@@ -28,7 +28,6 @@ class TestAdaptiveClippedGrad:
 
         # Check initial state
         assert clip_state.clip_norm == 1.0
-        assert clip_state.step == 0
         assert clip_state.clipping_rate == 0.0
 
         # Compute gradients
@@ -39,7 +38,6 @@ class TestAdaptiveClippedGrad:
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Check state updated
-        assert clip_state.step == 1
         assert isinstance(clip_state.clip_norm, float)
         assert isinstance(clip_state.clipping_rate, float)
         assert grads.shape == params.shape
@@ -183,11 +181,8 @@ class TestAdaptiveClippedGrad:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        assert clip_state.step == 0
-
-        for i in range(1, 6):
+        for _i in range(1, 6):
             _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
-            assert clip_state.step == i
 
     def test_with_aux_output(self):
         """Test that has_aux=True works correctly."""
@@ -204,6 +199,7 @@ class TestAdaptiveClippedGrad:
             has_aux=True,
             initial_clip_norm=1.0,
             batch_argnums=(1, 2),
+            return_aux=True,  # Need to explicitly request aux outputs
         )
 
         params = torch.randn(10, requires_grad=False)
@@ -216,7 +212,6 @@ class TestAdaptiveClippedGrad:
         )
 
         assert grads.shape == params.shape
-        assert clip_state.step == 1
 
     def test_different_target_quantiles(self):
         """Test that different target quantiles affect adaptation."""
@@ -308,12 +303,12 @@ class TestAdaptiveClippedGrad:
             pred = x @ params
             return ((pred - y) ** 2).mean()
 
-        # Test with return_values=True to verify kwargs are passed
+        # Test with return_aux=True to verify kwargs are passed
         grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
             batch_argnums=(1, 2),
-            return_values=True,  # Should be passed to clipped_grad
+            return_aux=True,  # Should be passed to clipped_grad
         )
 
         params = torch.randn(10, requires_grad=False)
@@ -326,8 +321,7 @@ class TestAdaptiveClippedGrad:
 
         assert grads.shape == params.shape
         assert grad_aux.loss_values is not None
-        # Note: grad_norms is used internally for adaptation but stripped from output
-        # unless user explicitly sets return_grad_norms=True
+        assert grad_aux.grad_norms is not None
 
     def test_composition_with_noise(self):
         """Test that adaptive clipping composes naturally with noise."""
@@ -388,7 +382,7 @@ class TestAdaptiveClippedGrad:
         batch_x = torch.randn(32, 10)
         batch_y = torch.randn(32)
 
-        for step in range(3):
+        for _step in range(3):
             grads_no_mb, state_no_mb = grad_fn_no_mb(
                 params, batch_x, batch_y, state=state_no_mb
             )
@@ -398,7 +392,6 @@ class TestAdaptiveClippedGrad:
             torch.testing.assert_close(grads_mb, grads_no_mb, rtol=1e-5, atol=1e-6)
 
             # State updates should be identical
-            assert state_mb.step == state_no_mb.step == step + 1
             assert math.isclose(state_mb.clip_norm, state_no_mb.clip_norm, rel_tol=1e-5)
             assert math.isclose(
                 state_mb.clipping_rate, state_no_mb.clipping_rate, rel_tol=1e-5
@@ -480,7 +473,6 @@ class TestEdgeCases:
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         assert grads.shape == params.shape
-        assert clip_state.step == 1
 
     def test_zero_gradients(self):
         """Test with zero gradients (e.g., at local minimum)."""
@@ -502,7 +494,6 @@ class TestEdgeCases:
 
         # Should handle gracefully
         assert torch.allclose(grads, torch.zeros_like(grads))
-        assert clip_state.step == 1
 
     def test_large_batch(self):
         """Test with large batch size."""
@@ -524,5 +515,4 @@ class TestEdgeCases:
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         assert grads.shape == params.shape
-        assert clip_state.step == 1
         assert 0.0 <= clip_state.clipping_rate <= 1.0
