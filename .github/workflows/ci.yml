@@ -12,26 +12,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-rust:
-    name: Rust Tests
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Run Rust tests
-        run: cargo test --manifest-path crates/dp-accounting/Cargo.toml
-
   test-core:
-    name: Core Tests - Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    name: Core Tests - ${{ matrix.os }} - Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest]
         python-version: [ "3.11", "3.12" ]
 
     steps:
@@ -65,11 +52,12 @@ jobs:
           fail_ci_if_error: false
 
   test-accounting:
-    name: Accounting Tests - Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    name: Accounting Tests - ${{ matrix.os }} - Rust + Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest]
         python-version: [ "3.11", "3.12" ]
 
     steps:
@@ -78,6 +66,9 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Run Rust unit tests
+        run: cargo test --manifest-path crates/dp-accounting/Cargo.toml
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
@@ -105,9 +96,10 @@ jobs:
           name: codecov-accounting-py${{ matrix.python-version }}
           fail_ci_if_error: false
 
-  test-hf-gpu:
-    name: HF Ecosystem Tests (GPU) - Python ${{ matrix.python-version }}
+  test-gpu:
+    name: GPU Tests - Python ${{ matrix.python-version }}
     runs-on: GPU-runner-001
+    needs: [test-core, test-accounting]
     if: github.event_name == 'push' || github.event.pull_request.draft == false
     strategy:
       fail-fast: false
@@ -133,7 +125,7 @@ jobs:
         run: |
           uv sync --group dev --group test
 
-      - name: Run HF ecosystem tests (including GPU-specific)
+      - name: Run GPU tests (HF models + integration)
         run: |
           uv run pytest tests/compat tests/validation --cov=opaque --cov-report=xml --cov-report=term
 
@@ -141,17 +133,24 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
-          flags: hf-gpu
-          name: codecov-hf-gpu-py${{ matrix.python-version }}
+          flags: gpu
+          name: codecov-gpu-py${{ matrix.python-version }}
           fail_ci_if_error: false
 
-  build:
-    name: Build package
-    runs-on: ubuntu-latest
+  package:
+    name: Build packages - ${{ matrix.os }}
+    needs: [test-core, test-accounting]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
@@ -170,5 +169,5 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dist
+          name: dist-${{ matrix.os }}
           path: dist/
