@@ -37,7 +37,7 @@ For current distributed training capabilities, see
 
 ### Critical Requirement: Deterministic Synchronized Noise
 
-**Opaque uses deterministic noise generation to keep distributed processes synchronized.** When `generator=None` or a fixed seed is provided to `gaussian_noise()`, all processes generate **identical noise from the same seed**. This is essential for:
+**Opaque uses deterministic noise generation to keep distributed processes synchronized.** When `seed=None` or a fixed seed is provided to `gaussian_noise()`, all processes generate **identical noise from the same seed**. This is essential for:
 
 1. **Maintaining DP guarantees** - Each device must apply the same noise to ensure privacy bounds hold
 2. **Preventing model divergence** - Different noise per device causes training to diverge
@@ -49,7 +49,7 @@ For current distributed training capabilities, see
 import torch.distributed as dist
 from opaque.noise import gaussian_noise
 
-noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=42)  # Same seed on ALL devices
+noise_fn, noise_state = gaussian_noise(stddev=1.1, seed=42)  # Same seed on ALL devices
 
 for batch in dataloader:
     grads = clipped_grad_fn(...)
@@ -61,7 +61,7 @@ for batch in dataloader:
 **Why synchronization matters:**
 - Each device independently computes noise with the same seed → identical values
 - This is not broadcasting (which would be inefficient); it's deterministic generation
-- `generator=None` automatically selects a deterministic shared seed when distributed training is detected
+- `seed=None` automatically selects a deterministic shared seed when distributed training is detected
 - Different seeds per device will cause training failure (model divergence)
 
 See [docs/user-guide/distributed.md](../user-guide/distributed.md) for detailed examples.
@@ -345,7 +345,7 @@ if dist_utils.get_rank() == 0:
 ### 5. Keep Noise Deterministic Across Ranks
 
 ```python
-# Use generator=None to get the same deterministic seed on every device
+# Use seed=None to get the same deterministic seed on every device
 noise_fn, noise_state = gaussian_noise(stddev=1.1)
 ```
 

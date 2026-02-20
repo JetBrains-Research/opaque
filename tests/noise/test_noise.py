@@ -80,7 +80,7 @@ class TestGaussian:
 
     def test_noise_normality(self):
         """Noise should follow normal distribution."""
-        noise_fn, state = gaussian_noise(stddev=1.0, generator=42)
+        noise_fn, state = gaussian_noise(stddev=1.0, seed=42)
         zeros = torch.zeros(10000)
         noisy, state = noise_fn(zeros, state)
 
@@ -133,17 +133,17 @@ class TestGaussianGenerator:
     """Tests for generator parameter."""
 
     def test_generator_none(self):
-        """generator=None should create non-reproducible noise."""
-        noise_fn, state = gaussian_noise(stddev=1.0, generator=None)
+        """seed=None should create non-reproducible noise."""
+        noise_fn, state = gaussian_noise(stddev=1.0, seed=None)
         assert isinstance(state, GaussianNoiseState)
         grad = torch.zeros(10)
         noisy, state = noise_fn(grad, state)
         assert not torch.allclose(noisy, grad)
 
     def test_generator_int_reproducible(self):
-        """generator=int should produce reproducible noise."""
-        noise_fn1, state1 = gaussian_noise(stddev=1.0, generator=42)
-        noise_fn2, state2 = gaussian_noise(stddev=1.0, generator=42)
+        """seed=int should produce reproducible noise."""
+        noise_fn1, state1 = gaussian_noise(stddev=1.0, seed=42)
+        noise_fn2, state2 = gaussian_noise(stddev=1.0, seed=42)
 
         grad = torch.zeros(10, 10)
         noisy1, state1 = noise_fn1(grad, state1)
@@ -153,8 +153,8 @@ class TestGaussianGenerator:
 
     def test_generator_different_seeds(self):
         """Different seeds should produce different noise."""
-        noise_fn1, state1 = gaussian_noise(stddev=1.0, generator=42)
-        noise_fn2, state2 = gaussian_noise(stddev=1.0, generator=43)
+        noise_fn1, state1 = gaussian_noise(stddev=1.0, seed=42)
+        noise_fn2, state2 = gaussian_noise(stddev=1.0, seed=43)
 
         grad = torch.zeros(10, 10)
         noisy1, _ = noise_fn1(grad, state1)
@@ -162,15 +162,20 @@ class TestGaussianGenerator:
 
         assert not torch.allclose(noisy1, noisy2)
 
-    def test_generator_torch_generator(self):
-        """generator=torch.Generator should use the passed generator."""
-        gen = torch.Generator().manual_seed(42)
-        noise_fn, state = gaussian_noise(stddev=1.0, generator=gen)
-        assert state.rng_state is gen
+    def test_seed_int_produces_reproducible_state(self):
+        """seed=int should initialize RNG state deterministically."""
+        noise_fn1, state1 = gaussian_noise(stddev=1.0, seed=42)
+        noise_fn2, state2 = gaussian_noise(stddev=1.0, seed=42)
+        
+        # Both should produce same initial state
+        grad = torch.zeros(10)
+        noisy1, _ = noise_fn1(grad, state1)
+        noisy2, _ = noise_fn2(grad, state2)
+        assert torch.allclose(noisy1, noisy2)
 
     def test_state_evolution(self):
         """State should evolve, producing different noise each call."""
-        noise_fn, state = gaussian_noise(stddev=1.0, generator=42)
+        noise_fn, state = gaussian_noise(stddev=1.0, seed=42)
 
         grad = torch.zeros(10)
         noisy1, state = noise_fn(grad, state)
@@ -178,14 +183,14 @@ class TestGaussianGenerator:
 
         assert not torch.allclose(noisy1, noisy2)
 
-    def test_zero_stddev_with_generator(self):
-        """stddev=0 should return original gradients even with generator."""
-        noise_fn, state = gaussian_noise(stddev=0.0, generator=42)
+    def test_zero_stddev_with_seed(self):
+        """stddev=0 should return original gradients even with seed."""
+        noise_fn, state = gaussian_noise(stddev=0.0, seed=42)
         grad = torch.randn(5, 3)
         noisy, state = noise_fn(grad, state)
         assert torch.equal(noisy, grad)
 
-    def test_invalid_generator_type_raises(self):
-        """Invalid generator type should raise TypeError."""
-        with pytest.raises(TypeError, match="generator must be"):
-            gaussian_noise(stddev=1.0, generator="bad")
+    def test_invalid_seed_type_raises(self):
+        """Invalid seed type should raise TypeError."""
+        with pytest.raises(TypeError, match="seed must be"):
+            gaussian_noise(stddev=1.0, seed="bad")

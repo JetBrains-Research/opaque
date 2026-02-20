@@ -35,10 +35,16 @@ class MFNoiseState:
     Attributes:
         inner_state: Internal state (streaming matrix state or step counter).
         rng_state: Random number generator for reproducibility.
+        seed: Base seed used for initialization (None if unseeded).
+        synchronized: Whether noise is synchronized across devices in distributed mode.
+        step_counter: Number of noise_fn calls made (for future per-step derivation).
     """
 
     inner_state: Any
     rng_state: torch.Generator | None = None
+    seed: int | None = None
+    synchronized: bool = False
+    step_counter: int = 0
 
 
 def _iid_normal_noise(
@@ -122,6 +128,8 @@ def _matrix_factorization_noise(
     *,
     stddev: float,
     gen: torch.Generator,
+    seed: int | None,
+    synchronized: bool,
     dtype: torch.dtype | None = None,
 ) -> tuple[
     Callable[[Any, MFNoiseState], tuple[Any, MFNoiseState]],
@@ -137,6 +145,8 @@ def _matrix_factorization_noise(
         noising: Dense 2D tensor or ``StreamingMatrix`` representing C^{-1}.
         stddev: Standard deviation for the base noise.
         gen: Pre-resolved ``torch.Generator``.
+        seed: Base seed used for initialization (None if unseeded).
+        synchronized: Whether noise is synchronized across devices.
         dtype: Optional dtype for intermediate noise computation.
 
     Returns:
@@ -148,15 +158,15 @@ def _matrix_factorization_noise(
         where noise is conceptually added after gradient aggregation.
 
         The ``gen`` parameter is expected to be pre-resolved via
-        ``_resolve_generator()`` which handles distributed mode automatically.
+        ``_create_rng_state()`` which handles distributed mode automatically.
     """
     if isinstance(noising, torch.Tensor):
         return _dense_mf_noise(
-            grad_template, noising, stddev=stddev, gen=gen, dtype=dtype
+            grad_template, noising, stddev=stddev, gen=gen, seed=seed, synchronized=synchronized, dtype=dtype
         )
     elif isinstance(noising, streaming_matrix.StreamingMatrix):
         return _streaming_mf_noise(
-            grad_template, noising, stddev=stddev, gen=gen, dtype=dtype
+            grad_template, noising, stddev=stddev, gen=gen, seed=seed, synchronized=synchronized, dtype=dtype
         )
     else:
         raise TypeError(f"Unsupported noising type: {type(noising)}")
@@ -168,6 +178,8 @@ def _dense_mf_noise(
     *,
     stddev: float,
     gen: torch.Generator,
+    seed: int | None,
+    synchronized: bool,
     dtype: torch.dtype | None = None,
 ) -> tuple[Callable, MFNoiseState]:
     """(noise_fn, state) from a dense noising matrix C^{-1}."""
@@ -177,6 +189,9 @@ def _dense_mf_noise(
     state = MFNoiseState(
         inner_state=torch.tensor(0, dtype=torch.long),
         rng_state=gen,
+        seed=seed,
+        synchronized=synchronized,
+        step_counter=0,
     )
 
     def noise_fn(clipped_grads, st):
@@ -204,6 +219,9 @@ def _dense_mf_noise(
         new_state = MFNoiseState(
             inner_state=index + 1,
             rng_state=g,
+            seed=st.seed,
+            synchronized=st.synchronized,
+            step_counter=st.step_counter + 1,
         )
         return noisy_grads, new_state
 
@@ -216,6 +234,8 @@ def _streaming_mf_noise(
     *,
     stddev: float,
     gen: torch.Generator,
+    seed: int | None,
+    synchronized: bool,
     dtype: torch.dtype | None = None,
 ) -> tuple[Callable, MFNoiseState]:
     """(noise_fn, state) from a streaming noising matrix C^{-1}."""
@@ -223,6 +243,9 @@ def _streaming_mf_noise(
     state = MFNoiseState(
         inner_state=streaming_state,
         rng_state=gen,
+        seed=seed,
+        synchronized=synchronized,
+        step_counter=0,
     )
 
     def noise_fn(clipped_grads, st):
@@ -239,6 +262,9 @@ def _streaming_mf_noise(
         new_state = MFNoiseState(
             inner_state=new_streaming_state,
             rng_state=g,
+            seed=st.seed,
+            synchronized=st.synchronized,
+            step_counter=st.step_counter + 1,
         )
         return noisy_grads, new_state
 

@@ -288,11 +288,8 @@ def main():
         clip_state = None
         print(f"   Using fixed clip norm (no adaptation): {fixed_clip_norm}")
 
-    # RNG for noise
-    if device.type == "cpu":
-        rng = torch.Generator().manual_seed(42)
-    else:
-        rng = torch.Generator(device=device).manual_seed(42)
+    # Noise seed (automatically shifted by rank in distributed mode)
+    noise_seed = 42
 
     # Pre-create clipped_grad function if using fixed clipping (avoids recreation)
     if not use_adaptive_clipping:
@@ -374,7 +371,7 @@ def main():
 
                 # 2. Add Gaussian noise for DP
                 stddev = noise_multiplier * clip_state.sensitivity()
-                noise_fn, noise_state = gaussian_noise(stddev=stddev, generator=rng)
+                noise_fn, noise_state = gaussian_noise(stddev=stddev, seed=noise_seed, synchronized="auto")
                 noisy_grads, _ = noise_fn(grads_tuple, noise_state)
 
                 # 3. Optimizer step (direct, no wrapper)

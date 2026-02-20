@@ -49,7 +49,7 @@ noise_fn, noise_state = band_mf_noise(
     n=1000,
     bands=4,
     stddev=noise_multiplier * clip_norm,
-    generator=42,
+    seed=42,
 )
 
 # Training loop
@@ -133,7 +133,7 @@ optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
 # 1. Gaussian Noise (Standard DP-SGD) - Simplest baseline
 noise_fn, noise_state = gaussian_noise(
     stddev=1.1,
-    generator=42,  # Optional seed for reproducibility
+    seed=42,  # Optional seed for reproducibility
 )
 
 # 2. BandMF (Banded Toeplitz) - Good default, 10-50% better than Gaussian
@@ -142,7 +142,7 @@ noise_fn, noise_state = band_mf_noise(
     n=1000,           # Total training steps (required)
     bands=4,          # Correlation bands (default: 4)
     stddev=1.1,
-    generator=42,
+    seed=42,
 )
 
 # 3. BLT (Buffered Linear Toeplitz) - State-of-the-art for long training
@@ -152,7 +152,7 @@ noise_fn, noise_state = blt_mf_noise(
     stddev=1.1,
     min_buffers=1,    # Optimize within this range
     max_buffers=5,
-    generator=42,
+    seed=42,
 )
 
 # 4. Dense MF - Best utility for small n (< 100 steps)
@@ -160,7 +160,7 @@ noise_fn, noise_state = dense_mf_noise(
     grad_template,
     n=100,            # Total training steps (required)
     stddev=1.1,
-    generator=42,
+    seed=42,
 )
 
 # 5. Custom MF - Bring your own strategy matrix C_inv
@@ -170,7 +170,7 @@ noise_fn, noise_state = custom_mf_noise(
     grad_template,
     noising=strategy_matrix,
     stddev=1.1,
-    generator=42,
+    seed=42,
 )
 
 # 6. Identity MF - DP-SGD via MF API (for testing/validation)
@@ -178,7 +178,7 @@ from opaque.noise.matrix_factorization import identity
 noise_fn, noise_state = identity_mf_noise(
     grad_template,
     stddev=1.1,
-    generator=42,
+    seed=42,
 )
 
 # Training loop (IDENTICAL for all mechanisms!)
@@ -227,7 +227,7 @@ clipped_grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_size
 # ===============================================================================
 
 # 1. Gaussian Noise
-noise_fn, noise_state = gaussian_noise(stddev=1.1)  # No generator=... needed!
+noise_fn, noise_state = gaussian_noise(stddev=1.1)  # No seed=... needed!
 
 # 2. BandMF
 noise_fn, noise_state = band_mf_noise(grad_template, n=1000, bands=4, stddev=1.1)
@@ -365,7 +365,7 @@ noise_fn, state = custom_mf_noise(
     grad_template,
     noising,
     stddev=noise_multiplier * clip_norm,
-    generator=42,
+    seed=42,
 )
 ```
 
@@ -435,8 +435,8 @@ noise_fn, noise_state = band_mf_noise(
     n=1000, 
     bands=4, 
     stddev=1.1,
-    # generator=None (default) → auto-detects distributed, uses seed=0 everywhere
-    # generator=42 → uses seed=42 on all devices (reproducible)
+    # seed=None (default) → auto-detects distributed, uses seed=0 everywhere
+    # seed=42 → uses seed=42 on all devices (reproducible)
 )
 
 # Training loop - identical to single-device

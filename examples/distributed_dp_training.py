@@ -76,12 +76,12 @@ def main():
     # Poisson sampler with automatic distributed support
     # When distributed is detected:
     # - Auto-selects SHARDED mode (each device samples disjoint data)
-    # - Auto-shifts seed by rank (if provided): seed 42 → 42, 43, 44, ... per rank
+    # - Auto-shifts generator seed by rank (if provided): seed 42 → 42, 43, 44, ... per rank
     sampler = opaque.PoissonSampler(
         dataset,
         sample_rate=0.01,
         num_epochs=1,
-        generator=42,  # Optional: for reproducibility. Auto-shifted by rank.
+        generator=42,  # Optional: for reproducibility. Generator seed auto-shifted by rank.
     )
 
     # DataLoader with batch_sampler

@@ -14,7 +14,7 @@ confines noise to a bounded region from the start.
 
 The API returns ``(noise_fn, state)`` where state is always immutable:
 
-    >>> noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-3.0, 3.0), generator=42)
+    >>> noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-3.0, 3.0), seed=42)
     >>> noisy_grads, state = noise_fn(grads, state)
 
 References:
@@ -29,7 +29,7 @@ from typing import Any
 
 import torch
 
-from opaque.noise.gaussian_noise import GaussianNoiseState, _resolve_generator
+from opaque.noise.gaussian_noise import GaussianNoiseState, _create_rng_state
 from opaque.utils.pytree import tree_map
 
 _SQRT2 = math.sqrt(2.0)
@@ -67,28 +67,35 @@ def _truncated_normal_around(
     dtype = center.dtype
     device = center.device
 
-    z_lower = (lower - center) / stddev
-    z_upper = (upper - center) / stddev
+    # Move center to CPU for computation with generator (CPU-only)
+    center_cpu = center.cpu()
+    
+    z_lower = (lower - center_cpu) / stddev
+    z_upper = (upper - center_cpu) / stddev
 
     alpha = 0.5 * (1.0 + torch.erf(z_lower / _SQRT2))
     beta = 0.5 * (1.0 + torch.erf(z_upper / _SQRT2))
 
-    u = torch.rand(center.shape, dtype=dtype, device=device, generator=generator)
+    # Generate random values on CPU with generator, then move to device
+    u = torch.rand(center_cpu.shape, dtype=dtype, generator=generator)
     u = alpha + u * (beta - alpha)
 
     eps = torch.finfo(dtype).tiny
     u = torch.clamp(u, min=eps, max=1.0 - eps)
 
-    samples = center + stddev * _SQRT2 * torch.erfinv(2.0 * u - 1.0)
-
-    return torch.clamp(samples, min=lower, max=upper)
+    samples = center_cpu + stddev * _SQRT2 * torch.erfinv(2.0 * u - 1.0)
+    samples = torch.clamp(samples, min=lower, max=upper)
+    
+    # Move result back to original device
+    return samples.to(device=device)
 
 
 def bounded_gaussian_noise(
     stddev: float,
     bounds: tuple[float, float],
     *,
-    generator: None | int | torch.Generator = None,
+    seed: int | None = None,
+    synchronized: str | bool = "auto",
 ) -> tuple[
     Callable[[Any, GaussianNoiseState], tuple[Any, GaussianNoiseState]],
     GaussianNoiseState,
@@ -105,10 +112,14 @@ def bounded_gaussian_noise(
             (usually ``noise_multiplier * clip_norm``).
         bounds: ``(lower, upper)`` bounds for the noisy output domain.
             Must satisfy ``lower < upper``.
-        generator: RNG configuration:
-            - ``None``: new unseeded generator (non-reproducible)
-            - ``int``: seeded generator (reproducible)
-            - ``torch.Generator``: use directly
+        seed: Base seed for RNG:
+            - ``None``: Unseeded in single-device mode, fixed seed (0) in distributed
+              mode with ``synchronized="auto"``
+            - ``int``: Explicit seed for reproducibility
+        synchronized: Synchronization mode for distributed training:
+            - ``"auto"`` (default): Auto-detect and sync if distributed
+            - ``True``: Force synchronized noise (same seed across devices)
+            - ``False``: Independent noise per device (seed + rank offset)
 
     Returns:
         A tuple ``(noise_fn, state)`` where:
@@ -124,7 +135,7 @@ def bounded_gaussian_noise(
         >>> from opaque.noise import bounded_gaussian_noise
         >>>
         >>> noise_fn, state = bounded_gaussian_noise(
-        ...     stddev=1.0, bounds=(-3.0, 3.0), generator=42,
+        ...     stddev=1.0, bounds=(-3.0, 3.0), seed=42,
         ... )
         >>> grads = torch.zeros(100)
         >>> noisy, state = noise_fn(grads, state)
@@ -142,8 +153,13 @@ def bounded_gaussian_noise(
     if lower >= upper:
         raise ValueError(f"bounds must satisfy lower < upper, got ({lower}, {upper})")
 
-    gen = _resolve_generator(generator)
-    state = GaussianNoiseState(rng_state=gen)
+    gen, resolved_seed, is_sync = _create_rng_state(seed, synchronized)
+    state = GaussianNoiseState(
+        rng_state=gen,
+        seed=resolved_seed,
+        synchronized=is_sync,
+        step_counter=0,
+    )
 
     if stddev == 0:
 
@@ -166,7 +182,14 @@ def bounded_gaussian_noise(
             )
 
         noisy = tree_map(add_bounded_noise, grads)
-        return noisy, GaussianNoiseState(rng_state=g)
+        
+        # Return updated state with incremented step counter
+        return noisy, GaussianNoiseState(
+            rng_state=g,
+            seed=st.seed,
+            synchronized=st.synchronized,
+            step_counter=st.step_counter + 1,
+        )
 
     return noise_fn, state
 

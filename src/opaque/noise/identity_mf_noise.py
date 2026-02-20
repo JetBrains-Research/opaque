@@ -22,7 +22,8 @@ def identity_mf_noise(
     grad_template: Any,
     *,
     stddev: float,
-    generator: None | int | torch.Generator = None,
+    seed: int | None = None,
+    synchronized: str | bool = "auto",
 ) -> tuple[
     Callable[[Any, MFNoiseState], tuple[Any, MFNoiseState]],
     MFNoiseState,
@@ -38,10 +39,14 @@ def identity_mf_noise(
         grad_template: A pytree with the same structure and shapes as the
             gradients that will be passed to ``noise_fn``.
         stddev: Standard deviation for the base noise.
-        generator: RNG configuration:
-            - ``None``: new unseeded generator (non-reproducible)
-            - ``int``: seeded generator (reproducible)
-            - ``torch.Generator``: use directly
+        seed: Base seed for RNG:
+            - ``None``: Unseeded in single-device mode, fixed seed (0) in distributed
+              mode with ``synchronized="auto"``
+            - ``int``: Explicit seed for reproducibility
+        synchronized: Synchronization mode for distributed training:
+            - ``"auto"`` (default): Auto-detect and sync if distributed
+            - ``True``: Force synchronized noise (same seed across devices)
+            - ``False``: Independent noise per device (seed + rank offset)
 
     Returns:
         A tuple ``(noise_fn, state)`` where:
@@ -50,7 +55,7 @@ def identity_mf_noise(
         - ``state`` is a :class:`~opaque.noise.matrix_factorization.noise.MFNoiseState`
 
     Example:
-        >>> noise_fn, state = identity_mf_noise(grad_template, stddev=1.0, generator=42)
+        >>> noise_fn, state = identity_mf_noise(grad_template, stddev=1.0, seed=42)
         >>> for step in range(100):
         ...     noisy_grads, state = noise_fn(clipped_grads, state)
     """
@@ -58,7 +63,8 @@ def identity_mf_noise(
         grad_template,
         identity(),
         stddev=stddev,
-        generator=generator,
+        seed=seed,
+        synchronized=synchronized,
     )
 
 

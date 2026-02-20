@@ -14,7 +14,7 @@ from typing import Any
 
 import torch
 
-from opaque.noise.gaussian_noise import _resolve_generator
+from opaque.noise.gaussian_noise import _create_rng_state
 from opaque.noise.matrix_factorization.noise import (
     MFNoiseState,
     _matrix_factorization_noise,
@@ -32,7 +32,8 @@ def band_mf_noise(
     n_steps: int,
     *,
     stddev: float,
-    generator: None | int | torch.Generator = None,
+    seed: int | None = None,
+    synchronized: str | bool = "auto",
     bands: int | None = None,
 ) -> tuple[
     Callable[[Any, MFNoiseState], tuple[Any, MFNoiseState]],
@@ -48,10 +49,14 @@ def band_mf_noise(
             gradients that will be passed to ``noise_fn``.
         n_steps: Number of training iterations.
         stddev: Standard deviation for the base noise.
-        generator: RNG configuration:
-            - ``None``: new unseeded generator (non-reproducible)
-            - ``int``: seeded generator (reproducible)
-            - ``torch.Generator``: use directly
+        seed: Base seed for RNG:
+            - ``None``: Unseeded in single-device mode, fixed seed (0) in distributed
+              mode with ``synchronized="auto"``
+            - ``int``: Explicit seed for reproducibility
+        synchronized: Synchronization mode for distributed training:
+            - ``"auto"`` (default): Auto-detect and sync if distributed
+            - ``True``: Force synchronized noise (same seed across devices)
+            - ``False``: Independent noise per device (seed + rank offset)
         bands: Number of bands in the Toeplitz matrix. Defaults to
             ``n_steps`` (full band, equivalent to optimal Fichtenberger init).
 
@@ -62,7 +67,7 @@ def band_mf_noise(
         - ``state`` is a :class:`~opaque.noise.matrix_factorization.noise.MFNoiseState`
 
     Example:
-        >>> noise_fn, state = band_mf_noise(grad_template, 1000, stddev=1.0, generator=42, bands=10)
+        >>> noise_fn, state = band_mf_noise(grad_template, 1000, stddev=1.0, seed=42, bands=10)
         >>> for step in range(1000):
         ...     noisy_grads, state = noise_fn(clipped_grads, state)
     """
@@ -71,8 +76,8 @@ def band_mf_noise(
 
     coefs = optimize_toeplitz(n_steps, bands)
     noising = inverse_as_streaming_matrix(coefs)
-    gen = _resolve_generator(generator)
-    return _matrix_factorization_noise(grad_template, noising, stddev=stddev, gen=gen)
+    gen, resolved_seed, is_sync = _create_rng_state(seed, synchronized)
+    return _matrix_factorization_noise(grad_template, noising, stddev=stddev, gen=gen, seed=resolved_seed, synchronized=is_sync)
 
 
 __all__ = ["band_mf_noise"]

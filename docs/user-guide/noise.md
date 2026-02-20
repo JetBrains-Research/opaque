@@ -46,16 +46,21 @@ params = update(params, noisy_grads)
 - Lower stddev → Weaker privacy, higher accuracy
 - Typically: `stddev = noise_multiplier * clip_norm`
 
-**`generator`** (optional): RNG configuration for reproducibility
+**`seed`** (optional): Integer seed for reproducibility
 
 ```python
 # Seeded for reproducibility
-noise_fn, state = gaussian_noise(stddev=1.0, generator=42)
+noise_fn, state = gaussian_noise(stddev=1.0, seed=42)
 
-# Or pass a torch.Generator directly
-gen = torch.Generator().manual_seed(42)
-noise_fn, state = gaussian_noise(stddev=1.0, generator=gen)
+# Or let Opaque create a random seed
+noise_fn, state = gaussian_noise(stddev=1.0)  # Random seed
 ```
+
+**`synchronized`** (optional): Controls distributed noise synchronization
+
+- `"auto"` (default): Auto-detect distributed mode and sync noise across devices
+- `True`: Force synchronized noise (same seed on all devices)
+- `False`: Different noise per device (seed shifted by rank)
 
 ## Calibrating Noise
 
@@ -239,7 +244,7 @@ Use the `generator` parameter for deterministic noise:
 ```python
 from opaque import bounded_gaussian_noise
 
-noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-3.0, 3.0), generator=42)
+noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-3.0, 3.0), seed=42)
 noisy_grads, state = noise_fn(grads, state)
 ```
 
@@ -346,13 +351,12 @@ For reproducible noise across runs:
 
 ```python
 # Seed the noise function for reproducibility
-noise_fn, state = gaussian_noise(stddev=1.0, generator=42)
+noise_fn, state = gaussian_noise(stddev=1.0, seed=42)
 noisy_grads, state = noise_fn(grads, state)
 
-# Or pass a torch.Generator directly
-gen = torch.Generator().manual_seed(42)
-noise_fn, state = gaussian_noise(stddev=1.0, generator=gen)
-noisy_grads, state = noise_fn(grads, state)
+# Control distributed synchronization
+noise_fn, state = gaussian_noise(stddev=1.0, seed=42, synchronized=True)  # Same noise on all devices
+noise_fn, state = gaussian_noise(stddev=1.0, seed=42, synchronized=False)  # Different per device
 ```
 
 ## See Also
