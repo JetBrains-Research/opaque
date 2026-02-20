@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import opaque_accounting as _native
 
 from opaque.accounting.base import DpProcess, Pld
+from opaque.accounting.mechanisms.bounded_gaussian import BoundedGaussian
 from opaque.accounting.mechanisms.gaussian import Gaussian
 from opaque.accounting.transformations.adaclip import AdaClip
 
@@ -16,7 +17,7 @@ from opaque.accounting.transformations.adaclip import AdaClip
 class Poisson(DpProcess):
     """Poisson-subsampled Gaussian mechanism."""
 
-    inner: Gaussian | AdaClip
+    inner: Gaussian | BoundedGaussian | AdaClip
     sample_rate: float
 
     @functools.lru_cache(maxsize=8)
@@ -38,7 +39,7 @@ class Poisson(DpProcess):
         )
 
         match self.inner:
-            case Gaussian(noise_multiplier=nm):
+            case Gaussian(noise_multiplier=nm) | BoundedGaussian(noise_multiplier=nm):
                 return _native.poisson_gaussian_pld(
                     nm, self.sample_rate, config.to_native()
                 )
@@ -53,13 +54,13 @@ class Poisson(DpProcess):
                 )
             case _:
                 raise TypeError(
-                    "Poisson requires a Gaussian or AdaClip inner mechanism, got "
+                    "Poisson requires a Gaussian, BoundedGaussian, or AdaClip inner mechanism, got "
                     f"{type(self.inner).__name__}."
                 )
 
 
 def poisson(
-    inner: Gaussian | AdaClip,
+    inner: Gaussian | BoundedGaussian | AdaClip,
     sample_rate: float,
 ) -> Poisson:
     """Poisson-subsampled Gaussian mechanism (standard DP-SGD step).
@@ -86,9 +87,9 @@ def poisson(
         training = step * 1000
         eps = training.epsilon_at(1e-5)
     """
-    if not isinstance(inner, (Gaussian, AdaClip)):
+    if not isinstance(inner, (Gaussian, BoundedGaussian, AdaClip)):
         raise TypeError(
-            f"poisson() requires a Gaussian or AdaClip inner mechanism, got {type(inner).__name__}. "
+            f"poisson() requires a Gaussian, BoundedGaussian, or AdaClip inner mechanism, got {type(inner).__name__}. "
             "Use: acc.poisson(acc.gaussian(noise_multiplier), sample_rate)"
         )
     return Poisson(inner=inner, sample_rate=sample_rate)

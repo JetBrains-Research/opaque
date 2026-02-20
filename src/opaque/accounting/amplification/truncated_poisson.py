@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import opaque_accounting as _native
 
 from opaque.accounting.base import DpProcess, Pld
+from opaque.accounting.mechanisms.bounded_gaussian import BoundedGaussian
 from opaque.accounting.mechanisms.gaussian import Gaussian
 from opaque.accounting.transformations.adaclip import AdaClip
 
@@ -16,7 +17,7 @@ from opaque.accounting.transformations.adaclip import AdaClip
 class TruncatedPoisson(DpProcess):
     """Truncated Poisson-subsampled Gaussian mechanism."""
 
-    inner: Gaussian | AdaClip
+    inner: Gaussian | BoundedGaussian | AdaClip
     sample_rate: float
     batch_size_cap: int
     dataset_size: int
@@ -40,7 +41,7 @@ class TruncatedPoisson(DpProcess):
         )
 
         match self.inner:
-            case Gaussian(noise_multiplier=nm):
+            case Gaussian(noise_multiplier=nm) | BoundedGaussian(noise_multiplier=nm):
                 return _native.truncated_poisson_gaussian_pld(
                     nm,
                     self.sample_rate,
@@ -63,13 +64,13 @@ class TruncatedPoisson(DpProcess):
                 )
             case _:
                 raise TypeError(
-                    "TruncatedPoisson requires a Gaussian or AdaClip inner mechanism, got "
+                    "TruncatedPoisson requires a Gaussian, BoundedGaussian, or AdaClip inner mechanism, got "
                     f"{type(self.inner).__name__}."
                 )
 
 
 def truncated_poisson(
-    inner: Gaussian | AdaClip,
+    inner: Gaussian | BoundedGaussian | AdaClip,
     sample_rate: float,
     batch_size_cap: int,
     dataset_size: int,
@@ -102,9 +103,9 @@ def truncated_poisson(
         training = step * 1000
         eps = training.epsilon_at(1e-5)
     """
-    if not isinstance(inner, (Gaussian, AdaClip)):
+    if not isinstance(inner, (Gaussian, BoundedGaussian, AdaClip)):
         raise TypeError(
-            f"truncated_poisson() requires a Gaussian or AdaClip inner mechanism, got {type(inner).__name__}."
+            f"truncated_poisson() requires a Gaussian, BoundedGaussian, or AdaClip inner mechanism, got {type(inner).__name__}."
         )
     return TruncatedPoisson(
         inner=inner,

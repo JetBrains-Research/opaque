@@ -18,6 +18,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<config::PyDiscretizationConfig>()?;
 
     // Mechanisms
+    m.add_function(wrap_pyfunction!(mechanisms::py_bounded_gaussian_pld, m)?)?;
     m.add_function(wrap_pyfunction!(mechanisms::py_gaussian_pld, m)?)?;
     m.add_function(wrap_pyfunction!(mechanisms::py_eps_delta_pld, m)?)?;
     m.add_function(wrap_pyfunction!(mechanisms::py_identity_pld, m)?)?;

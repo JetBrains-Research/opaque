@@ -13,7 +13,7 @@ from opaque.accounting.amplification import (
 )
 from opaque.accounting.base import DpProcess
 from opaque.accounting.discretization import DiscretizationConfig
-from opaque.accounting.mechanisms import Gaussian
+from opaque.accounting.mechanisms import BoundedGaussian, Gaussian
 
 # ── Amplification dataclass tests ────────────────────────────────────
 
@@ -165,3 +165,62 @@ class TestParallelPoissonConstructor:
     def test_rejects_non_poisson(self):
         with pytest.raises(TypeError, match="Poisson"):
             acc.parallel_poisson(acc.gaussian(0.8), 4)  # type: ignore[arg-type]
+
+
+# ── BoundedGaussian amplification tests ─────────────────────────────
+
+
+class TestPoissonWithBoundedGaussian:
+    """poisson() accepts BoundedGaussian as inner mechanism."""
+
+    def test_accepts_bounded_gaussian(self):
+        step = acc.poisson(acc.bounded_gaussian(1.1), 0.01)
+        assert isinstance(step, Poisson)
+        assert isinstance(step.inner, BoundedGaussian)
+        eps = step.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
+
+    def test_stores_bounded_gaussian_inner(self):
+        """Poisson stores the full BoundedGaussian object, not a flattened nm."""
+        bg = acc.bounded_gaussian(1.0)
+        step = acc.poisson(bg, 0.01)
+        assert step.inner is bg
+        assert step.inner.noise_multiplier == pytest.approx(1.0)
+
+    def test_equivalent_to_poisson_gaussian_same_nm(self):
+        """For wide bounds, poisson(bounded_gaussian(nm)) == poisson(gaussian(nm))."""
+        nm, q = 1.0, 0.01
+        bg_step = acc.poisson(acc.bounded_gaussian(nm), q)
+        g_step = acc.poisson(acc.gaussian(nm), q)
+        assert bg_step.epsilon_at(1e-5) == pytest.approx(g_step.epsilon_at(1e-5), abs=1e-8)
+
+    def test_rejects_non_gaussian(self):
+        with pytest.raises(TypeError, match="Gaussian|BoundedGaussian|AdaClip"):
+            acc.poisson(acc.eps_delta(1.0, 1e-5), 0.01)  # type: ignore[arg-type]
+
+
+class TestTruncatedPoissonWithBoundedGaussian:
+    """truncated_poisson() accepts BoundedGaussian as inner mechanism."""
+
+    def test_accepts_bounded_gaussian(self):
+        step = acc.truncated_poisson(acc.bounded_gaussian(1.0), 0.01, 128, 10_000)
+        assert isinstance(step, TruncatedPoisson)
+        assert isinstance(step.inner, BoundedGaussian)
+        eps = step.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
+
+    def test_stores_bounded_gaussian_inner(self):
+        bg = acc.bounded_gaussian(1.0)
+        step = acc.truncated_poisson(bg, 0.01, 128, 10_000)
+        assert step.inner is bg
+
+    def test_equivalent_to_truncated_poisson_gaussian_same_nm(self):
+        """For wide bounds, truncated_poisson(bounded_gaussian(nm)) == truncated_poisson(gaussian(nm))."""
+        nm = 1.0
+        bg_step = acc.truncated_poisson(acc.bounded_gaussian(nm), 0.01, 128, 10_000)
+        g_step = acc.truncated_poisson(acc.gaussian(nm), 0.01, 128, 10_000)
+        assert bg_step.epsilon_at(1e-5) == pytest.approx(g_step.epsilon_at(1e-5), abs=1e-8)
+
+    def test_rejects_non_gaussian(self):
+        with pytest.raises(TypeError, match="Gaussian|BoundedGaussian|AdaClip"):
+            acc.truncated_poisson(acc.eps_delta(1.0), 0.01, 128, 10_000)  # type: ignore[arg-type]

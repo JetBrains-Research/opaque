@@ -5,6 +5,31 @@ use pyo3::prelude::*;
 use super::config::PyDiscretizationConfig;
 use super::pld::PyPld;
 
+/// Compute the PLD for the Bounded Gaussian mechanism (Add/Remove adjacency).
+///
+/// The Bounded Gaussian Mechanism (Chen & Hale, 2024) adds truncated Gaussian
+/// noise to keep outputs in a bounded domain.  For DP-SGD the mechanism is
+/// analysed under Add/Remove adjacency with sensitivity 1 (same as standard
+/// Gaussian). When truncation bounds are wide relative to σ, the PLD equals
+/// that of the standard Gaussian with the same noise multiplier.
+///
+/// Args:
+///     noise_multiplier (float): σ/Δ ratio, in [0.1, 1.2] — same as gaussian_pld.
+///     config (DiscretizationConfig): Discretization configuration.
+///
+/// Returns:
+///     Pld: The privacy loss distribution.
+#[pyfunction]
+#[pyo3(name = "bounded_gaussian_pld", signature = (noise_multiplier, config))]
+pub fn py_bounded_gaussian_pld(
+    noise_multiplier: f64,
+    config: &PyDiscretizationConfig,
+) -> PyResult<PyPld> {
+    let pld = crate::mechanisms::bounded_gaussian_pld(noise_multiplier, &config.inner)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}
+
 /// Compute the PLD for a Gaussian mechanism.
 ///
 /// Args:

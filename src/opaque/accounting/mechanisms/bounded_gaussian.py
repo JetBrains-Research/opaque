@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import functools
+from dataclasses import dataclass
 
 import opaque_accounting as _native
 
-from opaque.accounting.base import DiscretizationConfig, DpProcess, Pld
-from opaque.accounting.discretization import resolve_pld_config
+from opaque.accounting.base import DpProcess, Pld
+from opaque.accounting.discretization import get_discretization
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,23 +21,30 @@ class BoundedGaussian(DpProcess):
     standard Gaussian mechanism.
 
     When the truncation bounds are wide relative to σ (the standard DP-SGD case),
-    the PLD is approximately equal to the standard Gaussian PLD.  The ``pld()``
-    method returns ``gaussian_pld(noise_multiplier)`` as a conservative
-    (upper-bound) approximation.
+    the PLD is approximately equal to the standard Gaussian PLD.
     """
 
     noise_multiplier: float
-    config: DiscretizationConfig | None = field(default=None, repr=False)
 
-    def pld(self) -> Pld:
-        return _native.bounded_gaussian_pld(self.noise_multiplier, config=self.config)
+    @functools.lru_cache(maxsize=8)
+    def pld(
+        self,
+        *,
+        discretization: float | None = None,
+        log_x_mass_truncation_bound: float | None = None,
+        pessimistic_estimate: bool | None = None,
+        max_grid_size: int | None = None,
+    ) -> Pld:
+        config = get_discretization(
+            discretization=discretization,
+            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+            pessimistic_estimate=pessimistic_estimate,
+            max_grid_size=max_grid_size,
+        )
+        return _native.bounded_gaussian_pld(self.noise_multiplier, config.to_native())
 
 
-def bounded_gaussian(
-    noise_multiplier: float,
-    *,
-    discretization: None | float | DiscretizationConfig = None,
-) -> BoundedGaussian:
+def bounded_gaussian(noise_multiplier: float) -> BoundedGaussian:
     """Bounded Gaussian mechanism (Add/Remove adjacency, wide-bound approximation).
 
     The Bounded Gaussian Mechanism (Chen & Hale, 2024) adds noise from a
@@ -45,9 +53,8 @@ def bounded_gaussian(
     For DP-SGD with gradient clipping the standard adjacency is **Add/Remove**
     with sensitivity 1.  When the truncation bounds are wide relative to σ (at
     least ~3σ from every possible query value), the PLD is approximately equal
-    to the standard Gaussian PLD.  This function returns an accounting process
-    that uses ``gaussian_pld(noise_multiplier)`` as a conservative upper bound
-    on ε.
+    to the standard Gaussian PLD, so ``bounded_gaussian_pld(nm)`` is used as a
+    conservative upper bound on ε.
 
     Note:
         The exact PLD of a truncated Gaussian includes a log-normalisation
@@ -59,10 +66,6 @@ def bounded_gaussian(
     Args:
         noise_multiplier: Noise standard deviation divided by sensitivity (σ/Δ).
             Valid range: [0.1, 1.2] — same as :func:`gaussian`.
-        discretization: PLD precision config (keyword-only). Can be:
-            - None: use module default (see :func:`set_discretization`)
-            - float: use as grid spacing
-            - DiscretizationConfig: full config
 
     Returns:
         A :class:`BoundedGaussian` process.
@@ -77,10 +80,12 @@ def bounded_gaussian(
         training = acc.bounded_gaussian(1.1) * 1000
         eps = training.epsilon_at(1e-5)
 
+        # Query-time discretization override
+        eps = proc.epsilon_at(1e-5, discretization=1e-3)
+
     References:
         Bo Chen and Matthew Hale, "The Bounded Gaussian Mechanism for
         Differential Privacy," J. Privacy and Confidentiality, 14(1), 2024.
         https://arxiv.org/abs/2211.17230
     """
-    config = resolve_pld_config(discretization)
-    return BoundedGaussian(noise_multiplier, config=config)
+    return BoundedGaussian(noise_multiplier)
