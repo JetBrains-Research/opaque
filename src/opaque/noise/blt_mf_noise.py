@@ -16,6 +16,7 @@ from typing import Any
 import torch
 
 from opaque.noise.gaussian_noise import _create_rng_state
+from opaque.random import RngKey
 from opaque.noise.matrix_factorization.buffered_toeplitz import (
     inverse_as_streaming_matrix,
     optimize,
@@ -31,7 +32,7 @@ def blt_mf_noise(
     n_steps: int,
     *,
     stddev: float,
-    seed: int | None = None,
+    key: RngKey | None = None,
     synchronized: str | bool = "auto",
     min_sep: int = 1,
     max_participations: int | None = 1,
@@ -52,10 +53,10 @@ def blt_mf_noise(
             gradients that will be passed to ``noise_fn``.
         n_steps: Number of training iterations.
         stddev: Standard deviation for the base noise.
-        seed: Base seed for RNG:
-            - ``None``: Unseeded in single-device mode, fixed seed (0) in distributed
-              mode with ``synchronized="auto"``
-            - ``int``: Explicit seed for reproducibility
+                key: Optional RNG key (primary API) for explicit functional randomness.
+                        - ``None``: Non-deterministic in single-device mode; fixed key in
+                            distributed mode with ``synchronized="auto"``
+                        - ``RngKey``: Explicit key for reproducibility
         synchronized: Synchronization mode for distributed training:
             - ``"auto"`` (default): Auto-detect and sync if distributed
             - ``True``: Force synchronized noise (same seed across devices)
@@ -72,7 +73,8 @@ def blt_mf_noise(
         - ``state`` is a :class:`~opaque.noise.matrix_factorization.noise.MFNoiseState`
 
     Example:
-        >>> noise_fn, state = blt_mf_noise(grad_template, 1000, stddev=1.0, seed=42)
+        >>> from opaque.random import key
+        >>> noise_fn, state = blt_mf_noise(grad_template, 1000, stddev=1.0, key=key(42))
         >>> for step in range(1000):
         ...     noisy_grads, state = noise_fn(clipped_grads, state)
     """
@@ -84,7 +86,7 @@ def blt_mf_noise(
         max_buffers=max_buffers,
     )
     noising = inverse_as_streaming_matrix(blt)
-    gen, resolved_seed, is_sync = _create_rng_state(seed, synchronized)
+    gen, resolved_seed, is_sync = _create_rng_state(key, synchronized)
     return _matrix_factorization_noise(grad_template, noising, stddev=stddev, gen=gen, seed=resolved_seed, synchronized=is_sync)
 
 

@@ -4,6 +4,7 @@ import pytest
 import scipy.stats
 import torch
 
+from opaque.random import key
 from opaque.noise import bounded_gaussian_noise
 from opaque.noise.gaussian_noise import GaussianNoiseState
 
@@ -128,7 +129,7 @@ class TestBoundedGaussian:
         stddev = 1.0
         lower, upper = -2.0, 2.0
         noise_fn, state = bounded_gaussian_noise(
-            stddev=stddev, bounds=(lower, upper), seed=42
+            stddev=stddev, bounds=(lower, upper), key=key(42)
         )
         zeros = torch.zeros(50000)
         noisy, state = noise_fn(zeros, state)
@@ -213,16 +214,16 @@ class TestBoundedGaussian:
         assert noisy.max().item() <= upper
 
 
-class TestBoundedGaussianGenerator:
-    """Tests for generator parameter."""
+class TestBoundedGaussianKey:
+    """Tests for key parameter."""
 
     def test_reproducibility(self):
         """Same generator seed should produce same noise."""
         noise_fn1, state1 = bounded_gaussian_noise(
-            stddev=1.0, bounds=(-3.0, 3.0), seed=42
+            stddev=1.0, bounds=(-3.0, 3.0), key=key(42)
         )
         noise_fn2, state2 = bounded_gaussian_noise(
-            stddev=1.0, bounds=(-3.0, 3.0), seed=42
+            stddev=1.0, bounds=(-3.0, 3.0), key=key(42)
         )
 
         grad = torch.zeros(10, 10)
@@ -234,10 +235,10 @@ class TestBoundedGaussianGenerator:
     def test_different_seeds(self):
         """Different seeds should produce different noise."""
         noise_fn1, state1 = bounded_gaussian_noise(
-            stddev=1.0, bounds=(-3.0, 3.0), seed=42
+            stddev=1.0, bounds=(-3.0, 3.0), key=key(42)
         )
         noise_fn2, state2 = bounded_gaussian_noise(
-            stddev=1.0, bounds=(-3.0, 3.0), seed=43
+            stddev=1.0, bounds=(-3.0, 3.0), key=key(43)
         )
 
         grad = torch.zeros(10, 10)
@@ -250,7 +251,7 @@ class TestBoundedGaussianGenerator:
         """Stateful version must also respect bounds."""
         lower, upper = -2.0, 2.0
         noise_fn, state = bounded_gaussian_noise(
-            stddev=1.0, bounds=(lower, upper), seed=42
+            stddev=1.0, bounds=(lower, upper), key=key(42)
         )
         grad = torch.zeros(10000)
         noisy, state = noise_fn(grad, state)
@@ -261,7 +262,7 @@ class TestBoundedGaussianGenerator:
     def test_zero_stddev_with_generator(self):
         """stddev=0 should clamp to bounds without noise."""
         noise_fn, state = bounded_gaussian_noise(
-            stddev=0.0, bounds=(-1.0, 1.0), seed=42
+            stddev=0.0, bounds=(-1.0, 1.0), key=key(42)
         )
         grad = torch.tensor([0.5, -0.5, 2.0, -2.0])
         noisy, state = noise_fn(grad, state)
@@ -271,9 +272,9 @@ class TestBoundedGaussianGenerator:
     def test_negative_stddev_raises_with_generator(self):
         """Negative stddev should raise ValueError."""
         with pytest.raises(ValueError, match="stddev must be non-negative"):
-            bounded_gaussian_noise(stddev=-1.0, bounds=(-1.0, 1.0), seed=42)
+            bounded_gaussian_noise(stddev=-1.0, bounds=(-1.0, 1.0), key=key(42))
 
     def test_invalid_bounds_raises_with_generator(self):
         """Invalid bounds should raise ValueError."""
         with pytest.raises(ValueError, match="bounds must satisfy lower < upper"):
-            bounded_gaussian_noise(stddev=1.0, bounds=(1.0, -1.0), seed=42)
+            bounded_gaussian_noise(stddev=1.0, bounds=(1.0, -1.0), key=key(42))

@@ -23,6 +23,8 @@ from typing import Any
 
 import torch
 
+from opaque.random import RngKey, fold_in as rng_fold_in
+from opaque.random import generator_from_key
 from opaque.utils.pytree import tree_map
 
 from . import streaming_matrix
@@ -34,17 +36,17 @@ class MFNoiseState:
 
     Attributes:
         inner_state: Internal state (streaming matrix state or step counter).
-        rng_state: Random number generator for reproducibility.
-        seed: Base seed used for initialization (None if unseeded).
+        seed: Base seed used for initialization.
         synchronized: Whether noise is synchronized across devices in distributed mode.
-        step_counter: Number of noise_fn calls made (for future per-step derivation).
+        step_counter: Number of noise_fn calls made.
+        rng_key: Immutable RNG key for deterministic per-step derivation.
     """
 
     inner_state: Any
-    rng_state: torch.Generator | None = None
-    seed: int | None = None
-    synchronized: bool = False
-    step_counter: int = 0
+    seed: int
+    synchronized: bool
+    step_counter: int
+    rng_key: RngKey
 
 
 def _iid_normal_noise(
@@ -127,8 +129,8 @@ def _matrix_factorization_noise(
     noising: torch.Tensor | streaming_matrix.StreamingMatrix,
     *,
     stddev: float,
-    gen: torch.Generator,
-    seed: int | None,
+    gen: RngKey,
+    seed: int,
     synchronized: bool,
     dtype: torch.dtype | None = None,
 ) -> tuple[
@@ -144,8 +146,8 @@ def _matrix_factorization_noise(
         grad_template: Pytree with the same structure/shapes as gradients.
         noising: Dense 2D tensor or ``StreamingMatrix`` representing C^{-1}.
         stddev: Standard deviation for the base noise.
-        gen: Pre-resolved ``torch.Generator``.
-        seed: Base seed used for initialization (None if unseeded).
+        gen: Pre-resolved base ``RngKey``.
+        seed: Base seed used for initialization.
         synchronized: Whether noise is synchronized across devices.
         dtype: Optional dtype for intermediate noise computation.
 
@@ -177,8 +179,8 @@ def _dense_mf_noise(
     noising: torch.Tensor,
     *,
     stddev: float,
-    gen: torch.Generator,
-    seed: int | None,
+    gen: RngKey,
+    seed: int,
     synchronized: bool,
     dtype: torch.dtype | None = None,
 ) -> tuple[Callable, MFNoiseState]:
@@ -188,15 +190,16 @@ def _dense_mf_noise(
 
     state = MFNoiseState(
         inner_state=torch.tensor(0, dtype=torch.long),
-        rng_state=gen,
         seed=seed,
         synchronized=synchronized,
         step_counter=0,
+        rng_key=gen,
     )
 
     def noise_fn(clipped_grads, st):
         index = st.inner_state
-        g = st.rng_state
+        step_key = rng_fold_in(st.rng_key, st.step_counter)
+        g = generator_from_key(step_key)
         max_steps = noising.shape[0]
         if index >= max_steps:
             raise ValueError(
@@ -218,10 +221,10 @@ def _dense_mf_noise(
         noisy_grads = tree_map(add_noise, clipped_grads)
         new_state = MFNoiseState(
             inner_state=index + 1,
-            rng_state=g,
             seed=st.seed,
             synchronized=st.synchronized,
             step_counter=st.step_counter + 1,
+            rng_key=st.rng_key,
         )
         return noisy_grads, new_state
 
@@ -233,8 +236,8 @@ def _streaming_mf_noise(
     noising: streaming_matrix.StreamingMatrix,
     *,
     stddev: float,
-    gen: torch.Generator,
-    seed: int | None,
+    gen: RngKey,
+    seed: int,
     synchronized: bool,
     dtype: torch.dtype | None = None,
 ) -> tuple[Callable, MFNoiseState]:
@@ -242,14 +245,15 @@ def _streaming_mf_noise(
     streaming_state = noising.init_multiply(grad_template)
     state = MFNoiseState(
         inner_state=streaming_state,
-        rng_state=gen,
         seed=seed,
         synchronized=synchronized,
         step_counter=0,
+        rng_key=gen,
     )
 
     def noise_fn(clipped_grads, st):
-        g = st.rng_state
+        step_key = rng_fold_in(st.rng_key, st.step_counter)
+        g = generator_from_key(step_key)
         s_state = st.inner_state
 
         iid_noise = _iid_normal_noise(clipped_grads, stddev, generator=g, dtype=dtype)
@@ -261,10 +265,10 @@ def _streaming_mf_noise(
         )
         new_state = MFNoiseState(
             inner_state=new_streaming_state,
-            rng_state=g,
             seed=st.seed,
             synchronized=st.synchronized,
             step_counter=st.step_counter + 1,
+            rng_key=st.rng_key,
         )
         return noisy_grads, new_state
 

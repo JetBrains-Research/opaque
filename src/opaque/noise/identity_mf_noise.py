@@ -16,13 +16,14 @@ import torch
 from opaque.noise.custom_mf_noise import custom_mf_noise
 from opaque.noise.matrix_factorization.noise import MFNoiseState
 from opaque.noise.matrix_factorization.streaming_matrix import identity
+from opaque.random import RngKey
 
 
 def identity_mf_noise(
     grad_template: Any,
     *,
     stddev: float,
-    seed: int | None = None,
+    key: RngKey | None = None,
     synchronized: str | bool = "auto",
 ) -> tuple[
     Callable[[Any, MFNoiseState], tuple[Any, MFNoiseState]],
@@ -39,10 +40,10 @@ def identity_mf_noise(
         grad_template: A pytree with the same structure and shapes as the
             gradients that will be passed to ``noise_fn``.
         stddev: Standard deviation for the base noise.
-        seed: Base seed for RNG:
-            - ``None``: Unseeded in single-device mode, fixed seed (0) in distributed
-              mode with ``synchronized="auto"``
-            - ``int``: Explicit seed for reproducibility
+                key: Optional RNG key (primary API) for explicit functional randomness.
+                        - ``None``: Non-deterministic in single-device mode; fixed key in
+                            distributed mode with ``synchronized="auto"``
+                        - ``RngKey``: Explicit key for reproducibility
         synchronized: Synchronization mode for distributed training:
             - ``"auto"`` (default): Auto-detect and sync if distributed
             - ``True``: Force synchronized noise (same seed across devices)
@@ -55,7 +56,8 @@ def identity_mf_noise(
         - ``state`` is a :class:`~opaque.noise.matrix_factorization.noise.MFNoiseState`
 
     Example:
-        >>> noise_fn, state = identity_mf_noise(grad_template, stddev=1.0, seed=42)
+        >>> from opaque.random import key
+        >>> noise_fn, state = identity_mf_noise(grad_template, stddev=1.0, key=key(42))
         >>> for step in range(100):
         ...     noisy_grads, state = noise_fn(clipped_grads, state)
     """
@@ -63,7 +65,7 @@ def identity_mf_noise(
         grad_template,
         identity(),
         stddev=stddev,
-        seed=seed,
+        key=key,
         synchronized=synchronized,
     )
 

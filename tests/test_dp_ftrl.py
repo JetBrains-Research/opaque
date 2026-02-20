@@ -3,6 +3,7 @@
 import torch
 import torch.nn as nn
 
+from opaque.random import key
 from opaque.noise import custom_mf_noise
 from opaque.noise.matrix_factorization import identity
 from opaque.noise.matrix_factorization.toeplitz import (
@@ -52,7 +53,7 @@ class TestDPFTRLTrainingLoop:
             self._make_template(model),
             identity(),
             stddev=0.1,
-            seed=42,
+            key=key(42),
         )
 
         x = torch.randn(50, 5)
@@ -74,7 +75,7 @@ class TestDPFTRLTrainingLoop:
             self._make_template(model),
             noising,
             stddev=0.1,
-            seed=42,
+            key=key(42),
         )
 
         x = torch.randn(50, 5)
@@ -95,7 +96,7 @@ class TestDPFTRLTrainingLoop:
             self._make_template(model),
             noising,
             stddev=0.1,
-            seed=42,
+            key=key(42),
         )
 
         x = torch.randn(50, 5)
@@ -114,7 +115,7 @@ class TestDPFTRLTrainingLoop:
             self._make_template(model),
             identity(),
             stddev=0.1,
-            seed=42,
+            key=key(42),
         )
 
         x = torch.randn(50, 5)
@@ -137,7 +138,7 @@ class TestDPFTRLTrainingLoop:
             self._make_template(model),
             identity(),
             stddev=0.1,
-            seed=42,
+            key=key(42),
         )
 
         x = torch.randn(50, 10)
@@ -158,7 +159,7 @@ class TestDPFTRLTrainingLoop:
                 self._make_template(model),
                 identity(),
                 stddev=1.0,
-                seed=42,
+                key=key(42),
             )
 
             x = torch.randn(4, 5)
@@ -195,7 +196,7 @@ class TestBandMFvsDPSGD:
             self._make_template(model),
             noising,
             stddev=0.1,
-            seed=42,
+            key=key(42),
         )
 
         losses = _train_loop(model, optimizer, noise_fn, state, x, y, steps)
@@ -223,7 +224,7 @@ class TestBandMFvsDPSGD:
             self._make_template(model_sgd),
             identity(),
             stddev=stddev,
-            seed=42,
+            key=key(42),
         )
         losses_sgd = _train_loop(model_sgd, opt_sgd, noise_sgd, state_sgd, x, y, steps)
 
@@ -237,7 +238,7 @@ class TestBandMFvsDPSGD:
             self._make_template(model_mf),
             noising,
             stddev=stddev,
-            seed=43,
+            key=key(43),
         )
         losses_mf = _train_loop(model_mf, opt_mf, noise_mf, state_mf, x, y, steps)
 

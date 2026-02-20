@@ -14,7 +14,8 @@ confines noise to a bounded region from the start.
 
 The API returns ``(noise_fn, state)`` where state is always immutable:
 
-    >>> noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-3.0, 3.0), seed=42)
+    >>> from opaque.random import key
+    >>> noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-3.0, 3.0), key=key(42))
     >>> noisy_grads, state = noise_fn(grads, state)
 
 References:
@@ -30,6 +31,8 @@ from typing import Any
 import torch
 
 from opaque.noise.gaussian_noise import GaussianNoiseState, _create_rng_state
+from opaque.random import RngKey, generator_from_key
+from opaque.random import fold_in as rng_fold_in
 from opaque.utils.pytree import tree_map
 
 _SQRT2 = math.sqrt(2.0)
@@ -69,7 +72,7 @@ def _truncated_normal_around(
 
     # Move center to CPU for computation with generator (CPU-only)
     center_cpu = center.cpu()
-    
+
     z_lower = (lower - center_cpu) / stddev
     z_upper = (upper - center_cpu) / stddev
 
@@ -85,7 +88,7 @@ def _truncated_normal_around(
 
     samples = center_cpu + stddev * _SQRT2 * torch.erfinv(2.0 * u - 1.0)
     samples = torch.clamp(samples, min=lower, max=upper)
-    
+
     # Move result back to original device
     return samples.to(device=device)
 
@@ -94,7 +97,7 @@ def bounded_gaussian_noise(
     stddev: float,
     bounds: tuple[float, float],
     *,
-    seed: int | None = None,
+    key: RngKey | None = None,
     synchronized: str | bool = "auto",
 ) -> tuple[
     Callable[[Any, GaussianNoiseState], tuple[Any, GaussianNoiseState]],
@@ -112,10 +115,10 @@ def bounded_gaussian_noise(
             (usually ``noise_multiplier * clip_norm``).
         bounds: ``(lower, upper)`` bounds for the noisy output domain.
             Must satisfy ``lower < upper``.
-        seed: Base seed for RNG:
-            - ``None``: Unseeded in single-device mode, fixed seed (0) in distributed
-              mode with ``synchronized="auto"``
-            - ``int``: Explicit seed for reproducibility
+                key: Optional RNG key (primary API) for explicit functional randomness.
+                        - ``None``: Non-deterministic in single-device mode; fixed key in
+                            distributed mode with ``synchronized="auto"``
+                        - ``RngKey``: Explicit key for reproducibility
         synchronized: Synchronization mode for distributed training:
             - ``"auto"`` (default): Auto-detect and sync if distributed
             - ``True``: Force synchronized noise (same seed across devices)
@@ -133,9 +136,10 @@ def bounded_gaussian_noise(
     Example:
         >>> import torch
         >>> from opaque.noise import bounded_gaussian_noise
+        >>> from opaque.random import key
         >>>
         >>> noise_fn, state = bounded_gaussian_noise(
-        ...     stddev=1.0, bounds=(-3.0, 3.0), seed=42,
+        ...     stddev=1.0, bounds=(-3.0, 3.0), key=key(42),
         ... )
         >>> grads = torch.zeros(100)
         >>> noisy, state = noise_fn(grads, state)
@@ -153,12 +157,12 @@ def bounded_gaussian_noise(
     if lower >= upper:
         raise ValueError(f"bounds must satisfy lower < upper, got ({lower}, {upper})")
 
-    gen, resolved_seed, is_sync = _create_rng_state(seed, synchronized)
+    base_key, resolved_seed, is_sync = _create_rng_state(key, synchronized)
     state = GaussianNoiseState(
-        rng_state=gen,
         seed=resolved_seed,
         synchronized=is_sync,
         step_counter=0,
+        rng_key=base_key,
     )
 
     if stddev == 0:
@@ -170,7 +174,8 @@ def bounded_gaussian_noise(
 
     def noise_fn(grads, st):
         """Add bounded Gaussian noise to gradients."""
-        g = st.rng_state
+        step_key = rng_fold_in(st.rng_key, st.step_counter)
+        g = generator_from_key(step_key)
 
         def add_bounded_noise(tensor: torch.Tensor) -> torch.Tensor:
             return _truncated_normal_around(
@@ -182,13 +187,13 @@ def bounded_gaussian_noise(
             )
 
         noisy = tree_map(add_bounded_noise, grads)
-        
+
         # Return updated state with incremented step counter
         return noisy, GaussianNoiseState(
-            rng_state=g,
             seed=st.seed,
             synchronized=st.synchronized,
             step_counter=st.step_counter + 1,
+            rng_key=st.rng_key,
         )
 
     return noise_fn, state

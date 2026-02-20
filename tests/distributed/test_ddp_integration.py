@@ -141,7 +141,7 @@ def _worker_shared_noise_is_deterministic(
             "weight": torch.zeros(10, 5, device=device),
             "bias": torch.zeros(5, device=device),
         }
-        noise_fn, state = gaussian_noise(stddev=1.0, seed=None)
+        noise_fn, state = gaussian_noise(stddev=1.0, key=None)
         noisy, _ = noise_fn(grads, state)
 
         gathered = [torch.zeros_like(noisy["weight"]) for _ in range(world_size)]
@@ -167,7 +167,7 @@ def _worker_dp_training_step(rank: int, world_size: int, port: int) -> None:
         grad_fn, clip_state = clipped_grad(
             loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2), distributed=False
         )
-        noise_fn, noise_state = gaussian_noise(stddev=1.1, seed=None)
+        noise_fn, noise_state = gaussian_noise(stddev=1.1, key=None)
 
         batch_size = 8
         x = torch.randn(batch_size, 10, device=device)

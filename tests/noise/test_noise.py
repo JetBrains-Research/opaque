@@ -4,6 +4,7 @@ import pytest
 import scipy.stats
 import torch
 
+from opaque.random import key
 from opaque.noise import gaussian_noise
 from opaque.noise.gaussian_noise import GaussianNoiseState
 
@@ -80,7 +81,7 @@ class TestGaussian:
 
     def test_noise_normality(self):
         """Noise should follow normal distribution."""
-        noise_fn, state = gaussian_noise(stddev=1.0, seed=42)
+        noise_fn, state = gaussian_noise(stddev=1.0, key=key(42))
         zeros = torch.zeros(10000)
         noisy, state = noise_fn(zeros, state)
 
@@ -129,21 +130,21 @@ class TestGaussian:
         assert not torch.allclose(noisy[0], grads[0])
 
 
-class TestGaussianGenerator:
-    """Tests for generator parameter."""
+class TestGaussianKey:
+    """Tests for key parameter."""
 
     def test_generator_none(self):
-        """seed=None should create non-reproducible noise."""
-        noise_fn, state = gaussian_noise(stddev=1.0, seed=None)
+        """key=None should create non-reproducible noise."""
+        noise_fn, state = gaussian_noise(stddev=1.0, key=None)
         assert isinstance(state, GaussianNoiseState)
         grad = torch.zeros(10)
         noisy, state = noise_fn(grad, state)
         assert not torch.allclose(noisy, grad)
 
     def test_generator_int_reproducible(self):
-        """seed=int should produce reproducible noise."""
-        noise_fn1, state1 = gaussian_noise(stddev=1.0, seed=42)
-        noise_fn2, state2 = gaussian_noise(stddev=1.0, seed=42)
+        """key(42) should produce reproducible noise."""
+        noise_fn1, state1 = gaussian_noise(stddev=1.0, key=key(42))
+        noise_fn2, state2 = gaussian_noise(stddev=1.0, key=key(42))
 
         grad = torch.zeros(10, 10)
         noisy1, state1 = noise_fn1(grad, state1)
@@ -152,9 +153,9 @@ class TestGaussianGenerator:
         assert torch.allclose(noisy1, noisy2)
 
     def test_generator_different_seeds(self):
-        """Different seeds should produce different noise."""
-        noise_fn1, state1 = gaussian_noise(stddev=1.0, seed=42)
-        noise_fn2, state2 = gaussian_noise(stddev=1.0, seed=43)
+        """Different keys should produce different noise."""
+        noise_fn1, state1 = gaussian_noise(stddev=1.0, key=key(42))
+        noise_fn2, state2 = gaussian_noise(stddev=1.0, key=key(43))
 
         grad = torch.zeros(10, 10)
         noisy1, _ = noise_fn1(grad, state1)
@@ -163,9 +164,9 @@ class TestGaussianGenerator:
         assert not torch.allclose(noisy1, noisy2)
 
     def test_seed_int_produces_reproducible_state(self):
-        """seed=int should initialize RNG state deterministically."""
-        noise_fn1, state1 = gaussian_noise(stddev=1.0, seed=42)
-        noise_fn2, state2 = gaussian_noise(stddev=1.0, seed=42)
+        """key(42) should initialize RNG state deterministically."""
+        noise_fn1, state1 = gaussian_noise(stddev=1.0, key=key(42))
+        noise_fn2, state2 = gaussian_noise(stddev=1.0, key=key(42))
         
         # Both should produce same initial state
         grad = torch.zeros(10)
@@ -175,7 +176,7 @@ class TestGaussianGenerator:
 
     def test_state_evolution(self):
         """State should evolve, producing different noise each call."""
-        noise_fn, state = gaussian_noise(stddev=1.0, seed=42)
+        noise_fn, state = gaussian_noise(stddev=1.0, key=key(42))
 
         grad = torch.zeros(10)
         noisy1, state = noise_fn(grad, state)
@@ -183,14 +184,24 @@ class TestGaussianGenerator:
 
         assert not torch.allclose(noisy1, noisy2)
 
+    def test_saved_state_replay_is_deterministic(self):
+        """Re-using the same immutable state should replay identical noise."""
+        noise_fn, state = gaussian_noise(stddev=1.0, key=key(42))
+        grad = torch.zeros(10)
+
+        noisy1, _ = noise_fn(grad, state)
+        noisy2, _ = noise_fn(grad, state)
+
+        assert torch.allclose(noisy1, noisy2)
+
     def test_zero_stddev_with_seed(self):
-        """stddev=0 should return original gradients even with seed."""
-        noise_fn, state = gaussian_noise(stddev=0.0, seed=42)
+        """stddev=0 should return original gradients even with explicit key."""
+        noise_fn, state = gaussian_noise(stddev=0.0, key=key(42))
         grad = torch.randn(5, 3)
         noisy, state = noise_fn(grad, state)
         assert torch.equal(noisy, grad)
 
     def test_invalid_seed_type_raises(self):
-        """Invalid seed type should raise TypeError."""
-        with pytest.raises(TypeError, match="seed must be"):
-            gaussian_noise(stddev=1.0, seed="bad")
+        """Invalid key type should raise TypeError."""
+        with pytest.raises(TypeError, match="key must be"):
+            gaussian_noise(stddev=1.0, key="bad")
