@@ -24,7 +24,9 @@ for compatibility research and current limitations.
     
     ```python
     # ✅ CORRECT: All devices use SAME seed (prevents model divergence)
-    noise_fn, noise_state = gaussian_noise(stddev=1.1, seed=42)  # SAME seed
+    from opaque.random import key
+    
+    noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(42))  # SAME seed
     
     for batch in dataloader:
         grads = clipped_grad_fn(params, batch)
@@ -35,14 +37,16 @@ for compatibility research and current limitations.
     
     ```python
     # ❌ WRONG #1: Different noise per device (causes model divergence)
-    noise_fn = gaussian_noise(stddev=1.1, seed=42 + rank)
+    from opaque.random import fold_in, key
+    
+    noise_fn = gaussian_noise(stddev=1.1, key=fold_in(key(42), rank))  # Wrong pattern!
     # Models diverge because each device computes differently with different noise!
     ```
     
     ```python
     # ❌ WRONG #2: Only rank 0 applies noise (breaks DP for other devices)
     if rank == 0:
-        noise_fn, noise_state = gaussian_noise(stddev=1.1, seed=42)
+        noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(42))
         noisy_grads, noise_state = noise_fn(grads, noise_state)
         dist.broadcast(noisy_grads)  # ← DON'T DO THIS!
     # Other ranks receive noisy_grads but didn't apply DP → No privacy!
@@ -52,7 +56,7 @@ for compatibility research and current limitations.
     - DP guarantees are **per-device per-batch**
     - Every device must call `noise_fn()` in its own training loop
     - Same seed ensures all devices generate identical noise (synchronized, not broadcast)
-    - When `seed=None`, Opaque auto-selects a deterministic shared seed
+    - When `key=None`, Opaque auto-selects a deterministic shared seed
     - Different seeds cause model divergence (training failure)
     - Never compute noise on rank 0 and broadcast it
 
@@ -99,10 +103,11 @@ clipped_grad_fn, clip_state = clipped_grad(
 )
 
 # Noise: No seed needed - automatically uses same seed on all devices!
+from opaque.random import key
 noise_fn, noise_state = gaussian_noise(stddev=1.1)
 
 # Sampler: Automatically shards data across devices (seed shifts by rank)
-sampler = PoissonSampler(dataset, sample_rate=0.01, seed=42)
+sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))
 dataloader = torch.utils.data.DataLoader(
     dataset,
     batch_sampler=sampler,
@@ -232,7 +237,8 @@ noise_fn, noise_state = band_mf_noise(
 )
 
 # Sampler (same as Gaussian)
-sampler = PoissonSampler(dataset, sample_rate=0.01, seed=42)
+from opaque.random import key
+sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))
 dataloader = torch.utils.data.DataLoader(
     dataset,
     batch_sampler=sampler,
@@ -352,7 +358,7 @@ for batch in dataloader:
 
 All mechanisms support the same features:
 - ✅ Automatic distributed seed synchronization
-- ✅ Reproducible with explicit `seed=42`
+- ✅ Reproducible with explicit `key=key(42)`
 - ✅ Works with all optimizers (SGD, Adam, etc.)
 - ✅ Compatible with all sampling strategies
 
@@ -370,6 +376,7 @@ from opaque.clipping import clipped_grad
 from opaque.distributed import sum_gradients, get_rank
 from opaque.noise import gaussian_noise
 from opaque.sampling import PoissonSampler
+from opaque.random import key
 
 # Initialize distributed
 dist.init_process_group(backend="nccl")
@@ -387,7 +394,7 @@ noise_fn, noise_state = gaussian_noise(stddev=1.1)
 
 # Sampling: automatically detects distributed and uses SHARDED mode
 # Seed is automatically shifted by rank for sampling diversity
-sampler = PoissonSampler(dataset, sample_rate=0.01, seed=42)
+sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))
 
 # Training loop
 for batch in dataloader:
@@ -408,7 +415,7 @@ for batch in dataloader:
 - ✅ **Simple accounting**: Standard DP-SGD, textbook algorithms
 - ✅ **No duplicates**: Sharded data ensures examples don't repeat across devices
 - ✅ **Automatic**: Both sampler and noise auto-detect distributed mode
-- ✅ **No seed management**: Just pass `seed=None` (or omit it) and it works across all devices
+- ✅ **No seed management**: Just pass `key=None` (or omit it) and it works across all devices
 
 !!! abstract "See Also: Privacy Accounting"
     For complete accounting example, see [Privacy Accounting](#privacy-accounting) section below.
@@ -426,11 +433,12 @@ noise_fn, noise_state = gaussian_noise(stddev=1.1)
 
 # Independent sampling: each device samples full dataset
 # Seed shifted by rank for independent RNG streams (if provided)
+from opaque.random import key
 sampler = PoissonSampler(
     dataset,
     sample_rate=0.01,
     distributed=False,
-    seed=42,
+    key=key(42),
 )
 
 # Training loop (same as sharded)
@@ -585,15 +593,15 @@ both_devices: noisy = [5.0, 7.0, 9.0] + [0.1, 0.2, 0.3] = [5.1, 7.2, 9.3]
 
 Opaque automatically handles seed management to prevent common distributed training issues:
 
-**When no seed is provided** (`seed=None`):
+**When no seed is provided** (`key=None`):
 - **Sampler**: Uses unseeded RNG (different samples per run)
 - **Noise**: Auto-detects distributed mode and uses **same seed (0)** across all devices for synchronized noise
 
-**When seed is provided** (e.g., `seed=42`):
-- **Sampler**: Automatically shifts seed by rank (42 → 42, 43, 44, ...) for independent sampling
+**When seed is provided** (e.g., `key=key(42)`):
+- **Sampler**: Automatically shifts seed by rank for independent sampling
 - **Noise**: Uses seed as-is (user responsible for consistency)
 
-**Result**: The API is simple - just pass `seed=None` (or omit it) and everything works:
+**Result**: The API is simple - just pass `key=None` (or omit it) and everything works:
 - ✅ Sampler gives different data per device (rank shifting)
 - ✅ Noise is synchronized across devices (same seed)
 - ✅ No model divergence, no data duplication
@@ -608,6 +616,7 @@ The choice is **NOT between different vs same noise** (both use same noise to av
 
 ```python
 # Noise: automatically synchronized when distributed (no seed needed)
+from opaque.random import key
 noise_fn, noise_state = gaussian_noise(stddev=1.1)
 
 # Sampler: seed automatically shifted by rank (42 → 42, 43, 44, ...)
@@ -615,7 +624,7 @@ sampler = PoissonSampler(
     dataset,
     sample_rate=0.01,
     distributed=True,
-    seed=42,
+    key=key(42),
 )
 
 # Device 0: samples with seed 42, gets examples 0-49999 (5% of shard)
@@ -641,6 +650,7 @@ for batch in dataloader:
 
 ```python
 # Noise: automatically synchronized when distributed (no seed needed)
+from opaque.random import key
 noise_fn, noise_state = gaussian_noise(stddev=1.1)
 
 # Sampler: seed automatically shifted by rank (42 → 42, 43, 44, ...)
@@ -648,7 +658,7 @@ sampler = PoissonSampler(
     dataset,
     sample_rate=0.01,
     distributed=False,
-    seed=42,
+    key=key(42),
 )
 
 # Device 0: samples with seed 42: examples 0, 15, 42, ... (5% of 1M)
@@ -683,11 +693,12 @@ for batch in dataloader:
     
     ```python
     # ✅ EXPLICIT SEED: Same seed on all devices (user provides it)
-    noise_fn, noise_state = gaussian_noise(stddev=1.1, seed=42)
+    from opaque.random import key, fold_in
+    noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(42))
     
     # ❌ DIFFERENT PER DEVICE (causes model divergence - avoid!)
     # Don't manually shift by rank for noise:
-    noise_fn = gaussian_noise(stddev=1.1, seed=42 + rank)  # Wrong!
+    noise_fn = gaussian_noise(stddev=1.1, key=fold_in(key(42), rank))  # Wrong!
     ```
 
 !!! tip "Which Sampling Strategy?"

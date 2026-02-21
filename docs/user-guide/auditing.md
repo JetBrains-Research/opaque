@@ -22,10 +22,11 @@ If the audited epsilon exceeds the theoretical epsilon, there's likely a bug in 
 
 ```python
 import opaque.auditing as auditing
+from opaque.random import key
 from torch.utils.data import DataLoader
 
 # 1. Setup: designate canaries and flip coins
-experiment = auditing.setup(dataset, num_canaries=1000, seed=42)
+experiment = auditing.setup(dataset, num_canaries=1000, key=key(42))
 
 # 2. Train on the subset (excludes held-out canaries)
 train_loader = DataLoader(experiment.subset(dataset), batch_size=32)
@@ -71,12 +72,13 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from opaque import clipped_grad, gaussian_noise, PoissonSampler
 import opaque.auditing as auditing
+from opaque.random import key
 
 # Dataset
 dataset = TensorDataset(X, y)
 
 # ── Auditing setup (1 line) ──
-experiment = auditing.setup(dataset, num_canaries=1000, seed=42)
+experiment = auditing.setup(dataset, num_canaries=1000, key=key(42))
 
 # ── Training (unchanged except: experiment.subset) ──
 train_data = experiment.subset(dataset)
@@ -155,9 +157,10 @@ audit.max_accuracy()             # Best-case classification accuracy
 
 ```python
 from opaque.auditing import AuditResult, BootstrapParams
+from opaque.random import key
 
 params = BootstrapParams.confidence_interval(
-    confidence=0.95, num_samples=2000, seed=42
+    confidence=0.95, num_samples=2000, key=key(42)
 )
 
 # Bootstrap any metric

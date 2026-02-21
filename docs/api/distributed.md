@@ -48,8 +48,9 @@ For current distributed training capabilities, see
 # ✅ CORRECT: All devices use SAME seed
 import torch.distributed as dist
 from opaque.noise import gaussian_noise
+from opaque.random import key
 
-noise_fn, noise_state = gaussian_noise(stddev=1.1, seed=42)  # Same seed on ALL devices
+noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(42))  # Same seed on ALL devices
 
 for batch in dataloader:
     grads = clipped_grad_fn(...)
@@ -61,7 +62,7 @@ for batch in dataloader:
 **Why synchronization matters:**
 - Each device independently computes noise with the same seed → identical values
 - This is not broadcasting (which would be inefficient); it's deterministic generation
-- `seed=None` automatically selects a deterministic shared seed when distributed training is detected
+- When `key=None`, Opaque automatically selects a deterministic shared seed when distributed training is detected
 - Different seeds per device will cause training failure (model divergence)
 
 See [docs/user-guide/distributed.md](../user-guide/distributed.md) for detailed examples.

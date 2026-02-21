@@ -11,7 +11,7 @@ def setup(
     dataset: Any,
     *,
     num_canaries: int,
-    seed: int | None = None,
+    key: RngKey | None = None,
 ) -> CoinFlipExperiment:
 ```
 
@@ -21,14 +21,15 @@ Set up a one-run privacy audit experiment. Randomly selects canary examples and 
 |-----------|------|---------|-------------|
 | `dataset` | any with `len()` | required | The full training dataset |
 | `num_canaries` | `int` | required | Number of canary examples to designate |
-| `seed` | `int \| None` | `None` | Random seed for reproducibility |
+| `key` | `RngKey \| None` | `None` | RNG key for reproducibility |
 
 **Returns**: `CoinFlipExperiment` managing the canary assignment.
 
 ```python
 import opaque.auditing as auditing
+from opaque.random import key
 
-experiment = auditing.setup(dataset, num_canaries=1000, seed=42)
+experiment = auditing.setup(dataset, num_canaries=1000, key=key(42))
 train_data = experiment.subset(dataset)
 ```
 
@@ -169,7 +170,9 @@ def bootstrap(
 Bootstrap confidence intervals for any metric. Supports bias-corrected and accelerated (BCa) intervals.
 
 ```python
-params = BootstrapParams.confidence_interval(confidence=0.95, seed=42)
+from opaque.random import key
+
+params = BootstrapParams.confidence_interval(confidence=0.95, key=key(42))
 auroc_ci = audit.bootstrap(AuditResult.auroc, params)
 eps_ci = audit.bootstrap(lambda r: r.epsilon_at(delta=1e-5), params)
 ```
@@ -244,7 +247,9 @@ def confidence_interval(
 Create params for a symmetric confidence interval.
 
 ```python
-params = BootstrapParams.confidence_interval(confidence=0.95, seed=42)
+from opaque.random import key
+
+params = BootstrapParams.confidence_interval(confidence=0.95, key=key(42))
 ```
 
 ---

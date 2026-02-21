@@ -40,6 +40,7 @@ from transformers import AutoConfig, AutoModelForCausalLM
 
 from opaque.clipping import clipped_grad
 from opaque.noise import gaussian_noise
+from opaque.random import key
 from opaque.utils import make_functional
 
 
@@ -371,7 +372,7 @@ def main():
 
                 # 2. Add Gaussian noise for DP
                 stddev = noise_multiplier * clip_state.sensitivity()
-                noise_fn, noise_state = gaussian_noise(stddev=stddev, seed=noise_seed, synchronized="auto")
+                noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(noise_seed), synchronized="auto")
                 noisy_grads, _ = noise_fn(grads_tuple, noise_state)
 
                 # 3. Optimizer step (direct, no wrapper)
