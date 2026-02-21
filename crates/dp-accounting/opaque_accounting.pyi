@@ -409,6 +409,147 @@ def poisson_truncated_gaussian_pld(
 
 
 # ---------------------------------------------------------------------------
+# Matrix factorization functions
+# ---------------------------------------------------------------------------
+
+
+def mf_gaussian_pld(
+    noise_multiplier: float,
+    sensitivity: float,
+    config: DiscretizationConfig,
+) -> Pld:
+    """Compute the PLD for a matrix factorization Gaussian mechanism.
+
+    Computes the privacy guarantee for the entire MF training run as a
+    single Gaussian mechanism with effective noise multiplier σ/S.
+
+    Args:
+        noise_multiplier: Raw noise std σ (before MF). Must be positive.
+        sensitivity: L2 sensitivity of the encoder matrix. Must be positive.
+        config: PLD discretization configuration.
+
+    Returns:
+        The privacy loss distribution for the entire MF training run.
+
+    Example::
+
+        config = dp.DiscretizationConfig()
+        pld = dp.mf_gaussian_pld(1.0, 2.5, config)
+        pld.epsilon_at(1e-5)
+    """
+    ...
+
+
+def max_participation_for_linear_fn(
+    x: list[float],
+    min_sep: int = 1,
+    max_participations: int | None = None,
+) -> float:
+    """Solve max_u <x, u> where u respects min-sep participation.
+
+    Uses dynamic programming (Algorithm 3, VecSens) from
+    Choquette-Choo et al. (2023).
+
+    Args:
+        x: Vector of values to optimize over.
+        min_sep: Minimum separation between selections (>= 1).
+        max_participations: Optional upper bound on selections.
+
+    Returns:
+        The optimal inner product.
+    """
+    ...
+
+
+def minsep_true_max_participations(
+    n: int,
+    min_sep: int,
+    max_participations: int | None = None,
+) -> int:
+    """Maximum participations under a min-sep constraint.
+
+    Args:
+        n: Number of rounds.
+        min_sep: Minimum separation between participations.
+        max_participations: Optional upper bound.
+
+    Returns:
+        Effective maximum participations.
+    """
+    ...
+
+
+def single_participation_sensitivity(
+    column_norms: list[float],
+) -> float:
+    """L2 sensitivity under single participation.
+
+    Args:
+        column_norms: L2 norms of encoder matrix columns.
+
+    Returns:
+        Maximum column norm (the sensitivity).
+    """
+    ...
+
+
+def banded_sensitivity(
+    gram_diag: list[float],
+    min_sep: int = 1,
+    max_participations: int | None = None,
+) -> float:
+    """Exact L2 sensitivity for banded Gram matrices under min-sep participation.
+
+    Args:
+        gram_diag: Diagonal of Gram matrix X = C^T C.
+        min_sep: Minimum separation between participations.
+        max_participations: Optional upper bound.
+
+    Returns:
+        The exact L2 sensitivity.
+    """
+    ...
+
+
+def general_sensitivity_upper_bound(
+    gram_matrix: list[float],
+    n: int,
+    min_sep: int = 1,
+    max_participations: int | None = None,
+) -> float:
+    """Upper bound on L2 sensitivity for general Gram matrices.
+
+    Args:
+        gram_matrix: Flattened row-major Gram matrix X = C^T C.
+        n: Matrix dimension.
+        min_sep: Minimum separation between participations.
+        max_participations: Optional upper bound.
+
+    Returns:
+        An upper bound on the L2 sensitivity.
+    """
+    ...
+
+
+def fixed_epoch_sensitivity(
+    gram_matrix: list[float],
+    n: int,
+    epochs: int,
+) -> float:
+    """L2 sensitivity under fixed-epoch participation.
+
+    Args:
+        gram_matrix: Flattened row-major Gram matrix X = C^T C.
+        n: Matrix dimension (total rounds).
+        epochs: Number of epochs (must divide n).
+
+    Returns:
+        The L2 sensitivity under fixed-epoch participation.
+    """
+    ...
+
+
+# ---------------------------------------------------------------------------
 # AdaClip utility
 # ---------------------------------------------------------------------------
 

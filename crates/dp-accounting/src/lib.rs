@@ -27,6 +27,7 @@
 //!
 //! - [`mechanisms`]: Gaussian, (ε,δ), identity PLD constructors
 //! - [`amplification`]: Poisson, truncated Poisson, accumulated PLDs
+//! - [`matrix_factorization`]: MF-DP accounting (BandMF, BLT, Dense)
 //! - [`transformations`]: Adaptive clipping sensitivity formula
 //! - [`pld`]: The `PrivacyLossDistribution` type and metrics
 //! - [`discretization`]: Connect-the-Dots discretization
@@ -43,6 +44,7 @@ pub mod pld;
 
 // --- New flat-function modules ---
 pub mod amplification;
+pub mod matrix_factorization;
 pub mod mechanisms;
 pub mod transformations;
 

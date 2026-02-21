@@ -24,6 +24,10 @@ from opaque.accounting.mechanisms.identity import (
     Identity,
     identity,
 )
+from opaque.accounting.mechanisms.mf_gaussian import (
+    MfGaussian,
+    mf_gaussian,
+)
 from opaque.accounting.mechanisms.rectified_gaussian import (
     RectifiedGaussian,
     rectified_gaussian,
@@ -38,12 +42,14 @@ __all__ = [
     "Gaussian",
     "EpsDelta",
     "Identity",
+    "MfGaussian",
     "RectifiedGaussian",
     "TruncatedGaussian",
     # Constructor functions
     "gaussian",
     "eps_delta",
     "identity",
+    "mf_gaussian",
     "rectified_gaussian",
     "truncated_gaussian",
 ]

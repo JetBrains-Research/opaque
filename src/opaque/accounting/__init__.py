@@ -73,6 +73,7 @@ from opaque.accounting.mechanisms import (
     eps_delta,
     gaussian,
     identity,
+    mf_gaussian,
     rectified_gaussian,
     truncated_gaussian,
 )
@@ -91,6 +92,7 @@ __all__ = [
     "truncated_gaussian",
     "eps_delta",
     "identity",
+    "mf_gaussian",
     # Amplification
     "poisson",
     "truncated_poisson",
