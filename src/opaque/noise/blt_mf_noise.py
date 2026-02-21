@@ -13,10 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-import torch
-
 from opaque.noise.gaussian_noise import _create_rng_state
-from opaque.random import RngKey
 from opaque.noise.matrix_factorization.buffered_toeplitz import (
     inverse_as_streaming_matrix,
     optimize,
@@ -25,6 +22,7 @@ from opaque.noise.matrix_factorization.noise import (
     MFNoiseState,
     _matrix_factorization_noise,
 )
+from opaque.random import RngKey
 
 
 def blt_mf_noise(

@@ -3,7 +3,6 @@
 import pytest
 import torch
 
-from opaque.random import key
 from opaque.noise import custom_mf_noise
 from opaque.noise.matrix_factorization import MFNoiseState
 from opaque.noise.matrix_factorization.streaming_matrix import identity, prefix_sum
@@ -11,6 +10,7 @@ from opaque.noise.matrix_factorization.toeplitz import (
     inverse_as_streaming_matrix,
     optimal_max_error_strategy_coefs,
 )
+from opaque.random import key
 
 
 class TestDenseMatrixFactorizationNoise:

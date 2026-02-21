@@ -6,7 +6,11 @@ import torch
 from torch.utils.data import TensorDataset
 
 from opaque.random import fold_in, key, training_key
-from opaque.sampling import CyclicPoissonSampler, PoissonSampler, TruncatedPoissonSampler
+from opaque.sampling import (
+    CyclicPoissonSampler,
+    PoissonSampler,
+    TruncatedPoissonSampler,
+)
 
 
 class TestPoissonSamplerKeys:
@@ -23,14 +27,10 @@ class TestPoissonSamplerKeys:
         """Same key should produce same samples."""
         dataset = TensorDataset(torch.randn(1000, 10))
 
-        sampler1 = PoissonSampler(
-            dataset, sample_rate=0.1, num_epochs=5, key=key(42)
-        )
+        sampler1 = PoissonSampler(dataset, sample_rate=0.1, num_epochs=5, key=key(42))
         batches1 = list(sampler1)
 
-        sampler2 = PoissonSampler(
-            dataset, sample_rate=0.1, num_epochs=5, key=key(42)
-        )
+        sampler2 = PoissonSampler(dataset, sample_rate=0.1, num_epochs=5, key=key(42))
         batches2 = list(sampler2)
 
         assert len(batches1) == len(batches2)
@@ -41,14 +41,10 @@ class TestPoissonSamplerKeys:
         """Different keys should produce different samples."""
         dataset = TensorDataset(torch.randn(1000, 10))
 
-        sampler1 = PoissonSampler(
-            dataset, sample_rate=0.1, num_epochs=5, key=key(42)
-        )
+        sampler1 = PoissonSampler(dataset, sample_rate=0.1, num_epochs=5, key=key(42))
         batches1 = list(sampler1)
 
-        sampler2 = PoissonSampler(
-            dataset, sample_rate=0.1, num_epochs=5, key=key(43)
-        )
+        sampler2 = PoissonSampler(dataset, sample_rate=0.1, num_epochs=5, key=key(43))
         batches2 = list(sampler2)
 
         # Should be different (statistical test)
@@ -61,12 +57,16 @@ class TestPoissonSamplerKeys:
 
         # Simulate rank 0
         rank0_key = base_key  # No shift
-        sampler_rank0 = PoissonSampler(dataset, sample_rate=0.1, num_epochs=5, key=rank0_key)
+        sampler_rank0 = PoissonSampler(
+            dataset, sample_rate=0.1, num_epochs=5, key=rank0_key
+        )
         batches_rank0 = list(sampler_rank0)
 
         # Simulate rank 1 (fold in rank)
         rank1_key = fold_in(base_key, 1)
-        sampler_rank1 = PoissonSampler(dataset, sample_rate=0.1, num_epochs=5, key=rank1_key)
+        sampler_rank1 = PoissonSampler(
+            dataset, sample_rate=0.1, num_epochs=5, key=rank1_key
+        )
         batches_rank1 = list(sampler_rank1)
 
         # Different ranks should produce different samples

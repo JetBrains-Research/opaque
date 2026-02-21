@@ -11,8 +11,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-import torch
-
 from opaque.noise.custom_mf_noise import custom_mf_noise
 from opaque.noise.matrix_factorization.noise import MFNoiseState
 from opaque.noise.matrix_factorization.streaming_matrix import identity

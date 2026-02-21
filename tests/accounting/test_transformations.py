@@ -52,7 +52,9 @@ class TestEffectiveNoiseMultiplier:
         batch_size = 200
         sigma_b = batch_size * multiplier  # = 10.0
 
-        ac = acc.adaclip(acc.gaussian(z), quantile_noise_multiplier=multiplier, batch_size=batch_size)
+        ac = acc.adaclip(
+            acc.gaussian(z), quantile_noise_multiplier=multiplier, batch_size=batch_size
+        )
         expected = 1.0 / math.sqrt(1.0 / z**2 + 1.0 / (4.0 * sigma_b**2))
         assert abs(ac.effective_noise_multiplier - expected) < 1e-10
 
@@ -77,7 +79,9 @@ class TestEffectiveNoiseMultiplier:
 
         # Poisson wrapping AdaClip should produce higher epsilon than Poisson wrapping Gaussian(z_eff)
         step_ac = acc.poisson(ac, sample_rate=0.01)
-        step_eff = acc.poisson(acc.gaussian(ac.effective_noise_multiplier), sample_rate=0.01)
+        step_eff = acc.poisson(
+            acc.gaussian(ac.effective_noise_multiplier), sample_rate=0.01
+        )
 
         eps_ac = step_ac.epsilon_at(1e-5)
         eps_eff = step_eff.epsilon_at(1e-5)

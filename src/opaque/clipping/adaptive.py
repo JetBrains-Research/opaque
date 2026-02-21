@@ -128,7 +128,9 @@ class AdaptiveClipState(ClipState):
                 )
 
 
-def _compute_clipping_stats(grad_norms: torch.Tensor, clip_norm: float) -> tuple[float, float, float]:
+def _compute_clipping_stats(
+    grad_norms: torch.Tensor, clip_norm: float
+) -> tuple[float, float, float]:
     """Compute local clipping statistics from per-example gradient norms."""
     num_clipped = float((grad_norms > clip_norm).sum().item())
     total = float(max(1, grad_norms.numel()))
@@ -466,7 +468,9 @@ def adaptive_clipped_grad(
                     else None
                 ),
                 loss_aux=(
-                    aux.loss_aux if aux is not None and hasattr(aux, "loss_aux") else None
+                    aux.loss_aux
+                    if aux is not None and hasattr(aux, "loss_aux")
+                    else None
                 ),
                 clipping_rate=new_state.clipping_rate,
             )

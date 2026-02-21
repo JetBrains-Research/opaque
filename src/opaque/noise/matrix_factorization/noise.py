@@ -23,8 +23,8 @@ from typing import Any
 
 import torch
 
-from opaque.random import RngKey, fold_in as rng_fold_in
-from opaque.random import generator_from_key
+from opaque.random import RngKey, generator_from_key
+from opaque.random import fold_in as rng_fold_in
 from opaque.utils.pytree import tree_map
 
 from . import streaming_matrix
@@ -164,11 +164,23 @@ def _matrix_factorization_noise(
     """
     if isinstance(noising, torch.Tensor):
         return _dense_mf_noise(
-            grad_template, noising, stddev=stddev, gen=gen, seed=seed, synchronized=synchronized, dtype=dtype
+            grad_template,
+            noising,
+            stddev=stddev,
+            gen=gen,
+            seed=seed,
+            synchronized=synchronized,
+            dtype=dtype,
         )
     elif isinstance(noising, streaming_matrix.StreamingMatrix):
         return _streaming_mf_noise(
-            grad_template, noising, stddev=stddev, gen=gen, seed=seed, synchronized=synchronized, dtype=dtype
+            grad_template,
+            noising,
+            stddev=stddev,
+            gen=gen,
+            seed=seed,
+            synchronized=synchronized,
+            dtype=dtype,
         )
     else:
         raise TypeError(f"Unsupported noising type: {type(noising)}")

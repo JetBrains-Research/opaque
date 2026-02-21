@@ -14,6 +14,7 @@ __all__ = [
     "sync_mf_noise_state",
 ]
 
+
 def sync_gaussian_noise_state(state: GaussianNoiseState) -> GaussianNoiseState:
     """Validate and synchronize gaussian noise state across ranks.
 

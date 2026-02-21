@@ -16,11 +16,11 @@ from typing import Any
 import torch
 
 from opaque.noise.gaussian_noise import _create_rng_state
-from opaque.random import RngKey
 from opaque.noise.matrix_factorization.noise import (
     MFNoiseState,
     _matrix_factorization_noise,
 )
+from opaque.random import RngKey
 
 
 def custom_mf_noise(

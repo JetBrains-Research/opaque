@@ -28,7 +28,9 @@ class TestSamplingModeValidation:
         with patch("opaque.sampling.poisson.is_distributed", return_value=True):
             with patch("opaque.sampling.poisson.get_rank", return_value=0):
                 with patch("opaque.sampling.poisson.get_world_size", return_value=4):
-                    with pytest.warns(UserWarning, match="Automatically using SHARDED mode"):
+                    with pytest.warns(
+                        UserWarning, match="Automatically using SHARDED mode"
+                    ):
                         sampler = PoissonSampler(dataset, sample_rate=0.1, key=key(0))
                         assert sampler._use_sharded is True
 
@@ -39,7 +41,9 @@ class TestSamplingModeValidation:
         with patch("opaque.sampling.poisson.is_distributed", return_value=True):
             with patch("opaque.sampling.poisson.get_rank", return_value=0):
                 with patch("opaque.sampling.poisson.get_world_size", return_value=4):
-                    with pytest.warns(UserWarning, match="Automatically using SHARDED mode"):
+                    with pytest.warns(
+                        UserWarning, match="Automatically using SHARDED mode"
+                    ):
                         PoissonSampler(dataset, sample_rate=0.1, key=key(0))
 
 

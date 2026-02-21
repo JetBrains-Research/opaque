@@ -31,7 +31,9 @@ class TestQuantileNoise:
             pred = x @ params
             return ((pred - y) ** 2).mean()
 
-        with pytest.raises(ValueError, match="quantile_noise_multiplier must be positive"):
+        with pytest.raises(
+            ValueError, match="quantile_noise_multiplier must be positive"
+        ):
             adaptive_clipped_grad(
                 loss_fn,
                 quantile_noise_multiplier=-1.0,
@@ -79,7 +81,7 @@ class TestQuantileNoise:
 
     def test_quantile_noise_different_keys_produce_different_paths(self):
         """Test that different keys can produce different adaptation paths.
-        
+
         Note: This test checks that the keys are preserved correctly and used in
         adaptation. Due to stochasticity, paths may or may not diverge in just
         a few steps, depending on clipping rates and noise magnitude. We verify
@@ -122,7 +124,7 @@ class TestQuantileNoise:
 
         # Keys should still be different after training
         assert state1.key != state2.key
-        
+
         # With very large noise (1.0), divergence is likely but not guaranteed
         # The important thing is that keys are preserved and affect adaptation
 

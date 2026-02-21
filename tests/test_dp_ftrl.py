@@ -3,13 +3,13 @@
 import torch
 import torch.nn as nn
 
-from opaque.random import key
 from opaque.noise import custom_mf_noise
 from opaque.noise.matrix_factorization import identity
 from opaque.noise.matrix_factorization.toeplitz import (
     inverse_as_streaming_matrix,
     optimal_max_error_strategy_coefs,
 )
+from opaque.random import key
 
 
 def _train_loop(model, optimizer, noise_fn, state, x_data, y_data, steps):

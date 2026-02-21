@@ -4,9 +4,9 @@ import pytest
 import scipy.stats
 import torch
 
-from opaque.random import key
 from opaque.noise import gaussian_noise
 from opaque.noise.gaussian_noise import GaussianNoiseState
+from opaque.random import key
 
 
 class TestGaussian:
@@ -164,7 +164,7 @@ class TestGaussianKey:
         """key(42) should initialize RNG state deterministically."""
         noise_fn1, state1 = gaussian_noise(stddev=1.0, key=key(42))
         noise_fn2, state2 = gaussian_noise(stddev=1.0, key=key(42))
-        
+
         # Both should produce same initial state
         grad = torch.zeros(10)
         noisy1, _ = noise_fn1(grad, state1)

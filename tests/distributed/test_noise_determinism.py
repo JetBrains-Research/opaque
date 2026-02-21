@@ -12,8 +12,8 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
-from opaque.random import key
 from opaque.noise import gaussian_noise, identity_mf_noise
+from opaque.random import key
 
 
 class TestDistributedNoise:

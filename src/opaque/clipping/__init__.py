@@ -4,6 +4,7 @@ This module provides utilities for clipping gradients and function outputs
 to bounded L2 sensitivity, a key requirement for DP-SGD.
 """
 
+from opaque.clipping import distributed
 from opaque.clipping.adaptive import (
     AdaptiveClippedGradAux,
     AdaptiveClipState,
@@ -11,10 +12,11 @@ from opaque.clipping.adaptive import (
 )
 from opaque.clipping.clipped_fun import ClippedFunAux, clipped_fun
 from opaque.clipping.clipped_grad import ClippedGradAux, clipped_grad
-from opaque.clipping import distributed
-from opaque.clipping.distributed import (sync_adaptive_clip_state,
-                                         sync_adaptive_clipped_grad_aux,
-                                         sync_clip_state)
+from opaque.clipping.distributed import (
+    sync_adaptive_clip_state,
+    sync_adaptive_clipped_grad_aux,
+    sync_clip_state,
+)
 from opaque.clipping.pytree import clip_pytree
 from opaque.clipping.types import ClipState, FixedClipState, NeighboringRelation
 

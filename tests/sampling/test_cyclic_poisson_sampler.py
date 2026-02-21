@@ -329,7 +329,9 @@ class TestCyclicPoissonSamplerEdgeCases:
     def test_invalid_cycle_length_raises(self):
         """Invalid cycle_length raises ValueError."""
         with pytest.raises(ValueError):
-            CyclicPoissonSampler(range(10), sampling_prob=0.5, cycle_length=0, key=key(0))
+            CyclicPoissonSampler(
+                range(10), sampling_prob=0.5, cycle_length=0, key=key(0)
+            )
 
     def test_invalid_truncated_batch_size_raises(self):
         """Invalid truncated_batch_size raises ValueError."""
