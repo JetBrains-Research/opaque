@@ -1,16 +1,18 @@
-"""Opaque: Differentially Private Training for PyTorch.
+"""Opaque: Functional DP-SGD for PyTorch.
 
-This package provides differentially private training utilities for PyTorch,
-inspired by JAX-Privacy. Includes standard DP-SGD, correlated noise mechanisms
-(BandMF, BLT, DP-FTRL), and PLD-based privacy accounting.
+Composable primitives for differentially private model training: per-example
+gradient clipping, calibrated noise injection, privacy accounting, and Poisson
+sampling. Built on ``torch.func`` with explicit state.
 
-Key modules:
+Modules:
 
-- **opaque.clipping**: Per-example gradient clipping (clipped_grad, clipped_fun)
-- **opaque.noise**: Noise injection (gaussian_noise, band_mf_noise, etc.)
-- **opaque.accounting**: Privacy accounting via PLD (compositional API)
-- **opaque.sampling**: Batch sampling strategies (Poisson, truncated Poisson)
-- **opaque.auditing**: Empirical privacy auditing
+- ``opaque.clipping``: Per-example gradient clipping (clipped_grad, clipped_fun, clip_pytree)
+- ``opaque.noise``: Gaussian noise, bounded Gaussian, matrix-factorization correlated noise
+- ``opaque.accounting``: PLD-based privacy accounting with composition, calibration, and metrics
+- ``opaque.sampling``: Poisson, truncated Poisson, and cyclic Poisson samplers
+- ``opaque.auditing``: Empirical privacy auditing via membership inference
+- ``opaque.distributed``: DDP utilities (gradient aggregation, state sync)
+- ``opaque.compat``: HuggingFace auto-patching for vmap compatibility
 """
 
 import os

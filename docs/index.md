@@ -1,72 +1,121 @@
 # Opaque
 
-**Functional Differential Privacy for PyTorch**
+**Functional DP-SGD for PyTorch**
 
-Opaque provides per-example gradient clipping, noise injection, and privacy
-accounting for DP-SGD training.  It uses a functional API built on
-`torch.func` — no hooks, no subclassing, no hidden state.
+Opaque provides composable primitives for differentially private model training
+in PyTorch. Built on `torch.func`, every component uses explicit state -- no
+hooks, no subclassing, no hidden mutation.
 
-## What Opaque Provides
+## Per-example gradient clipping
 
-| Module | Purpose |
-|--------|---------|
-| `opaque.clipping` | Per-example gradient clipping (`clipped_grad`, `adaptive_clipped_grad`) |
-| `opaque.noise` | Gaussian noise, bounded Gaussian, matrix factorization noise |
-| `opaque.accounting` | Rust PLD privacy accounting — composition, calibration, budgets |
-| `opaque.sampling` | Poisson, truncated Poisson, and cyclic Poisson samplers |
-| `opaque.auditing` | Empirical privacy auditing via membership inference |
-| `opaque.distributed` | DDP utilities (`sum_gradients`, state sync) |
-| `opaque.compat` | HuggingFace auto-patching for `vmap` compatibility |
-
-## Quick Example
+`clipped_grad` computes per-example gradients via `vmap` + `grad`, clips each
+to a maximum L2 norm, and sums the result.
 
 ```python
-import torch
-from opaque import clipped_grad, gaussian_noise
+from opaque import clipped_grad
+
+grad_fn, clip_state = clipped_grad(
+    loss_fn, l2_clip_norm=1.0, argnums=0, batch_argnums=1,
+)
+grads, clip_state = grad_fn(params, batch, state=clip_state)
+```
+
+## Noise injection
+
+Add calibrated Gaussian noise scaled to the clipping sensitivity. All noise
+functions return `(noise_fn, state)` and support synchronized distributed mode.
+
+```python
+from opaque import gaussian_noise
 from opaque.random import key
 
-# Loss function (works with any model)
-def loss_fn(params, x, y):
-    return ((x @ params - y) ** 2).sum()
-
-# DP-SGD components
-grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2))
-noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(42))
-
-# Training loop
-for batch_x, batch_y in dataloader:
-    grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
-    noisy_grads, noise_state = noise_fn(grads, noise_state)
-    params = params - lr * noisy_grads
+noise_fn, noise_state = gaussian_noise(
+    stddev=noise_multiplier * clip_state.sensitivity(), key=key(42),
+)
+noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
 
-## How It Works
+## Privacy accounting
 
-1. `clipped_grad` uses `torch.func.vmap` + `torch.func.grad` to compute
-   per-example gradients, clips each to L2 norm ≤ `l2_clip_norm`, and sums.
-2. `gaussian_noise` adds $\mathcal{N}(0, \sigma^2 I)$ noise where
-   $\sigma = \texttt{stddev}$.
-3. Privacy accounting tracks cumulative privacy loss via PLD composition.
+Composable `DpProcess` objects built on a Rust PLD engine. Mechanisms compose
+with `*` (repeat) and `|` (heterogeneous composition). Query multiple privacy
+metrics from the same object.
 
-## Installation
+```python
+import opaque.accounting as acc
 
-```bash
-git clone https://github.com/JetBrains-Research/opaque.git
-cd opaque
-uv sync
+step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate=0.01)
+training = step * 1000
+
+eps = training.epsilon_at(delta=1e-5)
+adv = training.advantage()
+beta = training.beta_at(alpha=0.01)
 ```
 
-## Next Steps
+## Noise calibration
 
-**Learning from scratch:**
+Binary search for the noise multiplier (or any parameter) that satisfies a
+target privacy budget.
 
-- [Tutorial 01: Gradient Clipping from Basics](tutorials/01_gradient_clipping_from_basics.ipynb)
-- [Tutorial 02: Noise and Accounting](tutorials/02_differential_privacy_noise_and_accounting.ipynb)
-- [Quick Start](getting-started/quickstart.md)
+```python
+result = acc.calibrate(
+    acc.epsilon_budget(3.0, delta=1e-5),
+    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000,
+    param_min=0.1, param_max=10.0,
+)
+noise_multiplier = result.param
+```
 
-**I know DP, show me the API:**
+## Poisson sampling
 
-- [API Reference](api/index.md)
-- [User Guide](user-guide/index.md)
-- [LoRA Fine-tuning](user-guide/lora.md)
-- [Distributed Training](user-guide/distributed.md)
+Privacy-amplifying batch sampling. Each example is included independently with
+probability `sample_rate`, producing variable-size batches. Distributed mode is
+detected and sharded automatically.
+
+```python
+from opaque.sampling import PoissonSampler
+from opaque.random import key
+
+sampler = PoissonSampler(dataset, sample_rate=0.01, num_epochs=10, key=key(0))
+loader = DataLoader(dataset, batch_sampler=sampler)
+```
+
+## Distributed training
+
+DDP-compatible: each device clips locally, gradients are aggregated via
+AllReduce, and noise is added identically on every device (same key, same
+noise).
+
+```python
+from opaque.distributed import sum_gradients
+
+grads, clip_state = grad_fn(params, local_batch, state=clip_state)
+grads = sum_gradients(grads)
+noisy_grads, noise_state = noise_fn(grads, noise_state)
+```
+
+## Privacy auditing
+
+Empirical privacy validation via membership inference attacks with
+Clopper-Pearson confidence intervals.
+
+```python
+from opaque.auditing import audit
+
+result = audit(member_scores, non_member_scores, confidence=0.95)
+print(f"Empirical epsilon: {result.epsilon:.2f}")
+```
+
+## Next steps
+
+**Getting started**: [Installation](getting-started/installation.md) and
+[Quick Start](getting-started/quickstart.md).
+
+**Understanding the API**: [User Guide](user-guide/index.md) covers each
+module with detailed explanations, API patterns, and practical guidance.
+
+**Hands-on practice**: [Tutorials](tutorials/README.md) are task-based Jupyter
+notebooks that exercise the library on concrete problems.
+
+**API details**: [API Reference](api/index.md) provides complete function
+signatures and docstrings.

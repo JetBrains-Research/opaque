@@ -1,5 +1,5 @@
 site_name: Opaque
-site_description: Functional Differential Privacy for PyTorch LoRA Fine-tuning
+site_description: Functional DP-SGD for PyTorch
 site_author: Opaque Contributors
 site_url: https://opaque.readthedocs.io
 
@@ -74,6 +74,19 @@ nav:
   - Getting Started:
     - Installation: getting-started/installation.md
     - Quick Start: getting-started/quickstart.md
+  - User Guide:
+    - Overview: user-guide/index.md
+    - Differential Privacy Basics: user-guide/dp-basics.md
+    - Random Number Generation: user-guide/rng-key.md
+    - Per-Example Gradient Clipping: user-guide/clipping.md
+    - Noise Addition: user-guide/noise.md
+    - Privacy Accounting: user-guide/accounting.md
+    - Sampling & Microbatching: user-guide/sampling.md
+    - Optimizers: user-guide/optimizers.md
+    - Distributed Training: user-guide/distributed.md
+    - Memory Profiling: user-guide/memory-profiling.md
+    - Privacy Auditing: user-guide/auditing.md
+    - Known Limitations: limitations.md
   - Tutorials:
     - Overview: tutorials/README.md
     - 01 - Gradient Clipping from Basics: tutorials/01_gradient_clipping_from_basics.ipynb
@@ -83,34 +96,19 @@ nav:
     - 05 - Sampling and Microbatching: tutorials/05_sampling_and_microbatching.ipynb
     - 06 - LoRA HuggingFace Training: tutorials/06_lora_huggingface_dp_training.ipynb
     - 07 - Privacy Auditing: tutorials/07_privacy_auditing.ipynb
-    # Distributed training notebook removed: do not reference 08
-  - User Guide:
-    - Overview: user-guide/index.md
-    - Differential Privacy Basics: user-guide/dp-basics.md
-    - Random Number Generation: user-guide/rng-key.md
-    - Per-Sample Gradient Clipping: user-guide/clipping.md
-    - Noise Addition: user-guide/noise.md
-    - Privacy Accounting: user-guide/accounting.md
-    - Optimizers & Adaptive Clipping: user-guide/optimizers.md
-    - Poisson Sampling & Microbatching: user-guide/sampling.md
-    - Memory Profiling: user-guide/memory-profiling.md
-    - LoRA Fine-tuning: user-guide/lora.md
-    - Distributed Training: user-guide/distributed.md
-    - Privacy Auditing: user-guide/auditing.md
-    - Known Limitations: limitations.md
   - API Reference:
     - Overview: api/index.md
-    - Random Number Generation: api/rng.md
-    - Utils:
-      - PyTree Utilities: api/core/pytree_utils.md
-      - Functional Utilities: api/functional_utils.md
     - Clipping: api/core/clipping.md
     - Noise: api/noise.md
     - Accounting: api/accounting.md
-    - Optimizers: api/optimizers.md
     - Sampling: api/sampling.md
-    - Auditing: api/auditing.md
+    - Random: api/rng.md
     - Distributed: api/distributed.md
+    - Auditing: api/auditing.md
+    - Utilities:
+      - PyTree Utilities: api/core/pytree_utils.md
+      - Functional Utilities: api/functional_utils.md
+    - Optimizers: api/optimizers.md
   - Development:
     - Contributing: development/contributing.md
 
