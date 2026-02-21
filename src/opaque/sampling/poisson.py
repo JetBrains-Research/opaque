@@ -5,8 +5,7 @@ is independently included in a batch with probability ``sample_rate``. This prov
 privacy amplification, reducing the privacy cost compared to fixed-batch sampling.
 
 For distributed training, shard the dataset **before** creating the sampler using
-``local_shard_bounds()`` and ``torch.utils.data.Subset``, and derive a per-rank
-key with ``fold_in(key, rank)``.
+``local_shard()`` and derive a per-rank key with ``fold_in(key, rank)``.
 """
 
 from collections.abc import Iterator
@@ -30,11 +29,9 @@ class PoissonSampler(Sampler):
 
     .. code-block:: python
 
-        from torch.utils.data import Subset
-        from opaque.sampling.distributed import local_shard_bounds
+        from opaque.sampling.distributed import local_shard
 
-        start, end = local_shard_bounds(len(dataset), rank=rank, world_size=world_size)
-        shard = Subset(dataset, range(start, end))
+        shard = local_shard(dataset, rank=rank, world_size=world_size)
         sampler = PoissonSampler(shard, sample_rate=0.01, key=fold_in(key(42), rank))
 
     Args:

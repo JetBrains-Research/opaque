@@ -29,7 +29,7 @@ import opaque.distributed as dist_utils
 from opaque.clipping import sync_adaptive_clip_state
 from opaque.random import fold_in
 from opaque.random import key as rng_key
-from opaque.sampling.distributed import local_shard_bounds
+from opaque.sampling.distributed import local_shard
 
 
 def setup_distributed():
@@ -77,9 +77,8 @@ def main():
     # Create dataset and dataloader
     dataset = create_dataset(n_samples=1000)
 
-    # Shard dataset externally for distributed training
-    start, end = local_shard_bounds(len(dataset), rank=rank, world_size=world_size)
-    shard = torch.utils.data.Subset(dataset, range(start, end))
+    # Shard dataset for distributed training
+    shard = local_shard(dataset, rank=rank, world_size=world_size)
 
     # Poisson sampler on local shard with per-rank key
     sampler = opaque.PoissonSampler(

@@ -5,7 +5,7 @@ including Poisson sampling for privacy amplification and cyclic sampling
 for matrix factorization mechanisms (BandMF).
 
 For distributed training, shard the dataset externally using
-``sampling.distributed.local_shard_bounds()`` and pass a per-rank key
+``sampling.distributed.local_shard()`` and pass a per-rank key
 via ``fold_in(key, rank)``.
 """
 

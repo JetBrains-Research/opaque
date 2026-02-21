@@ -1,62 +1,68 @@
 """Tests for distributed Poisson sampling with external sharding (inner composition).
 
 Samplers no longer accept rank/world_size. Instead, the dataset is sharded
-externally using local_shard_bounds() + Subset, and per-rank keys are
-derived via fold_in(key, rank).
+externally using local_shard(), and per-rank keys are derived via
+fold_in(key, rank).
 """
 
 import numpy as np
 import pytest
 import torch
-from torch.utils.data import Subset, TensorDataset
+from torch.utils.data import TensorDataset
 
 from opaque.random import fold_in, key
 from opaque.sampling import PoissonSampler, TruncatedPoissonSampler
-from opaque.sampling.distributed import local_shard_bounds
+from opaque.sampling.distributed import _local_shard_bounds, local_shard
 
 
-def _make_shard(dataset, rank, world_size):
-    """Create a Subset shard for the given rank."""
-    start, end = local_shard_bounds(len(dataset), rank=rank, world_size=world_size)
-    return Subset(dataset, range(start, end))
-
-
-class TestLocalShardBounds:
-    """Tests for the local_shard_bounds utility."""
+class TestLocalShard:
+    """Tests for the local_shard utility."""
 
     def test_single_device(self):
-        """world_size=1 returns full range."""
-        assert local_shard_bounds(100) == (0, 100)
+        """world_size=1 returns full dataset."""
+        dataset = TensorDataset(torch.randn(100, 10))
+        shard = local_shard(dataset)
+        assert len(shard) == 100
 
     def test_even_split(self):
         """Even dataset divides equally."""
-        assert local_shard_bounds(100, rank=0, world_size=4) == (0, 25)
-        assert local_shard_bounds(100, rank=1, world_size=4) == (25, 50)
-        assert local_shard_bounds(100, rank=2, world_size=4) == (50, 75)
-        assert local_shard_bounds(100, rank=3, world_size=4) == (75, 100)
+        dataset = TensorDataset(torch.randn(100, 10))
+        for rank in range(4):
+            shard = local_shard(dataset, rank=rank, world_size=4)
+            assert len(shard) == 25
 
     def test_uneven_split_last_rank_gets_remainder(self):
         """Last rank receives remainder examples."""
-        assert local_shard_bounds(103, rank=0, world_size=4) == (0, 25)
-        assert local_shard_bounds(103, rank=1, world_size=4) == (25, 50)
-        assert local_shard_bounds(103, rank=2, world_size=4) == (50, 75)
-        assert local_shard_bounds(103, rank=3, world_size=4) == (75, 103)
+        dataset = TensorDataset(torch.randn(103, 10))
+        sizes = [len(local_shard(dataset, rank=r, world_size=4)) for r in range(4)]
+        assert sizes == [25, 25, 25, 28]
+
+    def test_returns_subset(self):
+        """Returns a torch.utils.data.Subset."""
+        from torch.utils.data import Subset
+
+        dataset = TensorDataset(torch.randn(100, 10))
+        shard = local_shard(dataset, rank=0, world_size=4)
+        assert isinstance(shard, Subset)
 
     def test_invalid_rank_raises(self):
+        dataset = TensorDataset(torch.randn(100, 10))
         with pytest.raises(ValueError, match="rank must be in"):
-            local_shard_bounds(100, rank=4, world_size=4)
+            local_shard(dataset, rank=4, world_size=4)
 
     def test_invalid_world_size_raises(self):
+        dataset = TensorDataset(torch.randn(100, 10))
         with pytest.raises(ValueError, match="world_size must be >= 1"):
-            local_shard_bounds(100, rank=0, world_size=0)
+            local_shard(dataset, rank=0, world_size=0)
 
     def test_negative_dataset_size_raises(self):
+        """Empty-ish edge case: _local_shard_bounds validates."""
         with pytest.raises(ValueError, match="dataset_size must be >= 0"):
-            local_shard_bounds(-1, rank=0, world_size=1)
+            _local_shard_bounds(-1, rank=0, world_size=1)
 
 
 class TestShardedSampling:
-    """Tests for sharded sampling via external Subset + fold_in."""
+    """Tests for sharded sampling via local_shard + fold_in."""
 
     def test_shards_correct_sizes(self):
         """Each shard has the expected number of examples."""
@@ -64,7 +70,7 @@ class TestShardedSampling:
         world_size = 4
 
         for rank in range(world_size):
-            shard = _make_shard(dataset, rank, world_size)
+            shard = local_shard(dataset, rank=rank, world_size=world_size)
             assert len(shard) == 250
 
     def test_uneven_split_last_rank_larger(self):
@@ -72,7 +78,7 @@ class TestShardedSampling:
         dataset = TensorDataset(torch.randn(103, 10))
         world_size = 4
 
-        shard_last = _make_shard(dataset, 3, world_size)
+        shard_last = local_shard(dataset, rank=3, world_size=world_size)
         expected = 103 - 3 * (103 // 4)
         assert len(shard_last) == expected
 
@@ -82,7 +88,7 @@ class TestShardedSampling:
         world_size = 4
 
         for rank in range(world_size):
-            shard = _make_shard(dataset, rank, world_size)
+            shard = local_shard(dataset, rank=rank, world_size=world_size)
             sampler = PoissonSampler(
                 shard, sample_rate=0.5, num_epochs=1, key=fold_in(key(42), rank)
             )
@@ -97,7 +103,7 @@ class TestShardedSampling:
         world_size = 4
 
         for rank in range(world_size):
-            shard = _make_shard(dataset, rank, world_size)
+            shard = local_shard(dataset, rank=rank, world_size=world_size)
             sampler = PoissonSampler(
                 shard,
                 sample_rate=sample_rate,
@@ -114,8 +120,8 @@ class TestShardedSampling:
         dataset = TensorDataset(torch.randn(1000, 10))
         world_size = 4
 
-        shard0 = _make_shard(dataset, 0, world_size)
-        shard1 = _make_shard(dataset, 1, world_size)
+        shard0 = local_shard(dataset, rank=0, world_size=world_size)
+        shard1 = local_shard(dataset, rank=1, world_size=world_size)
 
         sizes0 = [
             len(b)
@@ -165,7 +171,7 @@ class TestTruncatedPoissonDistributed:
         world_size = 4
 
         for rank in range(world_size):
-            shard = _make_shard(dataset, rank, world_size)
+            shard = local_shard(dataset, rank=rank, world_size=world_size)
             sampler = TruncatedPoissonSampler(
                 shard,
                 sample_rate=0.5,
@@ -198,7 +204,7 @@ class TestEdgeCases:
     def test_world_size_one_same_as_no_sharding(self):
         """Explicit world_size=1 produces same shard as full dataset."""
         dataset = TensorDataset(torch.randn(100, 10))
-        shard = _make_shard(dataset, 0, 1)
+        shard = local_shard(dataset, rank=0, world_size=1)
         assert len(shard) == len(dataset)
 
     def test_very_small_shards(self):
@@ -207,7 +213,7 @@ class TestEdgeCases:
         world_size = 10
 
         for rank in range(world_size):
-            shard = _make_shard(dataset, rank, world_size)
+            shard = local_shard(dataset, rank=rank, world_size=world_size)
             sampler = PoissonSampler(
                 shard,
                 sample_rate=0.5,

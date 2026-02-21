@@ -33,7 +33,7 @@ import torch.distributed as dist
 from opaque import clipped_grad, gaussian_noise, make_functional, PoissonSampler
 import opaque.distributed as dist_utils
 from opaque.random import key, fold_in
-from opaque.sampling.distributed import local_shard_bounds
+from opaque.sampling.distributed import local_shard
 
 # Distributed setup
 dist.init_process_group(backend="nccl")
@@ -55,9 +55,8 @@ noise_fn, noise_state = gaussian_noise(
     stddev=1.1 * clip_state.sensitivity(), key=key(42),
 )
 
-# Poisson sampler (shard dataset externally)
-start, end = local_shard_bounds(len(dataset), rank=rank, world_size=dist.get_world_size())
-shard = torch.utils.data.Subset(dataset, range(start, end))
+# Poisson sampler (shard dataset)
+shard = local_shard(dataset, rank=rank, world_size=dist.get_world_size())
 sampler = PoissonSampler(
     shard, sample_rate=0.01, key=fold_in(key(0), rank),
 )
@@ -147,22 +146,19 @@ across ranks and raises `RuntimeError` if it doesn't.
 
 ## Poisson Sampling
 
-Shard the dataset **externally** using `local_shard_bounds()` and
-`torch.utils.data.Subset`, then create a `PoissonSampler` on the shard.
-Derive a per-rank key via `fold_in(key, rank)`.
+Shard the dataset using `local_shard()`, then create a `PoissonSampler`
+on the shard.  Derive a per-rank key via `fold_in(key, rank)`.
 
 ```python
 import torch.distributed as dist
-from torch.utils.data import Subset
 from opaque import PoissonSampler
 from opaque.random import key, fold_in
-from opaque.sampling.distributed import local_shard_bounds
+from opaque.sampling.distributed import local_shard
 
 rank = dist.get_rank()
 world_size = dist.get_world_size()
 
-start, end = local_shard_bounds(len(dataset), rank=rank, world_size=world_size)
-shard = Subset(dataset, range(start, end))
+shard = local_shard(dataset, rank=rank, world_size=world_size)
 sampler = PoissonSampler(
     shard,
     sample_rate=0.01,

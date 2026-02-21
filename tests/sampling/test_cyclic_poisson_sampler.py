@@ -345,16 +345,16 @@ class TestCyclicPoissonSamplerDistributedSimulation:
     """Test distributed support via external sharding (inner composition).
 
     Samplers no longer accept rank/world_size. Instead, the dataset is
-    sharded externally using local_shard_bounds() + a list slice, and
-    per-rank keys are derived via fold_in(key, rank).
+    sharded externally using local_shard() (or _local_shard_bounds for
+    plain lists), and per-rank keys are derived via fold_in(key, rank).
     """
 
     def test_external_sharding(self):
         """External sharding produces sampler on a subset."""
-        from opaque.sampling.distributed import local_shard_bounds
+        from opaque.sampling.distributed import _local_shard_bounds
 
         dataset = list(range(100))
-        start, end = local_shard_bounds(len(dataset), rank=0, world_size=4)
+        start, end = _local_shard_bounds(len(dataset), rank=0, world_size=4)
         shard = dataset[start:end]
 
         sampler = CyclicPoissonSampler(
@@ -369,10 +369,10 @@ class TestCyclicPoissonSamplerDistributedSimulation:
 
     def test_sharding_rank_0(self):
         """Rank 0 gets correct shard via external subsetting."""
-        from opaque.sampling.distributed import local_shard_bounds
+        from opaque.sampling.distributed import _local_shard_bounds
 
         dataset = list(range(100))
-        start, end = local_shard_bounds(len(dataset), rank=0, world_size=4)
+        start, end = _local_shard_bounds(len(dataset), rank=0, world_size=4)
         shard = dataset[start:end]
 
         sampler = CyclicPoissonSampler(
@@ -392,10 +392,10 @@ class TestCyclicPoissonSamplerDistributedSimulation:
 
     def test_sharding_rank_last(self):
         """Last rank gets remainder via external subsetting."""
-        from opaque.sampling.distributed import local_shard_bounds
+        from opaque.sampling.distributed import _local_shard_bounds
 
         dataset = list(range(100))
-        start, end = local_shard_bounds(len(dataset), rank=3, world_size=4)
+        start, end = _local_shard_bounds(len(dataset), rank=3, world_size=4)
         shard = dataset[start:end]
 
         sampler = CyclicPoissonSampler(
@@ -416,13 +416,13 @@ class TestCyclicPoissonSamplerDistributedSimulation:
     def test_different_keys_per_rank(self):
         """Different keys per rank produce different sampling."""
         from opaque.random import fold_in
-        from opaque.sampling.distributed import local_shard_bounds
+        from opaque.sampling.distributed import _local_shard_bounds
 
         dataset = list(range(100))
         world_size = 4
 
         # Rank 0
-        s0, e0 = local_shard_bounds(len(dataset), rank=0, world_size=world_size)
+        s0, e0 = _local_shard_bounds(len(dataset), rank=0, world_size=world_size)
         sampler0 = CyclicPoissonSampler(
             dataset[s0:e0],
             sampling_prob=0.5,
@@ -433,7 +433,7 @@ class TestCyclicPoissonSamplerDistributedSimulation:
         batches0 = list(sampler0)
 
         # Rank 1
-        s1, e1 = local_shard_bounds(len(dataset), rank=1, world_size=world_size)
+        s1, e1 = _local_shard_bounds(len(dataset), rank=1, world_size=world_size)
         sampler1 = CyclicPoissonSampler(
             dataset[s1:e1],
             sampling_prob=0.5,
@@ -449,10 +449,10 @@ class TestCyclicPoissonSamplerDistributedSimulation:
     def test_cyclic_independence(self):
         """Each rank cycles through its shard independently."""
         from opaque.random import fold_in
-        from opaque.sampling.distributed import local_shard_bounds
+        from opaque.sampling.distributed import _local_shard_bounds
 
         dataset = list(range(100))
-        start, end = local_shard_bounds(len(dataset), rank=0, world_size=2)
+        start, end = _local_shard_bounds(len(dataset), rank=0, world_size=2)
         shard = dataset[start:end]
 
         sampler0 = CyclicPoissonSampler(

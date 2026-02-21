@@ -1,39 +1,58 @@
 """Distributed helper utilities for sampling.
 
 Pure functions that take explicit ``rank`` and ``world_size`` parameters.
-Use ``local_shard_bounds()`` to compute shard boundaries, then pass a
-``Subset`` to the sampler.
+Use ``local_shard()`` to slice a dataset for a given rank, then pass the
+resulting ``Subset`` to the sampler.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sized
+
+from torch.utils.data import Subset
+
 __all__ = [
-    "local_shard_bounds",
+    "local_shard",
 ]
 
 
-def local_shard_bounds(
-    dataset_size: int, *, rank: int = 0, world_size: int = 1
-) -> tuple[int, int]:
-    """Return ``[start, end)`` shard bounds for the given rank.
+def local_shard(
+    dataset: Sized, *, rank: int = 0, world_size: int = 1
+) -> Subset:
+    """Return the shard of ``dataset`` that belongs to ``rank``.
+
+    This is the recommended way to partition a dataset for distributed
+    DP training.  Each rank gets a contiguous, non-overlapping slice;
+    the last rank receives any remainder examples.
 
     Args:
-        dataset_size: Total number of examples in the dataset.
+        dataset: Any object with ``__len__`` (e.g. a PyTorch ``Dataset``).
         rank: Rank of the current worker (0-indexed). Defaults to 0.
         world_size: Total number of workers. Defaults to 1 (single device).
 
     Returns:
-        Tuple of (start_index, end_index). The last rank receives any
-        remainder examples when ``dataset_size`` is not evenly divisible.
+        A ``torch.utils.data.Subset`` view into ``dataset``.
 
     Raises:
         ValueError: If inputs are invalid.
 
     Example:
-        >>> local_shard_bounds(1000, rank=0, world_size=4)
-        (0, 250)
-        >>> local_shard_bounds(1000, rank=3, world_size=4)
-        (750, 1000)
+        >>> from torch.utils.data import TensorDataset
+        >>> ds = TensorDataset(torch.randn(1000, 10))
+        >>> shard = local_shard(ds, rank=0, world_size=4)
+        >>> len(shard)
+        250
+    """
+    start, end = _local_shard_bounds(len(dataset), rank=rank, world_size=world_size)
+    return Subset(dataset, range(start, end))
+
+
+def _local_shard_bounds(
+    dataset_size: int, *, rank: int = 0, world_size: int = 1
+) -> tuple[int, int]:
+    """Return ``[start, end)`` index bounds for the given rank.
+
+    Low-level helper used by :func:`local_shard`.
     """
     if dataset_size < 0:
         raise ValueError(f"dataset_size must be >= 0, got {dataset_size}")

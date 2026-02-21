@@ -5,8 +5,7 @@ of the dataset. This enables privacy amplification via correlated noise mechanis
 like BandMF.
 
 For distributed training, shard the dataset **before** creating the sampler using
-``local_shard_bounds()`` and ``torch.utils.data.Subset``, and derive a per-rank
-key with ``fold_in(key, rank)``.
+``local_shard()`` and derive a per-rank key with ``fold_in(key, rank)``.
 
 References:
     - BandMF: https://arxiv.org/abs/2306.08153
@@ -48,11 +47,9 @@ class CyclicPoissonSampler(Sampler):
 
     .. code-block:: python
 
-        from torch.utils.data import Subset
-        from opaque.sampling.distributed import local_shard_bounds
+        from opaque.sampling.distributed import local_shard
 
-        start, end = local_shard_bounds(len(dataset), rank=rank, world_size=world_size)
-        shard = Subset(dataset, range(start, end))
+        shard = local_shard(dataset, rank=rank, world_size=world_size)
         sampler = CyclicPoissonSampler(shard, sampling_prob=0.5, key=fold_in(key(42), rank))
 
     Args:
