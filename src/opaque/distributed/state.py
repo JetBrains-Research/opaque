@@ -18,12 +18,49 @@ from . import all_reduce as all_reduce_tensor
 from . import get_world_size, is_distributed
 
 __all__ = [
+    "assert_scalar_equal",
     "gather_pytree",
     "gather_pytree_tensors",
     "gather_tensors",
     "reduce_scalar",
     "sync_state",
 ]
+
+
+def assert_scalar_equal(
+    value: float | int,
+    *,
+    name: str,
+    atol: float = 1e-8,
+    rtol: float = 1e-5,
+    device: torch.device | None = None,
+) -> None:
+    """Assert that a scalar value is equal across distributed ranks.
+
+    Args:
+        value: Local scalar value to validate.
+        name: Human-readable value name used in error messages.
+        atol: Absolute tolerance for equality check.
+        rtol: Relative tolerance for equality check.
+        device: Optional device for scalar reductions.
+
+    Raises:
+        RuntimeError: If values differ across ranks beyond tolerance.
+    """
+    if not is_distributed():
+        return
+
+    min_value = reduce_scalar(float(value), op="min", device=device)
+    max_value = reduce_scalar(float(value), op="max", device=device)
+    if not torch.isclose(
+        torch.tensor(min_value),
+        torch.tensor(max_value),
+        atol=atol,
+        rtol=rtol,
+    ):
+        raise RuntimeError(
+            f"{name} mismatch across ranks: min={min_value}, max={max_value}."
+        )
 
 
 def gather_pytree(pytree: Any) -> Any:
@@ -337,19 +374,23 @@ def sync_adaptive_clip_state(
 ) -> Any:
     """Synchronize adaptive clipping state using global clipped counts.
 
-    This first synchronizes clip-related fields (`clip_norm`, `step`) and then
-    computes a globally consistent clipping rate from reduced counts:
+    This first synchronizes clip-related fields (``clip_norm``, ``step``) and
+    then computes a globally consistent clipping rate from reduced counts:
 
         global_rate = sum(local_num_clipped) / max(1, sum(local_total))
 
+    If the state has a ``batch_size`` field, it is summed across ranks so that
+    the privacy accountant receives the true global batch size.
+
     Args:
-        state: Adaptive clipping state dataclass (expects `clipping_rate` field).
+        state: Adaptive clipping state dataclass (expects ``clipping_rate`` field).
         local_num_clipped: Number of locally clipped examples at this step.
         local_total: Number of local examples considered at this step.
         device: Device to use for reductions.
 
     Returns:
-        New synchronized state with globally consistent `clipping_rate`.
+        New synchronized state with globally consistent ``clipping_rate``
+        and summed ``batch_size``.
     """
     if not is_distributed():
         return state
@@ -372,11 +413,19 @@ def sync_adaptive_clip_state(
     global_total = reduce_scalar(float(local_total), op="sum", device=device)
     global_rate = global_num_clipped / max(1.0, global_total)
 
+    updates: dict[str, Any] = {}
     if "clipping_rate" in available:
+        updates["clipping_rate"] = float(global_rate)
+    if "batch_size" in available:
+        local_bs = getattr(synced, "batch_size", 0)
+        global_bs = int(reduce_scalar(float(local_bs), op="sum", device=device))
+        updates["batch_size"] = global_bs
+
+    if updates:
         synced = type(synced)(
             **{
                 **{f.name: getattr(synced, f.name) for f in fields(synced)},
-                "clipping_rate": float(global_rate),
+                **updates,
             }
         )
 

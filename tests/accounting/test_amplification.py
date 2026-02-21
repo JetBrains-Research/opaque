@@ -111,7 +111,7 @@ class TestPoissonConstructor:
             acc.poisson(acc.eps_delta(1.0, 1e-5), 0.01)  # type: ignore[arg-type]
 
     def test_accepts_adaclip(self):
-        step = acc.poisson(acc.adaclip(acc.gaussian(0.8), 50.0), 0.01)
+        step = acc.poisson(acc.adaclip(acc.gaussian(0.8), batch_size=1000), 0.01)
         eps = step.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
@@ -144,7 +144,7 @@ class TestTruncatedPoissonConstructor:
 
     def test_accepts_adaclip(self):
         step = acc.truncated_poisson(
-            acc.adaclip(acc.gaussian(0.8), 50.0),
+            acc.adaclip(acc.gaussian(0.8), batch_size=1000),
             0.01,
             128,
             10_000,

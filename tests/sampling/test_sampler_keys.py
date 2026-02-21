@@ -61,16 +61,12 @@ class TestPoissonSamplerKeys:
 
         # Simulate rank 0
         rank0_key = base_key  # No shift
-        sampler_rank0 = PoissonSampler(
-            dataset, sample_rate=0.1, num_epochs=5, key=rank0_key, distributed=False
-        )
+        sampler_rank0 = PoissonSampler(dataset, sample_rate=0.1, num_epochs=5, key=rank0_key)
         batches_rank0 = list(sampler_rank0)
 
         # Simulate rank 1 (fold in rank)
         rank1_key = fold_in(base_key, 1)
-        sampler_rank1 = PoissonSampler(
-            dataset, sample_rate=0.1, num_epochs=5, key=rank1_key, distributed=False
-        )
+        sampler_rank1 = PoissonSampler(dataset, sample_rate=0.1, num_epochs=5, key=rank1_key)
         batches_rank1 = list(sampler_rank1)
 
         # Different ranks should produce different samples
@@ -88,8 +84,8 @@ class TestPoissonSamplerKeys:
         assert len(batches) > 0
         assert all(isinstance(b, list) for b in batches)
 
-    def test_distributed_mode_auto_with_key(self):
-        """distributed='auto' should work with keys."""
+    def test_sampling_with_key(self):
+        """Sampling should work with keys."""
         dataset = TensorDataset(torch.randn(1000, 10))
 
         sampler = PoissonSampler(
@@ -97,7 +93,6 @@ class TestPoissonSamplerKeys:
             sample_rate=0.1,
             num_epochs=5,
             key=key(42),
-            distributed="auto",
         )
 
         batches = list(sampler)
@@ -258,7 +253,7 @@ class TestCrossValidationWithNumpy:
 
         # Our implementation with key
         sampler_key = PoissonSampler(
-            dataset, sample_rate=0.1, num_epochs=1, key=key(42), distributed=False
+            dataset, sample_rate=0.1, num_epochs=1, key=key(42)
         )
         batches_key = list(sampler_key)
 

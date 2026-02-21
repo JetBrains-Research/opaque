@@ -13,42 +13,34 @@ from opaque.sampling import PoissonSampler, TruncatedPoissonSampler
 
 
 class TestSamplingModeValidation:
-    """Tests for distributed parameter validation."""
+    """Tests for automatic distributed mode selection."""
 
-    def test_independent_mode_no_rank_or_world_size(self):
-        """Test distributed=False works without rank/world_size."""
+    def test_single_device_defaults_to_independent_mode(self):
+        """Single-device setup should use independent sampling."""
         dataset = TensorDataset(torch.randn(100, 10))
-        sampler = PoissonSampler(dataset, sample_rate=0.1, distributed=False, key=key(0))
+        sampler = PoissonSampler(dataset, sample_rate=0.1, key=key(0))
         assert sampler._use_sharded is False
 
-    def test_sharded_mode_requires_rank_and_world_size(self, monkeypatch):
-        """Test distributed=True requires distributed training to be initialized."""
-        dataset = TensorDataset(torch.randn(100, 10))
-
-        # Mock distributed module to return single device
-        with patch("opaque.sampling.poisson.is_distributed", return_value=False):
-            with patch("opaque.sampling.poisson.get_rank", return_value=0):
-                with patch("opaque.sampling.poisson.get_world_size", return_value=1):
-                    with pytest.raises(
-                        RuntimeError,
-                        match="distributed=True requested but torch.distributed is not initialized",
-                    ):
-                        PoissonSampler(dataset, sample_rate=0.1, distributed=True, key=key(0))
-
-    def test_independent_mode_with_distributed_params_warns(self, monkeypatch):
-        """Test distributed=False with world_size > 1 emits warning."""
+    def test_distributed_initialization_enables_sharded_mode(self, monkeypatch):
+        """Initialized distributed setup should use sharded sampling."""
         dataset = TensorDataset(torch.randn(100, 10))
 
         with patch("opaque.sampling.poisson.is_distributed", return_value=True):
             with patch("opaque.sampling.poisson.get_rank", return_value=0):
                 with patch("opaque.sampling.poisson.get_world_size", return_value=4):
-                    with pytest.warns(UserWarning, match="parallel Poisson sampling"):
-                        PoissonSampler(
-                            dataset,
-                            sample_rate=0.1,
-                            distributed=False,
-                            key=key(0),
-                        )
+                    with pytest.warns(UserWarning, match="Automatically using SHARDED mode"):
+                        sampler = PoissonSampler(dataset, sample_rate=0.1, key=key(0))
+                        assert sampler._use_sharded is True
+
+    def test_distributed_mode_warns_about_auto_sharded(self, monkeypatch):
+        """Distributed setup should emit auto-sharded warning."""
+        dataset = TensorDataset(torch.randn(100, 10))
+
+        with patch("opaque.sampling.poisson.is_distributed", return_value=True):
+            with patch("opaque.sampling.poisson.get_rank", return_value=0):
+                with patch("opaque.sampling.poisson.get_world_size", return_value=4):
+                    with pytest.warns(UserWarning, match="Automatically using SHARDED mode"):
+                        PoissonSampler(dataset, sample_rate=0.1, key=key(0))
 
 
 class TestShardedMode:
@@ -73,7 +65,6 @@ class TestShardedMode:
                             dataset,
                             sample_rate=sample_rate,
                             num_epochs=num_epochs,
-                            distributed=True,
                             key=key(42 + rank),  # Different seeds
                         )
                         batches = list(sampler)
@@ -107,7 +98,6 @@ class TestShardedMode:
                             dataset,
                             sample_rate=sample_rate,
                             num_epochs=1,
-                            distributed=True,
                             key=key(0),
                         )
                         batch = list(sampler)[0]
@@ -140,7 +130,6 @@ class TestShardedMode:
                         dataset,
                         sample_rate=sample_rate,
                         num_epochs=1,
-                        distributed=True,
                         key=key(0),
                     )
                     batch_last = list(sampler_last)[0]
@@ -168,7 +157,6 @@ class TestShardedMode:
                             dataset,
                             sample_rate=sample_rate,
                             num_epochs=100,
-                            distributed=True,
                             key=key(100 + rank),
                         )
 
@@ -199,7 +187,6 @@ class TestShardedMode:
                         dataset,
                         sample_rate=sample_rate,
                         num_epochs=20,
-                        distributed=True,
                         key=key(42),
                     )
                     sizes0 = [len(batch) for batch in sampler0]
@@ -210,7 +197,6 @@ class TestShardedMode:
                         dataset,
                         sample_rate=sample_rate,
                         num_epochs=20,
-                        distributed=True,
                         key=key(43),
                     )
                     sizes1 = [len(batch) for batch in sampler1]
@@ -229,7 +215,7 @@ class TestIndependentMode:
         assert sampler._use_sharded is False
 
     def test_independent_mode_different_batches_across_workers(self):
-        """Test that workers in INDEPENDENT mode get different batches."""
+        """Different keys should produce different batches in single-device mode."""
         dataset = TensorDataset(torch.randn(1000, 10))
         sample_rate = 0.1
 
@@ -238,14 +224,12 @@ class TestIndependentMode:
             dataset,
             sample_rate=sample_rate,
             num_epochs=10,
-            distributed=False,
             key=key(42),
         )
         sampler1 = PoissonSampler(
             dataset,
             sample_rate=sample_rate,
             num_epochs=10,
-            distributed=False,
             key=key(43),
         )
 
@@ -256,7 +240,7 @@ class TestIndependentMode:
         assert batches0 != batches1, "Independent workers should differ"
 
     def test_independent_mode_original_behavior(self):
-        """Test that distributed=False matches original PoissonSampler behavior."""
+        """Single-device behavior remains stable across identical construction."""
         dataset = TensorDataset(torch.randn(500, 10))
         sample_rate = 0.2
         seed = 12345
@@ -269,12 +253,11 @@ class TestIndependentMode:
             key=key(seed),
         )
 
-        # New-style explicit independent
+        # Equivalent explicit construction
         sampler_new = PoissonSampler(
             dataset,
             sample_rate=sample_rate,
             num_epochs=5,
-            distributed=False,
             key=key(seed),
         )
 
@@ -286,7 +269,7 @@ class TestIndependentMode:
 
 
 class TestTruncatedPoissonDistributed:
-    """Tests for TruncatedPoissonSampler with distributed overrides."""
+    """Tests for TruncatedPoissonSampler in distributed environments."""
 
     def test_truncated_sharded_mode(self, monkeypatch):
         """Test TruncatedPoissonSampler in sharded mode."""
@@ -308,7 +291,6 @@ class TestTruncatedPoissonDistributed:
                             sample_rate=0.5,
                             max_batch_size=max_batch_size,
                             num_epochs=1,
-                            distributed=True,
                             key=key(rank + 100),
                         )
                         batch = list(sampler)[0]
@@ -350,8 +332,8 @@ class TestTruncatedPoissonDistributed:
 class TestEdgeCases:
     """Edge cases for distributed sampling modes."""
 
-    def test_single_worker_sharded_mode(self, monkeypatch):
-        """Test sharded mode with world_size=1."""
+    def test_single_worker_distributed_mode(self, monkeypatch):
+        """Distributed initialization with world_size=1 still works."""
         dataset = TensorDataset(torch.randn(100, 10))
 
         with patch("opaque.sampling.poisson.is_distributed", return_value=True):
@@ -361,7 +343,6 @@ class TestEdgeCases:
                         dataset,
                         sample_rate=0.5,
                         num_epochs=5,
-                        distributed=True,
                         key=key(42),
                     )
 
@@ -392,7 +373,6 @@ class TestEdgeCases:
                             dataset,
                             sample_rate=0.5,
                             num_epochs=10,
-                            distributed=True,
                             key=key(rank),
                         )
                         # Should not crash

@@ -4,12 +4,11 @@ This module provides TruncatedPoissonSampler, which combines Poisson subsampling
 for privacy amplification with a maximum batch size constraint for stability.
 
 Supports distributed training with automatic environment detection:
-- INDEPENDENT: Each worker samples independently (single device default)
-- SHARDED: Workers sample from disjoint shards (distributed default, ensures "single Poisson")
+- INDEPENDENT: Single-device default
+- SHARDED: Workers sample from disjoint shards when distributed is initialized
 """
 
 from collections.abc import Iterator
-from typing import Literal
 
 import numpy as np
 
@@ -26,9 +25,8 @@ class TruncatedPoissonSampler(PoissonSampler):
     3. Tighter privacy accounting via truncated Poisson analysis
 
     Supports distributed training with automatic environment detection:
-    - **Auto-detection**: Automatically detects distributed environment from RANK/WORLD_SIZE env vars
-    - **INDEPENDENT**: Single device training (default for world_size=1)
-    - **SHARDED**: Workers sample from disjoint shards (default for distributed, ensures "single Poisson")
+    - **INDEPENDENT**: Single-device training (default when not distributed)
+    - **SHARDED**: Workers sample from disjoint shards (default when distributed)
 
     Args:
         data_source: Dataset to sample from (any object with __len__)
@@ -36,10 +34,6 @@ class TruncatedPoissonSampler(PoissonSampler):
         max_batch_size: Maximum batch size (caps Poisson samples)
         num_epochs: Number of epochs to iterate over
         key: RNG key for reproducibility. Use ``key()`` or ``training_key()`` helpers.
-        distributed: Distributed handling mode:
-            - "auto": auto-select based on dist init
-            - True: force sharded sampling (requires torch.distributed initialized)
-            - False: force independent sampling (even if distributed is initialized)
 
     Example:
         >>> from opaque.random import key
@@ -62,7 +56,6 @@ class TruncatedPoissonSampler(PoissonSampler):
         - Provides tighter privacy bounds than standard Poisson
         - Use opaque.accounting.compose_truncated_poisson_gaussian() for accounting
         - If sample_rate * len(dataset) << max_batch_size, rarely truncates
-        - **Auto mode selection**: Detects distributed env and uses sharded sampling by default
         - In sharded sampling, each worker truncates its shard sample independently
     """
 
@@ -74,14 +67,12 @@ class TruncatedPoissonSampler(PoissonSampler):
         num_epochs: int = 1,
         *,
         key: RngKey,
-        distributed: Literal["auto"] | bool = "auto",
     ):
         super().__init__(
             data_source,
             sample_rate,
             num_epochs,
             key=key,
-            distributed=distributed,
         )
 
         if max_batch_size < 1:

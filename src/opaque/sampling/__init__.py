@@ -13,6 +13,7 @@ Note: PoissonSampler, TruncatedPoissonSampler, and CyclicPoissonSampler support
 distributed training with automatic environment detection.
 """
 
+from opaque.sampling import distributed
 from opaque.sampling._utils import PartitionType
 from opaque.sampling.cyclic_poisson import CyclicPoissonSampler
 from opaque.sampling.poisson import PoissonSampler
@@ -23,4 +24,5 @@ __all__ = [
     "TruncatedPoissonSampler",
     "CyclicPoissonSampler",
     "PartitionType",
+    "distributed",
 ]

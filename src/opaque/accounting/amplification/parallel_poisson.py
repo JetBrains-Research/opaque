@@ -56,14 +56,10 @@ class ParallelPoisson(DpProcess):
                     config.to_native(),
                 )
             case Poisson(
-                inner=AdaClip(
-                    inner=Gaussian(noise_multiplier=nm),
-                    quantile_noise_std=quantile_noise_std,
-                ),
+                inner=AdaClip() as ac,
                 sample_rate=rate,
             ):
-                s = _native.combined_sensitivity(nm, quantile_noise_std)
-                z_eff = 1.0 / s
+                z_eff = ac.effective_noise_multiplier
                 return _native.parallel_poisson_gaussian_pld(
                     z_eff,
                     rate,

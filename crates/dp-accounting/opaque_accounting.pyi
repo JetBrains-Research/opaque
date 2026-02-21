@@ -327,7 +327,7 @@ def parallel_poisson_gaussian_pld(
 # ---------------------------------------------------------------------------
 
 
-def combined_sensitivity(
+def adaclip_sensitivity(
     noise_multiplier: float,
     quantile_noise_std: float,
 ) -> float:

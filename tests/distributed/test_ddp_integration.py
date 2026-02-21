@@ -117,6 +117,7 @@ def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> N
             step=100,
             clipping_rate=0.5 + 0.1 * rank,
             rescale_to_unit_norm=False,
+            batch_size=8 * (rank + 1),
         )
         synced = sync_state(
             state,
@@ -166,7 +167,7 @@ def _worker_dp_training_step(rank: int, world_size: int, port: int) -> None:
             return ((pred - y) ** 2).mean()
 
         grad_fn, clip_state = clipped_grad(
-            loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2), distributed=False
+            loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2)
         )
         noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(0))
 
@@ -204,6 +205,7 @@ def _worker_adaptive_clipping(rank: int, world_size: int, port: int) -> None:
             loss_fn,
             batch_argnums=(1, 2),
             initial_clip_norm=0.1,
+            key=key(0),
         )
 
         batch_size = 8

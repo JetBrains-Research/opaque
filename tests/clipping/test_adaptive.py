@@ -24,6 +24,7 @@ class TestAdaptiveClippedGrad:
             loss_fn,
             initial_clip_norm=1.0,
             target_quantile=0.5,
+            key=key(0),
             batch_argnums=(1, 2),
         )
 
@@ -56,6 +57,7 @@ class TestAdaptiveClippedGrad:
             initial_clip_norm=0.01,  # Very low
             target_quantile=0.5,
             learning_rate=0.2,
+            key=key(0),
             batch_argnums=(1, 2),
         )
 
@@ -85,6 +87,7 @@ class TestAdaptiveClippedGrad:
             initial_clip_norm=100.0,  # Very high
             target_quantile=0.5,
             learning_rate=0.2,
+            key=key(0),
             batch_argnums=(1, 2),
         )
 
@@ -102,37 +105,83 @@ class TestAdaptiveClippedGrad:
         assert clip_state.clip_norm < initial_clip_norm
 
     def test_geometric_update_formula(self):
-        """Test that updates follow geometric formula: C_{t+1} = C_t * exp(η * direction)."""
-
-        def loss_fn(params, x, y):
-            pred = x @ params
-            return ((pred - y) ** 2).mean()
-
-        learning_rate = 0.2
-        grad_fn, clip_state = adaptive_clipped_grad(
-            loss_fn,
-            initial_clip_norm=1.0,
-            target_quantile=0.5,
-            learning_rate=learning_rate,
-            batch_argnums=(1, 2),
+        """Test proportional update: C_{t+1} = C_t * exp(η * (ρ̃ - γ))."""
+        from opaque.clipping.adaptive import (
+            _adaptive_clip_norm_update,
+            _compute_clipping_stats,
+            _sample_noisy_clipping_rate,
         )
 
-        params = torch.randn(10, requires_grad=False)
-        batch_x = torch.randn(8, 10)
-        batch_y = torch.randn(8)
+        # Direct unit test of the update formula with known values
+        base = 1.0
+        lr = 0.2
+        target = 0.5
 
-        # Step 1
-        initial_clip_norm = clip_state.clip_norm
-        _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
-        clipping_rate = clip_state.clipping_rate
+        # Case 1: clipping_rate above target → threshold increases
+        result = _adaptive_clip_norm_update(
+            base_clip_norm=base,
+            noisy_clipping_rate=0.8,
+            target_quantile=target,
+            learning_rate=lr,
+            clip_norm_min=0.01,
+            clip_norm_max=100.0,
+        )
+        expected = base * math.exp(lr * (0.8 - target))
+        assert abs(result - expected) < 1e-6
 
-        # Verify geometric update
-        if clipping_rate > 0.5:
-            expected_clip_norm = initial_clip_norm * math.exp(learning_rate)
-        else:
-            expected_clip_norm = initial_clip_norm * math.exp(-learning_rate)
+        # Case 2: clipping_rate below target → threshold decreases
+        result = _adaptive_clip_norm_update(
+            base_clip_norm=base,
+            noisy_clipping_rate=0.2,
+            target_quantile=target,
+            learning_rate=lr,
+            clip_norm_min=0.01,
+            clip_norm_max=100.0,
+        )
+        expected = base * math.exp(lr * (0.2 - target))
+        assert abs(result - expected) < 1e-6
 
-        assert abs(clip_state.clip_norm - expected_clip_norm) < 1e-6
+        # Case 3: clipping_rate == target → no change
+        result = _adaptive_clip_norm_update(
+            base_clip_norm=base,
+            noisy_clipping_rate=target,
+            target_quantile=target,
+            learning_rate=lr,
+            clip_norm_min=0.01,
+            clip_norm_max=100.0,
+        )
+        assert abs(result - base) < 1e-6
+
+    def test_proportional_update_step_size(self):
+        """Test that step size is proportional to deviation from target."""
+        from opaque.clipping.adaptive import _adaptive_clip_norm_update
+
+        base = 1.0
+        lr = 0.2
+        target = 0.5
+
+        # Small deviation
+        result_small = _adaptive_clip_norm_update(
+            base_clip_norm=base,
+            noisy_clipping_rate=0.55,
+            target_quantile=target,
+            learning_rate=lr,
+            clip_norm_min=0.01,
+            clip_norm_max=100.0,
+        )
+
+        # Large deviation
+        result_large = _adaptive_clip_norm_update(
+            base_clip_norm=base,
+            noisy_clipping_rate=0.95,
+            target_quantile=target,
+            learning_rate=lr,
+            clip_norm_min=0.01,
+            clip_norm_max=100.0,
+        )
+
+        # Large deviation should produce a bigger step
+        assert abs(result_large - base) > abs(result_small - base)
 
     def test_threshold_clamped_to_bounds(self):
         """Test that threshold is clamped to [clip_norm_min, clip_norm_max]."""
@@ -151,6 +200,7 @@ class TestAdaptiveClippedGrad:
             learning_rate=0.2,
             clip_norm_min=clip_norm_min,
             clip_norm_max=clip_norm_max,
+            key=key(0),
             batch_argnums=(1, 2),
         )
 
@@ -175,6 +225,7 @@ class TestAdaptiveClippedGrad:
         grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
+            key=key(0),
             batch_argnums=(1, 2),
         )
 
@@ -199,6 +250,7 @@ class TestAdaptiveClippedGrad:
             loss_fn,
             has_aux=True,
             initial_clip_norm=1.0,
+            key=key(0),
             batch_argnums=(1, 2),
             return_aux=True,  # Need to explicitly request aux outputs
         )
@@ -232,6 +284,7 @@ class TestAdaptiveClippedGrad:
             loss_fn,
             initial_clip_norm=1.0,
             target_quantile=0.1,
+            key=key(0),
             batch_argnums=(1, 2),
         )
 
@@ -240,6 +293,7 @@ class TestAdaptiveClippedGrad:
             loss_fn,
             initial_clip_norm=1.0,
             target_quantile=0.9,
+            key=key(0),
             batch_argnums=(1, 2),
         )
 
@@ -272,6 +326,7 @@ class TestAdaptiveClippedGrad:
             loss_fn,
             initial_clip_norm=0.01,
             learning_rate=0.05,
+            key=key(0),
             batch_argnums=(1, 2),
         )
 
@@ -280,6 +335,7 @@ class TestAdaptiveClippedGrad:
             loss_fn,
             initial_clip_norm=0.01,
             learning_rate=0.5,
+            key=key(0),
             batch_argnums=(1, 2),
         )
 
@@ -308,6 +364,7 @@ class TestAdaptiveClippedGrad:
         grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
+            key=key(0),
             batch_argnums=(1, 2),
             return_aux=True,  # Should be passed to clipped_grad
         )
@@ -335,6 +392,7 @@ class TestAdaptiveClippedGrad:
         grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
+            key=key(0),
             batch_argnums=(1, 2),
         )
 
@@ -368,6 +426,7 @@ class TestAdaptiveClippedGrad:
             initial_clip_norm=1.0,
             target_quantile=0.5,
             learning_rate=0.2,
+            key=key(0),
             batch_argnums=(1, 2),
             microbatch_size=None,  # No microbatching
         )
@@ -377,6 +436,7 @@ class TestAdaptiveClippedGrad:
             initial_clip_norm=1.0,
             target_quantile=0.5,
             learning_rate=0.2,
+            key=key(0),
             batch_argnums=(1, 2),
             microbatch_size=8,  # Process in microbatches of 8
         )
@@ -412,7 +472,7 @@ class TestInputValidation:
             return params.sum()
 
         with pytest.raises(ValueError, match="initial_clip_norm must be positive"):
-            adaptive_clipped_grad(loss_fn, initial_clip_norm=-1.0)
+            adaptive_clipped_grad(loss_fn, initial_clip_norm=-1.0, key=key(0))
 
     def test_invalid_target_quantile(self):
         """Test that target_quantile outside (0, 1) raises error."""
@@ -421,10 +481,10 @@ class TestInputValidation:
             return params.sum()
 
         with pytest.raises(ValueError, match="target_quantile must be in"):
-            adaptive_clipped_grad(loss_fn, target_quantile=0.0)
+            adaptive_clipped_grad(loss_fn, target_quantile=0.0, key=key(0))
 
         with pytest.raises(ValueError, match="target_quantile must be in"):
-            adaptive_clipped_grad(loss_fn, target_quantile=1.0)
+            adaptive_clipped_grad(loss_fn, target_quantile=1.0, key=key(0))
 
     def test_invalid_learning_rate(self):
         """Test that negative learning_rate raises error."""
@@ -433,7 +493,7 @@ class TestInputValidation:
             return params.sum()
 
         with pytest.raises(ValueError, match="learning_rate must be positive"):
-            adaptive_clipped_grad(loss_fn, learning_rate=-0.1)
+            adaptive_clipped_grad(loss_fn, learning_rate=-0.1, key=key(0))
 
     def test_invalid_clip_norm_min(self):
         """Test that negative clip_norm_min raises error."""
@@ -442,7 +502,7 @@ class TestInputValidation:
             return params.sum()
 
         with pytest.raises(ValueError, match="clip_norm_min must be positive"):
-            adaptive_clipped_grad(loss_fn, clip_norm_min=-0.1)
+            adaptive_clipped_grad(loss_fn, clip_norm_min=-0.1, key=key(0))
 
     def test_invalid_clip_norm_max(self):
         """Test that clip_norm_max <= clip_norm_min raises error."""
@@ -451,7 +511,9 @@ class TestInputValidation:
             return params.sum()
 
         with pytest.raises(ValueError, match="clip_norm_max.*must be.*clip_norm_min"):
-            adaptive_clipped_grad(loss_fn, clip_norm_min=10.0, clip_norm_max=5.0)
+            adaptive_clipped_grad(
+                loss_fn, clip_norm_min=10.0, clip_norm_max=5.0, key=key(0)
+            )
 
 
 class TestEdgeCases:
@@ -467,6 +529,7 @@ class TestEdgeCases:
         grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
+            key=key(0),
             batch_argnums=(1, 2),
         )
 
@@ -487,6 +550,7 @@ class TestEdgeCases:
         grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
+            key=key(0),
             batch_argnums=(1, 2),
         )
 
@@ -499,6 +563,37 @@ class TestEdgeCases:
         # Should handle gracefully
         assert torch.allclose(grads, torch.zeros_like(grads))
 
+    def test_batch_size_tracked_in_state(self):
+        """Test that batch_size is set from actual number of examples."""
+
+        def loss_fn(params, x, y):
+            pred = x @ params
+            return ((pred - y) ** 2).mean()
+
+        grad_fn, clip_state = adaptive_clipped_grad(
+            loss_fn,
+            initial_clip_norm=1.0,
+            key=key(0),
+            batch_argnums=(1, 2),
+        )
+
+        # Initial state has batch_size 0
+        assert clip_state.batch_size == 0
+
+        params = torch.randn(10, requires_grad=False)
+
+        # Batch of 8
+        batch_x = torch.randn(8, 10)
+        batch_y = torch.randn(8)
+        _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+        assert clip_state.batch_size == 8
+
+        # Batch of 16
+        batch_x = torch.randn(16, 10)
+        batch_y = torch.randn(16)
+        _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+        assert clip_state.batch_size == 16
+
     def test_large_batch(self):
         """Test with large batch size."""
 
@@ -509,6 +604,7 @@ class TestEdgeCases:
         grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
+            key=key(0),
             batch_argnums=(1, 2),
         )
 

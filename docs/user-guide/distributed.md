@@ -2,6 +2,27 @@
 
 Opaque supports distributed training using PyTorch's **DistributedDataParallel (DDP)**. This guide explains how to train differentially private models across multiple GPUs.
 
+!!! info "Local-first API (new pattern)"
+
+    Opaque components are moving to a **local-only functional core**:
+
+    - Local step: run component functions on local data and get `(output, state)`
+    - Distributed step: explicitly aggregate/sync via component-specific helpers
+
+    Generic collectives remain in `opaque.distributed`.
+    Component-specific synchronization lives in submodules like:
+
+    - `opaque.clipping.distributed`
+    - `opaque.noise.distributed`
+    - `opaque.sampling.distributed`
+
+    For clipping specifically, use:
+
+    - `opaque.distributed.sum_gradients(...)` for gradient aggregation
+    - `opaque.clipping.distributed.sync_clip_state(...)`
+    - `opaque.clipping.distributed.sync_adaptive_clip_state(...)`
+    - `opaque.clipping.distributed.sync_adaptive_clipped_grad_aux(...)`
+
 ## Overview
 
 Distributed training with DP requires careful handling because:

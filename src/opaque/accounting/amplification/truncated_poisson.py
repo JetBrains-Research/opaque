@@ -48,12 +48,8 @@ class TruncatedPoisson(DpProcess):
                     self.dataset_size,
                     config.to_native(),
                 )
-            case AdaClip(
-                inner=Gaussian(noise_multiplier=nm),
-                quantile_noise_std=quantile_noise_std,
-            ):
-                s = _native.combined_sensitivity(nm, quantile_noise_std)
-                z_eff = 1.0 / s
+            case AdaClip():
+                z_eff = self.inner.effective_noise_multiplier
                 return _native.truncated_poisson_gaussian_pld(
                     z_eff,
                     self.sample_rate,
