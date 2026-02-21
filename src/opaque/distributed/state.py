@@ -20,7 +20,6 @@ from . import get_world_size, is_distributed
 __all__ = [
     "assert_scalar_equal",
     "gather_pytree",
-    "gather_pytree_tensors",
     "gather_tensors",
     "reduce_scalar",
     "sync_state",
@@ -89,11 +88,6 @@ def gather_pytree(pytree: Any) -> Any:
         )
 
     return tree_map(gather_leaf, pytree)
-
-
-def gather_pytree_tensors(pytree: Any) -> Any:
-    """Backward-compatible alias for gather_pytree."""
-    return gather_pytree(pytree)
 
 
 def reduce_scalar(

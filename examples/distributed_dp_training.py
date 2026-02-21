@@ -27,7 +27,9 @@ from torch.utils.data import DataLoader, TensorDataset
 import opaque
 import opaque.distributed as dist_utils
 from opaque.clipping import sync_adaptive_clip_state
+from opaque.random import fold_in
 from opaque.random import key as rng_key
+from opaque.sampling.distributed import local_shard_bounds
 
 
 def setup_distributed():
@@ -75,15 +77,16 @@ def main():
     # Create dataset and dataloader
     dataset = create_dataset(n_samples=1000)
 
-    # Poisson sampler with automatic distributed support
-    # When distributed is detected:
-    # - Auto-selects SHARDED mode (each device samples disjoint data)
-    # - Auto-shifts generator seed by rank (if provided): seed 42 → 42, 43, 44, ... per rank
+    # Shard dataset externally for distributed training
+    start, end = local_shard_bounds(len(dataset), rank=rank, world_size=world_size)
+    shard = torch.utils.data.Subset(dataset, range(start, end))
+
+    # Poisson sampler on local shard with per-rank key
     sampler = opaque.PoissonSampler(
-        dataset,
+        shard,
         sample_rate=0.01,
         num_epochs=1,
-        key=rng_key(42),  # Reproducible; auto-shifted by rank in SHARDED mode.
+        key=fold_in(rng_key(42), rank),
     )
 
     # DataLoader with batch_sampler
@@ -105,9 +108,7 @@ def main():
     )
 
     # Create deterministic noise function (functional API)
-    # When distributed is detected, automatically uses SAME seed across all devices
-    # for synchronized noise (prevents model divergence)
-    # No need to manually manage seeds!
+    # Same key on all ranks produces identical noise (prevents model divergence)
     noise_fn, noise_state = opaque.gaussian_noise(stddev=1.1, key=rng_key(42))
 
     # Privacy accounting (same on all ranks)

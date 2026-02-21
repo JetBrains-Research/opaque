@@ -1,8 +1,5 @@
 """Tests for CyclicPoissonSampler with DDP support."""
 
-import os
-from unittest.mock import patch
-
 import numpy as np
 import pytest
 import torch
@@ -345,135 +342,133 @@ class TestCyclicPoissonSamplerEdgeCases:
 
 
 class TestCyclicPoissonSamplerDistributedSimulation:
-    """Test DDP support via mocking."""
+    """Test distributed support via external sharding (inner composition).
 
-    def test_ddp_auto_detection(self):
-        """Auto-detects distributed environment."""
-        # Mock distributed functions
-        with patch("opaque.sampling.cyclic_poisson.is_distributed", return_value=True):
-            with patch("opaque.sampling.cyclic_poisson.get_rank", return_value=0):
-                with patch(
-                    "opaque.sampling.cyclic_poisson.get_world_size", return_value=4
-                ):
-                    sampler = CyclicPoissonSampler(
-                        range(100),
-                        sampling_prob=0.5,
-                        cycle_length=2,
-                        iterations=5,
-                        key=key(0),
-                    )
+    Samplers no longer accept rank/world_size. Instead, the dataset is
+    sharded externally using local_shard_bounds() + a list slice, and
+    per-rank keys are derived via fold_in(key, rank).
+    """
 
-                    assert sampler.is_distributed
-                    assert sampler.world_size == 4
-                    assert sampler.rank == 0
-                    assert sampler.mode == "SHARDED"
+    def test_external_sharding(self):
+        """External sharding produces sampler on a subset."""
+        from opaque.sampling.distributed import local_shard_bounds
 
-    def test_ddp_sharding_rank_0(self):
-        """Rank 0 gets correct shard."""
-        with patch("opaque.sampling.cyclic_poisson.is_distributed", return_value=True):
-            with patch("opaque.sampling.cyclic_poisson.get_rank", return_value=0):
-                with patch(
-                    "opaque.sampling.cyclic_poisson.get_world_size", return_value=4
-                ):
-                    dataset_size = 100
-                    sampler = CyclicPoissonSampler(
-                        range(dataset_size),
-                        sampling_prob=1.0,
-                        cycle_length=1,
-                        iterations=1,
-                        key=key(42),
-                    )
+        dataset = list(range(100))
+        start, end = local_shard_bounds(len(dataset), rank=0, world_size=4)
+        shard = dataset[start:end]
 
-                    # Rank 0: [0, 25)
-                    assert sampler.start_idx == 0
-                    assert sampler.end_idx == 25
+        sampler = CyclicPoissonSampler(
+            shard,
+            sampling_prob=0.5,
+            cycle_length=2,
+            iterations=5,
+            key=key(0),
+        )
 
-                    batches = list(sampler)
-                    assert all(0 <= idx < 25 for batch in batches for idx in batch)
+        assert sampler.num_examples == 25
 
-    def test_ddp_sharding_rank_last(self):
-        """Last rank gets remainder."""
-        with patch("opaque.sampling.cyclic_poisson.is_distributed", return_value=True):
-            with patch("opaque.sampling.cyclic_poisson.get_rank", return_value=3):
-                with patch(
-                    "opaque.sampling.cyclic_poisson.get_world_size", return_value=4
-                ):
-                    dataset_size = 100
-                    sampler = CyclicPoissonSampler(
-                        range(dataset_size),
-                        sampling_prob=1.0,
-                        cycle_length=1,
-                        iterations=1,
-                        key=key(42),
-                    )
+    def test_sharding_rank_0(self):
+        """Rank 0 gets correct shard via external subsetting."""
+        from opaque.sampling.distributed import local_shard_bounds
 
-                    # Rank 3: [75, 100)
-                    assert sampler.start_idx == 75
-                    assert sampler.end_idx == 100
+        dataset = list(range(100))
+        start, end = local_shard_bounds(len(dataset), rank=0, world_size=4)
+        shard = dataset[start:end]
 
-                    batches = list(sampler)
-                    assert all(75 <= idx < 100 for batch in batches for idx in batch)
+        sampler = CyclicPoissonSampler(
+            shard,
+            sampling_prob=1.0,
+            cycle_length=1,
+            iterations=1,
+            key=key(42),
+        )
 
-    def test_ddp_seed_shifting(self):
-        """Seed auto-shifts by rank."""
-        # Rank 0: seed=42
-        with patch("opaque.sampling.cyclic_poisson.is_distributed", return_value=True):
-            with patch("opaque.sampling.cyclic_poisson.get_rank", return_value=0):
-                with patch(
-                    "opaque.sampling.cyclic_poisson.get_world_size", return_value=4
-                ):
-                    sampler0 = CyclicPoissonSampler(
-                        range(100),
-                        sampling_prob=0.5,
-                        cycle_length=1,
-                        iterations=5,
-                        key=key(42),
-                    )
+        # Shard is [0, 25) so sampler has 25 examples
+        assert sampler.num_examples == 25
 
-                    batches0 = list(sampler0)
+        batches = list(sampler)
+        # Indices are local [0, 25)
+        assert all(0 <= idx < 25 for batch in batches for idx in batch)
 
-        # Rank 1: seed should be different via fold_in
-        with patch("opaque.sampling.cyclic_poisson.is_distributed", return_value=True):
-            with patch("opaque.sampling.cyclic_poisson.get_rank", return_value=1):
-                with patch(
-                    "opaque.sampling.cyclic_poisson.get_world_size", return_value=4
-                ):
-                    sampler1 = CyclicPoissonSampler(
-                        range(100),
-                        sampling_prob=0.5,
-                        cycle_length=1,
-                        iterations=5,
-                        key=key(42),
-                    )
+    def test_sharding_rank_last(self):
+        """Last rank gets remainder via external subsetting."""
+        from opaque.sampling.distributed import local_shard_bounds
 
-                    batches1 = list(sampler1)
+        dataset = list(range(100))
+        start, end = local_shard_bounds(len(dataset), rank=3, world_size=4)
+        shard = dataset[start:end]
 
-        # Different ranks should get different batches (with high probability)
+        sampler = CyclicPoissonSampler(
+            shard,
+            sampling_prob=1.0,
+            cycle_length=1,
+            iterations=1,
+            key=key(42),
+        )
+
+        # Shard is [75, 100) → 25 local examples
+        assert sampler.num_examples == 25
+
+        batches = list(sampler)
+        # Indices are local [0, 25)
+        assert all(0 <= idx < 25 for batch in batches for idx in batch)
+
+    def test_different_keys_per_rank(self):
+        """Different keys per rank produce different sampling."""
+        from opaque.random import fold_in
+        from opaque.sampling.distributed import local_shard_bounds
+
+        dataset = list(range(100))
+        world_size = 4
+
+        # Rank 0
+        s0, e0 = local_shard_bounds(len(dataset), rank=0, world_size=world_size)
+        sampler0 = CyclicPoissonSampler(
+            dataset[s0:e0],
+            sampling_prob=0.5,
+            cycle_length=1,
+            iterations=5,
+            key=fold_in(key(42), 0),
+        )
+        batches0 = list(sampler0)
+
+        # Rank 1
+        s1, e1 = local_shard_bounds(len(dataset), rank=1, world_size=world_size)
+        sampler1 = CyclicPoissonSampler(
+            dataset[s1:e1],
+            sampling_prob=0.5,
+            cycle_length=1,
+            iterations=5,
+            key=fold_in(key(42), 1),
+        )
+        batches1 = list(sampler1)
+
+        # Different ranks should get different batches
         assert batches0 != batches1
 
-    def test_ddp_cyclic_independence(self):
+    def test_cyclic_independence(self):
         """Each rank cycles through its shard independently."""
-        # Rank 0
-        with patch("opaque.sampling.cyclic_poisson.is_distributed", return_value=True):
-            with patch("opaque.sampling.cyclic_poisson.get_rank", return_value=0):
-                with patch(
-                    "opaque.sampling.cyclic_poisson.get_world_size", return_value=2
-                ):
-                    dataset_size = 100
-                    sampler0 = CyclicPoissonSampler(
-                        range(dataset_size),
-                        sampling_prob=1.0,
-                        cycle_length=2,
-                        iterations=4,
-                        key=key(42),
-                    )
+        from opaque.random import fold_in
+        from opaque.sampling.distributed import local_shard_bounds
 
-                    batches0 = list(sampler0)
-                    # Rank 0 cycles: [0-50) → groups 0,1,0,1
+        dataset = list(range(100))
+        start, end = local_shard_bounds(len(dataset), rank=0, world_size=2)
+        shard = dataset[start:end]
 
-                    # Check all indices are in shard 0: [0, 50)
-                    for batch in batches0:
-                        assert all(0 <= idx < 50 for idx in batch)  # Rank 0's shard
+        sampler0 = CyclicPoissonSampler(
+            shard,
+            sampling_prob=1.0,
+            cycle_length=2,
+            iterations=4,
+            key=fold_in(key(42), 0),
+        )
+
+        batches0 = list(sampler0)
+        # Shard has 50 local examples → groups 0,1,0,1
+
+        # Check all indices are local: [0, 50)
+        for batch in batches0:
+            assert all(0 <= idx < 50 for idx in batch)
 
 
 class TestCyclicPoissonSamplerDataLoader:

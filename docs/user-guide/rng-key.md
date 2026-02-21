@@ -21,10 +21,9 @@ All primitives live in `opaque.random`:
 |----------|---------|
 | `key(seed)` | Create a key from an integer seed |
 | `split(k, num=2)` | Derive `num` independent child keys |
-| `fold_in(k, data)` | Mix a key with an integer or string |
+| `fold_in(k, *data)` | Mix a key with one or more int/str values |
 | `generator_from_key(k)` | Convert to `torch.Generator` |
 | `random_key()` | Non-deterministic key (uses system entropy) |
-| `training_key(...)` | Ergonomic key derivation for training loops |
 
 ### `key(seed)`
 
@@ -47,17 +46,21 @@ k1, k2 = split(k)
 noise_key, sample_key, clip_key = split(k, num=3)
 ```
 
-### `fold_in(k, data)`
+### `fold_in(k, *data)`
 
-Mix additional data into a key:
+Mix additional data into a key.  Variadic — accepts multiple values:
 
 ```python
 from opaque.random import key, fold_in
 
 k = key(42)
-step_key = fold_in(k, step)        # int
-rank_key = fold_in(k, f"rank:{r}")  # str
+step_key = fold_in(k, step)              # single int
+rank_key = fold_in(k, f"rank:{r}")        # single str
+combined = fold_in(k, step, rank)         # multiple values
+full     = fold_in(k, step, rank, worker) # step → rank → worker
 ```
+
+`fold_in(k, a, b)` is equivalent to `fold_in(fold_in(k, a), b)`.
 
 ## Using Keys with Opaque
 
@@ -120,42 +123,46 @@ for batch_x, batch_y in dataloader:
     params = params - lr * noisy_grads
 ```
 
-### With `training_key()` (Per-Step Keys)
+### With `fold_in()` (Per-Step Keys)
 
 For explicit control over per-step randomness:
 
 ```python
-from opaque.random import training_key
+from opaque.random import key, fold_in
 
+base = key(42)
 for step in range(num_steps):
-    k = training_key(base_seed=42, step=step)
-    noise_fn, noise_state = gaussian_noise(stddev=1.1, key=k)
+    step_key = fold_in(base, step)
+    noise_fn, noise_state = gaussian_noise(stddev=1.1, key=step_key)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
 
 ### Distributed Training
 
 In DDP, noise must be **synchronized** (same key on all devices).
-`gaussian_noise` handles this automatically with `synchronized="auto"`:
+Pass the same `key(seed)` on every rank:
 
 ```python
 # Same key on all ranks → same noise → models stay in sync
 noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(42))
 ```
 
-For explicit rank control:
+For per-rank key control, use `fold_in()`:
 
 ```python
-from opaque.random import training_key
+from opaque.random import key, fold_in
 import torch.distributed as dist
 
 rank = dist.get_rank()
 
-# Synchronized noise (same key regardless of rank)
-k = training_key(base_seed=42, step=step, rank=rank, synchronized=True)
+# Synchronized noise — same key, no rank folded in
+step_key = fold_in(key(42), step)
 
-# Independent noise per rank
-k = training_key(base_seed=42, step=step, rank=rank, synchronized=False)
+# Independent noise per rank — fold in rank
+step_key = fold_in(key(42), step, rank)
+
+# Equivalent explicit chaining
+step_key = fold_in(fold_in(key(42), step), rank)
 ```
 
 ## Reproducibility

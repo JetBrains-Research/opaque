@@ -4,13 +4,9 @@ This module provides PyTorch-compatible samplers for differential privacy,
 including Poisson sampling for privacy amplification and cyclic sampling
 for matrix factorization mechanisms (BandMF).
 
-Supports distributed training with auto detection or explicit overrides:
-- distributed="auto": SHARDED when distributed is initialized, otherwise INDEPENDENT
-- distributed=True: force SHARDED
-- distributed=False: force INDEPENDENT
-
-Note: PoissonSampler, TruncatedPoissonSampler, and CyclicPoissonSampler support
-distributed training with automatic environment detection.
+For distributed training, shard the dataset externally using
+``sampling.distributed.local_shard_bounds()`` and pass a per-rank key
+via ``fold_in(key, rank)``.
 """
 
 from opaque.sampling import distributed

@@ -1,32 +1,32 @@
-# RNG Helper API: Before and After
+# RNG Helper API: Design Rationale
 
 ## Summary
 
-We've introduced **convenience helpers** that make the required-key API ergonomic while preserving our core design principles:
+Opaque uses **explicit random keys** with a minimal API surface:
 
 1. **All randomness explicit** - No hidden global state
-2. **Deterministic by default** - Keys make reproducibility trivial  
-3. **Composable primitives** - Build complex patterns from simple functions
+2. **Deterministic by default** - Keys make reproducibility trivial
+3. **Composable primitives** - Build complex patterns from `key()`, `fold_in()`, `split()`
 
-## New API
+## API
 
 ```python
-from opaque.random import random_key, training_key
+from opaque.random import key, fold_in, split, random_key
 
-# For prototyping (non-deterministic)
-key = random_key()
+# Deterministic key
+k = key(42)
 
-# For training loops (deterministic, follows step → rank → worker derivation)
-key = training_key(base_seed=42, step=step)
+# Per-step derivation
+step_key = fold_in(k, step)
 
-# For distributed training with synchronized noise
-key = training_key(base_seed=42, step=step, rank=local_rank, synchronized=True)
+# Multi-value derivation (variadic fold_in)
+step_rank_key = fold_in(k, step, rank)
 
-# For distributed training with per-rank noise
-key = training_key(base_seed=42, step=step, rank=local_rank, synchronized=False)
+# Independent child keys
+noise_key, sample_key = split(k, num=2)
 
-# Auto mode: synchronized if no rank, unsynchronized otherwise
-key = training_key(base_seed=42, step=step, rank=local_rank, synchronized="auto")
+# Non-deterministic (prototyping only)
+k = random_key()
 ```
 
 ## Before (Hypothetical Optional Key)
@@ -38,22 +38,23 @@ noise_fn2, state2 = gaussian_noise(stddev=1.0)  # Same as above? Different?
 
 # Problems:
 # - Hidden non-determinism
-# - Accidental non-reproducible experiments  
+# - Accidental non-reproducible experiments
 # - Unclear distributed semantics
 # - Global state creeps back in
 ```
 
-## After (With Helpers)
+## After (With Primitives)
 
 ```python
 # Prototyping: explicitly non-deterministic
-key = random_key()
-noise_fn, state = gaussian_noise(stddev=1.0, key=key)
+k = random_key()
+noise_fn, state = gaussian_noise(stddev=1.0, key=k)
 
-# Training: explicitly deterministic
+# Training: explicitly deterministic with fold_in
+base = key(42)
 for step in range(num_steps):
-    key = training_key(base_seed=42, step=step)
-    noise_fn, state = gaussian_noise(stddev=1.0, key=key)
+    step_key = fold_in(base, step)
+    noise_fn, state = gaussian_noise(stddev=1.0, key=step_key)
     # ... train ...
 
 # Benefits:
@@ -68,24 +69,25 @@ for step in range(num_steps):
 See `examples/dp_sgd_simple.py` for a complete training loop:
 
 ```python
-from opaque.random import training_key
+from opaque.random import key, fold_in
 
+base = key(42)
 step = 0
 for epoch in range(epochs):
     for batch_x, batch_y in dataloader:
         # Create deterministic key for this step
-        key = training_key(base_seed=42, step=step)
-        
+        step_key = fold_in(base, step)
+
         # Configure noise with explicit key
         noise_fn, noise_state = gaussian_noise(
             stddev=noise_multiplier * clip_norm,
-            key=key,
+            key=step_key,
         )
-        
+
         # Compute clipped + noisy gradients
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
         noisy_grads, noise_state = noise_fn(grads, noise_state)
-        
+
         # Update
         params = params - lr * noisy_grads
         step += 1
@@ -96,9 +98,9 @@ for epoch in range(epochs):
 ### Why Not Allow None?
 
 1. **What would None mean?**
-   - `key(0)` → All runs identical (bad default)
-   - Random seed → Non-reproducible (defeats JAX philosophy)
-   - Global counter → Mutable state (defeats functional API)
+   - `key(0)` -> All runs identical (bad default)
+   - Random seed -> Non-reproducible (defeats JAX philosophy)
+   - Global counter -> Mutable state (defeats functional API)
 
 2. **Security/Auditing:**
    - DP guarantees depend on *all* randomness being controlled
@@ -110,63 +112,46 @@ for epoch in range(epochs):
    - This prevents subtle non-determinism bugs
    - Forces reproducibility by construction
 
-### Why Helpers Are Better
+### Why Primitives Are Better Than Helpers
 
-- **Intentional friction at the right level**: Core API requires keys, helpers make common patterns easy
-- **Visible decisions**: `random_key()` vs `training_key()` documents intent
+- **Fewer concepts**: `fold_in(key(42), step, rank)` vs `training_key(base_seed=42, step=step, rank=rank)`
+- **Composable**: Variadic `fold_in` handles any derivation chain
+- **Visible decisions**: `random_key()` vs `key(42)` documents intent
 - **No hidden state**: Everything remains functional and composable
-- **Escape hatch preserved**: Power users can still use `key()`, `split()`, `fold_in()` directly
 
 ## Distributed Training Patterns
 
 ### Centralized DP-SGD (synchronized noise)
 
 ```python
-# Same noise on all ranks for model convergence
-key = training_key(base_seed=42, step=step, rank=rank, synchronized=True)
-noise_fn, state = gaussian_noise(stddev=1.0, key=key)
+# Same noise on all ranks — same key, no rank folded in
+base = key(42)
+noise_fn, state = gaussian_noise(stddev=1.0, key=fold_in(base, step))
 ```
 
-### Per-Rank DP (unsynchronized noise)
+### Per-Rank DP (independent noise)
 
 ```python
-# Different noise per rank
-key = training_key(base_seed=42, step=step, rank=rank, synchronized=False)
-noise_fn, state = gaussian_noise(stddev=1.0, key=key)
-```
-
-### Auto Mode (default behavior)
-
-```python
-# Automatically synchronized if no rank, unsynchronized if rank provided
-key = training_key(base_seed=42, step=step, rank=rank, synchronized="auto")
+# Different noise per rank — fold in rank
+base = key(42)
+noise_fn, state = gaussian_noise(stddev=1.0, key=fold_in(base, step, rank))
 ```
 
 ## Complete Derivation Chain
 
 ```python
-# Full chain: step → rank → worker
-key = training_key(
-    base_seed=42,
-    step=current_step,
-    rank=local_rank,           # For DDP/FSDP
-    worker_id=worker_info.id,  # For DataLoader workers
-    synchronized=False,
-)
+# Full chain: step -> rank -> worker
+step_key = fold_in(key(42), current_step, local_rank, worker_info.id)
 ```
 
-This follows our canonical derivation order and ensures:
+This ensures:
 - Different noise per step (privacy amplification)
-- Different noise per rank (when unsynchronized)
+- Different noise per rank (when rank is provided)
 - Different noise per DataLoader worker (data loading parallelism)
 
 ## Tests
 
-See `tests/utils/test_rng_helpers.py` for 18 comprehensive tests covering:
+See `tests/utils/test_rng_helpers.py` for comprehensive tests covering:
 - Non-deterministic key generation
-- Deterministic training keys with step derivation
-- Synchronized vs unsynchronized distributed modes
-- Auto mode behavior
-- Worker ID folding
-- Full derivation chain validation
+- Variadic fold_in derivation
 - Integration with noise functions

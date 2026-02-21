@@ -100,6 +100,6 @@ def test_accountant_state_dict_roundtrip():
     step = acc.poisson(acc.adaclip(acc.gaussian(0.8), batch_size=1000), 0.01)
     acct = acct | step
     state = acct.state_dict()
-    restored = Accountant.load_state_dict(state)
+    restored = Accountant.from_state_dict(state)
     eps = restored.epsilon_at(1e-5)
     assert math.isfinite(eps) and eps > 0

@@ -30,7 +30,7 @@ from opaque.accounting.base import DpProcess
 
 # Re-export budgets so ``from opaque.accounting.calibration import Budget``
 # and ``from opaque.accounting import calibration as cal; cal.epsilon_budget(...)``
-# keep working.
+# work as convenience imports.
 from opaque.accounting.budgets import (  # noqa: F401
     AdvantageBudget,
     BetaBudget,
@@ -294,7 +294,7 @@ def calibrate(
 # =============================================================================
 
 __all__ = [
-    # Re-exported from budgets (backward compatibility)
+    # Re-exported from budgets (convenience)
     "Budget",
     "EpsilonBudget",
     "DeltaBudget",

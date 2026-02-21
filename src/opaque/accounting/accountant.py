@@ -215,11 +215,3 @@ class Accountant:
         acct = cls()
         acct._process = DpProcess.load_state_dict(state["process"])
         return acct
-
-    @classmethod
-    def load_state_dict(cls, state: dict[str, Any]) -> Accountant:
-        """Torch-style alias for :meth:`from_state_dict`.
-
-        Returns a new Accountant instance from a serialized state dict.
-        """
-        return cls.from_state_dict(state)

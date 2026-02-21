@@ -21,9 +21,7 @@ Device 2:  clip(local_batch) ──┘
 !!! danger "Noise must be added on **every** device with the **same** key"
 
     If devices generate different noise the models diverge.  Never add noise
-    on rank 0 and broadcast.  Pass the same `key=key(42)` everywhere, or use
-    `synchronized="auto"` (the default), which picks a shared seed
-    automatically.
+    on rank 0 and broadcast.  Pass the same `key=key(42)` on every rank.
 
 ## Minimal Example
 
@@ -34,7 +32,8 @@ import torch
 import torch.distributed as dist
 from opaque import clipped_grad, gaussian_noise, make_functional, PoissonSampler
 import opaque.distributed as dist_utils
-from opaque.random import key
+from opaque.random import key, fold_in
+from opaque.sampling.distributed import local_shard_bounds
 
 # Distributed setup
 dist.init_process_group(backend="nccl")
@@ -56,8 +55,12 @@ noise_fn, noise_state = gaussian_noise(
     stddev=1.1 * clip_state.sensitivity(), key=key(42),
 )
 
-# Poisson sampler (auto-sharded in DDP)
-sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(0))
+# Poisson sampler (shard dataset externally)
+start, end = local_shard_bounds(len(dataset), rank=rank, world_size=dist.get_world_size())
+shard = torch.utils.data.Subset(dataset, range(start, end))
+sampler = PoissonSampler(
+    shard, sample_rate=0.01, key=fold_in(key(0), rank),
+)
 loader = torch.utils.data.DataLoader(dataset, batch_sampler=sampler)
 
 # Training loop
@@ -87,19 +90,24 @@ torchrun --nproc_per_node=4 train.py
 
 ## Noise Synchronization
 
-The `synchronized` parameter on all noise constructors (`gaussian_noise`,
-`band_mf_noise`, etc.) controls whether devices generate identical or
-independent noise:
+Noise constructors take a `key` parameter — nothing else controls
+synchronization.  Pass the **same key** on every rank to get identical
+noise (centralized DP-SGD).  Use `fold_in(key, rank)` to get
+independent per-rank noise streams when needed:
 
-| Value | Behaviour |
-|-------|-----------|
-| `"auto"` (default) | Synchronized if `torch.distributed` is initialized, independent otherwise |
-| `True` | Force synchronized — all ranks use the same key |
-| `False` | Independent — key is folded with rank via `fold_in(key, rank)` |
+```python
+from opaque.random import key, fold_in
 
-In the common centralized DP-SGD pattern you want synchronized noise so
-that all devices stay in sync after each update.  The default `"auto"`
-handles this automatically.
+# Synchronized noise — same key on all ranks
+noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(42))
+
+# Independent noise — different key per rank
+noise_fn, noise_state = gaussian_noise(stddev=1.1, key=fold_in(key(42), rank))
+```
+
+In the common centralized DP-SGD pattern, pass the same `key(seed)` on
+every rank so that all devices produce identical noise and models stay
+in sync.
 
 ## Adaptive Clipping
 
@@ -139,19 +147,29 @@ across ranks and raises `RuntimeError` if it doesn't.
 
 ## Poisson Sampling
 
-`PoissonSampler` auto-detects DDP and switches to **SHARDED** mode:
-each rank samples from a disjoint partition of the dataset.
-The key is automatically diversified per rank via `fold_in(key, rank)`.
+Shard the dataset **externally** using `local_shard_bounds()` and
+`torch.utils.data.Subset`, then create a `PoissonSampler` on the shard.
+Derive a per-rank key via `fold_in(key, rank)`.
 
 ```python
+import torch.distributed as dist
+from torch.utils.data import Subset
 from opaque import PoissonSampler
-from opaque.random import key
+from opaque.random import key, fold_in
+from opaque.sampling.distributed import local_shard_bounds
 
-sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))
+rank = dist.get_rank()
+world_size = dist.get_world_size()
+
+start, end = local_shard_bounds(len(dataset), rank=rank, world_size=world_size)
+shard = Subset(dataset, range(start, end))
+sampler = PoissonSampler(
+    shard,
+    sample_rate=0.01,
+    key=fold_in(key(42), rank),
+)
 loader = DataLoader(dataset, batch_sampler=sampler)
 ```
-
-No manual rank handling is needed.
 
 ## Privacy Accounting
 
@@ -173,7 +191,7 @@ epsilon = training.epsilon_at(delta=1e-5)
 
 For correlated noise mechanisms (`band_mf_noise`, `blt_mf_noise`), each
 device must generate the *same* correlated noise stream.  Pass the same
-`key` and use `synchronized="auto"` (the default).  See
+`key=key(seed)` on every rank.  See
 [Matrix Factorization](matrix-factorization.md) for details.
 
 ## API Reference
@@ -212,8 +230,8 @@ Clipping-specific sync helpers that understand `FixedClipState` and
 
 ### `opaque.noise.distributed`
 
-Noise-specific validation helpers (called automatically by noise
-functions when `synchronized=True`).
+Noise-specific validation helpers.  Call manually in distributed
+training to assert noise state is consistent across ranks.
 
 | Function | Purpose |
 |----------|---------|

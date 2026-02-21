@@ -1,384 +1,218 @@
-"""Tests for distributed Poisson sampling modes."""
+"""Tests for distributed Poisson sampling with external sharding (inner composition).
 
-import os
-from unittest.mock import patch
+Samplers no longer accept rank/world_size. Instead, the dataset is sharded
+externally using local_shard_bounds() + Subset, and per-rank keys are
+derived via fold_in(key, rank).
+"""
 
 import numpy as np
 import pytest
 import torch
-from torch.utils.data import TensorDataset
+from torch.utils.data import Subset, TensorDataset
 
-from opaque.random import key
+from opaque.random import fold_in, key
 from opaque.sampling import PoissonSampler, TruncatedPoissonSampler
+from opaque.sampling.distributed import local_shard_bounds
 
 
-class TestSamplingModeValidation:
-    """Tests for automatic distributed mode selection."""
-
-    def test_single_device_defaults_to_independent_mode(self):
-        """Single-device setup should use independent sampling."""
-        dataset = TensorDataset(torch.randn(100, 10))
-        sampler = PoissonSampler(dataset, sample_rate=0.1, key=key(0))
-        assert sampler._use_sharded is False
-
-    def test_distributed_initialization_enables_sharded_mode(self, monkeypatch):
-        """Initialized distributed setup should use sharded sampling."""
-        dataset = TensorDataset(torch.randn(100, 10))
-
-        with patch("opaque.sampling.poisson.is_distributed", return_value=True):
-            with patch("opaque.sampling.poisson.get_rank", return_value=0):
-                with patch("opaque.sampling.poisson.get_world_size", return_value=4):
-                    with pytest.warns(
-                        UserWarning, match="Automatically using SHARDED mode"
-                    ):
-                        sampler = PoissonSampler(dataset, sample_rate=0.1, key=key(0))
-                        assert sampler._use_sharded is True
-
-    def test_distributed_mode_warns_about_auto_sharded(self, monkeypatch):
-        """Distributed setup should emit auto-sharded warning."""
-        dataset = TensorDataset(torch.randn(100, 10))
-
-        with patch("opaque.sampling.poisson.is_distributed", return_value=True):
-            with patch("opaque.sampling.poisson.get_rank", return_value=0):
-                with patch("opaque.sampling.poisson.get_world_size", return_value=4):
-                    with pytest.warns(
-                        UserWarning, match="Automatically using SHARDED mode"
-                    ):
-                        PoissonSampler(dataset, sample_rate=0.1, key=key(0))
+def _make_shard(dataset, rank, world_size):
+    """Create a Subset shard for the given rank."""
+    start, end = local_shard_bounds(len(dataset), rank=rank, world_size=world_size)
+    return Subset(dataset, range(start, end))
 
 
-class TestShardedMode:
-    """Tests for sharded sampling (partition-aware)."""
+class TestLocalShardBounds:
+    """Tests for the local_shard_bounds utility."""
 
-    def test_sharded_mode_disjoint_indices(self, monkeypatch):
-        """Test that workers sample from disjoint shards."""
+    def test_single_device(self):
+        """world_size=1 returns full range."""
+        assert local_shard_bounds(100) == (0, 100)
+
+    def test_even_split(self):
+        """Even dataset divides equally."""
+        assert local_shard_bounds(100, rank=0, world_size=4) == (0, 25)
+        assert local_shard_bounds(100, rank=1, world_size=4) == (25, 50)
+        assert local_shard_bounds(100, rank=2, world_size=4) == (50, 75)
+        assert local_shard_bounds(100, rank=3, world_size=4) == (75, 100)
+
+    def test_uneven_split_last_rank_gets_remainder(self):
+        """Last rank receives remainder examples."""
+        assert local_shard_bounds(103, rank=0, world_size=4) == (0, 25)
+        assert local_shard_bounds(103, rank=1, world_size=4) == (25, 50)
+        assert local_shard_bounds(103, rank=2, world_size=4) == (50, 75)
+        assert local_shard_bounds(103, rank=3, world_size=4) == (75, 103)
+
+    def test_invalid_rank_raises(self):
+        with pytest.raises(ValueError, match="rank must be in"):
+            local_shard_bounds(100, rank=4, world_size=4)
+
+    def test_invalid_world_size_raises(self):
+        with pytest.raises(ValueError, match="world_size must be >= 1"):
+            local_shard_bounds(100, rank=0, world_size=0)
+
+    def test_negative_dataset_size_raises(self):
+        with pytest.raises(ValueError, match="dataset_size must be >= 0"):
+            local_shard_bounds(-1, rank=0, world_size=1)
+
+
+class TestShardedSampling:
+    """Tests for sharded sampling via external Subset + fold_in."""
+
+    def test_shards_correct_sizes(self):
+        """Each shard has the expected number of examples."""
         dataset = TensorDataset(torch.randn(1000, 10))
-        sample_rate = 0.5  # High rate to ensure overlap would be detected
-        num_epochs = 1
-
-        # Collect indices from each worker
-        all_worker_indices = []
-        for rank in range(4):
-            # Mock distributed environment for this rank
-            with patch("opaque.sampling.poisson.is_distributed", return_value=True):
-                with patch("opaque.sampling.poisson.get_rank", return_value=rank):
-                    with patch(
-                        "opaque.sampling.poisson.get_world_size", return_value=4
-                    ):
-                        sampler = PoissonSampler(
-                            dataset,
-                            sample_rate=sample_rate,
-                            num_epochs=num_epochs,
-                            key=key(42 + rank),  # Different seeds
-                        )
-                        batches = list(sampler)
-                        all_worker_indices.append(batches[0])
-
-        # Check that indices from different workers are disjoint
-        for i in range(4):
-            for j in range(i + 1, 4):
-                indices_i = set(all_worker_indices[i])
-                indices_j = set(all_worker_indices[j])
-                overlap = indices_i & indices_j
-                assert len(overlap) == 0, (
-                    f"Workers {i} and {j} have overlapping indices: {overlap}"
-                )
-
-    def test_sharded_mode_correct_shard_boundaries(self, monkeypatch):
-        """Test that each worker samples from correct shard."""
-        dataset = TensorDataset(torch.randn(1000, 10))
-        sample_rate = 1.0  # Include all to verify boundaries
         world_size = 4
 
         for rank in range(world_size):
-            # Mock distributed environment for this rank
-            with patch("opaque.sampling.poisson.is_distributed", return_value=True):
-                with patch("opaque.sampling.poisson.get_rank", return_value=rank):
-                    with patch(
-                        "opaque.sampling.poisson.get_world_size",
-                        return_value=world_size,
-                    ):
-                        sampler = PoissonSampler(
-                            dataset,
-                            sample_rate=sample_rate,
-                            num_epochs=1,
-                            key=key(0),
-                        )
-                        batch = list(sampler)[0]
+            shard = _make_shard(dataset, rank, world_size)
+            assert len(shard) == 250
 
-                        # Compute expected shard boundaries
-                        shard_size = 1000 // world_size
-                        start_idx = rank * shard_size
-                        end_idx = (
-                            start_idx + shard_size if rank < world_size - 1 else 1000
-                        )
-
-                        # All indices should be in this worker's shard
-                        assert all(start_idx <= idx < end_idx for idx in batch), (
-                            f"Worker {rank} has indices outside its shard [{start_idx}, {end_idx})"
-                        )
-
-    def test_sharded_mode_handles_uneven_splits(self, monkeypatch):
-        """Test that last worker gets remainder in uneven splits."""
-        dataset = TensorDataset(torch.randn(103, 10))  # Not divisible by 4
-        sample_rate = 1.0
+    def test_uneven_split_last_rank_larger(self):
+        """Last rank gets remainder."""
+        dataset = TensorDataset(torch.randn(103, 10))
         world_size = 4
 
-        # Last worker should get largest shard
-        with patch("opaque.sampling.poisson.is_distributed", return_value=True):
-            with patch("opaque.sampling.poisson.get_rank", return_value=3):
-                with patch(
-                    "opaque.sampling.poisson.get_world_size", return_value=world_size
-                ):
-                    sampler_last = PoissonSampler(
-                        dataset,
-                        sample_rate=sample_rate,
-                        num_epochs=1,
-                        key=key(0),
-                    )
-                    batch_last = list(sampler_last)[0]
+        shard_last = _make_shard(dataset, 3, world_size)
+        expected = 103 - 3 * (103 // 4)
+        assert len(shard_last) == expected
 
-                    # Worker 3 gets indices [75, 103) = 28 examples
-                    # Other workers get 25 examples each
-                    expected_size_last = 103 - 3 * (103 // 4)
-                    assert len(batch_last) == expected_size_last
+    def test_shards_produce_valid_local_indices(self):
+        """Each shard samples indices in [0, shard_size)."""
+        dataset = TensorDataset(torch.randn(1000, 10))
+        world_size = 4
 
-    def test_sharded_mode_statistical_properties_per_shard(self, monkeypatch):
-        """Test that each shard maintains Poisson properties."""
+        for rank in range(world_size):
+            shard = _make_shard(dataset, rank, world_size)
+            sampler = PoissonSampler(
+                shard, sample_rate=0.5, num_epochs=1, key=fold_in(key(42), rank)
+            )
+            batch = list(sampler)[0]
+            shard_size = len(shard)
+            assert all(0 <= idx < shard_size for idx in batch)
+
+    def test_statistical_properties_per_shard(self):
+        """Each shard maintains Poisson properties."""
         dataset = TensorDataset(torch.randn(1000, 10))
         sample_rate = 0.1
         world_size = 4
 
         for rank in range(world_size):
-            # Mock distributed environment for this rank
-            with patch("opaque.sampling.poisson.is_distributed", return_value=True):
-                with patch("opaque.sampling.poisson.get_rank", return_value=rank):
-                    with patch(
-                        "opaque.sampling.poisson.get_world_size",
-                        return_value=world_size,
-                    ):
-                        sampler = PoissonSampler(
-                            dataset,
-                            sample_rate=sample_rate,
-                            num_epochs=100,
-                            key=key(100 + rank),
-                        )
+            shard = _make_shard(dataset, rank, world_size)
+            sampler = PoissonSampler(
+                shard,
+                sample_rate=sample_rate,
+                num_epochs=100,
+                key=fold_in(key(100), rank),
+            )
+            batch_sizes = [len(b) for b in sampler]
+            expected_mean = len(shard) * sample_rate
+            actual_mean = np.mean(batch_sizes)
+            assert abs(actual_mean - expected_mean) < expected_mean * 0.5 + 3
 
-                        batch_sizes = [len(batch) for batch in sampler]
-
-                        # Expected mean for this shard
-                        shard_size = 1000 // world_size
-                        if rank == world_size - 1:
-                            shard_size = 1000 - rank * shard_size
-                        expected_mean = shard_size * sample_rate
-
-                        actual_mean = np.mean(batch_sizes)
-                        # Tolerance: 50% of expected mean + 3 for small shards
-                        # Small shards have high variance, so we need loose tolerance
-                        tolerance = expected_mean * 0.5 + 3
-                        assert abs(actual_mean - expected_mean) < tolerance
-
-    def test_sharded_mode_different_workers_independent(self, monkeypatch):
-        """Test that different workers sample independently."""
+    def test_different_ranks_independent(self):
+        """Different ranks produce independent samples."""
         dataset = TensorDataset(torch.randn(1000, 10))
-        sample_rate = 0.5
+        world_size = 4
 
-        # Get batch sizes from two workers
-        with patch("opaque.sampling.poisson.is_distributed", return_value=True):
-            with patch("opaque.sampling.poisson.get_rank", return_value=0):
-                with patch("opaque.sampling.poisson.get_world_size", return_value=4):
-                    sampler0 = PoissonSampler(
-                        dataset,
-                        sample_rate=sample_rate,
-                        num_epochs=20,
-                        key=key(42),
-                    )
-                    sizes0 = [len(batch) for batch in sampler0]
+        shard0 = _make_shard(dataset, 0, world_size)
+        shard1 = _make_shard(dataset, 1, world_size)
 
-            with patch("opaque.sampling.poisson.get_rank", return_value=1):
-                with patch("opaque.sampling.poisson.get_world_size", return_value=4):
-                    sampler1 = PoissonSampler(
-                        dataset,
-                        sample_rate=sample_rate,
-                        num_epochs=20,
-                        key=key(43),
-                    )
-                    sizes1 = [len(batch) for batch in sampler1]
-
-        # Batch sizes should be different (independent sampling)
-        assert sizes0 != sizes1, "Workers should sample independently"
+        sizes0 = [
+            len(b)
+            for b in PoissonSampler(
+                shard0, sample_rate=0.5, num_epochs=20, key=fold_in(key(42), 0)
+            )
+        ]
+        sizes1 = [
+            len(b)
+            for b in PoissonSampler(
+                shard1, sample_rate=0.5, num_epochs=20, key=fold_in(key(42), 1)
+            )
+        ]
+        assert sizes0 != sizes1, "Different ranks should sample independently"
 
 
-class TestIndependentMode:
-    """Tests for independent sampling (backward compatibility)."""
+class TestSingleDeviceMode:
+    """Tests for single-device (default) sampling — no sharding needed."""
 
-    def test_independent_mode_is_default(self):
-        """Test that independent sampling is the default when not distributed."""
+    def test_single_device_full_dataset(self):
+        """Default: sampler operates on full dataset."""
         dataset = TensorDataset(torch.randn(100, 10))
         sampler = PoissonSampler(dataset, sample_rate=0.1, key=key(0))
-        assert sampler._use_sharded is False
+        batches = list(sampler)
+        assert len(batches) == 1
 
-    def test_independent_mode_different_batches_across_workers(self):
-        """Different keys should produce different batches in single-device mode."""
+    def test_different_keys_produce_different_batches(self):
         dataset = TensorDataset(torch.randn(1000, 10))
-        sample_rate = 0.1
+        s0 = PoissonSampler(dataset, sample_rate=0.1, num_epochs=10, key=key(42))
+        s1 = PoissonSampler(dataset, sample_rate=0.1, num_epochs=10, key=key(43))
+        assert list(s0) != list(s1)
 
-        # Create samplers for two workers with different RNG seeds
-        sampler0 = PoissonSampler(
-            dataset,
-            sample_rate=sample_rate,
-            num_epochs=10,
-            key=key(42),
-        )
-        sampler1 = PoissonSampler(
-            dataset,
-            sample_rate=sample_rate,
-            num_epochs=10,
-            key=key(43),
-        )
-
-        batches0 = list(sampler0)
-        batches1 = list(sampler1)
-
-        # Batches should be different
-        assert batches0 != batches1, "Independent workers should differ"
-
-    def test_independent_mode_original_behavior(self):
-        """Single-device behavior remains stable across identical construction."""
+    def test_same_key_reproduces_batches(self):
         dataset = TensorDataset(torch.randn(500, 10))
-        sample_rate = 0.2
-        seed = 12345
-
-        # Old-style sampler (implicit INDEPENDENT)
-        sampler_old = PoissonSampler(
-            dataset,
-            sample_rate=sample_rate,
-            num_epochs=5,
-            key=key(seed),
-        )
-
-        # Equivalent explicit construction
-        sampler_new = PoissonSampler(
-            dataset,
-            sample_rate=sample_rate,
-            num_epochs=5,
-            key=key(seed),
-        )
-
-        batches_old = list(sampler_old)
-        batches_new = list(sampler_new)
-
-        # Should produce identical results
-        assert batches_old == batches_new
+        s1 = PoissonSampler(dataset, sample_rate=0.2, num_epochs=5, key=key(12345))
+        s2 = PoissonSampler(dataset, sample_rate=0.2, num_epochs=5, key=key(12345))
+        assert list(s1) == list(s2)
 
 
 class TestTruncatedPoissonDistributed:
-    """Tests for TruncatedPoissonSampler in distributed environments."""
+    """Tests for TruncatedPoissonSampler with external sharding."""
 
-    def test_truncated_sharded_mode(self, monkeypatch):
-        """Test TruncatedPoissonSampler in sharded mode."""
+    def test_truncated_sharded_respects_max_batch_size(self):
+        """TruncatedPoissonSampler respects max_batch_size on each shard."""
         dataset = TensorDataset(torch.randn(1000, 10))
         max_batch_size = 50
         world_size = 4
 
-        all_indices = []
         for rank in range(world_size):
-            # Mock distributed environment for this rank
-            with patch("opaque.sampling.poisson.is_distributed", return_value=True):
-                with patch("opaque.sampling.poisson.get_rank", return_value=rank):
-                    with patch(
-                        "opaque.sampling.poisson.get_world_size",
-                        return_value=world_size,
-                    ):
-                        sampler = TruncatedPoissonSampler(
-                            dataset,
-                            sample_rate=0.5,
-                            max_batch_size=max_batch_size,
-                            num_epochs=1,
-                            key=key(rank + 100),
-                        )
-                        batch = list(sampler)[0]
-                        all_indices.append(batch)
+            shard = _make_shard(dataset, rank, world_size)
+            sampler = TruncatedPoissonSampler(
+                shard,
+                sample_rate=0.5,
+                max_batch_size=max_batch_size,
+                num_epochs=1,
+                key=fold_in(key(100), rank),
+            )
+            batch = list(sampler)[0]
+            assert len(batch) <= max_batch_size
 
-                        # Respect max_batch_size
-                        assert len(batch) <= max_batch_size
-
-        # Indices should be disjoint
-        for i in range(world_size):
-            for j in range(i + 1, world_size):
-                assert not (set(all_indices[i]) & set(all_indices[j]))
-
-    def test_truncated_independent_mode_backward_compat(self):
-        """Test TruncatedPoissonSampler independent override."""
+    def test_truncated_single_device(self):
+        """Default (no sharding) uses full dataset."""
         dataset = TensorDataset(torch.randn(500, 10))
-        sample_rate = 0.2
-        max_batch_size = 60
-        seed = 999
-
-        # Without mode parameter (should default to INDEPENDENT)
         sampler = TruncatedPoissonSampler(
             dataset,
-            sample_rate=sample_rate,
-            max_batch_size=max_batch_size,
+            sample_rate=0.2,
+            max_batch_size=60,
             num_epochs=5,
-            key=key(seed),
+            key=key(999),
         )
-
-        assert sampler._use_sharded is False
-
-        # Should work as before
         batches = list(sampler)
         assert len(batches) == 5
         for batch in batches:
-            assert len(batch) <= max_batch_size
+            assert len(batch) <= 60
 
 
 class TestEdgeCases:
-    """Edge cases for distributed sampling modes."""
+    """Edge cases for distributed sampling."""
 
-    def test_single_worker_distributed_mode(self, monkeypatch):
-        """Distributed initialization with world_size=1 still works."""
+    def test_world_size_one_same_as_no_sharding(self):
+        """Explicit world_size=1 produces same shard as full dataset."""
         dataset = TensorDataset(torch.randn(100, 10))
+        shard = _make_shard(dataset, 0, 1)
+        assert len(shard) == len(dataset)
 
-        with patch("opaque.sampling.poisson.is_distributed", return_value=True):
-            with patch("opaque.sampling.poisson.get_rank", return_value=0):
-                with patch("opaque.sampling.poisson.get_world_size", return_value=1):
-                    sampler = PoissonSampler(
-                        dataset,
-                        sample_rate=0.5,
-                        num_epochs=5,
-                        key=key(42),
-                    )
-
-                    batches = list(sampler)
-                    assert len(batches) == 5
-
-                    # Should sample from full dataset
-                    all_indices = set()
-                    for batch in batches:
-                        all_indices.update(batch)
-                    # With p=0.5 and multiple epochs, should see many indices
-                    assert len(all_indices) > 20
-
-    def test_very_small_shards(self, monkeypatch):
-        """Test sharded mode with more workers than optimal."""
+    def test_very_small_shards(self):
+        """Works with more workers than typical shard size."""
         dataset = TensorDataset(torch.randn(50, 10))
-        world_size = 10  # Each shard has only 5 examples
+        world_size = 10
 
         for rank in range(world_size):
-            # Mock distributed environment for this rank
-            with patch("opaque.sampling.poisson.is_distributed", return_value=True):
-                with patch("opaque.sampling.poisson.get_rank", return_value=rank):
-                    with patch(
-                        "opaque.sampling.poisson.get_world_size",
-                        return_value=world_size,
-                    ):
-                        sampler = PoissonSampler(
-                            dataset,
-                            sample_rate=0.5,
-                            num_epochs=10,
-                            key=key(rank),
-                        )
-                        # Should not crash
-                        batches = list(sampler)
-                        assert len(batches) == 10
+            shard = _make_shard(dataset, rank, world_size)
+            sampler = PoissonSampler(
+                shard,
+                sample_rate=0.5,
+                num_epochs=10,
+                key=fold_in(key(0), rank),
+            )
+            batches = list(sampler)
+            assert len(batches) == 10

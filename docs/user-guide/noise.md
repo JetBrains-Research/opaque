@@ -22,7 +22,6 @@ noisy_grads, state = noise_fn(clipped_grads, state)
 |-----------|------|-------------|
 | `stddev` | `float` | Standard deviation of Gaussian noise. Typically `noise_multiplier * clip_norm`. |
 | `key` | `RngKey` | Explicit RNG key for deterministic noise. Create with `key(seed)`. |
-| `synchronized` | `str \| bool` | `"auto"` (default): sync noise across devices in DDP. `True`/`False` to force. |
 
 ## Calibrating Noise
 
@@ -180,8 +179,9 @@ noisy2, state = noise_fn(grads, state)
 # noisy1 == noisy2 (deterministic)
 ```
 
-In distributed mode, use `synchronized="auto"` (default) to ensure all devices
-produce identical noise.  See [RNG Key](rng-key.md) for details.
+In distributed training, pass the same `key(seed)` on all ranks to produce
+identical noise.  See [Distributed Training](distributed.md) and
+[RNG Key](rng-key.md) for details.
 
 ## See Also
 
