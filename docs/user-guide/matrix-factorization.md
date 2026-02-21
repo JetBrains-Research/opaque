@@ -39,6 +39,7 @@ All MF constructors follow the same `(noise_fn, state)` pattern as `gaussian_noi
 ```python
 import torch
 from opaque.noise import band_mf_noise
+from opaque.random import key
 
 # A gradient template (zeros with the right shapes)
 grad_template = {name: torch.zeros_like(p) for name, p in model.named_parameters()}
@@ -46,10 +47,10 @@ grad_template = {name: torch.zeros_like(p) for name, p in model.named_parameters
 # Create noise function — grad_template is always the first argument
 noise_fn, noise_state = band_mf_noise(
     grad_template,
-    n=1000,
+    n_steps=1000,
     bands=4,
     stddev=noise_multiplier * clip_norm,
-    seed=42,
+    key=key(42),
 )
 
 # Training loop
@@ -72,12 +73,13 @@ for batch in dataloader:
 ```python
 # Gaussian noise (independent per step)
 from opaque.noise import gaussian_noise
-noise_fn, state = gaussian_noise(stddev=1.1)
+from opaque.random import key
+noise_fn, state = gaussian_noise(stddev=1.1, key=key(42))
 
 # BandMF (correlated across steps)
 from opaque.noise import band_mf_noise
 grad_template = {k: torch.zeros_like(v) for k, v in model.named_parameters()}
-noise_fn, state = band_mf_noise(grad_template, n=1000, bands=4, stddev=1.1)
+noise_fn, state = band_mf_noise(grad_template, n_steps=1000, bands=4, stddev=1.1, key=key(42))
 
 # Training loop is IDENTICAL for both:
 for batch in dataloader:
@@ -105,6 +107,7 @@ import torch
 import torch.nn.functional as F
 from torch.func import functional_call
 from opaque.clipping import clipped_grad
+from opaque.random import key
 from opaque.noise import (
     gaussian_noise,        # Standard DP-SGD
     band_mf_noise,         # BandMF (banded Toeplitz)
@@ -124,7 +127,7 @@ def loss_fn(params, batch):
     logits = functional_call(model, params, (x,))
     return F.cross_entropy(logits, y)
 
-clipped_grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_size=32)
+clipped_grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=1)
 optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
 
 # Choose ONE of these noise mechanisms:
@@ -133,34 +136,34 @@ optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
 # 1. Gaussian Noise (Standard DP-SGD) - Simplest baseline
 noise_fn, noise_state = gaussian_noise(
     stddev=1.1,
-    seed=42,  # Optional seed for reproducibility
+    key=key(42),  # RngKey for reproducibility
 )
 
 # 2. BandMF (Banded Toeplitz) - Good default, 10-50% better than Gaussian
 noise_fn, noise_state = band_mf_noise(
     grad_template,
-    n=1000,           # Total training steps (required)
+    n_steps=1000,     # Total training steps (required)
     bands=4,          # Correlation bands (default: 4)
     stddev=1.1,
-    seed=42,
+    key=key(42),
 )
 
 # 3. BLT (Buffered Linear Toeplitz) - State-of-the-art for long training
 noise_fn, noise_state = blt_mf_noise(
     grad_template,
-    n=10000,          # Total training steps (required)
+    n_steps=10000,    # Total training steps (required)
     stddev=1.1,
     min_buffers=1,    # Optimize within this range
     max_buffers=5,
-    seed=42,
+    key=key(42),
 )
 
-# 4. Dense MF - Best utility for small n (< 100 steps)
+# 4. Dense MF - Best utility for small n_steps (< 100 steps)
 noise_fn, noise_state = dense_mf_noise(
     grad_template,
-    n=100,            # Total training steps (required)
+    n_steps=100,      # Total training steps (required)
     stddev=1.1,
-    seed=42,
+    key=key(42),
 )
 
 # 5. Custom MF - Bring your own strategy matrix C_inv
@@ -170,7 +173,7 @@ noise_fn, noise_state = custom_mf_noise(
     grad_template,
     noising=strategy_matrix,
     stddev=1.1,
-    seed=42,
+    key=key(42),
 )
 
 # 6. Identity MF - DP-SGD via MF API (for testing/validation)
@@ -178,7 +181,7 @@ from opaque.noise.matrix_factorization import identity
 noise_fn, noise_state = identity_mf_noise(
     grad_template,
     stddev=1.1,
-    seed=42,
+    key=key(42),
 )
 
 # Training loop (IDENTICAL for all mechanisms!)
@@ -221,28 +224,31 @@ params = {k: v.detach() for k, v in model.named_parameters()}
 grad_template = {k: torch.zeros_like(v) for k, v in params.items()}
 
 # Clipping (same as single-device)
-clipped_grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_size=32)
+clipped_grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=1)
 
-# Choose ONE noise mechanism (no seed needed - auto-syncs in distributed mode!):
+# Choose ONE noise mechanism:
+# All use key=key(42) for reproducibility; synchronized="auto" (default)
+# ensures identical noise across devices in distributed mode.
 # ===============================================================================
+from opaque.random import key
 
 # 1. Gaussian Noise
-noise_fn, noise_state = gaussian_noise(stddev=1.1)  # No seed=... needed!
+noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(42))
 
 # 2. BandMF
-noise_fn, noise_state = band_mf_noise(grad_template, n=1000, bands=4, stddev=1.1)
+noise_fn, noise_state = band_mf_noise(grad_template, n_steps=1000, bands=4, stddev=1.1, key=key(42))
 
 # 3. BLT
-noise_fn, noise_state = blt_mf_noise(grad_template, n=10000, stddev=1.1)
+noise_fn, noise_state = blt_mf_noise(grad_template, n_steps=10000, stddev=1.1, key=key(42))
 
 # 4. Dense MF
-noise_fn, noise_state = dense_mf_noise(grad_template, n=100, stddev=1.1)
+noise_fn, noise_state = dense_mf_noise(grad_template, n_steps=100, stddev=1.1, key=key(42))
 
 # 5. Custom MF
-noise_fn, noise_state = custom_mf_noise(grad_template, noising=strategy_matrix, stddev=1.1)
+noise_fn, noise_state = custom_mf_noise(grad_template, noising=strategy_matrix, stddev=1.1, key=key(42))
 
 # 6. Identity MF
-noise_fn, noise_state = identity_mf_noise(grad_template, stddev=1.1)
+noise_fn, noise_state = identity_mf_noise(grad_template, stddev=1.1, key=key(42))
 
 # Training loop (IDENTICAL for all mechanisms AND identical to single-device!)
 for batch in dataloader:
@@ -271,7 +277,7 @@ dist.destroy_process_group()
 
 ✅ **Same training loop** for ALL mechanisms (Gaussian + all 5 MF variants)  
 ✅ **Drop-in replacement** - Change only noise initialization line  
-✅ **Automatic distributed support** - No seed management needed in DDP mode  
+✅ **Automatic distributed support** - `synchronized="auto"` ensures identical noise across devices  
 ✅ **Identical API** - `noise_fn(grads, state) -> (noisy_grads, new_state)`  
 
 **When to use which:**
@@ -294,9 +300,10 @@ from opaque.noise import band_mf_noise
 
 noise_fn, state = band_mf_noise(
     grad_template,
-    n=1000,
+    n_steps=1000,
     bands=4,
     stddev=noise_multiplier * clip_norm,
+    key=key(42),
 )
 ```
 
@@ -313,10 +320,11 @@ from opaque.noise import blt_mf_noise
 
 noise_fn, state = blt_mf_noise(
     grad_template,
-    n=10000,
+    n_steps=10000,
     stddev=noise_multiplier * clip_norm,
     min_buffers=1,
     max_buffers=5,
+    key=key(42),
 )
 ```
 
@@ -329,8 +337,9 @@ from opaque.noise import dense_mf_noise
 
 noise_fn, state = dense_mf_noise(
     grad_template,
-    n=100,
+    n_steps=100,
     stddev=noise_multiplier * clip_norm,
+    key=key(42),
 )
 ```
 
@@ -365,7 +374,7 @@ noise_fn, state = custom_mf_noise(
     grad_template,
     noising,
     stddev=noise_multiplier * clip_norm,
-    seed=42,
+    key=key(42),
 )
 ```
 
@@ -379,7 +388,7 @@ from opaque.noise import blt_mf_noise
 # min_sep = epoch_length / batch_size (minimum steps between participations)
 noise_fn, state = blt_mf_noise(
     grad_template,
-    n=5000,
+    n_steps=5000,
     stddev=noise_multiplier * clip_norm,
     min_sep=100,
     max_participations=5,  # 5 epochs
@@ -422,6 +431,7 @@ Matrix factorization noise generation works seamlessly with distributed training
 ```python
 import torch.distributed as dist
 from opaque.noise import band_mf_noise
+from opaque.random import key
 
 # Initialize distributed
 dist.init_process_group(backend="nccl")
@@ -429,14 +439,13 @@ rank = dist.get_rank()
 device = torch.device(f"cuda:{rank}")
 
 # Create noise function - works exactly like gaussian_noise!
-# Automatically uses same seed on all devices when distributed is detected
+# key=key(42) with synchronized="auto" (default) ensures identical noise on all devices
 noise_fn, noise_state = band_mf_noise(
     grad_template, 
-    n=1000, 
+    n_steps=1000, 
     bands=4, 
     stddev=1.1,
-    # seed=None (default) → auto-detects distributed, uses seed=0 everywhere
-    # seed=42 → uses seed=42 on all devices (reproducible)
+    key=key(42),
 )
 
 # Training loop - identical to single-device
@@ -457,8 +466,8 @@ for batch in dataloader:
 **Key points:**
 
 - ✅ **Same API as `gaussian_noise()`** - No special distributed handling needed
-- ✅ **Automatic seed management** - Uses `_resolve_generator()` internally like Gaussian noise
-- ✅ **Centralized pattern** - All devices use same seed (prevents model divergence)
+- ✅ **Automatic synchronization** - `synchronized="auto"` broadcasts key to all devices
+- ✅ **Centralized pattern** - All devices use same key (prevents model divergence)
 - ✅ **Standard privacy accounting** - Use simple RDP/PLD accounting (no composition needed)
 
 For details on distributed training, see [Distributed Training Guide](distributed.md).

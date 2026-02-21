@@ -10,7 +10,7 @@ Opaque is a PyTorch port of Google's [JAX-Privacy](https://github.com/google-dee
 [![CI](https://github.com/JetBrains-Research/opaque/actions/workflows/ci.yml/badge.svg)](https://github.com/JetBrains-Research/opaque/actions/workflows/ci.yml)
 [![Docs](https://github.com/JetBrains-Research/opaque/actions/workflows/docs.yml/badge.svg)](https://github.com/JetBrains-Research/opaque/actions/workflows/docs.yml)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
-[![Tests](https://img.shields.io/badge/tests-458%20passing-brightgreen.svg)](https://github.com/JetBrains-Research/opaque)
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](https://github.com/JetBrains-Research/opaque)
 
 ---
 
@@ -56,6 +56,7 @@ See [Installation Guide](#installation-guide) for detailed instructions.
 import torch
 import opaque.accounting as acc
 from opaque import clipped_grad, gaussian_noise
+from opaque.random import key
 
 # 1. Define your loss function
 def loss_fn(params, x, y):
@@ -64,7 +65,7 @@ def loss_fn(params, x, y):
 
 # 2. Configure DP-SGD components (once, outside loop)
 grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2))
-noise_fn, noise_state = gaussian_noise(stddev=1.1 * clip_state.sensitivity())
+noise_fn, noise_state = gaussian_noise(stddev=1.1 * clip_state.sensitivity(), key=key(42))
 
 # 3. Training loop - clean functional composition!
 params = torch.randn(10, requires_grad=False)
@@ -128,7 +129,7 @@ Core DP-SGD primitives are implemented and validated:
 - **Distributed**: DDP-compatible training with Poisson subsampling
 - **Profiling**: Memory tracking and microbatch size auto-tuning
 - **HuggingFace Compatibility**: Auto-patching for vmap-compatible forward passes (LLaMA, Mistral, Qwen2, Phi, OLMo, Gemma2)
-- **Validation**: 458 tests passing, numerical equivalence with JAX-Privacy (atol=1e-5)
+- **Validation**: Numerical equivalence with JAX-Privacy (atol=1e-5)
 
 ---
 

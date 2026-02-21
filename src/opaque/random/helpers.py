@@ -33,7 +33,7 @@ def random_key() -> RngKey:
         >>> from opaque.random import random_key
         >>> from opaque.noise import gaussian_noise
         >>> k = random_key()
-        >>> noise_fn, state = gaussian_noise(l2_norm_clip=1.0, noise_multiplier=1.1, key=k)
+        >>> noise_fn, state = gaussian_noise(stddev=1.1, key=k)
     """
     random_seed = secrets.randbits(64)
     return key(random_seed)
@@ -78,7 +78,7 @@ def training_key(
         >>> # Reproducible training loop
         >>> for step in range(epochs):
         ...     k = training_key(base_seed=42, step=step)
-        ...     noise_fn, state = gaussian_noise(l2_norm_clip=1.0, noise_multiplier=1.1, key=k)
+        ...     noise_fn, state = gaussian_noise(stddev=1.1, key=k)
         ...     # ... train ...
         >>>
         >>> # Distributed training with per-rank noise
@@ -152,7 +152,7 @@ def set_reproducible_pytorch_seed(key_val: RngKey) -> None:
         >>> # Then use training_key for per-step DP randomness
         >>> for step in range(num_steps):
         ...     step_key = training_key(base_seed=42, step=step)
-        ...     noise_fn, state = gaussian_noise(l2_norm_clip=1.0, noise_multiplier=1.1, key=step_key)
+        ...     noise_fn, state = gaussian_noise(stddev=1.1, key=step_key)
         ...     # ... training step ...
 
     Note:

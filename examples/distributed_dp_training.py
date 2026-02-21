@@ -26,6 +26,8 @@ from torch.utils.data import DataLoader, TensorDataset
 
 import opaque
 import opaque.distributed as dist_utils
+from opaque.clipping import sync_adaptive_clip_state
+from opaque.random import key as rng_key
 
 
 def setup_distributed():
@@ -81,7 +83,7 @@ def main():
         dataset,
         sample_rate=0.01,
         num_epochs=1,
-        generator=42,  # Optional: for reproducibility. Generator seed auto-shifted by rank.
+        key=rng_key(42),  # Reproducible; auto-shifted by rank in SHARDED mode.
     )
 
     # DataLoader with batch_sampler
@@ -98,15 +100,15 @@ def main():
         argnums=0,
         batch_argnums=(1, 2),
         initial_clip_norm=1.0,
+        key=rng_key(7),
         target_quantile=0.5,
-        distributed=True,  # Auto-sync clip_norm across devices
     )
 
     # Create deterministic noise function (functional API)
     # When distributed is detected, automatically uses SAME seed across all devices
     # for synchronized noise (prevents model divergence)
     # No need to manually manage seeds!
-    noise_fn, noise_state = opaque.gaussian_noise(stddev=1.1)  # No seed needed
+    noise_fn, noise_state = opaque.gaussian_noise(stddev=1.1, key=rng_key(42))
 
     # Privacy accounting (same on all ranks)
     epsilon_target = 3.0
@@ -132,6 +134,9 @@ def main():
         # Step 1: Compute clipped gradients (per-device on disjoint data shard)
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
+        # Step 1b: Synchronize adaptive clip state across devices
+        clip_state = sync_adaptive_clip_state(clip_state)
+
         # Step 2: Aggregate gradients across devices
         grads = dist_utils.sum_gradients(grads)
 
@@ -143,8 +148,8 @@ def main():
 
         # Step 4: Update parameters (all devices have identically noisy gradients)
         lr = 0.01
-        for key in params:
-            params[key] = params[key] - lr * noisy_grads[key]
+        for name in params:
+            params[name] = params[name] - lr * noisy_grads[name]
 
         # Log progress
         if rank == 0 and step % 10 == 0:

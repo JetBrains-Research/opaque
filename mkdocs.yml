@@ -96,6 +96,7 @@ nav:
     - Memory Profiling: user-guide/memory-profiling.md
     - LoRA Fine-tuning: user-guide/lora.md
     - Distributed Training: user-guide/distributed.md
+    - Privacy Auditing: user-guide/auditing.md
     - Known Limitations: limitations.md
   - API Reference:
     - Overview: api/index.md
@@ -108,11 +109,10 @@ nav:
     - Accounting: api/accounting.md
     - Optimizers: api/optimizers.md
     - Sampling: api/sampling.md
+    - Auditing: api/auditing.md
     - Distributed: api/distributed.md
   - Development:
     - Contributing: development/contributing.md
-    - TDD Workflow: development/tdd-workflow.md
-    - Roadmap: development/roadmap.md
 
 extra:
   social:

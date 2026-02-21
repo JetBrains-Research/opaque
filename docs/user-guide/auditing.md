@@ -74,6 +74,7 @@ from opaque import clipped_grad, gaussian_noise, PoissonSampler
 import opaque.auditing as auditing
 from opaque.random import key
 
+
 # Dataset
 dataset = TensorDataset(X, y)
 
@@ -88,12 +89,12 @@ train_loader = DataLoader(train_data, batch_sampler=sampler)
 def loss_fn(params, x, y):
     return F.mse_loss(x @ params, y, reduction="sum")
 
-grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=1)
-noise_fn, noise_state = gaussian_noise(stddev=1.1 * grad_fn.clip_norm)
+grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=1)
+noise_fn, noise_state = gaussian_noise(stddev=1.1 * clip_state.sensitivity(), key=key(42))
 
 for step in range(num_steps):
     batch_x, batch_y = next(iter(train_loader))
-    grads = grad_fn(params, batch_x, batch_y)
+    grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = params - lr * noisy_grads
 
