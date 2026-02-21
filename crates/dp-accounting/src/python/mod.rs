@@ -34,7 +34,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
 
     // AdaClip
-    m.add_function(wrap_pyfunction!(adaclip::py_combined_sensitivity, m)?)?;
+    m.add_function(wrap_pyfunction!(adaclip::py_adaclip_sensitivity, m)?)?;
 
     Ok(())
 }

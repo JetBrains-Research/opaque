@@ -16,7 +16,7 @@ use pyo3::prelude::*;
 /// Returns:
 ///     float: The combined L2 sensitivity z̃.
 #[pyfunction]
-#[pyo3(name = "combined_sensitivity")]
-pub fn py_combined_sensitivity(noise_multiplier: f64, quantile_noise_std: f64) -> f64 {
-    crate::transformations::adaclip::combined_sensitivity(noise_multiplier, quantile_noise_std)
+#[pyo3(name = "adaclip_sensitivity")]
+pub fn py_adaclip_sensitivity(noise_multiplier: f64, quantile_noise_std: f64) -> f64 {
+    crate::transformations::adaclip::adaclip_sensitivity(noise_multiplier, quantile_noise_std)
 }

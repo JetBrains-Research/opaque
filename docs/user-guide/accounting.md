@@ -117,13 +117,32 @@ step = acc.parallel_poisson(
 ### `acc.adaclip()` -- Adaptive Clipping
 
 Accounts for the extra privacy cost of noisy quantile estimation (Andrew et
-al. 2021). Returns an AdaClip process with reduced effective noise multiplier.
+al. 2021). Returns an `AdaClip` process whose
+`effective_noise_multiplier` encapsulates the combined sensitivity formula.
+Poisson wrappers use that property; they do not need to know AdaClip internals.
 
 ```python
+# In the training loop — use the actual batch size from clip_state
+step = acc.adaclip(
+    acc.gaussian(noise_multiplier),
+    batch_size=clip_state.batch_size,        # exact per-step value
+)
+accountant = accountant | step
+
+# During calibration — use expected or pessimistic batch size
 step = acc.poisson(
-    acc.adaclip(acc.gaussian(0.5), quantile_noise_std=1.0),
+    acc.adaclip(acc.gaussian(0.5), batch_size=sample_rate * dataset_size),
     sample_rate=0.01,
 )
+```
+
+!!! note "Calibration vs. runtime batch sizes"
+
+    During calibration the exact per-step batch size is unknown.  Use the
+    expected batch size (Poisson: `sample_rate × dataset_size`) or the
+    pessimistic maximum (Truncated Poisson: `batch_size_cap`).  At runtime,
+    pass the actual `clip_state.batch_size` for accurate per-step accounting
+    and **stop training early if the budget is exceeded**.
 ```
 
 ### `acc.eps_delta()` -- Fixed Guarantee

@@ -358,23 +358,25 @@ class TestParallelPoissonCrossValidation:
 
 
 class TestAdaClipCrossValidation:
-    """AdaClip: verify combined_sensitivity formula matches expected z_eff."""
+    """AdaClip: verify adaclip_sensitivity formula matches expected z_eff."""
 
     @pytest.mark.parametrize(
-        "sigma,sigma_b",
+        "sigma,batch_size",
         [
-            (1.0, 50.0),
-            (1.1, 50.0),
-            (0.5, 10.0),
-            (1.2, 100.0),
+            (1.0, 1000),
+            (1.1, 1000),
+            (0.5, 200),
+            (1.2, 2000),
         ],
     )
-    def test_adaclip_effective_noise(self, sigma, sigma_b):
-        """adaclip(gaussian(σ), σ_b) → AdaClip with z_eff = 1/combined_sensitivity."""
+    def test_adaclip_effective_noise(self, sigma, batch_size):
+        """adaclip(gaussian(σ), batch_size) → z_eff = 1/adaclip_sensitivity."""
         import opaque_accounting as _native
 
-        proc = acc.adaclip(acc.gaussian(sigma), sigma_b)
-        s = _native.combined_sensitivity(sigma, sigma_b)
+        proc = acc.adaclip(acc.gaussian(sigma), batch_size=batch_size)
+        # σ_b = batch_size × 0.05 (default multiplier)
+        sigma_b = batch_size * 0.05
+        s = _native.adaclip_sensitivity(sigma, sigma_b)
         z_eff = 1.0 / s
 
         # Verify effective noise via PLD
@@ -386,17 +388,17 @@ class TestAdaClipCrossValidation:
 
         assert isinstance(proc, AdaClip)
 
-    @pytest.mark.parametrize("sigma_b", [10.0, 50.0, 100.0])
-    def test_adaclip_increases_privacy_cost(self, sigma_b):
+    @pytest.mark.parametrize("batch_size", [200, 1000, 2000])
+    def test_adaclip_increases_privacy_cost(self, batch_size):
         """AdaClip reduces effective noise → higher epsilon (more privacy cost)."""
         g = acc.gaussian(1.0)
-        a = acc.adaclip(g, sigma_b)
+        a = acc.adaclip(g, batch_size=batch_size)
         # z_eff < sigma so epsilon should be larger
         assert a.epsilon_at(1e-5) > g.epsilon_at(1e-5)
 
     def test_adaclip_composed_with_poisson(self):
         """AdaClip result composes with poisson() normally."""
-        step = acc.poisson(acc.adaclip(acc.gaussian(1.1), 50.0), 0.01) * 1000
+        step = acc.poisson(acc.adaclip(acc.gaussian(1.1), batch_size=1000), 0.01) * 1000
         eps = step.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 

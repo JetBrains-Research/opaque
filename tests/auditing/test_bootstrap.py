@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from opaque.auditing import BootstrapParams
+from opaque.random import key
 
 
 class TestBootstrapParams:
@@ -18,7 +19,7 @@ class TestBootstrapParams:
         assert params.quantiles == (0.025, 0.975)
         assert params.bias_correction is True
         assert params.acceleration is False
-        assert params.seed is None
+        assert params.key is None
 
     def test_creation_custom(self):
         """Test creating BootstrapParams with custom values."""
@@ -26,12 +27,12 @@ class TestBootstrapParams:
             num_samples=500,
             quantiles=(0.05, 0.95),
             bias_correction=False,
-            seed=42,
+            key=key(42),
         )
         assert params.num_samples == 500
         assert params.quantiles == (0.05, 0.95)
         assert params.bias_correction is False
-        assert params.seed == 42
+        assert params.key == key(42)
 
     def test_invalid_num_samples(self):
         """Test that invalid num_samples raises ValueError."""
@@ -73,10 +74,10 @@ class TestBootstrapParams:
 
     def test_confidence_interval_factory(self):
         """Test confidence_interval factory method."""
-        params = BootstrapParams.confidence_interval(confidence=0.95, seed=42)
+        params = BootstrapParams.confidence_interval(confidence=0.95, key=key(42))
         assert params.num_samples == 1000
         assert params.quantiles == pytest.approx((0.025, 0.975))
-        assert params.seed == 42
+        assert params.key == key(42)
 
     def test_confidence_interval_90(self):
         """Test 90% confidence interval."""

@@ -20,6 +20,7 @@ import numpy as np
 from torch.utils.data import Sampler
 
 from opaque.distributed import get_rank, get_world_size, is_distributed
+from opaque.random import RngKey, fold_in
 from opaque.sampling._utils import (
     PartitionType,
     _equal_split_partition,
@@ -77,6 +78,7 @@ class CyclicPoissonSampler(Sampler):
         >>> # Cycles through groups: 0,1,2,0,1,2,... for 20 iterations
 
     Example (distributed - automatic):
+        >>> from opaque.random import key
         >>> # Run with: torchrun --nproc_per_node=4 train.py
         >>> dataset = MyDataset(size=1000)
         >>> sampler = CyclicPoissonSampler(
@@ -84,11 +86,11 @@ class CyclicPoissonSampler(Sampler):
         ...     sampling_prob=0.5,
         ...     cycle_length=3,
         ...     iterations=20,
-        ...     generator=42,  # Auto-shifts by rank: 42, 43, 44, 45
+        ...     key=key(42),  # Auto-shifts by rank via fold_in
         ... )
         >>> loader = DataLoader(dataset, batch_sampler=sampler)
-        >>> # Device 0: partition [0:250], cycle through its groups
-        >>> # Device 1: partition [250:500], cycle through its groups
+        >>> # Device 0: partition [0:250], fold_in(key(42), 0)
+        >>> # Device 1: partition [250:500], fold_in(key(42), 1)
         >>> # Each yields 20 batches independently
 
     Note:
@@ -96,7 +98,7 @@ class CyclicPoissonSampler(Sampler):
         - Expected batch size per iteration: |group| * sampling_prob
         - Use with DataLoader's batch_sampler parameter (not sampler)
         - Auto mode selection: Detects distributed and uses SHARDED by default
-        - Auto seed shifting: Integer seeds automatically shift by rank in distributed mode
+        - Auto rank shifting: Automatically applies fold_in(key, rank) in distributed mode
         - SHARDED mode: Zero communication overhead (no AllReduce)
     """
 
@@ -108,7 +110,8 @@ class CyclicPoissonSampler(Sampler):
         iterations: int | None = None,
         truncated_batch_size: int | None = None,
         partition_type: PartitionType = PartitionType.EQUAL_SPLIT,
-        generator: np.random.Generator | int | None = None,
+        *,
+        key: RngKey,
     ):
         """Initialize cyclic Poisson sampler with DDP awareness."""
         super().__init__()
@@ -164,30 +167,18 @@ class CyclicPoissonSampler(Sampler):
             self.end_idx = self.num_total_examples
             self.num_examples_local = self.num_total_examples
 
-        # ============ RNG setup (with rank-based seed shifting) ============
-        # Auto-shift seed by rank for diversity in distributed mode
-        if isinstance(generator, int):
-            if self.rank > 0:
-                rng_seed = generator + self.rank
-            else:
-                rng_seed = generator
-            self.rng_seed = rng_seed
-            self.rng_generator = None
-        elif isinstance(generator, np.random.Generator):
-            self.rng_seed = None
-            self.rng_generator = generator
+        # ============ RNG setup (with rank-based key derivation) ============
+        # Fold in rank for diversity in distributed mode
+        if self.is_distributed and self.rank > 0:
+            # Fold rank into key for per-rank diversity
+            rank_key = fold_in(key, self.rank)
         else:
-            self.rng_seed = None
-            self.rng_generator = None
+            # Use key as-is for single device or rank 0
+            rank_key = key
 
-        # ============ Pre-compute partition ============
-        # Create RNG for partition
-        if self.rng_seed is not None:
-            partition_rng = np.random.default_rng(self.rng_seed)
-        elif self.rng_generator is not None:
-            partition_rng = self.rng_generator
-        else:
-            partition_rng = np.random.default_rng()
+        # Convert RngKey to numpy generator and store for partition and iteration
+        self.generator = np.random.default_rng(rank_key.seed)
+        partition_rng = self.generator
 
         # Determine partition function
         if partition_type == PartitionType.INDEPENDENT:
@@ -234,21 +225,13 @@ class CyclicPoissonSampler(Sampler):
         Yields:
             Variable-size lists of indices
         """
-        # Create fresh RNG for iteration
-        if self.rng_seed is not None:
-            rng = np.random.default_rng(self.rng_seed)
-        elif self.rng_generator is not None:
-            rng = self.rng_generator
-        else:
-            rng = np.random.default_rng()
-
         for step in range(self.iterations):
             # Get the group for this iteration
             group_idx = step % self.cycle_length
             group = self.partition[group_idx]
 
             # Sample binomially: each example included with probability sampling_prob
-            sample_size = rng.binomial(n=len(group), p=self.sampling_prob)
+            sample_size = self.generator.binomial(n=len(group), p=self.sampling_prob)
 
             # Cap at truncated_batch_size if specified
             if self.truncated_batch_size is not None:
@@ -256,7 +239,7 @@ class CyclicPoissonSampler(Sampler):
 
             # Sample without replacement
             if sample_size > 0:
-                batch = rng.choice(
+                batch = self.generator.choice(
                     group, size=sample_size, replace=False, shuffle=False
                 )
             else:

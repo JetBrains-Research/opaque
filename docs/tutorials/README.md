@@ -110,26 +110,6 @@ Learn how to empirically validate your DP implementation using membership infere
 
 ---
 
-### [Tutorial 08: Distributed Training with DDP](08_distributed_training.ipynb) ✨ NEW!
-
-**Level**: Advanced
-**Duration**: 75-90 minutes
-**Prerequisites**: Tutorials 01-04, Multi-GPU setup
-
-Scale DP-SGD training to multiple GPUs with PyTorch's DistributedDataParallel:
-
-**What you'll learn**:
-
-1. **DDP for DP-SGD**: Why distributed DP requires special handling
-2. **Gradient aggregation**: Correct ordering (clip → noise → average)
-3. **State synchronization**: Keep adaptive clipping consistent across GPUs
-4. **Privacy accounting**: Using effective batch size
-5. **Best practices**: Common pitfalls and solutions
-
-**Key Takeaway**: With DP, you must add noise BEFORE averaging gradients across GPUs to maintain privacy guarantees!
-
----
-
 ## Additional Resources
 
 ### Documentation
@@ -152,23 +132,19 @@ Scale DP-SGD training to multiple GPUs with PyTorch's DistributedDataParallel:
 
 Found an issue or have suggestions for improving the tutorials?
 
-1. Open an issue on [GitHub](https://github.com/yourusername/opaque/issues)
+1. Open an issue on [GitHub](https://github.com/JetBrains-Research/opaque/issues)
 2. Submit a PR with improvements
 3. Share your own examples!
 
 **Completed tutorials**:
 
-- [x] Tutorial 01: Gradient Clipping from Basics (Stage 1)
-- [x] Tutorial 02: Differential Privacy - Noise and Accounting (Stage 2)
-- [x] Tutorial 03: Complete DP-SGD Training Loop (Stage 2)
-- [x] Tutorial 04: Functional DP Training with TorchOpt (Stage 2)
-- [x] Tutorial 07: Empirical Privacy Auditing (Stage 3)
-- [x] Tutorial 08: Distributed Training with DDP ✨ NEW!
-
-**Planned tutorials** (coming in future stages):
-
-- [ ] Tutorial 05: Poisson Sampling & Microbatching (Stage 4+)
-- [ ] Tutorial 06: DP-SGD for LoRA Fine-Tuning with HuggingFace (Stage 4+)
+- [x] Tutorial 01: Gradient Clipping from Basics
+- [x] Tutorial 02: Differential Privacy - Noise and Accounting
+- [x] Tutorial 03: Complete DP-SGD Training Loop
+- [x] Tutorial 04: Functional DP Training with TorchOpt
+- [x] Tutorial 05: Sampling and Microbatching
+- [x] Tutorial 06: LoRA HuggingFace DP Training
+- [x] Tutorial 07: Empirical Privacy Auditing
 
 ---
 
@@ -180,22 +156,24 @@ A: No! All tutorials run fine on CPU. They use small datasets for educational pu
 **Q: Can I use these notebooks in Google Colab?**
 A: Yes! Upload the notebook and install Opaque:
 ```python
-!pip install git+https://github.com/yourusername/opaque.git
+!pip install git+https://github.com/JetBrains-Research/opaque.git
 ```
 
 **Q: Can I train differentially private models with these tutorials?**
 A: Yes! Tutorial 02 covers complete DP-SGD with noise injection and privacy accounting. You can train models with
 formal (ε, δ)-DP guarantees.
 
-**Q: What's available now vs "coming soon"?**
-A: As of Stage 2 (complete), all core DP-SGD components are ready:
+**Q: What's available now?**
+A: All core DP-SGD components are ready:
 
-- ✅ Gradient clipping (`clipped_grad()`, `clipped_fun()`, `clip_pytree()`)
-- ✅ Noise injection (`gaussian_noise()`)
-- ✅ Privacy accounting (functional API via `opaque.accounting` module)
-- ✅ Calibration functions for target privacy (ε/δ, advantage, error rates)
-- ✅ Optimizer wrappers (`adaptive_clipping()` for TorchOpt optimizers)
-- 🔜 LoRA integration and advanced examples (Stages 4+)
+- ✅ Gradient clipping (`clipped_grad()`, `adaptive_clipped_grad()`, `clip_pytree()`)
+- ✅ Noise injection (`gaussian_noise()`, `bounded_gaussian_noise()`, MF noise)
+- ✅ Privacy accounting (Rust PLD engine with `opaque.accounting`)
+- ✅ Calibration for target privacy (ε/δ, advantage, error rates)
+- ✅ Sampling (`PoissonSampler`, `TruncatedPoissonSampler`, `CyclicPoissonSampler`)
+- ✅ Privacy auditing (`opaque.auditing`)
+- ✅ Distributed training (DDP)
+- ✅ LoRA fine-tuning with HuggingFace
 
 **Q: I found a bug in a tutorial. How do I report it?**
 A: Please open an issue with:

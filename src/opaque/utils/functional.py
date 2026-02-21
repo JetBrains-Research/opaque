@@ -91,7 +91,9 @@ def make_functional(
 
     Example with LoRA partitioning:
         >>> import torch.nn as nn
-        >>> from opaque import dp_adam, clipped_grad
+        >>> from opaque.clipping import clipped_grad
+        >>> from opaque.noise import gaussian_noise
+        >>> from opaque.random import key
         >>> from opaque.utils import make_functional, merge
         >>>
         >>> # Create model and freeze backbone
@@ -109,29 +111,22 @@ def make_functional(
         ...     model, partition_trainable=True
         ... )
         >>>
-        >>> # Only optimize trainable parameters
-        >>> init_fn, step_fn = dp_adam(
-        ...     learning_rate=1e-3,
-        ...     l2_clip_norm=1.0,
-        ...     noise_multiplier=1.1,
-        ...     sample_rate=0.01,
-        ...     target_delta=1e-5,
-        ... )
-        >>> state = init_fn(trainable)
-        >>>
         >>> # Training loop
         >>> def loss_fn(train_params, x, y):
         ...     all_params = merge(frozen, train_params)
         ...     pred = fmodel(all_params, x)
         ...     return ((pred - y) ** 2).mean()
         >>>
-        >>> clipped_grad_fn = clipped_grad(
+        >>> grad_fn, clip_state = clipped_grad(
         ...     loss_fn, argnums=0, batch_argnums=(1, 2), l2_clip_norm=1.0
         ... )
+        >>> noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(42))
+        >>> optimizer = torch.optim.SGD([p for p in model.parameters() if p.requires_grad], lr=1e-3)
         >>>
         >>> for x_batch, y_batch in dataloader:
-        ...     grads = clipped_grad_fn(trainable, x_batch, y_batch)
-        ...     trainable, state, metrics = step_fn(trainable, grads, state)
+        ...     grads, clip_state = grad_fn(trainable, x_batch, y_batch, state=clip_state)
+        ...     noisy_grads, noise_state = noise_fn(grads, noise_state)
+        ...     # ... assign grads and step optimizer
 
     Note:
         This function creates a deep copy of the module and moves it to the "meta" device,

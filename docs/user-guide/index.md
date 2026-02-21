@@ -15,6 +15,7 @@ import opaque.accounting as acc
 from opaque.accounting import calibration as cal
 from opaque import clipped_grad, gaussian_noise
 from opaque.sampling import PoissonSampler
+from opaque.random import RngKey, split
 
 # --- Calibrate noise multiplier for target privacy ---
 dataset_size = 50_000
@@ -29,17 +30,21 @@ result = cal.calibrate(
 )
 noise_multiplier = result.param
 
+# --- Create random keys for reproducibility ---
+master_key = RngKey(42)  # Master seed for reproducibility
+key_sampling, key_noise = split(master_key, num=2)
+
 # --- Set up gradient clipping, noise, optimizer ---
 grad_fn, clip_state = clipped_grad(
     loss_fn, l2_clip_norm=1.0, argnums=0, batch_argnums=1,
 )
-noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier)
+noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier, key=key_noise)
 
 optimizer = torchopt.adam(lr=1e-3)
 opt_state = optimizer.init(params)
 
 # --- Set up privacy-amplifying sampling ---
-sampler = PoissonSampler(dataset_size, sample_rate=sample_rate)
+sampler = PoissonSampler(dataset_size, sample_rate=sample_rate, key=key_sampling)
 dataloader = torch.utils.data.DataLoader(dataset, batch_sampler=sampler)
 
 # --- Training loop with per-step accounting ---
@@ -65,6 +70,36 @@ eps = acct.epsilon_at(1e-5)
 The sections below explain each part in detail.
 
 ## Core Concepts
+
+### Random Number Generation with RngKey
+
+Opaque uses **explicit random keys** (`RngKey`) instead of global seeds for all randomness. This functional approach provides stronger guarantees for reproducibility and correctness in distributed training:
+
+```python
+from opaque.random import RngKey, split
+
+# Create key from seed
+key = RngKey(42)
+
+# Split into independent keys for different purposes
+key_sampling, key_noise = split(key, num=2)
+
+# Use keys explicitly with APIs
+sampler = PoissonSampler(dataset_size, sample_rate=sample_rate, key=key_sampling)
+noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier, key=key_noise)
+```
+
+**Key benefits**:
+- ✅ **Explicit control**: All randomness requires an explicit key
+- ✅ **Reproducibility**: Same key → same random numbers, always
+- ✅ **Distributed-safe**: Easy to ensure non-overlapping randomness per rank
+- ✅ **Composable**: Split keys to create independent random streams
+
+See [Random Number Generation](rng-key.md) for a comprehensive guide on RngKey, including:
+- Why explicit keys vs. global seeds
+- Key splitting patterns for training loops
+- Distributed training with rank-specific keys
+- Best practices and troubleshooting
 
 ### Per-Sample Gradient Clipping
 
@@ -93,8 +128,9 @@ After clipping and summing, Gaussian noise scaled to the sensitivity is added:
 
 ```python
 from opaque import gaussian_noise
+from opaque.random import RngKey
 
-noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier)
+noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier, key=RngKey(42))
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
 
@@ -165,8 +201,9 @@ with probability `sample_rate = expected_batch_size / dataset_size`.
 
 ```python
 from opaque.sampling import PoissonSampler
+from opaque.random import RngKey
 
-sampler = PoissonSampler(dataset_size, sample_rate=sample_rate)
+sampler = PoissonSampler(dataset_size, sample_rate=sample_rate, key=RngKey(42))
 dataloader = torch.utils.data.DataLoader(dataset, batch_sampler=sampler)
 ```
 

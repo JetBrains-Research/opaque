@@ -1,5 +1,6 @@
 """Noise generation for differential privacy."""
 
+from opaque.noise import distributed
 from opaque.noise.band_mf_noise import band_mf_noise
 from opaque.noise.blt_mf_noise import blt_mf_noise
 from opaque.noise.bounded_gaussian_noise import bounded_gaussian_noise
@@ -18,6 +19,7 @@ __all__ = [
     # Backwards-compatible convenience alias
     "gaussian",
     "identity_mf_noise",
+    "distributed",
 ]
 
 # Convenience alias for callers using the short `gaussian` name in docs/examples

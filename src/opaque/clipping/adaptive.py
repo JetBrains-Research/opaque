@@ -10,12 +10,18 @@ Inspired by JAX-Privacy and Optax's functional state-passing design.
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Literal, NamedTuple
+from typing import Any, NamedTuple, cast
 
 import torch
 
-from opaque.clipping.clipped_grad import ClippedGradAux, clipped_grad
+from opaque.clipping.clipped_grad import clipped_grad
 from opaque.clipping.types import ClipState, NeighboringRelation
+from opaque.random import RngKey, fold_in, generator_from_key
+
+# Andrew et al. (2021): sigma_b = m/20 on clipped counts.
+# In this implementation we add noise directly to clipped fraction b_t,
+# so stddev on fraction is sigma_b / m = 1/20 = 0.05.
+_DEFAULT_QUANTILE_NOISE_MULTIPLIER = 0.05
 
 
 class AdaptiveClippedGradAux(NamedTuple):
@@ -47,11 +53,28 @@ class AdaptiveClipState(ClipState):
         clip_norm: Current clipping threshold C_t.
         clipping_rate: Fraction of gradients clipped in last call (for monitoring).
         rescale_to_unit_norm: Whether gradients were rescaled to unit norm.
+        key: RNG key for quantile noise (None if no noise).
+        step: Step counter for key derivation.
+        batch_size: Number of examples processed in the last call.  In
+            distributed training the synced state holds the *global* batch
+            size (sum across ranks).  Use this value for per-step privacy
+            accounting via ``acc.adaclip(acc.gaussian(z), batch_size=...)``.
     """
 
     clip_norm: float
-    clipping_rate: float = 0.0
-    rescale_to_unit_norm: bool = False
+    clipping_rate: float
+    rescale_to_unit_norm: bool
+    key: RngKey
+    step: int
+    quantile_noise_multiplier: float
+    learning_rate: float
+    target_quantile: float
+    clip_norm_min: float
+    clip_norm_max: float
+    base_clip_norm: float
+    num_clipped: float
+    total: float
+    batch_size: int
 
     def __post_init__(self):
         """Validate state values."""
@@ -60,6 +83,11 @@ class AdaptiveClipState(ClipState):
         if not 0 <= self.clipping_rate <= 1:
             raise ValueError(
                 f"clipping_rate must be in [0, 1], got {self.clipping_rate}"
+            )
+        if self.quantile_noise_multiplier <= 0:
+            raise ValueError(
+                "quantile_noise_multiplier must be > 0, "
+                f"got {self.quantile_noise_multiplier}"
             )
 
     def sensitivity(
@@ -100,6 +128,58 @@ class AdaptiveClipState(ClipState):
                 )
 
 
+def _compute_clipping_stats(
+    grad_norms: torch.Tensor, clip_norm: float
+) -> tuple[float, float, float]:
+    """Compute local clipping statistics from per-example gradient norms."""
+    num_clipped = float((grad_norms > clip_norm).sum().item())
+    total = float(max(1, grad_norms.numel()))
+    clipping_rate = num_clipped / total
+    return num_clipped, total, clipping_rate
+
+
+def _sample_noisy_clipping_rate(
+    clipping_rate: float,
+    *,
+    key: RngKey,
+    step: int,
+    quantile_noise_multiplier: float,
+) -> float:
+    """Add DP Gaussian noise to clipping rate using step-folded RNG key."""
+    step_key = fold_in(key, step)
+    generator = generator_from_key(step_key)
+    noise = torch.randn(1, generator=generator).item() * quantile_noise_multiplier
+    return clipping_rate + noise
+
+
+def _adaptive_clip_norm_update(
+    *,
+    base_clip_norm: float,
+    noisy_clipping_rate: float,
+    target_quantile: float,
+    learning_rate: float,
+    clip_norm_min: float,
+    clip_norm_max: float,
+) -> float:
+    """Compute geometric adaptive clipping update with clamping.
+
+    Implements the proportional update from Andrew et al. 2021:
+
+        C_{t+1} = C_t · exp(η · (ρ̃_t − γ))
+
+    where ρ̃_t is the noisy clipping rate and γ is the target quantile.
+    When ρ̃_t > γ (too many clipped), the threshold increases; when
+    ρ̃_t < γ (too few clipped), it decreases.  The step size is
+    proportional to the deviation from the target, giving smoother
+    adaptation near equilibrium.
+    """
+    update_factor = torch.exp(
+        torch.tensor(learning_rate * (noisy_clipping_rate - target_quantile))
+    ).item()
+    new_clip_norm = base_clip_norm * update_factor
+    return float(max(clip_norm_min, min(clip_norm_max, new_clip_norm)))
+
+
 def adaptive_clipped_grad(
     loss_fn: Callable,
     argnums: int | tuple[int, ...] = 0,
@@ -110,8 +190,9 @@ def adaptive_clipped_grad(
     learning_rate: float = 0.2,
     clip_norm_min: float = 0.01,
     clip_norm_max: float = 100.0,
+    quantile_noise_multiplier: float = _DEFAULT_QUANTILE_NOISE_MULTIPLIER,
+    key: RngKey,
     return_aux: bool = False,
-    distributed: Literal["auto"] | bool = "auto",
     **clipped_grad_kwargs: Any,
 ) -> tuple[Callable, AdaptiveClipState]:
     """Create function for adaptive gradient clipping with explicit state-passing.
@@ -124,8 +205,6 @@ def adaptive_clipped_grad(
         C_{t+1} = C_t * exp(η * sign(ρ_t - γ))
 
     Where ρ_t is the fraction of per-example gradients clipped at step t.
-
-    **Distributed training is automatically detected** - no configuration needed!
 
     Args:
         loss_fn: The loss function to be differentiated. Should return a scalar.
@@ -142,12 +221,13 @@ def adaptive_clipped_grad(
             (as used in Andrew et al. 2021). Controls adaptation speed.
         clip_norm_min: Minimum allowed clipping threshold. Default: 0.01.
         clip_norm_max: Maximum allowed clipping threshold. Default: 100.0.
+        quantile_noise_multiplier: Noise scale for clipped-fraction updates.
+            This is the standard deviation of Gaussian noise added to clipping
+            rate (fraction in [0, 1]). Default 0.05 follows Andrew et al.
+            recommendation (equivalent to sigma_b = m/20 on clipped counts).
+        key: RNG key for quantile noise generation.
         return_aux: If True, return a per-example aux NamedTuple with loss values,
             gradient norms, loss aux, and adaptive fields.
-        distributed: Distributed handling mode:
-            - "auto": enable distributed reductions if torch.distributed is initialized
-            - True: require distributed mode and perform internal reductions
-            - False: do not perform any distributed reductions
         **clipped_grad_kwargs: Additional arguments passed to `clipped_grad()`,
             such as `batch_argnums`, `rescale_to_unit_norm`, `normalize_by`, etc.
 
@@ -162,6 +242,7 @@ def adaptive_clipped_grad(
         >>> import torch
         >>> from opaque.clipping import adaptive_clipped_grad
         >>> from opaque.noise import gaussian_noise
+        >>> from opaque.random import key
         >>> import torchopt
         >>>
         >>> def loss_fn(params, x, y):
@@ -174,6 +255,7 @@ def adaptive_clipped_grad(
         ...     loss_fn,
         ...     initial_clip_norm=0.1,
         ...     target_quantile=0.5,
+        ...     key=key(0),
         ...     batch_argnums=(1, 2),
         ... )
         >>>
@@ -201,26 +283,29 @@ def adaptive_clipped_grad(
 
     Example with distributed training (DDP with Poisson sampling):
         >>> import torch.distributed as dist
-        >>> from opaque.clipping import adaptive_clipped_grad
+        >>> from opaque.clipping import adaptive_clipped_grad, sync_adaptive_clip_state
         >>> from opaque.distributed import sum_gradients
+        >>> from opaque.random import key
         >>> from opaque.sampling import PoissonSampler
         >>>
         >>> # Initialize distributed
         >>> dist.init_process_group(backend='nccl')
         >>>
-        >>> # Create adaptive clipping (auto-detects distributed!)
+        >>> # Create adaptive clipping (local-only function)
         >>> grad_fn, clip_state = adaptive_clipped_grad(
         ...     loss_fn,
+        ...     key=key(0),
         ...     batch_argnums=(1, 2),
         ... )
         >>>
         >>> # Use Poisson sampling (different batch sizes on each device)
-        >>> sampler = PoissonSampler(dataset, sample_rate=0.01, distributed=False)
+        >>> sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))
         >>>
         >>> for batch_x, batch_y in dataloader:
-        ...     # Each device: compute clipped gradients on local batch
-        ...     # (clip_state.clip_norm is IDENTICAL across devices)
+        ...     # Each device: compute clipped gradients and local adaptive state
         ...     grad, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+        ...     # Explicit sync step for adaptive clipping state
+        ...     clip_state = sync_adaptive_clip_state(clip_state)
         ...
         ...     # Sum clipped gradients across devices
         ...     grad = sum_gradients(grad)
@@ -232,9 +317,8 @@ def adaptive_clipped_grad(
     Notes:
         - State is IMMUTABLE - a new state object is returned each call.
         - Works with torch.compile, DDP, FSDP (state is explicit).
-        - **Distributed mode is automatically detected** via torch.distributed.is_initialized()
-        - In distributed mode, per-example norms are gathered from ALL devices
-          to compute the clipping rate, ensuring clip_norm is identical everywhere.
+                - Core clipping logic is local-only; distributed sync is explicit.
+                - `key` is required and must be a valid `opaque.random.RngKey`.
         - The clipping threshold adapts over ~23 iterations by a factor of 10
           with default parameters (learning_rate=0.2, target_quantile=0.5).
         - Andrew et al. recommend using the median (γ=0.5) as it works well
@@ -259,6 +343,11 @@ def adaptive_clipped_grad(
         raise ValueError(
             f"clip_norm_max ({clip_norm_max}) must be > clip_norm_min ({clip_norm_min})"
         )
+    if quantile_noise_multiplier <= 0:
+        raise ValueError(
+            "quantile_noise_multiplier must be positive, "
+            f"got {quantile_noise_multiplier}"
+        )
 
     # Extract rescale_to_unit_norm from kwargs for state initialization
     rescale_to_unit_norm = clipped_grad_kwargs.get("rescale_to_unit_norm", False)
@@ -269,31 +358,8 @@ def adaptive_clipped_grad(
         "learning_rate": learning_rate,
         "clip_norm_min": clip_norm_min,
         "clip_norm_max": clip_norm_max,
+        "quantile_noise_multiplier": quantile_noise_multiplier,
     }
-
-    def _use_distributed() -> bool:
-        if distributed not in ("auto", True, False):
-            raise ValueError(
-                f"distributed must be one of {{'auto', True, False}}, got {distributed!r}"
-            )
-
-        try:
-            from opaque.distributed import is_distributed
-        except ImportError as err:
-            if distributed is True:
-                raise RuntimeError(
-                    "distributed=True requested but opaque.distributed is unavailable."
-                ) from err
-            return False
-
-        active = is_distributed()
-        if distributed is True and not active:
-            raise RuntimeError(
-                "distributed=True requested but torch.distributed is not initialized."
-            )
-        if distributed is False:
-            return False
-        return active
 
     def grad_fn(*args, state: AdaptiveClipState, **kwargs):
         """Compute clipped gradients with adaptive threshold.
@@ -312,20 +378,24 @@ def adaptive_clipped_grad(
         # Compute gradients with current threshold
         # Force grad_norms computation to update the threshold
         user_wants_return_aux = return_aux
-        inner_fn, inner_state = clipped_grad(
-            loss_fn,
-            argnums=argnums,
-            has_aux=has_aux,
-            l2_clip_norm=state.clip_norm,
-            return_aux=user_wants_return_aux,
-            distributed=False,
-            _force_grad_norms=not user_wants_return_aux,
-            **clipped_grad_kwargs,
+        clipped_result = cast(
+            tuple[Callable, Any],
+            clipped_grad(
+                loss_fn,
+                argnums=argnums,
+                has_aux=has_aux,
+                l2_clip_norm=state.clip_norm,
+                return_aux=user_wants_return_aux,
+                _force_grad_norms=not user_wants_return_aux,
+                **clipped_grad_kwargs,
+            ),
         )
+        inner_fn, inner_state = clipped_result
 
         result, _ = inner_fn(*args, state=inner_state, **kwargs)
 
         # Extract gradients and auxiliary output
+        aux = None
         if isinstance(result, tuple):
             grads, aux = result
             grad_norms = aux.grad_norms
@@ -333,86 +403,75 @@ def adaptive_clipped_grad(
             grads = result
             grad_norms = None
 
-        distributed_active = _use_distributed()
-        if distributed_active:
-            from opaque.distributed import sum_gradients
-
-            grads = sum_gradients(grads)
-
         # Update clipping threshold using Andrew et al. 2021 algorithm
-        local_num_clipped = 0.0
-        local_total = 0.0
+        num_clipped = 0.0
+        total = 0.0
+        batch_size = grad_norms.numel() if grad_norms is not None else 0
         if grad_norms is not None:
-            # Compute clipping rate: ρ_t = fraction of gradients clipped
-            num_clipped = (grad_norms > state.clip_norm).sum().item()
-            total = max(1, grad_norms.numel())
-            clipping_rate = num_clipped / total
-            local_num_clipped = float(num_clipped)
-            local_total = float(total)
+            num_clipped, total, clipping_rate = _compute_clipping_stats(
+                grad_norms, state.clip_norm
+            )
 
-            # Geometric update: C_{t+1} = C_t * exp(η * sign(ρ_t - γ))
-            if clipping_rate > config["target_quantile"]:
-                # Too many gradients clipped → increase threshold
-                direction = 1.0
-            else:
-                # Too few gradients clipped → decrease threshold
-                direction = -1.0
+            noisy_clipping_rate = _sample_noisy_clipping_rate(
+                clipping_rate,
+                key=state.key,
+                step=state.step,
+                quantile_noise_multiplier=state.quantile_noise_multiplier,
+            )
 
-            # Update with exponential
-            update_factor = torch.exp(torch.tensor(config["learning_rate"] * direction))
-            new_clip_norm = state.clip_norm * update_factor.item()
-
-            # Clamp to valid range
-            new_clip_norm = max(
-                config["clip_norm_min"], min(config["clip_norm_max"], new_clip_norm)
+            new_clip_norm = _adaptive_clip_norm_update(
+                base_clip_norm=state.clip_norm,
+                noisy_clipping_rate=noisy_clipping_rate,
+                target_quantile=config["target_quantile"],
+                learning_rate=config["learning_rate"],
+                clip_norm_min=config["clip_norm_min"],
+                clip_norm_max=config["clip_norm_max"],
             )
         else:
             # No norms available (shouldn't happen)
             new_clip_norm = state.clip_norm
             clipping_rate = 0.0
 
-        # Create new state (IMMUTABLE)
+        # Create new state (IMMUTABLE) with incremented step
         new_state = AdaptiveClipState(
             clip_norm=new_clip_norm,
             clipping_rate=clipping_rate,
             rescale_to_unit_norm=state.rescale_to_unit_norm,
+            key=state.key,
+            step=state.step + 1,
+            quantile_noise_multiplier=state.quantile_noise_multiplier,
+            learning_rate=state.learning_rate,
+            target_quantile=state.target_quantile,
+            clip_norm_min=state.clip_norm_min,
+            clip_norm_max=state.clip_norm_max,
+            base_clip_norm=state.clip_norm,
+            num_clipped=num_clipped,
+            total=total,
+            batch_size=batch_size,
         )
 
-        if distributed_active:
-            new_state = sync_adaptive_clip_state(
-                new_state,
-                local_num_clipped=local_num_clipped,
-                local_total=local_total,
-            )
-
         if user_wants_return_aux:
-            if distributed_active:
-                from opaque.distributed import gather_pytree
-
-                gathered_aux = gather_pytree(
-                    {
-                        "loss_values": aux.loss_values,
-                        "grad_norms": aux.grad_norms,
-                        "clipped_grad_norms": aux.clipped_grad_norms,
-                        "loss_aux": aux.loss_aux,
-                    }
-                )
-                aux = ClippedGradAux(
-                    loss_values=gathered_aux.get("loss_values"),
-                    grad_norms=gathered_aux.get("grad_norms"),
-                    clipped_grad_norms=gathered_aux.get("clipped_grad_norms"),
-                    loss_aux=gathered_aux.get("loss_aux"),
-                )
-
             adaptive_aux = AdaptiveClippedGradAux(
-                loss_values=aux.loss_values if hasattr(aux, "loss_values") else None,
-                grad_norms=aux.grad_norms if hasattr(aux, "grad_norms") else None,
-                clipped_grad_norms=(
-                    aux.clipped_grad_norms
-                    if hasattr(aux, "clipped_grad_norms")
+                loss_values=(
+                    aux.loss_values
+                    if aux is not None and hasattr(aux, "loss_values")
                     else None
                 ),
-                loss_aux=aux.loss_aux if hasattr(aux, "loss_aux") else None,
+                grad_norms=(
+                    aux.grad_norms
+                    if aux is not None and hasattr(aux, "grad_norms")
+                    else None
+                ),
+                clipped_grad_norms=(
+                    aux.clipped_grad_norms
+                    if aux is not None and hasattr(aux, "clipped_grad_norms")
+                    else None
+                ),
+                loss_aux=(
+                    aux.loss_aux
+                    if aux is not None and hasattr(aux, "loss_aux")
+                    else None
+                ),
                 clipping_rate=new_state.clipping_rate,
             )
             return (grads, adaptive_aux), new_state
@@ -424,54 +483,24 @@ def adaptive_clipped_grad(
         clip_norm=initial_clip_norm,
         clipping_rate=0.0,
         rescale_to_unit_norm=rescale_to_unit_norm,
+        key=key,
+        step=0,
+        quantile_noise_multiplier=quantile_noise_multiplier,
+        learning_rate=learning_rate,
+        target_quantile=target_quantile,
+        clip_norm_min=clip_norm_min,
+        clip_norm_max=clip_norm_max,
+        base_clip_norm=initial_clip_norm,
+        num_clipped=0.0,
+        total=0.0,
+        batch_size=0,
     )
 
     return grad_fn, initial_state
-
-
-def sync_adaptive_clip_state(
-    state: AdaptiveClipState,
-    local_num_clipped: float | int,
-    local_total: float | int,
-) -> AdaptiveClipState:
-    """Synchronize adaptive clipping state using global clipped counts.
-
-    This composes mean reduction for clip_norm with a globally consistent
-    clipping rate computed from the sum of per-device counts:
-
-        global_rate = sum(local_num_clipped) / max(1, sum(local_total))
-
-    Args:
-        state: Adaptive clipping state.
-        local_num_clipped: Number of locally clipped examples at this step.
-        local_total: Number of local examples considered at this step.
-
-    Returns:
-        New synchronized state with globally consistent clipping_rate.
-    """
-    from opaque.distributed import is_distributed, reduce_scalar
-
-    if not is_distributed():
-        return state
-
-    # Mean reduction for clip_norm
-    synced_clip_norm = reduce_scalar(state.clip_norm, op="mean")
-
-    # Global clipping rate from summed counts
-    global_num_clipped = reduce_scalar(float(local_num_clipped), op="sum")
-    global_total = reduce_scalar(float(local_total), op="sum")
-    global_rate = global_num_clipped / max(1.0, global_total)
-
-    return AdaptiveClipState(
-        clip_norm=synced_clip_norm,
-        clipping_rate=float(global_rate),
-        rescale_to_unit_norm=state.rescale_to_unit_norm,
-    )
 
 
 __all__ = [
     "adaptive_clipped_grad",
     "AdaptiveClipState",
     "AdaptiveClippedGradAux",
-    "sync_adaptive_clip_state",
 ]

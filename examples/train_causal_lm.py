@@ -24,6 +24,7 @@ from opaque.accounting import calibration as cal
 from opaque.accounting.accountant import Accountant
 from opaque.clipping import adaptive_clipped_grad, clipped_grad
 from opaque.noise import gaussian_noise
+from opaque.random import key
 from opaque.utils import make_functional
 
 
@@ -433,11 +434,8 @@ def main():
         fixed_clip_norm = args.clip_norm
         clip_state = None
 
-    # Setup RNG
-    if device.type == "cpu":
-        rng = torch.Generator().manual_seed(args.seed)
-    else:
-        rng = torch.Generator(device=device).manual_seed(args.seed)
+    # Noise seed for DP (automatically shifted by rank in distributed mode)
+    noise_seed = args.seed
 
     # Pre-create clipped_grad function for fixed clipping
     if not args.adaptive_clipping:
@@ -526,7 +524,7 @@ def main():
 
             # Add Gaussian noise
             stddev = noise_multiplier * clip_state.sensitivity()
-            noise_fn, noise_state = gaussian_noise(stddev=stddev, generator=rng)
+            noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(noise_seed), synchronized="auto")
             noisy_grads, _ = noise_fn(grads_tuple, noise_state)
 
             # Optimizer step (no adapter wrapper - optimizer used directly)

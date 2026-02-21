@@ -1,7 +1,7 @@
 """Per-example clipping and summing for arbitrary functions."""
 
 from collections.abc import Callable
-from typing import Any, Literal, NamedTuple
+from typing import Any, NamedTuple
 
 import torch
 from torch.func import vmap as _vmap
@@ -188,7 +188,6 @@ def clipped_fun(
     nan_safe: bool = True,
     dtype: torch.dtype | None = None,
     spmd_axis_name: str | None = None,
-    distributed: Literal["auto"] | bool = "auto",
 ) -> tuple[Callable, FixedClipState]:
     """Transform a function to clip its output and sum across a batch.
 
@@ -245,11 +244,6 @@ def clipped_fun(
             will be the same as the dtypes of the function output.
         spmd_axis_name: See torch.vmap. **Currently not implemented** - parameter
             accepted for API compatibility.
-        distributed: Distributed handling mode:
-            - "auto": enable distributed reductions if torch.distributed is initialized
-            - True: require distributed mode and perform internal reductions
-            - False: do not perform any distributed reductions
-
     Returns:
         A new function `clip_fn` that clips the output of `fun` and sums across
         the batch. `clip_fn` takes the same arguments as `fun`. The exact output
@@ -272,30 +266,6 @@ def clipped_fun(
 
     # Normalize batch_argnums to tuple
     batch_argnums = normalize_to_tuple(batch_argnums)
-
-    def _use_distributed() -> bool:
-        if distributed not in ("auto", True, False):
-            raise ValueError(
-                f"distributed must be one of {{'auto', True, False}}, got {distributed!r}"
-            )
-
-        try:
-            from opaque.distributed import is_distributed
-        except ImportError:
-            if distributed is True:
-                raise RuntimeError(
-                    "distributed=True requested but opaque.distributed is unavailable."
-                ) from None
-            return False
-
-        active = is_distributed()
-        if distributed is True and not active:
-            raise RuntimeError(
-                "distributed=True requested but torch.distributed is not initialized."
-            )
-        if distributed is False:
-            return False
-        return active
 
     # Wrap function to handle has_aux - use empty tuple () not None!
     if not has_aux:
@@ -388,19 +358,8 @@ def clipped_fun(
         if normalize_by != 1.0:
             result = tree_map(lambda x: x / normalize_by, result)
 
-        distributed_active = _use_distributed()
-        if distributed_active:
-            from opaque.distributed import sum_gradients
-
-            result = sum_gradients(result)
-
         if not return_aux:
             return result
-
-        if distributed_active:
-            from opaque.distributed import gather_pytree
-
-            aux = gather_pytree(aux)
 
         aux_dict = aux if isinstance(aux, dict) else {}
         aux = ClippedFunAux(

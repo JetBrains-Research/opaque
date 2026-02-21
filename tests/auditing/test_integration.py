@@ -3,6 +3,7 @@
 import numpy as np
 
 from opaque.auditing import AuditResult, BootstrapParams
+from opaque.random import key
 
 
 def test_basic_audit_workflow():
@@ -33,7 +34,7 @@ def test_audit_with_bootstrap():
     out_scores = np.random.normal(loc=3.0, scale=1.0, size=50)
 
     result = AuditResult(in_scores, out_scores)
-    params = BootstrapParams(num_samples=20, seed=42)
+    params = BootstrapParams(num_samples=20, key=key(42))
 
     auroc_ci = result.bootstrap(AuditResult.auroc, params)
     assert len(auroc_ci) == 2

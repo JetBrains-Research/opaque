@@ -87,6 +87,7 @@ nav:
   - User Guide:
     - Overview: user-guide/index.md
     - Differential Privacy Basics: user-guide/dp-basics.md
+    - Random Number Generation: user-guide/rng-key.md
     - Per-Sample Gradient Clipping: user-guide/clipping.md
     - Noise Addition: user-guide/noise.md
     - Privacy Accounting: user-guide/accounting.md
@@ -95,9 +96,11 @@ nav:
     - Memory Profiling: user-guide/memory-profiling.md
     - LoRA Fine-tuning: user-guide/lora.md
     - Distributed Training: user-guide/distributed.md
+    - Privacy Auditing: user-guide/auditing.md
     - Known Limitations: limitations.md
   - API Reference:
     - Overview: api/index.md
+    - Random Number Generation: api/rng.md
     - Utils:
       - PyTree Utilities: api/core/pytree_utils.md
       - Functional Utilities: api/functional_utils.md
@@ -106,11 +109,10 @@ nav:
     - Accounting: api/accounting.md
     - Optimizers: api/optimizers.md
     - Sampling: api/sampling.md
+    - Auditing: api/auditing.md
     - Distributed: api/distributed.md
   - Development:
     - Contributing: development/contributing.md
-    - TDD Workflow: development/tdd-workflow.md
-    - Roadmap: development/roadmap.md
 
 extra:
   social:

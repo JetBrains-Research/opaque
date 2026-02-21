@@ -91,7 +91,7 @@ parameters and return opaque `Pld` handles.
 opaque_accounting (Rust crate)
 ├── mechanisms/       # gaussian_pld, eps_delta_pld, identity_pld
 ├── amplification/    # poisson_gaussian_pld, truncated_poisson_gaussian_pld, parallel_poisson_gaussian_pld
-├── transformations/  # combined_sensitivity (adaptive clipping)
+├── transformations/  # adaclip_sensitivity (adaptive clipping)
 ├── pld/              # PrivacyLossDistribution: metrics, compose, self_compose
 ├── discretization/   # Connect-the-Dots algorithm, DiscretizationConfig
 ├── numerics/         # FFT, log-space arithmetic, special functions

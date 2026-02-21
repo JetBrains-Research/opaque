@@ -49,8 +49,8 @@ class TestPldConstructors:
         eps = pld.epsilon_at(1e-5)
         assert eps == pytest.approx(0.0, abs=1e-10)
 
-    def test_combined_sensitivity(self):
-        s = dp.combined_sensitivity(1.1, 50.0)
+    def test_adaclip_sensitivity(self):
+        s = dp.adaclip_sensitivity(1.1, 50.0)
         assert math.isfinite(s) and s > 0
 
 

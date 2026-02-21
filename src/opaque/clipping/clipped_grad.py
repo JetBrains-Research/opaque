@@ -1,7 +1,7 @@
 """Per-example gradient clipping for differential privacy."""
 
 from collections.abc import Callable
-from typing import Any, Literal, NamedTuple
+from typing import Any, NamedTuple
 
 import torch
 from torch.func import grad_and_value
@@ -64,7 +64,6 @@ def clipped_grad(
     nan_safe: bool = True,
     dtype: torch.dtype | None = None,
     spmd_axis_name: str | None = None,
-    distributed: Literal["auto"] | bool = "auto",
     _force_grad_norms: bool = False,
 ) -> Callable:
     """Create a function to compute the sum of clipped gradients of loss_fn.
@@ -159,11 +158,6 @@ def clipped_grad(
             computes a sum over a potentially large batch.
         spmd_axis_name: Axis name for SPMD distributed training. Not yet implemented
             in PyTorch version (tech debt).
-        distributed: Distributed handling mode:
-            - "auto": enable distributed reductions if torch.distributed is initialized
-            - True: require distributed mode and perform internal reductions
-            - False: do not perform any distributed reductions
-
     Returns:
         Tuple of (clipped_grad_fn, clip_state) where:
         - clipped_grad_fn: A function that computes the sum of clipped per-example gradients.
@@ -210,7 +204,6 @@ def clipped_grad(
         nan_safe=nan_safe,
         dtype=dtype,
         spmd_axis_name=spmd_axis_name,
-        distributed=distributed,
     )
 
     # clipped_grad_fn is now a callable, clip_state is a FixedClipState
@@ -254,33 +247,4 @@ def clipped_grad(
         return grad_fn_wrapper, clip_state
 
 
-def sync_clip_state(state: Any) -> Any:
-    """Synchronize fixed clipping state across processes.
-
-    For FixedClipState, synchronizes l2_norm_bound using mean reduction.
-
-    Args:
-        state: Fixed clipping state (FixedClipState).
-
-    Returns:
-        New synchronized state.
-    """
-    from opaque.distributed import is_distributed, reduce_scalar
-
-    if not is_distributed():
-        return state
-
-    from opaque.clipping.types import FixedClipState
-
-    if not isinstance(state, FixedClipState):
-        raise TypeError(f"Expected FixedClipState, got {type(state)}")
-
-    synced_l2_norm_bound = reduce_scalar(state.l2_norm_bound, op="mean")
-
-    return FixedClipState(
-        l2_norm_bound=synced_l2_norm_bound,
-        rescale_to_unit_norm=state.rescale_to_unit_norm,
-    )
-
-
-__all__ = ["clipped_grad", "ClippedGradAux", "sync_clip_state"]
+__all__ = ["clipped_grad", "ClippedGradAux"]

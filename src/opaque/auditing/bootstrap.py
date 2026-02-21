@@ -11,6 +11,8 @@ import dataclasses
 
 import numpy as np
 
+from opaque.random import RngKey
+
 __all__ = ["BootstrapParams"]
 
 
@@ -37,13 +39,13 @@ class BootstrapParams:
         acceleration: If True, apply acceleration to adjust for non-constant variance.
             Requires bias_correction=True. Increases computation significantly
             (requires jackknife resampling). Default: False.
-        seed: Random seed for reproducibility. If None, a non-deterministic seed
-            is chosen.
+        key: RNG key for reproducibility.
 
     Example:
         >>> from opaque.auditing import AuditResult, BootstrapParams
+        >>> from opaque.random import key
         >>> result = AuditResult(in_scores, out_scores)
-        >>> params = BootstrapParams.confidence_interval(confidence=0.95, seed=42)
+        >>> params = BootstrapParams.confidence_interval(confidence=0.95, key=key(42))
         >>> auroc_ci = result.bootstrap(AuditResult.auroc, params)
     """
 
@@ -51,7 +53,7 @@ class BootstrapParams:
     quantiles: tuple[float, ...] = (0.025, 0.975)
     bias_correction: bool = True
     acceleration: bool = False
-    seed: int | None = None
+    key: RngKey | None = None
 
     def __post_init__(self):
         """Validate parameters."""
@@ -76,7 +78,7 @@ class BootstrapParams:
         num_samples: int = 1000,
         bias_correction: bool = True,
         acceleration: bool = False,
-        seed: int | None = None,
+        key: RngKey | None = None,
     ) -> "BootstrapParams":
         """Create BootstrapParams for a symmetric confidence interval.
 
@@ -85,7 +87,7 @@ class BootstrapParams:
             num_samples: Number of bootstrap resamples. Default: 1000.
             bias_correction: If True, apply bias correction. Default: True.
             acceleration: If True, apply acceleration (BCa). Default: False.
-            seed: Random seed for reproducibility.
+            key: RNG key for reproducibility.
 
         Returns:
             BootstrapParams configured for the specified confidence interval.
@@ -105,5 +107,5 @@ class BootstrapParams:
             quantiles=quantiles,
             bias_correction=bias_correction,
             acceleration=acceleration,
-            seed=seed,
+            key=key,
         )

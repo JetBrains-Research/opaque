@@ -20,6 +20,7 @@ import torch.nn as nn
 from opaque.clipping import adaptive_clipped_grad, clipped_grad
 from opaque.distributed import get_rank, get_world_size, reduce_scalar, sum_gradients
 from opaque.noise import gaussian_noise
+from opaque.random import key
 from opaque.utils import make_functional
 from opaque.utils.pytree import tree_leaves
 
@@ -116,6 +117,7 @@ def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> N
             step=100,
             clipping_rate=0.5 + 0.1 * rank,
             rescale_to_unit_norm=False,
+            batch_size=8 * (rank + 1),
         )
         synced = sync_state(
             state,
@@ -141,7 +143,7 @@ def _worker_shared_noise_is_deterministic(
             "weight": torch.zeros(10, 5, device=device),
             "bias": torch.zeros(5, device=device),
         }
-        noise_fn, state = gaussian_noise(stddev=1.0, generator=None)
+        noise_fn, state = gaussian_noise(stddev=1.0, key=key(0))
         noisy, _ = noise_fn(grads, state)
 
         gathered = [torch.zeros_like(noisy["weight"]) for _ in range(world_size)]
@@ -165,9 +167,9 @@ def _worker_dp_training_step(rank: int, world_size: int, port: int) -> None:
             return ((pred - y) ** 2).mean()
 
         grad_fn, clip_state = clipped_grad(
-            loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2), distributed=False
+            loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2)
         )
-        noise_fn, noise_state = gaussian_noise(stddev=1.1, generator=None)
+        noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(0))
 
         batch_size = 8
         x = torch.randn(batch_size, 10, device=device)
@@ -203,6 +205,7 @@ def _worker_adaptive_clipping(rank: int, world_size: int, port: int) -> None:
             loss_fn,
             batch_argnums=(1, 2),
             initial_clip_norm=0.1,
+            key=key(0),
         )
 
         batch_size = 8
