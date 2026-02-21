@@ -60,7 +60,7 @@ shard = local_shard(dataset, rank=rank, world_size=dist.get_world_size())
 sampler = PoissonSampler(
     shard, sample_rate=0.01, key=fold_in(key(0), rank),
 )
-loader = torch.utils.data.DataLoader(dataset, batch_sampler=sampler)
+loader = torch.utils.data.DataLoader(shard, batch_sampler=sampler)
 
 # Training loop
 for batch_x, batch_y in loader:

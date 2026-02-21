@@ -88,8 +88,8 @@ def main():
         key=fold_in(rng_key(42), rank),
     )
 
-    # DataLoader with batch_sampler
-    dataloader = DataLoader(dataset, batch_sampler=sampler)
+    # DataLoader with batch_sampler (use shard, not full dataset)
+    dataloader = DataLoader(shard, batch_sampler=sampler)
 
     # Define loss function
     def loss_fn(params, x, y):
