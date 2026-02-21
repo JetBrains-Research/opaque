@@ -558,7 +558,7 @@ Device 1: noisy_grad = [5.9, 7.8, 9.7]  # Different from Device 0!
 **What if we added noise BEFORE aggregation?** ❌
 
 ```python
-# BAD: Add noise before AllReduce (federated pattern)
+# BAD: Add noise before AllReduce (local noise addition)
 Device 0: clipped = [1.0, 2.0, 3.0] + noise_0 = [1.1, 2.2, 3.3]
 Device 1: clipped = [4.0, 5.0, 6.0] + noise_1 = [4.9, 5.8, 6.7]
 
@@ -570,7 +570,7 @@ aggregated = [6.0, 8.0, 10.0]  # Combined gradient + noise
 # Privacy accounting must use parallel Poisson (more complex)
 ```
 
-**Our approach (centralized pattern)** ✅
+**Our approach (central noise addition)** ✅
 
 ```python
 # GOOD: Aggregate THEN add noise
