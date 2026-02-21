@@ -16,9 +16,7 @@ __all__ = [
 ]
 
 
-def local_shard(
-    dataset: Sized, *, rank: int = 0, world_size: int = 1
-) -> Subset:
+def local_shard(dataset: Sized, *, rank: int = 0, world_size: int = 1) -> Subset:
     """Return the shard of ``dataset`` that belongs to ``rank``.
 
     This is the recommended way to partition a dataset for distributed
