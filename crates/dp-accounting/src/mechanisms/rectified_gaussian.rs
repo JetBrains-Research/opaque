@@ -190,12 +190,19 @@ fn rectified_gaussian_epsilon_bounds(
     };
 
     // Right: log(Φ(−R) / Φ(Δ/σ − R))
+    // Note: Δ/σ − R > −R always, so p_r1 ≥ p_r0. The privacy loss here
+    // is always ≤ 0.  When both underflow to zero the point mass is
+    // negligible—use 0.0 rather than ±∞.
     let p_r0 = n01.cdf(-radius);
     let p_r1 = n01.cdf(sensitivity / sigma - radius);
-    let eps_right = if p_r1 > 0.0 {
+    let eps_right = if p_r0 > 0.0 && p_r1 > 0.0 {
         (p_r0 / p_r1).ln()
+    } else if p_r0 > 0.0 {
+        // p_r0 > 0 but p_r1 underflowed (shouldn't happen since p_r1 >= p_r0)
+        f64::INFINITY
     } else {
-        f64::NEG_INFINITY
+        // Both zero: point mass is negligible
+        0.0
     };
 
     // Take the envelope of all components

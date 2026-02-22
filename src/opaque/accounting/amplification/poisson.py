@@ -105,6 +105,8 @@ def poisson(
         raise TypeError(
             f"poisson() requires a Gaussian, RectifiedGaussian, TruncatedGaussian, "
             f"or AdaClip inner mechanism, got {type(inner).__name__}. "
-            "Use: acc.poisson(acc.gaussian(noise_multiplier), sample_rate)"
+            "Examples: acc.poisson(acc.gaussian(nm), rate), "
+            "acc.poisson(acc.rectified_gaussian(nm, radius), rate), "
+            "acc.poisson(acc.truncated_gaussian(nm, radius), rate)"
         )
     return Poisson(inner=inner, sample_rate=sample_rate)

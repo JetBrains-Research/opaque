@@ -172,6 +172,16 @@ class TestParallelPoissonConstructor:
         with pytest.raises(TypeError, match="Gaussian"):
             acc.parallel_poisson(acc.truncated_gaussian(1.0, 5.0), sample_rate=0.01, num_workers=4)
 
+    def test_rejects_bounded_gaussian_inner(self):
+        """parallel_poisson rejects Poisson(RectifiedGaussian) eagerly."""
+        p_rect = acc.poisson(acc.rectified_gaussian(1.0, 5.0), 0.01)
+        with pytest.raises(TypeError, match="RectifiedGaussian"):
+            acc.parallel_poisson(p_rect, 4)
+
+        p_trunc = acc.poisson(acc.truncated_gaussian(1.0, 5.0), 0.01)
+        with pytest.raises(TypeError, match="TruncatedGaussian"):
+            acc.parallel_poisson(p_trunc, 4)
+
 
 # ── Bounded Gaussian amplification tests ─────────────────────────────
 
