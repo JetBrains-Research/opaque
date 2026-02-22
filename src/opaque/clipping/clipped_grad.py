@@ -65,7 +65,7 @@ def clipped_grad(
     dtype: torch.dtype | None = None,
     spmd_axis_name: str | None = None,
     _force_grad_norms: bool = False,
-) -> Callable:
+) -> tuple[Callable, "FixedClipState"]:
     """Create a function to compute the sum of clipped gradients of loss_fn.
 
     This function acts as a transformation similar to `torch.func.grad`, but with added
@@ -84,12 +84,13 @@ def clipped_grad(
         >>> import torch
         >>> from opaque.clipping import clipped_grad
         >>> f = lambda param, data: 0.5 * ((data - param) ** 2).mean()
-        >>> g = clipped_grad(f, l2_clip_norm=float('inf'))
-        >>> g(torch.tensor(3.0), torch.tensor([0.0, 7.0, -2.0]))
+        >>> g, clip_state = clipped_grad(f, l2_clip_norm=float('inf'))
+        >>> result = g(torch.tensor(3.0), torch.tensor([0.0, 7.0, -2.0]))
+        >>> result
         tensor(1.3333)
 
     Example Usage (with Auxiliary Output):
-        >>> g = clipped_grad(
+        >>> g, clip_state = clipped_grad(
         ...     f, l2_clip_norm=float('inf'), return_aux=True
         ... )
         >>> _, aux = g(torch.tensor(3.0), torch.tensor([0.0, 7.0, -2.0]))

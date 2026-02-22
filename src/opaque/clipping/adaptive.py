@@ -28,9 +28,9 @@ class AdaptiveClippedGradAux(NamedTuple):
     """Auxiliary outputs from adaptive_clipped_grad extending ClippedGradAux.
 
     Attributes:
-        loss_values: Per-example loss values (if return_loss_values=True).
-        grad_norms: L2 norms of per-example gradients before clipping (if return_grad_norms=True).
-        clipped_grad_norms: L2 norms after clipping (if return_grad_norms=True).
+        loss_values: Per-example loss values (if return_aux=True).
+        grad_norms: L2 norms of per-example gradients before clipping (if return_aux=True).
+        clipped_grad_norms: L2 norms after clipping (if return_aux=True).
         loss_aux: Auxiliary outputs from loss function (if has_aux=True).
         clipping_rate: Fraction of per-example gradients clipped at this step.
     """
