@@ -5,6 +5,9 @@ Opaque uses Privacy Loss Distributions (PLD) computed by a Rust engine for
 numerically tight composition bounds. The API is built around composable
 `DpProcess` objects that represent privacy mechanisms.
 
+For mathematical details, supported amplifications, and parameter guidance
+for each mechanism, see the [Mechanisms](../mechanisms/index.md) reference.
+
 ## Core concepts
 
 ### DpProcess
