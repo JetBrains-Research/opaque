@@ -337,7 +337,10 @@ class TestParallelPoissonCrossValidation:
     def test_parallel_poisson_vs_reference(self, sigma, q, num_workers):
         """ParallelPoisson(G(σ), q, k) should give sensible epsilon."""
         proc = (
-            acc.parallel_poisson(acc.gaussian(sigma), sample_rate=q, num_workers=num_workers) * 500
+            acc.parallel_poisson(
+                acc.gaussian(sigma), sample_rate=q, num_workers=num_workers
+            )
+            * 500
         )
         eps = proc.epsilon_at(1e-5)
 

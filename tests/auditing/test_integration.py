@@ -23,7 +23,9 @@ def test_basic_audit_workflow():
 
     # Test utility metrics
     assert 0.5 < result.auc() < 1.0, "AUC should be above random"
-    assert result.beta_at(alpha=0.05) < 0.95, "Beta should be below 1 for detectable leakage"
+    assert result.beta_at(alpha=0.05) < 0.95, (
+        "Beta should be below 1 for detectable leakage"
+    )
     assert result.max_accuracy() > 0.5, "Accuracy should exceed random"
 
 
@@ -75,7 +77,9 @@ def test_real_world_scenario():
     assert 0.5 < result.auc() < 0.85, "AUC should show modest attack"
 
     beta_at_1pct = result.beta_at(alpha=0.01)
-    assert beta_at_1pct > 0.7, "Beta should be high at low alpha (weak attack at strict threshold)"
+    assert beta_at_1pct > 0.7, (
+        "Beta should be high at low alpha (weak attack at strict threshold)"
+    )
 
 
 def test_one_run_audit():
