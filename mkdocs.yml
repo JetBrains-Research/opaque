@@ -93,6 +93,14 @@ nav:
     - Memory Profiling: user-guide/memory-profiling.md
     - Privacy Auditing: user-guide/auditing.md
     - Known Limitations: limitations.md
+  - Mechanisms:
+    - Overview: mechanisms/index.md
+    - Gaussian: mechanisms/gaussian.md
+    - Rectified Gaussian: mechanisms/rectified-gaussian.md
+    - Truncated Gaussian: mechanisms/truncated-gaussian.md
+    - BandMF: mechanisms/band-mf.md
+    - BLT: mechanisms/blt.md
+    - Dense MF: mechanisms/dense-mf.md
   - Tutorials:
     - Overview: tutorials/README.md
     - DP-SGD Training: tutorials/dp_sgd_training.ipynb

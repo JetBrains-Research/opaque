@@ -98,6 +98,8 @@ understanding, or jump to a specific topic.
   DP-SGD.
 - **[Distributed Training](distributed.md)** -- DDP with synchronized noise
   and gradient aggregation.
+- **[HuggingFace Compatibility](huggingface.md)** -- Using HuggingFace
+  Transformers models with Opaque, including LoRA fine-tuning.
 - **[Memory Profiling](memory-profiling.md)** -- Microbatch auto-tuning and
   memory tracking.
 - **[Privacy Auditing](auditing.md)** -- Empirical privacy validation via

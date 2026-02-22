@@ -35,9 +35,11 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `identity_mf_noise()`, `custom_mf_noise()` - MF API utilities
 
 - **[Accounting](accounting.md)**: Privacy budget tracking
-  - `gaussian()`, `poisson()`, `truncated_poisson()` - Mechanism constructors → typed subclasses
+  - `gaussian()`, `poisson()`, `truncated_poisson()`, `parallel_poisson()` - Standard mechanisms
+  - `rectified_gaussian()`, `truncated_gaussian()` - Bounded Gaussian mechanisms
+  - `band_mf()`, `blt_mf()`, `dense_mf()`, `cyclic_poisson()` - Matrix factorization mechanisms
   - `DpProcess` operators: `*` (repeat), `|` (compose)
-  - `.epsilon_at()`, `.delta_at()`, `.advantage()`, `.beta_at()` - Privacy metrics
+  - `.epsilon_at()`, `.delta_at()`, `.advantage()`, `.beta_at()`, `.risk_at()` - Privacy metrics
   - `calibrate()` - Binary-search noise multiplier for target privacy
 
 - **[Sampling](sampling.md)**: Privacy-amplifying sampling
@@ -118,12 +120,23 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | Function                  | Purpose                           | User Guide                                                              |
 |---------------------------|-----------------------------------|-------------------------------------------------------------------------|
 | `gaussian()`              | Gaussian mechanism                | [Guide](../user-guide/accounting.md#mechanisms)                         |
-| `poisson()`               | Poisson-subsampled Gaussian       | [Guide](../user-guide/accounting.md#mechanisms)                         |
-| `truncated_poisson()`     | Truncated Poisson Gaussian        | [Guide](../user-guide/accounting.md#mechanisms)                         |
+| `rectified_gaussian()`    | Bounded Gaussian — rectified      | [Guide](../user-guide/accounting.md#mechanisms)                         |
+| `truncated_gaussian()`    | Bounded Gaussian — truncated      | [Guide](../user-guide/accounting.md#mechanisms)                         |
+| `poisson()`               | Poisson-subsampled mechanism      | [Guide](../user-guide/accounting.md#mechanisms)                         |
+| `truncated_poisson()`     | Truncated Poisson subsampling     | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `parallel_poisson()`      | Parallel Poisson subsampling      | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `adaclip()`               | Adaptive clipping mechanism       | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `eps_delta()`             | Fixed (ε, δ) guarantee            | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `identity()`              | Zero privacy loss                 | [Guide](../user-guide/accounting.md#mechanisms)                         |
+
+### Accounting (Matrix Factorization)
+
+| Function                  | Purpose                           | User Guide                                                              |
+|---------------------------|-----------------------------------|-------------------------------------------------------------------------|
+| `band_mf()`              | BandMF banded Toeplitz mechanism  | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)    |
+| `blt_mf()`               | BLT mechanism (multi-epoch)       | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)    |
+| `dense_mf()`             | Dense optimal MF mechanism        | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)    |
+| `cyclic_poisson()`       | Cyclic Poisson amplification (BandMF) | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)|
 
 ### Accounting (Composition & Metrics)
 
@@ -135,6 +148,7 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | `.delta_at(epsilon)`      | Query δ for given ε               | [Guide](../user-guide/accounting.md#privacy-metrics)                    |
 | `.advantage()`            | Query f-DP advantage              | [Guide](../user-guide/accounting.md#privacy-metrics)                    |
 | `.beta_at(alpha)`         | Query (α, β) error rates          | [Guide](../user-guide/accounting.md#privacy-metrics)                    |
+| `.risk_at(prior)`         | Query Bayes risk                  | [Guide](../user-guide/accounting.md#privacy-metrics)                    |
 
 ### Calibration
 

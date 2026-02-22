@@ -8,6 +8,9 @@ proportional to the sensitivity (from clipping) and the desired privacy level.
 All noise functions in Opaque follow the same pattern: they return a
 `(noise_fn, state)` tuple with immutable state.
 
+For mathematical details, privacy analysis, and parameter guidance for
+each mechanism, see the [Mechanisms](../mechanisms/index.md) reference.
+
 ## Gaussian noise
 
 `gaussian_noise` is the standard noise mechanism for DP-SGD. It adds

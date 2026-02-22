@@ -5,6 +5,9 @@ Opaque uses Privacy Loss Distributions (PLD) computed by a Rust engine for
 numerically tight composition bounds. The API is built around composable
 `DpProcess` objects that represent privacy mechanisms.
 
+For mathematical details, supported amplifications, and parameter guidance
+for each mechanism, see the [Mechanisms](../mechanisms/index.md) reference.
+
 ## Core concepts
 
 ### DpProcess
@@ -73,7 +76,8 @@ eps = g.epsilon_at(delta=1e-5)
 
 Standard Poisson-subsampled mechanism. Each example is included independently
 with probability `sample_rate`. This provides privacy amplification through
-subsampling.
+subsampling. Accepts `gaussian()`, `rectified_gaussian()`,
+`truncated_gaussian()`, or `adaclip()` as the inner mechanism.
 
 ```python
 step = acc.poisson(acc.gaussian(0.8), sample_rate=256 / 50_000)
