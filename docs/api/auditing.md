@@ -270,4 +270,4 @@ params = BootstrapParams.confidence_interval(confidence=0.95, key=key(42))
 ## See Also
 
 - **[Privacy Auditing User Guide](../user-guide/auditing.md)**: Conceptual explanations and workflows
-- **[Tutorial: Empirical Privacy Auditing](../tutorials/07_privacy_auditing.ipynb)**: Interactive walkthrough
+- **[Privacy Auditing Tutorial](../tutorials/privacy_auditing.ipynb)**: Interactive walkthrough

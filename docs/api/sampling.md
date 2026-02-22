@@ -14,10 +14,10 @@ Opaque provides two sampling strategies:
   - Strong privacy amplification
   - Standard in DP research
 
-2. **Truncated Poisson Sampling**: Poisson sampling with bounded batch sizes ⭐
-  - Bounded batch sizes (more stable training)
-  - **Tighter privacy bounds** (up to 20% better!)
-  - **Recommended for production**
+2. **Truncated Poisson Sampling**: Poisson sampling with bounded batch sizes
+  - Bounded batch sizes (predictable memory usage)
+  - Tighter privacy bounds than fixed-batch sampling
+  - Well suited for production workloads
 
 **See also**: [Poisson Sampling & Microbatching User Guide](../user-guide/sampling.md)
 

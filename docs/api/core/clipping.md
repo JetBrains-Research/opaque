@@ -7,7 +7,7 @@ The `opaque.clipping` module provides the core functionality for per-sample grad
 Per-sample gradient clipping bounds the influence any single training example can have on the model, enabling
 differential privacy. Opaque provides three clipping functions:
 
-1. **`clipped_grad()`** ⭐ - High-level API for gradient clipping (recommended)
+1. **`clipped_grad()`** - High-level API for gradient clipping
   - Automatically differentiates loss function
   - Clips per-example gradients
   - Sums clipped gradients

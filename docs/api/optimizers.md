@@ -88,5 +88,5 @@ variables so that each rank samples from its shard of the dataset.
 
 - [Gradient Clipping API](core/clipping.md) — includes `adaptive_clipped_grad()`
 - [Optimizers User Guide](../user-guide/optimizers.md)
-- [Tutorial 04: DP Optimizers](../tutorials/04_dp_optimizers.ipynb)
+- [Fine-tuning an LLM Tutorial](../tutorials/llm_finetuning.ipynb)
 - [TorchOpt Documentation](https://torchopt.readthedocs.io/)

@@ -26,7 +26,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 ### DP-SGD Components
 
 - **[Clipping](core/clipping.md)**: Per-sample gradient clipping
-  - `clipped_grad()` - High-level gradient clipping (recommended)
+  - `clipped_grad()` - High-level gradient clipping
   - `clipped_fun()` - Clip and sum function outputs
   - `clip_pytree()` - Low-level PyTree clipping
   - `adaptive_clipped_grad()` - Clipped gradients with auto-tuned clip norm
@@ -45,7 +45,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 - **[Sampling](sampling.md)**: Privacy-amplifying sampling
   - `PoissonSampler` - Standard Poisson sampling
-  - `TruncatedPoissonSampler` - Bounded Poisson sampling (recommended)
+  - `TruncatedPoissonSampler` - Bounded Poisson sampling
 
 ### Validation & Debugging
 
@@ -108,8 +108,8 @@ epsilon = accountant.epsilon_at(1e-5)
 
 | Function         | Purpose                             | User Guide                                                        |
 |------------------|-------------------------------------|-------------------------------------------------------------------|
-| `clipped_grad()` | Differentiate loss with DP clipping | [Guide](../user-guide/clipping.md#clipped_grad-high-level-api)    |
-| `clipped_fun()`  | Clip and sum function outputs       | [Guide](../user-guide/clipping.md#clipped_fun-primary-api)        |
+| `clipped_grad()` | Differentiate loss with DP clipping | [Guide](../user-guide/clipping.md#clipped_grad-recommended-api) |
+| `clipped_fun()`  | Clip and sum function outputs       | [Guide](../user-guide/clipping.md#clipped_fun-general-purpose-clipping) |
 | `clip_pytree()`  | Clip PyTree to max norm             | [Guide](../user-guide/clipping.md#clip_pytree-low-level-clipping) |
 
 ### Noise
@@ -140,12 +140,12 @@ epsilon = accountant.epsilon_at(1e-5)
 
 | Method / Operator         | Purpose                           | User Guide                                                              |
 |---------------------------|-----------------------------------|-------------------------------------------------------------------------|
-| `process * k`             | Repeat k times                    | [Guide](../user-guide/accounting.md#composition)                        |
-| `a \| b`                  | Heterogeneous composition         | [Guide](../user-guide/accounting.md#composition)                        |
-| `.epsilon_at(delta)`      | Query (ε, δ)-DP                   | [Guide](../user-guide/accounting.md#1-differential-privacy)             |
-| `.delta_at(epsilon)`      | Query δ for given ε               | [Guide](../user-guide/accounting.md#1-differential-privacy)             |
-| `.advantage()`            | Query f-DP advantage              | [Guide](../user-guide/accounting.md#2-f-dp-advantage)                   |
-| `.beta_at(alpha)`         | Query (α, β) error rates          | [Guide](../user-guide/accounting.md#3-error-rates)                      |
+| `process * k`             | Repeat k times                    | [Guide](../user-guide/accounting.md#core-concepts)                      |
+| `a \| b`                  | Heterogeneous composition         | [Guide](../user-guide/accounting.md#core-concepts)                      |
+| `.epsilon_at(delta)`      | Query (ε, δ)-DP                   | [Guide](../user-guide/accounting.md#privacy-metrics)                    |
+| `.delta_at(epsilon)`      | Query δ for given ε               | [Guide](../user-guide/accounting.md#privacy-metrics)                    |
+| `.advantage()`            | Query f-DP advantage              | [Guide](../user-guide/accounting.md#privacy-metrics)                    |
+| `.beta_at(alpha)`         | Query (α, β) error rates          | [Guide](../user-guide/accounting.md#privacy-metrics)                    |
 
 ### Calibration
 
@@ -162,8 +162,8 @@ epsilon = accountant.epsilon_at(1e-5)
 
 | Class                     | Purpose                    | User Guide                                                    |
 |---------------------------|----------------------------|---------------------------------------------------------------|
-| `PoissonSampler`          | Standard Poisson sampling  | [Guide](../user-guide/sampling.md#standard-poisson-sampling)  |
-| `TruncatedPoissonSampler` | Truncated Poisson sampling | [Guide](../user-guide/sampling.md#truncated-poisson-sampling) |
+| `PoissonSampler`          | Standard Poisson sampling  | [Guide](../user-guide/sampling.md#poisson-sampling) |
+| `TruncatedPoissonSampler` | Truncated Poisson sampling | [Guide](../user-guide/sampling.md#poisson-sampling) |
 
 ### Privacy Auditing
 
@@ -221,7 +221,7 @@ Opaque's API follows these principles:
 
 - **[User Guides](../user-guide/index.md)**: Conceptual explanations and examples
 - **[Tutorials](../tutorials/README.md)**: Interactive Jupyter notebooks
-- **[Quick Start](../getting-started/quickstart.md)**: Get started in 5 minutes
+- **[Quick Start](../getting-started/quickstart.md)**: End-to-end DP-SGD example
 
 ---
 

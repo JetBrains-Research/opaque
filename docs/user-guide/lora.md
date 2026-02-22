@@ -139,7 +139,7 @@ target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
 
 ## See Also
 
-- [Tutorial 06](../tutorials/06_lora_huggingface_dp_training.ipynb) — Complete LoRA + DP tutorial
+- [Fine-tuning an LLM](../tutorials/llm_finetuning.ipynb) -- LoRA + DP tutorial
 - [Gradient Clipping](clipping.md) — Per-example gradient details
 - [Sampling](sampling.md) — Privacy amplification
 - [PEFT Documentation](https://huggingface.co/docs/peft) — LoRA reference

@@ -409,7 +409,7 @@ noise_fn = gaussian_noise(..., key=my_noise_key)
 Ensure all randomness uses RngKey:
 
 ```python
-# ✅ Good: Use RngKey throughout
+# Correct: Use RngKey throughout
 from opaque.random import set_reproducible_pytorch_seed, training_key
 
 set_reproducible_pytorch_seed(key(42))  # Framework
@@ -417,7 +417,7 @@ for step in range(n):
     k = training_key(42, step=step)  # DP operations
     # ... training ...
 
-# ❌ Bad: Mixing with global seeds
+# Incorrect: Mixing with global seeds
 torch.manual_seed(42)  # Framework
 noise_fn = gaussian_noise(..., key=some_key)  # DP
 # Different RNG sources can cause issues
@@ -428,11 +428,11 @@ noise_fn = gaussian_noise(..., key=some_key)  # DP
 Ensure rank-specific keys:
 
 ```python
-# ❌ Bad: All ranks same key
+# Incorrect: All ranks share the same key
 k = key(42)
-noise_fn = gaussian_noise(..., key=k)  # All ranks identical!
+noise_fn = gaussian_noise(..., key=k)  # All ranks get identical noise
 
-# ✅ Good: Per-rank keys
+# Correct: Per-rank keys
 k_base = key(42)
 rank_keys = split(k_base, num=world_size)
 noise_fn = gaussian_noise(..., key=rank_keys[rank])
