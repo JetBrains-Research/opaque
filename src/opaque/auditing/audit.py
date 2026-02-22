@@ -24,12 +24,9 @@ References:
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
 import numpy as np
 import scipy.stats
 
-from opaque.auditing.bootstrap import BootstrapParams
 from opaque.auditing.helpers import (
     _clopper_pearson_upper,
     _get_tn_fn_counts,
@@ -226,17 +223,62 @@ class AuditResult:
     # Attack utility metrics
     # ------------------------------------------------------------------
 
-    def auroc(self) -> float:
+    def auroc(
+        self,
+        *,
+        confidence: float | None = None,
+        num_samples: int = 1000,
+        key: RngKey | None = None,
+    ) -> float | tuple[float, float]:
         """Area under the ROC curve for the membership inference attack.
 
         AUROC = 0.5 means random guessing, AUROC = 1.0 means perfect attack.
 
+        When ``confidence`` is provided, returns a bootstrap confidence interval
+        as a ``(lower, upper)`` tuple instead of a point estimate.
+
+        Args:
+            confidence: If provided, return a symmetric CI at this level
+                (e.g. 0.95 for 95% CI). Must be in (0, 1).
+            num_samples: Number of bootstrap resamples for CI. Default: 1000.
+            key: RNG key for reproducible bootstrap resampling.
+
         Returns:
-            AUROC value in [0, 1].
+            Float AUROC if ``confidence`` is None, otherwise
+            ``(lower, upper)`` tuple.
+
+        Example:
+            >>> result.auroc()                              # point estimate
+            >>> result.auroc(confidence=0.95, key=key(42))  # 95% CI
         """
         tnr = self._tn_counts / self._tn_counts[-1]
         fnr = self._fn_counts / self._fn_counts[-1]
-        return float(0.5 * np.dot(tnr[:-1] + tnr[1:], fnr[1:] - fnr[:-1]))
+        point = float(0.5 * np.dot(tnr[:-1] + tnr[1:], fnr[1:] - fnr[:-1]))
+
+        if confidence is None:
+            return point
+
+        if not 0 < confidence < 1:
+            raise ValueError(f"confidence must be in (0, 1), got {confidence}")
+
+        significance = 1 - confidence
+        quantiles = (significance / 2, 1 - significance / 2)
+
+        rng = np.random.default_rng(seed=key.seed if key else None)
+        values = np.empty(num_samples)
+        for i in range(num_samples):
+            in_sample = rng.choice(self._in_arr, size=self.n_in)
+            out_sample = rng.choice(self._out_arr, size=self.n_out)
+            values[i] = AuditResult(in_sample, out_sample).auroc()
+
+        # Bias-corrected bootstrap
+        prop_less = (np.sum(values < point) + 1) / (num_samples + 2)
+        z0 = scipy.stats.norm.ppf(prop_less)
+        z_q = scipy.stats.norm.ppf(quantiles)
+        corrected = scipy.stats.norm.cdf(z0 + (z0 + z_q) / (1 - 0.0 * (z0 + z_q)))
+
+        ci = np.quantile(values, corrected, method="linear")
+        return (float(ci[0]), float(ci[1]))
 
     def tpr_at_fpr(self, *, fpr: float | np.ndarray) -> float | np.ndarray:
         """True positive rate at a given false positive rate.
@@ -273,76 +315,6 @@ class AuditResult:
         tpr = tp_counts / n_pos
 
         return float(np.max(tpr * prevalence + tnr * (1 - prevalence)))
-
-    # ------------------------------------------------------------------
-    # Bootstrap
-    # ------------------------------------------------------------------
-
-    def bootstrap(
-        self,
-        metric: Callable[[AuditResult], float],
-        params: BootstrapParams,
-    ) -> np.ndarray:
-        """Bootstrap confidence intervals for any metric.
-
-        Resamples scores with replacement and computes the metric on each
-        resample. Supports bias-corrected and accelerated (BCa) intervals.
-
-        Args:
-            metric: Function that takes an AuditResult and returns a float.
-                Can be an unbound method (e.g. ``AuditResult.auroc``).
-            params: Bootstrap parameters (num_samples, quantiles, etc.).
-
-        Returns:
-            Array of quantiles specified in params.quantiles.
-
-        Example:
-            >>> result = AuditResult(in_scores, out_scores)
-            >>> from opaque.random import key
-            >>> params = BootstrapParams(num_samples=1000, key=key(42))
-            >>> auroc_ci = result.bootstrap(AuditResult.auroc, params)
-            >>> eps_ci = result.bootstrap(
-            ...     lambda r: r.epsilon_clopper_pearson(significance=0.05),
-            ...     params,
-            ... )
-        """
-        rng = np.random.default_rng(seed=params.key.seed if params.key else None)
-
-        values = np.empty(params.num_samples)
-        for i in range(params.num_samples):
-            in_sample = rng.choice(self._in_arr, size=self.n_in)
-            out_sample = rng.choice(self._out_arr, size=self.n_out)
-            values[i] = metric(AuditResult(in_sample, out_sample))
-
-        if not params.bias_correction:
-            return np.quantile(values, params.quantiles, method="linear")
-
-        # Bias-corrected bootstrap (BCa)
-        full_estimate = metric(self)
-        prop_less = (np.sum(values < full_estimate) + 1) / (params.num_samples + 2)
-        z0 = scipy.stats.norm.ppf(prop_less)
-
-        if params.acceleration:
-            # Jackknife for acceleration
-            jk = np.empty(self.n_in + self.n_out)
-            for i in range(self.n_in):
-                jk[i] = metric(AuditResult(np.delete(self._in_arr, i), self._out_arr))
-            for i in range(self.n_out):
-                jk[self.n_in + i] = metric(
-                    AuditResult(self._in_arr, np.delete(self._out_arr, i))
-                )
-
-            jk_mean = np.mean(jk)
-            num = np.sum((jk_mean - jk) ** 3)
-            denom = 6 * np.sum((jk_mean - jk) ** 2) ** 1.5
-            accel = 0.0 if denom == 0 else num / denom
-        else:
-            accel = 0.0
-
-        z_q = scipy.stats.norm.ppf(params.quantiles)
-        corrected = scipy.stats.norm.cdf(z0 + (z0 + z_q) / (1 - accel * (z0 + z_q)))
-
-        return np.quantile(values, corrected, method="linear")
 
     # ------------------------------------------------------------------
     # Display

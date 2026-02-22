@@ -116,7 +116,6 @@ def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> N
             clip_norm=float(rank + 1),
             step=100,
             clipping_rate=0.5 + 0.1 * rank,
-            rescale_to_unit_norm=False,
             batch_size=8 * (rank + 1),
         )
         synced = sync_state(

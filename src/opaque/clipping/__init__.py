@@ -18,7 +18,7 @@ from opaque.clipping.distributed import (
     sync_clip_state,
 )
 from opaque.clipping.pytree import clip_pytree
-from opaque.clipping.types import ClipState, FixedClipState, NeighboringRelation
+from opaque.clipping.types import ClipState, FixedClipState
 
 __all__ = [
     # Core clipping functions
@@ -38,7 +38,5 @@ __all__ = [
     "sync_clip_state",
     "sync_adaptive_clip_state",
     "sync_adaptive_clipped_grad_aux",
-    # Types
-    "NeighboringRelation",
     "distributed",
 ]

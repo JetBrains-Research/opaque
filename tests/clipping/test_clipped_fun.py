@@ -68,12 +68,11 @@ def test_clip_no_change_when_below_threshold(device):
     assert torch.allclose(clipped["w"], pytree["w"])
 
 
-def test_clip_nan_safe_replaces_nans_before_scaling(device):
-    """nan_safe=True should replace NaNs/Infs with zeros."""
+def test_clip_pytree_raises_on_nan(device):
+    """clip_pytree should raise ValueError when NaN/Inf detected."""
     pytree = {"w": torch.tensor([float("nan"), float("inf"), 1.0], device=device)}
-    clipped, _ = clip_pytree(pytree, clip_norm=1.0, nan_safe=True)
-    # After nan_to_num, only the 1.0 remains, so norm=1.0, no scaling needed
-    assert torch.allclose(clipped["w"], torch.tensor([0.0, 0.0, 1.0], device=device))
+    with pytest.raises(ValueError, match="NaN"):
+        clip_pytree(pytree, clip_norm=1.0)
 
 
 def test_clip_handles_empty_tree(device):
@@ -219,8 +218,8 @@ def test_clipped_fun_has_aux_with_return_norms():
     assert aux.norms.shape == (3,)
 
 
-def test_clipped_fun_nan_safe_replaces_nans():
-    """Test nan_safe=True replaces NaN/Inf in gradients."""
+def test_clipped_fun_raises_on_nan():
+    """Test that NaN/Inf in gradients raises ValueError."""
 
     def loss_fn(param, data):
         # Create a scenario that produces NaN gradient
@@ -228,15 +227,14 @@ def test_clipped_fun_nan_safe_replaces_nans():
         return torch.sqrt(param - data).mean()  # Gradient is undefined for param < data
 
     clipped_grad_fn, clip_state = clipped_fun(
-        grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0, nan_safe=True
+        grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0
     )
 
     param = torch.tensor(1.0, requires_grad=True)
     data = torch.tensor([0.5, 2.0, 0.3])  # data[1]=2.0 will cause NaN
 
-    clipped_grad, _ = clipped_grad_fn(param, data, state=clip_state)
-    # Should complete without error and clipped_grad should be finite
-    assert torch.isfinite(clipped_grad).all()
+    with pytest.raises(ValueError, match="NaN"):
+        clipped_grad_fn(param, data, state=clip_state)
 
 
 def test_clipped_fun_dtype_controls_accumulation():

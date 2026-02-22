@@ -181,13 +181,10 @@ def clipped_fun(
     batch_argnums: int | tuple[int, ...] = 0,
     keep_batch_dim: bool = True,
     l2_clip_norm: float = 1.0,
-    rescale_to_unit_norm: bool = False,
     normalize_by: float = 1.0,
     return_aux: bool = False,
     microbatch_size: int | None = None,
-    nan_safe: bool = True,
     dtype: torch.dtype | None = None,
-    spmd_axis_name: str | None = None,
 ) -> tuple[Callable, FixedClipState]:
     """Transform a function to clip its output and sum across a batch.
 
@@ -255,16 +252,6 @@ def clipped_fun(
         | `False`      | `value`               |
         | `True`       | `value, aux`          |
     """
-    # Warn about unimplemented parameters
-    if spmd_axis_name is not None:
-        import warnings
-
-        warnings.warn(
-            "spmd_axis_name parameter is not yet implemented and will be ignored.",
-            UserWarning,
-            stacklevel=2,
-        )
-
     # Normalize batch_argnums to tuple
     batch_argnums = normalize_to_tuple(batch_argnums)
 
@@ -287,8 +274,6 @@ def clipped_fun(
             clipped_value, norm = clip_pytree(
                 value,
                 clip_norm=l2_clip_norm,
-                rescale_to_unit_norm=rescale_to_unit_norm,
-                nan_safe=nan_safe,
             )
             if return_aux:
                 # Build aux dict with clipping metadata
@@ -377,12 +362,11 @@ def clipped_fun(
         clipped_fn = _with_extra_batch_axis(clipped_fn, batch_argnums)
 
     # Calculate L2 sensitivity bound
-    l2_norm_bound = (1.0 if rescale_to_unit_norm else l2_clip_norm) / normalize_by
+    l2_norm_bound = l2_clip_norm / normalize_by
 
     # Create fixed clip state
     clip_state = FixedClipState(
         l2_norm_bound=l2_norm_bound,
-        rescale_to_unit_norm=rescale_to_unit_norm,
     )
 
     # Wrap function to accept and return state

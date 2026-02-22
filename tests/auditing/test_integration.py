@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from opaque.auditing import AuditResult, BootstrapParams
+from opaque.auditing import AuditResult
 from opaque.random import key
 
 
@@ -27,16 +27,15 @@ def test_basic_audit_workflow():
     assert result.max_accuracy() > 0.5, "Accuracy should exceed random"
 
 
-def test_audit_with_bootstrap():
-    """Test auditing with bootstrap confidence intervals."""
+def test_audit_with_auroc_ci():
+    """Test auditing with AUROC confidence intervals."""
     np.random.seed(42)
     in_scores = np.random.normal(loc=5.0, scale=1.0, size=50)
     out_scores = np.random.normal(loc=3.0, scale=1.0, size=50)
 
     result = AuditResult(in_scores, out_scores)
-    params = BootstrapParams(num_samples=20, key=key(42))
 
-    auroc_ci = result.bootstrap(AuditResult.auroc, params)
+    auroc_ci = result.auroc(confidence=0.95, num_samples=20, key=key(42))
     assert len(auroc_ci) == 2
     assert auroc_ci[0] <= auroc_ci[1]
 

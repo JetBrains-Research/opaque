@@ -2,27 +2,6 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from enum import Enum
-
-
-class NeighboringRelation(Enum):
-    """Differential privacy neighboring relation definitions.
-
-    These define what it means for two datasets to be "neighbors" in the
-    differential privacy sense. The choice affects the sensitivity calculation.
-
-    Attributes:
-        ADD_OR_REMOVE_ONE: Datasets differ by adding or removing one record.
-            This is the standard definition in DP literature. Sensitivity = S.
-        REPLACE_ONE: Datasets differ by replacing one record with another.
-            Sensitivity is doubled: 2*S (worst case: remove + add).
-        REPLACE_SPECIAL: Datasets differ by replacing one record with a special
-            "no-op" record. Used in some padding-based schemes. Sensitivity = S.
-    """
-
-    ADD_OR_REMOVE_ONE = "add_or_remove_one"
-    REPLACE_ONE = "replace_one"
-    REPLACE_SPECIAL = "replace_special"
 
 
 class ClipState(ABC):
@@ -50,22 +29,16 @@ class ClipState(ABC):
     """
 
     @abstractmethod
-    def sensitivity(
-        self,
-        neighboring_relation: NeighboringRelation = NeighboringRelation.REPLACE_SPECIAL,
-    ) -> float:
+    def sensitivity(self) -> float:
         """Compute L2 sensitivity for differential privacy noise calibration.
 
         The L2 sensitivity is the maximum change in L2 norm of the function output
-        when applied to neighboring datasets, as defined by the neighboring relation.
+        when one record is added or removed from the dataset.
 
         This is the critical value for calibrating DP noise:
             noise_stddev = noise_multiplier * sensitivity
 
-        Args:
-            neighboring_relation: The neighboring relation to use. Default is
-                REPLACE_SPECIAL, which is commonly used in DP-SGD with Poisson
-                sampling.
+        For replace-one neighboring, double this value when calibrating noise.
 
         Returns:
             The L2 sensitivity (float). This is what you multiply by noise_multiplier
@@ -82,8 +55,7 @@ class FixedClipState(ClipState):
     where the clip norm and sensitivity remain constant throughout training.
 
     Attributes:
-        l2_norm_bound: The L2 norm bound after clipping (1.0 if rescaled, else clip_norm)
-        rescale_to_unit_norm: Whether gradients were rescaled to unit norm
+        l2_norm_bound: The L2 norm bound after clipping
 
     Example:
         >>> from opaque import clipped_grad
@@ -100,7 +72,6 @@ class FixedClipState(ClipState):
     """
 
     l2_norm_bound: float
-    rescale_to_unit_norm: bool = False
 
     def __post_init__(self):
         """Validate state parameters."""
@@ -109,31 +80,15 @@ class FixedClipState(ClipState):
                 f"l2_norm_bound must be positive, got {self.l2_norm_bound}"
             )
 
-    def sensitivity(
-        self,
-        neighboring_relation: NeighboringRelation = NeighboringRelation.REPLACE_SPECIAL,
-    ) -> float:
+    def sensitivity(self) -> float:
         """Compute L2 sensitivity for DP noise calibration.
 
-        For fixed clipping, sensitivity is always the l2_norm_bound (which is
-        1.0 if rescale_to_unit_norm=True, otherwise it's the clip_norm).
+        For fixed clipping, sensitivity is always the l2_norm_bound.
         """
-        match neighboring_relation:
-            case NeighboringRelation.ADD_OR_REMOVE_ONE:
-                return self.l2_norm_bound
-            case NeighboringRelation.REPLACE_ONE:
-                return 2 * self.l2_norm_bound
-            case NeighboringRelation.REPLACE_SPECIAL:
-                return self.l2_norm_bound
-            case _:
-                raise ValueError(
-                    f"Unsupported neighboring_relation={neighboring_relation}. "
-                    f"Must be one of: {list(NeighboringRelation)}"
-                )
+        return self.l2_norm_bound
 
 
 __all__ = [
     "ClipState",
     "FixedClipState",
-    "NeighboringRelation",
 ]

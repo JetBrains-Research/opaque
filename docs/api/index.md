@@ -51,7 +51,6 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `epsilon_clopper_pearson()`, `epsilon_one_run()` - Estimate epsilon from attacks
   - `audit()` - Comprehensive privacy audit
   - `attack_auroc()`, `tpr_at_fpr()` - Attack utility metrics
-  - `bootstrap()` - Confidence intervals
 
 - **[Distributed](distributed.md)**: Multi-GPU training with DDP
   - `sum_gradients()` - Sum clipped gradients across GPUs (for DP training)
@@ -164,7 +163,6 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | `audit()`                   | Comprehensive audit             | [Guide](../user-guide/auditing.md)             |
 | `attack_auroc()`            | Membership inference AUROC      | [Guide](../user-guide/auditing.md)             |
 | `tpr_at_fpr()`              | TPR at given FPR                | [Guide](../user-guide/auditing.md)             |
-| `bootstrap()`               | Bootstrap confidence intervals  | [Guide](../user-guide/auditing.md)             |
 
 ### Distributed
 

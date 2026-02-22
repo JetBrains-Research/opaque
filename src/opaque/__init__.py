@@ -22,7 +22,6 @@ from opaque.clipping import (
     AdaptiveClipState,
     ClipState,
     FixedClipState,
-    NeighboringRelation,
     adaptive_clipped_grad,
     clip_pytree,
     clipped_fun,
@@ -71,7 +70,6 @@ __all__ = [
     "ClipState",
     "FixedClipState",
     "AdaptiveClipState",
-    "NeighboringRelation",
     # Sampling
     "sampling",
     "PoissonSampler",

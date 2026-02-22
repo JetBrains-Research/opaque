@@ -209,59 +209,56 @@ class TestEdgeCases:
         assert eps > 5.0
 
 
-class TestBootstrap:
-    """Tests for bootstrap method."""
+class TestAurocCI:
+    """Tests for auroc() confidence interval support."""
 
-    def test_basic_bootstrap(self):
-        """Test basic bootstrap functionality."""
-        from opaque.auditing import BootstrapParams
-
+    def test_basic_ci(self):
+        """Test basic auroc CI functionality."""
         rng = np.random.default_rng(42)
         result = AuditResult(rng.normal(2.0, 1.0, 100), rng.normal(0.0, 1.0, 100))
 
-        params = BootstrapParams(num_samples=50, key=key(42))
-        ci = result.bootstrap(AuditResult.auroc, params)
+        ci = result.auroc(confidence=0.95, num_samples=50, key=key(42))
 
-        assert isinstance(ci, np.ndarray)
+        assert isinstance(ci, tuple)
         assert len(ci) == 2
         assert ci[0] < ci[1]
 
-    def test_bootstrap_reproducibility(self):
-        """Test that bootstrap is reproducible with seed."""
-        from opaque.auditing import BootstrapParams
-
+    def test_ci_reproducibility(self):
+        """Test that auroc CI is reproducible with key."""
         result = AuditResult(np.arange(50, 100), np.arange(0, 50))
-        params = BootstrapParams(num_samples=20, key=key(42))
 
-        ci1 = result.bootstrap(AuditResult.auroc, params)
-        ci2 = result.bootstrap(AuditResult.auroc, params)
+        ci1 = result.auroc(confidence=0.95, num_samples=20, key=key(42))
+        ci2 = result.auroc(confidence=0.95, num_samples=20, key=key(42))
 
-        np.testing.assert_array_equal(ci1, ci2)
+        assert ci1 == ci2
 
-    def test_bootstrap_custom_quantiles(self):
-        """Test bootstrap with custom quantiles."""
-        from opaque.auditing import BootstrapParams
+    def test_point_estimate_unchanged(self):
+        """Test that auroc() without confidence returns a float."""
+        result = AuditResult(np.arange(50, 100), np.arange(0, 50))
 
+        val = result.auroc()
+        assert isinstance(val, float)
+
+    def test_ci_contains_point_estimate(self):
+        """Test that CI contains the point estimate."""
         rng = np.random.default_rng(42)
-        result = AuditResult(rng.normal(2.0, 1.0, 100), rng.normal(0.0, 1.0, 100))
+        result = AuditResult(rng.normal(2.0, 1.0, 200), rng.normal(0.0, 1.0, 200))
 
-        params = BootstrapParams(num_samples=50, quantiles=(0.1, 0.5, 0.9), key=key(42))
-        ci = result.bootstrap(AuditResult.auroc, params)
+        point = result.auroc()
+        ci = result.auroc(confidence=0.95, num_samples=200, key=key(42))
 
-        assert len(ci) == 3
-        assert ci[0] <= ci[1] <= ci[2]
+        assert ci[0] <= point <= ci[1]
 
-    def test_bootstrap_with_lambda(self):
-        """Test bootstrap with lambda for parameterized metrics."""
-        from opaque.auditing import BootstrapParams
-
+    def test_invalid_confidence(self):
+        """Test that invalid confidence raises ValueError."""
         result = AuditResult(np.arange(50, 100), np.arange(0, 50))
-        params = BootstrapParams(num_samples=20, key=key(42))
 
-        ci = result.bootstrap(
-            lambda r: r.epsilon_clopper_pearson(significance=0.05), params
-        )
-        assert len(ci) == 2
+        with pytest.raises(ValueError):
+            result.auroc(confidence=0.0)
+        with pytest.raises(ValueError):
+            result.auroc(confidence=1.0)
+        with pytest.raises(ValueError):
+            result.auroc(confidence=-0.1)
 
 
 class TestCoinFlipExperiment:

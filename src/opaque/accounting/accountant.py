@@ -11,13 +11,19 @@ identical steps are collapsed using structural equality (``==``), so
 
 from __future__ import annotations
 
+import dataclasses
 from typing import TYPE_CHECKING, Any
 
 from opaque.accounting.base import DpProcess
+from opaque.accounting.budgets import (
+    AdvantageBudget,
+    BetaBudget,
+    Budget,
+    DeltaBudget,
+    EpsilonBudget,
+    RiskBudget,
+)
 from opaque.accounting.mechanisms import Identity
-
-if TYPE_CHECKING:
-    from opaque.accounting.calibration import Budget
 
 __all__ = ["Accountant"]
 
@@ -200,7 +206,12 @@ class Accountant:
             acct2 = Accountant.from_state_dict(state)
             assert acct2.epsilon_at(1e-5) == acct.epsilon_at(1e-5)
         """
-        return {"process": self._process.state_dict()}
+        state: dict[str, Any] = {"process": self._process.state_dict()}
+        if self._budget is not None:
+            budget_data = dataclasses.asdict(self._budget)
+            budget_data["type"] = type(self._budget).__name__
+            state["budget"] = budget_data
+        return state
 
     @classmethod
     def from_state_dict(cls, state: dict[str, Any]) -> Accountant:
@@ -210,8 +221,29 @@ class Accountant:
             state: Dictionary produced by :meth:`state_dict`.
 
         Returns:
-            Reconstructed Accountant (without budget — attach separately).
+            Reconstructed Accountant with process and budget restored.
         """
-        acct = cls()
-        acct._process = DpProcess.load_state_dict(state["process"])
+        budget = None
+        if "budget" in state:
+            budget = _deserialize_budget(state["budget"])
+        acct = cls(budget=budget)
+        acct._process = DpProcess.from_state_dict(state["process"])
         return acct
+
+
+_BUDGET_REGISTRY: dict[str, type] = {
+    "EpsilonBudget": EpsilonBudget,
+    "DeltaBudget": DeltaBudget,
+    "AdvantageBudget": AdvantageBudget,
+    "BetaBudget": BetaBudget,
+    "RiskBudget": RiskBudget,
+}
+
+
+def _deserialize_budget(data: dict[str, Any]) -> Budget:
+    data = dict(data)
+    type_name = data.pop("type")
+    budget_cls = _BUDGET_REGISTRY.get(type_name)
+    if budget_cls is None:
+        raise ValueError(f"Unknown budget type: {type_name}")
+    return budget_cls(**data)
