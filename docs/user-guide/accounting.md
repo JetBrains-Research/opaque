@@ -105,7 +105,7 @@ step = acc.poisson(acc.gaussian(0.8), sample_rate=0.01)
 parallel_step = acc.parallel_poisson(step, num_workers=4)
 ```
 
-### `acc.adaclip(inner, quantile_noise_multiplier, batch_size)`
+### `acc.adaclip(inner, *, quantile_noise_multiplier, batch_size)`
 
 Accounts for the additional privacy cost of adaptive clipping (the noisy
 quantile query). Use this when using `adaptive_clipped_grad`.
@@ -119,7 +119,7 @@ step = acc.poisson(
 )
 ```
 
-### `acc.eps_delta(epsilon, delta)`
+### `acc.eps_delta(epsilon, delta=0.0)`
 
 A fixed (epsilon, delta)-DP mechanism. Useful for composing external privacy
 costs (e.g., a hyperparameter tuning step with known privacy cost).
@@ -133,6 +133,13 @@ total = external_cost | (step * 1000)
 
 Zero privacy cost. Identity element for composition. Useful as an initial
 value when building up a process programmatically.
+
+```python
+process = acc.identity()
+for step_proc in step_list:
+    process = process | step_proc
+eps = process.epsilon_at(delta=1e-5)
+```
 
 ## Privacy metrics
 
@@ -157,7 +164,7 @@ beta = training.beta_at(alpha=0.01)
 risk = training.risk_at(prior=0.5)
 ```
 
-See [DP Concepts](dp-basics.md#privacy-metrics) for the meaning of each
+See [DP Concepts](dp-concepts.md#privacy-metrics) for the meaning of each
 metric.
 
 ## Calibration

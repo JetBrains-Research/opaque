@@ -76,7 +76,7 @@ nav:
     - Quick Start: getting-started/quickstart.md
   - User Guide:
     - Overview: user-guide/index.md
-    - Differential Privacy Concepts: user-guide/dp-basics.md
+    - Differential Privacy Concepts: user-guide/dp-concepts.md
     - Random Number Generation: user-guide/rng-key.md
     - Per-Example Gradient Clipping: user-guide/clipping.md
     - Noise Addition: user-guide/noise.md
@@ -95,6 +95,7 @@ nav:
     - Fine-tuning an LLM: tutorials/llm_finetuning.ipynb
     - Sampling & Microbatching: tutorials/sampling_and_microbatching.ipynb
     - Privacy Auditing: tutorials/privacy_auditing.ipynb
+    - Distributed Training: tutorials/distributed_training.ipynb
   - API Reference:
     - Overview: api/index.md
     - Clipping: api/core/clipping.md
@@ -104,9 +105,7 @@ nav:
     - Random: api/rng.md
     - Distributed: api/distributed.md
     - Auditing: api/auditing.md
-    - Utilities:
-      - PyTree Utilities: api/core/pytree_utils.md
-      - Functional Utilities: api/functional_utils.md
+    - Utilities: api/utilities.md
     - Optimizers: api/optimizers.md
   - Development:
     - Contributing: development/contributing.md

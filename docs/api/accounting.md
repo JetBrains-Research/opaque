@@ -28,7 +28,7 @@ The underlying implementation uses Google's PLD accounting via the
 
 Abstract base class for all privacy processes. Subclasses implement `pld()` to
 compute the Privacy Loss Distribution on demand. Results are automatically
-cached via `@lru_cache` (maxsize=8). Use [`cached()`](#cached) for larger cache
+cached via `@lru_cache` (maxsize=8). Use [`cached()`](#cachedprocess---dpprocess) for larger cache
 size (16) or as an opaque merge barrier.
 
 **Privacy metrics:**
@@ -164,7 +164,7 @@ step = acc.parallel_poisson(
 )
 ```
 
-### `adaclip(inner, quantile_noise_std) -> DpProcess`
+### `adaclip(inner, *, quantile_noise_multiplier, batch_size) -> DpProcess`
 
 Adaptive clipping (Andrew et al. 2021). Accounts for the extra privacy cost of
 noisy quantile estimation using the combined sensitivity formula. Returns an
@@ -172,10 +172,11 @@ noisy quantile estimation using the combined sensitivity formula. Returns an
 `poisson()` or `truncated_poisson()`.
 
 - `inner` (Gaussian): Base Gaussian mechanism (from `gaussian()`)
-- `quantile_noise_std` (float): Noise std for quantile estimation. Larger = more private quantile, less accurate clipping.
+- `quantile_noise_multiplier` (float): Noise multiplier for the quantile fraction query. Default: 0.05.
+- `batch_size` (float): Expected batch size, used to compute the absolute noise std for the quantile query.
 
 ```python
-step = acc.poisson(acc.adaclip(acc.gaussian(0.5), quantile_noise_std=50.0), 0.01)
+step = acc.poisson(acc.adaclip(acc.gaussian(0.5), quantile_noise_multiplier=0.05, batch_size=256), 0.01)
 ```
 
 ### `eps_delta(epsilon, delta=0.0) -> DpProcess`
@@ -289,6 +290,20 @@ for i in range(num_steps):
 
 **Methods:** `epsilon_at(delta)`, `delta_at(epsilon)`, `advantage()`,
 `beta_at(alpha)`, `risk_at(prior)`, `budget_exceeded` (property).
+
+### Serialization
+
+```python
+state = acct.state_dict()
+# Save state to disk (JSON-serializable dict)...
+
+acct = Accountant.from_state_dict(state)
+# Or equivalently (torch-style alias):
+acct = Accountant.load_state_dict(state)
+```
+
+`from_state_dict` restores the accumulated process tree but not the budget.
+Reattach a budget after loading if needed.
 
 ---
 

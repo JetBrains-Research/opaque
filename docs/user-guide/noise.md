@@ -114,6 +114,16 @@ MF noise implements the DP-FTRL framework (Kairouz et al. 2021, Denisov et al.
 adds correlated noise n_t = sum_i C_inv[t,i] * z_i, where C_inv is the
 inverse of a strategy matrix chosen to minimize cumulative error.
 
+The mechanism factors a **workload matrix** A (what the optimizer computes,
+e.g., prefix sums) into:
+
+- **C** (strategy matrix): Encodes the privacy mechanism
+- **C^{-1}** (noising matrix): Generates correlated noise at each step
+- **B = A C^{-1}** (decoder matrix): Relates noisy outputs back to workload queries
+
+The sensitivity of C determines how much noise is needed, while the error of B
+determines the effective noise on the output.
+
 ### When to use MF noise
 
 Use MF noise when:
@@ -232,6 +242,48 @@ training = step * num_steps
 eps = training.epsilon_at(1e-5)
 ```
 
+### Multi-participation (multi-epoch)
+
+When training for multiple epochs, each example participates multiple times.
+The sensitivity computation must account for this:
+
+```python
+noise_fn, state = blt_mf_noise(
+    grad_template,
+    n_steps=5000,
+    stddev=noise_multiplier * clip_norm,
+    min_sep=100,            # minimum steps between participations
+    max_participations=5,   # 5 epochs
+    key=key(42),
+)
+```
+
+### Sensitivity computation
+
+The sensitivity of the strategy matrix C determines noise calibration:
+
+```python
+from opaque.noise.matrix_factorization.sensitivity import (
+    single_participation_sensitivity,
+    get_sensitivity_banded,
+)
+
+sens = single_participation_sensitivity(C_matrix)
+sens = get_sensitivity_banded(C_matrix, min_sep=100, max_participations=5)
+```
+
+### Comparison: DP-SGD vs MF strategies
+
+For a linear regression with n=1000 steps, epsilon=1.0:
+
+| Method | Mechanism | Relative MSE | Memory |
+|--------|-----------|-------------|--------|
+| DP-SGD | Independent noise | Baseline | O(1) |
+| BandMF (bands=4) | Banded Toeplitz | ~0.7x | O(bands) |
+| BLT (3 buffers) | Buffered Toeplitz | ~0.6x | O(buffers) |
+
+Values are illustrative; actual results depend on problem specifics.
+
 ### MF noise with cyclic sampling
 
 MF noise works best with `CyclicPoissonSampler`, which creates a predictable
@@ -271,6 +323,14 @@ noise_fn, noise_state = gaussian_noise(
 For validation, call `sync_gaussian_noise_state(state)` or
 `sync_mf_noise_state(state)` to assert that the seed and step counter match
 across ranks.
+
+## References
+
+- [Choquette-Choo et al., 2023](https://arxiv.org/abs/2306.08153) -- BandMF
+- [McMahan et al., 2024](https://arxiv.org/abs/2404.16706) -- BLT
+- [Choquette-Choo et al., 2024](https://arxiv.org/abs/2408.08868) -- Multi-epoch BLT
+- [McMahan et al., 2025](https://arxiv.org/abs/2504.21413) -- Inversion theorem
+- [Kairouz et al., 2021](https://arxiv.org/abs/2103.00039) -- DP-FTRL
 
 ## API reference
 

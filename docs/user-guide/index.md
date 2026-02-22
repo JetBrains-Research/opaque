@@ -76,7 +76,7 @@ understanding, or jump to a specific topic.
 
 ### Foundations
 
-- **[Differential Privacy Concepts](dp-basics.md)** -- What DP guarantees,
+- **[Differential Privacy Concepts](dp-concepts.md)** -- What DP guarantees,
   how DP-SGD works, privacy budgets, composition, and amplification.
 - **[Random Number Generation](rng-key.md)** -- Explicit RNG keys, splitting,
   fold_in, and reproducibility in distributed training.

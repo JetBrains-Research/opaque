@@ -225,7 +225,7 @@ class BootstrapParams:
     quantiles: tuple[float, ...] = (0.025, 0.975)
     bias_correction: bool = True
     acceleration: bool = False
-    seed: int | None = None
+    key: RngKey | None = None
 ```
 
 Configuration for bootstrap confidence intervals.
@@ -240,7 +240,7 @@ def confidence_interval(
     num_samples: int = 1000,
     bias_correction: bool = True,
     acceleration: bool = False,
-    seed: int | None = None,
+    key: RngKey | None = None,
 ) -> BootstrapParams:
 ```
 

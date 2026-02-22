@@ -17,11 +17,9 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `set_reproducible_pytorch_seed()` - PyTorch/CUDNN reproducibility
   - `generator_from_key()` - PyTorch generator bridge
 
-- **[PyTree Utilities](core/pytree_utils.md)**: Operations on PyTrees (nested structures of tensors)
-  - `tree_map()`, `global_norm()`, `tree_leaves()`
-
-- **[Functional Utilities](functional_utils.md)**: Utility functions for functional programming
+- **[Utilities](utilities.md)**: Functional and PyTree utilities
   - `make_functional()` - Convert nn.Module to functional form
+  - `tree_map()`, `tree_map_with_path()`, `partition()`, `merge()`, `global_norm()`, `tree_leaves()`
 
 ### DP-SGD Components
 
@@ -66,41 +64,31 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 ### Typical DP-SGD Workflow
 
 ```python
-import torch
 import opaque.accounting as acc
-from opaque.accounting.base import DpProcess
-from opaque.accounting import calibration as cal
 from opaque import clipped_grad, gaussian_noise
+from opaque.random import key
 
-# 1. Calibrate noise
-result = cal.calibrate(
-    cal.epsilon_budget(3.0, delta=1e-5),
+# Calibrate noise multiplier
+result = acc.calibrate(
+    acc.epsilon_budget(3.0, delta=1e-5),
     lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000,
-    param_min=0.1,
-    param_max=5.0,
-)
-noise_multiplier = result.param
-
-# 2. Create clipped gradient function
-grad_fn, clip_state = clipped_grad(
-    loss_fn, l2_clip_norm=1.0, argnums=0, batch_argnums=1
+    param_min=0.1, param_max=5.0,
 )
 
-# 3. Training loop with per-step accounting
-noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier)
-from opaque.accounting.accountant import Accountant
+# Set up DP components
+grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=1)
+noise_fn, noise_state = gaussian_noise(
+    stddev=result.param * clip_state.sensitivity(), key=key(42),
+)
 
-step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate=0.01)
-accountant = Accountant(budget=cal.epsilon_budget(3.0, delta=1e-5))
-
-for i in range(1000):
+# Training loop
+for batch in dataloader:
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = update(params, noisy_grads)
-    accountant = accountant | step
-
-epsilon = accountant.epsilon_at(1e-5)
 ```
+
+See [Quick Start](../getting-started/quickstart.md) for a complete working example.
 
 ## Function Index
 

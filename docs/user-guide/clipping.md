@@ -45,15 +45,19 @@ a `sensitivity()` method used to calibrate noise.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `loss_fn` | `Callable` | required | Per-example loss function. Must return a scalar. |
+| `loss_fn` | `Callable` | required | Per-example loss function. Must return a scalar (or `(scalar, aux)` if `has_aux=True`). |
 | `argnums` | `int \| tuple[int, ...]` | `0` | Which arguments to differentiate. |
-| `batch_argnums` | `int \| tuple[int, ...]` | `1` | Which arguments have a batch dimension. |
+| `has_aux` | `bool` | `False` | If True, `loss_fn` returns `(loss, aux)`. The aux data is returned per-example. |
 | `l2_clip_norm` | `float` | required | Maximum L2 norm for per-example gradients. |
+| `batch_argnums` | `int \| tuple[int, ...]` | `1` | Which arguments have a batch dimension. |
+| `keep_batch_dim` | `bool` | `True` | If True, keep the batch dimension in the output. |
 | `microbatch_size` | `int \| None` | `None` | Process batch in chunks to reduce memory. |
 | `rescale_to_unit_norm` | `bool` | `False` | If True, normalize all clipped gradients to norm 1. |
 | `normalize_by` | `float` | `1.0` | Divide the sensitivity by this value. |
+| `pre_clipping_transform` | `Callable` | identity | Transform applied to each per-example gradient before clipping. |
 | `nan_safe` | `bool` | `True` | Replace NaN/Inf gradients with zero. |
 | `dtype` | `torch.dtype \| None` | `None` | Accumulation dtype (e.g., float32 for float16 inputs). |
+| `spmd_axis_name` | `str \| None` | `None` | Axis name for SPMD-style distributed clipping. |
 | `return_aux` | `bool` | `False` | Return per-example diagnostics. |
 
 ### State flow
@@ -89,7 +93,7 @@ noise_fn, noise_state = gaussian_noise(
 ```
 
 The sensitivity depends on the neighboring relation. See
-[DP Concepts](dp-basics.md#neighboring-relations) for details.
+[DP Concepts](dp-concepts.md#neighboring-relations) for details.
 
 ### Diagnostics
 
