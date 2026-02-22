@@ -12,7 +12,7 @@ identical steps are collapsed using structural equality (``==``), so
 from __future__ import annotations
 
 import dataclasses
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from opaque.accounting.base import DpProcess
 from opaque.accounting.budgets import (
