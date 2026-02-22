@@ -75,7 +75,14 @@ pub fn poisson_truncated_gaussian_pld(
 
     discretize_asymmetric_mechanism(config, bounds_remove, bounds_add, |epsilon, adj| {
         Ok(get_delta_truncated(
-            epsilon, adj, sigma, sensitivity, radius, rate, z0, z1,
+            epsilon,
+            adj,
+            sigma,
+            sensitivity,
+            radius,
+            rate,
+            z0,
+            z1,
         ))
     })
     .map(|pld| pld.with_tail_budgets(tail_budget, tail_budget))
@@ -121,7 +128,11 @@ fn get_delta_truncated(
     // Poisson delta which uses log-space tail arithmetic.
     if (z0 - 1.0).abs() < 1e-10 && (z1 - 1.0).abs() < 1e-10 {
         return crate::amplification::poisson::poisson_gaussian_get_delta(
-            epsilon, adjacency, sigma, sensitivity, rate,
+            epsilon,
+            adjacency,
+            sigma,
+            sensitivity,
+            rate,
         );
     }
 
@@ -135,8 +146,7 @@ fn get_delta_truncated(
         Adjacency::Replace => {
             let d_rem =
                 get_delta_remove_truncated(epsilon, sigma, sensitivity, radius, rate, z0, z1);
-            let d_add =
-                get_delta_add_truncated(epsilon, sigma, sensitivity, radius, rate, z0, z1);
+            let d_add = get_delta_add_truncated(epsilon, sigma, sensitivity, radius, rate, z0, z1);
             d_rem.max(d_add)
         }
     }
@@ -328,10 +338,24 @@ fn epsilon_bounds_truncated(
         }
         Adjacency::Replace => {
             let b_rem = epsilon_bounds_truncated(
-                sigma, sensitivity, radius, rate, z0, z1, Adjacency::Remove, log_mass,
+                sigma,
+                sensitivity,
+                radius,
+                rate,
+                z0,
+                z1,
+                Adjacency::Remove,
+                log_mass,
             );
             let b_add = epsilon_bounds_truncated(
-                sigma, sensitivity, radius, rate, z0, z1, Adjacency::Add, log_mass,
+                sigma,
+                sensitivity,
+                radius,
+                rate,
+                z0,
+                z1,
+                Adjacency::Add,
+                log_mass,
             );
             EpsilonBounds {
                 epsilon_lower: b_rem.epsilon_lower.min(b_add.epsilon_lower),
@@ -394,10 +418,9 @@ mod tests {
         let eps_gauss = crate::amplification::poisson_gaussian_pld(0.5, 0.01, &cfg)
             .unwrap()
             .epsilon_at(1e-5);
-        let eps_rect =
-            crate::amplification::poisson_rectified_gaussian_pld(0.5, 3.0, 0.01, &cfg)
-                .unwrap()
-                .epsilon_at(1e-5);
+        let eps_rect = crate::amplification::poisson_rectified_gaussian_pld(0.5, 3.0, 0.01, &cfg)
+            .unwrap()
+            .epsilon_at(1e-5);
         let eps_trunc = poisson_truncated_gaussian_pld(0.5, 3.0, 0.01, &cfg)
             .unwrap()
             .epsilon_at(1e-5);

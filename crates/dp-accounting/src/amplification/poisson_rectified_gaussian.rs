@@ -54,18 +54,17 @@ pub fn poisson_rectified_gaussian_pld(
         Adjacency::Remove,
         log_mass,
     );
-    let bounds_add = epsilon_bounds_rectified(
-        sigma,
-        sensitivity,
-        radius,
-        rate,
-        Adjacency::Add,
-        log_mass,
-    );
+    let bounds_add =
+        epsilon_bounds_rectified(sigma, sensitivity, radius, rate, Adjacency::Add, log_mass);
 
     discretize_asymmetric_mechanism(config, bounds_remove, bounds_add, |epsilon, adj| {
         Ok(get_delta_rectified(
-            epsilon, adj, sigma, sensitivity, radius, rate,
+            epsilon,
+            adj,
+            sigma,
+            sensitivity,
+            radius,
+            rate,
         ))
     })
     .map(|pld| pld.with_tail_budgets(tail_budget, tail_budget))
@@ -204,7 +203,11 @@ fn get_delta_add_rectified(
     let r_abs = radius * sigma;
     let exp_eps = epsilon.exp();
 
-    let theoretical_upper = if q < 1.0 { -(1.0 - q).ln() } else { f64::INFINITY };
+    let theoretical_upper = if q < 1.0 {
+        -(1.0 - q).ln()
+    } else {
+        f64::INFINITY
+    };
     if epsilon >= theoretical_upper - 1e-10 {
         return 0.0;
     }

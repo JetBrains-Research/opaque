@@ -102,12 +102,7 @@ pub fn rectified_gaussian_pld(
 ///
 /// The interior integral reduces to standard Gaussian CDF evaluations at
 /// the crossover point where `f(x;0)/f(x;1) = e^ε`.
-fn rectified_gaussian_delta_at(
-    sigma: f64,
-    sensitivity: f64,
-    radius: f64,
-    epsilon: f64,
-) -> f64 {
+fn rectified_gaussian_delta_at(sigma: f64, sensitivity: f64, radius: f64, epsilon: f64) -> f64 {
     let n01 = Normal::new(0.0, 1.0).unwrap();
     let sigma_sq = sigma * sigma;
     let r_abs = radius * sigma; // absolute radius

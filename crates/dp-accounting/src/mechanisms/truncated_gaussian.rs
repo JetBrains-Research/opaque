@@ -108,12 +108,7 @@ pub fn truncated_gaussian_pld(
 ///   `x_cross = σ²/Δ · (Δ²/(2σ²) + log(Z₁/Z₀) − ε)`
 ///
 /// For x < x_cross, f(x;0) > e^ε · f(x;Δ), contributing to δ.
-fn truncated_gaussian_delta_at(
-    sigma: f64,
-    sensitivity: f64,
-    radius: f64,
-    epsilon: f64,
-) -> f64 {
+fn truncated_gaussian_delta_at(sigma: f64, sensitivity: f64, radius: f64, epsilon: f64) -> f64 {
     let n01 = Normal::new(0.0, 1.0).unwrap();
     let sigma_sq = sigma * sigma;
     let r_abs = radius * sigma; // absolute radius
@@ -147,9 +142,9 @@ fn truncated_gaussian_delta_at(
     // ∫_{a}^{b} f(x;μ) dx = [Φ((b−μ)/σ) − Φ((a−μ)/σ)] / Z(μ)
 
     let mass_p0 = (n01.cdf(int_upper / sigma) - n01.cdf(int_lower / sigma)) / z0;
-    let mass_p1 =
-        (n01.cdf((int_upper - sensitivity) / sigma) - n01.cdf((int_lower - sensitivity) / sigma))
-            / z1;
+    let mass_p1 = (n01.cdf((int_upper - sensitivity) / sigma)
+        - n01.cdf((int_lower - sensitivity) / sigma))
+        / z1;
 
     (mass_p0 - epsilon.exp() * mass_p1).max(0.0)
 }
@@ -354,8 +349,7 @@ mod tests {
                     .unwrap()
                     .epsilon_at(1e-5);
                 assert!(
-                    eps_trunc <= eps_rect + 1e-4
-                        && eps_rect <= eps_gauss + 1e-4,
+                    eps_trunc <= eps_rect + 1e-4 && eps_rect <= eps_gauss + 1e-4,
                     "Ordering violated at σ={}, R={}: trunc={:.6} ≤ rect={:.6} ≤ gauss={:.6}",
                     nm,
                     r,
