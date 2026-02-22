@@ -1,386 +1,319 @@
-# Poisson Sampling & Microbatching
+# Sampling & Microbatching
 
-**Poisson sampling** provides privacy amplification by randomly selecting training examples, while **microbatching**
-enables memory-efficient DP training for large models.
+Sampling determines how training examples are selected for each step.
+In DP-SGD, the sampling mechanism directly affects the privacy guarantee:
+Poisson subsampling provides privacy amplification, meaning you need less
+noise for the same epsilon when each example is included independently with
+small probability.
 
-## Why Poisson Sampling?
+Opaque provides three sampler classes, all designed to work with PyTorch's
+`DataLoader` via the `batch_sampler` parameter.
 
-In DP-SGD, we don't train on the entire dataset at once—we sample batches. **How we sample matters for privacy!**
+## Poisson sampling
 
-**Key insight**: If each example is selected independently with small probability, privacy is amplified (you get
-stronger guarantees for the same noise).
+### Why it matters for privacy
 
-### Privacy Amplification
-
-Training on a **subset** of data provides better privacy than training on **all** data:
+If each example is independently included with probability `q`, the privacy
+cost of one step is approximately `q` times the cost without subsampling.
+This is the *privacy amplification by subsampling* effect. The smaller the
+sample rate, the stronger the amplification:
 
 ```python
 import opaque.accounting as acc
 
-# No sampling (full dataset)
-training = acc.gaussian(noise_multiplier=1.0)
-epsilon = training.epsilon_at(1e-5)  # ε ≈ 15.0
+# Without subsampling: full dataset
+full = acc.gaussian(1.0) * 1000
+print(full.epsilon_at(1e-5))  # large
 
-# With Poisson sampling (sample_rate=0.01)
-training = acc.poisson(acc.gaussian(1.0), sample_rate=0.01)
-epsilon = training.epsilon_at(1e-5)  # ε ≈ 0.1  (150x better!)
+# With Poisson subsampling: sample_rate = 0.01
+subsampled = acc.poisson(acc.gaussian(1.0), sample_rate=0.01) * 1000
+print(subsampled.epsilon_at(1e-5))  # much smaller
 ```
 
-**Why?** Attackers can't be sure if a specific person's data was in the sampled batch.
+The sample rate is typically `batch_size / dataset_size`:
 
-## Poisson Sampling Basics
+```python
+dataset_size = 50_000
+batch_size = 256
+sample_rate = batch_size / dataset_size  # 0.00512
+```
 
-### What is Poisson Sampling?
+### `PoissonSampler`
 
-Each example in the dataset is **independently** included in the batch with probability `sample_rate`:
+The standard sampler. Each example is included independently with probability
+`sample_rate`, producing variable-size batches.
 
 ```python
 from opaque.sampling import PoissonSampler
+from opaque.random import key
+import torch.utils.data as data
 
-sampler = PoissonSampler(sample_rate=0.01)
+dataset = data.TensorDataset(X, y)
+sampler = PoissonSampler(
+    dataset,
+    sample_rate=0.01,
+    num_epochs=10,
+    key=key(42),
+)
+loader = data.DataLoader(dataset, batch_sampler=sampler)
 
-# Each call returns random subset
-batch_indices = sampler.sample(dataset_size=10000)
-# batch_indices ≈ 100 examples (but varies!)
+for batch in loader:
+    # batch size varies around dataset_size * sample_rate
+    ...
 ```
 
-**Key property**: Batch sizes are **variable** (Poisson distributed around `sample_rate × dataset_size`).
+**Parameters:**
 
-### Sample Rate
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `data_source` | any with `__len__` | The dataset |
+| `sample_rate` | `float` in (0, 1] | Inclusion probability per example |
+| `num_epochs` | `int` | Number of batches to yield (default: 1) |
+| `key` | `RngKey` | RNG key for reproducibility |
 
-The **sample rate** is the probability each example is included:
+**Properties:**
 
-```python
-sample_rate = batch_size / dataset_size
+| Property | Returns | Description |
+|----------|---------|-------------|
+| `expected_batch_size` | `float` | `len(data_source) * sample_rate` |
+| `batch_size_variance` | `float` | `len(data_source) * sample_rate * (1 - sample_rate)` |
 
-# Example: batch_size=32, dataset_size=10000
-sample_rate = 32 / 10000 = 0.0032  # 0.32% chance per example
-```
+Batch sizes follow a Binomial distribution. For large datasets and small
+sample rates, the standard deviation is roughly `sqrt(expected_batch_size)`.
 
-**Privacy rule**: Lower sample rate → stronger privacy amplification → need less noise
+### `TruncatedPoissonSampler`
 
-### Standard Poisson Sampling
-
-```python
-from opaque.sampling import PoissonSampler
-
-sampler = PoissonSampler(sample_rate=0.01)
-
-noise_fn, noise_state = gaussian_noise(stddev=noise_mult * clip_norm)
-
-for step in range(num_steps):
-    # Sample batch (variable size!)
-    indices = sampler.sample(dataset_size=10000)
-    batch = dataset[indices]
-
-    # Compute gradients
-    grads, clip_state = dp_grad_fn(params, batch, state=clip_state)
-    noisy_grads, noise_state = noise_fn(grads, noise_state)
-    params = update(params, noisy_grads)
-
-# Track privacy (compose all steps)
-training = acc.poisson(acc.gaussian(noise_mult), sample_rate=0.01) * num_steps
-epsilon = training.epsilon_at(delta=1e-5)
-```
-
-## Truncated Poisson Sampling
-
-**Problem**: Standard Poisson sampling has variable batch sizes (can be 0 or very large!)
-
-**Solution**: **Truncated Poisson** bounds batch sizes while maintaining privacy amplification.
-
-### Why Truncated?
-
-Variable batch sizes are problematic:
-
-- Batch size 0 → No gradient update
-- Very large batch → Memory issues
-- Inconsistent training dynamics
-
-**Truncated Poisson solves this** by rejecting samples outside `[min_size, max_size]` range.
-
-### Using Truncated Poisson
+Poisson sampling with an upper bound on batch size. When a Poisson sample
+exceeds `max_batch_size`, it is randomly subsampled down. This gives
+tighter privacy bounds than standard Poisson (up to 20% improvement in
+epsilon) while preventing memory spikes from unusually large batches.
 
 ```python
 from opaque.sampling import TruncatedPoissonSampler
+from opaque.random import key
 
 sampler = TruncatedPoissonSampler(
-    sample_rate=0.01,
-    truncated_batch_size=32,  # Target batch size
-    dataset_size=10000,
+    dataset,
+    sample_rate=batch_size / dataset_size,
+    max_batch_size=batch_size,
+    num_epochs=num_steps,
+    key=key(42),
 )
-
-for step in range(num_steps):
-    # Sample batch (bounded size!)
-    indices = sampler.sample()
-    # len(indices) ≈ 32, always in reasonable range
-
-    batch = dataset[indices]
-    grads, clip_state = dp_grad_fn(params, batch, state=clip_state)
-    noisy_grads, noise_state = noise_fn(grads, noise_state)
-    params = update(params, noisy_grads)
-
-# Track privacy (compose all steps)
-training = acc.truncated_poisson(
-    acc.gaussian(noise_mult),
-    sample_rate=0.01,
-    batch_size_cap=32,
-    dataset_size=10000,
-) * num_steps
-epsilon = training.epsilon_at(delta=1e-5)
+loader = data.DataLoader(dataset, batch_sampler=sampler)
 ```
 
-### Advantages
+**Additional parameter:**
 
-- **Consistent batch sizes**: No empty or huge batches
-- **Tighter privacy bounds**: Up to 20% better than standard Poisson
-- **More stable training dynamics**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `max_batch_size` | `int` | Upper bound on batch size |
 
-Truncated Poisson is a reasonable default for most DP-SGD workloads.
-
-## Microbatching for Memory Efficiency
-
-**Problem**: Per-example gradients require more memory than batch gradients.
-
-**Solution**: Process the batch in smaller **microbatches**, accumulating gradients.
-
-### Why Microbatch?
-
-Computing per-example gradients is memory-intensive:
+Privacy accounting uses `acc.truncated_poisson` to match:
 
 ```python
-# Standard batching (low memory)
-batch_grad = compute_batch_average_gradient(batch)  # Memory: O(model_size)
-
-# Per-example gradients (high memory!)
-per_example_grads = [compute_gradient(ex) for ex in batch]  # Memory: O(batch_size × model_size)
-```
-
-For large models or large batches, this can cause **out-of-memory** errors.
-
-### Manual Microbatching
-
-Process the batch in chunks:
-
-```python
-def compute_clipped_gradients_microbatched(params, batch, microbatch_size=8):
-    """Compute clipped gradients using microbatching."""
-    total_grads = None
-
-    for i in range(0, len(batch), microbatch_size):
-        microbatch = batch[i : i + microbatch_size]
-
-        # Compute clipped gradients for microbatch
-        grads = dp_grad_fn(params, microbatch)
-
-        # Accumulate
-        if total_grads is None:
-            total_grads = grads
-        else:
-            total_grads = {k: total_grads[k] + grads[k] for k in grads}
-
-    return total_grads
-
-# Training loop
-for step in range(num_steps):
-    batch = sample_batch(dataset, batch_size=32)
-
-    # Use microbatching (memory-efficient!)
-    grads = compute_clipped_gradients_microbatched(params, batch, microbatch_size=8)
-
-    noisy_grads, noise_state = noise_fn(grads, noise_state)
-    params = update(params, noisy_grads)
-```
-
-### Microbatch Size Selection
-
-Choose `microbatch_size` based on GPU memory:
-
-```python
-# Rule of thumb: Start small and increase until OOM
-microbatch_sizes = [4, 8, 16, 32]
-
-for mbs in microbatch_sizes:
-    try:
-        grads = compute_clipped_gradients_microbatched(params, batch, microbatch_size=mbs)
-        print(f"microbatch_size={mbs} works!")
-        break
-    except RuntimeError as e:
-        if "out of memory" in str(e):
-            print(f"microbatch_size={mbs} OOM, trying smaller...")
-            torch.cuda.empty_cache()
-        else:
-            raise
-```
-
-### Privacy Guarantees with Microbatching
-
-Microbatching is a memory optimization. Privacy guarantees are identical.
-
-```python
-# These are equivalent for privacy:
-
-# (1) Full batch
-grads, clip_state = dp_grad_fn(params, batch_of_32, state=clip_state)
-
-# (2) Microbatched
-grads_mb1, clip_state = dp_grad_fn(params, batch[:16], state=clip_state)
-grads_mb2, clip_state = dp_grad_fn(params, batch[16:], state=clip_state)
-grads = {k: grads_mb1[k] + grads_mb2[k] for k in grads_mb1}
-
-# Same clipped sum of per-example gradients!
-```
-
-## Complete Example: Truncated Poisson + Microbatching
-
-Here's a full training loop combining both techniques:
-
-```python
-import torch
-import opaque.accounting as acc
-from opaque import clipped_grad, gaussian_noise
-from opaque.sampling import TruncatedPoissonSampler
-
-# Setup
-clip_norm = 1.0
-batch_size = 32
-dataset_size = 10000
-sample_rate = batch_size / dataset_size
-microbatch_size = 8  # Process 8 examples at a time
-num_steps = 1000
-
-# Create sampler
-sampler = TruncatedPoissonSampler(
-    sample_rate=sample_rate,
-    truncated_batch_size=batch_size,
-    dataset_size=dataset_size,
-)
-
-# Calibrate noise
-result = acc.calibrate(
-    acc.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: acc.truncated_poisson(
-        acc.gaussian(nm), sample_rate, batch_size_cap=batch_size, dataset_size=dataset_size
-    ) * num_steps,
-    0.1, 10.0,
-)
-noise_multiplier = result.param
-
-# Create DP gradient function
-dp_grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=clip_norm, batch_argnums=1)
-
-# Create noise function
-noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_norm)
-
-for step in range(num_steps):
-    # Sample batch with truncated Poisson
-    indices = sampler.sample()
-    batch = dataset[indices]
-
-    # Compute gradients with microbatching
-    total_grads = None
-    for i in range(0, len(batch), microbatch_size):
-        microbatch = batch[i : i + microbatch_size]
-        grads, clip_state = dp_grad_fn(params, microbatch, state=clip_state)
-
-        if total_grads is None:
-            total_grads = grads
-        else:
-            total_grads = {k: total_grads[k] + grads[k] for k in grads}
-
-    # Add noise
-    noisy_grads, noise_state = noise_fn(total_grads, noise_state)
-
-    # Update
-    params = update(params, noisy_grads)
-
-# Check final privacy
-training = acc.truncated_poisson(
+step = acc.truncated_poisson(
     acc.gaussian(noise_multiplier),
-    sample_rate=sample_rate,
+    sample_rate=batch_size / dataset_size,
     batch_size_cap=batch_size,
     dataset_size=dataset_size,
-) * num_steps
-print(f"Final privacy: ε={training.epsilon_at(1e-5):.2f}")
+)
+training = step * num_steps
 ```
 
-## Sampling Methods Comparison
+### `CyclicPoissonSampler`
 
-| Method                | Batch Size                  | Privacy Bound | When to Use                  |
-|-----------------------|-----------------------------|---------------|------------------------------|
-| **Full batch**        | Fixed (= dataset_size)      | Weak          | Never for DP                 |
-| **Fixed batching**    | Fixed                       | Moderate      | Simple, no amplification     |
-| **Poisson**           | Variable (~sample_rate × n) | Strong        | Research, flexible           |
-| **Truncated Poisson** | Bounded                     | **Strongest** | **Production (recommended)** |
-
-## Privacy Amplification Effect
-
-Smaller sample rates provide stronger amplification:
+Partitions the dataset into `cycle_length` groups and cycles through them,
+sampling from each group with probability `sampling_prob`. This sampler
+is required for matrix-factorization correlated noise mechanisms
+(`band_mf_noise`, `blt_mf_noise`) which need a fixed participation pattern.
 
 ```python
-# Large batches (sample_rate=0.1)
-training_large = acc.poisson(acc.gaussian(1.0), sample_rate=0.1) * 100
-eps_large = training_large.epsilon_at(1e-5)  # ε ≈ 1.5
+from opaque.sampling import CyclicPoissonSampler, PartitionType
+from opaque.random import key
 
-# Small batches (sample_rate=0.01)
-training_small = acc.poisson(acc.gaussian(1.0), sample_rate=0.01) * 100
-eps_small = training_small.epsilon_at(1e-5)  # ε ≈ 0.15
-
-print(f"Large batches: ε={eps_large:.2f}")
-print(f"Small batches: ε={eps_small:.2f}")  # 10x better!
+sampler = CyclicPoissonSampler(
+    dataset,
+    sampling_prob=0.5,
+    cycle_length=5,
+    iterations=500,
+    partition_type=PartitionType.EQUAL_SPLIT,
+    key=key(42),
+)
+loader = data.DataLoader(dataset, batch_sampler=sampler)
 ```
 
-**Tradeoff**: Smaller batches → stronger privacy BUT more training steps needed for same number of epochs.
+**Parameters:**
 
-## Best Practices
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `data_source` | any with `__len__` | required | The dataset |
+| `sampling_prob` | `float` in (0, 1] | required | Inclusion probability within each group |
+| `cycle_length` | `int` | 1 | Number of groups (1 = standard Poisson) |
+| `iterations` | `int` or `None` | `None` (= 1) | Total batches to yield |
+| `truncated_batch_size` | `int` or `None` | `None` | Optional upper bound on batch size |
+| `partition_type` | `PartitionType` | `EQUAL_SPLIT` | How examples are assigned to groups |
+| `key` | `RngKey` | required | RNG key |
 
-### 1. Use Truncated Poisson by Default
+**Partition types:**
+
+- `PartitionType.EQUAL_SPLIT` -- shuffle the dataset, then split into groups
+  of equal size. Deterministic group sizes.
+- `PartitionType.INDEPENDENT` -- assign each example to a random group
+  (multinomial). Group sizes vary.
+
+At iteration `i`, the sampler draws from group `i % cycle_length`. With
+`cycle_length=1` it reduces to standard Poisson sampling.
+
+See [Noise Addition](noise.md#matrix-factorization-noise-dp-ftrl) for how cyclic
+sampling integrates with correlated noise mechanisms.
+
+## DataLoader integration
+
+All three samplers are PyTorch `Sampler` subclasses that yield lists of
+indices (i.e., they are batch samplers). Pass them to `DataLoader` via the
+`batch_sampler` parameter:
 
 ```python
-from opaque.sampling import TruncatedPoissonSampler
-
-sampler = TruncatedPoissonSampler(sample_rate, batch_size, dataset_size)
+loader = data.DataLoader(dataset, batch_sampler=sampler)
 ```
 
-### 2. Choose Appropriate Sample Rate
+Do not pass `batch_size`, `shuffle`, or `sampler` when using
+`batch_sampler` -- PyTorch does not allow combining these parameters.
+
+Because Poisson sampling produces variable-size batches, your training code
+should handle batches of different sizes. In practice this is rarely a
+problem since `clipped_grad` and `gaussian_noise` work with any batch size.
+
+## Distributed sampling
+
+In distributed training, shard the dataset explicitly using `local_shard()`
+and derive a per-rank key via `fold_in(key, rank)`:
+
+1. The dataset is partitioned across ranks. Rank `r` owns indices
+   `[r * shard_size, (r+1) * shard_size)`, with the last rank receiving
+   any remainder.
+2. The RNG key is diversified per rank via `fold_in(key, rank)`, so
+   different ranks sample different subsets of their shard.
+3. No communication is needed -- each rank samples independently from its
+   own partition.
 
 ```python
-# Good: sample_rate ∈ [0.001, 0.05]
-sample_rate = 32 / 10000  # 0.0032 ✓
+from opaque.sampling.distributed import local_shard
+from opaque.random import key, fold_in
+import torch.distributed as dist
 
-# Too high: sample_rate > 0.1
-sample_rate = 1000 / 10000  # 0.1 (weak amplification) ⚠️
+rank = dist.get_rank()
+world_size = dist.get_world_size()
 
-# Too low: sample_rate < 0.0001
-sample_rate = 1 / 10000  # 0.0001 (too many steps) ⚠️
+shard = local_shard(dataset, rank=rank, world_size=world_size)
+sampler = PoissonSampler(shard, sample_rate=0.01, key=fold_in(key(42), rank))
+loader = data.DataLoader(shard, batch_sampler=sampler)
 ```
 
-### 3. Use Microbatching for Large Models
+**Privacy accounting in distributed mode** uses the global sample rate:
 
 ```python
-# For large models (e.g., LLMs), always use microbatching
-microbatch_size = 4  # Start small
+global_sample_rate = batch_size_per_device * world_size / dataset_size
+step = acc.poisson(acc.gaussian(noise_multiplier), global_sample_rate)
 ```
 
-### 4. Monitor Batch Sizes
+### Distributed helpers
+
+The `opaque.sampling.distributed` submodule provides two utilities used
+internally by the samplers:
+
+| Function | Description |
+|----------|-------------|
+| `local_shard_bounds(dataset_size)` | Returns `(start, end)` index range for the current rank |
+| `rank_key(key)` | Returns `fold_in(key, rank)` for rank > 0, unchanged for rank 0 |
+
+These are available for advanced use cases but most users do not need them
+directly.
+
+## Microbatching
+
+Microbatching is a memory optimization, not a sampling strategy. When
+per-example gradient computation via `vmap` exceeds GPU memory,
+microbatching processes the batch in smaller chunks and accumulates the
+clipped gradient sums. The result is mathematically identical to processing
+the full batch.
 
 ```python
-batch_sizes = []
-for step in range(num_steps):
-    indices = sampler.sample()
-    batch_sizes.append(len(indices))
+from opaque import clipped_grad
 
-print(f"Mean batch size: {np.mean(batch_sizes):.1f}")
-print(f"Batch size range: [{min(batch_sizes)}, {max(batch_sizes)}]")
+grad_fn, clip_state = clipped_grad(
+    loss_fn,
+    l2_clip_norm=1.0,
+    batch_argnums=1,
+    microbatch_size=16,  # process 16 examples at a time
+)
 ```
 
-## See Also
+Each microbatch of 16 examples is vmapped, per-example gradients are
+clipped, and the clipped gradients are summed. The partial sums are
+accumulated in-place, so peak memory is proportional to
+`microbatch_size * model_parameters` rather than
+`batch_size * model_parameters`.
 
-- **[Tutorial 05](../tutorials/05_sampling_and_microbatching.ipynb)**: Interactive sampling tutorial
-- **[Privacy Accounting](accounting.md)**: How sampling affects privacy
-- **[API Reference](../api/sampling.md)**: Detailed sampling API
-- **[LoRA Fine-tuning](lora.md)**: Use sampling with large models
+### Choosing microbatch size
 
----
+Use `find_max_microbatch_size` to automatically find the largest microbatch
+that fits in GPU memory:
 
-**Next**: Learn about [LoRA Fine-tuning](lora.md) for parameter-efficient DP training
+```python
+from opaque.profiling import find_max_microbatch_size
+
+optimal = find_max_microbatch_size(
+    model=model,
+    sample_batch=(sample_x, sample_y),
+    batch_size=batch_size,
+    loss_fn=loss_fn,
+    l2_clip_norm=1.0,
+    safety_margin=0.9,  # use 90% of available memory
+)
+
+grad_fn, clip_state = clipped_grad(
+    loss_fn,
+    l2_clip_norm=1.0,
+    batch_argnums=(1, 2),
+    microbatch_size=optimal,
+)
+```
+
+See [Memory Profiling](memory-profiling.md) for more details on memory
+analysis tools.
+
+### Privacy equivalence
+
+Microbatching does not change the privacy guarantee. The clipped gradient
+sum is identical whether the batch is processed in one shot or in chunks:
+
+```python
+# These produce the same result:
+# Full batch: vmap over 256 examples, clip, sum
+grads, state = grad_fn(params, batch_256, state=state)
+
+# Microbatched: vmap over 16 at a time, clip each, sum partials
+grad_fn_mb, state_mb = clipped_grad(loss_fn, l2_clip_norm=1.0,
+                                     batch_argnums=1, microbatch_size=16)
+grads_mb, state_mb = grad_fn_mb(params, batch_256, state=state_mb)
+# grads == grads_mb
+```
+
+## Choosing a sampler
+
+| Sampler | Batch size | Privacy | Use case |
+|---------|-----------|---------|----------|
+| `PoissonSampler` | Variable | Standard amplification | Research, general use |
+| `TruncatedPoissonSampler` | Bounded above | Tighter (up to 20%) | Production, memory-constrained |
+| `CyclicPoissonSampler` | Cyclic groups | Depends on mechanism | Matrix-factorization noise |
+
+For most DP-SGD workloads, `PoissonSampler` is sufficient.
+`TruncatedPoissonSampler` is a reasonable upgrade when you want tighter
+privacy bounds or need predictable batch sizes. `CyclicPoissonSampler` is
+only needed with correlated noise mechanisms.
+
+## API reference
+
+See [Sampling API Reference](../api/sampling.md) for complete function
+signatures and return types.

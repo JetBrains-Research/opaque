@@ -68,12 +68,13 @@ def test_clip_no_change_when_below_threshold(device):
     assert torch.allclose(clipped["w"], pytree["w"])
 
 
-def test_clip_nan_safe_replaces_nans_before_scaling(device):
-    """nan_safe=True should replace NaNs/Infs with zeros."""
+def test_clip_pytree_handles_nan(device):
+    """clip_pytree should zero out NaN/Inf values (vmap-compatible)."""
     pytree = {"w": torch.tensor([float("nan"), float("inf"), 1.0], device=device)}
-    clipped, _ = clip_pytree(pytree, clip_norm=1.0, nan_safe=True)
-    # After nan_to_num, only the 1.0 remains, so norm=1.0, no scaling needed
-    assert torch.allclose(clipped["w"], torch.tensor([0.0, 0.0, 1.0], device=device))
+    clipped, aux = clip_pytree(pytree, clip_norm=1.0)
+    # NaN/Inf sanitized to 0 before clipping; only the finite value remains
+    assert torch.isfinite(clipped["w"]).all()
+    assert torch.isfinite(aux.norm)
 
 
 def test_clip_handles_empty_tree(device):
@@ -127,11 +128,11 @@ def test_clipped_fun_return_norms():
 
     (clipped_grad, aux), _ = clipped_grad_fn(param, data, state=clip_state)
     assert isinstance(clipped_grad, torch.Tensor)
-    assert aux.aux is None
-    assert aux.norms is not None
-    assert aux.clipped_norms is not None
-    assert aux.norms.shape == (3,)  # One norm per example
-    assert all(aux.norms >= 0)
+    assert aux.loss_aux is None
+    assert aux.grad_norms is not None
+    assert aux.clipped_grad_norms is not None
+    assert aux.grad_norms.shape == (3,)  # One norm per example
+    assert all(aux.grad_norms >= 0)
 
 
 def test_clipped_fun_keep_batch_dim_true():
@@ -194,7 +195,7 @@ def test_clipped_fun_has_aux_true():
 
     (clipped_value, aux), _ = clipped_fn(x, data, state=clip_state)
     assert isinstance(clipped_value, torch.Tensor)
-    assert aux.aux is not None
+    assert aux.loss_aux is not None
 
 
 def test_clipped_fun_has_aux_with_return_norms():
@@ -214,13 +215,13 @@ def test_clipped_fun_has_aux_with_return_norms():
 
     (clipped_value, aux), _ = clipped_fn(x, data, state=clip_state)
     assert isinstance(clipped_value, torch.Tensor)
-    assert aux.aux is not None
-    assert aux.norms is not None
-    assert aux.norms.shape == (3,)
+    assert aux.loss_aux is not None
+    assert aux.grad_norms is not None
+    assert aux.grad_norms.shape == (3,)
 
 
-def test_clipped_fun_nan_safe_replaces_nans():
-    """Test nan_safe=True replaces NaN/Inf in gradients."""
+def test_clipped_fun_handles_nan():
+    """Test that NaN/Inf in gradients are zeroed out (vmap-compatible)."""
 
     def loss_fn(param, data):
         # Create a scenario that produces NaN gradient
@@ -228,15 +229,15 @@ def test_clipped_fun_nan_safe_replaces_nans():
         return torch.sqrt(param - data).mean()  # Gradient is undefined for param < data
 
     clipped_grad_fn, clip_state = clipped_fun(
-        grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0, nan_safe=True
+        grad(loss_fn), batch_argnums=1, l2_clip_norm=1.0
     )
 
     param = torch.tensor(1.0, requires_grad=True)
     data = torch.tensor([0.5, 2.0, 0.3])  # data[1]=2.0 will cause NaN
 
-    clipped_grad, _ = clipped_grad_fn(param, data, state=clip_state)
-    # Should complete without error and clipped_grad should be finite
-    assert torch.isfinite(clipped_grad).all()
+    # NaN/Inf gradients are sanitized to zero inside clip_pytree
+    result, _ = clipped_grad_fn(param, data, state=clip_state)
+    assert torch.isfinite(result).all()
 
 
 def test_clipped_fun_dtype_controls_accumulation():
@@ -488,7 +489,7 @@ def test_clipped_fun_microbatching_with_aux():
     assert torch.allclose(clipped_no_mb, clipped_mb, atol=1e-6)
 
     # Auxiliary outputs should be identical (per-example)
-    assert torch.allclose(aux_no_mb.aux, aux_mb.aux, atol=1e-6)
+    assert torch.allclose(aux_no_mb.loss_aux, aux_mb.loss_aux, atol=1e-6)
 
 
 def test_clipped_fun_microbatching_with_return_norms():
@@ -516,4 +517,4 @@ def test_clipped_fun_microbatching_with_return_norms():
     assert torch.allclose(clipped_no_mb, clipped_mb, atol=1e-6)
 
     # Norms should be identical (per-example)
-    assert torch.allclose(aux_no_mb.norms, aux_mb.norms, atol=1e-6)
+    assert torch.allclose(aux_no_mb.grad_norms, aux_mb.grad_norms, atol=1e-6)

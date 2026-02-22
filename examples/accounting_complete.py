@@ -20,7 +20,7 @@ print("=" * 70)
 # =============================================================================
 # 1. Basic DP-SGD: Poisson-subsampled Gaussian
 # =============================================================================
-print("\n1️⃣  BASIC DP-SGD")
+print("\n[1] BASIC DP-SGD")
 print("-" * 70)
 
 # Standard DP-SGD step
@@ -38,7 +38,7 @@ print(f"Privacy: (ε={epsilon:.6f}, δ=1e-5)")
 # =============================================================================
 # 2. Production DP-SGD: Truncated Poisson (capped batch size)
 # =============================================================================
-print("\n2️⃣  PRODUCTION DP-SGD (Truncated Poisson)")
+print("\n[2] PRODUCTION DP-SGD (Truncated Poisson)")
 print("-" * 70)
 
 # CIFAR-10 example: n=50k, batch=250, 10 epochs
@@ -62,7 +62,7 @@ print(f"  Privacy: (ε={eps:.6f}, δ=1e-5)")
 # =============================================================================
 # 3. All privacy metrics from a single PLD
 # =============================================================================
-print("\n3️⃣  PRIVACY METRICS")
+print("\n[3] PRIVACY METRICS")
 print("-" * 70)
 
 proc = acc.poisson(acc.gaussian(1.0), 0.01) * 500
@@ -77,7 +77,7 @@ print(f"  Bayes risk:    risk={proc.risk_at(0.5):.6f} at prior=0.5")
 # =============================================================================
 # 4. Calibration: Find noise for target privacy
 # =============================================================================
-print("\n4️⃣  CALIBRATION")
+print("\n[4] CALIBRATION")
 print("-" * 70)
 
 
@@ -104,7 +104,7 @@ print(f"Solution: nm={result_adv.param:.4f}, achieved={result_adv.achieved:.6f}"
 # =============================================================================
 # 5. Multi-phase training (heterogeneous composition)
 # =============================================================================
-print("\n5️⃣  MULTI-PHASE TRAINING")
+print("\n[5] MULTI-PHASE TRAINING")
 print("-" * 70)
 
 # Three-phase curriculum: warm-up → main training → fine-tuning
@@ -125,7 +125,7 @@ print(f"Total privacy: (ε={eps_total:.6f}, δ=1e-5)")
 # =============================================================================
 # 6. All available mechanisms
 # =============================================================================
-print("\n6️⃣  ALL MECHANISMS")
+print("\n[6] ALL MECHANISMS")
 print("-" * 70)
 
 # Base Gaussian (no subsampling)
@@ -141,7 +141,7 @@ trunc = acc.truncated_poisson(acc.gaussian(1.0), 0.01, batch_size_cap=256, datas
 print(f"Truncated Poisson:  {trunc}")
 
 # Parallel Poisson (multi-worker sampling)
-parallel = acc.parallel_poisson(acc.poisson(acc.gaussian(1.0), 0.01), num_workers=4)
+parallel = acc.parallel_poisson(acc.gaussian(1.0), sample_rate=0.01, num_workers=4)
 print(f"Parallel Poisson:   {parallel}")
 
 # Adaptive clipping (Andrew et al. 2021)
@@ -159,7 +159,7 @@ print(f"Identity:           {ident}")
 # =============================================================================
 # 7. Discretization configuration
 # =============================================================================
-print("\n7️⃣  DISCRETIZATION CONTROL")
+print("\n[7] DISCRETIZATION CONTROL")
 print("-" * 70)
 
 # Query-time discretization (recommended approach)
@@ -185,7 +185,7 @@ print(f"\nModule default set to 1e-3: eps={module_default.epsilon_at(1e-5):.6f}"
 # =============================================================================
 # 8. Quick inspection
 # =============================================================================
-print("\n8️⃣  QUICK INSPECTION")
+print("\n[8] QUICK INSPECTION")
 print("-" * 70)
 
 step = acc.poisson(acc.gaussian(1.1), 0.01) * 1000
@@ -194,5 +194,5 @@ print(f"  epsilon(1e-5) = {step.epsilon_at(1e-5):.4f}")
 print(f"  advantage     = {step.advantage():.4e}")
 
 print("=" * 70)
-print("✅ END OF DEMONSTRATION")
+print("END OF DEMONSTRATION")
 print("=" * 70)

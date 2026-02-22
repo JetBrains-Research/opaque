@@ -117,7 +117,7 @@ class TestEvaluate:
         audit = auditing.evaluate(experiment, loss_fn, params, dataset)
 
         # Should have valid metrics
-        assert 0.0 <= audit.auroc() <= 1.0
+        assert 0.0 <= audit.auc() <= 1.0
         assert audit.epsilon_at(delta=0.0) >= 0.0
 
         # Summary should work

@@ -16,16 +16,16 @@ class ClippedFunAux(NamedTuple):
     """Function-level auxiliary outputs from clipped_fun.
 
     Fields:
-        values: Per-example function values before clipping.
-        norms: Per-example L2 norms before clipping.
-        clipped_norms: Per-example L2 norms after clipping.
-        aux: Per-example auxiliary payload returned by the wrapped function.
+        loss_values: Per-example function values before clipping.
+        grad_norms: Per-example L2 norms before clipping.
+        clipped_grad_norms: Per-example L2 norms after clipping.
+        loss_aux: Per-example auxiliary payload returned by the wrapped function.
     """
 
-    values: Any | None
-    norms: Any | None
-    clipped_norms: Any | None
-    aux: Any | None
+    loss_values: Any | None
+    grad_norms: Any | None
+    clipped_grad_norms: Any | None
+    loss_aux: Any | None
 
 
 def _with_extra_batch_axis(fun, batch_argnums):
@@ -181,13 +181,10 @@ def clipped_fun(
     batch_argnums: int | tuple[int, ...] = 0,
     keep_batch_dim: bool = True,
     l2_clip_norm: float = 1.0,
-    rescale_to_unit_norm: bool = False,
     normalize_by: float = 1.0,
     return_aux: bool = False,
     microbatch_size: int | None = None,
-    nan_safe: bool = True,
     dtype: torch.dtype | None = None,
-    spmd_axis_name: str | None = None,
 ) -> tuple[Callable, FixedClipState]:
     """Transform a function to clip its output and sum across a batch.
 
@@ -196,20 +193,19 @@ def clipped_fun(
 
     Example Usage:
         >>> data = torch.tensor([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
-        >>> clipped_mean = clipped_fun(torch.mean, l2_clip_norm=1.0)
-        >>> clipped_mean(data)
+        >>> clipped_mean, clip_state = clipped_fun(torch.mean, l2_clip_norm=1.0)
+        >>> result, clip_state = clipped_mean(data, state=clip_state)
+        >>> result
         tensor(5.)
 
     Formal Guarantees:
         For the first function output:
           The L2 sensitivity of the returned function with respect to the batch
           arguments (specified by `batch_argnums`) under add/remove or zero-out
-          differential privacy definitions is guaranteed to be 1.0 if
-          `rescale_to_unit_norm` is True. Otherwise, the sensitivity is
-          `l2_clip_norm`. Under replace-one DP, the sensitivity is doubled
-          (2.0 or 2 * `l2_clip_norm`).
+          differential privacy definitions is guaranteed to be `l2_clip_norm`.
+          Under replace-one DP, the sensitivity is doubled (2 * `l2_clip_norm`).
         Extra auxiliary outputs (aux, norms) are per-example. This function
-          guarantees that per-example outputs only depend the data for the same
+          guarantees that per-example outputs only depend on the data for the same
           example. This allows maximum flexibility for the caller to aggregate
           these as desired (possibly with a DP mean, median, quantile, or histogram
           mechanism).
@@ -227,9 +223,6 @@ def clipped_fun(
             batch axis of size 1. If False, this size 1 axis will be dropped
             (reducing the rank of the batch args by 1 before passing to `fun`).
         l2_clip_norm: The maximum L2 norm allowed.
-        rescale_to_unit_norm: If True, the output PyTree's norm is rescaled by `1.0
-            / clip_norm` after potential clipping. If False, the output PyTree has
-            norm at most `clip_norm`.
         normalize_by: Divide the clipped output by this value before returning.
         return_aux: If True, the returned Callable will return a per-example aux
             NamedTuple containing the original per-example values, per-example norms
@@ -238,12 +231,8 @@ def clipped_fun(
             size for memory-efficient processing. Processes each microbatch separately
             and accumulates results without materializing the full batch of gradients.
             Set this to reduce peak memory usage at the cost of slightly slower computation.
-        nan_safe: If True, the formal guarantees of the returned Callable still
-            hold in the presence of NaNs and infs. See `clip_pytree` for more details.
         dtype: Optional dtype for the clipped+aggregated pytree. If None, the dtype
             will be the same as the dtypes of the function output.
-        spmd_axis_name: See torch.vmap. **Currently not implemented** - parameter
-            accepted for API compatibility.
     Returns:
         A new function `clip_fn` that clips the output of `fun` and sums across
         the batch. `clip_fn` takes the same arguments as `fun`. The exact output
@@ -254,16 +243,6 @@ def clipped_fun(
         | `False`      | `value`               |
         | `True`       | `value, aux`          |
     """
-    # Warn about unimplemented parameters
-    if spmd_axis_name is not None:
-        import warnings
-
-        warnings.warn(
-            "spmd_axis_name parameter is not yet implemented and will be ignored.",
-            UserWarning,
-            stacklevel=2,
-        )
-
     # Normalize batch_argnums to tuple
     batch_argnums = normalize_to_tuple(batch_argnums)
 
@@ -286,38 +265,36 @@ def clipped_fun(
             clipped_value, norm = clip_pytree(
                 value,
                 clip_norm=l2_clip_norm,
-                rescale_to_unit_norm=rescale_to_unit_norm,
-                nan_safe=nan_safe,
             )
             if return_aux:
                 # Build aux dict with clipping metadata
                 aux_dict = {
-                    "norms": norm.norm,
-                    "clipped_norms": global_norm(clipped_value),
+                    "grad_norms": norm.norm,
+                    "clipped_grad_norms": global_norm(clipped_value),
                 }
 
                 # Extract nested values and aux from wrapped functions (e.g., grad_fn)
-                # aux may be a dict like {"values": loss, "aux": user_aux} or just user_aux
+                # aux may be a dict like {"loss_values": loss, "loss_aux": user_aux} or just user_aux
                 if isinstance(aux, dict):
-                    # Preserve "values" from nested dict if present (e.g., loss from grad_and_value)
-                    if "values" in aux:
-                        aux_dict["values"] = aux["values"]
+                    # Preserve "loss_values" from nested dict if present (e.g., loss from grad_and_value)
+                    if "loss_values" in aux:
+                        aux_dict["loss_values"] = aux["loss_values"]
                     else:
-                        # No nested "values", use function output
-                        aux_dict["values"] = value
+                        # No nested "loss_values", use function output
+                        aux_dict["loss_values"] = value
 
                     # Extract user aux from nested dict if present
                     if has_aux:
-                        if "aux" in aux:
-                            aux_dict["aux"] = aux["aux"]
+                        if "loss_aux" in aux:
+                            aux_dict["loss_aux"] = aux["loss_aux"]
                         else:
                             # aux is already the user aux (not nested)
-                            aux_dict["aux"] = aux
+                            aux_dict["loss_aux"] = aux
                 else:
                     # aux is not a dict (direct user aux or None)
-                    aux_dict["values"] = value
+                    aux_dict["loss_values"] = value
                     if has_aux:
-                        aux_dict["aux"] = aux
+                        aux_dict["loss_aux"] = aux
 
                 return clipped_value, aux_dict
             return clipped_value
@@ -363,10 +340,10 @@ def clipped_fun(
 
         aux_dict = aux if isinstance(aux, dict) else {}
         aux = ClippedFunAux(
-            values=aux_dict.get("values"),
-            norms=aux_dict.get("norms"),
-            clipped_norms=aux_dict.get("clipped_norms"),
-            aux=aux_dict.get("aux"),
+            loss_values=aux_dict.get("loss_values"),
+            grad_norms=aux_dict.get("grad_norms"),
+            clipped_grad_norms=aux_dict.get("clipped_grad_norms"),
+            loss_aux=aux_dict.get("loss_aux"),
         )
 
         return result, aux
@@ -376,12 +353,11 @@ def clipped_fun(
         clipped_fn = _with_extra_batch_axis(clipped_fn, batch_argnums)
 
     # Calculate L2 sensitivity bound
-    l2_norm_bound = (1.0 if rescale_to_unit_norm else l2_clip_norm) / normalize_by
+    l2_norm_bound = l2_clip_norm / normalize_by
 
     # Create fixed clip state
     clip_state = FixedClipState(
         l2_norm_bound=l2_norm_bound,
-        rescale_to_unit_norm=rescale_to_unit_norm,
     )
 
     # Wrap function to accept and return state

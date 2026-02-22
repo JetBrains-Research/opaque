@@ -154,14 +154,13 @@ class TestTruncatedPoissonConstructor:
 
 
 class TestParallelPoissonConstructor:
-    """acc.parallel_poisson() validates inner type (must be Poisson)."""
+    """acc.parallel_poisson() takes (Gaussian, sample_rate, num_workers)."""
 
     def test_returns_parallel_poisson(self):
-        p = acc.poisson(acc.gaussian(0.8), 0.01)
-        a = acc.parallel_poisson(p, 4)
+        a = acc.parallel_poisson(acc.gaussian(0.8), sample_rate=0.01, num_workers=4)
         assert isinstance(a, ParallelPoisson)
         assert a.num_workers == 4
 
-    def test_rejects_non_poisson(self):
-        with pytest.raises(TypeError, match="Poisson"):
-            acc.parallel_poisson(acc.gaussian(0.8), 4)  # type: ignore[arg-type]
+    def test_rejects_non_gaussian(self):
+        with pytest.raises(TypeError, match="Gaussian"):
+            acc.parallel_poisson("bad", sample_rate=0.01, num_workers=4)  # type: ignore[arg-type]

@@ -9,7 +9,7 @@ DP training:
 
 - **Core**: `is_distributed()`, `get_rank()`, `get_world_size()`
 - **Gradient aggregation**: `sum_gradients()` (AllReduce SUM on PyTrees)
-- **State sync**: `sync_state()`, `reduce_scalar()`, `gather_tensors()`
+- **State sync**: `sync()`, `sync_object()`, `reduce_scalar()`, `gather_tensors()`
 
 DDP is the only supported parallelism strategy.
 See [User Guide: Distributed Training](../user-guide/distributed.md) for usage.
@@ -60,7 +60,12 @@ See [User Guide: Distributed Training](../user-guide/distributed.md) for usage.
         show_source: true
         heading_level: 3
 
-::: opaque.distributed.sync_state
+::: opaque.distributed.sync
+    options:
+        show_source: true
+        heading_level: 3
+
+::: opaque.distributed.sync_object
     options:
         show_source: true
         heading_level: 3

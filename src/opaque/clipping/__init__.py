@@ -14,11 +14,11 @@ from opaque.clipping.clipped_fun import ClippedFunAux, clipped_fun
 from opaque.clipping.clipped_grad import ClippedGradAux, clipped_grad
 from opaque.clipping.distributed import (
     sync_adaptive_clip_state,
-    sync_adaptive_clipped_grad_aux,
+    sync_aux,
     sync_clip_state,
 )
 from opaque.clipping.pytree import clip_pytree
-from opaque.clipping.types import ClipState, FixedClipState, NeighboringRelation
+from opaque.clipping.types import ClipState, FixedClipState
 
 __all__ = [
     # Core clipping functions
@@ -37,8 +37,6 @@ __all__ = [
     # Synchronization helpers
     "sync_clip_state",
     "sync_adaptive_clip_state",
-    "sync_adaptive_clipped_grad_aux",
-    # Types
-    "NeighboringRelation",
+    "sync_aux",
     "distributed",
 ]

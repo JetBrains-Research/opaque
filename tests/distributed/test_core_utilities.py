@@ -102,7 +102,11 @@ class TestModuleExports:
             "sum_gradients",
             "reduce_scalar",
             "gather_tensors",
-            "sync_state",
+            "gather_pytree",
+            "assert_pytree_equal",
+            "assert_scalar_equal",
+            "sync_object",
+            "sync",
         ]
 
         for name in expected_exports:

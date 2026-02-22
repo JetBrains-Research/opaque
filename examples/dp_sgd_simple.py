@@ -111,7 +111,7 @@ def main():
         print(f"   Final MSE: {final_loss:.4f}")
 
     print("\n5. Privacy accounting...")
-    print("   Note: Use jbr-fed-accounting for actual privacy analysis")
+    print("   Note: Use opaque.accounting for actual privacy analysis")
     print(f"   - Noise multiplier: {noise_multiplier}")
     print(f"   - Clip norm: {l2_clip_norm}")
     print(f"   - Steps: {epochs * len(dataloader)}")
@@ -136,8 +136,8 @@ def demo_research_flexibility():
     _grad_fn, _state = clipped_grad(loss_fn, l2_clip_norm=1.0)
     step_key = fold_in(key(42), 0)
     _noise_fn, _nstate = gaussian_noise(stddev=1.1 * _state.sensitivity(), key=step_key)
-    print(f"   ✓ Sensitivity: {_state.sensitivity()}")
-    print(f"   ✓ Noise: Gaussian(stddev={1.1 * _state.sensitivity()})")
+    print(f"   - Sensitivity: {_state.sensitivity()}")
+    print(f"   - Noise: Gaussian(stddev={1.1 * _state.sensitivity()})")
 
     # Example 2: Different clip norm
     print("\n2. Higher clip norm:")
@@ -146,20 +146,20 @@ def demo_research_flexibility():
     _noise_fn, _nstate = gaussian_noise(
         stddev=1.1 * _state_2.sensitivity(), key=step_key
     )
-    print(f"   ✓ Sensitivity: {_state_2.sensitivity()}")
-    print(f"   ✓ Noise: Gaussian(stddev={1.1 * _state_2.sensitivity()})")
+    print(f"   - Sensitivity: {_state_2.sensitivity()}")
+    print(f"   - Noise: Gaussian(stddev={1.1 * _state_2.sensitivity()})")
 
-    # Example 3: Rescale to unit norm
-    print("\n3. Unit norm (rescale_to_unit_norm=True):")
+    # Example 3: Normalize by batch size
+    print("\n3. Normalize by batch size (normalize_by=64):")
     _grad_fn_3, _state_3 = clipped_grad(
-        loss_fn, l2_clip_norm=5.0, rescale_to_unit_norm=True
+        loss_fn, l2_clip_norm=5.0, normalize_by=64.0
     )
     step_key = fold_in(key(42), 2)
     _noise_fn, _nstate = gaussian_noise(
         stddev=1.1 * _state_3.sensitivity(), key=step_key
     )
-    print(f"   ✓ Sensitivity: {_state_3.sensitivity()}")  # Should be 1.0
-    print(f"   ✓ Noise: Gaussian(stddev={1.1 * _state_3.sensitivity()})")
+    print(f"   - Sensitivity: {_state_3.sensitivity()}")
+    print(f"   - Noise: Gaussian(stddev={1.1 * _state_3.sensitivity()})")
 
     # Example 4: Bounded Gaussian noise (truncated normal)
     print("\n4. Bounded Gaussian (Chen & Hale, 2024):")
@@ -168,7 +168,7 @@ def demo_research_flexibility():
         stddev=1.1 * _state.sensitivity(), bounds=(-3.0, 3.0), key=step_key
     )
     print(
-        f"   ✓ Noise: BoundedGaussian(stddev={1.1 * _state.sensitivity()}, bounds=(-3, 3))"
+        f"   - Noise: BoundedGaussian(stddev={1.1 * _state.sensitivity()}, bounds=(-3, 3))"
     )
     print("   → Outputs guaranteed in [-3.0, 3.0]")
 

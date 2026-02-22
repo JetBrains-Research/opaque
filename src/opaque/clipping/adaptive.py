@@ -15,7 +15,7 @@ from typing import Any, NamedTuple, cast
 import torch
 
 from opaque.clipping.clipped_grad import clipped_grad
-from opaque.clipping.types import ClipState, NeighboringRelation
+from opaque.clipping.types import ClipState
 from opaque.random import RngKey, fold_in, generator_from_key
 
 # Andrew et al. (2021): sigma_b = m/20 on clipped counts.
@@ -28,9 +28,9 @@ class AdaptiveClippedGradAux(NamedTuple):
     """Auxiliary outputs from adaptive_clipped_grad extending ClippedGradAux.
 
     Attributes:
-        loss_values: Per-example loss values (if return_loss_values=True).
-        grad_norms: L2 norms of per-example gradients before clipping (if return_grad_norms=True).
-        clipped_grad_norms: L2 norms after clipping (if return_grad_norms=True).
+        loss_values: Per-example loss values (if return_aux=True).
+        grad_norms: L2 norms of per-example gradients before clipping (if return_aux=True).
+        clipped_grad_norms: L2 norms after clipping (if return_aux=True).
         loss_aux: Auxiliary outputs from loss function (if has_aux=True).
         clipping_rate: Fraction of per-example gradients clipped at this step.
     """
@@ -52,7 +52,6 @@ class AdaptiveClipState(ClipState):
     Attributes:
         clip_norm: Current clipping threshold C_t.
         clipping_rate: Fraction of gradients clipped in last call (for monitoring).
-        rescale_to_unit_norm: Whether gradients were rescaled to unit norm.
         key: RNG key for quantile noise (None if no noise).
         step: Step counter for key derivation.
         batch_size: Number of examples processed in the last call.  In
@@ -63,7 +62,6 @@ class AdaptiveClipState(ClipState):
 
     clip_norm: float
     clipping_rate: float
-    rescale_to_unit_norm: bool
     key: RngKey
     step: int
     quantile_noise_multiplier: float
@@ -90,18 +88,10 @@ class AdaptiveClipState(ClipState):
                 f"got {self.quantile_noise_multiplier}"
             )
 
-    def sensitivity(
-        self,
-        neighboring_relation: NeighboringRelation = NeighboringRelation.REPLACE_SPECIAL,
-    ) -> float:
+    def sensitivity(self) -> float:
         """Compute L2 sensitivity for differential privacy noise calibration.
 
-        The sensitivity depends on whether gradients were rescaled to unit norm:
-        - If rescale_to_unit_norm=True: sensitivity is always 1.0
-        - If rescale_to_unit_norm=False: sensitivity is clip_norm
-
-        Args:
-            neighboring_relation: The neighboring relation to use for DP.
+        For replace-one neighboring, double this value when calibrating noise.
 
         Returns:
             L2 sensitivity (float).
@@ -112,20 +102,7 @@ class AdaptiveClipState(ClipState):
             >>> noise_fn, ns = gaussian_noise(stddev=noise_multiplier * sens)
             >>> noisy_grad, ns = noise_fn(grad, ns)
         """
-        l2_bound = 1.0 if self.rescale_to_unit_norm else self.clip_norm
-
-        match neighboring_relation:
-            case NeighboringRelation.ADD_OR_REMOVE_ONE:
-                return l2_bound
-            case NeighboringRelation.REPLACE_ONE:
-                return 2 * l2_bound
-            case NeighboringRelation.REPLACE_SPECIAL:
-                return l2_bound
-            case _:
-                raise ValueError(
-                    f"Unsupported neighboring_relation={neighboring_relation}. "
-                    f"Must be one of: {list(NeighboringRelation)}"
-                )
+        return self.clip_norm
 
 
 def _compute_clipping_stats(
@@ -202,9 +179,11 @@ def adaptive_clipped_grad(
     (grad, new_state) or ((grad, aux), new_state) depending on return_aux.
 
     The clipping threshold adapts geometrically based on observed clipping rate:
-        C_{t+1} = C_t * exp(η * sign(ρ_t - γ))
+        C_{t+1} = C_t * exp(η * (ρ̃_t - γ))
 
-    Where ρ_t is the fraction of per-example gradients clipped at step t.
+    Where ρ̃_t is the noisy fraction of per-example gradients clipped at step t
+    and γ is the target quantile. The step size is proportional to the deviation
+    from the target, giving smoother adaptation near equilibrium.
 
     Args:
         loss_fn: The loss function to be differentiated. Should return a scalar.
@@ -229,7 +208,7 @@ def adaptive_clipped_grad(
         return_aux: If True, return a per-example aux NamedTuple with loss values,
             gradient norms, loss aux, and adaptive fields.
         **clipped_grad_kwargs: Additional arguments passed to `clipped_grad()`,
-            such as `batch_argnums`, `rescale_to_unit_norm`, `normalize_by`, etc.
+            such as `batch_argnums`, `normalize_by`, etc.
 
     Returns:
         A tuple of (clipped_grad_fn, initial_state) where:
@@ -264,7 +243,7 @@ def adaptive_clipped_grad(
         >>> optimizer = torchopt.adamw(lr=1e-3)
         >>> opt_state = optimizer.init(params)
         >>>
-        >>> noise_fn, noise_state = gaussian_noise(stddev=1.1)
+        >>> noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(1))
         >>> for batch_x, batch_y in dataloader:
         ...     # Compute clipped gradients - state passed explicitly
         ...     grad, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
@@ -310,8 +289,10 @@ def adaptive_clipped_grad(
         ...     # Sum clipped gradients across devices
         ...     grad = sum_gradients(grad)
         ...
-        ...     # Add noise and update (only on rank 0, or broadcast)
-        ...     noisy_grad = gaussian_noise(grad, clip_state.clip_norm * 1.1)
+        ...     # Add noise and update
+        ...     noise_fn, noise_state = gaussian_noise(
+        ...         stddev=clip_state.sensitivity() * 1.1, key=key(2))
+        ...     noisy_grad, noise_state = noise_fn(grad, noise_state)
         ...     # ... optimizer step
 
     Notes:
@@ -348,9 +329,6 @@ def adaptive_clipped_grad(
             "quantile_noise_multiplier must be positive, "
             f"got {quantile_noise_multiplier}"
         )
-
-    # Extract rescale_to_unit_norm from kwargs for state initialization
-    rescale_to_unit_norm = clipped_grad_kwargs.get("rescale_to_unit_norm", False)
 
     # Store config in closure (immutable)
     config = {
@@ -436,7 +414,6 @@ def adaptive_clipped_grad(
         new_state = AdaptiveClipState(
             clip_norm=new_clip_norm,
             clipping_rate=clipping_rate,
-            rescale_to_unit_norm=state.rescale_to_unit_norm,
             key=state.key,
             step=state.step + 1,
             quantile_noise_multiplier=state.quantile_noise_multiplier,
@@ -482,7 +459,6 @@ def adaptive_clipped_grad(
     initial_state = AdaptiveClipState(
         clip_norm=initial_clip_norm,
         clipping_rate=0.0,
-        rescale_to_unit_norm=rescale_to_unit_norm,
         key=key,
         step=0,
         quantile_noise_multiplier=quantile_noise_multiplier,

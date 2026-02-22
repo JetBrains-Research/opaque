@@ -25,6 +25,7 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 from opaque.clipping import adaptive_clipped_grad
 from opaque.distributed import sum_gradients
 from opaque.noise import gaussian_noise
+from opaque.random import key
 from opaque.utils import make_functional, merge
 
 
@@ -182,23 +183,24 @@ def main():
         learning_rate=clip_learning_rate,
         microbatch_size=microbatch_size,
         keep_batch_dim=False,
-        return_grad_norms=True,
-        return_values=True,
+        return_aux=True,
+        key=key(42),
     )
     # Same seed on all devices for sharded Poisson sampling
     # When distributed is detected, noise automatically uses the same seed everywhere
-    # (no need to manually shift by rank!)
+    # (no need to manually shift by rank)
     noise_fn, noise_state = gaussian_noise(
         stddev=noise_multiplier * clip_state.sensitivity(),
+        key=key(42),
     )
 
     # TorchOpt functional optimizer (same initialization on all devices)
     opt = torchopt.sgd(lr=learning_rate)
     opt_state = opt.init(trainable)
-    # ℹ️ Optimizer state stays synchronized automatically:
-    #    - opt.update() is a pure function (same inputs → same outputs)
+    # Optimizer state stays synchronized automatically:
+    #    - opt.update() is a pure function (same inputs -> same outputs)
     #    - After sum_gradients() + noise (same seed), all devices have identical noisy_grads
-    #    - Therefore, opt_state evolves identically on all devices (no explicit sync needed)
+    #    - Therefore, opt_state evolves identically on all devices (no explicit synchronization needed)
 
     if distributed:
         dist.barrier()
@@ -218,16 +220,16 @@ def main():
             if distributed:
                 grads = sum_gradients(grads)  # Sum before noise
 
-            # 2. Add noise on EVERY device (all with same seed → same noise)
-            # ⚠️ CRITICAL: noise_fn() is called on EVERY device in the distributed setting
-            #    NOT just the main rank! Each device independently applies the same noise.
+            # 2. Add noise on EVERY device (all with same seed -> same noise)
+            # IMPORTANT: noise_fn() is called on EVERY device in the distributed setting
+            #    NOT just the main rank. Each device independently applies the same noise.
             noisy_grads, noise_state = noise_fn(grads, noise_state)
 
             # 3. Update parameters with noisy aggregated gradients
             updates, opt_state = opt.update(noisy_grads, opt_state, params=trainable)
             trainable = torchopt.apply_updates(trainable, updates)
-            # ℹ️ opt_state is now identical on all devices (pure function property)
-            # No explicit synchronization needed!
+            # opt_state is now identical on all devices (pure function property)
+            # No explicit synchronization needed
 
             if is_main and global_step % 20 == 0:
                 loss_val = aux.loss_values.mean().item()
@@ -243,7 +245,7 @@ def main():
 
     if is_main:
         elapsed = time.time() - start
-        print("\n✅ DDP test complete")
+        print("\nDDP test complete")
         print(f"Steps: {global_step}, Time: {elapsed:.1f}s")
 
     if distributed:

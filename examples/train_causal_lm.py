@@ -339,7 +339,7 @@ def main():
         audit_experiment = auditing.setup(
             train_dataset,
             num_canaries=num_canaries,
-            seed=args.seed,
+            key=key(args.seed),
         )
         audit_train_dataset = audit_experiment.subset(train_dataset)
         print(
@@ -424,8 +424,8 @@ def main():
             clip_norm_max=args.clip_norm_max,
             microbatch_size=args.microbatch_size,
             keep_batch_dim=False,
-            return_grad_norms=True,
-            return_values=True,
+            return_aux=True,
+            key=key(args.seed),
         )
         opt_state = base_opt.init(trainable_params)
         fixed_clip_norm = None
@@ -447,8 +447,7 @@ def main():
             l2_clip_norm=fixed_clip_norm,
             microbatch_size=args.microbatch_size,
             keep_batch_dim=False,
-            return_grad_norms=True,
-            return_values=True,
+            return_aux=True,
         )
     else:
         fixed_clipped_grad_fn = None

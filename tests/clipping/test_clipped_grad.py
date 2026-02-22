@@ -64,30 +64,6 @@ def test_clipped_grad_basic():
     assert grad.shape == param.shape
 
 
-def test_clipped_grad_with_rescale():
-    """Test clipped_grad with rescale_to_unit_norm=True."""
-
-    def loss(param, data):
-        return 0.5 * ((data - param) ** 2).mean()
-
-    grad_fn, clip_state = clipped_grad(
-        loss,
-        argnums=0,
-        batch_argnums=1,
-        l2_clip_norm=2.5,
-        rescale_to_unit_norm=True,
-    )
-
-    param = torch.tensor(3.0, requires_grad=True)
-    data = torch.tensor([0.0, 7.0, -2.0])
-
-    grad, _ = grad_fn(param, data, state=clip_state)
-
-    # Check grad is a tensor with correct shape
-    assert isinstance(grad, torch.Tensor)
-    assert grad.shape == param.shape
-
-
 def test_clipped_grad_with_pytree_params():
     """Test clipped_grad with PyTree (dict) parameters."""
 

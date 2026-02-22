@@ -16,16 +16,14 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `set_reproducible_pytorch_seed()` - PyTorch/CUDNN reproducibility
   - `generator_from_key()` - PyTorch generator bridge
 
-- **[PyTree Utilities](core/pytree_utils.md)**: Operations on PyTrees (nested structures of tensors)
-  - `tree_map()`, `global_norm()`, `tree_leaves()`
-
-- **[Functional Utilities](functional_utils.md)**: Utility functions for functional programming
+- **[Utilities](utilities.md)**: Functional and PyTree utilities
   - `make_functional()` - Convert nn.Module to functional form
+  - `tree_map()`, `tree_map_with_path()`, `partition()`, `merge()`, `global_norm()`, `tree_leaves()`
 
 ### DP-SGD Components
 
-- **[Clipping](core/clipping.md)**: Per-sample gradient clipping
-  - `clipped_grad()` - High-level gradient clipping (recommended)
+- **[Clipping](clipping.md)**: Per-sample gradient clipping
+  - `clipped_grad()` - High-level gradient clipping
   - `clipped_fun()` - Clip and sum function outputs
   - `clip_pytree()` - Low-level PyTree clipping
   - `adaptive_clipped_grad()` - Clipped gradients with auto-tuned clip norm
@@ -44,62 +42,53 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 - **[Sampling](sampling.md)**: Privacy-amplifying sampling
   - `PoissonSampler` - Standard Poisson sampling
-  - `TruncatedPoissonSampler` - Bounded Poisson sampling (recommended)
+  - `TruncatedPoissonSampler` - Bounded Poisson sampling
+  - `CyclicPoissonSampler` - Cyclic Poisson sampling (BandMF)
 
 ### Validation & Debugging
 
 - **[Auditing](auditing.md)**: Empirical privacy validation
   - `epsilon_clopper_pearson()`, `epsilon_one_run()` - Estimate epsilon from attacks
   - `audit()` - Comprehensive privacy audit
-  - `attack_auroc()`, `tpr_at_fpr()` - Attack utility metrics
-  - `bootstrap()` - Confidence intervals
+  - `auc()`, `beta_at()` - Attack utility metrics
 
 - **[Distributed](distributed.md)**: Multi-GPU training with DDP
   - `sum_gradients()` - Sum clipped gradients across GPUs (for DP training)
   - `reduce_pytree()` - Generic PyTree reduction
-  - `sync_state()` - Synchronize adaptive clipping state
-  - `is_initialized()`, `get_rank()`, `get_world_size()` - Distributed utilities
+  - `sync()` - Auto-dispatch sync for any state/aux type
+  - `sync_object()` - Synchronize scalar fields of a dataclass
+  - `is_distributed()`, `get_rank()`, `get_world_size()` - Distributed utilities
 
 ## Quick Reference
 
 ### Typical DP-SGD Workflow
 
 ```python
-import torch
 import opaque.accounting as acc
-from opaque.accounting.base import DpProcess
-from opaque.accounting import calibration as cal
 from opaque import clipped_grad, gaussian_noise
+from opaque.random import key
 
-# 1. Calibrate noise
-result = cal.calibrate(
-    cal.epsilon_budget(3.0, delta=1e-5),
+# Calibrate noise multiplier
+result = acc.calibrate(
+    acc.epsilon_budget(3.0, delta=1e-5),
     lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000,
-    param_min=0.1,
-    param_max=5.0,
-)
-noise_multiplier = result.param
-
-# 2. Create clipped gradient function
-grad_fn, clip_state = clipped_grad(
-    loss_fn, l2_clip_norm=1.0, argnums=0, batch_argnums=1
+    param_min=0.1, param_max=5.0,
 )
 
-# 3. Training loop with per-step accounting
-noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier)
-from opaque.accounting.accountant import Accountant
+# Set up DP components
+grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=1)
+noise_fn, noise_state = gaussian_noise(
+    stddev=result.param * clip_state.sensitivity(), key=key(42),
+)
 
-step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate=0.01)
-accountant = Accountant(budget=cal.epsilon_budget(3.0, delta=1e-5))
-
-for i in range(1000):
+# Training loop
+for batch in dataloader:
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = update(params, noisy_grads)
-    accountant = accountant | step
-
-epsilon = accountant.epsilon_at(1e-5)
 ```
+
+See [Quick Start](../getting-started/quickstart.md) for a complete working example.
 
 ## Function Index
 
@@ -107,8 +96,8 @@ epsilon = accountant.epsilon_at(1e-5)
 
 | Function         | Purpose                             | User Guide                                                        |
 |------------------|-------------------------------------|-------------------------------------------------------------------|
-| `clipped_grad()` | Differentiate loss with DP clipping | [Guide](../user-guide/clipping.md#clipped_grad-high-level-api)    |
-| `clipped_fun()`  | Clip and sum function outputs       | [Guide](../user-guide/clipping.md#clipped_fun-primary-api)        |
+| `clipped_grad()` | Differentiate loss with DP clipping | [Guide](../user-guide/clipping.md#clipped_grad-recommended-api) |
+| `clipped_fun()`  | Clip and sum function outputs       | [Guide](../user-guide/clipping.md#clipped_fun-general-purpose-clipping) |
 | `clip_pytree()`  | Clip PyTree to max norm             | [Guide](../user-guide/clipping.md#clip_pytree-low-level-clipping) |
 
 ### Noise
@@ -139,12 +128,12 @@ epsilon = accountant.epsilon_at(1e-5)
 
 | Method / Operator         | Purpose                           | User Guide                                                              |
 |---------------------------|-----------------------------------|-------------------------------------------------------------------------|
-| `process * k`             | Repeat k times                    | [Guide](../user-guide/accounting.md#composition)                        |
-| `a \| b`                  | Heterogeneous composition         | [Guide](../user-guide/accounting.md#composition)                        |
-| `.epsilon_at(delta)`      | Query (ε, δ)-DP                   | [Guide](../user-guide/accounting.md#1-differential-privacy)             |
-| `.delta_at(epsilon)`      | Query δ for given ε               | [Guide](../user-guide/accounting.md#1-differential-privacy)             |
-| `.advantage()`            | Query f-DP advantage              | [Guide](../user-guide/accounting.md#2-f-dp-advantage)                   |
-| `.beta_at(alpha)`         | Query (α, β) error rates          | [Guide](../user-guide/accounting.md#3-error-rates)                      |
+| `process * k`             | Repeat k times                    | [Guide](../user-guide/accounting.md#core-concepts)                      |
+| `a \| b`                  | Heterogeneous composition         | [Guide](../user-guide/accounting.md#core-concepts)                      |
+| `.epsilon_at(delta)`      | Query (ε, δ)-DP                   | [Guide](../user-guide/accounting.md#privacy-metrics)                    |
+| `.delta_at(epsilon)`      | Query δ for given ε               | [Guide](../user-guide/accounting.md#privacy-metrics)                    |
+| `.advantage()`            | Query f-DP advantage              | [Guide](../user-guide/accounting.md#privacy-metrics)                    |
+| `.beta_at(alpha)`         | Query (α, β) error rates          | [Guide](../user-guide/accounting.md#privacy-metrics)                    |
 
 ### Calibration
 
@@ -161,20 +150,21 @@ epsilon = accountant.epsilon_at(1e-5)
 
 | Class                     | Purpose                    | User Guide                                                    |
 |---------------------------|----------------------------|---------------------------------------------------------------|
-| `PoissonSampler`          | Standard Poisson sampling  | [Guide](../user-guide/sampling.md#standard-poisson-sampling)  |
-| `TruncatedPoissonSampler` | Truncated Poisson sampling | [Guide](../user-guide/sampling.md#truncated-poisson-sampling) |
+| `PoissonSampler`          | Standard Poisson sampling  | [Guide](../user-guide/sampling.md#poisson-sampling) |
+| `TruncatedPoissonSampler` | Truncated Poisson sampling | [Guide](../user-guide/sampling.md#poisson-sampling) |
+| `CyclicPoissonSampler`    | Cyclic Poisson sampling (BandMF) | [Guide](../user-guide/sampling.md#poisson-sampling) |
 
 ### Privacy Auditing
 
-| Function                    | Purpose                         | User Guide                                     |
-|-----------------------------|---------------------------------|------------------------------------------------|
-| `epsilon_clopper_pearson()` | Conservative epsilon bound      | [Guide](../user-guide/auditing.md)             |
-| `epsilon_one_run()`         | Tighter bound (Nasr et al.)     | [Guide](../user-guide/auditing.md)             |
-| `epsilon_raw_counts()`      | Direct epsilon estimate         | [Guide](../user-guide/auditing.md)             |
-| `audit()`                   | Comprehensive audit             | [Guide](../user-guide/auditing.md)             |
-| `attack_auroc()`            | Membership inference AUROC      | [Guide](../user-guide/auditing.md)             |
-| `tpr_at_fpr()`              | TPR at given FPR                | [Guide](../user-guide/auditing.md)             |
-| `bootstrap()`               | Bootstrap confidence intervals  | [Guide](../user-guide/auditing.md)             |
+| Function / Method                    | Purpose                         | User Guide                                     |
+|--------------------------------------|---------------------------------|------------------------------------------------|
+| `auditing.setup()`                   | Prepare canary experiment       | [Guide](../user-guide/auditing.md)             |
+| `auditing.evaluate()`               | Score canaries and compute audit | [Guide](../user-guide/auditing.md)             |
+| `AuditResult.epsilon_at()`          | Epsilon bound (auto-selects method) | [Guide](../user-guide/auditing.md)          |
+| `AuditResult.epsilon_clopper_pearson()` | Conservative epsilon bound  | [Guide](../user-guide/auditing.md)             |
+| `AuditResult.epsilon_one_run()`     | Tighter bound (Nasr et al.)     | [Guide](../user-guide/auditing.md)             |
+| `AuditResult.auc()`                 | Membership inference AUC        | [Guide](../user-guide/auditing.md)             |
+| `AuditResult.beta_at()`             | Type-II error at given alpha    | [Guide](../user-guide/auditing.md)             |
 
 ### Distributed
 
@@ -184,8 +174,9 @@ epsilon = accountant.epsilon_at(1e-5)
 | `reduce_pytree()`      | Generic PyTree reduction    | [Guide](../user-guide/distributed.md)      |
 | `reduce_scalar()`      | Reduce scalar across devices | [Guide](../user-guide/distributed.md)      |
 | `gather_tensors()`     | Gather tensors from all ranks | [Guide](../user-guide/distributed.md)      |
-| `sync_state()`         | Sync adaptive clip state    | [Guide](../user-guide/distributed.md)      |
-| `is_initialized()`     | Check if DDP is active      | [Guide](../user-guide/distributed.md)      |
+| `sync()`               | Auto-dispatch sync for any state/aux | [Guide](../user-guide/distributed.md) |
+| `sync_object()`        | Sync scalar fields of a dataclass | [Guide](../user-guide/distributed.md) |
+| `is_distributed()`     | Check if DDP is active      | [Guide](../user-guide/distributed.md)      |
 | `get_rank()`           | Get current GPU index       | [Guide](../user-guide/distributed.md)      |
 | `get_world_size()`     | Get total number of GPUs    | [Guide](../user-guide/distributed.md)      |
 
@@ -220,7 +211,7 @@ Opaque's API follows these principles:
 
 - **[User Guides](../user-guide/index.md)**: Conceptual explanations and examples
 - **[Tutorials](../tutorials/README.md)**: Interactive Jupyter notebooks
-- **[Quick Start](../getting-started/quickstart.md)**: Get started in 5 minutes
+- **[Quick Start](../getting-started/quickstart.md)**: End-to-end DP-SGD example
 
 ---
 

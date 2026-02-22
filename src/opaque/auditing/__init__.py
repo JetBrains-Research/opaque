@@ -34,13 +34,11 @@ from typing import Any
 import numpy as np
 
 from opaque.auditing.audit import AuditResult, CoinFlipExperiment
-from opaque.auditing.bootstrap import BootstrapParams
 from opaque.auditing.scoring import score_by_loss
 from opaque.random import RngKey, fold_in
 
 __all__ = [
     "AuditResult",
-    "BootstrapParams",
     "CoinFlipExperiment",
     "evaluate",
     "score_by_loss",

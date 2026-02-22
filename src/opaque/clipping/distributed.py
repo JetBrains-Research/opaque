@@ -9,10 +9,10 @@ from __future__ import annotations
 from dataclasses import replace
 
 from opaque.distributed import (
-    assert_scalar_equal,
     gather_pytree,
     is_distributed,
-    reduce_scalar,
+    register_sync_type,
+    sync_object,
 )
 
 from .adaptive import (
@@ -21,28 +21,29 @@ from .adaptive import (
     _adaptive_clip_norm_update,
     _sample_noisy_clipping_rate,
 )
+from .clipped_fun import ClippedFunAux
+from .clipped_grad import ClippedGradAux
 from .types import FixedClipState
 
 __all__ = [
     "sync_clip_state",
     "sync_adaptive_clip_state",
-    "sync_adaptive_clipped_grad_aux",
+    "sync_aux",
 ]
 
 
 def sync_clip_state(state: FixedClipState) -> FixedClipState:
-    """Synchronize fixed clipping state and fail on mismatches.
+    """Validate fixed clipping state is identical across ranks.
 
     Fixed clipping state must be identical across ranks. This function checks
-    equality (within floating tolerance) rather than averaging values.
+    equality (within floating tolerance) and raises on mismatch.
     """
     if not is_distributed():
         return state
     if not isinstance(state, FixedClipState):
         raise TypeError(f"Expected FixedClipState, got {type(state)}")
 
-    assert_scalar_equal(state.l2_norm_bound, name="FixedClipState.l2_norm_bound")
-    return state
+    return sync_object(state, field_ops={"l2_norm_bound": "assert_equal"})
 
 
 def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
@@ -56,55 +57,80 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
     if not is_distributed():
         return state
 
-    global_num_clipped = reduce_scalar(float(state.num_clipped), op="sum")
-    global_total = reduce_scalar(float(state.total), op="sum")
-    global_batch_size = int(reduce_scalar(float(state.batch_size), op="sum"))
-    global_rate = global_num_clipped / max(1.0, global_total)
+    # Use sync_object to sum the local counts and batch_size across ranks
+    synced = sync_object(
+        state,
+        field_ops={
+            "num_clipped": "sum",
+            "total": "sum",
+            "batch_size": "sum",
+        },
+    )
 
-    step_for_noise = max(0, state.step - 1)
+    # Recompute global clipping rate and clip_norm from aggregated counts
+    global_rate = synced.num_clipped / max(1.0, synced.total)
+
+    step_for_noise = max(0, synced.step - 1)
     noisy_global_rate = _sample_noisy_clipping_rate(
         global_rate,
-        key=state.key,
+        key=synced.key,
         step=step_for_noise,
-        quantile_noise_multiplier=state.quantile_noise_multiplier,
+        quantile_noise_multiplier=synced.quantile_noise_multiplier,
     )
 
     new_clip_norm = _adaptive_clip_norm_update(
-        base_clip_norm=state.base_clip_norm,
+        base_clip_norm=synced.base_clip_norm,
         noisy_clipping_rate=noisy_global_rate,
-        target_quantile=state.target_quantile,
-        learning_rate=state.learning_rate,
-        clip_norm_min=state.clip_norm_min,
-        clip_norm_max=state.clip_norm_max,
+        target_quantile=synced.target_quantile,
+        learning_rate=synced.learning_rate,
+        clip_norm_min=synced.clip_norm_min,
+        clip_norm_max=synced.clip_norm_max,
     )
 
     return replace(
-        state,
+        synced,
         clip_norm=float(new_clip_norm),
         clipping_rate=float(global_rate),
-        batch_size=global_batch_size,
     )
 
 
-def sync_adaptive_clipped_grad_aux(
-    aux: AdaptiveClippedGradAux,
-) -> AdaptiveClippedGradAux:
-    """Gather adaptive clipping auxiliary outputs across ranks."""
+def sync_aux(
+    aux: ClippedFunAux | ClippedGradAux | AdaptiveClippedGradAux,
+) -> ClippedFunAux | ClippedGradAux | AdaptiveClippedGradAux:
+    """Gather per-example auxiliary outputs across ranks.
+
+    Works with any of the clipping aux types (``ClippedFunAux``,
+    ``ClippedGradAux``, ``AdaptiveClippedGradAux``).  Tensor fields are
+    concatenated along the batch dimension; scalar and ``None`` fields are
+    preserved as-is.
+
+    Args:
+        aux: Auxiliary NamedTuple from any clipping function.
+
+    Returns:
+        New aux of the same type with gathered tensor fields.
+    """
     if not is_distributed():
         return aux
 
-    gathered = gather_pytree(
-        {
-            "loss_values": aux.loss_values,
-            "grad_norms": aux.grad_norms,
-            "clipped_grad_norms": aux.clipped_grad_norms,
-            "loss_aux": aux.loss_aux,
-        }
-    )
-    return AdaptiveClippedGradAux(
-        loss_values=gathered.get("loss_values"),
-        grad_norms=gathered.get("grad_norms"),
-        clipped_grad_norms=gathered.get("clipped_grad_norms"),
-        loss_aux=gathered.get("loss_aux"),
-        clipping_rate=aux.clipping_rate,
-    )
+    # Separate tensor fields (to gather) from scalar/None fields (to keep)
+    tensor_fields = {}
+    scalar_fields = {}
+    for field_name in aux._fields:
+        value = getattr(aux, field_name)
+        if value is None or isinstance(value, (int, float)):
+            scalar_fields[field_name] = value
+        else:
+            tensor_fields[field_name] = value
+
+    gathered = gather_pytree(tensor_fields) if tensor_fields else {}
+
+    return type(aux)(**{**gathered, **scalar_fields})
+
+
+# Register all clipping types with the sync dispatcher
+register_sync_type(FixedClipState, sync_clip_state)
+register_sync_type(AdaptiveClipState, sync_adaptive_clip_state)
+register_sync_type(ClippedFunAux, sync_aux)
+register_sync_type(ClippedGradAux, sync_aux)
+register_sync_type(AdaptiveClippedGradAux, sync_aux)

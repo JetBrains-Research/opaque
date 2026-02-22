@@ -1,19 +1,28 @@
 # Noise Addition
 
-After [clipping gradients](clipping.md), the next step in DP-SGD is **adding calibrated Gaussian noise**.
-The noise obscures individual contributions, providing the differential privacy guarantee.
+After clipping gradients, the next step in DP-SGD is adding calibrated noise
+to the sum of clipped gradients. The noise obscures individual contributions,
+providing the differential privacy guarantee. The amount of noise is
+proportional to the sensitivity (from clipping) and the desired privacy level.
 
-## `gaussian_noise()`
+All noise functions in Opaque follow the same pattern: they return a
+`(noise_fn, state)` tuple with immutable state.
 
-All noise functions return `(noise_fn, state)`:
+## Gaussian noise
+
+`gaussian_noise` is the standard noise mechanism for DP-SGD. It adds
+independent Gaussian noise to each gradient tensor.
 
 ```python
 from opaque import gaussian_noise
 from opaque.random import key
 
-noise_fn, state = gaussian_noise(stddev=noise_multiplier * clip_norm, key=key(42))
+noise_fn, noise_state = gaussian_noise(
+    stddev=noise_multiplier * clip_state.sensitivity(),
+    key=key(42),
+)
 
-noisy_grads, state = noise_fn(clipped_grads, state)
+noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
 
 ### Parameters
@@ -23,169 +32,336 @@ noisy_grads, state = noise_fn(clipped_grads, state)
 | `stddev` | `float` | Standard deviation of Gaussian noise. Typically `noise_multiplier * clip_norm`. |
 | `key` | `RngKey` | Explicit RNG key for deterministic noise. Create with `key(seed)`. |
 
-## Calibrating Noise
+### Calibrating stddev
 
-Use the accounting module to find the minimum noise for your target privacy level.
+The noise standard deviation is `noise_multiplier * sensitivity`, where:
 
-### (ε, δ)-DP
+- `noise_multiplier` is determined by the target privacy budget (use
+  `acc.calibrate()` to find it)
+- `sensitivity` comes from `clip_state.sensitivity()`
 
 ```python
 import opaque.accounting as acc
-
-sample_rate = batch_size / dataset_size
-num_steps = num_epochs * (dataset_size // batch_size)
 
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
     lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps,
     param_min=0.1, param_max=10.0,
 )
-noise_multiplier = result.param
-```
 
-### f-DP Advantage
-
-```python
-result = acc.calibrate(
-    acc.advantage_budget(0.1),
-    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps,
-    param_min=0.1, param_max=10.0,
-)
-```
-
-### (α, β) Error Rates
-
-```python
-result = acc.calibrate(
-    acc.beta_budget(0.8, alpha=1e-4),
-    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps,
-    param_min=0.1, param_max=10.0,
-)
-```
-
-## Typical Noise Multipliers
-
-| Privacy (ε, δ) | Sample Rate | Steps | Noise Multiplier |
-|----------------|-------------|-------|------------------|
-| (1.0, 1e-5)   | 0.01        | 1000  | ~3.5             |
-| (3.0, 1e-5)   | 0.01        | 1000  | ~1.2             |
-| (10.0, 1e-5)  | 0.01        | 1000  | ~0.4             |
-| (3.0, 1e-5)   | 0.1         | 1000  | ~0.5             |
-
-!!! tip "Higher sample rate = less noise"
-    Larger batches provide privacy amplification, requiring less noise for the same ε.
-
-## Complete DP-SGD Loop
-
-```python
-import torch
-import opaque.accounting as acc
-from opaque import clipped_grad, gaussian_noise
-from opaque.random import key
-
-clip_norm = 1.0
-batch_size, dataset_size = 32, 10_000
-sample_rate = batch_size / dataset_size
-num_steps = 1000
-
-# Calibrate
-result = acc.calibrate(
-    acc.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate) * num_steps,
-    0.1, 10.0,
-)
-noise_multiplier = result.param
-
-# DP components
-grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=clip_norm, batch_argnums=(1, 2))
 noise_fn, noise_state = gaussian_noise(
-    stddev=noise_multiplier * clip_norm, key=key(42),
+    stddev=result.param * clip_state.sensitivity(), key=key(42),
 )
-
-# Train
-for step in range(num_steps):
-    grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
-    noisy_grads, noise_state = noise_fn(grads, noise_state)
-    params = params - lr * noisy_grads
-
-# Verify privacy
-training = acc.poisson(acc.gaussian(noise_multiplier), sample_rate) * num_steps
-print(f"ε = {training.epsilon_at(1e-5):.2f}")
 ```
 
-## Bounded Gaussian Noise
+See [Privacy Accounting](accounting.md) for details on calibration.
 
-For applications where outputs must stay in a fixed range
-([Chen & Hale 2024](https://arxiv.org/abs/2211.17230)):
+### State flow
+
+Each call to `noise_fn` returns a new state with an incremented step counter.
+Always use the returned state for the next call.
+
+```python
+noise_fn, state = gaussian_noise(stddev=1.0, key=key(42))
+
+for batch in dataloader:
+    grads, clip_state = grad_fn(params, batch, state=clip_state)
+    noisy_grads, state = noise_fn(grads, state)  # state advances
+    updates, opt_state = optimizer.update(noisy_grads, opt_state)
+    params = torchopt.apply_updates(params, updates)
+```
+
+Internally, noise at step t is generated from `fold_in(base_key, t)`, ensuring
+deterministic per-step noise regardless of execution order.
+
+### Zero stddev
+
+When `stddev=0`, `gaussian_noise` returns a no-op function that passes
+gradients through unchanged. This is useful for toggling DP on and off
+without changing the training loop.
+
+## Bounded Gaussian noise
+
+`bounded_gaussian_noise` samples from a truncated normal distribution,
+clamping noise to a specified interval. This is useful when the output domain
+has known bounds (e.g., probabilities in [0, 1]).
 
 ```python
 from opaque import bounded_gaussian_noise
 from opaque.random import key
 
-noise_fn, state = bounded_gaussian_noise(
-    stddev=1.0, bounds=(-3.0, 3.0), key=key(42),
+noise_fn, noise_state = bounded_gaussian_noise(
+    stddev=1.0,
+    bounds=(-2.0, 2.0),
+    key=key(42),
 )
-noisy_grads, state = noise_fn(clipped_grads, state)
+noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
 
-## Noise Schedule (Advanced)
+The truncation uses an inverse-CDF method: for each gradient element, noise is
+sampled from a Gaussian centered on that element and truncated to the bounds.
 
-You can vary noise across steps.  Track per-step composition with `Accountant`:
+## Matrix-factorization noise (DP-FTRL)
+
+Standard Gaussian noise is independent across training steps. Matrix-
+factorization (MF) noise introduces correlations between steps so that noise
+partially cancels when aggregated over the training run. This reduces the
+effective noise on cumulative updates, improving accuracy for the same privacy
+budget.
+
+MF noise implements the DP-FTRL framework (Kairouz et al. 2021, Denisov et al.
+2022). Instead of adding independent noise z_t at each step, the mechanism
+adds correlated noise n_t = sum_i C_inv[t,i] * z_i, where C_inv is the
+inverse of a strategy matrix chosen to minimize cumulative error.
+
+The mechanism factors a **workload matrix** A (what the optimizer computes,
+e.g., prefix sums) into:
+
+- **C** (strategy matrix): Encodes the privacy mechanism
+- **C^{-1}** (noising matrix): Generates correlated noise at each step
+- **B = A C^{-1}** (decoder matrix): Relates noisy outputs back to workload queries
+
+The sensitivity of C determines how much noise is needed, while the error of B
+determines the effective noise on the output.
+
+### When to use MF noise
+
+Use MF noise when:
+
+- Training runs many steps (hundreds to thousands)
+- The privacy budget is tight and independent noise degrades accuracy too much
+- You want better privacy-utility trade-offs at the same epsilon
+
+MF noise has higher per-step overhead (maintaining correlation buffers) and
+requires knowing the total number of steps in advance.
+
+### Variants
+
+Opaque provides four MF noise strategies, plus two utility variants:
+
+| Function | Memory | Best for |
+|----------|--------|----------|
+| `band_mf_noise` | O(bands) | General use, good default |
+| `blt_mf_noise` | O(buffers) | Long training runs (n > 5000) |
+| `dense_mf_noise` | O(n^2) | Short runs (n < 100), optimal noise |
+| `custom_mf_noise` | varies | Research, custom strategies |
+| `identity_mf_noise` | O(1) | Testing MF infrastructure with standard noise |
+
+### `band_mf_noise`
+
+Banded Toeplitz strategy. Maintains a small buffer of recent noise values
+and combines them using optimized coefficients. The `bands` parameter
+controls the buffer size (default: automatically chosen).
 
 ```python
-from opaque.accounting.accountant import Accountant
-
-acct = Accountant()
-
-for step in range(num_steps):
-    current_noise = 2.0 - 1.5 * (step / num_steps)  # decreasing
-    noise_fn, noise_state = gaussian_noise(stddev=current_noise * clip_norm, key=key(step))
-    noisy_grads, noise_state = noise_fn(grads, noise_state)
-    # ...
-    acct = acct | acc.poisson(acc.gaussian(current_noise), sample_rate)
-
-print(f"ε = {acct.epsilon_at(1e-5):.2f}")
-```
-
-!!! warning "Use with caution"
-    Noise schedules can improve accuracy but complicate privacy analysis.
-    Stick with fixed noise unless you understand composition.
-
-## PyTree Support
-
-`gaussian_noise()` works with any PyTree structure (nested dicts of tensors):
-
-```python
-grads = {
-    "encoder": {"weight": tensor1, "bias": tensor2},
-    "decoder": {"weight": tensor3, "bias": tensor4},
-}
-noise_fn, state = gaussian_noise(stddev=1.0, key=key(42))
-noisy_grads, state = noise_fn(grads, state)
-```
-
-## Reproducibility
-
-Same key → same noise sequence:
-
-```python
+from opaque import band_mf_noise
 from opaque.random import key
 
-noise_fn, state = gaussian_noise(stddev=1.0, key=key(42))
-noisy1, state = noise_fn(grads, state)
+noise_fn, noise_state = band_mf_noise(
+    grad_template=params,   # any pytree with correct shapes/dtypes
+    n_steps=1000,
+    stddev=noise_multiplier * clip_state.sensitivity(),
+    key=key(42),
+)
 
-noise_fn, state = gaussian_noise(stddev=1.0, key=key(42))
-noisy2, state = noise_fn(grads, state)
-# noisy1 == noisy2 (deterministic)
+for step in range(1000):
+    grads, clip_state = grad_fn(params, batch, state=clip_state)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
+    params = params - lr * noisy_grads
 ```
 
+The `grad_template` argument provides shape and dtype information for
+pre-allocating noise buffers. Pass any pytree with the same structure as
+the gradients (e.g., the model parameters).
+
 In distributed training, pass the same `key(seed)` on all ranks to produce
-identical noise.  See [Distributed Training](distributed.md) and
+identical noise. See [Distributed Training](distributed.md) and
 [RNG Key](rng-key.md) for details.
 
-## See Also
+### `blt_mf_noise`
 
-- [Gradient Clipping](clipping.md) — step before noise
-- [Privacy Accounting](accounting.md) — track budget after noise
-- [Tutorial 02](../tutorials/02_differential_privacy_noise_and_accounting.ipynb) — interactive tutorial
-- [API Reference](../api/noise.md) — full API docs
+Buffered Linear Toeplitz strategy. More memory-efficient than band_mf for
+long training runs, using a parametric representation of the Toeplitz
+coefficients.
+
+```python
+from opaque import blt_mf_noise
+from opaque.random import key
+
+noise_fn, noise_state = blt_mf_noise(
+    grad_template=params,
+    n_steps=10000,
+    stddev=noise_multiplier * clip_state.sensitivity(),
+    key=key(42),
+    max_buffers=10,
+)
+```
+
+### `dense_mf_noise`
+
+Computes the optimal dense strategy matrix. Materializes the full n*n matrix,
+so memory grows quadratically with n. Best for short training runs.
+
+```python
+from opaque import dense_mf_noise
+from opaque.random import key
+
+noise_fn, noise_state = dense_mf_noise(
+    grad_template=params,
+    n_steps=50,
+    stddev=noise_multiplier * clip_state.sensitivity(),
+    key=key(42),
+)
+```
+
+### `custom_mf_noise`
+
+Accepts a user-provided noising matrix (dense tensor or `StreamingMatrix`)
+for research and custom strategies.
+
+```python
+from opaque import custom_mf_noise
+from opaque.random import key
+
+noise_fn, noise_state = custom_mf_noise(
+    grad_template=params,
+    noising=my_custom_matrix,
+    stddev=noise_multiplier * clip_state.sensitivity(),
+    key=key(42),
+)
+```
+
+### `identity_mf_noise`
+
+Identity strategy — equivalent to standard DP-SGD (independent noise at each
+step) but using the MF API. Useful for testing the MF infrastructure or as a
+baseline when comparing MF strategies.
+
+```python
+from opaque import identity_mf_noise
+from opaque.random import key
+
+noise_fn, noise_state = identity_mf_noise(
+    grad_template=params,
+    stddev=noise_multiplier * clip_state.sensitivity(),
+    key=key(42),
+)
+```
+
+Note that `identity_mf_noise` does not require `n_steps` since the identity
+matrix has no temporal structure.
+
+### Privacy accounting for MF noise
+
+MF noise mechanisms have the same per-step privacy cost as standard Gaussian
+noise (the noise multiplier determines epsilon in the same way). The benefit
+is purely in utility: the effective noise on the cumulative model update is
+lower.
+
+Account for MF noise using the same `acc.gaussian()` mechanism:
+
+```python
+step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
+training = step * num_steps
+eps = training.epsilon_at(1e-5)
+```
+
+### Multi-participation (multi-epoch)
+
+When training for multiple epochs, each example participates multiple times.
+The sensitivity computation must account for this:
+
+```python
+noise_fn, state = blt_mf_noise(
+    grad_template,
+    n_steps=5000,
+    stddev=noise_multiplier * clip_norm,
+    min_sep=100,            # minimum steps between participations
+    max_participations=5,   # 5 epochs
+    key=key(42),
+)
+```
+
+### Sensitivity computation
+
+The sensitivity of the strategy matrix C determines noise calibration:
+
+```python
+from opaque.noise.matrix_factorization.sensitivity import (
+    single_participation_sensitivity,
+    get_sensitivity_banded,
+)
+
+sens = single_participation_sensitivity(C_matrix)
+sens = get_sensitivity_banded(C_matrix, min_sep=100, max_participations=5)
+```
+
+### Comparison: DP-SGD vs MF strategies
+
+For a linear regression with n=1000 steps, epsilon=1.0:
+
+| Method | Mechanism | Relative MSE | Memory |
+|--------|-----------|-------------|--------|
+| DP-SGD | Independent noise | Baseline | O(1) |
+| BandMF (bands=4) | Banded Toeplitz | ~0.7x | O(bands) |
+| BLT (3 buffers) | Buffered Toeplitz | ~0.6x | O(buffers) |
+
+Values are illustrative; actual results depend on problem specifics.
+
+### MF noise with cyclic sampling
+
+MF noise works best with `CyclicPoissonSampler`, which creates a predictable
+sampling pattern that the noise strategy can exploit:
+
+```python
+from opaque.sampling import CyclicPoissonSampler
+from opaque.random import key
+
+sampler = CyclicPoissonSampler(
+    dataset, sampling_prob=sample_rate, cycle_length=4,
+    iterations=num_steps, key=key(0),
+)
+```
+
+## Distributed noise synchronization
+
+In distributed training, all devices must add the same noise to maintain model
+consistency. Pass the **same key** on every rank:
+
+```python
+# Same key on all ranks → identical noise → models stay in sync
+noise_fn, noise_state = gaussian_noise(
+    stddev=noise_multiplier * sensitivity, key=key(42),
+)
+```
+
+For independent per-rank noise (not typical for centralized DP-SGD), derive
+a per-rank key via `fold_in`:
+
+```python
+from opaque.random import key, fold_in
+import torch.distributed as dist
+
+rank = dist.get_rank()
+noise_fn, noise_state = gaussian_noise(
+    stddev=noise_multiplier * sensitivity,
+    key=fold_in(key(42), rank),
+)
+```
+
+For validation, call `sync(noise_state)` to assert that the RNG key and
+step counter match across ranks. The `sync()` dispatcher auto-detects the
+noise state type. See [Distributed Training](distributed.md) for details.
+
+## References
+
+- [Choquette-Choo et al., 2023](https://arxiv.org/abs/2306.08153) -- BandMF
+- [McMahan et al., 2024](https://arxiv.org/abs/2404.16706) -- BLT
+- [Choquette-Choo et al., 2024](https://arxiv.org/abs/2408.08868) -- Multi-epoch BLT
+- [McMahan et al., 2025](https://arxiv.org/abs/2504.21413) -- Inversion theorem
+- [Kairouz et al., 2021](https://arxiv.org/abs/2103.00039) -- DP-FTRL
+
+## API reference
+
+See [Noise API Reference](../api/noise.md) for complete function signatures
+and return types.

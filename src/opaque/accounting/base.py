@@ -133,7 +133,7 @@ class DpProcess(ABC):
         return data
 
     @classmethod
-    def load_state_dict(cls, data: dict[str, object]) -> DpProcess:
+    def from_state_dict(cls, data: dict[str, object]) -> DpProcess:
         """Deserialize a DpProcess from a state dict.
 
         Recursively reconstructs the process tree using the auto-populated
@@ -160,7 +160,7 @@ class DpProcess(ABC):
         # Recursively deserialize nested processes
         for key in ["inner", "left", "right"]:
             if key in data and isinstance(data[key], dict):
-                data[key] = cls.load_state_dict(data[key])
+                data[key] = cls.from_state_dict(data[key])
 
         # Instantiate using dataclass constructor
         return process_cls(**data)

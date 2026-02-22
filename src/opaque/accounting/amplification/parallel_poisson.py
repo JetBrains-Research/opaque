@@ -74,41 +74,50 @@ class ParallelPoisson(DpProcess):
 
 
 def parallel_poisson(
-    inner: Poisson,
+    inner: Gaussian | AdaClip,
+    sample_rate: float,
     num_workers: int,
 ) -> ParallelPoisson:
     """Poisson sampling under parallel worker execution.
 
     When Poisson sampling runs on ``num_workers`` parallel workers independently,
     each worker samples its data independently. This causes unique examples to
-    appear in multiple workers' batches—this mechanism accounts for that
+    appear in multiple workers' batches — this mechanism accounts for that
     sampling duplication in the privacy calculation.
 
     This is the accounting mechanism for parallel training setups where:
+
     - Multi-worker PyTorch DataLoader with Poisson sampling on each worker
     - DDP training where each rank runs Poisson sampling independently
-    - Any other parallel training where the same Poisson sampler runs on N workers
+    - Any other parallel training where the same Poisson sampler runs on N
+      workers
+
+    Like :func:`poisson` and :func:`truncated_poisson`, this is a full wrapper:
+    pass the inner Gaussian mechanism and sample rate directly.
 
     Args:
-        inner: A Poisson process (from :func:`poisson`).
-        num_workers: Number of parallel workers running Poisson sampling independently.
+        inner: A Gaussian or AdaClip mechanism (from :func:`gaussian` or
+            :func:`adaclip`).
+        sample_rate: Probability of including each example, in (0, 1].
+        num_workers: Number of parallel workers running Poisson sampling
+            independently.
 
     Returns:
         A :class:`ParallelPoisson` process.
 
     Example::
 
-        # Multi-worker training with 4 workers
         step = acc.parallel_poisson(
-            acc.poisson(acc.gaussian(1.1), 0.01),
-            num_workers=4,
+            acc.gaussian(1.1), sample_rate=0.01, num_workers=4,
         )
         training = step * 500
         eps = training.epsilon_at(1e-5)
     """
-    if not isinstance(inner, Poisson):
+    if not isinstance(inner, (Gaussian, AdaClip)):
         raise TypeError(
-            f"parallel_poisson() requires a Poisson inner mechanism, got {type(inner).__name__}. "
-            "Use: acc.parallel_poisson(acc.poisson(acc.gaussian(nm), rate), num_workers=k)"
+            f"parallel_poisson() requires a Gaussian or AdaClip inner mechanism, "
+            f"got {type(inner).__name__}. "
+            "Use: acc.parallel_poisson(acc.gaussian(nm), sample_rate=q, num_workers=k)"
         )
-    return ParallelPoisson(inner=inner, num_workers=num_workers)
+    poisson_inner = Poisson(inner=inner, sample_rate=sample_rate)
+    return ParallelPoisson(inner=poisson_inner, num_workers=num_workers)

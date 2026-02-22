@@ -256,8 +256,8 @@ class TestQuantileNoiseSensitivity:
         assert state_no_noise.sensitivity() == state_noise.sensitivity()
         assert state_no_noise.sensitivity() == 1.0  # clip_norm=1.0
 
-    def test_sensitivity_with_rescale(self):
-        """Test sensitivity with rescale_to_unit_norm and quantile noise."""
+    def test_sensitivity_equals_clip_norm(self):
+        """Test sensitivity equals clip_norm."""
 
         def loss_fn(params, x, y):
             pred = x @ params
@@ -268,10 +268,8 @@ class TestQuantileNoiseSensitivity:
             initial_clip_norm=5.0,
             quantile_noise_multiplier=0.1,
             key=key(42),
-            rescale_to_unit_norm=True,
             batch_argnums=(1, 2),
         )
 
-        # With rescale_to_unit_norm, sensitivity is always 1.0
-        assert state.sensitivity() == 1.0
-        assert state.rescale_to_unit_norm is True
+        # sensitivity() now takes no parameters and returns clip_norm
+        assert state.sensitivity() == 5.0
