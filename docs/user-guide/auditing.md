@@ -90,6 +90,57 @@ audit = auditing.evaluate(experiment, loss_fn, params, dataset)
 print(f"Empirical epsilon: {audit.epsilon_at(delta=1e-5):.2f}")
 ```
 
+## Scoring functions
+
+The default scoring function computes the per-example training loss: canaries
+that the model has memorized will have lower loss than canaries that were
+excluded. This loss-based score works well for most settings.
+
+You can provide a custom scoring function to `auditing.evaluate`:
+
+```python
+def custom_score(params, x, y):
+    """Higher score = more likely a member."""
+    logits = fmodel(params, x.unsqueeze(0))
+    return -F.cross_entropy(logits, y.unsqueeze(0))
+
+audit = auditing.evaluate(experiment, custom_score, params, dataset)
+```
+
+**Choosing a score:**
+
+| Score | When to use |
+|-------|-------------|
+| Training loss (default) | General-purpose, works well for most models |
+| Negative cross-entropy | Classification models, calibrated outputs |
+| Prediction confidence | When loss is not well-defined |
+
+Loss-based scores tend to give the tightest epsilon bounds because they
+directly measure memorization signal.
+
+## Canary selection and statistical power
+
+### Number of canaries
+
+The number of canaries directly affects the statistical power of the audit.
+More canaries means tighter confidence intervals on the estimated epsilon.
+
+| Canaries | Typical precision |
+|----------|-------------------|
+| 100 | Very noisy, wide confidence intervals |
+| 500 | Usable for detecting large bugs |
+| 1000+ | Recommended for reliable epsilon bounds |
+| 5000+ | Tight bounds, needed for small-epsilon regimes |
+
+Rule of thumb: use at least 500 canaries. For $\varepsilon < 1$, use 2000+.
+
+### Random vs targeted canaries
+
+`auditing.setup` selects canaries uniformly at random. This gives an unbiased
+estimate of average-case privacy. For worst-case auditing, you can manually
+select outlier examples (rare classes, unusual features) as canaries and
+construct the experiment manually.
+
 ## Epsilon estimation methods
 
 ### One-run (default)
@@ -165,9 +216,65 @@ Theoretical epsilon: 3.00
 Audited epsilon:     1.50   # expected: gap exists because the attack is not optimal
 ```
 
-If the audited epsilon exceeds the theoretical epsilon, investigate:
-a bug in gradient clipping, noise injection, privacy accounting, or data
-leakage outside the training loop.
+### Understanding the gap
+
+The gap between theoretical and empirical epsilon is expected and normal.
+Theoretical accounting provides an *upper bound*; the audit runs an actual
+attack, which is suboptimal. Common reasons for a large gap:
+
+- **Weak attack:** Loss-based membership inference does not exploit all
+  information available to the adversary. The true privacy may be closer to
+  the theoretical bound.
+- **High noise regime:** When $\varepsilon < 1$, the signal is very weak and
+  even optimal attacks cannot distinguish members from non-members reliably.
+
+A small gap (audited $\approx$ theoretical) indicates:
+
+- The attack is strong relative to the actual privacy level.
+- The accounting is tight (PLD-based accounting typically is).
+
+### When audited epsilon exceeds theoretical
+
+This is a **red flag** indicating a likely implementation bug. Common causes:
+
+- Gradient clipping applied incorrectly (e.g., clipping after summation)
+- Noise scaled to wrong sensitivity
+- Privacy accounting does not match the actual training procedure
+- Data leakage outside the training loop (e.g., non-private evaluation on
+  training data)
+
+Investigate each component in isolation before concluding the accounting is
+wrong.
+
+## Comparison with shadow models
+
+The classical approach to privacy auditing trains hundreds of "shadow models"
+with and without a target example, then uses the distribution of model
+behaviors to estimate membership. This is the gold standard for attack
+strength but prohibitively expensive for large models.
+
+Opaque's one-run method ([Steinke et al. 2023](https://arxiv.org/abs/2305.08846))
+trades attack strength for efficiency: one training run gives a valid (though
+potentially looser) epsilon bound. For most practical purposes — verifying
+that your DP implementation is correct — the one-run approach is sufficient.
+
+## Edge cases
+
+## Edge cases and limitations
+
+- **Small datasets.** With fewer than 5000 examples, designating 1000 canaries
+  removes 20%+ of the data, which can change training dynamics significantly.
+  Use fewer canaries or a larger held-out pool.
+- **Overfitting.** If the model memorizes the training set (common with small
+  models and no regularization), the audit will show inflated epsilon. This
+  does not mean DP is broken — it means the model has memorized, which is
+  exactly what DP aims to prevent.
+- **Non-convergence.** Auditing an unconverged model is meaningless: the loss
+  scores will be noisy and the epsilon bound unreliable. Ensure the model has
+  reached a reasonable training loss before evaluating.
+- **Distributed training.** Run the audit on a single device with the same
+  training configuration. DDP should produce identical results (same noise, same
+  gradients), but running single-device simplifies debugging.
 
 ## Practical guidance
 
