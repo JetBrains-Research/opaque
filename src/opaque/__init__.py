@@ -7,7 +7,7 @@ sampling. Built on ``torch.func`` with explicit state.
 Modules:
 
 - ``opaque.clipping``: Per-example gradient clipping (clipped_grad, clipped_fun, clip_pytree)
-- ``opaque.noise``: Gaussian noise, bounded Gaussian, matrix-factorization correlated noise
+- ``opaque.noise``: Gaussian noise, truncated Gaussian, matrix-factorization correlated noise
 - ``opaque.accounting``: PLD-based privacy accounting with composition, calibration, and metrics
 - ``opaque.sampling``: Poisson, truncated Poisson, and cyclic Poisson samplers
 - ``opaque.auditing``: Empirical privacy auditing via membership inference
@@ -30,11 +30,11 @@ from opaque.clipping import (
 from opaque.noise import (
     band_mf_noise,
     blt_mf_noise,
-    bounded_gaussian_noise,
     custom_mf_noise,
     dense_mf_noise,
     gaussian_noise,
     identity_mf_noise,
+    truncated_gaussian_noise,
 )
 from opaque.sampling import (
     CyclicPoissonSampler,
@@ -77,7 +77,7 @@ __all__ = [
     "CyclicPoissonSampler",
     # Noise
     "gaussian_noise",
-    "bounded_gaussian_noise",
+    "truncated_gaussian_noise",
     "band_mf_noise",
     "blt_mf_noise",
     "custom_mf_noise",

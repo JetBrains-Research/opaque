@@ -18,10 +18,8 @@ from .gaussian_noise import GaussianNoiseState
 from .matrix_factorization.noise import MFNoiseState
 
 __all__ = [
-    "sync_bounded_noise_state",
     "sync_gaussian_noise_state",
     "sync_mf_noise_state",
-    "sync_rectified_noise_state",
 ]
 
 _NOISE_STATE_OPS = {
@@ -46,42 +44,6 @@ def sync_gaussian_noise_state(state: GaussianNoiseState) -> GaussianNoiseState:
         return state
 
     _assert_rng_key_equal(state, "GaussianNoiseState")
-    return sync_object(state, field_ops=_NOISE_STATE_OPS)
-
-
-def sync_rectified_noise_state(state: GaussianNoiseState) -> GaussianNoiseState:
-    """Validate rectified Gaussian noise state consistency across ranks.
-
-    Asserts that all ranks have the same seed and step counter.
-    No-op if ``torch.distributed`` is not initialized.
-
-    Use this with :func:`~opaque.noise.rectified_gaussian_noise`.
-    The noise function itself is deterministic given the same key, so
-    verifying the RNG state is sufficient to guarantee identical noise
-    on every rank.
-    """
-    if not is_distributed():
-        return state
-
-    _assert_rng_key_equal(state, "RectifiedGaussianNoiseState")
-    return sync_object(state, field_ops=_NOISE_STATE_OPS)
-
-
-def sync_bounded_noise_state(state: GaussianNoiseState) -> GaussianNoiseState:
-    """Validate bounded Gaussian noise state consistency across ranks.
-
-    Asserts that all ranks have the same seed and step counter.
-    No-op if ``torch.distributed`` is not initialized.
-
-    Use this with :func:`~opaque.noise.bounded_gaussian_noise`.
-    The noise function itself is deterministic given the same key, so
-    verifying the RNG state is sufficient to guarantee identical noise
-    on every rank.
-    """
-    if not is_distributed():
-        return state
-
-    _assert_rng_key_equal(state, "BoundedGaussianNoiseState")
     return sync_object(state, field_ops=_NOISE_STATE_OPS)
 
 

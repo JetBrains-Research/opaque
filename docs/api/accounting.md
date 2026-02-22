@@ -166,15 +166,14 @@ step = acc.parallel_poisson(
 
 ### `rectified_gaussian(noise_multiplier, bound_multiplier) -> DpProcess`
 
-Rectified Gaussian mechanism. Clamps standard Gaussian noise to
-`[-R*sigma, R*sigma]`, creating point masses at the boundaries. The bounded
-support allows exact hockey-stick divergence computation for tighter privacy
-bounds than the standard Gaussian.
+Bounded Gaussian mechanism — rectified variant. Clamps standard Gaussian
+noise to `[-R*sigma, R*sigma]`; the excess tail mass becomes point masses at
+the boundaries. Tighter than the standard Gaussian.
 
 - `noise_multiplier` (float): Ratio of noise std to sensitivity.
 - `bound_multiplier` (float): Bound radius in units of sigma (R ≥ 1).
 
-Composable with `poisson()` and `truncated_poisson()` for subsampled accounting.
+Composable with `poisson()` for subsampled accounting.
 
 ```python
 step = acc.poisson(acc.rectified_gaussian(1.1, 5.0), sample_rate=0.01)
@@ -182,16 +181,14 @@ step = acc.poisson(acc.rectified_gaussian(1.1, 5.0), sample_rate=0.01)
 
 ### `truncated_gaussian(noise_multiplier, bound_multiplier) -> DpProcess`
 
-Truncated Gaussian mechanism. Samples from a renormalized Gaussian on
-`[-R*sigma, R*sigma]` (no point masses at boundaries). Always at least as
-tight as rectified Gaussian. Use this for `bounded_gaussian_noise()`.
+Bounded Gaussian mechanism — truncated variant. The density is renormalized
+over `[-R*sigma, R*sigma]` (no point masses at boundaries). Always at least as
+tight as the rectified variant.
 
 - `noise_multiplier` (float): Ratio of noise std to sensitivity.
 - `bound_multiplier` (float): Bound radius in units of sigma (R ≥ 1).
 
-```python
-step = acc.poisson(acc.truncated_gaussian(1.1, 5.0), sample_rate=0.01)
-```
+Composable with `poisson()` for subsampled accounting.
 
 ### `adaclip(inner, *, quantile_noise_multiplier, batch_size) -> DpProcess`
 

@@ -38,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Configurable PLD precision via `DiscretizationConfig`
 - **Noise Injection** (`opaque.noise`)
   - `gaussian_noise()` — Stateful Gaussian noise with reproducible RNG
-  - `bounded_gaussian_noise()` — Truncated Gaussian within bounds
+  - `truncated_gaussian_noise()` — Truncated Gaussian within bounds
   - Matrix factorization noise: `band_mf_noise()`, `blt_mf_noise()`, `dense_mf_noise()`, `custom_mf_noise()`, `identity_mf_noise()`
 - **Sampling Mechanisms** (`opaque.sampling`)
   - `PoissonSampler` — Standard Poisson sampling for privacy amplification

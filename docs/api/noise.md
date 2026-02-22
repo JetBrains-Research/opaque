@@ -12,10 +12,10 @@ Opaque provides several noise mechanisms:
 ### Independent Noise (DP-SGD)
 
 - **`gaussian_noise()`** — Standard (unbounded) Gaussian noise. The default for most DP-SGD workflows.
-- **`bounded_gaussian_noise()`** — Bounded Gaussian noise using a truncated normal distribution
-  ([Chen & Hale, 2024](https://arxiv.org/abs/2211.17230)). Guarantees all noisy outputs lie within a specified domain.
-- **`rectified_gaussian_noise()`** — Rectified Gaussian noise: standard Gaussian clamped to `[-radius, radius]`.
-  Creates point masses at the boundaries. Pair with `acc.rectified_gaussian()` for exact accounting.
+- **`truncated_gaussian_noise()`** — Bounded Gaussian noise (renormalized density). The tail mass
+  is redistributed over the bounded interval — no point masses at the boundaries.
+- **`rectified_gaussian_noise()`** — Bounded Gaussian noise (clamped). Standard Gaussian clamped
+  to `[-radius, radius]`. The excess tail mass becomes point masses at the boundaries.
 
 ### Correlated Noise (DP-FTRL / Matrix Factorization)
 
@@ -38,12 +38,9 @@ Use `sync()` from `opaque.distributed` to validate noise state consistency
 across ranks. It auto-dispatches based on type:
 
 - **`sync(GaussianNoiseState)`** — Validate RNG key and step counter match across ranks.
+  Rectified and truncated Gaussian noise also return `GaussianNoiseState`,
+  so `sync()` handles them automatically.
 - **`sync(MFNoiseState)`** — Validate MF noise state matches across ranks.
-
-Explicit sync helpers are also available for bounded noise variants:
-
-- **`sync_rectified_noise_state()`** — Validate RNG key and step counter for rectified Gaussian noise.
-- **`sync_bounded_noise_state()`** — Validate RNG key and step counter for bounded Gaussian noise.
 
 **See also**: [Noise Addition User Guide](../user-guide/noise.md)
 
@@ -51,11 +48,11 @@ Explicit sync helpers are also available for bounded noise variants:
 
 ::: opaque.noise.gaussian_noise
 
-## Bounded Gaussian
+## Bounded Gaussian — Truncated (renormalized)
 
-::: opaque.noise.bounded_gaussian_noise
+::: opaque.noise.truncated_gaussian_noise
 
-## Rectified Gaussian
+## Bounded Gaussian — Rectified (clamped)
 
 ::: opaque.noise.rectified_gaussian_noise
 
@@ -91,16 +88,6 @@ Explicit sync helpers are also available for bounded noise variants:
       heading_level: 3
 
 ::: opaque.noise.distributed.sync_mf_noise_state
-    options:
-      show_source: true
-      heading_level: 3
-
-::: opaque.noise.distributed.sync_rectified_noise_state
-    options:
-      show_source: true
-      heading_level: 3
-
-::: opaque.noise.distributed.sync_bounded_noise_state
     options:
       show_source: true
       heading_level: 3

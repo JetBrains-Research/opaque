@@ -262,11 +262,8 @@ following types are registered:
 | `GaussianNoiseState` | Assert seed and step counter match across ranks |
 | `MFNoiseState` | Assert seed and step counter match for MF noise |
 
-!!! note "Bounded and rectified noise"
-    `rectified_gaussian_noise` and `bounded_gaussian_noise` both return
-    `GaussianNoiseState`, so `sync()` handles them automatically. Explicit
-    helpers `sync_rectified_noise_state()` and `sync_bounded_noise_state()`
-    are available in `opaque.noise.distributed` for readability.
+Rectified and truncated Gaussian noise also return `GaussianNoiseState`,
+so `sync()` handles them automatically — no extra helpers needed.
 
 See [API Reference](../api/distributed.md) for full docstrings.
 

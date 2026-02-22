@@ -1,21 +1,22 @@
-"""Bounded Gaussian noise mechanism for differential privacy.
+"""Truncated Gaussian noise mechanism for differential privacy.
 
-This module implements the Bounded Gaussian Mechanism from:
+This module implements the truncated Gaussian noise mechanism, based on the
+Bounded Gaussian Mechanism from:
 
     Bo Chen and Matthew Hale, "The Bounded Gaussian Mechanism for Differential
     Privacy," Journal of Privacy and Confidentiality, 14(1), 2024.
     https://arxiv.org/abs/2211.17230
 
-The bounded Gaussian mechanism uses a truncated normal distribution restricted
-to a given domain [lower, upper], ensuring all privatized outputs are valid.
-Unlike the standard Gaussian mechanism which has unbounded support (and may
-produce invalid values that require post-hoc projection), this mechanism
-confines noise to a bounded region from the start.
+The mechanism uses a truncated normal distribution restricted to a given domain
+[lower, upper], ensuring all privatized outputs are valid. Unlike the standard
+Gaussian mechanism which has unbounded support (and may produce invalid values
+that require post-hoc projection), this mechanism confines noise to a bounded
+region from the start.
 
 The API returns ``(noise_fn, state)`` where state is always immutable:
 
     >>> from opaque.random import key
-    >>> noise_fn, state = bounded_gaussian_noise(stddev=1.0, bounds=(-3.0, 3.0), key=key(42))
+    >>> noise_fn, state = truncated_gaussian_noise(stddev=1.0, bounds=(-3.0, 3.0), key=key(42))
     >>> noisy_grads, state = noise_fn(grads, state)
 
 References:
@@ -93,7 +94,7 @@ def _truncated_normal_around(
     return samples.to(device=device)
 
 
-def bounded_gaussian_noise(
+def truncated_gaussian_noise(
     stddev: float,
     bounds: tuple[float, float],
     *,
@@ -102,7 +103,7 @@ def bounded_gaussian_noise(
     Callable[[Any, GaussianNoiseState], tuple[Any, GaussianNoiseState]],
     GaussianNoiseState,
 ]:
-    """Create a bounded Gaussian noise function with immutable state.
+    """Create a truncated Gaussian noise function with immutable state.
 
     Returns ``(noise_fn, state)`` where ``noise_fn`` adds noise from a
     truncated normal distribution centred at each input value, with support
@@ -133,10 +134,10 @@ def bounded_gaussian_noise(
 
     Example:
         >>> import torch
-        >>> from opaque.noise import bounded_gaussian_noise
+        >>> from opaque.noise import truncated_gaussian_noise
         >>> from opaque.random import key
         >>>
-        >>> noise_fn, state = bounded_gaussian_noise(
+        >>> noise_fn, state = truncated_gaussian_noise(
         ...     stddev=1.0, bounds=(-3.0, 3.0), key=key(42),
         ... )
         >>> grads = torch.zeros(100)
@@ -171,7 +172,7 @@ def bounded_gaussian_noise(
         return zero_noise_fn, state
 
     def noise_fn(grads, st):
-        """Add bounded Gaussian noise to gradients."""
+        """Add truncated Gaussian noise to gradients."""
         step_key = rng_fold_in(st.rng_key, st.step_counter)
         g = generator_from_key(step_key)
 
@@ -195,4 +196,4 @@ def bounded_gaussian_noise(
     return noise_fn, state
 
 
-__all__ = ["bounded_gaussian_noise"]
+__all__ = ["truncated_gaussian_noise"]

@@ -30,7 +30,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 - **[Noise](noise.md)**: Noise injection for DP
   - `gaussian_noise()` - Standard Gaussian noise
-  - `bounded_gaussian_noise()` - Bounded Gaussian noise (truncated normal)
+  - `truncated_gaussian_noise()`, `rectified_gaussian_noise()` - Bounded Gaussian noise (two variants)
   - `band_mf_noise()`, `blt_mf_noise()`, `dense_mf_noise()` - Correlated noise (DP-FTRL)
   - `identity_mf_noise()`, `custom_mf_noise()` - MF API utilities
 
@@ -105,7 +105,8 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | Function                       | Purpose                                      | User Guide                      |
 |--------------------------------|----------------------------------------------|---------------------------------|
 | `gaussian_noise()`                   | Standard Gaussian noise (unbounded)          | [Guide](../user-guide/noise.md) |
-| `bounded_gaussian_noise()`           | Bounded Gaussian noise (truncated normal)    | [Guide](../user-guide/noise.md#bounded-gaussian-noise) |
+| `truncated_gaussian_noise()`           | Bounded Gaussian — renormalized density       | [Guide](../user-guide/noise.md#bounded-gaussian-noise) |
+| `rectified_gaussian_noise()`           | Bounded Gaussian — clamped                    | [Guide](../user-guide/noise.md#bounded-gaussian-noise) |
 | `band_mf_noise()`                   | BandMF correlated noise (DP-FTRL)           | [Guide](../user-guide/noise.md) |
 | `blt_mf_noise()`                    | BLT correlated noise (DP-FTRL)              | [Guide](../user-guide/noise.md) |
 | `dense_mf_noise()`                  | Dense optimal correlated noise               | [Guide](../user-guide/noise.md) |
