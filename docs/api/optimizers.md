@@ -54,10 +54,11 @@ optimizer = torchopt.adamw(lr=1e-3, weight_decay=0.01)
 import torchopt
 from opaque.clipping import clipped_grad
 from opaque.noise import gaussian_noise
+from opaque.random import key
 
 # Gradient pipeline
 grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=1)
-noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * 1.0)
+noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * 1.0, key=key(42))
 
 # Optimizer
 optimizer = torchopt.adam(lr=1e-3)
@@ -79,8 +80,8 @@ gradient pipeline runs *inside* each rank.  DDP handles the all-reduce of noisy
 gradients across ranks.  No changes to the clipping, noise, or optimizer API are
 needed.
 
-Use `PoissonSampler(distributed=True)` or set `RANK`/`WORLD_SIZE` environment
-variables so that each rank samples from its shard of the dataset.
+`PoissonSampler` auto-detects `torch.distributed` and shards the dataset
+across ranks automatically.
 
 ---
 

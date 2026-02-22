@@ -8,6 +8,7 @@ avoids mutable closures and works seamlessly with distributed training.
 import torch
 
 from opaque.clipping import adaptive_clipped_grad
+from opaque.random import key
 
 
 def simple_loss(params, x, y):
@@ -41,6 +42,7 @@ def main():
         target_quantile=0.5,  # Target 50% clipping rate
         learning_rate=0.2,  # Adaptation speed
         batch_argnums=(1, 2),  # x and y are batched
+        key=key(0),
     )
 
     print("Initial state:")

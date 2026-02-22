@@ -25,6 +25,20 @@ Opaque provides several noise mechanisms:
 
 All noise functions return `(noise_fn, state)` where `noise_fn(grads, state) -> (noisy_grads, new_state)`.
 
+### State Classes
+
+- **`GaussianNoiseState`** — State for `gaussian_noise()`. Holds seed, step counter, RNG key, and synchronization flag.
+- **`MFNoiseState`** — State for all MF noise functions. Holds noise buffers, step counter, and correlation state.
+
+### Distributed Sync Helpers
+
+- **`sync_gaussian_noise_state(state)`** — Validate that Gaussian noise state (seed, step counter) matches across ranks.
+- **`sync_mf_noise_state(state)`** — Validate that MF noise state matches across ranks.
+
+### Aliases
+
+- **`gaussian`** — Backwards-compatible alias for `gaussian_noise`.
+
 **See also**: [Noise Addition User Guide](../user-guide/noise.md)
 
 ## Standard Gaussian
@@ -46,3 +60,27 @@ All noise functions return `(noise_fn, state)` where `noise_fn(grads, state) -> 
 ::: opaque.noise.identity_mf_noise
 
 ::: opaque.noise.custom_mf_noise
+
+## State Classes
+
+::: opaque.noise.gaussian_noise.GaussianNoiseState
+    options:
+      show_source: true
+      heading_level: 3
+
+::: opaque.noise.matrix_factorization.MFNoiseState
+    options:
+      show_source: true
+      heading_level: 3
+
+## Distributed Synchronization
+
+::: opaque.noise.distributed.sync_gaussian_noise_state
+    options:
+      show_source: true
+      heading_level: 3
+
+::: opaque.noise.distributed.sync_mf_noise_state
+    options:
+      show_source: true
+      heading_level: 3

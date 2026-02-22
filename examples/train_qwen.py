@@ -276,8 +276,8 @@ def main():
             clip_norm_max=10000,
             microbatch_size=1,  # Microbatch size of 1 for 7B model
             keep_batch_dim=False,
-            return_grad_norms=True,
-            return_values=True,
+            return_aux=True,
+            key=key(42),
         )
         opt_state = base_opt.init(params)
         fixed_clip_norm = None  # Will use adaptive norm from clip_state
@@ -305,8 +305,7 @@ def main():
             l2_clip_norm=fixed_clip_norm,
             microbatch_size=1,  # Microbatch size of 1 for 7B model
             keep_batch_dim=False,
-            return_grad_norms=True,
-            return_values=True,
+            return_aux=True,
         )
         print(f"   ✓ Created in {time.time() - t0:.1f}s")
     else:

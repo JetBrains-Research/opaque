@@ -5,22 +5,33 @@ The `opaque.clipping` module provides the core functionality for per-sample grad
 ## Overview
 
 Per-sample gradient clipping bounds the influence any single training example can have on the model, enabling
-differential privacy. Opaque provides three clipping functions:
+differential privacy.
 
-1. **`clipped_grad()`** - High-level API for gradient clipping
-  - Automatically differentiates loss function
-  - Clips per-example gradients
-  - Sums clipped gradients
+### Clipping Functions
 
-2. **`clipped_fun()`** - Clip and sum arbitrary function outputs
-  - Works with any function returning PyTrees
-  - Primary building block
+1. **`clipped_grad()`** — High-level API: differentiates, clips, and sums gradients.
+2. **`clipped_fun()`** — Clip and sum arbitrary function outputs (PyTrees).
+3. **`adaptive_clipped_grad()`** — Adaptive clipping (Andrew et al. 2021) with automatic threshold tuning.
+4. **`clip_pytree()`** — Low-level: clip an existing PyTree of gradients.
 
-3. **`clip_pytree()`** - Low-level PyTree clipping
-  - Clips existing gradients
-  - Used internally by other functions
+### State Types
 
-**Key concept**: All functions clip to maximum L2 norm, ensuring bounded sensitivity for DP.
+- **`ClipState`** — Base class for clipping state.
+- **`FixedClipState`** — State for `clipped_grad` / `clipped_fun` (fixed threshold).
+- **`AdaptiveClipState`** — State for `adaptive_clipped_grad` (adapting threshold).
+- **`NeighboringRelation`** — Enum for DP neighboring relation (ADD_OR_REMOVE_ONE, REPLACE_ONE, REPLACE_SPECIAL).
+
+### Auxiliary Output Types
+
+- **`ClippedGradAux`** — Per-example loss values, gradient norms, clipped norms (from `clipped_grad`).
+- **`ClippedFunAux`** — Per-example values, norms, clipped norms (from `clipped_fun`).
+- **`AdaptiveClippedGradAux`** — Extends `ClippedGradAux` with clipping rate (from `adaptive_clipped_grad`).
+
+### Distributed Sync Helpers
+
+- **`sync_clip_state(state)`** — Assert `FixedClipState.l2_norm_bound` matches across ranks.
+- **`sync_adaptive_clip_state(state)`** — Aggregate counts and recompute global adaptive clip norm.
+- **`sync_adaptive_clipped_grad_aux(aux)`** — Gather aux outputs across ranks.
 
 **See also**: [Per-Sample Gradient Clipping User Guide](../../user-guide/clipping.md)
 

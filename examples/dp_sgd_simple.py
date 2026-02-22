@@ -111,7 +111,7 @@ def main():
         print(f"   Final MSE: {final_loss:.4f}")
 
     print("\n5. Privacy accounting...")
-    print("   Note: Use jbr-fed-accounting for actual privacy analysis")
+    print("   Note: Use opaque.accounting for actual privacy analysis")
     print(f"   - Noise multiplier: {noise_multiplier}")
     print(f"   - Clip norm: {l2_clip_norm}")
     print(f"   - Steps: {epochs * len(dataloader)}")
