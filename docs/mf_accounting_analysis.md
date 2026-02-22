@@ -21,10 +21,12 @@
 
 ### 1.2 Core Theoretical Framework
 
-**Matrix Mechanism**: Given workload A (prefix sum), strategy C, and noising matrix B = A @ C^{-1}:
-- Output: AX + B*Z where Z ~ N(0, sigma^2 * I)
-- Privacy: reduces to Gaussian mechanism with effective noise multiplier sigma / sensitivity(C)
-- Error: E[||BZ||^2] = sigma^2 * ||B||_F^2
+**Matrix Mechanism**: Given gradient stream G in R^{n x d}, workload A = tril(ones(n,n)) (prefix sum),
+factorize A = BC and release M(G) = B(CG + Z) where Z ~ N(0, sigma^2 I). By post-processing:
+
+- **Sensitivity**: S = ||C||_{1,2} = max_j sqrt(sum_i C_{i,j}^2)  (max L2 column norm)
+- **Error**: E[||AG - M(G)||_F^2] = sigma^2 * ||AC^{-1}||_F^2
+- **Combined objective**: minimize sens(C)^2 * ||AC^{-1}||_F^2
 
 **Sensitivity under participation patterns**:
 - **Single participation**: S = max column norm of C
@@ -35,6 +37,41 @@
 **Privacy accounting**:
 - Single Gaussian PLD with effective noise multiplier sigma_eff = sigma / S
 - For cyclic/Poisson amplification: compose per-group amplified PLDs
+
+**Key result — BandMF amplification** (Proposition 2.1 of arXiv:2306.08153):
+For b-banded C with ||C||_{1,2} <= 1, the mechanism satisfies (eps,delta)-DP when
+sigma_BandMF = sigma_SGD(epsilon, delta, k, n/b) — i.e., privacy cost scales with n/b, not n.
+
+**Key result — b-min-sep subsampling** (arXiv:2602.09338):
+b-min-sep subsampling Pareto dominates cyclic Poisson for BandMF, providing
+approximately b times more examples available for sampling per iteration.
+
+### 1.3 Paper Genealogy
+
+```
+Dwork et al. 2010 (continual observation)
+    |
+Chan et al. 2011 (binary tree mechanism)
+    |
+Kairouz et al. 2021 (DP-FTRL with tree aggregation)
+    |
+Denisov et al. 2022 (optimal dense MF, adaptive streams)
+    |
+    +--- Choquette-Choo et al. 2023a (multi-epoch MF, VecSens)
+    |       |
+    |       +--- Choquette-Choo et al. 2023b (BandMF + amplification)
+    |       |       |
+    |       |       +--- McKenna 2024 (scaling BandMF)
+    |       |       +--- Dong et al. 2025 (b-min-sep subsampling)
+    |       |
+    |       +--- Kalinin & Lampert 2024 (BSR)
+    |               +--- Kalinin et al. 2025 (BISR, optimal bounds)
+    |
+    +--- Dvijotham et al. 2024 (BLT mechanism)
+            |
+            +--- McMahan et al. 2024 (BLT-DP-FTRL for practice)
+            +--- McMahan & Pillutla 2025 (BLT inversion theorem)
+```
 
 ---
 
@@ -229,17 +266,26 @@ acc.band_mf_accounting(n=1000, bands=5, min_sep=5, noise_multiplier=1.0)
 
 ### 4.10 POTENTIAL ISSUE: Numerical Stability of BLT Inverse
 
-**Theory** (arXiv:2504.21413): BLT inversion uses eigendecomposition of Theta2 = Theta - omega @ ones^T.
+**Theory** (arXiv:2504.21413, Theorem 1): BLT^{-1} is itself a BLT with explicit inverse formula.
+The inverse decay parameters hat_lambda depend on sum(alpha_i / lambda_i) (Pillutla score):
+- If Pillutla score < 1: all hat_lambda_i in (0,1) — well-behaved
+- If Pillutla score > 1: one hat_lambda_j in (-1,0) — oscillatory inverse
+- If Pillutla score = 1: degenerate case
 
 **Implementation** (`buffered_toeplitz.py:inverse()`):
-- Uses `torch.linalg.eigvals` for eigenvalues
+- Uses `torch.linalg.eigvals` for eigenvalues (Lemma 5.2 of BLT paper)
 - Closed-form eigenvectors from `omega / (evals - buf_decay)`
 - Gap check: `min_buf_decay_gap >= 1e-9`
 - Verification: reconstructed Theta2 matches within `atol=1e-7`
+- Pillutla score constraint enforced during optimization (penalty for score >= 1)
 
-**Issue**: For buf_decay values very close together (but > 1e-9 gap), the eigenvector computation involves dividing by small differences, which can amplify floating-point errors. The hardcoded 1e-9 threshold may be too tight for some configurations.
+**Issue**: For buf_decay values very close together (but > 1e-9 gap), the eigenvector computation
+involves dividing by small differences, amplifying floating-point errors. The paper (arXiv:2504.21413)
+provides the more stable explicit formula (Theorem 2) using interlaced decay parameters, which the
+implementation does NOT use — instead using the eigendecomposition approach.
 
-**Impact**: Low-Medium. The verification check catches failures, but the threshold is empirically calibrated rather than theoretically justified.
+**Impact**: Low-Medium. The verification check catches failures, but the newer O(d^3) algorithm from
+arXiv:2504.21413 could be more numerically stable for difficult configurations.
 
 ### 4.11 MISSING: Recent Advances Not Incorporated
 
