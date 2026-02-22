@@ -84,7 +84,7 @@ noise_fn, state = band_mf_noise(grad_template, n_steps=1000, bands=4, stddev=1.1
 # Training loop is IDENTICAL for both:
 for batch in dataloader:
     clipped_grad = compute_clipped_grad(model, batch)
-    noisy_grad, state = noise_fn(clipped_grad, state)  # ← Same call!
+    noisy_grad, state = noise_fn(clipped_grad, state)  # same call
     # ... update parameters
 ```
 
@@ -184,12 +184,12 @@ noise_fn, noise_state = identity_mf_noise(
     key=key(42),
 )
 
-# Training loop (IDENTICAL for all mechanisms!)
+# Training loop (identical for all mechanisms)
 for batch in dataloader:
     # Compute clipped gradients
     grads, clip_state = clipped_grad_fn(params, batch, state=clip_state)
     
-    # Add noise (mechanism-specific, but same API!)
+    # Add noise (mechanism-specific, but same API)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
     
     # Update parameters
@@ -250,7 +250,7 @@ noise_fn, noise_state = custom_mf_noise(grad_template, noising=strategy_matrix, 
 # 6. Identity MF
 noise_fn, noise_state = identity_mf_noise(grad_template, stddev=1.1, key=key(42))
 
-# Training loop (IDENTICAL for all mechanisms AND identical to single-device!)
+# Training loop (identical for all mechanisms and identical to single-device)
 for batch in dataloader:
     batch = tuple(t.to(device) for t in batch)
     
@@ -260,7 +260,7 @@ for batch in dataloader:
     # 2. Aggregate across devices
     grads = sum_gradients(grads)
     
-    # 3. Add noise (same on all devices - automatically synchronized!)
+    # 3. Add noise (same on all devices, automatically synchronised)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
     
     # 4. Update parameters
@@ -275,10 +275,10 @@ dist.destroy_process_group()
 
 **Key Takeaways:**
 
-✅ **Same training loop** for ALL mechanisms (Gaussian + all 5 MF variants)  
-✅ **Drop-in replacement** - Change only noise initialization line  
-✅ **Automatic distributed support** - `synchronized="auto"` ensures identical noise across devices  
-✅ **Identical API** - `noise_fn(grads, state) -> (noisy_grads, new_state)`  
+- **Same training loop** for all mechanisms (Gaussian and all five MF variants).
+- **Drop-in replacement** -- change only the noise initialisation line.
+- **Automatic distributed support** -- `synchronized="auto"` ensures identical noise across devices.
+- **Identical API** -- `noise_fn(grads, state) -> (noisy_grads, new_state)`.  
 
 **When to use which:**
 
@@ -438,7 +438,7 @@ dist.init_process_group(backend="nccl")
 rank = dist.get_rank()
 device = torch.device(f"cuda:{rank}")
 
-# Create noise function - works exactly like gaussian_noise!
+# Create noise function (same API as gaussian_noise)
 # key=key(42) with synchronized="auto" (default) ensures identical noise on all devices
 noise_fn, noise_state = band_mf_noise(
     grad_template, 
@@ -465,10 +465,10 @@ for batch in dataloader:
 
 **Key points:**
 
-- ✅ **Same API as `gaussian_noise()`** - No special distributed handling needed
-- ✅ **Automatic synchronization** - `synchronized="auto"` broadcasts key to all devices
-- ✅ **Centralized pattern** - All devices use same key (prevents model divergence)
-- ✅ **Standard privacy accounting** - Use simple RDP/PLD accounting (no composition needed)
+- **Same API as `gaussian_noise()`** -- no special distributed handling needed.
+- **Automatic synchronisation** -- `synchronized="auto"` broadcasts the key to all devices.
+- **Centralised pattern** -- all devices use the same key (prevents model divergence).
+- **Standard privacy accounting** -- use simple RDP/PLD accounting (no composition needed).
 
 For details on distributed training, see [Distributed Training Guide](distributed.md).
 

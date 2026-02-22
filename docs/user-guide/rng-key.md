@@ -67,7 +67,7 @@ first.
 ```python
 # Wrong: reusing the same key
 noise_fn, ns = gaussian_noise(stddev=1.0, key=k)
-sampler = PoissonSampler(dataset, sample_rate=0.01, key=k)  # correlated!
+sampler = PoissonSampler(dataset, sample_rate=0.01, key=k)  # correlated
 
 # Right: split first
 k_noise, k_sample = split(k)
