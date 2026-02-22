@@ -97,13 +97,13 @@ If you need subsampling amplification with correlated noise, use
 [BandMF](band-mf.md) with `cyclic_poisson()` instead.
 
 !!! note "Multi-epoch vs subsampling"
-    BLT and subsampling solve different problems. Subsampling (Poisson)
-    amplifies privacy by using a random subset at each step. Multi-epoch
-    (BLT) handles the privacy cost of the same example appearing in multiple
-    steps. When you train for multiple epochs with Poisson sampling, the
-    accounting must handle both — BLT addresses the multi-participation
-    sensitivity while the Poisson amplification is implicit in the per-step
-    analysis.
+    BLT and Poisson subsampling solve different problems. Poisson subsampling
+    amplifies privacy by using a random subset at each step. BLT handles the
+    privacy cost of the same example appearing in multiple steps via its
+    multi-participation (min-sep / max-participations) sensitivity computation.
+    BLT itself does **not** model subsampling amplification and has no
+    `sample_rate` parameter. If you need subsampling with correlated noise,
+    use [BandMF](band-mf.md) with `cyclic_poisson()` instead.
 
 ## Code examples
 

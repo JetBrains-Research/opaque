@@ -92,6 +92,8 @@ rect      = acc.poisson(acc.rectified_gaussian(1.0, 5.0), sample_rate=0.01) * 10
 trunc     = acc.poisson(acc.truncated_gaussian(1.0, 5.0), sample_rate=0.01) * 1000
 
 # --- Correlated noise ---
+# Note: cyclic_poisson's sample_rate is a per-group Poisson probability
+# (typically ≈ bands * q when q is the usual DP-SGD sampling rate).
 band      = acc.cyclic_poisson(acc.band_mf(1.0, 1000, bands=10), sample_rate=0.01)
 blt       = acc.blt_mf(1.0, 1000)
 dense     = acc.dense_mf(1.0, 50, epochs=2)

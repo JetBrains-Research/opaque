@@ -176,6 +176,7 @@ BandMF works best with `CyclicPoissonSampler`, which creates a predictable
 sampling pattern that the noise strategy exploits:
 
 ```python
+import torch
 from opaque import band_mf_noise, clipped_grad
 from opaque.sampling import CyclicPoissonSampler
 from opaque.random import key, split

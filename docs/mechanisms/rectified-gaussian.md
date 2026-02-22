@@ -107,7 +107,7 @@ eps = training.epsilon_at(delta=1e-5)
 ### Noise injection
 
 ```python
-from opaque import rectified_gaussian_noise
+from opaque.noise import rectified_gaussian_noise
 from opaque.random import key
 
 noise_fn, noise_state = rectified_gaussian_noise(
@@ -122,8 +122,10 @@ for batch in dataloader:
     params = params - lr * noisy_grads
 ```
 
-The `radius` parameter is in absolute units. To match accounting (which uses
-`bound_multiplier` in sigma units), set `radius = bound_multiplier`.
+The `radius` parameter is in multiples of the standard deviation $\sigma$
+(the same convention used by the accounting API). For example, `radius=5.0`
+clamps the noise to the interval $[-5\sigma, 5\sigma]$ in both the noise
+injection and accounting calls.
 
 ### Privacy accounting
 

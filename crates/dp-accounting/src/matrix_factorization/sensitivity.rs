@@ -215,13 +215,13 @@ pub fn general_sensitivity_upper_bound(
 
     // Stage 1: For each row, find max participation over |X[i, :]|
     let mut row_max = vec![0.0_f64; n];
-    for i in 0..n {
+    for (i, rm) in row_max.iter_mut().enumerate() {
         let row_start = i * n;
         let abs_row: Vec<f64> = gram_matrix[row_start..row_start + n]
             .iter()
             .map(|&v| v.abs())
             .collect();
-        row_max[i] = max_participation_for_linear_fn(&abs_row, min_sep, max_participations);
+        *rm = max_participation_for_linear_fn(&abs_row, min_sep, max_participations);
     }
 
     // Stage 2: Find max participation over the row maxima
