@@ -1,4 +1,4 @@
-"""Tests for opaque.accounting.mechanisms — Gaussian, EpsDelta, Identity."""
+"""Tests for opaque.accounting.mechanisms — Gaussian, EpsDelta, Identity, RectifiedGaussian, TruncatedGaussian."""
 
 import math
 from dataclasses import FrozenInstanceError
@@ -12,6 +12,8 @@ from opaque.accounting.mechanisms import (
     EpsDelta,
     Gaussian,
     Identity,
+    RectifiedGaussian,
+    TruncatedGaussian,
 )
 
 # ── Mechanism dataclass tests ────────────────────────────────────────
@@ -148,3 +150,132 @@ class TestIdentityDataclass:
 
     def test_equality(self):
         assert Identity() == Identity()
+
+
+# ── RectifiedGaussian tests ──────────────────────────────────────────
+
+
+class TestRectifiedGaussianDataclass:
+    """RectifiedGaussian frozen dataclass."""
+
+    def test_fields(self):
+        g = RectifiedGaussian(1.1, 5.0)
+        assert g.noise_multiplier == pytest.approx(1.1)
+        assert g.radius == pytest.approx(5.0)
+
+    def test_frozen(self):
+        g = RectifiedGaussian(1.1, 5.0)
+        with pytest.raises(FrozenInstanceError):
+            g.noise_multiplier = 2.0  # type: ignore[misc]
+
+    def test_is_dp_process(self):
+        assert isinstance(RectifiedGaussian(1.0, 5.0), DpProcess)
+
+    def test_equality(self):
+        assert RectifiedGaussian(1.0, 5.0) == RectifiedGaussian(1.0, 5.0)
+        assert RectifiedGaussian(1.0, 5.0) != RectifiedGaussian(1.1, 5.0)
+        assert RectifiedGaussian(1.0, 5.0) != RectifiedGaussian(1.0, 3.0)
+
+    def test_pld_returns_valid(self):
+        pld = RectifiedGaussian(0.8, 5.0).pld()
+        eps = pld.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
+
+    def test_pld_with_query_config(self):
+        g = RectifiedGaussian(1.0, 5.0)
+        pld1 = g.pld(discretization=1e-3)
+        pld2 = g.pld(discretization=1e-4)
+        eps1 = pld1.epsilon_at(1e-5)
+        eps2 = pld2.epsilon_at(1e-5)
+        assert math.isfinite(eps1) and eps1 > 0
+        assert math.isfinite(eps2) and eps2 > 0
+
+    def test_epsilon_le_gaussian(self):
+        """Rectified Gaussian should give ε ≤ standard Gaussian (tighter)."""
+        nm, R = 1.0, 5.0
+        eps_gauss = Gaussian(nm).epsilon_at(1e-5)
+        eps_rect = RectifiedGaussian(nm, R).epsilon_at(1e-5)
+        assert eps_rect <= eps_gauss + 1e-6
+
+
+class TestRectifiedGaussianConstructor:
+    """acc.rectified_gaussian() returns RectifiedGaussian."""
+
+    def test_returns_rectified_gaussian(self):
+        g = acc.rectified_gaussian(1.1, 5.0)
+        assert isinstance(g, RectifiedGaussian)
+        assert g.noise_multiplier == pytest.approx(1.1)
+        assert g.radius == pytest.approx(5.0)
+
+    def test_epsilon_at_works(self):
+        g = acc.rectified_gaussian(1.1, 5.0)
+        eps = g.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
+
+
+# ── TruncatedGaussian tests ─────────────────────────────────────────
+
+
+class TestTruncatedGaussianDataclass:
+    """TruncatedGaussian frozen dataclass."""
+
+    def test_fields(self):
+        g = TruncatedGaussian(1.1, 5.0)
+        assert g.noise_multiplier == pytest.approx(1.1)
+        assert g.radius == pytest.approx(5.0)
+
+    def test_frozen(self):
+        g = TruncatedGaussian(1.1, 5.0)
+        with pytest.raises(FrozenInstanceError):
+            g.noise_multiplier = 2.0  # type: ignore[misc]
+
+    def test_is_dp_process(self):
+        assert isinstance(TruncatedGaussian(1.0, 5.0), DpProcess)
+
+    def test_equality(self):
+        assert TruncatedGaussian(1.0, 5.0) == TruncatedGaussian(1.0, 5.0)
+        assert TruncatedGaussian(1.0, 5.0) != TruncatedGaussian(1.1, 5.0)
+        assert TruncatedGaussian(1.0, 5.0) != TruncatedGaussian(1.0, 3.0)
+
+    def test_pld_returns_valid(self):
+        pld = TruncatedGaussian(0.8, 5.0).pld()
+        eps = pld.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
+
+    def test_pld_with_query_config(self):
+        g = TruncatedGaussian(1.0, 5.0)
+        pld1 = g.pld(discretization=1e-3)
+        pld2 = g.pld(discretization=1e-4)
+        eps1 = pld1.epsilon_at(1e-5)
+        eps2 = pld2.epsilon_at(1e-5)
+        assert math.isfinite(eps1) and eps1 > 0
+        assert math.isfinite(eps2) and eps2 > 0
+
+    def test_epsilon_le_gaussian(self):
+        """Truncated Gaussian should give ε ≤ standard Gaussian (tighter)."""
+        nm, R = 1.0, 5.0
+        eps_gauss = Gaussian(nm).epsilon_at(1e-5)
+        eps_trunc = TruncatedGaussian(nm, R).epsilon_at(1e-5)
+        assert eps_trunc <= eps_gauss + 1e-6
+
+    def test_epsilon_le_rectified(self):
+        """Truncated Gaussian should give ε ≤ rectified Gaussian (tightest)."""
+        nm, R = 1.0, 5.0
+        eps_rect = RectifiedGaussian(nm, R).epsilon_at(1e-5)
+        eps_trunc = TruncatedGaussian(nm, R).epsilon_at(1e-5)
+        assert eps_trunc <= eps_rect + 1e-6
+
+
+class TestTruncatedGaussianConstructor:
+    """acc.truncated_gaussian() returns TruncatedGaussian."""
+
+    def test_returns_truncated_gaussian(self):
+        g = acc.truncated_gaussian(1.1, 5.0)
+        assert isinstance(g, TruncatedGaussian)
+        assert g.noise_multiplier == pytest.approx(1.1)
+        assert g.radius == pytest.approx(5.0)
+
+    def test_epsilon_at_works(self):
+        g = acc.truncated_gaussian(1.1, 5.0)
+        eps = g.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0

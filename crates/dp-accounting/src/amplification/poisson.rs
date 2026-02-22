@@ -80,7 +80,6 @@ fn privacy_loss_add(x: f64, sigma: f64, sensitivity: f64, rate: f64) -> f64 {
 }
 
 /// Poisson-transformed privacy loss for REPLACE adjacency.
-#[allow(dead_code)]
 fn privacy_loss_replace(x: f64, sigma: f64, sensitivity: f64, rate: f64) -> f64 {
     let sigma_sq = sigma * sigma;
     let q = rate;

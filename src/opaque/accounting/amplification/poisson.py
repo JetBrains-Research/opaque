@@ -9,14 +9,19 @@ import opaque_accounting as _native
 
 from opaque.accounting.base import DpProcess, Pld
 from opaque.accounting.mechanisms.gaussian import Gaussian
+from opaque.accounting.mechanisms.rectified_gaussian import RectifiedGaussian
+from opaque.accounting.mechanisms.truncated_gaussian import TruncatedGaussian
 from opaque.accounting.transformations.adaclip import AdaClip
+
+#: Mechanism types accepted by :func:`poisson`.
+_Inner = Gaussian | RectifiedGaussian | TruncatedGaussian | AdaClip
 
 
 @dataclass(frozen=True, slots=True)
 class Poisson(DpProcess):
     """Poisson-subsampled Gaussian mechanism."""
 
-    inner: Gaussian | AdaClip
+    inner: _Inner
     sample_rate: float
 
     @functools.lru_cache(maxsize=8)
@@ -42,6 +47,14 @@ class Poisson(DpProcess):
                 return _native.poisson_gaussian_pld(
                     nm, self.sample_rate, config.to_native()
                 )
+            case RectifiedGaussian(noise_multiplier=nm, radius=r):
+                return _native.poisson_rectified_gaussian_pld(
+                    nm, r, self.sample_rate, config.to_native()
+                )
+            case TruncatedGaussian(noise_multiplier=nm, radius=r):
+                return _native.poisson_truncated_gaussian_pld(
+                    nm, r, self.sample_rate, config.to_native()
+                )
             case AdaClip():
                 z_eff = self.inner.effective_noise_multiplier
                 return _native.poisson_gaussian_pld(
@@ -49,13 +62,14 @@ class Poisson(DpProcess):
                 )
             case _:
                 raise TypeError(
-                    "Poisson requires a Gaussian or AdaClip inner mechanism, got "
+                    "Poisson requires a Gaussian, RectifiedGaussian, "
+                    "TruncatedGaussian, or AdaClip inner mechanism, got "
                     f"{type(self.inner).__name__}."
                 )
 
 
 def poisson(
-    inner: Gaussian | AdaClip,
+    inner: _Inner,
     sample_rate: float,
 ) -> Poisson:
     """Poisson-subsampled Gaussian mechanism (standard DP-SGD step).
@@ -66,8 +80,8 @@ def poisson(
     This is the **standard DP-SGD mechanism** used in most deep learning privacy work.
 
     Args:
-        inner: The base Gaussian mechanism (from :func:`gaussian`) or
-            an :func:`adaclip` transform applied to a Gaussian.
+        inner: The base mechanism — :func:`gaussian`, :func:`rectified_gaussian`,
+            :func:`truncated_gaussian`, or an :func:`adaclip` transform.
         sample_rate: Probability of including each example (batch_size / dataset_size).
 
     Returns:
@@ -75,16 +89,22 @@ def poisson(
 
     Example::
 
-        # One training step
+        # Standard Gaussian
         step = acc.poisson(acc.gaussian(1.1), sample_rate=0.01)
 
-        # 1000 steps of training
+        # Tighter bounds with rectified Gaussian
+        step = acc.poisson(acc.rectified_gaussian(1.1, 5.0), sample_rate=0.01)
+
+        # Tightest bounds with truncated Gaussian
+        step = acc.poisson(acc.truncated_gaussian(1.1, 5.0), sample_rate=0.01)
+
         training = step * 1000
         eps = training.epsilon_at(1e-5)
     """
-    if not isinstance(inner, (Gaussian, AdaClip)):
+    if not isinstance(inner, (Gaussian, RectifiedGaussian, TruncatedGaussian, AdaClip)):
         raise TypeError(
-            f"poisson() requires a Gaussian or AdaClip inner mechanism, got {type(inner).__name__}. "
+            f"poisson() requires a Gaussian, RectifiedGaussian, TruncatedGaussian, "
+            f"or AdaClip inner mechanism, got {type(inner).__name__}. "
             "Use: acc.poisson(acc.gaussian(noise_multiplier), sample_rate)"
         )
     return Poisson(inner=inner, sample_rate=sample_rate)

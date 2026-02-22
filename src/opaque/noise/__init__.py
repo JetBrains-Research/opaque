@@ -8,6 +8,7 @@ from opaque.noise.custom_mf_noise import custom_mf_noise
 from opaque.noise.dense_mf_noise import dense_mf_noise
 from opaque.noise.gaussian_noise import gaussian_noise
 from opaque.noise.identity_mf_noise import identity_mf_noise
+from opaque.noise.rectified_gaussian_noise import rectified_gaussian_noise
 
 __all__ = [
     "band_mf_noise",
@@ -17,5 +18,6 @@ __all__ = [
     "dense_mf_noise",
     "gaussian_noise",
     "identity_mf_noise",
+    "rectified_gaussian_noise",
     "distributed",
 ]
