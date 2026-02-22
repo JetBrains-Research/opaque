@@ -148,17 +148,43 @@ in Opaque's Rust PLD engine. See [Privacy Accounting](accounting.md).
 
 ### Rényi DP and historical context
 
-Early DP-SGD implementations (including the original TF Privacy) used
-*Rényi Differential Privacy* (RDP), which tracks privacy via Rényi
-divergences $D_\alpha(M(D) \| M(D'))$ and converts to $(\varepsilon,
-\delta)$-DP via an optimization over the order $\alpha$. RDP was a major
-improvement over basic composition but is known to be lossy in the
-conversion step.
+Many users encounter Opaque after working with RDP-based frameworks
+(TensorFlow Privacy, early Opacus). This section explains how the two
+approaches relate and what to expect when migrating.
 
-PLD-based accounting (used by Opaque) supersedes RDP: it provides
-numerically tighter bounds without approximation artifacts. If you are
-migrating from an RDP-based framework, expect slightly smaller $\varepsilon$
-values from Opaque for the same training configuration.
+**Rényi Differential Privacy (RDP)** ([Mironov 2017](https://arxiv.org/abs/1702.07476))
+tracks privacy via Rényi divergences $D_\alpha(M(D) \| M(D'))$ across a
+continuum of orders $\alpha$. A mechanism is $(\alpha, \tau)$-RDP if the
+Rényi divergence of order $\alpha$ between neighboring outputs is at most
+$\tau$. To obtain the familiar $(\varepsilon, \delta)$-DP guarantee, RDP
+performs an optimization over $\alpha$, selecting the order that minimizes
+$\varepsilon$ for a given $\delta$. This was a major improvement over basic
+and advanced composition and became the de facto standard for DP-SGD privacy
+accounting from 2017 to ~2021.
+
+**Limitation of RDP.** The RDP-to-$(\varepsilon, \delta)$ conversion is
+*lossy*: it discards information about the full shape of the privacy loss
+distribution. In practice, this means RDP reports pessimistic (higher)
+$\varepsilon$ values—particularly for many-step compositions where the
+accumulated approximation error compounds.
+
+**PLD-based accounting** (used by Opaque) supersedes RDP. Instead of
+summarizing the privacy loss via a single divergence at each order, PLD
+tracks the complete probability distribution of the privacy loss random
+variable and composes via FFT convolution. This is numerically tight—exact
+up to discretization error—and avoids the lossy conversion step entirely.
+
+**What this means for migration.** If you are coming from an RDP-based
+framework, expect:
+
+- **Smaller $\varepsilon$ values** for the same training configuration
+  (typically 10–30% tighter, sometimes more for long training runs).
+- **No $\alpha$ parameter to tune.** PLD accounting has no analog of the
+  RDP order; the full distribution is used directly.
+- **Richer privacy metrics.** Because Opaque retains the full PLD, it can
+  report f-DP advantage, $(\alpha, \beta)$ error rates, and Bayes risk in
+  addition to $(\varepsilon, \delta)$—all from the same computation.
+  See [Choosing a metric](#choosing-a-metric) below.
 
 ### Subsampling amplification
 
@@ -389,6 +415,7 @@ sensitivity when calibrating noise ($\sigma = \text{noise\_multiplier} \times 2C
 ## References
 
 - [Abadi et al. 2016 - Deep Learning with Differential Privacy](https://arxiv.org/abs/1607.00133)
+- [Mironov 2017 - Rényi Differential Privacy](https://arxiv.org/abs/1702.07476)
 - [Dong et al. 2019 - Gaussian Differential Privacy](https://arxiv.org/abs/1905.02383)
 - [Kairouz et al. 2015 - The Composition Theorem for Differential Privacy](https://arxiv.org/abs/1311.0776)
 - [Balle et al. 2020 - Hypothesis Testing Interpretations and the Laplace Mechanism](https://arxiv.org/abs/1905.10731)
