@@ -202,9 +202,11 @@ def adaptive_clipped_grad(
     (grad, new_state) or ((grad, aux), new_state) depending on return_aux.
 
     The clipping threshold adapts geometrically based on observed clipping rate:
-        C_{t+1} = C_t * exp(η * sign(ρ_t - γ))
+        C_{t+1} = C_t * exp(η * (ρ̃_t - γ))
 
-    Where ρ_t is the fraction of per-example gradients clipped at step t.
+    Where ρ̃_t is the noisy fraction of per-example gradients clipped at step t
+    and γ is the target quantile. The step size is proportional to the deviation
+    from the target, giving smoother adaptation near equilibrium.
 
     Args:
         loss_fn: The loss function to be differentiated. Should return a scalar.
@@ -264,7 +266,7 @@ def adaptive_clipped_grad(
         >>> optimizer = torchopt.adamw(lr=1e-3)
         >>> opt_state = optimizer.init(params)
         >>>
-        >>> noise_fn, noise_state = gaussian_noise(stddev=1.1)
+        >>> noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(1))
         >>> for batch_x, batch_y in dataloader:
         ...     # Compute clipped gradients - state passed explicitly
         ...     grad, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
@@ -310,8 +312,10 @@ def adaptive_clipped_grad(
         ...     # Sum clipped gradients across devices
         ...     grad = sum_gradients(grad)
         ...
-        ...     # Add noise and update (only on rank 0, or broadcast)
-        ...     noisy_grad = gaussian_noise(grad, clip_state.clip_norm * 1.1)
+        ...     # Add noise and update
+        ...     noise_fn, noise_state = gaussian_noise(
+        ...         stddev=clip_state.sensitivity() * 1.1, key=key(2))
+        ...     noisy_grad, noise_state = noise_fn(grad, noise_state)
         ...     # ... optimizer step
 
     Notes:

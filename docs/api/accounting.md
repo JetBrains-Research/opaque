@@ -28,7 +28,7 @@ The underlying implementation uses Google's PLD accounting via the
 
 Abstract base class for all privacy processes. Subclasses implement `pld()` to
 compute the Privacy Loss Distribution on demand. Results are automatically
-cached via `@lru_cache` (maxsize=8). Use [`cached()`](#cachedprocess---dpprocess) for larger cache
+cached via `@lru_cache` (maxsize=8). Use `cached()` for larger cache
 size (16) or as an opaque merge barrier.
 
 **Privacy metrics:**
@@ -102,7 +102,7 @@ eps = proc.epsilon_at(1e-5)  # Uses 1e-4 default
 ```
 
 - `acc.set_discretization(discretization=1e-4, ...)` -- Set global default
-- `acc.get_discretization()` -- Return current default `DiscretizationConfig` or `None`
+- `acc.get_discretization()` -- Return current `DiscretizationConfig` (always returns a concrete config)
 
 ---
 

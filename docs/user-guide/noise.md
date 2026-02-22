@@ -227,6 +227,26 @@ noise_fn, noise_state = custom_mf_noise(
 )
 ```
 
+### `identity_mf_noise`
+
+Identity strategy — equivalent to standard DP-SGD (independent noise at each
+step) but using the MF API. Useful for testing the MF infrastructure or as a
+baseline when comparing MF strategies.
+
+```python
+from opaque import identity_mf_noise
+from opaque.random import key
+
+noise_fn, noise_state = identity_mf_noise(
+    grad_template=params,
+    stddev=noise_multiplier * clip_state.sensitivity(),
+    key=key(42),
+)
+```
+
+Note that `identity_mf_noise` does not require `n_steps` since the identity
+matrix has no temporal structure.
+
 ### Privacy accounting for MF noise
 
 MF noise mechanisms have the same per-step privacy cost as standard Gaussian

@@ -85,7 +85,7 @@ def clipped_grad(
         >>> from opaque.clipping import clipped_grad
         >>> f = lambda param, data: 0.5 * ((data - param) ** 2).mean()
         >>> g, clip_state = clipped_grad(f, l2_clip_norm=float('inf'))
-        >>> result = g(torch.tensor(3.0), torch.tensor([0.0, 7.0, -2.0]))
+        >>> result, clip_state = g(torch.tensor(3.0), torch.tensor([0.0, 7.0, -2.0]), state=clip_state)
         >>> result
         tensor(1.3333)
 
@@ -93,7 +93,7 @@ def clipped_grad(
         >>> g, clip_state = clipped_grad(
         ...     f, l2_clip_norm=float('inf'), return_aux=True
         ... )
-        >>> _, aux = g(torch.tensor(3.0), torch.tensor([0.0, 7.0, -2.0]))
+        >>> (_, aux), clip_state = g(torch.tensor(3.0), torch.tensor([0.0, 7.0, -2.0]), state=clip_state)
         >>> aux.loss_values
         tensor([4.5000, 8.0000, 12.5000])
         >>> aux.grad_norms

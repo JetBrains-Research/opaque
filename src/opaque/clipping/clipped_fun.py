@@ -196,8 +196,9 @@ def clipped_fun(
 
     Example Usage:
         >>> data = torch.tensor([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
-        >>> clipped_mean = clipped_fun(torch.mean, l2_clip_norm=1.0)
-        >>> clipped_mean(data)
+        >>> clipped_mean, clip_state = clipped_fun(torch.mean, l2_clip_norm=1.0)
+        >>> result, clip_state = clipped_mean(data, state=clip_state)
+        >>> result
         tensor(5.)
 
     Formal Guarantees:

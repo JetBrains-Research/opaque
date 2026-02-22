@@ -60,7 +60,7 @@ for step in range(100):
 ```python
 # Using fold_in for step-based keys
 base_key = key(42)
-step_key = fold_in(base_key, step=0)
+step_key = fold_in(base_key, 0)
 
 # Or use training_key helper
 step_key = training_key(base_seed=42, step=0)
