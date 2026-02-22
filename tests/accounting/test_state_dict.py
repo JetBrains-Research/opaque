@@ -6,7 +6,10 @@ from typing import cast
 import opaque.accounting as acc
 from opaque.accounting.accountant import Accountant
 from opaque.accounting.base import DpProcess
-from opaque.accounting.mechanisms import BandMfAmplified
+from opaque.accounting.mechanisms.band_mf_amplified import (
+    BandMfAmplified,
+    band_mf_amplified,
+)
 
 
 def test_gaussian_state_dict_structure():
@@ -98,7 +101,7 @@ def test_cached_state_dict_structure():
 
 
 def test_band_mf_amplified_state_dict_structure():
-    proc = acc.band_mf_amplified(1.0, 2.5, 0.01, 200)
+    proc = band_mf_amplified(1.0, 2.5, 0.01, 200)
     state = cast(dict[str, object], proc.state_dict())
     assert state["type"] == "BandMfAmplified"
     assert state["noise_multiplier"] == 1.0
@@ -108,7 +111,7 @@ def test_band_mf_amplified_state_dict_structure():
 
 
 def test_band_mf_amplified_round_trip():
-    proc = acc.band_mf_amplified(1.0, 2.5, 0.01, 200)
+    proc = band_mf_amplified(1.0, 2.5, 0.01, 200)
     state = proc.state_dict()
     restored = DpProcess.load_state_dict(state)
     assert isinstance(restored, BandMfAmplified)
