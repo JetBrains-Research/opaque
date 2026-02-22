@@ -107,27 +107,35 @@ def _worker_reduce_scalar(rank: int, world_size: int, port: int) -> None:
 
 def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> None:
     from opaque.clipping.adaptive import AdaptiveClipState
-    from opaque.distributed import sync_state
+    from opaque.clipping.distributed import sync_adaptive_clip_state
+    from opaque.random import key as rng_key
 
     _setup_ddp(rank, world_size, port)
     try:
-        device = torch.device(f"cuda:{rank}")
         state = AdaptiveClipState(
             clip_norm=float(rank + 1),
-            step=100,
             clipping_rate=0.5 + 0.1 * rank,
+            key=rng_key(42),
+            step=100,
+            quantile_noise_multiplier=0.05,
+            learning_rate=0.2,
+            target_quantile=0.5,
+            clip_norm_min=0.01,
+            clip_norm_max=100.0,
+            base_clip_norm=float(rank + 1),
+            num_clipped=float(3 * (rank + 1)),
+            total=float(10 * (rank + 1)),
             batch_size=8 * (rank + 1),
         )
-        synced = sync_state(
-            state,
-            field_ops={"clip_norm": "mean", "clipping_rate": "mean"},
-            device=device,
-        )
-        expected_clip_norm = sum(range(1, world_size + 1)) / world_size
-        expected_rate = sum(0.5 + 0.1 * r for r in range(world_size)) / world_size
-        assert abs(synced.clip_norm - expected_clip_norm) < 1e-5
+        synced = sync_adaptive_clip_state(state)
+        # num_clipped and total are summed, then global rate recomputed
+        expected_total_clipped = sum(3.0 * (r + 1) for r in range(world_size))
+        expected_total = sum(10.0 * (r + 1) for r in range(world_size))
+        expected_rate = expected_total_clipped / expected_total
         assert abs(synced.clipping_rate - expected_rate) < 1e-5
-        assert synced.step == 100
+        # batch_size is summed
+        expected_batch_size = sum(8 * (r + 1) for r in range(world_size))
+        assert synced.batch_size == expected_batch_size
     finally:
         _cleanup_ddp()
 

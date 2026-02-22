@@ -66,6 +66,7 @@ __all__ = [
     "sum_gradients",
     # Scalar reduction
     "reduce_scalar",
+    "assert_pytree_equal",
     "assert_scalar_equal",
     # Tensor gathering
     "gather_tensors",
@@ -225,6 +226,7 @@ from .gradients import (  # noqa: E402
     sum_gradients,
 )
 from .state import (  # noqa: E402
+    assert_pytree_equal,
     assert_scalar_equal,
     gather_pytree,
     gather_tensors,

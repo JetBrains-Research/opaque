@@ -126,11 +126,11 @@ def test_clipped_fun_return_norms():
 
     (clipped_grad, aux), _ = clipped_grad_fn(param, data, state=clip_state)
     assert isinstance(clipped_grad, torch.Tensor)
-    assert aux.aux is None
-    assert aux.norms is not None
-    assert aux.clipped_norms is not None
-    assert aux.norms.shape == (3,)  # One norm per example
-    assert all(aux.norms >= 0)
+    assert aux.loss_aux is None
+    assert aux.grad_norms is not None
+    assert aux.clipped_grad_norms is not None
+    assert aux.grad_norms.shape == (3,)  # One norm per example
+    assert all(aux.grad_norms >= 0)
 
 
 def test_clipped_fun_keep_batch_dim_true():
@@ -193,7 +193,7 @@ def test_clipped_fun_has_aux_true():
 
     (clipped_value, aux), _ = clipped_fn(x, data, state=clip_state)
     assert isinstance(clipped_value, torch.Tensor)
-    assert aux.aux is not None
+    assert aux.loss_aux is not None
 
 
 def test_clipped_fun_has_aux_with_return_norms():
@@ -213,9 +213,9 @@ def test_clipped_fun_has_aux_with_return_norms():
 
     (clipped_value, aux), _ = clipped_fn(x, data, state=clip_state)
     assert isinstance(clipped_value, torch.Tensor)
-    assert aux.aux is not None
-    assert aux.norms is not None
-    assert aux.norms.shape == (3,)
+    assert aux.loss_aux is not None
+    assert aux.grad_norms is not None
+    assert aux.grad_norms.shape == (3,)
 
 
 def test_clipped_fun_raises_on_nan():
@@ -486,7 +486,7 @@ def test_clipped_fun_microbatching_with_aux():
     assert torch.allclose(clipped_no_mb, clipped_mb, atol=1e-6)
 
     # Auxiliary outputs should be identical (per-example)
-    assert torch.allclose(aux_no_mb.aux, aux_mb.aux, atol=1e-6)
+    assert torch.allclose(aux_no_mb.loss_aux, aux_mb.loss_aux, atol=1e-6)
 
 
 def test_clipped_fun_microbatching_with_return_norms():
@@ -514,4 +514,4 @@ def test_clipped_fun_microbatching_with_return_norms():
     assert torch.allclose(clipped_no_mb, clipped_mb, atol=1e-6)
 
     # Norms should be identical (per-example)
-    assert torch.allclose(aux_no_mb.norms, aux_mb.norms, atol=1e-6)
+    assert torch.allclose(aux_no_mb.grad_norms, aux_mb.grad_norms, atol=1e-6)

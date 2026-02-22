@@ -16,16 +16,16 @@ class ClippedFunAux(NamedTuple):
     """Function-level auxiliary outputs from clipped_fun.
 
     Fields:
-        values: Per-example function values before clipping.
-        norms: Per-example L2 norms before clipping.
-        clipped_norms: Per-example L2 norms after clipping.
-        aux: Per-example auxiliary payload returned by the wrapped function.
+        loss_values: Per-example function values before clipping.
+        grad_norms: Per-example L2 norms before clipping.
+        clipped_grad_norms: Per-example L2 norms after clipping.
+        loss_aux: Per-example auxiliary payload returned by the wrapped function.
     """
 
-    values: Any | None
-    norms: Any | None
-    clipped_norms: Any | None
-    aux: Any | None
+    loss_values: Any | None
+    grad_norms: Any | None
+    clipped_grad_norms: Any | None
+    loss_aux: Any | None
 
 
 def _with_extra_batch_axis(fun, batch_argnums):
@@ -278,32 +278,32 @@ def clipped_fun(
             if return_aux:
                 # Build aux dict with clipping metadata
                 aux_dict = {
-                    "norms": norm.norm,
-                    "clipped_norms": global_norm(clipped_value),
+                    "grad_norms": norm.norm,
+                    "clipped_grad_norms": global_norm(clipped_value),
                 }
 
                 # Extract nested values and aux from wrapped functions (e.g., grad_fn)
-                # aux may be a dict like {"values": loss, "aux": user_aux} or just user_aux
+                # aux may be a dict like {"loss_values": loss, "loss_aux": user_aux} or just user_aux
                 if isinstance(aux, dict):
-                    # Preserve "values" from nested dict if present (e.g., loss from grad_and_value)
-                    if "values" in aux:
-                        aux_dict["values"] = aux["values"]
+                    # Preserve "loss_values" from nested dict if present (e.g., loss from grad_and_value)
+                    if "loss_values" in aux:
+                        aux_dict["loss_values"] = aux["loss_values"]
                     else:
-                        # No nested "values", use function output
-                        aux_dict["values"] = value
+                        # No nested "loss_values", use function output
+                        aux_dict["loss_values"] = value
 
                     # Extract user aux from nested dict if present
                     if has_aux:
-                        if "aux" in aux:
-                            aux_dict["aux"] = aux["aux"]
+                        if "loss_aux" in aux:
+                            aux_dict["loss_aux"] = aux["loss_aux"]
                         else:
                             # aux is already the user aux (not nested)
-                            aux_dict["aux"] = aux
+                            aux_dict["loss_aux"] = aux
                 else:
                     # aux is not a dict (direct user aux or None)
-                    aux_dict["values"] = value
+                    aux_dict["loss_values"] = value
                     if has_aux:
-                        aux_dict["aux"] = aux
+                        aux_dict["loss_aux"] = aux
 
                 return clipped_value, aux_dict
             return clipped_value
@@ -349,10 +349,10 @@ def clipped_fun(
 
         aux_dict = aux if isinstance(aux, dict) else {}
         aux = ClippedFunAux(
-            values=aux_dict.get("values"),
-            norms=aux_dict.get("norms"),
-            clipped_norms=aux_dict.get("clipped_norms"),
-            aux=aux_dict.get("aux"),
+            loss_values=aux_dict.get("loss_values"),
+            grad_norms=aux_dict.get("grad_norms"),
+            clipped_grad_norms=aux_dict.get("clipped_grad_norms"),
+            loss_aux=aux_dict.get("loss_aux"),
         )
 
         return result, aux

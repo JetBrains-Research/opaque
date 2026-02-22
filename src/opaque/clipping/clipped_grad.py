@@ -183,9 +183,9 @@ def clipped_grad(
             # PyTorch vmap cannot handle namedtuples with None values when out_dims != None
             aux_dict = {}
             if return_aux:
-                aux_dict["values"] = value_and_aux[0]
+                aux_dict["loss_values"] = value_and_aux[0]
             if return_aux and has_aux:
-                aux_dict["aux"] = value_and_aux[1]
+                aux_dict["loss_aux"] = value_and_aux[1]
             return result, aux_dict
         return result
 
@@ -212,8 +212,8 @@ def clipped_grad(
                     clipped_grads, aux = result
                     grad_aux = ClippedGradAux(
                         loss_values=None,
-                        grad_norms=aux.norms,
-                        clipped_grad_norms=aux.clipped_norms,
+                        grad_norms=aux.grad_norms,
+                        clipped_grad_norms=aux.clipped_grad_norms,
                         loss_aux=None,
                         clipping_norm=l2_clip_norm,
                     )
@@ -231,10 +231,10 @@ def clipped_grad(
                 *args, state=state, **kwargs
             )
             grad_aux = ClippedGradAux(
-                loss_values=aux.values,
-                grad_norms=aux.norms,
-                clipped_grad_norms=aux.clipped_norms,
-                loss_aux=aux.aux,
+                loss_values=aux.loss_values,
+                grad_norms=aux.grad_norms,
+                clipped_grad_norms=aux.clipped_grad_norms,
+                loss_aux=aux.loss_aux,
                 clipping_norm=l2_clip_norm,
             )
             return (clipped_grads, grad_aux), returned_state

@@ -237,6 +237,8 @@ a single device without changes.
 | `all_reduce(tensor, op)` | In-place AllReduce on a single tensor |
 | `gather_tensors(tensor, dim)` | Gather variable-size tensors from all ranks and concatenate |
 | `gather_pytree(pytree)` | Gather and concatenate tensor leaves of a PyTree |
+| `assert_pytree_equal(pytree, name)` | Assert a PyTree is identical across ranks (fingerprint check) |
+| `sync_state(state, field_ops)` | Synchronize scalar fields of a dataclass across ranks |
 | `sync_state(state, field_ops)` | Synchronize scalar fields of a dataclass |
 | `assert_scalar_equal(v, name)` | Raise `RuntimeError` if a scalar differs across ranks |
 | `barrier()` | Blocking barrier across all ranks |
@@ -247,7 +249,7 @@ a single device without changes.
 |----------|---------|
 | `sync_clip_state(state)` | Assert `FixedClipState.l2_norm_bound` matches across ranks |
 | `sync_adaptive_clip_state(state)` | Aggregate counts, recompute global clipping rate, update `clip_norm` |
-| `sync_adaptive_clipped_grad_aux(aux)` | Gather auxiliary tensors (`grad_norms`, `loss_values`, etc.) |
+| `sync_aux(aux)` | Gather any clipping aux across ranks (works with all aux types) |
 
 ### `opaque.noise.distributed`
 

@@ -31,7 +31,7 @@ differential privacy.
 
 - **`sync_clip_state(state)`** — Assert `FixedClipState.l2_norm_bound` matches across ranks.
 - **`sync_adaptive_clip_state(state)`** — Aggregate counts and recompute global adaptive clip norm.
-- **`sync_adaptive_clipped_grad_aux(aux)`** — Gather aux outputs across ranks.
+- **`sync_aux(aux)`** — Gather any clipping aux (``ClippedFunAux``, ``ClippedGradAux``, ``AdaptiveClippedGradAux``) across ranks.
 
 **See also**: [Per-Sample Gradient Clipping User Guide](../../user-guide/clipping.md)
 

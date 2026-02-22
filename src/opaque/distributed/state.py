@@ -18,6 +18,7 @@ from . import all_reduce as all_reduce_tensor
 from . import get_world_size, is_distributed
 
 __all__ = [
+    "assert_pytree_equal",
     "assert_scalar_equal",
     "gather_pytree",
     "gather_tensors",
@@ -60,6 +61,51 @@ def assert_scalar_equal(
         raise RuntimeError(
             f"{name} mismatch across ranks: min={min_value}, max={max_value}."
         )
+
+
+def assert_pytree_equal(
+    pytree: Any,
+    *,
+    name: str = "pytree",
+    atol: float = 1e-6,
+    rtol: float = 1e-5,
+) -> None:
+    """Assert that a pytree of tensors is identical across all ranks.
+
+    Uses a cheap fingerprint (sum of all elements) to detect divergence
+    with a single scalar all-reduce, rather than transferring the full pytree.
+
+    This is useful for debugging to verify that model parameters or gradients
+    haven't diverged across ranks.
+
+    Args:
+        pytree: Nested dict/list of tensors to check.
+        name: Human-readable name for error messages.
+        atol: Absolute tolerance for fingerprint comparison.
+        rtol: Relative tolerance for fingerprint comparison.
+
+    Raises:
+        RuntimeError: If the fingerprint differs across ranks.
+
+    Example:
+        >>> from opaque.distributed import assert_pytree_equal
+        >>> assert_pytree_equal(model_params, name="model_params")
+    """
+    if not is_distributed():
+        return
+
+    # Compute a fingerprint: sum of all elements across all tensors
+    total = 0.0
+
+    def accumulate(leaf: Any) -> Any:
+        nonlocal total
+        if isinstance(leaf, torch.Tensor):
+            total += leaf.detach().double().sum().item()
+        return leaf
+
+    tree_map(accumulate, pytree)
+
+    assert_scalar_equal(total, name=name, atol=atol, rtol=rtol)
 
 
 def gather_pytree(pytree: Any) -> Any:
@@ -230,8 +276,9 @@ def sync_state(
         state: Dataclass instance with scalar fields to synchronize.
                 field_ops: Per-field reduction operations. Keys are field names.
                         Values can be either:
-                        - an op string accepted by `reduce_scalar` ("sum", "mean", "max",
-                            "min", "product"), or
+                        - an op string: "sum", "mean", "max", "min", "product"
+                            (passed to `reduce_scalar`), or "assert_equal" to validate
+                            the value is identical across ranks (raises on mismatch), or
                         - a callable for custom reduction. Callable can be either
                             `fn(value)` or `fn(value, device)` and must return a synchronized
                             scalar float value.
@@ -300,7 +347,12 @@ def sync_state(
     for field_name, field_op in field_ops.items():
         value = getattr(state, field_name)
         if isinstance(value, (float, int)):
-            if isinstance(field_op, str):
+            if field_op == "assert_equal":
+                assert_scalar_equal(
+                    float(value), name=f"{type(state).__name__}.{field_name}"
+                )
+                continue
+            elif isinstance(field_op, str):
                 synced_value = reduce_scalar(value, op=field_op, device=device)
             elif callable(field_op):
                 numeric_value = float(value)
@@ -327,100 +379,3 @@ def sync_state(
         )
 
     return state
-
-
-def sync_clip_state(
-    state: Any,
-    device: torch.device | None = None,
-) -> Any:
-    """Synchronize clipping-related dataclass state fields across processes.
-
-    This helper is aware of common clipping state field names and applies sensible
-    per-field reductions:
-    - `l2_norm_bound`: mean
-    - `clip_norm`: mean
-    - `clipping_rate`: mean
-    - `step`: max
-
-    Non-existent fields are ignored.
-    """
-    if not is_distributed():
-        return state
-
-    if not is_dataclass(state):
-        raise TypeError(f"state must be a dataclass, got {type(state)}")
-
-    available = {f.name for f in fields(state)}
-    field_ops = {
-        name: ("max" if name == "step" else "mean")
-        for name in ("l2_norm_bound", "clip_norm", "clipping_rate", "step")
-        if name in available
-    }
-
-    return sync_state(state, field_ops=field_ops, device=device)
-
-
-def sync_adaptive_clip_state(
-    state: Any,
-    local_num_clipped: float | int,
-    local_total: float | int,
-    device: torch.device | None = None,
-) -> Any:
-    """Synchronize adaptive clipping state using global clipped counts.
-
-    This first synchronizes clip-related fields (``clip_norm``, ``step``) and
-    then computes a globally consistent clipping rate from reduced counts:
-
-        global_rate = sum(local_num_clipped) / max(1, sum(local_total))
-
-    If the state has a ``batch_size`` field, it is summed across ranks so that
-    the privacy accountant receives the true global batch size.
-
-    Args:
-        state: Adaptive clipping state dataclass (expects ``clipping_rate`` field).
-        local_num_clipped: Number of locally clipped examples at this step.
-        local_total: Number of local examples considered at this step.
-        device: Device to use for reductions.
-
-    Returns:
-        New synchronized state with globally consistent ``clipping_rate``
-        and summed ``batch_size``.
-    """
-    if not is_distributed():
-        return state
-
-    if not is_dataclass(state):
-        raise TypeError(f"state must be a dataclass, got {type(state)}")
-
-    available = {f.name for f in fields(state)}
-    field_ops = {
-        name: ("max" if name == "step" else "mean")
-        for name in ("clip_norm", "step")
-        if name in available
-    }
-
-    synced = sync_state(state, field_ops=field_ops, device=device)
-
-    global_num_clipped = reduce_scalar(
-        float(local_num_clipped), op="sum", device=device
-    )
-    global_total = reduce_scalar(float(local_total), op="sum", device=device)
-    global_rate = global_num_clipped / max(1.0, global_total)
-
-    updates: dict[str, Any] = {}
-    if "clipping_rate" in available:
-        updates["clipping_rate"] = float(global_rate)
-    if "batch_size" in available:
-        local_bs = getattr(synced, "batch_size", 0)
-        global_bs = int(reduce_scalar(float(local_bs), op="sum", device=device))
-        updates["batch_size"] = global_bs
-
-    if updates:
-        synced = type(synced)(
-            **{
-                **{f.name: getattr(synced, f.name) for f in fields(synced)},
-                **updates,
-            }
-        )
-
-    return synced
