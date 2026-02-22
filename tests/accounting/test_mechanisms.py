@@ -1,4 +1,4 @@
-"""Tests for opaque.accounting.mechanisms — Gaussian, EpsDelta, Identity, RectifiedGaussian, TruncatedGaussian."""
+"""Tests for opaque.accounting.mechanisms — Gaussian, EpsDelta, Identity, RectifiedGaussian, TruncatedGaussian, BandMfAmplified."""
 
 import math
 from dataclasses import FrozenInstanceError
@@ -9,6 +9,7 @@ import opaque.accounting as acc
 from opaque.accounting.base import DpProcess
 from opaque.accounting.discretization import DiscretizationConfig
 from opaque.accounting.mechanisms import (
+    BandMfAmplified,
     EpsDelta,
     Gaussian,
     Identity,
@@ -279,3 +280,81 @@ class TestTruncatedGaussianConstructor:
         g = acc.truncated_gaussian(1.1, 5.0)
         eps = g.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
+
+
+# ── BandMfAmplified dataclass tests ─────────────────────────────────
+
+
+class TestBandMfAmplifiedDataclass:
+    """BandMfAmplified frozen dataclass."""
+
+    def test_fields(self):
+        proc = BandMfAmplified(1.0, 2.5, 0.01, 200)
+        assert proc.noise_multiplier == pytest.approx(1.0)
+        assert proc.sensitivity == pytest.approx(2.5)
+        assert proc.sample_rate == pytest.approx(0.01)
+        assert proc.num_groups == 200
+
+    def test_frozen(self):
+        proc = BandMfAmplified(1.0, 2.5, 0.01, 200)
+        with pytest.raises(FrozenInstanceError):
+            proc.noise_multiplier = 2.0  # type: ignore[misc]
+
+    def test_is_dp_process(self):
+        assert isinstance(BandMfAmplified(1.0, 2.5, 0.01, 200), DpProcess)
+
+    def test_pld_returns_valid(self):
+        proc = BandMfAmplified(1.0, 1.0, 0.01, 10)
+        eps = proc.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
+
+    def test_matches_manual_composition(self):
+        """BandMfAmplified should match poisson(gaussian(...)) * k."""
+        nm, sens, rate, k = 1.0, 2.0, 0.01, 50
+        proc = acc.band_mf_amplified(nm, sens, rate, k)
+        manual = acc.poisson(acc.gaussian(nm / sens), rate) * k
+        eps_proc = proc.epsilon_at(1e-5)
+        eps_manual = manual.epsilon_at(1e-5)
+        assert eps_proc == pytest.approx(eps_manual, rel=1e-6)
+
+    def test_diagonal_matches_standard_poisson(self):
+        """With sensitivity=1 (diagonal strategy), matches standard poisson * n."""
+        n = 100
+        nm, rate = 1.0, 0.01
+        proc = acc.band_mf_amplified(nm, 1.0, rate, n)
+        standard = acc.poisson(acc.gaussian(nm), rate) * n
+        eps_proc = proc.epsilon_at(1e-5)
+        eps_std = standard.epsilon_at(1e-5)
+        assert eps_proc == pytest.approx(eps_std, rel=1e-6)
+
+    def test_more_groups_higher_epsilon(self):
+        """More groups should give higher epsilon (more composition)."""
+        eps_10 = acc.band_mf_amplified(1.0, 1.0, 0.01, 10).epsilon_at(1e-5)
+        eps_50 = acc.band_mf_amplified(1.0, 1.0, 0.01, 50).epsilon_at(1e-5)
+        assert eps_10 < eps_50
+
+
+class TestBandMfAmplifiedConstructor:
+    """acc.band_mf_amplified() validates and returns BandMfAmplified."""
+
+    def test_returns_correct_type(self):
+        proc = acc.band_mf_amplified(1.0, 2.5, 0.01, 200)
+        assert isinstance(proc, BandMfAmplified)
+
+    def test_rejects_non_positive_noise(self):
+        with pytest.raises(ValueError):
+            acc.band_mf_amplified(0.0, 1.0, 0.01, 10)
+
+    def test_rejects_non_positive_sensitivity(self):
+        with pytest.raises(ValueError):
+            acc.band_mf_amplified(1.0, 0.0, 0.01, 10)
+
+    def test_rejects_bad_sample_rate(self):
+        with pytest.raises(ValueError):
+            acc.band_mf_amplified(1.0, 1.0, 0.0, 10)
+        with pytest.raises(ValueError):
+            acc.band_mf_amplified(1.0, 1.0, 1.5, 10)
+
+    def test_rejects_bad_num_groups(self):
+        with pytest.raises(ValueError):
+            acc.band_mf_amplified(1.0, 1.0, 0.01, 0)

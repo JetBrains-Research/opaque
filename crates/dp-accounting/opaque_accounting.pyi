@@ -549,6 +549,49 @@ def fixed_epoch_sensitivity(
     ...
 
 
+def blt_sensitivity_squared(
+    buf_decay: list[float],
+    output_scale: list[float],
+    n: float,
+) -> float:
+    """Sensitivity squared for a BLT strategy matrix.
+
+    Implements Lemma 5.3 of the BLT paper.
+
+    Args:
+        buf_decay: Decay factors for each buffer, each in (0, 1).
+        output_scale: Scale factors for each buffer.
+        n: Number of iterations (use float('inf') for asymptotic limit).
+
+    Returns:
+        The sensitivity squared.
+    """
+    ...
+
+
+def toeplitz_minsep_sensitivity_squared(
+    strategy_coef: list[float],
+    n: int,
+    min_sep: int = 1,
+    max_participations: int | None = None,
+) -> float:
+    """Sensitivity squared for a Toeplitz matrix under min-sep participation.
+
+    Implements BSR Theorem 2 closed-form for non-negative, non-increasing
+    Toeplitz coefficients.
+
+    Args:
+        strategy_coef: Toeplitz coefficients (non-negative, non-increasing).
+        n: Matrix dimension (total rounds).
+        min_sep: Minimum separation between participations.
+        max_participations: Optional upper bound.
+
+    Returns:
+        The sensitivity squared.
+    """
+    ...
+
+
 # ---------------------------------------------------------------------------
 # AdaClip utility
 # ---------------------------------------------------------------------------

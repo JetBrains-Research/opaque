@@ -169,3 +169,61 @@ pub fn py_fixed_epoch_sensitivity(
     crate::matrix_factorization::fixed_epoch_sensitivity(&gram_matrix, n, epochs)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
+
+/// Sensitivity squared for a BLT strategy matrix.
+///
+/// Implements Lemma 5.3 of the BLT paper (https://arxiv.org/abs/2404.16706).
+///
+/// Args:
+///     buf_decay (list[float]): Decay factors for each buffer, each in (0, 1).
+///     output_scale (list[float]): Scale factors for each buffer.
+///     n (float): Number of iterations (use float('inf') for asymptotic).
+///
+/// Returns:
+///     float: The sensitivity squared.
+///
+/// Raises:
+///     ValueError: If parameters are invalid.
+#[pyfunction]
+#[pyo3(name = "blt_sensitivity_squared", signature = (buf_decay, output_scale, n))]
+pub fn py_blt_sensitivity_squared(
+    buf_decay: Vec<f64>,
+    output_scale: Vec<f64>,
+    n: f64,
+) -> PyResult<f64> {
+    crate::matrix_factorization::blt_sensitivity_squared(&buf_decay, &output_scale, n)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// Sensitivity squared for a Toeplitz matrix under min-sep participation.
+///
+/// Implements BSR Theorem 2 closed-form for non-negative, non-increasing
+/// Toeplitz coefficients.
+///
+/// Args:
+///     strategy_coef (list[float]): Toeplitz coefficients (non-negative, non-increasing).
+///     n (int): Matrix dimension (total rounds).
+///     min_sep (int): Minimum separation between participations (>= 1).
+///     max_participations (int | None): Optional upper bound.
+///
+/// Returns:
+///     float: The sensitivity squared.
+///
+/// Raises:
+///     ValueError: If parameters are invalid.
+#[pyfunction]
+#[pyo3(name = "toeplitz_minsep_sensitivity_squared", signature = (strategy_coef, n, min_sep=1, max_participations=None))]
+pub fn py_toeplitz_minsep_sensitivity_squared(
+    strategy_coef: Vec<f64>,
+    n: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+) -> PyResult<f64> {
+    crate::matrix_factorization::toeplitz_minsep_sensitivity_squared(
+        &strategy_coef,
+        n,
+        min_sep,
+        max_participations,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}

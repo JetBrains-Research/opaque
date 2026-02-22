@@ -318,6 +318,161 @@ pub fn fixed_epoch_sensitivity(
     Ok(max_sq_sens.sqrt())
 }
 
+/// Sensitivity squared for a Buffered Linear Toeplitz (BLT) strategy matrix.
+///
+/// Implements Lemma 5.3 of the BLT paper. The sensitivity is:
+///   sensitivity^2(C) = 1 + sum_{i,j} omega_i * omega_j * geometric_sum(1, theta_i * theta_j, n-1)
+///
+/// # Arguments
+///
+/// * `buf_decay` — Decay factors θ for each buffer, each in (0, 1).
+/// * `output_scale` — Scale factors ω for each buffer. Must be same length as buf_decay.
+/// * `n` — Number of iterations (can be f64::INFINITY for asymptotic limit).
+///
+/// # Returns
+///
+/// The squared sensitivity as f64.
+///
+/// # Errors
+///
+/// Returns `InvalidParameter` if buf_decay and output_scale have different lengths.
+///
+/// # References
+///
+/// Lemma 5.3 of <https://arxiv.org/abs/2404.16706>
+pub fn blt_sensitivity_squared(
+    buf_decay: &[f64],
+    output_scale: &[f64],
+    n: f64,
+) -> Result<f64> {
+    if buf_decay.len() != output_scale.len() {
+        return Err(PldError::InvalidParameter(
+            "buf_decay and output_scale must have the same length".into(),
+        ));
+    }
+
+    if buf_decay.is_empty() {
+        return Ok(1.0);
+    }
+
+    for &d in buf_decay {
+        if d > 1.0 {
+            return Ok(f64::INFINITY);
+        }
+    }
+
+    let num = if n.is_infinite() {
+        f64::INFINITY
+    } else {
+        n - 1.0
+    };
+
+    let mut total = 0.0;
+    for i in 0..buf_decay.len() {
+        for j in 0..buf_decay.len() {
+            let omega_pair = output_scale[i] * output_scale[j];
+            let theta_pair = buf_decay[i] * buf_decay[j];
+            total += crate::numerics::special::geometric_sum(omega_pair, theta_pair, num);
+        }
+    }
+
+    Ok(1.0 + total)
+}
+
+/// Sensitivity squared for a Toeplitz strategy matrix under min-sep participation.
+///
+/// Implements the closed-form from Theorem 2 of the BSR paper. Requires
+/// non-negative, non-increasing Toeplitz coefficients.
+///
+/// # Arguments
+///
+/// * `strategy_coef` — Toeplitz coefficients of C (non-negative, non-increasing).
+/// * `n` — Matrix dimension (number of rounds).
+/// * `min_sep` — Minimum separation between participations (>= 1).
+/// * `max_participations` — Optional upper bound on participations.
+///
+/// # Returns
+///
+/// The squared sensitivity as f64.
+///
+/// # Errors
+///
+/// Returns `InvalidParameter` if coefficients are not non-negative non-increasing,
+/// or if min_sep is 0, or if n is 0.
+///
+/// # References
+///
+/// Theorem 2 of <https://arxiv.org/abs/2405.13763>
+pub fn toeplitz_minsep_sensitivity_squared(
+    strategy_coef: &[f64],
+    n: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+) -> Result<f64> {
+    if n == 0 {
+        return Err(PldError::InvalidParameter("n must be > 0".into()));
+    }
+    if min_sep == 0 {
+        return Err(PldError::InvalidParameter("min_sep must be >= 1".into()));
+    }
+
+    // Validate non-negative
+    for &c in strategy_coef {
+        if c < 0.0 {
+            return Err(PldError::InvalidParameter(format!(
+                "coef must be non-negative, found {}",
+                c
+            )));
+        }
+    }
+
+    // Validate non-increasing
+    for i in 1..strategy_coef.len() {
+        if strategy_coef[i] > strategy_coef[i - 1] {
+            return Err(PldError::InvalidParameter(format!(
+                "coef must be non-increasing, found increase at index {}",
+                i
+            )));
+        }
+    }
+
+    let k = minsep_true_max_participations(n, min_sep, max_participations);
+
+    // Build full coefficients: zero-pad strategy_coef to length n
+    let mut coef = vec![0.0; n];
+    let copy_len = strategy_coef.len().min(n);
+    coef[..copy_len].copy_from_slice(&strategy_coef[..copy_len]);
+
+    // Pad to next multiple of min_sep
+    let padding = (min_sep - n % min_sep) % min_sep;
+    let padded_len = n + padding;
+    let mut vector = vec![0.0; padded_len];
+    vector[..n].copy_from_slice(&coef);
+
+    // Cumulative sum across blocks of size min_sep
+    // Equivalent to: reshape(-1, min_sep).cumsum(dim=0).flatten()
+    let num_blocks = padded_len / min_sep;
+    for block in 1..num_blocks {
+        for offset in 0..min_sep {
+            vector[block * min_sep + offset] += vector[(block - 1) * min_sep + offset];
+        }
+    }
+
+    // Sliding-window subtraction: truncate at k participations
+    let k_start = k * min_sep;
+    if k_start < padded_len {
+        // We need the original (pre-subtraction) values, so clone first
+        let saved = vector.clone();
+        for i in k_start..padded_len {
+            vector[i] = saved[i] - saved[i - k_start];
+        }
+    }
+
+    // Return dot product of first n elements
+    let result: f64 = vector[..n].iter().map(|&v| v * v).sum();
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -493,5 +648,127 @@ mod tests {
         ];
         let sens = fixed_epoch_sensitivity(&gram, 4, 4).unwrap();
         assert!((sens - 2.0).abs() < 1e-10);
+    }
+
+    // ---- blt_sensitivity_squared ----
+
+    #[test]
+    fn test_blt_empty_buffers() {
+        // No buffers: sensitivity^2 = 1.0
+        assert!((blt_sensitivity_squared(&[], &[], 100.0).unwrap() - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_blt_decay_exceeds_one() {
+        // buf_decay > 1 → infinity
+        assert!(blt_sensitivity_squared(&[1.5], &[1.0], 10.0).unwrap().is_infinite());
+    }
+
+    #[test]
+    fn test_blt_length_mismatch() {
+        assert!(blt_sensitivity_squared(&[0.5, 0.3], &[1.0], 10.0).is_err());
+    }
+
+    #[test]
+    fn test_blt_single_buffer() {
+        // Single buffer: 1 + omega^2 * geometric_sum(1, theta^2, n-1)
+        let theta = 0.5;
+        let omega = 0.3;
+        let n = 50.0;
+        let result = blt_sensitivity_squared(&[theta], &[omega], n).unwrap();
+        // omega^2 * (1 + theta^2 + theta^4 + ... + theta^(2*(n-2)))
+        let geo = omega * omega * (1.0 - (theta * theta).powf(n - 1.0)) / (1.0 - theta * theta);
+        let expected = 1.0 + geo;
+        assert!(
+            (result - expected).abs() / expected < 1e-10,
+            "result={result}, expected={expected}"
+        );
+    }
+
+    #[test]
+    fn test_blt_infinite_n() {
+        // Infinite n: 1 + sum(omega_i*omega_j / (1 - theta_i*theta_j))
+        let buf_decay = vec![0.5, 0.3];
+        let output_scale = vec![0.2, 0.1];
+        let result = blt_sensitivity_squared(&buf_decay, &output_scale, f64::INFINITY).unwrap();
+        let mut expected = 1.0;
+        for i in 0..2 {
+            for j in 0..2 {
+                expected += output_scale[i] * output_scale[j]
+                    / (1.0 - buf_decay[i] * buf_decay[j]);
+            }
+        }
+        assert!(
+            (result - expected).abs() / expected < 1e-10,
+            "result={result}, expected={expected}"
+        );
+    }
+
+    // ---- toeplitz_minsep_sensitivity_squared ----
+
+    #[test]
+    fn test_toeplitz_minsep_identity() {
+        // coef=[1.0] (identity Toeplitz), n=5, min_sep=1
+        // Full coef: [1, 0, 0, 0, 0]
+        // After cumsum with min_sep=1 blocks: [1, 1, 1, 1, 1]
+        // k=5, k_start=5=padded_len, no subtraction
+        // dot = 1+1+1+1+1 = 5.0
+        let result = toeplitz_minsep_sensitivity_squared(&[1.0], 5, 1, None).unwrap();
+        assert!((result - 5.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_toeplitz_minsep_single_participation() {
+        // min_sep >= n means k=1, so only one participation
+        // coef=[1.0, 0.5, 0.25], n=3, min_sep=3
+        // k = ceil(3/3) = 1
+        // Zero-pad to n=3: coef=[1.0, 0.5, 0.25]
+        // padding = (3-3%3)%3 = 0, padded_len=3
+        // cumsum: 1 block only, no cumsum
+        // k_start = 1*3 = 3 = padded_len, no subtraction
+        // dot = 1.0^2 + 0.5^2 + 0.25^2 = 1.3125
+        let result = toeplitz_minsep_sensitivity_squared(&[1.0, 0.5, 0.25], 3, 3, None).unwrap();
+        assert!((result - 1.3125).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_toeplitz_minsep_invalid_n() {
+        assert!(toeplitz_minsep_sensitivity_squared(&[1.0], 0, 1, None).is_err());
+    }
+
+    #[test]
+    fn test_toeplitz_minsep_invalid_minsep() {
+        assert!(toeplitz_minsep_sensitivity_squared(&[1.0], 5, 0, None).is_err());
+    }
+
+    #[test]
+    fn test_toeplitz_minsep_negative_coef() {
+        assert!(toeplitz_minsep_sensitivity_squared(&[1.0, -0.5], 5, 1, None).is_err());
+    }
+
+    #[test]
+    fn test_toeplitz_minsep_increasing_coef() {
+        assert!(toeplitz_minsep_sensitivity_squared(&[0.5, 1.0], 5, 1, None).is_err());
+    }
+
+    #[test]
+    fn test_toeplitz_minsep_with_max_participations() {
+        // coef=[1.0], n=10, min_sep=1, max_participations=Some(5)
+        // Full coef: [1,0,0,0,0,0,0,0,0,0]
+        // After cumsum with min_sep=1: [1,1,1,1,1,1,1,1,1,1]
+        // k=5, k_start=5
+        // subtraction: vector[5..10] = saved[5..10] - saved[0..5] = 0
+        // vector = [1,1,1,1,1,0,0,0,0,0]
+        // dot = 5.0
+        let result =
+            toeplitz_minsep_sensitivity_squared(&[1.0], 10, 1, Some(5)).unwrap();
+        assert!((result - 5.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_toeplitz_minsep_empty_coef() {
+        // Empty coef → all zeros → sensitivity^2 = 0
+        let result = toeplitz_minsep_sensitivity_squared(&[], 5, 1, None).unwrap();
+        assert!((result - 0.0).abs() < 1e-10);
     }
 }

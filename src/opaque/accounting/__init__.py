@@ -70,6 +70,7 @@ from opaque.accounting.discretization import (
 
 # Mechanisms
 from opaque.accounting.mechanisms import (
+    band_mf_amplified,
     eps_delta,
     gaussian,
     identity,
@@ -93,6 +94,7 @@ __all__ = [
     "eps_delta",
     "identity",
     "mf_gaussian",
+    "band_mf_amplified",
     # Amplification
     "poisson",
     "truncated_poisson",

@@ -12,6 +12,10 @@ For subsampling amplification (Poisson, truncated Poisson, parallel Poisson),
 see :mod:`opaque.accounting.amplification`.
 """
 
+from opaque.accounting.mechanisms.band_mf_amplified import (
+    BandMfAmplified,
+    band_mf_amplified,
+)
 from opaque.accounting.mechanisms.eps_delta import (
     EpsDelta,
     eps_delta,
@@ -43,6 +47,7 @@ __all__ = [
     "EpsDelta",
     "Identity",
     "MfGaussian",
+    "BandMfAmplified",
     "RectifiedGaussian",
     "TruncatedGaussian",
     # Constructor functions
@@ -50,6 +55,7 @@ __all__ = [
     "eps_delta",
     "identity",
     "mf_gaussian",
+    "band_mf_amplified",
     "rectified_gaussian",
     "truncated_gaussian",
 ]

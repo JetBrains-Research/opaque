@@ -220,6 +220,43 @@ pub fn gaussian_log_cdf(z: f64) -> f64 {
     standard_normal.cdf(z).ln()
 }
 
+/// Numerically stable geometric sum: a * (1 + r + r^2 + ... + r^(num-1)).
+///
+/// Uses a quadratic Taylor approximation near r=1 for numerical stability.
+/// Threshold calibrated to minimize gradient error, following JAX-Privacy.
+///
+/// # Arguments
+///
+/// * `a` — Scale factor
+/// * `r` — Common ratio, requires |r| < 1
+/// * `num` — Number of terms (must be > 0, may be f64::INFINITY)
+///
+/// # References
+///
+/// BLT paper, Lemma 5.3: <https://arxiv.org/abs/2404.16706>
+pub fn geometric_sum(a: f64, r: f64, num: f64) -> f64 {
+    if num.is_infinite() {
+        return a / (1.0 - r);
+    }
+
+    // Adaptive threshold: calibrated to minimise gradient error.
+    // Constants from regression on numerical experiments (see JAX-Privacy).
+    const SLOPE: f64 = 0.53018965;
+    const INTERCEPT: f64 = 3.33503185;
+    let pow_threshold = INTERCEPT + SLOPE * num.ln();
+    let threshold = 1.0 - 10.0_f64.powf(-pow_threshold);
+
+    if r < threshold {
+        // Direct computation (safe when r is not near 1)
+        a * (1.0 - r.powf(num)) / (1.0 - r)
+    } else {
+        // Quadratic Taylor polynomial at r = 1 (from sympy)
+        let x0 = num - 1.0;
+        let x1 = r - 1.0;
+        (1.0 / 6.0) * a * num * (x0 * x1 * x1 * (num - 2.0) + 3.0 * x0 * x1 + 6.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -321,5 +358,54 @@ mod tests {
         let result = arcsinh_exp(a, b);
         assert!(result.is_finite());
         assert!(result > 0.0);
+    }
+
+    // ---- geometric_sum ----
+
+    #[test]
+    fn test_geometric_sum_basic() {
+        // 1 + 0.5 + 0.25 + ... + 0.5^9 = (1 - 0.5^10)/(1 - 0.5)
+        let result = geometric_sum(1.0, 0.5, 10.0);
+        let expected = (1.0 - 0.5_f64.powi(10)) / (1.0 - 0.5);
+        assert!((result - expected).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_geometric_sum_single_term() {
+        // a * r^0 = a
+        assert!((geometric_sum(2.0, 0.5, 1.0) - 2.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_geometric_sum_r_zero() {
+        // a + 0 + 0 + ... = a
+        assert!((geometric_sum(2.0, 0.0, 5.0) - 2.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_geometric_sum_near_one() {
+        // r very close to 1 should use Taylor series and still be accurate
+        // For r=1 exactly, the sum is a*num
+        let result = geometric_sum(1.0, 0.9999, 100.0);
+        // Direct: (1 - 0.9999^100)/(1 - 0.9999) ≈ 99.5...
+        let expected = (1.0 - 0.9999_f64.powf(100.0)) / (1.0 - 0.9999);
+        assert!((result - expected).abs() / expected < 1e-4);
+    }
+
+    #[test]
+    fn test_geometric_sum_infinite() {
+        // a / (1 - r)
+        let result = geometric_sum(1.0, 0.5, f64::INFINITY);
+        assert!((result - 2.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_geometric_sum_scaled() {
+        // a * (1 + r + r^2 + ... + r^4) = a * (1 - r^5)/(1 - r)
+        let a = 3.0;
+        let r = 0.7;
+        let result = geometric_sum(a, r, 5.0);
+        let expected = a * (1.0 - r.powi(5)) / (1.0 - r);
+        assert!((result - expected).abs() < 1e-10);
     }
 }

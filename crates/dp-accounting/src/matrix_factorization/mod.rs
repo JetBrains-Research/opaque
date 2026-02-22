@@ -38,7 +38,8 @@ pub mod sensitivity;
 
 pub use mf_gaussian::mf_gaussian_pld;
 pub use sensitivity::{
-    banded_sensitivity, fixed_epoch_sensitivity, general_sensitivity_upper_bound,
-    max_participation_for_linear_fn, minsep_true_max_participations,
-    single_participation_sensitivity,
+    banded_sensitivity, blt_sensitivity_squared, fixed_epoch_sensitivity,
+    general_sensitivity_upper_bound, max_participation_for_linear_fn,
+    minsep_true_max_participations, single_participation_sensitivity,
+    toeplitz_minsep_sensitivity_squared,
 };
