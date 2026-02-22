@@ -113,7 +113,9 @@ def _truncated_gaussian_delta_quadrature(
 
     # Normalization constants
     z0 = _N01.cdf(r_abs / sigma) - _N01.cdf(-r_abs / sigma)
-    z1 = _N01.cdf((r_abs - sensitivity) / sigma) - _N01.cdf((-r_abs - sensitivity) / sigma)
+    z1 = _N01.cdf((r_abs - sensitivity) / sigma) - _N01.cdf(
+        (-r_abs - sensitivity) / sigma
+    )
 
     if z0 <= 0.0 or z1 <= 0.0:
         return 0.0
@@ -338,9 +340,7 @@ class TestPoissonRectifiedConvergence:
         eps_rect = (
             acc.poisson(acc.rectified_gaussian(sigma, LARGE_RADIUS), q) * steps
         ).epsilon_at(1e-5)
-        eps_ref = _ref_poisson_gaussian_epsilon(
-            sigma, 1e-5, sample_rate=q, steps=steps
-        )
+        eps_ref = _ref_poisson_gaussian_epsilon(sigma, 1e-5, sample_rate=q, steps=steps)
 
         # Composed over many steps, allow slightly larger tolerance
         assert eps_rect == pytest.approx(eps_ref, abs=1e-3), (
@@ -359,9 +359,7 @@ class TestPoissonTruncatedConvergence:
         eps_trunc = (
             acc.poisson(acc.truncated_gaussian(sigma, LARGE_RADIUS), q) * steps
         ).epsilon_at(1e-5)
-        eps_ref = _ref_poisson_gaussian_epsilon(
-            sigma, 1e-5, sample_rate=q, steps=steps
-        )
+        eps_ref = _ref_poisson_gaussian_epsilon(sigma, 1e-5, sample_rate=q, steps=steps)
 
         assert eps_trunc == pytest.approx(eps_ref, abs=1e-3), (
             f"Poisson(TruncGauss(σ={sigma}, R=50), q={q}) * {steps}: "
