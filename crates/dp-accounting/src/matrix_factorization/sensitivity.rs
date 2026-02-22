@@ -155,9 +155,7 @@ pub fn banded_sensitivity(
         ));
     }
     if min_sep == 0 {
-        return Err(PldError::InvalidParameter(
-            "min_sep must be >= 1".into(),
-        ));
+        return Err(PldError::InvalidParameter("min_sep must be >= 1".into()));
     }
 
     let value = max_participation_for_linear_fn(gram_diag, min_sep, max_participations);
@@ -212,9 +210,7 @@ pub fn general_sensitivity_upper_bound(
         )));
     }
     if min_sep == 0 {
-        return Err(PldError::InvalidParameter(
-            "min_sep must be >= 1".into(),
-        ));
+        return Err(PldError::InvalidParameter("min_sep must be >= 1".into()));
     }
 
     // Stage 1: For each row, find max participation over |X[i, :]|
@@ -260,20 +256,14 @@ pub fn general_sensitivity_upper_bound(
 /// # References
 ///
 /// Choquette-Choo et al. (2022) <https://arxiv.org/abs/2211.06530>
-pub fn fixed_epoch_sensitivity(
-    gram_matrix: &[f64],
-    n: usize,
-    epochs: usize,
-) -> Result<f64> {
+pub fn fixed_epoch_sensitivity(gram_matrix: &[f64], n: usize, epochs: usize) -> Result<f64> {
     if n == 0 {
         return Err(PldError::InvalidParameter(
             "matrix dimension n must be > 0".into(),
         ));
     }
     if epochs == 0 {
-        return Err(PldError::InvalidParameter(
-            "epochs must be > 0".into(),
-        ));
+        return Err(PldError::InvalidParameter("epochs must be > 0".into()));
     }
     if n % epochs != 0 {
         return Err(PldError::InvalidParameter(format!(
@@ -340,11 +330,7 @@ pub fn fixed_epoch_sensitivity(
 /// # References
 ///
 /// Lemma 5.3 of <https://arxiv.org/abs/2404.16706>
-pub fn blt_sensitivity_squared(
-    buf_decay: &[f64],
-    output_scale: &[f64],
-    n: f64,
-) -> Result<f64> {
+pub fn blt_sensitivity_squared(buf_decay: &[f64], output_scale: &[f64], n: f64) -> Result<f64> {
     if buf_decay.len() != output_scale.len() {
         return Err(PldError::InvalidParameter(
             "buf_decay and output_scale must have the same length".into(),
@@ -583,11 +569,7 @@ mod tests {
     #[test]
     fn test_general_sens_identity() {
         // 3x3 identity Gram matrix, min_sep=1
-        let gram = vec![
-            1.0, 0.0, 0.0,
-            0.0, 1.0, 0.0,
-            0.0, 0.0, 1.0,
-        ];
+        let gram = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
         let sens = general_sensitivity_upper_bound(&gram, 3, 1, None).unwrap();
         // Each row max = 1.0, then total max = 3.0, sqrt = sqrt(3)
         assert!((sens - 3.0_f64.sqrt()).abs() < 1e-10);
@@ -609,10 +591,7 @@ mod tests {
         // Submatrix for group 1: X[{1,3},{1,3}] = [[1,0],[0,1]], sum_abs = 2
         // max_sq_sens = 2, sens = sqrt(2)
         let gram = vec![
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ];
         let sens = fixed_epoch_sensitivity(&gram, 4, 2).unwrap();
         assert!((sens - 2.0_f64.sqrt()).abs() < 1e-10);
@@ -641,10 +620,7 @@ mod tests {
         // Only group 0: indices [0, 1, 2, 3], full 4x4 identity submatrix
         // sum_abs = 4 (diagonal only), sens = sqrt(4) = 2
         let gram = vec![
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ];
         let sens = fixed_epoch_sensitivity(&gram, 4, 4).unwrap();
         assert!((sens - 2.0).abs() < 1e-10);
@@ -661,7 +637,9 @@ mod tests {
     #[test]
     fn test_blt_decay_exceeds_one() {
         // buf_decay > 1 → infinity
-        assert!(blt_sensitivity_squared(&[1.5], &[1.0], 10.0).unwrap().is_infinite());
+        assert!(blt_sensitivity_squared(&[1.5], &[1.0], 10.0)
+            .unwrap()
+            .is_infinite());
     }
 
     #[test]
@@ -694,8 +672,7 @@ mod tests {
         let mut expected = 1.0;
         for i in 0..2 {
             for j in 0..2 {
-                expected += output_scale[i] * output_scale[j]
-                    / (1.0 - buf_decay[i] * buf_decay[j]);
+                expected += output_scale[i] * output_scale[j] / (1.0 - buf_decay[i] * buf_decay[j]);
             }
         }
         assert!(
@@ -760,8 +737,7 @@ mod tests {
         // subtraction: vector[5..10] = saved[5..10] - saved[0..5] = 0
         // vector = [1,1,1,1,1,0,0,0,0,0]
         // dot = 5.0
-        let result =
-            toeplitz_minsep_sensitivity_squared(&[1.0], 10, 1, Some(5)).unwrap();
+        let result = toeplitz_minsep_sensitivity_squared(&[1.0], 10, 1, Some(5)).unwrap();
         assert!((result - 5.0).abs() < 1e-10);
     }
 

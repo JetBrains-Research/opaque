@@ -161,11 +161,7 @@ pub fn py_general_sensitivity_upper_bound(
 ///     ValueError: If parameters are invalid.
 #[pyfunction]
 #[pyo3(name = "fixed_epoch_sensitivity", signature = (gram_matrix, n, epochs))]
-pub fn py_fixed_epoch_sensitivity(
-    gram_matrix: Vec<f64>,
-    n: usize,
-    epochs: usize,
-) -> PyResult<f64> {
+pub fn py_fixed_epoch_sensitivity(gram_matrix: Vec<f64>, n: usize, epochs: usize) -> PyResult<f64> {
     crate::matrix_factorization::fixed_epoch_sensitivity(&gram_matrix, n, epochs)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }

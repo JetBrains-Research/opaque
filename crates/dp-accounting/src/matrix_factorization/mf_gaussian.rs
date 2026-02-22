@@ -254,7 +254,11 @@ mod tests {
 
         let epsilons: Vec<f64> = sigmas
             .iter()
-            .map(|&s| mf_gaussian_pld(s, sensitivity, &cfg).unwrap().epsilon_at(1e-5))
+            .map(|&s| {
+                mf_gaussian_pld(s, sensitivity, &cfg)
+                    .unwrap()
+                    .epsilon_at(1e-5)
+            })
             .collect();
 
         for w in epsilons.windows(2) {
@@ -288,12 +292,12 @@ mod tests {
 
         // Test with various (noise_multiplier, sensitivity) pairs
         let cases = [
-            (0.5, 1.0),   // effective_nm = 0.5
-            (1.0, 2.0),   // effective_nm = 0.5
-            (0.8, 1.0),   // effective_nm = 0.8
-            (2.0, 2.5),   // effective_nm = 0.8
-            (1.0, 1.0),   // effective_nm = 1.0
-            (3.0, 3.0),   // effective_nm = 1.0
+            (0.5, 1.0), // effective_nm = 0.5
+            (1.0, 2.0), // effective_nm = 0.5
+            (0.8, 1.0), // effective_nm = 0.8
+            (2.0, 2.5), // effective_nm = 0.8
+            (1.0, 1.0), // effective_nm = 1.0
+            (3.0, 3.0), // effective_nm = 1.0
         ];
 
         for &(sigma, sens) in &cases {
@@ -303,8 +307,7 @@ mod tests {
 
             for &eps in &[0.1, 0.5, 1.0, 3.0] {
                 let analytical =
-                    (n.cdf(dt / 2.0 - eps / dt) - eps.exp() * n.cdf(-dt / 2.0 - eps / dt))
-                        .max(0.0);
+                    (n.cdf(dt / 2.0 - eps / dt) - eps.exp() * n.cdf(-dt / 2.0 - eps / dt)).max(0.0);
                 let numerical = pld.delta_at(eps);
                 let err = (numerical - analytical).abs();
                 assert!(
@@ -358,11 +361,7 @@ mod tests {
 
         let epsilons: Vec<f64> = pairs
             .iter()
-            .map(|&(sigma, sens)| {
-                mf_gaussian_pld(sigma, sens, &cfg)
-                    .unwrap()
-                    .epsilon_at(1e-5)
-            })
+            .map(|&(sigma, sens)| mf_gaussian_pld(sigma, sens, &cfg).unwrap().epsilon_at(1e-5))
             .collect();
 
         for w in epsilons.windows(2) {
