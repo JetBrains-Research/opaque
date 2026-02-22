@@ -27,11 +27,10 @@ noisy_grads, noise_state = noise_fn(grads, noise_state)
 
 ### Parameters
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `stddev` | `float` | required | Standard deviation of the Gaussian noise. |
-| `key` | `RngKey` | required | Explicit RNG key for deterministic noise. |
-| `synchronized` | `str \| bool` | `"auto"` | Distributed noise synchronization mode. |
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `stddev` | `float` | Standard deviation of Gaussian noise. Typically `noise_multiplier * clip_norm`. |
+| `key` | `RngKey` | Explicit RNG key for deterministic noise. Create with `key(seed)`. |
 
 ### Calibrating stddev
 
@@ -173,6 +172,10 @@ for step in range(1000):
 The `grad_template` argument provides shape and dtype information for
 pre-allocating noise buffers. Pass any pytree with the same structure as
 the gradients (e.g., the model parameters).
+
+In distributed training, pass the same `key(seed)` on all ranks to produce
+identical noise. See [Distributed Training](distributed.md) and
+[RNG Key](rng-key.md) for details.
 
 ### `blt_mf_noise`
 
@@ -322,27 +325,32 @@ sampler = CyclicPoissonSampler(
 ## Distributed noise synchronization
 
 In distributed training, all devices must add the same noise to maintain model
-consistency. The `synchronized` parameter controls this:
-
-| Value | Behavior |
-|-------|----------|
-| `"auto"` (default) | Synchronized if `torch.distributed` is initialized, independent otherwise. |
-| `True` | Force synchronized noise (all ranks use the same RNG key). |
-| `False` | Independent noise per rank (key is diversified by rank). |
-
-With `synchronized="auto"`, distributed training works without any changes to
-the noise API. All devices generate identical noise from the same key.
+consistency. Pass the **same key** on every rank:
 
 ```python
-# Same on all devices -- synchronized="auto" handles it
+# Same key on all ranks → identical noise → models stay in sync
 noise_fn, noise_state = gaussian_noise(
     stddev=noise_multiplier * sensitivity, key=key(42),
 )
 ```
 
+For independent per-rank noise (not typical for centralized DP-SGD), derive
+a per-rank key via `fold_in`:
+
+```python
+from opaque.random import key, fold_in
+import torch.distributed as dist
+
+rank = dist.get_rank()
+noise_fn, noise_state = gaussian_noise(
+    stddev=noise_multiplier * sensitivity,
+    key=fold_in(key(42), rank),
+)
+```
+
 For validation, call `sync_gaussian_noise_state(state)` or
-`sync_mf_noise_state(state)` to assert that the seed and step counter match
-across ranks.
+`sync_mf_noise_state(state)` to assert that the RNG key and step counter
+match across ranks. See [Distributed Training](distributed.md) for details.
 
 ## References
 

@@ -48,7 +48,7 @@ Example - Adaptive Clipping (Automatic Distributed Detection):
     >>> grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 """
 
-from typing import Optional
+from typing import Optional  # noqa: F401  (used in docstrings)
 
 import torch
 import torch.distributed as dist
@@ -70,7 +70,6 @@ __all__ = [
     # Tensor gathering
     "gather_tensors",
     "gather_pytree",
-    "gather_pytree_tensors",
     # State synchronization
     "sync_state",
 ]
@@ -228,7 +227,6 @@ from .gradients import (  # noqa: E402
 from .state import (  # noqa: E402
     assert_scalar_equal,
     gather_pytree,
-    gather_pytree_tensors,
     gather_tensors,
     reduce_scalar,
     sync_state,

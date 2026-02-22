@@ -10,7 +10,6 @@ The `opaque.random` module provides:
 - **Convenience helpers**:
   - `key()` - Create RngKey from integer seed
   - `random_key()` - Non-deterministic key from system entropy
-  - `training_key()` - Deterministic keys for training loops with proper derivation order
   - `set_reproducible_pytorch_seed()` - Configure PyTorch/CUDNN reproducibility
 - **Bridge function**: `generator_from_key()` - Create torch.Generator from RngKey
 
@@ -23,7 +22,7 @@ The `opaque.random` module provides:
 from opaque.random import RngKey, split, fold_in, key, generator_from_key
 
 # Convenience helpers
-from opaque.random import random_key, training_key, set_reproducible_pytorch_seed
+from opaque.random import random_key, set_reproducible_pytorch_seed
 ```
 
 ### Creating Keys
@@ -62,21 +61,22 @@ for step in range(100):
 base_key = key(42)
 step_key = fold_in(base_key, 0)
 
-# Or use training_key helper
-step_key = training_key(base_seed=42, step=0)
+# Multiple values (variadic)
+step_rank_key = fold_in(base_key, step, rank)
 ```
 
 ### PyTorch Reproducibility
 
 ```python
 # Set all PyTorch/CUDNN seeds from RngKey
-from opaque.random import set_reproducible_pytorch_seed
+from opaque.random import set_reproducible_pytorch_seed, key, fold_in
 
 set_reproducible_pytorch_seed(key(42))
 
-# Then use training_key for per-step DP randomness
+# Then use fold_in for per-step DP randomness
+base = key(42)
 for step in range(num_steps):
-    step_key = training_key(base_seed=42, step=step)
+    step_key = fold_in(base, step)
     # ... training step ...
 ```
 
@@ -130,7 +130,7 @@ from opaque.random import random_key
 k = random_key()  # Each call returns different key
 ```
 
-Useful for prototyping and experiments. For reproducible training, use `key()` or `training_key()`.
+Useful for prototyping and experiments. For reproducible training, use `key()` with an explicit seed.
 
 **Returns:** RngKey with seed from `secrets.randbits(64)`
 
@@ -162,88 +162,47 @@ keys = split(k, num=10)
 
 ---
 
-#### fold_in(rng_key: RngKey, data: int | str) → RngKey
+#### fold_in(rng_key: RngKey, *data: int | str) → RngKey
 
-Deterministically derive a new key from additional data (typically a counter).
+Deterministically derive a new key by folding in one or more values.
+
+Accepts a variable number of int/str arguments. Each value is folded
+sequentially, so `fold_in(k, a, b)` equals `fold_in(fold_in(k, a), b)`.
 
 ```python
 from opaque.random import fold_in, key
 
 base_key = key(42)
 
-# Derive step-specific keys
-step_0_key = fold_in(base_key, 0)
-step_1_key = fold_in(base_key, 1)
+# Single value
+step_key = fold_in(base_key, 0)
 
-# or with string data
+# Multiple values (variadic)
+step_rank_key = fold_in(base_key, step, rank)
+
+# Full derivation chain
+full_key = fold_in(base_key, step, rank, worker_id)
+
+# String data
 key_v2 = fold_in(base_key, "v2")
 ```
 
 **Args:**
 - `rng_key`: Base key
-- `data`: Integer or string to fold in
+- `*data`: One or more int or str values to fold in sequentially
 
-**Returns:** New RngKey derived from `rng_key` and `data`
-
-**Raises:** TypeError if `data` is not int or str
-
-**Use Cases:**
-- Step counters in loops
-- Checkpointing (deterministic resume key)
-- Debugging specific iterations
-- Versioning DP mechanisms
-
----
-
-#### training_key(base_seed: int, step: int, rank: int | None = None, worker_id: int | None = None, synchronized: bool | Literal["auto"] | None = None) → RngKey
-
-Deterministic training loop key with proper derivation order.
-
-```python
-from opaque.random import training_key
-
-# Simple training loop
-for step in range(100):
-    k = training_key(base_seed=42, step=step)
-    # Use k for this step's randomness
-
-# Distributed training - per-rank noise
-import torch.distributed as dist
-rank = dist.get_rank()
-k = training_key(
-    base_seed=42,
-    step=step,
-    rank=rank,
-    synchronized=False,  # Different key per rank
-)
-
-# Distributed training - synchronized noise
-k = training_key(
-    base_seed=42,
-    step=step,
-    rank=rank,
-    synchronized=True,  # Same key on all ranks
-)
-```
-
-**Args:**
-- `base_seed` (int): Reproducible seed for entire training run
-- `step` (int): Training step counter (folded first)
-- `rank` (int | None): Distributed rank (folded after step if unsynchronized)
-- `worker_id` (int | None): DataLoader worker ID (folded last)
-- `synchronized` (bool | "auto" | None, default: None):
-  - `True`: Same key for all ranks (centralized DP-SGD)
-  - `False`: Different keys per rank (per-rank noise)
-  - `"auto"`: Synchronized if `rank is None`, unsynchronized if rank provided
-  - `None`: Must not pass `rank` (raises ValueError)
-
-**Returns:** RngKey following step → rank → worker_id derivation order
+**Returns:** New RngKey derived from `rng_key` and all folded values
 
 **Raises:**
-- ValueError if `rank` is passed without specifying `synchronized`
-- ValueError if `synchronized` has invalid value
+- TypeError if any value is not int or str
+- ValueError if no data values are provided
 
-**Key Pattern:** Always use `step → rank → worker_id` derivation order for consistent and correct distributed training behavior.
+**Use Cases:**
+- Step counters in loops: `fold_in(base, step)`
+- Distributed training: `fold_in(base, step, rank)`
+- DataLoader workers: `fold_in(base, step, rank, worker_id)`
+- Checkpointing (deterministic resume key)
+- Versioning DP mechanisms
 
 ---
 
@@ -276,14 +235,15 @@ tensor = torch.randn(10, generator=gen)
 Configure PyTorch and CUDNN for reproducible training from a single RngKey.
 
 ```python
-from opaque.random import key, training_key, set_reproducible_pytorch_seed
+from opaque.random import key, fold_in, set_reproducible_pytorch_seed
 
 # At training start
 set_reproducible_pytorch_seed(key(42))
 
-# Then use training_key for per-step DP
+# Then use fold_in for per-step DP
+base = key(42)
 for step in range(num_steps):
-    step_key = training_key(base_seed=42, step=step)
+    step_key = fold_in(base, step)
     # ... training with deterministic framework + DP randomness
 ```
 
@@ -305,7 +265,7 @@ Sets:
 **Example:**
 
 ```python
-from opaque.random import key, training_key, set_reproducible_pytorch_seed
+from opaque.random import key, fold_in, split, set_reproducible_pytorch_seed
 from opaque.noise import gaussian_noise
 from opaque.sampling import PoissonSampler
 
@@ -313,11 +273,12 @@ from opaque.sampling import PoissonSampler
 set_reproducible_pytorch_seed(key(42))
 
 # Training loop with per-step DP randomness
+base = key(42)
 for step in range(1000):
     # Deterministic per-step key
-    step_key = training_key(base_seed=42, step=step)
+    step_key = fold_in(base, step)
     step_key, noise_key = split(step_key, num=2)
-    
+
     # Use for DP
     noise_fn, state = gaussian_noise(1.1, key=noise_key)
     grads = compute_dp_grads(model, batch)
@@ -361,30 +322,21 @@ for step in range(100):
 
 ### Distributed Training
 
-**Using training_key()** (recommended):
+**Using fold_in()** (recommended):
 
 ```python
 import torch.distributed as dist
-from opaque.random import training_key
+from opaque.random import key, fold_in
 
 rank = dist.get_rank()
+base = key(42)
 
 for step in range(steps):
-    # Sampling: synchronized across ranks
-    sample_key = training_key(
-        base_seed=42,
-        step=step,
-        rank=rank,
-        synchronized=True,
-    )
-    
-    # Noise: independent per rank
-    noise_key = training_key(
-        base_seed=42,
-        step=step,
-        rank=rank,
-        synchronized=False,
-    )
+    # Synchronized noise — same key on all ranks (no rank folded in)
+    noise_key = fold_in(base, step)
+
+    # Per-rank noise — fold in rank for diversity
+    sample_key = fold_in(base, step, rank)
 ```
 
 **Manual approach** (for reference):
@@ -410,11 +362,12 @@ Ensure all randomness uses RngKey:
 
 ```python
 # Correct: Use RngKey throughout
-from opaque.random import set_reproducible_pytorch_seed, training_key
+from opaque.random import set_reproducible_pytorch_seed, key, fold_in
 
 set_reproducible_pytorch_seed(key(42))  # Framework
+base = key(42)
 for step in range(n):
-    k = training_key(42, step=step)  # DP operations
+    k = fold_in(base, step)  # DP operations
     # ... training ...
 
 # Incorrect: Mixing with global seeds
@@ -432,9 +385,11 @@ Ensure rank-specific keys:
 k = key(42)
 noise_fn = gaussian_noise(..., key=k)  # All ranks get identical noise
 
-# Correct: Per-rank keys
-k_base = key(42)
-rank_keys = split(k_base, num=world_size)
+# Correct: Per-rank keys via fold_in
+noise_fn = gaussian_noise(..., key=fold_in(key(42), rank))
+
+# Also correct: Per-rank keys via split
+rank_keys = split(key(42), num=world_size)
 noise_fn = gaussian_noise(..., key=rank_keys[rank])
 ```
 
@@ -458,7 +413,7 @@ for step in range(checkpoint["step"], total_steps):
 
 ## Further Reading
 
-- [RngKey User Guide](../user-guide/rng-key.md) - Comprehensive conceptual guide
+- [RngKey User Guide](../user-guide/rng-key.md) - Conceptual guide
 - [Noise APIs](noise.md) - Using keys with noise injection
 - [Sampling](sampling.md) - Using keys with samplers
-- [Distributed Training](distributed.md) - DDP/FSDP patterns with keys
+- [Distributed Training](distributed.md) - DDP patterns with keys

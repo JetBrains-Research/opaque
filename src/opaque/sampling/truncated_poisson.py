@@ -3,9 +3,7 @@
 This module provides TruncatedPoissonSampler, which combines Poisson subsampling
 for privacy amplification with a maximum batch size constraint for stability.
 
-Supports distributed training with automatic environment detection:
-- INDEPENDENT: Single-device default
-- SHARDED: Workers sample from disjoint shards when distributed is initialized
+For distributed training, shard the dataset externally (same as PoissonSampler).
 """
 
 from collections.abc import Iterator
@@ -19,21 +17,17 @@ from opaque.sampling.poisson import PoissonSampler
 class TruncatedPoissonSampler(PoissonSampler):
     """Truncated Poisson sampler with maximum batch size.
 
-    Like PoissonSampler, but caps batch size at `max_batch_size`. This provides:
+    Like PoissonSampler, but caps batch size at ``max_batch_size``. This provides:
     1. Privacy amplification from Poisson subsampling
     2. Bounded batch size for stability and memory constraints
     3. Tighter privacy accounting via truncated Poisson analysis
 
-    Supports distributed training with automatic environment detection:
-    - **INDEPENDENT**: Single-device training (default when not distributed)
-    - **SHARDED**: Workers sample from disjoint shards (default when distributed)
-
     Args:
-        data_source: Dataset to sample from (any object with __len__)
-        sample_rate: Probability of including each example (0 < p <= 1)
+        data_source: Dataset to sample from (any object with ``__len__``)
+        sample_rate: Probability of including each example (0 < p ≤ 1)
         max_batch_size: Maximum batch size (caps Poisson samples)
         num_epochs: Number of epochs to iterate over
-        key: RNG key for reproducibility. Use ``key()`` or ``training_key()`` helpers.
+        key: RNG key for reproducibility. Use ``key()`` or ``fold_in()``.
 
     Example:
         >>> from opaque.random import key
@@ -46,17 +40,11 @@ class TruncatedPoissonSampler(PoissonSampler):
         ...     key=key(42),
         ... )
         >>> loader = DataLoader(dataset, batch_sampler=sampler)
-        >>>
-        >>> for batch in loader:
-        ...     # Batch size is variable but capped at 128
-        ...     assert len(batch) <= 128
-        ...     pass
 
     Note:
-        - Provides tighter privacy bounds than standard Poisson
-        - Use opaque.accounting.compose_truncated_poisson_gaussian() for accounting
-        - If sample_rate * len(dataset) << max_batch_size, rarely truncates
-        - In sharded sampling, each worker truncates its shard sample independently
+        - Provides tighter privacy bounds than standard Poisson.
+        - Use ``opaque.accounting.compose_truncated_poisson_gaussian()`` for accounting.
+        - If ``sample_rate * len(dataset) << max_batch_size``, rarely truncates.
     """
 
     def __init__(

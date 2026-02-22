@@ -30,7 +30,7 @@ from typing import Any
 
 import torch
 
-from opaque.noise.gaussian_noise import GaussianNoiseState, _create_rng_state
+from opaque.noise.gaussian_noise import GaussianNoiseState
 from opaque.random import RngKey, generator_from_key
 from opaque.random import fold_in as rng_fold_in
 from opaque.utils.pytree import tree_map
@@ -98,7 +98,6 @@ def bounded_gaussian_noise(
     bounds: tuple[float, float],
     *,
     key: RngKey,
-    synchronized: str | bool = "auto",
 ) -> tuple[
     Callable[[Any, GaussianNoiseState], tuple[Any, GaussianNoiseState]],
     GaussianNoiseState,
@@ -110,16 +109,18 @@ def bounded_gaussian_noise(
     restricted to [lower, upper]. This implements the Bounded Gaussian
     Mechanism (Chen & Hale, 2024).
 
+    The noise function uses exactly the ``key`` you provide — no auto-detection
+    of distributed state. For synchronized noise in DDP, pass the same key on
+    every rank.
+
     Args:
         stddev: Standard deviation of the underlying Gaussian noise
             (usually ``noise_multiplier * clip_norm``).
         bounds: ``(lower, upper)`` bounds for the noisy output domain.
             Must satisfy ``lower < upper``.
         key: Explicit RNG key for deterministic, functional randomness.
-        synchronized: Synchronization mode for distributed training:
-            - ``"auto"`` (default): Auto-detect and sync if distributed
-            - ``True``: Force synchronized noise (same seed across devices)
-            - ``False``: Independent noise per device (seed + rank offset)
+            Same key on all ranks → same noise (synchronized).
+            ``fold_in(key, rank)`` → independent noise per rank.
 
     Returns:
         A tuple ``(noise_fn, state)`` where:
@@ -154,12 +155,12 @@ def bounded_gaussian_noise(
     if lower >= upper:
         raise ValueError(f"bounds must satisfy lower < upper, got ({lower}, {upper})")
 
-    base_key, resolved_seed, is_sync = _create_rng_state(key, synchronized)
+    if not isinstance(key, RngKey):
+        raise TypeError(f"key must be RngKey, got {type(key)}")
+
     state = GaussianNoiseState(
-        seed=resolved_seed,
-        synchronized=is_sync,
         step_counter=0,
-        rng_key=base_key,
+        rng_key=key,
     )
 
     if stddev == 0:
@@ -187,8 +188,6 @@ def bounded_gaussian_noise(
 
         # Return updated state with incremented step counter
         return noisy, GaussianNoiseState(
-            seed=st.seed,
-            synchronized=st.synchronized,
             step_counter=st.step_counter + 1,
             rng_key=st.rng_key,
         )

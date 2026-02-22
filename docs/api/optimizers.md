@@ -80,8 +80,8 @@ gradient pipeline runs *inside* each rank.  DDP handles the all-reduce of noisy
 gradients across ranks.  No changes to the clipping, noise, or optimizer API are
 needed.
 
-`PoissonSampler` auto-detects `torch.distributed` and shards the dataset
-across ranks automatically.
+Use `local_shard()` to partition the dataset across ranks and pass a
+per-rank key via `fold_in(key, rank)` to each `PoissonSampler`.
 
 ---
 

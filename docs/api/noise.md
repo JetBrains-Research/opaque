@@ -27,17 +27,13 @@ All noise functions return `(noise_fn, state)` where `noise_fn(grads, state) -> 
 
 ### State Classes
 
-- **`GaussianNoiseState`** — State for `gaussian_noise()`. Holds seed, step counter, RNG key, and synchronization flag.
+- **`GaussianNoiseState`** — State for `gaussian_noise()`. Holds step counter and RNG key.
 - **`MFNoiseState`** — State for all MF noise functions. Holds noise buffers, step counter, and correlation state.
 
 ### Distributed Sync Helpers
 
-- **`sync_gaussian_noise_state(state)`** — Validate that Gaussian noise state (seed, step counter) matches across ranks.
+- **`sync_gaussian_noise_state(state)`** — Validate that Gaussian noise state (RNG key, step counter) matches across ranks.
 - **`sync_mf_noise_state(state)`** — Validate that MF noise state matches across ranks.
-
-### Aliases
-
-- **`gaussian`** — Backwards-compatible alias for `gaussian_noise`.
 
 **See also**: [Noise Addition User Guide](../user-guide/noise.md)
 

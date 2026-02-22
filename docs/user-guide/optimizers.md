@@ -88,7 +88,8 @@ adaptive state.
 **DDP compatibility.** In distributed training, optimizer states stay
 synchronized automatically because `optimizer.update` is a pure function
 and all ranks receive identical noisy gradients after `sum_gradients` and
-synchronized noise. No explicit state synchronization is needed.
+noise addition (using the same key on all ranks). No explicit state
+synchronization is needed.
 
 ## API reference
 

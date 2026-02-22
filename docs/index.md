@@ -23,7 +23,7 @@ grads, clip_state = grad_fn(params, batch, state=clip_state)
 ## Noise injection
 
 Add calibrated Gaussian noise scaled to the clipping sensitivity. All noise
-functions return `(noise_fn, state)` and support synchronized distributed mode.
+functions return `(noise_fn, state)`. Pass the same key on all ranks for synchronized distributed noise.
 
 ```python
 from opaque import gaussian_noise

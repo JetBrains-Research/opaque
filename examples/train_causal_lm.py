@@ -523,7 +523,7 @@ def main():
 
             # Add Gaussian noise
             stddev = noise_multiplier * clip_state.sensitivity()
-            noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(noise_seed), synchronized="auto")
+            noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(noise_seed))
             noisy_grads, _ = noise_fn(grads_tuple, noise_state)
 
             # Optimizer step (no adapter wrapper - optimizer used directly)

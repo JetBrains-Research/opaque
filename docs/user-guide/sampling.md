@@ -186,25 +186,29 @@ problem since `clipped_grad` and `gaussian_noise` work with any batch size.
 
 ## Distributed sampling
 
-All samplers auto-detect `torch.distributed` and switch to **sharded mode**
-when distributed training is initialized. In sharded mode:
+In distributed training, shard the dataset explicitly using `local_shard()`
+and derive a per-rank key via `fold_in(key, rank)`:
 
-1. The dataset is partitioned across ranks. Each rank computes its shard
-   boundaries: rank `r` owns indices `[r * shard_size, (r+1) * shard_size)`,
-   with the last rank receiving any remainder.
+1. The dataset is partitioned across ranks. Rank `r` owns indices
+   `[r * shard_size, (r+1) * shard_size)`, with the last rank receiving
+   any remainder.
 2. The RNG key is diversified per rank via `fold_in(key, rank)`, so
    different ranks sample different subsets of their shard.
 3. No communication is needed -- each rank samples independently from its
    own partition.
 
 ```python
-# Same code works for single-device and distributed
-sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))
-loader = data.DataLoader(dataset, batch_sampler=sampler)
-```
+from opaque.sampling.distributed import local_shard
+from opaque.random import key, fold_in
+import torch.distributed as dist
 
-No manual rank handling is required. The sampler reads `get_rank()` and
-`get_world_size()` from `torch.distributed` automatically.
+rank = dist.get_rank()
+world_size = dist.get_world_size()
+
+shard = local_shard(dataset, rank=rank, world_size=world_size)
+sampler = PoissonSampler(shard, sample_rate=0.01, key=fold_in(key(42), rank))
+loader = data.DataLoader(shard, batch_sampler=sampler)
+```
 
 **Privacy accounting in distributed mode** uses the global sample rate:
 

@@ -9,11 +9,9 @@ The API returns ``(noise_fn, state)`` where state is always immutable:
     >>> noise_fn, state = gaussian_noise(stddev=1.0, key=key(42))
     >>> noisy_grads, state = noise_fn(grads, state)
 
-Auto-distributed support:
-- When distributed mode is detected (via torch.distributed.is_initialized()), and
-  synchronized="auto" (default), all devices automatically use the SAME seed for
-  synchronized noise.
-- This prevents model divergence while keeping the API simple.
+The noise function is **purely local** — it uses exactly the key you provide.
+For synchronized noise in distributed training, pass the same key on every rank.
+For independent noise, derive a per-rank key with ``fold_in(key, rank)``.
 """
 
 import dataclasses
@@ -22,7 +20,6 @@ from typing import Any
 
 import torch
 
-from opaque.distributed import get_rank, is_distributed
 from opaque.random import RngKey, generator_from_key
 from opaque.random import (
     fold_in as rng_fold_in,
@@ -34,65 +31,22 @@ from opaque.utils.pytree import tree_map
 class GaussianNoiseState:
     """Immutable state for Gaussian noise generation.
 
-    Holds immutable metadata plus a JAX-style key for deterministic per-step
-    derivation. Noise for step ``t`` is generated from ``fold_in(rng_key, t)``.
+    Holds an immutable RNG key for deterministic per-step derivation.
+    Noise for step ``t`` is generated from ``fold_in(rng_key, t)``.
 
     Attributes:
-        seed: Canonical seed metadata derived from the base key.
-        synchronized: Whether noise is synchronized across devices in distributed mode.
         step_counter: Number of noise_fn calls made.
         rng_key: Immutable RNG key for deterministic derivation.
     """
 
-    seed: int
-    synchronized: bool
     step_counter: int
     rng_key: RngKey
-
-
-def _create_rng_state(
-    key: RngKey,
-    synchronized: str | bool,
-) -> tuple[RngKey, int, bool]:
-    """Create RNG state with appropriate seed for current distributed configuration.
-
-    Args:
-        key: Explicit RNG key (required API).
-        synchronized: Synchronization mode:
-            - ``"auto"``: Auto-detect distributed mode and sync if detected
-            - ``True``: Force synchronized noise (same seed on all devices)
-            - ``False``: Independent noise per device (seed shifts by rank)
-
-    Returns:
-        Tuple of (base_key, resolved_seed, is_synchronized):
-            - base_key: Resolved RNG key
-            - resolved_seed: Canonical seed metadata value
-            - is_synchronized: Whether noise is synchronized across devices
-    """
-    # Resolve synchronized mode
-    if synchronized == "auto":
-        is_sync = is_distributed()
-    elif isinstance(synchronized, bool):
-        is_sync = synchronized
-    else:
-        raise ValueError(
-            f"synchronized must be 'auto', True, or False, got {synchronized!r}"
-        )
-
-    if not isinstance(key, RngKey):
-        raise TypeError(f"key must be RngKey, got {type(key)}")
-
-    rank = get_rank() if is_distributed() else 0
-
-    base_key = key if is_sync else rng_fold_in(key, f"rank:{rank}")
-    return base_key, int(base_key.seed), is_sync
 
 
 def gaussian_noise(
     stddev: float,
     *,
     key: RngKey,
-    synchronized: str | bool = "auto",
 ) -> tuple[
     Callable[[Any, GaussianNoiseState], tuple[Any, GaussianNoiseState]],
     GaussianNoiseState,
@@ -102,19 +56,20 @@ def gaussian_noise(
     Returns ``(noise_fn, state)`` where ``noise_fn`` adds calibrated Gaussian
     noise N(0, stddev²) to gradients and returns updated state.
 
-    **Automatic distributed support**: When ``synchronized="auto"`` (default) and
-    distributed mode is detected (via ``torch.distributed.is_initialized()``),
-    automatically uses the SAME seed across all devices. This provides synchronized
-    noise for model convergence.
+    The noise function uses exactly the ``key`` you provide — no auto-detection
+    of distributed state. For synchronized noise in DDP, pass the same key on
+    every rank. For independent noise, derive a per-rank key::
+
+        from opaque.random import key, fold_in
+        my_key = fold_in(key(42), rank)  # different noise per rank
+        noise_fn, state = gaussian_noise(stddev=1.1, key=my_key)
 
     Args:
         stddev: Standard deviation of Gaussian noise
             (usually ``noise_multiplier * clip_norm``).
         key: Explicit RNG key for deterministic, functional randomness.
-        synchronized: Synchronization mode for distributed training:
-            - ``"auto"`` (default): Auto-detect and sync if distributed
-            - ``True``: Force synchronized noise (same seed across devices)
-            - ``False``: Independent noise per device (seed + rank offset)
+            Same key on all ranks → same noise (synchronized).
+            ``fold_in(key, rank)`` → independent noise per rank.
 
     Returns:
         A tuple ``(noise_fn, state)`` where:
@@ -122,37 +77,33 @@ def gaussian_noise(
         - ``noise_fn(grads, state) -> (noisy_grads, new_state)``
         - ``state`` is a :class:`GaussianNoiseState`
 
-    Example (typical use - auto-detected synchronization):
+    Example:
         >>> import torch
         >>> from opaque.noise import gaussian_noise
         >>> from opaque.random import key
         >>>
-        >>> # When distributed is detected, automatically synchronizes noise across devices
-        >>> noise_fn, state = gaussian_noise(stddev=1.1, key=key(0))
+        >>> noise_fn, state = gaussian_noise(stddev=1.1, key=key(42))
         >>> grads = torch.zeros(10)
         >>> noisy_grads, state = noise_fn(grads, state)
 
-    Example (reproducible with explicit key):
-        >>> # Provide explicit key for deterministic training
-        >>> from opaque.random import key
+    Example (distributed — synchronized noise on all ranks):
+        >>> # All ranks pass the same key → identical noise → models stay in sync
         >>> noise_fn, state = gaussian_noise(stddev=1.1, key=key(42))
-        >>> noisy_grads, state = noise_fn(grads, state)
 
-    Example (independent noise per device):
-        >>> # Each device gets different noise (key folded with rank)
-        >>> from opaque.random import key
-        >>> noise_fn, state = gaussian_noise(stddev=1.1, key=key(42), synchronized=False)
-        >>> noisy_grads, state = noise_fn(grads, state)
+    Example (distributed — independent noise per rank):
+        >>> from opaque.random import key, fold_in
+        >>> rank = torch.distributed.get_rank()
+        >>> noise_fn, state = gaussian_noise(stddev=1.1, key=fold_in(key(42), rank))
     """
     if stddev < 0:
         raise ValueError(f"stddev must be non-negative, got {stddev}")
 
-    base_key, resolved_seed, is_sync = _create_rng_state(key, synchronized)
+    if not isinstance(key, RngKey):
+        raise TypeError(f"key must be RngKey, got {type(key)}")
+
     state = GaussianNoiseState(
-        seed=resolved_seed,
-        synchronized=is_sync,
         step_counter=0,
-        rng_key=base_key,
+        rng_key=key,
     )
 
     if stddev == 0:
@@ -180,8 +131,6 @@ def gaussian_noise(
 
         # Return updated state with incremented step counter
         return noisy, GaussianNoiseState(
-            seed=st.seed,
-            synchronized=st.synchronized,
             step_counter=st.step_counter + 1,
             rng_key=st.rng_key,
         )

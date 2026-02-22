@@ -2,7 +2,7 @@
 
 This example demonstrates:
 1. Natural composition of clipped_grad() and gaussian_noise()
-2. Using training_key() helper for ergonomic RNG handling
+2. Using fold_in() for per-step RNG derivation
 3. Full DP-SGD training loop with the simplified API
 4. Swapping in bounded_gaussian_noise() for bounded-domain noise
 
@@ -16,7 +16,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
 from opaque import bounded_gaussian_noise, clipped_grad, gaussian_noise
-from opaque.random import training_key
+from opaque.random import fold_in, key
 
 
 def main():
@@ -75,12 +75,12 @@ def main():
 
         for batch_x, batch_y in dataloader:
             # Step 2: Create key for this step (deterministic based on step counter)
-            key = training_key(base_seed=42, step=step)
+            step_key = fold_in(key(42), step)
 
             # Step 3: Configure noise based on sensitivity + key
             noise_fn, noise_state = gaussian_noise(
                 stddev=noise_multiplier * clip_state.sensitivity(),
-                key=key,
+                key=step_key,
             )
 
             # Compute clipped gradients (pass state, receive updated state)
@@ -134,32 +134,38 @@ def demo_research_flexibility():
     # Example 1: Standard DP-SGD
     print("\n1. Standard DP-SGD:")
     _grad_fn, _state = clipped_grad(loss_fn, l2_clip_norm=1.0)
-    key = training_key(base_seed=42, step=0)
-    _noise_fn, _nstate = gaussian_noise(stddev=1.1 * _state.sensitivity(), key=key)
+    step_key = fold_in(key(42), 0)
+    _noise_fn, _nstate = gaussian_noise(stddev=1.1 * _state.sensitivity(), key=step_key)
     print(f"   ✓ Sensitivity: {_state.sensitivity()}")
     print(f"   ✓ Noise: Gaussian(stddev={1.1 * _state.sensitivity()})")
 
     # Example 2: Different clip norm
     print("\n2. Higher clip norm:")
     _grad_fn_2, _state_2 = clipped_grad(loss_fn, l2_clip_norm=2.0)
-    key = training_key(base_seed=42, step=1)
-    _noise_fn, _nstate = gaussian_noise(stddev=1.1 * _state_2.sensitivity(), key=key)
+    step_key = fold_in(key(42), 1)
+    _noise_fn, _nstate = gaussian_noise(
+        stddev=1.1 * _state_2.sensitivity(), key=step_key
+    )
     print(f"   ✓ Sensitivity: {_state_2.sensitivity()}")
     print(f"   ✓ Noise: Gaussian(stddev={1.1 * _state_2.sensitivity()})")
 
     # Example 3: Rescale to unit norm
     print("\n3. Unit norm (rescale_to_unit_norm=True):")
-    _grad_fn_3, _state_3 = clipped_grad(loss_fn, l2_clip_norm=5.0, rescale_to_unit_norm=True)
-    key = training_key(base_seed=42, step=2)
-    _noise_fn, _nstate = gaussian_noise(stddev=1.1 * _state_3.sensitivity(), key=key)
+    _grad_fn_3, _state_3 = clipped_grad(
+        loss_fn, l2_clip_norm=5.0, rescale_to_unit_norm=True
+    )
+    step_key = fold_in(key(42), 2)
+    _noise_fn, _nstate = gaussian_noise(
+        stddev=1.1 * _state_3.sensitivity(), key=step_key
+    )
     print(f"   ✓ Sensitivity: {_state_3.sensitivity()}")  # Should be 1.0
     print(f"   ✓ Noise: Gaussian(stddev={1.1 * _state_3.sensitivity()})")
 
     # Example 4: Bounded Gaussian noise (truncated normal)
     print("\n4. Bounded Gaussian (Chen & Hale, 2024):")
-    key = training_key(base_seed=42, step=3)
+    step_key = fold_in(key(42), 3)
     _noise_fn, _nstate = bounded_gaussian_noise(
-        stddev=1.1 * _state.sensitivity(), bounds=(-3.0, 3.0), key=key
+        stddev=1.1 * _state.sensitivity(), bounds=(-3.0, 3.0), key=step_key
     )
     print(
         f"   ✓ Noise: BoundedGaussian(stddev={1.1 * _state.sensitivity()}, bounds=(-3, 3))"
@@ -168,8 +174,10 @@ def demo_research_flexibility():
 
     # Example 5: Future - swap clipping mechanism
     print("\n5. Future: Swappable mechanisms:")
-    print("   # key = training_key(base_seed=42, step=step)")
-    print("   # noise_fn = correlated_gaussian_noise(stddev=1.1, rank=10, key=key)")
+    print("   # step_key = fold_in(key(42), step)")
+    print(
+        "   # noise_fn = correlated_gaussian_noise(stddev=1.1, rank=10, key=step_key)"
+    )
     print("   # grad_fn = per_layer_clipped_grad(loss_fn, clip_norms={...})")
     print("   # grad_fn = adaptive_clipper(loss_fn, target_quantile=0.5)")
 

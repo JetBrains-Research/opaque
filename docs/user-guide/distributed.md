@@ -33,7 +33,8 @@ import torch
 import torch.distributed as dist
 from opaque import clipped_grad, gaussian_noise, make_functional, PoissonSampler
 import opaque.distributed as dist_utils
-from opaque.random import key
+from opaque.random import key, fold_in
+from opaque.sampling.distributed import local_shard
 
 # Distributed setup
 dist.init_process_group(backend="nccl")
@@ -55,9 +56,12 @@ noise_fn, noise_state = gaussian_noise(
     stddev=1.1 * clip_state.sensitivity(), key=key(42),
 )
 
-# Poisson sampler (auto-sharded in DDP)
-sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(0))
-loader = torch.utils.data.DataLoader(dataset, batch_sampler=sampler)
+# Poisson sampler (shard dataset)
+shard = local_shard(dataset, rank=rank, world_size=dist.get_world_size())
+sampler = PoissonSampler(
+    shard, sample_rate=0.01, key=fold_in(key(0), rank),
+)
+loader = torch.utils.data.DataLoader(shard, batch_sampler=sampler)
 
 # Training loop
 for batch_x, batch_y in loader:
@@ -86,19 +90,23 @@ torchrun --nproc_per_node=4 train.py
 
 ## Noise synchronization
 
-The `synchronized` parameter on noise constructors (`gaussian_noise`,
-`band_mf_noise`, etc.) controls whether devices generate identical or
-independent noise:
+Noise constructors take a `key` parameter. Pass the **same key** on every
+rank to get identical noise (centralized DP-SGD). Use `fold_in(key, rank)`
+to get independent per-rank noise streams when needed:
 
-| Value | Behavior |
-|-------|----------|
-| `"auto"` (default) | Synchronized if `torch.distributed` is initialized, independent otherwise |
-| `True` | Force synchronized -- all ranks use the same key |
-| `False` | Independent -- key is folded with rank via `fold_in(key, rank)` |
+```python
+from opaque.random import key, fold_in
 
-The default `"auto"` handles the common centralized DP-SGD case
-automatically. All ranks generate identical noise, so all models stay in
-sync after each update.
+# Synchronized noise — same key on all ranks
+noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(42))
+
+# Independent noise — different key per rank
+noise_fn, noise_state = gaussian_noise(stddev=1.1, key=fold_in(key(42), rank))
+```
+
+In the common centralized DP-SGD pattern, pass the same `key(seed)` on
+every rank so that all devices produce identical noise and models stay
+in sync.
 
 ## Gradient aggregation
 
@@ -162,20 +170,26 @@ ranks and raises `RuntimeError` if it does not.
 
 ## Poisson sampling
 
-`PoissonSampler` auto-detects DDP and switches to sharded mode: each rank
-samples from a disjoint partition of the dataset. The key is automatically
-diversified per rank via `fold_in(key, rank)`.
+Shard the dataset using `local_shard()`, then create a `PoissonSampler`
+on the shard. Derive a per-rank key via `fold_in(key, rank)`.
 
 ```python
+import torch.distributed as dist
 from opaque import PoissonSampler
-from opaque.random import key
+from opaque.random import key, fold_in
+from opaque.sampling.distributed import local_shard
 
-sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))
-loader = torch.utils.data.DataLoader(dataset, batch_sampler=sampler)
+rank = dist.get_rank()
+world_size = dist.get_world_size()
+
+shard = local_shard(dataset, rank=rank, world_size=world_size)
+sampler = PoissonSampler(
+    shard,
+    sample_rate=0.01,
+    key=fold_in(key(42), rank),
+)
+loader = DataLoader(shard, batch_sampler=sampler)
 ```
-
-No manual rank handling is needed. See [Sampling](sampling.md#distributed-sampling)
-for details.
 
 ## Privacy accounting
 
@@ -193,7 +207,11 @@ epsilon = training.epsilon_at(delta=1e-5)
 
 ## Optimizer state synchronization
 
-Functional optimizers (TorchOpt) stay synchronized automatically. Because:
+For correlated noise mechanisms (`band_mf_noise`, `blt_mf_noise`), each
+device must generate the same correlated noise stream. Pass the same
+`key=key(seed)` on every rank.
+
+Functional optimizers (TorchOpt) stay synchronized automatically because:
 
 1. After `sum_gradients`, all ranks hold the same gradient sum.
 2. After adding synchronized noise, all ranks hold the same noisy gradient.
@@ -228,7 +246,20 @@ a single device without changes.
 | Function | Purpose |
 |----------|---------|
 | `sync_clip_state(state)` | Assert `FixedClipState.l2_norm_bound` matches across ranks |
-| `sync_adaptive_clip_state(state)` | Aggregate counts, recompute global clipping rate, update clip norm |
+| `sync_adaptive_clip_state(state)` | Aggregate counts, recompute global clipping rate, update `clip_norm` |
+| `sync_adaptive_clipped_grad_aux(aux)` | Gather auxiliary tensors (`grad_norms`, `loss_values`, etc.) |
+
+### `opaque.noise.distributed`
+
+Noise-specific validation helpers. Call manually in distributed
+training to assert noise state is consistent across ranks.
+
+| Function | Purpose |
+|----------|---------|
+| `sync_gaussian_noise_state(state)` | Assert seed and step counter match across ranks |
+| `sync_mf_noise_state(state)` | Assert seed and step counter match for MF noise |
+
+See [API Reference](../api/distributed.md) for full docstrings.
 
 ## Limitations
 

@@ -17,7 +17,7 @@ For complete function signatures, see the
 | [Fine-tuning an LLM](llm_finetuning.ipynb) | Fine-tune a HuggingFace model with DP and LoRA | `make_functional`, `partition_trainable`, PEFT, adaptive clipping |
 | [Sampling & Microbatching](sampling_and_microbatching.ipynb) | Compare sampling strategies and tune microbatch size | `PoissonSampler`, `TruncatedPoissonSampler`, `microbatch_size` |
 | [Privacy Auditing](privacy_auditing.ipynb) | Validate privacy guarantees empirically | `auditing.setup`, `auditing.evaluate`, `AuditResult`, bootstrap |
-| [Distributed Training](distributed_training.ipynb) | Run DP-SGD across multiple GPUs | `sum_gradients`, `PoissonSampler` (sharded), synchronized noise |
+| [Distributed Training](distributed_training.ipynb) | Run DP-SGD across multiple GPUs | `sum_gradients`, `local_shard`, `PoissonSampler`, shared RNG key |
 
 Most tutorials run on CPU in reasonable time using small datasets.
 The distributed training tutorial requires multiple GPUs and `torchrun`.

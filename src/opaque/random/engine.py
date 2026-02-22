@@ -55,12 +55,37 @@ def key(seed: int) -> RngKey:
     return RngKey(seed=_to_uint64(seed))
 
 
-def fold_in(rng_key: RngKey, data: int | str) -> RngKey:
-    """Fold additional data into a key to deterministically derive a new key."""
-    if not isinstance(data, (int, str)):
-        raise TypeError(f"data must be int or str, got {type(data)}")
-    mixed = _stable_hash64(rng_key.seed, data)
-    return RngKey(seed=mixed, impl=rng_key.impl)
+def fold_in(rng_key: RngKey, *data: int | str) -> RngKey:
+    """Fold one or more values into a key to deterministically derive a new key.
+
+    Accepts a variable number of int/str arguments. Each value is folded
+    sequentially, so ``fold_in(k, a, b)`` equals ``fold_in(fold_in(k, a), b)``.
+
+    Args:
+        rng_key: Base key.
+        *data: One or more int or str values to fold in sequentially.
+
+    Returns:
+        A new RngKey derived from the base key and all folded values.
+
+    Raises:
+        TypeError: If any value is not int or str.
+        ValueError: If no data values are provided.
+
+    Example:
+        >>> k = key(42)
+        >>> fold_in(k, 0)           # single value
+        >>> fold_in(k, step, rank)  # multiple values (step then rank)
+    """
+    if not data:
+        raise ValueError("fold_in requires at least one data argument")
+    result = rng_key
+    for d in data:
+        if not isinstance(d, (int, str)):
+            raise TypeError(f"data must be int or str, got {type(d)}")
+        mixed = _stable_hash64(result.seed, d)
+        result = RngKey(seed=mixed, impl=result.impl)
+    return result
 
 
 def split(rng_key: RngKey, num: int = 2) -> tuple[RngKey, ...]:

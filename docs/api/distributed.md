@@ -77,11 +77,6 @@ See [User Guide: Distributed Training](../user-guide/distributed.md) for usage.
         show_source: true
         heading_level: 3
 
-::: opaque.distributed.gather_pytree_tensors
-    options:
-        show_source: true
-        heading_level: 3
-
 ::: opaque.distributed.assert_scalar_equal
     options:
         show_source: true

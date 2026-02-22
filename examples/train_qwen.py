@@ -371,7 +371,7 @@ def main():
 
                 # 2. Add Gaussian noise for DP
                 stddev = noise_multiplier * clip_state.sensitivity()
-                noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(noise_seed), synchronized="auto")
+                noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(noise_seed))
                 noisy_grads, _ = noise_fn(grads_tuple, noise_state)
 
                 # 3. Optimizer step (direct, no wrapper)

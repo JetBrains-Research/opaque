@@ -103,10 +103,42 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 | `partition_type` | `PartitionType` | `EQUAL_SPLIT` | How to partition: `EQUAL_SPLIT` or `INDEPENDENT` |
 | `key` | `RngKey` | required | RNG key for reproducible sampling |
 
-Auto-detects distributed training: uses SHARDED mode (each rank cycles
-through its shard) when `torch.distributed` is initialized.
+In distributed training, shard the dataset with `local_shard()` and pass
+a per-rank key via `fold_in(key, rank)`. Best used with `band_mf_noise`
+or `blt_mf_noise` for correlated noise.
 
-Best used with `band_mf_noise` or `blt_mf_noise` for correlated noise.
+## Distributed Helpers
+
+### `local_shard`
+
+Partition a dataset for DDP training. Returns a `Subset` containing the
+contiguous shard for the given rank.
+
+```python
+from opaque.sampling.distributed import local_shard
+import torch.distributed as dist
+
+shard = local_shard(
+    dataset,
+    rank=dist.get_rank(),
+    world_size=dist.get_world_size(),
+)
+sampler = PoissonSampler(shard, sample_rate=0.01, key=fold_in(key(42), rank))
+loader = DataLoader(shard, batch_sampler=sampler)
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `dataset` | dataset with `len()` | required | The full training dataset |
+| `rank` | `int` | `0` | Current device rank |
+| `world_size` | `int` | `1` | Total number of devices |
+
+**Returns:** `torch.utils.data.Subset` containing the local shard.
+
+::: opaque.sampling.distributed.local_shard
+    options:
+      show_source: true
+      heading_level: 3
 
 ## API Documentation
 

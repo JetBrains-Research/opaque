@@ -5,7 +5,7 @@ import pytest
 import torch
 from torch.utils.data import TensorDataset
 
-from opaque.random import fold_in, key, training_key
+from opaque.random import fold_in, key
 from opaque.sampling import (
     CyclicPoissonSampler,
     PoissonSampler,
@@ -34,7 +34,7 @@ class TestPoissonSamplerKeys:
         batches2 = list(sampler2)
 
         assert len(batches1) == len(batches2)
-        for b1, b2 in zip(batches1, batches2):
+        for b1, b2 in zip(batches1, batches2, strict=False):
             assert b1 == b2, "Same key should produce identical samples"
 
     def test_different_keys_produce_different_samples(self):
@@ -72,12 +72,12 @@ class TestPoissonSamplerKeys:
         # Different ranks should produce different samples
         assert batches_rank0 != batches_rank1
 
-    def test_training_key_helper_integration(self):
-        """training_key() helper should work seamlessly."""
+    def test_fold_in_helper_integration(self):
+        """fold_in() should work seamlessly for per-step keys."""
         dataset = TensorDataset(torch.randn(1000, 10))
 
-        # Use training_key for reproducible sampling
-        k = training_key(base_seed=42, step=0)
+        # Use fold_in for per-step reproducible sampling
+        k = fold_in(key(42), 0)
         sampler = PoissonSampler(dataset, sample_rate=0.1, num_epochs=5, key=k)
 
         batches = list(sampler)
@@ -134,7 +134,7 @@ class TestTruncatedPoissonSamplerKeys:
         batches2 = list(sampler2)
 
         assert len(batches1) == len(batches2)
-        for b1, b2 in zip(batches1, batches2):
+        for b1, b2 in zip(batches1, batches2, strict=False):
             assert b1 == b2
 
     def test_truncation_respects_max_batch_size(self):
@@ -174,7 +174,7 @@ class TestCyclicPoissonSamplerKeys:
             iterations=50,
             key=key(42),
         )
-        batches1 = [batch for batch in sampler1]
+        batches1 = list(sampler1)
 
         sampler2 = CyclicPoissonSampler(
             dataset,
@@ -183,10 +183,10 @@ class TestCyclicPoissonSamplerKeys:
             iterations=50,
             key=key(42),
         )
-        batches2 = [batch for batch in sampler2]
+        batches2 = list(sampler2)
 
         assert len(batches1) == len(batches2)
-        for b1, b2 in zip(batches1, batches2):
+        for b1, b2 in zip(batches1, batches2, strict=False):
             assert b1 == b2
 
     def test_different_keys_produce_different_samples(self):
@@ -200,7 +200,7 @@ class TestCyclicPoissonSamplerKeys:
             iterations=50,
             key=key(42),
         )
-        batches1 = [batch for batch in sampler1]
+        batches1 = list(sampler1)
 
         sampler2 = CyclicPoissonSampler(
             dataset,
@@ -209,7 +209,7 @@ class TestCyclicPoissonSamplerKeys:
             iterations=50,
             key=key(100),
         )
-        batches2 = [batch for batch in sampler2]
+        batches2 = list(sampler2)
 
         # Should be different (at least some batches)
         assert batches1 != batches2
@@ -227,7 +227,7 @@ class TestCyclicPoissonSamplerKeys:
             iterations=50,
             key=base_key,
         )
-        batches_rank0 = [batch for batch in sampler_rank0]
+        batches_rank0 = list(sampler_rank0)
 
         # Rank 1 (fold in rank)
         rank1_key = fold_in(base_key, 1)
@@ -238,7 +238,7 @@ class TestCyclicPoissonSamplerKeys:
             iterations=50,
             key=rank1_key,
         )
-        batches_rank1 = [batch for batch in sampler_rank1]
+        batches_rank1 = list(sampler_rank1)
 
         # Should be different
         assert batches_rank0 != batches_rank1

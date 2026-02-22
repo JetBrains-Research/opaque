@@ -27,7 +27,13 @@ of what other code has run.
 
 ## Core primitives
 
-All primitives are in `opaque.random`:
+| Function | Purpose |
+|----------|---------|
+| `key(seed)` | Create a key from an integer seed |
+| `split(k, num=2)` | Derive `num` independent child keys |
+| `fold_in(k, *data)` | Mix a key with one or more int/str values |
+| `generator_from_key(k)` | Convert to `torch.Generator` |
+| `random_key()` | Non-deterministic key (uses system entropy) |
 
 ### `key(seed)`
 
@@ -75,31 +81,29 @@ noise_fn, ns = gaussian_noise(stddev=1.0, key=k_noise)
 sampler = PoissonSampler(dataset, sample_rate=0.01, key=k_sample)
 ```
 
-### `fold_in(k, data)`
+### `fold_in(k, *data)`
 
-Mix additional data into a key to derive a new key deterministically.
-Accepts integers or strings.
+Mix additional data into a key. Variadic — accepts multiple values:
 
 ```python
 from opaque.random import key, fold_in
 
 k = key(42)
-step_key = fold_in(k, step)           # int: step counter
-rank_key = fold_in(k, f"rank:{r}")    # str: domain separation
-noise_key = fold_in(k, "noise")       # str: label
+step_key = fold_in(k, step)              # single int
+rank_key = fold_in(k, f"rank:{r}")        # single str
+combined = fold_in(k, step, rank)         # multiple values
+full     = fold_in(k, step, rank, worker) # step → rank → worker
 ```
 
+`fold_in(k, a, b)` is equivalent to `fold_in(fold_in(k, a), b)`.
+
 `fold_in` uses BLAKE2b hashing internally. Different data values produce
-different keys:
+different keys, and int vs str are distinguished:
 
 ```python
 fold_in(k, 0).seed != fold_in(k, 1).seed
-fold_in(k, "noise").seed != fold_in(k, "sampling").seed
 fold_in(k, 42).seed != fold_in(k, "42").seed  # int vs str distinguished
 ```
-
-Use `fold_in` for structured key derivation: step counters, rank indices,
-domain labels, version strings.
 
 ### `generator_from_key(k)`
 
@@ -198,70 +202,48 @@ for batch_x, batch_y in dataloader:
     params = params - lr * noisy_grads
 ```
 
-### With `training_key`
+### With `fold_in()` (per-step keys)
 
-`training_key` is a convenience function that implements a canonical
-derivation chain for training loops: `base_seed -> step -> rank -> worker`.
+Use `fold_in` to derive per-step keys from a base key. This gives
+explicit control over the derivation chain:
+`key(seed) → fold_in(step) → fold_in(rank) → fold_in(worker)`.
 
 ```python
-from opaque.random import training_key
+from opaque.random import key, fold_in
 
+base = key(42)
 for step in range(num_steps):
-    k = training_key(base_seed=42, step=step)
-    noise_fn, noise_state = gaussian_noise(stddev=1.1, key=k)
+    step_key = fold_in(base, step)
+    noise_fn, noise_state = gaussian_noise(stddev=1.1, key=step_key)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
-
-**Parameters:**
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `base_seed` | `int` | required | Seed for the entire training run |
-| `step` | `int` | required | Training step counter |
-| `rank` | `int` or `None` | `None` | Distributed rank |
-| `worker_id` | `int` or `None` | `None` | DataLoader worker ID |
-| `synchronized` | `bool`, `"auto"`, or `None` | `None` | Noise synchronization policy |
-
-The `synchronized` parameter controls whether the derived key is the same
-across ranks or different:
-
-| Value | Behavior | Use case |
-|-------|----------|----------|
-| `True` | Same key on all ranks (rank ignored) | Centralized DP-SGD (synchronized noise) |
-| `False` | Different key per rank (`fold_in(k, rank)`) | Independent noise per device |
-| `"auto"` | Synchronized if `rank is None`, else unsynchronized | Sensible default |
-| `None` | Raises `ValueError` if `rank` is provided | Prevents accidental misuse |
-
-The derivation order is: `key(base_seed) -> fold_in(step) -> fold_in(rank)
-(if unsynchronized) -> fold_in(worker_id)`.
 
 ### Distributed training
 
 In centralized DP-SGD, all ranks must add the **same** noise so that
-models stay in sync. This requires the same key on every rank.
-
-`gaussian_noise` handles this automatically: with the default
-`synchronized="auto"`, it detects whether `torch.distributed` is
-initialized and uses synchronized noise if so.
+models stay in sync. Pass the same `key(seed)` on every rank:
 
 ```python
 # Same key on all ranks -> same noise -> models stay in sync
 noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(42))
 ```
 
-For explicit control:
+For per-rank key control, use `fold_in()`:
 
 ```python
-from opaque.random import training_key
+from opaque.random import key, fold_in
 import torch.distributed as dist
 
 rank = dist.get_rank()
 
-# Synchronized: same key regardless of rank
-k = training_key(base_seed=42, step=step, rank=rank, synchronized=True)
+# Synchronized noise — same key, no rank folded in
+step_key = fold_in(key(42), step)
 
-# Unsynchronized: different key per rank
-k = training_key(base_seed=42, step=step, rank=rank, synchronized=False)
+# Independent noise per rank — fold in rank
+step_key = fold_in(key(42), step, rank)
+
+# Equivalent explicit chaining
+step_key = fold_in(fold_in(key(42), step), rank)
 ```
 
 ## Reproducibility
@@ -319,11 +301,11 @@ noise_state = state["noise_state"]
 ```
 
 Alternatively, reconstruct the key from the step counter using
-`training_key`:
+`fold_in`:
 
 ```python
 # Resume from step 500
-k = training_key(base_seed=42, step=500)
+k = fold_in(key(42), 500)
 noise_fn, noise_state = gaussian_noise(stddev=1.1, key=k)
 ```
 
