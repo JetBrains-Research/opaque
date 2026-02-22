@@ -113,6 +113,7 @@ fn validate_radius(radius: f64) -> Result<()> {
 /// unbounded Gaussian.  In this regime we delegate to the numerically-stable
 /// log-space implementation in `poisson.rs` to avoid floating-point
 /// amplification artifacts in the Connect-the-Dots discretization.
+#[allow(clippy::too_many_arguments)]
 fn get_delta_truncated(
     epsilon: f64,
     adjacency: Adjacency,
@@ -281,6 +282,7 @@ fn get_delta_add_truncated(
 // ===========================================================================
 
 /// Epsilon bounds for Poisson-subsampled truncated Gaussian.
+#[allow(clippy::too_many_arguments)]
 fn epsilon_bounds_truncated(
     sigma: f64,
     sensitivity: f64,
