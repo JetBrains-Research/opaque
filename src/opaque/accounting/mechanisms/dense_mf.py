@@ -127,17 +127,13 @@ def dense_mf(
         eps = proc.epsilon_at(1e-5)
     """
     if noise_multiplier <= 0:
-        raise ValueError(
-            f"noise_multiplier must be positive, got {noise_multiplier}"
-        )
+        raise ValueError(f"noise_multiplier must be positive, got {noise_multiplier}")
     if n_steps < 1:
         raise ValueError(f"n_steps must be >= 1, got {n_steps}")
     if epochs < 1:
         raise ValueError(f"epochs must be >= 1, got {epochs}")
     if n_steps % epochs != 0:
-        raise ValueError(
-            f"epochs={epochs} must divide n_steps={n_steps}"
-        )
+        raise ValueError(f"epochs={epochs} must divide n_steps={n_steps}")
     if bands is not None and bands < 1:
         raise ValueError(f"bands must be >= 1 or None, got {bands}")
     return DenseMf(noise_multiplier, n_steps, epochs, bands, equal_norm)

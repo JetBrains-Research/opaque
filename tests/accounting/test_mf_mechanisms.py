@@ -6,16 +6,15 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 import opaque.accounting as acc
+from opaque.accounting.amplification import (
+    CyclicPoisson,
+)
 from opaque.accounting.base import DpProcess
 from opaque.accounting.mechanisms import (
     BandMf,
     BltMf,
     DenseMf,
 )
-from opaque.accounting.amplification import (
-    CyclicPoisson,
-)
-
 
 # ── BandMf dataclass tests ──────────────────────────────────────────
 
@@ -132,13 +131,9 @@ class TestCyclicPoissonDataclass:
     def test_more_groups_higher_epsilon(self):
         """More groups → more composition → higher epsilon."""
         # Fewer groups (larger bands)
-        eps_small = acc.cyclic_poisson(
-            acc.band_mf(1.0, 100, 50), 0.01
-        ).epsilon_at(1e-5)
+        eps_small = acc.cyclic_poisson(acc.band_mf(1.0, 100, 50), 0.01).epsilon_at(1e-5)
         # More groups (smaller bands)
-        eps_large = acc.cyclic_poisson(
-            acc.band_mf(1.0, 100, 5), 0.01
-        ).epsilon_at(1e-5)
+        eps_large = acc.cyclic_poisson(acc.band_mf(1.0, 100, 5), 0.01).epsilon_at(1e-5)
         assert eps_small < eps_large
 
     def test_transparent_to_inner(self):
@@ -302,10 +297,7 @@ class TestMfComposition:
 
     def test_cyclic_poisson_composes_with_gaussian(self):
         """CyclicPoisson | Gaussian works."""
-        proc = (
-            acc.cyclic_poisson(acc.band_mf(1.0, 100, 5), 0.01)
-            | acc.gaussian(1.0)
-        )
+        proc = acc.cyclic_poisson(acc.band_mf(1.0, 100, 5), 0.01) | acc.gaussian(1.0)
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 

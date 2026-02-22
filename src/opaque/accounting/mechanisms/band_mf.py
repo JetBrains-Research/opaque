@@ -14,7 +14,6 @@ References:
 from __future__ import annotations
 
 import functools
-import math
 from dataclasses import dataclass
 
 import opaque_accounting as _native
@@ -123,13 +122,9 @@ def band_mf(
         eps = proc.epsilon_at(1e-5)
     """
     if noise_multiplier <= 0:
-        raise ValueError(
-            f"noise_multiplier must be positive, got {noise_multiplier}"
-        )
+        raise ValueError(f"noise_multiplier must be positive, got {noise_multiplier}")
     if n_steps < 1:
         raise ValueError(f"n_steps must be >= 1, got {n_steps}")
     if bands < 1 or bands > n_steps:
-        raise ValueError(
-            f"bands must be in [1, n_steps={n_steps}], got {bands}"
-        )
+        raise ValueError(f"bands must be in [1, n_steps={n_steps}], got {bands}")
     return BandMf(noise_multiplier, n_steps, bands)

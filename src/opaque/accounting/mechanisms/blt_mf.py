@@ -154,9 +154,7 @@ def blt_mf(
         eps = proc.epsilon_at(1e-5)
     """
     if noise_multiplier <= 0:
-        raise ValueError(
-            f"noise_multiplier must be positive, got {noise_multiplier}"
-        )
+        raise ValueError(f"noise_multiplier must be positive, got {noise_multiplier}")
     if n_steps < 1:
         raise ValueError(f"n_steps must be >= 1, got {n_steps}")
     if min_sep < 1:
@@ -169,4 +167,6 @@ def blt_mf(
         raise ValueError(f"error must be 'max' or 'mean', got {error!r}")
     if max_buffers < 0:
         raise ValueError(f"max_buffers must be >= 0, got {max_buffers}")
-    return BltMf(noise_multiplier, n_steps, min_sep, max_participations, error, max_buffers)
+    return BltMf(
+        noise_multiplier, n_steps, min_sep, max_participations, error, max_buffers
+    )

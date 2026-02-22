@@ -104,9 +104,7 @@ def band_mf_amplified(
         eps = proc.epsilon_at(1e-5)
     """
     if noise_multiplier <= 0:
-        raise ValueError(
-            f"noise_multiplier must be positive, got {noise_multiplier}"
-        )
+        raise ValueError(f"noise_multiplier must be positive, got {noise_multiplier}")
     if sensitivity <= 0:
         raise ValueError(f"sensitivity must be positive, got {sensitivity}")
     if not 0 < sample_rate <= 1:
