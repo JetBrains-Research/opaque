@@ -15,7 +15,6 @@ from typing import Any
 
 import torch
 
-from opaque.noise.gaussian_noise import _create_rng_state
 from opaque.noise.matrix_factorization.noise import (
     MFNoiseState,
     _matrix_factorization_noise,
@@ -29,7 +28,6 @@ def custom_mf_noise(
     *,
     stddev: float,
     key: RngKey,
-    synchronized: str | bool = "auto",
     dtype: torch.dtype | None = None,
 ) -> tuple[
     Callable[[Any, MFNoiseState], tuple[Any, MFNoiseState]],
@@ -44,6 +42,10 @@ def custom_mf_noise(
     :func:`blt_mf_noise`, :func:`dense_mf_noise`, or
     :func:`identity_mf_noise` instead.
 
+    The noise function uses exactly the ``key`` you provide — no auto-detection
+    of distributed state. For synchronized noise in DDP, pass the same key on
+    every rank.
+
     Args:
         grad_template: A pytree with the same structure and shapes as the
             gradients that will be passed to ``noise_fn``. Used to
@@ -52,10 +54,8 @@ def custom_mf_noise(
             ``StreamingMatrix`` representing C^{-1}.
         stddev: Standard deviation for the base noise.
         key: Explicit RNG key for deterministic, functional randomness.
-        synchronized: Synchronization mode for distributed training:
-            - ``"auto"`` (default): Auto-detect and sync if distributed
-            - ``True``: Force synchronized noise (same seed across devices)
-            - ``False``: Independent noise per device (seed + rank offset)
+            Same key on all ranks → same noise (synchronized).
+            ``fold_in(key, rank)`` → independent noise per rank.
         dtype: Optional dtype for intermediate noise computation.
 
     Returns:
@@ -76,14 +76,11 @@ def custom_mf_noise(
         ... )
         >>> noisy_grad, state = noise_fn(torch.zeros(10), state)
     """
-    gen, resolved_seed, is_sync = _create_rng_state(key, synchronized)
     return _matrix_factorization_noise(
         grad_template,
         noising,
         stddev=stddev,
-        gen=gen,
-        seed=resolved_seed,
-        synchronized=is_sync,
+        key=key,
         dtype=dtype,
     )
 

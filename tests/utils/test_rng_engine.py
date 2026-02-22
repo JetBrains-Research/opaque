@@ -40,3 +40,26 @@ def test_generator_from_key_is_reproducible():
     x1 = torch.randn(16, generator=g1)
     x2 = torch.randn(16, generator=g2)
     assert torch.allclose(x1, x2)
+
+
+def test_fold_in_variadic_equals_sequential():
+    """fold_in(k, a, b) must equal fold_in(fold_in(k, a), b)."""
+    k = key(42)
+    chained = fold_in(fold_in(k, 7), 3)
+    variadic = fold_in(k, 7, 3)
+    assert chained.seed == variadic.seed
+
+
+def test_fold_in_variadic_three_values():
+    """fold_in(k, a, b, c) == fold_in(fold_in(fold_in(k, a), b), c)."""
+    k = key(0)
+    chained = fold_in(fold_in(fold_in(k, 1), 2), 3)
+    variadic = fold_in(k, 1, 2, 3)
+    assert chained.seed == variadic.seed
+
+
+def test_fold_in_no_data_raises():
+    """fold_in(k) with no data arguments must raise ValueError."""
+    k = key(42)
+    with pytest.raises(ValueError, match="at least one data argument"):
+        fold_in(k)

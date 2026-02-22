@@ -13,7 +13,6 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `RngKey` - Immutable key type
   - `key()`, `random_key()` - Create keys
   - `split()`, `fold_in()` - Manipulate keys
-  - `training_key()` - Deterministic training loop keys
   - `set_reproducible_pytorch_seed()` - PyTorch/CUDNN reproducibility
   - `generator_from_key()` - PyTorch generator bridge
 

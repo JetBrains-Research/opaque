@@ -37,24 +37,21 @@ class TestDistributedNoise:
         assert torch.allclose(noisy1["weight"], noisy2["weight"])
         assert torch.allclose(noisy1["bias"], noisy2["bias"])
 
-    def test_rank_fold_in_when_unsynchronized(self, monkeypatch):
-        """Unsynchronized mode folds rank into key and produces distinct streams."""
-        import importlib
+    def test_rank_fold_in_produces_distinct_streams(self):
+        """Folding rank into key produces distinct but deterministic streams."""
+        from opaque.random import fold_in
 
-        gaussian_noise_module = importlib.import_module("opaque.noise.gaussian_noise")
-        monkeypatch.setattr(gaussian_noise_module, "is_distributed", lambda: True)
-        monkeypatch.setattr(gaussian_noise_module, "get_rank", lambda: 7)
-
-        noise_fn1, state1 = gaussian_noise(1.0, key=key(42), synchronized=False)
-        noise_fn2, state2 = gaussian_noise(1.0, key=key(42), synchronized=False)
+        # Simulate two ranks by folding different ranks into the same base key
+        noise_fn1, state1 = gaussian_noise(1.0, key=fold_in(key(42), 0))
+        noise_fn2, state2 = gaussian_noise(1.0, key=fold_in(key(42), 1))
 
         grads = {"weight": torch.zeros(4)}
 
         noisy1, state1 = noise_fn1(grads, state1)
         noisy2, state2 = noise_fn2(grads, state2)
 
-        # Deterministic seed should produce identical noise.
-        assert torch.allclose(noisy1["weight"], noisy2["weight"])
+        # Different ranks should produce different noise
+        assert not torch.allclose(noisy1["weight"], noisy2["weight"])
 
     def test_distributed_noise_is_deterministic(self):
         """Noise with same seed+rank is reproducible across resets."""

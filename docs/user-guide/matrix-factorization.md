@@ -227,8 +227,8 @@ grad_template = {k: torch.zeros_like(v) for k, v in params.items()}
 clipped_grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=1)
 
 # Choose ONE noise mechanism:
-# All use key=key(42) for reproducibility; synchronized="auto" (default)
-# ensures identical noise across devices in distributed mode.
+# All use key=key(42) for reproducibility.
+# Pass the same key on every rank for synchronized noise in DDP.
 # ===============================================================================
 from opaque.random import key
 
@@ -260,7 +260,7 @@ for batch in dataloader:
     # 2. Aggregate across devices
     grads = sum_gradients(grads)
     
-    # 3. Add noise (same on all devices - automatically synchronized!)
+    # 3. Add noise (same on all devices — same key produces same noise)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
     
     # 4. Update parameters
@@ -277,7 +277,7 @@ dist.destroy_process_group()
 
 ✅ **Same training loop** for ALL mechanisms (Gaussian + all 5 MF variants)  
 ✅ **Drop-in replacement** - Change only noise initialization line  
-✅ **Automatic distributed support** - `synchronized="auto"` ensures identical noise across devices  
+✅ **Explicit distributed support** - Same `key(seed)` on all ranks ensures identical noise  
 ✅ **Identical API** - `noise_fn(grads, state) -> (noisy_grads, new_state)`  
 
 **When to use which:**
@@ -439,7 +439,7 @@ rank = dist.get_rank()
 device = torch.device(f"cuda:{rank}")
 
 # Create noise function - works exactly like gaussian_noise!
-# key=key(42) with synchronized="auto" (default) ensures identical noise on all devices
+# Same key on all ranks ensures identical noise
 noise_fn, noise_state = band_mf_noise(
     grad_template, 
     n_steps=1000, 
@@ -466,7 +466,7 @@ for batch in dataloader:
 **Key points:**
 
 - ✅ **Same API as `gaussian_noise()`** - No special distributed handling needed
-- ✅ **Automatic synchronization** - `synchronized="auto"` broadcasts key to all devices
+- ✅ **Explicit synchronization** - Same `key(seed)` on all ranks ensures identical noise
 - ✅ **Centralized pattern** - All devices use same key (prevents model divergence)
 - ✅ **Standard privacy accounting** - Use simple RDP/PLD accounting (no composition needed)
 

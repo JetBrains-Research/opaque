@@ -13,7 +13,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from opaque.noise.gaussian_noise import _create_rng_state
 from opaque.noise.matrix_factorization.buffered_toeplitz import (
     inverse_as_streaming_matrix,
     optimize,
@@ -31,7 +30,6 @@ def blt_mf_noise(
     *,
     stddev: float,
     key: RngKey,
-    synchronized: str | bool = "auto",
     min_sep: int = 1,
     max_participations: int | None = 1,
     error: str = "max",
@@ -46,16 +44,18 @@ def blt_mf_noise(
     participation pattern, then wraps the result in the matrix
     factorization noise API.
 
+    The noise function uses exactly the ``key`` you provide — no auto-detection
+    of distributed state. For synchronized noise in DDP, pass the same key on
+    every rank.
+
     Args:
         grad_template: A pytree with the same structure and shapes as the
             gradients that will be passed to ``noise_fn``.
         n_steps: Number of training iterations.
         stddev: Standard deviation for the base noise.
         key: Explicit RNG key for deterministic, functional randomness.
-        synchronized: Synchronization mode for distributed training:
-            - ``"auto"`` (default): Auto-detect and sync if distributed
-            - ``True``: Force synchronized noise (same seed across devices)
-            - ``False``: Independent noise per device (seed + rank offset)
+            Same key on all ranks → same noise (synchronized).
+            ``fold_in(key, rank)`` → independent noise per rank.
         min_sep: Minimum separation between participations (default 1).
         max_participations: Maximum participations per user (default 1).
         error: Error metric to optimize: ``'max'`` or ``'mean'``.
@@ -81,14 +81,11 @@ def blt_mf_noise(
         max_buffers=max_buffers,
     )
     noising = inverse_as_streaming_matrix(blt)
-    gen, resolved_seed, is_sync = _create_rng_state(key, synchronized)
     return _matrix_factorization_noise(
         grad_template,
         noising,
         stddev=stddev,
-        gen=gen,
-        seed=resolved_seed,
-        synchronized=is_sync,
+        key=key,
     )
 
 
