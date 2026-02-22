@@ -245,6 +245,46 @@ def identity_pld(
     ...
 
 
+def rectified_gaussian_pld(
+    noise_multiplier: float,
+    radius: float,
+    config: DiscretizationConfig,
+) -> Pld:
+    """Compute the PLD for a rectified (clamped) Gaussian mechanism.
+
+    Noise is sampled from a standard Gaussian and clamped to [−R·σ, R·σ].
+
+    Args:
+        noise_multiplier: Ratio of noise std to sensitivity (σ/Δ).
+        radius: Support half-width in sigma units.
+        config: PLD discretization configuration.
+
+    Returns:
+        The privacy loss distribution.
+    """
+    ...
+
+
+def truncated_gaussian_pld(
+    noise_multiplier: float,
+    radius: float,
+    config: DiscretizationConfig,
+) -> Pld:
+    """Compute the PLD for a truncated (renormalized) Gaussian mechanism.
+
+    Noise is sampled from a Gaussian restricted to [−R·σ, R·σ] with renormalized density.
+
+    Args:
+        noise_multiplier: Ratio of noise std to sensitivity (σ/Δ).
+        radius: Support half-width in sigma units.
+        config: PLD discretization configuration.
+
+    Returns:
+        The privacy loss distribution.
+    """
+    ...
+
+
 # ---------------------------------------------------------------------------
 # Amplification functions
 # ---------------------------------------------------------------------------
@@ -314,6 +354,52 @@ def parallel_poisson_gaussian_pld(
         noise_multiplier: σ/Δ ratio.
         rate: Poisson sampling probability, in (0, 1].
         microbatches: Number of independent samples, > 0.
+        config: PLD discretization configuration.
+
+    Returns:
+        The amplified privacy loss distribution.
+    """
+    ...
+
+
+def poisson_rectified_gaussian_pld(
+    noise_multiplier: float,
+    radius: float,
+    rate: float,
+    config: DiscretizationConfig,
+) -> Pld:
+    """Compute the PLD for a Poisson-subsampled rectified Gaussian mechanism.
+
+    The rectified (clamped) Gaussian clips noise to [−R·σ, R·σ], giving tighter
+    privacy bounds than the standard unbounded Gaussian.
+
+    Args:
+        noise_multiplier: σ/Δ ratio.
+        radius: Support half-width in sigma units.
+        rate: Poisson sampling probability, in (0, 1].
+        config: PLD discretization configuration.
+
+    Returns:
+        The amplified privacy loss distribution.
+    """
+    ...
+
+
+def poisson_truncated_gaussian_pld(
+    noise_multiplier: float,
+    radius: float,
+    rate: float,
+    config: DiscretizationConfig,
+) -> Pld:
+    """Compute the PLD for a Poisson-subsampled truncated Gaussian mechanism.
+
+    The truncated (renormalized) Gaussian restricts noise to [−R·σ, R·σ]
+    with renormalized density, giving even tighter privacy bounds.
+
+    Args:
+        noise_multiplier: σ/Δ ratio.
+        radius: Support half-width in sigma units.
+        rate: Poisson sampling probability, in (0, 1].
         config: PLD discretization configuration.
 
     Returns:

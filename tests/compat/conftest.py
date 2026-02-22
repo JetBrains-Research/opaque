@@ -6,13 +6,16 @@ import os
 
 import pytest
 import torch
-from peft import LoraConfig, get_peft_model
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+
+# Guard optional deps — must come BEFORE bare imports so that pytest
+# skips the entire module instead of crashing with ModuleNotFoundError.
+pytest.importorskip("transformers")
+pytest.importorskip("peft")
+
+from peft import LoraConfig, get_peft_model  # noqa: E402
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 
 from opaque import clipped_grad, make_functional
-
-transformers = pytest.importorskip("transformers")
-peft = pytest.importorskip("peft")
 
 
 def pytest_runtest_setup(item):

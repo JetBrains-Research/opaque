@@ -262,6 +262,9 @@ following types are registered:
 | `GaussianNoiseState` | Assert seed and step counter match across ranks |
 | `MFNoiseState` | Assert seed and step counter match for MF noise |
 
+Rectified and truncated Gaussian noise also return `GaussianNoiseState`,
+so `sync()` handles them automatically — no extra helpers needed.
+
 See [API Reference](../api/distributed.md) for full docstrings.
 
 ## Limitations

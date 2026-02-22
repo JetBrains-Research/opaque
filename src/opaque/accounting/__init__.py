@@ -73,6 +73,8 @@ from opaque.accounting.mechanisms import (
     eps_delta,
     gaussian,
     identity,
+    rectified_gaussian,
+    truncated_gaussian,
 )
 
 # Transformations
@@ -85,6 +87,8 @@ __all__ = [
     "get_discretization",
     # Mechanisms (factories only; classes via subpackage import)
     "gaussian",
+    "rectified_gaussian",
+    "truncated_gaussian",
     "eps_delta",
     "identity",
     # Amplification

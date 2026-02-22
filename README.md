@@ -61,7 +61,7 @@ for batch_x, batch_y in dataloader:
 
 - **Per-example gradient clipping** via `torch.func.vmap` + `torch.func.grad`,
   with fixed and adaptive clip norms
-- **Noise injection**: Gaussian, bounded Gaussian, and matrix-factorization
+- **Noise injection**: Gaussian, truncated Gaussian, and matrix-factorization
   correlated noise (BandMF, BLT, dense)
 - **Privacy accounting**: Rust-based PLD engine with tight composition,
   multiple privacy metrics (epsilon-delta, f-DP advantage, error rates),

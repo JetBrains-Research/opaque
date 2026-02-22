@@ -98,7 +98,7 @@ src/opaque/
 │   └── _helpers.py         # Internal helpers
 ├── noise/                  # Noise injection (DP-SGD + correlated MF)
 │   ├── gaussian_noise.py           # gaussian_noise() → (noise_fn, state)
-│   ├── bounded_gaussian_noise.py   # bounded_gaussian_noise() → (noise_fn, state)
+│   ├── truncated_gaussian_noise.py   # truncated_gaussian_noise() → (noise_fn, state)
 │   ├── band_mf_noise.py            # BandMF correlated noise
 │   ├── blt_mf_noise.py             # Buffered Linear Toeplitz noise
 │   ├── dense_mf_noise.py           # Dense matrix noise

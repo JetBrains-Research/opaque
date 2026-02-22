@@ -24,14 +24,26 @@ from opaque.accounting.mechanisms.identity import (
     Identity,
     identity,
 )
+from opaque.accounting.mechanisms.rectified_gaussian import (
+    RectifiedGaussian,
+    rectified_gaussian,
+)
+from opaque.accounting.mechanisms.truncated_gaussian import (
+    TruncatedGaussian,
+    truncated_gaussian,
+)
 
 __all__ = [
     # Dataclass types
     "Gaussian",
     "EpsDelta",
     "Identity",
+    "RectifiedGaussian",
+    "TruncatedGaussian",
     # Constructor functions
     "gaussian",
     "eps_delta",
     "identity",
+    "rectified_gaussian",
+    "truncated_gaussian",
 ]

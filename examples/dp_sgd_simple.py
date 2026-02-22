@@ -4,18 +4,18 @@ This example demonstrates:
 1. Natural composition of clipped_grad() and gaussian_noise()
 2. Using fold_in() for per-step RNG derivation
 3. Full DP-SGD training loop with the simplified API
-4. Swapping in bounded_gaussian_noise() for bounded-domain noise
+4. Swapping in truncated_gaussian_noise() for bounded-domain noise
 
 The new API makes it easy to swap components for research:
 - Swap clipping: per_layer_clipped_grad(), adaptive_clipper()
-- Swap noise: bounded_gaussian_noise(), correlated_gaussian(), laplace()
+- Swap noise: truncated_gaussian_noise(), correlated_gaussian(), laplace()
 """
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
-from opaque import bounded_gaussian_noise, clipped_grad, gaussian_noise
+from opaque import truncated_gaussian_noise, clipped_grad, gaussian_noise
 from opaque.random import fold_in, key
 
 
@@ -161,10 +161,10 @@ def demo_research_flexibility():
     print(f"   - Sensitivity: {_state_3.sensitivity()}")
     print(f"   - Noise: Gaussian(stddev={1.1 * _state_3.sensitivity()})")
 
-    # Example 4: Bounded Gaussian noise (truncated normal)
-    print("\n4. Bounded Gaussian (Chen & Hale, 2024):")
+    # Example 4: Truncated Gaussian noise (truncated normal)
+    print("\n4. Truncated Gaussian (Chen & Hale, 2024):")
     step_key = fold_in(key(42), 3)
-    _noise_fn, _nstate = bounded_gaussian_noise(
+    _noise_fn, _nstate = truncated_gaussian_noise(
         stddev=1.1 * _state.sensitivity(), bounds=(-3.0, 3.0), key=step_key
     )
     print(

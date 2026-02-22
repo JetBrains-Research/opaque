@@ -39,6 +39,7 @@ Examples:
     >>> print(f"Use microbatch_size={max_mb}")
 """
 
+import os
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -178,19 +179,11 @@ class MemoryTracker:
         if self.device == "cuda" and self._supported:
             return torch.cuda.get_device_properties(0).total_memory
         elif self.device == "mps" and self._supported:
-            # MPS shares system memory - use available RAM
-            # Use ~70% of available as conservative estimate
+            # MPS shares system memory — report total physical RAM.
+            # os.sysconf is always available on macOS, no third-party deps.
             try:
-                import psutil
-
-                return int(psutil.virtual_memory().available * 0.7)
-            except ImportError:
-                warnings.warn(
-                    "psutil not installed. Cannot determine MPS memory. "
-                    "Install with: pip install psutil",
-                    UserWarning,
-                    stacklevel=2,
-                )
+                return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+            except (ValueError, OSError):
                 return 0.0
         return 0.0
 

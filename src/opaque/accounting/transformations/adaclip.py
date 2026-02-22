@@ -104,7 +104,7 @@ class AdaClip(DpProcess):
         )
 
         match self.inner:
-            case Gaussian(noise_multiplier=nm):
+            case Gaussian():
                 z_eff = self.effective_noise_multiplier
                 return _native.gaussian_pld(z_eff, config.to_native())
             case _:

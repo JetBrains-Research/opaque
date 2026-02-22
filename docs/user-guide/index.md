@@ -85,8 +85,8 @@ understanding, or jump to a specific topic.
 
 - **[Per-Example Gradient Clipping](clipping.md)** -- `clipped_grad`,
   `clipped_fun`, `clip_pytree`, microbatching, and adaptive clipping.
-- **[Noise Addition](noise.md)** -- Gaussian noise, bounded Gaussian, and
-  matrix-factorization correlated noise for DP-FTRL.
+- **[Noise Addition](noise.md)** -- Gaussian noise, bounded Gaussian variants
+  (truncated, rectified), and matrix-factorization correlated noise for DP-FTRL.
 - **[Privacy Accounting](accounting.md)** -- Composable `DpProcess` objects,
   privacy metrics, calibration, and the `Accountant` helper.
 - **[Sampling & Microbatching](sampling.md)** -- Poisson, truncated Poisson,

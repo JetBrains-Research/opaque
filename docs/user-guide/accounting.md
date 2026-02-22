@@ -108,6 +108,40 @@ step = acc.parallel_poisson(
 )
 ```
 
+### `acc.rectified_gaussian(noise_multiplier, bound_multiplier)`
+
+Bounded Gaussian mechanism — rectified variant. Clamps standard Gaussian
+noise to `[-R*sigma, R*sigma]`; the excess tail mass becomes point masses
+at the boundaries. Tighter than `acc.gaussian()` because the bounded
+support limits worst-case hockey-stick divergence.
+
+Use this when adding noise via `rectified_gaussian_noise()`.
+Composable with `poisson()` for subsampled accounting.
+
+```python
+step = acc.poisson(acc.rectified_gaussian(1.1, bound_multiplier=5.0), sample_rate=0.01)
+training = step * 1000
+eps = training.epsilon_at(delta=1e-5)  # tighter than acc.gaussian(1.1)
+```
+
+### `acc.truncated_gaussian(noise_multiplier, bound_multiplier)`
+
+Bounded Gaussian mechanism — truncated variant. The density is renormalized
+over `[-R*sigma, R*sigma]` (no point masses at boundaries). Always at least
+as tight as the rectified variant.
+
+Use this when adding noise via `truncated_gaussian_noise()`.
+Composable with `poisson()` for subsampled accounting.
+
+```python
+step = acc.poisson(acc.truncated_gaussian(1.1, bound_multiplier=5.0), sample_rate=0.01)
+training = step * 1000
+eps = training.epsilon_at(delta=1e-5)  # tightest of the three
+```
+
+Both bounded variants give tighter ε than `acc.gaussian()`. Truncated is
+always at least as tight as rectified. For most workloads, prefer truncated.
+
 ### `acc.adaclip(inner, *, quantile_noise_multiplier, batch_size)`
 
 Accounts for the additional privacy cost of adaptive clipping (the noisy

@@ -11,12 +11,15 @@ from opaque.accounting.base import DpProcess, Pld
 from opaque.accounting.mechanisms.gaussian import Gaussian
 from opaque.accounting.transformations.adaclip import AdaClip
 
+#: Mechanism types accepted by :func:`truncated_poisson`.
+_Inner = Gaussian | AdaClip
+
 
 @dataclass(frozen=True, slots=True)
 class TruncatedPoisson(DpProcess):
     """Truncated Poisson-subsampled Gaussian mechanism."""
 
-    inner: Gaussian | AdaClip
+    inner: _Inner
     sample_rate: float
     batch_size_cap: int
     dataset_size: int
@@ -59,13 +62,13 @@ class TruncatedPoisson(DpProcess):
                 )
             case _:
                 raise TypeError(
-                    "TruncatedPoisson requires a Gaussian or AdaClip inner mechanism, got "
-                    f"{type(self.inner).__name__}."
+                    "TruncatedPoisson requires a Gaussian or AdaClip inner "
+                    f"mechanism, got {type(self.inner).__name__}."
                 )
 
 
 def truncated_poisson(
-    inner: Gaussian | AdaClip,
+    inner: _Inner,
     sample_rate: float,
     batch_size_cap: int,
     dataset_size: int,
@@ -100,7 +103,8 @@ def truncated_poisson(
     """
     if not isinstance(inner, (Gaussian, AdaClip)):
         raise TypeError(
-            f"truncated_poisson() requires a Gaussian or AdaClip inner mechanism, got {type(inner).__name__}."
+            f"truncated_poisson() requires a Gaussian or AdaClip inner mechanism, "
+            f"got {type(inner).__name__}."
         )
     return TruncatedPoisson(
         inner=inner,

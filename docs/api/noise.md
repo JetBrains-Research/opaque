@@ -12,8 +12,10 @@ Opaque provides several noise mechanisms:
 ### Independent Noise (DP-SGD)
 
 - **`gaussian_noise()`** — Standard (unbounded) Gaussian noise. The default for most DP-SGD workflows.
-- **`bounded_gaussian_noise()`** — Bounded Gaussian noise using a truncated normal distribution
-  ([Chen & Hale, 2024](https://arxiv.org/abs/2211.17230)). Guarantees all noisy outputs lie within a specified domain.
+- **`truncated_gaussian_noise()`** — Bounded Gaussian noise (renormalized density). The tail mass
+  is redistributed over the bounded interval — no point masses at the boundaries.
+- **`rectified_gaussian_noise()`** — Bounded Gaussian noise (clamped). Standard Gaussian clamped
+  to `[-radius, radius]`. The excess tail mass becomes point masses at the boundaries.
 
 ### Correlated Noise (DP-FTRL / Matrix Factorization)
 
@@ -36,6 +38,8 @@ Use `sync()` from `opaque.distributed` to validate noise state consistency
 across ranks. It auto-dispatches based on type:
 
 - **`sync(GaussianNoiseState)`** — Validate RNG key and step counter match across ranks.
+  Rectified and truncated Gaussian noise also return `GaussianNoiseState`,
+  so `sync()` handles them automatically.
 - **`sync(MFNoiseState)`** — Validate MF noise state matches across ranks.
 
 **See also**: [Noise Addition User Guide](../user-guide/noise.md)
@@ -44,9 +48,13 @@ across ranks. It auto-dispatches based on type:
 
 ::: opaque.noise.gaussian_noise
 
-## Bounded Gaussian
+## Bounded Gaussian — Truncated (renormalized)
 
-::: opaque.noise.bounded_gaussian_noise
+::: opaque.noise.truncated_gaussian_noise
+
+## Bounded Gaussian — Rectified (clamped)
+
+::: opaque.noise.rectified_gaussian_noise
 
 ## Matrix Factorization Noise
 

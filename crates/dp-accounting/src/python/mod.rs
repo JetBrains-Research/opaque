@@ -21,6 +21,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(mechanisms::py_gaussian_pld, m)?)?;
     m.add_function(wrap_pyfunction!(mechanisms::py_eps_delta_pld, m)?)?;
     m.add_function(wrap_pyfunction!(mechanisms::py_identity_pld, m)?)?;
+    m.add_function(wrap_pyfunction!(mechanisms::py_rectified_gaussian_pld, m)?)?;
+    m.add_function(wrap_pyfunction!(mechanisms::py_truncated_gaussian_pld, m)?)?;
 
     // Amplification
     m.add_function(wrap_pyfunction!(amplification::py_poisson_gaussian_pld, m)?)?;
@@ -30,6 +32,14 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(
         amplification::py_parallel_poisson_gaussian_pld,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        amplification::py_poisson_rectified_gaussian_pld,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        amplification::py_poisson_truncated_gaussian_pld,
         m
     )?)?;
 
