@@ -87,7 +87,7 @@ per-rank key via `fold_in(key, rank)` to each `PoissonSampler`.
 
 ## See Also
 
-- [Gradient Clipping API](core/clipping.md) — includes `adaptive_clipped_grad()`
+- [Gradient Clipping API](clipping.md) — includes `adaptive_clipped_grad()`
 - [Optimizers User Guide](../user-guide/optimizers.md)
 - [Fine-tuning an LLM Tutorial](../tutorials/llm_finetuning.ipynb)
 - [TorchOpt Documentation](https://torchopt.readthedocs.io/)

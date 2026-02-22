@@ -54,7 +54,7 @@ params = torch.randn(10, requires_grad=False)
 for batch_x, batch_y in dataloader:
     grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
-    params = params - lr * noisy_grads
+    params = params - lr * noisy_grads  # or use torchopt optimizer
 ```
 
 ## Features
@@ -66,8 +66,7 @@ for batch_x, batch_y in dataloader:
 - **Privacy accounting**: Rust-based PLD engine with tight composition,
   multiple privacy metrics (epsilon-delta, f-DP advantage, error rates),
   and noise calibration via binary search
-- **Poisson sampling**: standard, truncated, and cyclic variants with
-  automatic distributed sharding
+- **Poisson sampling**: standard, truncated, and cyclic variants
 - **Privacy auditing**: empirical privacy validation via membership inference
 - **Distributed training**: DDP-compatible with synchronized noise and
   gradient aggregation
@@ -85,11 +84,11 @@ for batch_x, batch_y in dataloader:
 ## Development
 
 ```bash
-uv run pytest                              # Run tests
+uv sync --group test                       # Install test dependencies
+uv run pytest                              # Run all tests
+uv run pytest -m "not slow"               # Skip slow tests
 uv run ruff format src/ tests/             # Format
 uv run ruff check src/ tests/              # Lint
-uv sync --group test                       # + HuggingFace tests
-uv sync --group cross-validation           # + reference comparison
 ```
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for development workflow.

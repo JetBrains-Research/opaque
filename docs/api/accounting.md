@@ -102,7 +102,7 @@ eps = proc.epsilon_at(1e-5)  # Uses 1e-4 default
 ```
 
 - `acc.set_discretization(discretization=1e-4, ...)` -- Set global default
-- `acc.get_discretization()` -- Return current `DiscretizationConfig` (always returns a concrete config)
+- `acc.get_discretization()` -- Return current `DiscretizationConfig`
 
 ---
 

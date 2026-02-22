@@ -83,8 +83,9 @@ eps = training.epsilon_at(delta=1e-5)
 
 ### `acc.truncated_poisson(inner, sample_rate, batch_size_cap, dataset_size)`
 
-Tighter privacy bounds than standard Poisson by capping the batch size. Can
-give up to 20% improvement in epsilon.
+Caps the maximum batch size to limit memory consumption, at the cost of
+slightly worse privacy bounds compared to standard Poisson (the truncation
+introduces additional privacy cost).
 
 ```python
 n = 50_000

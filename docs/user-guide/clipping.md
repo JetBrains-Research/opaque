@@ -342,5 +342,5 @@ are treated as constants by `vmap`.
 
 ## API reference
 
-See [Clipping API Reference](../api/core/clipping.md) for complete function
+See [Clipping API Reference](../api/clipping.md) for complete function
 signatures, all parameters, and return types.

@@ -66,6 +66,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
+import torchopt
 from opaque import clipped_grad, gaussian_noise, PoissonSampler
 import opaque.auditing as auditing
 from opaque.random import key
@@ -88,11 +89,15 @@ noise_fn, noise_state = gaussian_noise(
     stddev=1.1 * clip_state.sensitivity(), key=key(42),
 )
 
+optimizer = torchopt.sgd(lr=0.01)
+opt_state = optimizer.init(params)
+
 for step in range(num_steps):
     batch_x, batch_y = next(iter(train_loader))
     grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
-    params = params - lr * noisy_grads
+    updates, opt_state = optimizer.update(noisy_grads, opt_state)
+    params = torchopt.apply_updates(params, updates)
 
 # Evaluate
 audit = auditing.evaluate(experiment, loss_fn, params, dataset)
@@ -140,29 +145,15 @@ audit.tpr_at_fpr(fpr=0.1)       # True positive rate at 10% FPR
 audit.max_accuracy()             # Best-case classification accuracy
 ```
 
-| Metric | Random | Weak attack | Strong attack |
-|--------|--------|-------------|---------------|
-| AUROC | 0.50 | 0.60 | 0.80+ |
-| TPR @ 1% FPR | 0.01 | 0.05 | 0.20+ |
-| Max accuracy | 0.50 | 0.60 | 0.80+ |
-
 ## Confidence intervals
 
-Use bootstrap to quantify uncertainty in any metric:
+Quantify uncertainty in the AUROC estimate:
 
 ```python
-from opaque.auditing import AuditResult, BootstrapParams
 from opaque.random import key
 
-bp = BootstrapParams.confidence_interval(
-    confidence=0.95, num_samples=2000, key=key(42),
-)
-
-auroc_ci = audit.bootstrap(AuditResult.auroc, bp)
+auroc_ci = audit.auroc(confidence=0.95, key=key(42))
 print(f"AUROC 95% CI: [{auroc_ci[0]:.3f}, {auroc_ci[1]:.3f}]")
-
-eps_ci = audit.bootstrap(lambda r: r.epsilon_at(delta=1e-5), bp)
-print(f"Epsilon 95% CI: [{eps_ci[0]:.2f}, {eps_ci[1]:.2f}]")
 ```
 
 ## Post-hoc auditing
@@ -196,7 +187,7 @@ leakage outside the training loop.
 
 - **Use enough canaries.** 1000+ gives reliable results. 100 is too few
   for tight bounds.
-- **Report confidence intervals.** Always use `bootstrap()` to quantify
+- **Report confidence intervals.** Use `auroc(confidence=0.95)` to quantify
   uncertainty.
 - **Compare to theoretical epsilon.** The empirical bound should be lower.
 - **Audit multiple metrics.** AUROC and TPR at low FPR are complementary

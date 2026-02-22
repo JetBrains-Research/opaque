@@ -212,5 +212,5 @@ accessible via `model.parameters()`.
 ## API reference
 
 See [Utilities API Reference](../api/utilities.md) for
-`make_functional` signatures and [Clipping API Reference](../api/core/clipping.md)
+`make_functional` signatures and [Clipping API Reference](../api/clipping.md)
 for `clipped_grad` with `partition_trainable` examples.

@@ -67,7 +67,8 @@ noise_fn, state = gaussian_noise(stddev=1.0, key=key(42))
 for batch in dataloader:
     grads, clip_state = grad_fn(params, batch, state=clip_state)
     noisy_grads, state = noise_fn(grads, state)  # state advances
-    params = params - lr * noisy_grads
+    updates, opt_state = optimizer.update(noisy_grads, opt_state)
+    params = torchopt.apply_updates(params, updates)
 ```
 
 Internally, noise at step t is generated from `fold_in(base_key, t)`, ensuring

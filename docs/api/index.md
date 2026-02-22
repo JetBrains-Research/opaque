@@ -22,7 +22,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 ### DP-SGD Components
 
-- **[Clipping](core/clipping.md)**: Per-sample gradient clipping
+- **[Clipping](clipping.md)**: Per-sample gradient clipping
   - `clipped_grad()` - High-level gradient clipping
   - `clipped_fun()` - Clip and sum function outputs
   - `clip_pytree()` - Low-level PyTree clipping
@@ -43,6 +43,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 - **[Sampling](sampling.md)**: Privacy-amplifying sampling
   - `PoissonSampler` - Standard Poisson sampling
   - `TruncatedPoissonSampler` - Bounded Poisson sampling
+  - `CyclicPoissonSampler` - Cyclic Poisson sampling (BandMF)
 
 ### Validation & Debugging
 
@@ -151,6 +152,7 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 |---------------------------|----------------------------|---------------------------------------------------------------|
 | `PoissonSampler`          | Standard Poisson sampling  | [Guide](../user-guide/sampling.md#poisson-sampling) |
 | `TruncatedPoissonSampler` | Truncated Poisson sampling | [Guide](../user-guide/sampling.md#poisson-sampling) |
+| `CyclicPoissonSampler`    | Cyclic Poisson sampling (BandMF) | [Guide](../user-guide/sampling.md#poisson-sampling) |
 
 ### Privacy Auditing
 

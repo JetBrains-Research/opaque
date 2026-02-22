@@ -23,7 +23,7 @@ Device 2:  clip(local_batch) --+
 ```
 
 The noise must be added independently on every device with the same key.
-Never add noise on rank 0 and broadcast -- this produces the correct result
+Avoid adding noise on rank 0 and broadcasting -- this produces the correct result
 but wastes communication bandwidth and complicates the code.
 
 ## Minimal example

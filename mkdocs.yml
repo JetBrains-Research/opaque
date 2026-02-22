@@ -63,11 +63,16 @@ markdown_extensions:
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.arithmatex:
+      generic: true
   - tables
   - attr_list
   - md_in_html
   - toc:
       permalink: true
+
+extra_javascript:
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
 
 nav:
   - Home: index.md
@@ -98,7 +103,7 @@ nav:
     - Distributed Training: tutorials/distributed_training.ipynb
   - API Reference:
     - Overview: api/index.md
-    - Clipping: api/core/clipping.md
+    - Clipping: api/clipping.md
     - Noise: api/noise.md
     - Accounting: api/accounting.md
     - Sampling: api/sampling.md

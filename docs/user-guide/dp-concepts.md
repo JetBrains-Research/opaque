@@ -7,11 +7,11 @@ guides linked throughout.
 ## What differential privacy guarantees
 
 Differential privacy is a mathematical property of a *mechanism* (an algorithm
-that takes a dataset and produces an output). A mechanism M is
-(epsilon, delta)-differentially private if, for any two datasets D and D' that
-differ in a single record, and for any set of outputs S:
+that takes a dataset and produces an output). A mechanism $\mathcal{M}$ is
+$(\varepsilon, \delta)$-differentially private if, for any two datasets $D$ and $D'$ that
+differ in a single record, and for any set of outputs $S$:
 
-    P[M(D) in S] <= exp(epsilon) * P[M(D') in S] + delta
+$$P[\mathcal{M}(D) \in S] \leq e^{\varepsilon} \cdot P[\mathcal{M}(D') \in S] + \delta$$
 
 Informally: the output distribution barely changes when one person's data is
 added or removed. An adversary observing the output cannot confidently determine
@@ -225,22 +225,16 @@ often an optimal number of steps that balances convergence with noise level.
 
 ## Neighboring relations
 
-The privacy guarantee depends on what "differ in one record" means. Opaque
-supports three neighboring relations:
+The privacy guarantee depends on what "differ in one record" means:
 
 | Relation | Meaning | Sensitivity |
 |----------|---------|-------------|
-| `ADD_OR_REMOVE_ONE` | D' = D +/- one record | C |
-| `REPLACE_ONE` | D' = D with one record swapped | 2C |
-| `REPLACE_SPECIAL` | D' = D with one record replaced by a no-op | C |
+| Add or remove | $D' = D \pm$ one record | $C$ |
+| Replace one | $D' = D$ with one record swapped | $2C$ |
 
-`REPLACE_SPECIAL` is the default and most common in DP-SGD. It models the
-case where the adversary knows the dataset differs by replacing one real
-example with a "zero" example that contributes nothing.
-
-The choice of neighboring relation affects the sensitivity (and therefore the
-noise calibration). Opaque's `ClipState.sensitivity()` method computes the
-correct sensitivity for each relation.
+Opaque uses the **add-or-remove** convention: `sensitivity()` returns the
+clip norm $C$. If your analysis uses replace-one semantics, double the
+sensitivity when calibrating noise ($\sigma = \text{noise\_multiplier} \times 2C$).
 
 ## References
 
