@@ -18,7 +18,6 @@ and Bayes risk — all from a single PLD computation.
 | Method | Bound Quality | Composition | Speed |
 |--------|--------------|-------------|-------|
 | Basic composition | Loose | O(k) additive | Fast |
-| Renyi DP (RDP) | Good | Moment-based | Fast |
 | **PLD (this crate)** | **Tight** | **FFT convolution** | **O(n log n)** |
 
 PLD gives the tightest known bounds for composed mechanisms via
