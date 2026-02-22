@@ -1,0 +1,125 @@
+name: Accounting Wheels
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'crates/dp-accounting/**'
+      - '.github/workflows/accounting-wheels.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'crates/dp-accounting/**'
+      - '.github/workflows/accounting-wheels.yml'
+
+# Cancel in-progress runs when a new workflow with the same group name is triggered
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-wheels:
+    name: Wheel - ${{ matrix.platform.name }} Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.platform.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+        platform:
+          - name: linux-x86_64
+            runner: ubuntu-latest
+            target: x86_64
+            manylinux: auto
+
+          - name: linux-aarch64
+            runner: ubuntu-latest
+            target: aarch64
+            manylinux: auto
+
+          - name: macos-x86_64
+            runner: macos-latest
+            target: x86_64
+            manylinux: ""
+
+          - name: macos-arm64
+            runner: macos-latest
+            target: aarch64
+            manylinux: ""
+
+          - name: windows-x86_64
+            runner: windows-latest
+            target: x86_64
+            manylinux: ""
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Build wheel (Linux)
+        if: runner.os == 'Linux'
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.platform.target }}
+          manylinux: ${{ matrix.platform.manylinux }}
+          working-directory: crates/dp-accounting
+          args: --release --out dist --interpreter python${{ matrix.python-version }}
+          sccache: true
+
+      - name: Build wheel (macOS / Windows)
+        if: runner.os != 'Linux'
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.platform.target }}
+          working-directory: crates/dp-accounting
+          args: --release --out dist --interpreter python${{ matrix.python-version }}
+          sccache: true
+
+      - name: Smoke test wheel
+        if: matrix.platform.target == 'x86_64' || (runner.os == 'macOS' && matrix.platform.target == 'aarch64')
+        shell: bash
+        run: |
+          pip install --find-links crates/dp-accounting/dist opaque-accounting --force-reinstall
+          python -c "
+          import opaque_accounting as dp
+          pld = dp.gaussian_pld(1.1)
+          eps = pld.epsilon_at(1e-5)
+          assert eps > 0, f'Expected positive epsilon, got {eps}'
+          print(f'Smoke test passed: epsilon_at(1e-5) = {eps:.4f}')
+          "
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.platform.name }}-py${{ matrix.python-version }}
+          path: crates/dp-accounting/dist/*.whl
+
+  build-sdist:
+    name: Source distribution
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          working-directory: crates/dp-accounting
+          args: --out dist
+
+      - name: Upload sdist
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: crates/dp-accounting/dist/*.tar.gz

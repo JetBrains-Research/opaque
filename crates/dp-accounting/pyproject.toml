@@ -6,9 +6,25 @@ build-backend = "maturin"
 name = "opaque-accounting"
 version = "0.1.0"
 description = "High-performance differential privacy accounting using Privacy Loss Distributions"
+readme = "README.md"
 license = { text = "Apache-2.0" }
+authors = [
+    { name = "Opaque Contributors" },
+]
 requires-python = ">=3.11"
+keywords = [
+    "differential-privacy",
+    "privacy",
+    "pld",
+    "dp-sgd",
+    "machine-learning",
+    "privacy-accounting",
+]
 classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: 3.11",
@@ -17,6 +33,13 @@ classifiers = [
     "Topic :: Security",
 ]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/JetBrains-Research/opaque"
+Documentation = "https://github.com/JetBrains-Research/opaque/tree/main/crates/dp-accounting"
+Repository = "https://github.com/JetBrains-Research/opaque"
+Issues = "https://github.com/JetBrains-Research/opaque/issues"
+Changelog = "https://github.com/JetBrains-Research/opaque/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 dev = [

@@ -12,16 +12,32 @@ mutation.
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch 2.0+](https://img.shields.io/badge/pytorch-2.0+-red.svg)](https://pytorch.org/)
 [![CI](https://github.com/JetBrains-Research/opaque/actions/workflows/ci.yml/badge.svg)](https://github.com/JetBrains-Research/opaque/actions/workflows/ci.yml)
+[![Accounting CI](https://github.com/JetBrains-Research/opaque/actions/workflows/accounting-ci.yml/badge.svg)](https://github.com/JetBrains-Research/opaque/actions/workflows/accounting-ci.yml)
 
 ## Installation
 
 ```bash
+# Full DP-SGD library (includes PyTorch, noise, clipping, accounting)
 pip install opaque-dp
+
+# Privacy accounting only (no PyTorch required)
+pip install opaque-accounting
 
 # Development
 git clone https://github.com/JetBrains-Research/opaque.git
 cd opaque && uv sync
 ```
+
+> **Two packages in this repository:**
+>
+> | Package | PyPI name | Import | PyTorch? | Use case |
+> |---------|-----------|--------|----------|----------|
+> | `opaque` | `opaque-dp` | `import opaque` | ✅ required | Full DP-SGD training |
+> | `opaque-accounting` | `opaque-accounting` | `import opaque_accounting` | ❌ not required | Privacy accounting only |
+>
+> `pip install opaque-dp` automatically installs `opaque-accounting` as a dependency.
+> The Python wrapper at `opaque.accounting` (part of `opaque-dp`) adds typed constructors,
+> calibration utilities, and documentation on top of the Rust engine.
 
 ## Example
 
@@ -84,11 +100,19 @@ for batch_x, batch_y in dataloader:
 ## Development
 
 ```bash
+# Full opaque library
 uv sync --group test                       # Install test dependencies
 uv run pytest                              # Run all tests
 uv run pytest -m "not slow"               # Skip slow tests
 uv run ruff format src/ tests/             # Format
-uv run ruff check src/ tests/              # Lint
+uv run ruff check src/ tests/             # Lint
+
+# opaque-accounting crate (standalone, no PyTorch)
+cd crates/dp-accounting
+cargo test                                 # Rust unit tests
+cargo clippy -- -D warnings               # Rust lint
+uv run maturin develop --release          # Build Python extension
+uv run pytest tests/                      # PyO3 binding smoke tests
 ```
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for development workflow.

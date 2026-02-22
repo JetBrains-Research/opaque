@@ -1,12 +1,42 @@
 # opaque-accounting
 
+[![PyPI](https://img.shields.io/pypi/v/opaque-accounting)](https://pypi.org/project/opaque-accounting/)
+[![CI](https://github.com/JetBrains-Research/opaque/actions/workflows/accounting-ci.yml/badge.svg)](https://github.com/JetBrains-Research/opaque/actions/workflows/accounting-ci.yml)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 PLD computation engine for differential privacy accounting, implemented in Rust with Python bindings via PyO3.
+
+## Installation
+
+### Standalone (no PyTorch required)
+
+```bash
+pip install opaque-accounting
+```
+
+This installs the `opaque_accounting` Python module — the low-level Rust engine
+for PLD computation. No PyTorch or other ML dependencies required. Ideal for
+privacy researchers who only need privacy accounting.
+
+### As part of Opaque (full DP-SGD library)
+
+```bash
+pip install opaque-dp
+```
+
+The full `opaque` package includes `opaque-accounting` as a dependency and
+exposes a higher-level Python wrapper at `opaque.accounting` with typed
+constructors, calibration utilities, and friendly documentation.
 
 ## Overview
 
 `opaque_accounting` is the numerical backend for `opaque.accounting`. It provides
 flat functions that take scalar parameters and return opaque `Pld` handles.
 Python owns composition, repetition, caching, and calibration.
+
+> **Two ways to use this:**
+> - `import opaque_accounting as dp` — direct Rust API (this package, standalone)
+> - `import opaque.accounting as acc` — Python wrapper with higher-level API (requires `pip install opaque-dp`)
 
 The engine uses the Privacy Loss Distribution (PLD) framework with
 Connect-the-Dots discretization ([Doroshenko et al., 2022](https://arxiv.org/abs/2207.04380)).
