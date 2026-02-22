@@ -178,6 +178,82 @@ for step_proc in step_list:
 eps = process.epsilon_at(delta=1e-5)
 ```
 
+## Matrix factorization mechanisms
+
+MF noise introduces correlations between training steps, reducing
+effective noise on cumulative updates. The accounting must handle the
+modified sensitivity of the strategy matrix. These mechanisms optimize
+the strategy internally and compute the correct sensitivity — do not use
+`acc.gaussian()` for MF noise.
+
+### `acc.band_mf(noise_multiplier, n_steps, bands)`
+
+BandMF mechanism with banded Toeplitz strategy. Computes single-participation
+sensitivity from the optimized encoder.
+
+```python
+proc = acc.band_mf(noise_multiplier=1.0, n_steps=1000, bands=10)
+eps = proc.epsilon_at(delta=1e-5)
+```
+
+For subsampling amplification, wrap with `cyclic_poisson` (see below).
+
+### `acc.blt_mf(noise_multiplier, n_steps, *, min_sep, max_participations)`
+
+BLT mechanism with Buffered Linear Toeplitz strategy. Supports
+multi-epoch training via `min_sep` and `max_participations`.
+
+```python
+# Single participation
+proc = acc.blt_mf(noise_multiplier=1.0, n_steps=5000)
+eps = proc.epsilon_at(delta=1e-5)
+
+# Multi-epoch: each user participates up to 5 times, at least 100 steps apart
+proc = acc.blt_mf(1.0, 5000, min_sep=100, max_participations=5)
+eps = proc.epsilon_at(delta=1e-5)
+```
+
+### `acc.dense_mf(noise_multiplier, n_steps, *, epochs)`
+
+Dense MF with optimal strategy matrix. Materializes the full n x n matrix,
+so use only for short training runs (n < 100).
+
+```python
+proc = acc.dense_mf(noise_multiplier=1.0, n_steps=50, epochs=2)
+eps = proc.epsilon_at(delta=1e-5)
+```
+
+### `acc.cyclic_poisson(inner, sample_rate)`
+
+Cyclic Poisson amplification for BandMF. Decomposes the training run
+into `ceil(n_steps / bands)` independent groups, each analyzed as a
+Poisson-subsampled Gaussian mechanism. Only accepts `band_mf` processes.
+
+```python
+proc = acc.cyclic_poisson(
+    acc.band_mf(noise_multiplier=1.0, n_steps=1000, bands=10),
+    sample_rate=0.01,
+)
+eps = proc.epsilon_at(delta=1e-5)
+```
+
+### Calibrating MF noise
+
+Calibration works the same way — pass a lambda that builds the MF process:
+
+```python
+result = acc.calibrate(
+    acc.epsilon_budget(3.0, delta=1e-5),
+    lambda nm: acc.cyclic_poisson(
+        acc.band_mf(nm, n_steps=1000, bands=10),
+        sample_rate=0.01,
+    ),
+    param_min=0.1,
+    param_max=10.0,
+)
+noise_multiplier = result.param
+```
+
 ## Privacy metrics
 
 All metrics are methods on `DpProcess`. They compute the underlying PLD on

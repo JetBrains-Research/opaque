@@ -113,7 +113,7 @@ def test_band_mf_amplified_state_dict_structure():
 def test_band_mf_amplified_round_trip():
     proc = band_mf_amplified(1.0, 2.5, 0.01, 200)
     state = proc.state_dict()
-    restored = DpProcess.load_state_dict(state)
+    restored = DpProcess.from_state_dict(state)
     assert isinstance(restored, BandMfAmplified)
     assert restored == proc
 

@@ -296,18 +296,25 @@ matrix has no temporal structure.
 
 ### Privacy accounting for MF noise
 
-MF noise mechanisms have the same per-step privacy cost as standard Gaussian
-noise (the noise multiplier determines epsilon in the same way). The benefit
-is purely in utility: the effective noise on the cumulative model update is
-lower.
-
-Account for MF noise using the same `acc.gaussian()` mechanism:
+MF noise has different sensitivity than standard Gaussian noise because
+the correlated strategy matrix amplifies or attenuates individual
+contributions. Opaque provides dedicated accounting mechanisms that
+compute the correct sensitivity internally:
 
 ```python
-step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
-training = step * num_steps
-eps = training.epsilon_at(1e-5)
+import opaque.accounting as acc
+
+# BandMF (with cyclic Poisson amplification)
+proc = acc.cyclic_poisson(acc.band_mf(1.0, 1000, 10), sample_rate=0.01)
+eps = proc.epsilon_at(1e-5)
+
+# BLT (multi-epoch)
+proc = acc.blt_mf(1.0, 5000, min_sep=100, max_participations=5)
+eps = proc.epsilon_at(1e-5)
 ```
+
+See [Privacy Accounting — Matrix factorization mechanisms](accounting.md#matrix-factorization-mechanisms)
+for the full API.
 
 ### Multi-participation (multi-epoch)
 
