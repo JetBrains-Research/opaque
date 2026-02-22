@@ -6,6 +6,7 @@
 mod adaclip;
 mod amplification;
 mod config;
+mod matrix_factorization;
 mod mechanisms;
 mod pld;
 
@@ -40,6 +41,44 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(
         amplification::py_poisson_truncated_gaussian_pld,
+        m
+    )?)?;
+
+    // Matrix Factorization
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_mf_gaussian_pld,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_max_participation_for_linear_fn,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_minsep_true_max_participations,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_single_participation_sensitivity,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_banded_sensitivity,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_general_sensitivity_upper_bound,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_fixed_epoch_sensitivity,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_blt_sensitivity_squared,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_toeplitz_minsep_sensitivity_squared,
         m
     )?)?;
 

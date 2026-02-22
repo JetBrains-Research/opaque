@@ -225,6 +225,75 @@ composition: `identity() | a` returns `a`.
 
 ---
 
+## Matrix Factorization Mechanisms
+
+MF mechanisms compute the correct sensitivity of the correlated noise strategy
+internally. They return a `DpProcess` that composes with all standard operators.
+
+### `band_mf(noise_multiplier, n_steps, bands) -> DpProcess`
+
+BandMF mechanism with banded Toeplitz strategy. Single-participation sensitivity
+is computed from the optimized encoder matrix.
+
+- `noise_multiplier` (float): Raw noise standard deviation sigma.
+- `n_steps` (int): Number of training iterations.
+- `bands` (int): Number of bands in the Toeplitz matrix (1 to `n_steps`).
+
+```python
+proc = acc.band_mf(noise_multiplier=1.0, n_steps=1000, bands=10)
+eps = proc.epsilon_at(1e-5)
+```
+
+### `blt_mf(noise_multiplier, n_steps, *, min_sep=1, max_participations=1, error="max", max_buffers=10) -> DpProcess`
+
+BLT (Buffered Linear Toeplitz) mechanism. Supports multi-epoch participation
+patterns via `min_sep` and `max_participations`.
+
+- `noise_multiplier` (float): Raw noise standard deviation sigma.
+- `n_steps` (int): Number of training iterations.
+- `min_sep` (int): Minimum steps between participations (default 1).
+- `max_participations` (int | None): Maximum participations per user (default 1).
+- `error` (str): Error metric to optimize: `"max"` or `"mean"`.
+- `max_buffers` (int): Maximum number of BLT buffers (default 10).
+
+```python
+proc = acc.blt_mf(1.0, 5000, min_sep=100, max_participations=5)
+eps = proc.epsilon_at(1e-5)
+```
+
+### `dense_mf(noise_multiplier, n_steps, *, epochs=1, bands=None, equal_norm=False) -> DpProcess`
+
+Dense MF with optimal strategy matrix. Materializes the full n x n matrix.
+
+- `noise_multiplier` (float): Raw noise standard deviation sigma.
+- `n_steps` (int): Number of training iterations.
+- `epochs` (int): Number of epochs; must divide `n_steps`.
+- `bands` (int | None): Optional banded constraint.
+- `equal_norm` (bool): If True, optimize with equal column norm constraint.
+
+```python
+proc = acc.dense_mf(noise_multiplier=1.0, n_steps=50, epochs=2)
+eps = proc.epsilon_at(1e-5)
+```
+
+### `cyclic_poisson(inner, sample_rate) -> DpProcess`
+
+Cyclic Poisson amplification for BandMF. Decomposes the training run into
+`ceil(n_steps / bands)` independent groups, each analyzed as a
+Poisson-subsampled Gaussian. Only accepts `BandMf` inner processes.
+
+- `inner` (BandMf): A BandMf process (from `band_mf()`).
+- `sample_rate` (float): Poisson sampling probability per group.
+
+```python
+proc = acc.cyclic_poisson(
+    acc.band_mf(1.0, 1000, 10), sample_rate=0.01,
+)
+eps = proc.epsilon_at(1e-5)
+```
+
+---
+
 ## Composition Functions
 
 Functional equivalents of the `*` and `|` operators. Most users should prefer

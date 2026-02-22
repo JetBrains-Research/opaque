@@ -2,7 +2,8 @@
 
 This module provides a compositional API for tracking privacy guarantees:
 
-- **Mechanisms**: gaussian(), poisson(), truncated_poisson(), etc.
+- **Mechanisms**: gaussian(), band_mf(), blt_mf(), dense_mf(), etc.
+- **Amplification**: poisson(), cyclic_poisson(), truncated_poisson(), etc.
 - **Composition**: Combine processes using ``*`` (repeat) or ``|`` (compose)
 - **Metrics**: Query privacy with epsilon_at(), delta_at(), advantage(), etc.
 
@@ -13,15 +14,14 @@ Example::
 
     import opaque.accounting as acc
 
-    # Create a DP-SGD step
+    # Standard DP-SGD step
     step = acc.poisson(acc.gaussian(1.1), sample_rate=0.01)
-
-    # Compose 1000 steps
     training = step * 1000
-
-    # Query privacy at delta=1e-5
     epsilon = training.epsilon_at(1e-5)
-    print(f"Privacy: (ε={epsilon:.2f}, δ=1e-5)")
+
+    # BandMF with cyclic Poisson amplification
+    proc = acc.cyclic_poisson(acc.band_mf(1.0, 1000, 10), sample_rate=0.01)
+    eps = proc.epsilon_at(1e-5)
 
 For calibration (finding noise for target privacy budget), use the
 :mod:`opaque.accounting.calibration` submodule.
@@ -41,6 +41,7 @@ except ImportError as e:
 
 # Amplification
 from opaque.accounting.amplification import (
+    cyclic_poisson,
     parallel_poisson,
     poisson,
     truncated_poisson,
@@ -70,6 +71,9 @@ from opaque.accounting.discretization import (
 
 # Mechanisms
 from opaque.accounting.mechanisms import (
+    band_mf,
+    blt_mf,
+    dense_mf,
     eps_delta,
     gaussian,
     identity,
@@ -91,10 +95,14 @@ __all__ = [
     "truncated_gaussian",
     "eps_delta",
     "identity",
+    "band_mf",
+    "blt_mf",
+    "dense_mf",
     # Amplification
     "poisson",
     "truncated_poisson",
     "parallel_poisson",
+    "cyclic_poisson",
     # Transformations
     "adaclip",
     # Composition
