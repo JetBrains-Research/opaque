@@ -306,7 +306,7 @@ def sync_object(
         >>> state = AdaptiveClipState(clip_norm=1.0, step=100, clipping_rate=0.8)
         >>>
         >>> # Synchronize clip_norm and clipping_rate (but not step)
-        >>> state = dist_state.sync_state(
+        >>> state = dist_state.sync_object(
         ...     state,
         ...     field_ops={"clip_norm": "mean", "clipping_rate": "mean"}
         ... )

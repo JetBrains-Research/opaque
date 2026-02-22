@@ -270,6 +270,12 @@ def sync(state: object) -> object:
         noise_state = sync(noise_state)     # dispatches to sync_gaussian_noise_state
         aux = sync(aux)                     # dispatches to sync_aux
     """
+    # Lazy registration: ensure clipping and noise modules have registered
+    # their sync types even if the user only imported opaque.distributed.
+    if not _SYNC_REGISTRY:
+        import opaque.clipping.distributed  # noqa: F401
+        import opaque.noise.distributed  # noqa: F401
+
     state_type = type(state)
     if state_type in _SYNC_REGISTRY:
         return _SYNC_REGISTRY[state_type](state)

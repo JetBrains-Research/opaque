@@ -107,7 +107,7 @@ def _worker_reduce_scalar(rank: int, world_size: int, port: int) -> None:
 
 def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> None:
     from opaque.clipping.adaptive import AdaptiveClipState
-    from opaque.clipping.distributed import sync_adaptive_clip_state
+    from opaque.distributed import sync
     from opaque.random import key as rng_key
 
     _setup_ddp(rank, world_size, port)
@@ -127,7 +127,7 @@ def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> N
             total=float(10 * (rank + 1)),
             batch_size=8 * (rank + 1),
         )
-        synced = sync_adaptive_clip_state(state)
+        synced = sync(state)
         # num_clipped and total are summed, then global rate recomputed
         expected_total_clipped = sum(3.0 * (r + 1) for r in range(world_size))
         expected_total = sum(10.0 * (r + 1) for r in range(world_size))
@@ -220,13 +220,9 @@ def _worker_adaptive_clipping(rank: int, world_size: int, port: int) -> None:
         y = torch.randn(batch_size, 1, device=device)
 
         grads, new_state = grad_fn(params, x, y, state=clip_state)
-        from opaque.distributed import sync_object
+        from opaque.distributed import sync
 
-        new_state = sync_object(
-            new_state,
-            field_ops={"clip_norm": "mean", "clipping_rate": "mean"},
-            device=device,
-        )
+        new_state = sync(new_state)
 
         assert new_state.clip_norm > 0
         assert new_state.step == 1

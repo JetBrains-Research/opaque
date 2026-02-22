@@ -57,7 +57,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `reduce_pytree()` - Generic PyTree reduction
   - `sync()` - Auto-dispatch sync for any state/aux type
   - `sync_object()` - Synchronize scalar fields of a dataclass
-  - `is_initialized()`, `get_rank()`, `get_world_size()` - Distributed utilities
+  - `is_distributed()`, `get_rank()`, `get_world_size()` - Distributed utilities
 
 ## Quick Reference
 
@@ -156,14 +156,15 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 
 ### Privacy Auditing
 
-| Function                    | Purpose                         | User Guide                                     |
-|-----------------------------|---------------------------------|------------------------------------------------|
-| `epsilon_clopper_pearson()` | Conservative epsilon bound      | [Guide](../user-guide/auditing.md)             |
-| `epsilon_one_run()`         | Tighter bound (Nasr et al.)     | [Guide](../user-guide/auditing.md)             |
-| `epsilon_raw_counts()`      | Direct epsilon estimate         | [Guide](../user-guide/auditing.md)             |
-| `audit()`                   | Comprehensive audit             | [Guide](../user-guide/auditing.md)             |
-| `auc()`                     | Membership inference AUC        | [Guide](../user-guide/auditing.md)             |
-| `beta_at()`                 | Type-II error at given alpha    | [Guide](../user-guide/auditing.md)             |
+| Function / Method                    | Purpose                         | User Guide                                     |
+|--------------------------------------|---------------------------------|------------------------------------------------|
+| `auditing.setup()`                   | Prepare canary experiment       | [Guide](../user-guide/auditing.md)             |
+| `auditing.evaluate()`               | Score canaries and compute audit | [Guide](../user-guide/auditing.md)             |
+| `AuditResult.epsilon_at()`          | Epsilon bound (auto-selects method) | [Guide](../user-guide/auditing.md)          |
+| `AuditResult.epsilon_clopper_pearson()` | Conservative epsilon bound  | [Guide](../user-guide/auditing.md)             |
+| `AuditResult.epsilon_one_run()`     | Tighter bound (Nasr et al.)     | [Guide](../user-guide/auditing.md)             |
+| `AuditResult.auc()`                 | Membership inference AUC        | [Guide](../user-guide/auditing.md)             |
+| `AuditResult.beta_at()`             | Type-II error at given alpha    | [Guide](../user-guide/auditing.md)             |
 
 ### Distributed
 
@@ -175,7 +176,7 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | `gather_tensors()`     | Gather tensors from all ranks | [Guide](../user-guide/distributed.md)      |
 | `sync()`               | Auto-dispatch sync for any state/aux | [Guide](../user-guide/distributed.md) |
 | `sync_object()`        | Sync scalar fields of a dataclass | [Guide](../user-guide/distributed.md) |
-| `is_initialized()`     | Check if DDP is active      | [Guide](../user-guide/distributed.md)      |
+| `is_distributed()`     | Check if DDP is active      | [Guide](../user-guide/distributed.md)      |
 | `get_rank()`           | Get current GPU index       | [Guide](../user-guide/distributed.md)      |
 | `get_world_size()`     | Get total number of GPUs    | [Guide](../user-guide/distributed.md)      |
 

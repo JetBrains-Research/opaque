@@ -136,8 +136,8 @@ def demo_research_flexibility():
     _grad_fn, _state = clipped_grad(loss_fn, l2_clip_norm=1.0)
     step_key = fold_in(key(42), 0)
     _noise_fn, _nstate = gaussian_noise(stddev=1.1 * _state.sensitivity(), key=step_key)
-    print(f"   ✓ Sensitivity: {_state.sensitivity()}")
-    print(f"   ✓ Noise: Gaussian(stddev={1.1 * _state.sensitivity()})")
+    print(f"   - Sensitivity: {_state.sensitivity()}")
+    print(f"   - Noise: Gaussian(stddev={1.1 * _state.sensitivity()})")
 
     # Example 2: Different clip norm
     print("\n2. Higher clip norm:")
@@ -146,8 +146,8 @@ def demo_research_flexibility():
     _noise_fn, _nstate = gaussian_noise(
         stddev=1.1 * _state_2.sensitivity(), key=step_key
     )
-    print(f"   ✓ Sensitivity: {_state_2.sensitivity()}")
-    print(f"   ✓ Noise: Gaussian(stddev={1.1 * _state_2.sensitivity()})")
+    print(f"   - Sensitivity: {_state_2.sensitivity()}")
+    print(f"   - Noise: Gaussian(stddev={1.1 * _state_2.sensitivity()})")
 
     # Example 3: Normalize by batch size
     print("\n3. Normalize by batch size (normalize_by=64):")
@@ -158,8 +158,8 @@ def demo_research_flexibility():
     _noise_fn, _nstate = gaussian_noise(
         stddev=1.1 * _state_3.sensitivity(), key=step_key
     )
-    print(f"   ✓ Sensitivity: {_state_3.sensitivity()}")
-    print(f"   ✓ Noise: Gaussian(stddev={1.1 * _state_3.sensitivity()})")
+    print(f"   - Sensitivity: {_state_3.sensitivity()}")
+    print(f"   - Noise: Gaussian(stddev={1.1 * _state_3.sensitivity()})")
 
     # Example 4: Bounded Gaussian noise (truncated normal)
     print("\n4. Bounded Gaussian (Chen & Hale, 2024):")
@@ -168,7 +168,7 @@ def demo_research_flexibility():
         stddev=1.1 * _state.sensitivity(), bounds=(-3.0, 3.0), key=step_key
     )
     print(
-        f"   ✓ Noise: BoundedGaussian(stddev={1.1 * _state.sensitivity()}, bounds=(-3, 3))"
+        f"   - Noise: BoundedGaussian(stddev={1.1 * _state.sensitivity()}, bounds=(-3, 3))"
     )
     print("   → Outputs guaranteed in [-3.0, 3.0]")
 

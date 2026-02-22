@@ -26,7 +26,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 import opaque
 import opaque.distributed as dist_utils
-from opaque.clipping import sync_adaptive_clip_state
+from opaque.distributed import sync
 from opaque.random import fold_in
 from opaque.random import key as rng_key
 from opaque.sampling.distributed import local_shard
@@ -66,7 +66,7 @@ def main():
     rank, world_size, device = setup_distributed()
 
     if rank == 0:
-        print("🚀 Starting distributed DP training")
+        print("Starting distributed DP training")
         print(f"   World size: {world_size}")
         print(f"   Device: {device}")
 
@@ -115,7 +115,7 @@ def main():
     delta = 1e-5
 
     if rank == 0:
-        print(f"\n📊 Privacy budget: ε={epsilon_target}, δ={delta}")
+        print(f"\nPrivacy budget: eps={epsilon_target}, delta={delta}")
         print("   Approach: Standard DP-SGD (shared noise across devices)")
         print(f"   Clip norm (initial): {clip_state.clip_norm}")
         print(f"   Noise multiplier: {1.1}")
@@ -135,15 +135,15 @@ def main():
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Step 1b: Synchronize adaptive clip state across devices
-        clip_state = sync_adaptive_clip_state(clip_state)
+        clip_state = sync(clip_state)
 
         # Step 2: Aggregate gradients across devices
         grads = dist_utils.sum_gradients(grads)
 
         # Step 3: Add noise on ALL devices (all with same seed → identical noise)
-        # ⚠️ CRITICAL: noise_fn() is called on EVERY device (rank 0, 1, 2, ...)
-        #    NOT just rank 0! Each device independently generates the same noise.
-        #    This prevents model divergence across devices.
+        # IMPORTANT: noise_fn() is called on EVERY device (rank 0, 1, 2, ...)
+        # not just rank 0. Each device independently generates the same noise.
+        # This prevents model divergence across devices.
         noisy_grads, noise_state = noise_fn(grads, noise_state)
 
         # Step 4: Update parameters (all devices have identically noisy gradients)
@@ -161,7 +161,7 @@ def main():
             )
 
     if rank == 0:
-        print("\n✅ Training complete!")
+        print("\nTraining complete.")
         print(f"   Final clip norm: {clip_state.clip_norm:.4f}")
         print(f"   Total steps: {clip_state.step}")
 

@@ -12,7 +12,7 @@ Uses AG News dataset with realistic settings optimized for 7B model:
 IMPORTANT - Adaptive Clipping Performance:
 - By default: use_adaptive_clipping=False (fast, fixed clip norm)
 - Optional: use_adaptive_clipping=True (slow but adaptive)
-- Fixed clipping: creates clipped_grad ONCE and reuses it (fast!)
+- Fixed clipping: creates clipped_grad ONCE and reuses it (rapidly)
 - Adaptive clipping: uses adaptive_clipped_grad (state-passing API)
 - This is a known limitation of PyTorch's vmap with changing parameters
 
@@ -20,7 +20,7 @@ Expected timing (on H200 GPU):
 DEFAULT (use_adaptive_clipping=False):
 - Setup: ~60-90s (includes model loading and one-time clipped_grad creation)
 - First step: ~15-25s (first vmap compilation)
-- Subsequent steps: ~3-5s each (reuses same function!)
+- Subsequent steps: ~3-5s each (reuses same function)
 - Total for ~1000 steps (10 epochs × ~100 batches): 5-10 minutes
 
 OPTIONAL (use_adaptive_clipping=True):
@@ -255,10 +255,10 @@ def main():
     print(f"   Adaptive clipping: {use_adaptive_clipping}")
     if use_adaptive_clipping:
         print(f"   Target clip rate: {target_clip_rate:.1%}")
-        print("   ⚠️  WARNING: Adaptive clipping causes ~1min recompilation per step!")
-        print("   ⚠️  Set use_adaptive_clipping=False for faster training.")
+        print("   WARNING: Adaptive clipping causes ~1min recompilation per step!")
+        print("   WARNING: Set use_adaptive_clipping=False for faster training.")
     else:
-        print("   ✓ Using fixed clipping (fast mode)")
+        print("   Using fixed clipping (fast mode)")
     print(f"   Number of epochs: {num_epochs}")
     print(f"   Batches per epoch: {len(batches)}")
     print(f"   Total training steps: {num_epochs * len(batches)}")
@@ -307,7 +307,7 @@ def main():
             keep_batch_dim=False,
             return_aux=True,
         )
-        print(f"   ✓ Created in {time.time() - t0:.1f}s")
+        print(f"   Created in {time.time() - t0:.1f}s")
     else:
         fixed_clipped_grad_fn = None
 
@@ -315,7 +315,7 @@ def main():
     setup_time = time.time() - overall_start
     print("\n[7/7] Running DP-SGD training loop...")
     print("=" * 80)
-    print(f"\n✓ Setup completed in {setup_time:.1f}s")
+    print(f"\nSetup completed in {setup_time:.1f}s")
     print("\nNote: First step will compile the model (this is normal)")
     print("Subsequent steps should be fast (~5-10s each)\n")
 
@@ -429,7 +429,7 @@ def main():
         # Success!
         print("\n" + "=" * 80)
         print(
-            f"✅ DP-SGD LORA TRAINING COMPLETE! (ADAPTIVE CLIPPING + {device.type.upper()})"
+            f"DP-SGD LORA TRAINING COMPLETE! (ADAPTIVE CLIPPING + {device.type.upper()})"
         )
         print("=" * 80)
         print(f"Device: {device}")
@@ -473,7 +473,7 @@ def main():
 
     except Exception as e:
         print("\n" + "=" * 80)
-        print("❌ TRAINING FAILED")
+        print("TRAINING FAILED")
         print("=" * 80)
         print(f"Error type: {type(e).__name__}")
         print(f"Error message: {str(e)[:200]}")

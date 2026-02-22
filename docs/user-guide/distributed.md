@@ -164,13 +164,14 @@ grads = dist_utils.sum_gradients(grads)
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
 
-`sync_adaptive_clip_state` aggregates `num_clipped` and `total` across
-ranks (sum), recomputes the global clipping rate, and updates `clip_norm`.
-After the call, `clip_state.clip_norm` is identical on every device.
+`sync()` auto-dispatches based on the type of the state object. For
+`AdaptiveClipState`, it aggregates `num_clipped` and `total` across ranks
+(sum), recomputes the global clipping rate, and updates `clip_norm`. After
+the call, `clip_state.clip_norm` is identical on every device.
 
 For fixed clipping (`clipped_grad`), the state is deterministic and does
 not need synchronization. You can optionally validate with
-`sync_clip_state(state)`, which asserts that `l2_norm_bound` matches across
+`sync(clip_state)`, which asserts that `l2_norm_bound` matches across
 ranks and raises `RuntimeError` if it does not.
 
 ## Poisson sampling
@@ -248,23 +249,18 @@ a single device without changes.
 | `assert_scalar_equal(v, name)` | Raise `RuntimeError` if a scalar differs across ranks |
 | `barrier()` | Blocking barrier across all ranks |
 
-### Clipping sync helpers
+### Type-specific sync behavior
 
-| Function | Purpose |
-|----------|---------|
-| `sync_clip_state(state)` | Assert `FixedClipState.l2_norm_bound` matches across ranks |
-| `sync_adaptive_clip_state(state)` | Aggregate counts, recompute global clipping rate, update `clip_norm` |
-| `sync_aux(aux)` | Gather any clipping aux across ranks (works with all aux types) |
+`sync()` auto-dispatches based on the type of the object passed. The
+following types are registered:
 
-### `opaque.noise.distributed`
-
-Noise-specific validation helpers. Call manually in distributed
-training to assert noise state is consistent across ranks.
-
-| Function | Purpose |
-|----------|---------|
-| `sync_gaussian_noise_state(state)` | Assert seed and step counter match across ranks |
-| `sync_mf_noise_state(state)` | Assert seed and step counter match for MF noise |
+| Type | Behavior |
+|------|----------|
+| `FixedClipState` | Assert `l2_norm_bound` matches across ranks |
+| `AdaptiveClipState` | Aggregate counts, recompute global clipping rate, update `clip_norm` |
+| `ClippedFunAux`, `ClippedGradAux`, `AdaptiveClippedGradAux` | Gather aux tensors across ranks |
+| `GaussianNoiseState` | Assert seed and step counter match across ranks |
+| `MFNoiseState` | Assert seed and step counter match for MF noise |
 
 See [API Reference](../api/distributed.md) for full docstrings.
 

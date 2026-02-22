@@ -85,11 +85,11 @@ def main():
     print("\n" + "=" * 70)
     print("Key Benefits of Explicit State-Passing:")
     print("=" * 70)
-    print("✓ State is IMMUTABLE - no hidden mutations")
-    print("✓ Works with torch.compile (state is traced)")
-    print("✓ Works with DDP/FSDP (synchronize state explicitly)")
-    print("✓ Easy to save/restore training state")
-    print("✓ Pure functional - no side effects")
+    print("- State is IMMUTABLE - no hidden mutations")
+    print("- Works with torch.compile (state is traced)")
+    print("- Works with DDP (synchronize state explicitly)")
+    print("- Easy to save/restore training state")
+    print("- Pure functional - no side effects")
     print("=" * 70)
 
 

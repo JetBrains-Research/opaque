@@ -28,9 +28,12 @@ differential privacy.
 
 ### Distributed Sync Helpers
 
-- **`sync_clip_state(state)`** — Assert `FixedClipState.l2_norm_bound` matches across ranks.
-- **`sync_adaptive_clip_state(state)`** — Aggregate counts and recompute global adaptive clip norm.
-- **`sync_aux(aux)`** — Gather any clipping aux (``ClippedFunAux``, ``ClippedGradAux``, ``AdaptiveClippedGradAux``) across ranks.
+Use `sync()` from `opaque.distributed` to synchronize any clipping state or aux
+object. It auto-dispatches to the right function based on type:
+
+- **`sync(FixedClipState)`** → asserts `l2_norm_bound` matches across ranks.
+- **`sync(AdaptiveClipState)`** → aggregates counts and recomputes global adaptive clip norm.
+- **`sync(ClippedFunAux | ClippedGradAux | AdaptiveClippedGradAux)`** → gathers aux across ranks.
 
 **See also**: [Per-Sample Gradient Clipping User Guide](../user-guide/clipping.md)
 

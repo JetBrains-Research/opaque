@@ -277,9 +277,9 @@ clip_state = sync(clip_state)  # aggregate counts across ranks
 grads = dist_utils.sum_gradients(grads)
 ```
 
-`sync_adaptive_clip_state` aggregates `num_clipped` and `total` across ranks,
-recomputes the global clipping rate, and updates `clip_norm` to be identical
-on every device.
+`sync()` dispatches to `sync_adaptive_clip_state` internally, which aggregates
+`num_clipped` and `total` across ranks, recomputes the global clipping rate,
+and updates `clip_norm` to be identical on every device.
 
 ## Loss function requirements
 

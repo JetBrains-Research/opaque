@@ -32,8 +32,11 @@ All noise functions return `(noise_fn, state)` where `noise_fn(grads, state) -> 
 
 ### Distributed Sync Helpers
 
-- **`sync_gaussian_noise_state(state)`** — Validate that Gaussian noise state (RNG key, step counter) matches across ranks.
-- **`sync_mf_noise_state(state)`** — Validate that MF noise state matches across ranks.
+Use `sync()` from `opaque.distributed` to validate noise state consistency
+across ranks. It auto-dispatches based on type:
+
+- **`sync(GaussianNoiseState)`** — Validate RNG key and step counter match across ranks.
+- **`sync(MFNoiseState)`** — Validate MF noise state matches across ranks.
 
 **See also**: [Noise Addition User Guide](../user-guide/noise.md)
 
