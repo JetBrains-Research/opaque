@@ -76,7 +76,8 @@ eps = g.epsilon_at(delta=1e-5)
 
 Standard Poisson-subsampled mechanism. Each example is included independently
 with probability `sample_rate`. This provides privacy amplification through
-subsampling.
+subsampling. Accepts `gaussian()`, `rectified_gaussian()`,
+`truncated_gaussian()`, or `adaclip()` as the inner mechanism.
 
 ```python
 step = acc.poisson(acc.gaussian(0.8), sample_rate=256 / 50_000)

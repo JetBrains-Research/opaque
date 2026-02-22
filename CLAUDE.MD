@@ -97,32 +97,57 @@ src/opaque/
 │   ├── clipped_grad.py     # clipped_grad (gradient clipping)
 │   └── _helpers.py         # Internal helpers
 ├── noise/                  # Noise injection (DP-SGD + correlated MF)
-│   ├── gaussian_noise.py           # gaussian_noise() → (noise_fn, state)
+│   ├── gaussian_noise.py             # gaussian_noise() → (noise_fn, state)
+│   ├── rectified_gaussian_noise.py   # rectified_gaussian_noise() → (noise_fn, state)
 │   ├── truncated_gaussian_noise.py   # truncated_gaussian_noise() → (noise_fn, state)
-│   ├── band_mf_noise.py            # BandMF correlated noise
-│   ├── blt_mf_noise.py             # Buffered Linear Toeplitz noise
-│   ├── dense_mf_noise.py           # Dense matrix noise
-│   ├── custom_mf_noise.py          # Bring-your-own-matrix noise
-│   ├── identity_mf_noise.py        # Identity (DP-SGD via MF API)
-│   └── matrix_factorization/       # MF math infrastructure
-│       ├── streaming_matrix.py     # StreamingMatrix data structure
-│       ├── toeplitz.py             # Banded Toeplitz strategies
-│       ├── buffered_toeplitz.py    # BLT strategies
-│       ├── banded.py               # General banded strategies
-│       ├── dense.py                # Dense strategies
-│       ├── sensitivity.py          # Sensitivity calculations
-│       ├── checks.py               # Validation
-│       └── optimization.py         # Strategy optimization
+│   ├── band_mf_noise.py             # BandMF correlated noise
+│   ├── blt_mf_noise.py              # Buffered Linear Toeplitz noise
+│   ├── dense_mf_noise.py            # Dense matrix noise
+│   ├── custom_mf_noise.py           # Bring-your-own-matrix noise
+│   ├── identity_mf_noise.py         # Identity (DP-SGD via MF API)
+│   ├── distributed.py               # Distributed noise helpers
+│   └── matrix_factorization/        # MF math infrastructure
+│       ├── streaming_matrix.py      # StreamingMatrix data structure
+│       ├── toeplitz.py              # Banded Toeplitz strategies
+│       ├── buffered_toeplitz.py     # BLT strategies
+│       ├── banded.py                # General banded strategies
+│       ├── dense.py                 # Dense strategies
+│       ├── sensitivity.py           # Sensitivity calculations
+│       ├── checks.py                # Validation
+│       └── optimization.py          # Strategy optimization
 ├── auditing/               # Empirical privacy auditing
 │   ├── __init__.py         # setup(), evaluate() module-level API
 │   ├── audit.py            # AuditResult, CoinFlipExperiment
 │   ├── scoring.py          # score_by_loss (torch.func.vmap)
 │   ├── bootstrap.py        # BootstrapParams
 │   └── helpers.py          # Internal helpers
-├── accounting/             # Privacy accounting (functional API)
-│   ├── composition.py      # create(), compose_*() functions
-│   ├── queries.py          # get_epsilon, get_beta, get_advantage
-│   └── calibration.py      # find_noise_multiplier_for_*()
+├── accounting/             # Privacy accounting (composable DpProcess API)
+│   ├── base.py             # DpProcess abstract base class
+│   ├── accountant.py       # Accountant step-by-step tracker
+│   ├── discretization.py   # PLD discretization config
+│   ├── calibration.py      # calibrate(), budget factories
+│   ├── budgets.py          # Budget types (epsilon, delta, advantage, beta, risk)
+│   ├── mechanisms/         # Mechanism constructors
+│   │   ├── gaussian.py             # gaussian()
+│   │   ├── rectified_gaussian.py   # rectified_gaussian()
+│   │   ├── truncated_gaussian.py   # truncated_gaussian()
+│   │   ├── band_mf.py             # band_mf()
+│   │   ├── blt_mf.py              # blt_mf()
+│   │   ├── dense_mf.py            # dense_mf()
+│   │   ├── eps_delta.py           # eps_delta()
+│   │   ├── identity.py            # identity()
+│   │   └── mf_gaussian.py         # MF Gaussian base
+│   ├── amplification/      # Subsampling amplification
+│   │   ├── poisson.py              # poisson()
+│   │   ├── truncated_poisson.py    # truncated_poisson()
+│   │   ├── parallel_poisson.py     # parallel_poisson()
+│   │   └── cyclic_poisson.py       # cyclic_poisson()
+│   ├── composition/        # Composition operators
+│   │   ├── repeated.py     # proc * k
+│   │   ├── composed.py     # a | b
+│   │   └── cached.py       # cached()
+│   └── transformations/    # Mechanism transformations
+│       └── adaclip.py      # adaclip()
 ├── sampling/               # Batch sampling strategies
 ├── optimizers/             # TorchOpt wrappers
 │   └── adaptive_clipping.py
@@ -130,18 +155,19 @@ src/opaque/
     └── transformers/
 
 tests/
-├── auditing/               # 108 auditing tests
-├── accounting/             # 50 accounting tests
-├── clipping/               # 9 clipping tests
-├── noise/                  # Noise tests (gaussian, bounded)
+├── auditing/               # 97 auditing tests
+├── accounting/             # 245 accounting tests
+├── clipping/               # 86 clipping tests
+├── noise/                  # 60 noise tests
 ├── matrix_factorization/   # MF infrastructure tests
-├── jax_validation/         # 5 JAX validation tests
-├── optimizers/             # 56 optimizer tests
+├── distributed/            # Distributed tests
+├── sampling/               # Sampling tests
+├── validation/             # Cross-framework validation
 └── test_dp_ftrl.py         # End-to-end DP-FTRL tests
 ```
 
-**Total Tests**: 458 tests passing (108 auditing + 55 accounting + 56 optimizer + 239 other)
-**Current Status**: Stages 1-2 COMPLETE, Phase 1C (Auditing) COMPLETE, Noise API unified
+**Total Tests**: 834 tests passing
+**Current Status**: Stages 1-2 COMPLETE, Composable DpProcess accounting API, full mechanism suite
 
 **Test Execution**:
 

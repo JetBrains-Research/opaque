@@ -121,10 +121,10 @@ sensitivity-1 queries. Base mechanism for DP-SGD.
 
 ### `poisson(inner, sample_rate) -> DpProcess`
 
-Poisson-subsampled Gaussian mechanism (standard DP-SGD step). `inner` must be
-a `Gaussian` process. `sample_rate` is `batch_size / dataset_size`.
+Poisson-subsampled mechanism (standard DP-SGD step). `sample_rate` is
+`batch_size / dataset_size`.
 
-- `inner` (Gaussian): Base Gaussian mechanism (from `gaussian()`)
+- `inner` (Gaussian | RectifiedGaussian | TruncatedGaussian | AdaClip): Base mechanism
 - `sample_rate` (float): Probability of including each example, in (0, 1]
 
 ```python
