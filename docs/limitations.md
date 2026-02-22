@@ -1,172 +1,105 @@
 # Known Limitations
 
-This document describes current limitations of Opaque and recommended workarounds.
+## Gradient checkpointing incompatibility
 
-## Gradient Checkpointing Incompatibility
+Gradient checkpointing (`torch.utils.checkpoint.checkpoint`) is
+incompatible with `torch.func.vmap`, which Opaque uses for per-example
+gradient computation.
 
-**Status:** Known PyTorch limitation
-**Impact:** Cannot use `torch.utils.checkpoint` with Opaque
-**Workaround:** Use `microbatch_size` parameter instead
+**Error:**
 
-### Problem
-
-Gradient checkpointing (`torch.utils.checkpoint.checkpoint`) is incompatible with `torch.func.vmap`, which Opaque uses for per-example gradient computation.
-
-**Error you'll see:**
-```python
+```
 RuntimeError: You tried to vmap over _NoopSaveInputs, but it does not have
-vmap support. Please override and implement the vmap staticmethod or set
-generate_vmap_rule=True.
+vmap support.
 ```
 
-### When This Happens
+**When this happens:**
 
-1. **Explicit checkpoint use:**
-   ```python
-   from torch.utils.checkpoint import checkpoint
+- Explicit use of `torch.utils.checkpoint.checkpoint` in a model's
+  `forward` method.
+- Calling `model.gradient_checkpointing_enable()` on a HuggingFace
+  Transformers model.
+- Third-party models that enable checkpointing by default.
 
-   def forward(self, x):
-       x = checkpoint(self.layer, x, use_reentrant=False)  # ← Breaks!
-   ```
+**Solution:** Use microbatching instead. The `microbatch_size` parameter on
+`clipped_grad` achieves similar memory savings by processing the batch in
+chunks:
 
-2. **HuggingFace Transformers:**
-   ```python
-   from transformers import AutoModel
-
-   model = AutoModel.from_pretrained("gpt2")
-   model.gradient_checkpointing_enable()  # ← Breaks!
-   ```
-
-3. **Libraries with built-in checkpointing:**
-   - Some models enable checkpointing by default
-   - Check model documentation
-
-### Solution: Use Microbatching
-
-Opaque provides **manual microbatch accumulation** that achieves similar memory savings without the vmap incompatibility.
-
-**Basic Usage:**
 ```python
-from opaque.clipping import clipped_grad
+from opaque import clipped_grad
 
 grad_fn, state = clipped_grad(
     loss_fn,
-    argnums=0,
-    batch_argnums=(1, 2),
     l2_clip_norm=1.0,
-    microbatch_size=16,  # ← Process batch in chunks of 16
+    batch_argnums=(1, 2),
+    microbatch_size=16,
 )
 ```
 
-**Automatic Tuning (Recommended):**
+Use `find_max_microbatch_size` from `opaque.profiling` to automatically
+find the largest microbatch that fits in memory:
+
 ```python
 from opaque.profiling import find_max_microbatch_size
-from opaque.clipping import clipped_grad
 
-# Target batch size you use in training
-batch_size = 128
-
-# Automatically find optimal microbatch size
-optimal_size = find_max_microbatch_size(
+optimal = find_max_microbatch_size(
     model=model,
     sample_batch=(sample_x, sample_y),
     batch_size=batch_size,
     loss_fn=loss_fn,
     l2_clip_norm=1.0,
-    safety_margin=0.9,  # Keep 10% memory free
-)
-
-print(f"Using microbatch_size={optimal_size}")
-
-# Use the optimal size
-grad_fn, state = clipped_grad(
-    loss_fn,
-    microbatch_size=optimal_size,
-    ...
+    safety_margin=0.9,
 )
 ```
 
-### Disabling Gradient Checkpointing
+**Memory comparison:**
 
-**HuggingFace Transformers:**
+| Technique | Memory | Compute | Opaque compatible |
+|-----------|--------|---------|-------------------|
+| No optimization | O(batch_size) | 1x | Yes |
+| Gradient checkpointing | O(sqrt(batch_size)) | ~2x | No |
+| Microbatching (size m) | O(m) | 1x | Yes |
+
+**Root cause:** PyTorch's checkpoint uses `autograd.Function` internally.
+`torch.func.vmap` requires functions to implement vmap rules, and the
+checkpoint `autograd.Function` does not. This is tracked in
+[PyTorch #165880](https://github.com/pytorch/pytorch/issues/165880). When
+PyTorch resolves this, Opaque will automatically support checkpointing.
+
+## Flash Attention 2 incompatibility
+
+Flash Attention 2 uses `torch.nonzero` internally for sequence unpadding,
+which produces dynamic output shapes incompatible with vmap.
+
+**Solution:** Use SDPA or eager attention when loading HuggingFace models:
+
 ```python
-from transformers import AutoModel
-
-model = AutoModel.from_pretrained("gpt2")
-
-# ❌ DON'T: Enable checkpointing
-# model.gradient_checkpointing_enable()
-
-# ✅ DO: Keep it disabled (default)
-# model.gradient_checkpointing is False by default
-
-# Use Opaque with microbatching instead
-grad_fn, state = clipped_grad(
-    loss_fn,
-    microbatch_size=8,  # Memory-efficient!
-    ...
+model = AutoModelForCausalLM.from_pretrained(
+    "meta-llama/Llama-3.1-8B",
+    attn_implementation="sdpa",
 )
 ```
 
-**Custom Models:**
-Before:
-```python
-class MyModel(nn.Module):
-    def forward(self, x):
-        # ❌ This breaks with Opaque
-        x = checkpoint(self.layer1, x, use_reentrant=False)
-        x = checkpoint(self.layer2, x, use_reentrant=False)
-        return x
-```
+See [HuggingFace Compatibility](user-guide/huggingface.md#attention-implementation-support)
+for supported attention implementations.
 
-After:
-```python
-class MyModel(nn.Module):
-    def forward(self, x):
-        # ✅ Regular forward pass
-        x = self.layer1(x)
-        x = self.layer2(x)
-        return x
+## DDP only
 
-# Use microbatching in clipped_grad instead
-grad_fn, state = clipped_grad(
-    loss_fn,
-    microbatch_size=16,  # ← Achieves similar memory savings
-    ...
-)
-```
+Opaque supports `torch.nn.parallel.DistributedDataParallel` (DDP). FSDP,
+Tensor Parallel, and Pipeline Parallel are not supported. Multi-node DDP
+should work but is not extensively tested. The NCCL backend is recommended;
+Gloo and MPI are not tested.
 
-### Memory Comparison
+## In-place operations under vmap
 
-| Technique | Memory Usage | Compute Cost | Opaque Compatible |
-|-----------|-------------|--------------|-------------------|
-| No optimization | O(n) | 1x | ✅ Yes |
-| Gradient checkpointing | O(√n) | ~2x | ❌ No |
-| Microbatching (size=m) | O(m) | 1x | ✅ Yes |
+`torch.func.vmap` does not support in-place tensor operations. Models that
+use in-place operations (e.g., `x.add_()`, `x[:, 0] = 0`) in their
+forward pass will fail. Replace them with out-of-place equivalents
+(`x = x + y`, `x = torch.cat([zeros, x[:, 1:]], dim=1)`).
 
-Where:
-- n = batch size
-- m = microbatch size (user controlled)
+## Data-dependent control flow under vmap
 
-**Key insight:** Microbatching gives you similar memory control as checkpointing, without the vmap incompatibility!
-
-### Why This Happens
-
-- **PyTorch's checkpoint** uses `autograd.Function` internally
-- **torch.func.vmap** requires functions to implement vmap rules
-- The checkpoint `autograd.Function` doesn't have vmap support
-
-This is tracked in [PyTorch Issue #165880](https://github.com/pytorch/pytorch/issues/165880).
-
-### Future
-
-When PyTorch fixes vmap + checkpoint compatibility:
-- Opaque will automatically support checkpointing
-- No code changes needed
-- You can choose between checkpointing and microbatching
-
-## See Also
-
-- [Poisson Sampling & Microbatching Guide](user-guide/sampling.md)
-- [API Reference - Clipping](api/core/clipping.md)
-- [Tutorial - Sampling and Microbatching](tutorials/05_sampling_and_microbatching.ipynb)
+vmap requires the same operations to execute for every example in the
+batch. Conditional branches that depend on tensor values
+(`if x.sum() > 0`) will fail. This is a fundamental limitation of
+vectorized execution.

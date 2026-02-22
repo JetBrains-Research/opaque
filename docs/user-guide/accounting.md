@@ -1,439 +1,276 @@
 # Privacy Accounting
 
-Privacy accounting tracks how much privacy budget is consumed during DP
-training. Opaque uses Privacy Loss Distributions (PLD) for tight composition
-bounds.
+Privacy accounting tracks how much privacy budget is consumed during training.
+Opaque uses Privacy Loss Distributions (PLD) computed by a Rust engine for
+numerically tight composition bounds. The API is built around composable
+`DpProcess` objects that represent privacy mechanisms.
 
-## Quick Start
-
-```python
-import opaque.accounting as acc
-from opaque.accounting.accountant import Accountant
-
-step = acc.poisson(acc.gaussian(0.8), sample_rate=0.01)
-training = step * 1000
-eps = training.epsilon_at(delta=1e-5)
-```
-
-## Core Concepts
+## Core concepts
 
 ### DpProcess
 
 Every mechanism constructor returns a `DpProcess`. Composition operators
-produce new `DpProcess` instances. Privacy metrics are computed on demand
-from the underlying PLD.
+produce new `DpProcess` instances. Privacy metrics are computed on demand from
+the underlying PLD.
 
 ```python
 import opaque.accounting as acc
 
-# Mechanism constructors
+# Mechanism constructors return DpProcess instances
 g = acc.gaussian(0.8)
-p = acc.poisson(acc.gaussian(0.8), 0.01)
-tp = acc.truncated_poisson(
-    acc.gaussian(0.8), 0.01, batch_size_cap=100, dataset_size=10000
-)
+p = acc.poisson(acc.gaussian(0.8), sample_rate=0.01)
 
-# Composition
+# Composition produces new DpProcess instances
 training = p * 1000
-combined = acc.gaussian(0.3) | acc.gaussian(0.5)
 
 # Privacy metrics (all derived from the same PLD)
-eps = training.epsilon_at(1e-5)
-delta = training.delta_at(1.0)
+eps = training.epsilon_at(delta=1e-5)
 adv = training.advantage()
-beta = training.beta_at(0.05)
-risk = training.risk_at(0.5)
+beta = training.beta_at(alpha=0.01)
 ```
 
-### Composition Operators
+### Composition operators
 
-| Operator     | Description                     | Equivalent             |
-|--------------|---------------------------------|------------------------|
-| `proc * k`   | Repeat k times (homogeneous)   | `acc.repeat(proc, k)`  |
-| `a \| b`     | Compose two processes           | `acc.compose(a, b)`    |
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `proc * k` | Repeat k times (homogeneous) | `step * 1000` |
+| `a \| b` | Compose two processes (heterogeneous) | `warmup \| main` |
+
+Homogeneous composition (`*`) is used when the same mechanism is applied
+repeatedly (e.g., 1000 identical DP-SGD steps). Heterogeneous composition
+(`|`) is used when different mechanisms are applied in sequence (e.g., a
+warmup phase with different noise followed by a main phase).
 
 ```python
-step = acc.poisson(acc.gaussian(0.5), 0.01)
-
-# Homogeneous
+# Homogeneous: same step repeated
+step = acc.poisson(acc.gaussian(0.8), sample_rate=0.01)
 training = step * 1000
 
-# Heterogeneous (multi-phase)
-warmup = acc.poisson(acc.gaussian(0.3), 0.01) * 100
-main = acc.poisson(acc.gaussian(0.5), 0.01) * 900
+# Heterogeneous: different phases
+warmup = acc.poisson(acc.gaussian(0.3), sample_rate=0.01) * 100
+main = acc.poisson(acc.gaussian(0.5), sample_rate=0.01) * 900
 total = warmup | main
+
+eps = total.epsilon_at(delta=1e-5)
 ```
+
+Composition is automatically optimized: identical processes are merged into
+repeated nodes (2 FFTs instead of N), and identity processes are elided.
 
 ## Mechanisms
 
-### `acc.poisson()` -- Standard DP-SGD
+### `acc.gaussian(noise_multiplier)`
 
-Poisson-subsampled Gaussian mechanism. Each example is included independently
+Gaussian mechanism without subsampling. Rarely used directly since DP-SGD
+typically uses Poisson sampling.
+
+```python
+g = acc.gaussian(0.8)
+eps = g.epsilon_at(delta=1e-5)
+```
+
+### `acc.poisson(inner, sample_rate)`
+
+Standard Poisson-subsampled mechanism. Each example is included independently
 with probability `sample_rate`. This provides privacy amplification through
 subsampling.
 
 ```python
 step = acc.poisson(acc.gaussian(0.8), sample_rate=256 / 50_000)
 training = step * 1000
-eps = training.epsilon_at(1e-5)
+eps = training.epsilon_at(delta=1e-5)
 ```
 
-### `acc.truncated_poisson()` -- Bounded Batch Size
+### `acc.truncated_poisson(inner, sample_rate, batch_size_cap, dataset_size)`
 
-Tighter privacy bounds than standard Poisson by capping the batch size.
-Gives up to 20% improvement in epsilon.
+Tighter privacy bounds than standard Poisson by capping the batch size. Can
+give up to 20% improvement in epsilon.
 
 ```python
 n = 50_000
 batch = 256
 step = acc.truncated_poisson(
-    acc.gaussian(0.8), batch / n, batch_size_cap=batch, dataset_size=n
-)
-training = step * 1000
-```
-
-### `acc.gaussian()` -- No Sampling
-
-Gaussian mechanism without subsampling. Rarely used directly since DP-SGD
-almost always uses Poisson sampling.
-
-```python
-proc = acc.gaussian(0.5)
-eps = proc.epsilon_at(1e-5)
-```
-
-### `acc.parallel_poisson()` -- Parallel Poisson Sampling
-
-Parallel Poisson sampling models independent Poisson sampling on multiple
-workers, where the same example can appear on multiple devices.
-
-```python
-step = acc.parallel_poisson(
-    acc.poisson(acc.gaussian(0.5), 0.01),
-    num_workers=4,
+    acc.gaussian(0.8), batch / n,
+    batch_size_cap=batch, dataset_size=n,
 )
 ```
 
-### `acc.adaclip()` -- Adaptive Clipping
+### `acc.parallel_poisson(inner, num_workers)`
 
-Accounts for the extra privacy cost of noisy quantile estimation (Andrew et
-al. 2021). Returns an `AdaClip` process whose
-`effective_noise_multiplier` encapsulates the combined sensitivity formula.
-Poisson wrappers use that property; they do not need to know AdaClip internals.
+Accounts for Poisson sampling under parallel worker execution. Tighter than
+treating workers as independent.
 
 ```python
-# In the training loop — use the actual batch size from clip_state
-step = acc.adaclip(
-    acc.gaussian(noise_multiplier),
-    batch_size=clip_state.batch_size,        # exact per-step value
-)
-accountant = accountant | step
+step = acc.poisson(acc.gaussian(0.8), sample_rate=0.01)
+parallel_step = acc.parallel_poisson(step, num_workers=4)
+```
 
-# During calibration — use expected or pessimistic batch size
+### `acc.adaclip(inner, quantile_noise_multiplier, batch_size)`
+
+Accounts for the additional privacy cost of adaptive clipping (the noisy
+quantile query). Use this when using `adaptive_clipped_grad`.
+
+```python
 step = acc.poisson(
-    acc.adaclip(acc.gaussian(0.5), batch_size=sample_rate * dataset_size),
+    acc.adaclip(acc.gaussian(0.8),
+                quantile_noise_multiplier=0.05,
+                batch_size=256),
     sample_rate=0.01,
 )
 ```
 
-!!! note "Calibration vs. runtime batch sizes"
+### `acc.eps_delta(epsilon, delta)`
 
-    During calibration the exact per-step batch size is unknown.  Use the
-    expected batch size (Poisson: `sample_rate × dataset_size`) or the
-    pessimistic maximum (Truncated Poisson: `batch_size_cap`).  At runtime,
-    pass the actual `clip_state.batch_size` for accurate per-step accounting
-    and **stop training early if the budget is exceeded**.
-```
-
-### `acc.eps_delta()` -- Fixed Guarantee
-
-Compose an external mechanism with known (epsilon, delta) into the privacy
-process tree.
+A fixed (epsilon, delta)-DP mechanism. Useful for composing external privacy
+costs (e.g., a hyperparameter tuning step with known privacy cost).
 
 ```python
-external = acc.eps_delta(1.0, delta=1e-5)
-total = external | (acc.poisson(acc.gaussian(0.5), 0.01) * 1000)
+external_cost = acc.eps_delta(1.0, delta=1e-6)
+total = external_cost | (step * 1000)
 ```
 
-## Privacy Metrics
+### `acc.identity()`
 
-All metrics are computed from the same PLD. No redundant computation.
+Zero privacy cost. Identity element for composition. Useful as an initial
+value when building up a process programmatically.
 
-| Method              | Metric                        |
-|---------------------|-------------------------------|
-| `epsilon_at(delta)` | (epsilon, delta)-DP           |
-| `delta_at(epsilon)` | delta for given epsilon        |
-| `advantage()`       | f-DP total-variation advantage |
-| `beta_at(alpha)`    | Type-II error at given alpha   |
-| `risk_at(prior)`    | Bayes risk                     |
+## Privacy metrics
+
+All metrics are methods on `DpProcess`. They compute the underlying PLD on
+demand and cache the result.
+
+| Method | Returns | Interpretation |
+|--------|---------|----------------|
+| `.epsilon_at(delta)` | float | Smallest epsilon for (epsilon, delta)-DP |
+| `.delta_at(epsilon)` | float | Smallest delta for (epsilon, delta)-DP |
+| `.advantage()` | float | f-DP total-variation advantage (0 = perfect privacy) |
+| `.beta_at(alpha)` | float | Type-II error at Type-I error alpha (higher = more private) |
+| `.risk_at(prior)` | float | Bayes risk under optimal adversary (higher = more private) |
 
 ```python
-proc = acc.poisson(acc.gaussian(0.5), 0.01) * 1000
-eps = proc.epsilon_at(1e-5)
-adv = proc.advantage()
-beta = proc.beta_at(alpha=0.01)
+training = acc.poisson(acc.gaussian(1.1), sample_rate=0.01) * 1000
+
+eps = training.epsilon_at(delta=1e-5)
+delta = training.delta_at(epsilon=3.0)
+adv = training.advantage()
+beta = training.beta_at(alpha=0.01)
+risk = training.risk_at(prior=0.5)
 ```
 
-## Accountant
-
-The `Accountant` class tracks accumulated privacy loss across a training loop.
-Each compose operation returns a new `Accountant` (the original is unchanged).
-
-```python
-import opaque.accounting as acc
-
-step = acc.poisson(acc.gaussian(0.5), 0.01)
-acct = Accountant()
-
-for i in range(num_steps):
-    acct = acct | step
-    if i % 100 == 0:
-        eps = acct.epsilon_at(1e-5)
-        print(f"Step {i}: eps={eps:.2f}")
-```
-
-### Budget Tracking
-
-Pass a calibration budget to enable automatic budget checking:
-
-```python
-from opaque.accounting import calibration as cal
-from opaque.accounting.accountant import Accountant
-
-budget = cal.epsilon_budget(3.0, delta=1e-5)
-acct = Accountant(budget=budget)
-step = acc.poisson(acc.gaussian(0.5), 0.01)
-
-for i in range(num_steps):
-    acct = acct | step
-    if acct.budget_exceeded:
-        print(f"Budget exhausted at step {i}")
-        break
-```
-
-### Multi-Phase Training
-
-Compose different phases in a single accounting session:
-
-```python
-acct = Accountant()
-
-warmup_step = acc.poisson(acc.gaussian(0.3), 0.01)
-for _ in range(100):
-    acct = acct | warmup_step
-
-main_step = acc.poisson(acc.gaussian(0.5), 0.01)
-for _ in range(900):
-    acct = acct | main_step
-
-eps = acct.epsilon_at(1e-5)
-```
+See [DP Concepts](dp-basics.md#privacy-metrics) for the meaning of each
+metric.
 
 ## Calibration
 
-Find the noise multiplier (or any other parameter) that achieves a target
-privacy budget:
+Calibration finds the parameter value (typically noise multiplier) that
+achieves a target privacy budget. It uses binary search over the parameter
+space.
+
+### Basic calibration
 
 ```python
-from opaque.accounting import calibration as cal
-
-result = cal.calibrate(
-    cal.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000,
+result = acc.calibrate(
+    acc.epsilon_budget(3.0, delta=1e-5),
+    lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000,
     param_min=0.1,
-    param_max=5.0,
+    param_max=10.0,
 )
 noise_multiplier = result.param
 ```
 
-Calibrate sample rate instead:
+The `process` argument is a lambda that takes the parameter being calibrated
+and returns a `DpProcess`. `calibrate` binary-searches for the parameter
+value where the budget metric equals the target.
+
+### Budget types
+
+| Function | Target metric | Direction |
+|----------|---------------|-----------|
+| `acc.epsilon_budget(eps, delta)` | epsilon | decreasing (more noise = lower epsilon) |
+| `acc.delta_budget(delta, epsilon)` | delta | decreasing |
+| `acc.advantage_budget(adv)` | advantage | decreasing |
+| `acc.beta_budget(beta, alpha)` | beta | increasing (more noise = higher beta) |
+| `acc.risk_budget(risk, prior)` | risk | increasing |
+
+### Calibrating other parameters
+
+`calibrate` works with any float parameter, not just noise multiplier. For
+example, calibrating the sample rate:
 
 ```python
-result = cal.calibrate(
-    cal.epsilon_budget(3.0, delta=1e-5),
-    lambda q: acc.poisson(acc.gaussian(0.5), sample_rate=q) * 1000,
-    param_min=1e-4,
+result = acc.calibrate(
+    acc.epsilon_budget(3.0, delta=1e-5),
+    lambda sr: acc.poisson(acc.gaussian(1.0), sample_rate=sr) * 1000,
+    param_min=0.001,
     param_max=0.1,
 )
+sample_rate = result.param
 ```
 
-### Budget Types
+## Accountant
 
-| Factory                          | Metric                  | Decreasing with noise |
-|----------------------------------|-------------------------|-----------------------|
-| `cal.epsilon_budget(eps, delta)` | epsilon at given delta  | Yes                   |
-| `cal.delta_budget(delta, eps)`   | delta at given epsilon  | Yes                   |
-| `cal.advantage_budget(adv)`      | f-DP advantage          | Yes                   |
-| `cal.beta_budget(beta, alpha)`   | Type-II error           | No                    |
-| `cal.risk_budget(risk, prior)`   | Bayes risk              | No                    |
-
-"Decreasing with noise" indicates whether the metric decreases as the
-calibrated parameter (typically noise multiplier) increases. The binary search
-direction adapts automatically.
-
-## Serialization
-
-Processes expose `state_dict()` for JSON-friendly serialization:
+The `Accountant` class provides step-by-step privacy tracking during training.
+It wraps a `DpProcess` and provides budget checking.
 
 ```python
-step = acc.poisson(acc.gaussian(0.5), 0.01)
-state = step.state_dict()
+from opaque.accounting.accountant import Accountant
+
+acct = Accountant(budget=acc.epsilon_budget(3.0, delta=1e-5))
+step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
+
+for batch in dataloader:
+    # ... train ...
+    acct = acct | step
+    if acct.budget_exceeded:
+        print("Privacy budget exhausted")
+        break
+
+eps = acct.epsilon_at(delta=1e-5)
 ```
 
-## PLD Caching
+`Accountant` is functional: `acct | step` returns a new `Accountant` without
+mutating the original. The `budget_exceeded` property checks whether the
+accumulated process exceeds the budget.
 
-PLD computation (FFT-based convolution) is the most expensive operation in
-privacy accounting. To improve performance, **all `pld()` methods are
-automatically cached** via `@functools.lru_cache(maxsize=8)`.
-
-### Automatic Caching
-
-Every privacy query reuses cached PLDs when called with the same discretization
-parameters:
+### Serialization
 
 ```python
-step = acc.poisson(acc.gaussian(0.8), 0.01)
+state = acct.state_dict()
+# Save state to disk...
 
-# First call computes PLD (cache miss)
-eps1 = step.epsilon_at(1e-5)
-
-# Subsequent calls reuse cached PLD (cache hit)
-eps2 = step.epsilon_at(1e-5)
-delta = step.delta_at(1.0)
-adv = step.advantage()
-
-# Cache info shows hits/misses
-print(step.pld.cache_info())  # CacheInfo(hits=3, misses=1, maxsize=8, currsize=1)
+acct = Accountant.from_state_dict(state)
 ```
 
-**Cache key**: `(frozen dataclass instance, discretization params)`
+## Discretization
 
-Changing discretization creates a new cache entry:
+PLD computation uses a discretized grid. The default parameters are suitable
+for most use cases. For tighter bounds at the cost of computation, adjust the
+discretization:
 
 ```python
-step = acc.gaussian(1.0)
+from opaque.accounting import set_discretization
 
-eps_fine = step.epsilon_at(1e-5, discretization=1e-5)    # miss
-eps_coarse = step.epsilon_at(1e-5, discretization=1e-3)  # miss (different config)
-eps_fine2 = step.epsilon_at(1e-5, discretization=1e-5)   # hit
+# Tighter (slower)
+set_discretization(discretization=1e-5, max_grid_size=50_000_000)
 
-print(step.pld.cache_info())  # currsize=2 (two configs cached)
+# Faster (looser)
+set_discretization(discretization=1e-3)
 ```
 
-### Cache Size
-
-Default cache size is **8 entries per process**. With ~10MB per PLD worst case:
-- Per process: 8 × 10MB = **80MB max**
-- 10 process types: **~800MB total worst case**
-
-This is conservative for typical usage (usually 1-2 discretization configs).
-
-### The `cached()` Wrapper
-
-Use `acc.cached()` when you need:
-
-1. **Larger cache** (16 entries instead of 8)
-2. **Merge barrier** to prevent composition optimizations
+Parameters can also be overridden per query:
 
 ```python
-# Standard usage (maxsize=8 automatic)
-step = acc.poisson(acc.gaussian(0.8), 0.01)
-training = step * 1000
-
-# With cached() wrapper (maxsize=16 + merge barrier)
-training = acc.cached(step * 1000)
+eps = training.epsilon_at(delta=1e-5, discretization=1e-5)
 ```
 
-**Merge barrier**: Composition optimizer won't look inside `cached()` nodes.
-This prevents structural optimizations like:
+| Parameter | Default | Effect |
+|-----------|---------|--------|
+| `discretization` | 1e-4 | Grid spacing. Smaller = tighter, slower. |
+| `log_x_mass_truncation_bound` | -50.0 | Log tail mass cutoff. |
+| `pessimistic_estimate` | True | Round upward for safe guarantees. |
+| `max_grid_size` | 10,000,000 | Maximum grid bins before coarsening. |
 
-```python
-step = acc.gaussian(1.0)
+## API reference
 
-# Without cached: optimizer merges these into single Repeated(step, 2000)
-a = step * 1000
-b = step * 1000
-total = a | b  # Optimized to: step * 2000
-
-# With cached: optimizer treats as opaque
-a = acc.cached(step * 1000)
-b = acc.cached(step * 1000)
-total = a | b  # NOT merged (two separate cached nodes)
-```
-
-**When to use `cached()`**:
-- Deep composition trees where you want explicit boundaries
-- Profiling shows you need larger cache for specific nodes
-- Preventing unwanted optimizations for testing
-
-**Most users don't need `cached()`** - automatic caching is sufficient.
-
-### Transitive Caching
-
-Composed processes benefit from transitive caching:
-
-```python
-step = acc.poisson(acc.gaussian(1.1), 0.01)
-warmup = step * 100
-main = step * 900
-total = warmup | main  # Composed process
-
-# Computing total's PLD calls warmup.pld() and main.pld()
-# which in turn call step.pld() -- all get cached!
-eps = total.epsilon_at(1e-5)
-
-# Second query reuses ALL cached PLDs
-delta = total.delta_at(1.0)  # No PLD recomputation
-```
-
-This makes repeated privacy queries very fast after the first computation.
-
-## Privacy Amplification Through Sampling
-
-Subsampling amplifies privacy -- the same noise gives stronger guarantees:
-
-```python
-eps_full = acc.gaussian(0.5).epsilon_at(1e-5)
-eps_sampled = acc.poisson(acc.gaussian(0.5), 0.01).epsilon_at(1e-5)
-print(f"Full batch: eps={eps_full:.2f}")
-print(f"Sampled:    eps={eps_sampled:.4f}")
-```
-
-Lower sample rates provide more amplification but may require more training
-steps.
-
-## Custom Precision
-
-Override discretization at query time for faster or more precise computation:
-
-```python
-# Create process without config
-proc = acc.gaussian(0.5)
-
-# Apply different configs at query time
-eps_coarse = proc.epsilon_at(1e-5, discretization=1e-3)  # faster, coarser
-eps_fine = proc.epsilon_at(1e-5, discretization=1e-5)    # slower, more accurate
-```
-
-Or set a module-level default:
-
-```python
-# All queries use this default unless overridden
-acc.set_discretization(discretization=1e-3)
-proc = acc.gaussian(0.5)
-eps = proc.epsilon_at(1e-5)  # Uses 1e-3 default
-```
-
-| Parameter                      | Default      | Description                          |
-|--------------------------------|--------------|--------------------------------------|
-| `discretization`               | `1e-4`       | Grid spacing. Error scales as O(d^2) |
-| `log_x_mass_truncation_bound`  | `-32.0`      | Tails below 2^bound are truncated    |
-| `pessimistic_estimate`         | `True`       | Upper-bound rounding (safe)          |
-| `max_grid_size`                | `10_000_000` | Auto-coarsen if grid exceeds this    |
-
-## See Also
-
-- [API Reference: Accounting](../api/accounting.md)
-- [Tutorial 02: Noise and Accounting](../tutorials/02_differential_privacy_noise_and_accounting.ipynb)
-- [Tutorial 03: Complete DP-SGD](../tutorials/03_complete_dp_sgd_training.ipynb)
-- [Noise Addition](noise.md)
+See [Accounting API Reference](../api/accounting.md) for complete function
+signatures and return types.

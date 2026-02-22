@@ -76,7 +76,7 @@ nav:
     - Quick Start: getting-started/quickstart.md
   - User Guide:
     - Overview: user-guide/index.md
-    - Differential Privacy Basics: user-guide/dp-basics.md
+    - Differential Privacy Concepts: user-guide/dp-basics.md
     - Random Number Generation: user-guide/rng-key.md
     - Per-Example Gradient Clipping: user-guide/clipping.md
     - Noise Addition: user-guide/noise.md
@@ -84,6 +84,7 @@ nav:
     - Sampling & Microbatching: user-guide/sampling.md
     - Optimizers: user-guide/optimizers.md
     - Distributed Training: user-guide/distributed.md
+    - HuggingFace Compatibility: user-guide/huggingface.md
     - Memory Profiling: user-guide/memory-profiling.md
     - Privacy Auditing: user-guide/auditing.md
     - Known Limitations: limitations.md
