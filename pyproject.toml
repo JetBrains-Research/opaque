@@ -39,9 +39,9 @@ dependencies = [
 ]
 
 [tool.uv]
-# Enable workspace so uv resolves crates/dp-accounting from source
+# Enable workspace so uv resolves accounting/ from source
 [tool.uv.workspace]
-members = ["crates/dp-accounting"]
+members = ["accounting"]
 
 [tool.uv.sources]
 opaque-accounting = { workspace = true, editable = true }

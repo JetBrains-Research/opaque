@@ -90,10 +90,10 @@ jobs:
           components: clippy, rustfmt
 
       - name: Run cargo fmt
-        run: cargo fmt --manifest-path crates/dp-accounting/Cargo.toml
+        run: cargo fmt --manifest-path accounting/Cargo.toml
 
       - name: Run clippy with autofixes
-        run: cargo clippy --manifest-path crates/dp-accounting/Cargo.toml --fix --allow-dirty || true
+        run: cargo clippy --manifest-path accounting/Cargo.toml --fix --allow-dirty || true
 
       - name: Check for changes
         id: git-check
@@ -114,4 +114,4 @@ jobs:
           git push
 
       - name: Fail if unfixable clippy warnings remain
-        run: cargo clippy --manifest-path crates/dp-accounting/Cargo.toml -- -D warnings
+        run: cargo clippy --manifest-path accounting/Cargo.toml -- -D warnings

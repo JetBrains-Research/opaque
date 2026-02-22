@@ -5,12 +5,12 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'crates/dp-accounting/**'
+      - 'accounting/**'
       - '.github/workflows/accounting-wheels.yml'
   pull_request:
     branches: [ main ]
     paths:
-      - 'crates/dp-accounting/**'
+      - 'accounting/**'
       - '.github/workflows/accounting-wheels.yml'
 
 # Cancel in-progress runs when a new workflow with the same group name is triggered
@@ -69,7 +69,7 @@ jobs:
         with:
           target: ${{ matrix.platform.target }}
           manylinux: ${{ matrix.platform.manylinux }}
-          working-directory: crates/dp-accounting
+          working-directory: accounting
           args: --release --out dist --interpreter python${{ matrix.python-version }}
           sccache: true
 
@@ -78,7 +78,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
-          working-directory: crates/dp-accounting
+          working-directory: accounting
           args: --release --out dist --interpreter python${{ matrix.python-version }}
           sccache: true
 
@@ -86,7 +86,7 @@ jobs:
         if: matrix.platform.target == 'x86_64' || (runner.os == 'macOS' && matrix.platform.target == 'aarch64')
         shell: bash
         run: |
-          pip install --find-links crates/dp-accounting/dist opaque-accounting --force-reinstall
+          pip install --find-links accounting/dist opaque-accounting --force-reinstall
           python -c "
           import opaque_accounting as dp
           pld = dp.gaussian_pld(1.1)
@@ -99,7 +99,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.platform.name }}-py${{ matrix.python-version }}
-          path: crates/dp-accounting/dist/*.whl
+          path: accounting/dist/*.whl
 
   build-sdist:
     name: Source distribution
@@ -115,11 +115,11 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           command: sdist
-          working-directory: crates/dp-accounting
+          working-directory: accounting
           args: --out dist
 
       - name: Upload sdist
         uses: actions/upload-artifact@v4
         with:
           name: sdist
-          path: crates/dp-accounting/dist/*.tar.gz
+          path: accounting/dist/*.tar.gz

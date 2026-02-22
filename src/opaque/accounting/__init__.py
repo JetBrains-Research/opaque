@@ -34,7 +34,7 @@ except ImportError as e:
     raise ImportError(
         "opaque-accounting native module not found. "
         "Build with: uv run maturin develop --release "
-        "-m crates/dp-accounting/Cargo.toml"
+        "-m accounting/Cargo.toml"
     ) from e
 
 # Base

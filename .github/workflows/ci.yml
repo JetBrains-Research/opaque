@@ -68,7 +68,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Run Rust unit tests
-        run: cargo test --manifest-path crates/dp-accounting/Cargo.toml
+        run: cargo test --manifest-path accounting/Cargo.toml
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3

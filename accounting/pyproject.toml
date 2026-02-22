@@ -36,7 +36,7 @@ dependencies = []
 
 [project.urls]
 Homepage = "https://github.com/JetBrains-Research/opaque"
-Documentation = "https://github.com/JetBrains-Research/opaque/tree/main/crates/dp-accounting"
+Documentation = "https://github.com/JetBrains-Research/opaque/tree/main/accounting"
 Repository = "https://github.com/JetBrains-Research/opaque"
 Issues = "https://github.com/JetBrains-Research/opaque/issues"
 Changelog = "https://github.com/JetBrains-Research/opaque/blob/main/CHANGELOG.md"

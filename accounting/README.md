@@ -59,14 +59,14 @@ FFT-based convolution in O(n log n) time.
 ### As part of Opaque (recommended)
 
 ```bash
-uv run maturin develop --release -m crates/dp-accounting/Cargo.toml
+uv run maturin develop --release -m accounting/Cargo.toml
 ```
 
 ### Standalone Rust
 
 ```toml
 [dependencies]
-opaque-accounting = { path = "crates/dp-accounting" }
+opaque-accounting = { path = "accounting" }
 ```
 
 ## Quick Start

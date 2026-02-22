@@ -4,13 +4,13 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'crates/dp-accounting/**'
+      - 'accounting/**'
       - 'tests/accounting/**'
       - '.github/workflows/accounting-ci.yml'
   pull_request:
     branches: [ main ]
     paths:
-      - 'crates/dp-accounting/**'
+      - 'accounting/**'
       - 'tests/accounting/**'
       - '.github/workflows/accounting-ci.yml'
 
@@ -45,19 +45,19 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            crates/dp-accounting/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('crates/dp-accounting/Cargo.lock') }}
+            accounting/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('accounting/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
       - name: cargo fmt --check
-        run: cargo fmt --manifest-path crates/dp-accounting/Cargo.toml -- --check
+        run: cargo fmt --manifest-path accounting/Cargo.toml -- --check
 
       - name: cargo clippy
-        run: cargo clippy --manifest-path crates/dp-accounting/Cargo.toml -- -D warnings
+        run: cargo clippy --manifest-path accounting/Cargo.toml -- -D warnings
 
       - name: cargo test
-        run: cargo test --manifest-path crates/dp-accounting/Cargo.toml
+        run: cargo test --manifest-path accounting/Cargo.toml
 
   python-bindings:
     name: Python ${{ matrix.python-version }} bindings - ${{ matrix.os }}
@@ -83,8 +83,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            crates/dp-accounting/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('crates/dp-accounting/Cargo.lock') }}
+            accounting/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('accounting/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
@@ -97,11 +97,11 @@ jobs:
         run: pip install maturin pytest
 
       - name: Build and install wheel
-        working-directory: crates/dp-accounting
+        working-directory: accounting
         run: maturin develop --release
 
       - name: Run PyO3 binding smoke tests
-        working-directory: crates/dp-accounting
+        working-directory: accounting
         run: pytest tests/ -v
 
       - name: Verify standalone install (no PyTorch)

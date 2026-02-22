@@ -108,7 +108,7 @@ uv run ruff format src/ tests/             # Format
 uv run ruff check src/ tests/             # Lint
 
 # opaque-accounting crate (standalone, no PyTorch)
-cd crates/dp-accounting
+cd accounting
 cargo test                                 # Rust unit tests
 cargo clippy -- -D warnings               # Rust lint
 uv run maturin develop --release          # Build Python extension
