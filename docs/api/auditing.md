@@ -125,10 +125,10 @@ Epsilon lower bound at the given delta. Matches the accounting API (`DpProcess.e
 | `significance` | `float` | `0.05` | Failure probability (1 - confidence) |
 | `method` | `str \| None` | auto | `'one_run'` or `'clopper_pearson'` |
 
-### AuditResult.auroc
+### AuditResult.auc
 
 ```python
-def auroc(
+def auc(
     self,
     *,
     confidence: float | None = None,
@@ -149,8 +149,8 @@ as a `(lower, upper)` tuple instead of a point estimate.
 | `key` | `RngKey \| None` | `None` | RNG key for reproducible bootstrap resampling |
 
 ```python
-audit.auroc()                              # point estimate -> float
-audit.auroc(confidence=0.95, key=key(42))  # 95% CI -> (lower, upper)
+audit.auc()                              # point estimate -> float
+audit.auc(confidence=0.95, key=key(42))  # 95% CI -> (lower, upper)
 ```
 
 ### AuditResult.tpr_at_fpr
@@ -223,8 +223,8 @@ Split scores by coin flip and return an `AuditResult`. The result defaults to th
 | `auditing.setup()` | Set up canary experiment |
 | `auditing.evaluate()` | Score canaries and compute audit |
 | `audit.epsilon_at(delta=)` | Epsilon bound (auto-selects method) |
-| `audit.auroc()` | Attack AUROC (point estimate) |
-| `audit.auroc(confidence=0.95, key=)` | AUROC with bootstrap CI |
+| `audit.auc()` | Attack AUC (point estimate) |
+| `audit.auc(confidence=0.95, key=)` | AUC with bootstrap CI |
 | `audit.tpr_at_fpr(fpr=)` | TPR at given FPR |
 | `audit.max_accuracy()` | Best-case attack accuracy |
 | `audit.summary()` | Formatted report |

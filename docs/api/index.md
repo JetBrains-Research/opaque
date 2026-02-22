@@ -161,7 +161,7 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | `epsilon_one_run()`         | Tighter bound (Nasr et al.)     | [Guide](../user-guide/auditing.md)             |
 | `epsilon_raw_counts()`      | Direct epsilon estimate         | [Guide](../user-guide/auditing.md)             |
 | `audit()`                   | Comprehensive audit             | [Guide](../user-guide/auditing.md)             |
-| `attack_auroc()`            | Membership inference AUROC      | [Guide](../user-guide/auditing.md)             |
+| `auc()`                     | Membership inference AUC        | [Guide](../user-guide/auditing.md)             |
 | `tpr_at_fpr()`              | TPR at given FPR                | [Guide](../user-guide/auditing.md)             |
 
 ### Distributed

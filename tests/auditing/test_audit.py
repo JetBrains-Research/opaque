@@ -111,24 +111,24 @@ class TestEpsilonOneRun:
             result.epsilon_one_run(significance=0.05, delta=1.5)
 
 
-class TestAuroc:
-    """Tests for auroc method."""
+class TestAuc:
+    """Tests for auc method."""
 
     def test_perfect_attack(self):
         """Test with perfect attack."""
         result = AuditResult(np.arange(50, 100), np.arange(0, 50))
-        assert result.auroc() > 0.99
+        assert result.auc() > 0.99
 
     def test_random_attack(self):
         """Test with random attack."""
         scores = np.arange(100)
         result = AuditResult(scores, scores)
-        assert 0.45 < result.auroc() < 0.55
+        assert 0.45 < result.auc() < 0.55
 
     def test_negative_scores(self):
         """Test that negative scores work correctly."""
         result = AuditResult(np.arange(-50, 0), np.arange(-100, -50))
-        assert result.auroc() > 0.99
+        assert result.auc() > 0.99
 
 
 class TestTprAtFpr:
@@ -209,34 +209,34 @@ class TestEdgeCases:
         assert eps > 5.0
 
 
-class TestAurocCI:
-    """Tests for auroc() confidence interval support."""
+class TestAucCI:
+    """Tests for auc() confidence interval support."""
 
     def test_basic_ci(self):
-        """Test basic auroc CI functionality."""
+        """Test basic auc CI functionality."""
         rng = np.random.default_rng(42)
         result = AuditResult(rng.normal(2.0, 1.0, 100), rng.normal(0.0, 1.0, 100))
 
-        ci = result.auroc(confidence=0.95, num_samples=50, key=key(42))
+        ci = result.auc(confidence=0.95, num_samples=50, key=key(42))
 
         assert isinstance(ci, tuple)
         assert len(ci) == 2
         assert ci[0] < ci[1]
 
     def test_ci_reproducibility(self):
-        """Test that auroc CI is reproducible with key."""
+        """Test that auc CI is reproducible with key."""
         result = AuditResult(np.arange(50, 100), np.arange(0, 50))
 
-        ci1 = result.auroc(confidence=0.95, num_samples=20, key=key(42))
-        ci2 = result.auroc(confidence=0.95, num_samples=20, key=key(42))
+        ci1 = result.auc(confidence=0.95, num_samples=20, key=key(42))
+        ci2 = result.auc(confidence=0.95, num_samples=20, key=key(42))
 
         assert ci1 == ci2
 
     def test_point_estimate_unchanged(self):
-        """Test that auroc() without confidence returns a float."""
+        """Test that auc() without confidence returns a float."""
         result = AuditResult(np.arange(50, 100), np.arange(0, 50))
 
-        val = result.auroc()
+        val = result.auc()
         assert isinstance(val, float)
 
     def test_ci_contains_point_estimate(self):
@@ -244,8 +244,8 @@ class TestAurocCI:
         rng = np.random.default_rng(42)
         result = AuditResult(rng.normal(2.0, 1.0, 200), rng.normal(0.0, 1.0, 200))
 
-        point = result.auroc()
-        ci = result.auroc(confidence=0.95, num_samples=200, key=key(42))
+        point = result.auc()
+        ci = result.auc(confidence=0.95, num_samples=200, key=key(42))
 
         assert ci[0] <= point <= ci[1]
 
@@ -254,11 +254,11 @@ class TestAurocCI:
         result = AuditResult(np.arange(50, 100), np.arange(0, 50))
 
         with pytest.raises(ValueError):
-            result.auroc(confidence=0.0)
+            result.auc(confidence=0.0)
         with pytest.raises(ValueError):
-            result.auroc(confidence=1.0)
+            result.auc(confidence=1.0)
         with pytest.raises(ValueError):
-            result.auroc(confidence=-0.1)
+            result.auc(confidence=-0.1)
 
 
 class TestCoinFlipExperiment:
@@ -348,8 +348,8 @@ class TestCoinFlipExperiment:
         assert isinstance(result, AuditResult)
         assert result.n_in == len(exp.in_indices)
         assert result.n_out == len(exp.out_indices)
-        # Perfect separation → high AUROC
-        assert result.auroc() > 0.99
+        # Perfect separation → high AUC
+        assert result.auc() > 0.99
 
     def test_audit_wrong_length_raises(self):
         """Test that wrong-length scores raise ValueError."""
@@ -381,7 +381,7 @@ class TestCoinFlipExperiment:
 
         # Audit
         result = exp.audit(scores)
-        assert result.auroc() > 0.6
+        assert result.auc() > 0.6
         assert result.epsilon_one_run(significance=0.05, delta=1e-5) > 0
 
     def test_repr(self):
@@ -438,7 +438,7 @@ class TestAuditResultRepr:
         assert "AuditResult" in r
         assert "n_in=50" in r
         assert "n_out=50" in r
-        assert "auroc=" in r
+        assert "auc=" in r
 
     def test_summary(self):
         """Test summary() produces multi-line report."""
@@ -446,7 +446,7 @@ class TestAuditResultRepr:
         s = result.summary()
         assert "Audit Summary" in s
         assert "Samples:" in s
-        assert "AUROC:" in s
+        assert "AUC:" in s
         assert "Clopper-Pearson" in s
         assert "TPR" in s
         assert "Max accuracy" in s

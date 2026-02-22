@@ -125,7 +125,7 @@ Beyond epsilon, these metrics quantify the strength of the membership
 inference attack:
 
 ```python
-audit.auroc()                    # Area under ROC curve (0.5 = random)
+audit.auc()                    # Area under ROC curve (0.5 = random)
 audit.tpr_at_fpr(fpr=0.01)      # True positive rate at 1% FPR
 audit.tpr_at_fpr(fpr=0.1)       # True positive rate at 10% FPR
 audit.max_accuracy()             # Best-case classification accuracy
@@ -133,13 +133,13 @@ audit.max_accuracy()             # Best-case classification accuracy
 
 ## Confidence intervals
 
-Quantify uncertainty in the AUROC estimate:
+Quantify uncertainty in the AUC estimate:
 
 ```python
 from opaque.random import key
 
-auroc_ci = audit.auroc(confidence=0.95, key=key(42))
-print(f"AUROC 95% CI: [{auroc_ci[0]:.3f}, {auroc_ci[1]:.3f}]")
+auc_ci = audit.auc(confidence=0.95, key=key(42))
+print(f"AUC 95% CI: [{auc_ci[0]:.3f}, {auc_ci[1]:.3f}]")
 ```
 
 ## Post-hoc auditing
@@ -173,10 +173,10 @@ leakage outside the training loop.
 
 - **Use enough canaries.** 1000+ gives reliable results. 100 is too few
   for tight bounds.
-- **Report confidence intervals.** Use `auroc(confidence=0.95)` to quantify
+- **Report confidence intervals.** Use `auc(confidence=0.95)` to quantify
   uncertainty.
 - **Compare to theoretical epsilon.** The empirical bound should be lower.
-- **Audit multiple metrics.** AUROC and TPR at low FPR are complementary
+- **Audit multiple metrics.** AUC and TPR at low FPR are complementary
   to epsilon.
 
 ## References

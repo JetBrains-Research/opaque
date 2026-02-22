@@ -22,9 +22,15 @@ Device 1:  clip(local_batch) --+-- AllReduce SUM -- + noise(key) -- update
 Device 2:  clip(local_batch) --+
 ```
 
-The noise must be added independently on every device with the same key.
-Avoid adding noise on rank 0 and broadcasting -- this produces the correct result
-but wastes communication bandwidth and complicates the code.
+There are two valid approaches to noise in distributed DP-SGD:
+
+- **Independent generation (recommended):** Every rank generates the same
+  noise using the same key. No communication is needed — the noise is
+  identical because the RNG state is identical. This is simpler and avoids
+  an extra broadcast.
+- **Rank-0 broadcast:** Rank 0 generates the noise and broadcasts it to
+  all other ranks. This is correct but adds a communication step and
+  requires special-casing rank 0.
 
 ## Minimal example
 
@@ -124,14 +130,7 @@ call, every rank holds the same total clipped gradient sum.
 For more general reductions, use `reduce_pytree`:
 
 ```python
-# Mean reduction (not typical for DP-SGD, but available)
-grads, handles = dist_utils.reduce_pytree(grads, op="mean")
-
-# Async reduction
-grads, handles = dist_utils.reduce_pytree(grads, op="sum", async_op=True)
-# ... overlap computation ...
-for h in handles:
-    h.wait()
+grads = dist_utils.reduce_pytree(grads, op="mean")
 ```
 
 ## Adaptive clipping

@@ -22,22 +22,22 @@ def test_basic_audit_workflow():
     assert eps_bonf > 0, "Bonferroni should also detect leakage"
 
     # Test utility metrics
-    assert 0.5 < result.auroc() < 1.0, "AUROC should be above random"
+    assert 0.5 < result.auc() < 1.0, "AUC should be above random"
     assert result.tpr_at_fpr(fpr=0.05) > 0.05, "TPR should exceed FPR"
     assert result.max_accuracy() > 0.5, "Accuracy should exceed random"
 
 
-def test_audit_with_auroc_ci():
-    """Test auditing with AUROC confidence intervals."""
+def test_audit_with_auc_ci():
+    """Test auditing with AUC confidence intervals."""
     np.random.seed(42)
     in_scores = np.random.normal(loc=5.0, scale=1.0, size=50)
     out_scores = np.random.normal(loc=3.0, scale=1.0, size=50)
 
     result = AuditResult(in_scores, out_scores)
 
-    auroc_ci = result.auroc(confidence=0.95, num_samples=20, key=key(42))
-    assert len(auroc_ci) == 2
-    assert auroc_ci[0] <= auroc_ci[1]
+    auc_ci = result.auc(confidence=0.95, num_samples=20, key=key(42))
+    assert len(auc_ci) == 2
+    assert auc_ci[0] <= auc_ci[1]
 
 
 def test_no_privacy_leakage():
@@ -49,14 +49,14 @@ def test_no_privacy_leakage():
     eps = result.epsilon_clopper_pearson(significance=0.05, delta=0)
     assert eps < 0.5, "Should detect minimal leakage"
 
-    assert 0.4 < result.auroc() < 0.6, "AUROC should be near random"
+    assert 0.4 < result.auc() < 0.6, "AUC should be near random"
 
 
 def test_perfect_attack():
     """Test auditing with perfect attack separation."""
     result = AuditResult(np.arange(50, 100, dtype=float), np.arange(0, 50, dtype=float))
 
-    assert result.auroc() > 0.99, "Perfect attack should have AUROC ~1.0"
+    assert result.auc() > 0.99, "Perfect attack should have AUC ~1.0"
 
     eps = result.epsilon_clopper_pearson(significance=0.05, delta=0, threshold=50)
     assert eps > 2.5, "Perfect attack should give large epsilon"
@@ -72,7 +72,7 @@ def test_real_world_scenario():
     eps = result.epsilon_at(delta=1e-5, method="clopper_pearson")
     assert eps > 0, "Should detect some privacy leakage"
 
-    assert 0.5 < result.auroc() < 0.85, "AUROC should show modest attack"
+    assert 0.5 < result.auc() < 0.85, "AUC should show modest attack"
 
     tpr_at_1pct = result.tpr_at_fpr(fpr=0.01)
     assert tpr_at_1pct < 0.3, "TPR should be limited at low FPR"
@@ -105,6 +105,6 @@ def test_all_metrics_on_single_result():
     assert result.epsilon_one_run(significance=0.05, delta=1e-5) > 0
 
     # All utility metrics
-    assert 0.5 < result.auroc() < 1.0
+    assert 0.5 < result.auc() < 1.0
     assert result.tpr_at_fpr(fpr=0.05) >= 0
     assert result.max_accuracy() > 0.5

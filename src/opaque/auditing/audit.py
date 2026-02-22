@@ -54,7 +54,7 @@ class AuditResult:
     Example:
         >>> result = AuditResult(in_scores, out_scores)
         >>> result.epsilon_clopper_pearson(significance=0.05, delta=1e-5)
-        >>> result.auroc()
+        >>> result.auc()
         >>> result.tpr_at_fpr(fpr=0.01)
     """
 
@@ -84,7 +84,7 @@ class AuditResult:
     def __repr__(self) -> str:
         return (
             f"AuditResult(n_in={self.n_in}, n_out={self.n_out}, "
-            f"auroc={self.auroc():.4f})"
+            f"auc={self.auc():.4f})"
         )
 
     # ------------------------------------------------------------------
@@ -223,7 +223,7 @@ class AuditResult:
     # Attack utility metrics
     # ------------------------------------------------------------------
 
-    def auroc(
+    def auc(
         self,
         *,
         confidence: float | None = None,
@@ -232,7 +232,7 @@ class AuditResult:
     ) -> float | tuple[float, float]:
         """Area under the ROC curve for the membership inference attack.
 
-        AUROC = 0.5 means random guessing, AUROC = 1.0 means perfect attack.
+        AUC = 0.5 means random guessing, AUC = 1.0 means perfect attack.
 
         When ``confidence`` is provided, returns a bootstrap confidence interval
         as a ``(lower, upper)`` tuple instead of a point estimate.
@@ -244,12 +244,12 @@ class AuditResult:
             key: RNG key for reproducible bootstrap resampling.
 
         Returns:
-            Float AUROC if ``confidence`` is None, otherwise
+            Float AUC if ``confidence`` is None, otherwise
             ``(lower, upper)`` tuple.
 
         Example:
-            >>> result.auroc()                              # point estimate
-            >>> result.auroc(confidence=0.95, key=key(42))  # 95% CI
+            >>> result.auc()                              # point estimate
+            >>> result.auc(confidence=0.95, key=key(42))  # 95% CI
         """
         tnr = self._tn_counts / self._tn_counts[-1]
         fnr = self._fn_counts / self._fn_counts[-1]
@@ -269,7 +269,7 @@ class AuditResult:
         for i in range(num_samples):
             in_sample = rng.choice(self._in_arr, size=self.n_in)
             out_sample = rng.choice(self._out_arr, size=self.n_out)
-            values[i] = AuditResult(in_sample, out_sample).auroc()
+            values[i] = AuditResult(in_sample, out_sample).auc()
 
         # Bias-corrected bootstrap
         prop_less = (np.sum(values < point) + 1) / (num_samples + 2)
@@ -343,7 +343,7 @@ class AuditResult:
             "Audit Summary",
             "\u2500" * 40,
             f"  Samples:              {self.n_in} in, {self.n_out} out",
-            f"  AUROC:                {self.auroc():.4f}",
+            f"  AUC:                  {self.auc():.4f}",
             f"  \u03b5 (Clopper-Pearson):  {eps_cp:.4f}",
         ]
 
