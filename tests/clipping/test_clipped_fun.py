@@ -68,11 +68,13 @@ def test_clip_no_change_when_below_threshold(device):
     assert torch.allclose(clipped["w"], pytree["w"])
 
 
-def test_clip_pytree_raises_on_nan(device):
-    """clip_pytree should raise ValueError when NaN/Inf detected."""
+def test_clip_pytree_handles_nan(device):
+    """clip_pytree should zero out NaN/Inf values (vmap-compatible)."""
     pytree = {"w": torch.tensor([float("nan"), float("inf"), 1.0], device=device)}
-    with pytest.raises(ValueError, match="NaN"):
-        clip_pytree(pytree, clip_norm=1.0)
+    clipped, aux = clip_pytree(pytree, clip_norm=1.0)
+    # NaN/Inf sanitized to 0 before clipping; only the finite value remains
+    assert torch.isfinite(clipped["w"]).all()
+    assert torch.isfinite(aux.norm)
 
 
 def test_clip_handles_empty_tree(device):
@@ -218,8 +220,8 @@ def test_clipped_fun_has_aux_with_return_norms():
     assert aux.grad_norms.shape == (3,)
 
 
-def test_clipped_fun_raises_on_nan():
-    """Test that NaN/Inf in gradients raises ValueError."""
+def test_clipped_fun_handles_nan():
+    """Test that NaN/Inf in gradients are zeroed out (vmap-compatible)."""
 
     def loss_fn(param, data):
         # Create a scenario that produces NaN gradient
@@ -233,8 +235,9 @@ def test_clipped_fun_raises_on_nan():
     param = torch.tensor(1.0, requires_grad=True)
     data = torch.tensor([0.5, 2.0, 0.3])  # data[1]=2.0 will cause NaN
 
-    with pytest.raises(ValueError, match="NaN"):
-        clipped_grad_fn(param, data, state=clip_state)
+    # NaN/Inf gradients are sanitized to zero inside clip_pytree
+    result, _ = clipped_grad_fn(param, data, state=clip_state)
+    assert torch.isfinite(result).all()
 
 
 def test_clipped_fun_dtype_controls_accumulation():

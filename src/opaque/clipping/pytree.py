@@ -21,8 +21,8 @@ def clip_pytree(
 ) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
     """Clip a PyTree of tensors to a maximum L2 norm.
 
-    Raises ValueError if any tensor contains NaN or Inf values, since these
-    would break the DP sensitivity bound.
+    NaN and Inf values in the input are replaced with zeros before clipping.
+    This is vmap-compatible and DP-safe (the clipped output has norm <= clip_norm).
 
     Args:
         pytree: Dictionary of tensors to clip
@@ -35,25 +35,25 @@ def clip_pytree(
         Tuple of (clipped_pytree, aux) where aux contains:
             - norm: The L2 norm of the original (unclipped) pytree
 
-    Raises:
-        ValueError: If any tensor contains NaN or Inf values.
-
     Edge cases:
         - clip_norm=0: Returns zeros
         - clip_norm=inf: No clipping (passthrough)
         - pytree_norm=0: Returns unchanged
+        - NaN/Inf values: Replaced with zeros before clipping
         - return_zero=True: Returns zeros regardless of other parameters
     """
-    # Compute original norm
-    orig_norm = global_norm(pytree)
+    # Sanitize NaN/Inf → 0 before clipping.  This is both vmap-compatible
+    # (no data-dependent control flow) and DP-safe (zeroed contributions
+    # have norm 0, which is within the sensitivity bound).
+    pytree = tree_map(
+        lambda t: torch.nan_to_num(t, nan=0.0, posinf=0.0, neginf=0.0)
+        if isinstance(t, torch.Tensor)
+        else t,
+        pytree,
+    )
 
-    # Check for NaN/Inf — these break the sensitivity bound
-    if not torch.isfinite(orig_norm):
-        raise ValueError(
-            "Per-example gradient contains NaN or Inf values. "
-            "This breaks the DP sensitivity bound. "
-            "Fix the loss function to avoid producing NaN/Inf gradients."
-        )
+    # Compute original norm (always finite after sanitization)
+    orig_norm = global_norm(pytree)
 
     # Compute scale factor
     clip_norm_tensor = torch.tensor(
