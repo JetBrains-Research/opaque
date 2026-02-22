@@ -55,7 +55,7 @@ class AuditResult:
         >>> result = AuditResult(in_scores, out_scores)
         >>> result.epsilon_clopper_pearson(significance=0.05, delta=1e-5)
         >>> result.auc()
-        >>> result.tpr_at_fpr(fpr=0.01)
+        >>> result.beta_at(alpha=0.01)
     """
 
     def __init__(self, in_scores: np.ndarray, out_scores: np.ndarray) -> None:
@@ -233,14 +233,14 @@ class AuditResult:
 
         AUC = 0.5 means random guessing, AUC = 1.0 means perfect attack.
 
-        When ``confidence`` is provided, returns a bootstrap confidence interval
+        When ``confidence`` is provided, returns a confidence interval
         as a ``(lower, upper)`` tuple instead of a point estimate.
 
         Args:
             confidence: If provided, return a symmetric CI at this level
                 (e.g. 0.95 for 95% CI). Must be in (0, 1).
-            num_samples: Number of bootstrap resamples for CI. Default: 1000.
-            key: RNG key for reproducible bootstrap resampling.
+            num_samples: Number of resamples for CI. Default: 1000.
+            key: RNG key for reproducible resampling.
 
         Returns:
             Float AUC if ``confidence`` is None, otherwise
@@ -279,16 +279,22 @@ class AuditResult:
         ci = np.quantile(values, corrected, method="linear")
         return (float(ci[0]), float(ci[1]))
 
-    def tpr_at_fpr(self, *, fpr: float | np.ndarray) -> float | np.ndarray:
-        """True positive rate at a given false positive rate.
+    def beta_at(self, *, alpha: float | np.ndarray) -> float | np.ndarray:
+        """Type-II error rate at a given Type-I error rate.
+
+        Consistent with ``DpProcess.beta_at(alpha=)`` in the accounting
+        module.  Higher beta means the attack is weaker (more private).
+
+        Relationship to TPR/FPR: ``beta = 1 - TPR`` at ``alpha = FPR``.
 
         Args:
-            fpr: Target false positive rate(s) in [0, 1].
+            alpha: Type-I error rate(s) (false positive rate) in [0, 1].
 
         Returns:
-            TPR value(s) at the specified FPR(s).
+            Type-II error rate(s) at the specified alpha(s).
         """
-        return _tpr_at_given_fpr(fpr, self._tp_counts, self._fp_counts)
+        tpr = _tpr_at_given_fpr(alpha, self._tp_counts, self._fp_counts)
+        return 1.0 - tpr
 
     def max_accuracy(self, *, prevalence: float | None = None) -> float:
         """Maximum classification accuracy achievable.
@@ -352,8 +358,8 @@ class AuditResult:
 
         lines.extend(
             [
-                f"  TPR @ 1% FPR:         {self.tpr_at_fpr(fpr=0.01):.4f}",
-                f"  TPR @ 10% FPR:        {self.tpr_at_fpr(fpr=0.1):.4f}",
+                f"  β @ α=0.01:           {self.beta_at(alpha=0.01):.4f}",
+                f"  β @ α=0.10:           {self.beta_at(alpha=0.1):.4f}",
                 f"  Max accuracy:         {self.max_accuracy():.4f}",
                 f"  (\u03b1={significance}, \u03b4={delta})",
             ]

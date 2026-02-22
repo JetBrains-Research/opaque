@@ -139,27 +139,30 @@ def auc(
 
 Area under the ROC curve. 0.5 = random guessing, 1.0 = perfect attack.
 
-When `confidence` is provided, returns a bootstrap confidence interval
+When `confidence` is provided, returns a confidence interval
 as a `(lower, upper)` tuple instead of a point estimate.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `confidence` | `float \| None` | `None` | If provided, return a symmetric CI at this level (e.g. 0.95 for 95% CI) |
-| `num_samples` | `int` | `1000` | Number of bootstrap resamples for CI |
-| `key` | `RngKey \| None` | `None` | RNG key for reproducible bootstrap resampling |
+| `num_samples` | `int` | `1000` | Number of resamples for CI |
+| `key` | `RngKey \| None` | `None` | RNG key for reproducible resampling |
 
 ```python
 audit.auc()                              # point estimate -> float
 audit.auc(confidence=0.95, key=key(42))  # 95% CI -> (lower, upper)
 ```
 
-### AuditResult.tpr_at_fpr
+### AuditResult.beta_at
 
 ```python
-def tpr_at_fpr(self, *, fpr: float | np.ndarray) -> float | np.ndarray:
+def beta_at(self, *, alpha: float | np.ndarray) -> float | np.ndarray:
 ```
 
-True positive rate at a given false positive rate.
+Type-II error rate at a given Type-I error rate. Consistent with
+`DpProcess.beta_at(alpha=)` in the accounting module. Higher beta means
+the attack is weaker (more private). Relationship: `beta = 1 - TPR` at
+`alpha = FPR`.
 
 ### AuditResult.max_accuracy
 
@@ -224,8 +227,8 @@ Split scores by coin flip and return an `AuditResult`. The result defaults to th
 | `auditing.evaluate()` | Score canaries and compute audit |
 | `audit.epsilon_at(delta=)` | Epsilon bound (auto-selects method) |
 | `audit.auc()` | Attack AUC (point estimate) |
-| `audit.auc(confidence=0.95, key=)` | AUC with bootstrap CI |
-| `audit.tpr_at_fpr(fpr=)` | TPR at given FPR |
+| `audit.auc(confidence=0.95, key=)` | AUC with CI |
+| `audit.beta_at(alpha=)` | Type-II error at given Type-I error |
 | `audit.max_accuracy()` | Best-case attack accuracy |
 | `audit.summary()` | Formatted report |
 

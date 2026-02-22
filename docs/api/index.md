@@ -50,12 +50,13 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 - **[Auditing](auditing.md)**: Empirical privacy validation
   - `epsilon_clopper_pearson()`, `epsilon_one_run()` - Estimate epsilon from attacks
   - `audit()` - Comprehensive privacy audit
-  - `attack_auroc()`, `tpr_at_fpr()` - Attack utility metrics
+  - `auc()`, `beta_at()` - Attack utility metrics
 
 - **[Distributed](distributed.md)**: Multi-GPU training with DDP
   - `sum_gradients()` - Sum clipped gradients across GPUs (for DP training)
   - `reduce_pytree()` - Generic PyTree reduction
-  - `sync_state()` - Synchronize adaptive clipping state
+  - `sync()` - Auto-dispatch sync for any state/aux type
+  - `sync_object()` - Synchronize scalar fields of a dataclass
   - `is_initialized()`, `get_rank()`, `get_world_size()` - Distributed utilities
 
 ## Quick Reference
@@ -162,7 +163,7 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | `epsilon_raw_counts()`      | Direct epsilon estimate         | [Guide](../user-guide/auditing.md)             |
 | `audit()`                   | Comprehensive audit             | [Guide](../user-guide/auditing.md)             |
 | `auc()`                     | Membership inference AUC        | [Guide](../user-guide/auditing.md)             |
-| `tpr_at_fpr()`              | TPR at given FPR                | [Guide](../user-guide/auditing.md)             |
+| `beta_at()`                 | Type-II error at given alpha    | [Guide](../user-guide/auditing.md)             |
 
 ### Distributed
 
@@ -172,7 +173,8 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | `reduce_pytree()`      | Generic PyTree reduction    | [Guide](../user-guide/distributed.md)      |
 | `reduce_scalar()`      | Reduce scalar across devices | [Guide](../user-guide/distributed.md)      |
 | `gather_tensors()`     | Gather tensors from all ranks | [Guide](../user-guide/distributed.md)      |
-| `sync_state()`         | Sync adaptive clip state    | [Guide](../user-guide/distributed.md)      |
+| `sync()`               | Auto-dispatch sync for any state/aux | [Guide](../user-guide/distributed.md) |
+| `sync_object()`        | Sync scalar fields of a dataclass | [Guide](../user-guide/distributed.md) |
 | `is_initialized()`     | Check if DDP is active      | [Guide](../user-guide/distributed.md)      |
 | `get_rank()`           | Get current GPU index       | [Guide](../user-guide/distributed.md)      |
 | `get_world_size()`     | Get total number of GPUs    | [Guide](../user-guide/distributed.md)      |

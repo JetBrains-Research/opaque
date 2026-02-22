@@ -349,9 +349,9 @@ noise_fn, noise_state = gaussian_noise(
 )
 ```
 
-For validation, call `sync_gaussian_noise_state(state)` or
-`sync_mf_noise_state(state)` to assert that the RNG key and step counter
-match across ranks. See [Distributed Training](distributed.md) for details.
+For validation, call `sync(noise_state)` to assert that the RNG key and
+step counter match across ranks. The `sync()` dispatcher auto-detects the
+noise state type. See [Distributed Training](distributed.md) for details.
 
 ## References
 

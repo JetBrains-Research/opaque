@@ -48,7 +48,7 @@ def test_truncated_poisson_state_dict_structure():
 
 
 def test_parallel_poisson_state_dict_structure():
-    proc = acc.parallel_poisson(acc.poisson(acc.gaussian(0.8), 0.01), 4)
+    proc = acc.parallel_poisson(acc.gaussian(0.8), sample_rate=0.01, num_workers=4)
     state = cast(dict[str, object], proc.state_dict())
     assert state["type"] == "ParallelPoisson"
     assert state["num_workers"] == 4

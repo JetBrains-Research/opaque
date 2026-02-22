@@ -23,7 +23,7 @@ def test_basic_audit_workflow():
 
     # Test utility metrics
     assert 0.5 < result.auc() < 1.0, "AUC should be above random"
-    assert result.tpr_at_fpr(fpr=0.05) > 0.05, "TPR should exceed FPR"
+    assert result.beta_at(alpha=0.05) < 0.95, "Beta should be below 1 for detectable leakage"
     assert result.max_accuracy() > 0.5, "Accuracy should exceed random"
 
 
@@ -74,8 +74,8 @@ def test_real_world_scenario():
 
     assert 0.5 < result.auc() < 0.85, "AUC should show modest attack"
 
-    tpr_at_1pct = result.tpr_at_fpr(fpr=0.01)
-    assert tpr_at_1pct < 0.3, "TPR should be limited at low FPR"
+    beta_at_1pct = result.beta_at(alpha=0.01)
+    assert beta_at_1pct > 0.7, "Beta should be high at low alpha (weak attack at strict threshold)"
 
 
 def test_one_run_audit():
@@ -106,5 +106,5 @@ def test_all_metrics_on_single_result():
 
     # All utility metrics
     assert 0.5 < result.auc() < 1.0
-    assert result.tpr_at_fpr(fpr=0.05) >= 0
+    assert result.beta_at(alpha=0.05) <= 1.0
     assert result.max_accuracy() > 0.5

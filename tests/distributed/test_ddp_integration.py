@@ -220,9 +220,9 @@ def _worker_adaptive_clipping(rank: int, world_size: int, port: int) -> None:
         y = torch.randn(batch_size, 1, device=device)
 
         grads, new_state = grad_fn(params, x, y, state=clip_state)
-        from opaque.distributed import sync_state
+        from opaque.distributed import sync_object
 
-        new_state = sync_state(
+        new_state = sync_object(
             new_state,
             field_ops={"clip_norm": "mean", "clipping_rate": "mean"},
             device=device,

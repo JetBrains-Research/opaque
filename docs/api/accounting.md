@@ -148,19 +148,19 @@ batch = 256
 step = acc.truncated_poisson(acc.gaussian(0.8), batch / n, batch, n)
 ```
 
-### `parallel_poisson(inner, num_workers) -> DpProcess`
+### `parallel_poisson(inner, sample_rate, num_workers) -> DpProcess`
 
 Parallel Poisson subsampling. Models independent Poisson sampling on
 multiple workers, where the same example can appear on multiple devices.
-`inner` must be a `Poisson` process.
+Like `poisson()` and `truncated_poisson()`, this is a full wrapper.
 
-- `inner` (Poisson): Poisson-subsampled process (from `poisson()`)
+- `inner` (Gaussian | AdaClip): Base mechanism (from `gaussian()` or `adaclip()`)
+- `sample_rate` (float): Probability of including each example, in (0, 1]
 - `num_workers` (int): Number of parallel workers sampling independently
 
 ```python
 step = acc.parallel_poisson(
-    acc.poisson(acc.gaussian(0.5), 0.01),
-    num_workers=4,
+    acc.gaussian(0.5), sample_rate=0.01, num_workers=4,
 )
 ```
 

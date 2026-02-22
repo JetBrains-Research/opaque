@@ -131,38 +131,39 @@ class TestAuc:
         assert result.auc() > 0.99
 
 
-class TestTprAtFpr:
-    """Tests for tpr_at_fpr method."""
+class TestBetaAt:
+    """Tests for beta_at method (Type-II error = 1 - TPR)."""
 
     def test_perfect_classifier(self):
-        """Test with perfectly separated scores."""
+        """Test with perfectly separated scores (low beta = strong attack)."""
         result = AuditResult(np.arange(50, 100), np.arange(0, 50))
-        assert result.tpr_at_fpr(fpr=0.1) > 0.9
+        assert result.beta_at(alpha=0.1) < 0.1
 
     def test_random_classifier(self):
-        """Test with identical distributions."""
+        """Test with identical distributions (high beta = weak attack)."""
         scores = np.arange(100)
         result = AuditResult(scores, scores)
-        tpr = result.tpr_at_fpr(fpr=0.1)
-        assert 0.05 < tpr < 0.2
+        beta = result.beta_at(alpha=0.1)
+        assert 0.8 < beta < 0.95
 
-    def test_multiple_fprs(self):
-        """Test with multiple FPR values."""
+    def test_multiple_alphas(self):
+        """Test with multiple alpha values."""
         result = AuditResult(np.arange(50, 100), np.arange(0, 50))
 
-        fprs = np.array([0.01, 0.05, 0.1])
-        tprs = result.tpr_at_fpr(fpr=fprs)
+        alphas = np.array([0.01, 0.05, 0.1])
+        betas = result.beta_at(alpha=alphas)
 
-        assert len(tprs) == 3
-        assert np.all(tprs[:-1] <= tprs[1:])
+        assert len(betas) == 3
+        # beta decreases as alpha increases (more FP allowed → fewer FN)
+        assert np.all(betas[:-1] >= betas[1:])
 
-    def test_invalid_fpr(self):
-        """Test that invalid FPR raises ValueError."""
+    def test_invalid_alpha(self):
+        """Test that invalid alpha raises ValueError."""
         result = AuditResult([1, 2], [3, 4])
         with pytest.raises(ValueError, match="fpr must be in"):
-            result.tpr_at_fpr(fpr=-0.1)
+            result.beta_at(alpha=-0.1)
         with pytest.raises(ValueError, match="fpr must be in"):
-            result.tpr_at_fpr(fpr=1.5)
+            result.beta_at(alpha=1.5)
 
 
 class TestMaxAccuracy:
@@ -448,7 +449,7 @@ class TestAuditResultRepr:
         assert "Samples:" in s
         assert "AUC:" in s
         assert "Clopper-Pearson" in s
-        assert "TPR" in s
+        assert "β @" in s
         assert "Max accuracy" in s
 
     def test_summary_coin_flip_shows_one_run(self):

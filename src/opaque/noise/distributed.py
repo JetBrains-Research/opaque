@@ -7,7 +7,12 @@ training to catch divergence early.
 
 from __future__ import annotations
 
-from opaque.distributed import assert_scalar_equal, is_distributed, sync_state
+from opaque.distributed import (
+    assert_scalar_equal,
+    is_distributed,
+    register_sync_type,
+    sync_object,
+)
 
 from .gaussian_noise import GaussianNoiseState
 from .matrix_factorization.noise import MFNoiseState
@@ -39,7 +44,7 @@ def sync_gaussian_noise_state(state: GaussianNoiseState) -> GaussianNoiseState:
         return state
 
     _assert_rng_key_equal(state, "GaussianNoiseState")
-    return sync_state(state, field_ops=_NOISE_STATE_OPS)
+    return sync_object(state, field_ops=_NOISE_STATE_OPS)
 
 
 def sync_mf_noise_state(state: MFNoiseState) -> MFNoiseState:
@@ -52,4 +57,9 @@ def sync_mf_noise_state(state: MFNoiseState) -> MFNoiseState:
         return state
 
     _assert_rng_key_equal(state, "MFNoiseState")
-    return sync_state(state, field_ops=_NOISE_STATE_OPS)
+    return sync_object(state, field_ops=_NOISE_STATE_OPS)
+
+
+# Register noise types with the sync dispatcher
+register_sync_type(GaussianNoiseState, sync_gaussian_noise_state)
+register_sync_type(MFNoiseState, sync_mf_noise_state)

@@ -72,7 +72,8 @@ __all__ = [
     "gather_tensors",
     "gather_pytree",
     # State synchronization
-    "sync_state",
+    "sync_object",
+    "sync",
 ]
 
 
@@ -231,5 +232,48 @@ from .state import (  # noqa: E402
     gather_pytree,
     gather_tensors,
     reduce_scalar,
-    sync_state,
+    sync_object,
 )
+
+# ---- Type-based sync dispatcher ----
+# Maps type → sync function. Populated by clipping and noise modules
+# when they are imported (via register_sync_type).
+_SYNC_REGISTRY: dict[type, object] = {}
+
+
+def register_sync_type(state_type: type, sync_fn: object) -> None:
+    """Register a sync function for a given state/aux type."""
+    _SYNC_REGISTRY[state_type] = sync_fn
+
+
+def sync(state: object) -> object:
+    """Synchronize a state or auxiliary object across distributed ranks.
+
+    Auto-dispatches to the right specialized sync function based on the
+    type of *state*.  Works with all clipping states, noise states, and
+    auxiliary output types.
+
+    Args:
+        state: Any registered state or aux object.
+
+    Returns:
+        Synchronized copy of *state*.
+
+    Raises:
+        TypeError: If no sync function is registered for the type.
+
+    Example::
+
+        from opaque.distributed import sync
+
+        clip_state = sync(clip_state)       # dispatches to sync_clip_state
+        noise_state = sync(noise_state)     # dispatches to sync_gaussian_noise_state
+        aux = sync(aux)                     # dispatches to sync_aux
+    """
+    state_type = type(state)
+    if state_type in _SYNC_REGISTRY:
+        return _SYNC_REGISTRY[state_type](state)
+    raise TypeError(
+        f"No sync function registered for {state_type.__name__}. "
+        f"Registered types: {[t.__name__ for t in _SYNC_REGISTRY]}"
+    )

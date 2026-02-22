@@ -17,17 +17,17 @@ Informally: the output distribution barely changes when one person's data is
 added or removed. An adversary observing the output cannot confidently determine
 whether any specific individual was in the training set.
 
-**epsilon** (privacy loss) controls how much the distributions can differ. Smaller
-epsilon means stronger privacy. At epsilon=0, the mechanism reveals nothing
-about individuals; at epsilon=infinity, there is no privacy guarantee.
+**$\varepsilon$** (privacy loss) controls how much the distributions can differ. Smaller
+$\varepsilon$ means stronger privacy. At $\varepsilon=0$, the mechanism reveals nothing
+about individuals; at $\varepsilon=\infty$, there is no privacy guarantee.
 
-**delta** bounds the probability that the epsilon guarantee fails. It should be
-cryptographically small, typically smaller than 1/n where n is the dataset size.
-Common values: 1e-5 to 1e-6.
+**$\delta$** bounds the probability that the $\varepsilon$ guarantee fails. It should be
+cryptographically small, typically smaller than $1/n$ where $n$ is the dataset size.
+Common values: $10^{-5}$ to $10^{-6}$.
 
 ### Practical interpretation
 
-| epsilon | Interpretation |
+| $\varepsilon$ | Interpretation |
 |---------|----------------|
 | 0.1     | Strong privacy. Significant accuracy loss expected. |
 | 1.0     | Moderate privacy. Reasonable accuracy on large datasets. |
@@ -77,22 +77,22 @@ Opaque computes per-example gradients efficiently using `torch.func.vmap` and
 
 ### Step 2: Clipping
 
-Each per-example gradient is clipped to a maximum L2 norm C (the *clip norm*).
-If the gradient's norm exceeds C, it is scaled down to have norm exactly C.
-Gradients with norm below C are left unchanged.
+Each per-example gradient is clipped to a maximum $\ell_2$ norm $C$ (the *clip norm*).
+If the gradient's norm exceeds $C$, it is scaled down to have norm exactly $C$.
+Gradients with norm below $C$ are left unchanged.
 
 Clipping bounds the *sensitivity* of the gradient query: changing one training
-example changes the sum of clipped gradients by at most C (under add-or-remove
-neighboring relation) or 2C (under replace-one).
+example changes the sum of clipped gradients by at most $C$ (under add-or-remove
+neighboring relation) or $2C$ (under replace-one).
 
 ### Step 3: Noise addition
 
-Gaussian noise with standard deviation sigma is added to the sum of clipped
+Gaussian noise with standard deviation $\sigma$ is added to the sum of clipped
 gradients. The noise magnitude is proportional to the sensitivity (the clip
 norm) and the desired privacy level.
 
-The ratio sigma/C is the *noise multiplier*. Larger noise multiplier means
-stronger privacy (smaller epsilon) but more gradient corruption.
+The ratio $\sigma / C$ is the *noise multiplier*. Larger noise multiplier means
+stronger privacy (smaller $\varepsilon$) but more gradient corruption.
 
 ### Step 4: Parameter update
 
@@ -103,9 +103,9 @@ standard SGD. Any optimizer (SGD, Adam, AdamW) can be used.
 
 ### The budget is finite
 
-Each DP-SGD step consumes some privacy budget. Over T training steps, the total
-privacy cost composes. More steps means larger total epsilon for the same noise
-level, or more noise needed to maintain the same epsilon.
+Each DP-SGD step consumes some privacy budget. Over $T$ training steps, the total
+privacy cost composes. More steps means larger total $\varepsilon$ for the same noise
+level, or more noise needed to maintain the same $\varepsilon$.
 
 This creates a fundamental trade-off: training longer improves model quality
 but costs more privacy. The **calibration** step (see
@@ -117,11 +117,11 @@ target epsilon for a given number of steps.
 When the same dataset is used for multiple DP mechanisms (e.g., T steps of
 DP-SGD), the total privacy loss is bounded by *composition theorems*.
 
-**Basic composition**: epsilon values add. T steps of epsilon_0-DP gives
-T * epsilon_0 total privacy. This is loose.
+**Basic composition**: $\varepsilon$ values add. $T$ steps of $\varepsilon_0$-DP gives
+$T \cdot \varepsilon_0$ total privacy. This is loose.
 
-**Advanced composition** (Kairouz et al. 2015): total epsilon grows as
-roughly sqrt(T) * epsilon_0 for small epsilon_0. Much tighter.
+**Advanced composition** (Kairouz et al. 2015): total $\varepsilon$ grows as
+roughly $\sqrt{T} \cdot \varepsilon_0$ for small $\varepsilon_0$. Much tighter.
 
 **PLD composition**: Opaque uses *Privacy Loss Distributions* (PLD), which
 track the full distribution of privacy loss rather than just summary
@@ -137,9 +137,9 @@ If each training step samples a random subset of the dataset (rather than using
 the full dataset), the privacy cost per step is reduced. This is *privacy
 amplification by subsampling*.
 
-With Poisson sampling at rate q (each example included independently with
-probability q), the effective noise multiplier is amplified by approximately
-1/q. For q=0.01 (1% sample rate), this is a 100x amplification.
+With Poisson sampling at rate $q$ (each example included independently with
+probability $q$), the effective noise multiplier is amplified by approximately
+$1/q$. For $q=0.01$ (1% sample rate), this is a 100x amplification.
 
 Opaque's `PoissonSampler` implements Poisson subsampling. The accounting module
 accounts for this amplification via `acc.poisson(mechanism, sample_rate)`.
@@ -150,10 +150,10 @@ See [Sampling & Microbatching](sampling.md).
 Opaque supports three families of privacy metrics, all derived from the same
 underlying PLD:
 
-### (epsilon, delta)-DP
+### ($\varepsilon$, $\delta$)-DP
 
-The standard DP definition. Given a target delta, compute the smallest epsilon
-such that the mechanism is (epsilon, delta)-DP.
+The standard DP definition. Given a target $\delta$, compute the smallest $\varepsilon$
+such that the mechanism is $(\varepsilon, \delta)$-DP.
 
 ```python
 eps = training.epsilon_at(delta=1e-5)
@@ -172,13 +172,13 @@ adv = training.advantage()
 
 This is related to the trade-off function in f-DP (Dong et al. 2019).
 
-### (alpha, beta) error rates
+### ($\alpha$, $\beta$) error rates
 
-The hypothesis-testing interpretation. Given a Type-I error rate alpha (false
-positive rate), compute the Type-II error rate beta (false negative rate) for
+The hypothesis-testing interpretation. Given a Type-I error rate $\alpha$ (false
+positive rate), compute the Type-II error rate $\beta$ (false negative rate) for
 the optimal distinguishing test.
 
-Higher beta means stronger privacy: the adversary cannot reject the null
+Higher $\beta$ means stronger privacy: the adversary cannot reject the null
 hypothesis (that the data was not in the training set) without high false
 negative rates.
 

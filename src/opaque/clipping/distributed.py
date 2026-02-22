@@ -11,7 +11,8 @@ from dataclasses import replace
 from opaque.distributed import (
     gather_pytree,
     is_distributed,
-    sync_state,
+    register_sync_type,
+    sync_object,
 )
 
 from .adaptive import (
@@ -42,7 +43,7 @@ def sync_clip_state(state: FixedClipState) -> FixedClipState:
     if not isinstance(state, FixedClipState):
         raise TypeError(f"Expected FixedClipState, got {type(state)}")
 
-    return sync_state(state, field_ops={"l2_norm_bound": "assert_equal"})
+    return sync_object(state, field_ops={"l2_norm_bound": "assert_equal"})
 
 
 def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
@@ -56,8 +57,8 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
     if not is_distributed():
         return state
 
-    # Use sync_state to sum the local counts and batch_size across ranks
-    synced = sync_state(
+    # Use sync_object to sum the local counts and batch_size across ranks
+    synced = sync_object(
         state,
         field_ops={
             "num_clipped": "sum",
@@ -125,3 +126,11 @@ def sync_aux(
     gathered = gather_pytree(tensor_fields) if tensor_fields else {}
 
     return type(aux)(**{**gathered, **scalar_fields})
+
+
+# Register all clipping types with the sync dispatcher
+register_sync_type(FixedClipState, sync_clip_state)
+register_sync_type(AdaptiveClipState, sync_adaptive_clip_state)
+register_sync_type(ClippedFunAux, sync_aux)
+register_sync_type(ClippedGradAux, sync_aux)
+register_sync_type(AdaptiveClippedGradAux, sync_aux)

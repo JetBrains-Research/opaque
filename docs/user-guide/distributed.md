@@ -37,6 +37,7 @@ There are two valid approaches to noise in distributed DP-SGD:
 ```python
 import torch
 import torch.distributed as dist
+import torchopt
 from opaque import clipped_grad, gaussian_noise, make_functional, PoissonSampler
 import opaque.distributed as dist_utils
 from opaque.random import key, fold_in
@@ -69,6 +70,10 @@ sampler = PoissonSampler(
 )
 loader = torch.utils.data.DataLoader(shard, batch_sampler=sampler)
 
+# Optimizer
+optimizer = torchopt.sgd(lr=0.01)
+opt_state = optimizer.init(params)
+
 # Training loop
 for batch_x, batch_y in loader:
     batch_x, batch_y = batch_x.to(device), batch_y.to(device)
@@ -83,7 +88,8 @@ for batch_x, batch_y in loader:
     noisy_grads, noise_state = noise_fn(grads, noise_state)
 
     # 4. Update
-    params = {k: params[k] - 0.01 * noisy_grads[k] for k in params}
+    updates, opt_state = optimizer.update(noisy_grads, opt_state)
+    params = torchopt.apply_updates(params, updates)
 
 dist.destroy_process_group()
 ```
@@ -141,7 +147,7 @@ after each step:
 
 ```python
 from opaque import adaptive_clipped_grad
-from opaque.clipping import sync_adaptive_clip_state
+from opaque.distributed import sync
 from opaque.random import key
 
 grad_fn, clip_state = adaptive_clipped_grad(
@@ -153,7 +159,7 @@ grad_fn, clip_state = adaptive_clipped_grad(
 
 # In the training loop:
 grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
-clip_state = sync_adaptive_clip_state(clip_state)   # required in DDP
+clip_state = sync(clip_state)   # required in DDP
 grads = dist_utils.sum_gradients(grads)
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
@@ -237,7 +243,8 @@ a single device without changes.
 | `gather_tensors(tensor, dim)` | Gather variable-size tensors from all ranks and concatenate |
 | `gather_pytree(pytree)` | Gather and concatenate tensor leaves of a PyTree |
 | `assert_pytree_equal(pytree, name)` | Assert a PyTree is identical across ranks (fingerprint check) |
-| `sync_state(state, field_ops)` | Synchronize scalar fields of a dataclass across ranks |
+| `sync(state)` | Dispatch to the right sync function for any state/aux type |
+| `sync_object(state, field_ops)` | Synchronize scalar fields of a dataclass across ranks |
 | `assert_scalar_equal(v, name)` | Raise `RuntimeError` if a scalar differs across ranks |
 | `barrier()` | Blocking barrier across all ranks |
 

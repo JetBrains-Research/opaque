@@ -23,7 +23,7 @@ __all__ = [
     "gather_pytree",
     "gather_tensors",
     "reduce_scalar",
-    "sync_state",
+    "sync_object",
 ]
 
 
@@ -262,7 +262,7 @@ def gather_tensors(
     return torch.cat(gathered_tensors, dim=dim)
 
 
-def sync_state(
+def sync_object(
     state: Any,
     field_ops: Mapping[str, str | Callable[..., float]] | None = None,
     device: torch.device | None = None,

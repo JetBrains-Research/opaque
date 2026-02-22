@@ -270,10 +270,10 @@ In distributed training, the clip norm must be consistent across devices.
 After each step, synchronize the state:
 
 ```python
-from opaque.clipping import sync_adaptive_clip_state
+from opaque.distributed import sync
 
 grads, clip_state = grad_fn(params, batch, state=clip_state)
-clip_state = sync_adaptive_clip_state(clip_state)  # aggregate counts across ranks
+clip_state = sync(clip_state)  # aggregate counts across ranks
 grads = dist_utils.sum_gradients(grads)
 ```
 

@@ -96,14 +96,16 @@ step = acc.truncated_poisson(
 )
 ```
 
-### `acc.parallel_poisson(inner, num_workers)`
+### `acc.parallel_poisson(inner, sample_rate, num_workers)`
 
-Accounts for Poisson sampling under parallel worker execution. Tighter than
-treating workers as independent.
+Accounts for Poisson sampling under parallel worker execution. Like
+`poisson()` and `truncated_poisson()`, this is a full wrapper: pass the
+inner Gaussian mechanism and sample rate directly.
 
 ```python
-step = acc.poisson(acc.gaussian(0.8), sample_rate=0.01)
-parallel_step = acc.parallel_poisson(step, num_workers=4)
+step = acc.parallel_poisson(
+    acc.gaussian(0.8), sample_rate=0.01, num_workers=4,
+)
 ```
 
 ### `acc.adaclip(inner, *, quantile_noise_multiplier, batch_size)`

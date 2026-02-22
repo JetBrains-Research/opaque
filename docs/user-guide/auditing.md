@@ -126,8 +126,8 @@ inference attack:
 
 ```python
 audit.auc()                    # Area under ROC curve (0.5 = random)
-audit.tpr_at_fpr(fpr=0.01)      # True positive rate at 1% FPR
-audit.tpr_at_fpr(fpr=0.1)       # True positive rate at 10% FPR
+audit.beta_at(alpha=0.01)       # Type-II error at 1% Type-I error
+audit.beta_at(alpha=0.1)        # Type-II error at 10% Type-I error
 audit.max_accuracy()             # Best-case classification accuracy
 ```
 
@@ -176,7 +176,7 @@ leakage outside the training loop.
 - **Report confidence intervals.** Use `auc(confidence=0.95)` to quantify
   uncertainty.
 - **Compare to theoretical epsilon.** The empirical bound should be lower.
-- **Audit multiple metrics.** AUC and TPR at low FPR are complementary
+- **Audit multiple metrics.** AUC and beta at low alpha are complementary
   to epsilon.
 
 ## References
