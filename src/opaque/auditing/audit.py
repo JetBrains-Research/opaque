@@ -83,8 +83,7 @@ class AuditResult:
 
     def __repr__(self) -> str:
         return (
-            f"AuditResult(n_in={self.n_in}, n_out={self.n_out}, "
-            f"auc={self.auc():.4f})"
+            f"AuditResult(n_in={self.n_in}, n_out={self.n_out}, auc={self.auc():.4f})"
         )
 
     # ------------------------------------------------------------------
