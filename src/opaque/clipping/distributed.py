@@ -11,7 +11,6 @@ from dataclasses import replace
 from opaque.distributed import (
     gather_pytree,
     is_distributed,
-    reduce_scalar,
     sync_state,
 )
 
