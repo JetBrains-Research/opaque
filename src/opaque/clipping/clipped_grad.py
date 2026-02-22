@@ -100,11 +100,9 @@ def clipped_grad(
         For the gradient output:
           The L2 sensitivity of the returned function with respect to the batch
           arguments (specified by `batch_argnums`) under add/remove or zero-out
-          differential privacy definitions is guaranteed to be 1.0 if
-          `rescale_to_unit_norm` is True. Otherwise, the sensitivity is
-          `l2_clip_norm`. Under replace-one DP, the sensitivity is doubled
-          (2.0 or 2 * `l2_clip_norm`).
-        All auxiliary outputs (aux, values, grad_norms) are per-example. This
+          differential privacy definitions is guaranteed to be `l2_clip_norm`.
+          Under replace-one DP, the sensitivity is doubled (2 * `l2_clip_norm`).
+        All auxiliary outputs (loss_values, grad_norms) are per-example. This
           function guarantees that per-example outputs only depend on the data for the
           same example. This allows maximum flexibility for the caller to aggregate
           these as desired (possibly with a DP mean, median, quantile, or histogram
@@ -122,10 +120,6 @@ def clipped_grad(
             provided for the auxiliary data.
         l2_clip_norm: The maximum L2 norm for each per-example gradient. Gradients
             with a norm larger than this value will be scaled down.
-        rescale_to_unit_norm: If True, clipped gradients are rescaled by
-            `1.0 / l2_clip_norm`. This ensures the sensitivity is 1.0. If False, they
-            are only scaled down if their norm exceeds `l2_clip_norm`, resulting in a
-            sensitivity of `l2_clip_norm`.
         normalize_by: Divide the clipped output by this value before returning.
         batch_argnums: Specifies which argument(s) of `loss_fn` contain the batch
             dimension (usually the data and labels). Can be an integer or a sequence
@@ -148,14 +142,10 @@ def clipped_grad(
             size for memory-efficient processing. Processes each microbatch separately
             and accumulates results without materializing the full batch of gradients.
             Set this to reduce peak memory usage at the cost of slightly slower computation.
-        nan_safe: If True, the formal guarantees of the returned Callable still
-            hold in the presence of NaNs and infs.
         dtype: Optional dtype for the returned gradient. If None, the dtype will be
             the same as the dtypes of the gradient function. Can be useful to avoid
             overflow issues when using low-precision dtypes as the returned function
             computes a sum over a potentially large batch.
-        spmd_axis_name: Axis name for SPMD distributed training. Not yet implemented
-            in PyTorch version (tech debt).
     Returns:
         Tuple of (clipped_grad_fn, clip_state) where:
         - clipped_grad_fn: A function that computes the sum of clipped per-example gradients.

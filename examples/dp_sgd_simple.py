@@ -149,16 +149,16 @@ def demo_research_flexibility():
     print(f"   ✓ Sensitivity: {_state_2.sensitivity()}")
     print(f"   ✓ Noise: Gaussian(stddev={1.1 * _state_2.sensitivity()})")
 
-    # Example 3: Rescale to unit norm
-    print("\n3. Unit norm (rescale_to_unit_norm=True):")
+    # Example 3: Normalize by batch size
+    print("\n3. Normalize by batch size (normalize_by=64):")
     _grad_fn_3, _state_3 = clipped_grad(
-        loss_fn, l2_clip_norm=5.0, rescale_to_unit_norm=True
+        loss_fn, l2_clip_norm=5.0, normalize_by=64.0
     )
     step_key = fold_in(key(42), 2)
     _noise_fn, _nstate = gaussian_noise(
         stddev=1.1 * _state_3.sensitivity(), key=step_key
     )
-    print(f"   ✓ Sensitivity: {_state_3.sensitivity()}")  # Should be 1.0
+    print(f"   ✓ Sensitivity: {_state_3.sensitivity()}")
     print(f"   ✓ Noise: Gaussian(stddev={1.1 * _state_3.sensitivity()})")
 
     # Example 4: Bounded Gaussian noise (truncated normal)

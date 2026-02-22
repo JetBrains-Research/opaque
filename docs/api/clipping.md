@@ -19,13 +19,12 @@ differential privacy.
 - **`ClipState`** — Base class for clipping state.
 - **`FixedClipState`** — State for `clipped_grad` / `clipped_fun` (fixed threshold).
 - **`AdaptiveClipState`** — State for `adaptive_clipped_grad` (adapting threshold).
-- **`NeighboringRelation`** — Enum for DP neighboring relation (ADD_OR_REMOVE_ONE, REPLACE_ONE, REPLACE_SPECIAL).
 
 ### Auxiliary Output Types
 
-- **`ClippedGradAux`** — Per-example loss values, gradient norms, clipped norms (from `clipped_grad`).
-- **`ClippedFunAux`** — Per-example values, norms, clipped norms (from `clipped_fun`).
-- **`AdaptiveClippedGradAux`** — Extends `ClippedGradAux` with clipping rate (from `adaptive_clipped_grad`).
+- **`ClippedGradAux`** — Per-example `loss_values`, `grad_norms`, `clipped_grad_norms` (from `clipped_grad`).
+- **`ClippedFunAux`** — Per-example `loss_values`, `grad_norms`, `clipped_grad_norms`, `loss_aux` (from `clipped_fun`).
+- **`AdaptiveClippedGradAux`** — Extends `ClippedGradAux` with `clipping_rate` (from `adaptive_clipped_grad`).
 
 ### Distributed Sync Helpers
 
@@ -33,7 +32,7 @@ differential privacy.
 - **`sync_adaptive_clip_state(state)`** — Aggregate counts and recompute global adaptive clip norm.
 - **`sync_aux(aux)`** — Gather any clipping aux (``ClippedFunAux``, ``ClippedGradAux``, ``AdaptiveClippedGradAux``) across ranks.
 
-**See also**: [Per-Sample Gradient Clipping User Guide](../../user-guide/clipping.md)
+**See also**: [Per-Sample Gradient Clipping User Guide](../user-guide/clipping.md)
 
 ## API Documentation
 

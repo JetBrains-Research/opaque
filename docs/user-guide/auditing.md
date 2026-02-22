@@ -45,20 +45,6 @@ audit = auditing.evaluate(experiment, loss_fn, params, dataset)
 print(audit.summary())
 ```
 
-Output:
-
-```
-Audit Summary
---------------------------------------------
-  Samples:              502 in, 498 out
-  AUROC:                0.7310
-  epsilon (one-run):    1.6700
-  TPR @ 1% FPR:         0.1200
-  TPR @ 10% FPR:        0.3800
-  Max accuracy:         0.6800
-  (alpha=0.05, delta=0)
-```
-
 ## End-to-end example
 
 ```python

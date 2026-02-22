@@ -202,12 +202,10 @@ def clipped_fun(
         For the first function output:
           The L2 sensitivity of the returned function with respect to the batch
           arguments (specified by `batch_argnums`) under add/remove or zero-out
-          differential privacy definitions is guaranteed to be 1.0 if
-          `rescale_to_unit_norm` is True. Otherwise, the sensitivity is
-          `l2_clip_norm`. Under replace-one DP, the sensitivity is doubled
-          (2.0 or 2 * `l2_clip_norm`).
+          differential privacy definitions is guaranteed to be `l2_clip_norm`.
+          Under replace-one DP, the sensitivity is doubled (2 * `l2_clip_norm`).
         Extra auxiliary outputs (aux, norms) are per-example. This function
-          guarantees that per-example outputs only depend the data for the same
+          guarantees that per-example outputs only depend on the data for the same
           example. This allows maximum flexibility for the caller to aggregate
           these as desired (possibly with a DP mean, median, quantile, or histogram
           mechanism).
@@ -225,9 +223,6 @@ def clipped_fun(
             batch axis of size 1. If False, this size 1 axis will be dropped
             (reducing the rank of the batch args by 1 before passing to `fun`).
         l2_clip_norm: The maximum L2 norm allowed.
-        rescale_to_unit_norm: If True, the output PyTree's norm is rescaled by `1.0
-            / clip_norm` after potential clipping. If False, the output PyTree has
-            norm at most `clip_norm`.
         normalize_by: Divide the clipped output by this value before returning.
         return_aux: If True, the returned Callable will return a per-example aux
             NamedTuple containing the original per-example values, per-example norms
@@ -236,12 +231,8 @@ def clipped_fun(
             size for memory-efficient processing. Processes each microbatch separately
             and accumulates results without materializing the full batch of gradients.
             Set this to reduce peak memory usage at the cost of slightly slower computation.
-        nan_safe: If True, the formal guarantees of the returned Callable still
-            hold in the presence of NaNs and infs. See `clip_pytree` for more details.
         dtype: Optional dtype for the clipped+aggregated pytree. If None, the dtype
             will be the same as the dtypes of the function output.
-        spmd_axis_name: See torch.vmap. **Currently not implemented** - parameter
-            accepted for API compatibility.
     Returns:
         A new function `clip_fn` that clips the output of `fun` and sums across
         the batch. `clip_fn` takes the same arguments as `fun`. The exact output

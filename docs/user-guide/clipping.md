@@ -52,12 +52,9 @@ a `sensitivity()` method used to calibrate noise.
 | `batch_argnums` | `int \| tuple[int, ...]` | `1` | Which arguments have a batch dimension. |
 | `keep_batch_dim` | `bool` | `True` | If True, batch inputs are passed to `loss_fn` with a leading batch axis of size 1. If False, the size-1 axis is dropped. |
 | `microbatch_size` | `int \| None` | `None` | Process batch in chunks to reduce memory. |
-| `rescale_to_unit_norm` | `bool` | `False` | If True, normalize all clipped gradients to norm 1. |
 | `normalize_by` | `float` | `1.0` | Divide the clipped output and sensitivity by this value. Useful for averaging (set to batch size). |
 | `pre_clipping_transform` | `Callable` | identity | Transform applied to each per-example gradient before clipping. |
-| `nan_safe` | `bool` | `True` | Replace NaN/Inf gradients with zero. |
 | `dtype` | `torch.dtype \| None` | `None` | Accumulation dtype (e.g., float32 for float16 inputs). |
-| `spmd_axis_name` | `str \| None` | `None` | Axis name for SPMD-style distributed clipping. |
 | `return_aux` | `bool` | `False` | Return per-example diagnostics. |
 
 ### State flow
@@ -85,15 +82,12 @@ example is added, removed, or replaced. Noise is calibrated to this value.
 
 ```python
 sensitivity = clip_state.sensitivity()
-# With l2_clip_norm=1.0 and default REPLACE_SPECIAL: sensitivity = 1.0
+# With l2_clip_norm=1.0: sensitivity = 1.0
 
 noise_fn, noise_state = gaussian_noise(
     stddev=noise_multiplier * sensitivity, key=key(42),
 )
 ```
-
-The sensitivity depends on the neighboring relation. See
-[DP Concepts](dp-concepts.md#neighboring-relations) for details.
 
 ### Diagnostics
 
