@@ -63,13 +63,8 @@ def sync_rectified_noise_state(state: GaussianNoiseState) -> GaussianNoiseState:
     if not is_distributed():
         return state
 
-    assert_scalar_equal(
-        int(state.rng_key.seed), name="RectifiedGaussianNoiseState.seed"
-    )
-    assert_scalar_equal(
-        state.step_counter, name="RectifiedGaussianNoiseState.step_counter"
-    )
-    return state
+    _assert_rng_key_equal(state, "RectifiedGaussianNoiseState")
+    return sync_object(state, field_ops=_NOISE_STATE_OPS)
 
 
 def sync_bounded_noise_state(state: GaussianNoiseState) -> GaussianNoiseState:
@@ -86,13 +81,8 @@ def sync_bounded_noise_state(state: GaussianNoiseState) -> GaussianNoiseState:
     if not is_distributed():
         return state
 
-    assert_scalar_equal(
-        int(state.rng_key.seed), name="BoundedGaussianNoiseState.seed"
-    )
-    assert_scalar_equal(
-        state.step_counter, name="BoundedGaussianNoiseState.step_counter"
-    )
-    return state
+    _assert_rng_key_equal(state, "BoundedGaussianNoiseState")
+    return sync_object(state, field_ops=_NOISE_STATE_OPS)
 
 
 def sync_mf_noise_state(state: MFNoiseState) -> MFNoiseState:

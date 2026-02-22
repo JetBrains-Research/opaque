@@ -14,6 +14,8 @@ Opaque provides several noise mechanisms:
 - **`gaussian_noise()`** — Standard (unbounded) Gaussian noise. The default for most DP-SGD workflows.
 - **`bounded_gaussian_noise()`** — Bounded Gaussian noise using a truncated normal distribution
   ([Chen & Hale, 2024](https://arxiv.org/abs/2211.17230)). Guarantees all noisy outputs lie within a specified domain.
+- **`rectified_gaussian_noise()`** — Rectified Gaussian noise: standard Gaussian clamped to `[-radius, radius]`.
+  Creates point masses at the boundaries. Pair with `acc.rectified_gaussian()` for exact accounting.
 
 ### Correlated Noise (DP-FTRL / Matrix Factorization)
 
@@ -38,6 +40,11 @@ across ranks. It auto-dispatches based on type:
 - **`sync(GaussianNoiseState)`** — Validate RNG key and step counter match across ranks.
 - **`sync(MFNoiseState)`** — Validate MF noise state matches across ranks.
 
+Explicit sync helpers are also available for bounded noise variants:
+
+- **`sync_rectified_noise_state()`** — Validate RNG key and step counter for rectified Gaussian noise.
+- **`sync_bounded_noise_state()`** — Validate RNG key and step counter for bounded Gaussian noise.
+
 **See also**: [Noise Addition User Guide](../user-guide/noise.md)
 
 ## Standard Gaussian
@@ -47,6 +54,10 @@ across ranks. It auto-dispatches based on type:
 ## Bounded Gaussian
 
 ::: opaque.noise.bounded_gaussian_noise
+
+## Rectified Gaussian
+
+::: opaque.noise.rectified_gaussian_noise
 
 ## Matrix Factorization Noise
 
@@ -80,6 +91,16 @@ across ranks. It auto-dispatches based on type:
       heading_level: 3
 
 ::: opaque.noise.distributed.sync_mf_noise_state
+    options:
+      show_source: true
+      heading_level: 3
+
+::: opaque.noise.distributed.sync_rectified_noise_state
+    options:
+      show_source: true
+      heading_level: 3
+
+::: opaque.noise.distributed.sync_bounded_noise_state
     options:
       show_source: true
       heading_level: 3

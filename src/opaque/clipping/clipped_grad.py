@@ -8,6 +8,7 @@ from torch.func import grad_and_value
 
 from opaque.clipping._helpers import normalize_fun_to_return_aux, normalize_to_tuple
 from opaque.clipping.clipped_fun import clipped_fun
+from opaque.clipping.types import FixedClipState
 
 
 class ClippedGradAux(NamedTuple):
@@ -62,7 +63,7 @@ def clipped_grad(
     microbatch_size: int | None = None,
     dtype: torch.dtype | None = None,
     _force_grad_norms: bool = False,
-) -> tuple[Callable, "FixedClipState"]:
+) -> tuple[Callable, FixedClipState]:
     """Create a function to compute the sum of clipped gradients of loss_fn.
 
     This function acts as a transformation similar to `torch.func.grad`, but with added

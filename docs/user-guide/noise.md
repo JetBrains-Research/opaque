@@ -101,6 +101,37 @@ noisy_grads, noise_state = noise_fn(grads, noise_state)
 The truncation uses an inverse-CDF method: for each gradient element, noise is
 sampled from a Gaussian centered on that element and truncated to the bounds.
 
+!!! tip "Tighter accounting with bounded noise"
+    When using `bounded_gaussian_noise`, pair it with
+    `acc.truncated_gaussian()` for tighter privacy accounting. The bounded
+    support means less worst-case privacy loss than the standard Gaussian.
+    See [Privacy Accounting — Bounded mechanisms](accounting.md#accrectified_gaussiannoise_multiplier-bound_multiplier)
+    for details.
+
+## Rectified Gaussian noise
+
+`rectified_gaussian_noise` samples from a standard Gaussian and clamps the
+result to `[-radius, radius]`. This creates point masses at the clamp
+boundaries, matching the rectified Gaussian accounting mechanism.
+
+```python
+from opaque import rectified_gaussian_noise
+from opaque.random import key
+
+noise_fn, noise_state = rectified_gaussian_noise(
+    stddev=1.0,
+    radius=5.0,
+    key=key(42),
+)
+noisy_grads, noise_state = noise_fn(grads, noise_state)
+```
+
+The `radius` is specified in absolute units (not multiples of `stddev`). To
+match accounting, set `radius = bound_multiplier * stddev`.
+
+Pair with `acc.rectified_gaussian(noise_multiplier, bound_multiplier)` for
+exact accounting.
+
 ## Matrix-factorization noise (DP-FTRL)
 
 Standard Gaussian noise is independent across training steps. Matrix-
