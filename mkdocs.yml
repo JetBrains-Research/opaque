@@ -90,13 +90,11 @@ nav:
     - Known Limitations: limitations.md
   - Tutorials:
     - Overview: tutorials/README.md
-    - 01 - Gradient Clipping from Basics: tutorials/01_gradient_clipping_from_basics.ipynb
-    - 02 - DP Noise and Accounting: tutorials/02_differential_privacy_noise_and_accounting.ipynb
-    - 03 - Complete DP-SGD Training: tutorials/03_complete_dp_sgd_training.ipynb
-    - 04 - Functional DP with TorchOpt: tutorials/04_dp_optimizers.ipynb
-    - 05 - Sampling and Microbatching: tutorials/05_sampling_and_microbatching.ipynb
-    - 06 - LoRA HuggingFace Training: tutorials/06_lora_huggingface_dp_training.ipynb
-    - 07 - Privacy Auditing: tutorials/07_privacy_auditing.ipynb
+    - DP-SGD Training: tutorials/dp_sgd_training.ipynb
+    - Accounting & Calibration: tutorials/accounting_and_calibration.ipynb
+    - Fine-tuning an LLM: tutorials/llm_finetuning.ipynb
+    - Sampling & Microbatching: tutorials/sampling_and_microbatching.ipynb
+    - Privacy Auditing: tutorials/privacy_auditing.ipynb
   - API Reference:
     - Overview: api/index.md
     - Clipping: api/core/clipping.md
