@@ -138,7 +138,7 @@ def train(args):
     sampler = PoissonSampler(
         train_dataset,
         sample_rate=sample_rate,
-        num_epochs=args.epochs,
+        num_epochs=total_steps,
         key=key_samp,
     )
     train_loader = DataLoader(train_dataset, batch_sampler=sampler)

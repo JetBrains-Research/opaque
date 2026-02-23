@@ -256,10 +256,7 @@ strength but prohibitively expensive for large models.
 Opaque's one-run method ([Steinke et al. 2023](https://arxiv.org/abs/2305.08846))
 trades attack strength for efficiency: one training run gives a valid (though
 potentially looser) epsilon bound. For most practical purposes — verifying
-that your DP implementation is correct — the one-run approach is sufficient.
-
-## Edge cases
-
+  that your DP implementation is correct — the one-run approach is sufficient.
 ## Edge cases and limitations
 
 - **Small datasets.** With fewer than 5000 examples, designating 1000 canaries

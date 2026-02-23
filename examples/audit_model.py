@@ -90,7 +90,7 @@ def run_audit(args):
     train_data = experiment.subset(dataset)
     sampler = PoissonSampler(
         train_data, sample_rate=sample_rate,
-        iterations=total_steps, key=key_samp,
+        num_epochs=total_steps, key=key_samp,
     )
     train_loader = DataLoader(train_data, batch_sampler=sampler)
 

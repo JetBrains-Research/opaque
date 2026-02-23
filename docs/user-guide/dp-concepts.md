@@ -294,7 +294,7 @@ $$T = \text{epochs} \times \lceil n / B \rceil$$
 
 where $n$ is the dataset size and $B$ is the (expected) batch size. For Poisson
 sampling, $B = q \cdot n$, so $T = \text{epochs} / q$. More epochs or smaller
-batches (larger $q$) means more steps and higher privacy cost.
+batches (smaller $q$) means more steps and higher privacy cost.
 
 ### Privacy vs compute
 
