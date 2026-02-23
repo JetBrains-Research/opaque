@@ -114,22 +114,37 @@ target epsilon for a given number of steps.
 
 ### Composition
 
-When the same dataset is used for multiple DP mechanisms (e.g., T steps of
+When the same dataset is used for multiple DP mechanisms (e.g., $T$ steps of
 DP-SGD), the total privacy loss is bounded by *composition theorems*.
 
-**Basic composition**: $\varepsilon$ values add. $T$ steps of $\varepsilon_0$-DP gives
-$T \cdot \varepsilon_0$ total privacy. This is loose.
+**Basic composition**: $\varepsilon$ values add linearly. $T$ steps of
+$\varepsilon_0$-DP gives $T \cdot \varepsilon_0$ total privacy loss. For a
+mechanism with noise multiplier $\sigma$ and sensitivity $C$, a single step
+gives $\varepsilon_0 \approx C / \sigma$, so $T$ steps cost approximately
+$T \cdot C / \sigma$. This bound is correct but extremely loose.
 
-**Advanced composition** (Kairouz et al. 2015): total $\varepsilon$ grows as
-roughly $\sqrt{T} \cdot \varepsilon_0$ for small $\varepsilon_0$. Much tighter.
+**Advanced composition** ([Kairouz et al. 2015](https://arxiv.org/abs/1311.0776)):
+for $T$ applications of an $(\varepsilon_0, \delta_0)$-DP mechanism, the total
+privacy satisfies $(\varepsilon, T\delta_0 + \delta)$-DP where:
+
+$$\varepsilon = \sqrt{2T \ln(1/\delta)} \cdot \varepsilon_0 + T \cdot \varepsilon_0 (e^{\varepsilon_0} - 1)$$
+
+For small $\varepsilon_0$, the total grows as $\sqrt{T}$ rather than $T$ — a
+significant improvement. But it still uses worst-case per-step bounds.
 
 **PLD composition**: Opaque uses *Privacy Loss Distributions* (PLD), which
-track the full distribution of privacy loss rather than just summary
-statistics. PLD composition is numerically tight and dominates both basic and
-advanced composition.
+track the full probability distribution of the privacy loss random variable
 
-The `*` and `|` operators on `DpProcess` objects compute PLD composition.
-See [Privacy Accounting](accounting.md).
+$$\ell(o) = \ln \frac{P[\mathcal{M}(D) = o]}{P[\mathcal{M}(D') = o]}$$
+
+rather than just worst-case bounds. Composing two mechanisms corresponds to
+convolving their PLDs. This is numerically tight — it gives the exact
+privacy guarantee up to discretization error — and dominates both basic and
+advanced composition. In practice, PLD composition gives 2-5x tighter
+$\varepsilon$ than advanced composition for typical DP-SGD training runs.
+
+The `*` and `|` operators on `DpProcess` objects compute PLD composition
+in Opaque's Rust PLD engine. See [Privacy Accounting](accounting.md).
 
 ### Subsampling amplification
 
@@ -141,14 +156,33 @@ With Poisson sampling at rate $q$ (each example included independently with
 probability $q$), the effective noise multiplier is amplified by approximately
 $1/q$. For $q=0.01$ (1% sample rate), this is a 100x amplification.
 
+Opaque supports several subsampling schemes:
+
+| Scheme | Description | Use case |
+|--------|-------------|----------|
+| **Poisson** | Each example included independently with probability $q$ | Standard DP-SGD. Variable batch size. |
+| **Truncated Poisson** | Poisson sampling capped at a maximum batch size | Production DP-SGD. Fixed memory budget. |
+| **Cyclic Poisson** | Training rounds divided into groups; Poisson within each group | BandMF correlated noise. |
+
+The key distinction is between *Poisson* and *fixed-size* sampling. Poisson
+sampling produces variable-size batches but has a clean privacy analysis.
+Fixed-size sampling (drawing exactly $B$ examples) has a slightly different
+privacy profile. Opaque uses Poisson-style sampling throughout.
+
+Truncated Poisson combines the best of both: it uses Poisson sampling but caps
+the batch size at a maximum, giving fixed memory usage while retaining the
+Poisson amplification guarantee.
+
 Opaque's `PoissonSampler` implements Poisson subsampling. The accounting module
 accounts for this amplification via `acc.poisson(mechanism, sample_rate)`.
-See [Sampling & Microbatching](sampling.md).
+See [Sampling & Microbatching](sampling.md) and the
+[Mechanisms](../mechanisms/index.md) reference for per-mechanism amplification
+details.
 
 ## Privacy metrics
 
-Opaque supports three families of privacy metrics, all derived from the same
-underlying PLD:
+Opaque supports four families of privacy metrics, all derived from the same
+underlying PLD. Different metrics suit different audiences and use cases.
 
 ### ($\varepsilon$, $\delta$)-DP
 
@@ -159,18 +193,33 @@ such that the mechanism is $(\varepsilon, \delta)$-DP.
 eps = training.epsilon_at(delta=1e-5)
 ```
 
-### f-DP advantage
+This is the most widely reported metric in the DP literature. Use it for
+compliance reporting and comparison with published results.
 
-The total-variation advantage measures how well an adversary can distinguish
-between the output distributions on neighboring datasets. An advantage of 0
-means the adversary cannot distinguish at all (perfect privacy); an advantage
-of 1 means the adversary can always distinguish.
+### f-DP and the trade-off function
+
+f-DP ([Dong et al. 2019](https://arxiv.org/abs/1905.02383)) characterizes
+privacy via a *trade-off function* $f$. For neighboring datasets $D, D'$ and
+any hypothesis test $\phi$ that distinguishes between them:
+
+$$f(\alpha) = \inf_\phi \{ \beta_\phi : \alpha_\phi \leq \alpha \}$$
+
+where $\alpha_\phi$ is the Type-I error (false positive) and $\beta_\phi$ is
+the Type-II error (false negative). The function $f$ traces the best possible
+ROC curve an adversary can achieve. f-DP is strictly more informative than
+$(\varepsilon, \delta)$-DP: you can derive $(\varepsilon, \delta)$ from $f$
+but not vice versa.
+
+**Advantage** is a scalar summary of the trade-off function:
+
+$$\text{Adv} = \sup_\phi \left| P[\phi(o)=1 \mid D] - P[\phi(o)=1 \mid D'] \right|$$
+
+An advantage of 0 means the adversary cannot distinguish at all (perfect
+privacy); an advantage of 1 means perfect distinguishing.
 
 ```python
 adv = training.advantage()
 ```
-
-This is related to the trade-off function in f-DP (Dong et al. 2019).
 
 ### ($\alpha$, $\beta$) error rates
 
@@ -186,6 +235,34 @@ negative rates.
 beta = training.beta_at(alpha=0.01)
 ```
 
+This metric is useful for understanding the operational meaning of a privacy
+guarantee: "an adversary accepting 1% false positives will miss at least
+$\beta$% of true members."
+
+### Bayes risk
+
+Given a prior probability $\pi$ that a record is in the dataset, the Bayes
+risk measures the adversary's expected error under the optimal decision rule:
+
+```python
+risk = training.risk_at(prior=0.5)
+```
+
+A risk of 0.5 means the adversary does no better than random guessing.
+This metric is natural for decision-theoretic reasoning about privacy.
+
+### Choosing a metric
+
+| Metric | Best for | Opaque method |
+|--------|----------|---------------|
+| $(\varepsilon, \delta)$-DP | Compliance, published comparisons | `.epsilon_at(delta)` |
+| Advantage | Quick scalar privacy summary | `.advantage()` |
+| $(\alpha, \beta)$ | Understanding operational privacy | `.beta_at(alpha)` |
+| Bayes risk | Decision-theoretic analysis | `.risk_at(prior)` |
+
+All four metrics are derived from the same PLD, so they are mutually
+consistent. You can query all of them from the same `DpProcess` object.
+
 ## Key trade-offs in DP training
 
 ### Privacy vs accuracy
@@ -193,12 +270,31 @@ beta = training.beta_at(alpha=0.01)
 More noise means stronger privacy but degrades gradient signal. The model may
 converge to a worse solution or not converge at all.
 
-Strategies to improve accuracy at fixed privacy:
-- Increase batch size (amplification reduces per-step cost)
-- Use adaptive clipping to avoid over-clipping
-- Use LoRA or other parameter-efficient methods to reduce gradient dimensionality
-- Use matrix-factorization noise for correlated noise (DP-FTRL) instead of
-  independent Gaussian noise
+Strategies to improve accuracy at fixed privacy budget:
+
+- **Increase batch size.** Larger batches give stronger subsampling amplification
+  (smaller $q$) and more gradient signal per unit of noise. The total noise added
+  per step is $\sigma \cdot C$ regardless of batch size, but it is averaged over
+  more examples. Physical batch sizes of 1000+ are common in DP training.
+- **Use bounded Gaussian mechanisms.** Rectified and truncated Gaussian noise
+  provide tighter privacy accounting at the same noise level as standard Gaussian.
+  See [Mechanisms](../mechanisms/index.md) for the privacy ordering.
+- **Use correlated noise (DP-FTRL).** Matrix factorization mechanisms (BandMF,
+  BLT, Dense) inject correlated noise that partially cancels across steps,
+  reducing the effective noise on cumulative model updates.
+- **Use adaptive clipping** to avoid over-clipping gradients.
+- **Use LoRA** or other parameter-efficient methods to reduce gradient
+  dimensionality, concentrating the noise budget on fewer parameters.
+
+### Epoch budget
+
+The total number of training steps determines the privacy cost:
+
+$$T = \text{epochs} \times \lceil n / B \rceil$$
+
+where $n$ is the dataset size and $B$ is the (expected) batch size. For Poisson
+sampling, $B = q \cdot n$, so $T = \text{epochs} / q$. More epochs or smaller
+batches (smaller $q$) means more steps and higher privacy cost.
 
 ### Privacy vs compute
 
@@ -223,6 +319,46 @@ More training steps consume more privacy budget. For a fixed budget, longer
 training requires more noise per step, which can reduce accuracy. There is
 often an optimal number of steps that balances convergence with noise level.
 
+## Noise mechanisms
+
+The choice of noise mechanism affects both the privacy guarantee and the noise
+impact on model quality.
+
+### Independent noise (DP-SGD)
+
+Standard DP-SGD adds independent noise at each training step. Three Gaussian
+variants are available, ordered from weakest to strongest privacy guarantee at
+the same noise level:
+
+$$\text{Truncated} \leq \text{Rectified} \leq \text{Gaussian}$$
+
+Truncated and rectified Gaussian mechanisms add bounded noise (clamped to
+$[-R\sigma, R\sigma]$), which gives tighter privacy accounting than
+unbounded Gaussian noise. The privacy improvement is free — the noise
+magnitude is identical. See [Mechanisms](../mechanisms/index.md) for the
+mathematical details.
+
+### Correlated noise (DP-FTRL)
+
+Matrix factorization (MF) mechanisms add *correlated* noise across training
+steps. Instead of independent noise $z_t$ at each step, the noise is
+generated as $z = B \cdot \xi$ where $B$ is a lower-triangular strategy
+matrix and $\xi$ is i.i.d. Gaussian. The correlations are designed so that
+the effective noise on the *cumulative* model update is smaller than what
+independent noise would give.
+
+Three MF strategies are available:
+
+| Strategy | Memory | Best for |
+|----------|--------|----------|
+| **BandMF** | $O(b)$ | Streaming, long training runs |
+| **BLT** | $O(b)$ | Multi-epoch training |
+| **Dense** | $O(n^2)$ | Short training, optimal noise |
+
+MF mechanisms require different samplers (CyclicPoissonSampler for BandMF)
+and have different amplification properties. See the
+[Mechanisms](../mechanisms/index.md) reference for details.
+
 ## Neighboring relations
 
 The privacy guarantee depends on what "differ in one record" means:
@@ -241,5 +377,7 @@ sensitivity when calibrating noise ($\sigma = \text{noise\_multiplier} \times 2C
 - [Abadi et al. 2016 - Deep Learning with Differential Privacy](https://arxiv.org/abs/1607.00133)
 - [Dong et al. 2019 - Gaussian Differential Privacy](https://arxiv.org/abs/1905.02383)
 - [Kairouz et al. 2015 - The Composition Theorem for Differential Privacy](https://arxiv.org/abs/1311.0776)
-- [Balle et al. 2020 - Hypothesis Testing Interpretations of DP](https://arxiv.org/abs/1905.02383)
+- [Balle et al. 2020 - Hypothesis Testing Interpretations and the Laplace Mechanism](https://arxiv.org/abs/1905.10731)
 - [Andrew et al. 2021 - Differentially Private Learning with Adaptive Clipping](https://arxiv.org/abs/1905.03871)
+- [Koskela et al. 2020 - Computing Tight DP Guarantees Using FFT](https://arxiv.org/abs/1906.03049)
+- [Denisov et al. 2022 - Improved DP for SGD via Optimal Accounting](https://arxiv.org/abs/2210.00597)

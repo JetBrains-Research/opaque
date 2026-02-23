@@ -167,6 +167,23 @@ for input_ids, labels in dataloader:
     trainable = {k: trainable[k] - lr * noisy_grads[k] for k in trainable}
 ```
 
+### Other PEFT methods
+
+Any parameter-efficient method that uses standard `requires_grad` flags works
+with `make_functional(partition_trainable=True)`:
+
+| Method | Library | Notes |
+|--------|---------|-------|
+| **LoRA** | `peft` | Recommended. Well-tested with Opaque. |
+| **Adapters** (bottleneck) | `peft` / `adapter-transformers` | Works. More trainable params than LoRA at same capacity. |
+| **BitFit** (bias-only) | Manual (`requires_grad=False` on non-bias) | Minimal trainable params, very memory efficient. |
+| **Prefix tuning** | `peft` | Works but virtual tokens add complexity to loss computation. |
+| **IA3** | `peft` | Very few trainable params. Good for memory-constrained settings. |
+
+The key requirement is that trainable parameters are identified by
+`requires_grad=True`. If a PEFT method uses custom forward hooks instead of
+standard parameters, it may not work with `vmap`.
+
 ### LoRA hyperparameters
 
 | Parameter | Typical values | Effect on DP training |
@@ -191,6 +208,51 @@ Gradient checkpointing (`model.gradient_checkpointing_enable()`) uses
 `autograd.Function` internally, which is incompatible with `vmap`. Use
 the `microbatch_size` parameter on `clipped_grad` as an alternative for
 memory reduction. See [Known Limitations](../limitations.md) for details.
+
+## Model selection
+
+Opaque's auto-patching covers these model families:
+
+| Model family | Tested sizes | Notes |
+|-------------|-------------|-------|
+| LLaMA / Llama 3 | 7B, 8B, 70B (LoRA) | Recommended starting point |
+| Mistral | 7B | Similar architecture to LLaMA |
+| Qwen2 | 0.5B, 7B | |
+| Phi / Phi-3 | 3.8B | Smaller, good for experimentation |
+| OLMo | 7B | Open-source, Apache 2.0 |
+| Gemma / Gemma2 | 2B, 7B | |
+
+**What makes a model vmap-compatible:** The model must not use
+`torch.nonzero`, data-dependent control flow (`if tensor.item() > 0`), or
+operations that depend on the batch dimension being a specific index. Most
+standard Transformer architectures work. Encoder-only models (BERT, RoBERTa)
+typically work without patches.
+
+**Sequence length and memory:** Attention is $O(\text{seq}^2)$ in memory
+(for eager/SDPA). Combined with per-example gradients, long sequences
+significantly increase memory. Use shorter sequences (512-1024) when possible,
+or reduce the microbatch size.
+
+## Distributed HuggingFace models
+
+DDP works with patched HuggingFace models. The patches are applied once
+on import and affect all ranks identically.
+
+```python
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel
+
+dist.init_process_group("nccl")
+model = AutoModelForCausalLM.from_pretrained(
+    "meta-llama/Llama-3.1-8B",
+    attn_implementation="sdpa",
+)
+# DDP wraps the model; make_functional unwraps it
+fmodel, trainable, frozen = make_functional(model, partition_trainable=True)
+```
+
+The noise key must be identical across ranks so that each rank adds the same
+noise after `sum_gradients`. See [Distributed Training](distributed.md).
 
 ## Troubleshooting
 
