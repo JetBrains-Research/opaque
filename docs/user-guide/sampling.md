@@ -52,7 +52,7 @@ dataset = data.TensorDataset(X, y)
 sampler = PoissonSampler(
     dataset,
     sample_rate=0.01,
-    num_epochs=10,
+    num_iterations=10,
     key=key(42),
 )
 loader = data.DataLoader(dataset, batch_sampler=sampler)
@@ -68,7 +68,7 @@ for batch in loader:
 |-----------|------|-------------|
 | `data_source` | any with `__len__` | The dataset |
 | `sample_rate` | `float` in (0, 1] | Inclusion probability per example |
-| `num_epochs` | `int` | Number of batches to yield (default: 1) |
+| `num_iterations` | `int` or `None` | Number of batches to yield (default: `None` = infinite) |
 | `key` | `RngKey` | RNG key for reproducibility |
 
 **Properties:**
@@ -96,7 +96,7 @@ sampler = TruncatedPoissonSampler(
     dataset,
     sample_rate=batch_size / dataset_size,
     max_batch_size=batch_size,
-    num_epochs=num_steps,
+    num_iterations=num_steps,
     key=key(42),
 )
 loader = data.DataLoader(dataset, batch_sampler=sampler)

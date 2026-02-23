@@ -9,11 +9,21 @@ This example is designed as a production-style script (not a tutorial):
 
 USAGE:
 
-  # Quick smoke test (~5 minutes)
-  python examples/train_causal_lm.py --smoke-test
+  # Quick smoke test (~5 minutes, GPT-2 on ag_news)
+  python examples/train_causal_lm.py --preset smoke
+
+  # Or use default settings (same as smoke)
+  python examples/train_causal_lm.py
 
   # Full production training on Mellum-4b + KStack (~3-5 hours)
+  # Configure W&B (optional):
   export WANDB_API_KEY='your-key-here'
+  export WANDB_BASE_URL='https://jetbrains.wandb.io'  # For JetBrains W&B instance
+  export WANDB_ENTITY='federated-compute'  # Your team/entity name
+
+  python examples/train_causal_lm.py --preset mellum-kstack --wandb
+
+  # Or customize individual parameters:
   python examples/train_causal_lm.py \\
     --model_name "JetBrains/Mellum-4b-base" \\
     --dataset "JetBrains/KStack" \\
@@ -27,24 +37,25 @@ USAGE:
     --learning_rate 5e-5 \\
     --lora_r 16 --lora_alpha 32 \\
     --max_seq_len 1024 \\
-    --lora_budget_modules q_proj v_proj \\
+    --lora_budget_modules q_proj k_proj v_proj o_proj \\
     --audit --audit_canaries 1000 \\
     --wandb
-
-DEFAULTS: Configured for quick smoke tests. Use --full-run or specify parameters above
-for production training.
 """
 
 import argparse
 import warnings
 
 import torch
-import torch.nn.functional as F
 import torchopt
-from datasets import load_dataset
+from datasets import load_dataset, Dataset
 from peft import LoraConfig, get_peft_model
-from torch.utils.data import TensorDataset
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+from torch.utils.data import DataLoader
+from transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    DataCollatorForLanguageModeling,
+)
 
 import opaque.accounting as acc
 import opaque.auditing as auditing
@@ -52,7 +63,8 @@ from opaque.accounting import calibration as cal
 from opaque.accounting.accountant import Accountant
 from opaque.clipping import adaptive_clipped_grad, clipped_grad
 from opaque.noise import gaussian_noise
-from opaque.random import key
+from opaque.random import key, fold_in
+from opaque.sampling import PoissonSampler
 from opaque.utils import make_functional
 
 try:
@@ -62,26 +74,19 @@ except ImportError:
     WANDB_AVAILABLE = False
 
 
-def compute_causal_lm_loss(logits, targets):
-    """Compute causal language modeling loss."""
-    if hasattr(logits, "logits"):
-        logits = logits.logits
-
-    # Shift for next-token prediction
-    shift_logits = logits[:, :-1, :].contiguous()
-    shift_budgets = targets[:, 1:].contiguous()
-
-    # Compute cross-entropy loss
-    loss = F.cross_entropy(
-        shift_logits.view(-1, logits.size(-1)), shift_budgets.view(-1)
-    )
-    return loss
-
-
 def parse_args():
     """Parse command-line arguments with logical groups."""
     parser = argparse.ArgumentParser(
         description="End-to-end DP-SGD LoRA training for Causal Language Models"
+    )
+
+    # Preset configurations
+    parser.add_argument(
+        "--preset",
+        type=str,
+        choices=["smoke", "mellum-kstack"],
+        default=None,
+        help="Apply preset configuration (smoke=quick test, mellum-kstack=Mellum-4b + KStack production). Overrides other args.",
     )
 
     model_group = parser.add_argument_group("model", "Model and tokenizer settings")
@@ -130,7 +135,16 @@ def parse_args():
 
     train_group = parser.add_argument_group("training", "Training loop settings")
     train_group.add_argument(
-        "--batch_size", type=int, default=16, help="Training batch size"
+        "--batch_size",
+        type=int,
+        default=16,
+        help="Expected batch size for Poisson sampling (determines sample_rate)"
+    )
+    train_group.add_argument(
+        "--eval_batch_size",
+        type=int,
+        default=None,
+        help="Batch size for evaluation (default: same as batch_size, can be larger since no privacy needed)"
     )
     train_group.add_argument(
         "--num_epochs", type=int, default=3, help="Number of epochs"
@@ -146,10 +160,16 @@ def parse_args():
         help="Optimizer",
     )
     train_group.add_argument(
+        "--log_steps",
+        type=int,
+        default=1,
+        help="Log training metrics every N steps",
+    )
+    train_group.add_argument(
         "--eval_steps",
         type=int,
         default=10,
-        help="Log eval loss, grad norms, and privacy every N steps",
+        help="Log eval loss and privacy every N steps",
     )
     train_group.add_argument("--seed", type=int, default=42, help="Random seed")
 
@@ -168,7 +188,7 @@ def parse_args():
     dp_group.add_argument(
         "--clip_norm",
         type=float,
-        default=0.15,
+        default=1.0,
         help="Clip norm (fixed mode) or starting clip norm (adaptive mode)",
     )
     dp_group.add_argument(
@@ -254,38 +274,73 @@ def parse_args():
     wandb_group.add_argument(
         "--wandb",
         action="store_true",
-        help="Enable Weights & Biases tracking",
+        help="Enable Weights & Biases tracking (requires WANDB_API_KEY env var)",
     )
     wandb_group.add_argument(
         "--wandb_project",
         type=str,
-        default="opaque-dp-training",
-        help="W&B project name",
+        default="opaque",
+        help="W&B project name (default: opaque)",
     )
     wandb_group.add_argument(
         "--wandb_entity",
         type=str,
         default=None,
-        help="W&B entity (team) name",
+        help="W&B entity/team name (default: read from WANDB_ENTITY env var or use personal account)",
     )
     wandb_group.add_argument(
-        "--wandb_name",
+        "--wandb_run_name",
         type=str,
         default=None,
-        help="W&B run name",
+        help="W&B run name (default: auto-generated from model and hyperparameters)",
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    # Apply preset configurations
+    if args.preset == "smoke":
+        # Quick smoke test with default small model
+        args.model_name = "gpt2"
+        args.dataset = "ag_news"
+        args.dataset_text_field = "text"
+        args.num_train_samples = 5000
+        args.num_eval_samples = 100
+        args.num_epochs = 3
+        args.batch_size = 16
+        args.eval_steps = 10
+        args.target_epsilon = 3.0
+        args.learning_rate = 1e-5
+        args.lora_r = 4
+        args.lora_alpha = 8
+        args.max_seq_len = 512
+        args.lora_budget_modules = ["c_attn", "c_proj"]
+        args.audit = False
+    elif args.preset == "mellum-kstack":
+        # Full production Mellum-4b + KStack training
+        args.model_name = "JetBrains/Mellum-4b-base"
+        args.dataset = "JetBrains/KStack"
+        args.dataset_text_field = "content"
+        args.num_train_samples = 50000
+        args.num_eval_samples = 1000
+        args.num_epochs = 3
+        args.batch_size = 32
+        args.eval_steps = 10
+        args.target_epsilon = 10.0
+        args.learning_rate = 5e-5
+        args.lora_r = 16
+        args.lora_alpha = 32
+        args.max_seq_len = 1024
+        args.lora_budget_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
+
+    return args
 
 
 def main():
     args = parse_args()
 
-    # Suppress expected performance warning with SDPA attention + vmap
-    warnings.filterwarnings(
-        "ignore",
-        message=".*batching rule for aten::_scaled_dot_product_efficient_attention_backward.*",
-    )
+    # Set eval_batch_size to batch_size if not specified
+    if args.eval_batch_size is None:
+        args.eval_batch_size = args.batch_size
 
     print("=" * 80)
     print("DP-SGD LoRA Training for Causal Language Models")
@@ -294,14 +349,22 @@ def main():
     # Initialize W&B if enabled
     use_wandb = args.wandb and WANDB_AVAILABLE
     if use_wandb:
-        # Generate run name from key parameters
-        model_short = args.model_name.split('/')[-1]
-        run_name = f"{model_short}_n{args.num_train_samples}_e{args.num_epochs}_b{args.batch_size}_eps{args.target_epsilon}_lr{args.learning_rate}"
+        import os
+
+        # Read entity from env var if not specified
+        entity = args.wandb_entity or os.environ.get("WANDB_ENTITY")
+
+        # Generate default run name from key parameters if not specified
+        if args.wandb_run_name is None:
+            model_short = args.model_name.split('/')[-1]
+            run_name = f"{model_short}_n{args.num_train_samples}_e{args.num_epochs}_b{args.batch_size}_eps{args.target_epsilon}_lr{args.learning_rate}"
+        else:
+            run_name = args.wandb_run_name
 
         wandb.init(
-            project="opaque",
-            entity="federated-compute",
-            name=run_name if args.wandb_name is None else args.wandb_name,
+            project=args.wandb_project,
+            entity=entity,
+            name=run_name,
             config=vars(args),
         )
         print(f"W&B initialized: {wandb.run.url}")
@@ -328,6 +391,9 @@ def main():
     # SDPA (scaled_dot_product_attention) uses C++ kernels incompatible with vmap
     # When microbatch_size > 1, we must use eager attention for gradient computation
     use_eager = args.use_eager_attention or device.type == "mps" or args.microbatch_size > 1
+
+    if device.type == "mps" and not args.use_eager_attention:
+        print("Auto-enabling eager attention (required for MPS device)")
     if args.microbatch_size > 1 and not args.use_eager_attention:
         print(f"Auto-enabling eager attention (required for microbatch_size={args.microbatch_size})")
 
@@ -376,12 +442,20 @@ def main():
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
 
-    # Load dataset
+    # Load and prepare dataset
     print(f"\nLoading dataset: {args.dataset}...")
     print(f"  Split: {args.dataset_split}")
     print(f"  Text field: {args.dataset_text_field}")
     dataset = load_dataset(args.dataset, split=args.dataset_split)
     print(f"  Total examples in dataset: {len(dataset)}")
+
+    # Validate we have enough data
+    total_needed = args.num_train_samples + args.num_eval_samples
+    if len(dataset) < total_needed:
+        raise ValueError(
+            f"Dataset has {len(dataset)} examples but need {total_needed} "
+            f"(train={args.num_train_samples} + eval={args.num_eval_samples})"
+        )
 
     # Show sample of raw data
     if len(dataset) > 0:
@@ -391,94 +465,73 @@ def main():
         print(f"    Text length: {len(sample_text)} chars")
         print(f"    Preview: {sample_text[:200]}...")
 
-    # Extract text
-    print(f"\nExtracting {min(args.num_train_samples, len(dataset))} samples...")
-    all_texts = [
-        item[args.dataset_text_field]
-        for item in dataset.select(range(min(args.num_train_samples, len(dataset))))
-    ]
-    print(f"  Selected {len(all_texts)} training samples")
-    avg_text_len = sum(len(t) for t in all_texts) / len(all_texts)
-    print(f"  Average text length: {avg_text_len:.0f} chars")
+    # Split into eval and train using skip/take
+    print(f"\nPreparing {args.num_eval_samples} eval + {args.num_train_samples} train samples...")
+    eval_dataset = dataset.take(args.num_eval_samples)
+    train_dataset = dataset.skip(args.num_eval_samples).take(args.num_train_samples)
 
-    # Tokenize
-    print("\nTokenizing...")
-    print(f"  Max sequence length: {args.max_seq_len}")
-    print(f"  Padding: True, Truncation: True")
-    all_encodings = tokenizer(
-        all_texts,
-        padding=True,
-        truncation=True,
-        max_length=args.max_seq_len,
-        return_tensors="pt",
-    )
-    all_tokens = all_encodings["input_ids"].to(device)
-    print(f"  Tokenized shape: {all_tokens.shape}")
-    print(f"  Total tokens: {all_tokens.numel():,}")
-    avg_tokens_per_sample = all_tokens.shape[1]
-    print(f"  Avg tokens per sample: {avg_tokens_per_sample}")
-
-    # Build train/eval tensors
-    if all_tokens.size(0) < args.batch_size:
-        raise ValueError(
-            f"Need at least batch_size={args.batch_size} samples, got {all_tokens.size(0)}"
+    # Tokenize function
+    def tokenize_function(examples):
+        return tokenizer(
+            examples[args.dataset_text_field],
+            truncation=True,
+            max_length=args.max_seq_len,
         )
 
-    # Use larger eval set (separate from training) for reliable metrics
-    eval_count = min(args.num_eval_samples, all_tokens.size(0))
-    eval_tokens = all_tokens[:eval_count]
-    train_tokens = all_tokens[eval_count:]  # Don't include eval in training
+    # Tokenize each split separately
+    print(f"\nTokenizing (max_seq_len={args.max_seq_len})...")
+    eval_dataset = eval_dataset.map(
+        tokenize_function,
+        batched=True,
+        remove_columns=eval_dataset.column_names,
+        desc="Tokenizing eval"
+    )
+    train_dataset = train_dataset.map(
+        tokenize_function,
+        batched=True,
+        remove_columns=train_dataset.column_names,
+        desc="Tokenizing train"
+    )
 
-    if len(train_tokens) < args.batch_size:
-        print(f"Warning: Only {len(train_tokens)} training samples after eval split")
-        train_tokens = all_tokens  # Fall back to using all data
-
-    train_dataset = TensorDataset(train_tokens, train_tokens)
     print(
-        f"Prepared TensorDataset with {len(train_dataset)} train samples and {len(eval_tokens)} eval samples"
+        f"Prepared datasets: {len(train_dataset)} train samples, {len(eval_dataset)} eval samples"
     )
 
-    # Auditing setup at beginning of training
-    audit_experiment = None
-    audit_train_dataset = train_dataset
-    if args.audit:
-        max_canaries = max(1, len(train_dataset) - args.batch_size)
-        num_canaries = min(args.audit_canaries, max_canaries)
-        print(f"Setting up auditing with {num_canaries} canaries...")
-        audit_experiment = auditing.setup(
-            train_dataset,
-            num_canaries=num_canaries,
-            key=key(args.seed),
-        )
-        audit_train_dataset = audit_experiment.subset(train_dataset)
-        print(
-            f"Auditing ready: train subset size={len(audit_train_dataset)}, "
-            f"in={len(audit_experiment.in_indices)}, out={len(audit_experiment.out_indices)}"
-        )
+    # Create data collator (HF primitive for batching + creating labels)
+    data_collator = DataCollatorForLanguageModeling(
+        tokenizer=tokenizer,
+        mlm=False,  # False for causal LM (GPT-style)
+    )
 
-    # Materialize training tensor after optional auditing split
-    if args.audit and audit_experiment is not None:
-        train_indices = torch.as_tensor(
-            audit_experiment.train_indices(len(train_dataset)),
-            dtype=torch.long,
-            device=train_tokens.device,
-        )
-        train_tokens_for_loop = train_tokens[train_indices]
-    else:
-        train_tokens_for_loop = train_tokens
+    # Set format to PyTorch tensors for efficiency
+    train_dataset.set_format(type="torch", columns=["input_ids"])
+    eval_dataset.set_format(type="torch", columns=["input_ids"])
 
-    num_batches = len(train_tokens_for_loop) // args.batch_size
-    if num_batches == 0:
-        raise ValueError(
-            f"Training subset too small after auditing split: {len(train_tokens_for_loop)}"
-        )
+    # Eval DataLoader (standard batching, no privacy requirements)
+    eval_loader = DataLoader(
+        eval_dataset,
+        batch_size=args.eval_batch_size,
+        shuffle=False,
+        collate_fn=data_collator,
+        drop_last=False,
+    )
+
+    # For training: Poisson sampling (not uniform shuffling!)
+    # Poisson: each example independently sampled with probability sample_rate each step
+    sample_rate = args.batch_size / len(train_dataset)
+
+    # Expected number of steps to process full dataset with Poisson sampling
+    # = 1 / sample_rate (since we sample sample_rate fraction each step)
+    expected_steps_per_epoch = int(1.0 / sample_rate)
+
+    print(f"\nPoisson sampling setup:")
+    print(f"  Sample rate: {sample_rate:.4f}")
+    print(f"  Expected batch size: {args.batch_size}")
+    print(f"  Expected steps per epoch: ~{expected_steps_per_epoch}")
+    print(f"Eval batches: {len(eval_loader)}")
 
     # Convert to functional (only LoRA parameters)
     print("\nConverting to functional form (LoRA parameters only)...")
-    for name, param in model.named_parameters():
-        if "lora_" not in name:
-            param.requires_grad = False
-
     fmodel, trainable_params, frozen_params = make_functional(
         model,
         disable_autograd_tracking=True,
@@ -493,35 +546,23 @@ def main():
     # Define per-example loss
     def per_example_loss_fn(trainable, tokens_batch):
         # tokens_batch has shape (1, seq_len) when keep_batch_dim=True
-        # or (seq_len,) when keep_batch_dim=False
-        if tokens_batch.ndim == 1:
-            # keep_batch_dim=False: add batch dimension manually
-            tokens_batch = tokens_batch.unsqueeze(0)
-        logits = fmodel(merged_params(trainable), tokens_batch)
-        return compute_causal_lm_loss(logits, tokens_batch)
+        # Use HuggingFace's built-in loss (handles shifting internally)
+        output = fmodel(merged_params(trainable), tokens_batch, labels=tokens_batch)
+        return output.loss
 
     def eval_loss(trainable):
-        """Compute eval loss in batches to avoid OOM."""
+        """Compute eval loss using DataLoader."""
         with torch.no_grad():
             total_loss = 0.0
-            eval_batch_size = args.audit_batch_size  # Use same batch size as audit for consistency
-            num_eval_batches = (len(eval_tokens) + eval_batch_size - 1) // eval_batch_size
+            total_tokens = 0
 
-            for i in range(num_eval_batches):
-                start_idx = i * eval_batch_size
-                end_idx = min(start_idx + eval_batch_size, len(eval_tokens))
-                batch_tokens = eval_tokens[start_idx:end_idx]
+            for batch in eval_loader:
+                batch_tokens = batch["input_ids"].to(device)
+                output = fmodel(merged_params(trainable), batch_tokens, labels=batch_tokens)
+                total_loss += output.loss.item() * len(batch_tokens)
+                total_tokens += len(batch_tokens)
 
-                logits = fmodel(merged_params(trainable), batch_tokens)
-                loss = compute_causal_lm_loss(logits, batch_tokens)
-                total_loss += loss.item() * len(batch_tokens)
-
-            return total_loss / len(eval_tokens)
-
-    def auditing_loss_fn(trainable, x, y):
-        del y
-        logits = fmodel(merged_params(trainable), x.unsqueeze(0))
-        return compute_causal_lm_loss(logits, x.unsqueeze(0))
+            return total_loss / total_tokens
 
     # Setup optimizer
     print("\nSetting up DP-SGD training...")
@@ -531,15 +572,17 @@ def main():
     print(f"  Microbatch size: {args.microbatch_size}")
     print(f"  Adaptive clipping: {args.adaptive_clipping}")
     print(f"  Eval steps: {args.eval_steps}")
-    print(f"  Auditing enabled: {args.audit}")
     print(f"  Epochs: {args.num_epochs}")
-    print(f"  Total steps: {args.num_epochs * num_batches}")
+    print(f"  Expected total steps: ~{args.num_epochs * expected_steps_per_epoch}")
 
-    if args.optimizer == "sgd":
+    if args.optimizer == "adam":
+        base_opt = torchopt.adam(lr=args.learning_rate)
+    elif args.optimizer == "sgd":
         base_opt = torchopt.sgd(lr=args.learning_rate)
     else:
-        base_opt = torchopt.adam(lr=args.learning_rate)
+        raise ValueError(f"Unknown optimizer: {args.optimizer}")
 
+    # Create gradient function (adaptive or fixed clipping)
     if args.adaptive_clipping:
         grad_fn, clip_state = adaptive_clipped_grad(
             per_example_loss_fn,
@@ -553,34 +596,22 @@ def main():
             return_aux=True,
             key=key(args.seed),
         )
-        opt_state = base_opt.init(trainable_params)
-        fixed_clip_norm = None
     else:
-        opt_state = base_opt.init(trainable_params)
-        fixed_clip_norm = args.clip_norm
-        clip_state = None
-
-    # Noise seed for DP (automatically shifted by rank in distributed mode)
-    noise_seed = args.seed
-
-    # Pre-create clipped_grad function for fixed clipping
-    if not args.adaptive_clipping:
-        print("Creating clipped_grad function...")
-        fixed_clipped_grad_fn, clip_state = clipped_grad(
+        grad_fn, clip_state = clipped_grad(
             per_example_loss_fn,
             argnums=0,
             batch_argnums=(1,),
-            l2_clip_norm=fixed_clip_norm,
+            l2_clip_norm=args.clip_norm,
             microbatch_size=args.microbatch_size,
             keep_batch_dim=True,
             return_aux=True,
         )
-    else:
-        fixed_clipped_grad_fn = None
+
+    opt_state = base_opt.init(trainable_params)
 
     # Calibrate noise multiplier from target privacy budget
-    sample_rate = args.batch_size / len(train_tokens_for_loop)
-    total_steps = args.num_epochs * num_batches
+    # sample_rate already computed above
+    total_steps = args.num_epochs * expected_steps_per_epoch
     budget = cal.epsilon_budget(args.target_epsilon, delta=args.target_delta)
     calibration = cal.calibrate(
         budget,
@@ -606,6 +637,9 @@ def main():
     accounting = Accountant()
     step_process = acc.cached(acc.poisson(acc.gaussian(noise_multiplier), sample_rate))
 
+    # Initialize noise function
+    noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_state.sensitivity(), key=key(args.seed))
+
     # Training loop
     print("\n" + "=" * 80)
     print("Starting training...")
@@ -619,90 +653,84 @@ def main():
     for epoch in range(args.num_epochs):
         print(f"\nEpoch {epoch + 1}/{args.num_epochs}")
         print("-" * 80)
-        epoch_losses = []
 
-        # Build shuffled fixed-size batches from audit-aware training subset
-        indices = torch.randperm(len(train_tokens_for_loop), device="cpu")
-        for batch_idx in range(num_batches):
-            batch_indices = indices[
-                batch_idx * args.batch_size : (batch_idx + 1) * args.batch_size
-            ]
-            tokens = train_tokens_for_loop[batch_indices.to(train_tokens_for_loop.device)]
+        # Create Poisson sampler for this epoch
+        epoch_sampler = PoissonSampler(
+            train_dataset,
+            sample_rate=sample_rate,
+            num_iterations=expected_steps_per_epoch,
+            key=fold_in(key(args.seed), epoch),
+        )
 
-            # Determine clip norm
-            current_clip_norm = (
-                fixed_clip_norm
-                if fixed_clip_norm is not None
-                else clip_state.clip_norm
-            )
+        # DataLoader with batch_sampler
+        epoch_loader = DataLoader(
+            train_dataset,
+            batch_sampler=epoch_sampler,
+            collate_fn=data_collator,
+        )
+
+        # Iterate through Poisson-sampled batches
+        for step_idx, batch in enumerate(epoch_loader):
+            tokens = batch["input_ids"].to(device)
+
+            # Accounting update (must happen even for empty batches)
+            accounting |= step_process
+
+            # Skip if no examples sampled (rare but possible with Poisson)
+            if len(tokens) == 0:
+                continue
 
             # Compute clipped gradients (with state passing)
-            if fixed_clipped_grad_fn is not None:
-                (grads_tuple, aux), clip_state = fixed_clipped_grad_fn(
-                    trainable_params, tokens, state=clip_state
-                )
-            else:
-                # Adaptive: grad_fn already handles adaptive clipping
-                (grads_tuple, aux), clip_state = grad_fn(
-                    trainable_params, tokens, state=clip_state
-                )
+            (grads_tuple, aux), clip_state = grad_fn(
+                trainable_params, tokens, state=clip_state
+            )
+            current_clip_norm = clip_state.clip_norm
 
             # Add Gaussian noise
             stddev = noise_multiplier * clip_state.sensitivity()
-            noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(noise_seed))
-            noisy_grads, _ = noise_fn(grads_tuple, noise_state)
+            noisy_grads, noise_state = noise_fn(grads_tuple, noise_state)
 
             # Optimizer step (no adapter wrapper - optimizer used directly)
             updates, opt_state = base_opt.update(
                 noisy_grads, opt_state, params=trainable_params
             )
-            metrics = {
-                "clip_norm": current_clip_norm if fixed_clip_norm is not None else clip_state.clip_norm,
-                "clip_rate": clip_state.clipping_rate if hasattr(clip_state, 'clipping_rate')
-                    else (aux.grad_norms > current_clip_norm).float().mean().item(),
-            }
 
             # Apply updates
             trainable_params = torchopt.apply_updates(trainable_params, updates)
 
-            # Accounting update
-            accounting |= step_process
-
-            # Track metrics
+            # Extract metrics from aux
             avg_loss = aux.loss_values.mean().item()
             mean_grad_norm = aux.grad_norms.mean().item()
-
-            # Calculate clipped grad norm mean
-            clipped_norms = torch.minimum(aux.grad_norms, torch.tensor(current_clip_norm))
-            clipped_grad_norm_mean = clipped_norms.mean().item()
-
-            num_clipped = (aux.grad_norms > current_clip_norm).sum().item()
+            clipped_grad_norm_mean = aux.clipped_norms.mean().item()
+            clip_rate = aux.clipping_rate
 
             losses.append(avg_loss)
-            epoch_losses.append(avg_loss)
-            clip_norms_history.append(metrics["clip_norm"])
-            clip_rates_history.append(metrics["clip_rate"])
+            clip_norms_history.append(current_clip_norm)
+            clip_rates_history.append(clip_rate)
 
             global_step += 1
 
-            # W&B logging - every step (fast, async)
-            if use_wandb:
-                wandb.log({
-                    "train/loss": avg_loss,
-                    "train/clip_norm": metrics["clip_norm"],
-                    "train/clip_rate": metrics["clip_rate"],
-                    "train/grad_norm_mean": mean_grad_norm,
-                    "train/clipped_grad_norm_mean": clipped_grad_norm_mean,
-                    "train/noise_std": stddev,
-                    "train/step": global_step,
-                }, step=global_step)
+            # Log training metrics every log_steps
+            if global_step % args.log_steps == 0:
+                num_clipped = int(clip_rate * len(aux.grad_norms))
 
-            # Report training metrics every 5 steps to console
-            if global_step % 5 == 0:
+                # W&B logging
+                if use_wandb:
+                    wandb.log({
+                        "train/loss": avg_loss,
+                        "train/clip_norm": current_clip_norm,
+                        "train/clip_rate": clip_rate,
+                        "train/grad_norm_mean": mean_grad_norm,
+                        "train/clipped_grad_norm_mean": clipped_grad_norm_mean,
+                        "train/noise_std": stddev,
+                        "train/step": global_step,
+                    }, step=global_step)
+
+                # Console logging
                 print(
-                    f"Step {global_step:4d} [E{epoch + 1} B{batch_idx + 1:3d}/{num_batches:3d}] | "
+                    f"Step {global_step:4d} [E{epoch + 1} S{step_idx + 1:3d}/{expected_steps_per_epoch:3d}] | "
                     f"Loss: {avg_loss:.4f} | "
-                    f"Clip: norm={metrics['clip_norm']:.3f}, rate={metrics['clip_rate']:.1%} ({num_clipped}/{len(aux.grad_norms)}) | "
+                    f"Clip: norm={current_clip_norm:.3f}, rate={clip_rate:.1%} ({num_clipped}/{len(aux.grad_norms)}) | "
                     f"GradNorm: μ={mean_grad_norm:.3f}, σ={stddev:.4f}"
                 )
 
@@ -723,39 +751,12 @@ def main():
                     f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f} (δ={args.target_delta:.1e})"
                 )
 
-        # Epoch summary
-        epoch_avg_loss = sum(epoch_losses) / len(epoch_losses)
-        print(f"Epoch {epoch + 1} avg loss: {epoch_avg_loss:.4f}")
-
-        # Per-epoch auditing
-        if args.audit and audit_experiment is not None:
-            print(f"\nRunning privacy audit after epoch {epoch + 1}...")
-            audit_result = auditing.evaluate(
-                audit_experiment,
-                auditing_loss_fn,
-                trainable_params,
-                train_dataset,
-                batch_size=args.audit_batch_size,
-            )
-            empirical_epsilon = audit_result.epsilon_at(delta=args.target_delta)
-            theoretical_epsilon = accounting.epsilon_at(args.target_delta)
-            print(f"  Theoretical ε={theoretical_epsilon:.3f} | Empirical ε={empirical_epsilon:.3f}")
-
-            # W&B logging - audit metrics
-            if use_wandb:
-                wandb.log({
-                    "audit/empirical_epsilon": empirical_epsilon,
-                    "audit/theoretical_epsilon": theoretical_epsilon,
-                    "audit/epsilon_ratio": empirical_epsilon / theoretical_epsilon if theoretical_epsilon > 0 else 0,
-                    "epoch": epoch + 1,
-                }, step=global_step)
-
     # Final summary
     print("\n" + "=" * 80)
     print("Training Complete!")
     print("=" * 80)
     print(f"Model: {args.model_name}")
-    print(f"Dataset: {args.dataset} ({len(all_texts)} samples)")
+    print(f"Dataset: {args.dataset} ({len(train_dataset)} train samples)")
     print("\nTraining results:")
     print(f"  Total steps: {global_step}")
     print(f"  Initial loss: {losses[0]:.4f}")
@@ -771,7 +772,7 @@ def main():
         )
     else:
         print("\nFixed clipping:")
-        print(f"  Clip norm: {fixed_clip_norm:.3f}")
+        print(f"  Clip norm: {args.clip_norm:.3f}")
         print(
             f"  Average clip rate: {sum(clip_rates_history) / len(clip_rates_history):.2%}"
         )
@@ -781,21 +782,6 @@ def main():
     print(f"  Target delta: {args.target_delta:.1e}")
     print(f"  Noise multiplier (calibrated): {noise_multiplier:.4f}")
     print(f"  Final epsilon: {accounting.epsilon_at(args.target_delta):.3f}")
-
-    if args.audit and audit_experiment is not None:
-        print("\nRunning empirical privacy auditing...")
-        audit_result = auditing.evaluate(
-            audit_experiment,
-            auditing_loss_fn,
-            trainable_params,
-            train_dataset,
-            batch_size=args.audit_batch_size,
-        )
-        print(audit_result.summary(delta=args.target_delta))
-        print(
-            f"Theoretical ε={accounting.epsilon_at(args.target_delta):.3f} | "
-            f"Empirical ε(lower bound)={audit_result.epsilon_at(delta=args.target_delta):.3f}"
-        )
 
     return 0
 
