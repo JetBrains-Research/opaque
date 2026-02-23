@@ -21,19 +21,23 @@ def vmap_create_causal_mask(
 ) -> torch.Tensor | None:
     """vmap-compatible create_causal_mask.
 
-    Handles arbitrary batch dimensions. Under vmap, batch dimension is removed.
+    Handles arbitrary batch dimensions from vmap.
 
     Original: inputs_embeds (batch, seq, hidden) -> mask (batch, 1, seq, seq)
-    Under vmap: inputs_embeds (seq, hidden) -> mask (1, seq, seq)
+    With keep_batch_dim=True: inputs_embeds (1, seq, hidden) -> mask (1, 1, seq, seq)
+    With keep_batch_dim=False: inputs_embeds (seq, hidden) -> mask (1, 1, seq, seq)
+
+    When using keep_batch_dim=True (recommended), the batch dimension is preserved
+    through vmap, allowing SDPA to work correctly with microbatching.
     """
-    # Under vmap, inputs_embeds has shape (seq_len, hidden_dim)
-    # Without vmap, inputs_embeds has shape (batch_size, seq_len, hidden_dim)
+    # Detect if we're under vmap with batch dimension removed (keep_batch_dim=False)
+    # or with batch dimension kept (keep_batch_dim=True)
     if inputs_embeds.ndim == 2:
-        # Under vmap: add batch dimension
+        # Under vmap with keep_batch_dim=False: (seq_len, hidden_dim)
         batch_size = 1
         seq_len = inputs_embeds.shape[0]
     else:
-        # Normal execution
+        # Normal execution or vmap with keep_batch_dim=True: (batch, seq_len, hidden_dim)
         batch_size = inputs_embeds.shape[0]
         seq_len = inputs_embeds.shape[1]
 

@@ -38,6 +38,8 @@ examples = [
   "torchopt>=0.7.3",
   "jupyter>=1.0.0",
   "matplotlib>=3.10.7",
+  "torchvision>=0.25.0",
+  "wandb>=0.16.0",
 ]
 
 # Documentation building
