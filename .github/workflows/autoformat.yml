@@ -1,117 +1,71 @@
-name: Auto-format
+name: Auto-format & Lint
 
 on:
-  pull_request:
-    branches: [ main ]
+  # DISABLED: Manual formatting via PRs. CI linting is handled in ci.yml
+  # pull_request:
+  #   branches: [ main ]
 
-# Cancel in-progress runs when a new workflow with the same group name is triggered
 concurrency:
   group: autoformat-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  autoformat-python:
-    name: Auto-format Python (Ruff)
+  format-python:
+    name: Format Python (Ruff)
     runs-on: ubuntu-latest
-
     permissions:
       contents: write
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v3
         with:
           version: "latest"
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
-        run: |
-          uv sync
+      - name: Format Python code
+        run: uv run ruff format packages/
 
-      - name: Run ruff format
-        run: |
-          uv run ruff format src/ tests/
+      - name: Auto-fix linting issues
+        run: uv run ruff check --fix packages/ || true
 
-      - name: Run ruff check with autofixes
-        run: |
-          uv run ruff check --fix src/ tests/ || true
+      - name: Commit formatting changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "ci: auto-format Python with ruff"
+          file_pattern: "packages/**/*.py"
 
-      - name: Check for changes
-        id: git-check
-        run: |
-          if [ -n "$(git status --porcelain)" ]; then
-            echo "changes=true" >> $GITHUB_OUTPUT
-          else
-            echo "changes=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Commit and push changes
-        if: steps.git-check.outputs.changes == 'true'
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add -A
-          git commit -m "Auto-format with ruff
-
-          🤖 Automated formatting by GitHub Actions"
-          git push
-
-      - name: Fail if unfixable issues remain
-        run: |
-          uv run ruff check src/ tests/
-
-  autoformat-rust:
-    name: Auto-format Rust (fmt + clippy)
+  format-rust:
+    name: Format Rust (fmt + clippy)
     runs-on: ubuntu-latest
-
     permissions:
       contents: write
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
 
-      - name: Run cargo fmt
-        run: cargo fmt --manifest-path crates/dp-accounting/Cargo.toml
+      - name: Format Rust code
+        run: cargo fmt --manifest-path packages/opaque-accounting/Cargo.toml
 
-      - name: Run clippy with autofixes
-        run: cargo clippy --manifest-path crates/dp-accounting/Cargo.toml --fix --allow-dirty || true
+      - name: Auto-fix clippy issues
+        run: cargo clippy --manifest-path packages/opaque-accounting/Cargo.toml --fix --allow-dirty || true
 
-      - name: Check for changes
-        id: git-check
-        run: |
-          if [ -n "$(git status --porcelain)" ]; then
-            echo "changes=true" >> $GITHUB_OUTPUT
-          else
-            echo "changes=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Commit and push changes
-        if: steps.git-check.outputs.changes == 'true'
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add -A
-          git commit -m "Auto-format Rust with cargo fmt + clippy\n\n🦀 Automated formatting by GitHub Actions"
-          git push
-
-      - name: Fail if unfixable clippy warnings remain
-        run: cargo clippy --manifest-path crates/dp-accounting/Cargo.toml -- -D warnings
+      - name: Commit formatting changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "ci: auto-format Rust with fmt + clippy"
+          file_pattern: "packages/opaque-accounting/**/*.rs"

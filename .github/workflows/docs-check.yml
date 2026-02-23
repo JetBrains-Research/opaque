@@ -6,7 +6,9 @@ on:
     paths:
       - 'docs/**'
       - 'mkdocs.yml'
-      - 'src/opaque/**/*.py'
+      - 'packages/opaque/src/opaque/**/*.py'
+      - 'packages/opaque-accounting/src/**/*.rs'
+      - 'packages/opaque-accounting/opaque_accounting/**/*.pyi'
       - '.github/workflows/docs-check.yml'
 
 jobs:
@@ -30,11 +32,14 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --group docs
+          uv sync
+          uv pip install mkdocs mkdocs-material mkdocstrings mkdocstrings-python mkdocs-jupyter
 
       - name: Build documentation
+        env:
+          PYTHONPATH: packages/opaque/src:packages/opaque-accounting:${{ env.PYTHONPATH }}
         run: |
-          uv run --group docs mkdocs build
+          uv run mkdocs build
 
       - name: Check for broken links
         run: |

@@ -1,0 +1,30 @@
+[package]
+name = "opaque-accounting"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "High-performance differential privacy accounting using Privacy Loss Distributions"
+repository.workspace = true
+keywords.workspace = true
+rust-version = "1.70"
+
+[lib]
+name = "opaque_accounting"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+thiserror = "2"
+statrs = "0.18"
+realfft = "3.4"
+rayon = "1.10"
+serde = { version = "1", features = ["derive"], optional = true }
+pyo3 = { version = "0.23", features = ["extension-module"], optional = true }
+
+[dev-dependencies]
+approx = "0.5"
+
+[features]
+default = []
+python-extension = ["pyo3"]
+nightly = []

@@ -1,0 +1,15 @@
+{
+  "rebase_continue": {
+    "return_code": 0,
+    "stdout": "[detached HEAD c1030ee] Refactor code structure for improved readability and maintainability\n 235 files changed, 2884 insertions(+), 4930 deletions(-)\n create mode 100644 .gitattributes\n create mode 100644 .github/workflows/publish.yml\n create mode 100644 .github/workflows/release.lock.yml\n create mode 100644 .github/workflows/release.md\n create mode 100644 Cargo.toml\n create mode 100644 abort_rebase.sh\n create mode 100644 abort_rebase_devnull.sh\n create mode 100644 check_branch.py\n create mode ",
+    "stderr": "Successfully rebased and updated refs/heads/evgri243/restructure+workflow.\n"
+  },
+  "rebase_complete": true,
+  "branch": "evgri243/restructure+workflow",
+  "head_commit": "c1030ee14666dd5c9db529d06451ff4d6e4c80a5",
+  "log": [
+    "c1030ee Refactor code structure for improved readability and maintainability",
+    "6b78909 docs: complete documentation overhaul (Phases 2 & 4) (#86)",
+    "a407b2a docs: add Mechanisms reference section (#85)"
+  ]
+}

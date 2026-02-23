@@ -1,0 +1,112 @@
+name: Publish Release (Phase 2)
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    name: Build and Publish Release
+    if: |
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'release/')
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for release notes
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Extract version from branch name
+        id: version
+        run: |
+          # Extract version from branch name (e.g., "release/v0.1.0" -> "0.1.0")
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          VERSION=$(echo "$BRANCH" | sed -n 's/^release\/v\([0-9]\+\.[0-9]\+\.[0-9]\+\)$/\1/p')
+          
+          if [ -z "$VERSION" ]; then
+            echo "❌ Could not extract version from branch name: $BRANCH"
+            echo "Expected format: release/vX.Y.Z"
+            exit 1
+          fi
+          
+          # Verify it's not a dev version
+          if [[ "$VERSION" == *"dev"* ]]; then
+            echo "❌ Version $VERSION appears to be a dev version"
+            exit 1
+          fi
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Publishing version: $VERSION"
+
+      - name: Set version and build wheels
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          
+          # Update version in both packages (temporary, not committed)
+          cd packages/opaque && uv version $VERSION && uv build --wheel
+          cd ../opaque-accounting && uv version $VERSION && uv build --wheel
+          
+          # List built wheels
+          ls -lh packages/*/dist/*.whl
+
+      - name: Authenticate to GCP
+        id: gcp-auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Configure GCP Artifact Registry
+        run: |
+          gcloud artifacts print-settings python \
+            --project=jetbrains-ml4se-fed \
+            --repository=jbr-fed-python \
+            --location=europe-west4 > ~/.pypirc
+
+      - name: Publish to GCP Artifact Registry
+        run: |
+          uv publish \
+            --publish-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/ \
+            packages/opaque/dist/*.whl \
+            packages/opaque-accounting/dist/*.whl
+
+      - name: Extract release notes from CHANGELOG
+        id: release_notes
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          # Extract section from CHANGELOG.md between this version and next version heading
+          NOTES=$(awk "/^## \[$VERSION\]/,/^## \[/ {if (/^## \[/ && !p) {p=1; next} if (/^## \[/ && p) exit; if (p) print}" CHANGELOG.md || echo "Release $VERSION")
+          if [ -z "$NOTES" ]; then
+            NOTES="Release v$VERSION"
+          fi
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: opaque-dp v${{ steps.version.outputs.version }}
+          body: ${{ steps.release_notes.outputs.notes }}
+          draft: false
+          prerelease: false
+          files: |
+            packages/opaque/dist/*.whl
+            packages/opaque-accounting/dist/*.whl

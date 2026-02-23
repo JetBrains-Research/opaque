@@ -74,7 +74,7 @@ uv run pytest
 uv run pytest --cov=opaque --cov-report=html
 
 # Specific test file
-uv run pytest tests/clipping/test_clipped_fun.py -v
+uv run pytest packages/opaque/tests/clipping/test_clipped_fun.py -v
 ```
 
 ### Test Markers and Filtering
@@ -104,15 +104,15 @@ Marker filtering is automatic: tests marked `test` are skipped when
 
 ### GPU and Multi-GPU Tests
 
-Some tests require a CUDA GPU. These are located in `tests/distributed/` and
+Some tests require a CUDA GPU. These are located in `packages/opaque/tests/distributed/` and
 use `torch.distributed` with NCCL backend:
 
 ```bash
 # Run distributed tests (requires 2+ GPUs)
-uv run pytest tests/distributed/ -v
+uv run pytest packages/opaque/tests/distributed/ -v
 
 # Run HuggingFace model validation (requires GPU + --group test)
-uv run pytest tests/validation/ -v -m slow
+uv run pytest packages/opaque/tests/validation/ -v -m slow
 ```
 
 GPU tests use `@pytest.mark.skipif(not torch.cuda.is_available(), ...)`
@@ -124,13 +124,13 @@ and are automatically skipped on CPU-only machines.
 
 ```bash
 # Format code
-uv run ruff format src/ tests/
+uv run ruff format packages/
 
 # Check linting
-uv run ruff check src/ tests/
+uv run ruff check packages/
 
 # Fix auto-fixable issues
-uv run ruff check --fix src/ tests/
+uv run ruff check --fix packages/
 ```
 
 **Standards**:
@@ -144,9 +144,9 @@ uv run ruff check --fix src/ tests/
 
 ### Before Submitting
 
-1. **Run tests**: `uv run pytest`
-2. **Format code**: `uv run ruff format --check src/ tests/`
-3. **Check linting**: `uv run ruff check src/ tests/`
+1. **Run tests**: `uv run pytest packages/opaque/tests packages/opaque-accounting/tests`
+2. **Format code**: `uv run ruff format --check packages/`
+3. **Check linting**: `uv run ruff check packages/`
 4. **Update docs**: Ensure docstrings are complete
 
 ### PR Checklist

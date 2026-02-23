@@ -44,7 +44,7 @@
 2. **Week 3-4: Debugging & JAX-Privacy Validation**
    - Debug all issues (API friction, memory, numerical stability, LoRA integration)
    - Cross-validate with JAX-Privacy (gradient + utility equivalence)
-   - Create `tests/validation/test_opaque_vs_jax_privacy.py`
+   - Create `packages/opaque/tests/validation/test_opaque_vs_jax_privacy.py`
 
 3. **Week 5-6: Documentation & Microbatching**
    - Troubleshooting guide (real issues + solutions)
@@ -85,7 +85,7 @@ PyTorch implementation of differential privacy for LLM fine-tuning:
 
 ### Current Codebase
 ```
-src/opaque/
+packages/opaque/src/opaque/
 ├── __init__.py             # Public API exports
 ├── utils/                  # Utility modules
 │   ├── pytree.py           # PyTree operations (tree_map, global_norm)
@@ -154,7 +154,7 @@ src/opaque/
 └── compat/                 # HuggingFace compatibility
     └── transformers/
 
-tests/
+packages/opaque/tests/
 ├── auditing/               # 97 auditing tests
 ├── accounting/             # 245 accounting tests
 ├── clipping/               # 86 clipping tests
@@ -188,11 +188,12 @@ tests/
 
 **Commands**:
 ```bash
-uv run pytest                                      # Run unit tests (parallel, -n=auto in pyproject.toml)
+uv run pytest packages/opaque/tests/              # Run unit tests (parallel, -n=auto in pyproject.toml)
 uv run --group jax-validation pytest -m jax_validation  # JAX validation
-uv run pytest -n 0                                # Run tests sequentially (disable parallel)
-uv run ruff format src/ tests/                    # Format
-uv run ruff check src/ tests/                     # Lint
+uv run pytest -n 0 packages/opaque/tests/        # Run tests sequentially (disable parallel)
+uv run ruff format packages/                      # Format
+uv run ruff check packages/                       # Lint
+cargo test --workspace                            # Run Rust tests
 ```
 
 ---

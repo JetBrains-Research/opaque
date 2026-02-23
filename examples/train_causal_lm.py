@@ -501,13 +501,13 @@ def main():
             batch_indices = indices[
                 batch_idx * args.batch_size : (batch_idx + 1) * args.batch_size
             ]
-            tokens = train_tokens_for_loop[batch_indices.to(train_tokens_for_loop.device)]
+            tokens = train_tokens_for_loop[
+                batch_indices.to(train_tokens_for_loop.device)
+            ]
 
             # Determine clip norm
             current_clip_norm = (
-                fixed_clip_norm
-                if fixed_clip_norm is not None
-                else clip_state.clip_norm
+                fixed_clip_norm if fixed_clip_norm is not None else clip_state.clip_norm
             )
 
             # Compute clipped gradients (with state passing)
@@ -531,9 +531,12 @@ def main():
                 noisy_grads, opt_state, params=trainable_params
             )
             metrics = {
-                "clip_norm": current_clip_norm if fixed_clip_norm is not None else clip_state.clip_norm,
-                "clip_rate": clip_state.clipping_rate if hasattr(clip_state, 'clipping_rate')
-                    else (aux.grad_norms > current_clip_norm).float().mean().item(),
+                "clip_norm": current_clip_norm
+                if fixed_clip_norm is not None
+                else clip_state.clip_norm,
+                "clip_rate": clip_state.clipping_rate
+                if hasattr(clip_state, "clipping_rate")
+                else (aux.grad_norms > current_clip_norm).float().mean().item(),
             }
 
             # Apply updates
@@ -544,9 +547,6 @@ def main():
 
             # Track metrics
             avg_loss = aux.loss_values.mean().item()
-            min_loss = aux.loss_values.min().item()
-            max_loss = aux.loss_values.max().item()
-            loss_std = aux.loss_values.std().item()
 
             min_grad_norm = aux.grad_norms.min().item()
             max_grad_norm = aux.grad_norms.max().item()

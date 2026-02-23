@@ -89,14 +89,17 @@ def run_audit(args):
     # Train on the subset (canaries randomly included/excluded)
     train_data = experiment.subset(dataset)
     sampler = PoissonSampler(
-        train_data, sample_rate=sample_rate,
-        num_epochs=total_steps, key=key_samp,
+        train_data,
+        sample_rate=sample_rate,
+        num_epochs=total_steps,
+        key=key_samp,
     )
     train_loader = DataLoader(train_data, batch_sampler=sampler)
 
     # Model setup
     model = SimpleModel(args.dim)
     from opaque import make_functional
+
     fmodel, params = make_functional(model)
 
     def loss_fn(params, x, y):
@@ -104,8 +107,10 @@ def run_audit(args):
         return F.cross_entropy(logits.squeeze(0), y.unsqueeze(0))
 
     grad_fn, clip_state = clipped_grad(
-        loss_fn, l2_clip_norm=args.clip_norm,
-        argnums=0, batch_argnums=(1, 2),
+        loss_fn,
+        l2_clip_norm=args.clip_norm,
+        argnums=0,
+        batch_argnums=(1, 2),
     )
     noise_fn, noise_state = gaussian_noise(
         stddev=noise_multiplier * clip_state.sensitivity(),
@@ -157,7 +162,7 @@ def run_audit(args):
     print(f"  beta(alpha=0.01):   {audit_result.beta_at(alpha=0.01):.4f}")
     print(f"  beta(alpha=0.10):   {audit_result.beta_at(alpha=0.10):.4f}")
 
-    if hasattr(audit_result, 'summary'):
+    if hasattr(audit_result, "summary"):
         print()
         print(audit_result.summary())
 
