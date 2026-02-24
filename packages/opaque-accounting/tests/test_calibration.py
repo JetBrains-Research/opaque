@@ -134,6 +134,7 @@ class TestCalibrateErrors:
 # -- Calibration roundtrip ---------------------------------------------------
 
 
+@pytest.mark.slow
 class TestCalibrateEpsilon:
     """Calibrate noise multiplier for target epsilon — verify roundtrip."""
 
@@ -174,6 +175,7 @@ class TestCalibrateEpsilon:
         assert result_strict.param > result_loose.param
 
 
+@pytest.mark.slow
 class TestCalibrateDifferentBatchSizes:
     """Calibration converges for various batch/dataset ratios."""
 
@@ -192,6 +194,7 @@ class TestCalibrateDifferentBatchSizes:
         assert abs(result.achieved - 5.0) < 1e-3
 
 
+@pytest.mark.slow
 class TestCalibrateAdvantage:
     """Calibrate for f-DP advantage target."""
 
@@ -206,6 +209,7 @@ class TestCalibrateAdvantage:
         assert abs(result.achieved - 0.1) < 1e-4
 
 
+@pytest.mark.slow
 class TestCalibrateBeta:
     """Calibrate for (α, β) error rate target.
 

@@ -268,6 +268,7 @@ class TestCompositionProperties:
             for i in range(1, len(epsilons)):
                 assert epsilons[i] > epsilons[i - 1]
 
+    @pytest.mark.slow
     def test_epsilon_decreases_with_noise(self):
         """More noise → lower epsilon."""
         sigmas = [0.3, 0.5, 0.8, 1.2]

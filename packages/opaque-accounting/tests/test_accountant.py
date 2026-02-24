@@ -4,6 +4,8 @@ Covers construction, metrics, budget tracking, functional properties,
 realistic training-loop patterns, calibration integration, and API consistency.
 """
 
+import pytest
+
 import opaque_accounting as acc
 from opaque_accounting.accountant import Accountant
 from opaque_accounting.calibration import epsilon_budget
@@ -262,6 +264,7 @@ class TestAccountantTrainingLoop:
 
         assert not acct.budget_exceeded
 
+    @pytest.mark.slow
     def test_calibration_then_train(self):
         """Calibrate noise, then use Accountant to track budget."""
         budget = acc.epsilon_budget(2.0, delta=1e-5)

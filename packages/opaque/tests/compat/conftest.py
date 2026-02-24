@@ -18,11 +18,7 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer  # noqa
 from opaque import clipped_grad, make_functional
 
 
-def pytest_runtest_setup(item):
-    """Auto-skip GPU tests if no GPU (CUDA/MPS) is available."""
-    if "gpu" in item.keywords:
-        if not (torch.cuda.is_available() or torch.backends.mps.is_available()):
-            pytest.skip("No GPU available (CUDA or MPS) - skipping GPU tests")
+# NOTE: GPU auto-skip is handled by the top-level conftest.py pytest_runtest_setup hook.
 
 
 def has_hf_token() -> bool:

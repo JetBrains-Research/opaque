@@ -901,6 +901,7 @@ class TestEndToEndDPTraining:
 # =============================================================================
 
 
+@pytest.mark.slow
 class TestMultiArchitectureModels:
     """Test DP training compatibility with various HuggingFace model architectures.
 

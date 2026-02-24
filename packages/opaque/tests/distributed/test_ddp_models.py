@@ -355,13 +355,15 @@ class TestDDPQuickSanity:
         mp.spawn(_run_ddp_quick_sanity, args=(2, port), nprocs=2, join=True)
 
 
-@unittest.skipIf(
+@pytest.mark.slow
+@pytest.mark.gpu
+@pytest.mark.skipif(
     torch.cuda.device_count() < 2,
-    "Need at least 2 GPUs for DDP scaling tests",
+    reason="Need at least 2 GPUs for DDP scaling tests",
 )
-@unittest.skipIf(
+@pytest.mark.skipif(
     not HAS_HF,
-    "transformers/peft libraries not installed",
+    reason="transformers/peft libraries not installed",
 )
 class TestDDPMultiGPUScaling(unittest.TestCase):
     """DDP multi-GPU scaling tests to detect memory degradation and OOM issues."""

@@ -62,7 +62,6 @@ class TestMultiArchitectureCompatibility:
         )
         assert len(grads) > 0
 
-    @pytest.mark.slow
     def test_gemma2_architecture(self, device):
         """Test Gemma2 architecture (custom sliding window attention).
 
@@ -108,7 +107,6 @@ class TestMultiArchitectureCompatibility:
         )
         assert len(grads) > 0
 
-    @pytest.mark.slow
     def test_deepseek_architecture(self, device):
         """Test DeepSeek architecture (large model download)."""
         config = AutoConfig.from_pretrained("deepseek-ai/deepseek-coder-1.3b-base")
@@ -128,7 +126,6 @@ class TestMultiArchitectureCompatibility:
         grads, _ = run_clipped_grad_test(model, tokenizer)
         assert len(grads) > 0
 
-    @pytest.mark.slow
     def test_phi2_architecture(self, device):
         """Test Phi-2 architecture (large model download)."""
         config = AutoConfig.from_pretrained("microsoft/phi-2", trust_remote_code=True)
@@ -148,7 +145,6 @@ class TestMultiArchitectureCompatibility:
         grads, _ = run_clipped_grad_test(model, tokenizer)
         assert len(grads) > 0
 
-    @pytest.mark.slow
     def test_phi3_architecture(self, device):
         """Test Phi-3 architecture with custom DynamicCache compatibility.
 

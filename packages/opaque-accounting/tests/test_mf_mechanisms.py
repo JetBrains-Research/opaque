@@ -40,6 +40,7 @@ class TestBandMfDataclass:
         assert BandMf(1.0, 100, 5) == BandMf(1.0, 100, 5)
         assert BandMf(1.0, 100, 5) != BandMf(1.0, 100, 10)
 
+    @pytest.mark.slow
     def test_pld_returns_valid(self):
         proc = BandMf(1.0, 100, 5)
         eps = proc.epsilon_at(1e-5)

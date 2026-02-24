@@ -51,6 +51,7 @@ docs = [
 
 [tool.pytest.ini_options]
 markers = [
-  "gpu: Test requires GPU (CUDA or MPS)",
-  "slow: Test is slow (model loading, multi-step training)",
+  "gpu: Test requires GPU (CUDA or MPS) — skipped automatically when no GPU is available",
+  "slow: Test takes >5 s on CPU (calibration, model download, multi-step training)",
+  "cross_validation: Requires optional deps (dp-accounting, riskcal, scipy) — install with: uv sync --group cross-validation",
 ]

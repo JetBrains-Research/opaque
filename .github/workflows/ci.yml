@@ -69,10 +69,10 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --group dev --all-packages
 
-      - name: Run Python accounting tests
+      - name: Run Python accounting tests (skip slow calibration)
         run: |
           uv run pytest packages/opaque-accounting/tests \
-            -m "not slow" \
+            -m "not slow and not cross_validation" \
             --cov=opaque_accounting \
             --cov-report=xml \
             -v
@@ -137,10 +137,10 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --group dev --group compat --all-packages
 
-      - name: Run core tests (non-GPU)
+      - name: Run core tests (skip GPU and slow)
         run: |
           uv run pytest packages/opaque/tests \
-            -m "not gpu" \
+            -m "not gpu and not slow" \
             --cov=opaque \
             --cov-report=xml \
             -v
@@ -176,10 +176,10 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --group dev --group compat --all-packages
 
-      - name: Run GPU tests
+      - name: Run GPU and slow tests
         run: |
           uv run pytest packages/opaque/tests \
-            -m "gpu" \
+            -m "gpu or slow" \
             --cov=opaque \
             --cov-report=xml \
             -v

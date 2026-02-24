@@ -4,6 +4,23 @@ import pytest
 import torch
 
 
+# ---------------------------------------------------------------------------
+# Auto-skip logic for marker-based gating
+# ---------------------------------------------------------------------------
+
+
+def pytest_runtest_setup(item):
+    """Auto-skip tests based on markers and environment capabilities."""
+    if "gpu" in item.keywords:
+        if not (torch.cuda.is_available() or torch.backends.mps.is_available()):
+            pytest.skip("No GPU available (CUDA or MPS)")
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
 def get_default_device():
     """Get the default device for testing (CUDA > MPS > CPU in priority order).
 
