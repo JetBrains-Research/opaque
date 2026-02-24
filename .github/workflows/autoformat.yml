@@ -29,14 +29,11 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
-        run: uv sync --frozen --all-groups
-
       - name: Format Python code
-        run: uv run ruff format packages/
+        run: uvx ruff format packages/
 
       - name: Auto-fix linting issues
-        run: uv run ruff check --fix packages/
+        run: uvx ruff check --fix packages/
 
       - name: Commit formatting changes
         uses: stefanzweifel/git-auto-commit-action@v5
@@ -46,8 +43,8 @@ jobs:
 
       - name: Verify no remaining issues
         run: |
-          uv run ruff format --check packages/
-          uv run ruff check packages/
+          uvx ruff format --check packages/
+          uvx ruff check packages/
 
   format-rust:
     name: Format Rust (fmt + clippy)
