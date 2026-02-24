@@ -18,7 +18,6 @@ transformers = pytest.importorskip("transformers")
 peft = pytest.importorskip("peft")
 
 
-@pytest.mark.test
 @pytest.mark.slow
 @pytest.mark.gpu
 @pytest.mark.integration

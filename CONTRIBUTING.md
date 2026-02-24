@@ -55,10 +55,9 @@ Opaque uses `uv` dependency groups to separate test dependencies:
 
 ```bash
 uv sync                          # Core only (clipping, noise, accounting)
-uv sync --group dev              # + pytest, ruff, hypothesis, scipy
-uv sync --group test             # + transformers, peft (HuggingFace tests)
+uv sync --group dev              # + pytest, ruff, scipy
+uv sync --group compat           # + transformers, peft (HuggingFace tests)
 uv sync --group cross-validation # + dp-accounting, riskcal (reference comparison)
-uv sync --group benchmark        # + opacus, torchvision (benchmarking)
 uv sync --group examples         # + datasets, torchopt, jupyter, matplotlib
 uv sync --group docs             # + mkdocs
 uv sync --all-groups             # Everything
@@ -79,28 +78,21 @@ uv run pytest packages/opaque/tests/clipping/test_clipped_fun.py -v
 
 ### Test Markers and Filtering
 
-Tests are organized with pytest markers. Markers are enforced with `--strict-markers`:
+Tests use pytest markers for filtering:
 
 ```bash
-# HuggingFace compatibility (requires --group test)
-uv run pytest -m test
+# GPU tests (requires CUDA or MPS)
+uv run pytest -m gpu
 
-# Cross-validation against dp-accounting/riskcal (requires --group cross-validation)
-uv run pytest -m cross_validation
-
-# Slow tests (typically model loading / multi-step training)
-uv run pytest -m slow
-
-# Exclude slow tests
-uv run pytest -m "not slow"
-
-# JAX validation tests
-uv run pytest -m jax_validation
+# Non-GPU tests only
+uv run pytest -m "not gpu"
 ```
 
-Marker filtering is automatic: tests marked `test` are skipped when
-`transformers` is not installed, and `cross_validation` tests are skipped when
-`dp-accounting` is not installed. No manual marker exclusion required.
+Other tests use `pytest.importorskip()` for automatic dependency handling:
+- HuggingFace tests: Skip if `transformers` not installed (requires `--group compat`)
+- Cross-validation: Skip if `dp-accounting` not installed (requires `--group cross-validation`)
+
+No manual marker exclusion needed - tests skip automatically when dependencies are missing.
 
 ### GPU and Multi-GPU Tests
 
@@ -108,15 +100,14 @@ Some tests require a CUDA GPU. These are located in `packages/opaque/tests/distr
 use `torch.distributed` with NCCL backend:
 
 ```bash
+# Run GPU tests (requires CUDA or MPS GPU)
+uv run pytest -m gpu -v
+
 # Run distributed tests (requires 2+ GPUs)
 uv run pytest packages/opaque/tests/distributed/ -v
-
-# Run HuggingFace model validation (requires GPU + --group test)
-uv run pytest packages/opaque/tests/validation/ -v -m slow
 ```
 
-GPU tests use `@pytest.mark.skipif(not torch.cuda.is_available(), ...)`
-and are automatically skipped on CPU-only machines.
+GPU tests are marked with `@pytest.mark.gpu` and are automatically filtered in CI.
 
 ---
 

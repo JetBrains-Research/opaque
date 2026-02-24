@@ -9,14 +9,12 @@ These tests verify that our automatic vmap patches work correctly with various H
 ## Installation
 
 ```bash
-uv sync --group test
+uv sync --group compat
 ```
 
 This installs:
 - `transformers>=4.57.0`
 - `peft>=0.18.0`
-- `pytest>=7.0.0`
-- `pytest-typeguard>=4.0.0`
 
 ## Test Files
 

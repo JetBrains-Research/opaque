@@ -334,7 +334,6 @@ def _run_multi_gpu_wrapper(
     )
 
 
-@pytest.mark.test
 @pytest.mark.slow
 @pytest.mark.gpu
 @pytest.mark.skipif(

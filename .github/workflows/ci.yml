@@ -135,19 +135,12 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --frozen --group dev --all-packages
+        run: uv sync --frozen --group dev --group compat --all-packages
 
-      - name: Run core tests
+      - name: Run core tests (non-GPU)
         run: |
-          uv run pytest \
-            packages/opaque/tests/clipping \
-            packages/opaque/tests/noise \
-            packages/opaque/tests/sampling \
-            packages/opaque/tests/utils \
-            packages/opaque/tests/profiling \
-            packages/opaque/tests/auditing \
-            packages/opaque/tests/matrix_factorization \
-            packages/opaque/tests/test_dp_ftrl.py \
+          uv run pytest packages/opaque/tests \
+            -m "not gpu" \
             --cov=opaque \
             --cov-report=xml \
             -v
@@ -181,13 +174,12 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --group dev --group test
+        run: uv sync --frozen --group dev --group compat --all-packages
 
       - name: Run GPU tests
         run: |
-          uv run pytest \
-            packages/opaque/tests/compat \
-            packages/opaque/tests/validation \
+          uv run pytest packages/opaque/tests \
+            -m "gpu" \
             --cov=opaque \
             --cov-report=xml \
             -v

@@ -36,7 +36,7 @@ tests/
 - `test_architectures.py` - Multi-architecture tests
 - `conftest.py` - Shared fixtures and helpers
 
-**Dependencies**: Install with `uv sync --group test`
+**Dependencies**: Install with `uv sync --group compat`
 - Requires: `transformers>=4.57.0`, `peft>=0.18.0`
 
 **What it tests**:

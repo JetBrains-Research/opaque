@@ -18,26 +18,6 @@ def get_default_device():
         return torch.device("cpu")
 
 
-def pytest_configure(config):
-    """Register custom markers."""
-    config.addinivalue_line(
-        "markers",
-        "jax_validation: marks tests that require JAX and JAX-Privacy for cross-framework validation",
-    )
-    config.addinivalue_line(
-        "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
-    )
-    config.addinivalue_line("markers", "gpu: marks tests that require GPU")
-    config.addinivalue_line(
-        "markers",
-        "integration: marks tests as integration tests (end-to-end scenarios with real models)",
-    )
-    config.addinivalue_line(
-        "markers",
-        "test: marks tests requiring HuggingFace ecosystem (install with 'uv sync --group test')",
-    )
-
-
 @pytest.fixture
 def device():
     """Provide device for tests (CUDA > MPS > CPU in priority order)."""
