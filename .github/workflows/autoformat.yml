@@ -10,7 +10,7 @@ concurrency:
 
 jobs:
   format-python:
-    name: Format Python (Ruff)
+    name: Format Python
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -47,7 +47,7 @@ jobs:
           uvx ruff check packages/
 
   format-rust:
-    name: Format Rust (fmt + clippy)
+    name: Format Rust
     runs-on: ubuntu-latest
     permissions:
       contents: write
