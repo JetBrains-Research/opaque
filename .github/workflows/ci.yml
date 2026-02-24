@@ -46,6 +46,7 @@ jobs:
   # Test accounting: Rust + Python accounting module
   test-accounting:
     name: Accounting Tests - ${{ matrix.platform }}/${{ matrix.arch }} - Py${{ matrix.python-version }}
+    needs: lint
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -117,7 +118,7 @@ jobs:
   # Test core: PyTorch DP-SGD functionality
   test-core:
     name: Core Tests - ${{ matrix.platform }}/${{ matrix.arch }} - Py${{ matrix.python-version }}
-    needs: [test-accounting]
+    needs: lint
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -234,6 +235,7 @@ jobs:
   # Pure Python package (opaque-dp) - build once on any platform
   build-opaque-dp:
     name: Build opaque-dp (pure Python)
+    needs: lint
     runs-on: ubuntu-latest
 
     steps:
@@ -266,6 +268,7 @@ jobs:
   # Native extension (opaque-accounting) - build per platform
   build-opaque-accounting:
     name: Build opaque-accounting - ${{ matrix.platform }}/${{ matrix.arch }}
+    needs: lint
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
