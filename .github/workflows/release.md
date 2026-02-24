@@ -44,7 +44,7 @@ Analyze commits since the last release tag (or all commits if this is the first 
 - **Performance**: Notable performance improvements
 - **Documentation**: Significant documentation updates
 
-Use: `git log $(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)..HEAD --oneline`
+Use: `git log $(git describe --tags --match 'v*' --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)..HEAD --oneline`
 
 Format the release notes in clean, engaging Markdown suitable for GitHub Releases.
 
