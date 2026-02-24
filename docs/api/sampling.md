@@ -35,7 +35,7 @@ from opaque.random import key
 sampler = PoissonSampler(
     data_source,
     sample_rate=batch_size / len(data_source),
-    num_epochs=1,
+    num_iterations=None,
     key=key(42),
 )
 loader = DataLoader(dataset, batch_sampler=sampler)
@@ -45,7 +45,7 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 |-----------|------|---------|-------------|
 | `data_source` | dataset with `len()` | required | The training dataset |
 | `sample_rate` | `float` | required | Probability of including each example, in (0, 1] |
-| `num_epochs` | `int` | `1` | Number of epochs to iterate |
+| `num_iterations` | `int` or `None` | `None` | Number of batches to yield. `None` = infinite |
 | `key` | `RngKey` | required | RNG key for reproducible sampling |
 
 Account with `acc.poisson(acc.gaussian(nm), sample_rate)`.
@@ -60,7 +60,7 @@ sampler = TruncatedPoissonSampler(
     data_source,
     sample_rate=batch_size / len(data_source),
     max_batch_size=max_batch,
-    num_epochs=1,
+    num_iterations=None,
     key=key(42),
 )
 loader = DataLoader(dataset, batch_sampler=sampler)
@@ -71,7 +71,7 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 | `data_source` | dataset with `len()` | required | The training dataset |
 | `sample_rate` | `float` | required | Expected sampling rate, in (0, 1] |
 | `max_batch_size` | `int` | required | Maximum batch size cap |
-| `num_epochs` | `int` | `1` | Number of epochs to iterate |
+| `num_iterations` | `int` or `None` | `None` | Number of batches to yield. `None` = infinite |
 | `key` | `RngKey` | required | RNG key for reproducible sampling |
 
 Account with `acc.truncated_poisson(acc.gaussian(nm), sample_rate,

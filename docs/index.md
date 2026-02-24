@@ -83,7 +83,7 @@ detected and sharded automatically.
 from opaque.sampling import PoissonSampler
 from opaque.random import key
 
-sampler = PoissonSampler(dataset, sample_rate=0.01, num_epochs=10, key=key(0))
+sampler = PoissonSampler(dataset, sample_rate=0.01, num_iterations=10, key=key(0))
 loader = DataLoader(dataset, batch_sampler=sampler)
 ```
 
