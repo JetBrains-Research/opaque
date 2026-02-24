@@ -12,9 +12,8 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  # Accounting: Rust + Python — math is platform-independent, test on linux only
-  test-accounting:
-    name: Accounting Tests - Py${{ matrix.python-version }}
+  test:
+    name: Tests - Py${{ matrix.python-version }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -38,94 +37,32 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --frozen --group dev --all-packages
+        run: uv sync --frozen --group dev --group compat --all-packages
 
-      - name: Run Python accounting tests
+      - name: Run accounting tests
         run: |
           uv run pytest packages/opaque-accounting/tests \
             --cov=opaque_accounting \
-            --cov-report=xml \
+            --cov-report=xml:coverage-accounting.xml \
             -v
-
-      - uses: codecov/codecov-action@v4
-        with:
-          file: ./coverage.xml
-          flags: accounting
-          fail_ci_if_error: false
-
-  # Core full: all tests including compat/validation on linux (reference platform)
-  test-core:
-    name: Core Tests - Py${{ matrix.python-version }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12"]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: astral-sh/setup-uv@v3
-        with:
-          version: "latest"
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: uv sync --frozen --group dev --group compat --all-packages
 
       - name: Run core tests (skip GPU-only)
         run: |
           uv run pytest packages/opaque/tests \
             -m "not gpu" \
             --cov=opaque \
-            --cov-report=xml \
+            --cov-report=xml:coverage-core.xml \
             -v
 
       - uses: codecov/codecov-action@v4
         with:
-          file: ./coverage.xml
-          flags: core
+          files: ./coverage-accounting.xml,./coverage-core.xml
           fail_ci_if_error: false
 
-  # Core platform: fast unit tests on macOS (no compat/validation, no model downloads)
-  test-core-platform:
-    name: Core Tests - macOS
-    runs-on: macos-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: astral-sh/setup-uv@v3
-        with:
-          version: "latest"
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: uv sync --frozen --group dev --all-packages
-
-      - name: Run core unit tests (no compat/validation)
-        run: |
-          uv run pytest packages/opaque/tests \
-            --ignore=packages/opaque/tests/compat \
-            --ignore=packages/opaque/tests/validation \
-            -m "not gpu" \
-            -v
-
-  # GPU tests: HuggingFace models + integration (custom runner only)
   test-gpu:
     name: GPU Tests
     runs-on: GPU-runner-001
-    needs: [test-core]
+    needs: [test]
 
     steps:
       - uses: actions/checkout@v4
@@ -155,10 +92,9 @@ jobs:
           flags: gpu
           fail_ci_if_error: false
 
-  # Pure Python package — build once
   build-opaque-dp:
     name: Build opaque-dp
-    needs: [test-accounting, test-core]
+    needs: [test]
     runs-on: ubuntu-latest
 
     steps:
@@ -191,7 +127,7 @@ jobs:
   # Native extension — build per platform
   build-opaque-accounting:
     name: Build opaque-accounting - ${{ matrix.platform }}/${{ matrix.arch }}
-    needs: [test-accounting, test-core]
+    needs: [test]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
