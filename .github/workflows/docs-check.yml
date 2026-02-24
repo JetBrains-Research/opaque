@@ -33,7 +33,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: uv sync --frozen --group docs --all-packages
+        run: uv sync --group docs --all-packages
 
       - name: Build documentation
         env:

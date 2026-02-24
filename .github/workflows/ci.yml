@@ -37,7 +37,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --frozen --group dev --group compat --all-packages
+        run: uv sync --group dev --group compat --all-packages
 
       - name: Run accounting tests
         run: |
@@ -76,7 +76,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: uv sync --frozen --group dev --group compat --all-packages
+        run: uv sync --group dev --group compat --all-packages
 
       - name: Run GPU tests
         run: |
