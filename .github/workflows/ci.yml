@@ -20,12 +20,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Primary: Python 3.11 on all platforms
+          # Primary: Python 3.11 on all platforms (native extension is platform-specific)
           - platform: linux
             arch: amd64
             runner: ubuntu-latest
             python-version: "3.11"
-            rust-tests: true
           - platform: linux
             arch: arm64
             runner: ubuntu-24.04-arm
@@ -47,7 +46,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Run Rust tests
-        if: matrix.rust-tests
         run: cargo test --lib --manifest-path packages/opaque-accounting/Cargo.toml
 
       - uses: astral-sh/setup-uv@v3
@@ -74,33 +72,14 @@ jobs:
           flags: accounting-${{ matrix.platform }}-${{ matrix.arch }}
           fail_ci_if_error: false
 
-  # Test core: PyTorch DP-SGD functionality
+  # Test core: PyTorch DP-SGD functionality (pure Python — linux/amd64 is sufficient)
   test-core:
-    name: Core Tests - ${{ matrix.platform }}/${{ matrix.arch }} - Py${{ matrix.python-version }}
-    runs-on: ${{ matrix.runner }}
+    name: Core Tests - Py${{ matrix.python-version }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # Primary: Python 3.11 on all platforms
-          - platform: linux
-            arch: amd64
-            runner: ubuntu-latest
-            python-version: "3.11"
-          - platform: linux
-            arch: arm64
-            runner: ubuntu-24.04-arm
-            python-version: "3.11"
-          - platform: macos
-            arch: arm64
-            runner: macos-latest
-            python-version: "3.11"
-
-          # Compat check: Python 3.12 on linux/amd64 only
-          - platform: linux
-            arch: amd64
-            runner: ubuntu-latest
-            python-version: "3.12"
+        python-version: ["3.11", "3.12"]
 
     steps:
       - uses: actions/checkout@v4
@@ -129,7 +108,7 @@ jobs:
       - uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
-          flags: core-${{ matrix.platform }}-${{ matrix.arch }}
+          flags: core
           fail_ci_if_error: false
 
   # GPU tests: HuggingFace models + integration (custom runner only)
