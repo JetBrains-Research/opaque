@@ -55,10 +55,9 @@ Opaque uses `uv` dependency groups to separate test dependencies:
 
 ```bash
 uv sync                          # Core only (clipping, noise, accounting)
-uv sync --group dev              # + pytest, ruff, hypothesis, scipy
-uv sync --group test             # + transformers, peft (HuggingFace tests)
+uv sync --group dev              # + pytest, ruff, scipy
+uv sync --group compat           # + transformers, peft (HuggingFace tests)
 uv sync --group cross-validation # + dp-accounting, riskcal (reference comparison)
-uv sync --group benchmark        # + opacus, torchvision (benchmarking)
 uv sync --group examples         # + datasets, torchopt, jupyter, matplotlib
 uv sync --group docs             # + mkdocs
 uv sync --all-groups             # Everything
@@ -74,49 +73,41 @@ uv run pytest
 uv run pytest --cov=opaque --cov-report=html
 
 # Specific test file
-uv run pytest tests/clipping/test_clipped_fun.py -v
+uv run pytest packages/opaque/tests/clipping/test_clipped_fun.py -v
 ```
 
 ### Test Markers and Filtering
 
-Tests are organized with pytest markers. Markers are enforced with `--strict-markers`:
+Tests use pytest markers for filtering:
 
 ```bash
-# HuggingFace compatibility (requires --group test)
-uv run pytest -m test
+# GPU tests (requires CUDA or MPS)
+uv run pytest -m gpu
 
-# Cross-validation against dp-accounting/riskcal (requires --group cross-validation)
-uv run pytest -m cross_validation
-
-# Slow tests (typically model loading / multi-step training)
-uv run pytest -m slow
-
-# Exclude slow tests
-uv run pytest -m "not slow"
-
-# JAX validation tests
-uv run pytest -m jax_validation
+# Non-GPU tests only
+uv run pytest -m "not gpu"
 ```
 
-Marker filtering is automatic: tests marked `test` are skipped when
-`transformers` is not installed, and `cross_validation` tests are skipped when
-`dp-accounting` is not installed. No manual marker exclusion required.
+Other tests use `pytest.importorskip()` for automatic dependency handling:
+- HuggingFace tests: Skip if `transformers` not installed (requires `--group compat`)
+- Cross-validation: Skip if `dp-accounting` not installed (requires `--group cross-validation`)
+
+No manual marker exclusion needed - tests skip automatically when dependencies are missing.
 
 ### GPU and Multi-GPU Tests
 
-Some tests require a CUDA GPU. These are located in `tests/distributed/` and
+Some tests require a CUDA GPU. These are located in `packages/opaque/tests/distributed/` and
 use `torch.distributed` with NCCL backend:
 
 ```bash
-# Run distributed tests (requires 2+ GPUs)
-uv run pytest tests/distributed/ -v
+# Run GPU tests (requires CUDA or MPS GPU)
+uv run pytest -m gpu -v
 
-# Run HuggingFace model validation (requires GPU + --group test)
-uv run pytest tests/validation/ -v -m slow
+# Run distributed tests (requires 2+ GPUs)
+uv run pytest packages/opaque/tests/distributed/ -v
 ```
 
-GPU tests use `@pytest.mark.skipif(not torch.cuda.is_available(), ...)`
-and are automatically skipped on CPU-only machines.
+GPU tests are marked with `@pytest.mark.gpu` and are automatically filtered in CI.
 
 ---
 
@@ -124,13 +115,13 @@ and are automatically skipped on CPU-only machines.
 
 ```bash
 # Format code
-uv run ruff format src/ tests/
+uv run ruff format packages/
 
 # Check linting
-uv run ruff check src/ tests/
+uv run ruff check packages/
 
 # Fix auto-fixable issues
-uv run ruff check --fix src/ tests/
+uv run ruff check --fix packages/
 ```
 
 **Standards**:
@@ -144,9 +135,9 @@ uv run ruff check --fix src/ tests/
 
 ### Before Submitting
 
-1. **Run tests**: `uv run pytest`
-2. **Format code**: `uv run ruff format --check src/ tests/`
-3. **Check linting**: `uv run ruff check src/ tests/`
+1. **Run tests**: `uv run pytest packages/opaque/tests packages/opaque-accounting/tests`
+2. **Format code**: `uv run ruff format --check packages/`
+3. **Check linting**: `uv run ruff check packages/`
 4. **Update docs**: Ensure docstrings are complete
 
 ### PR Checklist

@@ -1,173 +1,240 @@
-name: CI
+name: CI/CD
 
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
-# Cancel in-progress runs when a new workflow with the same group name is triggered
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  test-core:
-    name: Core Tests - ${{ matrix.os }} - Python ${{ matrix.python-version }}
-    runs-on: ${{ matrix.os }}
+  test:
+    name: Tests - Py${{ matrix.python-version }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        python-version: [ "3.11", "3.12" ]
+        python-version: ["3.11", "3.12"]
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Run Rust tests
+        run: cargo test --lib --manifest-path packages/opaque-accounting/Cargo.toml
+
+      - uses: astral-sh/setup-uv@v3
         with:
           version: "latest"
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
+        run: uv sync --group dev --group compat --all-packages
+
+      - name: Run accounting tests
         run: |
-          uv sync --group dev
+          uv run pytest packages/opaque-accounting/tests \
+            --cov=opaque_accounting \
+            --cov-report=xml:coverage-accounting.xml \
+            -v
 
-      - name: Run core tests
+      - name: Run core tests (skip GPU-only)
         run: |
-          uv run pytest tests/clipping tests/noise tests/sampling tests/utils tests/profiling tests/auditing tests/matrix_factorization tests/test_dp_ftrl.py --cov=opaque --cov-report=xml --cov-report=term
+          uv run pytest packages/opaque/tests \
+            -m "not gpu" \
+            --cov=opaque \
+            --cov-report=xml:coverage-core.xml \
+            -v
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+      - uses: codecov/codecov-action@v4
         with:
-          file: ./coverage.xml
-          flags: core
-          name: codecov-core-py${{ matrix.python-version }}
-          fail_ci_if_error: false
-
-  test-accounting:
-    name: Accounting Tests - ${{ matrix.os }} - Rust + Python ${{ matrix.python-version }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        python-version: [ "3.11", "3.12" ]
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Run Rust unit tests
-        run: cargo test --manifest-path crates/dp-accounting/Cargo.toml
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          version: "latest"
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: |
-          uv sync --group dev --group cross-validation
-
-      - name: Run accounting tests (including cross-validation)
-        run: |
-          uv run pytest tests/accounting -m "not slow" --cov=opaque --cov-report=xml --cov-report=term
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./coverage.xml
-          flags: accounting
-          name: codecov-accounting-py${{ matrix.python-version }}
+          files: ./coverage-accounting.xml,./coverage-core.xml
           fail_ci_if_error: false
 
   test-gpu:
-    name: GPU Tests - Python ${{ matrix.python-version }}
+    name: GPU Tests
     runs-on: GPU-runner-001
-    needs: [test-core]
-    if: github.event_name == 'push' || github.event.pull_request.draft == false
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: [ "3.11", "3.12" ]
-    # Using specific runner name from org-level shared runner
+    needs: [test]
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v3
         with:
           version: "latest"
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: |
-          uv sync --group dev --group test
-
-      - name: Run GPU tests (HF models + integration)
-        run: |
-          uv run pytest tests/compat tests/validation --cov=opaque --cov-report=xml --cov-report=term
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./coverage.xml
-          flags: gpu
-          name: codecov-gpu-py${{ matrix.python-version }}
-          fail_ci_if_error: false
-
-  package:
-    name: Build packages - ${{ matrix.os }}
-    needs: [test-core, test-accounting]
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          version: "latest"
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Build package
-        run: |
-          uv build
+      - name: Install dependencies
+        run: uv sync --group dev --group compat --all-packages
 
-      - name: Upload build artifacts
+      - name: Run GPU tests
+        run: |
+          uv run pytest packages/opaque/tests \
+            -m "gpu" \
+            --cov=opaque \
+            --cov-report=xml \
+            -v
+
+      - uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          flags: gpu
+          fail_ci_if_error: false
+
+  build-opaque-dp:
+    name: Build opaque-dp
+    needs: [test]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set dev version
+        run: |
+          DEV_VERSION="0.0.0.dev0+${{ github.run_number }}"
+          cd packages/opaque && uv version $DEV_VERSION
+
+      - name: Build wheel
+        run: |
+          cd packages/opaque && uv build --wheel
+
+      - name: Upload wheel to artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ matrix.os }}
+          name: wheels-opaque-dp
+          path: packages/opaque/dist/*.whl
+          retention-days: 30
+
+  # Native extension — build per platform
+  build-opaque-accounting:
+    name: Build opaque-accounting - ${{ matrix.platform }}/${{ matrix.arch }}
+    needs: [test]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            arch: amd64
+            runner: ubuntu-latest
+          - platform: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - platform: macos
+            arch: arm64
+            runner: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set dev version
+        run: |
+          DEV_VERSION="0.0.0.dev0+${{ github.run_number }}"
+          cd packages/opaque-accounting && uv version $DEV_VERSION
+
+      - name: Build wheel
+        run: |
+          cd packages/opaque-accounting && uv build --wheel
+
+      - name: Upload wheel to artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-opaque-accounting-${{ matrix.platform }}-${{ matrix.arch }}
+          path: packages/opaque-accounting/dist/*.whl
+          retention-days: 30
+
+  # Publish all wheels to GCP (main branch only)
+  publish-to-gcp:
+    name: Publish dev builds to GCP
+    needs: [build-opaque-dp, build-opaque-accounting]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check if this is a release commit
+        id: check_release
+        run: |
+          VERSION=$(grep '^version = ' packages/opaque/pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          if [[ "$VERSION" != *"dev"* ]]; then
+            echo "⏭️  Skipping dev build publish - this is a release version ($VERSION)"
+            echo "is_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "📦 Publishing dev build version: $VERSION"
+            echo "is_release=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download all wheels
+        if: steps.check_release.outputs.is_release == 'false'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
           path: dist/
+          merge-multiple: true
+
+      - name: List wheels
+        if: steps.check_release.outputs.is_release == 'false'
+        run: |
+          echo "Wheels to publish:"
+          ls -lh dist/*.whl
+
+      - name: Authenticate to GCP
+        if: steps.check_release.outputs.is_release == 'false'
+        id: gcp-auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Configure GCP Artifact Registry
+        if: steps.check_release.outputs.is_release == 'false'
+        run: |
+          gcloud artifacts print-settings python \
+            --project=jetbrains-ml4se-fed \
+            --repository=jbr-fed-python \
+            --location=europe-west4 > ~/.pypirc
+
+      - uses: astral-sh/setup-uv@v3
+        if: steps.check_release.outputs.is_release == 'false'
+        with:
+          version: "latest"
+
+      - name: Publish dev builds to GCP
+        if: steps.check_release.outputs.is_release == 'false'
+        run: |
+          uv publish \
+            --publish-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/ \
+            dist/*.whl

@@ -60,16 +60,22 @@ class SimpleCNN(nn.Module):
 
 def get_dataset(name: str, train: bool):
     if name == "mnist":
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,)),
-        ])
+        transform = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Normalize((0.1307,), (0.3081,)),
+            ]
+        )
         return datasets.MNIST("data", train=train, download=True, transform=transform)
     elif name == "cifar10":
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
-        ])
+        transform = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    (0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)
+                ),
+            ]
+        )
         return datasets.CIFAR10("data", train=train, download=True, transform=transform)
     else:
         raise ValueError(f"Unknown dataset: {name}")
@@ -95,6 +101,7 @@ def train(args):
     # Model (functional form)
     model = SimpleCNN(in_channels=in_channels).to(device)
     from opaque import make_functional
+
     fmodel, params = make_functional(model)
 
     def loss_fn(params, x, y):
@@ -188,12 +195,18 @@ def main():
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--clip-norm", type=float, default=1.0)
-    parser.add_argument("--microbatch-size", type=int, default=None,
-                        help="Microbatch size for memory efficiency (default: full batch)")
+    parser.add_argument(
+        "--microbatch-size",
+        type=int,
+        default=None,
+        help="Microbatch size for memory efficiency (default: full batch)",
+    )
     parser.add_argument("--target-epsilon", type=float, default=3.0)
     parser.add_argument("--target-delta", type=float, default=1e-5)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument(
+        "--device", default="cuda" if torch.cuda.is_available() else "cpu"
+    )
     parser.add_argument("--log-every", type=int, default=100)
     args = parser.parse_args()
     train(args)

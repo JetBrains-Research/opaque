@@ -13,14 +13,24 @@ mutation.
 [![PyTorch 2.0+](https://img.shields.io/badge/pytorch-2.0+-red.svg)](https://pytorch.org/)
 [![CI](https://github.com/JetBrains-Research/opaque/actions/workflows/ci.yml/badge.svg)](https://github.com/JetBrains-Research/opaque/actions/workflows/ci.yml)
 
+## Monorepo Structure
+
+This repository contains:
+
+- **[opaque](packages/opaque/)** – PyTorch DP-SGD library with functional API
+- **[opaque-accounting](packages/opaque-accounting/)** – High-performance privacy accounting (Rust backend)
+
 ## Installation
 
 ```bash
-pip install opaque-dp
+# Production release from GCP Artifact Registry
+pip install --index-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/ \
+  opaque-dp opaque-accounting
 
-# Development
+# Development setup (builds both from source)
 git clone https://github.com/JetBrains-Research/opaque.git
-cd opaque && uv sync
+cd opaque
+uv sync
 ```
 
 ## Example
@@ -84,11 +94,12 @@ for batch_x, batch_y in dataloader:
 ## Development
 
 ```bash
-uv sync --group test                       # Install test dependencies
-uv run pytest                              # Run all tests
-uv run pytest -m "not slow"               # Skip slow tests
-uv run ruff format src/ tests/             # Format
-uv run ruff check src/ tests/              # Lint
+uv sync --group dev --group compat                                  # Install dev + HuggingFace dependencies
+uv run pytest packages/opaque/tests packages/opaque-accounting/tests # Run all tests
+uv run pytest -m "not gpu"                                         # Skip GPU tests
+uv run ruff format packages/                                        # Format
+uv run ruff check packages/                                         # Lint
+cargo test --workspace                                              # Run Rust tests
 ```
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for development workflow.

@@ -1,89 +1,32 @@
-[project]
-name = "opaque"
-version = "0.2.0"
-description = "Functional Differential Privacy for LoRA Fine-tuning"
-readme = "README.md"
-license = { text = "Apache-2.0" }
-authors = [
-  { name = "Opaque Contributors" }
-]
-requires-python = ">=3.11,<3.13"
-keywords = [
-  "differential-privacy",
-  "dp-sgd",
-  "pytorch",
-  "lora",
-  "fine-tuning",
-  "llm",
-  "privacy",
-  "machine-learning",
-  "deep-learning",
-]
-classifiers = [
-  "Development Status :: 3 - Alpha",
-  "Intended Audience :: Developers",
-  "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: Apache Software License",
-  "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-  "Topic :: Scientific/Engineering :: Artificial Intelligence",
-  "Topic :: Security",
-]
-# Core runtime dependencies - required for library functionality
-dependencies = [
-  "torch>=2.10.0",      # Core PyTorch with vmap/functorch
-  "optree>=0.17.0",     # PyTree manipulation for functional conversion
-  "scipy>=1.11.0",      # L-BFGS optimization, Toeplitz matrix construction
-  "opaque-accounting",  # Rust-based PLD privacy accounting (local crate)
-]
-
 [tool.uv]
-# Enable workspace so uv resolves crates/dp-accounting from source
-[tool.uv.workspace]
-members = ["crates/dp-accounting"]
+workspace.members = ["packages/opaque", "packages/opaque-accounting"]
 
 [tool.uv.sources]
-opaque-accounting = { workspace = true, editable = true }
-
-# No optional dependencies - users choose their own ML stack
-# Opaque only provides DP-SGD primitives (clipped_grad, noise, accounting)
+opaque = { workspace = true }
+opaque-accounting = { workspace = true }
 
 [dependency-groups]
-# Core development - linting, formatting, basic testing
+# Core development - linting, formatting, testing
 # Install with: uv sync --group dev
 dev = [
   "pytest>=7.0.0",
   "pytest-cov>=4.0.0",
   "ruff>=0.1.0",
-  "hypothesis>=6.0.0",     # Property-based testing
   "scipy>=1.11.0",         # Statistical tests
 ]
 
-# Optional test dependencies (HuggingFace ecosystem)
-# Install with: uv sync --group test
-test = [
+# Compatibility testing with HuggingFace ecosystem
+# Install with: uv sync --group compat
+compat = [
   "transformers>=4.57.0",
   "peft>=0.18.0",
-  "pytest>=7.0.0",
-  "typeguard>=4.0.0",
 ]
 
-# Cross-validation against reference DP accounting libraries
+# Cross-validation against other DP implementations
 # Install with: uv sync --group cross-validation
 cross-validation = [
   "dp-accounting>=0.4.4",
   "riskcal>=1.2.0",
-  "numpy>=1.20",
-  "scipy>=1.7",
-  "pytest>=7.0.0",
-]
-
-# Benchmarking against other DP libraries
-# Install with: uv sync --group benchmark
-benchmark = [
-  "opacus>=1.5.4",         # Meta's DP library
-  "torchvision>=0.24.0",   # For Opacus examples
 ]
 
 # Examples and tutorials
@@ -106,71 +49,8 @@ docs = [
   "mkdocs-jupyter>=0.24.0",
 ]
 
-[project.urls]
-Homepage = "https://github.com/JetBrains-Research/opaque"
-Documentation = "https://github.com/JetBrains-Research/opaque/tree/main/docs"
-Repository = "https://github.com/JetBrains-Research/opaque"
-Issues = "https://github.com/JetBrains-Research/opaque/issues"
-
-[build-system]
-requires = ["hatchling>=0.11.2"]
-build-backend = "hatchling.build"
-
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = "test_*.py"
-python_functions = "test_*"
-addopts = "-v --strict-markers"
 markers = [
-  "jax_validation: Tests that validate against JAX-Privacy (optional dependency)",
-  "slow: Tests that take a long time to run",
-  "test: HuggingFace compatibility tests (requires transformers, peft - install with 'uv sync --group test')",
-  "cross_validation: Cross-validation tests against dp_accounting and riskcal (requires dp-accounting, riskcal)",
+  "gpu: Test requires GPU (CUDA or MPS) — skipped automatically when no GPU is available",
+  "slow: Test takes >5 s on CPU (calibration, model download, multi-step training)",
 ]
-
-[tool.coverage.run]
-source = ["src/opaque"]
-omit = ["*/tests/*", "*/__pycache__/*", "*/examples/*"]
-
-[tool.coverage.report]
-exclude_lines = [
-  "pragma: no cover",
-  "def __repr__",
-  "raise AssertionError",
-  "raise NotImplementedError",
-  "if __name__ == .__main__.:",
-  "if TYPE_CHECKING:",
-  "@abstractmethod",
-]
-
-[tool.ruff]
-line-length = 88
-target-version = "py311"
-src = ["src", "tests"]
-
-[tool.ruff.lint]
-select = [
-  "E",   # pycodestyle errors
-  "W",   # pycodestyle warnings
-  "F",   # pyflakes
-  "I",   # isort
-  "B",   # flake8-bugbear
-  "C4",  # flake8-comprehensions
-  "UP",  # pyupgrade
-]
-ignore = [
-  "E501",  # line-too-long (handled by formatter)
-  "B008",  # function-call-in-default-argument (common in dataclasses)
-  "B019",  # cached-instance-method: Intentional for immutable frozen dataclasses.
-           # The pld() methods are cached with bounded maxsize (8-16 entries).
-           # Composition inherently requires holding references to sub-processes,
-           # and typical usage patterns reuse process instances naturally.
-]
-
-[tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]  # unused imports
-"tests/*" = ["F401", "F811"]  # unused imports, redefined while testing
-
-[tool.ruff.format]
-quote-style = "double"
-indent-style = "space"
