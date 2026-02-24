@@ -12,6 +12,39 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # Lint: check-only, PR gate — never runs on main
+  lint:
+    name: Lint & Format
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path packages/opaque-accounting/Cargo.toml -- --check
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --frozen --group dev --all-packages
+
+      - name: Check Python linting
+        run: uv run ruff check .
+
+      - name: Check Python formatting
+        run: uv run ruff format --check .
+
   # Test accounting: Rust + Python accounting module
   test-accounting:
     name: Accounting Tests - ${{ matrix.platform }}/${{ matrix.arch }} - Py${{ matrix.python-version }}
