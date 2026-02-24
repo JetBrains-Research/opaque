@@ -5,7 +5,6 @@
 import os
 
 import pytest
-import torch
 
 # Guard optional deps — must come BEFORE bare imports so that pytest
 # skips the entire module instead of crashing with ModuleNotFoundError.
