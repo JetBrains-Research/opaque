@@ -8,10 +8,12 @@ dp_accounting PLDs, enabling triple validation.
 **Tolerance**: < 1e-6 for all epsilon/delta comparisons.  Empirically the
 agreement is ~1e-8 to 1e-12.
 
-Marked with ``@pytest.mark.cross_validation`` so they can be run
-selectively with:
+Requires optional deps — install with ``uv sync --group cross-validation``.
+The ``pytest.importorskip`` calls below gate the entire module automatically.
 
-    uv run --group cross-validation pytest -m cross_validation -v
+Run selectively with::
+
+    uv run --group cross-validation pytest tests/test_cross_validation.py -v
 """
 
 from __future__ import annotations
@@ -29,8 +31,6 @@ from dp_accounting.pld import privacy_loss_distribution as pld_lib  # noqa: E402
 import opaque_accounting as acc  # noqa: E402
 from opaque_accounting import calibration as cal  # noqa: E402
 from opaque_accounting.discretization import get_discretization  # noqa: E402
-
-pytestmark = pytest.mark.cross_validation
 
 # ============================================================================
 # Helpers

@@ -15,10 +15,13 @@ Strategy (1) catches formula bugs in Rust.  Strategy (2) catches
 discretisation / composition drift by chaining through the already-validated
 standard Gaussian oracle.
 
+Requires optional deps — install with ``uv sync --group cross-validation``.
+The ``pytest.importorskip`` calls below gate the entire module automatically.
+
 Run with::
 
-    uv run --group cross-validation pytest -m cross_validation \
-        tests/accounting/test_bounded_gaussian_cross_validation.py -v
+    uv run --group cross-validation pytest \
+        tests/test_bounded_gaussian_cross_validation.py -v
 """
 
 from __future__ import annotations
@@ -34,8 +37,6 @@ from dp_accounting.pld import privacy_loss_distribution as pld_lib  # noqa: E402
 from scipy import integrate, stats  # noqa: E402
 
 import opaque_accounting as acc  # noqa: E402
-
-pytestmark = pytest.mark.cross_validation
 
 # ============================================================================
 # Pure-Python δ(ε) via numerical quadrature

@@ -72,7 +72,7 @@ jobs:
       - name: Run Python accounting tests (skip slow calibration)
         run: |
           uv run pytest packages/opaque-accounting/tests \
-            -m "not slow and not cross_validation" \
+            -m "not slow" \
             --cov=opaque_accounting \
             --cov-report=xml \
             -v
