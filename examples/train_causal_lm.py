@@ -43,6 +43,7 @@ USAGE:
 """
 
 import argparse
+import time
 import warnings
 
 import torch
@@ -62,6 +63,7 @@ import opaque.auditing as auditing
 from opaque.accounting import calibration as cal, Accountant
 from opaque.clipping import adaptive_clipped_grad, clipped_grad
 from opaque.noise import gaussian_noise
+from opaque.profiling import TrainingProfiler, print_memory, reset_peak_memory
 from opaque.random import key, fold_in
 from opaque.sampling import PoissonSampler
 from opaque.utils import make_functional
@@ -169,6 +171,12 @@ def parse_args():
         type=int,
         default=10,
         help="Log eval loss and privacy every N steps",
+    )
+    train_group.add_argument(
+        "--max_steps",
+        type=int,
+        default=None,
+        help="Maximum training steps (overrides num_epochs if set)",
     )
     train_group.add_argument("--seed", type=int, default=42, help="Random seed")
 
@@ -454,8 +462,13 @@ def main():
         print("Using eager attention implementation")
         model_kwargs["attn_implementation"] = "eager"
 
+    # Initialize profiler
+    profiler = TrainingProfiler(device)
+
     model = AutoModelForCausalLM.from_pretrained(args.model_name, **model_kwargs)
     model = model.to(device)
+    profiler.mark("model_loaded")
+    print_memory(device, "After model load")
 
     # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
@@ -474,6 +487,8 @@ def main():
     )
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
+    profiler.mark("lora_applied")
+    print_memory(device, "After LoRA")
 
     # Load and prepare dataset
     print(f"\nLoading dataset: {args.dataset}...")
@@ -565,7 +580,6 @@ def main():
     # Convert to functional (only LoRA parameters)
     print("\nConverting to functional form (LoRA parameters only)...")
     print("  (This may take 1-2 minutes for large models...)")
-    import time
     start_time = time.time()
     fmodel, trainable_params, frozen_params = make_functional(
         model,
@@ -575,6 +589,8 @@ def main():
     param_names = list(trainable_params.keys())
     elapsed = time.time() - start_time
     print(f"Trainable parameters: {len(param_names)} (took {elapsed:.1f}s)")
+    profiler.mark("functional_conversion")
+    print_memory(device, "After functional conversion")
 
     def merged_params(trainable):
         return {**frozen_params, **trainable}
@@ -694,6 +710,11 @@ def main():
     clip_rates_history = []
     global_step = 0
 
+    # Reset peak memory before training to get accurate training peak
+    reset_peak_memory(device)
+    profiler.mark("training_start")
+    print_memory(device, "Before training")
+
     for epoch in range(args.num_epochs):
         print(f"\nEpoch {epoch + 1}/{args.num_epochs}")
         print("-" * 80)
@@ -726,23 +747,25 @@ def main():
             if len(tokens) == 0:
                 continue
 
-            # Compute clipped gradients (with state passing)
-            (grads_tuple, aux), clip_state = grad_fn(
-                trainable_params, tokens, state=clip_state
-            )
-            current_clip_norm = clip_state.clip_norm
+            # Time the training step using profiler
+            with profiler.step(batch_size=len(tokens)):
+                # Compute clipped gradients (with state passing)
+                (grads_tuple, aux), clip_state = grad_fn(
+                    trainable_params, tokens, state=clip_state
+                )
+                current_clip_norm = clip_state.clip_norm
 
-            # Add Gaussian noise
-            stddev = noise_multiplier * clip_state.sensitivity()
-            noisy_grads, noise_state = noise_fn(grads_tuple, noise_state)
+                # Add Gaussian noise
+                stddev = noise_multiplier * clip_state.sensitivity()
+                noisy_grads, noise_state = noise_fn(grads_tuple, noise_state)
 
-            # Optimizer step (no adapter wrapper - optimizer used directly)
-            updates, opt_state = base_opt.update(
-                noisy_grads, opt_state, params=trainable_params
-            )
+                # Optimizer step (no adapter wrapper - optimizer used directly)
+                updates, opt_state = base_opt.update(
+                    noisy_grads, opt_state, params=trainable_params
+                )
 
-            # Apply updates
-            trainable_params = torchopt.apply_updates(trainable_params, updates)
+                # Apply updates
+                trainable_params = torchopt.apply_updates(trainable_params, updates)
 
             # Extract metrics from aux
             avg_loss = aux.loss_values.mean().item()
@@ -759,6 +782,7 @@ def main():
             # Log training metrics every log_steps
             if global_step % args.log_steps == 0:
                 num_clipped = int(clip_rate * len(aux.grad_norms))
+                perf_metrics = profiler.current_metrics()
 
                 # W&B logging
                 if use_wandb:
@@ -770,6 +794,11 @@ def main():
                         "train/clipped_grad_norm_mean": clipped_grad_norm_mean,
                         "train/noise_std": stddev,
                         "train/step": global_step,
+                        "train/step_time_sec": perf_metrics["step_time_sec"],
+                        "train/throughput_samples_per_sec": perf_metrics["throughput_samples_sec"],
+                        "memory/allocated_gb": perf_metrics["memory_allocated_gb"],
+                        "memory/reserved_gb": perf_metrics["memory_reserved_gb"],
+                        "memory/peak_gb": perf_metrics["memory_peak_gb"],
                     }, step=global_step)
 
                 # Console logging
@@ -777,7 +806,8 @@ def main():
                     f"Step {global_step:4d} [E{epoch + 1} S{step_idx + 1:3d}/{expected_steps_per_epoch:3d}] | "
                     f"Loss: {avg_loss:.4f} | "
                     f"Clip: norm={current_clip_norm:.3f}, rate={clip_rate:.1%} ({num_clipped}/{len(aux.grad_norms)}) | "
-                    f"GradNorm: μ={mean_grad_norm:.3f}, σ={stddev:.4f}"
+                    f"GradNorm: μ={mean_grad_norm:.3f}, σ={stddev:.4f} | "
+                    f"Time: {perf_metrics['step_time_sec']:.2f}s | Mem: {perf_metrics['memory_peak_gb']:.1f}GB"
                 )
 
             # Expensive operations (eval + privacy) every eval_steps
@@ -796,6 +826,15 @@ def main():
                 print(
                     f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f} (δ={args.target_delta:.1e})"
                 )
+
+            # Early exit if max_steps reached
+            if args.max_steps is not None and global_step >= args.max_steps:
+                print(f"\nReached max_steps={args.max_steps}, stopping training.")
+                break
+
+        # Break outer epoch loop if max_steps reached
+        if args.max_steps is not None and global_step >= args.max_steps:
+            break
 
     # Final summary
     print("\n" + "=" * 80)
@@ -828,6 +867,11 @@ def main():
     print(f"  Target delta: {args.target_delta:.1e}")
     print(f"  Noise multiplier (calibrated): {noise_multiplier:.4f}")
     print(f"  Final epsilon: {accounting.epsilon_at(args.target_delta):.3f}")
+
+    # Mark training complete and print profiler summary
+    profiler.mark("training_complete")
+    print("\n" + profiler.final_summary())
+    print("\n" + profiler.checkpoint_summary())
 
     return 0
 

@@ -1,763 +1,563 @@
-"""Memory profiling tools for DP training.
+"""Memory and timing profiling tools for DP training.
 
-This module provides tools to profile actual memory usage during differentially
-private training with per-example gradients.
+This module provides lightweight tools for tracking memory usage and timing
+during differentially private training. Designed for easy integration with
+training loops and WANDB logging.
 
-Device Support:
-  - CUDA: Full memory tracking via torch.cuda APIs
-  - MPS (Apple Silicon): Full memory tracking via torch.mps APIs
-  - CPU: Limited support (warns that profiling is approximate)
+Key Components:
+    - MemoryStats: Dataclass for GPU memory statistics
+    - StepTimer: Context manager for timing training steps
+    - TrainingProfiler: Main class for tracking memory + timing over training
+    - Utility functions: get_memory_stats, print_memory, reset_peak_memory
 
-Examples:
-    >>> import torch
-    >>> from opaque.profiling import MemoryProfiler, profile_memory, find_max_microbatch_size
-    >>> from opaque import clipped_grad
+Example - Basic usage in training loop:
+    >>> from opaque.profiling import TrainingProfiler
     >>>
-    >>> # Context manager for detailed timeline
-    >>> profiler = MemoryProfiler()
-    >>> with profiler:
-    ...     grads, aux = grad_fn(params, batch)
-    ...     profiler.mark("after_grad")
+    >>> profiler = TrainingProfiler(device)
+    >>> profiler.mark("model_loaded")
+    >>>
+    >>> for step, batch in enumerate(dataloader):
+    ...     with profiler.step():
+    ...         grads = compute_gradients(batch)
+    ...         update_params(grads)
     ...
-    ...     noisy_grads = noise_fn(grads)
-    ...     profiler.mark("after_noise")
-    ...
-    ...     params = optimizer.step(params, noisy_grads)
-    ...     profiler.mark("after_optimizer")
-    >>> print(profiler.report())
+    ...     if step % 10 == 0:
+    ...         print(profiler.summary())
+    ...         wandb.log(profiler.to_dict())
+
+Example - Simple memory tracking:
+    >>> from opaque.profiling import get_memory_stats, print_memory
     >>>
-    >>> # One-shot profiling
-    >>> model = model.to('mps')  # or .cuda()
-    >>> data = data.to('mps')
-    >>> profile = profile_memory(model, (data, targets), loss_fn, l2_clip_norm=1.0)
-    >>> print(profile)
-    >>>
-    >>> # Auto-find max microbatch size
-    >>> max_mb = find_max_microbatch_size(
-    ...     model, (data, targets), batch_size=32, loss_fn, l2_clip_norm=1.0
-    ... )
-    >>> print(f"Use microbatch_size={max_mb}")
+    >>> print_memory(device, "After model load")
+    >>> # ... do work ...
+    >>> stats = get_memory_stats(device)
+    >>> print(f"Peak: {stats.peak_gb:.2f} GB")
 """
 
-import os
-import warnings
-from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Literal
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import torch
-import torch.nn as nn
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 @dataclass
-class MemoryProfile:
-    """Actual measured memory usage from profiling.
+class MemoryStats:
+    """GPU memory statistics at a point in time.
+
+    All values are in GB for easy reading. Use to_dict() for WANDB logging.
 
     Attributes:
-        peak_gb: Peak memory usage in GB
-        available_gb: Total available memory in GB
-        batch_size: Batch size used in profiling
-        microbatch_size: Microbatch size used (None if full batch)
-        device: Device used ("cuda", "mps", or "cpu")
-        status: Profile status ("ok", "warning", "critical", "unsupported")
+        allocated_gb: Currently allocated memory
+        reserved_gb: Reserved by PyTorch allocator (includes fragmentation)
+        peak_gb: Peak allocated since last reset
+        free_gb: Estimated free memory (total - reserved)
+        total_gb: Total GPU memory
     """
 
-    peak_gb: float
-    available_gb: float
-    batch_size: int
-    microbatch_size: int | None
-    device: str
-    status: Literal["ok", "warning", "critical", "unsupported"]
+    allocated_gb: float = 0.0
+    reserved_gb: float = 0.0
+    peak_gb: float = 0.0
+    free_gb: float = 0.0
+    total_gb: float = 0.0
 
+    @property
     def utilization(self) -> float:
-        """Return memory utilization as fraction (0.0-1.0).
+        """Memory utilization as fraction (0.0-1.0)."""
+        if self.total_gb > 0:
+            return self.peak_gb / self.total_gb
+        return 0.0
+
+    def to_dict(self, prefix: str = "memory/") -> dict[str, float]:
+        """Convert to dict for WANDB logging.
+
+        Args:
+            prefix: Prefix for all keys (default: "memory/")
 
         Returns:
-            Fraction of available memory used, or 0.0 if cannot determine
+            Dict with keys like "memory/allocated_gb", "memory/peak_gb", etc.
         """
-        if self.available_gb > 0:
-            return self.peak_gb / self.available_gb
-        return 0.0
+        return {
+            f"{prefix}allocated_gb": self.allocated_gb,
+            f"{prefix}reserved_gb": self.reserved_gb,
+            f"{prefix}peak_gb": self.peak_gb,
+            f"{prefix}free_gb": self.free_gb,
+            f"{prefix}total_gb": self.total_gb,
+            f"{prefix}utilization": self.utilization,
+        }
 
     def __str__(self) -> str:
-        """Human-readable memory profile."""
-        mb_str = (
-            f", microbatch_size={self.microbatch_size}" if self.microbatch_size else ""
+        return (
+            f"Memory: alloc={self.allocated_gb:.2f}GB, "
+            f"peak={self.peak_gb:.2f}GB, "
+            f"free={self.free_gb:.2f}GB "
+            f"({self.utilization:.1%} used)"
         )
-        status_emoji = {
-            "ok": "✓",
-            "warning": "⚠️",
-            "critical": "❌",
-            "unsupported": "ℹ️",
-        }[self.status]
-
-        return f"""Memory Profile (batch_size={self.batch_size}{mb_str})
-  Device:           {self.device}
-  Peak Memory:      {self.peak_gb:>6.2f} GB
-  Available:        {self.available_gb:>6.2f} GB
-  Utilization:      {self.utilization() * 100:>5.1f}%
-  Status:           {status_emoji} {self.status.upper()}
-"""
 
 
-class MemoryTracker:
-    """Unified memory tracking across devices.
+def get_memory_stats(device: torch.device | str) -> MemoryStats:
+    """Get current GPU memory statistics.
 
-    Provides consistent interface for memory tracking on CUDA, MPS, and CPU.
+    Args:
+        device: PyTorch device (cuda, mps, or cpu)
+
+    Returns:
+        MemoryStats with current memory usage. All zeros for CPU.
+
+    Example:
+        >>> stats = get_memory_stats("cuda")
+        >>> print(f"Peak memory: {stats.peak_gb:.2f} GB")
     """
+    if isinstance(device, str):
+        device = torch.device(device)
 
-    def __init__(self, device: str):
-        """Initialize tracker for specified device.
+    if device.type == "cuda":
+        allocated = torch.cuda.memory_allocated(device) / (1024**3)
+        reserved = torch.cuda.memory_reserved(device) / (1024**3)
+        peak = torch.cuda.max_memory_allocated(device) / (1024**3)
+        total = torch.cuda.get_device_properties(device).total_memory / (1024**3)
+        free = total - reserved
+        return MemoryStats(
+            allocated_gb=allocated,
+            reserved_gb=reserved,
+            peak_gb=peak,
+            free_gb=free,
+            total_gb=total,
+        )
+    elif device.type == "mps":
+        allocated = torch.mps.current_allocated_memory() / (1024**3)
+        # MPS doesn't have peak tracking, use current as approximation
+        return MemoryStats(
+            allocated_gb=allocated,
+            reserved_gb=allocated,
+            peak_gb=allocated,
+            free_gb=0.0,  # MPS doesn't expose this
+            total_gb=0.0,
+        )
+    else:
+        return MemoryStats()
 
-        Args:
-            device: Device type ("cuda", "mps", or "cpu")
-        """
-        self.device = device
-        self._supported = self._check_support()
 
-    def _check_support(self) -> bool:
-        """Check if memory tracking is supported on this device.
+def reset_peak_memory(device: torch.device | str) -> None:
+    """Reset peak memory counter for accurate per-phase tracking.
 
-        Returns:
-            True if device has memory tracking APIs
-        """
-        if self.device == "cuda":
-            return torch.cuda.is_available()
-        elif self.device == "mps":
-            return torch.backends.mps.is_available()
-        else:  # CPU
-            return False
+    Args:
+        device: PyTorch device
 
-    def is_supported(self) -> bool:
-        """Check if profiling is fully supported on this device.
+    Example:
+        >>> reset_peak_memory("cuda")
+        >>> # ... do training step ...
+        >>> stats = get_memory_stats("cuda")
+        >>> print(f"Step peak: {stats.peak_gb:.2f} GB")
+    """
+    if isinstance(device, str):
+        device = torch.device(device)
 
-        Returns:
-            True if device supports accurate memory profiling
-        """
-        return self._supported
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
+    # MPS doesn't support peak memory reset
 
-    def reset(self) -> None:
-        """Reset memory tracking and clear cache."""
-        if self.device == "cuda" and self._supported:
-            torch.cuda.empty_cache()
-            torch.cuda.reset_peak_memory_stats()
-        elif self.device == "mps" and self._supported:
-            torch.mps.empty_cache()
 
-    def get_current_allocated(self) -> float:
-        """Get current allocated memory in bytes.
+def print_memory(device: torch.device | str, label: str = "") -> MemoryStats:
+    """Print memory stats with optional label. Returns stats for further use.
 
-        Returns:
-            Current allocated memory in bytes, or 0 if unsupported
-        """
-        if self.device == "cuda" and self._supported:
-            return torch.cuda.memory_allocated()
-        elif self.device == "mps" and self._supported:
-            return torch.mps.current_allocated_memory()
-        return 0.0
+    Args:
+        device: PyTorch device
+        label: Optional label to prefix the output
 
-    def get_peak_allocated(self) -> float:
-        """Get peak allocated memory in bytes since last reset.
+    Returns:
+        MemoryStats for the current state
 
-        Returns:
-            Peak allocated memory in bytes, or 0 if unsupported
-        """
-        if self.device == "cuda" and self._supported:
-            return torch.cuda.max_memory_allocated()
-        elif self.device == "mps" and self._supported:
-            # MPS doesn't have max_memory_allocated, use current
-            # This is a limitation but still useful for profiling
-            return torch.mps.current_allocated_memory()
-        return 0.0
+    Example:
+        >>> print_memory("cuda", "After model load")
+        [After model load] Memory: alloc=7.50GB, peak=7.50GB, free=72.50GB (9.4% used)
+    """
+    stats = get_memory_stats(device)
+    prefix = f"[{label}] " if label else ""
+    print(f"{prefix}{stats}")
+    return stats
 
-    def get_total_memory(self) -> float:
-        """Get total available memory in bytes.
 
-        Returns:
-            Total available memory in bytes, or 0 if unsupported
-        """
-        if self.device == "cuda" and self._supported:
-            return torch.cuda.get_device_properties(0).total_memory
-        elif self.device == "mps" and self._supported:
-            # MPS shares system memory — report total physical RAM.
-            # os.sysconf is always available on macOS, no third-party deps.
-            try:
-                return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-            except (ValueError, OSError):
-                return 0.0
-        return 0.0
+def empty_cache(device: torch.device | str) -> None:
+    """Clear GPU cache to free reserved memory.
 
-    def get_memory_stats(self) -> dict[str, float | int]:
-        """Get detailed memory statistics (CUDA only).
+    Args:
+        device: PyTorch device
+    """
+    if isinstance(device, str):
+        device = torch.device(device)
 
-        Returns:
-            Dictionary with detailed memory stats:
-            - allocated: Currently allocated memory in bytes
-            - reserved: Reserved memory in bytes (may be larger than allocated)
-            - active: Active memory blocks count
-            - num_alloc_retries: Number of failed cudaMalloc calls that were retried
-            - num_ooms: Number of out-of-memory errors
-            Returns empty dict for non-CUDA devices.
-        """
-        if self.device == "cuda" and self._supported:
-            stats = torch.cuda.memory_stats()
-            return {
-                "allocated": stats.get("allocated_bytes.all.current", 0),
-                "reserved": stats.get("reserved_bytes.all.current", 0),
-                "active": stats.get("active_bytes.all.current", 0),
-                "num_alloc_retries": stats.get("num_alloc_retries", 0),
-                "num_ooms": stats.get("num_ooms", 0),
-            }
-        return {}
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+    elif device.type == "mps":
+        torch.mps.empty_cache()
 
 
 @dataclass
-class MemorySnapshot:
-    """Single point-in-time memory measurement.
+class StepMetrics:
+    """Metrics for a single training step.
 
     Attributes:
-        label: Description of this measurement point
-        allocated_gb: Memory allocated at this point in GB
-        delta_gb: Change in memory from previous snapshot in GB
-        reserved_gb: Reserved memory (CUDA only), or None
-        active_gb: Active memory (CUDA only), or None
-        num_allocs: Number of allocations (CUDA only), or None
+        step_time: Wall-clock time for the step in seconds
+        peak_memory_gb: Peak GPU memory during the step
+        batch_size: Number of samples processed
+        throughput: Samples per second
     """
 
-    label: str
-    allocated_gb: float
-    delta_gb: float = 0.0
-    reserved_gb: float | None = None
-    active_gb: float | None = None
-    num_allocs: int | None = None
+    step_time: float = 0.0
+    peak_memory_gb: float = 0.0
+    batch_size: int = 0
+    throughput: float = 0.0
+
+    def to_dict(self, prefix: str = "perf/") -> dict[str, float]:
+        """Convert to dict for WANDB logging."""
+        return {
+            f"{prefix}step_time_sec": self.step_time,
+            f"{prefix}peak_memory_gb": self.peak_memory_gb,
+            f"{prefix}throughput_samples_sec": self.throughput,
+        }
 
 
-class MemoryProfiler:
-    """Context manager for tracking memory during DP training operations.
+class StepTimer:
+    """Context manager for timing a training step with GPU sync.
 
-    Provides component-wise memory breakdown and timeline tracking during
-    training step execution.
+    Handles GPU synchronization for accurate timing and optional
+    peak memory tracking.
 
     Example:
-        >>> from opaque.profiling import MemoryProfiler
-        >>> from opaque import clipped_grad
-        >>>
-        >>> # Profile a training step
-        >>> profiler = MemoryProfiler()
-        >>> with profiler:
-        >>>     grads, aux = grad_fn(params, batch)
-        >>>     profiler.mark("after_grad")
-        >>>
-        >>>     noisy_grads = noise_fn(grads)
-        >>>     profiler.mark("after_noise")
-        >>>
-        >>>     params = optimizer.step(params, noisy_grads)
-        >>>     profiler.mark("after_optimizer")
-        >>>
-        >>> profiler.report()
+        >>> timer = StepTimer("cuda")
+        >>> with timer:
+        ...     grads = compute_gradients(batch)
+        ...     update_params(grads)
+        >>> print(f"Step took {timer.elapsed:.2f}s")
     """
 
-    def __init__(self, device: str | None = None, *, enable_profiler: bool = False):
-        """Initialize memory profiler.
+    def __init__(
+        self,
+        device: torch.device | str,
+        *,
+        track_memory: bool = True,
+        batch_size: int = 0,
+    ):
+        """Initialize step timer.
 
         Args:
-            device: Device to track ("cuda", "mps", "cpu"). If None, auto-detect
-                   from current default device.
-            enable_profiler: If True, enable torch.profiler for detailed operation-level
-                           profiling. This provides detailed breakdown of memory usage
-                           per PyTorch operation, but adds overhead (~10-20%).
+            device: PyTorch device (for GPU sync)
+            track_memory: Whether to track peak memory during step
+            batch_size: Batch size for throughput calculation
         """
-        if device is None:
-            # Auto-detect device
-            if torch.cuda.is_available() and torch.cuda.current_device() >= 0:
-                device = "cuda"
-            elif torch.backends.mps.is_available():
-                device = "mps"
-            else:
-                device = "cpu"
-
+        if isinstance(device, str):
+            device = torch.device(device)
         self.device = device
-        self.tracker = MemoryTracker(device)
-        self.snapshots: list[MemorySnapshot] = []
-        self._start_allocated = 0.0
-        self._active = False
-        self._enable_profiler = enable_profiler
-        self._torch_profiler = None
-        self._profiler_results = None
+        self.track_memory = track_memory
+        self.batch_size = batch_size
+        self.elapsed: float = 0.0
+        self.peak_memory_gb: float = 0.0
+        self._start_time: float = 0.0
 
-        # Warn if profiling not fully supported
-        if not self.tracker.is_supported():
-            warnings.warn(
-                f"Memory profiling on {device.upper()} is limited. "
-                "For accurate profiling, use CUDA or MPS devices.",
-                UserWarning,
-                stacklevel=2,
-            )
-
-    def __enter__(self):
-        """Enter context manager and start profiling."""
-        self._active = True
-        self.tracker.reset()
-        self._start_allocated = self.tracker.get_current_allocated()
-
-        # Start torch.profiler if enabled
-        if self._enable_profiler:
-            from torch.profiler import ProfilerActivity, profile
-
-            activities = [ProfilerActivity.CPU]
-            if self.device == "cuda":
-                activities.append(ProfilerActivity.CUDA)
-
-            self._torch_profiler = profile(
-                activities=activities,
-                profile_memory=True,
-                record_shapes=False,
-                with_stack=False,
-            )
-            self._torch_profiler.__enter__()
-
-        # Record initial state with detailed stats if available
-        stats = self.tracker.get_memory_stats()
-        self.snapshots = [
-            MemorySnapshot(
-                label="start",
-                allocated_gb=self._start_allocated / 1e9,
-                delta_gb=0.0,
-                reserved_gb=stats.get("reserved", 0) / 1e9 if stats else None,
-                active_gb=stats.get("active", 0) / 1e9 if stats else None,
-                num_allocs=stats.get("num_alloc_retries", 0) if stats else None,
-            )
-        ]
+    def __enter__(self) -> "StepTimer":
+        if self.track_memory and self.device.type == "cuda":
+            reset_peak_memory(self.device)
+        self._start_time = time.perf_counter()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Exit context manager and record final state."""
-        self._active = False
+    def __exit__(self, *args) -> None:
+        # Sync GPU before measuring time
+        if self.device.type == "cuda":
+            torch.cuda.synchronize(self.device)
 
-        # Stop torch.profiler if enabled
-        if self._torch_profiler is not None:
-            self._torch_profiler.__exit__(exc_type, exc_val, exc_tb)
-            self._profiler_results = self._torch_profiler.key_averages()
+        self.elapsed = time.perf_counter() - self._start_time
 
-        # Record final state with detailed stats
-        final_allocated = self.tracker.get_current_allocated()
-        prev_allocated = self.snapshots[-1].allocated_gb * 1e9
-        stats = self.tracker.get_memory_stats()
+        if self.track_memory:
+            stats = get_memory_stats(self.device)
+            self.peak_memory_gb = stats.peak_gb
 
-        self.snapshots.append(
-            MemorySnapshot(
-                label="end",
-                allocated_gb=final_allocated / 1e9,
-                delta_gb=(final_allocated - prev_allocated) / 1e9,
-                reserved_gb=stats.get("reserved", 0) / 1e9 if stats else None,
-                active_gb=stats.get("active", 0) / 1e9 if stats else None,
-                num_allocs=stats.get("num_alloc_retries", 0) if stats else None,
-            )
+    @property
+    def metrics(self) -> StepMetrics:
+        """Get metrics for this step."""
+        throughput = self.batch_size / self.elapsed if self.elapsed > 0 else 0.0
+        return StepMetrics(
+            step_time=self.elapsed,
+            peak_memory_gb=self.peak_memory_gb,
+            batch_size=self.batch_size,
+            throughput=throughput,
         )
-        return False
 
-    def mark(self, label: str) -> None:
-        """Record a memory measurement at this point.
+
+@dataclass
+class Checkpoint:
+    """A named memory/time checkpoint during training."""
+
+    name: str
+    timestamp: float
+    memory: MemoryStats
+
+
+@dataclass
+class TrainingProfiler:
+    """Profiler for tracking memory and timing throughout training.
+
+    Designed for easy integration with training loops:
+    - mark() to record checkpoints at key points
+    - step() context manager for per-step timing
+    - Automatic statistics aggregation
+    - Easy WANDB integration
+
+    Example:
+        >>> profiler = TrainingProfiler("cuda")
+        >>> profiler.mark("model_loaded")
+        >>>
+        >>> for step, batch in enumerate(dataloader):
+        ...     with profiler.step(batch_size=len(batch)):
+        ...         train_step(batch)
+        ...
+        ...     if step % 10 == 0:
+        ...         # Log to console
+        ...         print(profiler.step_summary())
+        ...         # Log to WANDB
+        ...         wandb.log(profiler.current_metrics())
+        >>>
+        >>> # Final summary
+        >>> print(profiler.final_summary())
+    """
+
+    device: torch.device | str
+    checkpoints: list[Checkpoint] = field(default_factory=list)
+    step_times: list[float] = field(default_factory=list)
+    step_peak_memories: list[float] = field(default_factory=list)
+    step_batch_sizes: list[int] = field(default_factory=list)
+    _start_time: float = field(default_factory=time.perf_counter)
+
+    def __post_init__(self):
+        if isinstance(self.device, str):
+            self.device = torch.device(self.device)
+
+    def mark(self, name: str) -> MemoryStats:
+        """Record a named checkpoint with current memory state.
 
         Args:
-            label: Description of this measurement point (e.g., "after_grad")
+            name: Name for this checkpoint (e.g., "model_loaded", "after_warmup")
 
-        Raises:
-            RuntimeError: If called outside context manager
+        Returns:
+            Current MemoryStats
+
+        Example:
+            >>> profiler.mark("model_loaded")
+            >>> # ... training ...
+            >>> profiler.mark("training_complete")
         """
-        if not self._active:
-            raise RuntimeError(
-                "MemoryProfiler.mark() can only be called within context manager"
-            )
-
-        current_allocated = self.tracker.get_current_allocated()
-        prev_allocated = self.snapshots[-1].allocated_gb * 1e9
-        stats = self.tracker.get_memory_stats()
-
-        self.snapshots.append(
-            MemorySnapshot(
-                label=label,
-                allocated_gb=current_allocated / 1e9,
-                delta_gb=(current_allocated - prev_allocated) / 1e9,
-                reserved_gb=stats.get("reserved", 0) / 1e9 if stats else None,
-                active_gb=stats.get("active", 0) / 1e9 if stats else None,
-                num_allocs=stats.get("num_alloc_retries", 0) if stats else None,
+        stats = get_memory_stats(self.device)
+        self.checkpoints.append(
+            Checkpoint(
+                name=name,
+                timestamp=time.perf_counter() - self._start_time,
+                memory=stats,
             )
         )
+        return stats
 
-    def get_peak_memory(self) -> float:
-        """Get peak memory usage in GB.
-
-        Returns:
-            Peak memory in GB, or 0.0 if unsupported
-        """
-        return self.tracker.get_peak_allocated() / 1e9
-
-    def get_total_memory(self) -> float:
-        """Get total available memory in GB.
-
-        Returns:
-            Total memory in GB, or 0.0 if unsupported
-        """
-        return self.tracker.get_total_memory() / 1e9
-
-    def print_ops(self, top_k: int = 20) -> None:
-        """Print detailed operation-level memory breakdown (requires enable_profiler=True).
+    def step(self, *, batch_size: int = 0, track_memory: bool = True) -> StepTimer:
+        """Create a context manager for timing a training step.
 
         Args:
-            top_k: Number of top memory-consuming operations to show
-
-        Raises:
-            RuntimeError: If profiler was not enabled
-        """
-        if self._profiler_results is None:
-            raise RuntimeError(
-                "Operation-level profiling not available. "
-                "Create profiler with enable_profiler=True"
-            )
-
-        sort_key = (
-            "self_cuda_memory_usage"
-            if self.device == "cuda"
-            else "self_cpu_memory_usage"
-        )
-        print(self._profiler_results.table(sort_by=sort_key, row_limit=top_k))
-
-    def report(self, detailed: bool = False) -> str:
-        """Generate formatted memory report.
-
-        Args:
-            detailed: If True and on CUDA, include reserved memory and allocation stats
+            batch_size: Number of samples in batch (for throughput calc)
+            track_memory: Whether to track peak memory during step
 
         Returns:
-            Formatted string showing memory timeline and breakdown
+            StepTimer context manager
+
+        Example:
+            >>> with profiler.step(batch_size=32):
+            ...     train_step(batch)
         """
-        if not self.snapshots:
-            return "No profiling data collected"
-
-        peak_gb = self.get_peak_memory()
-        total_gb = self.get_total_memory()
-        peak_pct = (peak_gb / total_gb * 100) if total_gb > 0 else 0.0
-
-        # Check if we have detailed stats available
-        has_detailed_stats = (
-            detailed
-            and self.device == "cuda"
-            and any(s.reserved_gb is not None for s in self.snapshots)
+        timer = StepTimer(
+            self.device, track_memory=track_memory, batch_size=batch_size
         )
 
-        # Build report header
-        width = 95 if has_detailed_stats else 60
+        # Create wrapper that records metrics after step
+        class RecordingTimer:
+            def __init__(inner_self, timer: StepTimer, profiler: TrainingProfiler):
+                inner_self.timer = timer
+                inner_self.profiler = profiler
+
+            def __enter__(inner_self) -> StepTimer:
+                return inner_self.timer.__enter__()
+
+            def __exit__(inner_self, *args):
+                inner_self.timer.__exit__(*args)
+                inner_self.profiler.step_times.append(inner_self.timer.elapsed)
+                inner_self.profiler.step_peak_memories.append(
+                    inner_self.timer.peak_memory_gb
+                )
+                inner_self.profiler.step_batch_sizes.append(inner_self.timer.batch_size)
+
+        return RecordingTimer(timer, self)
+
+    @property
+    def num_steps(self) -> int:
+        """Number of training steps recorded."""
+        return len(self.step_times)
+
+    @property
+    def total_time(self) -> float:
+        """Total training time in seconds."""
+        return sum(self.step_times)
+
+    @property
+    def avg_step_time(self) -> float:
+        """Average step time in seconds."""
+        if not self.step_times:
+            return 0.0
+        return sum(self.step_times) / len(self.step_times)
+
+    @property
+    def avg_step_time_stable(self) -> float:
+        """Average step time excluding first step (warmup)."""
+        if len(self.step_times) <= 1:
+            return self.avg_step_time
+        return sum(self.step_times[1:]) / len(self.step_times[1:])
+
+    @property
+    def peak_memory_gb(self) -> float:
+        """Maximum peak memory across all steps."""
+        if not self.step_peak_memories:
+            return get_memory_stats(self.device).peak_gb
+        return max(self.step_peak_memories)
+
+    @property
+    def avg_throughput(self) -> float:
+        """Average throughput in samples/second."""
+        total_samples = sum(self.step_batch_sizes)
+        if self.total_time > 0:
+            return total_samples / self.total_time
+        return 0.0
+
+    def current_metrics(self, prefix: str = "") -> dict[str, float]:
+        """Get current metrics as dict for WANDB logging.
+
+        Args:
+            prefix: Optional prefix for all keys
+
+        Returns:
+            Dict with performance and memory metrics
+        """
+        if not self.step_times:
+            return {}
+
+        last_step_time = self.step_times[-1]
+        last_batch_size = self.step_batch_sizes[-1] if self.step_batch_sizes else 0
+        last_throughput = last_batch_size / last_step_time if last_step_time > 0 else 0
+
+        mem = get_memory_stats(self.device)
+
+        metrics = {
+            "step_time_sec": last_step_time,
+            "throughput_samples_sec": last_throughput,
+            "avg_step_time_sec": self.avg_step_time_stable,
+            "memory_allocated_gb": mem.allocated_gb,
+            "memory_reserved_gb": mem.reserved_gb,
+            "memory_peak_gb": mem.peak_gb,
+        }
+
+        if prefix:
+            metrics = {f"{prefix}{k}": v for k, v in metrics.items()}
+
+        return metrics
+
+    def step_summary(self) -> str:
+        """One-line summary of recent step performance."""
+        if not self.step_times:
+            return "No steps recorded"
+
+        last_time = self.step_times[-1]
+        last_mem = self.step_peak_memories[-1] if self.step_peak_memories else 0
+        last_batch = self.step_batch_sizes[-1] if self.step_batch_sizes else 0
+        throughput = last_batch / last_time if last_time > 0 else 0
+
+        return (
+            f"Step: {last_time:.2f}s | "
+            f"Mem: {last_mem:.1f}GB | "
+            f"Throughput: {throughput:.1f} samples/s"
+        )
+
+    def final_summary(self) -> str:
+        """Comprehensive summary for end of training."""
         lines = [
-            "=" * width,
-            f"Memory Profile Report ({self.device.upper()})",
-            "=" * width,
-            f"Peak Memory:      {peak_gb:>8.2f} GB",
-            f"Total Available:  {total_gb:>8.2f} GB",
-            f"Peak Utilization: {peak_pct:>7.1f}%",
-            "",
+            "=" * 60,
+            "Training Performance Summary",
+            "=" * 60,
         ]
 
-        # Add detailed stats summary if available
-        if has_detailed_stats:
-            final_stats = self.tracker.get_memory_stats()
-            if final_stats:
-                lines.extend(
-                    [
-                        "CUDA Memory Stats:",
-                        f"  Reserved:         {final_stats.get('reserved', 0) / 1e9:>8.2f} GB (memory cached by PyTorch)",
-                        f"  Alloc Retries:    {final_stats.get('num_alloc_retries', 0):>8} (fragmentation indicator)",
-                        f"  OOM Count:        {final_stats.get('num_ooms', 0):>8} (out-of-memory errors)",
-                        "",
-                    ]
+        if self.num_steps > 0:
+            lines.extend([
+                f"Total steps:           {self.num_steps}",
+                f"Total time:            {self.total_time:.1f}s",
+                f"Avg step time:         {self.avg_step_time:.2f}s (with warmup)",
+                f"Avg step time:         {self.avg_step_time_stable:.2f}s (stable)",
+                f"Steps per minute:      {60.0 / self.avg_step_time_stable:.1f}",
+                f"Avg throughput:        {self.avg_throughput:.1f} samples/s",
+            ])
+
+        mem = get_memory_stats(self.device)
+        if mem.total_gb > 0:
+            lines.extend([
+                "",
+                "Memory:",
+                f"  Peak allocated:      {self.peak_memory_gb:.2f} GB",
+                f"  Current allocated:   {mem.allocated_gb:.2f} GB",
+                f"  Total GPU memory:    {mem.total_gb:.2f} GB",
+                f"  Utilization:         {self.peak_memory_gb / mem.total_gb:.1%}",
+            ])
+
+        if self.checkpoints:
+            lines.extend([
+                "",
+                "Checkpoints:",
+            ])
+            for cp in self.checkpoints:
+                lines.append(
+                    f"  [{cp.timestamp:7.1f}s] {cp.name}: {cp.memory.peak_gb:.2f} GB peak"
                 )
 
-        # Timeline header
-        lines.append("Timeline:")
-        lines.append("-" * width)
+        lines.append("=" * 60)
+        return "\n".join(lines)
 
-        if has_detailed_stats:
+    def checkpoint_summary(self) -> str:
+        """Summary of memory at each checkpoint."""
+        if not self.checkpoints:
+            return "No checkpoints recorded"
+
+        lines = ["Checkpoints:"]
+        prev_mem = 0.0
+        for cp in self.checkpoints:
+            delta = cp.memory.peak_gb - prev_mem
+            delta_str = f"+{delta:.2f}" if delta >= 0 else f"{delta:.2f}"
             lines.append(
-                f"{'Label':<20} {'Allocated':>12} {'Delta':>10} "
-                f"{'Reserved':>12} {'Efficiency':>10}"
+                f"  {cp.name:30s}: {cp.memory.peak_gb:6.2f} GB ({delta_str} GB)"
             )
-        else:
-            lines.append(f"{'Label':<25} {'Memory (GB)':>15} {'Delta (GB)':>15}")
-        lines.append("-" * width)
-
-        # Timeline data
-        for snapshot in self.snapshots:
-            delta_sign = "+" if snapshot.delta_gb >= 0 else ""
-
-            if has_detailed_stats and snapshot.reserved_gb is not None:
-                # Calculate efficiency (allocated / reserved)
-                efficiency = (
-                    (snapshot.allocated_gb / snapshot.reserved_gb * 100)
-                    if snapshot.reserved_gb > 0
-                    else 100.0
-                )
-                lines.append(
-                    f"{snapshot.label:<20} {snapshot.allocated_gb:>10.2f} GB "
-                    f"{delta_sign}{snapshot.delta_gb:>8.2f} GB "
-                    f"{snapshot.reserved_gb:>10.2f} GB {efficiency:>9.1f}%"
-                )
-            else:
-                lines.append(
-                    f"{snapshot.label:<25} {snapshot.allocated_gb:>15.2f} "
-                    f"{delta_sign}{snapshot.delta_gb:>14.2f}"
-                )
-
-        lines.append("=" * width)
-
+            prev_mem = cp.memory.peak_gb
         return "\n".join(lines)
 
 
-def profile_memory(
-    model: nn.Module,
-    sample_batch: tuple[torch.Tensor, ...],
-    loss_fn: Callable,
-    l2_clip_norm: float,
-    *,
-    microbatch_size: int | None = None,
-) -> MemoryProfile:
-    """Profile actual memory usage by running one training step.
-
-    Measures real memory consumption by executing a forward pass, computing
-    per-example gradients with clipping, and tracking peak memory usage.
-
-    Device Support:
-      - CUDA: Full support with accurate memory tracking
-      - MPS (Apple Silicon): Full support with memory tracking
-      - CPU: Limited support (returns status="unsupported" with warning)
-
-    Args:
-        model: PyTorch model to profile
-        sample_batch: Single batch of (data, targets, ...) as tensors
-        loss_fn: Loss function with signature (params, data, targets, ...) -> scalar
-        l2_clip_norm: L2 clipping norm for gradients
-        microbatch_size: Microbatch size to test (None = full batch)
-
-    Returns:
-        MemoryProfile with measured memory usage and status
-
-    Example:
-        >>> import torch
-        >>> from opaque.profiling import profile_memory
-        >>>
-        >>> # On MPS (Apple Silicon)
-        >>> model = model.to('mps')
-        >>> data, targets = data.to('mps'), targets.to('mps')
-        >>>
-        >>> profile = profile_memory(
-        ...     model,
-        ...     (data, targets),
-        ...     loss_fn,
-        ...     l2_clip_norm=1.0,
-        ... )
-        >>> print(profile)
-        Memory Profile (batch_size=32)
-          Device:           mps
-          Peak Memory:       2.45 GB
-          Available:        28.50 GB
-          Utilization:       8.6%
-          Status:           ✓ OK
-    """
-    from opaque import clipped_grad
-    from opaque.utils import make_functional
-
-    # Detect device from model
-    device_param = next(model.parameters())
-    if device_param.is_cuda:
-        device = "cuda"
-    elif device_param.device.type == "mps":
-        device = "mps"
-    else:
-        device = "cpu"
-
-    tracker = MemoryTracker(device)
-
-    # Warn if profiling not fully supported
-    if not tracker.is_supported():
-        warnings.warn(
-            f"Memory profiling on {device.upper()} is limited. "
-            "For accurate profiling, use CUDA or MPS devices.",
-            UserWarning,
-            stacklevel=2,
-        )
-
-    # Make functional
-    fmodel, trainable, frozen = make_functional(model, partition_trainable=True)
-    params = {**frozen, **trainable}
-
-    # Create grad function
-    grad_fn, clip_state = clipped_grad(
-        loss_fn,
-        l2_clip_norm=l2_clip_norm,
-        batch_argnums=tuple(range(1, len(sample_batch) + 1)),
-        microbatch_size=microbatch_size,
-    )
-
-    # Reset and measure
-    tracker.reset()
-
-    # Run one step (no_grad to avoid accumulating .grad attributes)
-    with torch.no_grad():
-        grads, _ = grad_fn(params, *sample_batch, state=clip_state)
-
-    # Get measurements
-    peak_bytes = tracker.get_peak_allocated()
-    total_bytes = tracker.get_total_memory()
-
-    peak_gb = peak_bytes / 1e9
-    available_gb = total_bytes / 1e9
-
-    # Determine status
-    if not tracker.is_supported():
-        status = "unsupported"
-    else:
-        util = peak_gb / available_gb if available_gb > 0 else 0
-        if util > 0.95:
-            status = "critical"
-        elif util > 0.85:
-            status = "warning"
-        else:
-            status = "ok"
-
-    batch_size = sample_batch[0].shape[0]
-
-    return MemoryProfile(
-        peak_gb=peak_gb,
-        available_gb=available_gb,
-        batch_size=batch_size,
-        microbatch_size=microbatch_size,
-        device=device,
-        status=status,
-    )
-
-
-def find_max_microbatch_size(
-    model: nn.Module,
-    sample_batch: tuple[torch.Tensor, ...],
-    batch_size: int,
-    loss_fn: Callable,
-    l2_clip_norm: float,
-    *,
-    safety_margin: float = 0.9,
-    min_size: int = 1,
-) -> int:
-    """Find largest microbatch size that fits in memory.
-
-    Uses binary search with actual profiling to find the maximum microbatch
-    size that can be used without causing out-of-memory errors.
-
-    Device Support:
-      - CUDA: Full support with binary search
-      - MPS: Full support with binary search
-      - CPU: Returns min_size with warning (profiling not supported)
-
-    Args:
-        model: PyTorch model
-        sample_batch: Full batch of data as (data, targets, ...)
-        batch_size: Full batch size
-        loss_fn: Loss function
-        l2_clip_norm: L2 clipping norm
-        safety_margin: Use only this fraction of available memory (default 0.9)
-        min_size: Minimum microbatch size to try (default 1)
-
-    Returns:
-        Maximum microbatch size that fits (power of 2)
-
-    Example:
-        >>> from opaque.profiling import find_max_microbatch_size
-        >>>
-        >>> # Auto-detect best microbatch size
-        >>> max_mb = find_max_microbatch_size(
-        ...     model,
-        ...     (data, targets),
-        ...     batch_size=64,
-        ...     loss_fn=loss_fn,
-        ...     l2_clip_norm=1.0,
-        ... )
-        >>> print(f"Recommended microbatch_size={max_mb}")
-        >>>
-        >>> # Use in training
-        >>> from opaque import clipped_grad
-        >>> grad_fn = clipped_grad(
-        ...     loss_fn,
-        ...     l2_clip_norm=1.0,
-        ...     batch_argnums=(1, 2),
-        ...     microbatch_size=max_mb,
-        ... )
-    """
-    # Detect device
-    device_param = next(model.parameters())
-    if device_param.is_cuda:
-        device = "cuda"
-    elif device_param.device.type == "mps":
-        device = "mps"
-    else:
-        device = "cpu"
-
-    tracker = MemoryTracker(device)
-
-    # Check support
-    if not tracker.is_supported():
-        warnings.warn(
-            f"Memory profiling on {device.upper()} is not supported. "
-            f"Returning min_size={min_size}. Test manually on CUDA/MPS for accurate sizing.",
-            UserWarning,
-            stacklevel=2,
-        )
-        return min_size
-
-    # Binary search over power-of-2 sizes
-    sizes = [2**i for i in range(20) if 2**i <= batch_size]
-    sizes = [s for s in sizes if s >= min_size]
-
-    if not sizes:
-        return min_size
-
-    left, right = 0, len(sizes) - 1
-    best_size = min_size
-
-    while left <= right:
-        mid = (left + right) // 2
-        test_size = sizes[mid]
-
-        try:
-            profile = profile_memory(
-                model,
-                sample_batch,
-                loss_fn,
-                l2_clip_norm,
-                microbatch_size=test_size,
-            )
-
-            # Check if within safety margin
-            if profile.utilization() <= safety_margin:
-                best_size = test_size
-                left = mid + 1  # Try larger
-            else:
-                right = mid - 1  # Try smaller
-
-        except RuntimeError as e:
-            if "out of memory" in str(e).lower():
-                # OOM - try smaller
-                right = mid - 1
-                # Clear cache
-                if device == "cuda":
-                    torch.cuda.empty_cache()
-                elif device == "mps":
-                    torch.mps.empty_cache()
-            else:
-                raise
-
-    return best_size
-
+# Keep backwards compatibility with old API by re-exporting key functions
+# The old API had MemoryProfile, MemoryTracker, profile_memory, find_max_microbatch_size
+# We'll keep the simple utility functions and add the new TrainingProfiler
 
 __all__ = [
-    "MemoryProfile",
-    "MemoryTracker",
-    "profile_memory",
-    "find_max_microbatch_size",
+    # New API
+    "MemoryStats",
+    "StepMetrics",
+    "StepTimer",
+    "TrainingProfiler",
+    "Checkpoint",
+    # Utility functions
+    "get_memory_stats",
+    "reset_peak_memory",
+    "print_memory",
+    "empty_cache",
 ]

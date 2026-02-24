@@ -575,3 +575,49 @@ All human-facing docs in [docs/](docs/):
 - **Examples**: Linear regression (to be created)
 
 This file is **agent-only** - users should read [README.md](README.md) or [docs/](docs/).
+
+---
+
+## WANDB Configuration
+
+**For running training with WANDB logging:**
+
+```bash
+export WANDB_API_KEY="local-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"
+export WANDB_BASE_URL="https://jetbrains.wandb.io"
+export WANDB_ENTITY="federated-compute"
+export PYTHONUNBUFFERED=1
+
+uv run examples/train_causal_lm.py --preset mellum-kstack --wandb
+```
+
+**Key points:**
+- WANDB project: `opaque`
+- Entity: `federated-compute`
+- JetBrains instance: `https://jetbrains.wandb.io`
+- Always use `PYTHONUNBUFFERED=1` for real-time output
+
+---
+
+## Memory Optimization Work
+
+**Current Phase**: Phase 0 - Baseline Measurement
+
+**Reference Repos** (cloned locally):
+- Unsloth: `/mnt/jetbrains/work/unsloth/`
+- Unsloth-Zoo: `/mnt/jetbrains/work/unsloth-zoo/`
+
+**Key files to adapt from unsloth:**
+- `/mnt/jetbrains/work/unsloth/unsloth/kernels/cross_entropy_loss.py` - Chunked CE
+- `/mnt/jetbrains/work/unsloth/unsloth/kernels/rms_layernorm.py` - Fused RMSNorm
+- `/mnt/jetbrains/work/unsloth/unsloth/kernels/swiglu.py` - Fused SwiGLU
+- `/mnt/jetbrains/work/unsloth/unsloth/kernels/fast_lora.py` - Fused LoRA
+
+**Plan**: See `docs/development/MEMORY_OPTIMIZATION_PLAN.md`
+
+**Baseline Target** (mellum-kstack preset):
+- Model: JetBrains/Mellum-4b-base (128K vocab)
+- Hardware: H200 80GB
+- Config: microbatch=4, seq_len=1024, bf16, LoRA r=16
+- Current LoRA: q_proj + v_proj only (2/7 modules)
+- Peak memory: ~75 GB
