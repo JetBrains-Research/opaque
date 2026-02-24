@@ -12,33 +12,14 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  # Test accounting: Rust + Python accounting module
+  # Accounting: Rust + Python — math is platform-independent, test on linux only
   test-accounting:
-    name: Accounting Tests - ${{ matrix.platform }}/${{ matrix.arch }} - Py${{ matrix.python-version }}
-    runs-on: ${{ matrix.runner }}
+    name: Accounting Tests - Py${{ matrix.python-version }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # Primary: Python 3.11 on all platforms (native extension is platform-specific)
-          - platform: linux
-            arch: amd64
-            runner: ubuntu-latest
-            python-version: "3.11"
-          - platform: linux
-            arch: arm64
-            runner: ubuntu-24.04-arm
-            python-version: "3.11"
-          - platform: macos
-            arch: arm64
-            runner: macos-latest
-            python-version: "3.11"
-
-          # Compat check: Python 3.12 on linux/amd64 only
-          - platform: linux
-            arch: amd64
-            runner: ubuntu-latest
-            python-version: "3.12"
+        python-version: ["3.11", "3.12"]
 
     steps:
       - uses: actions/checkout@v4
@@ -69,10 +50,10 @@ jobs:
       - uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
-          flags: accounting-${{ matrix.platform }}-${{ matrix.arch }}
+          flags: accounting
           fail_ci_if_error: false
 
-  # Test core: PyTorch DP-SGD functionality (pure Python — linux/amd64 is sufficient)
+  # Core full: all tests including compat/validation on linux (reference platform)
   test-core:
     name: Core Tests - Py${{ matrix.python-version }}
     runs-on: ubuntu-latest
@@ -111,6 +92,35 @@ jobs:
           flags: core
           fail_ci_if_error: false
 
+  # Core platform: fast unit tests on macOS (no compat/validation, no model downloads)
+  test-core-platform:
+    name: Core Tests - macOS
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: uv sync --frozen --group dev --all-packages
+
+      - name: Run core unit tests (no compat/validation)
+        run: |
+          uv run pytest packages/opaque/tests \
+            --ignore=packages/opaque/tests/compat \
+            --ignore=packages/opaque/tests/validation \
+            -m "not gpu" \
+            -v
+
   # GPU tests: HuggingFace models + integration (custom runner only)
   test-gpu:
     name: GPU Tests
@@ -145,8 +155,7 @@ jobs:
           flags: gpu
           fail_ci_if_error: false
 
-  # Build multi-platform wheels for opaque-accounting
-  # Pure Python package (opaque-dp) - build once on any platform
+  # Pure Python package — build once
   build-opaque-dp:
     name: Build opaque-dp
     needs: [test-accounting, test-core]
@@ -179,7 +188,7 @@ jobs:
           path: packages/opaque/dist/*.whl
           retention-days: 30
 
-  # Native extension (opaque-accounting) - build per platform
+  # Native extension — build per platform
   build-opaque-accounting:
     name: Build opaque-accounting - ${{ matrix.platform }}/${{ matrix.arch }}
     needs: [test-accounting, test-core]
@@ -188,17 +197,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux x86_64
           - platform: linux
             arch: amd64
             runner: ubuntu-latest
-
-          # Linux ARM64
           - platform: linux
             arch: arm64
             runner: ubuntu-24.04-arm
-
-          # macOS ARM64
           - platform: macos
             arch: arm64
             runner: macos-latest
