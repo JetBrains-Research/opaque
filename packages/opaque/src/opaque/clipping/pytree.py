@@ -46,9 +46,11 @@ def clip_pytree(
     # (no data-dependent control flow) and DP-safe (zeroed contributions
     # have norm 0, which is within the sensitivity bound).
     pytree = tree_map(
-        lambda t: torch.nan_to_num(t, nan=0.0, posinf=0.0, neginf=0.0)
-        if isinstance(t, torch.Tensor)
-        else t,
+        lambda t: (
+            torch.nan_to_num(t, nan=0.0, posinf=0.0, neginf=0.0)
+            if isinstance(t, torch.Tensor)
+            else t
+        ),
         pytree,
     )
 
