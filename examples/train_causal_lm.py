@@ -514,16 +514,19 @@ def main():
 
     # Tokenize each split separately
     print(f"\nTokenizing (max_seq_len={args.max_seq_len})...")
+    eval_cols_to_remove = eval_dataset.column_names
+    train_cols_to_remove = train_dataset.column_names
+
     eval_dataset = eval_dataset.map(
         tokenize_function,
         batched=True,
-        remove_columns=eval_dataset.column_names,
+        remove_columns=eval_cols_to_remove,
         desc="Tokenizing eval"
     )
     train_dataset = train_dataset.map(
         tokenize_function,
         batched=True,
-        remove_columns=train_dataset.column_names,
+        remove_columns=train_cols_to_remove,
         desc="Tokenizing train"
     )
 
@@ -536,10 +539,6 @@ def main():
         tokenizer=tokenizer,
         mlm=False,  # False for causal LM (GPT-style)
     )
-
-    # Set format to PyTorch tensors for efficiency
-    train_dataset.set_format(type="torch", columns=["input_ids"])
-    eval_dataset.set_format(type="torch", columns=["input_ids"])
 
     # Eval DataLoader (standard batching, no privacy requirements)
     eval_loader = DataLoader(
