@@ -5,10 +5,25 @@
 - Python 3.11 or 3.12
 - PyTorch 2.0 or later
 
+## Install from Artifact Registry (Recommended)
+
+Install the latest release (`0.1.0`) from the JetBrains Artifact Registry:
+
+```bash
+pip install opaque-dp==0.1.0 \
+  --index-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/
+```
+
+If you also need the privacy accounting engine:
+
+```bash
+pip install opaque-dp==0.1.0 opaque-accounting==0.1.0 \
+  --index-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/
+```
+
 ## From Source
 
-!!! note
-    Opaque is not yet published to PyPI. Install from source:
+To install the development version from source:
 
 ```bash
 # Clone the repository
