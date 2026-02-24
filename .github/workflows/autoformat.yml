@@ -1,9 +1,8 @@
 name: Auto-format & Lint
 
 on:
-  # DISABLED: Manual formatting via PRs. CI linting is handled in ci.yml
-  # pull_request:
-  #   branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 concurrency:
   group: autoformat-${{ github.event.pull_request.number }}
