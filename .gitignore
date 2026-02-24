@@ -68,6 +68,8 @@ continue_rebase.py
 extract_old_readme.py
 force_push.py
 complete_rebase_result.json
+rebase_continue_result.json
+readme_comparison.json
 force_push_result.json
 OLD_README.md
 
