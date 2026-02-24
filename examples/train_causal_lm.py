@@ -86,7 +86,7 @@ def parse_args():
         type=str,
         choices=["smoke", "mellum-kstack"],
         default=None,
-        help="Apply preset configuration (smoke=quick test, mellum-kstack=Mellum-4b + KStack production). Overrides other args.",
+        help="Apply preset configuration (smoke=quick test ~2min, medium=longer test ~10min, mellum-kstack=full production). Overrides other args.",
     )
 
     model_group = parser.add_argument_group("model", "Model and tokenizer settings")
@@ -212,8 +212,18 @@ def parse_args():
     dp_group.add_argument(
         "--microbatch_size",
         type=int,
-        default=1,
-        help="Microbatch size passed to clipped_grad/adaptive_clipped_grad",
+        default=None,
+        help="Microbatch size passed to clipped_grad/adaptive_clipped_grad (None=process full batch with vmap, faster but more memory)",
+    )
+
+    # Model precision
+    model_group = parser.add_argument_group("Model Configuration")
+    model_group.add_argument(
+        "--dtype",
+        type=str,
+        default="bfloat16",
+        choices=["float32", "float16", "bfloat16"],
+        help="Model precision (default: bfloat16 for best performance/memory tradeoff)",
     )
 
     privacy_group = parser.add_argument_group(
@@ -299,14 +309,16 @@ def parse_args():
 
     # Apply preset configurations
     if args.preset == "smoke":
-        # Quick smoke test with default small model
+        # Quick smoke test with GPT-2 (~100 steps, ~2-3 minutes)
         args.model_name = "gpt2"
         args.dataset = "ag_news"
         args.dataset_text_field = "text"
-        args.num_train_samples = 5000
+        args.num_train_samples = 1000
         args.num_eval_samples = 100
         args.num_epochs = 3
-        args.batch_size = 16
+        args.batch_size = 32
+        args.eval_batch_size = 8  # Small eval batches
+        args.log_steps = 10
         args.eval_steps = 10
         args.target_epsilon = 3.0
         args.learning_rate = 1e-5
@@ -314,23 +326,32 @@ def parse_args():
         args.lora_alpha = 8
         args.max_seq_len = 512
         args.lora_budget_modules = ["c_attn", "c_proj"]
+        args.use_eager_attention = True  # Required: SDPA incompatible with vmap
+        args.dtype = "bfloat16"  # Use bfloat16 by default
         args.audit = False
     elif args.preset == "mellum-kstack":
-        # Full production Mellum-4b + KStack training
+        # Golden configuration for Mellum-4b + KStack training on H200
+        # Memory analysis: Model=7.5 GiB, Activations per example=~17 GiB (bfloat16, seq_len=1024)
+        # With microbatch_size=4: 7.5 + (4×17) = ~75 GiB peak memory usage
         args.model_name = "JetBrains/Mellum-4b-base"
         args.dataset = "JetBrains/KStack"
         args.dataset_text_field = "content"
         args.num_train_samples = 50000
         args.num_eval_samples = 1000
         args.num_epochs = 3
-        args.batch_size = 32
-        args.eval_steps = 10
+        args.batch_size = 128  # Large batch for better privacy amplification
+        args.eval_batch_size = 4  # Small batches for eval to avoid OOM
+        args.log_steps = 2  # Frequent logging
+        args.eval_steps = 10  # Regular evaluation
         args.target_epsilon = 10.0
         args.learning_rate = 5e-5
         args.lora_r = 16
         args.lora_alpha = 32
         args.max_seq_len = 1024
-        args.lora_budget_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
+        args.lora_budget_modules = ["q_proj", "v_proj"]  # Minimal LoRA for memory efficiency
+        args.use_eager_attention = True  # Required: SDPA incompatible with vmap
+        args.dtype = "bfloat16"  # Required: Cuts memory by ~50% vs FP32
+        args.microbatch_size = 4  # Required: Process 4 examples at a time (vmap limitation)
 
     return args
 
@@ -390,11 +411,11 @@ def main():
     # Auto-detect eager attention for MPS or microbatching
     # SDPA (scaled_dot_product_attention) uses C++ kernels incompatible with vmap
     # When microbatch_size > 1, we must use eager attention for gradient computation
-    use_eager = args.use_eager_attention or device.type == "mps" or args.microbatch_size > 1
+    use_eager = args.use_eager_attention or device.type == "mps" or (args.microbatch_size is not None and args.microbatch_size > 1)
 
     if device.type == "mps" and not args.use_eager_attention:
         print("Auto-enabling eager attention (required for MPS device)")
-    if args.microbatch_size > 1 and not args.use_eager_attention:
+    if args.microbatch_size is not None and args.microbatch_size > 1 and not args.use_eager_attention:
         print(f"Auto-enabling eager attention (required for microbatch_size={args.microbatch_size})")
 
     # Load model config and disable dropout
@@ -415,8 +436,21 @@ def main():
         if hasattr(config, attr):
             setattr(config, attr, 0.0)
 
+    # Map dtype string to torch dtype
+    dtype_map = {
+        "float32": torch.float32,
+        "float16": torch.float16,
+        "bfloat16": torch.bfloat16,
+    }
+    torch_dtype = dtype_map[args.dtype]
+    print(f"Using dtype: {args.dtype} ({torch_dtype})")
+
     # Load model
-    model_kwargs = {"config": config, "trust_remote_code": True}
+    model_kwargs = {
+        "config": config,
+        "torch_dtype": torch_dtype,
+        "trust_remote_code": True,
+    }
     if use_eager:
         print("Using eager attention implementation")
         model_kwargs["attn_implementation"] = "eager"
@@ -532,13 +566,17 @@ def main():
 
     # Convert to functional (only LoRA parameters)
     print("\nConverting to functional form (LoRA parameters only)...")
+    print("  (This may take 1-2 minutes for large models...)")
+    import time
+    start_time = time.time()
     fmodel, trainable_params, frozen_params = make_functional(
         model,
         disable_autograd_tracking=True,
         partition_trainable=True,
     )
     param_names = list(trainable_params.keys())
-    print(f"Trainable parameters: {len(param_names)}")
+    elapsed = time.time() - start_time
+    print(f"Trainable parameters: {len(param_names)} (took {elapsed:.1f}s)")
 
     def merged_params(trainable):
         return {**frozen_params, **trainable}
@@ -612,6 +650,13 @@ def main():
     # Calibrate noise multiplier from target privacy budget
     # sample_rate already computed above
     total_steps = args.num_epochs * expected_steps_per_epoch
+    print(f"\nCalibrating privacy parameters...")
+    print(f"  Total steps: {total_steps}")
+    print(f"  Sample rate: {sample_rate:.6f}")
+    print(f"  Target: ε={args.target_epsilon}, δ={args.target_delta}")
+    print(f"  (This may take 1-3 minutes...)")
+
+    start_time = time.time()
     budget = cal.epsilon_budget(args.target_epsilon, delta=args.target_delta)
     calibration = cal.calibrate(
         budget,
@@ -621,8 +666,9 @@ def main():
         tolerance=args.calibration_tolerance,
     )
     noise_multiplier = calibration.param
+    elapsed = time.time() - start_time
 
-    print("\nCalibrated privacy parameters:")
+    print(f"\nCalibrated privacy parameters (took {elapsed:.1f}s):")
     print(
         f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.1e} | "
         f"Achieved ε≈{calibration.achieved:.3f}"
@@ -653,6 +699,7 @@ def main():
     for epoch in range(args.num_epochs):
         print(f"\nEpoch {epoch + 1}/{args.num_epochs}")
         print("-" * 80)
+        print("Creating Poisson sampler...")
 
         # Create Poisson sampler for this epoch
         epoch_sampler = PoissonSampler(
@@ -661,6 +708,7 @@ def main():
             num_iterations=expected_steps_per_epoch,
             key=fold_in(key(args.seed), epoch),
         )
+        print("Creating DataLoader...")
 
         # DataLoader with batch_sampler
         epoch_loader = DataLoader(
@@ -701,7 +749,7 @@ def main():
             # Extract metrics from aux
             avg_loss = aux.loss_values.mean().item()
             mean_grad_norm = aux.grad_norms.mean().item()
-            clipped_grad_norm_mean = aux.clipped_norms.mean().item()
+            clipped_grad_norm_mean = aux.clipped_grad_norms.mean().item()
             clip_rate = aux.clipping_rate
 
             losses.append(avg_loss)
