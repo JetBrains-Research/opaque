@@ -155,7 +155,6 @@ jobs:
     name: GPU Tests - Py${{ matrix.python-version }}
     runs-on: GPU-runner-001
     needs: [test-core]
-    if: github.event_name == 'push'
     strategy:
       fail-fast: false
       matrix:
