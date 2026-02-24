@@ -48,6 +48,13 @@ Use: `git log $(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max
 
 Format the release notes in clean, engaging Markdown suitable for GitHub Releases.
 
+**Hard requirements (do not skip):**
+- You MUST derive release notes from Git history in this run, not from pre-existing text in `CHANGELOG.md`.
+- Build an explicit commit range from the latest release tag (`v*`) to `HEAD`.
+- Categorize commits by intent (Added/Changed/Fixed/Docs/Breaking).
+- Exclude merge noise and bot-only maintenance commits unless they changed user-visible behavior.
+- Include a `Commit Evidence` section in the PR body with short SHAs and subjects used to build the notes.
+
 ### 2. Update CHANGELOG.md
 
 Prepend a new section to CHANGELOG.md:
@@ -64,6 +71,8 @@ Prepend a new section to CHANGELOG.md:
 ### Fixed
 - List bug fixes
 ```
+
+Populate this section from the commit analysis above. If an existing unreleased section conflicts with commit history, prefer commit history and update entries accordingly.
 
 ### 3. Update Installation Documentation
 
