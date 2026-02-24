@@ -25,6 +25,7 @@ jobs:
             arch: amd64
             runner: ubuntu-latest
             python-version: "3.11"
+            rust-tests: true
           - platform: linux
             arch: arm64
             runner: ubuntu-24.04-arm
@@ -46,6 +47,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Run Rust tests
+        if: matrix.rust-tests
         run: cargo test --lib --manifest-path packages/opaque-accounting/Cargo.toml
 
       - uses: astral-sh/setup-uv@v3
