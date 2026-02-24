@@ -7,8 +7,14 @@
 
 ## From Source
 
-!!! note
-    Opaque is not yet published to PyPI. Install from source:
+Install version `0.1.0+test` from the JetBrains Artifact Registry:
+
+```bash
+pip install opaque-dp==0.1.0+test \
+  --extra-index-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/
+```
+
+Or install from source:
 
 ```bash
 # Clone the repository
