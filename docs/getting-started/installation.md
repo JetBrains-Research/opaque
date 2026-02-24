@@ -5,10 +5,16 @@
 - Python 3.11 or 3.12
 - PyTorch 2.0 or later
 
-## From Source
+## From GCP Artifact Registry
 
-!!! note
-    Opaque is not yet published to PyPI. Install from source:
+The latest release is `v0.3.0`:
+
+```bash
+pip install opaque-dp==0.3.0 \
+  --extra-index-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/
+```
+
+## From Source
 
 ```bash
 # Clone the repository
