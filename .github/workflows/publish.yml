@@ -35,25 +35,73 @@ jobs:
       - name: Extract version from branch name
         id: version
         run: |
-          # Extract stable version from branch name.
-          # Accepts both:
-          #   - release/vX.Y.Z
-          #   - release/vX.Y.Z-<suffix>  (auto-generated uniqueness suffixes)
+          # Extract version from branch name and validate PEP 440 format
           BRANCH="${{ github.event.pull_request.head.ref }}"
-          VERSION=$(echo "$BRANCH" | sed -n 's/^release\/v\([0-9]\+\.[0-9]\+\.[0-9]\+\)\(-.*\)\?$/\1/p')
+          FULL_VERSION=$(echo "$BRANCH" | sed -n 's/^release\/v\(.*\)$/\1/p')
           
-          if [ -z "$VERSION" ]; then
+          if [ -z "$FULL_VERSION" ]; then
             echo "❌ Could not extract version from branch name: $BRANCH"
-            echo "Expected format: release/vX.Y.Z or release/vX.Y.Z-<suffix>"
+            echo "Expected format: release/vX.Y.Z or release/vX.Y.Z-pre-release"
             exit 1
           fi
           
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "📦 Publishing version: $VERSION"
+          # Validate PEP 440 and reject non-canonical branch versions.
+          # Phase 1 (release.md) is responsible for normalization.
+          FULL_VERSION="$FULL_VERSION" GITHUB_OUTPUT="$GITHUB_OUTPUT" python3 << 'PYTHON_EOF'
+          from packaging.version import Version
+          import os
+          import sys
+
+          full_version = os.environ["FULL_VERSION"]
+          github_output = os.environ["GITHUB_OUTPUT"]
+          
+          try:
+            # Parse and canonicalize according to PEP 440
+            version_obj = Version(full_version)
+            canonical = str(version_obj)
+            is_prerelease = version_obj.is_prerelease
+            
+            # Do not auto-correct in publish: fail fast on non-canonical forms.
+            if full_version != canonical:
+              print(f"❌ Non-canonical version in release branch: {full_version}")
+              print(f"Canonical PEP 440 form is: {canonical}")
+              print("Please rerun release preparation so branch/version are normalized before publishing.")
+              sys.exit(1)
+            
+            with open(github_output, "a") as f:
+              f.write(f"version={canonical}\n")
+              f.write(f"is_prerelease={str(is_prerelease).lower()}\n")
+            
+            print(f"📦 Publishing version: {canonical} (pre-release: {is_prerelease})")
+          except Exception as e:
+            print(f"❌ Invalid version format: {full_version}")
+            print(f"Error: {e}")
+            print("")
+            print("Valid examples:")
+            print("  - 1.2.3          → stable release")
+            print("  - 1.2.3rc1       → release candidate")
+            print("  - 1.2.3a1        → alpha")
+            print("  - 1.2.3b1        → beta")
+            print("  - 1.2.3.dev1     → dev version")
+            print("")
+            print("See PEP 440 for full versioning rules.")
+            sys.exit(1)
+          PYTHON_EOF
 
       - name: Set version and build wheels
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+
+          # Keep repository sources unchanged on main, but ensure release wheel metadata
+          # pins opaque-accounting to the same release version as opaque-dp.
+          sed -i -E "s/\"opaque-accounting[^\"]*\"/\"opaque-accounting==${VERSION}\"/" packages/opaque/pyproject.toml
+
+          if ! grep -q "opaque-accounting==${VERSION}" packages/opaque/pyproject.toml; then
+            echo "❌ Could not update opaque-accounting dependency spec in packages/opaque/pyproject.toml"
+            exit 1
+          fi
+
+          echo "✅ Set opaque-dp dependency to opaque-accounting==${VERSION} for release build"
           
           # Update version in both packages (temporary, not committed)
           cd packages/opaque && uv version $VERSION && uv build --wheel
@@ -106,7 +154,7 @@ jobs:
           name: opaque-dp v${{ steps.version.outputs.version }}
           body: ${{ steps.release_notes.outputs.notes }}
           draft: false
-          prerelease: false
+          prerelease: ${{ steps.version.outputs.is_prerelease }}
           files: |
             packages/opaque/dist/*.whl
             packages/opaque-accounting/dist/*.whl
