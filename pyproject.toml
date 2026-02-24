@@ -4,3 +4,50 @@ workspace.members = ["packages/opaque", "packages/opaque-accounting"]
 [tool.uv.sources]
 opaque = { workspace = true }
 opaque-accounting = { workspace = true }
+
+[dependency-groups]
+# Core development - linting, formatting, basic testing
+# Install with: uv sync --group dev
+dev = [
+  "pytest>=7.0.0",
+  "pytest-cov>=4.0.0",
+  "ruff>=0.1.0",
+  "hypothesis>=6.0.0",     # Property-based testing
+  "scipy>=1.11.0",         # Statistical tests
+]
+
+# Compatibility testing with HuggingFace ecosystem
+# Install with: uv sync --group compat
+compat = [
+  "transformers>=4.57.0",
+  "peft>=0.18.0",
+  "pytest>=7.0.0",
+  "typeguard>=4.0.0",
+]
+
+# Benchmarking against other DP libraries
+# Install with: uv sync --group benchmark
+benchmark = [
+  "opacus>=1.5.4",         # Meta's DP library
+  "torchvision>=0.24.0",   # For Opacus examples
+]
+
+# Examples and tutorials
+# Install with: uv sync --group examples
+examples = [
+  "transformers>=4.57.0",
+  "peft>=0.18.0",
+  "datasets>=2.0.0",
+  "torchopt>=0.7.3",
+  "jupyter>=1.0.0",
+  "matplotlib>=3.10.7",
+]
+
+# Documentation building
+# Install with: uv sync --group docs
+docs = [
+  "mkdocs>=1.5.0",
+  "mkdocs-material>=9.5.0",
+  "mkdocstrings[python]>=0.24.0",
+  "mkdocs-jupyter>=0.24.0",
+]

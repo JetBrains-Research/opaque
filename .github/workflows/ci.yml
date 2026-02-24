@@ -67,7 +67,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --frozen --all-packages
+        run: uv sync --frozen --group dev --all-packages
 
       - name: Run Python accounting tests
         run: |
@@ -135,7 +135,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --frozen --all-packages
+        run: uv sync --frozen --group dev --all-packages
 
       - name: Run core tests
         run: |
