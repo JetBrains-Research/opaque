@@ -268,9 +268,11 @@ def clipped_fun(
             )
             if return_aux:
                 # Build aux dict with clipping metadata
+                # IMPORTANT: Detach all tensors to prevent memory leaks from retaining
+                # computational graphs. These are monitoring values, not used for gradients.
                 aux_dict = {
-                    "grad_norms": norm.norm,
-                    "clipped_grad_norms": global_norm(clipped_value),
+                    "grad_norms": norm.norm.detach(),
+                    "clipped_grad_norms": global_norm(clipped_value).detach(),
                 }
 
                 # Extract nested values and aux from wrapped functions (e.g., grad_fn)
@@ -278,10 +280,11 @@ def clipped_fun(
                 if isinstance(aux, dict):
                     # Preserve "loss_values" from nested dict if present (e.g., loss from grad_and_value)
                     if "loss_values" in aux:
-                        aux_dict["loss_values"] = aux["loss_values"]
+                        loss_val = aux["loss_values"]
+                        aux_dict["loss_values"] = loss_val.detach() if isinstance(loss_val, torch.Tensor) else loss_val
                     else:
                         # No nested "loss_values", use function output
-                        aux_dict["loss_values"] = value
+                        aux_dict["loss_values"] = value.detach() if isinstance(value, torch.Tensor) else value
 
                     # Extract user aux from nested dict if present
                     if has_aux:
@@ -292,7 +295,7 @@ def clipped_fun(
                             aux_dict["loss_aux"] = aux
                 else:
                     # aux is not a dict (direct user aux or None)
-                    aux_dict["loss_values"] = value
+                    aux_dict["loss_values"] = value.detach() if isinstance(value, torch.Tensor) else value
                     if has_aux:
                         aux_dict["loss_aux"] = aux
 

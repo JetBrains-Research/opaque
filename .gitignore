@@ -81,3 +81,6 @@ Cargo.lock
 
 # GitHub Agentic Workflows
 .github/aw/
+
+# Weights & Biases
+wandb/

@@ -26,7 +26,7 @@ class TruncatedPoissonSampler(PoissonSampler):
         data_source: Dataset to sample from (any object with ``__len__``)
         sample_rate: Probability of including each example (0 < p ≤ 1)
         max_batch_size: Maximum batch size (caps Poisson samples)
-        num_epochs: Number of epochs to iterate over
+        num_iterations: Number of batches to yield. If None, yields batches indefinitely.
         key: RNG key for reproducibility. Use ``key()`` or ``fold_in()``.
 
     Example:
@@ -36,7 +36,7 @@ class TruncatedPoissonSampler(PoissonSampler):
         ...     dataset,
         ...     sample_rate=0.01,
         ...     max_batch_size=128,
-        ...     num_epochs=10,
+        ...     num_iterations=10,
         ...     key=key(42),
         ... )
         >>> loader = DataLoader(dataset, batch_sampler=sampler)
@@ -52,14 +52,14 @@ class TruncatedPoissonSampler(PoissonSampler):
         data_source,
         sample_rate: float,
         max_batch_size: int,
-        num_epochs: int = 1,
+        num_iterations: int | None = None,
         *,
         key: RngKey,
     ):
         super().__init__(
             data_source,
             sample_rate,
-            num_epochs,
+            num_iterations,
             key=key,
         )
 
