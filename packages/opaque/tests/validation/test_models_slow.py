@@ -20,7 +20,6 @@ peft = pytest.importorskip("peft")
 
 @pytest.mark.slow
 @pytest.mark.gpu
-@pytest.mark.integration
 class TestRealModelsSingleGPU:
     """Single-GPU validation with real pretrained weights using shared utilities."""
 

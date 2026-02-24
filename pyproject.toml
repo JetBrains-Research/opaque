@@ -53,5 +53,4 @@ docs = [
 markers = [
   "gpu: Test requires GPU (CUDA or MPS)",
   "slow: Test is slow (model loading, multi-step training)",
-  "integration: End-to-end integration test with real models",
 ]
