@@ -2,10 +2,6 @@
 
 Thank you for your interest in contributing to Opaque!
 
-**For comprehensive development documentation, see [docs/development/](docs/development/).**
-
----
-
 ## Quick Start
 
 ### Setup
@@ -21,6 +17,58 @@ uv sync
 # Verify installation
 uv run pytest
 ```
+
+---
+
+## Types of Contributions
+
+We welcome all kinds of contributions:
+
+- **Bug fixes**: Found something broken? Open an issue or submit a fix
+- **Features**: New DP mechanisms, optimization, distributed training support
+- **Documentation**: Clarifications, examples, tutorial notebooks
+- **DP validation**: Cross-validation against JAX-Privacy, numerical comparisons
+- **Performance**: Profiling, optimization, memory efficiency improvements
+- **Examples**: Real-world use cases (LoRA fine-tuning, classification, etc.)
+
+No contribution is too small!
+
+---
+
+## Repository Structure
+
+The monorepo contains two main packages:
+
+```
+packages/
+├── opaque/              # PyTorch DP-SGD library (Python)
+│   ├── src/opaque/      # Source code (clipping, noise, accounting, sampling, optimizers)
+│   └── tests/           # Test suite (111 tests, ~90% coverage)
+└── opaque-accounting/   # Privacy accounting engine (Rust + Python bindings)
+    ├── src/             # Rust implementation (PLD, mechanisms, composition)
+    └── tests/           # Rust test suite (182 tests)
+
+docs/                    # User documentation (getting-started, guides, tutorials, API)
+examples/                # Example scripts and notebooks
+```
+
+**For Python changes**: Edit `packages/opaque/src/opaque/` and add tests to `packages/opaque/tests/`
+
+**For accounting changes**: If it's just using the existing Rust API from Python, work in `packages/opaque-accounting/opaque_accounting/`. If you need to modify the Rust core, work in `packages/opaque-accounting/src/`.
+
+---
+
+## Finding Issues to Work On
+
+**Good starting points**:
+- [Issues labeled `good-first-issue`](https://github.com/JetBrains-Research/opaque/labels/good-first-issue)
+- [Issues labeled `help-wanted`](https://github.com/JetBrains-Research/opaque/labels/help-wanted)
+- [Open Discussions](https://github.com/JetBrains-Research/opaque/discussions)
+
+**Before starting**:
+1. Comment on the issue to say you're working on it (avoid duplicated effort)
+2. Ask for clarification if the requirements aren't clear
+3. Check existing tests to understand the expected behavior
 
 ---
 
@@ -42,8 +90,6 @@ Opaque follows a Test-Driven Development workflow:
 3. **Document**: Add docstrings with usage examples
 4. **Refactor**: Improve code quality and structure
 5. **Verify**: Run full test suite with coverage
-
-**See**: [Contributing Guide](docs/development/contributing.md)
 
 ---
 
@@ -192,8 +238,58 @@ uv run mkdocs build
 ### Writing Docs
 
 - **User guides**: `docs/user-guide/`
+- **Tutorials**: `docs/tutorials/`
 - **API reference**: Auto-generated from docstrings
-- **Development**: `docs/development/`
+
+---
+
+## Creating a Release
+
+When you're ready to release a new version:
+
+### Step 1: Trigger Release Preparation
+
+```bash
+# Via GitHub CLI
+gh workflow run release.md --field version=0.1.0
+
+# Or via GitHub UI: Actions → "Automated Release" → Run workflow
+```
+
+The workflow will:
+- Analyze commits since the last release
+- Generate release notes with AI assistance
+- Update version numbers in `pyproject.toml` and documentation
+- Create a Pull Request with all changes
+
+### Step 2: Review and Merge
+
+- Review the PR for accuracy
+- Verify the AI-generated release notes
+- Make any edits if needed
+- Merge the PR when ready
+
+### Step 3: Create and Push Tag
+
+Once merged, create the release tag:
+
+```bash
+git checkout main && git pull
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+### Step 4: Automatic Publishing
+
+The `publish.yml` workflow runs automatically when the tag is pushed:
+- Builds wheels for both `opaque-dp` and `opaque-accounting`
+- Publishes to GCP Artifact Registry
+- Creates a GitHub Release with notes and artifacts
+
+**Monitor the release:**
+```bash
+gh run watch
+```
 
 ---
 
@@ -201,14 +297,6 @@ uv run mkdocs build
 
 - **Questions**: Open a [Discussion](https://github.com/JetBrains-Research/opaque/discussions)
 - **Bugs**: Open an [Issue](https://github.com/JetBrains-Research/opaque/issues)
-
----
-
-## Detailed Documentation
-
-**For comprehensive guides, see:**
-
-- [Contributing Guide](docs/development/contributing.md) - Full contribution guidelines
 
 ---
 
