@@ -33,13 +33,18 @@ jobs:
         run: uv run ruff format packages/
 
       - name: Auto-fix linting issues
-        run: uv run ruff check --fix packages/ || true
+        run: uv run ruff check --fix packages/
 
       - name: Commit formatting changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "ci: auto-format Python with ruff"
           file_pattern: "packages/**/*.py"
+
+      - name: Verify no remaining issues
+        run: |
+          uv run ruff format --check packages/
+          uv run ruff check packages/
 
   format-rust:
     name: Format Rust (fmt + clippy)
@@ -61,10 +66,15 @@ jobs:
         run: cargo fmt --manifest-path packages/opaque-accounting/Cargo.toml
 
       - name: Auto-fix clippy issues
-        run: cargo clippy --manifest-path packages/opaque-accounting/Cargo.toml --fix --allow-dirty || true
+        run: cargo clippy --manifest-path packages/opaque-accounting/Cargo.toml --fix --allow-dirty --allow-staged
 
       - name: Commit formatting changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "ci: auto-format Rust with fmt + clippy"
           file_pattern: "packages/opaque-accounting/**/*.rs"
+
+      - name: Verify no remaining issues
+        run: |
+          cargo fmt --manifest-path packages/opaque-accounting/Cargo.toml -- --check
+          cargo clippy --manifest-path packages/opaque-accounting/Cargo.toml -- -D warnings
