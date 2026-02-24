@@ -59,8 +59,7 @@ from transformers import (
 
 import opaque.accounting as acc
 import opaque.auditing as auditing
-from opaque.accounting import calibration as cal
-from opaque.accounting.accountant import Accountant
+from opaque.accounting import calibration as cal, Accountant
 from opaque.clipping import adaptive_clipped_grad, clipped_grad
 from opaque.noise import gaussian_noise
 from opaque.random import key, fold_in
@@ -85,7 +84,7 @@ def parse_args():
         "--preset",
         type=str,
         choices=["smoke", "mellum-kstack"],
-        default=None,
+        default="smoke",
         help="Apply preset configuration (smoke=quick test ~2min, medium=longer test ~10min, mellum-kstack=full production). Overrides other args.",
     )
 
@@ -408,15 +407,15 @@ def main():
     # Set seed
     torch.manual_seed(args.seed)
 
-    # Auto-detect eager attention for MPS or microbatching
-    # SDPA (scaled_dot_product_attention) uses C++ kernels incompatible with vmap
-    # When microbatch_size > 1, we must use eager attention for gradient computation
-    use_eager = args.use_eager_attention or device.type == "mps" or (args.microbatch_size is not None and args.microbatch_size > 1)
+    # Force eager attention for DP-SGD training
+    # SDPA (scaled_dot_product_attention) has compatibility issues with vmap for some models
+    # TODO: Re-enable SDPA support after fixing vmap compatibility issues
+    use_eager = True
+    if not args.use_eager_attention:
+        print("Auto-enabling eager attention (required for DP-SGD with vmap)")
 
-    if device.type == "mps" and not args.use_eager_attention:
-        print("Auto-enabling eager attention (required for MPS device)")
-    if args.microbatch_size is not None and args.microbatch_size > 1 and not args.use_eager_attention:
-        print(f"Auto-enabling eager attention (required for microbatch_size={args.microbatch_size})")
+    # Legacy checks (kept for reference, but now always using eager)
+    # use_eager = args.use_eager_attention or device.type == "mps" or (args.microbatch_size is not None and args.microbatch_size > 1)
 
     # Load model config and disable dropout
     print(f"\nLoading model: {args.model_name}...")

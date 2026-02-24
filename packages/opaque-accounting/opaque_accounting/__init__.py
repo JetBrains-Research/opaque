@@ -39,6 +39,12 @@ except ImportError as e:
 
 # Base
 
+# Import submodules for re-export
+from . import accountant, amplification, calibration, composition, mechanisms, transformations
+
+# Accountant
+from opaque_accounting.accountant import Accountant
+
 # Amplification
 from opaque_accounting.amplification import (
     cyclic_poisson,
@@ -85,6 +91,15 @@ from opaque_accounting.mechanisms import (
 from opaque_accounting.transformations import adaclip
 
 __all__ = [
+    # Submodules
+    "accountant",
+    "amplification",
+    "calibration",
+    "composition",
+    "mechanisms",
+    "transformations",
+    # Accountant
+    "Accountant",
     # Discretization
     "DiscretizationConfig",
     "set_discretization",

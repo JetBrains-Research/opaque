@@ -10,14 +10,13 @@ import torch
 
 def vmap_create_causal_mask(
     config,
-    inputs_embeds: torch.Tensor,
+    input_embeds: torch.Tensor,
     attention_mask: torch.Tensor | None,
     cache_position: torch.Tensor,
     past_key_values,
     position_ids: torch.Tensor | None = None,
     or_mask_function=None,
     and_mask_function=None,
-    **kwargs,
 ) -> torch.Tensor | None:
     """vmap-compatible create_causal_mask.
 
@@ -32,14 +31,14 @@ def vmap_create_causal_mask(
     """
     # Detect if we're under vmap with batch dimension removed (keep_batch_dim=False)
     # or with batch dimension kept (keep_batch_dim=True)
-    if inputs_embeds.ndim == 2:
+    if input_embeds.ndim == 2:
         # Under vmap with keep_batch_dim=False: (seq_len, hidden_dim)
         batch_size = 1
-        seq_len = inputs_embeds.shape[0]
+        seq_len = input_embeds.shape[0]
     else:
         # Normal execution or vmap with keep_batch_dim=True: (batch, seq_len, hidden_dim)
-        batch_size = inputs_embeds.shape[0]
-        seq_len = inputs_embeds.shape[1]
+        batch_size = input_embeds.shape[0]
+        seq_len = input_embeds.shape[1]
 
     # Determine target_length (total sequence length including cache)
     past_seen_tokens = 0
@@ -53,9 +52,9 @@ def vmap_create_causal_mask(
     # Create causal mask
     causal_mask = torch.full(
         (batch_size, 1, seq_len, target_length),
-        torch.finfo(inputs_embeds.dtype).min,
-        dtype=inputs_embeds.dtype,
-        device=inputs_embeds.device,
+        torch.finfo(input_embeds.dtype).min,
+        dtype=input_embeds.dtype,
+        device=input_embeds.device,
     )
 
     # Fill the causal part (allow attention to past and current tokens)
@@ -76,7 +75,7 @@ def vmap_create_causal_mask(
                 full_mask_cond = torch.zeros(
                     (seq_len, target_length),
                     dtype=torch.bool,
-                    device=inputs_embeds.device,
+                    device=input_embeds.device,
                 )
                 full_mask_cond[:, :seq_len] = mask_cond
                 # Can attend to all past cached tokens
@@ -87,14 +86,14 @@ def vmap_create_causal_mask(
             # Just create a standard causal mask
             mask_cond = torch.tril(
                 torch.ones(
-                    (seq_len, seq_len), dtype=torch.bool, device=inputs_embeds.device
+                    (seq_len, seq_len), dtype=torch.bool, device=input_embeds.device
                 )
             )
             if target_length > seq_len:
                 full_mask_cond = torch.zeros(
                     (seq_len, target_length),
                     dtype=torch.bool,
-                    device=inputs_embeds.device,
+                    device=input_embeds.device,
                 )
                 full_mask_cond[:, :seq_len] = mask_cond
                 full_mask_cond[:, seq_len:target_length] = True
@@ -102,7 +101,7 @@ def vmap_create_causal_mask(
 
         causal_mask[..., :seq_len, :target_length] = torch.where(
             mask_cond,
-            torch.tensor(0.0, dtype=inputs_embeds.dtype, device=inputs_embeds.device),
+            torch.tensor(0.0, dtype=input_embeds.dtype, device=input_embeds.device),
             causal_mask[..., :seq_len, :target_length],
         )
     else:
@@ -121,7 +120,7 @@ def vmap_create_causal_mask(
 
         # Combine: set padding positions to -inf
         causal_mask = causal_mask.masked_fill(
-            attention_mask == 0, torch.finfo(inputs_embeds.dtype).min
+            attention_mask == 0, torch.finfo(input_embeds.dtype).min
         )
 
     return causal_mask
