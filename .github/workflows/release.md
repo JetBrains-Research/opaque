@@ -15,7 +15,7 @@ safe-outputs:
     base-branch: main
 ---
 
-# Automated Release (End-to-End)
+# Automated Release
 
 Prepare and publish version `${{ github.event.inputs.version }}` of the `opaque-dp` Python library.
 
@@ -84,9 +84,11 @@ Update `docs/getting-started/installation.md` to reference version `${{ github.e
 
 Create a Pull Request with:
 - Title: `Release v${{ github.event.inputs.version }}`
-- Branch: `release/v${{ github.event.inputs.version }}`
+- Branch: `release/v${{ github.event.inputs.version }}` (must start with this exact prefix)
 - Body: Include the generated release notes
 - Base: `main`
+
+Before creating the PR, verify there is no existing open PR whose head branch starts with `release/v${{ github.event.inputs.version }}`.
 
 The PR description should include:
 1. Generated release notes
@@ -138,7 +140,7 @@ Create GitHub Release with:
 ## Safety Checks
 
 Before proceeding:
-- ✅ Verify version follows semantic versioning (not a dev version)
+- ✅ Verify version is a stable semantic version `X.Y.Z` (no `dev`, `rc`, `alpha`, `beta`, suffixes)
 - ✅ Confirm version doesn't already exist as a git tag
 - ✅ Ensure CHANGELOG.md exists
 

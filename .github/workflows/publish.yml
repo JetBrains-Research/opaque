@@ -1,4 +1,4 @@
-name: Publish Release (Phase 2)
+name: Publish Release
 
 on:
   pull_request:
@@ -35,19 +35,16 @@ jobs:
       - name: Extract version from branch name
         id: version
         run: |
-          # Extract version from branch name (e.g., "release/v0.1.0" -> "0.1.0")
+          # Extract stable version from branch name.
+          # Accepts both:
+          #   - release/vX.Y.Z
+          #   - release/vX.Y.Z-<suffix>  (auto-generated uniqueness suffixes)
           BRANCH="${{ github.event.pull_request.head.ref }}"
-          VERSION=$(echo "$BRANCH" | sed -n 's/^release\/v\([0-9]\+\.[0-9]\+\.[0-9]\+\)$/\1/p')
+          VERSION=$(echo "$BRANCH" | sed -n 's/^release\/v\([0-9]\+\.[0-9]\+\.[0-9]\+\)\(-.*\)\?$/\1/p')
           
           if [ -z "$VERSION" ]; then
             echo "❌ Could not extract version from branch name: $BRANCH"
-            echo "Expected format: release/vX.Y.Z"
-            exit 1
-          fi
-          
-          # Verify it's not a dev version
-          if [[ "$VERSION" == *"dev"* ]]; then
-            echo "❌ Version $VERSION appears to be a dev version"
+            echo "Expected format: release/vX.Y.Z or release/vX.Y.Z-<suffix>"
             exit 1
           fi
           
