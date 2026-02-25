@@ -176,10 +176,12 @@ class AuditResult:
         eps_max: float = 20.0,
         tol: float = 1e-4,
     ) -> float:
-        """Epsilon lower bound using the one-run method from Nasr et al. (2023).
+        """Epsilon lower bound using the one-run method (Steinke et al. 2023).
 
-        Uses a likelihood-ratio test tailored for DP auditing. Generally less
-        conservative than Clopper-Pearson for the same sample size.
+        Uses a likelihood-ratio test tailored for DP auditing. For each
+        Pareto-optimal threshold, tries both positive-only guesses
+        (k+ = TP + FP, k- = 0) and two-sided guesses (k+ = TP + FP,
+        k- = TN + FN) per Algorithm 1 of the paper, and takes the best.
 
         Args:
             significance: Allowed failure probability (1 - confidence).
@@ -192,7 +194,7 @@ class AuditResult:
             Epsilon lower bound at the specified confidence level.
 
         Reference:
-            Nasr et al. (2023), https://arxiv.org/pdf/2305.08846
+            Steinke, Nasr, Jagielski (2023), https://arxiv.org/abs/2305.08846
         """
         _validate_significance(significance)
         _validate_delta(delta)
@@ -202,20 +204,38 @@ class AuditResult:
         if threshold is not None:
             tp = int(np.sum(self._in_arr >= threshold))
             fp = int(np.sum(self._out_arr >= threshold))
-            return _epsilon_one_run_search(
+            tn = int(np.sum(self._out_arr < threshold))
+
+            # Positive-only: r = TP + FP, v = TP
+            eps_pos = _epsilon_one_run_search(
                 tp + fp, tp, m, significance, delta, eps_max, tol
             )
+            # Two-sided: r = m, v = TP + TN
+            eps_both = _epsilon_one_run_search(
+                m, tp + tn, m, significance, delta, eps_max, tol
+            )
+            return max(eps_pos, eps_both)
 
-        # Bonferroni correction over all Pareto-optimal thresholds
-        sig_corrected = significance / len(self._thresholds)
+        # Bonferroni correction: divide significance by the number of
+        # hypotheses tested.  We test 2 variants per threshold (positive-only
+        # and two-sided), so the total count is 2 * num_thresholds.
+        n_thresholds = len(self._thresholds)
+        sig_corrected = significance / (2 * n_thresholds)
         best = 0.0
-        for i in range(len(self._thresholds)):
+        for i in range(n_thresholds):
             tp_i = self.n_in - self._fn_counts[i]
             fp_i = self.n_out - self._tn_counts[i]
-            eps_i = _epsilon_one_run_search(
+            tn_i = self._tn_counts[i]
+
+            # Positive-only: r = TP + FP, v = TP
+            eps_pos = _epsilon_one_run_search(
                 tp_i + fp_i, tp_i, m, sig_corrected, delta, eps_max, tol
             )
-            best = max(best, eps_i)
+            # Two-sided: r = m, v = TP + TN
+            eps_both = _epsilon_one_run_search(
+                m, tp_i + tn_i, m, sig_corrected, delta, eps_max, tol
+            )
+            best = max(best, eps_pos, eps_both)
         return best
 
     # ------------------------------------------------------------------
@@ -330,6 +350,7 @@ class AuditResult:
         *,
         significance: float = 0.05,
         delta: float = 0.0,
+        theoretical_epsilon: float | None = None,
     ) -> str:
         """Multi-line summary of all metrics.
 
@@ -338,6 +359,8 @@ class AuditResult:
         Args:
             significance: Allowed failure probability for epsilon bounds.
             delta: DP delta parameter.
+            theoretical_epsilon: If provided, display alongside empirical
+                bound for comparison.
 
         Returns:
             Formatted string with all metrics.
@@ -356,10 +379,13 @@ class AuditResult:
             eps_or = self.epsilon_one_run(significance=significance, delta=delta)
             lines.append(f"  \u03b5 (one-run):          {eps_or:.4f}")
 
+        if theoretical_epsilon is not None:
+            lines.append(f"  \u03b5 (theoretical):      {theoretical_epsilon:.4f}")
+
         lines.extend(
             [
-                f"  β @ α=0.01:           {self.beta_at(alpha=0.01):.4f}",
-                f"  β @ α=0.10:           {self.beta_at(alpha=0.1):.4f}",
+                f"  \u03b2 @ \u03b1=0.01:           {self.beta_at(alpha=0.01):.4f}",
+                f"  \u03b2 @ \u03b1=0.10:           {self.beta_at(alpha=0.1):.4f}",
                 f"  Max accuracy:         {self.max_accuracy():.4f}",
                 f"  (\u03b1={significance}, \u03b4={delta})",
             ]
@@ -413,7 +439,7 @@ class CoinFlipExperiment:
         in_mask = rng.random(len(canary_indices)) < 0.5
 
         self.num_canaries = len(canary_indices)
-        self._canary_indices = canary_indices
+        self.canary_indices = canary_indices
         self._in_mask = in_mask
         self.in_indices = canary_indices[in_mask]
         self.out_indices = canary_indices[~in_mask]
@@ -424,26 +450,32 @@ class CoinFlipExperiment:
             f"n_in={len(self.in_indices)}, n_out={len(self.out_indices)})"
         )
 
-    def train_indices(self, dataset_size: int) -> np.ndarray:
+    def train_indices(self, dataset_size: int) -> list[int]:
         """Dataset indices to use for training.
 
         Returns all indices in ``range(dataset_size)`` except the excluded
-        canaries.
+        canaries. The return type is ``list[int]`` for direct use with
+        HuggingFace ``dataset.select()``::
+
+            train_data = dataset.select(experiment.train_indices(len(dataset)))
 
         Args:
             dataset_size: Total number of examples in the full dataset.
 
         Returns:
-            Sorted array of training indices.
+            Sorted list of training indices.
         """
         excluded = set(self.out_indices.tolist())
-        return np.array([i for i in range(dataset_size) if i not in excluded])
+        return [i for i in range(dataset_size) if i not in excluded]
 
     def subset(self, dataset):
         """Return a ``torch.utils.data.Subset`` for training.
 
         Excludes canaries that were assigned to the held-out group.
         Pass the result to a ``DataLoader`` for training.
+
+        For HuggingFace datasets, prefer :meth:`train_indices` with
+        ``dataset.select()`` instead.
 
         Args:
             dataset: A PyTorch-style dataset with ``len()``.
@@ -453,22 +485,7 @@ class CoinFlipExperiment:
         """
         from torch.utils.data import Subset
 
-        return Subset(dataset, self.train_indices(len(dataset)).tolist())
-
-    def canary_subset(self, dataset):
-        """Return a ``torch.utils.data.Subset`` of canary examples only.
-
-        Useful for scoring canaries after training.
-
-        Args:
-            dataset: A PyTorch-style dataset with ``len()``.
-
-        Returns:
-            ``Subset`` containing only canary examples (in order).
-        """
-        from torch.utils.data import Subset
-
-        return Subset(dataset, self._canary_indices.tolist())
+        return Subset(dataset, self.train_indices(len(dataset)))
 
     def audit(self, scores: np.ndarray) -> AuditResult:
         """Split scores by coin flip and return an AuditResult.

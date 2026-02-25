@@ -1,18 +1,27 @@
 """Empirical privacy auditing for differential privacy.
 
-End-to-end one-run auditing (Steinke et al. 2023)::
+One-run auditing with HuggingFace integration (Steinke et al. 2023)::
 
     import opaque.auditing as auditing
     from opaque.random import key
 
-    # Start: set up canaries and coin flips
+    # 1. Setup: designate canaries and flip coins
     experiment = auditing.setup(dataset, num_canaries=1000, key=key(42))
-    train_loader = DataLoader(experiment.subset(dataset), ...)
 
-    # ... train model ...
+    # 2. Train on subset (excludes held-out canaries)
+    train_data = dataset.select(experiment.train_indices(len(dataset)))
+    # ... DP-SGD training loop ...
 
-    # End: score canaries and compute epsilon
-    audit = auditing.evaluate(experiment, loss_fn, params, dataset)
+    # 3. Score canaries and compute epsilon
+    audit = auditing.evaluate(
+        experiment,
+        per_example_loss_fn,
+        trainable_params,
+        batch_argnums=(1,),
+        dataset=dataset,
+        collate_fn=data_collator,
+        batch_unpack=lambda b: (b["input_ids"].to(device),),
+    )
     audit.epsilon_at(delta=1e-5)
     print(audit.summary())
 
@@ -34,14 +43,14 @@ from typing import Any
 import numpy as np
 
 from opaque.auditing.audit import AuditResult, CoinFlipExperiment
-from opaque.auditing.scoring import score_by_loss
+from opaque.auditing.scoring import score
 from opaque.random import RngKey, fold_in
 
 __all__ = [
     "AuditResult",
     "CoinFlipExperiment",
     "evaluate",
-    "score_by_loss",
+    "score",
     "setup",
 ]
 
@@ -59,7 +68,7 @@ def setup(
     point for one-run auditing (Steinke et al. 2023).
 
     Args:
-        dataset: A PyTorch-style dataset with ``len()``.
+        dataset: Any dataset with ``len()`` (HuggingFace or PyTorch).
         num_canaries: Number of canary examples to designate.
         key: RNG key for reproducible canary selection and coin flips.
 
@@ -72,6 +81,11 @@ def setup(
         from opaque.random import key
 
         experiment = auditing.setup(dataset, num_canaries=1000, key=key(42))
+
+        # HuggingFace datasets:
+        train_data = dataset.select(experiment.train_indices(len(dataset)))
+
+        # PyTorch datasets:
         train_data = experiment.subset(dataset)
     """
     dataset_size = len(dataset)
@@ -89,39 +103,67 @@ def setup(
 def evaluate(
     experiment: CoinFlipExperiment,
     loss_fn: Callable,
-    params: Any,
+    *args: Any,
+    batch_argnums: tuple[int, ...],
     dataset: Any,
-    *,
+    collate_fn: Callable | None = None,
+    batch_unpack: Callable | None = None,
     batch_size: int = 256,
 ) -> AuditResult:
     """Score canaries and produce audit results in one call.
 
     Computes per-example negative loss as membership score (via
-    ``torch.func.vmap``), then splits scores by coin flip.
+    ``torch.func.vmap``), then splits scores by coin flip. Uses the
+    same ``batch_argnums`` convention as :func:`~opaque.clipped_grad`.
 
     Args:
         experiment: The :class:`CoinFlipExperiment` from :func:`setup`.
-        loss_fn: Loss function with signature ``loss_fn(params, x, y) -> scalar``.
-            Must be vmap-compatible (same requirement as ``clipped_grad``).
-        params: Trained model parameters.
+        loss_fn: Per-example loss function, same as used with
+            :func:`~opaque.clipped_grad`. Must be vmap-compatible.
+        *args: Non-batched arguments to ``loss_fn`` (e.g., model parameters).
+        batch_argnums: Indices of ``loss_fn`` positional arguments that come
+            from dataset batches (same convention as ``clipped_grad``).
         dataset: The full dataset (same one passed to :func:`setup`).
+        collate_fn: Collate function for the DataLoader (e.g.,
+            ``DataCollatorForLanguageModeling``). Default: PyTorch default.
+        batch_unpack: Callable mapping a DataLoader batch to a tuple of
+            tensors, one per ``batch_argnums`` position. For example,
+            ``lambda b: (b["input_ids"].to(device),)`` for HF batches.
+            If ``None``, batches are unpacked as tuples/lists.
         batch_size: Batch size for scoring. Default: 256.
 
     Returns:
         :class:`AuditResult` with ``epsilon_at()`` defaulting to the
         ``'one_run'`` method.
 
-    Example::
+    Example (HuggingFace pattern)::
 
-        audit = auditing.evaluate(experiment, loss_fn, params, dataset)
-        audit.epsilon_at(delta=1e-5)
-        print(audit.summary())
+        audit = auditing.evaluate(
+            experiment,
+            per_example_loss_fn,
+            trainable_params,
+            batch_argnums=(1,),
+            dataset=full_dataset,
+            collate_fn=data_collator,
+            batch_unpack=lambda b: (b["input_ids"].to(device),),
+        )
+
+    Example (PyTorch (x, y) pattern)::
+
+        audit = auditing.evaluate(
+            experiment, loss_fn, params,
+            batch_argnums=(1, 2),
+            dataset=dataset,
+        )
     """
-    scores = score_by_loss(
+    scores = score(
         loss_fn,
-        params,
-        dataset,
-        experiment._canary_indices,
+        *args,
+        batch_argnums=batch_argnums,
+        dataset=dataset,
+        indices=experiment.canary_indices,
+        collate_fn=collate_fn,
+        batch_unpack=batch_unpack,
         batch_size=batch_size,
     )
     return experiment.audit(scores)

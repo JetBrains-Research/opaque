@@ -314,12 +314,13 @@ class TestCoinFlipExperiment:
         assert len(in_set & out_set) == 0
 
     def test_train_indices(self):
-        """Test train_indices excludes out canaries."""
+        """Test train_indices excludes out canaries and returns list."""
         canary_idx = np.array([5, 15, 25])
         exp = CoinFlipExperiment(canary_idx, key=key(42))
 
         train_idx = exp.train_indices(dataset_size=30)
-        train_set = set(train_idx.tolist())
+        assert isinstance(train_idx, list)
+        train_set = set(train_idx)
 
         # Out canaries must not be in training set
         for idx in exp.out_indices:
@@ -415,20 +416,6 @@ class TestCoinFlipExperiment:
         for idx in exp.in_indices:
             assert idx in sub_indices
 
-    def test_canary_subset(self):
-        """Test canary_subset() returns only canary examples."""
-        import torch
-        from torch.utils.data import TensorDataset
-
-        dataset = TensorDataset(torch.arange(50), torch.arange(50))
-        canary_idx = np.array([5, 15, 25, 35, 45])
-        exp = CoinFlipExperiment(canary_idx, key=key(42))
-
-        sub = exp.canary_subset(dataset)
-        assert len(sub) == 5
-        assert sub.indices == canary_idx.tolist()
-
-
 class TestAuditResultRepr:
     """Tests for AuditResult __repr__ and summary."""
 
@@ -474,6 +461,19 @@ class TestAuditResultRepr:
         s = result.summary(significance=0.01, delta=1e-5)
         assert "\u03b1=0.01" in s
         assert "\u03b4=1e-05" in s
+
+    def test_summary_theoretical_epsilon(self):
+        """Test summary includes theoretical epsilon when provided."""
+        result = AuditResult(np.arange(50, 100), np.arange(0, 50))
+        s = result.summary(theoretical_epsilon=3.0)
+        assert "theoretical" in s
+        assert "3.0000" in s
+
+    def test_summary_without_theoretical_epsilon(self):
+        """Test summary excludes theoretical epsilon when not provided."""
+        result = AuditResult(np.arange(50, 100), np.arange(0, 50))
+        s = result.summary()
+        assert "theoretical" not in s
 
 
 class TestEpsilonAt:
@@ -540,7 +540,7 @@ class TestSetup:
         exp1 = auditing.setup(dataset, num_canaries=100, key=key(42))
         exp2 = auditing.setup(dataset, num_canaries=100, key=key(42))
 
-        np.testing.assert_array_equal(exp1._canary_indices, exp2._canary_indices)
+        np.testing.assert_array_equal(exp1.canary_indices, exp2.canary_indices)
         np.testing.assert_array_equal(exp1.in_indices, exp2.in_indices)
 
     def test_setup_different_seeds(self):
@@ -549,7 +549,7 @@ class TestSetup:
         exp1 = auditing.setup(dataset, num_canaries=100, key=key(42))
         exp2 = auditing.setup(dataset, num_canaries=100, key=key(99))
 
-        assert not np.array_equal(exp1._canary_indices, exp2._canary_indices)
+        assert not np.array_equal(exp1.canary_indices, exp2.canary_indices)
 
     def test_setup_too_many_canaries(self):
         """Test that requesting more canaries than dataset size raises."""
@@ -562,5 +562,5 @@ class TestSetup:
         dataset = list(range(500))
         exp = auditing.setup(dataset, num_canaries=100, key=key(42))
 
-        assert np.all(exp._canary_indices >= 0)
-        assert np.all(exp._canary_indices < 500)
+        assert np.all(exp.canary_indices >= 0)
+        assert np.all(exp.canary_indices < 500)

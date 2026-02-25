@@ -682,6 +682,23 @@ def main():
         mlm=False,  # False for causal LM (GPT-style)
     )
 
+    # Privacy auditing setup: designate canaries and remove held-out ones
+    experiment = None
+    full_train_dataset = train_dataset  # Keep reference before canary removal
+    if args.audit:
+        print(f"\nSetting up privacy auditing with {args.audit_canaries} canaries...")
+        experiment = auditing.setup(
+            train_dataset, num_canaries=args.audit_canaries, key=key(args.seed)
+        )
+        train_dataset = train_dataset.select(
+            experiment.train_indices(len(train_dataset))
+        )
+        print(
+            f"  Canaries: {len(experiment.in_indices)} in, "
+            f"{len(experiment.out_indices)} out (held out from training)"
+        )
+        print(f"  Training set reduced: {len(full_train_dataset)} -> {len(train_dataset)}")
+
     # Eval DataLoader (standard batching, no privacy requirements)
     eval_loader = DataLoader(
         eval_dataset,
@@ -1006,6 +1023,39 @@ def main():
     print(f"  Target delta: {args.target_delta:.1e}")
     print(f"  Noise multiplier (calibrated): {noise_multiplier:.4f}")
     print(f"  Final epsilon: {accounting.epsilon_at(args.target_delta):.3f}")
+
+    # Privacy auditing: score canaries and compute empirical epsilon
+    if args.audit and experiment is not None:
+        print("\n" + "-" * 80)
+        print("Privacy Auditing")
+        print("-" * 80)
+        print(f"Scoring {experiment.num_canaries} canaries...")
+
+        audit_result = auditing.evaluate(
+            experiment,
+            per_example_loss_fn,
+            trainable_params,
+            batch_argnums=(1,),
+            dataset=full_train_dataset,
+            collate_fn=data_collator,
+            batch_unpack=lambda b: (b["input_ids"].to(device),),
+            batch_size=args.audit_batch_size,
+        )
+        print(audit_result.summary(
+            delta=args.target_delta,
+            theoretical_epsilon=args.target_epsilon,
+        ))
+
+        if use_wandb:
+            wandb.log({
+                "audit/epsilon_one_run": audit_result.epsilon_at(
+                    delta=args.target_delta
+                ),
+                "audit/epsilon_clopper_pearson": audit_result.epsilon_clopper_pearson(
+                    delta=args.target_delta
+                ),
+                "audit/auc": audit_result.auc(),
+            }, step=global_step)
 
     # Mark training complete and print profiler summary
     profiler.mark("training_complete")

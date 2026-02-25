@@ -17,10 +17,9 @@ Opaque implements the one-run auditing method from
 3. **Train once.** Train on the resulting subset. Non-canary data is always
    included.
 4. **Score.** Compute a membership score for each canary (higher = more
-   likely a member). The default score is the loss difference between a
-   canary and a reference.
-5. **Test.** Use a binomial test to bound epsilon from the scores and the
-   coin flips.
+   likely a member). The default score is negative loss.
+5. **Test.** Use a likelihood-ratio test to bound epsilon from the scores
+   and the coin flips.
 
 The key advantage is that only one training run is needed, unlike methods
 that require training hundreds of shadow models.
@@ -36,16 +35,85 @@ from torch.utils.data import DataLoader
 experiment = auditing.setup(dataset, num_canaries=1000, key=key(42))
 
 # 2. Train on the subset (excludes held-out canaries)
+#    HuggingFace datasets:
+train_data = dataset.select(experiment.train_indices(len(dataset)))
+#    Or PyTorch datasets:
 train_data = experiment.subset(dataset)
-train_loader = DataLoader(train_data, batch_size=32)
 # ... standard DP-SGD training loop on train_data ...
 
 # 3. Evaluate: score canaries and compute epsilon
-audit = auditing.evaluate(experiment, loss_fn, params, dataset)
-print(audit.summary())
+audit = auditing.evaluate(
+    experiment,
+    per_example_loss_fn,
+    trainable_params,
+    batch_argnums=(1,),
+    dataset=dataset,
+    collate_fn=data_collator,
+    batch_unpack=lambda b: (b["input_ids"].to(device),),
+)
+print(audit.summary(delta=1e-5))
 ```
 
-## End-to-end example
+## End-to-end example with HuggingFace
+
+```python
+import torch
+from torch.utils.data import DataLoader
+from transformers import DataCollatorForLanguageModeling
+
+import opaque.auditing as auditing
+from opaque import clipped_grad, gaussian_noise, PoissonSampler, make_functional
+from opaque.random import key, fold_in
+
+# ... load and tokenize HF dataset into train_dataset ...
+# ... load model, apply LoRA, convert to functional form ...
+
+# Auditing setup
+experiment = auditing.setup(train_dataset, num_canaries=1000, key=key(42))
+full_dataset = train_dataset  # Keep reference to full dataset
+train_dataset = train_dataset.select(experiment.train_indices(len(train_dataset)))
+
+# Recalculate sample rate with reduced dataset
+sample_rate = batch_size / len(train_dataset)
+
+# Standard DP-SGD training
+sampler = PoissonSampler(train_dataset, sample_rate=sample_rate, key=key(0))
+train_loader = DataLoader(train_dataset, batch_sampler=sampler, collate_fn=data_collator)
+
+def per_example_loss_fn(params, tokens):
+    output = fmodel(merged_params(params), tokens, labels=tokens)
+    return output.loss
+
+grad_fn, clip_state = clipped_grad(
+    per_example_loss_fn, argnums=0, batch_argnums=(1,),
+    l2_clip_norm=1.0, keep_batch_dim=True,
+)
+noise_fn, noise_state = gaussian_noise(
+    stddev=1.1 * clip_state.sensitivity(), key=key(42),
+)
+
+for batch in train_loader:
+    tokens = batch["input_ids"].to(device)
+    (grads, aux), clip_state = grad_fn(params, tokens, state=clip_state)
+    noisy_grads, noise_state = noise_fn(grads, noise_state)
+    updates, opt_state = optimizer.update(noisy_grads, opt_state)
+    params = torchopt.apply_updates(params, updates)
+
+# Evaluate
+audit = auditing.evaluate(
+    experiment,
+    per_example_loss_fn,
+    params,
+    batch_argnums=(1,),
+    dataset=full_dataset,
+    collate_fn=data_collator,
+    batch_unpack=lambda b: (b["input_ids"].to(device),),
+)
+print(f"Empirical epsilon: {audit.epsilon_at(delta=1e-5):.2f}")
+print(audit.summary(delta=1e-5, theoretical_epsilon=target_epsilon))
+```
+
+## End-to-end example with PyTorch
 
 ```python
 import torch
@@ -62,7 +130,7 @@ dataset = TensorDataset(X, y)
 # Auditing setup
 experiment = auditing.setup(dataset, num_canaries=1000, key=key(42))
 
-# Training (only change: use experiment.subset)
+# Training (use experiment.subset for PyTorch datasets)
 train_data = experiment.subset(dataset)
 sampler = PoissonSampler(train_data, sample_rate=0.01, key=key(0))
 train_loader = DataLoader(train_data, batch_sampler=sampler)
@@ -86,7 +154,11 @@ for step in range(num_steps):
     params = torchopt.apply_updates(params, updates)
 
 # Evaluate
-audit = auditing.evaluate(experiment, loss_fn, params, dataset)
+audit = auditing.evaluate(
+    experiment, loss_fn, params,
+    batch_argnums=(1, 2),
+    dataset=dataset,
+)
 print(f"Empirical epsilon: {audit.epsilon_at(delta=1e-5):.2f}")
 ```
 
@@ -96,15 +168,23 @@ The default scoring function computes the per-example training loss: canaries
 that the model has memorized will have lower loss than canaries that were
 excluded. This loss-based score works well for most settings.
 
-You can provide a custom scoring function to `auditing.evaluate`:
+The `batch_argnums` parameter follows the same convention as
+`clipped_grad`, specifying which arguments of the loss function come
+from dataset batches and should be vmapped over.
+
+For HuggingFace models that produce dict-style batches, use `batch_unpack`
+to extract the relevant tensors:
 
 ```python
-def custom_score(params, x, y):
-    """Higher score = more likely a member."""
-    logits = fmodel(params, x.unsqueeze(0))
-    return -F.cross_entropy(logits, y.unsqueeze(0))
-
-audit = auditing.evaluate(experiment, custom_score, params, dataset)
+audit = auditing.evaluate(
+    experiment,
+    per_example_loss_fn,
+    params,
+    batch_argnums=(1,),
+    dataset=dataset,
+    collate_fn=data_collator,
+    batch_unpack=lambda b: (b["input_ids"].to(device),),
+)
 ```
 
 **Choosing a score:**
@@ -112,8 +192,8 @@ audit = auditing.evaluate(experiment, custom_score, params, dataset)
 | Score | When to use |
 |-------|-------------|
 | Training loss (default) | General-purpose, works well for most models |
-| Negative cross-entropy | Classification models, calibrated outputs |
-| Prediction confidence | When loss is not well-defined |
+| Loss decrease from init | Stronger signal (paper's recommended black-box score) |
+| Custom scoring | When loss is not well-defined |
 
 Loss-based scores tend to give the tightest epsilon bounds because they
 directly measure memorization signal.
@@ -145,9 +225,12 @@ construct the experiment manually.
 
 ### One-run (default)
 
-A likelihood-ratio test tailored for the coin-flip setup. Tighter than
-Clopper-Pearson but only valid when canaries were randomly included or
-excluded with probability 0.5 (the standard `auditing.setup` path).
+A likelihood-ratio test from Steinke et al. (2023), Corollary 5.4.
+For each Pareto-optimal threshold, tests both positive-only guesses
+and two-sided guesses (counting both correct inclusions and correct
+exclusions), taking the best result.  Only valid when canaries were
+randomly included or excluded with probability 0.5 (the standard
+`auditing.setup` path).
 
 ```python
 audit.epsilon_at(delta=1e-5, method="one_run")
@@ -256,7 +339,8 @@ strength but prohibitively expensive for large models.
 Opaque's one-run method ([Steinke et al. 2023](https://arxiv.org/abs/2305.08846))
 trades attack strength for efficiency: one training run gives a valid (though
 potentially looser) epsilon bound. For most practical purposes — verifying
-  that your DP implementation is correct — the one-run approach is sufficient.
+that your DP implementation is correct — the one-run approach is sufficient.
+
 ## Edge cases and limitations
 
 - **Small datasets.** With fewer than 5000 examples, designating 1000 canaries
@@ -280,6 +364,7 @@ potentially looser) epsilon bound. For most practical purposes — verifying
 - **Report confidence intervals.** Use `auc(confidence=0.95)` to quantify
   uncertainty.
 - **Compare to theoretical epsilon.** The empirical bound should be lower.
+  Use `summary(theoretical_epsilon=...)` for side-by-side display.
 - **Audit multiple metrics.** AUC and beta at low alpha are complementary
   to epsilon.
 
