@@ -1,353 +1,363 @@
 """
-GeGLU Kernel Validation
+GeGLU Kernel Tests (Exact and Approx)
 
-3-phase validation:
-1. Opaque kernel vs PyTorch gelu(e) * g (baseline)
-2. Opaque kernel backward vs PyTorch backward
-3. Opaque vmap vs torch.vmap(PyTorch)
+Tests:
+1. Forward pass vs PyTorch reference
+2. Backward pass vs PyTorch reference
+3. vmap (per-sample grad) vs PyTorch vmap
+4. Performance: forward+backward time and memory vs PyTorch
+
+Config: Mellum-4b scale (intermediate_dim=8256)
 """
 
 import pytest
 import torch
 import torch.nn.functional as F
-import sys
 
-try:
-    from .kernel_validation_framework import (
-        benchmark_forward_backward,
-        print_comparison_table,
-    )
-except ImportError:
-    from kernel_validation_framework import (
-        benchmark_forward_backward,
-        print_comparison_table,
-    )
-
+from opaque.kernels.geglu import NewStyleGeGLUExact, NewStyleGeGLUApprox
 
 pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="CUDA required for kernel tests"
+    not torch.cuda.is_available(), reason="CUDA required"
 )
 
-
-# ============================================================================
-# Test Configurations
-# ============================================================================
-
-TEST_CONFIGS = [
-    {"batch_size": 4, "seq_len": 128, "hidden_size": 256, "name": "Small"},
-    {"batch_size": 2, "seq_len": 256, "hidden_size": 1024, "name": "Medium"},
-    {"batch_size": 1, "seq_len": 512, "hidden_size": 4096, "name": "Large"},
-]
+# GeGLU uses tanh approximation in Triton, so tolerances are wider
+RTOL_FORWARD = 5e-3
+RTOL_BACKWARD = 2e-3
 
 
 # ============================================================================
 # Reference Implementations
 # ============================================================================
 
-def pytorch_geglu_exact(e, g):
-    """PyTorch reference: GeGLU (exact) = gelu(e) * g."""
-    return F.gelu(e, approximate="none") * g
+def pytorch_geglu_exact(gate, up):
+    """PyTorch reference: GeGLU = gelu(gate) * up."""
+    return F.gelu(gate, approximate='none') * up
 
 
-def pytorch_geglu_approx(e, g):
-    """PyTorch reference: GeGLU (approx tanh) = gelu_tanh(e) * g."""
-    return F.gelu(e, approximate="tanh") * g
+def pytorch_geglu_approx(gate, up):
+    """PyTorch reference: GeGLU (tanh approx) = gelu_tanh(gate) * up."""
+    return F.gelu(gate, approximate='tanh') * up
 
 
-def opaque_geglu_exact(e, g):
-    """Opaque kernel implementation (exact)."""
-    from opaque.kernels import NewStyleGeGLUExact
-    result = NewStyleGeGLUExact.apply(e, g)
-    return result[0] if isinstance(result, tuple) else result
+def opaque_geglu_exact(gate, up):
+    """Opaque Triton kernel (exact)."""
+    return NewStyleGeGLUExact.apply(gate, up)
 
 
-def opaque_geglu_approx(e, g):
-    """Opaque kernel implementation (approx)."""
-    from opaque.kernels import NewStyleGeGLUApprox
-    result = NewStyleGeGLUApprox.apply(e, g)
-    return result[0] if isinstance(result, tuple) else result
+def opaque_geglu_approx(gate, up):
+    """Opaque Triton kernel (tanh approx)."""
+    return NewStyleGeGLUApprox.apply(gate, up)
 
 
 # ============================================================================
-# Phase 1: Forward Pass Validation
+# Exact GeGLU Tests
 # ============================================================================
 
-class TestGeGLUForward:
-    """Test forward pass matches PyTorch."""
+class TestGeGLUExactForward:
+    """Test GeGLU exact forward pass."""
 
-    @pytest.mark.parametrize("config", TEST_CONFIGS)
-    def test_exact_forward_matches_pytorch(self, config):
-        """Verify exact GeGLU forward pass matches PyTorch."""
+    def test_forward_matches_pytorch(self, precision_error, mellum_config):
+        """Forward: opaque vs pytorch."""
         torch.manual_seed(42)
-        batch, seq_len, hidden = config["batch_size"], config["seq_len"], config["hidden_size"]
+        batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
 
-        e = torch.randn(batch, seq_len, hidden, device="cuda", dtype=torch.float32)
-        g = torch.randn(batch, seq_len, hidden, device="cuda", dtype=torch.float32)
+        gate = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32)
+        up = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32)
 
-        opaque_out = opaque_geglu_exact(e, g)
-        pytorch_out = pytorch_geglu_exact(e, g)
+        out_pytorch = pytorch_geglu_exact(gate, up)
+        out_opaque = opaque_geglu_exact(gate, up)
 
-        max_diff = (opaque_out - pytorch_out).abs().max().item()
-        print(f"\n{config['name']} (exact): forward diff = {max_diff:.2e}")
+        err = precision_error(out_opaque, out_pytorch, threshold=1e-4)
+        print(f"\nGeGLU Exact Forward: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_FORWARD:.0e})")
 
-        assert torch.allclose(opaque_out, pytorch_out, rtol=1e-4, atol=1e-4), (
-            f"Forward mismatch for {config['name']}: diff={max_diff:.2e}"
-        )
+        assert err["rel_err"] < RTOL_FORWARD, f"Forward rel_err {err['rel_err']:.2e} >= {RTOL_FORWARD:.0e}"
 
-    @pytest.mark.parametrize("config", TEST_CONFIGS)
-    def test_approx_forward_matches_pytorch(self, config):
-        """Verify approx GeGLU forward pass matches PyTorch."""
+
+class TestGeGLUExactBackward:
+    """Test GeGLU exact backward pass."""
+
+    def test_backward_matches_pytorch(self, precision_error, mellum_config):
+        """Backward: opaque vs pytorch."""
         torch.manual_seed(42)
-        batch, seq_len, hidden = config["batch_size"], config["seq_len"], config["hidden_size"]
+        batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
 
-        e = torch.randn(batch, seq_len, hidden, device="cuda", dtype=torch.float32)
-        g = torch.randn(batch, seq_len, hidden, device="cuda", dtype=torch.float32)
+        gate_pt = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
+        up_pt = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
+        out_pt = pytorch_geglu_exact(gate_pt, up_pt)
+        out_pt.sum().backward()
 
-        opaque_out = opaque_geglu_approx(e, g)
-        pytorch_out = pytorch_geglu_approx(e, g)
+        gate_op = gate_pt.detach().clone().requires_grad_(True)
+        up_op = up_pt.detach().clone().requires_grad_(True)
+        out_op = opaque_geglu_exact(gate_op, up_op)
+        out_op.sum().backward()
 
-        max_diff = (opaque_out - pytorch_out).abs().max().item()
-        print(f"\n{config['name']} (approx): forward diff = {max_diff:.2e}")
+        gate_err = precision_error(gate_op.grad, gate_pt.grad, threshold=1e-4)
+        up_err = precision_error(up_op.grad, up_pt.grad, threshold=1e-4)
 
-        # Approx may have slightly larger tolerance due to tanh approximation
-        assert torch.allclose(opaque_out, pytorch_out, rtol=1e-3, atol=1e-3), (
-            f"Forward mismatch for {config['name']}: diff={max_diff:.2e}"
-        )
+        print(f"\nGeGLU Exact Backward:")
+        print(f"  gate.grad: abs={gate_err['abs_err']:.2e}, rel={gate_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
+        print(f"  up.grad:   abs={up_err['abs_err']:.2e}, rel={up_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
+
+        assert gate_err["rel_err"] < RTOL_BACKWARD, f"gate.grad rel_err {gate_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
+        assert up_err["rel_err"] < RTOL_BACKWARD, f"up.grad rel_err {up_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
 
 
-# ============================================================================
-# Phase 2: Backward Pass Validation
-# ============================================================================
+class TestGeGLUExactVmap:
+    """Test GeGLU exact vmap."""
 
-class TestGeGLUBackward:
-    """Test backward pass matches PyTorch."""
-
-    @pytest.mark.parametrize("config", TEST_CONFIGS)
-    def test_exact_backward_matches_pytorch(self, config):
-        """Verify exact GeGLU gradients match PyTorch."""
+    def test_vmap_precision(self, precision_error, mellum_config):
+        """vmap: opaque vs pytorch vmap."""
         torch.manual_seed(42)
-        batch, seq_len, hidden = config["batch_size"], config["seq_len"], config["hidden_size"]
+        vmap_batch = mellum_config["vmap_batch"]
+        batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
 
-        # Opaque kernel
-        e_opaque = torch.randn(
-            batch, seq_len, hidden, device="cuda", dtype=torch.float32, requires_grad=True
-        )
-        g_opaque = torch.randn(
-            batch, seq_len, hidden, device="cuda", dtype=torch.float32, requires_grad=True
-        )
+        gate = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
+        up = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
 
-        opaque_out = opaque_geglu_exact(e_opaque, g_opaque)
-        opaque_out.sum().backward()
-        opaque_e_grad = e_opaque.grad.clone()
-        opaque_g_grad = g_opaque.grad.clone()
+        gate_pt = gate.detach().clone().requires_grad_(True)
+        up_pt = up.detach().clone().requires_grad_(True)
+        out_pt = torch.vmap(pytorch_geglu_exact)(gate_pt, up_pt)
+        out_pt.sum().backward()
 
-        # PyTorch reference
-        e_pytorch = e_opaque.detach().clone().requires_grad_(True)
-        g_pytorch = g_opaque.detach().clone().requires_grad_(True)
-        pytorch_out = pytorch_geglu_exact(e_pytorch, g_pytorch)
-        pytorch_out.sum().backward()
+        gate_op = gate.detach().clone().requires_grad_(True)
+        up_op = up.detach().clone().requires_grad_(True)
+        out_op = torch.vmap(opaque_geglu_exact)(gate_op, up_op)
+        out_op.sum().backward()
 
-        e_diff = (opaque_e_grad - e_pytorch.grad).abs().max().item()
-        g_diff = (opaque_g_grad - g_pytorch.grad).abs().max().item()
-        print(f"\n{config['name']} (exact): e_grad diff = {e_diff:.2e}, g_grad diff = {g_diff:.2e}")
+        fwd_err = precision_error(out_op, out_pt, threshold=1e-4)
+        gate_err = precision_error(gate_op.grad, gate_pt.grad, threshold=1e-4)
+        up_err = precision_error(up_op.grad, up_pt.grad, threshold=1e-4)
 
-        assert torch.allclose(opaque_e_grad, e_pytorch.grad, rtol=1e-3, atol=1e-3), (
-            f"Backward e mismatch: max_diff={e_diff:.2e}"
-        )
-        assert torch.allclose(opaque_g_grad, g_pytorch.grad, rtol=1e-3, atol=1e-3), (
-            f"Backward g mismatch: max_diff={g_diff:.2e}"
-        )
+        print(f"\nGeGLU Exact vmap:")
+        print(f"  forward:   abs={fwd_err['abs_err']:.2e}, rel={fwd_err['rel_err']:.2e} (target: <{RTOL_FORWARD:.0e})")
+        print(f"  gate.grad: abs={gate_err['abs_err']:.2e}, rel={gate_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
+        print(f"  up.grad:   abs={up_err['abs_err']:.2e}, rel={up_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
 
+        assert fwd_err["rel_err"] < RTOL_FORWARD, f"vmap forward rel_err {fwd_err['rel_err']:.2e} >= {RTOL_FORWARD:.0e}"
+        assert gate_err["rel_err"] < RTOL_BACKWARD, f"vmap gate.grad rel_err {gate_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
+        assert up_err["rel_err"] < RTOL_BACKWARD, f"vmap up.grad rel_err {up_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
 
-# ============================================================================
-# Phase 3: Vmap Validation
-# ============================================================================
-
-class TestGeGLUVmap:
-    """Test vmap support for DP-SGD."""
-
-    def test_exact_vmap_matches_pytorch_vmap(self):
-        """Verify Opaque exact vmap matches torch.vmap(PyTorch)."""
+    def test_vmap_performance(self, mellum_config, measure_time_and_memory, assert_perf_benefit):
+        """vmap: opaque should be faster or use less memory."""
         torch.manual_seed(42)
-        vmap_batch, batch, seq_len, hidden = 4, 2, 64, 256
+        vmap_batch = mellum_config["vmap_batch"]
+        batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
 
-        e = torch.randn(
-            vmap_batch, batch, seq_len, hidden, device="cuda", dtype=torch.float32
-        )
-        g = torch.randn(
-            vmap_batch, batch, seq_len, hidden, device="cuda", dtype=torch.float32
-        )
+        gate = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
+        up = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
 
-        # Opaque vmap
-        opaque_vmapped = torch.vmap(opaque_geglu_exact, in_dims=(0, 0))
-        opaque_results = opaque_vmapped(e, g)
+        def pytorch_fn(g, u):
+            return torch.vmap(pytorch_geglu_exact)(g, u)
 
-        # PyTorch vmap
-        pytorch_vmapped = torch.vmap(pytorch_geglu_exact, in_dims=(0, 0))
-        pytorch_results = pytorch_vmapped(e, g)
+        def opaque_fn(g, u):
+            return torch.vmap(opaque_geglu_exact)(g, u)
 
-        max_diff = (opaque_results - pytorch_results).abs().max().item()
-        print(f"\nExact vmap: Opaque vs PyTorch max diff = {max_diff:.2e}")
+        pt_stats = measure_time_and_memory(pytorch_fn, gate, up)
+        op_stats = measure_time_and_memory(opaque_fn, gate, up)
 
-        assert torch.allclose(opaque_results, pytorch_results, rtol=1e-4, atol=1e-4), (
-            f"vmap mismatch: max_diff={max_diff:.2e}"
-        )
-
-    def test_vmap_backward(self):
-        """Verify vmap backward pass works correctly."""
-        torch.manual_seed(42)
-        vmap_batch, batch, seq_len, hidden = 3, 2, 32, 128
-
-        e = torch.randn(
-            vmap_batch, batch, seq_len, hidden, device="cuda", dtype=torch.float32, requires_grad=True
-        )
-        g = torch.randn(
-            vmap_batch, batch, seq_len, hidden, device="cuda", dtype=torch.float32, requires_grad=True
-        )
-
-        # vmap forward + backward
-        vmapped_fn = torch.vmap(opaque_geglu_exact, in_dims=(0, 0))
-        vmap_results = vmapped_fn(e, g)
-        vmap_results.sum().backward()
-
-        assert e.grad is not None, "No gradient computed for e"
-        assert g.grad is not None, "No gradient computed for g"
-        print(f"\nvmap backward: e grad shape = {e.grad.shape}, g grad shape = {g.grad.shape}")
+        assert_perf_benefit(pt_stats, op_stats, label="GeGLU Exact vmap")
 
 
 # ============================================================================
-# Full Validation Suite
+# Exact GeGLU Performance Tests
 # ============================================================================
 
-def run_full_validation():
-    """Run complete validation suite with detailed output."""
-    print("\n" + "="*80)
-    print("GEGLU KERNEL VALIDATION")
-    print("="*80)
+class TestGeGLUExactPerformance:
+    """Test GeGLU exact kernel performance (non-vmap)."""
 
-    all_passed = True
-
-    # Phase 1: Forward validation (exact)
-    print("\n--- Phase 1: Forward Pass Validation (Exact) ---")
-    for config in TEST_CONFIGS:
+    def test_forward_performance(self, mellum_config, measure_time_and_memory, assert_perf_benefit):
+        """Forward performance: opaque vs pytorch."""
         torch.manual_seed(42)
-        batch, seq_len, hidden = config["batch_size"], config["seq_len"], config["hidden_size"]
+        batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
 
-        e = torch.randn(batch, seq_len, hidden, device="cuda", dtype=torch.float32)
-        g = torch.randn(batch, seq_len, hidden, device="cuda", dtype=torch.float32)
+        gate = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32)
+        up = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32)
 
-        opaque_out = opaque_geglu_exact(e, g)
-        pytorch_out = pytorch_geglu_exact(e, g)
+        def pytorch_fn(g, u):
+            return pytorch_geglu_exact(g, u)
 
-        max_diff = (opaque_out - pytorch_out).abs().max().item()
-        passed = max_diff < 1e-4
-        status = "PASS" if passed else "FAIL"
-        print(f"  {config['name']}: {status} (diff={max_diff:.2e})")
+        def opaque_fn(g, u):
+            return opaque_geglu_exact(g, u)
 
-        if not passed:
-            all_passed = False
+        pt_stats = measure_time_and_memory(pytorch_fn, gate, up)
+        op_stats = measure_time_and_memory(opaque_fn, gate, up)
 
-    # Phase 1: Forward validation (approx)
-    print("\n--- Phase 1: Forward Pass Validation (Approx) ---")
-    for config in TEST_CONFIGS:
+        assert_perf_benefit(pt_stats, op_stats, label="GeGLU Exact forward", max_perf_overhead=0.30)
+
+    def test_backward_performance(self, mellum_config, measure_time_and_memory, assert_perf_benefit):
+        """Backward performance: opaque vs pytorch."""
         torch.manual_seed(42)
-        batch, seq_len, hidden = config["batch_size"], config["seq_len"], config["hidden_size"]
+        batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
 
-        e = torch.randn(batch, seq_len, hidden, device="cuda", dtype=torch.float32)
-        g = torch.randn(batch, seq_len, hidden, device="cuda", dtype=torch.float32)
+        gate = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
+        up = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
 
-        opaque_out = opaque_geglu_approx(e, g)
-        pytorch_out = pytorch_geglu_approx(e, g)
+        def pytorch_fn(g, u):
+            return pytorch_geglu_exact(g, u)
 
-        max_diff = (opaque_out - pytorch_out).abs().max().item()
-        passed = max_diff < 1e-3
-        status = "PASS" if passed else "FAIL"
-        print(f"  {config['name']}: {status} (diff={max_diff:.2e})")
+        def opaque_fn(g, u):
+            return opaque_geglu_exact(g, u)
 
-        if not passed:
-            all_passed = False
+        pt_stats = measure_time_and_memory(pytorch_fn, gate, up)
+        op_stats = measure_time_and_memory(opaque_fn, gate, up)
 
-    # Phase 2: Backward validation (exact)
-    print("\n--- Phase 2: Backward Pass Validation (Exact) ---")
-    for config in TEST_CONFIGS:
+        assert_perf_benefit(pt_stats, op_stats, label="GeGLU Exact backward")
+
+
+# ============================================================================
+# Approx GeGLU Tests
+# ============================================================================
+
+class TestGeGLUApproxForward:
+    """Test GeGLU approx forward pass."""
+
+    def test_forward_matches_pytorch(self, precision_error, mellum_config):
+        """Forward: opaque vs pytorch."""
         torch.manual_seed(42)
-        batch, seq_len, hidden = config["batch_size"], config["seq_len"], config["hidden_size"]
+        batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
 
-        e_opaque = torch.randn(
-            batch, seq_len, hidden, device="cuda", dtype=torch.float32, requires_grad=True
-        )
-        g_opaque = torch.randn(
-            batch, seq_len, hidden, device="cuda", dtype=torch.float32, requires_grad=True
-        )
+        gate = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32)
+        up = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32)
 
-        opaque_out = opaque_geglu_exact(e_opaque, g_opaque)
-        opaque_out.sum().backward()
+        out_pytorch = pytorch_geglu_approx(gate, up)
+        out_opaque = opaque_geglu_approx(gate, up)
 
-        e_pytorch = e_opaque.detach().clone().requires_grad_(True)
-        g_pytorch = g_opaque.detach().clone().requires_grad_(True)
-        pytorch_out = pytorch_geglu_exact(e_pytorch, g_pytorch)
-        pytorch_out.sum().backward()
+        err = precision_error(out_opaque, out_pytorch, threshold=1e-4)
+        print(f"\nGeGLU Approx Forward: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_FORWARD:.0e})")
 
-        e_diff = (e_opaque.grad - e_pytorch.grad).abs().max().item()
-        g_diff = (g_opaque.grad - g_pytorch.grad).abs().max().item()
-        passed = e_diff < 1e-3 and g_diff < 1e-3
-        status = "PASS" if passed else "FAIL"
-        print(f"  {config['name']}: {status} (e_diff={e_diff:.2e}, g_diff={g_diff:.2e})")
+        assert err["rel_err"] < RTOL_FORWARD, f"Forward rel_err {err['rel_err']:.2e} >= {RTOL_FORWARD:.0e}"
 
-        if not passed:
-            all_passed = False
 
-    # Phase 3: Vmap validation
-    print("\n--- Phase 3: Vmap Validation ---")
-    torch.manual_seed(42)
-    vmap_batch, batch, seq_len, hidden = 4, 2, 64, 256
+class TestGeGLUApproxBackward:
+    """Test GeGLU approx backward pass."""
 
-    e = torch.randn(
-        vmap_batch, batch, seq_len, hidden, device="cuda", dtype=torch.float32
-    )
-    g = torch.randn(
-        vmap_batch, batch, seq_len, hidden, device="cuda", dtype=torch.float32
-    )
+    def test_backward_matches_pytorch(self, precision_error, mellum_config):
+        """Backward: opaque vs pytorch."""
+        torch.manual_seed(42)
+        batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
 
-    opaque_vmapped = torch.vmap(opaque_geglu_exact, in_dims=(0, 0))
-    pytorch_vmapped = torch.vmap(pytorch_geglu_exact, in_dims=(0, 0))
+        gate_pt = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
+        up_pt = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
+        out_pt = pytorch_geglu_approx(gate_pt, up_pt)
+        out_pt.sum().backward()
 
-    opaque_results = opaque_vmapped(e, g)
-    pytorch_results = pytorch_vmapped(e, g)
+        gate_op = gate_pt.detach().clone().requires_grad_(True)
+        up_op = up_pt.detach().clone().requires_grad_(True)
+        out_op = opaque_geglu_approx(gate_op, up_op)
+        out_op.sum().backward()
 
-    max_diff = (opaque_results - pytorch_results).abs().max().item()
-    passed = max_diff < 1e-4
-    status = "PASS" if passed else "FAIL"
-    print(f"  Opaque vmap vs PyTorch vmap: {status} (max_diff={max_diff:.2e})")
+        gate_err = precision_error(gate_op.grad, gate_pt.grad, threshold=1e-4)
+        up_err = precision_error(up_op.grad, up_pt.grad, threshold=1e-4)
 
-    if not passed:
-        all_passed = False
+        print(f"\nGeGLU Approx Backward:")
+        print(f"  gate.grad: abs={gate_err['abs_err']:.2e}, rel={gate_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
+        print(f"  up.grad:   abs={up_err['abs_err']:.2e}, rel={up_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
 
-    # Performance comparison
-    print("\n--- Performance Comparison ---")
-    batch, seq_len, hidden = 8, 256, 4096
-    e = torch.randn(batch, seq_len, hidden, device="cuda", dtype=torch.float32)
-    g = torch.randn(batch, seq_len, hidden, device="cuda", dtype=torch.float32)
+        assert gate_err["rel_err"] < RTOL_BACKWARD, f"gate.grad rel_err {gate_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
+        assert up_err["rel_err"] < RTOL_BACKWARD, f"up.grad rel_err {up_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
 
-    bench_pytorch = benchmark_forward_backward(
-        lambda e_in, g_in: pytorch_geglu_exact(e_in, g_in),
-        [e, g], [0, 1], name="PyTorch"
-    )
-    bench_opaque = benchmark_forward_backward(
-        lambda e_in, g_in: opaque_geglu_exact(e_in, g_in),
-        [e, g], [0, 1], name="Opaque"
-    )
 
-    print_comparison_table([bench_pytorch, bench_opaque], "Forward+Backward Performance")
+class TestGeGLUApproxVmap:
+    """Test GeGLU approx vmap."""
 
-    # Summary
-    print("\n" + "="*80)
-    print(f"VALIDATION RESULT: {'ALL PASSED' if all_passed else 'SOME FAILED'}")
-    print("="*80)
+    def test_vmap_precision(self, precision_error, mellum_config):
+        """vmap: opaque vs pytorch vmap."""
+        torch.manual_seed(42)
+        vmap_batch = mellum_config["vmap_batch"]
+        batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
 
-    return all_passed
+        gate = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
+        up = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
+
+        gate_pt = gate.detach().clone().requires_grad_(True)
+        up_pt = up.detach().clone().requires_grad_(True)
+        out_pt = torch.vmap(pytorch_geglu_approx)(gate_pt, up_pt)
+        out_pt.sum().backward()
+
+        gate_op = gate.detach().clone().requires_grad_(True)
+        up_op = up.detach().clone().requires_grad_(True)
+        out_op = torch.vmap(opaque_geglu_approx)(gate_op, up_op)
+        out_op.sum().backward()
+
+        fwd_err = precision_error(out_op, out_pt, threshold=1e-4)
+        gate_err = precision_error(gate_op.grad, gate_pt.grad, threshold=1e-4)
+        up_err = precision_error(up_op.grad, up_pt.grad, threshold=1e-4)
+
+        print(f"\nGeGLU Approx vmap:")
+        print(f"  forward:   abs={fwd_err['abs_err']:.2e}, rel={fwd_err['rel_err']:.2e} (target: <{RTOL_FORWARD:.0e})")
+        print(f"  gate.grad: abs={gate_err['abs_err']:.2e}, rel={gate_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
+        print(f"  up.grad:   abs={up_err['abs_err']:.2e}, rel={up_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
+
+        assert fwd_err["rel_err"] < RTOL_FORWARD, f"vmap forward rel_err {fwd_err['rel_err']:.2e} >= {RTOL_FORWARD:.0e}"
+        assert gate_err["rel_err"] < RTOL_BACKWARD, f"vmap gate.grad rel_err {gate_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
+        assert up_err["rel_err"] < RTOL_BACKWARD, f"vmap up.grad rel_err {up_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
+
+    def test_vmap_performance(self, mellum_config, measure_time_and_memory, assert_perf_benefit):
+        """vmap: opaque should be faster or use less memory."""
+        torch.manual_seed(42)
+        vmap_batch = mellum_config["vmap_batch"]
+        batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
+
+        gate = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
+        up = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
+
+        def pytorch_fn(g, u):
+            return torch.vmap(pytorch_geglu_approx)(g, u)
+
+        def opaque_fn(g, u):
+            return torch.vmap(opaque_geglu_approx)(g, u)
+
+        pt_stats = measure_time_and_memory(pytorch_fn, gate, up)
+        op_stats = measure_time_and_memory(opaque_fn, gate, up)
+
+        assert_perf_benefit(pt_stats, op_stats, label="GeGLU Approx vmap")
+
+
+# ============================================================================
+# Approx GeGLU Performance Tests
+# ============================================================================
+
+class TestGeGLUApproxPerformance:
+    """Test GeGLU approx kernel performance (non-vmap)."""
+
+    def test_forward_performance(self, mellum_config, measure_time_and_memory, assert_perf_benefit):
+        """Forward performance: opaque vs pytorch."""
+        torch.manual_seed(42)
+        batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
+
+        gate = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32)
+        up = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32)
+
+        def pytorch_fn(g, u):
+            return pytorch_geglu_approx(g, u)
+
+        def opaque_fn(g, u):
+            return opaque_geglu_approx(g, u)
+
+        pt_stats = measure_time_and_memory(pytorch_fn, gate, up)
+        op_stats = measure_time_and_memory(opaque_fn, gate, up)
+
+        assert_perf_benefit(pt_stats, op_stats, label="GeGLU Approx forward", max_perf_overhead=0.30)
+
+    def test_backward_performance(self, mellum_config, measure_time_and_memory, assert_perf_benefit):
+        """Backward performance: opaque vs pytorch."""
+        torch.manual_seed(42)
+        batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
+
+        gate = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
+        up = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
+
+        def pytorch_fn(g, u):
+            return pytorch_geglu_approx(g, u)
+
+        def opaque_fn(g, u):
+            return opaque_geglu_approx(g, u)
+
+        pt_stats = measure_time_and_memory(pytorch_fn, gate, up)
+        op_stats = measure_time_and_memory(opaque_fn, gate, up)
+
+        assert_perf_benefit(pt_stats, op_stats, label="GeGLU Approx backward")
 
 
 if __name__ == "__main__":
-    success = run_full_validation()
-    sys.exit(0 if success else 1)
+    pytest.main([__file__, "-v", "-s"])

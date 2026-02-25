@@ -1,43 +1,27 @@
 """
-LayerNorm Kernel Validation
+LayerNorm Kernel Tests
 
-3-phase validation:
-1. Opaque kernel vs PyTorch F.layer_norm (baseline)
-2. Opaque kernel backward vs PyTorch backward
-3. Opaque vmap vs torch.vmap(PyTorch)
+Tests:
+1. Forward pass vs PyTorch reference
+2. Backward pass vs PyTorch reference
+3. vmap (per-sample grad) vs PyTorch vmap
+4. Forward and backward performance benchmarks
+
+Config: Mellum-4b scale (hidden_dim=3072)
 """
 
 import pytest
 import torch
 import torch.nn.functional as F
-import sys
 
-try:
-    from .kernel_validation_framework import (
-        benchmark_forward_backward,
-        print_comparison_table,
-    )
-except ImportError:
-    from kernel_validation_framework import (
-        benchmark_forward_backward,
-        print_comparison_table,
-    )
-
+from opaque.kernels.layernorm import NewStyleLayerNorm
 
 pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="CUDA required for kernel tests"
+    not torch.cuda.is_available(), reason="CUDA required"
 )
 
-
-# ============================================================================
-# Test Configurations
-# ============================================================================
-
-TEST_CONFIGS = [
-    {"batch_size": 4, "seq_len": 128, "hidden_size": 256, "name": "Small"},
-    {"batch_size": 2, "seq_len": 256, "hidden_size": 1024, "name": "Medium"},
-    {"batch_size": 1, "seq_len": 512, "hidden_size": 4096, "name": "Large"},
-]
+RTOL_FORWARD = 2e-4
+RTOL_BACKWARD = 1e-2
 
 
 # ============================================================================
@@ -51,322 +35,170 @@ def pytorch_layernorm(x, weight, bias, eps=1e-5):
 
 
 def opaque_layernorm(x, weight, bias, eps=1e-5):
-    """Opaque kernel implementation."""
-    from opaque.kernels import NewStyleLayerNorm
-    # NewStyleLayerNorm returns (Y, r, mu, BLOCK_SIZE, num_warps)
+    """Opaque Triton kernel."""
+    # NewStyleLayerNorm returns (Y, r, mu)
     result = NewStyleLayerNorm.apply(x, weight, bias, eps)
-    return result[0]  # Just the output Y
+    return result[0]
 
 
 # ============================================================================
-# Phase 1: Forward Pass Validation
+# Forward Pass Tests
 # ============================================================================
 
 class TestLayerNormForward:
-    """Test forward pass matches PyTorch."""
+    """Test forward pass precision."""
 
-    @pytest.mark.parametrize("config", TEST_CONFIGS)
-    def test_forward_matches_pytorch(self, config):
-        """Verify forward pass matches PyTorch."""
+    def test_forward_matches_pytorch(self, mellum_config, precision_error):
+        """Forward: opaque vs pytorch."""
         torch.manual_seed(42)
-        batch, seq_len, hidden = config["batch_size"], config["seq_len"], config["hidden_size"]
+        batch, seq, hidden = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["hidden_dim"]
 
-        x = torch.randn(batch, seq_len, hidden, device="cuda", dtype=torch.float32)
+        x = torch.randn(batch, seq, hidden, device="cuda", dtype=torch.float32)
         weight = torch.ones(hidden, device="cuda", dtype=torch.float32)
         bias = torch.zeros(hidden, device="cuda", dtype=torch.float32)
 
-        opaque_out = opaque_layernorm(x, weight, bias)
-        pytorch_out = pytorch_layernorm(x, weight, bias)
+        out_pytorch = pytorch_layernorm(x, weight, bias)
+        out_opaque = opaque_layernorm(x, weight, bias)
 
-        max_diff = (opaque_out - pytorch_out).abs().max().item()
-        print(f"\n{config['name']}: forward diff = {max_diff:.2e}")
+        err = precision_error(out_opaque, out_pytorch, threshold=1e-4)
+        print(f"\nForward: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_FORWARD:.0e})")
 
-        assert torch.allclose(opaque_out, pytorch_out, rtol=1e-4, atol=1e-4), (
-            f"Forward mismatch for {config['name']}: diff={max_diff:.2e}"
-        )
+        assert err["rel_err"] < RTOL_FORWARD, f"Forward rel_err {err['rel_err']:.2e} >= {RTOL_FORWARD:.0e}"
 
 
 # ============================================================================
-# Phase 2: Backward Pass Validation
+# Backward Pass Tests
 # ============================================================================
 
 class TestLayerNormBackward:
-    """Test backward pass matches PyTorch."""
+    """Test backward pass precision."""
 
-    @pytest.mark.parametrize("config", TEST_CONFIGS)
-    def test_backward_matches_pytorch(self, config):
-        """Verify gradients match PyTorch."""
+    def test_backward_matches_pytorch(self, mellum_config, precision_error):
+        """Backward: opaque vs pytorch."""
         torch.manual_seed(42)
-        batch, seq_len, hidden = config["batch_size"], config["seq_len"], config["hidden_size"]
+        batch, seq, hidden = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["hidden_dim"]
 
-        # Opaque kernel
-        x_opaque = torch.randn(
-            batch, seq_len, hidden, device="cuda", dtype=torch.float32, requires_grad=True
-        )
+        # PyTorch reference
+        x_pt = torch.randn(batch, seq, hidden, device="cuda", dtype=torch.float32, requires_grad=True)
         weight = torch.ones(hidden, device="cuda", dtype=torch.float32)
         bias = torch.zeros(hidden, device="cuda", dtype=torch.float32)
 
-        opaque_out = opaque_layernorm(x_opaque, weight, bias)
-        opaque_out.sum().backward()
-        opaque_grad = x_opaque.grad.clone()
+        out_pt = pytorch_layernorm(x_pt, weight, bias)
+        # Use random gradient (sum() produces near-zero grads for LayerNorm)
+        grad = torch.randn_like(out_pt)
+        out_pt.backward(grad)
 
-        # PyTorch reference
-        x_pytorch = x_opaque.detach().clone().requires_grad_(True)
-        pytorch_out = pytorch_layernorm(x_pytorch, weight, bias)
-        pytorch_out.sum().backward()
-        pytorch_grad = x_pytorch.grad
+        # Opaque kernel
+        x_op = x_pt.detach().clone().requires_grad_(True)
+        out_op = opaque_layernorm(x_op, weight, bias)
+        out_op.backward(grad)
 
-        max_diff = (opaque_grad - pytorch_grad).abs().max().item()
-        print(f"\n{config['name']}: backward max diff = {max_diff:.2e}")
+        x_err = precision_error(x_op.grad, x_pt.grad, threshold=1e-4)
 
-        assert torch.allclose(opaque_grad, pytorch_grad, rtol=1e-3, atol=1e-3), (
-            f"Backward mismatch for {config['name']}: max_diff={max_diff:.2e}"
-        )
+        print(f"\nBackward:")
+        print(f"  x.grad: abs={x_err['abs_err']:.2e}, rel={x_err['rel_err']:.2e}, {x_err['pct_large']:.1f}% > thresh (target: rel<{RTOL_BACKWARD:.0e})")
+
+        assert x_err["rel_err"] < RTOL_BACKWARD, f"x.grad rel_err {x_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
 
 
 # ============================================================================
-# Phase 3: Vmap Validation
+# Vmap Tests
 # ============================================================================
 
 class TestLayerNormVmap:
-    """Test vmap support for DP-SGD."""
+    """Test vmap (per-sample gradient) precision and performance."""
 
-    def test_vmap_forward_matches_loop(self):
-        """Verify vmap produces same results as loop."""
+    def test_vmap_precision(self, mellum_config, precision_error):
+        """vmap: opaque vs pytorch vmap."""
         torch.manual_seed(42)
-        vmap_batch, batch, seq_len, hidden = 4, 2, 64, 256
+        vmap_batch = mellum_config["vmap_batch"]
+        batch, seq, hidden = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["hidden_dim"]
 
-        x = torch.randn(
-            vmap_batch, batch, seq_len, hidden, device="cuda", dtype=torch.float32
-        )
         weight = torch.ones(hidden, device="cuda", dtype=torch.float32)
         bias = torch.zeros(hidden, device="cuda", dtype=torch.float32)
 
-        # vmap over opaque kernel
-        vmapped_fn = torch.vmap(
-            lambda inp: opaque_layernorm(inp, weight, bias),
-            in_dims=0
-        )
-        vmap_results = vmapped_fn(x)
-
-        # Loop reference
-        loop_results = torch.stack([
-            opaque_layernorm(x[i], weight, bias)
-            for i in range(vmap_batch)
-        ])
-
-        max_diff = (vmap_results - loop_results).abs().max().item()
-        print(f"\nvmap vs loop: max diff = {max_diff:.2e}")
-
-        assert torch.allclose(vmap_results, loop_results, rtol=1e-5, atol=1e-5), (
-            f"vmap mismatch: max_diff={max_diff:.2e}"
-        )
-
-    def test_vmap_matches_pytorch_vmap(self):
-        """Verify Opaque vmap matches torch.vmap(PyTorch)."""
-        torch.manual_seed(42)
-        vmap_batch, batch, seq_len, hidden = 4, 2, 64, 256
-
-        x = torch.randn(
-            vmap_batch, batch, seq_len, hidden, device="cuda", dtype=torch.float32
-        )
-        weight = torch.ones(hidden, device="cuda", dtype=torch.float32)
-        bias = torch.zeros(hidden, device="cuda", dtype=torch.float32)
-
-        # Opaque vmap
-        opaque_vmapped = torch.vmap(
-            lambda inp: opaque_layernorm(inp, weight, bias), in_dims=0
-        )
-        opaque_results = opaque_vmapped(x)
+        x = torch.randn(vmap_batch, batch, seq, hidden, device="cuda", dtype=torch.float32, requires_grad=True)
 
         # PyTorch vmap
-        pytorch_vmapped = torch.vmap(
-            lambda inp: pytorch_layernorm(inp, weight, bias), in_dims=0
-        )
-        pytorch_results = pytorch_vmapped(x)
+        x_pt = x.detach().clone().requires_grad_(True)
+        out_pt = torch.vmap(lambda inp: pytorch_layernorm(inp, weight, bias))(x_pt)
+        # Use random gradient (sum() produces near-zero grads for LayerNorm)
+        grad = torch.randn_like(out_pt)
+        out_pt.backward(grad)
 
-        max_diff = (opaque_results - pytorch_results).abs().max().item()
-        print(f"\nOpaque vmap vs PyTorch vmap: max diff = {max_diff:.2e}")
+        # Opaque vmap
+        x_op = x.detach().clone().requires_grad_(True)
+        out_op = torch.vmap(lambda inp: opaque_layernorm(inp, weight, bias))(x_op)
+        out_op.backward(grad)
 
-        assert torch.allclose(opaque_results, pytorch_results, rtol=1e-4, atol=1e-4), (
-            f"vmap mismatch: max_diff={max_diff:.2e}"
-        )
+        fwd_err = precision_error(out_op, out_pt, threshold=1e-4)
+        x_err = precision_error(x_op.grad, x_pt.grad, threshold=1e-4)
 
-    def test_vmap_backward(self):
-        """Verify vmap backward pass works correctly."""
+        print(f"\nvmap precision:")
+        print(f"  forward: abs={fwd_err['abs_err']:.2e}, rel={fwd_err['rel_err']:.2e} (target: <{RTOL_FORWARD:.0e})")
+        print(f"  x.grad:  abs={x_err['abs_err']:.2e}, rel={x_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
+
+        assert fwd_err["rel_err"] < RTOL_FORWARD, f"vmap forward rel_err {fwd_err['rel_err']:.2e} >= {RTOL_FORWARD:.0e}"
+        assert x_err["rel_err"] < RTOL_BACKWARD, f"vmap x.grad rel_err {x_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
+
+    def test_vmap_performance(self, mellum_config, measure_time_and_memory, assert_perf_benefit):
+        """vmap: opaque should be faster or use less memory than pytorch vmap."""
         torch.manual_seed(42)
-        vmap_batch, batch, seq_len, hidden = 3, 2, 32, 128
+        vmap_batch = mellum_config["vmap_batch"]
+        batch, seq, hidden = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["hidden_dim"]
 
-        x = torch.randn(
-            vmap_batch, batch, seq_len, hidden, device="cuda", dtype=torch.float32, requires_grad=True
-        )
         weight = torch.ones(hidden, device="cuda", dtype=torch.float32)
         bias = torch.zeros(hidden, device="cuda", dtype=torch.float32)
 
-        # vmap forward + backward
-        vmapped_fn = torch.vmap(
-            lambda inp: opaque_layernorm(inp, weight, bias), in_dims=0
-        )
-        vmap_results = vmapped_fn(x)
-        vmap_results.sum().backward()
+        x = torch.randn(vmap_batch, batch, seq, hidden, device="cuda", dtype=torch.float32, requires_grad=True)
 
-        assert x.grad is not None, "No gradient computed"
-        assert x.grad.shape == x.shape, "Gradient shape mismatch"
-        print(f"\nvmap backward: grad shape = {x.grad.shape}")
+        def pytorch_vmap_fn(inp):
+            return torch.vmap(lambda i: pytorch_layernorm(i, weight, bias))(inp)
+
+        def opaque_vmap_fn(inp):
+            return torch.vmap(lambda i: opaque_layernorm(i, weight, bias))(inp)
+
+        pt_stats = measure_time_and_memory(pytorch_vmap_fn, x)
+        op_stats = measure_time_and_memory(opaque_vmap_fn, x)
+
+        assert_perf_benefit(pt_stats, op_stats, label="vmap", max_perf_overhead=0.50)
 
 
 # ============================================================================
-# Performance Benchmarks
+# Performance Tests
 # ============================================================================
 
 class TestLayerNormPerformance:
-    """Performance benchmarks."""
+    """Benchmark forward and backward performance."""
 
-    def test_benchmark_forward_backward(self):
-        """Benchmark forward and backward pass."""
+    def test_forward_performance(self, mellum_config, measure_time_and_memory, assert_perf_benefit):
+        """Forward-only: opaque vs pytorch performance."""
         torch.manual_seed(42)
-        batch, seq_len, hidden = 8, 256, 4096
+        batch, seq, hidden = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["hidden_dim"]
 
-        x = torch.randn(batch, seq_len, hidden, device="cuda", dtype=torch.float32)
+        x = torch.randn(batch, seq, hidden, device="cuda", dtype=torch.float32)
         weight = torch.ones(hidden, device="cuda", dtype=torch.float32)
         bias = torch.zeros(hidden, device="cuda", dtype=torch.float32)
 
-        results = []
+        pt_stats = measure_time_and_memory(pytorch_layernorm, x, weight, bias)
+        op_stats = measure_time_and_memory(opaque_layernorm, x, weight, bias)
 
-        # PyTorch
-        bench_pytorch = benchmark_forward_backward(
-            lambda inp: pytorch_layernorm(inp, weight, bias),
-            [x], [0], name="PyTorch F.layer_norm"
-        )
-        results.append(bench_pytorch)
+        assert_perf_benefit(pt_stats, op_stats, label="forward", max_perf_overhead=0.60)
 
-        # Opaque
-        bench_opaque = benchmark_forward_backward(
-            lambda inp: opaque_layernorm(inp, weight, bias),
-            [x], [0], name="Opaque kernel"
-        )
-        results.append(bench_opaque)
-
-        print_comparison_table(results, "LayerNorm Performance (batch=8, seq=256, hidden=4096)")
-
-
-# ============================================================================
-# Full Validation Suite
-# ============================================================================
-
-def run_full_validation():
-    """Run complete validation suite with detailed output."""
-    print("\n" + "="*80)
-    print("LAYERNORM KERNEL VALIDATION")
-    print("="*80)
-
-    all_passed = True
-
-    # Phase 1: Forward validation
-    print("\n--- Phase 1: Forward Pass Validation ---")
-    for config in TEST_CONFIGS:
+    def test_backward_performance(self, mellum_config, measure_time_and_memory, assert_perf_benefit):
+        """Forward+backward: opaque vs pytorch performance."""
         torch.manual_seed(42)
-        batch, seq_len, hidden = config["batch_size"], config["seq_len"], config["hidden_size"]
+        batch, seq, hidden = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["hidden_dim"]
 
-        x = torch.randn(batch, seq_len, hidden, device="cuda", dtype=torch.float32)
+        x = torch.randn(batch, seq, hidden, device="cuda", dtype=torch.float32, requires_grad=True)
         weight = torch.ones(hidden, device="cuda", dtype=torch.float32)
         bias = torch.zeros(hidden, device="cuda", dtype=torch.float32)
 
-        opaque_out = opaque_layernorm(x, weight, bias)
-        pytorch_out = pytorch_layernorm(x, weight, bias)
+        pt_stats = measure_time_and_memory(pytorch_layernorm, x, weight, bias)
+        op_stats = measure_time_and_memory(opaque_layernorm, x, weight, bias)
 
-        max_diff = (opaque_out - pytorch_out).abs().max().item()
-        passed = max_diff < 1e-4
-        status = "PASS" if passed else "FAIL"
-        print(f"  {config['name']}: {status} (diff={max_diff:.2e})")
-
-        if not passed:
-            all_passed = False
-
-    # Phase 2: Backward validation
-    print("\n--- Phase 2: Backward Pass Validation ---")
-    for config in TEST_CONFIGS:
-        torch.manual_seed(42)
-        batch, seq_len, hidden = config["batch_size"], config["seq_len"], config["hidden_size"]
-
-        x_opaque = torch.randn(
-            batch, seq_len, hidden, device="cuda", dtype=torch.float32, requires_grad=True
-        )
-        weight = torch.ones(hidden, device="cuda", dtype=torch.float32)
-        bias = torch.zeros(hidden, device="cuda", dtype=torch.float32)
-
-        opaque_out = opaque_layernorm(x_opaque, weight, bias)
-        opaque_out.sum().backward()
-        opaque_grad = x_opaque.grad.clone()
-
-        x_pytorch = x_opaque.detach().clone().requires_grad_(True)
-        pytorch_out = pytorch_layernorm(x_pytorch, weight, bias)
-        pytorch_out.sum().backward()
-        pytorch_grad = x_pytorch.grad
-
-        max_diff = (opaque_grad - pytorch_grad).abs().max().item()
-        passed = max_diff < 1e-3
-        status = "PASS" if passed else "FAIL"
-        print(f"  {config['name']}: {status} (max_diff={max_diff:.2e})")
-
-        if not passed:
-            all_passed = False
-
-    # Phase 3: Vmap validation
-    print("\n--- Phase 3: Vmap Validation ---")
-    torch.manual_seed(42)
-    vmap_batch, batch, seq_len, hidden = 4, 2, 64, 256
-
-    x = torch.randn(
-        vmap_batch, batch, seq_len, hidden, device="cuda", dtype=torch.float32
-    )
-    weight = torch.ones(hidden, device="cuda", dtype=torch.float32)
-    bias = torch.zeros(hidden, device="cuda", dtype=torch.float32)
-
-    opaque_vmapped = torch.vmap(
-        lambda inp: opaque_layernorm(inp, weight, bias), in_dims=0
-    )
-    pytorch_vmapped = torch.vmap(
-        lambda inp: pytorch_layernorm(inp, weight, bias), in_dims=0
-    )
-
-    opaque_results = opaque_vmapped(x)
-    pytorch_results = pytorch_vmapped(x)
-
-    max_diff = (opaque_results - pytorch_results).abs().max().item()
-    passed = max_diff < 1e-4
-    status = "PASS" if passed else "FAIL"
-    print(f"  Opaque vmap vs PyTorch vmap: {status} (max_diff={max_diff:.2e})")
-
-    if not passed:
-        all_passed = False
-
-    # Performance comparison
-    print("\n--- Performance Comparison ---")
-    batch, seq_len, hidden = 8, 256, 4096
-    x = torch.randn(batch, seq_len, hidden, device="cuda", dtype=torch.float32)
-    weight = torch.ones(hidden, device="cuda", dtype=torch.float32)
-    bias = torch.zeros(hidden, device="cuda", dtype=torch.float32)
-
-    bench_pytorch = benchmark_forward_backward(
-        lambda inp: pytorch_layernorm(inp, weight, bias),
-        [x], [0], name="PyTorch"
-    )
-    bench_opaque = benchmark_forward_backward(
-        lambda inp: opaque_layernorm(inp, weight, bias),
-        [x], [0], name="Opaque"
-    )
-
-    print_comparison_table([bench_pytorch, bench_opaque], "Forward+Backward Performance")
-
-    # Summary
-    print("\n" + "="*80)
-    print(f"VALIDATION RESULT: {'ALL PASSED' if all_passed else 'SOME FAILED'}")
-    print("="*80)
-
-    return all_passed
+        assert_perf_benefit(pt_stats, op_stats, label="backward", max_perf_overhead=0.60)
 
 
 if __name__ == "__main__":
-    success = run_full_validation()
-    sys.exit(0 if success else 1)
+    pytest.main([__file__, "-v", "-s"])

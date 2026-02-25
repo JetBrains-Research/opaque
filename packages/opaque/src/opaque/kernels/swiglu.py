@@ -27,11 +27,13 @@ def _fg_kernel(
         offsets = block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     mask = offsets < n_elements
 
-    e_row = tl.load(e + offsets, mask=mask, other=0)
+    # Compute in float32 for precision (matching Unsloth)
+    e_row = tl.load(e + offsets, mask=mask, other=0).to(tl.float32)
     g_row = tl.load(g + offsets, mask=mask, other=0)
 
     # f = e * sigmoid(e)
     f_row = e_row * tl.sigmoid(e_row)
+    f_row = f_row.to(g_row.dtype)  # Cast back to input dtype
     # h = f * g
     h_row = f_row * g_row
 
@@ -52,9 +54,14 @@ def _DWf_DW_dfg_kernel(
     """
     SwiGLU backward pass: h = silu(e) * g = (e * sigmoid(e)) * g
 
-    Gradients:
-    - grad_g = grad_out * silu(e) = grad_out * (e * sigmoid(e))
-    - grad_e = grad_out * g * sigmoid(e) * (1 + e * (1 - sigmoid(e)))
+    Following Unsloth's exact formula:
+    - e = e.float()
+    - se = 1.0 / (1.0 + torch.exp(-e))
+    - f = (se * e).to(dtype)
+    - h = f * g
+    - df = DW * f
+    - dg = DW * g
+    - de = (dg.float() * se * (1.0 + e * (1.0 - se))).to(dtype)
     """
     block_idx = tl.program_id(0)
     if LONG_INDEXING:
@@ -64,22 +71,31 @@ def _DWf_DW_dfg_kernel(
         offsets = block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     mask = offsets < n_elements
 
-    grad_out = tl.load(DW + offsets, mask=mask, other=0)
-    e_row = tl.load(e + offsets, mask=mask, other=0)
+    DW_row = tl.load(DW + offsets, mask=mask, other=0)
+    # Compute in float32 for precision (matching Unsloth)
+    e_row = tl.load(e + offsets, mask=mask, other=0).to(tl.float32)
     g_row = tl.load(g + offsets, mask=mask, other=0)
 
+    # se = sigmoid(e) in float32
     se_row = tl.sigmoid(e_row)
-    f_row = se_row * e_row  # silu(e) = e * sigmoid(e)
+    # f = (se * e).to(dtype)
+    f_row = se_row * e_row
+    f_row = f_row.to(DW_row.dtype)
 
-    # grad_g = grad_out * silu(e)
-    dg_row = grad_out * f_row
+    # df = DW * f (this is grad_up in our convention)
+    df_row = DW_row * f_row
 
-    # grad_e = grad_out * g * sigmoid(e) * (1 + e * (1 - sigmoid(e)))
-    de_row = grad_out * g_row * se_row * (1.0 + e_row * (1.0 - se_row))
+    # dg = DW * g (intermediate for computing de)
+    dg_row = DW_row * g_row
+
+    # de = (dg.float() * se * (1.0 + e * (1.0 - se))).to(dtype)
+    de_row = dg_row.to(tl.float32) * se_row * (1.0 + e_row * (1.0 - se_row))
+    de_row = de_row.to(DW_row.dtype)
 
     # Store derivatives to output buffers
+    # de_out = grad_gate, dg_out = grad_up
     tl.store(de_out + offsets, de_row, mask=mask)
-    tl.store(dg_out + offsets, dg_row, mask=mask)
+    tl.store(dg_out + offsets, df_row, mask=mask)
 
 
 class NewStyleSwiGLU(torch.autograd.Function):
@@ -102,18 +118,17 @@ class NewStyleSwiGLU(torch.autograd.Function):
                 LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
             )
 
-        return h.reshape(original_shape), gate_flat, up_flat
+        return h.reshape(original_shape)
 
     @staticmethod
     def setup_context(ctx, inputs, output):
         gate, up = inputs
-        h, gate_flat, up_flat = output
-        ctx.save_for_backward(gate_flat, up_flat)
+        ctx.save_for_backward(gate.reshape(-1), up.reshape(-1))
         ctx.original_shape = gate.shape
-        ctx.n_elements = gate_flat.numel()
+        ctx.n_elements = gate.numel()
 
     @staticmethod
-    def backward(ctx, grad_h, grad_gate_flat, grad_up_flat):
+    def backward(ctx, grad_h):
         gate_flat, up_flat = ctx.saved_tensors
         grad_h_flat = grad_h.reshape(-1).contiguous()
         n_elements = ctx.n_elements
@@ -142,13 +157,71 @@ class NewStyleSwiGLU(torch.autograd.Function):
         if gate_bdim != 0 or up_bdim != 0:
             raise ValueError("Both gate and up should be batched at dim 0")
 
-        h, gate_flat, up_flat = NewStyleSwiGLU.apply(gate, up)
-        # Return only the output h with batch dimension 0
-        # gate_flat and up_flat are not exposed outside the Function
+        h = NewStyleSwiGLU.apply(gate, up)
         return h, gate_bdim
 
 
 def swiglu_vmap(gate, up):
     """Convenience wrapper."""
-    h, _, _ = NewStyleSwiGLU.apply(gate, up)
-    return h
+    return NewStyleSwiGLU.apply(gate, up)
+
+
+def triton_swiglu_forward(gate, up):
+    """Direct Triton SwiGLU forward: h = silu(gate) * up.
+
+    Calls the Triton kernel directly without autograd wrapper.
+    For use as a callback in LoRA_MLP.
+    """
+    original_shape = gate.shape
+    gate_flat = gate.reshape(-1)
+    up_flat = up.reshape(-1)
+    n_elements = gate_flat.numel()
+
+    h = torch.empty_like(gate_flat)
+    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
+    with torch_gpu_device(gate.device):
+        _fg_kernel[grid](
+            gate_flat, up_flat, h,
+            n_elements,
+            BLOCK_SIZE=BLOCK_SIZE,
+            LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+        )
+
+    return h.reshape(original_shape)
+
+
+def triton_swiglu_backward(grad_h, gate, up):
+    """Direct Triton SwiGLU backward.
+
+    Calls the Triton backward kernel directly without autograd wrapper.
+    For use as a callback in LoRA_MLP.
+
+    Args:
+        grad_h: Gradient of output (same shape as gate/up)
+        gate: Gate input from forward pass
+        up: Up input from forward pass
+
+    Returns:
+        (grad_gate, grad_up) tuple
+    """
+    original_shape = gate.shape
+    grad_h_flat = grad_h.reshape(-1).contiguous()
+    gate_flat = gate.reshape(-1).contiguous()
+    up_flat = up.reshape(-1).contiguous()
+    n_elements = gate_flat.numel()
+
+    grad_gate = torch.empty_like(gate_flat)
+    grad_up = torch.empty_like(up_flat)
+
+    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+    with torch_gpu_device(gate.device):
+        _DWf_DW_dfg_kernel[grid](
+            grad_h_flat, gate_flat, up_flat,
+            grad_gate, grad_up,
+            n_elements,
+            BLOCK_SIZE=BLOCK_SIZE,
+            LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+        )
+
+    return grad_gate.reshape(original_shape), grad_up.reshape(original_shape)

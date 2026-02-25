@@ -48,12 +48,14 @@ def _exact_backward_kernel(
     """
     GeGLU (exact) backward pass: h = gelu(e) * g
 
-    f = gelu(e) = 1/2 * e * (1 + erf(e/sqrt(2)))
+    Following Unsloth's formula exactly:
+    f = 1/2 * e * (1 + erf(1/sqrt(2) * e))
+    h = f * g
 
-    Gradients:
-    - grad_g = grad_out * gelu(e)
-    - grad_e = grad_out * g * gelu'(e)
-      where gelu'(e) = 1/2 * (1 + erf(e/sqrt(2))) + e/sqrt(2*pi) * exp(-e^2/2)
+    df/de = 1/2 * (1 + erf(1/sqrt(2) * e)) + 1/sqrt(2*pi) * e * exp(-1/2 * e^2)
+
+    Note: dg_out = DW * f (grad for up input)
+          de_out = DW * g * df/de (grad for gate input)
     """
     block_idx = tl.program_id(0)
     if LONG_INDEXING:
@@ -63,25 +65,31 @@ def _exact_backward_kernel(
         offsets = block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     mask = offsets < n_elements
 
-    grad_out = tl.load(DW + offsets, mask=mask, other=0).to(tl.float32)
+    DW_row = tl.load(DW + offsets, mask=mask, other=0)
     e_row = tl.load(e + offsets, mask=mask, other=0).to(tl.float32)
-    g_row = tl.load(g + offsets, mask=mask, other=0).to(tl.float32)
+    g_row = tl.load(g + offsets, mask=mask, other=0)
 
-    # Compute gelu(e)
-    cdf = 0.5 * (tl.math.erf(tl.math.rsqrt(2.0) * e_row) + 1.0)
-    f_row = cdf * e_row  # gelu(e)
+    # Break e_row away for re-use
+    # f = 1/2 * e * (1 + erf(1/sqrt(2) * e))
+    f_partial_row = 0.5 * (tl.math.erf(tl.math.rsqrt(2.0) * e_row) + 1.0)
+    f_row = f_partial_row * e_row
+    f_row = f_row.to(DW_row.dtype)
 
-    # grad_g = grad_out * gelu(e)
-    dg_row = grad_out * f_row
+    # df = DW * f (grad for up)
+    df_row = DW_row * f_row
+    # dg = DW * g (intermediate for computing de)
+    dg_row = DW_row * g_row
 
-    # grad_e = grad_out * g * gelu'(e)
-    # gelu'(e) = cdf + e/sqrt(2*pi) * exp(-e^2/2)
+    # df/de = 1/2 * (1 + erf(1/sqrt(2) * e)) + 1/sqrt(2*pi) * e * exp(-1/2 * e^2)
     t = 0.3989422804014327  # 1/sqrt(2*pi)
-    gelu_prime = cdf + t * e_row * tl.exp(-0.5 * e_row * e_row)
-    de_row = grad_out * g_row * gelu_prime
+    df_de = f_partial_row + t * e_row * tl.exp(-0.5 * e_row * e_row)
 
-    tl.store(de_out + offsets, de_row.to(de_out.dtype.element_ty), mask=mask)
-    tl.store(dg_out + offsets, dg_row.to(dg_out.dtype.element_ty), mask=mask)
+    de_row = dg_row.to(tl.float32) * df_de
+    de_row = de_row.to(DW_row.dtype)
+
+    # Store: de_out = grad_gate, dg_out = grad_up
+    tl.store(de_out + offsets, de_row, mask=mask)
+    tl.store(dg_out + offsets, df_row, mask=mask)
 
 
 class NewStyleGeGLUExact(torch.autograd.Function):
@@ -104,18 +112,17 @@ class NewStyleGeGLUExact(torch.autograd.Function):
                 LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
             )
 
-        return h.reshape(original_shape), gate_flat, up_flat
+        return h.reshape(original_shape)
 
     @staticmethod
     def setup_context(ctx, inputs, output):
         gate, up = inputs
-        h, gate_flat, up_flat = output
-        ctx.save_for_backward(gate_flat, up_flat)
+        ctx.save_for_backward(gate.reshape(-1), up.reshape(-1))
         ctx.original_shape = gate.shape
-        ctx.n_elements = gate_flat.numel()
+        ctx.n_elements = gate.numel()
 
     @staticmethod
-    def backward(ctx, grad_h, grad_gate_flat, grad_up_flat):
+    def backward(ctx, grad_h):
         gate_flat, up_flat = ctx.saved_tensors
         grad_h_flat = grad_h.reshape(-1).contiguous()
         n_elements = ctx.n_elements
@@ -142,8 +149,7 @@ class NewStyleGeGLUExact(torch.autograd.Function):
         gate_bdim, up_bdim = in_dims
         if gate_bdim != 0 or up_bdim != 0:
             raise ValueError("Both gate and up should be batched at dim 0")
-        h, gate_flat, up_flat = NewStyleGeGLUExact.apply(gate, up)
-        # Return only the output h with batch dimension 0
+        h = NewStyleGeGLUExact.apply(gate, up)
         return h, gate_bdim
 
 
@@ -185,11 +191,15 @@ def _approx_backward_kernel(
     """
     GeGLU (approx tanh) backward pass: h = gelu_tanh(e) * g
 
-    f = gelu_tanh(e) = 0.5 * e * (1 + tanh(sqrt(2/pi) * (e + 0.044715 * e^3)))
+    Following Unsloth's formula exactly:
+    f = 1/2 * e * (1 + tanh( sqrt(2/pi) * x * (1 + 0.044715 * x^2 ) ))
 
-    Gradients:
-    - grad_g = grad_out * gelu_tanh(e)
-    - grad_e = grad_out * g * gelu_tanh'(e)
+    df/de = 1/2 * [1 + tanh( sqrt(2/pi) * x * (1 + 0.044715 * x^2 ) )] +
+            1/2 * sech^2 [   sqrt(2/pi) * x * (1 + 0.044715 * x^2 )  ] *
+                       ( sqrt(2/pi) * x * (1 + 0.044715 * x^2 * 3 ) )
+
+    Note: dg_out = DW * f (grad for up input)
+          de_out = DW * g * df/de (grad for gate input)
     """
     block_idx = tl.program_id(0)
     if LONG_INDEXING:
@@ -199,31 +209,35 @@ def _approx_backward_kernel(
         offsets = block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     mask = offsets < n_elements
 
-    grad_out = tl.load(DW + offsets, mask=mask, other=0).to(tl.float32)
+    DW_row = tl.load(DW + offsets, mask=mask, other=0)
     e_row = tl.load(e + offsets, mask=mask, other=0).to(tl.float32)
-    g_row = tl.load(g + offsets, mask=mask, other=0).to(tl.float32)
+    g_row = tl.load(g + offsets, mask=mask, other=0)
 
-    s = 0.7978845608028654  # sqrt(2/pi)
-    inner = s * (e_row + 0.044715 * e_row * e_row * e_row)
-    tanh_inner = triton_tanh(inner)
-    T = 1.0 + tanh_inner
+    # See https://www.desmos.com/calculator/nqprfoni6x
+    s = 0.7978845608028654  # math.sqrt(2 / math.pi)
+    a = s * e_row  # a = sqrt(2 / pi) * x
+    b = a * 0.044715 * e_row * e_row  # b = a * 0.044715 * x^2
+    T = 1.0 + triton_tanh(a + b)
     T2 = 0.5 * T
+    # Q = 0.5 * -T * (T - 2.0) * (a + 3.0 * b)
+    Q2 = -T2 * (T - 2.0) * (a + 3.0 * b)
+    df_de = T2 + Q2  # 1/2 * (T + Q)
 
-    # f = gelu_tanh(e) = 0.5 * e * T
+    # f = 1/2 * e * (1 + tanh( sqrt(2/pi) * (x + 0.044715 * x^3 ) ))
     f_row = T2 * e_row
+    f_row = f_row.to(DW_row.dtype)
 
-    # grad_g = grad_out * gelu_tanh(e)
-    dg_row = grad_out * f_row
+    # df = DW * f (grad for up)
+    df_row = DW_row * f_row
+    # dg = DW * g (intermediate for computing de)
+    dg_row = DW_row * g_row
 
-    # gelu_tanh'(e) = 0.5 * T + 0.5 * e * sech^2(inner) * s * (1 + 3*0.044715*e^2)
-    sech2 = 1.0 - tanh_inner * tanh_inner
-    gelu_prime = T2 + 0.5 * e_row * sech2 * s * (1.0 + 3.0 * 0.044715 * e_row * e_row)
+    de_row = dg_row.to(tl.float32) * df_de
+    de_row = de_row.to(DW_row.dtype)
 
-    # grad_e = grad_out * g * gelu_tanh'(e)
-    de_row = grad_out * g_row * gelu_prime
-
-    tl.store(de_out + offsets, de_row.to(de_out.dtype.element_ty), mask=mask)
-    tl.store(dg_out + offsets, dg_row.to(dg_out.dtype.element_ty), mask=mask)
+    # Store: de_out = grad_gate, dg_out = grad_up
+    tl.store(de_out + offsets, de_row, mask=mask)
+    tl.store(dg_out + offsets, df_row, mask=mask)
 
 
 class NewStyleGeGLUApprox(torch.autograd.Function):
@@ -246,18 +260,17 @@ class NewStyleGeGLUApprox(torch.autograd.Function):
                 LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
             )
 
-        return h.reshape(original_shape), gate_flat, up_flat
+        return h.reshape(original_shape)
 
     @staticmethod
     def setup_context(ctx, inputs, output):
         gate, up = inputs
-        h, gate_flat, up_flat = output
-        ctx.save_for_backward(gate_flat, up_flat)
+        ctx.save_for_backward(gate.reshape(-1), up.reshape(-1))
         ctx.original_shape = gate.shape
-        ctx.n_elements = gate_flat.numel()
+        ctx.n_elements = gate.numel()
 
     @staticmethod
-    def backward(ctx, grad_h, grad_gate_flat, grad_up_flat):
+    def backward(ctx, grad_h):
         gate_flat, up_flat = ctx.saved_tensors
         grad_h_flat = grad_h.reshape(-1).contiguous()
         n_elements = ctx.n_elements
@@ -284,17 +297,136 @@ class NewStyleGeGLUApprox(torch.autograd.Function):
         gate_bdim, up_bdim = in_dims
         if gate_bdim != 0 or up_bdim != 0:
             raise ValueError("Both gate and up should be batched at dim 0")
-        h, gate_flat, up_flat = NewStyleGeGLUApprox.apply(gate, up)
-        # Return only the output h with batch dimension 0
+        h = NewStyleGeGLUApprox.apply(gate, up)
         return h, gate_bdim
 
 
 # Convenience wrappers
 def geglu_exact_vmap(gate, up):
-    h, _, _ = NewStyleGeGLUExact.apply(gate, up)
-    return h
+    return NewStyleGeGLUExact.apply(gate, up)
 
 
 def geglu_approx_vmap(gate, up):
-    h, _, _ = NewStyleGeGLUApprox.apply(gate, up)
-    return h
+    return NewStyleGeGLUApprox.apply(gate, up)
+
+
+def triton_geglu_exact_forward(gate, up):
+    """Direct Triton GeGLU (exact/erf) forward: h = gelu(gate) * up.
+
+    Calls the Triton kernel directly without autograd wrapper.
+    For use as a callback in LoRA_MLP.
+    """
+    original_shape = gate.shape
+    gate_flat = gate.reshape(-1)
+    up_flat = up.reshape(-1)
+    n_elements = gate_flat.numel()
+
+    h = torch.empty_like(gate_flat)
+    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
+    with torch_gpu_device(gate.device):
+        _exact_forward_kernel[grid](
+            gate_flat, up_flat, h,
+            n_elements,
+            BLOCK_SIZE=BLOCK_SIZE,
+            LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+        )
+
+    return h.reshape(original_shape)
+
+
+def triton_geglu_exact_backward(grad_h, gate, up):
+    """Direct Triton GeGLU (exact/erf) backward.
+
+    Calls the Triton backward kernel directly without autograd wrapper.
+    For use as a callback in LoRA_MLP.
+
+    Args:
+        grad_h: Gradient of output (same shape as gate/up)
+        gate: Gate input from forward pass
+        up: Up input from forward pass
+
+    Returns:
+        (grad_gate, grad_up) tuple
+    """
+    original_shape = gate.shape
+    grad_h_flat = grad_h.reshape(-1).contiguous()
+    gate_flat = gate.reshape(-1).contiguous()
+    up_flat = up.reshape(-1).contiguous()
+    n_elements = gate_flat.numel()
+
+    grad_gate = torch.empty_like(gate_flat)
+    grad_up = torch.empty_like(up_flat)
+
+    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+    with torch_gpu_device(gate.device):
+        _exact_backward_kernel[grid](
+            grad_h_flat, gate_flat, up_flat,
+            grad_gate, grad_up,
+            n_elements,
+            BLOCK_SIZE=BLOCK_SIZE,
+            LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+        )
+
+    return grad_gate.reshape(original_shape), grad_up.reshape(original_shape)
+
+
+def triton_geglu_approx_forward(gate, up):
+    """Direct Triton GeGLU (approx/tanh) forward: h = gelu_tanh(gate) * up.
+
+    Calls the Triton kernel directly without autograd wrapper.
+    For use as a callback in LoRA_MLP.
+    """
+    original_shape = gate.shape
+    gate_flat = gate.reshape(-1)
+    up_flat = up.reshape(-1)
+    n_elements = gate_flat.numel()
+
+    h = torch.empty_like(gate_flat)
+    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
+    with torch_gpu_device(gate.device):
+        _approx_forward_kernel[grid](
+            gate_flat, up_flat, h,
+            n_elements,
+            BLOCK_SIZE=BLOCK_SIZE,
+            LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+        )
+
+    return h.reshape(original_shape)
+
+
+def triton_geglu_approx_backward(grad_h, gate, up):
+    """Direct Triton GeGLU (approx/tanh) backward.
+
+    Calls the Triton backward kernel directly without autograd wrapper.
+    For use as a callback in LoRA_MLP.
+
+    Args:
+        grad_h: Gradient of output (same shape as gate/up)
+        gate: Gate input from forward pass
+        up: Up input from forward pass
+
+    Returns:
+        (grad_gate, grad_up) tuple
+    """
+    original_shape = gate.shape
+    grad_h_flat = grad_h.reshape(-1).contiguous()
+    gate_flat = gate.reshape(-1).contiguous()
+    up_flat = up.reshape(-1).contiguous()
+    n_elements = gate_flat.numel()
+
+    grad_gate = torch.empty_like(gate_flat)
+    grad_up = torch.empty_like(up_flat)
+
+    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+    with torch_gpu_device(gate.device):
+        _approx_backward_kernel[grid](
+            grad_h_flat, gate_flat, up_flat,
+            grad_gate, grad_up,
+            n_elements,
+            BLOCK_SIZE=BLOCK_SIZE,
+            LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+        )
+
+    return grad_gate.reshape(original_shape), grad_up.reshape(original_shape)

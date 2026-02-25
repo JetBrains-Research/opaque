@@ -17,7 +17,16 @@ Modules:
 
 import os
 
-from opaque import accounting, auditing, distributed, sampling
+# Lazy imports for optional dependencies
+try:
+    from opaque import accounting, auditing, distributed, sampling
+except ImportError:
+    # Optional dependencies not available - kernels will still work
+    accounting = None
+    auditing = None
+    distributed = None
+    sampling = None
+
 from opaque.clipping import (
     AdaptiveClipState,
     ClipState,

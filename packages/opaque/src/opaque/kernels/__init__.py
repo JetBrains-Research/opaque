@@ -12,12 +12,21 @@ from .rms_layernorm import RMSLayerNorm, rms_layernorm
 from .cross_entropy import NewStyleCrossEntropy, cross_entropy_vmap
 
 # Activation functions
-from .swiglu import NewStyleSwiGLU, swiglu_vmap
+from .swiglu import (
+    NewStyleSwiGLU,
+    swiglu_vmap,
+    triton_swiglu_forward,
+    triton_swiglu_backward,
+)
 from .geglu import (
     NewStyleGeGLUExact,
     NewStyleGeGLUApprox,
     geglu_exact_vmap,
     geglu_approx_vmap,
+    triton_geglu_exact_forward,
+    triton_geglu_exact_backward,
+    triton_geglu_approx_forward,
+    triton_geglu_approx_backward,
 )
 
 # Position embeddings
@@ -38,6 +47,9 @@ from .lora import (
     lora_linear_vmap,
     lora_qkv_vmap,
     lora_mlp_vmap,
+    ACTIVATION_SWIGLU,
+    ACTIVATION_GEGLU_EXACT,
+    ACTIVATION_GEGLU_APPROX,
 )
 
 __all__ = [
@@ -52,10 +64,16 @@ __all__ = [
     # Activations
     "NewStyleSwiGLU",
     "swiglu_vmap",
+    "triton_swiglu_forward",
+    "triton_swiglu_backward",
     "NewStyleGeGLUExact",
     "NewStyleGeGLUApprox",
     "geglu_exact_vmap",
     "geglu_approx_vmap",
+    "triton_geglu_exact_forward",
+    "triton_geglu_exact_backward",
+    "triton_geglu_approx_forward",
+    "triton_geglu_approx_backward",
     # Position embeddings
     "NewStyleRoPEEmbedding",
     "NewStyleRoPEEmbeddingQK",
@@ -70,4 +88,7 @@ __all__ = [
     "lora_linear_vmap",
     "lora_qkv_vmap",
     "lora_mlp_vmap",
+    "ACTIVATION_SWIGLU",
+    "ACTIVATION_GEGLU_EXACT",
+    "ACTIVATION_GEGLU_APPROX",
 ]

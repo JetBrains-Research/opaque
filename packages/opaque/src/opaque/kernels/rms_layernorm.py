@@ -85,6 +85,9 @@ def _rms_layernorm_backward(
 
     Computes gradients with respect to input and weight.
     Each program processes one row.
+
+    Following Unsloth's formula for numerical stability:
+    output = inv_var / n_cols * (n_cols * dY_W - normed * rowsum_dY_normed)
     """
     row_idx = tl.program_id(0)
     col_offsets = tl.arange(0, BLOCK_SIZE)
@@ -96,25 +99,22 @@ def _rms_layernorm_backward(
     input_ptr += row_idx * input_row_stride
     inv_var_ptr += row_idx * inv_var_row_stride
 
-    # Load saved values
+    # Load saved values in float32 for precision
     grad_output_row = tl.load(grad_output_ptr + col_offsets, mask=mask, other=0).to(tl.float32)
     input_row = tl.load(input_ptr + col_offsets, mask=mask, other=0).to(tl.float32)
     weight_row = tl.load(weight_ptr + col_offsets, mask=mask, other=0).to(tl.float32)
     inv_var = tl.load(inv_var_ptr).to(tl.float32)
 
-    # Backward pass
-    # d_output/d_input involves chain rule through normalization
+    # Compute normalized input
     normed = input_row * inv_var
 
-    # Gradient w.r.t normalized = grad_output * weight
-    grad_normed = grad_output_row * weight_row
+    # dY_W = grad_output * weight
+    dY_W = grad_output_row * weight_row
 
-    # Gradient w.r.t input (complex formula from chain rule)
-    # d_loss/d_x = (d_loss/d_norm) * d_norm/d_x
-    # where d_norm/d_x = (1/rms) * (I - (x*x.T)/(x.T*x))
-    grad_norm_mean = tl.sum(grad_normed * normed, axis=0) / n_cols
-    grad_input_row = (grad_normed - normed * grad_norm_mean) * inv_var
-    grad_input_row = grad_input_row.to(grad_output_row.dtype)
+    # Unsloth's numerically stable formula:
+    # output = inv_var / n_cols * (n_cols * dY_W - normed * rowsum_dY_normed)
+    rowsum_dY_normed = tl.sum(dY_W * normed, axis=0)
+    grad_input_row = inv_var / n_cols * (n_cols * dY_W - normed * rowsum_dY_normed)
 
     # Store gradient
     tl.store(grad_input_ptr + col_offsets, grad_input_row, mask=mask)

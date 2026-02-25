@@ -207,21 +207,24 @@ class NewStyleRoPEEmbedding(torch.autograd.Function):
                 num_warps=num_warps,
             )
 
-        return Q_out.reshape(batch, seq_len, n_heads, head_dim), cos, sin, BLOCK_SIZE, num_warps, n_groups
+        return Q_out.reshape(batch, seq_len, n_heads, head_dim)
 
     @staticmethod
     def setup_context(ctx, inputs, output):
         Q, cos, sin = inputs
-        Q_out, cos_out, sin_out, BLOCK_SIZE, num_warps, n_groups = output
-        # Don't save Q (we don't need it for backward, only cos/sin)
-        ctx.save_for_backward(cos_out, sin_out)
+        # Save cos/sin from inputs (squeezed to match what forward used)
+        ctx.save_for_backward(cos.squeeze(), sin.squeeze())
+        # Recompute metadata from input shapes
+        batch, seq_len, n_heads, head_dim = Q.shape
+        BLOCK_SIZE, num_warps = calculate_settings(head_dim // 2)
+        div, mod = divmod(n_heads, ROPE_GROUP_SIZE)
         ctx.BLOCK_SIZE = BLOCK_SIZE
         ctx.num_warps = num_warps
-        ctx.n_groups = n_groups
+        ctx.n_groups = div + (mod != 0)
         ctx.shape = Q.shape
 
     @staticmethod
-    def backward(ctx, grad_Q, grad_cos, grad_sin, grad_bs, grad_nw, grad_ng):
+    def backward(ctx, grad_Q):
         cos, sin = ctx.saved_tensors
         batch, seq_len, n_heads, head_dim = ctx.shape
 
@@ -267,13 +270,12 @@ class NewStyleRoPEEmbedding(torch.autograd.Function):
         Q_merged = Q.reshape(-1, *Q.shape[2:])  # (vmap_batch * batch, seq_len, n_heads, head_dim)
 
         # Apply RoPE to merged tensor
-        Q_rot, cos_out, sin_out, bs, nw, ng = NewStyleRoPEEmbedding.apply(Q_merged, cos, sin)
+        Q_rot = NewStyleRoPEEmbedding.apply(Q_merged, cos, sin)
 
         # Reshape back to original vmap shape
         Q_rot = Q_rot.reshape(original_shape)
 
-        # Return with proper batch dimensions
-        return (Q_rot, cos_out, sin_out, bs, nw, ng), (Q_bdim, None, None, None, None, None)
+        return Q_rot, Q_bdim
 
 
 class NewStyleRoPEEmbeddingQK(torch.autograd.Function):
@@ -341,14 +343,20 @@ class NewStyleRoPEEmbeddingQK(torch.autograd.Function):
                 num_warps=num_warps,
             )
 
-        return Q_out, K_out, cos, sin, rope_ptr if has_indices else None, BLOCK_SIZE, num_warps, has_indices
+        return Q_out, K_out
 
     @staticmethod
     def setup_context(ctx, inputs, output):
         Q, K, cos, sin, rope_indices = inputs
-        Q_out, K_out, cos_out, sin_out, rope_ptr, BLOCK_SIZE, num_warps, has_indices = output
 
-        ctx.save_for_backward(cos_out, sin_out, rope_ptr if has_indices else torch.empty(0))
+        has_indices = rope_indices is not None
+        if has_indices:
+            rope_ptr = rope_indices.reshape(-1).to(dtype=torch.int32, device=Q.device)
+        else:
+            rope_ptr = cos.new_empty(1, dtype=torch.int32)
+
+        ctx.save_for_backward(cos.squeeze(), sin.squeeze(), rope_ptr if has_indices else torch.empty(0, device=Q.device))
+        BLOCK_SIZE, num_warps = calculate_settings(Q.shape[-1])
         ctx.BLOCK_SIZE = BLOCK_SIZE
         ctx.num_warps = num_warps
         ctx.has_indices = has_indices
@@ -357,7 +365,7 @@ class NewStyleRoPEEmbeddingQK(torch.autograd.Function):
         ctx.n_heads_K = K.shape[1]
 
     @staticmethod
-    def backward(ctx, grad_Q, grad_K, grad_cos, grad_sin, grad_rope, grad_bs, grad_nw, grad_hi):
+    def backward(ctx, grad_Q, grad_K):
         cos, sin, rope_ptr = ctx.saved_tensors
         batch, _, _, head_dim = grad_Q.shape
 
@@ -416,15 +424,13 @@ class NewStyleRoPEEmbeddingQK(torch.autograd.Function):
         Q_merged = Q.reshape(-1, *Q.shape[2:])
         K_merged = K.reshape(-1, *K.shape[2:])
 
-        result = NewStyleRoPEEmbeddingQK.apply(Q_merged, K_merged, cos, sin, rope_indices)
-        Q_rot, K_rot = result[0], result[1]
+        Q_rot, K_rot = NewStyleRoPEEmbeddingQK.apply(Q_merged, K_merged, cos, sin, rope_indices)
 
         # Reshape back
         Q_rot = Q_rot.reshape(original_Q_shape)
         K_rot = K_rot.reshape(original_K_shape)
 
-        return (Q_rot, K_rot, result[2], result[3], result[4], result[5], result[6], result[7]), \
-               (Q_bdim, K_bdim, None, None, None, None, None, None)
+        return (Q_rot, K_rot), (Q_bdim, K_bdim)
 
 
 class NewStyleSlowRoPEEmbedding(torch.autograd.Function):
@@ -457,16 +463,15 @@ class NewStyleSlowRoPEEmbedding(torch.autograd.Function):
         RH_Q = torch.cat((-Q[..., half:], Q[..., :half]), dim=-1)
         Q_out = Q_out * cos + RH_Q * sin
 
-        return Q_out, cos, sin
+        return Q_out
 
     @staticmethod
     def setup_context(ctx, inputs, output):
         Q, cos, sin, position_ids = inputs
-        Q_out, cos_out, sin_out = output
-        ctx.save_for_backward(cos_out, sin_out)
+        ctx.save_for_backward(cos, sin)
 
     @staticmethod
-    def backward(ctx, grad_Q, grad_cos, grad_sin):
+    def backward(ctx, grad_Q):
         cos, sin = ctx.saved_tensors
 
         half = grad_Q.shape[-1] // 2
@@ -484,7 +489,7 @@ class NewStyleSlowRoPEEmbedding(torch.autograd.Function):
             raise ValueError(f"Q should be batched at dim 0, got {Q_bdim}")
 
         output = NewStyleSlowRoPEEmbedding.apply(Q, cos, sin, position_ids)
-        return output, (Q_bdim, None, None)
+        return output, Q_bdim
 
 
 # ============================================================================
@@ -502,8 +507,7 @@ def rope_embedding_vmap(Q, cos, sin):
     Returns:
         Q_rot: Rotated tensor, same shape as input
     """
-    result = NewStyleRoPEEmbedding.apply(Q, cos, sin)
-    return result[0]  # Return only Q_rot, not the auxiliary outputs
+    return NewStyleRoPEEmbedding.apply(Q, cos, sin)
 
 
 def rope_embedding_qk_vmap(Q, K, cos, sin, rope_indices=None):
@@ -519,8 +523,7 @@ def rope_embedding_qk_vmap(Q, K, cos, sin, rope_indices=None):
     Returns:
         Tuple of (Q_rot, K_rot)
     """
-    result = NewStyleRoPEEmbeddingQK.apply(Q, K, cos, sin, rope_indices)
-    return result[0], result[1]  # Return only Q_rot, K_rot
+    return NewStyleRoPEEmbeddingQK.apply(Q, K, cos, sin, rope_indices)
 
 
 def slow_rope_embedding_vmap(Q, cos, sin, position_ids=None):
@@ -535,5 +538,4 @@ def slow_rope_embedding_vmap(Q, cos, sin, position_ids=None):
     Returns:
         Q_rot: Rotated tensor, same shape as input
     """
-    result = NewStyleSlowRoPEEmbedding.apply(Q, cos, sin, position_ids)
-    return result[0]
+    return NewStyleSlowRoPEEmbedding.apply(Q, cos, sin, position_ids)

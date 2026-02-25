@@ -1,74 +1,48 @@
 """
-RoPE (Rotary Position Embedding) Kernel Validation
+RoPE (Rotary Position Embedding) Kernel Tests
 
-3-phase validation:
-1. Opaque kernel vs PyTorch reference (baseline)
-2. Opaque kernel backward vs PyTorch backward
-3. Opaque vmap vs torch.vmap(PyTorch)
+Tests:
+1. Forward pass vs PyTorch reference
+2. Backward pass vs PyTorch reference
+3. vmap (per-sample grad) vs PyTorch vmap
+4. Forward and backward performance benchmarks
+
+Config: Mellum-like dims (batch=2, seq=128, n_heads=24, head_dim=128)
 """
 
 import pytest
 import torch
-import sys
 
-try:
-    from .kernel_validation_framework import (
-        benchmark_forward_backward,
-        print_comparison_table,
-    )
-except ImportError:
-    from kernel_validation_framework import (
-        benchmark_forward_backward,
-        print_comparison_table,
-    )
-
+from opaque.kernels.rope_embedding import NewStyleRoPEEmbedding
 
 pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="CUDA required for kernel tests"
+    not torch.cuda.is_available(), reason="CUDA required"
 )
+
+# Mellum-like dims for RoPE tests
+BATCH = 2
+SEQ_LEN = 128
+
+RTOL_ROPE = 5e-4
 
 
 # ============================================================================
-# Reference Implementations
+# Helpers
 # ============================================================================
 
 def rotate_half(x):
     """Standard rotate_half for RoPE."""
-    x1, x2 = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2:]
+    x1, x2 = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
     return torch.cat((-x2, x1), dim=-1)
 
 
-def pytorch_rope(Q, cos, sin):
-    """PyTorch reference RoPE implementation.
-
-    Args:
-        Q: (batch, seq_len, n_heads, head_dim)
-        cos: (seq_len, head_dim/2)
-        sin: (seq_len, head_dim/2)
-    """
-    batch, seq_len, n_heads, head_dim = Q.shape
-
-    # Expand cos/sin for broadcasting
-    cos_expanded = cos[None, :, None, :].expand(batch, seq_len, n_heads, -1)
-    sin_expanded = sin[None, :, None, :].expand(batch, seq_len, n_heads, -1)
-
-    # Duplicate for full head_dim
-    cos_full = torch.cat([cos_expanded, cos_expanded], dim=-1)
-    sin_full = torch.cat([sin_expanded, sin_expanded], dim=-1)
-
-    # Apply rotation
-    return Q * cos_full + rotate_half(Q) * sin_full
-
-
-def opaque_rope(Q, cos, sin):
-    """Opaque kernel implementation."""
-    from opaque.kernels import NewStyleRoPEEmbedding
-    result = NewStyleRoPEEmbedding.apply(Q, cos, sin)
-    return result[0]  # Just the rotated Q
-
-
 def generate_cos_sin(seq_len, head_dim, device="cuda", dtype=torch.float32):
-    """Generate cos/sin for RoPE."""
+    """Generate cos/sin caches for RoPE.
+
+    Returns:
+        cos: (seq_len, head_dim // 2)
+        sin: (seq_len, head_dim // 2)
+    """
     freqs = 1.0 / (10000.0 ** (torch.arange(0, head_dim, 2, device=device).float() / head_dim))
     positions = torch.arange(seq_len, device=device)
     freqs = torch.outer(positions, freqs)
@@ -77,230 +51,191 @@ def generate_cos_sin(seq_len, head_dim, device="cuda", dtype=torch.float32):
     return cos, sin
 
 
-# ============================================================================
-# Test Configurations
-# ============================================================================
+def pytorch_rope(Q, cos, sin):
+    """PyTorch reference RoPE implementation.
 
-TEST_CONFIGS = [
-    {"batch_size": 2, "seq_len": 64, "n_heads": 8, "head_dim": 64, "name": "Small"},
-    {"batch_size": 1, "seq_len": 128, "n_heads": 32, "head_dim": 128, "name": "Medium"},
-]
+    Args:
+        Q: (batch, seq_len, n_heads, head_dim)
+        cos: (seq_len, head_dim // 2)
+        sin: (seq_len, head_dim // 2)
+    """
+    batch, seq_len, n_heads, head_dim = Q.shape
+
+    cos_expanded = cos[None, :, None, :].expand(batch, seq_len, n_heads, -1)
+    sin_expanded = sin[None, :, None, :].expand(batch, seq_len, n_heads, -1)
+
+    cos_full = torch.cat([cos_expanded, cos_expanded], dim=-1)
+    sin_full = torch.cat([sin_expanded, sin_expanded], dim=-1)
+
+    return Q * cos_full + rotate_half(Q) * sin_full
+
+
+def opaque_rope(Q, cos, sin):
+    """Opaque Triton kernel (NewStyleRoPEEmbedding)."""
+    return NewStyleRoPEEmbedding.apply(Q, cos, sin)
 
 
 # ============================================================================
-# Phase 1: Forward Pass Validation
+# Forward Pass Tests
 # ============================================================================
 
 class TestRoPEForward:
-    """Test forward pass matches PyTorch."""
+    """Test forward pass precision."""
 
-    @pytest.mark.parametrize("config", TEST_CONFIGS)
-    def test_forward_matches_pytorch(self, config):
-        """Verify forward pass matches PyTorch."""
+    def test_forward_matches_pytorch(self, precision_error, mellum_config):
+        """Forward: opaque vs pytorch."""
         torch.manual_seed(42)
-        batch, seq_len, n_heads, head_dim = (
-            config["batch_size"], config["seq_len"], config["n_heads"], config["head_dim"]
-        )
+        N_HEADS = mellum_config["n_heads"]
+        HEAD_DIM = mellum_config["head_dim"]
 
-        Q = torch.randn(batch, seq_len, n_heads, head_dim, device="cuda", dtype=torch.float32)
-        cos, sin = generate_cos_sin(seq_len, head_dim)
+        Q = torch.randn(BATCH, SEQ_LEN, N_HEADS, HEAD_DIM, device="cuda", dtype=torch.float32)
+        cos, sin = generate_cos_sin(SEQ_LEN, HEAD_DIM)
 
-        opaque_out = opaque_rope(Q, cos, sin)
-        pytorch_out = pytorch_rope(Q, cos, sin)
+        out_opaque = opaque_rope(Q, cos, sin)
+        out_pytorch = pytorch_rope(Q, cos, sin)
 
-        max_diff = (opaque_out - pytorch_out).abs().max().item()
-        print(f"\n{config['name']}: forward diff = {max_diff:.2e}")
+        err = precision_error(out_opaque, out_pytorch, threshold=1e-4)
+        print(f"\nRoPE Forward: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_ROPE:.0e})")
 
-        assert torch.allclose(opaque_out, pytorch_out, rtol=1e-4, atol=1e-4), (
-            f"Forward mismatch for {config['name']}: diff={max_diff:.2e}"
-        )
+        assert err["rel_err"] < RTOL_ROPE, f"Forward rel_err {err['rel_err']:.2e} >= {RTOL_ROPE:.0e}"
 
 
 # ============================================================================
-# Phase 2: Backward Pass Validation
+# Backward Pass Tests
 # ============================================================================
 
 class TestRoPEBackward:
-    """Test backward pass matches PyTorch."""
+    """Test backward pass precision."""
 
-    @pytest.mark.parametrize("config", TEST_CONFIGS)
-    def test_backward_matches_pytorch(self, config):
-        """Verify gradients match PyTorch."""
+    def test_backward_matches_pytorch(self, precision_error, mellum_config):
+        """Backward: opaque vs pytorch Q.grad."""
         torch.manual_seed(42)
-        batch, seq_len, n_heads, head_dim = (
-            config["batch_size"], config["seq_len"], config["n_heads"], config["head_dim"]
-        )
-
-        # Opaque kernel
-        Q_opaque = torch.randn(
-            batch, seq_len, n_heads, head_dim, device="cuda", dtype=torch.float32, requires_grad=True
-        )
-        cos, sin = generate_cos_sin(seq_len, head_dim)
-
-        opaque_out = opaque_rope(Q_opaque, cos, sin)
-        opaque_out.sum().backward()
-        opaque_grad = Q_opaque.grad.clone()
+        N_HEADS = mellum_config["n_heads"]
+        HEAD_DIM = mellum_config["head_dim"]
 
         # PyTorch reference
-        Q_pytorch = Q_opaque.detach().clone().requires_grad_(True)
-        pytorch_out = pytorch_rope(Q_pytorch, cos, sin)
-        pytorch_out.sum().backward()
-        pytorch_grad = Q_pytorch.grad
+        Q_pt = torch.randn(BATCH, SEQ_LEN, N_HEADS, HEAD_DIM, device="cuda", dtype=torch.float32, requires_grad=True)
+        cos, sin = generate_cos_sin(SEQ_LEN, HEAD_DIM)
+        out_pt = pytorch_rope(Q_pt, cos, sin)
+        out_pt.sum().backward()
 
-        max_diff = (opaque_grad - pytorch_grad).abs().max().item()
-        print(f"\n{config['name']}: backward max diff = {max_diff:.2e}")
+        # Opaque kernel
+        Q_op = Q_pt.detach().clone().requires_grad_(True)
+        out_op = opaque_rope(Q_op, cos, sin)
+        out_op.sum().backward()
 
-        assert torch.allclose(opaque_grad, pytorch_grad, rtol=1e-4, atol=1e-4), (
-            f"Backward mismatch for {config['name']}: max_diff={max_diff:.2e}"
-        )
+        err = precision_error(Q_op.grad, Q_pt.grad, threshold=1e-4)
+        print(f"\nRoPE Backward Q.grad: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_ROPE:.0e})")
+
+        assert err["rel_err"] < RTOL_ROPE, f"Q.grad rel_err {err['rel_err']:.2e} >= {RTOL_ROPE:.0e}"
 
 
 # ============================================================================
-# Phase 3: Vmap Validation
+# Vmap Tests
 # ============================================================================
 
 class TestRoPEVmap:
-    """Test vmap support for DP-SGD."""
+    """Test vmap (per-sample gradient) precision and performance."""
 
-    def test_vmap_forward_matches_loop(self):
-        """Verify vmap produces same results as loop."""
+    def test_vmap_precision(self, precision_error, mellum_config):
+        """vmap: opaque vs pytorch vmap forward + backward."""
         torch.manual_seed(42)
-        vmap_batch, batch, seq_len, n_heads, head_dim = 4, 2, 32, 4, 32
+        N_HEADS = mellum_config["n_heads"]
+        HEAD_DIM = mellum_config["head_dim"]
+        VMAP_BATCH = mellum_config["vmap_batch"]
 
-        Q = torch.randn(
-            vmap_batch, batch, seq_len, n_heads, head_dim, device="cuda", dtype=torch.float32
-        )
-        cos, sin = generate_cos_sin(seq_len, head_dim)
+        cos, sin = generate_cos_sin(SEQ_LEN, HEAD_DIM)
 
-        # vmap over opaque kernel
-        vmapped_fn = torch.vmap(lambda q: opaque_rope(q, cos, sin), in_dims=0)
-        vmap_results = vmapped_fn(Q)
+        # PyTorch vmap
+        Q_pt = torch.randn(VMAP_BATCH, BATCH, SEQ_LEN, N_HEADS, HEAD_DIM, device="cuda", dtype=torch.float32, requires_grad=True)
+        out_pt = torch.vmap(lambda q: pytorch_rope(q, cos, sin))(Q_pt)
+        out_pt.sum().backward()
 
-        # Loop reference
-        loop_results = torch.stack([
-            opaque_rope(Q[i], cos, sin) for i in range(vmap_batch)
-        ])
+        # Opaque vmap
+        Q_op = Q_pt.detach().clone().requires_grad_(True)
+        out_op = torch.vmap(lambda q: opaque_rope(q, cos, sin))(Q_op)
+        out_op.sum().backward()
 
-        max_diff = (vmap_results - loop_results).abs().max().item()
-        print(f"\nvmap vs loop: max diff = {max_diff:.2e}")
+        fwd_err = precision_error(out_op, out_pt, threshold=1e-4)
+        bwd_err = precision_error(Q_op.grad, Q_pt.grad, threshold=1e-4)
 
-        assert torch.allclose(vmap_results, loop_results, rtol=1e-5, atol=1e-5), (
-            f"vmap mismatch: max_diff={max_diff:.2e}"
-        )
+        print(f"\nRoPE vmap:")
+        print(f"  forward: abs={fwd_err['abs_err']:.2e}, rel={fwd_err['rel_err']:.2e} (target: <{RTOL_ROPE:.0e})")
+        print(f"  Q.grad:  abs={bwd_err['abs_err']:.2e}, rel={bwd_err['rel_err']:.2e} (target: <{RTOL_ROPE:.0e})")
 
-    def test_vmap_backward(self):
-        """Verify vmap backward pass works correctly."""
+        assert fwd_err["rel_err"] < RTOL_ROPE, f"vmap forward rel_err {fwd_err['rel_err']:.2e} >= {RTOL_ROPE:.0e}"
+        assert bwd_err["rel_err"] < RTOL_ROPE, f"vmap Q.grad rel_err {bwd_err['rel_err']:.2e} >= {RTOL_ROPE:.0e}"
+
+    def test_vmap_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
+        """vmap: opaque should be faster or use less memory than pytorch vmap."""
         torch.manual_seed(42)
-        vmap_batch, batch, seq_len, n_heads, head_dim = 3, 2, 32, 4, 32
+        N_HEADS = mellum_config["n_heads"]
+        HEAD_DIM = mellum_config["head_dim"]
+        VMAP_BATCH = mellum_config["vmap_batch"]
 
-        Q = torch.randn(
-            vmap_batch, batch, seq_len, n_heads, head_dim, device="cuda", dtype=torch.float32, requires_grad=True
-        )
-        cos, sin = generate_cos_sin(seq_len, head_dim)
+        cos, sin = generate_cos_sin(SEQ_LEN, HEAD_DIM)
 
-        # vmap forward + backward
-        vmapped_fn = torch.vmap(lambda q: opaque_rope(q, cos, sin), in_dims=0)
-        vmap_results = vmapped_fn(Q)
-        vmap_results.sum().backward()
+        Q = torch.randn(VMAP_BATCH, BATCH, SEQ_LEN, N_HEADS, HEAD_DIM, device="cuda", dtype=torch.float32, requires_grad=True)
 
-        assert Q.grad is not None, "No gradient computed"
-        assert Q.grad.shape == Q.shape, "Gradient shape mismatch"
-        print(f"\nvmap backward: grad shape = {Q.grad.shape}")
+        def pytorch_fn(q):
+            return torch.vmap(lambda qi: pytorch_rope(qi, cos, sin))(q)
+
+        def opaque_fn(q):
+            return torch.vmap(lambda qi: opaque_rope(qi, cos, sin))(q)
+
+        pt_stats = measure_time_and_memory(pytorch_fn, Q)
+        op_stats = measure_time_and_memory(opaque_fn, Q)
+
+        assert_perf_benefit(pt_stats, op_stats, label="RoPE vmap")
 
 
 # ============================================================================
-# Full Validation Suite
+# Performance Tests
 # ============================================================================
 
-def run_full_validation():
-    """Run complete validation suite with detailed output."""
-    print("\n" + "="*80)
-    print("ROPE KERNEL VALIDATION")
-    print("="*80)
+class TestRoPEPerformance:
+    """Benchmark forward and backward performance."""
 
-    all_passed = True
-
-    # Phase 1: Forward validation
-    print("\n--- Phase 1: Forward Pass Validation ---")
-    for config in TEST_CONFIGS:
+    def test_forward_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
+        """Forward-only: opaque vs pytorch performance."""
         torch.manual_seed(42)
-        batch, seq_len, n_heads, head_dim = (
-            config["batch_size"], config["seq_len"], config["n_heads"], config["head_dim"]
-        )
+        N_HEADS = mellum_config["n_heads"]
+        HEAD_DIM = mellum_config["head_dim"]
 
-        Q = torch.randn(batch, seq_len, n_heads, head_dim, device="cuda", dtype=torch.float32)
-        cos, sin = generate_cos_sin(seq_len, head_dim)
+        cos, sin = generate_cos_sin(SEQ_LEN, HEAD_DIM)
+        Q = torch.randn(BATCH, SEQ_LEN, N_HEADS, HEAD_DIM, device="cuda", dtype=torch.float32)
 
-        opaque_out = opaque_rope(Q, cos, sin)
-        pytorch_out = pytorch_rope(Q, cos, sin)
+        def pytorch_fn(q):
+            return pytorch_rope(q, cos, sin)
 
-        max_diff = (opaque_out - pytorch_out).abs().max().item()
-        passed = max_diff < 1e-4
-        status = "PASS" if passed else "FAIL"
-        print(f"  {config['name']}: {status} (diff={max_diff:.2e})")
+        def opaque_fn(q):
+            return opaque_rope(q, cos, sin)
 
-        if not passed:
-            all_passed = False
+        pt_stats = measure_time_and_memory(pytorch_fn, Q)
+        op_stats = measure_time_and_memory(opaque_fn, Q)
 
-    # Phase 2: Backward validation
-    print("\n--- Phase 2: Backward Pass Validation ---")
-    for config in TEST_CONFIGS:
+        assert_perf_benefit(pt_stats, op_stats, label="RoPE forward")
+
+    def test_backward_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
+        """Forward+backward: opaque vs pytorch performance."""
         torch.manual_seed(42)
-        batch, seq_len, n_heads, head_dim = (
-            config["batch_size"], config["seq_len"], config["n_heads"], config["head_dim"]
-        )
+        N_HEADS = mellum_config["n_heads"]
+        HEAD_DIM = mellum_config["head_dim"]
 
-        Q_opaque = torch.randn(
-            batch, seq_len, n_heads, head_dim, device="cuda", dtype=torch.float32, requires_grad=True
-        )
-        cos, sin = generate_cos_sin(seq_len, head_dim)
+        cos, sin = generate_cos_sin(SEQ_LEN, HEAD_DIM)
+        Q = torch.randn(BATCH, SEQ_LEN, N_HEADS, HEAD_DIM, device="cuda", dtype=torch.float32, requires_grad=True)
 
-        opaque_out = opaque_rope(Q_opaque, cos, sin)
-        opaque_out.sum().backward()
+        def pytorch_fn(q):
+            return pytorch_rope(q, cos, sin)
 
-        Q_pytorch = Q_opaque.detach().clone().requires_grad_(True)
-        pytorch_out = pytorch_rope(Q_pytorch, cos, sin)
-        pytorch_out.sum().backward()
+        def opaque_fn(q):
+            return opaque_rope(q, cos, sin)
 
-        max_diff = (Q_opaque.grad - Q_pytorch.grad).abs().max().item()
-        passed = max_diff < 1e-4
-        status = "PASS" if passed else "FAIL"
-        print(f"  {config['name']}: {status} (max_diff={max_diff:.2e})")
+        pt_stats = measure_time_and_memory(pytorch_fn, Q)
+        op_stats = measure_time_and_memory(opaque_fn, Q)
 
-        if not passed:
-            all_passed = False
-
-    # Phase 3: Vmap validation
-    print("\n--- Phase 3: Vmap Validation ---")
-    torch.manual_seed(42)
-    vmap_batch, batch, seq_len, n_heads, head_dim = 4, 2, 32, 4, 32
-
-    Q = torch.randn(
-        vmap_batch, batch, seq_len, n_heads, head_dim, device="cuda", dtype=torch.float32
-    )
-    cos, sin = generate_cos_sin(seq_len, head_dim)
-
-    vmapped_fn = torch.vmap(lambda q: opaque_rope(q, cos, sin), in_dims=0)
-    vmap_results = vmapped_fn(Q)
-
-    loop_results = torch.stack([opaque_rope(Q[i], cos, sin) for i in range(vmap_batch)])
-
-    max_diff = (vmap_results - loop_results).abs().max().item()
-    passed = max_diff < 1e-5
-    status = "PASS" if passed else "FAIL"
-    print(f"  vmap vs loop: {status} (max_diff={max_diff:.2e})")
-
-    if not passed:
-        all_passed = False
-
-    # Summary
-    print("\n" + "="*80)
-    print(f"VALIDATION RESULT: {'ALL PASSED' if all_passed else 'SOME FAILED'}")
-    print("="*80)
-
-    return all_passed
+        assert_perf_benefit(pt_stats, op_stats, label="RoPE backward")
 
 
 if __name__ == "__main__":
-    success = run_full_validation()
-    sys.exit(0 if success else 1)
+    pytest.main([__file__, "-v", "-s"])

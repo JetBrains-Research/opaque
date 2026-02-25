@@ -109,19 +109,20 @@ class NewStyleLayerNorm(torch.autograd.Function):
             )
 
         Y = Y.reshape(original_shape)
-        return Y, r, mu, BLOCK_SIZE, num_warps
+        return Y, r, mu
 
     @staticmethod
     def setup_context(ctx, inputs, output):
         X, W, b, eps = inputs
-        Y, r, mu, BLOCK_SIZE, num_warps = output
+        Y, r, mu = output
         ctx.save_for_backward(X, W, b, r, mu)
         ctx.eps = eps
+        BLOCK_SIZE, num_warps = calculate_settings(X.shape[-1])
         ctx.BLOCK_SIZE = BLOCK_SIZE
         ctx.num_warps = num_warps
 
     @staticmethod
-    def backward(ctx, grad_Y, grad_r, grad_mu, grad_block, grad_warps):
+    def backward(ctx, grad_Y, grad_r, grad_mu):
         X, W, b, r, mu = ctx.saved_tensors
 
         original_shape = grad_Y.shape
@@ -154,11 +155,11 @@ class NewStyleLayerNorm(torch.autograd.Function):
             raise ValueError("W and b should not be batched")
 
         output = NewStyleLayerNorm.apply(X, W, b, eps)
-        # Only Y is batched, intermediates are per-row
-        return output, (X_bdim, X_bdim, X_bdim, None, None)
+        # Y is batched, r and mu are per-row (batched at same dim)
+        return output, (X_bdim, X_bdim, X_bdim)
 
 
 def layernorm_vmap(X, W, b, eps=1e-5):
     """Convenience wrapper."""
-    Y, _, _, _, _ = NewStyleLayerNorm.apply(X, W, b, eps)
+    Y, _, _ = NewStyleLayerNorm.apply(X, W, b, eps)
     return Y

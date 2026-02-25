@@ -1,12 +1,16 @@
 """LoRA (Low-Rank Adaptation) kernels with vmap support for DP-SGD.
 
-Simplified from unsloth/kernels/fast_lora.py for vmap compatibility.
+Ported from unsloth/kernels/fast_lora.py for vmap compatibility.
 Uses new-style autograd API with setup_context for vmap support.
 
 Three implementations:
 1. LoRA_W: Generic LoRA for single projection (O-proj, etc.)
 2. LoRA_QKV: Fused LoRA for Q, K, V projections
 3. LoRA_MLP: Fused LoRA for MLP (gate, up, down) with SwiGLU
+
+Optimizations (from Unsloth):
+- Triton SwiGLU kernels for activation in LoRA_MLP (forward + backward)
+- addmm_ for fused gradient accumulation (avoids temporary tensors)
 
 For DP-SGD:
 - Base weights (W) are frozen, only LoRA weights (A, B) are trained
@@ -15,6 +19,44 @@ For DP-SGD:
 
 import torch
 import torch.nn.functional as F
+
+from .swiglu import triton_swiglu_forward, triton_swiglu_backward
+from .geglu import (
+    triton_geglu_exact_forward,
+    triton_geglu_exact_backward,
+    triton_geglu_approx_forward,
+    triton_geglu_approx_backward,
+)
+
+# Activation types for LoRA_MLP
+ACTIVATION_SWIGLU = 0
+ACTIVATION_GEGLU_EXACT = 1
+ACTIVATION_GEGLU_APPROX = 2
+
+_ACTIVATION_FORWARD = {
+    ACTIVATION_SWIGLU: triton_swiglu_forward,
+    ACTIVATION_GEGLU_EXACT: triton_geglu_exact_forward,
+    ACTIVATION_GEGLU_APPROX: triton_geglu_approx_forward,
+}
+
+_ACTIVATION_BACKWARD = {
+    ACTIVATION_SWIGLU: triton_swiglu_backward,
+    ACTIVATION_GEGLU_EXACT: triton_geglu_exact_backward,
+    ACTIVATION_GEGLU_APPROX: triton_geglu_approx_backward,
+}
+
+_ACTIVATION_NAMES = {
+    "swiglu": ACTIVATION_SWIGLU,
+    "geglu_exact": ACTIVATION_GEGLU_EXACT,
+    "geglu_approx": ACTIVATION_GEGLU_APPROX,
+}
+
+# PyTorch fallbacks for vmap path (must be autograd-tracked, not raw Triton)
+_ACTIVATION_FORWARD_PYTORCH = {
+    ACTIVATION_SWIGLU: lambda gate, up: F.silu(gate) * up,
+    ACTIVATION_GEGLU_EXACT: lambda gate, up: F.gelu(gate, approximate='none') * up,
+    ACTIVATION_GEGLU_APPROX: lambda gate, up: F.gelu(gate, approximate='tanh') * up,
+}
 
 
 class NewStyleLoRAW(torch.autograd.Function):
@@ -31,9 +73,6 @@ class NewStyleLoRAW(torch.autograd.Function):
         out = F.linear(X, W)  # X @ W.T
 
         if A is not None and B is not None:
-            # A is (in_dim, rank), B is (rank, out_features)
-            # X @ A gives (batch, seq, rank)
-            # (X @ A) @ B gives (batch, seq, out_features)
             lora_out = (X @ A) @ B * scaling
             out = out + lora_out
 
@@ -57,28 +96,37 @@ class NewStyleLoRAW(torch.autograd.Function):
         X_flat = X.reshape(-1, hidden_dim)
         grad_out_flat = grad_out.reshape(-1, out_features)
 
-        # dX = grad_out @ W + grad_out @ B.T @ A.T * scaling
-        dX = grad_out_flat @ W
-        if A is not None and B is not None:
-            # Forward: out = (X @ A) @ B
-            # Backward: dX += grad_out @ B.T @ A.T
-            dX = dX + (grad_out_flat @ B.t() @ A.t()) * scaling
-        dX = dX.reshape(*batch_shape, hidden_dim)
-
-        # LoRA weight gradients
+        # LoRA weight gradients FIRST (before any potential buffer reuse)
         dA = dB = None
         if A is not None and B is not None:
-            # Forward: out = (X @ A) @ B
-            # dA = X.T @ grad_out @ B.T
-            # dB = A.T @ X.T @ grad_out
-            dA = (X_flat.t() @ grad_out_flat @ B.t()) * scaling
-            dB = (A.t() @ X_flat.t() @ grad_out_flat) * scaling
+            # dA = (X.T @ grad_out @ B.T) * scaling
+            # Use addmm_ to fuse scaling and avoid temporaries (Unsloth pattern)
+            grad_out_Bt = grad_out_flat @ B.t()
+            dA = torch.empty_like(A)
+            dA.addmm_(X_flat.t(), grad_out_Bt, alpha=scaling, beta=0)
+
+            # dB = (A.T @ X.T @ grad_out) * scaling
+            At_Xt = A.t() @ X_flat.t()
+            dB = torch.empty_like(B)
+            dB.addmm_(At_Xt, grad_out_flat, alpha=scaling, beta=0)
+
+        # dX = grad_out @ W + (grad_out @ B.T @ A.T) * scaling
+        dX = grad_out_flat @ W
+        if A is not None and B is not None:
+            # Fuse LoRA contribution into dX using addmm_
+            dX.addmm_(grad_out_Bt, A.t(), alpha=scaling, beta=1)
+        dX = dX.reshape(*batch_shape, hidden_dim)
 
         return dX, None, dA, dB, None
 
     @staticmethod
     def vmap(info, in_dims, X, W, A, B, scaling):
-        """Custom vmap rule for DP-SGD per-example gradients."""
+        """Efficient vmap rule: merge vmap batch into regular batch.
+
+        This is mathematically equivalent to vmap but avoids the overhead
+        of custom backward rules. For linear operations, this approach
+        gives identical gradients while being just as fast as non-vmapped code.
+        """
         X_bdim, W_bdim, A_bdim, B_bdim, scaling_bdim = in_dims
 
         if X_bdim != 0:
@@ -90,12 +138,16 @@ class NewStyleLoRAW(torch.autograd.Function):
         if scaling_bdim is not None:
             raise ValueError("scaling should not be batched")
 
+        # Merge vmap batch into regular batch
         original_shape = X.shape
         X_merged = X.reshape(-1, *X.shape[2:])
 
-        out = NewStyleLoRAW.apply(X_merged, W, A, B, scaling)
-        out = out.reshape(*original_shape[:-1], -1)
+        # Apply LoRA once using native PyTorch (bypasses custom backward overhead)
+        out = F.linear(X_merged, W)
+        if A is not None and B is not None:
+            out = out + (X_merged @ A @ B) * scaling
 
+        out = out.reshape(*original_shape[:-1], -1)
         return out, X_bdim
 
 
@@ -146,36 +198,46 @@ class NewStyleLoRAQKV(torch.autograd.Function):
         grad_K_flat = grad_K.reshape(-1, grad_K.shape[-1])
         grad_V_flat = grad_V.reshape(-1, grad_V.shape[-1])
 
-        # dX = sum of gradients from Q, K, V
-        dX = grad_Q_flat @ Wq + grad_K_flat @ Wk + grad_V_flat @ Wv
-
-        if Aq is not None and Bq is not None:
-            # Forward: Q = ... + (X @ Aq) @ Bq
-            # Backward: dX += grad_Q @ Bq.T @ Aq.T
-            dX = dX + (grad_Q_flat @ Bq.t() @ Aq.t()) * Sq
-        if Ak is not None and Bk is not None:
-            dX = dX + (grad_K_flat @ Bk.t() @ Ak.t()) * Sk
-        if Av is not None and Bv is not None:
-            dX = dX + (grad_V_flat @ Bv.t() @ Av.t()) * Sv
-
-        dX = dX.reshape(*batch_shape, hidden_dim)
-
-        # LoRA weight gradients
+        # LoRA weight gradients FIRST (Unsloth pattern with addmm_)
         dAq = dBq = dAk = dBk = dAv = dBv = None
 
+        # Precompute intermediates needed for both weight grads and dX
+        grad_Q_Bqt = grad_K_Bkt = grad_V_Bvt = None
+
         if Aq is not None and Bq is not None:
-            # Forward: Q = ... + (X @ Aq) @ Bq
-            # dAq = X.T @ grad_Q @ Bq.T, dBq = Aq.T @ X.T @ grad_Q
-            dAq = (X_flat.t() @ grad_Q_flat @ Bq.t()) * Sq
-            dBq = (Aq.t() @ X_flat.t() @ grad_Q_flat) * Sq
+            grad_Q_Bqt = grad_Q_flat @ Bq.t()
+            dAq = torch.empty_like(Aq)
+            dAq.addmm_(X_flat.t(), grad_Q_Bqt, alpha=Sq, beta=0)
+            dBq = torch.empty_like(Bq)
+            dBq.addmm_(Aq.t() @ X_flat.t(), grad_Q_flat, alpha=Sq, beta=0)
 
         if Ak is not None and Bk is not None:
-            dAk = (X_flat.t() @ grad_K_flat @ Bk.t()) * Sk
-            dBk = (Ak.t() @ X_flat.t() @ grad_K_flat) * Sk
+            grad_K_Bkt = grad_K_flat @ Bk.t()
+            dAk = torch.empty_like(Ak)
+            dAk.addmm_(X_flat.t(), grad_K_Bkt, alpha=Sk, beta=0)
+            dBk = torch.empty_like(Bk)
+            dBk.addmm_(Ak.t() @ X_flat.t(), grad_K_flat, alpha=Sk, beta=0)
 
         if Av is not None and Bv is not None:
-            dAv = (X_flat.t() @ grad_V_flat @ Bv.t()) * Sv
-            dBv = (Av.t() @ X_flat.t() @ grad_V_flat) * Sv
+            grad_V_Bvt = grad_V_flat @ Bv.t()
+            dAv = torch.empty_like(Av)
+            dAv.addmm_(X_flat.t(), grad_V_Bvt, alpha=Sv, beta=0)
+            dBv = torch.empty_like(Bv)
+            dBv.addmm_(Av.t() @ X_flat.t(), grad_V_flat, alpha=Sv, beta=0)
+
+        # dX = sum of base weight + LoRA contributions (Unsloth accumulation pattern)
+        dX = grad_Q_flat @ Wq
+        dX.addmm_(grad_K_flat, Wk, beta=1, alpha=1)
+        dX.addmm_(grad_V_flat, Wv, beta=1, alpha=1)
+
+        if grad_Q_Bqt is not None:
+            dX.addmm_(grad_Q_Bqt, Aq.t(), alpha=Sq, beta=1)
+        if grad_K_Bkt is not None:
+            dX.addmm_(grad_K_Bkt, Ak.t(), alpha=Sk, beta=1)
+        if grad_V_Bvt is not None:
+            dX.addmm_(grad_V_Bvt, Av.t(), alpha=Sv, beta=1)
+
+        dX = dX.reshape(*batch_shape, hidden_dim)
 
         return (
             dX,
@@ -186,7 +248,7 @@ class NewStyleLoRAQKV(torch.autograd.Function):
 
     @staticmethod
     def vmap(info, in_dims, X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv):
-        """Custom vmap rule for DP-SGD per-example gradients."""
+        """Efficient vmap rule: merge vmap batch into regular batch."""
         X_bdim = in_dims[0]
 
         if X_bdim != 0:
@@ -196,13 +258,24 @@ class NewStyleLoRAQKV(torch.autograd.Function):
             if bdim is not None:
                 raise ValueError(f"Input {i} should not be batched")
 
+        # Merge vmap batch into regular batch
         original_shape = X.shape
         X_merged = X.reshape(-1, *X.shape[2:])
 
-        Q, K, V = NewStyleLoRAQKV.apply(
-            X_merged, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv
-        )
+        # Apply LoRA using native PyTorch (bypasses custom backward overhead)
+        Q = F.linear(X_merged, Wq)
+        if Aq is not None and Bq is not None:
+            Q = Q + (X_merged @ Aq @ Bq) * Sq
 
+        K = F.linear(X_merged, Wk)
+        if Ak is not None and Bk is not None:
+            K = K + (X_merged @ Ak @ Bk) * Sk
+
+        V = F.linear(X_merged, Wv)
+        if Av is not None and Bv is not None:
+            V = V + (X_merged @ Av @ Bv) * Sv
+
+        # Reshape back
         Q = Q.reshape(*original_shape[:-1], -1)
         K = K.reshape(*original_shape[:-1], -1)
         V = V.reshape(*original_shape[:-1], -1)
@@ -211,18 +284,21 @@ class NewStyleLoRAQKV(torch.autograd.Function):
 
 
 class NewStyleLoRAMLP(torch.autograd.Function):
-    """Fused LoRA for MLP (gate, up, down) with SwiGLU activation.
+    """Fused LoRA for MLP (gate, up, down) with configurable GLU activation.
+
+    Uses Triton kernels for the activation (matching Unsloth's callback pattern).
+    Supports SwiGLU (default), GeGLU exact, and GeGLU approx via activation_type.
 
     Computes:
         gate = X @ Wg.T + X @ Ag @ Bg * Sg
         up = X @ Wu.T + X @ Au @ Bu * Su
-        h = silu(gate) * up  # SwiGLU
+        h = activation(gate) * up  # via Triton kernel
         out = h @ Wd.T + h @ Ad @ Bd * Sd
     """
 
     @staticmethod
-    def forward(X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd):
-        """Forward pass for MLP with SwiGLU."""
+    def forward(X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd, activation_type):
+        """Forward pass for MLP with configurable GLU activation."""
         gate = F.linear(X, Wg)
         if Ag is not None and Bg is not None:
             gate = gate + (X @ Ag) @ Bg * Sg
@@ -231,7 +307,9 @@ class NewStyleLoRAMLP(torch.autograd.Function):
         if Au is not None and Bu is not None:
             up = up + (X @ Au) @ Bu * Su
 
-        h = F.silu(gate) * up
+        # Use Triton kernel for activation (Unsloth callback pattern)
+        act_forward = _ACTIVATION_FORWARD[activation_type]
+        h = act_forward(gate, up)
 
         out = F.linear(h, Wd)
         if Ad is not None and Bd is not None:
@@ -241,12 +319,13 @@ class NewStyleLoRAMLP(torch.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd = inputs
+        X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd, activation_type = inputs
         out, gate, up, h = output
         ctx.save_for_backward(X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd, gate, up, h)
         ctx.Sg = Sg
         ctx.Su = Su
         ctx.Sd = Sd
+        ctx.activation_type = activation_type
 
     @staticmethod
     def backward(ctx, grad_out, grad_gate, grad_up, grad_h):
@@ -265,74 +344,92 @@ class NewStyleLoRAMLP(torch.autograd.Function):
         # Backward through down projection
         dh = grad_out_flat @ Wd
         if Ad is not None and Bd is not None:
-            # Forward: out = ... + (h @ Ad) @ Bd
-            # Backward: dh += grad_out @ Bd.T @ Ad.T
-            dh = dh + (grad_out_flat @ Bd.t() @ Ad.t()) * Sd
+            dh.addmm_(grad_out_flat @ Bd.t(), Ad.t(), alpha=Sd, beta=1)
 
-        # Backward through SwiGLU
-        sigmoid_gate = torch.sigmoid(gate_flat)
-        silu_gate = gate_flat * sigmoid_gate
-
-        dgate = dh * up_flat * sigmoid_gate * (1 + gate_flat * (1 - sigmoid_gate))
-        dup = dh * silu_gate
+        # Backward through activation using Triton kernel (Unsloth callback pattern)
+        act_backward = _ACTIVATION_BACKWARD[ctx.activation_type]
+        dgate, dup = act_backward(dh, gate_flat, up_flat)
 
         # Backward through gate projection
         dX_gate = dgate @ Wg
         if Ag is not None and Bg is not None:
-            # Forward: gate = ... + (X @ Ag) @ Bg
-            # Backward: dX += dgate @ Bg.T @ Ag.T
-            dX_gate = dX_gate + (dgate @ Bg.t() @ Ag.t()) * Sg
+            dX_gate.addmm_(dgate @ Bg.t(), Ag.t(), alpha=Sg, beta=1)
 
         # Backward through up projection
         dX_up = dup @ Wu
         if Au is not None and Bu is not None:
-            dX_up = dX_up + (dup @ Bu.t() @ Au.t()) * Su
+            dX_up.addmm_(dup @ Bu.t(), Au.t(), alpha=Su, beta=1)
 
         dX = (dX_gate + dX_up).reshape(*batch_shape, hidden_dim)
 
-        # LoRA weight gradients
+        # LoRA weight gradients (Unsloth addmm_ pattern)
         dAg = dBg = dAu = dBu = dAd = dBd = None
 
         if Ag is not None and Bg is not None:
-            # Forward: gate = ... + (X @ Ag) @ Bg
-            # dAg = X.T @ dgate @ Bg.T, dBg = Ag.T @ X.T @ dgate
-            dAg = (X_flat.t() @ dgate @ Bg.t()) * Sg
-            dBg = (Ag.t() @ X_flat.t() @ dgate) * Sg
+            dgate_Bgt = dgate @ Bg.t()
+            dAg = torch.empty_like(Ag)
+            dAg.addmm_(X_flat.t(), dgate_Bgt, alpha=Sg, beta=0)
+            dBg = torch.empty_like(Bg)
+            dBg.addmm_(Ag.t() @ X_flat.t(), dgate, alpha=Sg, beta=0)
 
         if Au is not None and Bu is not None:
-            dAu = (X_flat.t() @ dup @ Bu.t()) * Su
-            dBu = (Au.t() @ X_flat.t() @ dup) * Su
+            dup_But = dup @ Bu.t()
+            dAu = torch.empty_like(Au)
+            dAu.addmm_(X_flat.t(), dup_But, alpha=Su, beta=0)
+            dBu = torch.empty_like(Bu)
+            dBu.addmm_(Au.t() @ X_flat.t(), dup, alpha=Su, beta=0)
 
         if Ad is not None and Bd is not None:
-            dAd = (h_flat.t() @ grad_out_flat @ Bd.t()) * Sd
-            dBd = (Ad.t() @ h_flat.t() @ grad_out_flat) * Sd
+            grad_out_Bdt = grad_out_flat @ Bd.t()
+            dAd = torch.empty_like(Ad)
+            dAd.addmm_(h_flat.t(), grad_out_Bdt, alpha=Sd, beta=0)
+            dBd = torch.empty_like(Bd)
+            dBd.addmm_(Ad.t() @ h_flat.t(), grad_out_flat, alpha=Sd, beta=0)
 
         return (
             dX,
             None, dAg, dBg, None,  # gate
             None, dAu, dBu, None,  # up
             None, dAd, dBd, None,  # down
+            None,  # activation_type
         )
 
     @staticmethod
-    def vmap(info, in_dims, X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd):
-        """Custom vmap rule for DP-SGD per-example gradients."""
+    def vmap(info, in_dims, X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd, activation_type):
+        """Efficient vmap rule: merge vmap batch into regular batch."""
         X_bdim = in_dims[0]
 
         if X_bdim != 0:
             raise ValueError(f"X should be batched at dim 0, got {X_bdim}")
 
-        for i, bdim in enumerate(in_dims[1:], 1):
+        # in_dims has 14 elements (13 original + activation_type)
+        for i, bdim in enumerate(in_dims[1:13], 1):
             if bdim is not None:
                 raise ValueError(f"Input {i} should not be batched")
 
+        # Merge vmap batch into regular batch
         original_shape = X.shape
         X_merged = X.reshape(-1, *X.shape[2:])
 
-        out, gate, up, h = NewStyleLoRAMLP.apply(
-            X_merged, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd
-        )
+        # Apply MLP using native PyTorch ops (correct for per-example grads).
+        # Must use PyTorch activation (not raw Triton) to preserve autograd graph.
+        gate = F.linear(X_merged, Wg)
+        if Ag is not None and Bg is not None:
+            gate = gate + (X_merged @ Ag @ Bg) * Sg
 
+        up = F.linear(X_merged, Wu)
+        if Au is not None and Bu is not None:
+            up = up + (X_merged @ Au @ Bu) * Su
+
+        # PyTorch activation (autograd-tracked for gradient computation)
+        act_forward = _ACTIVATION_FORWARD_PYTORCH[activation_type]
+        h = act_forward(gate, up)
+
+        out = F.linear(h, Wd)
+        if Ad is not None and Bd is not None:
+            out = out + (h @ Ad @ Bd) * Sd
+
+        # Reshape back
         out = out.reshape(*original_shape[:-1], -1)
         gate = gate.reshape(*original_shape[:-1], -1)
         up = up.reshape(*original_shape[:-1], -1)
@@ -370,11 +467,19 @@ def lora_qkv_vmap(X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv):
     return NewStyleLoRAQKV.apply(X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv)
 
 
-def lora_mlp_vmap(X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd):
-    """Apply LoRA MLP (with SwiGLU) with vmap support.
+def lora_mlp_vmap(X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd, activation="swiglu"):
+    """Apply LoRA MLP with configurable GLU activation and vmap support.
+
+    Args:
+        X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd: Standard LoRA MLP inputs.
+        activation: Activation type - "swiglu" (default), "geglu_exact", or "geglu_approx".
 
     Returns:
         Output tensor (batch, seq_len, hidden_dim)
     """
-    result = NewStyleLoRAMLP.apply(X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd)
+    if isinstance(activation, str):
+        activation_type = _ACTIVATION_NAMES[activation]
+    else:
+        activation_type = activation
+    result = NewStyleLoRAMLP.apply(X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd, activation_type)
     return result[0]  # Return only the output, not intermediate tensors
