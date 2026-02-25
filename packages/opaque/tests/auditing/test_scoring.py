@@ -282,3 +282,101 @@ class TestEvaluate:
         s = audit.summary()
         assert "one-run" in s
         assert "Audit Summary" in s
+
+
+class TestEvaluateStoredConfig:
+    """Tests for evaluate() using config stored at setup() time."""
+
+    def test_setup_stores_config(self, linear_setup):
+        """Test that setup() stores scoring config on experiment."""
+        params, dataset, loss_fn = linear_setup
+        exp = auditing.setup(
+            dataset,
+            num_canaries=50,
+            key=key(42),
+            batch_argnums=(1, 2),
+        )
+
+        assert exp._dataset is dataset
+        assert exp._batch_argnums == (1, 2)
+        assert exp._batch_size == 256
+
+    def test_evaluate_with_stored_config(self, linear_setup):
+        """Test evaluate() using config from setup() — no extra args."""
+        params, dataset, loss_fn = linear_setup
+        exp = auditing.setup(
+            dataset,
+            num_canaries=50,
+            key=key(42),
+            batch_argnums=(1, 2),
+        )
+
+        # evaluate with just loss_fn and params — everything else from setup
+        audit = auditing.evaluate(exp, loss_fn, params)
+
+        assert isinstance(audit, AuditResult)
+        assert audit.n_in + audit.n_out == 50
+
+    def test_evaluate_override_stored_config(self, linear_setup):
+        """Test that explicit args to evaluate() override setup() config."""
+        params, dataset, loss_fn = linear_setup
+        exp = auditing.setup(
+            dataset,
+            num_canaries=50,
+            key=key(42),
+            batch_argnums=(1, 2),
+        )
+
+        # Override batch_size at evaluate time
+        audit = auditing.evaluate(exp, loss_fn, params, batch_size=16)
+        assert isinstance(audit, AuditResult)
+
+    def test_evaluate_errors_without_batch_argnums(self, linear_setup):
+        """Test that evaluate() errors if batch_argnums wasn't provided anywhere."""
+        params, dataset, loss_fn = linear_setup
+        # setup without batch_argnums
+        exp = auditing.setup(dataset, num_canaries=50, key=key(42))
+
+        with pytest.raises(TypeError, match="batch_argnums"):
+            auditing.evaluate(exp, loss_fn, params)
+
+    def test_setup_with_collate_fn(self):
+        """Test setup stores collate_fn and uses it in evaluate."""
+        torch.manual_seed(42)
+        n_samples = 50
+        dim = 8
+
+        tokens = torch.randn(n_samples, dim)
+
+        class DictDataset:
+            def __init__(self, data):
+                self.data = data
+
+            def __len__(self):
+                return len(self.data)
+
+            def __getitem__(self, idx):
+                return {"input_ids": self.data[idx]}
+
+        dataset = DictDataset(tokens)
+        params = torch.randn(dim)
+
+        def loss_fn(params, tokens):
+            return F.mse_loss(tokens @ params, torch.zeros(1), reduction="sum")
+
+        def collate_fn(batch):
+            return {"input_ids": torch.stack([b["input_ids"] for b in batch])}
+
+        exp = auditing.setup(
+            dataset,
+            num_canaries=20,
+            key=key(42),
+            batch_argnums=(1,),
+            collate_fn=collate_fn,
+            batch_unpack=lambda b: (b["input_ids"],),
+        )
+
+        # evaluate with just loss_fn + params
+        audit = auditing.evaluate(exp, loss_fn, params)
+        assert isinstance(audit, AuditResult)
+        assert audit.n_in + audit.n_out == 20

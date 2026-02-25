@@ -28,48 +28,55 @@ Only one training run is needed, unlike shadow-model approaches.
 import opaque.auditing as auditing
 from opaque.random import key
 
-# 1. Setup
-experiment = auditing.setup(dataset, num_canaries=1000, key=key(42))
+# 1. Setup: designate canaries and configure scoring
+experiment = auditing.setup(
+    dataset, num_canaries=1000, key=key(42),
+    batch_argnums=(1,),
+    collate_fn=data_collator,
+    batch_unpack=lambda b: (b["input_ids"].to(device),),
+)
 train_data = dataset.select(experiment.train_indices(len(dataset)))
 
 # 2. Train with DP-SGD on train_data ...
 
-# 3. Evaluate
-audit = auditing.evaluate(
-    experiment, loss_fn, params,
-    batch_argnums=(1,),
-    dataset=dataset,
-    collate_fn=collator,
-    batch_unpack=lambda b: (b["input_ids"].to(device),),
-)
+# 3. Evaluate: just pass loss_fn and trained params
+audit = auditing.evaluate(experiment, loss_fn, trained_params)
 print(audit.summary(delta=1e-5, theoretical_epsilon=target_eps))
 ```
 
 ## Integration with training
 
-The auditing module is designed to slot into an existing DP-SGD training
-loop with minimal changes. The key design principle: `auditing.evaluate`
-accepts the same `loss_fn` and `batch_argnums` as `clipped_grad`, so the
-same per-example loss function works for both training and auditing.
+The key design principle: configure scoring once at `setup()` time, then
+`evaluate()` is a one-liner after training.
 
 ### Step 1: Setup before training
 
-Call `auditing.setup` after tokenizing / preparing the dataset but before
-creating the DataLoader. This selects canaries and flips coins:
+Call `auditing.setup` after preparing the dataset. Pass the same
+`batch_argnums` you use with `clipped_grad`, plus `collate_fn` and
+`batch_unpack` for HuggingFace dict batches:
 
 ```python
-import opaque.auditing as auditing
-from opaque.random import key
-
-experiment = auditing.setup(train_dataset, num_canaries=1000, key=key(42))
-full_dataset = train_dataset  # keep reference for scoring later
+experiment = auditing.setup(
+    train_dataset,
+    num_canaries=1000,
+    key=key(42),
+    # Same batch_argnums as clipped_grad:
+    batch_argnums=(1,),
+    # Same collate_fn as your DataLoader:
+    collate_fn=data_collator,
+    # How to extract tensors from a collated batch:
+    batch_unpack=lambda b: (b["input_ids"].to(device),),
+)
 
 # Remove held-out canaries from training set
-train_dataset = train_dataset.select(experiment.train_indices(len(train_dataset)))
+train_dataset = train_dataset.select(
+    experiment.train_indices(len(train_dataset))
+)
 ```
 
+The experiment remembers both the full dataset and the scoring config.
 For PyTorch `TensorDataset`, use `experiment.subset(dataset)` instead of
-`dataset.select()`.
+`dataset.select()`, and you can omit `collate_fn` and `batch_unpack`.
 
 ### Step 2: Train normally
 
@@ -77,24 +84,21 @@ No changes to the training loop. The dataset is already filtered.
 
 ### Step 3: Evaluate after training
 
-Score all canaries (both in and out) against the trained model:
-
 ```python
-audit = auditing.evaluate(
-    experiment,
-    per_example_loss_fn,    # same function used with clipped_grad
-    trainable_params,       # trained parameters
-    batch_argnums=(1,),     # same as clipped_grad
-    dataset=full_dataset,   # the FULL dataset (before canary removal)
-    collate_fn=data_collator,
-    batch_unpack=lambda b: (b["input_ids"].to(device),),
-)
+audit = auditing.evaluate(experiment, per_example_loss_fn, trained_params)
 print(audit.summary(delta=1e-5, theoretical_epsilon=target_epsilon))
 ```
 
-The `batch_argnums`, `collate_fn`, and `batch_unpack` parameters handle
-the mismatch between how a DataLoader yields batches and how the loss
-function expects arguments:
+That's it. The dataset, `batch_argnums`, `collate_fn`, and `batch_unpack`
+are all retrieved from the experiment created in step 1.
+
+See [examples/train_causal_lm.py](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_causal_lm.py)
+for a complete working example with the `--audit` flag.
+
+### Parameter reference
+
+These parameters bridge the gap between how a DataLoader yields batches
+and how the loss function expects arguments:
 
 - **`batch_argnums`**: Which positional arguments of `loss_fn` come from the
   dataset. `(1,)` means arg 1 is batched; `(1, 2)` means args 1 and 2 are
@@ -103,9 +107,6 @@ function expects arguments:
   `DataCollatorForLanguageModeling` for HuggingFace).
 - **`batch_unpack`**: How to extract tensors from a collated batch. For
   HuggingFace dict batches: `lambda b: (b["input_ids"].to(device),)`.
-
-See [examples/train_causal_lm.py](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_causal_lm.py)
-for a complete working example with the `--audit` flag.
 
 ## Epsilon estimation methods
 

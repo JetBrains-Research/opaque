@@ -7,18 +7,38 @@
 ### setup
 
 ```python
-auditing.setup(dataset, *, num_canaries: int, key: RngKey) -> CoinFlipExperiment
+auditing.setup(
+    dataset, *, num_canaries, key,
+    batch_argnums=None, collate_fn=None,
+    batch_unpack=None, batch_size=256,
+) -> CoinFlipExperiment
 ```
 
-Randomly select `num_canaries` examples and flip a fair coin for each.
+Randomly select canaries, flip coins, and optionally store scoring config
+so that `evaluate()` requires only the loss function and trained parameters.
 
-| Parameter | Type | Description |
-|---|---|---|
-| `dataset` | any with `len()` | Full training dataset |
-| `num_canaries` | `int` | Number of canaries to designate |
-| `key` | `RngKey` | RNG key for reproducibility |
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `dataset` | any with `len()` | required | Full training dataset |
+| `num_canaries` | `int` | required | Number of canaries to designate |
+| `key` | `RngKey` | required | RNG key for reproducibility |
+| `batch_argnums` | `tuple[int, ...]` | `None` | Which `loss_fn` args are batched (same as `clipped_grad`) |
+| `collate_fn` | `Callable` | `None` | DataLoader collate function |
+| `batch_unpack` | `Callable` | `None` | Extract tensors from collated batch |
+| `batch_size` | `int` | `256` | Scoring batch size |
 
-**Raises** `ValueError` if `num_canaries > len(dataset)`.
+When `batch_argnums` and other scoring params are provided, the experiment
+stores them so `evaluate()` can use them automatically.
+
+```python
+# Recommended: configure scoring at setup time
+experiment = auditing.setup(
+    dataset, num_canaries=1000, key=key(42),
+    batch_argnums=(1,),
+    collate_fn=data_collator,
+    batch_unpack=lambda b: (b["input_ids"].to(device),),
+)
+```
 
 ---
 
@@ -27,29 +47,33 @@ Randomly select `num_canaries` examples and flip a fair coin for each.
 ```python
 auditing.evaluate(
     experiment, loss_fn, *args, *,
-    batch_argnums: tuple[int, ...],
-    dataset,
-    collate_fn=None,
-    batch_unpack=None,
-    batch_size=256,
+    batch_argnums=..., dataset=...,
+    collate_fn=..., batch_unpack=...,
+    batch_size=None,
 ) -> AuditResult
 ```
 
-Score all canaries and return an `AuditResult`. Internally calls
-`score()` on `experiment.canary_indices`, then `experiment.audit()`.
+Score all canaries and return an `AuditResult`. Parameters fall back to
+values stored at `setup()` time when not provided explicitly.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `experiment` | `CoinFlipExperiment` | required | From `setup()` |
 | `loss_fn` | `Callable` | required | Per-example loss (vmap-compatible) |
 | `*args` | | | Non-batched args (e.g. model params) |
-| `batch_argnums` | `tuple[int, ...]` | required | Which `loss_fn` args come from dataset batches |
-| `dataset` | any | required | Full dataset (same one passed to `setup`) |
-| `collate_fn` | `Callable \| None` | `None` | DataLoader collate function |
-| `batch_unpack` | `Callable \| None` | `None` | Extract tensors from collated batch |
-| `batch_size` | `int` | `256` | Scoring batch size |
+| `batch_argnums` | `tuple[int, ...]` | from setup | Which `loss_fn` args are batched |
+| `dataset` | any | from setup | Full dataset |
+| `collate_fn` | `Callable` | from setup | DataLoader collate function |
+| `batch_unpack` | `Callable` | from setup | Extract tensors from collated batch |
+| `batch_size` | `int` | from setup | Scoring batch size |
 
-**Returns** `AuditResult` with `epsilon_at()` defaulting to `'one_run'`.
+```python
+# If setup() has scoring config, evaluate is a one-liner:
+audit = auditing.evaluate(experiment, loss_fn, trained_params)
+
+# Or override specific params:
+audit = auditing.evaluate(experiment, loss_fn, params, batch_size=32)
+```
 
 ---
 
@@ -58,17 +82,14 @@ Score all canaries and return an `AuditResult`. Internally calls
 ```python
 auditing.score(
     loss_fn, *args, *,
-    batch_argnums: tuple[int, ...],
-    dataset,
-    indices=None,
-    collate_fn=None,
-    batch_unpack=None,
-    batch_size=256,
+    batch_argnums, dataset,
+    indices=None, collate_fn=None,
+    batch_unpack=None, batch_size=256,
 ) -> np.ndarray
 ```
 
 Compute per-example membership scores as negative loss. Lower-level
-than `evaluate()` — use when you need raw scores without an experiment.
+than `evaluate()` — use when you need raw scores.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
@@ -76,9 +97,9 @@ than `evaluate()` — use when you need raw scores without an experiment.
 | `*args` | | | Non-batched args (e.g. model params) |
 | `batch_argnums` | `tuple[int, ...]` | required | Which `loss_fn` args are batched |
 | `dataset` | any | required | Dataset to score |
-| `indices` | `np.ndarray \| None` | `None` | Score only these indices |
-| `collate_fn` | `Callable \| None` | `None` | DataLoader collate function |
-| `batch_unpack` | `Callable \| None` | `None` | Extract tensors from collated batch |
+| `indices` | `np.ndarray` | `None` | Score only these indices |
+| `collate_fn` | `Callable` | `None` | DataLoader collate function |
+| `batch_unpack` | `Callable` | `None` | Extract tensors from collated batch |
 | `batch_size` | `int` | `256` | Scoring batch size |
 
 **Returns** `np.ndarray` of shape `(n,)`. Higher = more likely member.
@@ -135,7 +156,7 @@ when `confidence` is provided.
 ### beta_at
 
 ```python
-audit.beta_at(*, alpha: float | np.ndarray) -> float | np.ndarray
+audit.beta_at(*, alpha) -> float | np.ndarray
 ```
 
 Type-II error at given Type-I error rate. `beta = 1 - TPR` at `alpha = FPR`.
@@ -177,7 +198,7 @@ Prefer `auditing.setup()` over direct construction.
 ### train_indices
 
 ```python
-experiment.train_indices(dataset_size: int) -> list[int]
+experiment.train_indices(dataset_size) -> list[int]
 ```
 
 All indices except held-out canaries. Returns `list[int]` for HuggingFace
@@ -195,7 +216,7 @@ PyTorch `Subset` for training. For HuggingFace datasets, prefer
 ### audit
 
 ```python
-experiment.audit(scores: np.ndarray) -> AuditResult
+experiment.audit(scores) -> AuditResult
 ```
 
 Split scores by coin flip. `scores` must have shape `(num_canaries,)`,
@@ -207,8 +228,8 @@ one per canary in the order of `canary_indices`.
 
 | | |
 |---|---|
-| `auditing.setup()` | Designate canaries, flip coins |
-| `auditing.evaluate()` | Score canaries, return `AuditResult` |
+| `auditing.setup(..., batch_argnums=, ...)` | Designate canaries + configure scoring |
+| `auditing.evaluate(exp, loss_fn, params)` | Score canaries, return `AuditResult` |
 | `auditing.score()` | Raw membership scores |
 | `experiment.train_indices()` | Training indices for `dataset.select()` |
 | `experiment.subset()` | PyTorch `Subset` for training |
@@ -216,5 +237,4 @@ one per canary in the order of `canary_indices`.
 | `audit.auc()` | Attack AUC |
 | `audit.auc(confidence=, key=)` | AUC with confidence interval |
 | `audit.beta_at(alpha=)` | Type-II error at given FPR |
-| `audit.summary()` | Formatted report |
-| `audit.summary(theoretical_epsilon=)` | Report with theoretical comparison |
+| `audit.summary(theoretical_epsilon=)` | Formatted report with comparison |

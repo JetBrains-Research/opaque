@@ -684,11 +684,16 @@ def main():
 
     # Privacy auditing setup: designate canaries and remove held-out ones
     experiment = None
-    full_train_dataset = train_dataset  # Keep reference before canary removal
     if args.audit:
         print(f"\nSetting up privacy auditing with {args.audit_canaries} canaries...")
         experiment = auditing.setup(
-            train_dataset, num_canaries=args.audit_canaries, key=key(args.seed)
+            train_dataset,
+            num_canaries=args.audit_canaries,
+            key=key(args.seed),
+            batch_argnums=(1,),
+            collate_fn=data_collator,
+            batch_unpack=lambda b: (b["input_ids"].to(device),),
+            batch_size=args.audit_batch_size,
         )
         train_dataset = train_dataset.select(
             experiment.train_indices(len(train_dataset))
@@ -697,7 +702,7 @@ def main():
             f"  Canaries: {len(experiment.in_indices)} in, "
             f"{len(experiment.out_indices)} out (held out from training)"
         )
-        print(f"  Training set reduced: {len(full_train_dataset)} -> {len(train_dataset)}")
+        print(f"  Training set: {len(train_dataset)} examples")
 
     # Eval DataLoader (standard batching, no privacy requirements)
     eval_loader = DataLoader(
@@ -1032,14 +1037,7 @@ def main():
         print(f"Scoring {experiment.num_canaries} canaries...")
 
         audit_result = auditing.evaluate(
-            experiment,
-            per_example_loss_fn,
-            trainable_params,
-            batch_argnums=(1,),
-            dataset=full_train_dataset,
-            collate_fn=data_collator,
-            batch_unpack=lambda b: (b["input_ids"].to(device),),
-            batch_size=args.audit_batch_size,
+            experiment, per_example_loss_fn, trainable_params
         )
         print(audit_result.summary(
             delta=args.target_delta,
