@@ -163,18 +163,12 @@ def evaluate(
         ``'one_run'`` method.
     """
     # Resolve parameters: explicit > stored at setup > error
-    resolved_dataset = _resolve(
-        dataset, experiment, "_dataset", "dataset"
-    )
+    resolved_dataset = _resolve(dataset, experiment, "_dataset", "dataset")
     resolved_argnums = _resolve(
         batch_argnums, experiment, "_batch_argnums", "batch_argnums"
     )
-    resolved_collate = _resolve_optional(
-        collate_fn, experiment, "_collate_fn"
-    )
-    resolved_unpack = _resolve_optional(
-        batch_unpack, experiment, "_batch_unpack"
-    )
+    resolved_collate = _resolve_optional(collate_fn, experiment, "_collate_fn")
+    resolved_unpack = _resolve_optional(batch_unpack, experiment, "_batch_unpack")
     resolved_batch_size = (
         batch_size
         if batch_size is not None
@@ -201,9 +195,7 @@ def _resolve(value: Any, experiment: CoinFlipExperiment, attr: str, name: str) -
     stored = getattr(experiment, attr, None)
     if stored is not None:
         return stored
-    raise TypeError(
-        f"'{name}' must be provided either to setup() or evaluate()"
-    )
+    raise TypeError(f"'{name}' must be provided either to setup() or evaluate()")
 
 
 def _resolve_optional(
