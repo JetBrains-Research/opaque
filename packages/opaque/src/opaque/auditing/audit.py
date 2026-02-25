@@ -11,11 +11,13 @@ For end-to-end auditing with a single training run, use
     from opaque.random import key
 
     experiment = auditing.setup(dataset, num_canaries=1000, key=key(42))
-    train_loader = DataLoader(experiment.subset(dataset), ...)
-    # ... train model ...
-    audit = auditing.evaluate(experiment, loss_fn, params, dataset)
-    audit.epsilon_at(delta=1e-5)
-    print(audit.summary())
+    train_data = dataset.select(experiment.train_indices(len(dataset)))
+    # ... train model with DP-SGD ...
+    audit = auditing.evaluate(
+        experiment, loss_fn, params,
+        batch_argnums=(1,), dataset=dataset,
+    )
+    print(audit.summary(delta=1e-5))
 
 References:
     - Steinke, Nasr, Jagielski (2023), https://arxiv.org/abs/2305.08846

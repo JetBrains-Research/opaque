@@ -50,9 +50,9 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 ### Validation & Debugging
 
 - **[Auditing](auditing.md)**: Empirical privacy validation
-  - `epsilon_clopper_pearson()`, `epsilon_one_run()` - Estimate epsilon from attacks
-  - `audit()` - Comprehensive privacy audit
-  - `auc()`, `beta_at()` - Attack utility metrics
+  - `auditing.setup()`, `auditing.evaluate()` - One-run auditing workflow
+  - `AuditResult.epsilon_at()` - Epsilon bound (auto-selects method)
+  - `auc()`, `beta_at()`, `summary()` - Attack metrics and reporting
 
 - **[Distributed](distributed.md)**: Multi-GPU training with DDP
   - `sum_gradients()` - Sum clipped gradients across GPUs (for DP training)

@@ -1,281 +1,220 @@
-# Privacy Auditing API
+# Auditing API
 
-The `opaque.auditing` module provides empirical privacy auditing via membership inference on canary examples.
+::: opaque.auditing
 
-## Module-Level Functions
+## Module functions
 
-### auditing.setup
-
-```python
-def setup(
-    dataset: Any,
-    *,
-    num_canaries: int,
-    key: RngKey,
-) -> CoinFlipExperiment:
-```
-
-Set up a one-run privacy audit experiment. Randomly selects canary examples and flips a fair coin for each to decide inclusion/exclusion (Steinke et al. 2023).
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `dataset` | any with `len()` | required | The full training dataset (HuggingFace or PyTorch) |
-| `num_canaries` | `int` | required | Number of canary examples to designate |
-| `key` | `RngKey` | required | RNG key for reproducibility |
-
-**Returns**: `CoinFlipExperiment` managing the canary assignment.
+### setup
 
 ```python
-import opaque.auditing as auditing
-from opaque.random import key
-
-experiment = auditing.setup(dataset, num_canaries=1000, key=key(42))
-
-# HuggingFace datasets:
-train_data = dataset.select(experiment.train_indices(len(dataset)))
-
-# PyTorch datasets:
-train_data = experiment.subset(dataset)
+auditing.setup(dataset, *, num_canaries: int, key: RngKey) -> CoinFlipExperiment
 ```
+
+Randomly select `num_canaries` examples and flip a fair coin for each.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `dataset` | any with `len()` | Full training dataset |
+| `num_canaries` | `int` | Number of canaries to designate |
+| `key` | `RngKey` | RNG key for reproducibility |
+
+**Raises** `ValueError` if `num_canaries > len(dataset)`.
 
 ---
 
-### auditing.evaluate
+### evaluate
 
 ```python
-def evaluate(
-    experiment: CoinFlipExperiment,
-    loss_fn: Callable,
-    *args: Any,
+auditing.evaluate(
+    experiment, loss_fn, *args, *,
     batch_argnums: tuple[int, ...],
-    dataset: Any,
-    collate_fn: Callable | None = None,
-    batch_unpack: Callable | None = None,
-    batch_size: int = 256,
-) -> AuditResult:
+    dataset,
+    collate_fn=None,
+    batch_unpack=None,
+    batch_size=256,
+) -> AuditResult
 ```
 
-Score canaries by negative loss and produce audit results in one call. Uses `torch.func.vmap` for per-example loss computation. Follows the same `batch_argnums` convention as `clipped_grad`.
+Score all canaries and return an `AuditResult`. Internally calls
+`score()` on `experiment.canary_indices`, then `experiment.audit()`.
 
 | Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `experiment` | `CoinFlipExperiment` | required | From `auditing.setup()` |
-| `loss_fn` | `Callable` | required | Per-example loss function, vmap-compatible |
-| `*args` | any | | Non-batched args to `loss_fn` (e.g., model parameters) |
-| `batch_argnums` | `tuple[int, ...]` | required | Indices of `loss_fn` args from dataset batches |
-| `dataset` | any | required | The full dataset (same as passed to `setup`) |
-| `collate_fn` | `Callable \| None` | `None` | Collate function for DataLoader |
-| `batch_unpack` | `Callable \| None` | `None` | Maps batch to tuple of tensors for `batch_argnums` |
-| `batch_size` | `int` | `256` | Batch size for scoring |
-
-**Returns**: `AuditResult` with `epsilon_at()` defaulting to the `'one_run'` method.
-
-```python
-# HuggingFace pattern
-audit = auditing.evaluate(
-    experiment,
-    per_example_loss_fn,
-    trainable_params,
-    batch_argnums=(1,),
-    dataset=dataset,
-    collate_fn=data_collator,
-    batch_unpack=lambda b: (b["input_ids"].to(device),),
-)
-
-# PyTorch (x, y) pattern
-audit = auditing.evaluate(
-    experiment, loss_fn, params,
-    batch_argnums=(1, 2),
-    dataset=dataset,
-)
-```
-
----
-
-### auditing.score
-
-```python
-def score(
-    loss_fn: Callable,
-    *args: Any,
-    batch_argnums: tuple[int, ...],
-    dataset: Any,
-    indices: np.ndarray | None = None,
-    collate_fn: Callable | None = None,
-    batch_unpack: Callable | None = None,
-    batch_size: int = 256,
-) -> np.ndarray:
-```
-
-Compute membership scores as negative per-example loss. Higher score = lower loss = more likely a training member. Lower-level than `evaluate()` — use when you need raw scores.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `loss_fn` | `Callable` | required | Per-example loss function, vmap-compatible |
-| `*args` | any | | Non-batched args (e.g., model parameters) |
+|---|---|---|---|
+| `experiment` | `CoinFlipExperiment` | required | From `setup()` |
+| `loss_fn` | `Callable` | required | Per-example loss (vmap-compatible) |
+| `*args` | | | Non-batched args (e.g. model params) |
 | `batch_argnums` | `tuple[int, ...]` | required | Which `loss_fn` args come from dataset batches |
+| `dataset` | any | required | Full dataset (same one passed to `setup`) |
+| `collate_fn` | `Callable \| None` | `None` | DataLoader collate function |
+| `batch_unpack` | `Callable \| None` | `None` | Extract tensors from collated batch |
+| `batch_size` | `int` | `256` | Scoring batch size |
+
+**Returns** `AuditResult` with `epsilon_at()` defaulting to `'one_run'`.
+
+---
+
+### score
+
+```python
+auditing.score(
+    loss_fn, *args, *,
+    batch_argnums: tuple[int, ...],
+    dataset,
+    indices=None,
+    collate_fn=None,
+    batch_unpack=None,
+    batch_size=256,
+) -> np.ndarray
+```
+
+Compute per-example membership scores as negative loss. Lower-level
+than `evaluate()` — use when you need raw scores without an experiment.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `loss_fn` | `Callable` | required | Per-example loss (vmap-compatible) |
+| `*args` | | | Non-batched args (e.g. model params) |
+| `batch_argnums` | `tuple[int, ...]` | required | Which `loss_fn` args are batched |
 | `dataset` | any | required | Dataset to score |
 | `indices` | `np.ndarray \| None` | `None` | Score only these indices |
-| `collate_fn` | `Callable \| None` | `None` | Collate function for DataLoader |
-| `batch_unpack` | `Callable \| None` | `None` | Maps batch to tuple of tensors |
-| `batch_size` | `int` | `256` | Batch size for scoring |
+| `collate_fn` | `Callable \| None` | `None` | DataLoader collate function |
+| `batch_unpack` | `Callable \| None` | `None` | Extract tensors from collated batch |
+| `batch_size` | `int` | `256` | Scoring batch size |
 
-**Returns**: Array of scores, shape `(n,)`.
+**Returns** `np.ndarray` of shape `(n,)`. Higher = more likely member.
 
 ---
 
 ## AuditResult
 
 ```python
-class AuditResult:
-    n_in: int       # Number of held-in canaries
-    n_out: int      # Number of held-out canaries
+class AuditResult(in_scores, out_scores)
 ```
 
-Privacy audit results computed from canary scores. Construct from `auditing.evaluate()` or directly from pre-computed scores.
+| Attribute | Type | Description |
+|---|---|---|
+| `n_in` | `int` | Number of held-in canaries |
+| `n_out` | `int` | Number of held-out canaries |
 
-### AuditResult.epsilon_at
+### epsilon_at
 
 ```python
-def epsilon_at(
-    self,
-    *,
-    delta: float = 0.0,
-    significance: float = 0.05,
-    method: str | None = None,
-) -> float:
+audit.epsilon_at(*, delta=0.0, significance=0.05, method=None) -> float
 ```
 
-Epsilon lower bound at the given delta. Matches the accounting API (`DpProcess.epsilon_at(delta=)`). Method is chosen automatically based on provenance.
+Epsilon lower bound. Auto-selects method: `'one_run'` if created via
+`CoinFlipExperiment.audit()`, `'clopper_pearson'` otherwise.
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `delta` | `float` | `0.0` | DP delta parameter |
-| `significance` | `float` | `0.05` | Failure probability (1 - confidence) |
-| `method` | `str \| None` | auto | `'one_run'` or `'clopper_pearson'` |
-
-### AuditResult.auc
+### epsilon_clopper_pearson
 
 ```python
-def auc(
-    self,
-    *,
-    confidence: float | None = None,
-    num_samples: int = 1000,
-    key: RngKey | None = None,
-) -> float | tuple[float, float]:
+audit.epsilon_clopper_pearson(*, significance=0.05, delta=0.0, threshold=None) -> float
 ```
 
-Area under the ROC curve. 0.5 = random guessing, 1.0 = perfect attack.
+Conservative binomial CI bound. Bonferroni-corrected over Pareto-optimal
+thresholds unless `threshold` is given.
 
-When `confidence` is provided, returns a confidence interval
-as a `(lower, upper)` tuple instead of a point estimate.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `confidence` | `float \| None` | `None` | If provided, return a symmetric CI at this level (e.g. 0.95 for 95% CI) |
-| `num_samples` | `int` | `1000` | Number of resamples for CI |
-| `key` | `RngKey \| None` | `None` | RNG key for reproducible resampling |
+### epsilon_one_run
 
 ```python
-audit.auc()                              # point estimate -> float
-audit.auc(confidence=0.95, key=key(42))  # 95% CI -> (lower, upper)
+audit.epsilon_one_run(*, significance=0.05, delta=0.0, threshold=None, eps_max=20.0, tol=1e-4) -> float
 ```
 
-### AuditResult.beta_at
+Likelihood-ratio test from Steinke et al. (2023). Tests both positive-only
+and two-sided guesses per threshold, with Bonferroni correction.
+
+### auc
 
 ```python
-def beta_at(self, *, alpha: float | np.ndarray) -> float | np.ndarray:
+audit.auc(*, confidence=None, num_samples=1000, key=None) -> float | tuple[float, float]
 ```
 
-Type-II error rate at a given Type-I error rate. Consistent with
-`DpProcess.beta_at(alpha=)` in the accounting module. Higher beta means
-the attack is weaker (more private). Relationship: `beta = 1 - TPR` at
-`alpha = FPR`.
+ROC AUC. Returns point estimate by default, or `(lower, upper)` CI tuple
+when `confidence` is provided.
 
-### AuditResult.max_accuracy
+### beta_at
 
 ```python
-def max_accuracy(self, *, prevalence: float | None = None) -> float:
+audit.beta_at(*, alpha: float | np.ndarray) -> float | np.ndarray
 ```
 
-Maximum classification accuracy across all thresholds.
+Type-II error at given Type-I error rate. `beta = 1 - TPR` at `alpha = FPR`.
 
-### AuditResult.summary
+### max_accuracy
 
 ```python
-def summary(
-    self,
-    *,
-    significance: float = 0.05,
-    delta: float = 0.0,
-    theoretical_epsilon: float | None = None,
-) -> str:
+audit.max_accuracy(*, prevalence=None) -> float
 ```
 
-Multi-line formatted summary of all metrics. When `theoretical_epsilon`
-is provided, it is displayed alongside the empirical bound for comparison.
+Best-case classification accuracy across all thresholds.
+
+### summary
+
+```python
+audit.summary(*, significance=0.05, delta=0.0, theoretical_epsilon=None) -> str
+```
+
+Formatted multi-line report. Includes `theoretical_epsilon` for comparison
+when provided.
 
 ---
 
 ## CoinFlipExperiment
 
 ```python
-class CoinFlipExperiment:
-    num_canaries: int          # Total canary count
-    canary_indices: np.ndarray # All canary dataset indices
-    in_indices: np.ndarray     # Canaries included in training
-    out_indices: np.ndarray    # Canaries excluded from training
+class CoinFlipExperiment(canary_indices, *, key)
 ```
 
-Manages canary coin flips for one-run auditing. Prefer `auditing.setup()` over direct construction.
+Prefer `auditing.setup()` over direct construction.
 
-### CoinFlipExperiment.train_indices
+| Attribute | Type | Description |
+|---|---|---|
+| `num_canaries` | `int` | Total canary count |
+| `canary_indices` | `np.ndarray` | All canary dataset indices |
+| `in_indices` | `np.ndarray` | Included in training (heads) |
+| `out_indices` | `np.ndarray` | Excluded from training (tails) |
+
+### train_indices
 
 ```python
-def train_indices(self, dataset_size: int) -> list[int]:
+experiment.train_indices(dataset_size: int) -> list[int]
 ```
 
-Return indices to use for training (all except held-out canaries). Returns
-`list[int]` for direct use with HuggingFace `dataset.select()`.
+All indices except held-out canaries. Returns `list[int]` for HuggingFace
+`dataset.select()`.
 
-### CoinFlipExperiment.subset
+### subset
 
 ```python
-def subset(self, dataset) -> torch.utils.data.Subset:
+experiment.subset(dataset) -> torch.utils.data.Subset
 ```
 
-Return a `Subset` for training (excludes held-out canaries). For HuggingFace
-datasets, prefer `train_indices()` with `dataset.select()` instead.
+PyTorch `Subset` for training. For HuggingFace datasets, prefer
+`train_indices()` with `dataset.select()`.
 
-### CoinFlipExperiment.audit
+### audit
 
 ```python
-def audit(self, scores: np.ndarray) -> AuditResult:
+experiment.audit(scores: np.ndarray) -> AuditResult
 ```
 
-Split scores by coin flip and return an `AuditResult`. The result defaults to the `'one_run'` epsilon method.
+Split scores by coin flip. `scores` must have shape `(num_canaries,)`,
+one per canary in the order of `canary_indices`.
 
 ---
 
-## Quick Reference
+## Quick reference
 
-| Function / Method | Purpose |
-|-------------------|---------|
-| `auditing.setup()` | Set up canary experiment |
-| `auditing.evaluate()` | Score canaries and compute audit |
-| `auditing.score()` | Compute raw membership scores |
-| `experiment.train_indices()` | Get training indices for HF `dataset.select()` |
-| `experiment.subset()` | Get PyTorch `Subset` for training |
-| `audit.epsilon_at(delta=)` | Epsilon bound (auto-selects method) |
-| `audit.auc()` | Attack AUC (point estimate) |
-| `audit.auc(confidence=0.95, key=)` | AUC with CI |
-| `audit.beta_at(alpha=)` | Type-II error at given Type-I error |
-| `audit.max_accuracy()` | Best-case attack accuracy |
+| | |
+|---|---|
+| `auditing.setup()` | Designate canaries, flip coins |
+| `auditing.evaluate()` | Score canaries, return `AuditResult` |
+| `auditing.score()` | Raw membership scores |
+| `experiment.train_indices()` | Training indices for `dataset.select()` |
+| `experiment.subset()` | PyTorch `Subset` for training |
+| `audit.epsilon_at(delta=)` | Epsilon bound (auto method) |
+| `audit.auc()` | Attack AUC |
+| `audit.auc(confidence=, key=)` | AUC with confidence interval |
+| `audit.beta_at(alpha=)` | Type-II error at given FPR |
 | `audit.summary()` | Formatted report |
 | `audit.summary(theoretical_epsilon=)` | Report with theoretical comparison |
-
-## See Also
-
-- **[Privacy Auditing User Guide](../user-guide/auditing.md)**: Conceptual explanations and workflows
-- **[Privacy Auditing Tutorial](../tutorials/privacy_auditing.ipynb)**: Interactive walkthrough

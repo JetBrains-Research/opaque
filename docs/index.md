@@ -103,14 +103,21 @@ noisy_grads, noise_state = noise_fn(grads, noise_state)
 
 ## Privacy auditing
 
-Empirical privacy validation via membership inference attacks with
-Clopper-Pearson confidence intervals.
+Empirical privacy validation via one-run membership inference
+([Steinke et al. 2023](https://arxiv.org/abs/2305.08846)).
 
 ```python
-from opaque.auditing import audit
+import opaque.auditing as auditing
+from opaque.random import key
 
-result = audit(member_scores, non_member_scores, confidence=0.95)
-print(f"Empirical epsilon: {result.epsilon:.2f}")
+experiment = auditing.setup(dataset, num_canaries=1000, key=key(42))
+train_data = dataset.select(experiment.train_indices(len(dataset)))
+# ... train with DP-SGD ...
+audit = auditing.evaluate(
+    experiment, loss_fn, params,
+    batch_argnums=(1,), dataset=dataset,
+)
+print(audit.summary(delta=1e-5))
 ```
 
 ## Next steps
