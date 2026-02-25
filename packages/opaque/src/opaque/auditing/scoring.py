@@ -113,13 +113,9 @@ def score(
             elif isinstance(batch, dict):
                 # Dict batch (HF-style): use values in order of batch_argnums
                 keys = list(batch.keys())
-                batch_tensors = tuple(
-                    batch[keys[i]] for i in range(len(batch_argnums))
-                )
+                batch_tensors = tuple(batch[keys[i]] for i in range(len(batch_argnums)))
             elif isinstance(batch, (list, tuple)):
-                batch_tensors = tuple(
-                    batch[i] for i in range(len(batch_argnums))
-                )
+                batch_tensors = tuple(batch[i] for i in range(len(batch_argnums)))
             else:
                 batch_tensors = (batch,)
 

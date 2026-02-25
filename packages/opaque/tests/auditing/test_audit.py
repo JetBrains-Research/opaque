@@ -416,6 +416,7 @@ class TestCoinFlipExperiment:
         for idx in exp.in_indices:
             assert idx in sub_indices
 
+
 class TestAuditResultRepr:
     """Tests for AuditResult __repr__ and summary."""
 
