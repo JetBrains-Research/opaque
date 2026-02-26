@@ -1,4 +1,6 @@
 """GeGLU (exact and approx) kernels with vmap support for DP-SGD."""
+import math
+
 import triton
 import triton.language as tl
 import torch
@@ -8,6 +10,8 @@ NUM_INT32_ELEMENTS = 2**31
 SAFE_INT32_BUFFER_MULTIPLIER = 4
 BLOCK_SIZE = 1024
 INT32_SAFETY_BUFFER = NUM_INT32_ELEMENTS - BLOCK_SIZE * SAFE_INT32_BUFFER_MULTIPLIER
+
+_SQRT_2_OVER_PI = math.sqrt(2.0 / math.pi)
 
 
 # ===== GeGLU Exact (erf-based) =====
@@ -40,10 +44,11 @@ def _exact_forward_kernel(
 
 @triton.jit
 def _exact_backward_kernel(
-    DW, e, g, de_out, dg_out,
+    DW, e, g, de_out, dg_out, h_out,
     n_elements,
     BLOCK_SIZE: tl.constexpr,
     LONG_INDEXING: tl.constexpr,
+    COMPUTE_H: tl.constexpr,
 ):
     """
     GeGLU (exact) backward pass: h = gelu(e) * g
@@ -56,6 +61,8 @@ def _exact_backward_kernel(
 
     Note: dg_out = DW * f (grad for up input)
           de_out = DW * g * df/de (grad for gate input)
+
+    When COMPUTE_H=True, also computes h and stores to h_out.
     """
     block_idx = tl.program_id(0)
     if LONG_INDEXING:
@@ -91,8 +98,70 @@ def _exact_backward_kernel(
     tl.store(de_out + offsets, de_row, mask=mask)
     tl.store(dg_out + offsets, df_row, mask=mask)
 
+    if COMPUTE_H:
+        h_row = f_row * g_row
+        tl.store(h_out + offsets, h_row, mask=mask)
 
-class NewStyleGeGLUExact(torch.autograd.Function):
+
+class _GeGLUExactBackward(torch.autograd.Function):
+    """Backward pass wrapped as autograd.Function for vmap(grad()) support."""
+
+    @staticmethod
+    def forward(grad_h_flat, gate_flat, up_flat):
+        n_elements = gate_flat.numel()
+
+        grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+        with torch_gpu_device(gate_flat.device):
+            # In-place: gate_flat → grad_gate, up_flat → grad_up
+            _exact_backward_kernel[grid](
+                grad_h_flat, gate_flat, up_flat,
+                gate_flat, up_flat, gate_flat,  # de→gate, dg→up, h_out unused
+                n_elements,
+                BLOCK_SIZE=BLOCK_SIZE,
+                LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+                COMPUTE_H=False,
+            )
+
+        return gate_flat, up_flat
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        pass
+
+    @staticmethod
+    def backward(ctx, *grad_outputs):
+        raise NotImplementedError("Double backward not supported for GeGLU Exact")
+
+    @staticmethod
+    def vmap(info, in_dims, grad_h_flat, gate_flat, up_flat):
+        grad_h_bdim, gate_bdim, up_bdim = in_dims
+
+        batched_shape = gate_flat.shape
+        grad_h_merged = grad_h_flat.reshape(-1)
+        gate_merged = gate_flat.reshape(-1)
+        up_merged = up_flat.reshape(-1)
+
+        n_elements = gate_merged.numel()
+
+        grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+        with torch_gpu_device(gate_merged.device):
+            # In-place: gate_merged → grad_gate, up_merged → grad_up
+            _exact_backward_kernel[grid](
+                grad_h_merged, gate_merged, up_merged,
+                gate_merged, up_merged, gate_merged,  # de→gate, dg→up, h_out unused
+                n_elements,
+                BLOCK_SIZE=BLOCK_SIZE,
+                LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+                COMPUTE_H=False,
+            )
+
+        return (
+            (gate_merged.reshape(batched_shape), up_merged.reshape(batched_shape)),
+            (gate_bdim, up_bdim),
+        )
+
+
+class Opaque_GeGLU_Exact(torch.autograd.Function):
     @staticmethod
     def forward(gate, up):
         """New-style API forward without ctx parameter."""
@@ -125,32 +194,36 @@ class NewStyleGeGLUExact(torch.autograd.Function):
     def backward(ctx, grad_h):
         gate_flat, up_flat = ctx.saved_tensors
         grad_h_flat = grad_h.reshape(-1).contiguous()
-        n_elements = ctx.n_elements
+        grad_gate_flat, grad_up_flat = _GeGLUExactBackward.apply(grad_h_flat, gate_flat, up_flat)
+        return grad_gate_flat.reshape(ctx.original_shape), grad_up_flat.reshape(ctx.original_shape)
 
-        # Allocate output buffers
-        grad_gate_out = torch.empty_like(gate_flat)
-        grad_up_out = torch.empty_like(up_flat)
+    @staticmethod
+    def vmap(info, in_dims, gate, up):
+        """Custom vmap rule for DP-SGD.
 
+        Calls Triton forward kernel directly with merged batch dims.
+        """
+        gate_bdim, up_bdim = in_dims
+        if gate_bdim != 0 or up_bdim != 0:
+            raise ValueError("Both gate and up should be batched at dim 0")
+
+        batched_shape = gate.shape
+        gate_flat = gate.reshape(-1)
+        up_flat = up.reshape(-1)
+        n_elements = gate_flat.numel()
+
+        h = torch.empty_like(gate_flat)
         grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
-        with torch_gpu_device(grad_h.device):
-            _exact_backward_kernel[grid](
-                grad_h_flat, gate_flat, up_flat,
-                grad_gate_out, grad_up_out,
+
+        with torch_gpu_device(gate.device):
+            _exact_forward_kernel[grid](
+                gate_flat, up_flat, h,
                 n_elements,
                 BLOCK_SIZE=BLOCK_SIZE,
                 LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
             )
 
-        return grad_gate_out.reshape(ctx.original_shape), grad_up_out.reshape(ctx.original_shape)
-
-    @staticmethod
-    def vmap(info, in_dims, gate, up):
-        """Custom vmap rule for DP-SGD."""
-        gate_bdim, up_bdim = in_dims
-        if gate_bdim != 0 or up_bdim != 0:
-            raise ValueError("Both gate and up should be batched at dim 0")
-        h = NewStyleGeGLUExact.apply(gate, up)
-        return h, gate_bdim
+        return h.reshape(batched_shape), gate_bdim
 
 
 # ===== GeGLU Approx (tanh-based) =====
@@ -183,10 +256,11 @@ def _approx_forward_kernel(
 
 @triton.jit
 def _approx_backward_kernel(
-    DW, e, g, de_out, dg_out,
+    DW, e, g, de_out, dg_out, h_out,
     n_elements,
     BLOCK_SIZE: tl.constexpr,
     LONG_INDEXING: tl.constexpr,
+    COMPUTE_H: tl.constexpr,
 ):
     """
     GeGLU (approx tanh) backward pass: h = gelu_tanh(e) * g
@@ -200,6 +274,8 @@ def _approx_backward_kernel(
 
     Note: dg_out = DW * f (grad for up input)
           de_out = DW * g * df/de (grad for gate input)
+
+    When COMPUTE_H=True, also computes h and stores to h_out.
     """
     block_idx = tl.program_id(0)
     if LONG_INDEXING:
@@ -239,8 +315,70 @@ def _approx_backward_kernel(
     tl.store(de_out + offsets, de_row, mask=mask)
     tl.store(dg_out + offsets, df_row, mask=mask)
 
+    if COMPUTE_H:
+        h_row = f_row * g_row
+        tl.store(h_out + offsets, h_row, mask=mask)
 
-class NewStyleGeGLUApprox(torch.autograd.Function):
+
+class _GeGLUApproxBackward(torch.autograd.Function):
+    """Backward pass wrapped as autograd.Function for vmap(grad()) support."""
+
+    @staticmethod
+    def forward(grad_h_flat, gate_flat, up_flat):
+        n_elements = gate_flat.numel()
+
+        grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+        with torch_gpu_device(gate_flat.device):
+            # In-place: gate_flat → grad_gate, up_flat → grad_up
+            _approx_backward_kernel[grid](
+                grad_h_flat, gate_flat, up_flat,
+                gate_flat, up_flat, gate_flat,  # de→gate, dg→up, h_out unused
+                n_elements,
+                BLOCK_SIZE=BLOCK_SIZE,
+                LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+                COMPUTE_H=False,
+            )
+
+        return gate_flat, up_flat
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        pass
+
+    @staticmethod
+    def backward(ctx, *grad_outputs):
+        raise NotImplementedError("Double backward not supported for GeGLU Approx")
+
+    @staticmethod
+    def vmap(info, in_dims, grad_h_flat, gate_flat, up_flat):
+        grad_h_bdim, gate_bdim, up_bdim = in_dims
+
+        batched_shape = gate_flat.shape
+        grad_h_merged = grad_h_flat.reshape(-1)
+        gate_merged = gate_flat.reshape(-1)
+        up_merged = up_flat.reshape(-1)
+
+        n_elements = gate_merged.numel()
+
+        grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+        with torch_gpu_device(gate_merged.device):
+            # In-place: gate_merged → grad_gate, up_merged → grad_up
+            _approx_backward_kernel[grid](
+                grad_h_merged, gate_merged, up_merged,
+                gate_merged, up_merged, gate_merged,  # de→gate, dg→up, h_out unused
+                n_elements,
+                BLOCK_SIZE=BLOCK_SIZE,
+                LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+                COMPUTE_H=False,
+            )
+
+        return (
+            (gate_merged.reshape(batched_shape), up_merged.reshape(batched_shape)),
+            (gate_bdim, up_bdim),
+        )
+
+
+class Opaque_GeGLU_Approx(torch.autograd.Function):
     @staticmethod
     def forward(gate, up):
         """New-style API forward without ctx parameter."""
@@ -273,44 +411,48 @@ class NewStyleGeGLUApprox(torch.autograd.Function):
     def backward(ctx, grad_h):
         gate_flat, up_flat = ctx.saved_tensors
         grad_h_flat = grad_h.reshape(-1).contiguous()
-        n_elements = ctx.n_elements
+        grad_gate_flat, grad_up_flat = _GeGLUApproxBackward.apply(grad_h_flat, gate_flat, up_flat)
+        return grad_gate_flat.reshape(ctx.original_shape), grad_up_flat.reshape(ctx.original_shape)
 
-        # Allocate output buffers
-        grad_gate_out = torch.empty_like(gate_flat)
-        grad_up_out = torch.empty_like(up_flat)
+    @staticmethod
+    def vmap(info, in_dims, gate, up):
+        """Custom vmap rule for DP-SGD.
 
+        Calls Triton forward kernel directly with merged batch dims.
+        """
+        gate_bdim, up_bdim = in_dims
+        if gate_bdim != 0 or up_bdim != 0:
+            raise ValueError("Both gate and up should be batched at dim 0")
+
+        batched_shape = gate.shape
+        gate_flat = gate.reshape(-1)
+        up_flat = up.reshape(-1)
+        n_elements = gate_flat.numel()
+
+        h = torch.empty_like(gate_flat)
         grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
-        with torch_gpu_device(grad_h.device):
-            _approx_backward_kernel[grid](
-                grad_h_flat, gate_flat, up_flat,
-                grad_gate_out, grad_up_out,
+
+        with torch_gpu_device(gate.device):
+            _approx_forward_kernel[grid](
+                gate_flat, up_flat, h,
                 n_elements,
                 BLOCK_SIZE=BLOCK_SIZE,
                 LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
             )
 
-        return grad_gate_out.reshape(ctx.original_shape), grad_up_out.reshape(ctx.original_shape)
-
-    @staticmethod
-    def vmap(info, in_dims, gate, up):
-        """Custom vmap rule for DP-SGD."""
-        gate_bdim, up_bdim = in_dims
-        if gate_bdim != 0 or up_bdim != 0:
-            raise ValueError("Both gate and up should be batched at dim 0")
-        h = NewStyleGeGLUApprox.apply(gate, up)
-        return h, gate_bdim
+        return h.reshape(batched_shape), gate_bdim
 
 
 # Convenience wrappers
-def geglu_exact_vmap(gate, up):
-    return NewStyleGeGLUExact.apply(gate, up)
+def opaque_geglu_exact(gate, up):
+    return Opaque_GeGLU_Exact.apply(gate, up)
 
 
-def geglu_approx_vmap(gate, up):
-    return NewStyleGeGLUApprox.apply(gate, up)
+def opaque_geglu_approx(gate, up):
+    return Opaque_GeGLU_Approx.apply(gate, up)
 
 
-def triton_geglu_exact_forward(gate, up):
+def _triton_geglu_exact_forward(gate, up):
     """Direct Triton GeGLU (exact/erf) forward: h = gelu(gate) * up.
 
     Calls the Triton kernel directly without autograd wrapper.
@@ -335,7 +477,7 @@ def triton_geglu_exact_forward(gate, up):
     return h.reshape(original_shape)
 
 
-def triton_geglu_exact_backward(grad_h, gate, up):
+def _triton_geglu_exact_backward(grad_h, gate, up):
     """Direct Triton GeGLU (exact/erf) backward.
 
     Calls the Triton backward kernel directly without autograd wrapper.
@@ -350,28 +492,53 @@ def triton_geglu_exact_backward(grad_h, gate, up):
         (grad_gate, grad_up) tuple
     """
     original_shape = gate.shape
-    grad_h_flat = grad_h.reshape(-1).contiguous()
-    gate_flat = gate.reshape(-1).contiguous()
-    up_flat = up.reshape(-1).contiguous()
+    grad_h_flat = grad_h.reshape(-1)
+    gate_flat = gate.reshape(-1)
+    up_flat = up.reshape(-1)
     n_elements = gate_flat.numel()
 
-    grad_gate = torch.empty_like(gate_flat)
-    grad_up = torch.empty_like(up_flat)
+    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+    with torch_gpu_device(gate.device):
+        # In-place: gate_flat → grad_gate, up_flat → grad_up
+        _exact_backward_kernel[grid](
+            grad_h_flat, gate_flat, up_flat,
+            gate_flat, up_flat, gate_flat,  # de→gate, dg→up, h_out unused
+            n_elements,
+            BLOCK_SIZE=BLOCK_SIZE,
+            LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+            COMPUTE_H=False,
+        )
+
+    return gate_flat.reshape(original_shape), up_flat.reshape(original_shape)
+
+
+def _triton_geglu_exact_backward_fused(dh, gate, up):
+    """In-place GeGLU (exact) backward that also recomputes h.
+
+    Overwrites: dh → h, gate → dgate, up → dup.
+    Returns (h, dgate, dup) which alias the input buffers.
+    """
+    original_shape = gate.shape
+    dh_flat = dh.reshape(-1)
+    gate_flat = gate.reshape(-1)
+    up_flat = up.reshape(-1)
+    n_elements = gate_flat.numel()
 
     grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
     with torch_gpu_device(gate.device):
         _exact_backward_kernel[grid](
-            grad_h_flat, gate_flat, up_flat,
-            grad_gate, grad_up,
+            dh_flat, gate_flat, up_flat,
+            gate_flat, up_flat, dh_flat,  # In-place: de→gate, dg→up, h→dh
             n_elements,
             BLOCK_SIZE=BLOCK_SIZE,
             LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+            COMPUTE_H=True,
         )
 
-    return grad_gate.reshape(original_shape), grad_up.reshape(original_shape)
+    return dh_flat.reshape(original_shape), gate_flat.reshape(original_shape), up_flat.reshape(original_shape)
 
 
-def triton_geglu_approx_forward(gate, up):
+def _triton_geglu_approx_forward(gate, up):
     """Direct Triton GeGLU (approx/tanh) forward: h = gelu_tanh(gate) * up.
 
     Calls the Triton kernel directly without autograd wrapper.
@@ -396,7 +563,7 @@ def triton_geglu_approx_forward(gate, up):
     return h.reshape(original_shape)
 
 
-def triton_geglu_approx_backward(grad_h, gate, up):
+def _triton_geglu_approx_backward(grad_h, gate, up):
     """Direct Triton GeGLU (approx/tanh) backward.
 
     Calls the Triton backward kernel directly without autograd wrapper.
@@ -411,22 +578,47 @@ def triton_geglu_approx_backward(grad_h, gate, up):
         (grad_gate, grad_up) tuple
     """
     original_shape = gate.shape
-    grad_h_flat = grad_h.reshape(-1).contiguous()
-    gate_flat = gate.reshape(-1).contiguous()
-    up_flat = up.reshape(-1).contiguous()
+    grad_h_flat = grad_h.reshape(-1)
+    gate_flat = gate.reshape(-1)
+    up_flat = up.reshape(-1)
     n_elements = gate_flat.numel()
 
-    grad_gate = torch.empty_like(gate_flat)
-    grad_up = torch.empty_like(up_flat)
+    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+    with torch_gpu_device(gate.device):
+        # In-place: gate_flat → grad_gate, up_flat → grad_up
+        _approx_backward_kernel[grid](
+            grad_h_flat, gate_flat, up_flat,
+            gate_flat, up_flat, gate_flat,  # de→gate, dg→up, h_out unused
+            n_elements,
+            BLOCK_SIZE=BLOCK_SIZE,
+            LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+            COMPUTE_H=False,
+        )
+
+    return gate_flat.reshape(original_shape), up_flat.reshape(original_shape)
+
+
+def _triton_geglu_approx_backward_fused(dh, gate, up):
+    """In-place GeGLU (approx) backward that also recomputes h.
+
+    Overwrites: dh → h, gate → dgate, up → dup.
+    Returns (h, dgate, dup) which alias the input buffers.
+    """
+    original_shape = gate.shape
+    dh_flat = dh.reshape(-1)
+    gate_flat = gate.reshape(-1)
+    up_flat = up.reshape(-1)
+    n_elements = gate_flat.numel()
 
     grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
     with torch_gpu_device(gate.device):
         _approx_backward_kernel[grid](
-            grad_h_flat, gate_flat, up_flat,
-            grad_gate, grad_up,
+            dh_flat, gate_flat, up_flat,
+            gate_flat, up_flat, dh_flat,  # In-place: de→gate, dg→up, h→dh
             n_elements,
             BLOCK_SIZE=BLOCK_SIZE,
             LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+            COMPUTE_H=True,
         )
 
-    return grad_gate.reshape(original_shape), grad_up.reshape(original_shape)
+    return dh_flat.reshape(original_shape), gate_flat.reshape(original_shape), up_flat.reshape(original_shape)

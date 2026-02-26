@@ -67,8 +67,13 @@ if _TRITON_VERSION >= (3, 0, 0):
         triton_tanh = libdevice.tanh
     except ImportError:
         triton_tanh = tl.math.tanh
+    triton_cast = tl.cast
 else:
     triton_tanh = tl.math.tanh
+
+    @triton.jit
+    def triton_cast(x, dtype):
+        return x.to(dtype)
 
 
 # Int32 safety limits for large tensor indexing

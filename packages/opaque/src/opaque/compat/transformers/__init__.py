@@ -14,8 +14,7 @@ Supported models:
 - GPT-2
 - LLaMA (and LLaMA-based: Mistral, DeepSeek, etc.)
 - Qwen2
-- Phi, Phi-3
-- OLMo
+- Phi-3
 - Gemma, Gemma2
 
 Attention implementations:
@@ -64,6 +63,10 @@ from opaque.compat.transformers._global_patches import (
     apply_global_patches,
     is_globally_patched,
 )
+from opaque.compat.transformers._kernel_patches import (
+    apply_kernel_patches,
+    is_kernel_patched,
+)
 from opaque.compat.transformers._memory_optimizations import (
     apply_memory_patches,
     is_memory_patched,
@@ -72,8 +75,10 @@ from opaque.compat.transformers._memory_optimizations import (
 
 __all__ = [
     "apply_global_patches",
+    "apply_kernel_patches",
     "apply_memory_patches",
     "is_globally_patched",
+    "is_kernel_patched",
     "is_memory_patched",
     "is_model_memory_optimized",
 ]

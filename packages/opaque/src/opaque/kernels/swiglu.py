@@ -47,9 +47,11 @@ def _DWf_DW_dfg_kernel(
     g,
     de_out,
     dg_out,
+    h_out,
     n_elements,
     BLOCK_SIZE: tl.constexpr,
     LONG_INDEXING: tl.constexpr,
+    COMPUTE_H: tl.constexpr,
 ):
     """
     SwiGLU backward pass: h = silu(e) * g = (e * sigmoid(e)) * g
@@ -62,6 +64,9 @@ def _DWf_DW_dfg_kernel(
     - df = DW * f
     - dg = DW * g
     - de = (dg.float() * se * (1.0 + e * (1.0 - se))).to(dtype)
+
+    When COMPUTE_H=True, also computes h and stores to h_out.
+    For in-place use: pass de_out=e, dg_out=g, h_out=DW (Unsloth pattern).
     """
     block_idx = tl.program_id(0)
     if LONG_INDEXING:
@@ -97,8 +102,77 @@ def _DWf_DW_dfg_kernel(
     tl.store(de_out + offsets, de_row, mask=mask)
     tl.store(dg_out + offsets, df_row, mask=mask)
 
+    # Optionally store h = silu(e) * g (recomputed, avoids saving h in forward)
+    if COMPUTE_H:
+        h_row = f_row * g_row
+        tl.store(h_out + offsets, h_row, mask=mask)
 
-class NewStyleSwiGLU(torch.autograd.Function):
+
+class _SwiGLUBackward(torch.autograd.Function):
+    """Backward pass wrapped as autograd.Function for vmap(grad()) support.
+
+    When vmap(grad(fn)) runs backward, functorch intercepts .apply() and
+    routes to vmap(), where tensors are regular and Triton kernels work.
+    """
+
+    @staticmethod
+    def forward(grad_h_flat, gate_flat, up_flat):
+        n_elements = gate_flat.numel()
+
+        grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+        with torch_gpu_device(gate_flat.device):
+            # In-place: gate_flat → grad_gate, up_flat → grad_up
+            # Kernel reads e(gate), g(up) before writing de_out, dg_out
+            _DWf_DW_dfg_kernel[grid](
+                grad_h_flat, gate_flat, up_flat,
+                gate_flat, up_flat, gate_flat,  # de→gate, dg→up, h_out unused
+                n_elements,
+                BLOCK_SIZE=BLOCK_SIZE,
+                LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+                COMPUTE_H=False,
+            )
+
+        return gate_flat, up_flat
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        pass  # No double backward needed
+
+    @staticmethod
+    def backward(ctx, *grad_outputs):
+        raise NotImplementedError("Double backward not supported for SwiGLU")
+
+    @staticmethod
+    def vmap(info, in_dims, grad_h_flat, gate_flat, up_flat):
+        grad_h_bdim, gate_bdim, up_bdim = in_dims
+
+        # Merge vmap batch dim into flat dim (element-wise kernel)
+        batched_shape = gate_flat.shape
+        grad_h_merged = grad_h_flat.reshape(-1)
+        gate_merged = gate_flat.reshape(-1)
+        up_merged = up_flat.reshape(-1)
+
+        n_elements = gate_merged.numel()
+
+        grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+        with torch_gpu_device(gate_merged.device):
+            # In-place: gate_merged → grad_gate, up_merged → grad_up
+            _DWf_DW_dfg_kernel[grid](
+                grad_h_merged, gate_merged, up_merged,
+                gate_merged, up_merged, gate_merged,  # de→gate, dg→up, h_out unused
+                n_elements,
+                BLOCK_SIZE=BLOCK_SIZE,
+                LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+                COMPUTE_H=False,
+            )
+
+        return (
+            (gate_merged.reshape(batched_shape), up_merged.reshape(batched_shape)),
+            (gate_bdim, up_bdim),
+        )
+
+
+class Opaque_SwiGLU(torch.autograd.Function):
     @staticmethod
     def forward(gate, up):
         """New-style API forward without ctx parameter."""
@@ -131,42 +205,46 @@ class NewStyleSwiGLU(torch.autograd.Function):
     def backward(ctx, grad_h):
         gate_flat, up_flat = ctx.saved_tensors
         grad_h_flat = grad_h.reshape(-1).contiguous()
-        n_elements = ctx.n_elements
-
-        # Allocate output buffers for gradients
-        grad_gate_out = torch.empty_like(gate_flat)
-        grad_up_out = torch.empty_like(up_flat)
-
-        grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
-        with torch_gpu_device(grad_h.device):
-            _DWf_DW_dfg_kernel[grid](
-                grad_h_flat, gate_flat, up_flat,
-                grad_gate_out, grad_up_out,
-                n_elements,
-                BLOCK_SIZE=BLOCK_SIZE,
-                LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
-            )
-
-        return grad_gate_out.reshape(ctx.original_shape), grad_up_out.reshape(ctx.original_shape)
+        grad_gate_flat, grad_up_flat = _SwiGLUBackward.apply(grad_h_flat, gate_flat, up_flat)
+        return grad_gate_flat.reshape(ctx.original_shape), grad_up_flat.reshape(ctx.original_shape)
 
     @staticmethod
     def vmap(info, in_dims, gate, up):
-        """Custom vmap rule for DP-SGD."""
+        """Custom vmap rule for DP-SGD.
+
+        Calls Triton forward kernel directly with merged batch dims.
+        Tensors are regular here (unwrapped by functorch), Triton works.
+        """
         gate_bdim, up_bdim = in_dims
 
         if gate_bdim != 0 or up_bdim != 0:
             raise ValueError("Both gate and up should be batched at dim 0")
 
-        h = NewStyleSwiGLU.apply(gate, up)
-        return h, gate_bdim
+        batched_shape = gate.shape
+        gate_flat = gate.reshape(-1)
+        up_flat = up.reshape(-1)
+        n_elements = gate_flat.numel()
+
+        h = torch.empty_like(gate_flat)
+        grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
+        with torch_gpu_device(gate.device):
+            _fg_kernel[grid](
+                gate_flat, up_flat, h,
+                n_elements,
+                BLOCK_SIZE=BLOCK_SIZE,
+                LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+            )
+
+        return h.reshape(batched_shape), gate_bdim
 
 
-def swiglu_vmap(gate, up):
+def opaque_swiglu(gate, up):
     """Convenience wrapper."""
-    return NewStyleSwiGLU.apply(gate, up)
+    return Opaque_SwiGLU.apply(gate, up)
 
 
-def triton_swiglu_forward(gate, up):
+def _triton_swiglu_forward(gate, up):
     """Direct Triton SwiGLU forward: h = silu(gate) * up.
 
     Calls the Triton kernel directly without autograd wrapper.
@@ -191,7 +269,7 @@ def triton_swiglu_forward(gate, up):
     return h.reshape(original_shape)
 
 
-def triton_swiglu_backward(grad_h, gate, up):
+def _triton_swiglu_backward(grad_h, gate, up):
     """Direct Triton SwiGLU backward.
 
     Calls the Triton backward kernel directly without autograd wrapper.
@@ -206,22 +284,55 @@ def triton_swiglu_backward(grad_h, gate, up):
         (grad_gate, grad_up) tuple
     """
     original_shape = gate.shape
-    grad_h_flat = grad_h.reshape(-1).contiguous()
-    gate_flat = gate.reshape(-1).contiguous()
-    up_flat = up.reshape(-1).contiguous()
+    grad_h_flat = grad_h.reshape(-1)
+    gate_flat = gate.reshape(-1)
+    up_flat = up.reshape(-1)
     n_elements = gate_flat.numel()
 
-    grad_gate = torch.empty_like(gate_flat)
-    grad_up = torch.empty_like(up_flat)
+    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+    with torch_gpu_device(gate.device):
+        # In-place: gate_flat → grad_gate, up_flat → grad_up
+        _DWf_DW_dfg_kernel[grid](
+            grad_h_flat, gate_flat, up_flat,
+            gate_flat, up_flat, gate_flat,  # de→gate, dg→up, h_out unused
+            n_elements,
+            BLOCK_SIZE=BLOCK_SIZE,
+            LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+            COMPUTE_H=False,
+        )
+
+    return gate_flat.reshape(original_shape), up_flat.reshape(original_shape)
+
+
+def _triton_swiglu_backward_fused(dh, gate, up):
+    """In-place SwiGLU backward that also recomputes h (Unsloth pattern).
+
+    Overwrites all three input buffers:
+    - dh → h (activation output, recomputed from gate and up)
+    - gate → dgate (gradient w.r.t. gate input)
+    - up → dup (gradient w.r.t. up input)
+
+    Returns (h, dgate, dup) which alias the input buffers.
+    For use in LoRA_MLP backward to avoid saving h and allocating grad buffers.
+    """
+    original_shape = gate.shape
+    dh_flat = dh.reshape(-1)
+    gate_flat = gate.reshape(-1)
+    up_flat = up.reshape(-1)
+    n_elements = gate_flat.numel()
 
     grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
     with torch_gpu_device(gate.device):
         _DWf_DW_dfg_kernel[grid](
-            grad_h_flat, gate_flat, up_flat,
-            grad_gate, grad_up,
+            dh_flat, gate_flat, up_flat,
+            gate_flat, up_flat, dh_flat,  # In-place: de→gate, dg→up, h→dh
             n_elements,
             BLOCK_SIZE=BLOCK_SIZE,
             LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+            COMPUTE_H=True,
         )
 
-    return grad_gate.reshape(original_shape), grad_up.reshape(original_shape)
+    h = dh_flat.reshape(original_shape)
+    dgate = gate_flat.reshape(original_shape)
+    dup = up_flat.reshape(original_shape)
+    return h, dgate, dup

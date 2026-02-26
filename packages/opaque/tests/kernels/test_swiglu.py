@@ -4,8 +4,9 @@ SwiGLU Kernel Tests
 Tests:
 1. Forward pass vs PyTorch reference
 2. Backward pass vs PyTorch reference
-3. vmap (per-sample grad) vs PyTorch vmap
-4. Forward and backward performance benchmarks
+3. vmap forward: Triton vmap vs PyTorch vmap
+4. vmap(grad): per-example gradients — the DP-SGD path
+5. Forward and backward performance benchmarks
 
 Target precision (float32):
 - norm_err: max |a - b| / max(|b|, threshold) < rtol
@@ -18,8 +19,9 @@ Config: Mellum-4b scale (intermediate_dim=8256)
 import pytest
 import torch
 import torch.nn.functional as F
+from torch.func import vmap, grad
 
-from opaque.kernels.swiglu import NewStyleSwiGLU
+from opaque.kernels.swiglu import Opaque_SwiGLU
 
 pytestmark = pytest.mark.skipif(
     not torch.cuda.is_available(), reason="CUDA required"
@@ -36,7 +38,7 @@ def pytorch_swiglu(gate, up):
 
 def opaque_swiglu(gate, up):
     """Opaque Triton kernel."""
-    return NewStyleSwiGLU.apply(gate, up)
+    return Opaque_SwiGLU.apply(gate, up)
 
 
 class TestSwiGLUForward:
@@ -90,62 +92,99 @@ class TestSwiGLUBackward:
         assert up_err["rel_err"] < RTOL_BACKWARD, f"up.grad rel_err {up_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
 
 
-class TestSwiGLUVmap:
-    """Test vmap (per-sample gradient) precision and performance."""
+class TestSwiGLUVmapForward:
+    """Test vmap forward: Triton vmap vs PyTorch vmap."""
 
-    def test_vmap_precision(self, precision_error, mellum_config):
-        """vmap: opaque vs pytorch vmap."""
+    def test_vmap_forward_precision(self, precision_error, mellum_config):
+        """Batched forward: opaque Triton vmap vs PyTorch reference."""
         torch.manual_seed(42)
         vmap_batch = mellum_config["vmap_batch"]
         batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
 
-        gate = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
-        up = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
+        gate = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32)
+        up = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32)
 
-        # PyTorch vmap
-        gate_pt = gate.detach().clone().requires_grad_(True)
-        up_pt = up.detach().clone().requires_grad_(True)
-        out_pt = torch.vmap(pytorch_swiglu)(gate_pt, up_pt)
-        out_pt.sum().backward()
+        out_pt = vmap(pytorch_swiglu)(gate, up)
+        out_op = vmap(opaque_swiglu)(gate, up)
 
-        # Opaque vmap
-        gate_op = gate.detach().clone().requires_grad_(True)
-        up_op = up.detach().clone().requires_grad_(True)
-        out_op = torch.vmap(opaque_swiglu)(gate_op, up_op)
-        out_op.sum().backward()
+        err = precision_error(out_op, out_pt, threshold=1e-4)
+        print(f"\nvmap forward: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_FORWARD:.0e})")
 
-        fwd_err = precision_error(out_op, out_pt, threshold=1e-4)
-        gate_err = precision_error(gate_op.grad, gate_pt.grad, threshold=1e-4)
-        up_err = precision_error(up_op.grad, up_pt.grad, threshold=1e-4)
+        assert err["rel_err"] < RTOL_FORWARD, f"vmap forward rel_err {err['rel_err']:.2e} >= {RTOL_FORWARD:.0e}"
 
-        print(f"\nvmap precision:")
-        print(f"  forward:   abs={fwd_err['abs_err']:.2e}, rel={fwd_err['rel_err']:.2e} (target: <{RTOL_FORWARD:.0e})")
-        print(f"  gate.grad: abs={gate_err['abs_err']:.2e}, rel={gate_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
-        print(f"  up.grad:   abs={up_err['abs_err']:.2e}, rel={up_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
-
-        assert fwd_err["rel_err"] < RTOL_FORWARD, f"vmap forward rel_err {fwd_err['rel_err']:.2e} >= {RTOL_FORWARD:.0e}"
-        assert gate_err["rel_err"] < RTOL_BACKWARD, f"vmap gate.grad rel_err {gate_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
-        assert up_err["rel_err"] < RTOL_BACKWARD, f"vmap up.grad rel_err {up_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
-
-    def test_vmap_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
-        """vmap: opaque should be faster or use less memory than pytorch vmap."""
+    def test_vmap_forward_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
+        """Triton vmap forward must be faster or use less memory than PyTorch."""
         torch.manual_seed(42)
         vmap_batch = mellum_config["vmap_batch"]
         batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
 
-        gate = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
-        up = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
+        gate = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32)
+        up = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32)
 
-        def pytorch_vmap_fn(g, u):
-            return torch.vmap(pytorch_swiglu)(g, u)
+        pt_stats = measure_time_and_memory(lambda g, u: vmap(pytorch_swiglu)(g, u), gate, up)
+        op_stats = measure_time_and_memory(lambda g, u: vmap(opaque_swiglu)(g, u), gate, up)
 
-        def opaque_vmap_fn(g, u):
-            return torch.vmap(opaque_swiglu)(g, u)
+        assert_perf_benefit(pt_stats, op_stats, label="vmap forward")
 
-        pt_stats = measure_time_and_memory(pytorch_vmap_fn, gate, up)
-        op_stats = measure_time_and_memory(opaque_vmap_fn, gate, up)
 
-        assert_perf_benefit(pt_stats, op_stats, label="vmap")
+class TestSwiGLUVmapGrad:
+    """Test vmap(grad): per-example gradients — the DP-SGD path.
+
+    Exercises both Opaque_SwiGLU.vmap() (forward) and
+    _SwiGLUBackward.vmap() (backward) with Triton kernels.
+    """
+
+    def test_vmap_grad_precision(self, precision_error, mellum_config):
+        """Per-example gradients: opaque Triton vs PyTorch reference."""
+        torch.manual_seed(42)
+        vmap_batch = mellum_config["vmap_batch"]
+        batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
+
+        gate = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32)
+        up = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32)
+
+        def f_pt(g, u):
+            return pytorch_swiglu(g, u).sum()
+
+        def f_op(g, u):
+            return opaque_swiglu(g, u).sum()
+
+        grads_pt_gate, grads_pt_up = vmap(grad(f_pt, argnums=(0, 1)))(gate, up)
+        grads_op_gate, grads_op_up = vmap(grad(f_op, argnums=(0, 1)))(gate, up)
+
+        gate_err = precision_error(grads_op_gate, grads_pt_gate, threshold=1e-4)
+        up_err = precision_error(grads_op_up, grads_pt_up, threshold=1e-4)
+
+        print(f"\nvmap(grad) precision:")
+        print(f"  gate grad: abs={gate_err['abs_err']:.2e}, rel={gate_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
+        print(f"  up grad:   abs={up_err['abs_err']:.2e}, rel={up_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
+
+        assert gate_err["rel_err"] < RTOL_BACKWARD, f"vmap(grad) gate rel_err {gate_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
+        assert up_err["rel_err"] < RTOL_BACKWARD, f"vmap(grad) up rel_err {up_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
+
+    def test_vmap_grad_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
+        """Triton vmap(grad) must be faster or use less memory than PyTorch."""
+        torch.manual_seed(42)
+        vmap_batch = mellum_config["vmap_batch"]
+        batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
+
+        gate = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32)
+        up = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32)
+
+        def make_pt_fn():
+            def f(g, u):
+                return pytorch_swiglu(g, u).sum()
+            return vmap(grad(f, argnums=(0, 1)))
+
+        def make_op_fn():
+            def f(g, u):
+                return opaque_swiglu(g, u).sum()
+            return vmap(grad(f, argnums=(0, 1)))
+
+        pt_stats = measure_time_and_memory(make_pt_fn(), gate, up)
+        op_stats = measure_time_and_memory(make_op_fn(), gate, up)
+
+        assert_perf_benefit(pt_stats, op_stats, label="vmap(grad)")
 
 
 class TestSwiGLUPerformance:

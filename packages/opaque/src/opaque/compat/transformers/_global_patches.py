@@ -16,6 +16,7 @@ To add support for a new model with custom requirements:
 """
 
 from opaque.compat.transformers._gemma2 import apply_gemma2_patches
+from opaque.compat.transformers._kernel_patches import apply_kernel_patches
 from opaque.compat.transformers._memory_optimizations import apply_memory_patches
 from opaque.compat.transformers._phi3 import apply_phi3_patches
 from opaque.compat.transformers._shared import apply_shared_patches
@@ -26,13 +27,14 @@ _is_patched = False
 
 
 def apply_global_patches() -> None:
-    """Apply all vmap compatibility and memory optimization patches at import time.
+    """Apply all vmap compatibility, memory, and kernel optimization patches at import time.
 
-    Orchestrates patching in four independent layers:
+    Orchestrates patching in five layers:
     1. Shared utilities - required by all models
     2. Standard models - can work independently after shared patches
     3. Custom models - can work independently after shared patches
     4. Memory optimizations - auto-apply chunked lm_head for large vocab models
+    5. Triton kernel optimizations - replace RMSNorm/MLP with vmap-compatible Triton kernels
 
     Each model's patches are independent from other models.
     """
@@ -54,6 +56,9 @@ def apply_global_patches() -> None:
 
     # Layer 4: Memory optimizations (auto-apply chunked lm_head when appropriate)
     apply_memory_patches()
+
+    # Layer 5: Triton kernel optimizations (when CUDA + Triton available)
+    apply_kernel_patches()
 
     _is_patched = True
 

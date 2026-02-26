@@ -82,7 +82,72 @@ def layernorm_backward(
     tl.store(dY + col_offsets, dX_row, mask=mask)
 
 
-class NewStyleLayerNorm(torch.autograd.Function):
+class _LayerNormBackward(torch.autograd.Function):
+    """Backward pass wrapped as autograd.Function for vmap(grad()) support."""
+
+    @staticmethod
+    def forward(grad_Y, X, W, b, r, mu, eps):
+        original_shape = X.shape
+        dim = original_shape[-1]
+        X_flat = X.reshape(-1, dim)
+        n_rows, n_cols = X_flat.shape
+
+        # In-place: kernel writes dX directly into the dY buffer
+        grad_X = grad_Y.reshape(n_rows, n_cols).contiguous()
+
+        BLOCK_SIZE, num_warps = calculate_settings(n_cols)
+
+        with torch_gpu_device(grad_Y.device):
+            layernorm_backward[(n_rows,)](
+                grad_X, grad_X.stride(0),
+                X_flat, X_flat.stride(0),
+                W, b, r, mu,
+                n_cols, eps,
+                BLOCK_SIZE=BLOCK_SIZE,
+                num_warps=num_warps,
+            )
+
+        return grad_X.reshape(original_shape)
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        pass
+
+    @staticmethod
+    def backward(ctx, *grad_outputs):
+        raise NotImplementedError("Double backward not supported for LayerNorm")
+
+    @staticmethod
+    def vmap(info, in_dims, grad_Y, X, W, b, r, mu, eps):
+        grad_Y_bdim, X_bdim, W_bdim, b_bdim, r_bdim, mu_bdim, eps_bdim = in_dims
+
+        assert W_bdim is None and b_bdim is None and eps_bdim is None
+
+        dim = X.shape[-1]
+
+        # Merge vmap batch into rows, in-place (kernel writes dX into dY buffer)
+        X_flat = X.reshape(-1, dim).contiguous()
+        grad_X = grad_Y.reshape(-1, dim).contiguous()
+        r_flat = r.reshape(-1).contiguous()
+        mu_flat = mu.reshape(-1).contiguous()
+        n_rows = X_flat.shape[0]
+
+        BLOCK_SIZE, num_warps = calculate_settings(dim)
+
+        with torch_gpu_device(X.device):
+            layernorm_backward[(n_rows,)](
+                grad_X, grad_X.stride(0),
+                X_flat, X_flat.stride(0),
+                W, b, r_flat, mu_flat,
+                dim, eps,
+                BLOCK_SIZE=BLOCK_SIZE,
+                num_warps=num_warps,
+            )
+
+        return grad_X.reshape(X.shape), X_bdim
+
+
+class Opaque_LayerNorm(torch.autograd.Function):
     @staticmethod
     def forward(X, W, b, eps):
         """New-style API forward without ctx parameter."""
@@ -124,29 +189,15 @@ class NewStyleLayerNorm(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_Y, grad_r, grad_mu):
         X, W, b, r, mu = ctx.saved_tensors
-
-        original_shape = grad_Y.shape
-        dim = original_shape[-1]
-        grad_Y_flat = grad_Y.reshape(-1, dim).contiguous()
-        X_flat = X.reshape(-1, dim)
-        n_rows, n_cols = grad_Y_flat.shape
-
-        with torch_gpu_device(grad_Y.device):
-            layernorm_backward[(n_rows,)](
-                grad_Y_flat, grad_Y_flat.stride(0),
-                X_flat, X_flat.stride(0),
-                W, b, r, mu,
-                n_cols, ctx.eps,
-                BLOCK_SIZE=ctx.BLOCK_SIZE,
-                num_warps=ctx.num_warps,
-            )
-
-        grad_X = grad_Y_flat.reshape(original_shape)
+        grad_X = _LayerNormBackward.apply(grad_Y, X, W, b, r, mu, ctx.eps)
         return grad_X, None, None, None
 
     @staticmethod
     def vmap(info, in_dims, X, W, b, eps):
-        """Custom vmap rule for DP-SGD."""
+        """Custom vmap rule for DP-SGD.
+
+        Calls Triton forward kernel directly with merged batch dims.
+        """
         X_bdim, W_bdim, b_bdim, eps_bdim = in_dims
 
         if X_bdim != 0:
@@ -154,12 +205,36 @@ class NewStyleLayerNorm(torch.autograd.Function):
         if W_bdim is not None or b_bdim is not None:
             raise ValueError("W and b should not be batched")
 
-        output = NewStyleLayerNorm.apply(X, W, b, eps)
-        # Y is batched, r and mu are per-row (batched at same dim)
-        return output, (X_bdim, X_bdim, X_bdim)
+        batched_shape = X.shape
+        dim = X.shape[-1]
+        X_flat = X.reshape(-1, dim)
+        n_rows, n_cols = X_flat.shape
+
+        BLOCK_SIZE, num_warps = calculate_settings(n_cols)
+
+        Y = torch.empty((n_rows, n_cols), dtype=X.dtype, device=X.device)
+        r = torch.empty(n_rows, dtype=torch.float32, device=X.device)
+        mu = torch.empty(n_rows, dtype=torch.float32, device=X.device)
+
+        with torch_gpu_device(X.device):
+            layernorm_forward[(n_rows,)](
+                Y, Y.stride(0),
+                X_flat, X_flat.stride(0),
+                W, b, r, mu,
+                n_cols, eps,
+                BLOCK_SIZE=BLOCK_SIZE,
+                num_warps=num_warps,
+            )
+
+        Y = Y.reshape(batched_shape)
+        vmap_batch = batched_shape[0]
+        r = r.reshape(vmap_batch, -1)
+        mu = mu.reshape(vmap_batch, -1)
+
+        return (Y, r, mu), (X_bdim, X_bdim, X_bdim)
 
 
-def layernorm_vmap(X, W, b, eps=1e-5):
+def opaque_layernorm(X, W, b, eps=1e-5):
     """Convenience wrapper."""
-    Y, _, _ = NewStyleLayerNorm.apply(X, W, b, eps)
+    Y, _, _ = Opaque_LayerNorm.apply(X, W, b, eps)
     return Y

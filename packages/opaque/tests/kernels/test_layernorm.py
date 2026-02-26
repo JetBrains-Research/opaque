@@ -13,8 +13,9 @@ Config: Mellum-4b scale (hidden_dim=3072)
 import pytest
 import torch
 import torch.nn.functional as F
+from torch.func import vmap, grad
 
-from opaque.kernels.layernorm import NewStyleLayerNorm
+from opaque.kernels.layernorm import Opaque_LayerNorm
 
 pytestmark = pytest.mark.skipif(
     not torch.cuda.is_available(), reason="CUDA required"
@@ -36,8 +37,8 @@ def pytorch_layernorm(x, weight, bias, eps=1e-5):
 
 def opaque_layernorm(x, weight, bias, eps=1e-5):
     """Opaque Triton kernel."""
-    # NewStyleLayerNorm returns (Y, r, mu)
-    result = NewStyleLayerNorm.apply(x, weight, bias, eps)
+    # Opaque_LayerNorm returns (Y, r, mu)
+    result = Opaque_LayerNorm.apply(x, weight, bias, eps)
     return result[0]
 
 
@@ -105,11 +106,11 @@ class TestLayerNormBackward:
 # Vmap Tests
 # ============================================================================
 
-class TestLayerNormVmap:
-    """Test vmap (per-sample gradient) precision and performance."""
+class TestLayerNormVmapForward:
+    """Test vmap forward: Triton vmap vs PyTorch vmap."""
 
-    def test_vmap_precision(self, mellum_config, precision_error):
-        """vmap: opaque vs pytorch vmap."""
+    def test_vmap_forward_precision(self, mellum_config, precision_error):
+        """Batched forward: opaque Triton vmap vs PyTorch reference."""
         torch.manual_seed(42)
         vmap_batch = mellum_config["vmap_batch"]
         batch, seq, hidden = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["hidden_dim"]
@@ -117,32 +118,18 @@ class TestLayerNormVmap:
         weight = torch.ones(hidden, device="cuda", dtype=torch.float32)
         bias = torch.zeros(hidden, device="cuda", dtype=torch.float32)
 
-        x = torch.randn(vmap_batch, batch, seq, hidden, device="cuda", dtype=torch.float32, requires_grad=True)
+        x = torch.randn(vmap_batch, batch, seq, hidden, device="cuda", dtype=torch.float32)
 
-        # PyTorch vmap
-        x_pt = x.detach().clone().requires_grad_(True)
-        out_pt = torch.vmap(lambda inp: pytorch_layernorm(inp, weight, bias))(x_pt)
-        # Use random gradient (sum() produces near-zero grads for LayerNorm)
-        grad = torch.randn_like(out_pt)
-        out_pt.backward(grad)
+        out_pt = vmap(lambda inp: pytorch_layernorm(inp, weight, bias))(x)
+        out_op = vmap(lambda inp: opaque_layernorm(inp, weight, bias))(x)
 
-        # Opaque vmap
-        x_op = x.detach().clone().requires_grad_(True)
-        out_op = torch.vmap(lambda inp: opaque_layernorm(inp, weight, bias))(x_op)
-        out_op.backward(grad)
+        err = precision_error(out_op, out_pt, threshold=1e-4)
+        print(f"\nvmap forward: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_FORWARD:.0e})")
 
-        fwd_err = precision_error(out_op, out_pt, threshold=1e-4)
-        x_err = precision_error(x_op.grad, x_pt.grad, threshold=1e-4)
+        assert err["rel_err"] < RTOL_FORWARD, f"vmap forward rel_err {err['rel_err']:.2e} >= {RTOL_FORWARD:.0e}"
 
-        print(f"\nvmap precision:")
-        print(f"  forward: abs={fwd_err['abs_err']:.2e}, rel={fwd_err['rel_err']:.2e} (target: <{RTOL_FORWARD:.0e})")
-        print(f"  x.grad:  abs={x_err['abs_err']:.2e}, rel={x_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
-
-        assert fwd_err["rel_err"] < RTOL_FORWARD, f"vmap forward rel_err {fwd_err['rel_err']:.2e} >= {RTOL_FORWARD:.0e}"
-        assert x_err["rel_err"] < RTOL_BACKWARD, f"vmap x.grad rel_err {x_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
-
-    def test_vmap_performance(self, mellum_config, measure_time_and_memory, assert_perf_benefit):
-        """vmap: opaque should be faster or use less memory than pytorch vmap."""
+    def test_vmap_forward_performance(self, mellum_config, measure_time_and_memory, assert_perf_benefit):
+        """Triton vmap forward must be faster or use less memory."""
         torch.manual_seed(42)
         vmap_batch = mellum_config["vmap_batch"]
         batch, seq, hidden = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["hidden_dim"]
@@ -150,18 +137,74 @@ class TestLayerNormVmap:
         weight = torch.ones(hidden, device="cuda", dtype=torch.float32)
         bias = torch.zeros(hidden, device="cuda", dtype=torch.float32)
 
-        x = torch.randn(vmap_batch, batch, seq, hidden, device="cuda", dtype=torch.float32, requires_grad=True)
+        x = torch.randn(vmap_batch, batch, seq, hidden, device="cuda", dtype=torch.float32)
 
-        def pytorch_vmap_fn(inp):
-            return torch.vmap(lambda i: pytorch_layernorm(i, weight, bias))(inp)
+        pt_stats = measure_time_and_memory(lambda inp: vmap(lambda i: pytorch_layernorm(i, weight, bias))(inp), x)
+        op_stats = measure_time_and_memory(lambda inp: vmap(lambda i: opaque_layernorm(i, weight, bias))(inp), x)
 
-        def opaque_vmap_fn(inp):
-            return torch.vmap(lambda i: opaque_layernorm(i, weight, bias))(inp)
+        assert_perf_benefit(pt_stats, op_stats, label="LayerNorm vmap forward")
 
-        pt_stats = measure_time_and_memory(pytorch_vmap_fn, x)
-        op_stats = measure_time_and_memory(opaque_vmap_fn, x)
 
-        assert_perf_benefit(pt_stats, op_stats, label="vmap", max_perf_overhead=0.50)
+class TestLayerNormVmapGrad:
+    """Test vmap(grad): per-example gradients — the DP-SGD path."""
+
+    def test_vmap_grad_precision(self, mellum_config, precision_error):
+        """Per-example gradients: opaque Triton vs PyTorch reference.
+
+        Uses a random target weighting because .sum() produces near-zero grads
+        for LayerNorm (output is mean-centered, so sum ≈ 0).
+        """
+        torch.manual_seed(42)
+        vmap_batch = mellum_config["vmap_batch"]
+        batch, seq, hidden = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["hidden_dim"]
+
+        weight = torch.ones(hidden, device="cuda", dtype=torch.float32)
+        bias = torch.zeros(hidden, device="cuda", dtype=torch.float32)
+
+        x = torch.randn(vmap_batch, batch, seq, hidden, device="cuda", dtype=torch.float32)
+        # Fixed random target provides non-trivial gradient signal
+        target = torch.randn(batch, seq, hidden, device="cuda", dtype=torch.float32)
+
+        def f_pt(xi):
+            return (pytorch_layernorm(xi, weight, bias) * target).sum()
+
+        def f_op(xi):
+            return (opaque_layernorm(xi, weight, bias) * target).sum()
+
+        grads_pt = vmap(grad(f_pt))(x)
+        grads_op = vmap(grad(f_op))(x)
+
+        err = precision_error(grads_op, grads_pt, threshold=1e-4)
+        print(f"\nvmap(grad): abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
+
+        assert err["rel_err"] < RTOL_BACKWARD, f"vmap(grad) rel_err {err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
+
+    def test_vmap_grad_performance(self, mellum_config, measure_time_and_memory, assert_perf_benefit):
+        """Triton vmap(grad) must be faster or use less memory."""
+        torch.manual_seed(42)
+        vmap_batch = mellum_config["vmap_batch"]
+        batch, seq, hidden = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["hidden_dim"]
+
+        weight = torch.ones(hidden, device="cuda", dtype=torch.float32)
+        bias = torch.zeros(hidden, device="cuda", dtype=torch.float32)
+
+        x = torch.randn(vmap_batch, batch, seq, hidden, device="cuda", dtype=torch.float32)
+        target = torch.randn(batch, seq, hidden, device="cuda", dtype=torch.float32)
+
+        def make_pt_fn():
+            def f(xi):
+                return (pytorch_layernorm(xi, weight, bias) * target).sum()
+            return vmap(grad(f))
+
+        def make_op_fn():
+            def f(xi):
+                return (opaque_layernorm(xi, weight, bias) * target).sum()
+            return vmap(grad(f))
+
+        pt_stats = measure_time_and_memory(make_pt_fn(), x)
+        op_stats = measure_time_and_memory(make_op_fn(), x)
+
+        assert_perf_benefit(pt_stats, op_stats, label="LayerNorm vmap(grad)")
 
 
 # ============================================================================

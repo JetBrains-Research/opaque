@@ -5,48 +5,39 @@ All kernels use new-style PyTorch autograd.Function API with custom vmap rules.
 """
 
 # Normalization layers
-from .layernorm import NewStyleLayerNorm, layernorm_vmap
-from .rms_layernorm import RMSLayerNorm, rms_layernorm
+from .layernorm import Opaque_LayerNorm, opaque_layernorm
+from .rms_layernorm import Opaque_RMSNorm, opaque_rms_norm
 
 # Loss functions
-from .cross_entropy import NewStyleCrossEntropy, cross_entropy_vmap
+from .cross_entropy import Opaque_CrossEntropy, opaque_cross_entropy
 
 # Activation functions
-from .swiglu import (
-    NewStyleSwiGLU,
-    swiglu_vmap,
-    triton_swiglu_forward,
-    triton_swiglu_backward,
-)
+from .swiglu import Opaque_SwiGLU, opaque_swiglu
 from .geglu import (
-    NewStyleGeGLUExact,
-    NewStyleGeGLUApprox,
-    geglu_exact_vmap,
-    geglu_approx_vmap,
-    triton_geglu_exact_forward,
-    triton_geglu_exact_backward,
-    triton_geglu_approx_forward,
-    triton_geglu_approx_backward,
+    Opaque_GeGLU_Exact,
+    Opaque_GeGLU_Approx,
+    opaque_geglu_exact,
+    opaque_geglu_approx,
 )
 
 # Position embeddings
 from .rope_embedding import (
-    NewStyleRoPEEmbedding,
-    NewStyleRoPEEmbeddingQK,
-    NewStyleSlowRoPEEmbedding,
-    rope_embedding_vmap,
-    rope_embedding_qk_vmap,
-    slow_rope_embedding_vmap,
+    Opaque_RoPE,
+    Opaque_RoPE_QK,
+    Opaque_SlowRoPE,
+    opaque_rope,
+    opaque_rope_qk,
+    opaque_slow_rope,
 )
 
 # LoRA kernels
 from .lora import (
-    NewStyleLoRAW,
-    NewStyleLoRAQKV,
-    NewStyleLoRAMLP,
-    lora_linear_vmap,
-    lora_qkv_vmap,
-    lora_mlp_vmap,
+    Opaque_LoRA_W,
+    Opaque_LoRA_QKV,
+    Opaque_LoRA_MLP,
+    opaque_lora_w,
+    opaque_lora_qkv,
+    opaque_lora_mlp,
     ACTIVATION_SWIGLU,
     ACTIVATION_GEGLU_EXACT,
     ACTIVATION_GEGLU_APPROX,
@@ -54,40 +45,34 @@ from .lora import (
 
 __all__ = [
     # Normalization
-    "NewStyleLayerNorm",
-    "layernorm_vmap",
-    "RMSLayerNorm",
-    "rms_layernorm",
+    "Opaque_LayerNorm",
+    "opaque_layernorm",
+    "Opaque_RMSNorm",
+    "opaque_rms_norm",
     # Loss
-    "NewStyleCrossEntropy",
-    "cross_entropy_vmap",
+    "Opaque_CrossEntropy",
+    "opaque_cross_entropy",
     # Activations
-    "NewStyleSwiGLU",
-    "swiglu_vmap",
-    "triton_swiglu_forward",
-    "triton_swiglu_backward",
-    "NewStyleGeGLUExact",
-    "NewStyleGeGLUApprox",
-    "geglu_exact_vmap",
-    "geglu_approx_vmap",
-    "triton_geglu_exact_forward",
-    "triton_geglu_exact_backward",
-    "triton_geglu_approx_forward",
-    "triton_geglu_approx_backward",
+    "Opaque_SwiGLU",
+    "opaque_swiglu",
+    "Opaque_GeGLU_Exact",
+    "Opaque_GeGLU_Approx",
+    "opaque_geglu_exact",
+    "opaque_geglu_approx",
     # Position embeddings
-    "NewStyleRoPEEmbedding",
-    "NewStyleRoPEEmbeddingQK",
-    "NewStyleSlowRoPEEmbedding",
-    "rope_embedding_vmap",
-    "rope_embedding_qk_vmap",
-    "slow_rope_embedding_vmap",
+    "Opaque_RoPE",
+    "Opaque_RoPE_QK",
+    "Opaque_SlowRoPE",
+    "opaque_rope",
+    "opaque_rope_qk",
+    "opaque_slow_rope",
     # LoRA
-    "NewStyleLoRAW",
-    "NewStyleLoRAQKV",
-    "NewStyleLoRAMLP",
-    "lora_linear_vmap",
-    "lora_qkv_vmap",
-    "lora_mlp_vmap",
+    "Opaque_LoRA_W",
+    "Opaque_LoRA_QKV",
+    "Opaque_LoRA_MLP",
+    "opaque_lora_w",
+    "opaque_lora_qkv",
+    "opaque_lora_mlp",
     "ACTIVATION_SWIGLU",
     "ACTIVATION_GEGLU_EXACT",
     "ACTIVATION_GEGLU_APPROX",
