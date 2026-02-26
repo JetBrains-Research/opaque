@@ -8,35 +8,42 @@
 
 ```python
 auditing.setup(
-    dataset, *, num_canaries, key,
+    dataset, *,
+    num_canaries=None, key=None,
+    coin_flip=None,
     batch_argnums=None, collate_fn=None,
     batch_unpack=None, batch_size=256,
 ) -> OneRunEstimator
 ```
 
-Randomly select canaries, flip coins, and store the dataset and scoring
-config so that `evaluate()` requires only the loss function and trained
-parameters.
+Set up a one-run privacy audit. Creates (or accepts) a coin-flip
+partition and wraps it with the dataset and scoring configuration.
+
+Either provide `num_canaries` + `key` to create a partition
+automatically, or provide a pre-built `coin_flip`.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `dataset` | any with `len()` | required | Full training dataset |
-| `num_canaries` | `int` | required | Number of canaries to designate |
-| `key` | `RngKey` | required | RNG key for reproducibility |
+| `num_canaries` | `int` | `None` | Number of canaries to designate |
+| `key` | `RngKey` | `None` | RNG key for reproducibility |
+| `coin_flip` | `CoinFlip` | `None` | Pre-built partition (overrides num_canaries/key) |
 | `batch_argnums` | `tuple[int, ...]` | `None` | Which `loss_fn` args are batched (same as `clipped_grad`) |
 | `collate_fn` | `Callable` | `None` | DataLoader collate function |
 | `batch_unpack` | `Callable` | `None` | Extract tensors from collated batch |
 | `batch_size` | `int` | `256` | Scoring batch size |
 
 ```python
-# Recommended: configure scoring at setup time
+# Create partition automatically
 audit_state = auditing.setup(
     dataset, num_canaries=1000, key=key(42),
     batch_argnums=(1,),
-    collate_fn=data_collator,
-    batch_unpack=lambda b: (b["input_ids"].to(device),),
 )
 train_data = dataset.select(audit_state.train_indices)
+
+# Or with a pre-built CoinFlip
+cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
+audit_state = auditing.setup(dataset, coin_flip=cf, batch_argnums=(1,))
 ```
 
 ---
@@ -50,58 +57,8 @@ auditing.coin_flip(
 ```
 
 Create a coin-flip partition. Randomly selects `num_canaries` examples
-and flips a fair coin for each to decide inclusion/exclusion. This only
-handles the partition — wrap with `one_run()` to add scoring config.
-
----
-
-### one_run
-
-```python
-auditing.one_run(
-    partition, *, dataset,
-    batch_argnums=None, collate_fn=None,
-    batch_unpack=None, batch_size=256,
-) -> OneRunEstimator
-```
-
-Create a one-run estimator from a `CoinFlip` partition. Wraps the
-partition with the dataset and scoring configuration.
-
----
-
-### evaluate
-
-```python
-auditing.evaluate(
-    loss_fn, *args, *,
-    state, batch_argnums=...,
-    dataset=..., collate_fn=...,
-    batch_unpack=..., batch_size=None,
-) -> AuditResult
-```
-
-Score all canaries and return an `AuditResult`. Parameters fall back to
-values stored at `setup()` time when not provided explicitly.
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `loss_fn` | `Callable` | required | Per-example loss (vmap-compatible) |
-| `*args` | | | Non-batched args (e.g. model params) |
-| `state` | `OneRunEstimator` | required | From `setup()` or `one_run()` |
-| `batch_argnums` | `tuple[int, ...]` | from setup | Which `loss_fn` args are batched |
-| `dataset` | any | from setup | Full dataset |
-| `collate_fn` | `Callable` | from setup | DataLoader collate function |
-| `batch_unpack` | `Callable` | from setup | Extract tensors from collated batch |
-| `batch_size` | `int` | from setup | Scoring batch size |
-
-```python
-# If setup() has scoring config, evaluate is a one-liner:
-audit = auditing.evaluate(loss_fn, trained_params, state=audit_state)
-
-# Or override specific params:
-audit = auditing.evaluate(loss_fn, params, state=audit_state, batch_size=32)
-```
+and flips a fair coin for each. Use when you want to inspect or reuse
+the partition before calling `setup()`.
 
 ---
 
@@ -117,18 +74,7 @@ auditing.score(
 ```
 
 Compute per-example membership scores as negative loss. Lower-level
-than `evaluate()` — use when you need raw scores.
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `loss_fn` | `Callable` | required | Per-example loss (vmap-compatible) |
-| `*args` | | | Non-batched args (e.g. model params) |
-| `batch_argnums` | `tuple[int, ...]` | required | Which `loss_fn` args are batched |
-| `dataset` | any | required | Dataset to score |
-| `indices` | `np.ndarray` | `None` | Score only these indices |
-| `collate_fn` | `Callable` | `None` | DataLoader collate function |
-| `batch_unpack` | `Callable` | `None` | Extract tensors from collated batch |
-| `batch_size` | `int` | `256` | Scoring batch size |
+utility — most users should use `OneRunEstimator.evaluate()` instead.
 
 **Returns** `np.ndarray` of shape `(n,)`. Higher = more likely member.
 
@@ -165,8 +111,7 @@ All indices except held-out canaries. Returns `list[int]` for HuggingFace
 cf.split_scores(scores) -> tuple[np.ndarray, np.ndarray]
 ```
 
-Split per-canary scores into `(in_scores, out_scores)`. `scores` must
-have shape `(num_canaries,)`, one per canary in order of `canary_indices`.
+Split per-canary scores into `(in_scores, out_scores)`.
 
 ---
 
@@ -176,13 +121,31 @@ have shape `(num_canaries,)`, one per canary in order of `canary_indices`.
 class OneRunEstimator
 ```
 
-One-run estimator returned by `auditing.setup()` or `auditing.one_run()`.
-Pass to `evaluate()` as `state`.
+One-run estimator returned by `auditing.setup()`. Call `evaluate()`
+after training to score canaries and produce an `AuditResult`.
 
 | Attribute | Type | Description |
 |---|---|---|
 | `coin_flip` | `CoinFlip` | The coin-flip partition |
-| `train_indices` | `list[int]` | Dataset indices to use for training (excludes held-out canaries) |
+| `train_indices` | `list[int]` | Dataset indices for training (excludes held-out canaries) |
+
+### evaluate
+
+```python
+estimator.evaluate(loss_fn, *args, *, batch_argnums=None, batch_size=None) -> AuditResult
+```
+
+Score canaries and produce audit results. Uses the scoring config
+stored at `setup()` time. Optional `batch_argnums` and `batch_size`
+override stored values.
+
+```python
+audit_state = auditing.setup(dataset, num_canaries=1000, key=key(42),
+                             batch_argnums=(1,), ...)
+train_data = dataset.select(audit_state.train_indices)
+# ... train ...
+result = audit_state.evaluate(loss_fn, trained_params)
+```
 
 ### audit
 
@@ -190,14 +153,8 @@ Pass to `evaluate()` as `state`.
 estimator.audit(scores) -> AuditResult
 ```
 
-Split scores by coin flip and return an `AuditResult`.
-
-### Usage
-
-```python
-audit_state = auditing.setup(dataset, num_canaries=1000, key=key(42), ...)
-train_data = dataset.select(audit_state.train_indices)
-```
+Split pre-computed scores by coin flip and return an `AuditResult`.
+Use `evaluate()` for the full pipeline (scoring + splitting).
 
 ---
 
@@ -269,14 +226,13 @@ when provided.
 
 | | |
 |---|---|
-| `auditing.setup(..., batch_argnums=, ...)` | Designate canaries + configure scoring -> `OneRunEstimator` |
+| `auditing.setup(dataset, ...)` | Designate canaries + configure scoring -> `OneRunEstimator` |
 | `auditing.coin_flip(dataset, ...)` | Coin-flip partition only -> `CoinFlip` |
-| `auditing.one_run(coin_flip, ...)` | Wrap partition with scoring config -> `OneRunEstimator` |
-| `auditing.evaluate(loss_fn, params, state=)` | Score canaries, return `AuditResult` |
-| `auditing.score()` | Raw membership scores |
+| `auditing.score(...)` | Raw membership scores |
+| `audit_state.evaluate(loss_fn, params)` | Score canaries, return `AuditResult` |
 | `audit_state.train_indices` | Training indices for `dataset.select()` |
-| `audit.epsilon_at(delta=)` | Epsilon bound (one-run method) |
-| `audit.auc()` | Attack AUC |
-| `audit.auc(confidence=, key=)` | AUC with confidence interval |
-| `audit.beta_at(alpha=)` | Type-II error at given FPR |
-| `audit.summary(theoretical_epsilon=)` | Formatted report with comparison |
+| `result.epsilon_at(delta=)` | Epsilon bound (one-run method) |
+| `result.auc()` | Attack AUC |
+| `result.auc(confidence=, key=)` | AUC with confidence interval |
+| `result.beta_at(alpha=)` | Type-II error at given FPR |
+| `result.summary(theoretical_epsilon=)` | Formatted report with comparison |

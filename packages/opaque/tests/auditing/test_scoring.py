@@ -1,4 +1,4 @@
-"""Tests for auditing.score and auditing.evaluate."""
+"""Tests for auditing.score and OneRunEstimator.evaluate."""
 
 import numpy as np
 import pytest
@@ -215,7 +215,7 @@ class TestScoreDictBatch:
 
 
 class TestEvaluate:
-    """Tests for auditing.evaluate."""
+    """Tests for OneRunEstimator.evaluate."""
 
     def test_evaluate_returns_audit_result(self, linear_setup):
         """Test that evaluate returns an AuditResult."""
@@ -228,7 +228,7 @@ class TestEvaluate:
         )
 
         # Train briefly (just use the true params as "trained")
-        audit = auditing.evaluate(loss_fn, params, state=audit_state)
+        audit = audit_state.evaluate(loss_fn, params)
 
         assert isinstance(audit, AuditResult)
         assert audit.n_in + audit.n_out == 50
@@ -243,14 +243,14 @@ class TestEvaluate:
             batch_argnums=(1, 2),
         )
 
-        audit = auditing.evaluate(loss_fn, params, state=audit_state)
+        audit = audit_state.evaluate(loss_fn, params)
 
         # epsilon_at should use one_run
         eps = audit.epsilon_at(delta=0.0)
         assert isinstance(eps, float)
 
     def test_end_to_end_workflow(self, linear_setup):
-        """Test the full auditing.setup -> train -> auditing.evaluate flow."""
+        """Test the full setup -> train -> evaluate flow."""
         _, dataset, loss_fn = linear_setup
 
         # Setup
@@ -270,7 +270,7 @@ class TestEvaluate:
         params = torch.randn(10)
 
         # Evaluate
-        audit = auditing.evaluate(loss_fn, params, state=audit_state)
+        audit = audit_state.evaluate(loss_fn, params)
 
         # Should have valid metrics
         assert 0.0 <= audit.auc() <= 1.0
@@ -310,7 +310,7 @@ class TestEvaluateStoredConfig:
         )
 
         # evaluate with just loss_fn and params — everything else from setup
-        audit = auditing.evaluate(loss_fn, params, state=audit_state)
+        audit = audit_state.evaluate(loss_fn, params)
 
         assert isinstance(audit, AuditResult)
         assert audit.n_in + audit.n_out == 50
@@ -326,7 +326,7 @@ class TestEvaluateStoredConfig:
         )
 
         # Override batch_size at evaluate time
-        audit = auditing.evaluate(loss_fn, params, state=audit_state, batch_size=16)
+        audit = audit_state.evaluate(loss_fn, params, batch_size=16)
         assert isinstance(audit, AuditResult)
 
     def test_evaluate_errors_without_batch_argnums(self, linear_setup):
@@ -336,7 +336,7 @@ class TestEvaluateStoredConfig:
         audit_state = auditing.setup(dataset, num_canaries=50, key=key(42))
 
         with pytest.raises(TypeError, match="batch_argnums"):
-            auditing.evaluate(loss_fn, params, state=audit_state)
+            audit_state.evaluate(loss_fn, params)
 
     def test_setup_with_collate_fn(self):
         """Test setup stores collate_fn and uses it in evaluate."""
@@ -375,6 +375,6 @@ class TestEvaluateStoredConfig:
         )
 
         # evaluate with just loss_fn + params
-        audit = auditing.evaluate(loss_fn, params, state=audit_state)
+        audit = audit_state.evaluate(loss_fn, params)
         assert isinstance(audit, AuditResult)
         assert audit.n_in + audit.n_out == 20

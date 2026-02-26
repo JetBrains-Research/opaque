@@ -40,8 +40,8 @@ train_data = dataset.select(audit_state.train_indices)
 # 2. Train with DP-SGD on train_data ...
 
 # 3. Evaluate: just pass loss_fn and trained params
-audit = auditing.evaluate(loss_fn, trained_params, state=audit_state)
-print(audit.summary(delta=1e-5, theoretical_epsilon=target_eps))
+result = audit_state.evaluate(loss_fn, trained_params)
+print(result.summary(delta=1e-5, theoretical_epsilon=target_eps))
 ```
 
 ## Integration with training
@@ -82,12 +82,12 @@ No changes to the training loop. The dataset is already filtered.
 ### Step 3: Evaluate after training
 
 ```python
-audit = auditing.evaluate(per_example_loss_fn, trained_params, state=audit_state)
-print(audit.summary(delta=1e-5, theoretical_epsilon=target_epsilon))
+result = audit_state.evaluate(per_example_loss_fn, trained_params)
+print(result.summary(delta=1e-5, theoretical_epsilon=target_epsilon))
 ```
 
 That's it. The dataset, `batch_argnums`, `collate_fn`, and `batch_unpack`
-are all retrieved from the `OneRunEstimator` created in step 1.
+are all stored in the `OneRunEstimator` from step 1.
 
 See [examples/train_causal_lm.py](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_causal_lm.py)
 for a complete working example with the `--audit` flag.

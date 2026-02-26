@@ -2,17 +2,13 @@
 
 One-run auditing with HuggingFace integration (Steinke et al. 2023).
 
-Two-step API — partition first, then wrap with an estimator::
+Quick start::
 
     import opaque.auditing as auditing
     from opaque.random import key
 
-    # Partition: coin-flip canary assignment
-    coin_flip = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
-
-    # Estimator: one-run method + scoring config
-    audit_state = auditing.one_run(
-        coin_flip, dataset=dataset,
+    audit_state = auditing.setup(
+        dataset, num_canaries=1000, key=key(42),
         batch_argnums=(1,),
         collate_fn=data_collator,
         batch_unpack=lambda b: (b["input_ids"].to(device),),
@@ -21,19 +17,13 @@ Two-step API — partition first, then wrap with an estimator::
 
     # ... DP-SGD training loop ...
 
-    audit = auditing.evaluate(per_example_loss_fn, trained_params, state=audit_state)
-    print(audit.summary(delta=1e-5))
+    result = audit_state.evaluate(per_example_loss_fn, trained_params)
+    print(result.summary(delta=1e-5))
 
-Or use the convenience :func:`setup` (combines both steps)::
+Or with a pre-built :class:`CoinFlip`::
 
-    audit_state = auditing.setup(
-        dataset, num_canaries=1000, key=key(42),
-        batch_argnums=(1,), collate_fn=data_collator,
-        batch_unpack=lambda b: (b["input_ids"].to(device),),
-    )
-    train_data = dataset.select(audit_state.train_indices)
-    # ... train ...
-    audit = auditing.evaluate(loss_fn, trained_params, state=audit_state)
+    cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
+    audit_state = auditing.setup(dataset, coin_flip=cf, batch_argnums=(1,))
 
 Or construct an :class:`AuditResult` directly from pre-computed scores::
 
@@ -61,14 +51,9 @@ __all__ = [
     "CoinFlip",
     "OneRunEstimator",
     "coin_flip",
-    "evaluate",
-    "one_run",
     "score",
     "setup",
 ]
-
-# Sentinel for "not provided" (distinct from None which is a valid value)
-_UNSET = object()
 
 
 def coin_flip(
@@ -80,9 +65,7 @@ def coin_flip(
     """Create a coin-flip partition for canary-based auditing.
 
     Randomly selects ``num_canaries`` examples from the dataset and flips
-    a fair coin for each to decide inclusion/exclusion. This only handles
-    the partition — wrap the result with :func:`one_run` to add scoring
-    config and estimation.
+    a fair coin for each to decide inclusion/exclusion.
 
     Args:
         dataset: Any dataset with ``len()`` (HuggingFace or PyTorch).
@@ -97,6 +80,16 @@ def coin_flip(
         cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
         train_data = dataset.select(cf.train_indices(len(dataset)))
     """
+    return _make_coin_flip(dataset, num_canaries=num_canaries, key=key)
+
+
+def _make_coin_flip(
+    dataset: Any,
+    *,
+    num_canaries: int,
+    key: RngKey,
+) -> CoinFlip:
+    """Internal: create CoinFlip without name shadowing issues."""
     dataset_size = len(dataset)
     if num_canaries > dataset_size:
         raise ValueError(
@@ -109,24 +102,35 @@ def coin_flip(
     return CoinFlip(canary_indices, key=coin_key)
 
 
-def one_run(
-    partition: CoinFlip,
-    *,
+def setup(
     dataset: Any,
+    *,
+    num_canaries: int | None = None,
+    key: RngKey | None = None,
+    coin_flip: CoinFlip | None = None,
     batch_argnums: tuple[int, ...] | None = None,
     collate_fn: Callable | None = None,
     batch_unpack: Callable | None = None,
     batch_size: int = 256,
 ) -> OneRunEstimator:
-    """Create a one-run estimator from a coin-flip partition.
+    """Set up a one-run privacy audit.
 
-    Wraps a :class:`CoinFlip` with the dataset and scoring configuration
-    so that :func:`evaluate` needs only the loss function and trained
-    parameters.
+    Creates (or accepts) a coin-flip partition and wraps it with the
+    dataset and scoring configuration. The returned
+    :class:`OneRunEstimator` is the main handle for the audit — call
+    :meth:`~OneRunEstimator.evaluate` after training.
+
+    Either provide ``num_canaries`` + ``key`` to create a partition
+    automatically, or provide a pre-built ``coin_flip``.
 
     Args:
-        partition: A :class:`CoinFlip` from :func:`coin_flip`.
-        dataset: The full dataset (same one passed to :func:`coin_flip`).
+        dataset: Any dataset with ``len()`` (HuggingFace or PyTorch).
+        num_canaries: Number of canary examples to designate.
+            Required unless ``coin_flip`` is provided.
+        key: RNG key for reproducible canary selection and coin flips.
+            Required unless ``coin_flip`` is provided.
+        coin_flip: A pre-built :class:`CoinFlip` partition. If provided,
+            ``num_canaries`` and ``key`` are ignored.
         batch_argnums: Which ``loss_fn`` args come from dataset batches
             (same convention as ``clipped_grad``).
         collate_fn: DataLoader collate function.
@@ -134,66 +138,32 @@ def one_run(
         batch_size: Scoring batch size. Default: 256.
 
     Returns:
-        A :class:`OneRunEstimator` ready for :func:`evaluate`.
+        A :class:`OneRunEstimator` ready for
+        :meth:`~OneRunEstimator.evaluate`.
 
     Example::
 
-        cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
-        audit_state = auditing.one_run(
-            cf, dataset=dataset, batch_argnums=(1,),
-        )
-        train_data = dataset.select(audit_state.train_indices)
-    """
-    return OneRunEstimator(
-        partition,
-        dataset=dataset,
-        batch_argnums=batch_argnums,
-        collate_fn=collate_fn,
-        batch_unpack=batch_unpack,
-        batch_size=batch_size,
-    )
-
-
-def setup(
-    dataset: Any,
-    *,
-    num_canaries: int,
-    key: RngKey,
-    batch_argnums: tuple[int, ...] | None = None,
-    collate_fn: Callable | None = None,
-    batch_unpack: Callable | None = None,
-    batch_size: int = 256,
-) -> OneRunEstimator:
-    """Set up a one-run privacy audit in one call.
-
-    Convenience function that combines :func:`coin_flip` and
-    :func:`one_run`.
-
-    Args:
-        dataset: Any dataset with ``len()`` (HuggingFace or PyTorch).
-        num_canaries: Number of canary examples to designate.
-        key: RNG key for reproducible canary selection and coin flips.
-        batch_argnums: Which ``loss_fn`` args come from dataset batches.
-        collate_fn: DataLoader collate function.
-        batch_unpack: Extracts tensors from a collated batch.
-        batch_size: Scoring batch size. Default: 256.
-
-    Returns:
-        A :class:`OneRunEstimator` containing the canary partition and
-        scoring configuration.
-
-    Example::
-
+        # Create partition automatically
         audit_state = auditing.setup(
             dataset, num_canaries=1000, key=key(42),
             batch_argnums=(1,),
-            collate_fn=data_collator,
-            batch_unpack=lambda b: (b["input_ids"].to(device),),
         )
         train_data = dataset.select(audit_state.train_indices)
+
+        # Or with a pre-built CoinFlip
+        cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
+        audit_state = auditing.setup(dataset, coin_flip=cf, batch_argnums=(1,))
     """
-    cf = coin_flip(dataset, num_canaries=num_canaries, key=key)
-    return one_run(
+    if coin_flip is not None:
+        cf = coin_flip
+    elif num_canaries is not None and key is not None:
+        cf = _make_coin_flip(dataset, num_canaries=num_canaries, key=key)
+    else:
+        raise TypeError(
+            "Either provide coin_flip or both num_canaries and key"
+        )
+
+    return OneRunEstimator(
         cf,
         dataset=dataset,
         batch_argnums=batch_argnums,
@@ -201,77 +171,3 @@ def setup(
         batch_unpack=batch_unpack,
         batch_size=batch_size,
     )
-
-
-def evaluate(
-    loss_fn: Callable,
-    *args: Any,
-    state: OneRunEstimator,
-    batch_argnums: tuple[int, ...] | None = _UNSET,
-    dataset: Any = _UNSET,
-    collate_fn: Callable | None = _UNSET,
-    batch_unpack: Callable | None = _UNSET,
-    batch_size: int | None = None,
-) -> AuditResult:
-    """Score canaries and produce audit results in one call.
-
-    When scoring config was provided at setup time, only ``loss_fn``
-    and trained parameters are needed::
-
-        audit = auditing.evaluate(loss_fn, trained_params, state=audit_state)
-
-    Any parameter passed here overrides the value stored in ``state``.
-
-    Args:
-        loss_fn: Per-example loss function (vmap-compatible).
-        *args: Non-batched arguments to ``loss_fn`` (e.g., model params).
-        state: The :class:`OneRunEstimator` from :func:`setup` or
-            :func:`one_run`.
-        batch_argnums: Which ``loss_fn`` args come from dataset batches.
-        dataset: The full dataset.
-        collate_fn: DataLoader collate function.
-        batch_unpack: Batch extraction function.
-        batch_size: Scoring batch size.
-
-    Returns:
-        :class:`AuditResult` with ``epsilon_at()`` defaulting to the
-        ``'one_run'`` method.
-    """
-    # Resolve parameters: explicit > stored in state > error
-    resolved_dataset = _resolve(dataset, state, "_dataset", "dataset")
-    resolved_argnums = _resolve(batch_argnums, state, "_batch_argnums", "batch_argnums")
-    resolved_collate = _resolve_optional(collate_fn, state, "_collate_fn")
-    resolved_unpack = _resolve_optional(batch_unpack, state, "_batch_unpack")
-    resolved_batch_size = (
-        batch_size if batch_size is not None else getattr(state, "_batch_size", 256)
-    )
-
-    cf = state.coin_flip
-    scores = score(
-        loss_fn,
-        *args,
-        batch_argnums=resolved_argnums,
-        dataset=resolved_dataset,
-        indices=cf.canary_indices,
-        collate_fn=resolved_collate,
-        batch_unpack=resolved_unpack,
-        batch_size=resolved_batch_size,
-    )
-    return state.audit(scores)
-
-
-def _resolve(value: Any, state: OneRunEstimator, attr: str, name: str) -> Any:
-    """Resolve a parameter: explicit value > stored on state > error."""
-    if value is not _UNSET:
-        return value
-    stored = getattr(state, attr, None)
-    if stored is not None:
-        return stored
-    raise TypeError(f"'{name}' must be provided either to setup() or evaluate()")
-
-
-def _resolve_optional(value: Any, state: OneRunEstimator, attr: str) -> Any | None:
-    """Resolve an optional parameter: explicit value > stored > None."""
-    if value is not _UNSET:
-        return value
-    return getattr(state, attr, None)

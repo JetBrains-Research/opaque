@@ -456,32 +456,6 @@ class TestCoinFlipFunction:
             auditing.coin_flip(dataset, num_canaries=20, key=key(42))
 
 
-class TestOneRunFunction:
-    """Tests for auditing.one_run() module-level function."""
-
-    def test_basic_one_run(self):
-        """Test one_run creates OneRunEstimator from CoinFlip."""
-        dataset = list(range(1000))
-        cf = auditing.coin_flip(dataset, num_canaries=100, key=key(42))
-        estimator = auditing.one_run(cf, dataset=dataset, batch_argnums=(1,))
-
-        assert isinstance(estimator, OneRunEstimator)
-        assert estimator.coin_flip is cf
-        assert estimator._batch_argnums == (1,)
-
-    def test_one_run_train_indices(self):
-        """Test that one_run result has correct train_indices."""
-        dataset = list(range(100))
-        cf = auditing.coin_flip(dataset, num_canaries=10, key=key(42))
-        estimator = auditing.one_run(cf, dataset=dataset)
-
-        train_set = set(estimator.train_indices)
-        for idx in cf.out_indices:
-            assert idx not in train_set
-        for idx in cf.in_indices:
-            assert idx in train_set
-
-
 class TestSetup:
     """Tests for auditing.setup() convenience function."""
 
@@ -542,6 +516,34 @@ class TestSetup:
             assert idx not in train_set
         for idx in cf.in_indices:
             assert idx in train_set
+
+    def test_setup_with_coin_flip(self):
+        """Test setup accepts a pre-built CoinFlip."""
+        dataset = list(range(1000))
+        cf = auditing.coin_flip(dataset, num_canaries=100, key=key(42))
+        audit_state = auditing.setup(dataset, coin_flip=cf, batch_argnums=(1,))
+
+        assert isinstance(audit_state, OneRunEstimator)
+        assert audit_state.coin_flip is cf
+        assert audit_state._batch_argnums == (1,)
+
+    def test_setup_with_coin_flip_train_indices(self):
+        """Test that setup with coin_flip has correct train_indices."""
+        dataset = list(range(100))
+        cf = auditing.coin_flip(dataset, num_canaries=10, key=key(42))
+        audit_state = auditing.setup(dataset, coin_flip=cf)
+
+        train_set = set(audit_state.train_indices)
+        for idx in cf.out_indices:
+            assert idx not in train_set
+        for idx in cf.in_indices:
+            assert idx in train_set
+
+    def test_setup_requires_coin_flip_or_canaries(self):
+        """Test that setup errors without coin_flip or num_canaries+key."""
+        dataset = list(range(100))
+        with pytest.raises(TypeError, match="coin_flip or both num_canaries"):
+            auditing.setup(dataset, batch_argnums=(1,))
 
     def test_repr(self):
         """Test OneRunEstimator repr from setup."""

@@ -117,8 +117,8 @@ audit_state = auditing.setup(
 )
 train_data = dataset.select(audit_state.train_indices)
 # ... train with DP-SGD ...
-audit = auditing.evaluate(loss_fn, trained_params, state=audit_state)
-print(audit.summary(delta=1e-5))
+result = audit_state.evaluate(loss_fn, trained_params)
+print(result.summary(delta=1e-5))
 ```
 
 ## Next steps

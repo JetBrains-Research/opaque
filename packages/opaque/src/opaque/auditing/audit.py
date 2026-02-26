@@ -5,7 +5,7 @@ then query metrics as methods. Shared state (TN/FN counts on the Pareto
 frontier) is precomputed once at construction.
 
 For end-to-end auditing with a single training run, use
-:func:`opaque.auditing.setup` and :func:`opaque.auditing.evaluate`::
+:func:`opaque.auditing.setup`::
 
     import opaque.auditing as auditing
     from opaque.random import key
@@ -16,16 +16,13 @@ For end-to-end auditing with a single training run, use
     )
     train_data = dataset.select(audit_state.train_indices)
     # ... train model with DP-SGD ...
-    audit = auditing.evaluate(loss_fn, params, state=audit_state)
-    print(audit.summary(delta=1e-5))
+    result = audit_state.evaluate(loss_fn, params)
+    print(result.summary(delta=1e-5))
 
-Or use the two-step API for more control::
+Or construct an :class:`AuditResult` directly from pre-computed scores::
 
-    coin_flip = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
-    estimator = auditing.one_run(coin_flip, dataset=dataset, batch_argnums=(1,))
-    train_data = dataset.select(estimator.train_indices)
-    # ... train model with DP-SGD ...
-    audit = auditing.evaluate(loss_fn, params, state=estimator)
+    result = AuditResult(in_scores, out_scores)
+    result.epsilon_at(delta=1e-5)
 
 References:
     - Steinke, Nasr, Jagielski (2023), https://arxiv.org/abs/2305.08846
@@ -419,12 +416,8 @@ class CoinFlip:
 class OneRunEstimator:
     """One-run estimator: wraps a :class:`CoinFlip` with scoring config.
 
-    Returned by :func:`~opaque.auditing.setup` (or
-    :func:`~opaque.auditing.one_run`). Passed as ``state`` to
-    :func:`~opaque.auditing.evaluate`.
-
-    The public surface is ``train_indices`` and ``coin_flip``.
-    Scoring config is internal, consumed by :func:`evaluate`.
+    Returned by :func:`~opaque.auditing.setup`. Call :meth:`evaluate`
+    after training to score canaries and produce an :class:`AuditResult`.
 
     Attributes:
         coin_flip: The :class:`CoinFlip` partition.
@@ -461,8 +454,64 @@ class OneRunEstimator:
             f"n_in={len(cf.in_indices)}, n_out={len(cf.out_indices)})"
         )
 
+    def evaluate(
+        self,
+        loss_fn,
+        *args,
+        batch_argnums: tuple[int, ...] | None = None,
+        batch_size: int | None = None,
+    ) -> AuditResult:
+        """Score canaries and produce audit results.
+
+        Computes per-canary membership scores using the scoring config
+        stored at :func:`~opaque.auditing.setup` time, then splits by
+        coin flip and returns an :class:`AuditResult`.
+
+        Args:
+            loss_fn: Per-example loss function (vmap-compatible).
+            *args: Non-batched arguments to ``loss_fn`` (e.g., trained
+                model parameters).
+            batch_argnums: Override the stored ``batch_argnums``.
+            batch_size: Override the stored ``batch_size``.
+
+        Returns:
+            :class:`AuditResult` with epsilon, AUC, and other metrics.
+
+        Example::
+
+            audit_state = auditing.setup(dataset, num_canaries=1000,
+                                         key=key(42), batch_argnums=(1,))
+            train_data = dataset.select(audit_state.train_indices)
+            # ... train ...
+            result = audit_state.evaluate(loss_fn, trained_params)
+        """
+        from opaque.auditing.scoring import score
+
+        ba = batch_argnums if batch_argnums is not None else self._batch_argnums
+        bs = batch_size if batch_size is not None else self._batch_size
+
+        if ba is None:
+            raise TypeError(
+                "batch_argnums must be provided to setup() or evaluate()"
+            )
+
+        scores = score(
+            loss_fn,
+            *args,
+            batch_argnums=ba,
+            dataset=self._dataset,
+            indices=self.coin_flip.canary_indices,
+            collate_fn=self._collate_fn,
+            batch_unpack=self._batch_unpack,
+            batch_size=bs,
+        )
+        return self.audit(scores)
+
     def audit(self, scores: np.ndarray) -> AuditResult:
-        """Split scores by coin flip and return an AuditResult.
+        """Split pre-computed scores by coin flip and return an AuditResult.
+
+        Use :meth:`evaluate` for the full pipeline (scoring + splitting).
+        Use this method when you already have per-canary scores.
 
         Args:
             scores: Membership scores, shape ``(num_canaries,)``.

@@ -50,7 +50,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 ### Validation & Debugging
 
 - **[Auditing](auditing.md)**: Empirical privacy validation
-  - `auditing.setup()`, `auditing.evaluate()` - One-run auditing workflow
+  - `auditing.setup()`, `OneRunEstimator.evaluate()` - One-run auditing workflow
   - `AuditResult.epsilon_at()` - Epsilon bound (auto-selects method)
   - `auc()`, `beta_at()`, `summary()` - Attack metrics and reporting
 
@@ -174,7 +174,7 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | Function / Method                    | Purpose                         | User Guide                                     |
 |--------------------------------------|---------------------------------|------------------------------------------------|
 | `auditing.setup()`                   | Prepare canary experiment       | [Guide](../user-guide/auditing.md)             |
-| `auditing.evaluate()`               | Score canaries and compute audit | [Guide](../user-guide/auditing.md)             |
+| `OneRunEstimator.evaluate()`        | Score canaries and compute audit | [Guide](../user-guide/auditing.md)             |
 | `AuditResult.epsilon_at()`          | Epsilon bound (one-run method)  | [Guide](../user-guide/auditing.md)          |
 | `AuditResult.epsilon_one_run()`     | Epsilon bound (Steinke et al.)  | [Guide](../user-guide/auditing.md)             |
 | `AuditResult.auc()`                 | Membership inference AUC        | [Guide](../user-guide/auditing.md)             |

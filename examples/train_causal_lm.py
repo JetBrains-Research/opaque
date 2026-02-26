@@ -1035,9 +1035,7 @@ def main():
         print("-" * 80)
         print(f"Scoring {audit_state.coin_flip.num_canaries} canaries...")
 
-        audit_result = auditing.evaluate(
-            per_example_loss_fn, trainable_params, state=audit_state
-        )
+        audit_result = audit_state.evaluate(per_example_loss_fn, trainable_params)
         print(audit_result.summary(
             delta=args.target_delta,
             theoretical_epsilon=args.target_epsilon,
