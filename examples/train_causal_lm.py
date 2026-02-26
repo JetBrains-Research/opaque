@@ -683,10 +683,10 @@ def main():
     )
 
     # Privacy auditing setup: designate canaries and remove held-out ones
-    experiment = None
+    audit_state = None
     if args.audit:
         print(f"\nSetting up privacy auditing with {args.audit_canaries} canaries...")
-        experiment = auditing.setup(
+        audit_state = auditing.setup(
             train_dataset,
             num_canaries=args.audit_canaries,
             key=key(args.seed),
@@ -695,12 +695,11 @@ def main():
             batch_unpack=lambda b: (b["input_ids"].to(device),),
             batch_size=args.audit_batch_size,
         )
-        train_dataset = train_dataset.select(
-            experiment.train_indices(len(train_dataset))
-        )
+        train_dataset = train_dataset.select(audit_state.train_indices)
+        exp = audit_state._experiment
         print(
-            f"  Canaries: {len(experiment.in_indices)} in, "
-            f"{len(experiment.out_indices)} out (held out from training)"
+            f"  Canaries: {len(exp.in_indices)} in, "
+            f"{len(exp.out_indices)} out (held out from training)"
         )
         print(f"  Training set: {len(train_dataset)} examples")
 
@@ -1030,14 +1029,14 @@ def main():
     print(f"  Final epsilon: {accounting.epsilon_at(args.target_delta):.3f}")
 
     # Privacy auditing: score canaries and compute empirical epsilon
-    if args.audit and experiment is not None:
+    if args.audit and audit_state is not None:
         print("\n" + "-" * 80)
         print("Privacy Auditing")
         print("-" * 80)
-        print(f"Scoring {experiment.num_canaries} canaries...")
+        print(f"Scoring {audit_state._experiment.num_canaries} canaries...")
 
         audit_result = auditing.evaluate(
-            experiment, per_example_loss_fn, trainable_params
+            per_example_loss_fn, trainable_params, state=audit_state
         )
         print(audit_result.summary(
             delta=args.target_delta,

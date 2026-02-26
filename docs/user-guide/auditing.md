@@ -29,18 +29,18 @@ import opaque.auditing as auditing
 from opaque.random import key
 
 # 1. Setup: designate canaries and configure scoring
-experiment = auditing.setup(
+audit_state = auditing.setup(
     dataset, num_canaries=1000, key=key(42),
     batch_argnums=(1,),
     collate_fn=data_collator,
     batch_unpack=lambda b: (b["input_ids"].to(device),),
 )
-train_data = dataset.select(experiment.train_indices(len(dataset)))
+train_data = dataset.select(audit_state.train_indices)
 
 # 2. Train with DP-SGD on train_data ...
 
 # 3. Evaluate: just pass loss_fn and trained params
-audit = auditing.evaluate(experiment, loss_fn, trained_params)
+audit = auditing.evaluate(loss_fn, trained_params, state=audit_state)
 print(audit.summary(delta=1e-5, theoretical_epsilon=target_eps))
 ```
 
@@ -56,7 +56,7 @@ Call `auditing.setup` after preparing the dataset. Pass the same
 `batch_unpack` for HuggingFace dict batches:
 
 ```python
-experiment = auditing.setup(
+audit_state = auditing.setup(
     train_dataset,
     num_canaries=1000,
     key=key(42),
@@ -69,14 +69,11 @@ experiment = auditing.setup(
 )
 
 # Remove held-out canaries from training set
-train_dataset = train_dataset.select(
-    experiment.train_indices(len(train_dataset))
-)
+train_dataset = train_dataset.select(audit_state.train_indices)
 ```
 
-The experiment remembers both the full dataset and the scoring config.
-For PyTorch `TensorDataset`, use `experiment.subset(dataset)` instead of
-`dataset.select()`, and you can omit `collate_fn` and `batch_unpack`.
+The `AuditState` remembers both the full dataset and the scoring config.
+For PyTorch `TensorDataset`, you can omit `collate_fn` and `batch_unpack`.
 
 ### Step 2: Train normally
 
@@ -85,12 +82,12 @@ No changes to the training loop. The dataset is already filtered.
 ### Step 3: Evaluate after training
 
 ```python
-audit = auditing.evaluate(experiment, per_example_loss_fn, trained_params)
+audit = auditing.evaluate(per_example_loss_fn, trained_params, state=audit_state)
 print(audit.summary(delta=1e-5, theoretical_epsilon=target_epsilon))
 ```
 
 That's it. The dataset, `batch_argnums`, `collate_fn`, and `batch_unpack`
-are all retrieved from the experiment created in step 1.
+are all retrieved from the `AuditState` created in step 1.
 
 See [examples/train_causal_lm.py](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_causal_lm.py)
 for a complete working example with the `--audit` flag.

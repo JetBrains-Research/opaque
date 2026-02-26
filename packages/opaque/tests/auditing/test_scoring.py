@@ -220,16 +220,13 @@ class TestEvaluate:
     def test_evaluate_returns_audit_result(self, linear_setup):
         """Test that evaluate returns an AuditResult."""
         params, dataset, loss_fn = linear_setup
-        exp = auditing.setup(dataset, num_canaries=50, key=key(42))
+        audit_state = auditing.setup(
+            dataset, num_canaries=50, key=key(42),
+            batch_argnums=(1, 2),
+        )
 
         # Train briefly (just use the true params as "trained")
-        audit = auditing.evaluate(
-            exp,
-            loss_fn,
-            params,
-            batch_argnums=(1, 2),
-            dataset=dataset,
-        )
+        audit = auditing.evaluate(loss_fn, params, state=audit_state)
 
         assert isinstance(audit, AuditResult)
         assert audit.n_in + audit.n_out == 50
@@ -237,15 +234,12 @@ class TestEvaluate:
     def test_evaluate_from_coin_flip(self, linear_setup):
         """Test that evaluate result defaults to one_run method."""
         params, dataset, loss_fn = linear_setup
-        exp = auditing.setup(dataset, num_canaries=50, key=key(42))
-
-        audit = auditing.evaluate(
-            exp,
-            loss_fn,
-            params,
+        audit_state = auditing.setup(
+            dataset, num_canaries=50, key=key(42),
             batch_argnums=(1, 2),
-            dataset=dataset,
         )
+
+        audit = auditing.evaluate(loss_fn, params, state=audit_state)
 
         assert audit._from_coin_flip is True
         # epsilon_at should use one_run by default
@@ -257,22 +251,20 @@ class TestEvaluate:
         _, dataset, loss_fn = linear_setup
 
         # Setup
-        experiment = auditing.setup(dataset, num_canaries=50, key=key(42))
-        train_data = experiment.subset(dataset)
-        assert len(train_data) == 200 - len(experiment.out_indices)
+        audit_state = auditing.setup(
+            dataset, num_canaries=50, key=key(42),
+            batch_argnums=(1, 2),
+        )
+        from torch.utils.data import Subset
+        train_data = Subset(dataset, audit_state.train_indices)
+        assert len(train_data) == 200 - len(audit_state._experiment.out_indices)
 
         # "Train" on subset (just use fresh random params)
         torch.manual_seed(0)
         params = torch.randn(10)
 
         # Evaluate
-        audit = auditing.evaluate(
-            experiment,
-            loss_fn,
-            params,
-            batch_argnums=(1, 2),
-            dataset=dataset,
-        )
+        audit = auditing.evaluate(loss_fn, params, state=audit_state)
 
         # Should have valid metrics
         assert 0.0 <= audit.auc() <= 1.0
@@ -288,23 +280,23 @@ class TestEvaluateStoredConfig:
     """Tests for evaluate() using config stored at setup() time."""
 
     def test_setup_stores_config(self, linear_setup):
-        """Test that setup() stores scoring config on experiment."""
+        """Test that setup() stores scoring config in AuditState."""
         params, dataset, loss_fn = linear_setup
-        exp = auditing.setup(
+        audit_state = auditing.setup(
             dataset,
             num_canaries=50,
             key=key(42),
             batch_argnums=(1, 2),
         )
 
-        assert exp._dataset is dataset
-        assert exp._batch_argnums == (1, 2)
-        assert exp._batch_size == 256
+        assert audit_state._dataset is dataset
+        assert audit_state._batch_argnums == (1, 2)
+        assert audit_state._batch_size == 256
 
     def test_evaluate_with_stored_config(self, linear_setup):
         """Test evaluate() using config from setup() — no extra args."""
         params, dataset, loss_fn = linear_setup
-        exp = auditing.setup(
+        audit_state = auditing.setup(
             dataset,
             num_canaries=50,
             key=key(42),
@@ -312,7 +304,7 @@ class TestEvaluateStoredConfig:
         )
 
         # evaluate with just loss_fn and params — everything else from setup
-        audit = auditing.evaluate(exp, loss_fn, params)
+        audit = auditing.evaluate(loss_fn, params, state=audit_state)
 
         assert isinstance(audit, AuditResult)
         assert audit.n_in + audit.n_out == 50
@@ -320,7 +312,7 @@ class TestEvaluateStoredConfig:
     def test_evaluate_override_stored_config(self, linear_setup):
         """Test that explicit args to evaluate() override setup() config."""
         params, dataset, loss_fn = linear_setup
-        exp = auditing.setup(
+        audit_state = auditing.setup(
             dataset,
             num_canaries=50,
             key=key(42),
@@ -328,17 +320,17 @@ class TestEvaluateStoredConfig:
         )
 
         # Override batch_size at evaluate time
-        audit = auditing.evaluate(exp, loss_fn, params, batch_size=16)
+        audit = auditing.evaluate(loss_fn, params, state=audit_state, batch_size=16)
         assert isinstance(audit, AuditResult)
 
     def test_evaluate_errors_without_batch_argnums(self, linear_setup):
         """Test that evaluate() errors if batch_argnums wasn't provided anywhere."""
         params, dataset, loss_fn = linear_setup
         # setup without batch_argnums
-        exp = auditing.setup(dataset, num_canaries=50, key=key(42))
+        audit_state = auditing.setup(dataset, num_canaries=50, key=key(42))
 
         with pytest.raises(TypeError, match="batch_argnums"):
-            auditing.evaluate(exp, loss_fn, params)
+            auditing.evaluate(loss_fn, params, state=audit_state)
 
     def test_setup_with_collate_fn(self):
         """Test setup stores collate_fn and uses it in evaluate."""
@@ -367,7 +359,7 @@ class TestEvaluateStoredConfig:
         def collate_fn(batch):
             return {"input_ids": torch.stack([b["input_ids"] for b in batch])}
 
-        exp = auditing.setup(
+        audit_state = auditing.setup(
             dataset,
             num_canaries=20,
             key=key(42),
@@ -377,6 +369,6 @@ class TestEvaluateStoredConfig:
         )
 
         # evaluate with just loss_fn + params
-        audit = auditing.evaluate(exp, loss_fn, params)
+        audit = auditing.evaluate(loss_fn, params, state=audit_state)
         assert isinstance(audit, AuditResult)
         assert audit.n_in + audit.n_out == 20

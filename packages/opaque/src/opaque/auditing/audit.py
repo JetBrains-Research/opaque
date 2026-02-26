@@ -10,13 +10,13 @@ For end-to-end auditing with a single training run, use
     import opaque.auditing as auditing
     from opaque.random import key
 
-    experiment = auditing.setup(dataset, num_canaries=1000, key=key(42))
-    train_data = dataset.select(experiment.train_indices(len(dataset)))
-    # ... train model with DP-SGD ...
-    audit = auditing.evaluate(
-        experiment, loss_fn, params,
-        batch_argnums=(1,), dataset=dataset,
+    audit_state = auditing.setup(
+        dataset, num_canaries=1000, key=key(42),
+        batch_argnums=(1,),
     )
+    train_data = dataset.select(audit_state.train_indices)
+    # ... train model with DP-SGD ...
+    audit = auditing.evaluate(loss_fn, params, state=audit_state)
     print(audit.summary(delta=1e-5))
 
 References:
@@ -37,7 +37,7 @@ from opaque.auditing.helpers import (
 )
 from opaque.random import RngKey
 
-__all__ = ["AuditResult", "CoinFlipExperiment"]
+__all__ = ["AuditResult", "AuditState", "CoinFlipExperiment"]
 
 
 class AuditResult:
@@ -513,6 +513,51 @@ class CoinFlipExperiment:
         result = AuditResult(scores[self._in_mask], scores[~self._in_mask])
         result._from_coin_flip = True
         return result
+
+
+class AuditState:
+    """Opaque state returned by :func:`~opaque.auditing.setup`.
+
+    Bundles a :class:`CoinFlipExperiment` with the dataset and scoring
+    configuration so that :func:`~opaque.auditing.evaluate` needs only
+    the loss function and trained parameters.
+
+    The only public surface is :attr:`train_indices` — everything else
+    is internal, consumed by :func:`~opaque.auditing.evaluate`.
+
+    Attributes:
+        train_indices: Sorted list of dataset indices to use for training
+            (all indices except held-out canaries). Pass directly to
+            ``dataset.select()``::
+
+                audit_state = auditing.setup(dataset, ...)
+                train_data = dataset.select(audit_state.train_indices)
+    """
+
+    def __init__(
+        self,
+        experiment: CoinFlipExperiment,
+        *,
+        dataset,
+        batch_argnums: tuple[int, ...] | None = None,
+        collate_fn=None,
+        batch_unpack=None,
+        batch_size: int = 256,
+    ) -> None:
+        self._experiment = experiment
+        self._dataset = dataset
+        self._batch_argnums = batch_argnums
+        self._collate_fn = collate_fn
+        self._batch_unpack = batch_unpack
+        self._batch_size = batch_size
+        self.train_indices = experiment.train_indices(len(dataset))
+
+    def __repr__(self) -> str:
+        exp = self._experiment
+        return (
+            f"AuditState(num_canaries={exp.num_canaries}, "
+            f"n_in={len(exp.in_indices)}, n_out={len(exp.out_indices)})"
+        )
 
 
 # ------------------------------------------------------------------

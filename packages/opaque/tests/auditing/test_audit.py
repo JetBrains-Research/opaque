@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 import opaque.auditing as auditing
-from opaque.auditing import AuditResult, CoinFlipExperiment
+from opaque.auditing import AuditResult, AuditState, CoinFlipExperiment
 from opaque.random import key
 
 
@@ -527,30 +527,37 @@ class TestSetup:
     """Tests for auditing.setup() module-level function."""
 
     def test_basic_setup(self):
-        """Test setup creates experiment from dataset."""
+        """Test setup creates AuditState from dataset."""
         dataset = list(range(1000))  # Anything with len()
-        exp = auditing.setup(dataset, num_canaries=100, key=key(42))
+        audit_state = auditing.setup(dataset, num_canaries=100, key=key(42))
 
-        assert isinstance(exp, CoinFlipExperiment)
+        assert isinstance(audit_state, AuditState)
+        exp = audit_state._experiment
         assert exp.num_canaries == 100
         assert len(exp.in_indices) + len(exp.out_indices) == 100
 
     def test_setup_reproducibility(self):
         """Test setup is reproducible with same seed."""
         dataset = list(range(1000))
-        exp1 = auditing.setup(dataset, num_canaries=100, key=key(42))
-        exp2 = auditing.setup(dataset, num_canaries=100, key=key(42))
+        s1 = auditing.setup(dataset, num_canaries=100, key=key(42))
+        s2 = auditing.setup(dataset, num_canaries=100, key=key(42))
 
-        np.testing.assert_array_equal(exp1.canary_indices, exp2.canary_indices)
-        np.testing.assert_array_equal(exp1.in_indices, exp2.in_indices)
+        np.testing.assert_array_equal(
+            s1._experiment.canary_indices, s2._experiment.canary_indices
+        )
+        np.testing.assert_array_equal(
+            s1._experiment.in_indices, s2._experiment.in_indices
+        )
 
     def test_setup_different_seeds(self):
         """Test different seeds give different experiments."""
         dataset = list(range(1000))
-        exp1 = auditing.setup(dataset, num_canaries=100, key=key(42))
-        exp2 = auditing.setup(dataset, num_canaries=100, key=key(99))
+        s1 = auditing.setup(dataset, num_canaries=100, key=key(42))
+        s2 = auditing.setup(dataset, num_canaries=100, key=key(99))
 
-        assert not np.array_equal(exp1.canary_indices, exp2.canary_indices)
+        assert not np.array_equal(
+            s1._experiment.canary_indices, s2._experiment.canary_indices
+        )
 
     def test_setup_too_many_canaries(self):
         """Test that requesting more canaries than dataset size raises."""
@@ -561,7 +568,32 @@ class TestSetup:
     def test_setup_canaries_are_valid_indices(self):
         """Test all canary indices are valid for the dataset."""
         dataset = list(range(500))
-        exp = auditing.setup(dataset, num_canaries=100, key=key(42))
+        audit_state = auditing.setup(dataset, num_canaries=100, key=key(42))
 
-        assert np.all(exp.canary_indices >= 0)
-        assert np.all(exp.canary_indices < 500)
+        assert np.all(audit_state._experiment.canary_indices >= 0)
+        assert np.all(audit_state._experiment.canary_indices < 500)
+
+    def test_train_indices(self):
+        """Test that AuditState.train_indices excludes out-canaries."""
+        dataset = list(range(100))
+        audit_state = auditing.setup(dataset, num_canaries=10, key=key(42))
+
+        exp = audit_state._experiment
+        train_set = set(audit_state.train_indices)
+
+        # Out canaries must not be in training set
+        for idx in exp.out_indices:
+            assert idx not in train_set
+
+        # In canaries must be in training set
+        for idx in exp.in_indices:
+            assert idx in train_set
+
+    def test_repr(self):
+        """Test AuditState repr."""
+        audit_state = auditing.setup(list(range(1000)), num_canaries=100, key=key(42))
+        r = repr(audit_state)
+        assert "AuditState" in r
+        assert "num_canaries=100" in r
+        assert "n_in=" in r
+        assert "n_out=" in r

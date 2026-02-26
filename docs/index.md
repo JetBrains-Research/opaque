@@ -110,14 +110,14 @@ Empirical privacy validation via one-run membership inference
 import opaque.auditing as auditing
 from opaque.random import key
 
-experiment = auditing.setup(
+audit_state = auditing.setup(
     dataset, num_canaries=1000, key=key(42),
     batch_argnums=(1,), collate_fn=data_collator,
     batch_unpack=lambda b: (b["input_ids"].to(device),),
 )
-train_data = dataset.select(experiment.train_indices(len(dataset)))
+train_data = dataset.select(audit_state.train_indices)
 # ... train with DP-SGD ...
-audit = auditing.evaluate(experiment, loss_fn, trained_params)
+audit = auditing.evaluate(loss_fn, trained_params, state=audit_state)
 print(audit.summary(delta=1e-5))
 ```
 
