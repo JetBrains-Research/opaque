@@ -264,7 +264,7 @@ class TestEvaluate:
         from torch.utils.data import Subset
 
         train_data = Subset(dataset, audit_state.train_indices)
-        assert len(train_data) == 200 - len(audit_state._experiment.out_indices)
+        assert len(train_data) == 200 - len(audit_state.coin_flip.out_indices)
 
         # "Train" on subset (just use fresh random params)
         torch.manual_seed(0)
@@ -287,7 +287,7 @@ class TestEvaluateStoredConfig:
     """Tests for evaluate() using config stored at setup() time."""
 
     def test_setup_stores_config(self, linear_setup):
-        """Test that setup() stores scoring config in AuditState."""
+        """Test that setup() stores scoring config in OneRunEstimator."""
         params, dataset, loss_fn = linear_setup
         audit_state = auditing.setup(
             dataset,

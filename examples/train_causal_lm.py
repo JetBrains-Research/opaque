@@ -696,7 +696,7 @@ def main():
             batch_size=args.audit_batch_size,
         )
         train_dataset = train_dataset.select(audit_state.train_indices)
-        exp = audit_state._experiment
+        exp = audit_state.coin_flip
         print(
             f"  Canaries: {len(exp.in_indices)} in, "
             f"{len(exp.out_indices)} out (held out from training)"
@@ -1033,7 +1033,7 @@ def main():
         print("\n" + "-" * 80)
         print("Privacy Auditing")
         print("-" * 80)
-        print(f"Scoring {audit_state._experiment.num_canaries} canaries...")
+        print(f"Scoring {audit_state.coin_flip.num_canaries} canaries...")
 
         audit_result = auditing.evaluate(
             per_example_loss_fn, trainable_params, state=audit_state

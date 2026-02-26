@@ -19,6 +19,14 @@ For end-to-end auditing with a single training run, use
     audit = auditing.evaluate(loss_fn, params, state=audit_state)
     print(audit.summary(delta=1e-5))
 
+Or use the two-step API for more control::
+
+    coin_flip = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
+    estimator = auditing.one_run(coin_flip, dataset=dataset, batch_argnums=(1,))
+    train_data = dataset.select(estimator.train_indices)
+    # ... train model with DP-SGD ...
+    audit = auditing.evaluate(loss_fn, params, state=estimator)
+
 References:
     - Steinke, Nasr, Jagielski (2023), https://arxiv.org/abs/2305.08846
     - Carlini et al. (2022), https://arxiv.org/abs/2112.03570
@@ -37,7 +45,7 @@ from opaque.auditing.helpers import (
 )
 from opaque.random import RngKey
 
-__all__ = ["AuditResult", "AuditState", "CoinFlipExperiment"]
+__all__ = ["AuditResult", "CoinFlip", "OneRunEstimator"]
 
 
 class AuditResult:
@@ -105,7 +113,7 @@ class AuditResult:
         The statistical method is chosen automatically based on how this
         object was created:
 
-        - From :meth:`CoinFlipExperiment.audit`: defaults to ``'one_run'``
+        - From :meth:`OneRunEstimator.audit`: defaults to ``'one_run'``
           (tighter, assumes coin-flip setup).
         - Constructed directly: defaults to ``'clopper_pearson'``
           (general, no assumptions on the split).
@@ -395,24 +403,16 @@ class AuditResult:
         return "\n".join(lines)
 
 
-class CoinFlipExperiment:
-    """One-run privacy audit: manages canary coin flips and score splitting.
+class CoinFlip:
+    """Coin-flip partitioning for canary-based privacy auditing.
 
-    Implements the canary setup from Steinke, Nasr, Jagielski (2023):
-    each canary is independently included or excluded from training with
-    probability 0.5 (a fair coin flip). After training, the user computes
-    a membership score for each canary and calls :meth:`audit` to get an
-    :class:`AuditResult`.
-
-    Prefer :func:`opaque.auditing.setup` which handles canary selection
-    automatically::
-
-        import opaque.auditing as auditing
-        from opaque.random import key
-        experiment = auditing.setup(dataset, num_canaries=1000, key=key(42))
+    Each canary is independently included or excluded from training
+    with probability 0.5 (a fair coin flip). This class only handles
+    the partition — it does not know about scoring or epsilon estimation.
 
     Attributes:
         num_canaries: Total number of canary examples.
+        canary_indices: All canary dataset indices.
         in_indices: Canary indices included in training (coin = heads).
         out_indices: Canary indices excluded from training (coin = tails).
 
@@ -427,12 +427,6 @@ class CoinFlipExperiment:
         *,
         key: RngKey,
     ) -> None:
-        """Flip coins for each canary to decide inclusion/exclusion.
-
-        Args:
-            canary_indices: Array of dataset indices designated as canaries.
-            key: RNG key for reproducible coin flips.
-        """
         canary_indices = np.asarray(canary_indices)
         if canary_indices.ndim != 1 or canary_indices.size == 0:
             raise ValueError("canary_indices must be a non-empty 1-D array")
@@ -448,7 +442,7 @@ class CoinFlipExperiment:
 
     def __repr__(self) -> str:
         return (
-            f"CoinFlipExperiment(num_canaries={self.num_canaries}, "
+            f"CoinFlip(num_canaries={self.num_canaries}, "
             f"n_in={len(self.in_indices)}, n_out={len(self.out_indices)})"
         )
 
@@ -456,10 +450,7 @@ class CoinFlipExperiment:
         """Dataset indices to use for training.
 
         Returns all indices in ``range(dataset_size)`` except the excluded
-        canaries. The return type is ``list[int]`` for direct use with
-        HuggingFace ``dataset.select()``::
-
-            train_data = dataset.select(experiment.train_indices(len(dataset)))
+        canaries (coin = tails).
 
         Args:
             dataset_size: Total number of examples in the full dataset.
@@ -472,9 +463,6 @@ class CoinFlipExperiment:
 
     def subset(self, dataset):
         """Return a ``torch.utils.data.Subset`` for training.
-
-        Excludes canaries that were assigned to the held-out group.
-        Pass the result to a ``DataLoader`` for training.
 
         For HuggingFace datasets, prefer :meth:`train_indices` with
         ``dataset.select()`` instead.
@@ -489,43 +477,38 @@ class CoinFlipExperiment:
 
         return Subset(dataset, self.train_indices(len(dataset)))
 
-    def audit(self, scores: np.ndarray) -> AuditResult:
-        """Split scores by coin flip and return an AuditResult.
-
-        The returned :class:`AuditResult` has ``epsilon_at()`` defaulting
-        to the ``'one_run'`` method, which is valid and tighter for
-        coin-flip experiments.
+    def split_scores(
+        self, scores: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Split per-canary scores into in-group and out-group.
 
         Args:
-            scores: Membership score for each canary, in the same order as
-                ``canary_indices`` passed to the constructor. Shape
-                ``(num_canaries,)``. Higher scores should indicate higher
-                likelihood of being a training member.
+            scores: Membership scores, shape ``(num_canaries,)``, in the
+                same order as ``canary_indices``.
 
         Returns:
-            :class:`AuditResult` with in/out scores split by coin flip.
+            ``(in_scores, out_scores)`` tuple.
         """
         scores = np.asarray(scores, dtype=float)
         if scores.shape != (self.num_canaries,):
             raise ValueError(
                 f"Expected {self.num_canaries} scores, got shape {scores.shape}"
             )
-        result = AuditResult(scores[self._in_mask], scores[~self._in_mask])
-        result._from_coin_flip = True
-        return result
+        return scores[self._in_mask], scores[~self._in_mask]
 
 
-class AuditState:
-    """Opaque state returned by :func:`~opaque.auditing.setup`.
+class OneRunEstimator:
+    """One-run estimator: wraps a :class:`CoinFlip` with scoring config.
 
-    Bundles a :class:`CoinFlipExperiment` with the dataset and scoring
-    configuration so that :func:`~opaque.auditing.evaluate` needs only
-    the loss function and trained parameters.
+    Returned by :func:`~opaque.auditing.setup` (or
+    :func:`~opaque.auditing.one_run`). Passed as ``state`` to
+    :func:`~opaque.auditing.evaluate`.
 
-    The only public surface is :attr:`train_indices` — everything else
-    is internal, consumed by :func:`~opaque.auditing.evaluate`.
+    The public surface is ``train_indices`` and ``coin_flip``.
+    Scoring config is internal, consumed by :func:`evaluate`.
 
     Attributes:
+        coin_flip: The :class:`CoinFlip` partition.
         train_indices: Sorted list of dataset indices to use for training
             (all indices except held-out canaries). Pass directly to
             ``dataset.select()``::
@@ -536,7 +519,7 @@ class AuditState:
 
     def __init__(
         self,
-        experiment: CoinFlipExperiment,
+        coin_flip: CoinFlip,
         *,
         dataset,
         batch_argnums: tuple[int, ...] | None = None,
@@ -544,20 +527,37 @@ class AuditState:
         batch_unpack=None,
         batch_size: int = 256,
     ) -> None:
-        self._experiment = experiment
+        self.coin_flip = coin_flip
         self._dataset = dataset
         self._batch_argnums = batch_argnums
         self._collate_fn = collate_fn
         self._batch_unpack = batch_unpack
         self._batch_size = batch_size
-        self.train_indices = experiment.train_indices(len(dataset))
+        self.train_indices = coin_flip.train_indices(len(dataset))
 
     def __repr__(self) -> str:
-        exp = self._experiment
+        cf = self.coin_flip
         return (
-            f"AuditState(num_canaries={exp.num_canaries}, "
-            f"n_in={len(exp.in_indices)}, n_out={len(exp.out_indices)})"
+            f"OneRunEstimator(num_canaries={cf.num_canaries}, "
+            f"n_in={len(cf.in_indices)}, n_out={len(cf.out_indices)})"
         )
+
+    def audit(self, scores: np.ndarray) -> AuditResult:
+        """Split scores by coin flip and return an AuditResult.
+
+        The returned :class:`AuditResult` has ``epsilon_at()`` defaulting
+        to the ``'one_run'`` method.
+
+        Args:
+            scores: Membership scores, shape ``(num_canaries,)``.
+
+        Returns:
+            :class:`AuditResult` with in/out scores split by coin flip.
+        """
+        in_scores, out_scores = self.coin_flip.split_scores(scores)
+        result = AuditResult(in_scores, out_scores)
+        result._from_coin_flip = True
+        return result
 
 
 # ------------------------------------------------------------------

@@ -1,10 +1,10 @@
-"""Tests for AuditResult and CoinFlipExperiment classes."""
+"""Tests for AuditResult, CoinFlip, and OneRunEstimator classes."""
 
 import numpy as np
 import pytest
 
 import opaque.auditing as auditing
-from opaque.auditing import AuditResult, AuditState, CoinFlipExperiment
+from opaque.auditing import AuditResult, CoinFlip, OneRunEstimator
 from opaque.random import key
 
 
@@ -262,135 +262,107 @@ class TestAucCI:
             result.auc(confidence=-0.1)
 
 
-class TestCoinFlipExperiment:
-    """Tests for CoinFlipExperiment (one-run auditing setup)."""
+class TestCoinFlip:
+    """Tests for CoinFlip (partitioning only)."""
 
     def test_basic_construction(self):
-        """Test constructing experiment with canary indices."""
+        """Test constructing CoinFlip with canary indices."""
         canary_idx = np.arange(100)
-        exp = CoinFlipExperiment(canary_idx, key=key(42))
+        cf = CoinFlip(canary_idx, key=key(42))
 
-        assert exp.num_canaries == 100
-        assert len(exp.in_indices) + len(exp.out_indices) == 100
-        # With 100 coins, both groups should be non-empty
-        assert len(exp.in_indices) > 0
-        assert len(exp.out_indices) > 0
+        assert cf.num_canaries == 100
+        assert len(cf.in_indices) + len(cf.out_indices) == 100
+        assert len(cf.in_indices) > 0
+        assert len(cf.out_indices) > 0
 
     def test_coin_flip_reproducibility(self):
         """Test that same seed gives same coin flips."""
         canary_idx = np.arange(200)
-        exp1 = CoinFlipExperiment(canary_idx, key=key(42))
-        exp2 = CoinFlipExperiment(canary_idx, key=key(42))
+        cf1 = CoinFlip(canary_idx, key=key(42))
+        cf2 = CoinFlip(canary_idx, key=key(42))
 
-        np.testing.assert_array_equal(exp1.in_indices, exp2.in_indices)
-        np.testing.assert_array_equal(exp1.out_indices, exp2.out_indices)
+        np.testing.assert_array_equal(cf1.in_indices, cf2.in_indices)
+        np.testing.assert_array_equal(cf1.out_indices, cf2.out_indices)
 
     def test_different_seeds_give_different_splits(self):
         """Test that different seeds give different splits."""
         canary_idx = np.arange(200)
-        exp1 = CoinFlipExperiment(canary_idx, key=key(42))
-        exp2 = CoinFlipExperiment(canary_idx, key=key(99))
+        cf1 = CoinFlip(canary_idx, key=key(42))
+        cf2 = CoinFlip(canary_idx, key=key(99))
 
-        # Extremely unlikely to be identical with different seeds
-        assert not np.array_equal(exp1.in_indices, exp2.in_indices)
+        assert not np.array_equal(cf1.in_indices, cf2.in_indices)
 
     def test_indices_are_subset_of_canaries(self):
         """Test that in/out indices are subsets of canary indices."""
         canary_idx = np.array([10, 20, 30, 40, 50])
-        exp = CoinFlipExperiment(canary_idx, key=key(42))
+        cf = CoinFlip(canary_idx, key=key(42))
 
-        for idx in exp.in_indices:
+        for idx in cf.in_indices:
             assert idx in canary_idx
-        for idx in exp.out_indices:
+        for idx in cf.out_indices:
             assert idx in canary_idx
 
     def test_no_overlap(self):
         """Test that in and out indices don't overlap."""
         canary_idx = np.arange(100)
-        exp = CoinFlipExperiment(canary_idx, key=key(42))
+        cf = CoinFlip(canary_idx, key=key(42))
 
-        in_set = set(exp.in_indices.tolist())
-        out_set = set(exp.out_indices.tolist())
+        in_set = set(cf.in_indices.tolist())
+        out_set = set(cf.out_indices.tolist())
         assert len(in_set & out_set) == 0
 
     def test_train_indices(self):
         """Test train_indices excludes out canaries and returns list."""
         canary_idx = np.array([5, 15, 25])
-        exp = CoinFlipExperiment(canary_idx, key=key(42))
+        cf = CoinFlip(canary_idx, key=key(42))
 
-        train_idx = exp.train_indices(dataset_size=30)
+        train_idx = cf.train_indices(dataset_size=30)
         assert isinstance(train_idx, list)
         train_set = set(train_idx)
 
-        # Out canaries must not be in training set
-        for idx in exp.out_indices:
+        for idx in cf.out_indices:
             assert idx not in train_set
-
-        # In canaries must be in training set
-        for idx in exp.in_indices:
+        for idx in cf.in_indices:
             assert idx in train_set
 
-        # Non-canary indices must be in training set
         non_canary = set(range(30)) - set(canary_idx.tolist())
         for idx in non_canary:
             assert idx in train_set
 
-    def test_audit_produces_audit_result(self):
-        """Test that audit() returns correct AuditResult."""
+    def test_split_scores(self):
+        """Test split_scores returns correct in/out arrays."""
         canary_idx = np.arange(100)
-        exp = CoinFlipExperiment(canary_idx, key=key(42))
+        cf = CoinFlip(canary_idx, key=key(42))
 
-        # Simulate: in-canaries get high scores, out-canaries get low
         scores = np.zeros(100)
-        scores[exp._in_mask] = 10.0
-        scores[~exp._in_mask] = 0.0
+        scores[cf._in_mask] = 10.0
+        scores[~cf._in_mask] = 0.0
 
-        result = exp.audit(scores)
+        in_scores, out_scores = cf.split_scores(scores)
 
-        assert isinstance(result, AuditResult)
-        assert result.n_in == len(exp.in_indices)
-        assert result.n_out == len(exp.out_indices)
-        # Perfect separation → high AUC
-        assert result.auc() > 0.99
+        assert len(in_scores) == len(cf.in_indices)
+        assert len(out_scores) == len(cf.out_indices)
+        np.testing.assert_array_equal(in_scores, 10.0)
+        np.testing.assert_array_equal(out_scores, 0.0)
 
-    def test_audit_wrong_length_raises(self):
+    def test_split_scores_wrong_length_raises(self):
         """Test that wrong-length scores raise ValueError."""
         canary_idx = np.arange(100)
-        exp = CoinFlipExperiment(canary_idx, key=key(42))
+        cf = CoinFlip(canary_idx, key=key(42))
 
         with pytest.raises(ValueError, match="Expected 100 scores"):
-            exp.audit(np.zeros(50))
+            cf.split_scores(np.zeros(50))
 
     def test_empty_canaries_raises(self):
         """Test that empty canary indices raise ValueError."""
         with pytest.raises(ValueError, match="non-empty"):
-            CoinFlipExperiment(np.array([]), key=key(42))
-
-    def test_end_to_end_one_run_audit(self):
-        """Test complete one-run auditing workflow with simulated scores."""
-        rng = np.random.default_rng(42)
-
-        # Setup: 500 canaries from a 10k dataset
-        canary_idx = rng.choice(10000, size=500, replace=False)
-        exp = CoinFlipExperiment(canary_idx, key=key(42))
-
-        # Simulate membership scores: in-canaries score higher
-        scores = np.empty(500)
-        scores[exp._in_mask] = rng.normal(loc=0.7, scale=0.3, size=exp._in_mask.sum())
-        scores[~exp._in_mask] = rng.normal(
-            loc=0.3, scale=0.3, size=(~exp._in_mask).sum()
-        )
-
-        # Audit
-        result = exp.audit(scores)
-        assert result.auc() > 0.6
-        assert result.epsilon_one_run(significance=0.05, delta=1e-5) > 0
+            CoinFlip(np.array([]), key=key(42))
 
     def test_repr(self):
-        """Test CoinFlipExperiment repr."""
-        exp = CoinFlipExperiment(np.arange(100), key=key(42))
-        r = repr(exp)
-        assert "CoinFlipExperiment" in r
+        """Test CoinFlip repr."""
+        cf = CoinFlip(np.arange(100), key=key(42))
+        r = repr(cf)
+        assert "CoinFlip" in r
         assert "num_canaries=100" in r
         assert "n_in=" in r
         assert "n_out=" in r
@@ -402,19 +374,76 @@ class TestCoinFlipExperiment:
 
         dataset = TensorDataset(torch.arange(50), torch.arange(50))
         canary_idx = np.array([5, 15, 25, 35, 45])
-        exp = CoinFlipExperiment(canary_idx, key=key(42))
+        cf = CoinFlip(canary_idx, key=key(42))
 
-        sub = exp.subset(dataset)
-        assert len(sub) == 50 - len(exp.out_indices)
+        sub = cf.subset(dataset)
+        assert len(sub) == 50 - len(cf.out_indices)
 
-        # All out-canaries excluded
         sub_indices = set(sub.indices)
-        for idx in exp.out_indices:
+        for idx in cf.out_indices:
             assert idx not in sub_indices
-
-        # All in-canaries included
-        for idx in exp.in_indices:
+        for idx in cf.in_indices:
             assert idx in sub_indices
+
+
+class TestOneRunEstimator:
+    """Tests for OneRunEstimator (wraps CoinFlip + estimation)."""
+
+    def test_audit_produces_audit_result(self):
+        """Test that audit() returns correct AuditResult."""
+        canary_idx = np.arange(100)
+        cf = CoinFlip(canary_idx, key=key(42))
+        estimator = OneRunEstimator(cf, dataset=list(range(200)))
+
+        scores = np.zeros(100)
+        scores[cf._in_mask] = 10.0
+        scores[~cf._in_mask] = 0.0
+
+        result = estimator.audit(scores)
+
+        assert isinstance(result, AuditResult)
+        assert result.n_in == len(cf.in_indices)
+        assert result.n_out == len(cf.out_indices)
+        assert result.auc() > 0.99
+
+    def test_audit_sets_from_coin_flip(self):
+        """Test that audit() marks result for one-run epsilon."""
+        cf = CoinFlip(np.arange(100), key=key(42))
+        estimator = OneRunEstimator(cf, dataset=list(range(200)))
+
+        scores = np.zeros(100)
+        scores[cf._in_mask] = 10.0
+        result = estimator.audit(scores)
+
+        assert result._from_coin_flip is True
+
+    def test_end_to_end_one_run_audit(self):
+        """Test complete one-run workflow with simulated scores."""
+        rng = np.random.default_rng(42)
+
+        canary_idx = rng.choice(10000, size=500, replace=False)
+        cf = CoinFlip(canary_idx, key=key(42))
+        estimator = OneRunEstimator(cf, dataset=list(range(10000)))
+
+        scores = np.empty(500)
+        scores[cf._in_mask] = rng.normal(loc=0.7, scale=0.3, size=cf._in_mask.sum())
+        scores[~cf._in_mask] = rng.normal(
+            loc=0.3, scale=0.3, size=(~cf._in_mask).sum()
+        )
+
+        result = estimator.audit(scores)
+        assert result.auc() > 0.6
+        assert result.epsilon_one_run(significance=0.05, delta=1e-5) > 0
+
+    def test_repr(self):
+        """Test OneRunEstimator repr."""
+        cf = CoinFlip(np.arange(100), key=key(42))
+        estimator = OneRunEstimator(cf, dataset=list(range(200)))
+        r = repr(estimator)
+        assert "OneRunEstimator" in r
+        assert "num_canaries=100" in r
+        assert "n_in=" in r
+        assert "n_out=" in r
 
 
 class TestAuditResultRepr:
@@ -442,10 +471,11 @@ class TestAuditResultRepr:
 
     def test_summary_coin_flip_shows_one_run(self):
         """Test summary shows one-run epsilon when from coin flip."""
-        exp = CoinFlipExperiment(np.arange(100), key=key(42))
+        cf = CoinFlip(np.arange(100), key=key(42))
+        estimator = OneRunEstimator(cf, dataset=list(range(200)))
         scores = np.zeros(100)
-        scores[exp._in_mask] = 10.0
-        result = exp.audit(scores)
+        scores[cf._in_mask] = 10.0
+        result = estimator.audit(scores)
 
         s = result.summary()
         assert "one-run" in s
@@ -489,10 +519,11 @@ class TestEpsilonAt:
 
     def test_coin_flip_defaults_to_one_run(self):
         """Test that coin-flip AuditResult uses one_run."""
-        exp = CoinFlipExperiment(np.arange(100), key=key(42))
+        cf = CoinFlip(np.arange(100), key=key(42))
+        estimator = OneRunEstimator(cf, dataset=list(range(200)))
         scores = np.zeros(100)
-        scores[exp._in_mask] = 10.0
-        result = exp.audit(scores)
+        scores[cf._in_mask] = 10.0
+        result = estimator.audit(scores)
 
         eps_at = result.epsilon_at(delta=0.0)
         eps_or = result.epsilon_one_run(significance=0.05, delta=0.0)
@@ -523,18 +554,63 @@ class TestEpsilonAt:
         assert isinstance(eps_d, float)
 
 
+class TestCoinFlipFunction:
+    """Tests for auditing.coin_flip() module-level function."""
+
+    def test_basic_coin_flip(self):
+        """Test coin_flip creates CoinFlip from dataset."""
+        dataset = list(range(1000))
+        cf = auditing.coin_flip(dataset, num_canaries=100, key=key(42))
+
+        assert isinstance(cf, CoinFlip)
+        assert cf.num_canaries == 100
+        assert len(cf.in_indices) + len(cf.out_indices) == 100
+
+    def test_coin_flip_too_many_canaries(self):
+        """Test that requesting more canaries than dataset size raises."""
+        dataset = list(range(10))
+        with pytest.raises(ValueError, match="exceeds dataset size"):
+            auditing.coin_flip(dataset, num_canaries=20, key=key(42))
+
+
+class TestOneRunFunction:
+    """Tests for auditing.one_run() module-level function."""
+
+    def test_basic_one_run(self):
+        """Test one_run creates OneRunEstimator from CoinFlip."""
+        dataset = list(range(1000))
+        cf = auditing.coin_flip(dataset, num_canaries=100, key=key(42))
+        estimator = auditing.one_run(cf, dataset=dataset, batch_argnums=(1,))
+
+        assert isinstance(estimator, OneRunEstimator)
+        assert estimator.coin_flip is cf
+        assert estimator._batch_argnums == (1,)
+
+    def test_one_run_train_indices(self):
+        """Test that one_run result has correct train_indices."""
+        dataset = list(range(100))
+        cf = auditing.coin_flip(dataset, num_canaries=10, key=key(42))
+        estimator = auditing.one_run(cf, dataset=dataset)
+
+        train_set = set(estimator.train_indices)
+        for idx in cf.out_indices:
+            assert idx not in train_set
+        for idx in cf.in_indices:
+            assert idx in train_set
+
+
 class TestSetup:
-    """Tests for auditing.setup() module-level function."""
+    """Tests for auditing.setup() convenience function."""
 
     def test_basic_setup(self):
-        """Test setup creates AuditState from dataset."""
-        dataset = list(range(1000))  # Anything with len()
+        """Test setup creates OneRunEstimator from dataset."""
+        dataset = list(range(1000))
         audit_state = auditing.setup(dataset, num_canaries=100, key=key(42))
 
-        assert isinstance(audit_state, AuditState)
-        exp = audit_state._experiment
-        assert exp.num_canaries == 100
-        assert len(exp.in_indices) + len(exp.out_indices) == 100
+        assert isinstance(audit_state, OneRunEstimator)
+        cf = audit_state.coin_flip
+        assert cf.num_canaries == 100
+        assert len(cf.in_indices) + len(cf.out_indices) == 100
 
     def test_setup_reproducibility(self):
         """Test setup is reproducible with same seed."""
@@ -543,20 +619,20 @@ class TestSetup:
         s2 = auditing.setup(dataset, num_canaries=100, key=key(42))
 
         np.testing.assert_array_equal(
-            s1._experiment.canary_indices, s2._experiment.canary_indices
+            s1.coin_flip.canary_indices, s2.coin_flip.canary_indices
         )
         np.testing.assert_array_equal(
-            s1._experiment.in_indices, s2._experiment.in_indices
+            s1.coin_flip.in_indices, s2.coin_flip.in_indices
         )
 
     def test_setup_different_seeds(self):
-        """Test different seeds give different experiments."""
+        """Test different seeds give different partitions."""
         dataset = list(range(1000))
         s1 = auditing.setup(dataset, num_canaries=100, key=key(42))
         s2 = auditing.setup(dataset, num_canaries=100, key=key(99))
 
         assert not np.array_equal(
-            s1._experiment.canary_indices, s2._experiment.canary_indices
+            s1.coin_flip.canary_indices, s2.coin_flip.canary_indices
         )
 
     def test_setup_too_many_canaries(self):
@@ -570,30 +646,27 @@ class TestSetup:
         dataset = list(range(500))
         audit_state = auditing.setup(dataset, num_canaries=100, key=key(42))
 
-        assert np.all(audit_state._experiment.canary_indices >= 0)
-        assert np.all(audit_state._experiment.canary_indices < 500)
+        assert np.all(audit_state.coin_flip.canary_indices >= 0)
+        assert np.all(audit_state.coin_flip.canary_indices < 500)
 
     def test_train_indices(self):
-        """Test that AuditState.train_indices excludes out-canaries."""
+        """Test that train_indices excludes out-canaries."""
         dataset = list(range(100))
         audit_state = auditing.setup(dataset, num_canaries=10, key=key(42))
 
-        exp = audit_state._experiment
+        cf = audit_state.coin_flip
         train_set = set(audit_state.train_indices)
 
-        # Out canaries must not be in training set
-        for idx in exp.out_indices:
+        for idx in cf.out_indices:
             assert idx not in train_set
-
-        # In canaries must be in training set
-        for idx in exp.in_indices:
+        for idx in cf.in_indices:
             assert idx in train_set
 
     def test_repr(self):
-        """Test AuditState repr."""
+        """Test OneRunEstimator repr from setup."""
         audit_state = auditing.setup(list(range(1000)), num_canaries=100, key=key(42))
         r = repr(audit_state)
-        assert "AuditState" in r
+        assert "OneRunEstimator" in r
         assert "num_canaries=100" in r
         assert "n_in=" in r
         assert "n_out=" in r
