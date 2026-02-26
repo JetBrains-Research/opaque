@@ -221,7 +221,9 @@ class TestEvaluate:
         """Test that evaluate returns an AuditResult."""
         params, dataset, loss_fn = linear_setup
         audit_state = auditing.setup(
-            dataset, num_canaries=50, key=key(42),
+            dataset,
+            num_canaries=50,
+            key=key(42),
             batch_argnums=(1, 2),
         )
 
@@ -235,7 +237,9 @@ class TestEvaluate:
         """Test that evaluate result defaults to one_run method."""
         params, dataset, loss_fn = linear_setup
         audit_state = auditing.setup(
-            dataset, num_canaries=50, key=key(42),
+            dataset,
+            num_canaries=50,
+            key=key(42),
             batch_argnums=(1, 2),
         )
 
@@ -252,10 +256,13 @@ class TestEvaluate:
 
         # Setup
         audit_state = auditing.setup(
-            dataset, num_canaries=50, key=key(42),
+            dataset,
+            num_canaries=50,
+            key=key(42),
             batch_argnums=(1, 2),
         )
         from torch.utils.data import Subset
+
         train_data = Subset(dataset, audit_state.train_indices)
         assert len(train_data) == 200 - len(audit_state._experiment.out_indices)
 

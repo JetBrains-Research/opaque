@@ -166,15 +166,11 @@ def evaluate(
     """
     # Resolve parameters: explicit > stored in state > error
     resolved_dataset = _resolve(dataset, state, "_dataset", "dataset")
-    resolved_argnums = _resolve(
-        batch_argnums, state, "_batch_argnums", "batch_argnums"
-    )
+    resolved_argnums = _resolve(batch_argnums, state, "_batch_argnums", "batch_argnums")
     resolved_collate = _resolve_optional(collate_fn, state, "_collate_fn")
     resolved_unpack = _resolve_optional(batch_unpack, state, "_batch_unpack")
     resolved_batch_size = (
-        batch_size
-        if batch_size is not None
-        else getattr(state, "_batch_size", 256)
+        batch_size if batch_size is not None else getattr(state, "_batch_size", 256)
     )
 
     experiment = state._experiment
@@ -201,9 +197,7 @@ def _resolve(value: Any, state: AuditState, attr: str, name: str) -> Any:
     raise TypeError(f"'{name}' must be provided either to setup() or evaluate()")
 
 
-def _resolve_optional(
-    value: Any, state: AuditState, attr: str
-) -> Any | None:
+def _resolve_optional(value: Any, state: AuditState, attr: str) -> Any | None:
     """Resolve an optional parameter: explicit value > stored > None."""
     if value is not _UNSET:
         return value
