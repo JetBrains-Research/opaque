@@ -491,9 +491,7 @@ class OneRunEstimator:
         bs = batch_size if batch_size is not None else self._batch_size
 
         if ba is None:
-            raise TypeError(
-                "batch_argnums must be provided to setup() or evaluate()"
-            )
+            raise TypeError("batch_argnums must be provided to setup() or evaluate()")
 
         scores = score(
             loss_fn,

@@ -159,9 +159,7 @@ def setup(
     elif num_canaries is not None and key is not None:
         cf = _make_coin_flip(dataset, num_canaries=num_canaries, key=key)
     else:
-        raise TypeError(
-            "Either provide coin_flip or both num_canaries and key"
-        )
+        raise TypeError("Either provide coin_flip or both num_canaries and key")
 
     return OneRunEstimator(
         cf,
