@@ -52,7 +52,7 @@ Opaque uses a 2-layer architecture to stay framework-agnostic:
 
 ## Implementation Phases
 
-### Phase 0: Baseline Measurement (1 day)
+### Phase 0: Baseline Measurement
 
 **Objective:** Establish reproducible baseline for comparison
 
@@ -64,60 +64,20 @@ Opaque uses a 2-layer architecture to stay framework-agnostic:
 
 **Command:**
 ```bash
+WANDB_API_KEY=...
 python examples/train_causal_lm.py \
   --preset mellum-kstack \
-  --num_train_samples 1000 \
   --max_steps 100 \
-  --log_steps 10
+  --log_steps 10 \
+  --max_steps 50 \
+  --wandb
 ```
 
 **Deliverable:** `baseline_measurements.md` with detailed metrics
 
 ---
 
-### Phase 1: Chunked Cross-Entropy Loss (3-5 days)
-
-**Problem:**
-- Mellum has 128K vocab → loss computation uses ~1 GB
-- Standard CE: allocate (batch×seq, vocab) = (4×1024, 128256) in memory
-- Chunked CE: process vocab in 4 chunks, only store logsumexp
-
-**Memory Savings:** ~0.5-1 GB
-
-**Implementation:**
-
-**Step 1.1: Generic Kernel** (1 day)
-- Create: `src/opaque/kernels/__init__.py`
-- Create: `src/opaque/kernels/cross_entropy.py`
-- Adapt from unsloth: `/tmp/unsloth/unsloth/kernels/cross_entropy_loss.py`
-- Components:
-  - `_chunked_cross_entropy_forward_kernel` (Triton)
-  - `_chunked_cross_entropy_backward_kernel` (Triton)
-  - `ChunkedCrossEntropyFunction` (autograd.Function with vmap support)
-  - `chunked_cross_entropy_loss()` (public API)
-- Test: Numerical equivalence with `F.cross_entropy`
-
-**Step 1.2: HuggingFace Integration** (2 days)
-- Create: `src/opaque/compat/transformers/_loss_patches.py`
-- Function: `apply_chunked_loss_patches(n_chunks=4)`
-- Strategy: Monkey-patch model.forward() to use chunked loss internally
-- Preserve API: `output = model(input_ids, labels=labels); loss = output.loss`
-- Integrate: Call from `_global_patches.py`
-
-**Step 1.3: Test & Benchmark** (1 day)
-- Test loss equivalence (atol=1e-4)
-- Benchmark memory savings
-- Measure speed overhead (expect 5-10% slower)
-- Document results
-
-**Success Criteria:**
-- Memory reduction: 0.5-1 GB
-- Loss values match baseline
-- No API changes needed in train_causal_lm.py
-
----
-
-### Phase 2: Fused Triton Kernels (5-7 days)
+### Phase 1: Fused Triton Kernels
 
 **Problem:**
 - Standard ops create intermediate tensors
@@ -128,19 +88,19 @@ python examples/train_causal_lm.py \
 **Memory Savings:** ~0.5-1 GB
 **Speed Improvement:** 20-30% faster ops
 
-**Step 2.1: RMSLayerNorm** (2 days)
+**Step  RMSLayerNorm**
 - Create: `src/opaque/kernels/rms_layernorm.py`
 - Source: `/tmp/unsloth/unsloth/kernels/rms_layernorm.py`
 - Single-pass computation, stores only inverse RMS for backward
 - Vmap-compatible autograd.Function
 
-**Step 2.2: SwiGLU** (2 days)
+**Step  SwiGLU**
 - Create: `src/opaque/kernels/swiglu.py`
 - Source: `/tmp/unsloth/unsloth/kernels/swiglu.py`
 - Fuses: `output = gate_proj * sigmoid(gate_proj) * up_proj`
 - In-place computation, no intermediates
 
-**Step 2.3: Integration** (1 day)
+**Step 3: Integration**
 - Create: `src/opaque/compat/transformers/_kernel_patches.py`
 - Patch model layers after loading
 - Test full integration
@@ -153,38 +113,7 @@ python examples/train_causal_lm.py \
 
 ---
 
-### Phase 3: Dtype Precision Guards (2-3 days)
-
-**Problem:**
-- PyTorch silently upcasts to fp32 in many ops
-- Accidental fp32 gradients = 2x memory usage
-- Must enforce bf16 throughout gradient computation
-
-**Memory Savings:** 0.5-2 GB (prevents accidental doubling)
-
-**Step 3.1: Audit Current Dtypes** (1 day)
-- Check: `src/opaque/clipping/clipped_fun.py`
-- Check: `src/opaque/noise/gaussian_noise.py`
-- Create audit script to detect fp32 tensors
-
-**Step 3.2: Add Dtype Guards** (1 day)
-- Modify: `clipped_fun.py` gradient accumulation
-- Add explicit `dtype` parameter enforcement
-- Ensure: `torch.sum(..., dtype=bf16)` not default fp32
-
-**Step 3.3: Validate** (1 day)
-- Assert all gradients stay bf16
-- Test memory consistency
-- Document findings
-
-**Success Criteria:**
-- No fp32 gradients during training
-- Memory stays consistent
-- No silent upcasting detected
-
----
-
-### Phase 4: Fused LoRA Operations (7-10 days)
+### Phase 2: Fused LoRA Operations
 
 **Goal:** Enable training with all 7 LoRA modules efficiently
 
@@ -196,29 +125,29 @@ python examples/train_causal_lm.py \
 **Memory Savings:** 0.5-1 GB
 **Enables:** Full 7-module LoRA (only ~60-110 MB net cost)
 
-**Step 4.1: Study Unsloth Implementation** (1 day)
+**Step 1: Study Unsloth Implementation**
 - Read: `/tmp/unsloth/unsloth/kernels/fast_lora.py`
 - Document: How fusion eliminates intermediates
 - Note: Must adapt to vmap-compatible pattern
 
-**Step 4.2: Design Vmap Pattern** (2 days)
+**Step 2: Design Vmap Pattern**
 - Create design doc: `lora_fusion_design.md`
 - Key: Use new autograd.Function pattern
   - `generate_vmap_rule = True`
   - `setup_context()` staticmethod
   - Batched transposes: `.transpose(-2, -1)` not `.t()`
 
-**Step 4.3: Implement** (3 days)
+**Step 3: Implement**
 - Create: `src/opaque/kernels/fused_lora.py`
 - Class: `FusedLoRALinear` (autograd.Function)
 - Test: Forward equivalence, backward correctness, vmap compatibility
 
-**Step 4.4: Integrate** (1-2 days)
+**Step 4: Integrate**
 - Hook into model creation pipeline
 - Replace standard LoRA layers with fused versions
 - Update: `examples/train_causal_lm.py` to support full LoRA
 
-**Step 4.5: Full Test** (1 day)
+**Step 5: Full Test**
 - Test with all 7 LoRA modules
 - Verify per-example gradients correct
 - Benchmark memory and speed
@@ -231,22 +160,128 @@ python examples/train_causal_lm.py \
 
 ---
 
-### Phase 5: CPU Offloading (Medium Risk, 1-2 weeks)
+### Phase 3: Chunked Cross-Entropy Loss
+
+**Problem:**
+- Mellum has 128K vocab → loss computation uses ~1 GB
+- Standard CE: allocate (batch×seq, vocab) = (4×1024, 128256) in memory
+- Chunked CE: process vocab in 4 chunks, only store logsumexp
+
+**Memory Savings:** ~0.5-1 GB
+
+**Implementation:**
+
+**Step 1: Generic Kernel**
+- Create: `src/opaque/kernels/__init__.py`
+- Create: `src/opaque/kernels/cross_entropy.py`
+- Adapt from unsloth: `/tmp/unsloth/unsloth/kernels/cross_entropy_loss.py`
+- Components:
+  - `_chunked_cross_entropy_forward_kernel` (Triton)
+  - `_chunked_cross_entropy_backward_kernel` (Triton)
+  - `ChunkedCrossEntropyFunction` (autograd.Function with vmap support)
+  - `chunked_cross_entropy_loss()` (public API)
+- Test: Numerical equivalence with `F.cross_entropy`
+
+**Step 2: HuggingFace Integration**
+- Create: `src/opaque/compat/transformers/_loss_patches.py`
+- Function: `apply_chunked_loss_patches(n_chunks=4)`
+- Strategy: Monkey-patch model.forward() to use chunked loss internally
+- Preserve API: `output = model(input_ids, labels=labels); loss = output.loss`
+- Integrate: Call from `_global_patches.py`
+
+**Step 3: Test & Benchmark**
+- Test loss equivalence (atol=1e-4)
+- Benchmark memory savings
+- Measure speed overhead (expect 5-10% slower)
+- Document results
+
+**Success Criteria:**
+- Memory reduction: 0.5-1 GB
+- Loss values match baseline
+- No API changes needed in train_causal_lm.py
+
+---
+
+#### Phase 3b: Fused Linear Cross-Entropy (Low Risk)
+
+**Problem:**
+- Standard CE: `logits = hidden @ lm_head.T` allocates [batch, seq, vocab] tensor
+- For batch=8, seq=1024, vocab=128K: ~4 GB just for logits!
+
+**Unsloth Solution:** Use `cut_cross_entropy` library
+```python
+from cut_cross_entropy import linear_cross_entropy
+
+# Never materializes full logits tensor
+loss = linear_cross_entropy(
+    hidden_states,      # [batch, seq, hidden]
+    lm_head.weight,     # [vocab, hidden]
+    labels,             # [batch, seq]
+    shift=True,
+    reduction="mean"
+)
+```
+
+**For DP-SGD:** Need to verify vmap compatibility
+```python
+# Test if this works with vmap
+per_example_loss = vmap(
+    lambda h, l: linear_cross_entropy(h.unsqueeze(0), lm_head.weight, l.unsqueeze(0))
+)(hidden_states, labels)
+```
+
+**Vmap Compatibility:** ⚠️ Unknown - `cut_cross_entropy` may use custom CUDA kernels
+
+**Memory Savings:** ~2-4 GB (no full logits tensor)
+**Speed Impact:** +10-20% faster (fused kernel)
+**Risk:** Low-Medium (need to test vmap compatibility)
+
+---
+
+### Phase 4: Dtype Precision Guards
+
+**Problem:**
+- PyTorch silently upcasts to fp32 in many ops
+- Accidental fp32 gradients = 2x memory usage
+- Must ensure mixed precision and automatic mix precision with pytorch without forced upcasting
+-
+
+**Memory Savings:** 0.5-2 GB (prevents accidental doubling)
+
+**Step 1: Audit Current Dtypes**
+- Check: `src/opaque/clipping/clipped_fun.py`
+- Check: `src/opaque/noise/gaussian_noise.py`
+- Create audit script to detect fp32 tensors
+
+**Step 2: Add Dtype Guards**
+- Modify: `clipped_fun.py` gradient accumulation
+- Add explicit `dtype` parameter enforcement
+- Ensure: `torch.sum(..., dtype=bf16)` not default fp32
+
+**Step 3: Validate**
+- Test memory consistency
+- Document findings
+
+**Success Criteria:**
+- Memory stays consistent
+- No silent upcasting detected
+
+---
+
+### Phase 5: CPU Offloading (Medium Risk)
 
 **Research Summary (Feb 2025):**
 Analysis of Unsloth's memory optimizations revealed that their 4-6x batch size improvement
 (batch 4 → 16-24 on Qwen 7B) comes primarily from:
 1. **Gradient checkpointing with CPU offloading** (~50% of savings) - ❌ Blocked by vmap
-2. **Fused linear + cross-entropy** (~30%) - ⚠️ Partially applicable
 3. **Embedding offloading** (~10%) - ✅ Applicable
-4. **Triton kernels** (~10%) - ✅ Already implemented (Phases 1-2)
 
 **Key Insight:** While full gradient checkpointing is blocked by vmap (uses `requires_grad_()`
 mutations), several CPU offloading techniques ARE compatible with our architecture.
 
 ---
 
-#### Option A: Frozen Embedding Offloading (Low Risk, 2-3 days)
+#### Option A: Frozen Embedding Offloading (Low Risk)
 
 **Problem:**
 - Large vocab models have massive embedding tables (Mellum 128K vocab = ~1 GB)
@@ -283,56 +318,7 @@ def offload_frozen_embeddings(model):
 
 ---
 
-#### Option B: Per-Example Gradient CPU Staging (Medium Risk, 1 week)
-
-**Problem:**
-- DP-SGD computes per-example gradients: `batch_size` copies of each gradient
-- For batch=8, this is 8x the memory of standard training gradients
-- Peak memory occurs when all per-example grads are on GPU before clipping
-
-**Proposed Pattern:**
-```python
-# In src/opaque/clipping/clipped_fun.py - modified accumulation
-def _microbatch_accumulate_with_offload(...):
-    """Process microbatches, offloading per-example grads to pinned CPU memory."""
-
-    # Pre-allocate pinned CPU buffers (like Unsloth's CPU_BUFFERS)
-    cpu_grad_buffers = [
-        torch.empty_like(p, device="cpu", pin_memory=True)
-        for p in parameters if p.requires_grad
-    ]
-
-    for microbatch in microbatches:
-        # Compute per-example grads on GPU
-        per_example_grads = vmap(grad(loss_fn))(microbatch)
-
-        # Immediately offload to pinned CPU (non-blocking hides latency)
-        for cpu_buf, gpu_grad in zip(cpu_grad_buffers, per_example_grads):
-            cpu_buf.copy_(gpu_grad, non_blocking=True)
-
-        # Clip on CPU (surprisingly fast for small tensors)
-        clipped = clip_per_example(cpu_grad_buffers, max_norm)
-
-        # Accumulate clipped grads back to GPU
-        for param, clipped_grad in zip(parameters, clipped):
-            param.grad.add_(clipped_grad.to(param.device, non_blocking=True))
-```
-
-**Key Techniques from Unsloth:**
-1. **Pinned memory** (`pin_memory=True`): Enables async CPU↔GPU transfer
-2. **Non-blocking transfers**: `tensor.to(device, non_blocking=True)` overlaps with compute
-3. **CUDA streams**: Separate stream for transfers to hide latency
-4. **Buffer pooling**: Reuse pre-allocated buffers to avoid allocation overhead
-
-**Vmap Compatibility:** ✅ Safe - offloading happens AFTER vmap computation
-
-**Memory Savings:** ~3-5 GB (moves per-example grads off GPU during clipping)
-**Speed Impact:** ~10-20% slower (CPU↔GPU transfers)
-**Risk:** Medium (timing/synchronization complexity)
-
----
-
-#### Option C: Activation Offloading for Frozen Layers (Medium Risk, 1-2 weeks)
+#### Option C: Activation Offloading for Frozen Layers (Medium Risk)
 
 **Problem:**
 - In LoRA training, base model layers are frozen but activations still stored
@@ -372,59 +358,6 @@ but CPU tensor handling in vmap backward is uncharted territory
 
 ---
 
-#### Option D: Fused Linear Cross-Entropy (Low Risk, 3-5 days)
-
-**Problem:**
-- Standard CE: `logits = hidden @ lm_head.T` allocates [batch, seq, vocab] tensor
-- For batch=8, seq=1024, vocab=128K: ~4 GB just for logits!
-
-**Unsloth Solution:** Use `cut_cross_entropy` library
-```python
-from cut_cross_entropy import linear_cross_entropy
-
-# Never materializes full logits tensor
-loss = linear_cross_entropy(
-    hidden_states,      # [batch, seq, hidden]
-    lm_head.weight,     # [vocab, hidden]
-    labels,             # [batch, seq]
-    shift=True,
-    reduction="mean"
-)
-```
-
-**For DP-SGD:** Need to verify vmap compatibility
-```python
-# Test if this works with vmap
-per_example_loss = vmap(
-    lambda h, l: linear_cross_entropy(h.unsqueeze(0), lm_head.weight, l.unsqueeze(0))
-)(hidden_states, labels)
-```
-
-**Vmap Compatibility:** ⚠️ Unknown - `cut_cross_entropy` may use custom CUDA kernels
-
-**Memory Savings:** ~2-4 GB (no full logits tensor)
-**Speed Impact:** +10-20% faster (fused kernel)
-**Risk:** Low-Medium (need to test vmap compatibility)
-
----
-
-#### Phase 5 Implementation Priority
-
-| Option | Memory Savings | Speed Impact | Vmap Safe | Risk | Priority |
-|--------|---------------|--------------|-----------|------|----------|
-| A: Embedding Offload | 1-2 GB | -5-10% | ✅ Yes | Low | **1st** |
-| D: Fused CE | 2-4 GB | +10-20% | ⚠️ Test | Low-Med | **2nd** |
-| B: Grad CPU Staging | 3-5 GB | -10-20% | ✅ Yes | Medium | **3rd** |
-| C: Activation Offload | 2-4 GB | -15-25% | ⚠️ Test | Med-High | **4th** |
-
-**Recommended Approach:**
-1. Start with Option A (embedding offload) - guaranteed safe, quick win
-2. Test Option D (fused CE) - high potential, needs vmap validation
-3. If more memory needed, implement Option B (grad staging)
-4. Option C is research/experimental
-
----
-
 #### Unsloth Reference Implementation
 
 **Key files analyzed:**
@@ -449,16 +382,16 @@ with torch.cuda.stream(EXTRA_STREAM):
 
 ---
 
-### Phase 6: Research (Optional, 2-4 weeks)
+### Phase 6: Research (Optional)
 
 **High-risk explorations after Phase 5:**
 
-**Option A: 4-bit Quantization with Vmap** (1-2 weeks)
+**Option A: 4-bit Quantization with Vmap**
 - Test if bitsandbytes NF4 works with vmap
 - Potential: ~10 GB savings
 - Risk: May be fundamentally incompatible
 
-**Option B: Hybrid Checkpointing** (2-4 weeks)
+**Option B: Hybrid Checkpointing**
 - Apply standard checkpointing to embedding/output layers only (no vmap needed)
 - Keep vmap-compatible path for transformer blocks
 - Potential: 1-2 GB additional savings
@@ -472,25 +405,18 @@ After each phase:
 
 ### 1. Memory Profile
 ```bash
+WANDB_API_KEY=...
 python examples/train_causal_lm.py \
   --preset mellum-kstack \
-  --max_steps 20 \
-  --profile_memory
+  --max_steps 100 \
+  --log_steps 10 \
+  --max_steps 50 \
+  --wandb
 ```
 Check: Peak memory, breakdown by component, no leaks
 
 ### 2. Numerical Validation
-```bash
-# Baseline
-python examples/train_causal_lm.py --preset mellum-kstack --seed 42 --max_steps 50 > baseline.txt
-
-# Optimized
-python examples/train_causal_lm.py --preset mellum-kstack --seed 42 --max_steps 50 --use_optimizations > optimized.txt
-
-# Compare
-python scripts/compare_loss_curves.py baseline.txt optimized.txt
-```
-Tolerance: Loss values within 1e-3
+Tolerance: Loss values within 1e-4
 
 ### 3. Performance Benchmark
 - Time 100 training steps
@@ -501,47 +427,6 @@ Tolerance: Loss values within 1e-3
 - Compute gradients individually per example
 - Compute gradients with vmap
 - Verify equivalence (atol=1e-5)
-
----
-
-## Expected Results
-
-| Phase | Memory Saved | Speed Change | Duration | Risk |
-|-------|--------------|--------------|----------|------|
-| 0: Baseline | 0 GB | 0% | 1 day | None |
-| 1: Chunked CE | 0.5-1 GB | -5 to -10% | 3-5 days | Low |
-| 2: Triton Kernels | 0.5-1 GB | +20-30% | 5-7 days | Low |
-| 3: Dtype Guards | 0.5-2 GB | 0% | 2-3 days | Low |
-| 4: Fused LoRA | 0.5-1 GB | +10-20% | 7-10 days | Medium |
-| **Total (1-4)** | **2-5 GB** | **+20-40%** | **18-28 days** | **Low** |
-| 5A: Embedding Offload | 1-2 GB | -5-10% | 2-3 days | Low |
-| 5B: Grad CPU Staging | 3-5 GB | -10-20% | 1 week | Medium |
-| 5C: Activation Offload | 2-4 GB | -15-25% | 1-2 weeks | Med-High |
-| 5D: Fused CE | 2-4 GB | +10-20% | 3-5 days | Low-Med |
-| **Total (1-5)** | **8-16 GB** | **+10-30%** | **4-6 weeks** | **Medium** |
-
-### Milestone Achievements
-
-**After Phase 1-3:**
-- Memory: ~72 GB (3 GB saved)
-- Speed: 20-30% faster
-- LoRA: Still 2/7 (foundation ready)
-
-**After Phase 4:**
-- Memory: ~70 GB (5 GB saved)
-- Speed: 30-40% faster
-- **LoRA: 7/7 modules (KEY UNLOCK)**
-- **Model quality: Significantly improved**
-
-**After Phase 5 (CPU Offloading):**
-- Memory: ~60-65 GB (10-15 GB saved)
-- Speed: 20-30% faster (kernels offset offloading overhead)
-- **Micro-batch: 8-16 (2-4x throughput)**
-- **Approaches Unsloth-level memory efficiency for DP-SGD**
-
-**Stretch (with Phase 6):**
-- Memory: ~55-60 GB (15-20 GB saved)
-- Micro-batch: 16-24 (4-6x throughput)
 
 ---
 
@@ -558,60 +443,6 @@ If issues arise:
 **Vmap Incompatibility:** Rewrite with vmap pattern, test standalone first
 
 ---
-
-## Key Implementation Details
-
-### Vmap-Compatible autograd.Function Pattern
-
-```python
-class VmapCompatibleFunction(torch.autograd.Function):
-    generate_vmap_rule = True  # Critical for vmap
-
-    @staticmethod
-    def forward(x, weight):  # No ctx parameter
-        return x @ weight.t()
-
-    @staticmethod
-    def setup_context(ctx, inputs, output):
-        """Setup context - called after forward"""
-        x, weight = inputs
-        ctx.save_for_backward(x, weight)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        x, weight = ctx.saved_tensors
-        grad_x = grad_output @ weight
-        grad_weight = grad_output.t() @ x
-        return grad_x, grad_weight
-```
-
-### Loss Patching Pattern
-
-```python
-# Layer 1: Generic kernel (opaque.kernels.cross_entropy)
-def chunked_cross_entropy_loss(logits, labels, n_chunks=4):
-    """Generic function - works on any tensors"""
-    return ChunkedCrossEntropyFunction.apply(logits, labels, n_chunks, -100)
-
-# Layer 2: HF integration (opaque.compat.transformers._loss_patches)
-def apply_chunked_loss_patches(model_class):
-    original_forward = model_class.forward
-
-    def forward_with_chunked_loss(self, input_ids=None, labels=None, **kwargs):
-        outputs = original_forward(self, input_ids=input_ids, labels=None, **kwargs)
-        if labels is not None:
-            logits = outputs.logits
-            shift_logits = logits[..., :-1, :].contiguous()
-            shift_labels = labels[..., 1:].contiguous()
-            outputs.loss = chunked_cross_entropy_loss(
-                shift_logits.view(-1, vocab_size),
-                shift_labels.view(-1),
-                n_chunks=4
-            )
-        return outputs
-
-    model_class.forward = forward_with_chunked_loss
-```
 
 ---
 
@@ -716,16 +547,6 @@ def _offload_frozen_module_for_training(module, device_type, offload_device="cpu
 - 8-bit LoRA
 - FP8 training (`load_in_fp8='block'` or `'row'`)
 - Automatic bf16/fp16 selection based on GPU capability
-
-### Memory Optimization Impact Summary
-
-| Technique | Memory Savings | Speed Impact | Vmap Compatible |
-|-----------|---------------|--------------|-----------------|
-| Gradient Checkpointing + CPU Offload | ~5-10 GB | -10-15% | ⚠️ **Partial** (see below) |
-| Fused Linear CE | ~2-4 GB | +10-20% | ✅ **Yes** (custom impl) |
-| Embedding Offloading | ~1-2 GB | -5-10% | ✅ Yes |
-| Triton Kernels | ~0.5-1 GB | +20-30% | ✅ Partially |
-| 4-bit Quantization | ~10 GB | -5% | ⚠️ **Partial** (see below) |
 
 ### Opaque Compatibility Matrix (Updated with Test Results)
 
