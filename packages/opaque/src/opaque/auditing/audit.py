@@ -477,9 +477,7 @@ class CoinFlip:
 
         return Subset(dataset, self.train_indices(len(dataset)))
 
-    def split_scores(
-        self, scores: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
+    def split_scores(self, scores: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Split per-canary scores into in-group and out-group.
 
         Args:

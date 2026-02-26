@@ -270,9 +270,7 @@ def _resolve(value: Any, state: OneRunEstimator, attr: str, name: str) -> Any:
     raise TypeError(f"'{name}' must be provided either to setup() or evaluate()")
 
 
-def _resolve_optional(
-    value: Any, state: OneRunEstimator, attr: str
-) -> Any | None:
+def _resolve_optional(value: Any, state: OneRunEstimator, attr: str) -> Any | None:
     """Resolve an optional parameter: explicit value > stored > None."""
     if value is not _UNSET:
         return value

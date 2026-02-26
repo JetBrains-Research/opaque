@@ -427,9 +427,7 @@ class TestOneRunEstimator:
 
         scores = np.empty(500)
         scores[cf._in_mask] = rng.normal(loc=0.7, scale=0.3, size=cf._in_mask.sum())
-        scores[~cf._in_mask] = rng.normal(
-            loc=0.3, scale=0.3, size=(~cf._in_mask).sum()
-        )
+        scores[~cf._in_mask] = rng.normal(loc=0.3, scale=0.3, size=(~cf._in_mask).sum())
 
         result = estimator.audit(scores)
         assert result.auc() > 0.6
@@ -621,9 +619,7 @@ class TestSetup:
         np.testing.assert_array_equal(
             s1.coin_flip.canary_indices, s2.coin_flip.canary_indices
         )
-        np.testing.assert_array_equal(
-            s1.coin_flip.in_indices, s2.coin_flip.in_indices
-        )
+        np.testing.assert_array_equal(s1.coin_flip.in_indices, s2.coin_flip.in_indices)
 
     def test_setup_different_seeds(self):
         """Test different seeds give different partitions."""
