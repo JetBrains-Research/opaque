@@ -34,48 +34,6 @@ class TestConstruction:
             AuditResult([1, 2], [])
 
 
-class TestEpsilonClopperPearson:
-    """Tests for epsilon_clopper_pearson method."""
-
-    def test_perfect_separation(self):
-        """Test with perfectly separated scores."""
-        result = AuditResult(list(range(100, 150)), list(range(0, 50)))
-
-        eps = result.epsilon_clopper_pearson(significance=0.05, delta=0, threshold=75)
-        assert eps > 2.0
-
-    def test_no_separation(self):
-        """Test with identical distributions."""
-        scores = list(range(100))
-        result = AuditResult(scores, scores)
-
-        eps = result.epsilon_clopper_pearson(significance=0.05, delta=0)
-        assert eps < 1.0
-
-    def test_invalid_significance(self):
-        """Test that invalid significance raises ValueError."""
-        result = AuditResult([1, 2], [3, 4])
-        with pytest.raises(ValueError, match="significance must be in"):
-            result.epsilon_clopper_pearson(significance=0.0)
-        with pytest.raises(ValueError, match="significance must be in"):
-            result.epsilon_clopper_pearson(significance=0.6)
-
-    def test_invalid_delta(self):
-        """Test that invalid delta raises ValueError."""
-        result = AuditResult([1, 2], [3, 4])
-        with pytest.raises(ValueError, match="delta must be in"):
-            result.epsilon_clopper_pearson(significance=0.05, delta=-0.1)
-        with pytest.raises(ValueError, match="delta must be in"):
-            result.epsilon_clopper_pearson(significance=0.05, delta=1.5)
-
-    def test_explicit_threshold(self):
-        """Test with explicit threshold."""
-        result = AuditResult(np.arange(50, 100), np.arange(0, 50))
-
-        eps = result.epsilon_clopper_pearson(significance=0.05, delta=0, threshold=50)
-        assert eps > 0
-
-
 class TestEpsilonOneRun:
     """Tests for epsilon_one_run method."""
 
@@ -199,14 +157,14 @@ class TestEdgeCases:
     def test_single_score_each(self):
         """Test with single score in each group."""
         result = AuditResult([10], [0])
-        eps = result.epsilon_clopper_pearson(significance=0.05, delta=0, threshold=5)
+        eps = result.epsilon_one_run(significance=0.05, delta=0, threshold=5)
         assert eps >= 0
 
     def test_large_separation(self):
         """Test with very large score separation."""
         result = AuditResult(np.arange(1000, 2000), np.arange(0, 1000))
 
-        eps = result.epsilon_clopper_pearson(significance=0.05, delta=0, threshold=1000)
+        eps = result.epsilon_one_run(significance=0.05, delta=0, threshold=1000)
         assert eps > 5.0
 
 
@@ -367,25 +325,6 @@ class TestCoinFlip:
         assert "n_in=" in r
         assert "n_out=" in r
 
-    def test_subset(self):
-        """Test subset() returns a torch Subset excluding out-canaries."""
-        import torch
-        from torch.utils.data import TensorDataset
-
-        dataset = TensorDataset(torch.arange(50), torch.arange(50))
-        canary_idx = np.array([5, 15, 25, 35, 45])
-        cf = CoinFlip(canary_idx, key=key(42))
-
-        sub = cf.subset(dataset)
-        assert len(sub) == 50 - len(cf.out_indices)
-
-        sub_indices = set(sub.indices)
-        for idx in cf.out_indices:
-            assert idx not in sub_indices
-        for idx in cf.in_indices:
-            assert idx in sub_indices
-
-
 class TestOneRunEstimator:
     """Tests for OneRunEstimator (wraps CoinFlip + estimation)."""
 
@@ -405,17 +344,6 @@ class TestOneRunEstimator:
         assert result.n_in == len(cf.in_indices)
         assert result.n_out == len(cf.out_indices)
         assert result.auc() > 0.99
-
-    def test_audit_sets_from_coin_flip(self):
-        """Test that audit() marks result for one-run epsilon."""
-        cf = CoinFlip(np.arange(100), key=key(42))
-        estimator = OneRunEstimator(cf, dataset=list(range(200)))
-
-        scores = np.zeros(100)
-        scores[cf._in_mask] = 10.0
-        result = estimator.audit(scores)
-
-        assert result._from_coin_flip is True
 
     def test_end_to_end_one_run_audit(self):
         """Test complete one-run workflow with simulated scores."""
@@ -463,26 +391,9 @@ class TestAuditResultRepr:
         assert "Audit Summary" in s
         assert "Samples:" in s
         assert "AUC:" in s
-        assert "Clopper-Pearson" in s
+        assert "one-run" in s
         assert "β @" in s
         assert "Max accuracy" in s
-
-    def test_summary_coin_flip_shows_one_run(self):
-        """Test summary shows one-run epsilon when from coin flip."""
-        cf = CoinFlip(np.arange(100), key=key(42))
-        estimator = OneRunEstimator(cf, dataset=list(range(200)))
-        scores = np.zeros(100)
-        scores[cf._in_mask] = 10.0
-        result = estimator.audit(scores)
-
-        s = result.summary()
-        assert "one-run" in s
-
-    def test_summary_direct_hides_one_run(self):
-        """Test summary hides one-run epsilon when constructed directly."""
-        result = AuditResult(np.arange(50, 100), np.arange(0, 50))
-        s = result.summary()
-        assert "one-run" not in s
 
     def test_summary_custom_params(self):
         """Test summary with custom significance and delta."""
@@ -508,39 +419,12 @@ class TestAuditResultRepr:
 class TestEpsilonAt:
     """Tests for epsilon_at method."""
 
-    def test_direct_defaults_to_clopper_pearson(self):
-        """Test that directly constructed AuditResult uses clopper_pearson."""
+    def test_defaults_to_one_run(self):
+        """Test that epsilon_at uses one_run method."""
         result = AuditResult(np.arange(50, 100), np.arange(0, 50))
-        eps_at = result.epsilon_at(delta=0.0)
-        eps_cp = result.epsilon_clopper_pearson(significance=0.05, delta=0.0)
-        assert eps_at == eps_cp
-
-    def test_coin_flip_defaults_to_one_run(self):
-        """Test that coin-flip AuditResult uses one_run."""
-        cf = CoinFlip(np.arange(100), key=key(42))
-        estimator = OneRunEstimator(cf, dataset=list(range(200)))
-        scores = np.zeros(100)
-        scores[cf._in_mask] = 10.0
-        result = estimator.audit(scores)
-
         eps_at = result.epsilon_at(delta=0.0)
         eps_or = result.epsilon_one_run(significance=0.05, delta=0.0)
         assert eps_at == eps_or
-
-    def test_explicit_method_override(self):
-        """Test that method parameter overrides default."""
-        result = AuditResult(np.arange(50, 100), np.arange(0, 50))
-        eps_or = result.epsilon_at(delta=0.0, method="one_run")
-        eps_cp = result.epsilon_at(delta=0.0, method="clopper_pearson")
-        # Both should be valid numbers (may differ)
-        assert eps_or > 0
-        assert eps_cp > 0
-
-    def test_invalid_method(self):
-        """Test that invalid method raises ValueError."""
-        result = AuditResult([1, 2, 3], [4, 5, 6])
-        with pytest.raises(ValueError, match="method must be"):
-            result.epsilon_at(method="invalid")
 
     def test_delta_passthrough(self):
         """Test that delta is passed through correctly."""

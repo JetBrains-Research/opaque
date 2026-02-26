@@ -11,7 +11,7 @@ auditing.setup(
     dataset, *, num_canaries, key,
     batch_argnums=None, collate_fn=None,
     batch_unpack=None, batch_size=256,
-) -> AuditState
+) -> OneRunEstimator
 ```
 
 Randomly select canaries, flip coins, and store the dataset and scoring
@@ -41,6 +41,35 @@ train_data = dataset.select(audit_state.train_indices)
 
 ---
 
+### coin_flip
+
+```python
+auditing.coin_flip(
+    dataset, *, num_canaries, key,
+) -> CoinFlip
+```
+
+Create a coin-flip partition. Randomly selects `num_canaries` examples
+and flips a fair coin for each to decide inclusion/exclusion. This only
+handles the partition — wrap with `one_run()` to add scoring config.
+
+---
+
+### one_run
+
+```python
+auditing.one_run(
+    partition, *, dataset,
+    batch_argnums=None, collate_fn=None,
+    batch_unpack=None, batch_size=256,
+) -> OneRunEstimator
+```
+
+Create a one-run estimator from a `CoinFlip` partition. Wraps the
+partition with the dataset and scoring configuration.
+
+---
+
 ### evaluate
 
 ```python
@@ -59,7 +88,7 @@ values stored at `setup()` time when not provided explicitly.
 |---|---|---|---|
 | `loss_fn` | `Callable` | required | Per-example loss (vmap-compatible) |
 | `*args` | | | Non-batched args (e.g. model params) |
-| `state` | `AuditState` | required | From `setup()` |
+| `state` | `OneRunEstimator` | required | From `setup()` or `one_run()` |
 | `batch_argnums` | `tuple[int, ...]` | from setup | Which `loss_fn` args are batched |
 | `dataset` | any | from setup | Full dataset |
 | `collate_fn` | `Callable` | from setup | DataLoader collate function |
@@ -105,17 +134,63 @@ than `evaluate()` — use when you need raw scores.
 
 ---
 
-## AuditState
+## CoinFlip
 
 ```python
-class AuditState
+class CoinFlip(canary_indices, *, key)
 ```
 
-Opaque container returned by `auditing.setup()`. Pass to `evaluate()`.
+Coin-flip partitioning for canary-based privacy auditing. Each canary
+is independently included or excluded with probability 0.5.
 
 | Attribute | Type | Description |
 |---|---|---|
+| `num_canaries` | `int` | Total canary count |
+| `canary_indices` | `np.ndarray` | All canary dataset indices |
+| `in_indices` | `np.ndarray` | Included in training (heads) |
+| `out_indices` | `np.ndarray` | Excluded from training (tails) |
+
+### train_indices
+
+```python
+cf.train_indices(dataset_size) -> list[int]
+```
+
+All indices except held-out canaries. Returns `list[int]` for HuggingFace
+`dataset.select()`.
+
+### split_scores
+
+```python
+cf.split_scores(scores) -> tuple[np.ndarray, np.ndarray]
+```
+
+Split per-canary scores into `(in_scores, out_scores)`. `scores` must
+have shape `(num_canaries,)`, one per canary in order of `canary_indices`.
+
+---
+
+## OneRunEstimator
+
+```python
+class OneRunEstimator
+```
+
+One-run estimator returned by `auditing.setup()` or `auditing.one_run()`.
+Pass to `evaluate()` as `state`.
+
+| Attribute | Type | Description |
+|---|---|---|
+| `coin_flip` | `CoinFlip` | The coin-flip partition |
 | `train_indices` | `list[int]` | Dataset indices to use for training (excludes held-out canaries) |
+
+### audit
+
+```python
+estimator.audit(scores) -> AuditResult
+```
+
+Split scores by coin flip and return an `AuditResult`.
 
 ### Usage
 
@@ -140,20 +215,10 @@ class AuditResult(in_scores, out_scores)
 ### epsilon_at
 
 ```python
-audit.epsilon_at(*, delta=0.0, significance=0.05, method=None) -> float
+audit.epsilon_at(*, delta=0.0, significance=0.05) -> float
 ```
 
-Epsilon lower bound. Auto-selects method: `'one_run'` if created via
-`CoinFlipExperiment.audit()`, `'clopper_pearson'` otherwise.
-
-### epsilon_clopper_pearson
-
-```python
-audit.epsilon_clopper_pearson(*, significance=0.05, delta=0.0, threshold=None) -> float
-```
-
-Conservative binomial CI bound. Bonferroni-corrected over Pareto-optimal
-thresholds unless `threshold` is given.
+Epsilon lower bound. Uses the one-run likelihood-ratio test.
 
 ### epsilon_one_run
 
@@ -200,60 +265,17 @@ when provided.
 
 ---
 
-## CoinFlipExperiment
-
-```python
-class CoinFlipExperiment(canary_indices, *, key)
-```
-
-Internal class managing canary coin flips. Prefer `auditing.setup()`
-which returns an `AuditState` wrapping this.
-
-| Attribute | Type | Description |
-|---|---|---|
-| `num_canaries` | `int` | Total canary count |
-| `canary_indices` | `np.ndarray` | All canary dataset indices |
-| `in_indices` | `np.ndarray` | Included in training (heads) |
-| `out_indices` | `np.ndarray` | Excluded from training (tails) |
-
-### train_indices
-
-```python
-experiment.train_indices(dataset_size) -> list[int]
-```
-
-All indices except held-out canaries. Returns `list[int]` for HuggingFace
-`dataset.select()`.
-
-### subset
-
-```python
-experiment.subset(dataset) -> torch.utils.data.Subset
-```
-
-PyTorch `Subset` for training. For HuggingFace datasets, prefer
-`train_indices()` with `dataset.select()`.
-
-### audit
-
-```python
-experiment.audit(scores) -> AuditResult
-```
-
-Split scores by coin flip. `scores` must have shape `(num_canaries,)`,
-one per canary in the order of `canary_indices`.
-
----
-
 ## Quick reference
 
 | | |
 |---|---|
-| `auditing.setup(..., batch_argnums=, ...)` | Designate canaries + configure scoring → `AuditState` |
+| `auditing.setup(..., batch_argnums=, ...)` | Designate canaries + configure scoring -> `OneRunEstimator` |
+| `auditing.coin_flip(dataset, ...)` | Coin-flip partition only -> `CoinFlip` |
+| `auditing.one_run(coin_flip, ...)` | Wrap partition with scoring config -> `OneRunEstimator` |
 | `auditing.evaluate(loss_fn, params, state=)` | Score canaries, return `AuditResult` |
 | `auditing.score()` | Raw membership scores |
 | `audit_state.train_indices` | Training indices for `dataset.select()` |
-| `audit.epsilon_at(delta=)` | Epsilon bound (auto method) |
+| `audit.epsilon_at(delta=)` | Epsilon bound (one-run method) |
 | `audit.auc()` | Attack AUC |
 | `audit.auc(confidence=, key=)` | AUC with confidence interval |
 | `audit.beta_at(alpha=)` | Type-II error at given FPR |

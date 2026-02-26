@@ -72,7 +72,7 @@ audit_state = auditing.setup(
 train_dataset = train_dataset.select(audit_state.train_indices)
 ```
 
-The `AuditState` remembers both the full dataset and the scoring config.
+The `OneRunEstimator` remembers both the full dataset and the scoring config.
 For PyTorch `TensorDataset`, you can omit `collate_fn` and `batch_unpack`.
 
 ### Step 2: Train normally
@@ -87,7 +87,7 @@ print(audit.summary(delta=1e-5, theoretical_epsilon=target_epsilon))
 ```
 
 That's it. The dataset, `batch_argnums`, `collate_fn`, and `batch_unpack`
-are all retrieved from the `AuditState` created in step 1.
+are all retrieved from the `OneRunEstimator` created in step 1.
 
 See [examples/train_causal_lm.py](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_causal_lm.py)
 for a complete working example with the `--audit` flag.
@@ -105,29 +105,17 @@ and how the loss function expects arguments:
 - **`batch_unpack`**: How to extract tensors from a collated batch. For
   HuggingFace dict batches: `lambda b: (b["input_ids"].to(device),)`.
 
-## Epsilon estimation methods
+## Epsilon estimation
 
-### One-run (default for coin-flip experiments)
+Epsilon is estimated using the one-run likelihood-ratio test from
+Steinke et al. (2023). For each Pareto-optimal threshold, the test
+tries both positive-only guesses and two-sided guesses, taking
+the best result with Bonferroni correction.
 
-Likelihood-ratio test from Steinke et al. (2023). For each Pareto-optimal
-threshold, tests both positive-only guesses and two-sided guesses, taking
-the best result with Bonferroni correction. Only valid for coin-flip
-experiments created via `auditing.setup`.
-
-### Clopper-Pearson (default for direct construction)
-
-Conservative binomial confidence intervals. Works with any in/out split,
-including manual splits.
-
-`epsilon_at()` automatically selects the method based on how the result was
-created:
-
-| Created via | Default method |
-|---|---|
-| `auditing.evaluate()` | `one_run` |
-| `AuditResult(in_scores, out_scores)` | `clopper_pearson` |
-
-You can override: `audit.epsilon_at(delta=1e-5, method="clopper_pearson")`.
+```python
+audit.epsilon_at(delta=1e-5)                 # convenience (calls epsilon_one_run)
+audit.epsilon_one_run(significance=0.05)     # explicit
+```
 
 ## Attack metrics
 

@@ -38,7 +38,6 @@ import numpy as np
 import scipy.stats
 
 from opaque.auditing.helpers import (
-    _clopper_pearson_upper,
     _get_tn_fn_counts,
     _one_run_p_value,
     _tpr_at_given_fpr,
@@ -63,7 +62,7 @@ class AuditResult:
 
     Example:
         >>> result = AuditResult(in_scores, out_scores)
-        >>> result.epsilon_clopper_pearson(significance=0.05, delta=1e-5)
+        >>> result.epsilon_at(delta=1e-5)
         >>> result.auc()
         >>> result.beta_at(alpha=0.01)
     """
@@ -79,7 +78,6 @@ class AuditResult:
         self._out_arr = out_arr
         self.n_in = len(in_arr)
         self.n_out = len(out_arr)
-        self._from_coin_flip = False  # Set True by CoinFlipExperiment.audit()
 
         # Precompute Pareto-optimal thresholds and counts
         thresholds, tn_counts, fn_counts = _get_tn_fn_counts(in_arr, out_arr)
@@ -105,77 +103,20 @@ class AuditResult:
         *,
         delta: float = 0.0,
         significance: float = 0.05,
-        method: str | None = None,
     ) -> float:
         """Epsilon lower bound at the given delta.
 
         Matches the accounting API (``DpProcess.epsilon_at(delta=)``).
-        The statistical method is chosen automatically based on how this
-        object was created:
-
-        - From :meth:`OneRunEstimator.audit`: defaults to ``'one_run'``
-          (tighter, assumes coin-flip setup).
-        - Constructed directly: defaults to ``'clopper_pearson'``
-          (general, no assumptions on the split).
+        Uses the one-run likelihood-ratio test from Steinke et al. (2023).
 
         Args:
             delta: DP delta parameter. Default: 0 (pure DP).
             significance: Allowed failure probability (1 - confidence).
-            method: ``'one_run'`` or ``'clopper_pearson'``. If None,
-                chosen automatically.
 
         Returns:
             Epsilon lower bound at the specified confidence level.
         """
-        if method is None:
-            method = "one_run" if self._from_coin_flip else "clopper_pearson"
-        if method == "one_run":
-            return self.epsilon_one_run(significance=significance, delta=delta)
-        if method == "clopper_pearson":
-            return self.epsilon_clopper_pearson(significance=significance, delta=delta)
-        raise ValueError(
-            f"method must be 'one_run' or 'clopper_pearson', got {method!r}"
-        )
-
-    def epsilon_clopper_pearson(
-        self,
-        *,
-        significance: float = 0.05,
-        delta: float = 0.0,
-        threshold: float | None = None,
-    ) -> float:
-        """Epsilon lower bound using Clopper-Pearson confidence intervals.
-
-        Constructs conservative binomial confidence intervals for TPR/FPR.
-        Uses Bonferroni correction over Pareto-optimal thresholds unless an
-        explicit threshold is provided.
-
-        Args:
-            significance: Allowed failure probability (1 - confidence).
-            delta: DP delta parameter. Default: 0 (pure DP).
-            threshold: If provided, use this specific threshold instead of
-                searching with Bonferroni correction.
-
-        Returns:
-            Epsilon lower bound at the specified confidence level.
-        """
-        _validate_significance(significance)
-        _validate_delta(delta)
-
-        if threshold is not None:
-            fn = int(np.sum(self._in_arr < threshold))
-            fp = int(np.sum(self._out_arr >= threshold))
-            return _epsilon_cp(fn, fp, self.n_in, self.n_out, significance, delta)
-
-        # Bonferroni correction over all Pareto-optimal thresholds
-        sig_corrected = significance / len(self._thresholds)
-        best = 0.0
-        for i in range(len(self._thresholds)):
-            fn_i = self._fn_counts[i]
-            fp_i = self.n_out - self._tn_counts[i]
-            eps_i = _epsilon_cp(fn_i, fp_i, self.n_in, self.n_out, sig_corrected, delta)
-            best = max(best, eps_i)
-        return best
+        return self.epsilon_one_run(significance=significance, delta=delta)
 
     def epsilon_one_run(
         self,
@@ -375,19 +316,15 @@ class AuditResult:
         Returns:
             Formatted string with all metrics.
         """
-        eps_cp = self.epsilon_clopper_pearson(significance=significance, delta=delta)
+        eps = self.epsilon_one_run(significance=significance, delta=delta)
 
         lines = [
             "Audit Summary",
             "\u2500" * 40,
             f"  Samples:              {self.n_in} in, {self.n_out} out",
             f"  AUC:                  {self.auc():.4f}",
-            f"  \u03b5 (Clopper-Pearson):  {eps_cp:.4f}",
+            f"  \u03b5 (one-run):          {eps:.4f}",
         ]
-
-        if self._from_coin_flip:
-            eps_or = self.epsilon_one_run(significance=significance, delta=delta)
-            lines.append(f"  \u03b5 (one-run):          {eps_or:.4f}")
 
         if theoretical_epsilon is not None:
             lines.append(f"  \u03b5 (theoretical):      {theoretical_epsilon:.4f}")
@@ -461,23 +398,9 @@ class CoinFlip:
         excluded = set(self.out_indices.tolist())
         return [i for i in range(dataset_size) if i not in excluded]
 
-    def subset(self, dataset):
-        """Return a ``torch.utils.data.Subset`` for training.
-
-        For HuggingFace datasets, prefer :meth:`train_indices` with
-        ``dataset.select()`` instead.
-
-        Args:
-            dataset: A PyTorch-style dataset with ``len()``.
-
-        Returns:
-            ``Subset`` containing all non-excluded examples.
-        """
-        from torch.utils.data import Subset
-
-        return Subset(dataset, self.train_indices(len(dataset)))
-
-    def split_scores(self, scores: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def split_scores(
+        self, scores: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Split per-canary scores into in-group and out-group.
 
         Args:
@@ -543,9 +466,6 @@ class OneRunEstimator:
     def audit(self, scores: np.ndarray) -> AuditResult:
         """Split scores by coin flip and return an AuditResult.
 
-        The returned :class:`AuditResult` has ``epsilon_at()`` defaulting
-        to the ``'one_run'`` method.
-
         Args:
             scores: Membership scores, shape ``(num_canaries,)``.
 
@@ -553,9 +473,7 @@ class OneRunEstimator:
             :class:`AuditResult` with in/out scores split by coin flip.
         """
         in_scores, out_scores = self.coin_flip.split_scores(scores)
-        result = AuditResult(in_scores, out_scores)
-        result._from_coin_flip = True
-        return result
+        return AuditResult(in_scores, out_scores)
 
 
 # ------------------------------------------------------------------
@@ -571,25 +489,6 @@ def _validate_significance(significance: float) -> None:
 def _validate_delta(delta: float) -> None:
     if not 0 <= delta <= 1:
         raise ValueError(f"delta must be in [0, 1], got {delta}")
-
-
-def _epsilon_cp(
-    fn: int,
-    fp: int,
-    n_in: int,
-    n_out: int,
-    significance: float,
-    delta: float,
-) -> float:
-    """Clopper-Pearson epsilon at given FN/FP counts."""
-    fnr_ub = _clopper_pearson_upper(fn, n_in, significance / 2)
-    fpr_ub = _clopper_pearson_upper(fp, n_out, significance / 2)
-
-    tpr_lb = 1 - fnr_ub
-    if tpr_lb <= delta:
-        return 0.0
-
-    return max(0.0, float(np.log(tpr_lb - delta) - np.log(fpr_ub)))
 
 
 def _epsilon_one_run_search(

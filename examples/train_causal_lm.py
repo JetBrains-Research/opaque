@@ -1045,10 +1045,7 @@ def main():
 
         if use_wandb:
             wandb.log({
-                "audit/epsilon_one_run": audit_result.epsilon_at(
-                    delta=args.target_delta
-                ),
-                "audit/epsilon_clopper_pearson": audit_result.epsilon_clopper_pearson(
+                "audit/epsilon": audit_result.epsilon_at(
                     delta=args.target_delta
                 ),
                 "audit/auc": audit_result.auc(),

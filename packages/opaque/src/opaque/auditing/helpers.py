@@ -1,6 +1,6 @@
 """Internal helper functions for privacy auditing.
 
-Low-level utilities for binomial confidence bounds, Pareto frontiers,
+Low-level utilities for Pareto frontiers, p-value computation,
 and other mathematical operations. All functions are prefixed with ``_``
 to indicate they are internal.
 """
@@ -18,19 +18,6 @@ def _log_sub(x: np.ndarray, y: np.ndarray) -> np.ndarray:
         raise ValueError(f"y must be <= x, got y={y} and x={x}")
     with np.errstate(divide="ignore"):
         return x + np.log1p(-np.exp(y - x))
-
-
-def _clopper_pearson_upper(
-    k: int | np.ndarray, n: int, significance: float
-) -> np.ndarray | float:
-    """Clopper-Pearson one-sided upper binomial confidence interval."""
-    k_arr = np.asarray(k)
-    result = np.where(
-        k_arr < n,
-        scipy.stats.beta.ppf(1 - significance, k_arr + 1, n - k_arr),
-        1.0,
-    )
-    return float(result) if np.isscalar(k) else result
 
 
 def _pareto_frontier(points: np.ndarray) -> np.ndarray:

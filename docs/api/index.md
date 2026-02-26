@@ -175,9 +175,8 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 |--------------------------------------|---------------------------------|------------------------------------------------|
 | `auditing.setup()`                   | Prepare canary experiment       | [Guide](../user-guide/auditing.md)             |
 | `auditing.evaluate()`               | Score canaries and compute audit | [Guide](../user-guide/auditing.md)             |
-| `AuditResult.epsilon_at()`          | Epsilon bound (auto-selects method) | [Guide](../user-guide/auditing.md)          |
-| `AuditResult.epsilon_clopper_pearson()` | Conservative epsilon bound  | [Guide](../user-guide/auditing.md)             |
-| `AuditResult.epsilon_one_run()`     | Tighter bound (Nasr et al.)     | [Guide](../user-guide/auditing.md)             |
+| `AuditResult.epsilon_at()`          | Epsilon bound (one-run method)  | [Guide](../user-guide/auditing.md)          |
+| `AuditResult.epsilon_one_run()`     | Epsilon bound (Steinke et al.)  | [Guide](../user-guide/auditing.md)             |
 | `AuditResult.auc()`                 | Membership inference AUC        | [Guide](../user-guide/auditing.md)             |
 | `AuditResult.beta_at()`             | Type-II error at given alpha    | [Guide](../user-guide/auditing.md)             |
 

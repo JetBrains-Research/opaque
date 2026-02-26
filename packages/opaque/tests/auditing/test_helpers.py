@@ -4,7 +4,6 @@ import numpy as np
 import pytest
 
 from opaque.auditing.helpers import (
-    _clopper_pearson_upper,
     _get_tn_fn_counts,
     _log_sub,
     _one_run_p_value,
@@ -37,26 +36,6 @@ class TestLogSub:
     def test_invalid_order(self):
         with pytest.raises(ValueError, match="y must be <= x"):
             _log_sub(np.log(3), np.log(10))
-
-
-class TestClopperPearsonUpper:
-    def test_zero_successes(self):
-        result = _clopper_pearson_upper(0, 100, 0.05)
-        assert 0 < result < 0.05
-
-    def test_all_successes(self):
-        result = _clopper_pearson_upper(100, 100, 0.05)
-        assert result == 1.0
-
-    def test_half_successes(self):
-        result = _clopper_pearson_upper(50, 100, 0.05)
-        assert 0.5 < result < 0.6
-
-    def test_vectorized(self):
-        k = np.array([0, 25, 50, 75, 100])
-        result = _clopper_pearson_upper(k, 100, 0.05)
-        assert len(result) == 5
-        assert np.all(result[:-1] <= result[1:])
 
 
 class TestParetoFrontier:

@@ -233,8 +233,8 @@ class TestEvaluate:
         assert isinstance(audit, AuditResult)
         assert audit.n_in + audit.n_out == 50
 
-    def test_evaluate_from_coin_flip(self, linear_setup):
-        """Test that evaluate result defaults to one_run method."""
+    def test_evaluate_epsilon_at(self, linear_setup):
+        """Test that evaluate result uses one_run method for epsilon_at."""
         params, dataset, loss_fn = linear_setup
         audit_state = auditing.setup(
             dataset,
@@ -245,8 +245,7 @@ class TestEvaluate:
 
         audit = auditing.evaluate(loss_fn, params, state=audit_state)
 
-        assert audit._from_coin_flip is True
-        # epsilon_at should use one_run by default
+        # epsilon_at should use one_run
         eps = audit.epsilon_at(delta=0.0)
         assert isinstance(eps, float)
 
