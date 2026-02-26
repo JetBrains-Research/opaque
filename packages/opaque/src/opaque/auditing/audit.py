@@ -398,9 +398,7 @@ class CoinFlip:
         excluded = set(self.out_indices.tolist())
         return [i for i in range(dataset_size) if i not in excluded]
 
-    def split_scores(
-        self, scores: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
+    def split_scores(self, scores: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Split per-canary scores into in-group and out-group.
 
         Args:

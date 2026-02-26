@@ -325,6 +325,7 @@ class TestCoinFlip:
         assert "n_in=" in r
         assert "n_out=" in r
 
+
 class TestOneRunEstimator:
     """Tests for OneRunEstimator (wraps CoinFlip + estimation)."""
 
