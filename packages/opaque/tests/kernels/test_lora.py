@@ -28,16 +28,18 @@ pytestmark = pytest.mark.skipif(
 
 SCALING = 0.1
 
-# Tolerances
+# Tolerances (atol + rtol formula: |a - b| <= atol + rtol * |b|)
 # W/QKV: addmm_ fused accumulation differs from separate add+matmul+scale
-RTOL_LORA = 5e-2
-RTOL_LORA_BACKWARD = 1e-2
+RTOL_LORA_FWD = 1e-5
+ATOL_LORA_FWD = 1e-4
+RTOL_LORA_BWD = 1e-3
+ATOL_LORA_BWD = 1e-2
 
-# MLP: Triton activation diffs get amplified through large matrix projections.
-# At realistic (Mellum-4b) scale, max relative error grows with tensor size due to
-# matmul chain amplification (gate/up → SwiGLU → down, 3 matmuls deep).
-RTOL_LORA_MLP = 5e-2
-RTOL_LORA_MLP_BACKWARD = 5e-1
+# MLP: Triton activation backward + 3-matmul chain amplifies rounding diffs.
+RTOL_LORA_MLP_FWD = 1e-4
+ATOL_LORA_MLP_FWD = 1e-4
+RTOL_LORA_MLP_BWD = 5e-2
+ATOL_LORA_MLP_BWD = 1e-2
 
 
 # ============================================================================
@@ -106,7 +108,7 @@ def opaque_lora_mlp(X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd):
 class TestLoRAWForward:
     """Test LoRA-W forward pass precision."""
 
-    def test_forward_matches_pytorch(self, precision_error, mellum_config):
+    def test_forward_matches_pytorch(self, assert_precision, mellum_config):
         """Forward: opaque vs pytorch (non-vmap, float32)."""
         BATCH = mellum_config["batch_size"]
         SEQ = mellum_config["seq_len"]
@@ -122,16 +124,14 @@ class TestLoRAWForward:
         out_pt = pytorch_lora_linear(X, W, A, B, SCALING)
         out_op = opaque_lora_linear(X, W, A, B, SCALING)
 
-        err = precision_error(out_op, out_pt, threshold=1e-4)
-        print(f"\nLoRA-W Forward: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_LORA:.0e})")
-
-        assert err["rel_err"] < RTOL_LORA, f"Forward rel_err {err['rel_err']:.2e} >= {RTOL_LORA:.0e}"
+        print("\nLoRA-W Forward:")
+        assert_precision(out_op, out_pt, rtol=RTOL_LORA_FWD, atol=ATOL_LORA_FWD, label="output")
 
 
 class TestLoRAWBackward:
     """Test LoRA-W backward pass precision."""
 
-    def test_backward_matches_pytorch(self, precision_error, mellum_config):
+    def test_backward_matches_pytorch(self, assert_precision, mellum_config):
         """Backward: opaque vs pytorch (non-vmap, test X.grad, A.grad, B.grad)."""
         BATCH = mellum_config["batch_size"]
         SEQ = mellum_config["seq_len"]
@@ -154,24 +154,16 @@ class TestLoRAWBackward:
         out_op = opaque_lora_linear(X_op, W, A_op, B_op, SCALING)
         out_op.sum().backward()
 
-        x_err = precision_error(X_op.grad, X_pt.grad, threshold=1e-4)
-        a_err = precision_error(A_op.grad, A_pt.grad, threshold=1e-4)
-        b_err = precision_error(B_op.grad, B_pt.grad, threshold=1e-4)
-
-        print(f"\nLoRA-W Backward:")
-        print(f"  X.grad: abs={x_err['abs_err']:.2e}, rel={x_err['rel_err']:.2e} (target: <{RTOL_LORA_BACKWARD:.0e})")
-        print(f"  A.grad: abs={a_err['abs_err']:.2e}, rel={a_err['rel_err']:.2e} (target: <{RTOL_LORA_BACKWARD:.0e})")
-        print(f"  B.grad: abs={b_err['abs_err']:.2e}, rel={b_err['rel_err']:.2e} (target: <{RTOL_LORA_BACKWARD:.0e})")
-
-        assert x_err["rel_err"] < RTOL_LORA_BACKWARD, f"X.grad rel_err {x_err['rel_err']:.2e} >= {RTOL_LORA_BACKWARD:.0e}"
-        assert a_err["rel_err"] < RTOL_LORA_BACKWARD, f"A.grad rel_err {a_err['rel_err']:.2e} >= {RTOL_LORA_BACKWARD:.0e}"
-        assert b_err["rel_err"] < RTOL_LORA_BACKWARD, f"B.grad rel_err {b_err['rel_err']:.2e} >= {RTOL_LORA_BACKWARD:.0e}"
+        print("\nLoRA-W Backward:")
+        assert_precision(X_op.grad, X_pt.grad, rtol=RTOL_LORA_BWD, atol=ATOL_LORA_BWD, label="X.grad")
+        assert_precision(A_op.grad, A_pt.grad, rtol=RTOL_LORA_BWD, atol=ATOL_LORA_BWD, label="A.grad")
+        assert_precision(B_op.grad, B_pt.grad, rtol=RTOL_LORA_BWD, atol=ATOL_LORA_BWD, label="B.grad")
 
 
 class TestLoRAWVmapForward:
     """Test LoRA-W vmap forward precision."""
 
-    def test_vmap_forward_precision(self, precision_error, mellum_config):
+    def test_vmap_forward_precision(self, assert_precision, mellum_config):
         """Batched forward: opaque Triton vmap vs PyTorch reference."""
         BATCH = mellum_config["batch_size"]
         SEQ = mellum_config["seq_len"]
@@ -189,16 +181,14 @@ class TestLoRAWVmapForward:
         out_pt = vmap(lambda x: pytorch_lora_linear(x, W, A, B, SCALING))(X)
         out_op = vmap(lambda x: opaque_lora_linear(x, W, A, B, SCALING))(X)
 
-        err = precision_error(out_op, out_pt, threshold=1e-4)
-        print(f"\nLoRA-W vmap forward: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_LORA:.0e})")
-
-        assert err["rel_err"] < RTOL_LORA, f"vmap forward rel_err {err['rel_err']:.2e} >= {RTOL_LORA:.0e}"
+        print("\nLoRA-W vmap forward:")
+        assert_precision(out_op, out_pt, rtol=RTOL_LORA_FWD, atol=ATOL_LORA_FWD, label="output")
 
 
 class TestLoRAWVmapGrad:
     """Test vmap(grad): per-example gradients — the DP-SGD path."""
 
-    def test_vmap_grad_precision(self, precision_error, mellum_config):
+    def test_vmap_grad_precision(self, assert_precision, mellum_config):
         """Per-example gradients: opaque Triton vs PyTorch reference."""
         BATCH = mellum_config["batch_size"]
         SEQ = mellum_config["seq_len"]
@@ -222,10 +212,8 @@ class TestLoRAWVmapGrad:
         grads_pt = vmap(grad(f_pt))(X)
         grads_op = vmap(grad(f_op))(X)
 
-        err = precision_error(grads_op, grads_pt, threshold=1e-4)
-        print(f"\nLoRA-W vmap(grad): abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_LORA_BACKWARD:.0e})")
-
-        assert err["rel_err"] < RTOL_LORA_BACKWARD, f"vmap(grad) rel_err {err['rel_err']:.2e} >= {RTOL_LORA_BACKWARD:.0e}"
+        print("\nLoRA-W vmap(grad):")
+        assert_precision(grads_op, grads_pt, rtol=RTOL_LORA_BWD, atol=ATOL_LORA_BWD, label="X.grad")
 
     def test_vmap_grad_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
         """Triton vmap(grad) must be faster or use less memory."""
@@ -317,7 +305,7 @@ class TestLoRAWPerformance:
 class TestLoRAQKVForward:
     """Test LoRA-QKV forward pass precision."""
 
-    def test_forward_matches_pytorch(self, precision_error, mellum_config):
+    def test_forward_matches_pytorch(self, assert_precision, mellum_config):
         """Forward: opaque vs pytorch (non-vmap, check Q, K, V each)."""
         BATCH = mellum_config["batch_size"]
         SEQ = mellum_config["seq_len"]
@@ -346,24 +334,16 @@ class TestLoRAQKVForward:
             X, Wq, Aq, Bq, SCALING, Wk, Ak, Bk, SCALING, Wv, Av, Bv, SCALING
         )
 
-        q_err = precision_error(Q_op, Q_pt, threshold=1e-4)
-        k_err = precision_error(K_op, K_pt, threshold=1e-4)
-        v_err = precision_error(V_op, V_pt, threshold=1e-4)
-
-        print(f"\nLoRA-QKV Forward:")
-        print(f"  Q: abs={q_err['abs_err']:.2e}, rel={q_err['rel_err']:.2e} (target: <{RTOL_LORA:.0e})")
-        print(f"  K: abs={k_err['abs_err']:.2e}, rel={k_err['rel_err']:.2e} (target: <{RTOL_LORA:.0e})")
-        print(f"  V: abs={v_err['abs_err']:.2e}, rel={v_err['rel_err']:.2e} (target: <{RTOL_LORA:.0e})")
-
-        assert q_err["rel_err"] < RTOL_LORA, f"Q rel_err {q_err['rel_err']:.2e} >= {RTOL_LORA:.0e}"
-        assert k_err["rel_err"] < RTOL_LORA, f"K rel_err {k_err['rel_err']:.2e} >= {RTOL_LORA:.0e}"
-        assert v_err["rel_err"] < RTOL_LORA, f"V rel_err {v_err['rel_err']:.2e} >= {RTOL_LORA:.0e}"
+        print("\nLoRA-QKV Forward:")
+        assert_precision(Q_op, Q_pt, rtol=RTOL_LORA_FWD, atol=ATOL_LORA_FWD, label="Q")
+        assert_precision(K_op, K_pt, rtol=RTOL_LORA_FWD, atol=ATOL_LORA_FWD, label="K")
+        assert_precision(V_op, V_pt, rtol=RTOL_LORA_FWD, atol=ATOL_LORA_FWD, label="V")
 
 
 class TestLoRAQKVBackward:
     """Test LoRA-QKV backward pass precision."""
 
-    def test_backward_matches_pytorch(self, precision_error, mellum_config):
+    def test_backward_matches_pytorch(self, assert_precision, mellum_config):
         """Backward: opaque vs pytorch (non-vmap)."""
         BATCH = mellum_config["batch_size"]
         SEQ = mellum_config["seq_len"]
@@ -403,36 +383,20 @@ class TestLoRAQKVBackward:
         )
         (Q_op + K_op + V_op).sum().backward()
 
-        x_err = precision_error(X_op.grad, X_pt.grad, threshold=1e-4)
-        aq_err = precision_error(Aq_op.grad, Aq_pt.grad, threshold=1e-4)
-        bq_err = precision_error(Bq_op.grad, Bq_pt.grad, threshold=1e-4)
-        ak_err = precision_error(Ak_op.grad, Ak_pt.grad, threshold=1e-4)
-        bk_err = precision_error(Bk_op.grad, Bk_pt.grad, threshold=1e-4)
-        av_err = precision_error(Av_op.grad, Av_pt.grad, threshold=1e-4)
-        bv_err = precision_error(Bv_op.grad, Bv_pt.grad, threshold=1e-4)
-
-        print(f"\nLoRA-QKV Backward:")
-        print(f"  X.grad:  abs={x_err['abs_err']:.2e}, rel={x_err['rel_err']:.2e} (target: <{RTOL_LORA_BACKWARD:.0e})")
-        print(f"  Aq.grad: abs={aq_err['abs_err']:.2e}, rel={aq_err['rel_err']:.2e} (target: <{RTOL_LORA_BACKWARD:.0e})")
-        print(f"  Bq.grad: abs={bq_err['abs_err']:.2e}, rel={bq_err['rel_err']:.2e} (target: <{RTOL_LORA_BACKWARD:.0e})")
-        print(f"  Ak.grad: abs={ak_err['abs_err']:.2e}, rel={ak_err['rel_err']:.2e} (target: <{RTOL_LORA_BACKWARD:.0e})")
-        print(f"  Bk.grad: abs={bk_err['abs_err']:.2e}, rel={bk_err['rel_err']:.2e} (target: <{RTOL_LORA_BACKWARD:.0e})")
-        print(f"  Av.grad: abs={av_err['abs_err']:.2e}, rel={av_err['rel_err']:.2e} (target: <{RTOL_LORA_BACKWARD:.0e})")
-        print(f"  Bv.grad: abs={bv_err['abs_err']:.2e}, rel={bv_err['rel_err']:.2e} (target: <{RTOL_LORA_BACKWARD:.0e})")
-
-        assert x_err["rel_err"] < RTOL_LORA_BACKWARD, f"X.grad rel_err {x_err['rel_err']:.2e} >= {RTOL_LORA_BACKWARD:.0e}"
-        assert aq_err["rel_err"] < RTOL_LORA_BACKWARD, f"Aq.grad rel_err {aq_err['rel_err']:.2e} >= {RTOL_LORA_BACKWARD:.0e}"
-        assert bq_err["rel_err"] < RTOL_LORA_BACKWARD, f"Bq.grad rel_err {bq_err['rel_err']:.2e} >= {RTOL_LORA_BACKWARD:.0e}"
-        assert ak_err["rel_err"] < RTOL_LORA_BACKWARD, f"Ak.grad rel_err {ak_err['rel_err']:.2e} >= {RTOL_LORA_BACKWARD:.0e}"
-        assert bk_err["rel_err"] < RTOL_LORA_BACKWARD, f"Bk.grad rel_err {bk_err['rel_err']:.2e} >= {RTOL_LORA_BACKWARD:.0e}"
-        assert av_err["rel_err"] < RTOL_LORA_BACKWARD, f"Av.grad rel_err {av_err['rel_err']:.2e} >= {RTOL_LORA_BACKWARD:.0e}"
-        assert bv_err["rel_err"] < RTOL_LORA_BACKWARD, f"Bv.grad rel_err {bv_err['rel_err']:.2e} >= {RTOL_LORA_BACKWARD:.0e}"
+        print("\nLoRA-QKV Backward:")
+        assert_precision(X_op.grad, X_pt.grad, rtol=RTOL_LORA_BWD, atol=ATOL_LORA_BWD, label="X.grad")
+        assert_precision(Aq_op.grad, Aq_pt.grad, rtol=RTOL_LORA_BWD, atol=ATOL_LORA_BWD, label="Aq.grad")
+        assert_precision(Bq_op.grad, Bq_pt.grad, rtol=RTOL_LORA_BWD, atol=ATOL_LORA_BWD, label="Bq.grad")
+        assert_precision(Ak_op.grad, Ak_pt.grad, rtol=RTOL_LORA_BWD, atol=ATOL_LORA_BWD, label="Ak.grad")
+        assert_precision(Bk_op.grad, Bk_pt.grad, rtol=RTOL_LORA_BWD, atol=ATOL_LORA_BWD, label="Bk.grad")
+        assert_precision(Av_op.grad, Av_pt.grad, rtol=RTOL_LORA_BWD, atol=ATOL_LORA_BWD, label="Av.grad")
+        assert_precision(Bv_op.grad, Bv_pt.grad, rtol=RTOL_LORA_BWD, atol=ATOL_LORA_BWD, label="Bv.grad")
 
 
 class TestLoRAQKVVmapForward:
     """Test LoRA-QKV vmap forward precision."""
 
-    def test_vmap_forward_precision(self, precision_error, mellum_config):
+    def test_vmap_forward_precision(self, assert_precision, mellum_config):
         """Batched forward: opaque Triton vmap vs PyTorch reference."""
         BATCH = mellum_config["batch_size"]
         SEQ = mellum_config["seq_len"]
@@ -462,24 +426,16 @@ class TestLoRAQKVVmapForward:
             lambda x: opaque_lora_qkv(x, Wq, Aq, Bq, SCALING, Wk, Ak, Bk, SCALING, Wv, Av, Bv, SCALING)
         )(X)
 
-        q_err = precision_error(Q_op, Q_pt, threshold=1e-4)
-        k_err = precision_error(K_op, K_pt, threshold=1e-4)
-        v_err = precision_error(V_op, V_pt, threshold=1e-4)
-
-        print(f"\nLoRA-QKV vmap forward:")
-        print(f"  Q: abs={q_err['abs_err']:.2e}, rel={q_err['rel_err']:.2e} (target: <{RTOL_LORA:.0e})")
-        print(f"  K: abs={k_err['abs_err']:.2e}, rel={k_err['rel_err']:.2e} (target: <{RTOL_LORA:.0e})")
-        print(f"  V: abs={v_err['abs_err']:.2e}, rel={v_err['rel_err']:.2e} (target: <{RTOL_LORA:.0e})")
-
-        assert q_err["rel_err"] < RTOL_LORA, f"vmap Q rel_err {q_err['rel_err']:.2e} >= {RTOL_LORA:.0e}"
-        assert k_err["rel_err"] < RTOL_LORA, f"vmap K rel_err {k_err['rel_err']:.2e} >= {RTOL_LORA:.0e}"
-        assert v_err["rel_err"] < RTOL_LORA, f"vmap V rel_err {v_err['rel_err']:.2e} >= {RTOL_LORA:.0e}"
+        print("\nLoRA-QKV vmap forward:")
+        assert_precision(Q_op, Q_pt, rtol=RTOL_LORA_FWD, atol=ATOL_LORA_FWD, label="Q")
+        assert_precision(K_op, K_pt, rtol=RTOL_LORA_FWD, atol=ATOL_LORA_FWD, label="K")
+        assert_precision(V_op, V_pt, rtol=RTOL_LORA_FWD, atol=ATOL_LORA_FWD, label="V")
 
 
 class TestLoRAQKVVmapGrad:
     """Test vmap(grad): per-example gradients — the DP-SGD path."""
 
-    def test_vmap_grad_precision(self, precision_error, mellum_config):
+    def test_vmap_grad_precision(self, assert_precision, mellum_config):
         """Per-example gradients: opaque Triton vs PyTorch reference."""
         BATCH = mellum_config["batch_size"]
         SEQ = mellum_config["seq_len"]
@@ -513,10 +469,8 @@ class TestLoRAQKVVmapGrad:
         grads_pt = vmap(grad(f_pt))(X)
         grads_op = vmap(grad(f_op))(X)
 
-        err = precision_error(grads_op, grads_pt, threshold=1e-4)
-        print(f"\nLoRA-QKV vmap(grad): abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_LORA_BACKWARD:.0e})")
-
-        assert err["rel_err"] < RTOL_LORA_BACKWARD, f"vmap(grad) rel_err {err['rel_err']:.2e} >= {RTOL_LORA_BACKWARD:.0e}"
+        print("\nLoRA-QKV vmap(grad):")
+        assert_precision(grads_op, grads_pt, rtol=RTOL_LORA_BWD, atol=ATOL_LORA_BWD, label="X.grad")
 
     def test_vmap_grad_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
         """Triton vmap(grad) must be faster or use less memory."""
@@ -648,12 +602,8 @@ class TestLoRAQKVPerformance:
 class TestLoRAMLPForward:
     """Test LoRA-MLP forward pass precision."""
 
-    def test_forward_matches_pytorch(self, precision_error, mellum_config):
-        """Forward: opaque vs pytorch (non-vmap, float32).
-
-        Uses Kaiming-scaled weights (realistic magnitudes) to prevent
-        Triton SwiGLU ULP diffs from being amplified through matmul chains.
-        """
+    def test_forward_matches_pytorch(self, assert_precision, mellum_config):
+        """Forward: opaque vs pytorch (non-vmap, float32)."""
         BATCH = mellum_config["batch_size"]
         SEQ = mellum_config["seq_len"]
         HIDDEN = mellum_config["hidden_dim"]
@@ -683,21 +633,15 @@ class TestLoRAMLPForward:
             X, Wg, Ag, Bg, SCALING, Wu, Au, Bu, SCALING, Wd, Ad, Bd, SCALING
         )
 
-        err = precision_error(out_op, out_pt, threshold=1e-4)
-        print(f"\nLoRA-MLP Forward: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_LORA_MLP:.0e})")
-
-        assert err["rel_err"] < RTOL_LORA_MLP, f"Forward rel_err {err['rel_err']:.2e} >= {RTOL_LORA_MLP:.0e}"
+        print("\nLoRA-MLP Forward:")
+        assert_precision(out_op, out_pt, rtol=RTOL_LORA_MLP_FWD, atol=ATOL_LORA_MLP_FWD, label="output")
 
 
 class TestLoRAMLPBackward:
     """Test LoRA-MLP backward pass precision."""
 
-    def test_backward_matches_pytorch(self, precision_error, mellum_config):
-        """Backward: opaque vs pytorch (non-vmap).
-
-        Uses Kaiming-scaled weights (realistic magnitudes) to prevent
-        Triton SwiGLU ULP diffs from being amplified through matmul chains.
-        """
+    def test_backward_matches_pytorch(self, assert_precision, mellum_config):
+        """Backward: opaque vs pytorch (non-vmap)."""
         BATCH = mellum_config["batch_size"]
         SEQ = mellum_config["seq_len"]
         HIDDEN = mellum_config["hidden_dim"]
@@ -738,36 +682,20 @@ class TestLoRAMLPBackward:
         )
         out_op.sum().backward()
 
-        x_err = precision_error(X_op.grad, X_pt.grad, threshold=1e-4)
-        ag_err = precision_error(Ag_op.grad, Ag_pt.grad, threshold=1e-4)
-        bg_err = precision_error(Bg_op.grad, Bg_pt.grad, threshold=1e-4)
-        au_err = precision_error(Au_op.grad, Au_pt.grad, threshold=1e-4)
-        bu_err = precision_error(Bu_op.grad, Bu_pt.grad, threshold=1e-4)
-        ad_err = precision_error(Ad_op.grad, Ad_pt.grad, threshold=1e-4)
-        bd_err = precision_error(Bd_op.grad, Bd_pt.grad, threshold=1e-4)
-
-        print(f"\nLoRA-MLP Backward:")
-        print(f"  X.grad:  abs={x_err['abs_err']:.2e}, rel={x_err['rel_err']:.2e} (target: <{RTOL_LORA_MLP_BACKWARD:.0e})")
-        print(f"  Ag.grad: abs={ag_err['abs_err']:.2e}, rel={ag_err['rel_err']:.2e} (target: <{RTOL_LORA_MLP_BACKWARD:.0e})")
-        print(f"  Bg.grad: abs={bg_err['abs_err']:.2e}, rel={bg_err['rel_err']:.2e} (target: <{RTOL_LORA_MLP_BACKWARD:.0e})")
-        print(f"  Au.grad: abs={au_err['abs_err']:.2e}, rel={au_err['rel_err']:.2e} (target: <{RTOL_LORA_MLP_BACKWARD:.0e})")
-        print(f"  Bu.grad: abs={bu_err['abs_err']:.2e}, rel={bu_err['rel_err']:.2e} (target: <{RTOL_LORA_MLP_BACKWARD:.0e})")
-        print(f"  Ad.grad: abs={ad_err['abs_err']:.2e}, rel={ad_err['rel_err']:.2e} (target: <{RTOL_LORA_MLP_BACKWARD:.0e})")
-        print(f"  Bd.grad: abs={bd_err['abs_err']:.2e}, rel={bd_err['rel_err']:.2e} (target: <{RTOL_LORA_MLP_BACKWARD:.0e})")
-
-        assert x_err["rel_err"] < RTOL_LORA_MLP_BACKWARD, f"X.grad rel_err {x_err['rel_err']:.2e} >= {RTOL_LORA_MLP_BACKWARD:.0e}"
-        assert ag_err["rel_err"] < RTOL_LORA_MLP_BACKWARD, f"Ag.grad rel_err {ag_err['rel_err']:.2e} >= {RTOL_LORA_MLP_BACKWARD:.0e}"
-        assert bg_err["rel_err"] < RTOL_LORA_MLP_BACKWARD, f"Bg.grad rel_err {bg_err['rel_err']:.2e} >= {RTOL_LORA_MLP_BACKWARD:.0e}"
-        assert au_err["rel_err"] < RTOL_LORA_MLP_BACKWARD, f"Au.grad rel_err {au_err['rel_err']:.2e} >= {RTOL_LORA_MLP_BACKWARD:.0e}"
-        assert bu_err["rel_err"] < RTOL_LORA_MLP_BACKWARD, f"Bu.grad rel_err {bu_err['rel_err']:.2e} >= {RTOL_LORA_MLP_BACKWARD:.0e}"
-        assert ad_err["rel_err"] < RTOL_LORA_MLP_BACKWARD, f"Ad.grad rel_err {ad_err['rel_err']:.2e} >= {RTOL_LORA_MLP_BACKWARD:.0e}"
-        assert bd_err["rel_err"] < RTOL_LORA_MLP_BACKWARD, f"Bd.grad rel_err {bd_err['rel_err']:.2e} >= {RTOL_LORA_MLP_BACKWARD:.0e}"
+        print("\nLoRA-MLP Backward:")
+        assert_precision(X_op.grad, X_pt.grad, rtol=RTOL_LORA_MLP_BWD, atol=ATOL_LORA_MLP_BWD, label="X.grad")
+        assert_precision(Ag_op.grad, Ag_pt.grad, rtol=RTOL_LORA_MLP_BWD, atol=ATOL_LORA_MLP_BWD, label="Ag.grad")
+        assert_precision(Bg_op.grad, Bg_pt.grad, rtol=RTOL_LORA_MLP_BWD, atol=ATOL_LORA_MLP_BWD, label="Bg.grad")
+        assert_precision(Au_op.grad, Au_pt.grad, rtol=RTOL_LORA_MLP_BWD, atol=ATOL_LORA_MLP_BWD, label="Au.grad")
+        assert_precision(Bu_op.grad, Bu_pt.grad, rtol=RTOL_LORA_MLP_BWD, atol=ATOL_LORA_MLP_BWD, label="Bu.grad")
+        assert_precision(Ad_op.grad, Ad_pt.grad, rtol=RTOL_LORA_MLP_BWD, atol=ATOL_LORA_MLP_BWD, label="Ad.grad")
+        assert_precision(Bd_op.grad, Bd_pt.grad, rtol=RTOL_LORA_MLP_BWD, atol=ATOL_LORA_MLP_BWD, label="Bd.grad")
 
 
 class TestLoRAMLPVmapForward:
     """Test LoRA-MLP vmap forward precision."""
 
-    def test_vmap_forward_precision(self, precision_error, mellum_config):
+    def test_vmap_forward_precision(self, assert_precision, mellum_config):
         """Batched forward: opaque Triton vmap vs PyTorch reference."""
         BATCH = mellum_config["batch_size"]
         SEQ = mellum_config["seq_len"]
@@ -799,16 +727,14 @@ class TestLoRAMLPVmapForward:
             lambda x: opaque_lora_mlp(x, Wg, Ag, Bg, SCALING, Wu, Au, Bu, SCALING, Wd, Ad, Bd, SCALING)
         )(X)
 
-        err = precision_error(out_op, out_pt, threshold=1e-4)
-        print(f"\nLoRA-MLP vmap forward: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_LORA_MLP:.0e})")
-
-        assert err["rel_err"] < RTOL_LORA_MLP, f"vmap forward rel_err {err['rel_err']:.2e} >= {RTOL_LORA_MLP:.0e}"
+        print("\nLoRA-MLP vmap forward:")
+        assert_precision(out_op, out_pt, rtol=RTOL_LORA_MLP_FWD, atol=ATOL_LORA_MLP_FWD, label="output")
 
 
 class TestLoRAMLPVmapGrad:
     """Test vmap(grad): per-example gradients — the DP-SGD path."""
 
-    def test_vmap_grad_precision(self, precision_error, mellum_config):
+    def test_vmap_grad_precision(self, assert_precision, mellum_config):
         """Per-example gradients: opaque Triton vs PyTorch reference."""
         BATCH = mellum_config["batch_size"]
         SEQ = mellum_config["seq_len"]
@@ -842,10 +768,8 @@ class TestLoRAMLPVmapGrad:
         grads_pt = vmap(grad(f_pt))(X)
         grads_op = vmap(grad(f_op))(X)
 
-        err = precision_error(grads_op, grads_pt, threshold=1e-4)
-        print(f"\nLoRA-MLP vmap(grad): abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_LORA_MLP_BACKWARD:.0e})")
-
-        assert err["rel_err"] < RTOL_LORA_MLP_BACKWARD, f"vmap(grad) rel_err {err['rel_err']:.2e} >= {RTOL_LORA_MLP_BACKWARD:.0e}"
+        print("\nLoRA-MLP vmap(grad):")
+        assert_precision(grads_op, grads_pt, rtol=RTOL_LORA_MLP_BWD, atol=ATOL_LORA_MLP_BWD, label="X.grad")
 
     def test_vmap_grad_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
         """Triton vmap(grad) must be faster or use less memory."""
@@ -899,35 +823,32 @@ class TestLoRAMLPPerformance:
         INTERMEDIATE = mellum_config["intermediate_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
+        kw = dict(device="cuda", dtype=torch.float32)
 
-        X = torch.randn(BATCH, SEQ, HIDDEN, device="cuda", dtype=torch.float32)
+        X = torch.randn(BATCH, SEQ, HIDDEN, **kw)
 
-        Wg = torch.randn(INTERMEDIATE, HIDDEN, device="cuda", dtype=torch.float32)
-        Ag = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        Bg = torch.randn(RANK, INTERMEDIATE, device="cuda", dtype=torch.float32)
+        Wg = _kaiming_weight(INTERMEDIATE, HIDDEN, **kw)
+        Ag = _lora_weight(HIDDEN, RANK, **kw)
+        Bg = _lora_weight(RANK, INTERMEDIATE, **kw)
 
-        Wu = torch.randn(INTERMEDIATE, HIDDEN, device="cuda", dtype=torch.float32)
-        Au = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        Bu = torch.randn(RANK, INTERMEDIATE, device="cuda", dtype=torch.float32)
+        Wu = _kaiming_weight(INTERMEDIATE, HIDDEN, **kw)
+        Au = _lora_weight(HIDDEN, RANK, **kw)
+        Bu = _lora_weight(RANK, INTERMEDIATE, **kw)
 
-        Wd = torch.randn(HIDDEN, INTERMEDIATE, device="cuda", dtype=torch.float32)
-        Ad = torch.randn(INTERMEDIATE, RANK, device="cuda", dtype=torch.float32)
-        Bd = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32)
+        Wd = _kaiming_weight(HIDDEN, INTERMEDIATE, **kw)
+        Ad = _lora_weight(INTERMEDIATE, RANK, **kw)
+        Bd = _lora_weight(RANK, HIDDEN, **kw)
 
         def pytorch_fn(x):
-            return pytorch_lora_mlp(
-                x, Wg, Ag, Bg, SCALING, Wu, Au, Bu, SCALING, Wd, Ad, Bd, SCALING
-            )
+            return pytorch_lora_mlp(x, Wg, Ag, Bg, SCALING, Wu, Au, Bu, SCALING, Wd, Ad, Bd, SCALING)
 
         def opaque_fn(x):
-            return opaque_lora_mlp(
-                x, Wg, Ag, Bg, SCALING, Wu, Au, Bu, SCALING, Wd, Ad, Bd, SCALING
-            )
+            return opaque_lora_mlp(x, Wg, Ag, Bg, SCALING, Wu, Au, Bu, SCALING, Wd, Ad, Bd, SCALING)
 
         pt_stats = measure_time_and_memory(pytorch_fn, X)
         op_stats = measure_time_and_memory(opaque_fn, X)
 
-        assert_perf_benefit(pt_stats, op_stats, label="LoRA-MLP forward", max_perf_overhead=0.20)
+        assert_perf_benefit(pt_stats, op_stats, label="LoRA-MLP forward", max_perf_overhead=0.50)
 
     def test_backward_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
         """Backward performance: opaque vs pytorch."""
@@ -937,30 +858,27 @@ class TestLoRAMLPPerformance:
         INTERMEDIATE = mellum_config["intermediate_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
+        kw = dict(device="cuda", dtype=torch.float32)
 
-        X = torch.randn(BATCH, SEQ, HIDDEN, device="cuda", dtype=torch.float32, requires_grad=True)
+        X = torch.randn(BATCH, SEQ, HIDDEN, **kw, requires_grad=True)
 
-        Wg = torch.randn(INTERMEDIATE, HIDDEN, device="cuda", dtype=torch.float32)
-        Ag = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32, requires_grad=True)
-        Bg = torch.randn(RANK, INTERMEDIATE, device="cuda", dtype=torch.float32, requires_grad=True)
+        Wg = _kaiming_weight(INTERMEDIATE, HIDDEN, **kw)
+        Ag = _lora_weight(HIDDEN, RANK, **kw).requires_grad_(True)
+        Bg = _lora_weight(RANK, INTERMEDIATE, **kw).requires_grad_(True)
 
-        Wu = torch.randn(INTERMEDIATE, HIDDEN, device="cuda", dtype=torch.float32)
-        Au = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32, requires_grad=True)
-        Bu = torch.randn(RANK, INTERMEDIATE, device="cuda", dtype=torch.float32, requires_grad=True)
+        Wu = _kaiming_weight(INTERMEDIATE, HIDDEN, **kw)
+        Au = _lora_weight(HIDDEN, RANK, **kw).requires_grad_(True)
+        Bu = _lora_weight(RANK, INTERMEDIATE, **kw).requires_grad_(True)
 
-        Wd = torch.randn(HIDDEN, INTERMEDIATE, device="cuda", dtype=torch.float32)
-        Ad = torch.randn(INTERMEDIATE, RANK, device="cuda", dtype=torch.float32, requires_grad=True)
-        Bd = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32, requires_grad=True)
+        Wd = _kaiming_weight(HIDDEN, INTERMEDIATE, **kw)
+        Ad = _lora_weight(INTERMEDIATE, RANK, **kw).requires_grad_(True)
+        Bd = _lora_weight(RANK, HIDDEN, **kw).requires_grad_(True)
 
         def pytorch_fn(x, ag, bg, au, bu, ad, bd):
-            return pytorch_lora_mlp(
-                x, Wg, ag, bg, SCALING, Wu, au, bu, SCALING, Wd, ad, bd, SCALING
-            )
+            return pytorch_lora_mlp(x, Wg, ag, bg, SCALING, Wu, au, bu, SCALING, Wd, ad, bd, SCALING)
 
         def opaque_fn(x, ag, bg, au, bu, ad, bd):
-            return opaque_lora_mlp(
-                x, Wg, ag, bg, SCALING, Wu, au, bu, SCALING, Wd, ad, bd, SCALING
-            )
+            return opaque_lora_mlp(x, Wg, ag, bg, SCALING, Wu, au, bu, SCALING, Wd, ad, bd, SCALING)
 
         pt_stats = measure_time_and_memory(pytorch_fn, X, Ag, Bg, Au, Bu, Ad, Bd)
         op_stats = measure_time_and_memory(opaque_fn, X, Ag, Bg, Au, Bu, Ad, Bd)

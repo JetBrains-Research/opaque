@@ -5,7 +5,6 @@ All kernels use new-style PyTorch autograd.Function API with custom vmap rules.
 """
 
 # Normalization layers
-from .layernorm import Opaque_LayerNorm, opaque_layernorm
 from .rms_layernorm import Opaque_RMSNorm, opaque_rms_norm
 
 # Loss functions
@@ -45,8 +44,6 @@ from .lora import (
 
 __all__ = [
     # Normalization
-    "Opaque_LayerNorm",
-    "opaque_layernorm",
     "Opaque_RMSNorm",
     "opaque_rms_norm",
     # Loss

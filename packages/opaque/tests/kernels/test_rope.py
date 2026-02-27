@@ -20,7 +20,9 @@ pytestmark = pytest.mark.skipif(
     not torch.cuda.is_available(), reason="CUDA required"
 )
 
-RTOL_ROPE = 5e-4
+# RoPE: elementwise cos/sin multiply, same math in Triton and PyTorch
+RTOL_ROPE = 1e-5
+ATOL_ROPE = 1e-5
 
 
 # ============================================================================
@@ -34,12 +36,7 @@ def rotate_half(x):
 
 
 def generate_cos_sin(seq_len, head_dim, device="cuda", dtype=torch.float32):
-    """Generate cos/sin caches for RoPE.
-
-    Returns:
-        cos: (seq_len, head_dim // 2)
-        sin: (seq_len, head_dim // 2)
-    """
+    """Generate cos/sin caches for RoPE."""
     freqs = 1.0 / (10000.0 ** (torch.arange(0, head_dim, 2, device=device).float() / head_dim))
     positions = torch.arange(seq_len, device=device)
     freqs = torch.outer(positions, freqs)
@@ -49,21 +46,12 @@ def generate_cos_sin(seq_len, head_dim, device="cuda", dtype=torch.float32):
 
 
 def pytorch_rope(Q, cos, sin):
-    """PyTorch reference RoPE implementation.
-
-    Args:
-        Q: (batch, seq_len, n_heads, head_dim)
-        cos: (seq_len, head_dim // 2)
-        sin: (seq_len, head_dim // 2)
-    """
+    """PyTorch reference RoPE implementation."""
     batch, seq_len, n_heads, head_dim = Q.shape
-
     cos_expanded = cos[None, :, None, :].expand(batch, seq_len, n_heads, -1)
     sin_expanded = sin[None, :, None, :].expand(batch, seq_len, n_heads, -1)
-
     cos_full = torch.cat([cos_expanded, cos_expanded], dim=-1)
     sin_full = torch.cat([sin_expanded, sin_expanded], dim=-1)
-
     return Q * cos_full + rotate_half(Q) * sin_full
 
 
@@ -79,7 +67,7 @@ def opaque_rope(Q, cos, sin):
 class TestRoPEForward:
     """Test forward pass precision."""
 
-    def test_forward_matches_pytorch(self, precision_error, mellum_config):
+    def test_forward_matches_pytorch(self, assert_precision, mellum_config):
         """Forward: opaque vs pytorch."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
@@ -93,10 +81,8 @@ class TestRoPEForward:
         out_opaque = opaque_rope(Q, cos, sin)
         out_pytorch = pytorch_rope(Q, cos, sin)
 
-        err = precision_error(out_opaque, out_pytorch, threshold=1e-4)
-        print(f"\nRoPE Forward: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_ROPE:.0e})")
-
-        assert err["rel_err"] < RTOL_ROPE, f"Forward rel_err {err['rel_err']:.2e} >= {RTOL_ROPE:.0e}"
+        print("\nRoPE Forward:")
+        assert_precision(out_opaque, out_pytorch, rtol=RTOL_ROPE, atol=ATOL_ROPE, label="output")
 
 
 # ============================================================================
@@ -106,7 +92,7 @@ class TestRoPEForward:
 class TestRoPEBackward:
     """Test backward pass precision."""
 
-    def test_backward_matches_pytorch(self, precision_error, mellum_config):
+    def test_backward_matches_pytorch(self, assert_precision, mellum_config):
         """Backward: opaque vs pytorch Q.grad."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
@@ -114,21 +100,17 @@ class TestRoPEBackward:
         N_HEADS = mellum_config["n_heads"]
         HEAD_DIM = mellum_config["head_dim"]
 
-        # PyTorch reference
         Q_pt = torch.randn(batch, seq_len, N_HEADS, HEAD_DIM, device="cuda", dtype=torch.float32, requires_grad=True)
         cos, sin = generate_cos_sin(seq_len, HEAD_DIM)
         out_pt = pytorch_rope(Q_pt, cos, sin)
         out_pt.sum().backward()
 
-        # Opaque kernel
         Q_op = Q_pt.detach().clone().requires_grad_(True)
         out_op = opaque_rope(Q_op, cos, sin)
         out_op.sum().backward()
 
-        err = precision_error(Q_op.grad, Q_pt.grad, threshold=1e-4)
-        print(f"\nRoPE Backward Q.grad: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_ROPE:.0e})")
-
-        assert err["rel_err"] < RTOL_ROPE, f"Q.grad rel_err {err['rel_err']:.2e} >= {RTOL_ROPE:.0e}"
+        print("\nRoPE Backward:")
+        assert_precision(Q_op.grad, Q_pt.grad, rtol=RTOL_ROPE, atol=ATOL_ROPE, label="Q.grad")
 
 
 # ============================================================================
@@ -138,7 +120,7 @@ class TestRoPEBackward:
 class TestRoPEVmapForward:
     """Test vmap forward: Triton vmap vs PyTorch vmap."""
 
-    def test_vmap_forward_precision(self, precision_error, mellum_config):
+    def test_vmap_forward_precision(self, assert_precision, mellum_config):
         """Batched forward: opaque Triton vmap vs PyTorch reference."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
@@ -154,10 +136,8 @@ class TestRoPEVmapForward:
         out_pt = vmap(lambda q: pytorch_rope(q, cos, sin))(Q)
         out_op = vmap(lambda q: opaque_rope(q, cos, sin))(Q)
 
-        err = precision_error(out_op, out_pt, threshold=1e-4)
-        print(f"\nRoPE vmap forward: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_ROPE:.0e})")
-
-        assert err["rel_err"] < RTOL_ROPE, f"vmap forward rel_err {err['rel_err']:.2e} >= {RTOL_ROPE:.0e}"
+        print("\nRoPE vmap forward:")
+        assert_precision(out_op, out_pt, rtol=RTOL_ROPE, atol=ATOL_ROPE, label="output")
 
     def test_vmap_forward_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
         """Triton vmap forward must be faster or use less memory."""
@@ -181,7 +161,7 @@ class TestRoPEVmapForward:
 class TestRoPEVmapGrad:
     """Test vmap(grad): per-example gradients — the DP-SGD path."""
 
-    def test_vmap_grad_precision(self, precision_error, mellum_config):
+    def test_vmap_grad_precision(self, assert_precision, mellum_config):
         """Per-example gradients: opaque Triton vs PyTorch reference."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
@@ -203,10 +183,8 @@ class TestRoPEVmapGrad:
         grads_pt = vmap(grad(f_pt))(Q)
         grads_op = vmap(grad(f_op))(Q)
 
-        err = precision_error(grads_op, grads_pt, threshold=1e-4)
-        print(f"\nRoPE vmap(grad): abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_ROPE:.0e})")
-
-        assert err["rel_err"] < RTOL_ROPE, f"vmap(grad) rel_err {err['rel_err']:.2e} >= {RTOL_ROPE:.0e}"
+        print("\nRoPE vmap(grad):")
+        assert_precision(grads_op, grads_pt, rtol=RTOL_ROPE, atol=ATOL_ROPE, label="Q.grad")
 
     def test_vmap_grad_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
         """Triton vmap(grad) must be faster or use less memory."""

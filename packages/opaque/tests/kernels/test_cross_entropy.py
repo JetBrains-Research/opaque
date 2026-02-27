@@ -24,7 +24,9 @@ pytestmark = pytest.mark.skipif(
 
 # Cross entropy tolerances (accumulation over large vocab dimension)
 RTOL_CE_FORWARD = 1e-4
+ATOL_CE_FORWARD = 1e-6
 RTOL_CE_BACKWARD = 1e-4
+ATOL_CE_BACKWARD = 1e-6
 
 
 # ============================================================================
@@ -57,7 +59,7 @@ def opaque_cross_entropy(logits, labels):
 class TestCrossEntropyForward:
     """Test forward pass precision."""
 
-    def test_forward_matches_pytorch(self, precision_error, mellum_config):
+    def test_forward_matches_pytorch(self, assert_precision, mellum_config):
         """Forward: opaque vs pytorch at mellum scale (chunked path)."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
@@ -70,13 +72,17 @@ class TestCrossEntropyForward:
         out_pytorch = pytorch_cross_entropy(logits, labels)
         out_opaque = opaque_cross_entropy(logits, labels)
 
-        err = precision_error(out_opaque.unsqueeze(0), out_pytorch.unsqueeze(0), threshold=1e-4)
-        print(f"\nCE Forward (vocab={vocab}): abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_CE_FORWARD:.0e})")
-
-        assert err["rel_err"] < RTOL_CE_FORWARD, f"Forward rel_err {err['rel_err']:.2e} >= {RTOL_CE_FORWARD:.0e}"
+        print(f"\nCE Forward (vocab={vocab}):")
+        assert_precision(
+            out_opaque.unsqueeze(0),
+            out_pytorch.unsqueeze(0),
+            rtol=RTOL_CE_FORWARD,
+            atol=ATOL_CE_FORWARD,
+            label="loss"
+        )
 
     @pytest.mark.parametrize("vocab_size", [128256])
-    def test_forward_other_vocab_sizes(self, precision_error, vocab_size):
+    def test_forward_other_vocab_sizes(self, assert_precision, vocab_size):
         """Forward with other large vocab sizes (e.g. LLaMA 3 128K)."""
         torch.manual_seed(42)
 
@@ -89,10 +95,14 @@ class TestCrossEntropyForward:
         labels_flat = labels.reshape(-1)
         losses_pt = F.cross_entropy(logits_flat, labels_flat, reduction="none")
 
-        err = precision_error(losses_op.reshape(-1), losses_pt, threshold=1e-4)
-        print(f"\nCE Forward (vocab={vocab_size}): abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e}")
-
-        assert err["rel_err"] < 1e-4, f"Forward rel_err {err['rel_err']:.2e} >= 1e-4"
+        print(f"\nCE Forward (vocab={vocab_size}):")
+        assert_precision(
+            losses_op.reshape(-1),
+            losses_pt,
+            rtol=RTOL_CE_FORWARD,
+            atol=ATOL_CE_FORWARD,
+            label="per-token losses"
+        )
 
 
 # ============================================================================
@@ -102,7 +112,7 @@ class TestCrossEntropyForward:
 class TestCrossEntropyBackward:
     """Test backward pass precision."""
 
-    def test_backward_matches_pytorch(self, precision_error, mellum_config):
+    def test_backward_matches_pytorch(self, assert_precision, mellum_config):
         """Backward: opaque vs pytorch logits.grad at mellum scale."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
@@ -123,12 +133,14 @@ class TestCrossEntropyBackward:
         out_op = opaque_cross_entropy(logits_op, labels)
         out_op.backward()
 
-        err = precision_error(logits_op.grad, logits_pt.grad, threshold=1e-4)
-
         print(f"\nCE Backward (vocab={vocab}):")
-        print(f"  logits.grad: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_CE_BACKWARD:.0e})")
-
-        assert err["rel_err"] < RTOL_CE_BACKWARD, f"logits.grad rel_err {err['rel_err']:.2e} >= {RTOL_CE_BACKWARD:.0e}"
+        assert_precision(
+            logits_op.grad,
+            logits_pt.grad,
+            rtol=RTOL_CE_BACKWARD,
+            atol=ATOL_CE_BACKWARD,
+            label="logits.grad"
+        )
 
     def test_backward_ignores_masked_labels(self, mellum_config):
         """Verify -100 labels produce zero gradient (not softmax probs)."""
@@ -158,7 +170,7 @@ class TestCrossEntropyBackward:
 class TestCrossEntropyVmapForward:
     """Test vmap forward: Triton vmap vs PyTorch vmap."""
 
-    def test_vmap_forward_precision(self, precision_error, mellum_config):
+    def test_vmap_forward_precision(self, assert_precision, mellum_config):
         """Batched forward: opaque Triton vmap vs PyTorch reference."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
@@ -175,10 +187,14 @@ class TestCrossEntropyVmapForward:
         out_pt = vmap(pytorch_cross_entropy, in_dims=(0, 0))(logits, labels)
         out_op = vmap(opaque_cross_entropy, in_dims=(0, 0))(logits, labels)
 
-        err = precision_error(out_op.unsqueeze(0), out_pt.unsqueeze(0), threshold=1e-4)
-        print(f"\nCE vmap forward (vocab={vocab}): abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_CE_FORWARD:.0e})")
-
-        assert err["rel_err"] < RTOL_CE_FORWARD, f"vmap forward rel_err {err['rel_err']:.2e} >= {RTOL_CE_FORWARD:.0e}"
+        print(f"\nCE vmap forward (vocab={vocab}):")
+        assert_precision(
+            out_op.unsqueeze(0),
+            out_pt.unsqueeze(0),
+            rtol=RTOL_CE_FORWARD,
+            atol=ATOL_CE_FORWARD,
+            label="loss"
+        )
 
     def test_vmap_forward_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
         """Triton vmap forward must be faster or use less memory."""
@@ -207,7 +223,7 @@ class TestCrossEntropyVmapForward:
 class TestCrossEntropyVmapGrad:
     """Test vmap(grad): per-example gradients — the DP-SGD path."""
 
-    def test_vmap_grad_precision(self, precision_error, mellum_config):
+    def test_vmap_grad_precision(self, assert_precision, mellum_config):
         """Per-example gradients: opaque Triton vs PyTorch reference."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
@@ -231,10 +247,14 @@ class TestCrossEntropyVmapGrad:
         grads_pt = vmap(grad(f_pt, argnums=0), in_dims=(0, 0))(logits, labels)
         grads_op = vmap(grad(f_op, argnums=0), in_dims=(0, 0))(logits, labels)
 
-        err = precision_error(grads_op, grads_pt, threshold=1e-4)
-        print(f"\nCE vmap(grad) (vocab={vocab}): abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_CE_BACKWARD:.0e})")
-
-        assert err["rel_err"] < RTOL_CE_BACKWARD, f"vmap(grad) rel_err {err['rel_err']:.2e} >= {RTOL_CE_BACKWARD:.0e}"
+        print(f"\nCE vmap(grad) (vocab={vocab}):")
+        assert_precision(
+            grads_op,
+            grads_pt,
+            rtol=RTOL_CE_BACKWARD,
+            atol=ATOL_CE_BACKWARD,
+            label="per-example gradients"
+        )
 
     def test_vmap_grad_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
         """Triton vmap(grad) must be faster or use less memory."""
@@ -316,6 +336,187 @@ class TestCrossEntropyPerformance:
         op_stats = measure_time_and_memory(opaque_fn, logits, labels)
 
         assert_perf_benefit(pt_stats, op_stats, label="CE backward")
+
+
+# ============================================================================
+# Softcapping and Logit Scaling Tests
+# ============================================================================
+
+class TestCrossEntropySoftcapping:
+    """Test logit softcapping (Gemma 2) and logit scaling (Cohere)."""
+
+    def test_softcapping_forward(self, assert_precision):
+        """Softcapping forward matches PyTorch reference."""
+        torch.manual_seed(42)
+        vocab = 1024
+        softcap = 30.0
+
+        logits = torch.randn(4, 64, vocab, device="cuda", dtype=torch.float32)
+        labels = torch.randint(0, vocab, (4, 64), device="cuda")
+
+        # PyTorch reference: manually apply softcapping then F.cross_entropy
+        capped = softcap * torch.tanh(logits / softcap)
+        ref = F.cross_entropy(
+            capped.reshape(-1, vocab), labels.reshape(-1), reduction="none"
+        ).reshape(4, 64)
+
+        # Opaque: pass raw logits + softcap param
+        losses_op, _ = Opaque_CrossEntropy.apply(logits, labels, softcap, 0)
+
+        print(f"\nSoftcapping forward:")
+        assert_precision(
+            losses_op,
+            ref,
+            rtol=1e-4,
+            atol=1e-6,
+            label="per-token losses"
+        )
+
+    def test_softcapping_backward(self, assert_precision):
+        """Softcapping backward matches PyTorch reference."""
+        torch.manual_seed(42)
+        vocab = 1024
+        softcap = 30.0
+
+        logits_pt = torch.randn(4, 64, vocab, device="cuda", dtype=torch.float32, requires_grad=True)
+        labels = torch.randint(0, vocab, (4, 64), device="cuda")
+
+        # PyTorch reference
+        capped = softcap * torch.tanh(logits_pt / softcap)
+        loss_pt = F.cross_entropy(capped.reshape(-1, vocab), labels.reshape(-1))
+        loss_pt.backward()
+
+        # Opaque
+        logits_op = logits_pt.detach().clone().requires_grad_(True)
+        losses_op, _ = Opaque_CrossEntropy.apply(logits_op, labels, softcap, 0)
+        mask = (labels != -100).float()
+        loss_op = (losses_op * mask).sum() / mask.sum().clamp(min=1)
+        loss_op.backward()
+
+        print(f"\nSoftcapping backward:")
+        assert_precision(
+            logits_op.grad,
+            logits_pt.grad,
+            rtol=1e-3,
+            atol=1e-5,
+            label="logits.grad"
+        )
+
+    def test_logit_scaling_forward(self, assert_precision):
+        """Logit scaling forward matches PyTorch reference."""
+        torch.manual_seed(42)
+        vocab = 1024
+        logit_scale = 0.0625
+
+        logits = torch.randn(4, 64, vocab, device="cuda", dtype=torch.float32)
+        labels = torch.randint(0, vocab, (4, 64), device="cuda")
+
+        # PyTorch reference: manually apply scaling then F.cross_entropy
+        scaled = logit_scale * logits
+        ref = F.cross_entropy(
+            scaled.reshape(-1, vocab), labels.reshape(-1), reduction="none"
+        ).reshape(4, 64)
+
+        # Opaque: pass raw logits + scale param
+        losses_op, _ = Opaque_CrossEntropy.apply(logits, labels, 0, logit_scale)
+
+        print(f"\nLogit scaling forward:")
+        assert_precision(
+            losses_op,
+            ref,
+            rtol=1e-4,
+            atol=1e-6,
+            label="per-token losses"
+        )
+
+    def test_logit_scaling_backward(self, assert_precision):
+        """Logit scaling backward matches PyTorch reference."""
+        torch.manual_seed(42)
+        vocab = 1024
+        logit_scale = 0.0625
+
+        logits_pt = torch.randn(4, 64, vocab, device="cuda", dtype=torch.float32, requires_grad=True)
+        labels = torch.randint(0, vocab, (4, 64), device="cuda")
+
+        # PyTorch reference
+        scaled = logit_scale * logits_pt
+        loss_pt = F.cross_entropy(scaled.reshape(-1, vocab), labels.reshape(-1))
+        loss_pt.backward()
+
+        # Opaque
+        logits_op = logits_pt.detach().clone().requires_grad_(True)
+        losses_op, _ = Opaque_CrossEntropy.apply(logits_op, labels, 0, logit_scale)
+        mask = (labels != -100).float()
+        loss_op = (losses_op * mask).sum() / mask.sum().clamp(min=1)
+        loss_op.backward()
+
+        print(f"\nLogit scaling backward:")
+        assert_precision(
+            logits_op.grad,
+            logits_pt.grad,
+            rtol=1e-3,
+            atol=1e-5,
+            label="logits.grad"
+        )
+
+    def test_softcapping_vmap_grad(self, assert_precision):
+        """Softcapping with vmap(grad) matches PyTorch reference."""
+        torch.manual_seed(42)
+        vocab = 1024
+        softcap = 30.0
+        vmap_batch = 4
+
+        logits = torch.randn(vmap_batch, 2, 32, vocab, device="cuda", dtype=torch.float32)
+        labels = torch.randint(0, vocab, (vmap_batch, 2, 32), device="cuda")
+
+        def f_pt(l, t):
+            capped = softcap * torch.tanh(l / softcap)
+            return F.cross_entropy(capped.reshape(-1, vocab), t.reshape(-1))
+
+        def f_op(l, t):
+            losses, _ = Opaque_CrossEntropy.apply(l, t, softcap, 0)
+            mask = (t != -100).float()
+            return (losses * mask).sum() / mask.sum().clamp(min=1)
+
+        grads_pt = vmap(grad(f_pt, argnums=0), in_dims=(0, 0))(logits, labels)
+        grads_op = vmap(grad(f_op, argnums=0), in_dims=(0, 0))(logits, labels)
+
+        print(f"\nSoftcapping vmap(grad):")
+        assert_precision(
+            grads_op,
+            grads_pt,
+            rtol=1e-3,
+            atol=1e-5,
+            label="per-example gradients"
+        )
+
+    def test_combined_softcapping_and_scaling(self, assert_precision):
+        """Both softcapping and scaling applied together."""
+        torch.manual_seed(42)
+        vocab = 1024
+        softcap = 30.0
+        logit_scale = 0.0625
+
+        logits = torch.randn(4, 64, vocab, device="cuda", dtype=torch.float32)
+        labels = torch.randint(0, vocab, (4, 64), device="cuda")
+
+        # PyTorch reference: scale then softcap (same order as kernel)
+        transformed = softcap * torch.tanh((logit_scale * logits) / softcap)
+        ref = F.cross_entropy(
+            transformed.reshape(-1, vocab), labels.reshape(-1), reduction="none"
+        ).reshape(4, 64)
+
+        # Opaque: pass raw logits + both params
+        losses_op, _ = Opaque_CrossEntropy.apply(logits, labels, softcap, logit_scale)
+
+        print(f"\nCombined softcap+scaling forward:")
+        assert_precision(
+            losses_op,
+            ref,
+            rtol=1e-4,
+            atol=1e-6,
+            label="per-token losses"
+        )
 
 
 if __name__ == "__main__":

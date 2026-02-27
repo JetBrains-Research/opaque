@@ -2,7 +2,7 @@
 
 Provides pytest fixtures for:
 - mellum_config: Mellum-4b model dimensions for realistic testing
-- precision_error: Compute precision metrics between tensors
+- assert_precision: Assert precision using torch.testing.assert_close (atol+rtol)
 - measure_time_and_memory: Benchmark execution time and peak CUDA memory
 - assert_perf_benefit: Assert performance improvement
 """
@@ -34,28 +34,38 @@ MELLUM_CONFIG = {
 # Utility functions
 # ============================================================================
 
-def _precision_error(a: torch.Tensor, b: torch.Tensor, threshold: float = 1e-4) -> dict:
-    """Compute precision metrics between two tensors.
+def _assert_precision(
+    actual: torch.Tensor,
+    expected: torch.Tensor,
+    rtol: float,
+    atol: float,
+    label: str = "",
+) -> dict:
+    """Assert precision using combined atol+rtol formula with diagnostic reporting.
 
-    Returns dict with:
-        abs_err: max |a - b|
-        rel_err: max |a - b| / |b| for elements where |b| >= threshold
-        pct_large: % of elements with |b| >= threshold
+    Uses torch.testing.assert_close: |actual - expected| <= atol + rtol * |expected|
+    This gracefully handles near-zero values (falls back to atol) and large values
+    (uses rtol), avoiding the near-zero blowup of pure max relative error.
+
+    Returns dict with abs_err and rel_err for diagnostic purposes.
     """
-    diff = (a - b).abs()
-    b_abs = b.abs()
+    diff = (actual.float() - expected.float()).abs()
+    abs_err = diff.max().item()
 
-    mask = b_abs >= threshold
+    # Compute max relative error for diagnostics (not used for assertion)
+    expected_abs = expected.float().abs()
+    mask = expected_abs >= 1e-6
     if mask.sum() > 0:
-        rel_err = (diff[mask] / b_abs[mask]).max().item()
+        rel_err = (diff[mask] / expected_abs[mask]).max().item()
     else:
         rel_err = float("nan")
 
-    return {
-        "abs_err": diff.max().item(),
-        "rel_err": rel_err,
-        "pct_large": mask.float().mean().item() * 100,
-    }
+    prefix = f"  {label}: " if label else "  "
+    print(f"{prefix}abs={abs_err:.2e}, rel={rel_err:.2e} (rtol={rtol:.0e}, atol={atol:.0e})")
+
+    torch.testing.assert_close(actual, expected, rtol=rtol, atol=atol)
+
+    return {"abs_err": abs_err, "rel_err": rel_err}
 
 
 def _measure_time_and_memory(fn, *args, warmup=3, runs=10):
@@ -120,9 +130,9 @@ def mellum_config():
 
 
 @pytest.fixture(scope="session")
-def precision_error():
-    """Compute precision metrics between two tensors."""
-    return _precision_error
+def assert_precision():
+    """Assert precision using torch.testing.assert_close with diagnostics."""
+    return _assert_precision
 
 
 @pytest.fixture(scope="session")

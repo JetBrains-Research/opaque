@@ -84,6 +84,22 @@ def _lora_w_backward_impl(grad_out, X, W, A, B, scaling):
     return dX, dA, dB
 
 
+def _lora_w_backward_lite(grad_out, W, A, B, scaling):
+    """Lightweight LoRA_W backward: only computes dX (no weight grads).
+
+    Used when LoRA weights are frozen (don't require grad), e.g. in vmap(grad())
+    for DP-SGD. Avoids saving X in setup_context, reducing peak memory.
+    """
+    batch_shape = grad_out.shape[:-1]
+    out_features = W.shape[0]
+    grad_out_flat = grad_out.reshape(-1, out_features)
+
+    dX = torch.mm(grad_out_flat, W)
+    if A is not None and B is not None:
+        dX.addmm_(grad_out_flat @ B.t(), A.t(), alpha=scaling, beta=1)
+    return dX.reshape(*batch_shape, W.shape[1])
+
+
 class _LoRAWBackward(torch.autograd.Function):
     """Backward pass wrapped as autograd.Function for vmap(grad()) support.
 
@@ -120,6 +136,35 @@ class _LoRAWBackward(torch.autograd.Function):
         return (dX, dA, dB), (X_bdim, A_bdim, B_bdim)
 
 
+class _LoRAWBackwardLite(torch.autograd.Function):
+    """Lightweight backward: only computes dX (no weight grads, no X needed).
+
+    Used when LoRA weights don't require grad (e.g. under vmap(grad()) where
+    grad() detaches captured parameters). Avoids retaining X, reducing peak memory.
+    """
+
+    @staticmethod
+    def forward(grad_out, W, A, B, scaling):
+        return _lora_w_backward_lite(grad_out, W, A, B, scaling)
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        pass
+
+    @staticmethod
+    def backward(ctx, *grad_outputs):
+        raise NotImplementedError("Double backward not supported for LoRA_W")
+
+    @staticmethod
+    def vmap(info, in_dims, grad_out, W, A, B, scaling):
+        grad_out_bdim, W_bdim, A_bdim, B_bdim, scaling_bdim = in_dims
+
+        grad_out_merged = grad_out.reshape(-1, *grad_out.shape[2:])
+        dX = _lora_w_backward_lite(grad_out_merged, W, A, B, scaling)
+        dX = dX.reshape(grad_out.shape)
+        return dX, grad_out_bdim
+
+
 class Opaque_LoRA_W(torch.autograd.Function):
     """LoRA for single weight projection with vmap support.
 
@@ -144,13 +189,27 @@ class Opaque_LoRA_W(torch.autograd.Function):
     @staticmethod
     def setup_context(ctx, inputs, output):
         X, W, A, B, scaling = inputs
-        ctx.save_for_backward(X, W, A, B)
+        # Under vmap(grad()), grad() detaches captured LoRA weights (requires_grad=False).
+        # Skip saving X when weight grads aren't needed — reduces peak memory.
+        needs_weight_grads = any(
+            t is not None and t.requires_grad for t in [A, B]
+        )
+        if needs_weight_grads:
+            ctx.save_for_backward(X, W, A, B)
+        else:
+            ctx.save_for_backward(W, A, B)
+        ctx.needs_weight_grads = needs_weight_grads
         ctx.scaling = scaling
 
     @staticmethod
     def backward(ctx, grad_out):
-        X, W, A, B = ctx.saved_tensors
-        dX, dA, dB = _LoRAWBackward.apply(grad_out, X, W, A, B, ctx.scaling)
+        if ctx.needs_weight_grads:
+            X, W, A, B = ctx.saved_tensors
+            dX, dA, dB = _LoRAWBackward.apply(grad_out, X, W, A, B, ctx.scaling)
+        else:
+            W, A, B = ctx.saved_tensors
+            dX = _LoRAWBackwardLite.apply(grad_out, W, A, B, ctx.scaling)
+            dA = dB = None
         return dX, None, dA, dB, None
 
     @staticmethod
@@ -284,6 +343,67 @@ class _LoRAQKVBackward(torch.autograd.Function):
         )
 
 
+def _lora_qkv_backward_lite(grad_Q, grad_K, grad_V, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv):
+    """Lightweight QKV backward: only computes dX (no weight grads, no X needed).
+
+    Used when LoRA weights don't require grad (e.g. under vmap(grad()) where
+    grad() detaches captured parameters). Avoids retaining X, reducing peak memory.
+    """
+    batch_shape = grad_Q.shape[:-1]
+    grad_Q_flat = grad_Q.reshape(-1, grad_Q.shape[-1])
+    grad_K_flat = grad_K.reshape(-1, grad_K.shape[-1])
+    grad_V_flat = grad_V.reshape(-1, grad_V.shape[-1])
+
+    # dX from base weights
+    dX = torch.mm(grad_Q_flat, Wq)
+    dX.addmm_(grad_K_flat, Wk, beta=1, alpha=1)
+    dX.addmm_(grad_V_flat, Wv, beta=1, alpha=1)
+
+    # dX from LoRA contributions
+    if Aq is not None and Bq is not None:
+        dX.addmm_(grad_Q_flat @ Bq.t(), Aq.t(), alpha=Sq, beta=1)
+    if Ak is not None and Bk is not None:
+        dX.addmm_(grad_K_flat @ Bk.t(), Ak.t(), alpha=Sk, beta=1)
+    if Av is not None and Bv is not None:
+        dX.addmm_(grad_V_flat @ Bv.t(), Av.t(), alpha=Sv, beta=1)
+
+    return dX.reshape(*batch_shape, Wq.shape[1])
+
+
+class _LoRAQKVBackwardLite(torch.autograd.Function):
+    """Lightweight QKV backward: only dX, no weight grads, no X needed."""
+
+    @staticmethod
+    def forward(grad_Q, grad_K, grad_V, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv):
+        return _lora_qkv_backward_lite(
+            grad_Q, grad_K, grad_V, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv,
+        )
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        pass
+
+    @staticmethod
+    def backward(ctx, *grad_outputs):
+        raise NotImplementedError("Double backward not supported for LoRA_QKV")
+
+    @staticmethod
+    def vmap(info, in_dims, grad_Q, grad_K, grad_V, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv):
+        grad_Q_bdim = in_dims[0]
+        batched_shape = grad_Q.shape
+
+        grad_Q_merged = grad_Q.reshape(-1, *grad_Q.shape[2:])
+        grad_K_merged = grad_K.reshape(-1, *grad_K.shape[2:])
+        grad_V_merged = grad_V.reshape(-1, *grad_V.shape[2:])
+
+        dX = _lora_qkv_backward_lite(
+            grad_Q_merged, grad_K_merged, grad_V_merged,
+            Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv,
+        )
+        dX = dX.reshape(batched_shape)
+        return dX, grad_Q_bdim
+
+
 class Opaque_LoRA_QKV(torch.autograd.Function):
     """Fused LoRA for Q, K, V projections with vmap support.
 
@@ -315,19 +435,36 @@ class Opaque_LoRA_QKV(torch.autograd.Function):
     @staticmethod
     def setup_context(ctx, inputs, output):
         X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv = inputs
-        ctx.save_for_backward(X, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv)
+        # Under vmap(grad()), grad() detaches captured LoRA weights (requires_grad=False).
+        # Skip saving X when weight grads aren't needed — reduces peak memory.
+        needs_weight_grads = any(
+            t is not None and t.requires_grad
+            for t in [Aq, Bq, Ak, Bk, Av, Bv]
+        )
+        if needs_weight_grads:
+            ctx.save_for_backward(X, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv)
+        else:
+            ctx.save_for_backward(Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv)
+        ctx.needs_weight_grads = needs_weight_grads
         ctx.Sq = Sq
         ctx.Sk = Sk
         ctx.Sv = Sv
 
     @staticmethod
     def backward(ctx, grad_Q, grad_K, grad_V):
-        X, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = ctx.saved_tensors
         Sq, Sk, Sv = ctx.Sq, ctx.Sk, ctx.Sv
 
-        dX, dAq, dBq, dAk, dBk, dAv, dBv = _LoRAQKVBackward.apply(
-            grad_Q, grad_K, grad_V, X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv,
-        )
+        if ctx.needs_weight_grads:
+            X, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = ctx.saved_tensors
+            dX, dAq, dBq, dAk, dBk, dAv, dBv = _LoRAQKVBackward.apply(
+                grad_Q, grad_K, grad_V, X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv,
+            )
+        else:
+            Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = ctx.saved_tensors
+            dX = _LoRAQKVBackwardLite.apply(
+                grad_Q, grad_K, grad_V, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv,
+            )
+            dAq = dBq = dAk = dBk = dAv = dBv = None
 
         return (
             dX,
@@ -484,6 +621,70 @@ class _LoRAMLPBackward(torch.autograd.Function):
         )
 
 
+def _lora_mlp_backward_lite(grad_out, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd, gate, up, activation_type):
+    """Lightweight MLP backward: only computes dX (no weight grads, no X needed).
+
+    Still needs gate/up for activation backward (recompute h, compute dgate/dup).
+    """
+    batch_shape = grad_out.shape[:-1]
+    grad_out_flat = grad_out.reshape(-1, grad_out.shape[-1])
+    gate_flat = gate.reshape(-1, gate.shape[-1])
+    up_flat = up.reshape(-1, up.shape[-1])
+
+    # Backward through down projection
+    dh = grad_out_flat @ Wd
+    if Ad is not None and Bd is not None:
+        dh.addmm_(grad_out_flat @ Bd.t(), Ad.t(), alpha=Sd, beta=1)
+
+    # Fused backward: recompute h, overwrite gate→dgate, up→dup
+    act_backward_fused = _ACTIVATION_BACKWARD_FUSED[activation_type]
+    h, dgate, dup = act_backward_fused(dh, gate_flat, up_flat)
+
+    # dX: fresh allocation (no X buffer to reuse)
+    dX = torch.mm(dgate, Wg)
+    dX.addmm_(dup, Wu, beta=1, alpha=1)
+    if Ag is not None and Bg is not None:
+        dX.addmm_(dgate @ Bg.t(), Ag.t(), alpha=Sg, beta=1)
+    if Au is not None and Bu is not None:
+        dX.addmm_(dup @ Bu.t(), Au.t(), alpha=Su, beta=1)
+
+    return dX.reshape(*batch_shape, Wg.shape[1])
+
+
+class _LoRAMLPBackwardLite(torch.autograd.Function):
+    """Lightweight MLP backward: only dX, no weight grads, no X needed."""
+
+    @staticmethod
+    def forward(grad_out, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd, gate, up, activation_type):
+        return _lora_mlp_backward_lite(
+            grad_out, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd, gate, up, activation_type,
+        )
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        pass
+
+    @staticmethod
+    def backward(ctx, *grad_outputs):
+        raise NotImplementedError("Double backward not supported for LoRA_MLP")
+
+    @staticmethod
+    def vmap(info, in_dims, grad_out, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd, gate, up, activation_type):
+        grad_out_bdim = in_dims[0]
+        batched_shape = grad_out.shape
+
+        grad_out_merged = grad_out.reshape(-1, *grad_out.shape[2:])
+        gate_merged = gate.reshape(-1, *gate.shape[2:])
+        up_merged = up.reshape(-1, *up.shape[2:])
+
+        dX = _lora_mlp_backward_lite(
+            grad_out_merged, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd,
+            gate_merged, up_merged, activation_type,
+        )
+        dX = dX.reshape(batched_shape)
+        return dX, grad_out_bdim
+
+
 class Opaque_LoRA_MLP(torch.autograd.Function):
     """Fused LoRA for MLP (gate, up, down) with configurable GLU activation.
 
@@ -526,7 +727,17 @@ class Opaque_LoRA_MLP(torch.autograd.Function):
         X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd, activation_type = inputs
         out, gate, up, h = output
         # Don't save h — recomputed in backward via fused kernel (Unsloth pattern)
-        ctx.save_for_backward(X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd, gate, up)
+        # Under vmap(grad()), grad() detaches captured LoRA weights (requires_grad=False).
+        # Skip saving X when weight grads aren't needed — reduces peak memory.
+        needs_weight_grads = any(
+            t is not None and t.requires_grad
+            for t in [Ag, Bg, Au, Bu, Ad, Bd]
+        )
+        if needs_weight_grads:
+            ctx.save_for_backward(X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd, gate, up)
+        else:
+            ctx.save_for_backward(Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd, gate, up)
+        ctx.needs_weight_grads = needs_weight_grads
         ctx.Sg = Sg
         ctx.Su = Su
         ctx.Sd = Sd
@@ -534,13 +745,21 @@ class Opaque_LoRA_MLP(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_out, grad_gate, grad_up, grad_h):
-        X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd, gate, up = ctx.saved_tensors
         Sg, Su, Sd = ctx.Sg, ctx.Su, ctx.Sd
 
-        dX, dAg, dBg, dAu, dBu, dAd, dBd = _LoRAMLPBackward.apply(
-            grad_out, X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd,
-            gate, up, ctx.activation_type,
-        )
+        if ctx.needs_weight_grads:
+            X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd, gate, up = ctx.saved_tensors
+            dX, dAg, dBg, dAu, dBu, dAd, dBd = _LoRAMLPBackward.apply(
+                grad_out, X, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd,
+                gate, up, ctx.activation_type,
+            )
+        else:
+            Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd, gate, up = ctx.saved_tensors
+            dX = _LoRAMLPBackwardLite.apply(
+                grad_out, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd,
+                gate, up, ctx.activation_type,
+            )
+            dAg = dBg = dAu = dBu = dAd = dBd = None
 
         return (
             dX,

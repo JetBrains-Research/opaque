@@ -21,9 +21,11 @@ pytestmark = pytest.mark.skipif(
     not torch.cuda.is_available(), reason="CUDA required"
 )
 
-# GeGLU uses tanh approximation in Triton, so tolerances are wider
-RTOL_FORWARD = 5e-3
-RTOL_BACKWARD = 2e-3
+# GeGLU uses tanh approximation in Triton, so tolerances are tighter with rtol/atol
+RTOL_FORWARD = 1e-4
+ATOL_FORWARD = 1e-5
+RTOL_BACKWARD = 1e-4
+ATOL_BACKWARD = 1e-5
 
 
 # ============================================================================
@@ -57,7 +59,7 @@ def opaque_geglu_approx(gate, up):
 class TestGeGLUExactForward:
     """Test GeGLU exact forward pass."""
 
-    def test_forward_matches_pytorch(self, precision_error, mellum_config):
+    def test_forward_matches_pytorch(self, assert_precision, mellum_config):
         """Forward: opaque vs pytorch."""
         torch.manual_seed(42)
         batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
@@ -68,16 +70,14 @@ class TestGeGLUExactForward:
         out_pytorch = pytorch_geglu_exact(gate, up)
         out_opaque = opaque_geglu_exact(gate, up)
 
-        err = precision_error(out_opaque, out_pytorch, threshold=1e-4)
-        print(f"\nGeGLU Exact Forward: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_FORWARD:.0e})")
-
-        assert err["rel_err"] < RTOL_FORWARD, f"Forward rel_err {err['rel_err']:.2e} >= {RTOL_FORWARD:.0e}"
+        print("\nGeGLU Exact Forward")
+        assert_precision(out_opaque, out_pytorch, rtol=RTOL_FORWARD, atol=ATOL_FORWARD, label="forward output")
 
 
 class TestGeGLUExactBackward:
     """Test GeGLU exact backward pass."""
 
-    def test_backward_matches_pytorch(self, precision_error, mellum_config):
+    def test_backward_matches_pytorch(self, assert_precision, mellum_config):
         """Backward: opaque vs pytorch."""
         torch.manual_seed(42)
         batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
@@ -92,21 +92,15 @@ class TestGeGLUExactBackward:
         out_op = opaque_geglu_exact(gate_op, up_op)
         out_op.sum().backward()
 
-        gate_err = precision_error(gate_op.grad, gate_pt.grad, threshold=1e-4)
-        up_err = precision_error(up_op.grad, up_pt.grad, threshold=1e-4)
-
-        print(f"\nGeGLU Exact Backward:")
-        print(f"  gate.grad: abs={gate_err['abs_err']:.2e}, rel={gate_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
-        print(f"  up.grad:   abs={up_err['abs_err']:.2e}, rel={up_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
-
-        assert gate_err["rel_err"] < RTOL_BACKWARD, f"gate.grad rel_err {gate_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
-        assert up_err["rel_err"] < RTOL_BACKWARD, f"up.grad rel_err {up_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
+        print("\nGeGLU Exact Backward")
+        assert_precision(gate_op.grad, gate_pt.grad, rtol=RTOL_BACKWARD, atol=ATOL_BACKWARD, label="gate.grad")
+        assert_precision(up_op.grad, up_pt.grad, rtol=RTOL_BACKWARD, atol=ATOL_BACKWARD, label="up.grad")
 
 
 class TestGeGLUExactVmapForward:
     """Test GeGLU exact vmap forward."""
 
-    def test_vmap_forward_precision(self, precision_error, mellum_config):
+    def test_vmap_forward_precision(self, assert_precision, mellum_config):
         """Batched forward: opaque Triton vmap vs PyTorch reference."""
         torch.manual_seed(42)
         vmap_batch = mellum_config["vmap_batch"]
@@ -118,10 +112,8 @@ class TestGeGLUExactVmapForward:
         out_pt = vmap(pytorch_geglu_exact)(gate, up)
         out_op = vmap(opaque_geglu_exact)(gate, up)
 
-        err = precision_error(out_op, out_pt, threshold=1e-4)
-        print(f"\nGeGLU Exact vmap forward: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_FORWARD:.0e})")
-
-        assert err["rel_err"] < RTOL_FORWARD, f"vmap forward rel_err {err['rel_err']:.2e} >= {RTOL_FORWARD:.0e}"
+        print("\nGeGLU Exact vmap forward")
+        assert_precision(out_op, out_pt, rtol=RTOL_FORWARD, atol=ATOL_FORWARD, label="vmap forward output")
 
     def test_vmap_forward_performance(self, mellum_config, measure_time_and_memory, assert_perf_benefit):
         """Triton vmap forward must be faster or use less memory than PyTorch."""
@@ -141,7 +133,7 @@ class TestGeGLUExactVmapForward:
 class TestGeGLUExactVmapGrad:
     """Test GeGLU exact vmap(grad): the DP-SGD path."""
 
-    def test_vmap_grad_precision(self, precision_error, mellum_config):
+    def test_vmap_grad_precision(self, assert_precision, mellum_config):
         """Per-example gradients: opaque Triton vs PyTorch reference."""
         torch.manual_seed(42)
         vmap_batch = mellum_config["vmap_batch"]
@@ -159,15 +151,9 @@ class TestGeGLUExactVmapGrad:
         grads_pt_gate, grads_pt_up = vmap(grad(f_pt, argnums=(0, 1)))(gate, up)
         grads_op_gate, grads_op_up = vmap(grad(f_op, argnums=(0, 1)))(gate, up)
 
-        gate_err = precision_error(grads_op_gate, grads_pt_gate, threshold=1e-4)
-        up_err = precision_error(grads_op_up, grads_pt_up, threshold=1e-4)
-
-        print(f"\nGeGLU Exact vmap(grad):")
-        print(f"  gate grad: abs={gate_err['abs_err']:.2e}, rel={gate_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
-        print(f"  up grad:   abs={up_err['abs_err']:.2e}, rel={up_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
-
-        assert gate_err["rel_err"] < RTOL_BACKWARD, f"vmap(grad) gate rel_err {gate_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
-        assert up_err["rel_err"] < RTOL_BACKWARD, f"vmap(grad) up rel_err {up_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
+        print("\nGeGLU Exact vmap(grad)")
+        assert_precision(grads_op_gate, grads_pt_gate, rtol=RTOL_BACKWARD, atol=ATOL_BACKWARD, label="gate grad")
+        assert_precision(grads_op_up, grads_pt_up, rtol=RTOL_BACKWARD, atol=ATOL_BACKWARD, label="up grad")
 
     def test_vmap_grad_performance(self, mellum_config, measure_time_and_memory, assert_perf_benefit):
         """Triton vmap(grad) must be faster or use less memory than PyTorch."""
@@ -247,7 +233,7 @@ class TestGeGLUExactPerformance:
 class TestGeGLUApproxForward:
     """Test GeGLU approx forward pass."""
 
-    def test_forward_matches_pytorch(self, precision_error, mellum_config):
+    def test_forward_matches_pytorch(self, assert_precision, mellum_config):
         """Forward: opaque vs pytorch."""
         torch.manual_seed(42)
         batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
@@ -258,16 +244,14 @@ class TestGeGLUApproxForward:
         out_pytorch = pytorch_geglu_approx(gate, up)
         out_opaque = opaque_geglu_approx(gate, up)
 
-        err = precision_error(out_opaque, out_pytorch, threshold=1e-4)
-        print(f"\nGeGLU Approx Forward: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_FORWARD:.0e})")
-
-        assert err["rel_err"] < RTOL_FORWARD, f"Forward rel_err {err['rel_err']:.2e} >= {RTOL_FORWARD:.0e}"
+        print("\nGeGLU Approx Forward")
+        assert_precision(out_opaque, out_pytorch, rtol=RTOL_FORWARD, atol=ATOL_FORWARD, label="forward output")
 
 
 class TestGeGLUApproxBackward:
     """Test GeGLU approx backward pass."""
 
-    def test_backward_matches_pytorch(self, precision_error, mellum_config):
+    def test_backward_matches_pytorch(self, assert_precision, mellum_config):
         """Backward: opaque vs pytorch."""
         torch.manual_seed(42)
         batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
@@ -282,21 +266,15 @@ class TestGeGLUApproxBackward:
         out_op = opaque_geglu_approx(gate_op, up_op)
         out_op.sum().backward()
 
-        gate_err = precision_error(gate_op.grad, gate_pt.grad, threshold=1e-4)
-        up_err = precision_error(up_op.grad, up_pt.grad, threshold=1e-4)
-
-        print(f"\nGeGLU Approx Backward:")
-        print(f"  gate.grad: abs={gate_err['abs_err']:.2e}, rel={gate_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
-        print(f"  up.grad:   abs={up_err['abs_err']:.2e}, rel={up_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
-
-        assert gate_err["rel_err"] < RTOL_BACKWARD, f"gate.grad rel_err {gate_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
-        assert up_err["rel_err"] < RTOL_BACKWARD, f"up.grad rel_err {up_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
+        print("\nGeGLU Approx Backward")
+        assert_precision(gate_op.grad, gate_pt.grad, rtol=RTOL_BACKWARD, atol=ATOL_BACKWARD, label="gate.grad")
+        assert_precision(up_op.grad, up_pt.grad, rtol=RTOL_BACKWARD, atol=ATOL_BACKWARD, label="up.grad")
 
 
 class TestGeGLUApproxVmapForward:
     """Test GeGLU approx vmap forward."""
 
-    def test_vmap_forward_precision(self, precision_error, mellum_config):
+    def test_vmap_forward_precision(self, assert_precision, mellum_config):
         """Batched forward: opaque Triton vmap vs PyTorch reference."""
         torch.manual_seed(42)
         vmap_batch = mellum_config["vmap_batch"]
@@ -308,10 +286,8 @@ class TestGeGLUApproxVmapForward:
         out_pt = vmap(pytorch_geglu_approx)(gate, up)
         out_op = vmap(opaque_geglu_approx)(gate, up)
 
-        err = precision_error(out_op, out_pt, threshold=1e-4)
-        print(f"\nGeGLU Approx vmap forward: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_FORWARD:.0e})")
-
-        assert err["rel_err"] < RTOL_FORWARD, f"vmap forward rel_err {err['rel_err']:.2e} >= {RTOL_FORWARD:.0e}"
+        print("\nGeGLU Approx vmap forward")
+        assert_precision(out_op, out_pt, rtol=RTOL_FORWARD, atol=ATOL_FORWARD, label="vmap forward output")
 
     def test_vmap_forward_performance(self, mellum_config, measure_time_and_memory, assert_perf_benefit):
         """Triton vmap forward must be faster or use less memory than PyTorch."""
@@ -331,7 +307,7 @@ class TestGeGLUApproxVmapForward:
 class TestGeGLUApproxVmapGrad:
     """Test GeGLU approx vmap(grad): the DP-SGD path."""
 
-    def test_vmap_grad_precision(self, precision_error, mellum_config):
+    def test_vmap_grad_precision(self, assert_precision, mellum_config):
         """Per-example gradients: opaque Triton vs PyTorch reference."""
         torch.manual_seed(42)
         vmap_batch = mellum_config["vmap_batch"]
@@ -349,15 +325,9 @@ class TestGeGLUApproxVmapGrad:
         grads_pt_gate, grads_pt_up = vmap(grad(f_pt, argnums=(0, 1)))(gate, up)
         grads_op_gate, grads_op_up = vmap(grad(f_op, argnums=(0, 1)))(gate, up)
 
-        gate_err = precision_error(grads_op_gate, grads_pt_gate, threshold=1e-4)
-        up_err = precision_error(grads_op_up, grads_pt_up, threshold=1e-4)
-
-        print(f"\nGeGLU Approx vmap(grad):")
-        print(f"  gate grad: abs={gate_err['abs_err']:.2e}, rel={gate_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
-        print(f"  up grad:   abs={up_err['abs_err']:.2e}, rel={up_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
-
-        assert gate_err["rel_err"] < RTOL_BACKWARD, f"vmap(grad) gate rel_err {gate_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
-        assert up_err["rel_err"] < RTOL_BACKWARD, f"vmap(grad) up rel_err {up_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
+        print("\nGeGLU Approx vmap(grad)")
+        assert_precision(grads_op_gate, grads_pt_gate, rtol=RTOL_BACKWARD, atol=ATOL_BACKWARD, label="gate grad")
+        assert_precision(grads_op_up, grads_pt_up, rtol=RTOL_BACKWARD, atol=ATOL_BACKWARD, label="up grad")
 
     def test_vmap_grad_performance(self, mellum_config, measure_time_and_memory, assert_perf_benefit):
         """Triton vmap(grad) must be faster or use less memory than PyTorch."""

@@ -21,7 +21,9 @@ pytestmark = pytest.mark.skipif(
 )
 
 RTOL_FORWARD = 1e-5
-RTOL_BACKWARD = 1e-3
+ATOL_FORWARD = 1e-5
+RTOL_BACKWARD = 1e-4
+ATOL_BACKWARD = 1e-5
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +49,7 @@ def opaque_rms_layernorm(x, weight, eps=1e-6):
 class TestRMSLayerNormForward:
     """Test forward pass precision."""
 
-    def test_forward_matches_pytorch(self, precision_error, mellum_config):
+    def test_forward_matches_pytorch(self, assert_precision, mellum_config):
         """Forward: opaque vs pytorch at Mellum scale."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
@@ -60,15 +62,8 @@ class TestRMSLayerNormForward:
         out_pytorch = pytorch_rms_layernorm(x, weight)
         out_opaque = opaque_rms_layernorm(x, weight)
 
-        err = precision_error(out_opaque, out_pytorch, threshold=1e-4)
-        print(
-            f"\nRMSNorm Forward: abs={err['abs_err']:.2e}, "
-            f"rel={err['rel_err']:.2e} (target: <{RTOL_FORWARD:.0e})"
-        )
-
-        assert err["rel_err"] < RTOL_FORWARD, (
-            f"Forward rel_err {err['rel_err']:.2e} >= {RTOL_FORWARD:.0e}"
-        )
+        print("\nRMSNorm Forward:")
+        assert_precision(out_opaque, out_pytorch, rtol=RTOL_FORWARD, atol=ATOL_FORWARD, label="forward")
 
 
 # ---------------------------------------------------------------------------
@@ -78,7 +73,7 @@ class TestRMSLayerNormForward:
 class TestRMSLayerNormBackward:
     """Test backward pass precision."""
 
-    def test_backward_matches_pytorch(self, precision_error, mellum_config):
+    def test_backward_matches_pytorch(self, assert_precision, mellum_config):
         """Backward: opaque vs pytorch (x.grad and weight.grad)."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
@@ -101,25 +96,9 @@ class TestRMSLayerNormBackward:
         out_op = opaque_rms_layernorm(x_op, w_op)
         out_op.sum().backward()
 
-        x_err = precision_error(x_op.grad, x_pt.grad, threshold=1e-4)
-        w_err = precision_error(w_op.grad, w_pt.grad, threshold=1e-4)
-
-        print(f"\nRMSNorm Backward:")
-        print(
-            f"  x.grad:      abs={x_err['abs_err']:.2e}, "
-            f"rel={x_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})"
-        )
-        print(
-            f"  weight.grad: abs={w_err['abs_err']:.2e}, "
-            f"rel={w_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})"
-        )
-
-        assert x_err["rel_err"] < RTOL_BACKWARD, (
-            f"x.grad rel_err {x_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
-        )
-        assert w_err["rel_err"] < RTOL_BACKWARD, (
-            f"weight.grad rel_err {w_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
-        )
+        print("\nRMSNorm Backward:")
+        assert_precision(x_op.grad, x_pt.grad, rtol=RTOL_BACKWARD, atol=ATOL_BACKWARD, label="x.grad")
+        assert_precision(w_op.grad, w_pt.grad, rtol=RTOL_BACKWARD, atol=ATOL_BACKWARD, label="weight.grad")
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +108,7 @@ class TestRMSLayerNormBackward:
 class TestRMSLayerNormVmapForward:
     """Test vmap forward: Triton vmap vs PyTorch vmap."""
 
-    def test_vmap_forward_precision(self, precision_error, mellum_config):
+    def test_vmap_forward_precision(self, assert_precision, mellum_config):
         """Batched forward: opaque Triton vmap vs PyTorch reference."""
         torch.manual_seed(42)
         vmap_batch = mellum_config["vmap_batch"]
@@ -143,10 +122,8 @@ class TestRMSLayerNormVmapForward:
         out_pt = vmap(lambda xi: pytorch_rms_layernorm(xi, weight))(x)
         out_op = vmap(lambda xi: opaque_rms_layernorm(xi, weight))(x)
 
-        err = precision_error(out_op, out_pt, threshold=1e-4)
-        print(f"\nRMSNorm vmap forward: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_FORWARD:.0e})")
-
-        assert err["rel_err"] < RTOL_FORWARD, f"vmap forward rel_err {err['rel_err']:.2e} >= {RTOL_FORWARD:.0e}"
+        print("\nRMSNorm vmap forward:")
+        assert_precision(out_op, out_pt, rtol=RTOL_FORWARD, atol=ATOL_FORWARD, label="vmap_forward")
 
     def test_vmap_forward_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
         """Triton vmap forward must be faster or use less memory."""
@@ -168,7 +145,7 @@ class TestRMSLayerNormVmapForward:
 class TestRMSLayerNormVmapGrad:
     """Test vmap(grad): per-example gradients — the DP-SGD path."""
 
-    def test_vmap_grad_precision(self, precision_error, mellum_config):
+    def test_vmap_grad_precision(self, assert_precision, mellum_config):
         """Per-example gradients: opaque Triton vs PyTorch reference."""
         torch.manual_seed(42)
         vmap_batch = mellum_config["vmap_batch"]
@@ -188,10 +165,8 @@ class TestRMSLayerNormVmapGrad:
         grads_pt = vmap(grad(f_pt))(x)
         grads_op = vmap(grad(f_op))(x)
 
-        err = precision_error(grads_op, grads_pt, threshold=1e-4)
-        print(f"\nRMSNorm vmap(grad): abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
-
-        assert err["rel_err"] < RTOL_BACKWARD, f"vmap(grad) rel_err {err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
+        print("\nRMSNorm vmap(grad):")
+        assert_precision(grads_op, grads_pt, rtol=RTOL_BACKWARD, atol=ATOL_BACKWARD, label="vmap_grad")
 
     def test_vmap_grad_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
         """Triton vmap(grad) must be faster or use less memory."""

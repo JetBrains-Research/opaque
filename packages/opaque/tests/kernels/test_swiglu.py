@@ -28,7 +28,9 @@ pytestmark = pytest.mark.skipif(
 )
 
 RTOL_FORWARD = 1e-5
-RTOL_BACKWARD = 1e-3
+ATOL_FORWARD = 1e-5
+RTOL_BACKWARD = 1e-4
+ATOL_BACKWARD = 1e-5
 
 
 def pytorch_swiglu(gate, up):
@@ -44,7 +46,7 @@ def opaque_swiglu(gate, up):
 class TestSwiGLUForward:
     """Test forward pass precision."""
 
-    def test_forward_matches_pytorch(self, precision_error, mellum_config):
+    def test_forward_matches_pytorch(self, assert_precision, mellum_config):
         """Forward: opaque vs pytorch."""
         torch.manual_seed(42)
         batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
@@ -55,16 +57,14 @@ class TestSwiGLUForward:
         out_pytorch = pytorch_swiglu(gate, up)
         out_opaque = opaque_swiglu(gate, up)
 
-        err = precision_error(out_opaque, out_pytorch, threshold=1e-4)
-        print(f"\nForward: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_FORWARD:.0e})")
-
-        assert err["rel_err"] < RTOL_FORWARD, f"Forward rel_err {err['rel_err']:.2e} >= {RTOL_FORWARD:.0e}"
+        print("\nForward precision check:")
+        assert_precision(out_opaque, out_pytorch, rtol=RTOL_FORWARD, atol=ATOL_FORWARD, label="forward")
 
 
 class TestSwiGLUBackward:
     """Test backward pass precision."""
 
-    def test_backward_matches_pytorch(self, precision_error, mellum_config):
+    def test_backward_matches_pytorch(self, assert_precision, mellum_config):
         """Backward: opaque vs pytorch."""
         torch.manual_seed(42)
         batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
@@ -81,21 +81,15 @@ class TestSwiGLUBackward:
         out_op = opaque_swiglu(gate_op, up_op)
         out_op.sum().backward()
 
-        gate_err = precision_error(gate_op.grad, gate_pt.grad, threshold=1e-4)
-        up_err = precision_error(up_op.grad, up_pt.grad, threshold=1e-4)
-
-        print(f"\nBackward:")
-        print(f"  gate.grad: abs={gate_err['abs_err']:.2e}, rel={gate_err['rel_err']:.2e}, {gate_err['pct_large']:.1f}% > thresh (target: rel<{RTOL_BACKWARD:.0e})")
-        print(f"  up.grad:   abs={up_err['abs_err']:.2e}, rel={up_err['rel_err']:.2e}, {up_err['pct_large']:.1f}% > thresh (target: rel<{RTOL_BACKWARD:.0e})")
-
-        assert gate_err["rel_err"] < RTOL_BACKWARD, f"gate.grad rel_err {gate_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
-        assert up_err["rel_err"] < RTOL_BACKWARD, f"up.grad rel_err {up_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
+        print("\nBackward precision check:")
+        assert_precision(gate_op.grad, gate_pt.grad, rtol=RTOL_BACKWARD, atol=ATOL_BACKWARD, label="gate.grad")
+        assert_precision(up_op.grad, up_pt.grad, rtol=RTOL_BACKWARD, atol=ATOL_BACKWARD, label="up.grad")
 
 
 class TestSwiGLUVmapForward:
     """Test vmap forward: Triton vmap vs PyTorch vmap."""
 
-    def test_vmap_forward_precision(self, precision_error, mellum_config):
+    def test_vmap_forward_precision(self, assert_precision, mellum_config):
         """Batched forward: opaque Triton vmap vs PyTorch reference."""
         torch.manual_seed(42)
         vmap_batch = mellum_config["vmap_batch"]
@@ -107,10 +101,8 @@ class TestSwiGLUVmapForward:
         out_pt = vmap(pytorch_swiglu)(gate, up)
         out_op = vmap(opaque_swiglu)(gate, up)
 
-        err = precision_error(out_op, out_pt, threshold=1e-4)
-        print(f"\nvmap forward: abs={err['abs_err']:.2e}, rel={err['rel_err']:.2e} (target: <{RTOL_FORWARD:.0e})")
-
-        assert err["rel_err"] < RTOL_FORWARD, f"vmap forward rel_err {err['rel_err']:.2e} >= {RTOL_FORWARD:.0e}"
+        print("\nvmap forward precision check:")
+        assert_precision(out_op, out_pt, rtol=RTOL_FORWARD, atol=ATOL_FORWARD, label="vmap forward")
 
     def test_vmap_forward_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
         """Triton vmap forward must be faster or use less memory than PyTorch."""
@@ -134,7 +126,7 @@ class TestSwiGLUVmapGrad:
     _SwiGLUBackward.vmap() (backward) with Triton kernels.
     """
 
-    def test_vmap_grad_precision(self, precision_error, mellum_config):
+    def test_vmap_grad_precision(self, assert_precision, mellum_config):
         """Per-example gradients: opaque Triton vs PyTorch reference."""
         torch.manual_seed(42)
         vmap_batch = mellum_config["vmap_batch"]
@@ -152,15 +144,9 @@ class TestSwiGLUVmapGrad:
         grads_pt_gate, grads_pt_up = vmap(grad(f_pt, argnums=(0, 1)))(gate, up)
         grads_op_gate, grads_op_up = vmap(grad(f_op, argnums=(0, 1)))(gate, up)
 
-        gate_err = precision_error(grads_op_gate, grads_pt_gate, threshold=1e-4)
-        up_err = precision_error(grads_op_up, grads_pt_up, threshold=1e-4)
-
-        print(f"\nvmap(grad) precision:")
-        print(f"  gate grad: abs={gate_err['abs_err']:.2e}, rel={gate_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
-        print(f"  up grad:   abs={up_err['abs_err']:.2e}, rel={up_err['rel_err']:.2e} (target: <{RTOL_BACKWARD:.0e})")
-
-        assert gate_err["rel_err"] < RTOL_BACKWARD, f"vmap(grad) gate rel_err {gate_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
-        assert up_err["rel_err"] < RTOL_BACKWARD, f"vmap(grad) up rel_err {up_err['rel_err']:.2e} >= {RTOL_BACKWARD:.0e}"
+        print("\nvmap(grad) precision check:")
+        assert_precision(grads_op_gate, grads_pt_gate, rtol=RTOL_BACKWARD, atol=ATOL_BACKWARD, label="vmap(grad) gate")
+        assert_precision(grads_op_up, grads_pt_up, rtol=RTOL_BACKWARD, atol=ATOL_BACKWARD, label="vmap(grad) up")
 
     def test_vmap_grad_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
         """Triton vmap(grad) must be faster or use less memory than PyTorch."""
