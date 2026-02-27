@@ -9,7 +9,8 @@ Patched components:
 - RMSNorm: Standard (LLaMA, Mistral, Qwen2, Qwen3, Phi3, Granite) and Gemma (weight+1 trick)
 - MLP activations: SwiGLU (LLaMA, Mistral, Qwen2, Qwen3, Phi3, Granite, Cohere, Cohere2) and GeGLU (Gemma, Gemma2)
 - RoPE: apply_rotary_pos_emb for all supported models (standard half-split rotation)
-- Cross-entropy loss: ForCausalLM loss via LOSS_MAPPING
+- Cross-entropy loss: ForCausalLM loss via LOSS_MAPPING (fp32 fallback)
+- Fused linear + CE: ForCausalLM.forward replaced to skip lm_head materialization (bf16/fp16)
 - LoRA: peft.tuners.lora.Linear forward + auto-fused QKV (Opaque_LoRA_QKV) and MLP (Opaque_LoRA_MLP) via get_peft_model hook
 
 Disable with: OPAQUE_NO_KERNEL_PATCH=1
@@ -193,7 +194,7 @@ def _opaque_causal_lm_loss(
 
     Supports all vocab sizes via chunked computation for vocab > 65536.
     """
-    from opaque.kernels import Opaque_CrossEntropy
+    from opaque.kernels import Opaque_CrossEntropyLoss
 
     logits = logits.float()
 
@@ -206,7 +207,7 @@ def _opaque_causal_lm_loss(
     shift_labels_flat = shift_labels.view(-1)
     shift_labels_flat = shift_labels_flat.to(logits_flat.device)
 
-    losses, _ = Opaque_CrossEntropy.apply(logits_flat, shift_labels_flat)
+    losses, _ = Opaque_CrossEntropyLoss.apply(logits_flat, shift_labels_flat)
 
     # Mask out ignored positions so they get zero upstream gradient
     mask = shift_labels_flat != ignore_index
@@ -219,6 +220,120 @@ def _opaque_causal_lm_loss(
         return masked_losses.sum() / num_items_in_batch
     else:
         return masked_losses.sum() / mask.sum().clamp(min=1)
+
+
+# ForCausalLM classes eligible for fused linear + cross-entropy loss.
+# All share identical structure: self.model(backbone) → self.lm_head → loss.
+_FUSED_CE_CAUSAL_LM = [
+    ("transformers.models.llama.modeling_llama", "LlamaForCausalLM"),
+    ("transformers.models.mistral.modeling_mistral", "MistralForCausalLM"),
+    ("transformers.models.qwen2.modeling_qwen2", "Qwen2ForCausalLM"),
+    ("transformers.models.qwen3.modeling_qwen3", "Qwen3ForCausalLM"),
+    ("transformers.models.gemma.modeling_gemma", "GemmaForCausalLM"),
+    ("transformers.models.gemma2.modeling_gemma2", "Gemma2ForCausalLM"),
+    ("transformers.models.granite.modeling_granite", "GraniteForCausalLM"),
+    ("transformers.models.cohere.modeling_cohere", "CohereForCausalLM"),
+    ("transformers.models.cohere2.modeling_cohere2", "Cohere2ForCausalLM"),
+]
+
+
+def _opaque_fused_ce_causal_lm_forward(
+    self, input_ids=None, attention_mask=None, position_ids=None,
+    past_key_values=None, inputs_embeds=None, labels=None,
+    use_cache=None, output_attentions=None, output_hidden_states=None,
+    return_dict=None, cache_position=None, num_logits_to_keep=0,
+    **kwargs,
+):
+    """ForCausalLM forward with fused linear + cross-entropy loss.
+
+    When labels are provided and hidden_states are bf16/fp16, skips lm_head
+    projection and computes loss directly from hidden_states @ lm_head.weight.T
+    using CCE Triton kernels. Avoids materializing the full (B, S, V) logit
+    tensor — saves ~1 GB per sample for 128K vocab models.
+    """
+    # No labels → inference → use original forward
+    if labels is None:
+        return self._opaque_original_forward(
+            input_ids=input_ids, attention_mask=attention_mask,
+            position_ids=position_ids, past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds, labels=labels,
+            use_cache=use_cache, output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict, cache_position=cache_position,
+            num_logits_to_keep=num_logits_to_keep, **kwargs,
+        )
+
+    # Resolve config defaults
+    output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+    output_hidden_states = (
+        output_hidden_states if output_hidden_states is not None
+        else self.config.output_hidden_states
+    )
+    return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+    # Call backbone
+    outputs = self.model(
+        input_ids=input_ids, attention_mask=attention_mask,
+        position_ids=position_ids, past_key_values=past_key_values,
+        inputs_embeds=inputs_embeds, use_cache=use_cache,
+        output_attentions=output_attentions,
+        output_hidden_states=output_hidden_states,
+        return_dict=return_dict, cache_position=cache_position,
+        **kwargs,
+    )
+    hidden_states = outputs[0]
+
+    # Fused path requires half precision (CCE backward constraint)
+    if hidden_states.dtype in (torch.bfloat16, torch.float16):
+        from opaque.kernels import Opaque_LinearCrossEntropyLoss
+
+        weight = self.lm_head.weight
+
+        # Cohere-style multiplicative logit scaling: logits * scale
+        logit_scale = getattr(self.config, "logit_scale", None)
+        if logit_scale is not None and logit_scale != 1.0:
+            weight = weight * logit_scale
+
+        # Gemma2 softcapping: softcap * tanh(logits / softcap)
+        softcap = getattr(self.config, "final_logit_softcapping", 0) or 0
+
+        # Granite divisive scaling: logits / logits_scaling
+        logits_scaling = getattr(self.config, "logits_scaling", 0) or 0
+
+        # Kernel returns nll_sum (unreduced) — reduce here
+        nll_sum = Opaque_LinearCrossEntropyLoss.apply(
+            hidden_states, weight, labels,
+            -100, softcap, logits_scaling,
+        )
+
+        num_items_in_batch = kwargs.get("num_items_in_batch")
+        if num_items_in_batch is not None:
+            if torch.is_tensor(num_items_in_batch):
+                num_items_in_batch = num_items_in_batch.to(nll_sum.device)
+            loss = nll_sum / num_items_in_batch
+        else:
+            shifted_labels = labels[..., 1:].contiguous().flatten()
+            n_valid = (shifted_labels != -100).sum().float().clamp(min=1)
+            loss = nll_sum / n_valid
+
+        logits = None
+    else:
+        # fp32 fallback: materialize logits, use existing CE kernel via LOSS_MAPPING
+        logits = self.lm_head(hidden_states[..., -num_logits_to_keep:, :])
+        loss = self.loss_function(logits, labels, self.vocab_size, **kwargs)
+
+    if not return_dict:
+        output = (logits,) + outputs[1:]
+        return (loss,) + output if loss is not None else output
+
+    from transformers.modeling_outputs import CausalLMOutputWithPast
+    return CausalLMOutputWithPast(
+        loss=loss,
+        logits=logits,
+        past_key_values=outputs.past_key_values,
+        hidden_states=outputs.hidden_states,
+        attentions=outputs.attentions,
+    )
 
 
 def _opaque_lora_linear_forward(self, x, *args, **kwargs):
@@ -316,6 +431,13 @@ def _patch_cross_entropy_loss(patched: list) -> None:
 
     except (ImportError, RuntimeError):
         pass
+
+
+def _patch_fused_ce(patched: list) -> None:
+    """Patch ForCausalLM.forward to use fused linear + cross-entropy loss."""
+    for path, cls_name in _FUSED_CE_CAUSAL_LM:
+        if _patch_forward(path, cls_name, _opaque_fused_ce_causal_lm_forward):
+            patched.append(f"{cls_name}(fused_ce)")
 
 
 def _patch_lora_forward(patched: list) -> None:
@@ -746,8 +868,11 @@ def apply_kernel_patches() -> None:
     # RoPE
     _patch_rope_functions(patched)
 
-    # Cross-entropy loss
+    # Cross-entropy loss (LOSS_MAPPING fallback for fp32 and non-fused models)
     _patch_cross_entropy_loss(patched)
+
+    # Fused linear + cross-entropy (bf16/fp16: skips lm_head materialization)
+    _patch_fused_ce(patched)
 
     # LoRA
     _patch_lora_forward(patched)

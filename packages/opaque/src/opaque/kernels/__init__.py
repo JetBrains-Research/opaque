@@ -8,7 +8,11 @@ All kernels use new-style PyTorch autograd.Function API with custom vmap rules.
 from .rms_layernorm import Opaque_RMSNorm, opaque_rms_norm
 
 # Loss functions
-from .cross_entropy import Opaque_CrossEntropy, opaque_cross_entropy
+from .cross_entropy import Opaque_CrossEntropyLoss, opaque_cross_entropy_loss
+from .linear_cross_entropy import (
+    Opaque_LinearCrossEntropyLoss,
+    opaque_linear_cross_entropy_loss,
+)
 
 # Activation functions
 from .swiglu import Opaque_SwiGLU, opaque_swiglu
@@ -47,8 +51,10 @@ __all__ = [
     "Opaque_RMSNorm",
     "opaque_rms_norm",
     # Loss
-    "Opaque_CrossEntropy",
-    "opaque_cross_entropy",
+    "Opaque_CrossEntropyLoss",
+    "opaque_cross_entropy_loss",
+    "Opaque_LinearCrossEntropyLoss",
+    "opaque_linear_cross_entropy_loss",
     # Activations
     "Opaque_SwiGLU",
     "opaque_swiglu",

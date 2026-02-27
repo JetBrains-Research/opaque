@@ -337,7 +337,7 @@ class _CrossEntropyBackward(torch.autograd.Function):
         return logits_flat.reshape(original_shape), logits_bdim
 
 
-class Opaque_CrossEntropy(torch.autograd.Function):
+class Opaque_CrossEntropyLoss(torch.autograd.Function):
     @staticmethod
     def forward(logits, labels, logit_softcapping=0, logit_scaling=0):
         """New-style API forward without ctx parameter.
@@ -417,12 +417,12 @@ class Opaque_CrossEntropy(torch.autograd.Function):
         return (losses, logsumexp), (logits_bdim, logits_bdim)
 
 
-def opaque_cross_entropy(logits, labels, logit_softcapping=0, logit_scaling=0):
+def opaque_cross_entropy_loss(logits, labels, logit_softcapping=0, logit_scaling=0):
     """Convenience wrapper.
 
     Args:
         logit_softcapping: Gemma 2 softcap value (0 = disabled).
         logit_scaling: Cohere logit scale value (0 = disabled).
     """
-    losses, _ = Opaque_CrossEntropy.apply(logits, labels, logit_softcapping, logit_scaling)
+    losses, _ = Opaque_CrossEntropyLoss.apply(logits, labels, logit_softcapping, logit_scaling)
     return losses
