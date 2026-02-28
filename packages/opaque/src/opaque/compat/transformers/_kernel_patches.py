@@ -795,38 +795,44 @@ def apply_kernel_patches() -> None:
         return
 
     patched = []
+    skip = os.environ.get("OPAQUE_SKIP_PATCHES", "").lower().split(",")
 
     # SwiGLU MLP
-    for path, cls_name in _SWIGLU_MLP:
-        if _patch_forward(path, cls_name, _opaque_swiglu_mlp_forward):
-            patched.append(cls_name)
+    if "swiglu" not in skip:
+        for path, cls_name in _SWIGLU_MLP:
+            if _patch_forward(path, cls_name, _opaque_swiglu_mlp_forward):
+                patched.append(cls_name)
 
-    # Phi3 MLP (combined gate_up_proj)
-    for path, cls_name in _PHI3_MLP:
-        if _patch_forward(path, cls_name, _opaque_phi3_mlp_forward):
-            patched.append(cls_name)
+        # Phi3 MLP (combined gate_up_proj)
+        for path, cls_name in _PHI3_MLP:
+            if _patch_forward(path, cls_name, _opaque_phi3_mlp_forward):
+                patched.append(cls_name)
 
-    # GeGLU exact MLP (Gemma)
-    for path, cls_name in _GEGLU_EXACT_MLP:
-        if _patch_forward(path, cls_name, _opaque_geglu_exact_mlp_forward):
-            patched.append(cls_name)
+        # GeGLU exact MLP (Gemma)
+        for path, cls_name in _GEGLU_EXACT_MLP:
+            if _patch_forward(path, cls_name, _opaque_geglu_exact_mlp_forward):
+                patched.append(cls_name)
 
-    # GeGLU approx MLP (Gemma2)
-    for path, cls_name in _GEGLU_APPROX_MLP:
-        if _patch_forward(path, cls_name, _opaque_geglu_approx_mlp_forward):
-            patched.append(cls_name)
+        # GeGLU approx MLP (Gemma2)
+        for path, cls_name in _GEGLU_APPROX_MLP:
+            if _patch_forward(path, cls_name, _opaque_geglu_approx_mlp_forward):
+                patched.append(cls_name)
 
     # RoPE
-    _patch_rope_functions(patched)
+    if "rope" not in skip:
+        _patch_rope_functions(patched)
 
     # Cross-entropy loss (LOSS_MAPPING fallback for fp32 and non-fused models)
-    _patch_cross_entropy_loss(patched)
+    if "ce" not in skip:
+        _patch_cross_entropy_loss(patched)
 
     # Fused linear + cross-entropy (bf16/fp16: skips lm_head materialization)
-    _patch_fused_ce(patched)
+    if "fused_ce" not in skip:
+        _patch_fused_ce(patched)
 
     # LoRA
-    _patch_lora_forward(patched)
+    if "lora" not in skip:
+        _patch_lora_forward(patched)
 
     if patched:
         logger.debug(f"opaque: Applied Triton kernel patches to: {', '.join(patched)}")
