@@ -685,6 +685,7 @@ class _LinearCEBackward(torch.autograd.Function):
     """Backward pass wrapped as autograd.Function for vmap(grad()) support."""
 
     @staticmethod
+    @torch.amp.custom_fwd(device_type="cuda")
     def forward(
         grad_out,
         hidden_states,
@@ -722,6 +723,7 @@ class _LinearCEBackward(torch.autograd.Function):
         pass
 
     @staticmethod
+    @torch.amp.custom_bwd(device_type="cuda")
     def backward(ctx, *grad_outputs):
         raise NotImplementedError(
             "Double backward not supported for LinearCrossEntropyLoss"
@@ -739,64 +741,67 @@ class _LinearCEBackward(torch.autograd.Function):
         ignore_index,
         compute_dc,
     ):
-        (grad_bdim, h_bdim, w_bdim, lab_bdim, sc_bdim, ii_bdim, dc_bdim) = in_dims
+        with torch.amp.autocast(device_type="cuda", enabled=False):
+            (grad_bdim, h_bdim, w_bdim, lab_bdim, sc_bdim, ii_bdim, dc_bdim) = in_dims
 
-        assert w_bdim is None, "weight should not be batched"
-        assert sc_bdim is None, "softcap should not be batched"
-        assert ii_bdim is None, "ignore_index should not be batched"
-        assert dc_bdim is None, "compute_dc should not be batched"
+            assert w_bdim is None, "weight should not be batched"
+            assert sc_bdim is None, "softcap should not be batched"
+            assert ii_bdim is None, "ignore_index should not be batched"
+            assert dc_bdim is None, "compute_dc should not be batched"
 
-        B_vmap = hidden_states.shape[0]
-        D = hidden_states.shape[-1]
-        V = weight.shape[0]
+            B_vmap = hidden_states.shape[0]
+            D = hidden_states.shape[-1]
+            V = weight.shape[0]
 
-        # Pre-shift and merge all samples into one flat batch
-        h_shifted = hidden_states[..., :-1, :].contiguous()  # (B_vmap, ..., seq-1, D)
-        t_shifted = labels[..., 1:].contiguous()  # (B_vmap, ..., seq-1)
-        tokens_per_sample = h_shifted[0].numel() // D
+            # Pre-shift and merge all samples into one flat batch
+            h_shifted = hidden_states[
+                ..., :-1, :
+            ].contiguous()  # (B_vmap, ..., seq-1, D)
+            t_shifted = labels[..., 1:].contiguous()  # (B_vmap, ..., seq-1)
+            tokens_per_sample = h_shifted[0].numel() // D
 
-        e = h_shifted.reshape(-1, D)  # (B_vmap * tokens_per_sample, D)
-        targets = t_shifted.reshape(-1)  # (B_vmap * tokens_per_sample,)
+            e = h_shifted.reshape(-1, D)  # (B_vmap * tokens_per_sample, D)
+            targets = t_shifted.reshape(-1)  # (B_vmap * tokens_per_sample,)
 
-        valids = _build_flat_valids(targets, ignore_index)
+            valids = _build_flat_valids(targets, ignore_index)
 
-        # Expand per-sample scalar grad to per-token grad
-        if grad_bdim is not None:
-            do = grad_out.repeat_interleave(
-                torch.tensor(tokens_per_sample, device=grad_out.device)
+            # Expand per-sample scalar grad to per-token grad
+            if grad_bdim is not None:
+                do = grad_out.repeat_interleave(
+                    torch.tensor(tokens_per_sample, device=grad_out.device)
+                )
+            else:
+                do = grad_out.expand(B_vmap * tokens_per_sample)
+
+            # Single merged forward
+            lse = _forward_impl(e, weight, targets, valids, softcap).lse
+
+            # Single merged backward with per-sample dC (if needed):
+            # de is merged (all samples), dc is per-sample via kernel-level sample masking.
+            # This is 1 forward + 1 backward = 2 kernel launches instead of B_vmap × 2.
+            de, dc = _backward_impl(
+                do,
+                e,
+                weight,
+                lse,
+                targets,
+                valids,
+                softcap,
+                compute_de=True,
+                compute_dc=compute_dc,
+                num_dc_samples=B_vmap if compute_dc else 1,
+                tokens_per_sample=tokens_per_sample if compute_dc else 0,
             )
-        else:
-            do = grad_out.expand(B_vmap * tokens_per_sample)
 
-        # Single merged forward
-        lse = _forward_impl(e, weight, targets, valids, softcap).lse
+            # Reshape de from (B_vmap * tokens_per_sample, D) to (B_vmap, tokens_per_sample, D)
+            # Don't pad here — backward() handles reshape + padding
+            de = de.reshape(B_vmap, tokens_per_sample, D)
 
-        # Single merged backward with per-sample dC (if needed):
-        # de is merged (all samples), dc is per-sample via kernel-level sample masking.
-        # This is 1 forward + 1 backward = 2 kernel launches instead of B_vmap × 2.
-        de, dc = _backward_impl(
-            do,
-            e,
-            weight,
-            lse,
-            targets,
-            valids,
-            softcap,
-            compute_de=True,
-            compute_dc=compute_dc,
-            num_dc_samples=B_vmap if compute_dc else 1,
-            tokens_per_sample=tokens_per_sample if compute_dc else 0,
-        )
+            if dc is None:
+                dc = weight.new_zeros((B_vmap, V, D))
 
-        # Reshape de from (B_vmap * tokens_per_sample, D) to (B_vmap, tokens_per_sample, D)
-        # Don't pad here — backward() handles reshape + padding
-        de = de.reshape(B_vmap, tokens_per_sample, D)
-
-        if dc is None:
-            dc = weight.new_zeros((B_vmap, V, D))
-
-        # dc is already (B_vmap, V, D) from per-sample kernel (or zeros if skipped)
-        return (de, dc), (0, 0)
+            # dc is already (B_vmap, V, D) from per-sample kernel (or zeros if skipped)
+            return (de, dc), (0, 0)
 
 
 # =============================================================================
@@ -816,6 +821,7 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
     """
 
     @staticmethod
+    @torch.amp.custom_fwd(device_type="cuda")
     def forward(
         hidden_states,
         weight,
@@ -845,6 +851,7 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
         ctx.ignore_index = ignore_index
 
     @staticmethod
+    @torch.amp.custom_bwd(device_type="cuda")
     def backward(ctx, grad_loss):
         hidden_states, weight, labels = ctx.saved_tensors
         # needs_input_grad[1] = weight needs grad. In DP-SGD LoRA training,
@@ -876,44 +883,47 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
         info, in_dims, hidden_states, weight, labels, ignore_index, logit_softcapping
     ):
         """Custom vmap rule for DP-SGD — single merged kernel call."""
-        (h_bdim, w_bdim, lab_bdim, ii_bdim, sc_bdim) = in_dims
+        with torch.amp.autocast(device_type="cuda", enabled=False):
+            (h_bdim, w_bdim, lab_bdim, ii_bdim, sc_bdim) = in_dims
 
-        if h_bdim != 0:
-            raise ValueError(f"hidden_states should be batched at dim 0, got {h_bdim}")
-        if lab_bdim != 0:
-            raise ValueError(f"labels should be batched at dim 0, got {lab_bdim}")
-        assert w_bdim is None, "weight should not be batched"
-        assert ii_bdim is None, "ignore_index should not be batched"
-        assert sc_bdim is None, "logit_softcapping should not be batched"
+            if h_bdim != 0:
+                raise ValueError(
+                    f"hidden_states should be batched at dim 0, got {h_bdim}"
+                )
+            if lab_bdim != 0:
+                raise ValueError(f"labels should be batched at dim 0, got {lab_bdim}")
+            assert w_bdim is None, "weight should not be batched"
+            assert ii_bdim is None, "ignore_index should not be batched"
+            assert sc_bdim is None, "logit_softcapping should not be batched"
 
-        softcap = logit_softcapping if logit_softcapping != 0 else None
+            softcap = logit_softcapping if logit_softcapping != 0 else None
 
-        B_vmap = hidden_states.shape[0]
-        D = hidden_states.shape[-1]
+            B_vmap = hidden_states.shape[0]
+            D = hidden_states.shape[-1]
 
-        # Pre-shift and merge all samples into one flat batch
-        h_shifted = hidden_states[..., :-1, :].contiguous()
-        t_shifted = labels[..., 1:].contiguous()
-        tokens_per_sample = h_shifted[0].numel() // D
+            # Pre-shift and merge all samples into one flat batch
+            h_shifted = hidden_states[..., :-1, :].contiguous()
+            t_shifted = labels[..., 1:].contiguous()
+            tokens_per_sample = h_shifted[0].numel() // D
 
-        e = h_shifted.reshape(-1, D)
-        targets = t_shifted.reshape(-1)
+            e = h_shifted.reshape(-1, D)
+            targets = t_shifted.reshape(-1)
 
-        valids = _build_flat_valids(targets, ignore_index)
+            valids = _build_flat_valids(targets, ignore_index)
 
-        # Single forward call for entire merged batch
-        lse_ret = _forward_impl(e, weight, targets, valids, softcap)
-        nll = lse_ret.neg_correct_logit.add_(lse_ret.lse)
+            # Single forward call for entire merged batch
+            lse_ret = _forward_impl(e, weight, targets, valids, softcap)
+            nll = lse_ret.neg_correct_logit.add_(lse_ret.lse)
 
-        # Split per-sample: scatter NLLs back to sample buckets
-        if valids is not None:
-            sample_ids = valids.long() // tokens_per_sample
-            nll_sums = torch.zeros(B_vmap, device=nll.device, dtype=nll.dtype)
-            nll_sums.scatter_add_(0, sample_ids, nll)
-        else:
-            nll_sums = nll.reshape(B_vmap, tokens_per_sample).sum(dim=1)
+            # Split per-sample: scatter NLLs back to sample buckets
+            if valids is not None:
+                sample_ids = valids.long() // tokens_per_sample
+                nll_sums = torch.zeros(B_vmap, device=nll.device, dtype=nll.dtype)
+                nll_sums.scatter_add_(0, sample_ids, nll)
+            else:
+                nll_sums = nll.reshape(B_vmap, tokens_per_sample).sum(dim=1)
 
-        return nll_sums, 0
+            return nll_sums, 0
 
 
 def opaque_linear_cross_entropy_loss(

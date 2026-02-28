@@ -270,6 +270,7 @@ class _CrossEntropyBackward(torch.autograd.Function):
     """Backward pass wrapped as autograd.Function for vmap(grad()) support."""
 
     @staticmethod
+    @torch.amp.custom_fwd(device_type="cuda")
     def forward(
         grad_losses,
         logits,
@@ -316,6 +317,7 @@ class _CrossEntropyBackward(torch.autograd.Function):
         pass
 
     @staticmethod
+    @torch.amp.custom_bwd(device_type="cuda")
     def backward(ctx, *grad_outputs):
         raise NotImplementedError("Double backward not supported for CrossEntropy")
 
@@ -331,49 +333,57 @@ class _CrossEntropyBackward(torch.autograd.Function):
         logit_softcapping,
         logit_scaling,
     ):
-        (grad_bdim, logits_bdim, lse_bdim, labels_bdim, vs_bdim, sc_bdim, ls_bdim) = (
-            in_dims
-        )
+        with torch.amp.autocast(device_type="cuda", enabled=False):
+            (
+                grad_bdim,
+                logits_bdim,
+                lse_bdim,
+                labels_bdim,
+                vs_bdim,
+                sc_bdim,
+                ls_bdim,
+            ) = in_dims
 
-        assert vs_bdim is None, "vocab_size should not be batched"
-        assert sc_bdim is None, "logit_softcapping should not be batched"
-        assert ls_bdim is None, "logit_scaling should not be batched"
+            assert vs_bdim is None, "vocab_size should not be batched"
+            assert sc_bdim is None, "logit_softcapping should not be batched"
+            assert ls_bdim is None, "logit_scaling should not be batched"
 
-        original_shape = logits.shape
-        # Merge vmap batch into rows, in-place (kernel writes dlogits into logits buffer)
-        logits_flat = logits.reshape(-1, vocab_size).contiguous()
-        logsumexp_flat = logsumexp.reshape(-1)
-        labels_flat = labels.reshape(-1)
-        grad_losses_flat = grad_losses.reshape(-1)
-        n_rows = logits_flat.shape[0]
+            original_shape = logits.shape
+            # Merge vmap batch into rows, in-place (kernel writes dlogits into logits buffer)
+            logits_flat = logits.reshape(-1, vocab_size).contiguous()
+            logsumexp_flat = logsumexp.reshape(-1)
+            labels_flat = labels.reshape(-1)
+            grad_losses_flat = grad_losses.reshape(-1)
+            n_rows = logits_flat.shape[0]
 
-        BLOCK_SIZE = 4096
-        div, mod = divmod(vocab_size, BLOCK_SIZE)
-        n_blocks = div + (mod != 0)
+            BLOCK_SIZE = 4096
+            div, mod = divmod(vocab_size, BLOCK_SIZE)
+            n_blocks = div + (mod != 0)
 
-        grid = (n_rows, n_blocks)
-        with torch_gpu_device(logits.device):
-            _cross_entropy_backward[grid](
-                logits_flat,
-                logits_flat.stride(0),
-                grad_losses_flat,
-                grad_losses_flat.stride(0) if grad_losses_flat.dim() > 0 else 0,
-                logsumexp_flat,
-                labels_flat,
-                VOCAB_SIZE=vocab_size,
-                BLOCK_SIZE=BLOCK_SIZE,
-                DO_SOFTCAPPING=logit_softcapping != 0,
-                SOFTCAP=logit_softcapping,
-                DO_LOGIT_SCALING=logit_scaling != 0,
-                LOGIT_SCALE=logit_scaling,
-                num_warps=8,
-            )
+            grid = (n_rows, n_blocks)
+            with torch_gpu_device(logits.device):
+                _cross_entropy_backward[grid](
+                    logits_flat,
+                    logits_flat.stride(0),
+                    grad_losses_flat,
+                    grad_losses_flat.stride(0) if grad_losses_flat.dim() > 0 else 0,
+                    logsumexp_flat,
+                    labels_flat,
+                    VOCAB_SIZE=vocab_size,
+                    BLOCK_SIZE=BLOCK_SIZE,
+                    DO_SOFTCAPPING=logit_softcapping != 0,
+                    SOFTCAP=logit_softcapping,
+                    DO_LOGIT_SCALING=logit_scaling != 0,
+                    LOGIT_SCALE=logit_scaling,
+                    num_warps=8,
+                )
 
-        return logits_flat.reshape(original_shape), logits_bdim
+            return logits_flat.reshape(original_shape), logits_bdim
 
 
 class Opaque_CrossEntropyLoss(torch.autograd.Function):
     @staticmethod
+    @torch.amp.custom_fwd(device_type="cuda")
     def forward(logits, labels, logit_softcapping=0, logit_scaling=0):
         """New-style API forward without ctx parameter.
 
@@ -415,6 +425,7 @@ class Opaque_CrossEntropyLoss(torch.autograd.Function):
         ctx.logit_scaling = logit_scaling
 
     @staticmethod
+    @torch.amp.custom_bwd(device_type="cuda")
     def backward(ctx, grad_losses, grad_logsumexp):
         logits, logsumexp, labels = ctx.saved_tensors
         grad_logits = _CrossEntropyBackward.apply(
@@ -434,35 +445,40 @@ class Opaque_CrossEntropyLoss(torch.autograd.Function):
 
         Calls Triton forward kernel directly with merged batch dims.
         """
-        logits_bdim, labels_bdim, sc_bdim, ls_bdim = in_dims
+        with torch.amp.autocast(device_type="cuda", enabled=False):
+            logits_bdim, labels_bdim, sc_bdim, ls_bdim = in_dims
 
-        if logits_bdim != 0:
-            raise ValueError(f"logits should be batched at dim 0, got {logits_bdim}")
-        if labels_bdim != 0:
-            raise ValueError(f"labels should be batched at dim 0, got {labels_bdim}")
+            if logits_bdim != 0:
+                raise ValueError(
+                    f"logits should be batched at dim 0, got {logits_bdim}"
+                )
+            if labels_bdim != 0:
+                raise ValueError(
+                    f"labels should be batched at dim 0, got {labels_bdim}"
+                )
 
-        batched_shape = logits.shape[:-1]
-        vocab_size = logits.shape[-1]
+            batched_shape = logits.shape[:-1]
+            vocab_size = logits.shape[-1]
 
-        logits_flat = logits.reshape(-1, vocab_size)
-        labels_flat = labels.reshape(-1)
-        n_rows = logits_flat.shape[0]
-        device = logits.device
+            logits_flat = logits.reshape(-1, vocab_size)
+            labels_flat = labels.reshape(-1)
+            n_rows = logits_flat.shape[0]
+            device = logits.device
 
-        losses, logsumexp = _ce_forward_impl(
-            logits_flat,
-            labels_flat,
-            n_rows,
-            vocab_size,
-            device,
-            logit_softcapping=logit_softcapping,
-            logit_scaling=logit_scaling,
-        )
+            losses, logsumexp = _ce_forward_impl(
+                logits_flat,
+                labels_flat,
+                n_rows,
+                vocab_size,
+                device,
+                logit_softcapping=logit_softcapping,
+                logit_scaling=logit_scaling,
+            )
 
-        losses = losses.reshape(batched_shape)
-        logsumexp = logsumexp.reshape(batched_shape)
+            losses = losses.reshape(batched_shape)
+            logsumexp = logsumexp.reshape(batched_shape)
 
-        return (losses, logsumexp), (logits_bdim, logits_bdim)
+            return (losses, logsumexp), (logits_bdim, logits_bdim)
 
 
 def opaque_cross_entropy_loss(logits, labels, logit_softcapping=0, logit_scaling=0):

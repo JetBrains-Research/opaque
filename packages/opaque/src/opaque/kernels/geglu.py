@@ -117,6 +117,7 @@ class _GeGLUExactBackward(torch.autograd.Function):
     """Backward pass wrapped as autograd.Function for vmap(grad()) support."""
 
     @staticmethod
+    @torch.amp.custom_fwd(device_type="cuda")
     def forward(grad_h_flat, gate_flat, up_flat):
         n_elements = gate_flat.numel()
 
@@ -145,46 +146,49 @@ class _GeGLUExactBackward(torch.autograd.Function):
         pass
 
     @staticmethod
+    @torch.amp.custom_bwd(device_type="cuda")
     def backward(ctx, *grad_outputs):
         raise NotImplementedError("Double backward not supported for GeGLU Exact")
 
     @staticmethod
     def vmap(info, in_dims, grad_h_flat, gate_flat, up_flat):
-        grad_h_bdim, gate_bdim, up_bdim = in_dims
+        with torch.amp.autocast(device_type="cuda", enabled=False):
+            grad_h_bdim, gate_bdim, up_bdim = in_dims
 
-        batched_shape = gate_flat.shape
-        grad_h_merged = grad_h_flat.reshape(-1)
-        gate_merged = gate_flat.reshape(-1)
-        up_merged = up_flat.reshape(-1)
+            batched_shape = gate_flat.shape
+            grad_h_merged = grad_h_flat.reshape(-1)
+            gate_merged = gate_flat.reshape(-1)
+            up_merged = up_flat.reshape(-1)
 
-        n_elements = gate_merged.numel()
+            n_elements = gate_merged.numel()
 
-        def grid(meta):
-            return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+            def grid(meta):
+                return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
-        with torch_gpu_device(gate_merged.device):
-            # In-place: gate_merged → grad_gate, up_merged → grad_up
-            _exact_backward_kernel[grid](
-                grad_h_merged,
-                gate_merged,
-                up_merged,
-                gate_merged,
-                up_merged,
-                gate_merged,  # de→gate, dg→up, h_out unused
-                n_elements,
-                BLOCK_SIZE=BLOCK_SIZE,
-                LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
-                COMPUTE_H=False,
+            with torch_gpu_device(gate_merged.device):
+                # In-place: gate_merged → grad_gate, up_merged → grad_up
+                _exact_backward_kernel[grid](
+                    grad_h_merged,
+                    gate_merged,
+                    up_merged,
+                    gate_merged,
+                    up_merged,
+                    gate_merged,  # de→gate, dg→up, h_out unused
+                    n_elements,
+                    BLOCK_SIZE=BLOCK_SIZE,
+                    LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+                    COMPUTE_H=False,
+                )
+
+            return (
+                (gate_merged.reshape(batched_shape), up_merged.reshape(batched_shape)),
+                (gate_bdim, up_bdim),
             )
-
-        return (
-            (gate_merged.reshape(batched_shape), up_merged.reshape(batched_shape)),
-            (gate_bdim, up_bdim),
-        )
 
 
 class Opaque_GeGLU_Exact(torch.autograd.Function):
     @staticmethod
+    @torch.amp.custom_fwd(device_type="cuda")
     def forward(gate, up):
         """New-style API forward without ctx parameter."""
         original_shape = gate.shape
@@ -217,6 +221,7 @@ class Opaque_GeGLU_Exact(torch.autograd.Function):
         ctx.n_elements = gate.numel()
 
     @staticmethod
+    @torch.amp.custom_bwd(device_type="cuda")
     def backward(ctx, grad_h):
         gate_flat, up_flat = ctx.saved_tensors
         grad_h_flat = grad_h.reshape(-1).contiguous()
@@ -233,31 +238,32 @@ class Opaque_GeGLU_Exact(torch.autograd.Function):
 
         Calls Triton forward kernel directly with merged batch dims.
         """
-        gate_bdim, up_bdim = in_dims
-        if gate_bdim != 0 or up_bdim != 0:
-            raise ValueError("Both gate and up should be batched at dim 0")
+        with torch.amp.autocast(device_type="cuda", enabled=False):
+            gate_bdim, up_bdim = in_dims
+            if gate_bdim != 0 or up_bdim != 0:
+                raise ValueError("Both gate and up should be batched at dim 0")
 
-        batched_shape = gate.shape
-        gate_flat = gate.reshape(-1)
-        up_flat = up.reshape(-1)
-        n_elements = gate_flat.numel()
+            batched_shape = gate.shape
+            gate_flat = gate.reshape(-1)
+            up_flat = up.reshape(-1)
+            n_elements = gate_flat.numel()
 
-        h = torch.empty_like(gate_flat)
+            h = torch.empty_like(gate_flat)
 
-        def grid(meta):
-            return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+            def grid(meta):
+                return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
-        with torch_gpu_device(gate.device):
-            _exact_forward_kernel[grid](
-                gate_flat,
-                up_flat,
-                h,
-                n_elements,
-                BLOCK_SIZE=BLOCK_SIZE,
-                LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
-            )
+            with torch_gpu_device(gate.device):
+                _exact_forward_kernel[grid](
+                    gate_flat,
+                    up_flat,
+                    h,
+                    n_elements,
+                    BLOCK_SIZE=BLOCK_SIZE,
+                    LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+                )
 
-        return h.reshape(batched_shape), gate_bdim
+            return h.reshape(batched_shape), gate_bdim
 
 
 # ===== GeGLU Approx (tanh-based) =====
@@ -372,6 +378,7 @@ class _GeGLUApproxBackward(torch.autograd.Function):
     """Backward pass wrapped as autograd.Function for vmap(grad()) support."""
 
     @staticmethod
+    @torch.amp.custom_fwd(device_type="cuda")
     def forward(grad_h_flat, gate_flat, up_flat):
         n_elements = gate_flat.numel()
 
@@ -400,46 +407,49 @@ class _GeGLUApproxBackward(torch.autograd.Function):
         pass
 
     @staticmethod
+    @torch.amp.custom_bwd(device_type="cuda")
     def backward(ctx, *grad_outputs):
         raise NotImplementedError("Double backward not supported for GeGLU Approx")
 
     @staticmethod
     def vmap(info, in_dims, grad_h_flat, gate_flat, up_flat):
-        grad_h_bdim, gate_bdim, up_bdim = in_dims
+        with torch.amp.autocast(device_type="cuda", enabled=False):
+            grad_h_bdim, gate_bdim, up_bdim = in_dims
 
-        batched_shape = gate_flat.shape
-        grad_h_merged = grad_h_flat.reshape(-1)
-        gate_merged = gate_flat.reshape(-1)
-        up_merged = up_flat.reshape(-1)
+            batched_shape = gate_flat.shape
+            grad_h_merged = grad_h_flat.reshape(-1)
+            gate_merged = gate_flat.reshape(-1)
+            up_merged = up_flat.reshape(-1)
 
-        n_elements = gate_merged.numel()
+            n_elements = gate_merged.numel()
 
-        def grid(meta):
-            return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+            def grid(meta):
+                return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
-        with torch_gpu_device(gate_merged.device):
-            # In-place: gate_merged → grad_gate, up_merged → grad_up
-            _approx_backward_kernel[grid](
-                grad_h_merged,
-                gate_merged,
-                up_merged,
-                gate_merged,
-                up_merged,
-                gate_merged,  # de→gate, dg→up, h_out unused
-                n_elements,
-                BLOCK_SIZE=BLOCK_SIZE,
-                LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
-                COMPUTE_H=False,
+            with torch_gpu_device(gate_merged.device):
+                # In-place: gate_merged → grad_gate, up_merged → grad_up
+                _approx_backward_kernel[grid](
+                    grad_h_merged,
+                    gate_merged,
+                    up_merged,
+                    gate_merged,
+                    up_merged,
+                    gate_merged,  # de→gate, dg→up, h_out unused
+                    n_elements,
+                    BLOCK_SIZE=BLOCK_SIZE,
+                    LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+                    COMPUTE_H=False,
+                )
+
+            return (
+                (gate_merged.reshape(batched_shape), up_merged.reshape(batched_shape)),
+                (gate_bdim, up_bdim),
             )
-
-        return (
-            (gate_merged.reshape(batched_shape), up_merged.reshape(batched_shape)),
-            (gate_bdim, up_bdim),
-        )
 
 
 class Opaque_GeGLU_Approx(torch.autograd.Function):
     @staticmethod
+    @torch.amp.custom_fwd(device_type="cuda")
     def forward(gate, up):
         """New-style API forward without ctx parameter."""
         original_shape = gate.shape
@@ -472,6 +482,7 @@ class Opaque_GeGLU_Approx(torch.autograd.Function):
         ctx.n_elements = gate.numel()
 
     @staticmethod
+    @torch.amp.custom_bwd(device_type="cuda")
     def backward(ctx, grad_h):
         gate_flat, up_flat = ctx.saved_tensors
         grad_h_flat = grad_h.reshape(-1).contiguous()
@@ -488,31 +499,32 @@ class Opaque_GeGLU_Approx(torch.autograd.Function):
 
         Calls Triton forward kernel directly with merged batch dims.
         """
-        gate_bdim, up_bdim = in_dims
-        if gate_bdim != 0 or up_bdim != 0:
-            raise ValueError("Both gate and up should be batched at dim 0")
+        with torch.amp.autocast(device_type="cuda", enabled=False):
+            gate_bdim, up_bdim = in_dims
+            if gate_bdim != 0 or up_bdim != 0:
+                raise ValueError("Both gate and up should be batched at dim 0")
 
-        batched_shape = gate.shape
-        gate_flat = gate.reshape(-1)
-        up_flat = up.reshape(-1)
-        n_elements = gate_flat.numel()
+            batched_shape = gate.shape
+            gate_flat = gate.reshape(-1)
+            up_flat = up.reshape(-1)
+            n_elements = gate_flat.numel()
 
-        h = torch.empty_like(gate_flat)
+            h = torch.empty_like(gate_flat)
 
-        def grid(meta):
-            return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+            def grid(meta):
+                return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
-        with torch_gpu_device(gate.device):
-            _approx_forward_kernel[grid](
-                gate_flat,
-                up_flat,
-                h,
-                n_elements,
-                BLOCK_SIZE=BLOCK_SIZE,
-                LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
-            )
+            with torch_gpu_device(gate.device):
+                _approx_forward_kernel[grid](
+                    gate_flat,
+                    up_flat,
+                    h,
+                    n_elements,
+                    BLOCK_SIZE=BLOCK_SIZE,
+                    LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
+                )
 
-        return h.reshape(batched_shape), gate_bdim
+            return h.reshape(batched_shape), gate_bdim
 
 
 # Convenience wrappers
