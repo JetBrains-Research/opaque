@@ -1,8 +1,15 @@
 """Cross-entropy loss kernel with vmap support for DP-SGD."""
+
 import triton
 import triton.language as tl
 import torch
-from .utils import MAX_FUSED_SIZE, calculate_settings, torch_gpu_device, triton_cast, triton_tanh
+from .utils import (
+    MAX_FUSED_SIZE,
+    calculate_settings,
+    torch_gpu_device,
+    triton_cast,
+    triton_tanh,
+)
 
 
 @triton.jit
@@ -29,7 +36,9 @@ def _cross_entropy_forward(
     mask = col_offsets < VOCAB_SIZE
 
     label_idx = tl.load(labels_ptr).to(tl.int32)
-    logits = tl.load(logits_ptr + col_offsets, mask=mask, other=-float("inf")).to(tl.float32)
+    logits = tl.load(logits_ptr + col_offsets, mask=mask, other=-float("inf")).to(
+        tl.float32
+    )
 
     # Logit scaling for Cohere: s * x
     if DO_LOGIT_SCALING:
@@ -88,7 +97,9 @@ def _chunked_cross_entropy_forward(
     mask = col_offsets < VOCAB_SIZE
 
     label_idx = tl.load(labels_ptr).to(tl.int32)
-    logits = tl.load(logits_ptr + col_offsets, mask=mask, other=-float("inf")).to(tl.float32)
+    logits = tl.load(logits_ptr + col_offsets, mask=mask, other=-float("inf")).to(
+        tl.float32
+    )
 
     # Logit scaling for Cohere: s * x
     if DO_LOGIT_SCALING:
@@ -180,8 +191,15 @@ def _cross_entropy_backward(
     tl.store(logits_ptr + col_offsets, dloss * y, mask=mask)
 
 
-def _ce_forward_impl(logits_flat, labels_flat, n_rows, vocab_size, device,
-                     logit_softcapping=0, logit_scaling=0):
+def _ce_forward_impl(
+    logits_flat,
+    labels_flat,
+    n_rows,
+    vocab_size,
+    device,
+    logit_softcapping=0,
+    logit_scaling=0,
+):
     """Shared forward implementation for both standard and vmap paths.
 
     Returns (losses, logsumexp) both of shape (n_rows,).
@@ -252,8 +270,15 @@ class _CrossEntropyBackward(torch.autograd.Function):
     """Backward pass wrapped as autograd.Function for vmap(grad()) support."""
 
     @staticmethod
-    def forward(grad_losses, logits, logsumexp, labels, vocab_size,
-                logit_softcapping, logit_scaling):
+    def forward(
+        grad_losses,
+        logits,
+        logsumexp,
+        labels,
+        vocab_size,
+        logit_softcapping,
+        logit_scaling,
+    ):
         original_shape = logits.shape
         # In-place: kernel writes dlogits directly into logits buffer
         logits_flat = logits.reshape(-1, vocab_size).contiguous()
@@ -295,10 +320,20 @@ class _CrossEntropyBackward(torch.autograd.Function):
         raise NotImplementedError("Double backward not supported for CrossEntropy")
 
     @staticmethod
-    def vmap(info, in_dims, grad_losses, logits, logsumexp, labels, vocab_size,
-             logit_softcapping, logit_scaling):
-        (grad_bdim, logits_bdim, lse_bdim, labels_bdim,
-         vs_bdim, sc_bdim, ls_bdim) = in_dims
+    def vmap(
+        info,
+        in_dims,
+        grad_losses,
+        logits,
+        logsumexp,
+        labels,
+        vocab_size,
+        logit_softcapping,
+        logit_scaling,
+    ):
+        (grad_bdim, logits_bdim, lse_bdim, labels_bdim, vs_bdim, sc_bdim, ls_bdim) = (
+            in_dims
+        )
 
         assert vs_bdim is None, "vocab_size should not be batched"
         assert sc_bdim is None, "logit_softcapping should not be batched"
@@ -355,7 +390,11 @@ class Opaque_CrossEntropyLoss(torch.autograd.Function):
         device = logits.device
 
         losses, logsumexp = _ce_forward_impl(
-            logits_flat, labels_flat, n_rows, vocab_size, device,
+            logits_flat,
+            labels_flat,
+            n_rows,
+            vocab_size,
+            device,
             logit_softcapping=logit_softcapping,
             logit_scaling=logit_scaling,
         )
@@ -379,8 +418,13 @@ class Opaque_CrossEntropyLoss(torch.autograd.Function):
     def backward(ctx, grad_losses, grad_logsumexp):
         logits, logsumexp, labels = ctx.saved_tensors
         grad_logits = _CrossEntropyBackward.apply(
-            grad_losses, logits, logsumexp, labels, ctx.vocab_size,
-            ctx.logit_softcapping, ctx.logit_scaling,
+            grad_losses,
+            logits,
+            logsumexp,
+            labels,
+            ctx.vocab_size,
+            ctx.logit_softcapping,
+            ctx.logit_scaling,
         )
         return grad_logits, None, None, None
 
@@ -406,7 +450,11 @@ class Opaque_CrossEntropyLoss(torch.autograd.Function):
         device = logits.device
 
         losses, logsumexp = _ce_forward_impl(
-            logits_flat, labels_flat, n_rows, vocab_size, device,
+            logits_flat,
+            labels_flat,
+            n_rows,
+            vocab_size,
+            device,
             logit_softcapping=logit_softcapping,
             logit_scaling=logit_scaling,
         )
@@ -424,5 +472,7 @@ def opaque_cross_entropy_loss(logits, labels, logit_softcapping=0, logit_scaling
         logit_softcapping: Gemma 2 softcap value (0 = disabled).
         logit_scaling: Cohere logit scale value (0 = disabled).
     """
-    losses, _ = Opaque_CrossEntropyLoss.apply(logits, labels, logit_softcapping, logit_scaling)
+    losses, _ = Opaque_CrossEntropyLoss.apply(
+        logits, labels, logit_softcapping, logit_scaling
+    )
     return losses

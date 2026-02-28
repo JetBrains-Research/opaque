@@ -19,6 +19,7 @@ For LLaMA-3 (128K vocab), this avoids materializing ~1 GB of logits per sample.
 
 from __future__ import annotations
 
+import os as _os
 from dataclasses import dataclass
 
 import torch
@@ -40,29 +41,50 @@ from .utils import (
 # Autotune configs (subset of CCE defaults, sufficient for our use case)
 # =============================================================================
 
+
 def _get_autotune_configs():
     return [
-        Config({"BLOCK_B": 128, "BLOCK_V": 128, "BLOCK_D": 32}, num_warps=4, num_stages=4),
-        Config({"BLOCK_B": 128, "BLOCK_V": 128, "BLOCK_D": 128}, num_warps=4, num_stages=2),
-        Config({"BLOCK_B": 64, "BLOCK_V": 128, "BLOCK_D": 32}, num_warps=4, num_stages=4),
-        Config({"BLOCK_B": 128, "BLOCK_V": 64, "BLOCK_D": 32}, num_warps=4, num_stages=4),
-        Config({"BLOCK_B": 128, "BLOCK_V": 128, "BLOCK_D": 32}, num_warps=8, num_stages=3),
-        Config({"BLOCK_B": 128, "BLOCK_V": 256, "BLOCK_D": 32}, num_warps=8, num_stages=3),
-        Config({"BLOCK_B": 256, "BLOCK_V": 128, "BLOCK_D": 32}, num_warps=8, num_stages=3),
-        Config({"BLOCK_B": 128, "BLOCK_V": 128, "BLOCK_D": 128}, num_warps=4, num_stages=4),
-        Config({"BLOCK_B": 64, "BLOCK_V": 128, "BLOCK_D": 64}, num_warps=4, num_stages=4),
-        Config({"BLOCK_B": 128, "BLOCK_V": 64, "BLOCK_D": 64}, num_warps=4, num_stages=4),
+        Config(
+            {"BLOCK_B": 128, "BLOCK_V": 128, "BLOCK_D": 32}, num_warps=4, num_stages=4
+        ),
+        Config(
+            {"BLOCK_B": 128, "BLOCK_V": 128, "BLOCK_D": 128}, num_warps=4, num_stages=2
+        ),
+        Config(
+            {"BLOCK_B": 64, "BLOCK_V": 128, "BLOCK_D": 32}, num_warps=4, num_stages=4
+        ),
+        Config(
+            {"BLOCK_B": 128, "BLOCK_V": 64, "BLOCK_D": 32}, num_warps=4, num_stages=4
+        ),
+        Config(
+            {"BLOCK_B": 128, "BLOCK_V": 128, "BLOCK_D": 32}, num_warps=8, num_stages=3
+        ),
+        Config(
+            {"BLOCK_B": 128, "BLOCK_V": 256, "BLOCK_D": 32}, num_warps=8, num_stages=3
+        ),
+        Config(
+            {"BLOCK_B": 256, "BLOCK_V": 128, "BLOCK_D": 32}, num_warps=8, num_stages=3
+        ),
+        Config(
+            {"BLOCK_B": 128, "BLOCK_V": 128, "BLOCK_D": 128}, num_warps=4, num_stages=4
+        ),
+        Config(
+            {"BLOCK_B": 64, "BLOCK_V": 128, "BLOCK_D": 64}, num_warps=4, num_stages=4
+        ),
+        Config(
+            {"BLOCK_B": 128, "BLOCK_V": 64, "BLOCK_D": 64}, num_warps=4, num_stages=4
+        ),
     ]
 
 
 # Use fixed best config (same as CCE default) — set CCE_AUTOTUNE=1 to enable search
-import os as _os
 _AUTOTUNE = _os.getenv("CCE_AUTOTUNE", "0") != "0"
 
 
 # =============================================================================
 # Forward Triton Kernel
 # =============================================================================
+
 
 def _linear_ce_forward_kernel(
     E,
@@ -105,7 +127,9 @@ def _linear_ce_forward_kernel(
 
     offs_b = (pid_b * BLOCK_B + tl.arange(0, BLOCK_B)).to(tl.int64)
     if HAS_VALIDS:
-        offs_b = tl.load(Valids + stride_vb * offs_b, mask=offs_b < B, other=BMax).to(tl.int64)
+        offs_b = tl.load(Valids + stride_vb * offs_b, mask=offs_b < B, other=BMax).to(
+            tl.int64
+        )
 
     offs_v = (pid_v * BLOCK_V + tl.arange(0, BLOCK_V)).to(tl.int64)
     offs_d = tl.arange(0, BLOCK_D).to(tl.int64)
@@ -145,7 +169,9 @@ def _linear_ce_forward_kernel(
     neg_correct_logit_ptrs = tl.broadcast_to(
         neg_correct_logit_ptrs[:, None], (BLOCK_B, BLOCK_V)
     )
-    tl.store(neg_correct_logit_ptrs, -logits, mask=this_targets[:, None] == offs_v[None, :])
+    tl.store(
+        neg_correct_logit_ptrs, -logits, mask=this_targets[:, None] == offs_v[None, :]
+    )
 
     # Per-block LSE: max + log(sum(exp(logits - max)))
     this_mx = tl.max(logits, axis=1)
@@ -168,12 +194,14 @@ def _linear_ce_forward_kernel(
 
 
 _linear_ce_forward_kernel = triton.jit(_linear_ce_forward_kernel)
-_linear_ce_forward_kernel = triton.heuristics({
-    "EVEN_D": lambda args: args["D"] % args["BLOCK_D"] == 0,
-    "HAS_VALIDS": lambda args: args["Valids"] is not None,
-    "HAS_SOFTCAP": lambda args: args["softcap"] is not None,
-    "GROUP_B": lambda args: 8,
-})(_linear_ce_forward_kernel)
+_linear_ce_forward_kernel = triton.heuristics(
+    {
+        "EVEN_D": lambda args: args["D"] % args["BLOCK_D"] == 0,
+        "HAS_VALIDS": lambda args: args["Valids"] is not None,
+        "HAS_SOFTCAP": lambda args: args["softcap"] is not None,
+        "GROUP_B": lambda args: 8,
+    }
+)(_linear_ce_forward_kernel)
 
 if _AUTOTUNE:
     _linear_ce_forward_kernel = triton.autotune(
@@ -183,16 +211,22 @@ if _AUTOTUNE:
     )(_linear_ce_forward_kernel)
 else:
     # Fixed best config (matches CCE default)
-    _linear_ce_forward_kernel = triton.heuristics({
-        k: (lambda args, _v=v: _v) for k, v in
-        Config(dict(BLOCK_B=128, BLOCK_V=128, BLOCK_D=32), num_warps=4, num_stages=4)
-        .all_kwargs().items()
-    })(_linear_ce_forward_kernel)
+    _linear_ce_forward_kernel = triton.heuristics(
+        {
+            k: (lambda args, _v=v: _v)
+            for k, v in Config(
+                dict(BLOCK_B=128, BLOCK_V=128, BLOCK_D=32), num_warps=4, num_stages=4
+            )
+            .all_kwargs()
+            .items()
+        }
+    )(_linear_ce_forward_kernel)
 
 
 # =============================================================================
 # Backward Triton Kernels
 # =============================================================================
+
 
 @triton.jit
 def _mm_backward(
@@ -294,7 +328,9 @@ def _linear_ce_backward_kernel(
 
     offs_b = (pid_b * BLOCK_B + tl.arange(0, BLOCK_B)).to(tl.int64)
     if HAS_VALIDS:
-        offs_b = tl.load(Valids + stride_vb * offs_b, mask=offs_b < B, other=BMax).to(tl.int64)
+        offs_b = tl.load(Valids + stride_vb * offs_b, mask=offs_b < B, other=BMax).to(
+            tl.int64
+        )
 
     offs_v = (pid_v * BLOCK_V + tl.arange(0, BLOCK_V)).to(tl.int64)
     offs_d = tl.arange(0, BLOCK_D).to(tl.int64)
@@ -381,14 +417,18 @@ def _linear_ce_backward_kernel(
             sample_ids = offs_b // tokens_per_sample  # (BLOCK_B,)
 
             for s in range(num_dc_samples):
-                s_mask = (sample_ids == s)  # (BLOCK_B,)
+                s_mask = sample_ids == s  # (BLOCK_B,)
                 count_s = tl.sum(s_mask.to(tl.int32))
                 if count_s > 0:
-                    masked_d = tl.where(s_mask[:, None], d_accum, tl.zeros_like(d_accum))
+                    masked_d = tl.where(
+                        s_mask[:, None], d_accum, tl.zeros_like(d_accum)
+                    )
                     dc_s_base = dC + s * dc_sample_stride
                     dc_locks_s_base = dCLocks + s * dc_locks_sample_stride
 
-                    lock_offset = (pid_v // tl.cdiv(V, BLOCK_V * n_dc_locks_0)) * n_dc_locks_1
+                    lock_offset = (
+                        pid_v // tl.cdiv(V, BLOCK_V * n_dc_locks_0)
+                    ) * n_dc_locks_1
                     _mm_backward(
                         tl.trans(masked_d),
                         dc_s_base + (offs_v[:, None] * stride_cv),
@@ -426,18 +466,20 @@ def _back_block_d(args) -> int:
 
 
 _linear_ce_backward_kernel = triton.jit(_linear_ce_backward_kernel)
-_linear_ce_backward_kernel = triton.heuristics({
-    "EVEN_D": lambda args: (args["D"] % args["BLOCK_D"]) == 0,
-    "MM_BACK_BLOCK_D": lambda args: _back_block_d(args),
-    "MM_BACK_EVEN_D": lambda args: (args["D"] % _back_block_d(args)) == 0,
-    "HAS_VALIDS": lambda args: args["Valids"] is not None,
-    "HAS_SOFTCAP": lambda args: args["softcap"] is not None,
-    "ITEM_DO": lambda args: args["dOut"].numel() == 1,
-    "GROUP_B": lambda args: 8,
-    "COMPUTE_DC": lambda args: args["dC"] is not None,
-    "COMPUTE_DE": lambda args: args["dE"] is not None,
-    "PER_SAMPLE_DC": lambda args: args["num_dc_samples"] > 1,
-})(_linear_ce_backward_kernel)
+_linear_ce_backward_kernel = triton.heuristics(
+    {
+        "EVEN_D": lambda args: (args["D"] % args["BLOCK_D"]) == 0,
+        "MM_BACK_BLOCK_D": lambda args: _back_block_d(args),
+        "MM_BACK_EVEN_D": lambda args: (args["D"] % _back_block_d(args)) == 0,
+        "HAS_VALIDS": lambda args: args["Valids"] is not None,
+        "HAS_SOFTCAP": lambda args: args["softcap"] is not None,
+        "ITEM_DO": lambda args: args["dOut"].numel() == 1,
+        "GROUP_B": lambda args: 8,
+        "COMPUTE_DC": lambda args: args["dC"] is not None,
+        "COMPUTE_DE": lambda args: args["dE"] is not None,
+        "PER_SAMPLE_DC": lambda args: args["num_dc_samples"] > 1,
+    }
+)(_linear_ce_backward_kernel)
 
 if _AUTOTUNE:
     _linear_ce_backward_kernel = triton.autotune(
@@ -446,16 +488,22 @@ if _AUTOTUNE:
         reset_to_zero=["dE", "dC"],
     )(_linear_ce_backward_kernel)
 else:
-    _linear_ce_backward_kernel = triton.heuristics({
-        k: (lambda args, _v=v: _v) for k, v in
-        Config(dict(BLOCK_B=128, BLOCK_V=128, BLOCK_D=32), num_warps=4, num_stages=4)
-        .all_kwargs().items()
-    })(_linear_ce_backward_kernel)
+    _linear_ce_backward_kernel = triton.heuristics(
+        {
+            k: (lambda args, _v=v: _v)
+            for k, v in Config(
+                dict(BLOCK_B=128, BLOCK_V=128, BLOCK_D=32), num_warps=4, num_stages=4
+            )
+            .all_kwargs()
+            .items()
+        }
+    )(_linear_ce_backward_kernel)
 
 
 # =============================================================================
 # Python wrapper helpers
 # =============================================================================
+
 
 @dataclass(slots=True)
 class LSEReturn:
@@ -490,12 +538,22 @@ def _forward_impl(
         return (triton.cdiv(B, META["BLOCK_B"]) * triton.cdiv(V, META["BLOCK_V"]),)
 
     _linear_ce_forward_kernel[grid](
-        e, c, lse, neg_correct_logit, locks, valids, targets,
+        e,
+        c,
+        lse,
+        neg_correct_logit,
+        locks,
+        valids,
+        targets,
         softcap,
-        B, V, D,
+        B,
+        V,
+        D,
         e.size(0),  # BMax
-        e.stride(0), e.stride(1),
-        c.stride(0), c.stride(1),
+        e.stride(0),
+        e.stride(1),
+        c.stride(0),
+        c.stride(1),
         1 if valids is None else valids.stride(0),
         num_locks=locks.size(0),
         B_BIN=b_bin_fn(B),
@@ -560,7 +618,9 @@ def _backward_impl(
 
     if dc is not None:
         if num_dc_samples > 1:
-            dc_locks = e.new_zeros((num_dc_samples, triton.cdiv(V, 128), nd_locks), dtype=torch.int32)
+            dc_locks = e.new_zeros(
+                (num_dc_samples, triton.cdiv(V, 128), nd_locks), dtype=torch.int32
+            )
             dc_lock_sizes = (triton.cdiv(V, 128), nd_locks)
             dc_locks_sample_stride = triton.cdiv(V, 128) * nd_locks
         else:
@@ -579,15 +639,27 @@ def _backward_impl(
         return (triton.cdiv(B, META["BLOCK_B"]) * triton.cdiv(V, META["BLOCK_V"]),)
 
     _linear_ce_backward_kernel[grid](
-        e, c, lse, do, valids, softcap, targets,
-        de, de_locks,
-        dc, dc_locks,
-        B, D, V,
+        e,
+        c,
+        lse,
+        do,
+        valids,
+        softcap,
+        targets,
+        de,
+        de_locks,
+        dc,
+        dc_locks,
+        B,
+        D,
+        V,
         e.size(0),  # BMax
         *de_lock_sizes,
         *dc_lock_sizes,
-        e.stride(0), e.stride(1),
-        c.stride(0), c.stride(1),
+        e.stride(0),
+        e.stride(1),
+        c.stride(0),
+        c.stride(1),
         1 if valids is None else valids.stride(0),
         tokens_per_sample=tokens_per_sample,
         num_dc_samples=num_dc_samples,
@@ -608,13 +680,19 @@ def _backward_impl(
 # Backward autograd.Function (for vmap(grad()) dispatch)
 # =============================================================================
 
+
 class _LinearCEBackward(torch.autograd.Function):
     """Backward pass wrapped as autograd.Function for vmap(grad()) support."""
 
     @staticmethod
     def forward(
-        grad_out, hidden_states, weight, labels,
-        softcap, ignore_index, compute_dc,
+        grad_out,
+        hidden_states,
+        weight,
+        labels,
+        softcap,
+        ignore_index,
+        compute_dc,
     ):
         # Pre-shift and flatten
         e = hidden_states[..., :-1, :].contiguous().flatten(0, -2)  # (N, D)
@@ -625,8 +703,15 @@ class _LinearCEBackward(torch.autograd.Function):
         lse = _forward_impl(e, weight, targets, valids, softcap).lse
 
         de, dc = _backward_impl(
-            grad_out, e, weight, lse, targets, valids, softcap,
-            compute_de=True, compute_dc=compute_dc,
+            grad_out,
+            e,
+            weight,
+            lse,
+            targets,
+            valids,
+            softcap,
+            compute_de=True,
+            compute_dc=compute_dc,
         )
         if dc is None:
             dc = weight.new_zeros(weight.shape)
@@ -638,13 +723,23 @@ class _LinearCEBackward(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, *grad_outputs):
-        raise NotImplementedError("Double backward not supported for LinearCrossEntropyLoss")
+        raise NotImplementedError(
+            "Double backward not supported for LinearCrossEntropyLoss"
+        )
 
     @staticmethod
-    def vmap(info, in_dims, grad_out, hidden_states, weight, labels,
-             softcap, ignore_index, compute_dc):
-        (grad_bdim, h_bdim, w_bdim, lab_bdim,
-         sc_bdim, ii_bdim, dc_bdim) = in_dims
+    def vmap(
+        info,
+        in_dims,
+        grad_out,
+        hidden_states,
+        weight,
+        labels,
+        softcap,
+        ignore_index,
+        compute_dc,
+    ):
+        (grad_bdim, h_bdim, w_bdim, lab_bdim, sc_bdim, ii_bdim, dc_bdim) = in_dims
 
         assert w_bdim is None, "weight should not be batched"
         assert sc_bdim is None, "softcap should not be batched"
@@ -680,8 +775,15 @@ class _LinearCEBackward(torch.autograd.Function):
         # de is merged (all samples), dc is per-sample via kernel-level sample masking.
         # This is 1 forward + 1 backward = 2 kernel launches instead of B_vmap × 2.
         de, dc = _backward_impl(
-            do, e, weight, lse, targets, valids, softcap,
-            compute_de=True, compute_dc=compute_dc,
+            do,
+            e,
+            weight,
+            lse,
+            targets,
+            valids,
+            softcap,
+            compute_de=True,
+            compute_dc=compute_dc,
             num_dc_samples=B_vmap if compute_dc else 1,
             tokens_per_sample=tokens_per_sample if compute_dc else 0,
         )
@@ -701,6 +803,7 @@ class _LinearCEBackward(torch.autograd.Function):
 # Main autograd.Function
 # =============================================================================
 
+
 class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
     """Fused linear projection + cross-entropy loss with vmap support.
 
@@ -714,8 +817,11 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
 
     @staticmethod
     def forward(
-        hidden_states, weight, labels,
-        ignore_index=-100, logit_softcapping=0,
+        hidden_states,
+        weight,
+        labels,
+        ignore_index=-100,
+        logit_softcapping=0,
     ):
         softcap = logit_softcapping if logit_softcapping != 0 else None
 
@@ -732,8 +838,7 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        (hidden_states, weight, labels,
-         ignore_index, logit_softcapping) = inputs
+        (hidden_states, weight, labels, ignore_index, logit_softcapping) = inputs
 
         ctx.save_for_backward(hidden_states, weight, labels)
         ctx.softcap = logit_softcapping if logit_softcapping != 0 else None
@@ -747,8 +852,13 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
         compute_dc = ctx.needs_input_grad[1]
 
         de, dc = _LinearCEBackward.apply(
-            grad_loss, hidden_states, weight, labels,
-            ctx.softcap, ctx.ignore_index, compute_dc,
+            grad_loss,
+            hidden_states,
+            weight,
+            labels,
+            ctx.softcap,
+            ctx.ignore_index,
+            compute_dc,
         )
 
         # de is (shifted_seq, D) — reshape and pad to match hidden_states shape
@@ -762,11 +872,11 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
         return de, dc, None, None, None
 
     @staticmethod
-    def vmap(info, in_dims, hidden_states, weight, labels,
-             ignore_index, logit_softcapping):
+    def vmap(
+        info, in_dims, hidden_states, weight, labels, ignore_index, logit_softcapping
+    ):
         """Custom vmap rule for DP-SGD — single merged kernel call."""
-        (h_bdim, w_bdim, lab_bdim,
-         ii_bdim, sc_bdim) = in_dims
+        (h_bdim, w_bdim, lab_bdim, ii_bdim, sc_bdim) = in_dims
 
         if h_bdim != 0:
             raise ValueError(f"hidden_states should be batched at dim 0, got {h_bdim}")
@@ -807,8 +917,11 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
 
 
 def opaque_linear_cross_entropy_loss(
-    hidden_states, weight, labels,
-    num_items_in_batch=None, ignore_index=-100,
+    hidden_states,
+    weight,
+    labels,
+    num_items_in_batch=None,
+    ignore_index=-100,
     logit_softcapping=0,
 ):
     """Convenience wrapper for fused linear + cross-entropy loss.
@@ -832,8 +945,11 @@ def opaque_linear_cross_entropy_loss(
         loss: scalar tensor
     """
     nll_sum = Opaque_LinearCrossEntropyLoss.apply(
-        hidden_states, weight, labels,
-        ignore_index, logit_softcapping,
+        hidden_states,
+        weight,
+        labels,
+        ignore_index,
+        logit_softcapping,
     )
 
     if num_items_in_batch is not None:

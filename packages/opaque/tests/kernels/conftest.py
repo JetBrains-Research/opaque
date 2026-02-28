@@ -34,6 +34,7 @@ MELLUM_CONFIG = {
 # Utility functions
 # ============================================================================
 
+
 def _assert_precision(
     actual: torch.Tensor,
     expected: torch.Tensor,
@@ -61,7 +62,9 @@ def _assert_precision(
         rel_err = float("nan")
 
     prefix = f"  {label}: " if label else "  "
-    print(f"{prefix}abs={abs_err:.2e}, rel={rel_err:.2e} (rtol={rtol:.0e}, atol={atol:.0e})")
+    print(
+        f"{prefix}abs={abs_err:.2e}, rel={rel_err:.2e} (rtol={rtol:.0e}, atol={atol:.0e})"
+    )
 
     torch.testing.assert_close(actual, expected, rtol=rtol, atol=atol)
 
@@ -122,6 +125,7 @@ def _assert_perf_benefit(pt_stats, op_stats, label="", max_perf_overhead=0.20):
 # ============================================================================
 # Pytest fixtures
 # ============================================================================
+
 
 @pytest.fixture(scope="session")
 def mellum_config():

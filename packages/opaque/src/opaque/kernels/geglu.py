@@ -1,4 +1,5 @@
 """GeGLU (exact and approx) kernels with vmap support for DP-SGD."""
+
 import math
 
 import triton
@@ -6,26 +7,28 @@ import triton.language as tl
 import torch
 from .utils import triton_tanh, torch_gpu_device, INT32_SAFETY_BUFFER
 
-NUM_INT32_ELEMENTS = 2**31
-SAFE_INT32_BUFFER_MULTIPLIER = 4
 BLOCK_SIZE = 1024
-INT32_SAFETY_BUFFER = NUM_INT32_ELEMENTS - BLOCK_SIZE * SAFE_INT32_BUFFER_MULTIPLIER
 
 _SQRT_2_OVER_PI = math.sqrt(2.0 / math.pi)
 
 
 # ===== GeGLU Exact (erf-based) =====
 
+
 @triton.jit
 def _exact_forward_kernel(
-    e, g, h,
+    e,
+    g,
+    h,
     n_elements,
     BLOCK_SIZE: tl.constexpr,
     LONG_INDEXING: tl.constexpr,
 ):
     block_idx = tl.program_id(0)
     if LONG_INDEXING:
-        offsets = block_idx.to(tl.int64) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE).to(tl.int64)
+        offsets = block_idx.to(tl.int64) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE).to(
+            tl.int64
+        )
         n_elements = tl.cast(n_elements, tl.int64)
     else:
         offsets = block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
@@ -44,7 +47,12 @@ def _exact_forward_kernel(
 
 @triton.jit
 def _exact_backward_kernel(
-    DW, e, g, de_out, dg_out, h_out,
+    DW,
+    e,
+    g,
+    de_out,
+    dg_out,
+    h_out,
     n_elements,
     BLOCK_SIZE: tl.constexpr,
     LONG_INDEXING: tl.constexpr,
@@ -66,7 +74,9 @@ def _exact_backward_kernel(
     """
     block_idx = tl.program_id(0)
     if LONG_INDEXING:
-        offsets = block_idx.to(tl.int64) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE).to(tl.int64)
+        offsets = block_idx.to(tl.int64) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE).to(
+            tl.int64
+        )
         n_elements = tl.cast(n_elements, tl.int64)
     else:
         offsets = block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
@@ -110,12 +120,18 @@ class _GeGLUExactBackward(torch.autograd.Function):
     def forward(grad_h_flat, gate_flat, up_flat):
         n_elements = gate_flat.numel()
 
-        grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+        def grid(meta):
+            return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
         with torch_gpu_device(gate_flat.device):
             # In-place: gate_flat → grad_gate, up_flat → grad_up
             _exact_backward_kernel[grid](
-                grad_h_flat, gate_flat, up_flat,
-                gate_flat, up_flat, gate_flat,  # de→gate, dg→up, h_out unused
+                grad_h_flat,
+                gate_flat,
+                up_flat,
+                gate_flat,
+                up_flat,
+                gate_flat,  # de→gate, dg→up, h_out unused
                 n_elements,
                 BLOCK_SIZE=BLOCK_SIZE,
                 LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
@@ -143,12 +159,18 @@ class _GeGLUExactBackward(torch.autograd.Function):
 
         n_elements = gate_merged.numel()
 
-        grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+        def grid(meta):
+            return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
         with torch_gpu_device(gate_merged.device):
             # In-place: gate_merged → grad_gate, up_merged → grad_up
             _exact_backward_kernel[grid](
-                grad_h_merged, gate_merged, up_merged,
-                gate_merged, up_merged, gate_merged,  # de→gate, dg→up, h_out unused
+                grad_h_merged,
+                gate_merged,
+                up_merged,
+                gate_merged,
+                up_merged,
+                gate_merged,  # de→gate, dg→up, h_out unused
                 n_elements,
                 BLOCK_SIZE=BLOCK_SIZE,
                 LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
@@ -171,11 +193,15 @@ class Opaque_GeGLU_Exact(torch.autograd.Function):
         n_elements = gate_flat.numel()
 
         h = torch.empty_like(gate_flat)
-        grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
+        def grid(meta):
+            return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
         with torch_gpu_device(gate.device):
             _exact_forward_kernel[grid](
-                gate_flat, up_flat, h,
+                gate_flat,
+                up_flat,
+                h,
                 n_elements,
                 BLOCK_SIZE=BLOCK_SIZE,
                 LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
@@ -194,8 +220,12 @@ class Opaque_GeGLU_Exact(torch.autograd.Function):
     def backward(ctx, grad_h):
         gate_flat, up_flat = ctx.saved_tensors
         grad_h_flat = grad_h.reshape(-1).contiguous()
-        grad_gate_flat, grad_up_flat = _GeGLUExactBackward.apply(grad_h_flat, gate_flat, up_flat)
-        return grad_gate_flat.reshape(ctx.original_shape), grad_up_flat.reshape(ctx.original_shape)
+        grad_gate_flat, grad_up_flat = _GeGLUExactBackward.apply(
+            grad_h_flat, gate_flat, up_flat
+        )
+        return grad_gate_flat.reshape(ctx.original_shape), grad_up_flat.reshape(
+            ctx.original_shape
+        )
 
     @staticmethod
     def vmap(info, in_dims, gate, up):
@@ -213,11 +243,15 @@ class Opaque_GeGLU_Exact(torch.autograd.Function):
         n_elements = gate_flat.numel()
 
         h = torch.empty_like(gate_flat)
-        grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
+        def grid(meta):
+            return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
         with torch_gpu_device(gate.device):
             _exact_forward_kernel[grid](
-                gate_flat, up_flat, h,
+                gate_flat,
+                up_flat,
+                h,
                 n_elements,
                 BLOCK_SIZE=BLOCK_SIZE,
                 LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
@@ -228,16 +262,21 @@ class Opaque_GeGLU_Exact(torch.autograd.Function):
 
 # ===== GeGLU Approx (tanh-based) =====
 
+
 @triton.jit
 def _approx_forward_kernel(
-    e, g, h,
+    e,
+    g,
+    h,
     n_elements,
     BLOCK_SIZE: tl.constexpr,
     LONG_INDEXING: tl.constexpr,
 ):
     block_idx = tl.program_id(0)
     if LONG_INDEXING:
-        offsets = block_idx.to(tl.int64) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE).to(tl.int64)
+        offsets = block_idx.to(tl.int64) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE).to(
+            tl.int64
+        )
         n_elements = tl.cast(n_elements, tl.int64)
     else:
         offsets = block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
@@ -247,7 +286,9 @@ def _approx_forward_kernel(
     e_row = tl.load(e + offsets, mask=mask, other=0).to(tl.float32)
     g_row = tl.load(g + offsets, mask=mask, other=0)
 
-    f_row = 0.5 * e_row * (triton_tanh(s * e_row * (1.0 + 0.044715 * e_row * e_row)) + 1.0)
+    f_row = (
+        0.5 * e_row * (triton_tanh(s * e_row * (1.0 + 0.044715 * e_row * e_row)) + 1.0)
+    )
     f_row = f_row.to(g_row.dtype)
     h_row = f_row * g_row
 
@@ -256,7 +297,12 @@ def _approx_forward_kernel(
 
 @triton.jit
 def _approx_backward_kernel(
-    DW, e, g, de_out, dg_out, h_out,
+    DW,
+    e,
+    g,
+    de_out,
+    dg_out,
+    h_out,
     n_elements,
     BLOCK_SIZE: tl.constexpr,
     LONG_INDEXING: tl.constexpr,
@@ -279,7 +325,9 @@ def _approx_backward_kernel(
     """
     block_idx = tl.program_id(0)
     if LONG_INDEXING:
-        offsets = block_idx.to(tl.int64) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE).to(tl.int64)
+        offsets = block_idx.to(tl.int64) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE).to(
+            tl.int64
+        )
         n_elements = tl.cast(n_elements, tl.int64)
     else:
         offsets = block_idx * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
@@ -327,12 +375,18 @@ class _GeGLUApproxBackward(torch.autograd.Function):
     def forward(grad_h_flat, gate_flat, up_flat):
         n_elements = gate_flat.numel()
 
-        grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+        def grid(meta):
+            return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
         with torch_gpu_device(gate_flat.device):
             # In-place: gate_flat → grad_gate, up_flat → grad_up
             _approx_backward_kernel[grid](
-                grad_h_flat, gate_flat, up_flat,
-                gate_flat, up_flat, gate_flat,  # de→gate, dg→up, h_out unused
+                grad_h_flat,
+                gate_flat,
+                up_flat,
+                gate_flat,
+                up_flat,
+                gate_flat,  # de→gate, dg→up, h_out unused
                 n_elements,
                 BLOCK_SIZE=BLOCK_SIZE,
                 LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
@@ -360,12 +414,18 @@ class _GeGLUApproxBackward(torch.autograd.Function):
 
         n_elements = gate_merged.numel()
 
-        grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+        def grid(meta):
+            return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
         with torch_gpu_device(gate_merged.device):
             # In-place: gate_merged → grad_gate, up_merged → grad_up
             _approx_backward_kernel[grid](
-                grad_h_merged, gate_merged, up_merged,
-                gate_merged, up_merged, gate_merged,  # de→gate, dg→up, h_out unused
+                grad_h_merged,
+                gate_merged,
+                up_merged,
+                gate_merged,
+                up_merged,
+                gate_merged,  # de→gate, dg→up, h_out unused
                 n_elements,
                 BLOCK_SIZE=BLOCK_SIZE,
                 LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
@@ -388,11 +448,15 @@ class Opaque_GeGLU_Approx(torch.autograd.Function):
         n_elements = gate_flat.numel()
 
         h = torch.empty_like(gate_flat)
-        grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
+        def grid(meta):
+            return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
         with torch_gpu_device(gate.device):
             _approx_forward_kernel[grid](
-                gate_flat, up_flat, h,
+                gate_flat,
+                up_flat,
+                h,
                 n_elements,
                 BLOCK_SIZE=BLOCK_SIZE,
                 LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
@@ -411,8 +475,12 @@ class Opaque_GeGLU_Approx(torch.autograd.Function):
     def backward(ctx, grad_h):
         gate_flat, up_flat = ctx.saved_tensors
         grad_h_flat = grad_h.reshape(-1).contiguous()
-        grad_gate_flat, grad_up_flat = _GeGLUApproxBackward.apply(grad_h_flat, gate_flat, up_flat)
-        return grad_gate_flat.reshape(ctx.original_shape), grad_up_flat.reshape(ctx.original_shape)
+        grad_gate_flat, grad_up_flat = _GeGLUApproxBackward.apply(
+            grad_h_flat, gate_flat, up_flat
+        )
+        return grad_gate_flat.reshape(ctx.original_shape), grad_up_flat.reshape(
+            ctx.original_shape
+        )
 
     @staticmethod
     def vmap(info, in_dims, gate, up):
@@ -430,11 +498,15 @@ class Opaque_GeGLU_Approx(torch.autograd.Function):
         n_elements = gate_flat.numel()
 
         h = torch.empty_like(gate_flat)
-        grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
+        def grid(meta):
+            return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
         with torch_gpu_device(gate.device):
             _approx_forward_kernel[grid](
-                gate_flat, up_flat, h,
+                gate_flat,
+                up_flat,
+                h,
                 n_elements,
                 BLOCK_SIZE=BLOCK_SIZE,
                 LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
@@ -464,11 +536,15 @@ def _triton_geglu_exact_forward(gate, up):
     n_elements = gate_flat.numel()
 
     h = torch.empty_like(gate_flat)
-    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
+    def grid(meta):
+        return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
     with torch_gpu_device(gate.device):
         _exact_forward_kernel[grid](
-            gate_flat, up_flat, h,
+            gate_flat,
+            up_flat,
+            h,
             n_elements,
             BLOCK_SIZE=BLOCK_SIZE,
             LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
@@ -497,12 +573,18 @@ def _triton_geglu_exact_backward(grad_h, gate, up):
     up_flat = up.reshape(-1)
     n_elements = gate_flat.numel()
 
-    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+    def grid(meta):
+        return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
     with torch_gpu_device(gate.device):
         # In-place: gate_flat → grad_gate, up_flat → grad_up
         _exact_backward_kernel[grid](
-            grad_h_flat, gate_flat, up_flat,
-            gate_flat, up_flat, gate_flat,  # de→gate, dg→up, h_out unused
+            grad_h_flat,
+            gate_flat,
+            up_flat,
+            gate_flat,
+            up_flat,
+            gate_flat,  # de→gate, dg→up, h_out unused
             n_elements,
             BLOCK_SIZE=BLOCK_SIZE,
             LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
@@ -524,18 +606,28 @@ def _triton_geglu_exact_backward_fused(dh, gate, up):
     up_flat = up.reshape(-1)
     n_elements = gate_flat.numel()
 
-    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+    def grid(meta):
+        return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
     with torch_gpu_device(gate.device):
         _exact_backward_kernel[grid](
-            dh_flat, gate_flat, up_flat,
-            gate_flat, up_flat, dh_flat,  # In-place: de→gate, dg→up, h→dh
+            dh_flat,
+            gate_flat,
+            up_flat,
+            gate_flat,
+            up_flat,
+            dh_flat,  # In-place: de→gate, dg→up, h→dh
             n_elements,
             BLOCK_SIZE=BLOCK_SIZE,
             LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
             COMPUTE_H=True,
         )
 
-    return dh_flat.reshape(original_shape), gate_flat.reshape(original_shape), up_flat.reshape(original_shape)
+    return (
+        dh_flat.reshape(original_shape),
+        gate_flat.reshape(original_shape),
+        up_flat.reshape(original_shape),
+    )
 
 
 def _triton_geglu_approx_forward(gate, up):
@@ -550,11 +642,15 @@ def _triton_geglu_approx_forward(gate, up):
     n_elements = gate_flat.numel()
 
     h = torch.empty_like(gate_flat)
-    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
+    def grid(meta):
+        return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
     with torch_gpu_device(gate.device):
         _approx_forward_kernel[grid](
-            gate_flat, up_flat, h,
+            gate_flat,
+            up_flat,
+            h,
             n_elements,
             BLOCK_SIZE=BLOCK_SIZE,
             LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
@@ -583,12 +679,18 @@ def _triton_geglu_approx_backward(grad_h, gate, up):
     up_flat = up.reshape(-1)
     n_elements = gate_flat.numel()
 
-    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+    def grid(meta):
+        return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
     with torch_gpu_device(gate.device):
         # In-place: gate_flat → grad_gate, up_flat → grad_up
         _approx_backward_kernel[grid](
-            grad_h_flat, gate_flat, up_flat,
-            gate_flat, up_flat, gate_flat,  # de→gate, dg→up, h_out unused
+            grad_h_flat,
+            gate_flat,
+            up_flat,
+            gate_flat,
+            up_flat,
+            gate_flat,  # de→gate, dg→up, h_out unused
             n_elements,
             BLOCK_SIZE=BLOCK_SIZE,
             LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
@@ -610,15 +712,25 @@ def _triton_geglu_approx_backward_fused(dh, gate, up):
     up_flat = up.reshape(-1)
     n_elements = gate_flat.numel()
 
-    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+    def grid(meta):
+        return (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+
     with torch_gpu_device(gate.device):
         _approx_backward_kernel[grid](
-            dh_flat, gate_flat, up_flat,
-            gate_flat, up_flat, dh_flat,  # In-place: de→gate, dg→up, h→dh
+            dh_flat,
+            gate_flat,
+            up_flat,
+            gate_flat,
+            up_flat,
+            dh_flat,  # In-place: de→gate, dg→up, h→dh
             n_elements,
             BLOCK_SIZE=BLOCK_SIZE,
             LONG_INDEXING=0 if n_elements <= INT32_SAFETY_BUFFER else 1,
             COMPUTE_H=True,
         )
 
-    return dh_flat.reshape(original_shape), gate_flat.reshape(original_shape), up_flat.reshape(original_shape)
+    return (
+        dh_flat.reshape(original_shape),
+        gate_flat.reshape(original_shape),
+        up_flat.reshape(original_shape),
+    )

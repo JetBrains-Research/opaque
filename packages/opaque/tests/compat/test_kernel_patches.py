@@ -26,6 +26,7 @@ ATOL = 1e-4
 # Helpers
 # =============================================================================
 
+
 def _make_small_model(model_name, device="cuda"):
     """Create a small 2-layer model for testing."""
     config = AutoConfig.from_pretrained(model_name)
@@ -42,6 +43,7 @@ def _get_tokenizer(model_name):
 # =============================================================================
 # MLP Tests
 # =============================================================================
+
 
 @pytest.mark.gpu
 class TestMLPPatches:
@@ -65,8 +67,9 @@ class TestMLPPatches:
         up = mlp.up_proj(x)
         ref = mlp.down_proj(F.silu(gate) * up)
 
-        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), \
+        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), (
             f"LlamaMLP output mismatch: max diff {(out - ref).abs().max():.2e}"
+        )
 
     def test_geglu_exact_mlp_matches(self, device):
         """Patched GemmaMLP should match PyTorch reference."""
@@ -87,10 +90,11 @@ class TestMLPPatches:
         # Reference: gelu_exact(gate) * up -> down
         gate = mlp.gate_proj(x)
         up = mlp.up_proj(x)
-        ref = mlp.down_proj(F.gelu(gate, approximate='none') * up)
+        ref = mlp.down_proj(F.gelu(gate, approximate="none") * up)
 
-        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), \
+        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), (
             f"GemmaMLP output mismatch: max diff {(out - ref).abs().max():.2e}"
+        )
 
     def test_geglu_approx_mlp_matches(self, device):
         """Patched Gemma2MLP should match PyTorch reference."""
@@ -111,15 +115,17 @@ class TestMLPPatches:
         # Reference: gelu_tanh(gate) * up -> down
         gate = mlp.gate_proj(x)
         up = mlp.up_proj(x)
-        ref = mlp.down_proj(F.gelu(gate, approximate='tanh') * up)
+        ref = mlp.down_proj(F.gelu(gate, approximate="tanh") * up)
 
-        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), \
+        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), (
             f"Gemma2MLP output mismatch: max diff {(out - ref).abs().max():.2e}"
+        )
 
 
 # =============================================================================
 # Gradient Tests
 # =============================================================================
+
 
 @pytest.mark.gpu
 class TestGradients:
@@ -148,10 +154,10 @@ class TestGradients:
 # vmap Compatibility
 # =============================================================================
 
+
 @pytest.mark.gpu
 class TestVmapCompatibility:
     """Test that patched modules work under vmap for DP-SGD."""
-
 
     def test_vmap_patched_mlp(self, device):
         """Patched MLP should produce correct output under vmap."""
@@ -171,13 +177,15 @@ class TestVmapCompatibility:
         # Verify each sample matches non-batched forward
         for i in range(x.shape[0]):
             ref = mlp(x[i])
-            assert torch.allclose(out[i], ref, rtol=RTOL, atol=ATOL), \
+            assert torch.allclose(out[i], ref, rtol=RTOL, atol=ATOL), (
                 f"vmap output[{i}] mismatch vs sequential"
+            )
 
 
 # =============================================================================
 # End-to-end Integration
 # =============================================================================
+
 
 @pytest.mark.gpu
 class TestEndToEnd:
@@ -233,6 +241,7 @@ class TestEndToEnd:
 # Configuration Tests
 # =============================================================================
 
+
 class TestConfiguration:
     """Test patch configuration and control."""
 
@@ -258,6 +267,7 @@ class TestConfiguration:
 # Cross-Entropy Loss Patch Tests
 # =============================================================================
 
+
 @pytest.mark.gpu
 class TestCrossEntropyPatches:
     """Test that patched cross-entropy loss produces correct outputs."""
@@ -276,14 +286,16 @@ class TestCrossEntropyPatches:
 
         # PyTorch reference with same shifting logic
         import torch.nn as nn
+
         labels_ref = nn.functional.pad(labels, (0, 1), value=-100)
         shift_labels = labels_ref[..., 1:].contiguous()
         logits_flat = logits.float().view(-1, vocab_size)
         shift_labels_flat = shift_labels.view(-1)
         ref = F.cross_entropy(logits_flat, shift_labels_flat, ignore_index=-100)
 
-        assert torch.allclose(loss, ref, rtol=1e-3, atol=1e-3), \
+        assert torch.allclose(loss, ref, rtol=1e-3, atol=1e-3), (
             f"Cross-entropy loss mismatch: got {loss.item():.6f}, expected {ref.item():.6f}"
+        )
 
     def test_causal_lm_loss_with_num_items_in_batch(self, device):
         """Loss with num_items_in_batch should use sum reduction."""
@@ -294,27 +306,38 @@ class TestCrossEntropyPatches:
         labels = torch.randint(0, vocab_size, (batch, seq_len), device=device)
 
         import torch.nn as nn
-        num_items = torch.tensor(batch * (seq_len - 1), dtype=torch.float32, device=device)
-        loss = _opaque_causal_lm_loss(logits, labels, vocab_size,
-                                       num_items_in_batch=num_items)
+
+        num_items = torch.tensor(
+            batch * (seq_len - 1), dtype=torch.float32, device=device
+        )
+        loss = _opaque_causal_lm_loss(
+            logits, labels, vocab_size, num_items_in_batch=num_items
+        )
 
         # Reference: sum reduction / num_items
         labels_ref = nn.functional.pad(labels, (0, 1), value=-100)
         shift_labels = labels_ref[..., 1:].contiguous()
         logits_flat = logits.float().view(-1, vocab_size)
         shift_labels_flat = shift_labels.view(-1)
-        ref = F.cross_entropy(logits_flat, shift_labels_flat, ignore_index=-100,
-                              reduction="sum") / num_items
+        ref = (
+            F.cross_entropy(
+                logits_flat, shift_labels_flat, ignore_index=-100, reduction="sum"
+            )
+            / num_items
+        )
 
-        assert torch.allclose(loss, ref, rtol=1e-3, atol=1e-3), \
+        assert torch.allclose(loss, ref, rtol=1e-3, atol=1e-3), (
             f"Sum-reduced loss mismatch: got {loss.item():.6f}, expected {ref.item():.6f}"
+        )
 
     def test_backward_through_patched_loss(self, device):
         """Gradients should flow through patched cross-entropy loss."""
         from opaque.compat.transformers._kernel_patches import _opaque_causal_lm_loss
 
         batch, seq_len, vocab_size = 2, 16, 1000
-        logits = torch.randn(batch, seq_len, vocab_size, device=device, requires_grad=True)
+        logits = torch.randn(
+            batch, seq_len, vocab_size, device=device, requires_grad=True
+        )
         labels = torch.randint(0, vocab_size, (batch, seq_len), device=device)
 
         loss = _opaque_causal_lm_loss(logits, labels, vocab_size)
@@ -340,6 +363,7 @@ class TestCrossEntropyPatches:
 # =============================================================================
 # LoRA Patch Tests
 # =============================================================================
+
 
 @pytest.mark.gpu
 class TestLoRAPatches:
@@ -367,8 +391,9 @@ class TestLoRAPatches:
         lora_delta = F.linear(F.linear(x, A_weight), B_weight) * scaling
         ref = base_out + lora_delta
 
-        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), \
+        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), (
             f"LoRA forward mismatch: max diff {(out - ref).abs().max():.2e}"
+        )
 
     def test_lora_forward_with_bias(self, device):
         """LoRA forward should correctly handle base layer bias."""
@@ -392,8 +417,9 @@ class TestLoRAPatches:
         lora_delta = F.linear(F.linear(x, A_weight), B_weight) * scaling
         ref = base_out + lora_delta
 
-        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), \
+        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), (
             f"LoRA with bias mismatch: max diff {(out - ref).abs().max():.2e}"
+        )
 
     def test_backward_through_patched_lora(self, device):
         """Gradients should flow through patched LoRA."""
@@ -422,7 +448,9 @@ class TestLoRAPatches:
 
     def test_lora_class_patched(self):
         """peft.tuners.lora.Linear should have patched forward."""
-        from opaque.compat.transformers._kernel_patches import _opaque_lora_linear_forward
+        from opaque.compat.transformers._kernel_patches import (
+            _opaque_lora_linear_forward,
+        )
 
         try:
             from peft.tuners.lora import Linear as PeftLoRALinear
@@ -436,6 +464,7 @@ class TestLoRAPatches:
 # =============================================================================
 # Phase 1: Qwen3 and Granite support
 # =============================================================================
+
 
 @pytest.mark.gpu
 class TestQwen3Patches:
@@ -460,8 +489,10 @@ class TestQwen3Patches:
         up = mlp.up_proj(x)
         ref = mlp.down_proj(F.silu(gate) * up)
 
-        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), \
+        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), (
             f"Qwen3MLP output mismatch: max diff {(out - ref).abs().max():.2e}"
+        )
+
 
 @pytest.mark.gpu
 class TestGranitePatches:
@@ -486,13 +517,15 @@ class TestGranitePatches:
         up = mlp.up_proj(x)
         ref = mlp.down_proj(F.silu(gate) * up)
 
-        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), \
+        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), (
             f"GraniteMLP output mismatch: max diff {(out - ref).abs().max():.2e}"
+        )
 
 
 # =============================================================================
 # Phase 3: Cohere/Cohere2 support
 # =============================================================================
+
 
 @pytest.mark.gpu
 class TestCoherePatches:
@@ -527,12 +560,15 @@ class TestCoherePatches:
         up = mlp.up_proj(x)
         ref = mlp.down_proj(F.silu(gate) * up)
 
-        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), \
+        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), (
             f"CohereMLP output mismatch: max diff {(out - ref).abs().max():.2e}"
+        )
+
 
 # =============================================================================
 # Phase 2: Fused LoRA MLP
 # =============================================================================
+
 
 @pytest.mark.gpu
 class TestFusedLoRAMLP:
@@ -570,8 +606,9 @@ class TestFusedLoRAMLP:
         h = F.silu(gate) * up
         ref = F.linear(h, Wd) + (h @ Ad @ Bd) * scaling
 
-        assert torch.allclose(out_fused, ref, rtol=1e-3, atol=1e-3), \
+        assert torch.allclose(out_fused, ref, rtol=1e-3, atol=1e-3), (
             f"Fused LoRA MLP output mismatch: max diff {(out_fused - ref).abs().max():.2e}"
+        )
 
     def test_fused_lora_mlp_backward(self, device):
         """Fused LoRA MLP should produce correct gradients."""
@@ -611,20 +648,23 @@ class TestFusedLoRAMLP:
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
-            r=8, lora_alpha=16, lora_dropout=0.0,
+            r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
             target_modules=["gate_proj", "up_proj", "down_proj"],
         )
         model = get_peft_model(model, lora_config).to(device)
 
         # Check that MLP layers were auto-fused
-        from opaque.compat.transformers._kernel_patches import _opaque_fused_lora_mlp_forward
         layers = model.model.model.layers
         for layer in layers:
             mlp = layer.mlp
-            assert hasattr(mlp, "_opaque_activation_type"), \
+            assert hasattr(mlp, "_opaque_activation_type"), (
                 "MLP should have _opaque_activation_type after auto-fuse"
-            assert hasattr(mlp, "_opaque_original_forward"), \
+            )
+            assert hasattr(mlp, "_opaque_original_forward"), (
                 "MLP should have _opaque_original_forward after auto-fuse"
+            )
 
     def test_fused_lora_mlp_model_forward_backward(self, device):
         """Full model with fused LoRA MLP should produce valid forward+backward."""
@@ -634,7 +674,9 @@ class TestFusedLoRAMLP:
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
-            r=8, lora_alpha=16, lora_dropout=0.0,
+            r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
             target_modules=["gate_proj", "up_proj", "down_proj"],
         )
         model = get_peft_model(model, lora_config).to(device)
@@ -668,29 +710,35 @@ class TestFusedLoRAMLP:
 
         # Use the original get_peft_model to avoid auto-hook (simulate loading from checkpoint)
         import peft
+
         original_get_peft_model = peft._opaque_original_get_peft_model
         lora_config = LoraConfig(
-            r=8, lora_alpha=16, lora_dropout=0.0,
+            r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
             target_modules=["gate_proj", "up_proj", "down_proj"],
         )
         model = original_get_peft_model(model, lora_config).to(device)
 
         # MLP should NOT be fused yet
         layers = model.model.model.layers
-        assert not hasattr(layers[0].mlp, "_opaque_activation_type"), \
+        assert not hasattr(layers[0].mlp, "_opaque_activation_type"), (
             "MLP should not be fused before patch_lora_model()"
+        )
 
         # Manually apply
         patch_lora_model(model)
 
         # MLP should now be fused
-        assert hasattr(layers[0].mlp, "_opaque_activation_type"), \
+        assert hasattr(layers[0].mlp, "_opaque_activation_type"), (
             "MLP should be fused after patch_lora_model()"
+        )
 
 
 # =============================================================================
 # Fused LoRA QKV
 # =============================================================================
+
 
 @pytest.mark.gpu
 class TestFusedLoRAQKV:
@@ -717,7 +765,19 @@ class TestFusedLoRAQKV:
         Bv = torch.randn(rank, kv_out, device=device)
 
         Q, K, V = Opaque_LoRA_QKV.apply(
-            x, Wq, Aq, Bq, scaling, Wk, Ak, Bk, scaling, Wv, Av, Bv, scaling,
+            x,
+            Wq,
+            Aq,
+            Bq,
+            scaling,
+            Wk,
+            Ak,
+            Bk,
+            scaling,
+            Wv,
+            Av,
+            Bv,
+            scaling,
         )
 
         # PyTorch reference
@@ -725,12 +785,15 @@ class TestFusedLoRAQKV:
         ref_k = F.linear(x, Wk) + (x @ Ak @ Bk) * scaling
         ref_v = F.linear(x, Wv) + (x @ Av @ Bv) * scaling
 
-        assert torch.allclose(Q, ref_q, rtol=1e-3, atol=1e-3), \
+        assert torch.allclose(Q, ref_q, rtol=1e-3, atol=1e-3), (
             f"Fused LoRA QKV Q mismatch: max diff {(Q - ref_q).abs().max():.2e}"
-        assert torch.allclose(K, ref_k, rtol=1e-3, atol=1e-3), \
+        )
+        assert torch.allclose(K, ref_k, rtol=1e-3, atol=1e-3), (
             f"Fused LoRA QKV K mismatch: max diff {(K - ref_k).abs().max():.2e}"
-        assert torch.allclose(V, ref_v, rtol=1e-3, atol=1e-3), \
+        )
+        assert torch.allclose(V, ref_v, rtol=1e-3, atol=1e-3), (
             f"Fused LoRA QKV V mismatch: max diff {(V - ref_v).abs().max():.2e}"
+        )
 
     def test_fused_lora_qkv_backward(self, device):
         """Fused LoRA QKV should produce correct gradients."""
@@ -753,7 +816,19 @@ class TestFusedLoRAQKV:
         Bv = torch.randn(rank, kv_out, device=device, requires_grad=True)
 
         Q, K, V = Opaque_LoRA_QKV.apply(
-            x, Wq, Aq, Bq, scaling, Wk, Ak, Bk, scaling, Wv, Av, Bv, scaling,
+            x,
+            Wq,
+            Aq,
+            Bq,
+            scaling,
+            Wk,
+            Ak,
+            Bk,
+            scaling,
+            Wv,
+            Av,
+            Bv,
+            scaling,
         )
         (Q.sum() + K.sum() + V.sum()).backward()
 
@@ -772,22 +847,23 @@ class TestFusedLoRAQKV:
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
-            r=8, lora_alpha=16, lora_dropout=0.0,
+            r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
             target_modules=["q_proj", "k_proj", "v_proj"],
         )
         model = get_peft_model(model, lora_config).to(device)
 
         # Check that attention layers were auto-fused
-        from opaque.compat.transformers._kernel_patches import (
-            _opaque_fused_qkv_attention_forward,
-        )
         layers = model.model.model.layers
         for layer in layers:
             attn = layer.self_attn
-            assert hasattr(attn, "_opaque_fused_qkv"), \
+            assert hasattr(attn, "_opaque_fused_qkv"), (
                 "Attention should have _opaque_fused_qkv after auto-fuse"
-            assert hasattr(attn, "_opaque_original_forward"), \
+            )
+            assert hasattr(attn, "_opaque_original_forward"), (
                 "Attention should have _opaque_original_forward after auto-fuse"
+            )
 
     def test_fused_lora_qkv_model_forward_backward(self, device):
         """Full model with fused LoRA QKV should produce valid forward+backward."""
@@ -797,7 +873,9 @@ class TestFusedLoRAQKV:
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
-            r=8, lora_alpha=16, lora_dropout=0.0,
+            r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
             target_modules=["q_proj", "k_proj", "v_proj"],
         )
         model = get_peft_model(model, lora_config).to(device)
@@ -827,7 +905,9 @@ class TestFusedLoRAQKV:
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
-            r=8, lora_alpha=16, lora_dropout=0.0,
+            r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
             target_modules=["q_proj", "k_proj", "v_proj"],
         )
         model = get_peft_model(model, lora_config).to(device)
@@ -835,8 +915,9 @@ class TestFusedLoRAQKV:
         layers = model.model.model.layers
         for layer in layers:
             attn = layer.self_attn
-            assert not hasattr(attn, "_opaque_fused_qkv"), \
+            assert not hasattr(attn, "_opaque_fused_qkv"), (
                 "Qwen2 attention should NOT have fused QKV (bias=True)"
+            )
 
     def test_qwen3_skips_qkv_fusion(self, device):
         """Qwen3 attention should NOT be fused (has q_norm/k_norm)."""
@@ -850,7 +931,9 @@ class TestFusedLoRAQKV:
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
-            r=8, lora_alpha=16, lora_dropout=0.0,
+            r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
             target_modules=["q_proj", "k_proj", "v_proj"],
         )
         model = get_peft_model(model, lora_config).to(device)
@@ -858,8 +941,9 @@ class TestFusedLoRAQKV:
         layers = model.model.model.layers
         for layer in layers:
             attn = layer.self_attn
-            assert not hasattr(attn, "_opaque_fused_qkv"), \
+            assert not hasattr(attn, "_opaque_fused_qkv"), (
                 "Qwen3 attention should NOT have fused QKV (q_norm/k_norm)"
+            )
 
     def test_patch_lora_model_manual_qkv(self, device):
         """patch_lora_model() should fuse QKV for manually loaded PEFT models."""
@@ -873,24 +957,29 @@ class TestFusedLoRAQKV:
 
         # Use the original get_peft_model to avoid auto-hook
         import peft
+
         original_get_peft_model = peft._opaque_original_get_peft_model
         lora_config = LoraConfig(
-            r=8, lora_alpha=16, lora_dropout=0.0,
+            r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
             target_modules=["q_proj", "k_proj", "v_proj"],
         )
         model = original_get_peft_model(model, lora_config).to(device)
 
         # QKV should NOT be fused yet
         layers = model.model.model.layers
-        assert not hasattr(layers[0].self_attn, "_opaque_fused_qkv"), \
+        assert not hasattr(layers[0].self_attn, "_opaque_fused_qkv"), (
             "QKV should not be fused before patch_lora_model()"
+        )
 
         # Manually apply
         patch_lora_model(model)
 
         # QKV should now be fused
-        assert hasattr(layers[0].self_attn, "_opaque_fused_qkv"), \
+        assert hasattr(layers[0].self_attn, "_opaque_fused_qkv"), (
             "QKV should be fused after patch_lora_model()"
+        )
 
     def test_fused_qkv_clipped_grad(self, device):
         """Fused QKV should work end-to-end with clipped_grad (DP-SGD)."""
@@ -900,7 +989,9 @@ class TestFusedLoRAQKV:
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
-            r=8, lora_alpha=16, lora_dropout=0.0,
+            r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
             target_modules=["q_proj", "k_proj", "v_proj"],
         )
         model = get_peft_model(model, lora_config).to(device)

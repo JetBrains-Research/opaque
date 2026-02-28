@@ -24,6 +24,7 @@ ROPE_GROUP_SIZE: int = 4
 # Triton Kernels
 # ============================================================================
 
+
 @triton.jit
 def _rope_embedding_kernel(
     Q,
@@ -65,7 +66,9 @@ def _rope_embedding_kernel(
 
     for k in range(head_start, head_end):
         offs_q1 = row_position * Q_row_stride + k * head_dim + col_offsets
-        offs_q2 = row_position * Q_row_stride + k * head_dim + col_offsets + half_head_dim
+        offs_q2 = (
+            row_position * Q_row_stride + k * head_dim + col_offsets + half_head_dim
+        )
 
         Q1 = tl.load(Q + offs_q1, mask=mask, other=0).to(sin1.dtype)
         Q2 = tl.load(Q + offs_q2, mask=mask, other=0).to(sin1.dtype)
@@ -158,6 +161,7 @@ _rope_embedding_qk_kernel_heuristics = _rope_embedding_qk_kernel
 # Autograd Functions with vmap support
 # ============================================================================
 
+
 class _RoPEBackward(torch.autograd.Function):
     """Backward pass wrapped as autograd.Function for vmap(grad()) support.
 
@@ -177,10 +181,15 @@ class _RoPEBackward(torch.autograd.Function):
 
         with torch_gpu_device(dQ.device):
             _rope_embedding_kernel_heuristics[(n_rows, n_groups)](
-                dQ, dQ.stride(0),
-                cos, cos.stride(0),
-                sin, sin.stride(0),
-                seq_len, head_dim, n_heads,
+                dQ,
+                dQ.stride(0),
+                cos,
+                cos.stride(0),
+                sin,
+                sin.stride(0),
+                seq_len,
+                head_dim,
+                n_heads,
                 BACKWARD_PASS=True,
                 BLOCK_SIZE=BLOCK_SIZE,
                 num_warps=num_warps,
@@ -206,7 +215,9 @@ class _RoPEBackward(torch.autograd.Function):
         batch, seq_len, n_heads, head_dim = grad_Q.shape[1:]
 
         # Merge vmap batch into batch dim, in-place (internal gradient, safe to mutate)
-        dQ = grad_Q.reshape(vmap_batch * batch * seq_len, n_heads * head_dim).contiguous()
+        dQ = grad_Q.reshape(
+            vmap_batch * batch * seq_len, n_heads * head_dim
+        ).contiguous()
         n_rows = dQ.shape[0]
 
         BLOCK_SIZE, num_warps = calculate_settings(head_dim // 2)
@@ -215,10 +226,15 @@ class _RoPEBackward(torch.autograd.Function):
 
         with torch_gpu_device(dQ.device):
             _rope_embedding_kernel_heuristics[(n_rows, n_groups)](
-                dQ, dQ.stride(0),
-                cos, cos.stride(0),
-                sin, sin.stride(0),
-                seq_len, head_dim, n_heads,
+                dQ,
+                dQ.stride(0),
+                cos,
+                cos.stride(0),
+                sin,
+                sin.stride(0),
+                seq_len,
+                head_dim,
+                n_heads,
                 BACKWARD_PASS=True,
                 BLOCK_SIZE=BLOCK_SIZE,
                 num_warps=num_warps,
@@ -328,10 +344,15 @@ class Opaque_RoPE(torch.autograd.Function):
 
         with torch_gpu_device(Q.device):
             _rope_embedding_kernel_heuristics[(n_rows, n_groups)](
-                Q_out, Q_out.stride(0),
-                cos_sq, cos_sq.stride(0),
-                sin_sq, sin_sq.stride(0),
-                seq_len, head_dim, n_heads,
+                Q_out,
+                Q_out.stride(0),
+                cos_sq,
+                cos_sq.stride(0),
+                sin_sq,
+                sin_sq.stride(0),
+                seq_len,
+                head_dim,
+                n_heads,
                 BACKWARD_PASS=False,
                 BLOCK_SIZE=BLOCK_SIZE,
                 num_warps=num_warps,
@@ -361,14 +382,26 @@ class _RoPE_QK_Backward(torch.autograd.Function):
 
         with torch_gpu_device(dQ_out.device):
             _rope_embedding_qk_kernel_heuristics[(batch * seq_len, n_heads_Q)](
-                dQ_out, dQ_out.stride(0), dQ_out.stride(1), dQ_out.stride(2),
-                dK_out, dK_out.stride(0), dK_out.stride(1), dK_out.stride(2),
-                cos, cos.stride(0),
-                sin, sin.stride(0),
-                rope_ptr, seq_len,
-                head_dim=head_dim, n_heads_K=n_heads_K,
-                BACKWARD_PASS=True, HAS_ROPE_INDICES=has_indices,
-                BLOCK_SIZE=BLOCK_SIZE, num_warps=num_warps,
+                dQ_out,
+                dQ_out.stride(0),
+                dQ_out.stride(1),
+                dQ_out.stride(2),
+                dK_out,
+                dK_out.stride(0),
+                dK_out.stride(1),
+                dK_out.stride(2),
+                cos,
+                cos.stride(0),
+                sin,
+                sin.stride(0),
+                rope_ptr,
+                seq_len,
+                head_dim=head_dim,
+                n_heads_K=n_heads_K,
+                BACKWARD_PASS=True,
+                HAS_ROPE_INDICES=has_indices,
+                BLOCK_SIZE=BLOCK_SIZE,
+                num_warps=num_warps,
             )
 
         return dQ_out, dK_out
@@ -393,8 +426,12 @@ class _RoPE_QK_Backward(torch.autograd.Function):
         n_heads_K = grad_K.shape[2]
 
         # Merge vmap batch into batch dim, in-place (internal gradients, safe to mutate)
-        dQ = grad_Q.reshape(vmap_batch * batch, n_heads_Q, seq_len, head_dim).contiguous()
-        dK = grad_K.reshape(vmap_batch * batch, n_heads_K, seq_len, head_dim).contiguous()
+        dQ = grad_Q.reshape(
+            vmap_batch * batch, n_heads_Q, seq_len, head_dim
+        ).contiguous()
+        dK = grad_K.reshape(
+            vmap_batch * batch, n_heads_K, seq_len, head_dim
+        ).contiguous()
 
         if not has_indices:
             rope_ptr_local = cos.new_empty(1, dtype=torch.int32)
@@ -404,15 +441,29 @@ class _RoPE_QK_Backward(torch.autograd.Function):
         BLOCK_SIZE, num_warps = calculate_settings(head_dim)
 
         with torch_gpu_device(dQ.device):
-            _rope_embedding_qk_kernel_heuristics[(vmap_batch * batch * seq_len, n_heads_Q)](
-                dQ, dQ.stride(0), dQ.stride(1), dQ.stride(2),
-                dK, dK.stride(0), dK.stride(1), dK.stride(2),
-                cos, cos.stride(0),
-                sin, sin.stride(0),
-                rope_ptr_local, seq_len,
-                head_dim=head_dim, n_heads_K=n_heads_K,
-                BACKWARD_PASS=True, HAS_ROPE_INDICES=has_indices,
-                BLOCK_SIZE=BLOCK_SIZE, num_warps=num_warps,
+            _rope_embedding_qk_kernel_heuristics[
+                (vmap_batch * batch * seq_len, n_heads_Q)
+            ](
+                dQ,
+                dQ.stride(0),
+                dQ.stride(1),
+                dQ.stride(2),
+                dK,
+                dK.stride(0),
+                dK.stride(1),
+                dK.stride(2),
+                cos,
+                cos.stride(0),
+                sin,
+                sin.stride(0),
+                rope_ptr_local,
+                seq_len,
+                head_dim=head_dim,
+                n_heads_K=n_heads_K,
+                BACKWARD_PASS=True,
+                HAS_ROPE_INDICES=has_indices,
+                BLOCK_SIZE=BLOCK_SIZE,
+                num_warps=num_warps,
             )
 
         return (
@@ -498,7 +549,11 @@ class Opaque_RoPE_QK(torch.autograd.Function):
         else:
             rope_ptr = cos.new_empty(1, dtype=torch.int32)
 
-        ctx.save_for_backward(cos.squeeze(), sin.squeeze(), rope_ptr if has_indices else torch.empty(0, device=Q.device))
+        ctx.save_for_backward(
+            cos.squeeze(),
+            sin.squeeze(),
+            rope_ptr if has_indices else torch.empty(0, device=Q.device),
+        )
         BLOCK_SIZE, num_warps = calculate_settings(Q.shape[-1])
         ctx.BLOCK_SIZE = BLOCK_SIZE
         ctx.num_warps = num_warps
@@ -550,15 +605,29 @@ class Opaque_RoPE_QK(torch.autograd.Function):
         BLOCK_SIZE, num_warps = calculate_settings(head_dim)
 
         with torch_gpu_device(Q.device):
-            _rope_embedding_qk_kernel_heuristics[(vmap_batch * batch * seq_len, n_heads_Q)](
-                Q_out, Q_out.stride(0), Q_out.stride(1), Q_out.stride(2),
-                K_out, K_out.stride(0), K_out.stride(1), K_out.stride(2),
-                cos_sq, cos_sq.stride(0),
-                sin_sq, sin_sq.stride(0),
-                rope_ptr, seq_len,
-                head_dim=head_dim, n_heads_K=n_heads_K,
-                BACKWARD_PASS=False, HAS_ROPE_INDICES=has_indices,
-                BLOCK_SIZE=BLOCK_SIZE, num_warps=num_warps,
+            _rope_embedding_qk_kernel_heuristics[
+                (vmap_batch * batch * seq_len, n_heads_Q)
+            ](
+                Q_out,
+                Q_out.stride(0),
+                Q_out.stride(1),
+                Q_out.stride(2),
+                K_out,
+                K_out.stride(0),
+                K_out.stride(1),
+                K_out.stride(2),
+                cos_sq,
+                cos_sq.stride(0),
+                sin_sq,
+                sin_sq.stride(0),
+                rope_ptr,
+                seq_len,
+                head_dim=head_dim,
+                n_heads_K=n_heads_K,
+                BACKWARD_PASS=False,
+                HAS_ROPE_INDICES=has_indices,
+                BLOCK_SIZE=BLOCK_SIZE,
+                num_warps=num_warps,
             )
 
         return (
@@ -629,6 +698,7 @@ class Opaque_SlowRoPE(torch.autograd.Function):
 # ============================================================================
 # Convenience wrappers
 # ============================================================================
+
 
 def opaque_rope(Q, cos, sin):
     """Apply RoPE embedding with vmap support.

@@ -69,7 +69,9 @@ class PoissonSampler(Sampler):
         if not 0 < sample_rate <= 1:
             raise ValueError(f"sample_rate must be in (0, 1], got {sample_rate}")
         if num_iterations is not None and num_iterations < 1:
-            raise ValueError(f"num_iterations must be >= 1 or None, got {num_iterations}")
+            raise ValueError(
+                f"num_iterations must be >= 1 or None, got {num_iterations}"
+            )
 
         self.data_source = data_source
         self.sample_rate = sample_rate

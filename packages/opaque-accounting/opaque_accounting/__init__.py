@@ -40,7 +40,14 @@ except ImportError as e:
 # Base
 
 # Import submodules for re-export
-from . import accountant, amplification, calibration, composition, mechanisms, transformations
+from . import (
+    accountant,
+    amplification,
+    calibration,
+    composition,
+    mechanisms,
+    transformations,
+)
 
 # Accountant
 from opaque_accounting.accountant import Accountant

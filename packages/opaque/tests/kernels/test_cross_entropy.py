@@ -18,9 +18,7 @@ from torch.func import vmap, grad
 
 from opaque.kernels.cross_entropy import Opaque_CrossEntropyLoss
 
-pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="CUDA required"
-)
+pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
 
 # Cross entropy tolerances (accumulation over large vocab dimension)
 RTOL_CE_FORWARD = 1e-4
@@ -35,6 +33,7 @@ VOCAB_SIZES = [32768, 128256]
 # ============================================================================
 # Reference Implementations
 # ============================================================================
+
 
 def pytorch_cross_entropy(logits, labels):
     """PyTorch reference: F.cross_entropy with reduction='mean'."""
@@ -59,6 +58,7 @@ def opaque_cross_entropy(logits, labels):
 # Forward Pass Tests
 # ============================================================================
 
+
 class TestCrossEntropyForward:
     """Test forward pass precision."""
 
@@ -69,7 +69,9 @@ class TestCrossEntropyForward:
         batch = mellum_config["batch_size"]
         seq_len = mellum_config["seq_len"]
 
-        logits = torch.randn(batch, seq_len, vocab_size, device="cuda", dtype=torch.float32)
+        logits = torch.randn(
+            batch, seq_len, vocab_size, device="cuda", dtype=torch.float32
+        )
         labels = torch.randint(0, vocab_size, (batch, seq_len), device="cuda")
 
         out_pytorch = pytorch_cross_entropy(logits, labels)
@@ -81,7 +83,7 @@ class TestCrossEntropyForward:
             out_pytorch.unsqueeze(0),
             rtol=RTOL_CE_FORWARD,
             atol=ATOL_CE_FORWARD,
-            label="loss"
+            label="loss",
         )
 
     @pytest.mark.parametrize("vocab_size", [128256])
@@ -104,7 +106,7 @@ class TestCrossEntropyForward:
             losses_pt,
             rtol=RTOL_CE_FORWARD,
             atol=ATOL_CE_FORWARD,
-            label="per-token losses"
+            label="per-token losses",
         )
 
 
@@ -112,11 +114,14 @@ class TestCrossEntropyForward:
 # Backward Pass Tests
 # ============================================================================
 
+
 class TestCrossEntropyBackward:
     """Test backward pass precision."""
 
     @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
-    def test_backward_matches_pytorch(self, assert_precision, mellum_config, vocab_size):
+    def test_backward_matches_pytorch(
+        self, assert_precision, mellum_config, vocab_size
+    ):
         """Backward: opaque vs pytorch logits.grad at mellum scale."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
@@ -124,7 +129,12 @@ class TestCrossEntropyBackward:
 
         # PyTorch reference
         logits_pt = torch.randn(
-            batch, seq_len, vocab_size, device="cuda", dtype=torch.float32, requires_grad=True
+            batch,
+            seq_len,
+            vocab_size,
+            device="cuda",
+            dtype=torch.float32,
+            requires_grad=True,
         )
         labels = torch.randint(0, vocab_size, (batch, seq_len), device="cuda")
 
@@ -142,7 +152,7 @@ class TestCrossEntropyBackward:
             logits_pt.grad,
             rtol=RTOL_CE_BACKWARD,
             atol=ATOL_CE_BACKWARD,
-            label="logits.grad"
+            label="logits.grad",
         )
 
     def test_backward_ignores_masked_labels(self, mellum_config):
@@ -152,7 +162,14 @@ class TestCrossEntropyBackward:
         seq_len = mellum_config["seq_len"]
         vocab = mellum_config["vocab_size"]
 
-        logits = torch.randn(batch, seq_len, vocab, device="cuda", dtype=torch.float32, requires_grad=True)
+        logits = torch.randn(
+            batch,
+            seq_len,
+            vocab,
+            device="cuda",
+            dtype=torch.float32,
+            requires_grad=True,
+        )
         labels = torch.randint(0, vocab, (batch, seq_len), device="cuda")
         labels[:, -10:] = -100  # Mask last 10 positions
 
@@ -170,6 +187,7 @@ class TestCrossEntropyBackward:
 # Vmap Tests
 # ============================================================================
 
+
 class TestCrossEntropyVmapForward:
     """Test vmap forward: Triton vmap vs PyTorch vmap."""
 
@@ -182,10 +200,16 @@ class TestCrossEntropyVmapForward:
         vmap_batch = mellum_config["vmap_batch"]
 
         logits = torch.randn(
-            vmap_batch, batch, seq_len, vocab_size,
-            device="cuda", dtype=torch.float32,
+            vmap_batch,
+            batch,
+            seq_len,
+            vocab_size,
+            device="cuda",
+            dtype=torch.float32,
         )
-        labels = torch.randint(0, vocab_size, (vmap_batch, batch, seq_len), device="cuda")
+        labels = torch.randint(
+            0, vocab_size, (vmap_batch, batch, seq_len), device="cuda"
+        )
 
         out_pt = vmap(pytorch_cross_entropy, in_dims=(0, 0))(logits, labels)
         out_op = vmap(opaque_cross_entropy, in_dims=(0, 0))(logits, labels)
@@ -196,11 +220,13 @@ class TestCrossEntropyVmapForward:
             out_pt.unsqueeze(0),
             rtol=RTOL_CE_FORWARD,
             atol=ATOL_CE_FORWARD,
-            label="loss"
+            label="loss",
         )
 
     @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
-    def test_vmap_forward_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config, vocab_size):
+    def test_vmap_forward_performance(
+        self, measure_time_and_memory, assert_perf_benefit, mellum_config, vocab_size
+    ):
         """Triton vmap forward must be faster or use less memory."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
@@ -208,19 +234,31 @@ class TestCrossEntropyVmapForward:
         vmap_batch = mellum_config["vmap_batch"]
 
         logits = torch.randn(
-            vmap_batch, batch, seq_len, vocab_size,
-            device="cuda", dtype=torch.float32,
+            vmap_batch,
+            batch,
+            seq_len,
+            vocab_size,
+            device="cuda",
+            dtype=torch.float32,
         )
-        labels = torch.randint(0, vocab_size, (vmap_batch, batch, seq_len), device="cuda")
+        labels = torch.randint(
+            0, vocab_size, (vmap_batch, batch, seq_len), device="cuda"
+        )
 
         pt_stats = measure_time_and_memory(
-            lambda l, t: vmap(pytorch_cross_entropy, in_dims=(0, 0))(l, t), logits, labels
+            lambda lgt, t: vmap(pytorch_cross_entropy, in_dims=(0, 0))(lgt, t),
+            logits,
+            labels,
         )
         op_stats = measure_time_and_memory(
-            lambda l, t: vmap(opaque_cross_entropy, in_dims=(0, 0))(l, t), logits, labels
+            lambda lgt, t: vmap(opaque_cross_entropy, in_dims=(0, 0))(lgt, t),
+            logits,
+            labels,
         )
 
-        assert_perf_benefit(pt_stats, op_stats, label=f"CE vmap forward (V={vocab_size})")
+        assert_perf_benefit(
+            pt_stats, op_stats, label=f"CE vmap forward (V={vocab_size})"
+        )
 
 
 class TestCrossEntropyVmapGrad:
@@ -235,16 +273,22 @@ class TestCrossEntropyVmapGrad:
         vmap_batch = mellum_config["vmap_batch"]
 
         logits = torch.randn(
-            vmap_batch, batch, seq_len, vocab_size,
-            device="cuda", dtype=torch.float32,
+            vmap_batch,
+            batch,
+            seq_len,
+            vocab_size,
+            device="cuda",
+            dtype=torch.float32,
         )
-        labels = torch.randint(0, vocab_size, (vmap_batch, batch, seq_len), device="cuda")
+        labels = torch.randint(
+            0, vocab_size, (vmap_batch, batch, seq_len), device="cuda"
+        )
 
-        def f_pt(l, t):
-            return pytorch_cross_entropy(l, t)
+        def f_pt(lgt, t):
+            return pytorch_cross_entropy(lgt, t)
 
-        def f_op(l, t):
-            return opaque_cross_entropy(l, t)
+        def f_op(lgt, t):
+            return opaque_cross_entropy(lgt, t)
 
         # grad w.r.t. logits only (argnums=0), labels are not differentiable
         grads_pt = vmap(grad(f_pt, argnums=0), in_dims=(0, 0))(logits, labels)
@@ -256,11 +300,13 @@ class TestCrossEntropyVmapGrad:
             grads_pt,
             rtol=RTOL_CE_BACKWARD,
             atol=ATOL_CE_BACKWARD,
-            label="per-example gradients"
+            label="per-example gradients",
         )
 
     @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
-    def test_vmap_grad_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config, vocab_size):
+    def test_vmap_grad_performance(
+        self, measure_time_and_memory, assert_perf_benefit, mellum_config, vocab_size
+    ):
         """Triton vmap(grad) must be faster or use less memory."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
@@ -268,19 +314,27 @@ class TestCrossEntropyVmapGrad:
         vmap_batch = mellum_config["vmap_batch"]
 
         logits = torch.randn(
-            vmap_batch, batch, seq_len, vocab_size,
-            device="cuda", dtype=torch.float32,
+            vmap_batch,
+            batch,
+            seq_len,
+            vocab_size,
+            device="cuda",
+            dtype=torch.float32,
         )
-        labels = torch.randint(0, vocab_size, (vmap_batch, batch, seq_len), device="cuda")
+        labels = torch.randint(
+            0, vocab_size, (vmap_batch, batch, seq_len), device="cuda"
+        )
 
         def make_pt_fn():
-            def f(l, t):
-                return pytorch_cross_entropy(l, t)
+            def f(lgt, t):
+                return pytorch_cross_entropy(lgt, t)
+
             return vmap(grad(f, argnums=0), in_dims=(0, 0))
 
         def make_op_fn():
-            def f(l, t):
-                return opaque_cross_entropy(l, t)
+            def f(lgt, t):
+                return opaque_cross_entropy(lgt, t)
+
             return vmap(grad(f, argnums=0), in_dims=(0, 0))
 
         pt_stats = measure_time_and_memory(make_pt_fn(), logits, labels)
@@ -293,47 +347,64 @@ class TestCrossEntropyVmapGrad:
 # Performance Tests
 # ============================================================================
 
+
 class TestCrossEntropyPerformance:
     """Benchmark forward and backward performance."""
 
     @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
-    def test_forward_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config, vocab_size):
+    def test_forward_performance(
+        self, measure_time_and_memory, assert_perf_benefit, mellum_config, vocab_size
+    ):
         """Forward-only: opaque vs pytorch performance."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
         seq_len = mellum_config["seq_len"]
 
-        logits = torch.randn(batch, seq_len, vocab_size, device="cuda", dtype=torch.float32)
+        logits = torch.randn(
+            batch, seq_len, vocab_size, device="cuda", dtype=torch.float32
+        )
         labels = torch.randint(0, vocab_size, (batch, seq_len), device="cuda")
 
-        def pytorch_fn(l, t):
-            return pytorch_cross_entropy(l, t)
+        def pytorch_fn(lgt, t):
+            return pytorch_cross_entropy(lgt, t)
 
-        def opaque_fn(l, t):
-            return opaque_cross_entropy(l, t)
+        def opaque_fn(lgt, t):
+            return opaque_cross_entropy(lgt, t)
 
         pt_stats = measure_time_and_memory(pytorch_fn, logits, labels)
         op_stats = measure_time_and_memory(opaque_fn, logits, labels)
 
-        assert_perf_benefit(pt_stats, op_stats, label=f"CE forward (V={vocab_size})", max_perf_overhead=0.60)
+        assert_perf_benefit(
+            pt_stats,
+            op_stats,
+            label=f"CE forward (V={vocab_size})",
+            max_perf_overhead=0.60,
+        )
 
     @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
-    def test_backward_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config, vocab_size):
+    def test_backward_performance(
+        self, measure_time_and_memory, assert_perf_benefit, mellum_config, vocab_size
+    ):
         """Forward+backward: opaque vs pytorch performance."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
         seq_len = mellum_config["seq_len"]
 
         logits = torch.randn(
-            batch, seq_len, vocab_size, device="cuda", dtype=torch.float32, requires_grad=True
+            batch,
+            seq_len,
+            vocab_size,
+            device="cuda",
+            dtype=torch.float32,
+            requires_grad=True,
         )
         labels = torch.randint(0, vocab_size, (batch, seq_len), device="cuda")
 
-        def pytorch_fn(l, t):
-            return pytorch_cross_entropy(l, t)
+        def pytorch_fn(lgt, t):
+            return pytorch_cross_entropy(lgt, t)
 
-        def opaque_fn(l, t):
-            return opaque_cross_entropy(l, t)
+        def opaque_fn(lgt, t):
+            return opaque_cross_entropy(lgt, t)
 
         pt_stats = measure_time_and_memory(pytorch_fn, logits, labels)
         op_stats = measure_time_and_memory(opaque_fn, logits, labels)
@@ -344,6 +415,7 @@ class TestCrossEntropyPerformance:
 # ============================================================================
 # Softcapping and Logit Scaling Tests
 # ============================================================================
+
 
 class TestCrossEntropySoftcapping:
     """Test logit softcapping (Gemma 2) and logit scaling (Cohere)."""
@@ -369,13 +441,7 @@ class TestCrossEntropySoftcapping:
         losses_op, _ = Opaque_CrossEntropyLoss.apply(logits, labels, softcap, 0)
 
         print(f"\nSoftcapping forward (V={vocab}):")
-        assert_precision(
-            losses_op,
-            ref,
-            rtol=1e-4,
-            atol=1e-6,
-            label="per-token losses"
-        )
+        assert_precision(losses_op, ref, rtol=1e-4, atol=1e-6, label="per-token losses")
 
     def test_softcapping_backward(self, assert_precision, mellum_config):
         """Softcapping backward matches PyTorch reference."""
@@ -385,7 +451,14 @@ class TestCrossEntropySoftcapping:
         vocab = mellum_config["vocab_size"]
         softcap = 30.0
 
-        logits_pt = torch.randn(batch, seq_len, vocab, device="cuda", dtype=torch.float32, requires_grad=True)
+        logits_pt = torch.randn(
+            batch,
+            seq_len,
+            vocab,
+            device="cuda",
+            dtype=torch.float32,
+            requires_grad=True,
+        )
         labels = torch.randint(0, vocab, (batch, seq_len), device="cuda")
 
         # PyTorch reference
@@ -402,11 +475,7 @@ class TestCrossEntropySoftcapping:
 
         print(f"\nSoftcapping backward (V={vocab}):")
         assert_precision(
-            logits_op.grad,
-            logits_pt.grad,
-            rtol=1e-3,
-            atol=1e-5,
-            label="logits.grad"
+            logits_op.grad, logits_pt.grad, rtol=1e-3, atol=1e-5, label="logits.grad"
         )
 
     def test_logit_scaling_forward(self, assert_precision, mellum_config):
@@ -430,13 +499,7 @@ class TestCrossEntropySoftcapping:
         losses_op, _ = Opaque_CrossEntropyLoss.apply(logits, labels, 0, logit_scale)
 
         print(f"\nLogit scaling forward (V={vocab}):")
-        assert_precision(
-            losses_op,
-            ref,
-            rtol=1e-4,
-            atol=1e-6,
-            label="per-token losses"
-        )
+        assert_precision(losses_op, ref, rtol=1e-4, atol=1e-6, label="per-token losses")
 
     def test_logit_scaling_backward(self, assert_precision, mellum_config):
         """Logit scaling backward matches PyTorch reference."""
@@ -446,7 +509,14 @@ class TestCrossEntropySoftcapping:
         vocab = mellum_config["vocab_size"]
         logit_scale = 0.0625
 
-        logits_pt = torch.randn(batch, seq_len, vocab, device="cuda", dtype=torch.float32, requires_grad=True)
+        logits_pt = torch.randn(
+            batch,
+            seq_len,
+            vocab,
+            device="cuda",
+            dtype=torch.float32,
+            requires_grad=True,
+        )
         labels = torch.randint(0, vocab, (batch, seq_len), device="cuda")
 
         # PyTorch reference
@@ -463,11 +533,7 @@ class TestCrossEntropySoftcapping:
 
         print(f"\nLogit scaling backward (V={vocab}):")
         assert_precision(
-            logits_op.grad,
-            logits_pt.grad,
-            rtol=1e-3,
-            atol=1e-5,
-            label="logits.grad"
+            logits_op.grad, logits_pt.grad, rtol=1e-3, atol=1e-5, label="logits.grad"
         )
 
     def test_softcapping_vmap_grad(self, assert_precision, mellum_config):
@@ -479,16 +545,18 @@ class TestCrossEntropySoftcapping:
         vmap_batch = mellum_config["vmap_batch"]
         softcap = 30.0
 
-        logits = torch.randn(vmap_batch, batch, seq_len, vocab, device="cuda", dtype=torch.float32)
+        logits = torch.randn(
+            vmap_batch, batch, seq_len, vocab, device="cuda", dtype=torch.float32
+        )
         labels = torch.randint(0, vocab, (vmap_batch, batch, seq_len), device="cuda")
 
-        def f_pt(l, t):
-            v = l.shape[-1]
-            capped = softcap * torch.tanh(l / softcap)
+        def f_pt(lgt, t):
+            v = lgt.shape[-1]
+            capped = softcap * torch.tanh(lgt / softcap)
             return F.cross_entropy(capped.reshape(-1, v), t.reshape(-1))
 
-        def f_op(l, t):
-            losses, _ = Opaque_CrossEntropyLoss.apply(l, t, softcap, 0)
+        def f_op(lgt, t):
+            losses, _ = Opaque_CrossEntropyLoss.apply(lgt, t, softcap, 0)
             mask = (t != -100).float()
             return (losses * mask).sum() / mask.sum().clamp(min=1)
 
@@ -497,11 +565,7 @@ class TestCrossEntropySoftcapping:
 
         print(f"\nSoftcapping vmap(grad) (V={vocab}):")
         assert_precision(
-            grads_op,
-            grads_pt,
-            rtol=1e-3,
-            atol=1e-5,
-            label="per-example gradients"
+            grads_op, grads_pt, rtol=1e-3, atol=1e-5, label="per-example gradients"
         )
 
     def test_combined_softcapping_and_scaling(self, assert_precision, mellum_config):
@@ -523,16 +587,12 @@ class TestCrossEntropySoftcapping:
         ).reshape(batch, seq_len)
 
         # Opaque: pass raw logits + both params
-        losses_op, _ = Opaque_CrossEntropyLoss.apply(logits, labels, softcap, logit_scale)
+        losses_op, _ = Opaque_CrossEntropyLoss.apply(
+            logits, labels, softcap, logit_scale
+        )
 
         print(f"\nCombined softcap+scaling forward (V={vocab}):")
-        assert_precision(
-            losses_op,
-            ref,
-            rtol=1e-4,
-            atol=1e-6,
-            label="per-token losses"
-        )
+        assert_precision(losses_op, ref, rtol=1e-4, atol=1e-6, label="per-token losses")
 
 
 if __name__ == "__main__":

@@ -28,9 +28,7 @@ from opaque.kernels.linear_cross_entropy import (
     opaque_linear_cross_entropy_loss,
 )
 
-pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="CUDA required"
-)
+pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
 
 # bf16 tolerances (lower precision than fp32 due to half-precision inputs)
 RTOL_FORWARD = 5e-3
@@ -46,8 +44,10 @@ VOCAB_SIZES = [32768, 128256]
 # Reference Implementations
 # ============================================================================
 
-def pytorch_linear_ce(hidden_states, weight, labels, ignore_index=-100,
-                      softcap=None, scaling=0):
+
+def pytorch_linear_ce(
+    hidden_states, weight, labels, ignore_index=-100, softcap=None, scaling=0
+):
     """PyTorch reference: matmul + shift + F.cross_entropy.
 
     This is what HuggingFace transformers does without the fused kernel:
@@ -75,8 +75,9 @@ def pytorch_linear_ce(hidden_states, weight, labels, ignore_index=-100,
     return loss
 
 
-def opaque_linear_ce(hidden_states, weight, labels, ignore_index=-100,
-                     softcap=0, scaling=0):
+def opaque_linear_ce(
+    hidden_states, weight, labels, ignore_index=-100, softcap=0, scaling=0
+):
     """Opaque kernel wrapper for functional use in vmap/grad.
 
     Kernel returns nll_sum (unreduced). We reduce here to match
@@ -87,8 +88,11 @@ def opaque_linear_ce(hidden_states, weight, labels, ignore_index=-100,
     if scaling != 0:
         weight = weight / scaling
     nll_sum = Opaque_LinearCrossEntropyLoss.apply(
-        hidden_states, weight, labels,
-        ignore_index, softcap,
+        hidden_states,
+        weight,
+        labels,
+        ignore_index,
+        softcap,
     )
     shifted_labels = labels[..., 1:].contiguous().flatten()
     n_valid = (shifted_labels != ignore_index).sum().float().clamp(min=1)
@@ -98,6 +102,7 @@ def opaque_linear_ce(hidden_states, weight, labels, ignore_index=-100,
 # ============================================================================
 # Forward Pass Tests
 # ============================================================================
+
 
 class TestLinearCEForward:
     """Test forward pass precision against PyTorch reference."""
@@ -110,8 +115,12 @@ class TestLinearCEForward:
         seq_len = mellum_config["seq_len"]
         hidden_dim = mellum_config["hidden_dim"]
 
-        hidden = torch.randn(batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16)
-        weight = torch.randn(vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16)
+        hidden = torch.randn(
+            batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
+        weight = torch.randn(
+            vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
         labels = torch.randint(0, vocab_size, (batch, seq_len), device="cuda")
 
         out_pt = pytorch_linear_ce(hidden, weight, labels)
@@ -123,19 +132,25 @@ class TestLinearCEForward:
             out_pt.float().unsqueeze(0),
             rtol=RTOL_FORWARD,
             atol=ATOL_FORWARD,
-            label="loss"
+            label="loss",
         )
 
     @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
-    def test_forward_with_ignore_index(self, assert_precision, mellum_config, vocab_size):
+    def test_forward_with_ignore_index(
+        self, assert_precision, mellum_config, vocab_size
+    ):
         """Forward with masked labels (-100) at some positions."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
         seq_len = mellum_config["seq_len"]
         hidden_dim = mellum_config["hidden_dim"]
 
-        hidden = torch.randn(batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16)
-        weight = torch.randn(vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16)
+        hidden = torch.randn(
+            batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
+        weight = torch.randn(
+            vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
         labels = torch.randint(0, vocab_size, (batch, seq_len), device="cuda")
         labels[:, -20:] = -100
 
@@ -148,7 +163,7 @@ class TestLinearCEForward:
             out_pt.float().unsqueeze(0),
             rtol=RTOL_FORWARD,
             atol=ATOL_FORWARD,
-            label="loss"
+            label="loss",
         )
 
 
@@ -156,11 +171,14 @@ class TestLinearCEForward:
 # Backward Pass Tests
 # ============================================================================
 
+
 class TestLinearCEBackward:
     """Test backward pass gradients against PyTorch reference."""
 
     @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
-    def test_backward_hidden_states_grad(self, assert_precision, mellum_config, vocab_size):
+    def test_backward_hidden_states_grad(
+        self, assert_precision, mellum_config, vocab_size
+    ):
         """Backward: d_hidden_states matches PyTorch."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
@@ -168,9 +186,16 @@ class TestLinearCEBackward:
         hidden_dim = mellum_config["hidden_dim"]
 
         hidden_pt = torch.randn(
-            batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16, requires_grad=True
+            batch,
+            seq_len,
+            hidden_dim,
+            device="cuda",
+            dtype=torch.bfloat16,
+            requires_grad=True,
         )
-        weight = torch.randn(vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16)
+        weight = torch.randn(
+            vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
         labels = torch.randint(0, vocab_size, (batch, seq_len), device="cuda")
 
         loss_pt = pytorch_linear_ce(hidden_pt, weight, labels)
@@ -186,7 +211,7 @@ class TestLinearCEBackward:
             hidden_pt.grad.float(),
             rtol=RTOL_BACKWARD,
             atol=ATOL_BACKWARD,
-            label="hidden_states.grad"
+            label="hidden_states.grad",
         )
 
     @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
@@ -197,9 +222,15 @@ class TestLinearCEBackward:
         seq_len = mellum_config["seq_len"]
         hidden_dim = mellum_config["hidden_dim"]
 
-        hidden = torch.randn(batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16)
+        hidden = torch.randn(
+            batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
         weight_pt = torch.randn(
-            vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16, requires_grad=True
+            vocab_size,
+            hidden_dim,
+            device="cuda",
+            dtype=torch.bfloat16,
+            requires_grad=True,
         )
         labels = torch.randint(0, vocab_size, (batch, seq_len), device="cuda")
 
@@ -216,13 +247,14 @@ class TestLinearCEBackward:
             weight_pt.grad.float(),
             rtol=RTOL_BACKWARD,
             atol=ATOL_BACKWARD,
-            label="weight.grad"
+            label="weight.grad",
         )
 
 
 # ============================================================================
 # Vmap Forward Tests
 # ============================================================================
+
 
 class TestLinearCEVmapForward:
     """Test vmap forward: batched forward via Triton vmap vs PyTorch."""
@@ -237,10 +269,19 @@ class TestLinearCEVmapForward:
         vmap_batch = mellum_config["vmap_batch"]
 
         hidden = torch.randn(
-            vmap_batch, batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16,
+            vmap_batch,
+            batch,
+            seq_len,
+            hidden_dim,
+            device="cuda",
+            dtype=torch.bfloat16,
         )
-        weight = torch.randn(vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16)
-        labels = torch.randint(0, vocab_size, (vmap_batch, batch, seq_len), device="cuda")
+        weight = torch.randn(
+            vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
+        labels = torch.randint(
+            0, vocab_size, (vmap_batch, batch, seq_len), device="cuda"
+        )
 
         def f_pt(h, t):
             return pytorch_linear_ce(h, weight, t)
@@ -257,11 +298,13 @@ class TestLinearCEVmapForward:
             out_pt.float(),
             rtol=RTOL_FORWARD,
             atol=ATOL_FORWARD,
-            label="loss"
+            label="loss",
         )
 
     @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
-    def test_vmap_forward_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config, vocab_size):
+    def test_vmap_forward_performance(
+        self, measure_time_and_memory, assert_perf_benefit, mellum_config, vocab_size
+    ):
         """Fused vmap forward must save memory vs materialized logits."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
@@ -270,10 +313,19 @@ class TestLinearCEVmapForward:
         vmap_batch = mellum_config["vmap_batch"]
 
         hidden = torch.randn(
-            vmap_batch, batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16,
+            vmap_batch,
+            batch,
+            seq_len,
+            hidden_dim,
+            device="cuda",
+            dtype=torch.bfloat16,
         )
-        weight = torch.randn(vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16)
-        labels = torch.randint(0, vocab_size, (vmap_batch, batch, seq_len), device="cuda")
+        weight = torch.randn(
+            vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
+        labels = torch.randint(
+            0, vocab_size, (vmap_batch, batch, seq_len), device="cuda"
+        )
 
         def f_pt(h, t):
             return pytorch_linear_ce(h, weight, t)
@@ -288,12 +340,15 @@ class TestLinearCEVmapForward:
             lambda h, t: vmap(f_op, in_dims=(0, 0))(h, t), hidden, labels
         )
 
-        assert_perf_benefit(pt_stats, op_stats, label=f"Linear CE vmap forward (V={vocab_size})")
+        assert_perf_benefit(
+            pt_stats, op_stats, label=f"Linear CE vmap forward (V={vocab_size})"
+        )
 
 
 # ============================================================================
 # Vmap(grad) Tests — the DP-SGD path
 # ============================================================================
+
 
 class TestLinearCEVmapGrad:
     """Test vmap(grad): per-example gradients for DP-SGD."""
@@ -308,10 +363,19 @@ class TestLinearCEVmapGrad:
         vmap_batch = mellum_config["vmap_batch"]
 
         hidden = torch.randn(
-            vmap_batch, batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16,
+            vmap_batch,
+            batch,
+            seq_len,
+            hidden_dim,
+            device="cuda",
+            dtype=torch.bfloat16,
         )
-        weight = torch.randn(vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16)
-        labels = torch.randint(0, vocab_size, (vmap_batch, batch, seq_len), device="cuda")
+        weight = torch.randn(
+            vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
+        labels = torch.randint(
+            0, vocab_size, (vmap_batch, batch, seq_len), device="cuda"
+        )
 
         def f_pt(h, t):
             return pytorch_linear_ce(h, weight, t)
@@ -328,7 +392,7 @@ class TestLinearCEVmapGrad:
             grads_pt.float(),
             rtol=RTOL_BACKWARD,
             atol=ATOL_BACKWARD,
-            label="per-example hidden.grad"
+            label="per-example hidden.grad",
         )
 
     @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
@@ -341,10 +405,19 @@ class TestLinearCEVmapGrad:
         vmap_batch = mellum_config["vmap_batch"]
 
         hidden = torch.randn(
-            vmap_batch, batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16,
+            vmap_batch,
+            batch,
+            seq_len,
+            hidden_dim,
+            device="cuda",
+            dtype=torch.bfloat16,
         )
-        weight = torch.randn(vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16)
-        labels = torch.randint(0, vocab_size, (vmap_batch, batch, seq_len), device="cuda")
+        weight = torch.randn(
+            vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
+        labels = torch.randint(
+            0, vocab_size, (vmap_batch, batch, seq_len), device="cuda"
+        )
 
         def f_pt(h, w, t):
             return pytorch_linear_ce(h, w, t)
@@ -352,8 +425,12 @@ class TestLinearCEVmapGrad:
         def f_op(h, w, t):
             return opaque_linear_ce(h, w, t)
 
-        grads_pt = vmap(grad(f_pt, argnums=1), in_dims=(0, None, 0))(hidden, weight, labels)
-        grads_op = vmap(grad(f_op, argnums=1), in_dims=(0, None, 0))(hidden, weight, labels)
+        grads_pt = vmap(grad(f_pt, argnums=1), in_dims=(0, None, 0))(
+            hidden, weight, labels
+        )
+        grads_op = vmap(grad(f_op, argnums=1), in_dims=(0, None, 0))(
+            hidden, weight, labels
+        )
 
         print(f"\nLinear CE vmap(grad) d_weight (V={vocab_size}):")
         assert_precision(
@@ -361,11 +438,13 @@ class TestLinearCEVmapGrad:
             grads_pt.float(),
             rtol=RTOL_BACKWARD,
             atol=ATOL_BACKWARD,
-            label="per-example weight.grad"
+            label="per-example weight.grad",
         )
 
     @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
-    def test_vmap_grad_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config, vocab_size):
+    def test_vmap_grad_performance(
+        self, measure_time_and_memory, assert_perf_benefit, mellum_config, vocab_size
+    ):
         """Fused vmap(grad) must save memory vs materialized logits."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
@@ -374,44 +453,64 @@ class TestLinearCEVmapGrad:
         vmap_batch = mellum_config["vmap_batch"]
 
         hidden = torch.randn(
-            vmap_batch, batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16,
+            vmap_batch,
+            batch,
+            seq_len,
+            hidden_dim,
+            device="cuda",
+            dtype=torch.bfloat16,
         )
-        weight = torch.randn(vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16)
-        labels = torch.randint(0, vocab_size, (vmap_batch, batch, seq_len), device="cuda")
+        weight = torch.randn(
+            vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
+        labels = torch.randint(
+            0, vocab_size, (vmap_batch, batch, seq_len), device="cuda"
+        )
 
         def make_pt_fn():
             def f(h, t):
                 return pytorch_linear_ce(h, weight, t)
+
             return vmap(grad(f, argnums=0), in_dims=(0, 0))
 
         def make_op_fn():
             def f(h, t):
                 return opaque_linear_ce(h, weight, t)
+
             return vmap(grad(f, argnums=0), in_dims=(0, 0))
 
         pt_stats = measure_time_and_memory(make_pt_fn(), hidden, labels)
         op_stats = measure_time_and_memory(make_op_fn(), hidden, labels)
 
-        assert_perf_benefit(pt_stats, op_stats, label=f"Linear CE vmap(grad) (V={vocab_size})")
+        assert_perf_benefit(
+            pt_stats, op_stats, label=f"Linear CE vmap(grad) (V={vocab_size})"
+        )
 
 
 # ============================================================================
 # Standard Performance Tests
 # ============================================================================
 
+
 class TestLinearCEPerformance:
     """Benchmark forward and backward performance vs PyTorch materialized path."""
 
     @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
-    def test_forward_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config, vocab_size):
+    def test_forward_performance(
+        self, measure_time_and_memory, assert_perf_benefit, mellum_config, vocab_size
+    ):
         """Forward-only: fused vs materialized logits."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
         seq_len = mellum_config["seq_len"]
         hidden_dim = mellum_config["hidden_dim"]
 
-        hidden = torch.randn(batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16)
-        weight = torch.randn(vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16)
+        hidden = torch.randn(
+            batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
+        weight = torch.randn(
+            vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
         labels = torch.randint(0, vocab_size, (batch, seq_len), device="cuda")
 
         def pytorch_fn(h, w):
@@ -423,10 +522,14 @@ class TestLinearCEPerformance:
         pt_stats = measure_time_and_memory(pytorch_fn, hidden, weight)
         op_stats = measure_time_and_memory(opaque_fn, hidden, weight)
 
-        assert_perf_benefit(pt_stats, op_stats, label=f"Linear CE forward (V={vocab_size})")
+        assert_perf_benefit(
+            pt_stats, op_stats, label=f"Linear CE forward (V={vocab_size})"
+        )
 
     @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
-    def test_backward_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config, vocab_size):
+    def test_backward_performance(
+        self, measure_time_and_memory, assert_perf_benefit, mellum_config, vocab_size
+    ):
         """Forward+backward: fused vs materialized logits."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
@@ -434,9 +537,16 @@ class TestLinearCEPerformance:
         hidden_dim = mellum_config["hidden_dim"]
 
         hidden = torch.randn(
-            batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16, requires_grad=True
+            batch,
+            seq_len,
+            hidden_dim,
+            device="cuda",
+            dtype=torch.bfloat16,
+            requires_grad=True,
         )
-        weight = torch.randn(vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16)
+        weight = torch.randn(
+            vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
         labels = torch.randint(0, vocab_size, (batch, seq_len), device="cuda")
 
         def pytorch_fn(h, w):
@@ -448,12 +558,15 @@ class TestLinearCEPerformance:
         pt_stats = measure_time_and_memory(pytorch_fn, hidden, weight)
         op_stats = measure_time_and_memory(opaque_fn, hidden, weight)
 
-        assert_perf_benefit(pt_stats, op_stats, label=f"Linear CE backward (V={vocab_size})")
+        assert_perf_benefit(
+            pt_stats, op_stats, label=f"Linear CE backward (V={vocab_size})"
+        )
 
 
 # ============================================================================
 # Softcapping and Logit Scaling Tests
 # ============================================================================
+
 
 class TestLinearCESoftcapping:
     """Test logit softcapping (Gemma2) and logit scaling (Granite)."""
@@ -467,7 +580,9 @@ class TestLinearCESoftcapping:
         hidden_dim = mellum_config["hidden_dim"]
         vocab = mellum_config["vocab_size"]
 
-        hidden = torch.randn(batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16)
+        hidden = torch.randn(
+            batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
         weight = torch.randn(vocab, hidden_dim, device="cuda", dtype=torch.bfloat16)
         labels = torch.randint(0, vocab, (batch, seq_len), device="cuda")
 
@@ -480,7 +595,7 @@ class TestLinearCESoftcapping:
             out_pt.float().unsqueeze(0),
             rtol=RTOL_FORWARD,
             atol=ATOL_FORWARD,
-            label="loss"
+            label="loss",
         )
 
     def test_softcapping_backward(self, assert_precision, mellum_config):
@@ -493,7 +608,12 @@ class TestLinearCESoftcapping:
         vocab = mellum_config["vocab_size"]
 
         hidden_pt = torch.randn(
-            batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16, requires_grad=True
+            batch,
+            seq_len,
+            hidden_dim,
+            device="cuda",
+            dtype=torch.bfloat16,
+            requires_grad=True,
         )
         weight = torch.randn(vocab, hidden_dim, device="cuda", dtype=torch.bfloat16)
         labels = torch.randint(0, vocab, (batch, seq_len), device="cuda")
@@ -511,7 +631,7 @@ class TestLinearCESoftcapping:
             hidden_pt.grad.float(),
             rtol=RTOL_BACKWARD,
             atol=ATOL_BACKWARD,
-            label="hidden_states.grad"
+            label="hidden_states.grad",
         )
 
     def test_logit_scaling_forward(self, assert_precision, mellum_config):
@@ -523,7 +643,9 @@ class TestLinearCESoftcapping:
         hidden_dim = mellum_config["hidden_dim"]
         vocab = mellum_config["vocab_size"]
 
-        hidden = torch.randn(batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16)
+        hidden = torch.randn(
+            batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
         weight = torch.randn(vocab, hidden_dim, device="cuda", dtype=torch.bfloat16)
         labels = torch.randint(0, vocab, (batch, seq_len), device="cuda")
 
@@ -536,7 +658,7 @@ class TestLinearCESoftcapping:
             out_pt.float().unsqueeze(0),
             rtol=RTOL_FORWARD,
             atol=ATOL_FORWARD,
-            label="loss"
+            label="loss",
         )
 
     def test_logit_scaling_backward(self, assert_precision, mellum_config):
@@ -549,7 +671,12 @@ class TestLinearCESoftcapping:
         vocab = mellum_config["vocab_size"]
 
         hidden_pt = torch.randn(
-            batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16, requires_grad=True
+            batch,
+            seq_len,
+            hidden_dim,
+            device="cuda",
+            dtype=torch.bfloat16,
+            requires_grad=True,
         )
         weight = torch.randn(vocab, hidden_dim, device="cuda", dtype=torch.bfloat16)
         labels = torch.randint(0, vocab, (batch, seq_len), device="cuda")
@@ -567,7 +694,7 @@ class TestLinearCESoftcapping:
             hidden_pt.grad.float(),
             rtol=RTOL_BACKWARD,
             atol=ATOL_BACKWARD,
-            label="hidden_states.grad"
+            label="hidden_states.grad",
         )
 
     def test_softcapping_vmap_grad(self, assert_precision, mellum_config):
@@ -581,7 +708,12 @@ class TestLinearCESoftcapping:
         vmap_batch = mellum_config["vmap_batch"]
 
         hidden = torch.randn(
-            vmap_batch, batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16,
+            vmap_batch,
+            batch,
+            seq_len,
+            hidden_dim,
+            device="cuda",
+            dtype=torch.bfloat16,
         )
         weight = torch.randn(vocab, hidden_dim, device="cuda", dtype=torch.bfloat16)
         labels = torch.randint(0, vocab, (vmap_batch, batch, seq_len), device="cuda")
@@ -601,13 +733,14 @@ class TestLinearCESoftcapping:
             grads_pt.float(),
             rtol=RTOL_BACKWARD,
             atol=ATOL_BACKWARD,
-            label="per-example gradients"
+            label="per-example gradients",
         )
 
 
 # ============================================================================
 # Convenience wrapper test
 # ============================================================================
+
 
 class TestLinearCEWrapper:
     """Test the convenience wrapper function."""
@@ -620,13 +753,19 @@ class TestLinearCEWrapper:
         hidden_dim = mellum_config["hidden_dim"]
         vocab = mellum_config["vocab_size"]
 
-        hidden = torch.randn(batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16)
+        hidden = torch.randn(
+            batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
         weight = torch.randn(vocab, hidden_dim, device="cuda", dtype=torch.bfloat16)
         labels = torch.randint(0, vocab, (batch, seq_len), device="cuda")
 
         # Manual: .apply() returns nll_sum, reduce ourselves
         nll_sum = Opaque_LinearCrossEntropyLoss.apply(
-            hidden, weight, labels, -100, 0,
+            hidden,
+            weight,
+            labels,
+            -100,
+            0,
         )
         shifted = labels[..., 1:].contiguous().flatten()
         n_valid = (shifted != -100).sum().float().clamp(min=1)
@@ -634,7 +773,9 @@ class TestLinearCEWrapper:
 
         # Wrapper does the same internally
         out_wrapper = opaque_linear_cross_entropy_loss(
-            hidden, weight, labels,
+            hidden,
+            weight,
+            labels,
         )
 
         print(f"\nWrapper vs manual .apply() + reduce (V={vocab}):")
@@ -643,7 +784,7 @@ class TestLinearCEWrapper:
             out_manual.float().unsqueeze(0),
             rtol=1e-5,
             atol=1e-5,
-            label="loss"
+            label="loss",
         )
 
 

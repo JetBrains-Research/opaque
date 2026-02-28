@@ -16,9 +16,7 @@ from torch.func import vmap, grad
 
 from opaque.kernels.rope_embedding import Opaque_RoPE
 
-pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="CUDA required"
-)
+pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
 
 # RoPE: elementwise cos/sin multiply, same math in Triton and PyTorch
 RTOL_FORWARD = 8e-3
@@ -31,6 +29,7 @@ ATOL_BACKWARD = 5e-8
 # Helpers
 # ============================================================================
 
+
 def rotate_half(x):
     """Standard rotate_half for RoPE."""
     x1, x2 = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
@@ -39,7 +38,9 @@ def rotate_half(x):
 
 def generate_cos_sin(seq_len, head_dim, device="cuda", dtype=torch.bfloat16):
     """Generate cos/sin caches for RoPE."""
-    freqs = 1.0 / (10000.0 ** (torch.arange(0, head_dim, 2, device=device).float() / head_dim))
+    freqs = 1.0 / (
+        10000.0 ** (torch.arange(0, head_dim, 2, device=device).float() / head_dim)
+    )
     positions = torch.arange(seq_len, device=device)
     freqs = torch.outer(positions, freqs)
     cos = freqs.cos().to(dtype)
@@ -66,6 +67,7 @@ def opaque_rope(Q, cos, sin):
 # Forward Pass Tests
 # ============================================================================
 
+
 class TestRoPEForward:
     """Test forward pass precision."""
 
@@ -77,19 +79,28 @@ class TestRoPEForward:
         N_HEADS = mellum_config["n_heads"]
         HEAD_DIM = mellum_config["head_dim"]
 
-        Q = torch.randn(batch, seq_len, N_HEADS, HEAD_DIM, device="cuda", dtype=torch.bfloat16)
+        Q = torch.randn(
+            batch, seq_len, N_HEADS, HEAD_DIM, device="cuda", dtype=torch.bfloat16
+        )
         cos, sin = generate_cos_sin(seq_len, HEAD_DIM)
 
         out_opaque = opaque_rope(Q, cos, sin)
         out_pytorch = pytorch_rope(Q, cos, sin)
 
         print("\nRoPE Forward:")
-        assert_precision(out_opaque, out_pytorch, rtol=RTOL_FORWARD, atol=ATOL_FORWARD, label="output")
+        assert_precision(
+            out_opaque,
+            out_pytorch,
+            rtol=RTOL_FORWARD,
+            atol=ATOL_FORWARD,
+            label="output",
+        )
 
 
 # ============================================================================
 # Backward Pass Tests
 # ============================================================================
+
 
 class TestRoPEBackward:
     """Test backward pass precision."""
@@ -102,7 +113,15 @@ class TestRoPEBackward:
         N_HEADS = mellum_config["n_heads"]
         HEAD_DIM = mellum_config["head_dim"]
 
-        Q_pt = torch.randn(batch, seq_len, N_HEADS, HEAD_DIM, device="cuda", dtype=torch.bfloat16, requires_grad=True)
+        Q_pt = torch.randn(
+            batch,
+            seq_len,
+            N_HEADS,
+            HEAD_DIM,
+            device="cuda",
+            dtype=torch.bfloat16,
+            requires_grad=True,
+        )
         cos, sin = generate_cos_sin(seq_len, HEAD_DIM)
         out_pt = pytorch_rope(Q_pt, cos, sin)
         out_pt.mean().backward()
@@ -112,12 +131,15 @@ class TestRoPEBackward:
         out_op.mean().backward()
 
         print("\nRoPE Backward:")
-        assert_precision(Q_op.grad, Q_pt.grad, rtol=RTOL_BACKWARD, atol=ATOL_BACKWARD, label="Q.grad")
+        assert_precision(
+            Q_op.grad, Q_pt.grad, rtol=RTOL_BACKWARD, atol=ATOL_BACKWARD, label="Q.grad"
+        )
 
 
 # ============================================================================
 # Vmap Tests
 # ============================================================================
+
 
 class TestRoPEVmapForward:
     """Test vmap forward: Triton vmap vs PyTorch vmap."""
@@ -133,15 +155,27 @@ class TestRoPEVmapForward:
 
         cos, sin = generate_cos_sin(seq_len, HEAD_DIM)
 
-        Q = torch.randn(VMAP_BATCH, batch, seq_len, N_HEADS, HEAD_DIM, device="cuda", dtype=torch.bfloat16)
+        Q = torch.randn(
+            VMAP_BATCH,
+            batch,
+            seq_len,
+            N_HEADS,
+            HEAD_DIM,
+            device="cuda",
+            dtype=torch.bfloat16,
+        )
 
         out_pt = vmap(lambda q: pytorch_rope(q, cos, sin))(Q)
         out_op = vmap(lambda q: opaque_rope(q, cos, sin))(Q)
 
         print("\nRoPE vmap forward:")
-        assert_precision(out_op, out_pt, rtol=RTOL_FORWARD, atol=ATOL_FORWARD, label="output")
+        assert_precision(
+            out_op, out_pt, rtol=RTOL_FORWARD, atol=ATOL_FORWARD, label="output"
+        )
 
-    def test_vmap_forward_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
+    def test_vmap_forward_performance(
+        self, measure_time_and_memory, assert_perf_benefit, mellum_config
+    ):
         """Triton vmap forward must be faster or use less memory."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
@@ -152,10 +186,22 @@ class TestRoPEVmapForward:
 
         cos, sin = generate_cos_sin(seq_len, HEAD_DIM)
 
-        Q = torch.randn(VMAP_BATCH, batch, seq_len, N_HEADS, HEAD_DIM, device="cuda", dtype=torch.bfloat16)
+        Q = torch.randn(
+            VMAP_BATCH,
+            batch,
+            seq_len,
+            N_HEADS,
+            HEAD_DIM,
+            device="cuda",
+            dtype=torch.bfloat16,
+        )
 
-        pt_stats = measure_time_and_memory(lambda q: vmap(lambda qi: pytorch_rope(qi, cos, sin))(q), Q)
-        op_stats = measure_time_and_memory(lambda q: vmap(lambda qi: opaque_rope(qi, cos, sin))(q), Q)
+        pt_stats = measure_time_and_memory(
+            lambda q: vmap(lambda qi: pytorch_rope(qi, cos, sin))(q), Q
+        )
+        op_stats = measure_time_and_memory(
+            lambda q: vmap(lambda qi: opaque_rope(qi, cos, sin))(q), Q
+        )
 
         assert_perf_benefit(pt_stats, op_stats, label="RoPE vmap forward")
 
@@ -174,7 +220,15 @@ class TestRoPEVmapGrad:
 
         cos, sin = generate_cos_sin(seq_len, HEAD_DIM)
 
-        Q = torch.randn(VMAP_BATCH, batch, seq_len, N_HEADS, HEAD_DIM, device="cuda", dtype=torch.bfloat16)
+        Q = torch.randn(
+            VMAP_BATCH,
+            batch,
+            seq_len,
+            N_HEADS,
+            HEAD_DIM,
+            device="cuda",
+            dtype=torch.bfloat16,
+        )
 
         def f_pt(q):
             return pytorch_rope(q, cos, sin).mean()
@@ -186,9 +240,13 @@ class TestRoPEVmapGrad:
         grads_op = vmap(grad(f_op))(Q)
 
         print("\nRoPE vmap(grad):")
-        assert_precision(grads_op, grads_pt, rtol=RTOL_BACKWARD, atol=ATOL_BACKWARD, label="Q.grad")
+        assert_precision(
+            grads_op, grads_pt, rtol=RTOL_BACKWARD, atol=ATOL_BACKWARD, label="Q.grad"
+        )
 
-    def test_vmap_grad_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
+    def test_vmap_grad_performance(
+        self, measure_time_and_memory, assert_perf_benefit, mellum_config
+    ):
         """Triton vmap(grad) must be faster or use less memory."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
@@ -199,16 +257,26 @@ class TestRoPEVmapGrad:
 
         cos, sin = generate_cos_sin(seq_len, HEAD_DIM)
 
-        Q = torch.randn(VMAP_BATCH, batch, seq_len, N_HEADS, HEAD_DIM, device="cuda", dtype=torch.bfloat16)
+        Q = torch.randn(
+            VMAP_BATCH,
+            batch,
+            seq_len,
+            N_HEADS,
+            HEAD_DIM,
+            device="cuda",
+            dtype=torch.bfloat16,
+        )
 
         def make_pt_fn():
             def f(q):
                 return pytorch_rope(q, cos, sin).mean()
+
             return vmap(grad(f))
 
         def make_op_fn():
             def f(q):
                 return opaque_rope(q, cos, sin).mean()
+
             return vmap(grad(f))
 
         pt_stats = measure_time_and_memory(make_pt_fn(), Q)
@@ -221,10 +289,13 @@ class TestRoPEVmapGrad:
 # Performance Tests
 # ============================================================================
 
+
 class TestRoPEPerformance:
     """Benchmark forward and backward performance."""
 
-    def test_forward_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
+    def test_forward_performance(
+        self, measure_time_and_memory, assert_perf_benefit, mellum_config
+    ):
         """Forward-only: opaque vs pytorch performance."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
@@ -233,7 +304,9 @@ class TestRoPEPerformance:
         HEAD_DIM = mellum_config["head_dim"]
 
         cos, sin = generate_cos_sin(seq_len, HEAD_DIM)
-        Q = torch.randn(batch, seq_len, N_HEADS, HEAD_DIM, device="cuda", dtype=torch.bfloat16)
+        Q = torch.randn(
+            batch, seq_len, N_HEADS, HEAD_DIM, device="cuda", dtype=torch.bfloat16
+        )
 
         def pytorch_fn(q):
             return pytorch_rope(q, cos, sin)
@@ -246,7 +319,9 @@ class TestRoPEPerformance:
 
         assert_perf_benefit(pt_stats, op_stats, label="RoPE forward")
 
-    def test_backward_performance(self, measure_time_and_memory, assert_perf_benefit, mellum_config):
+    def test_backward_performance(
+        self, measure_time_and_memory, assert_perf_benefit, mellum_config
+    ):
         """Forward+backward: opaque vs pytorch performance."""
         torch.manual_seed(42)
         batch = mellum_config["batch_size"]
@@ -255,7 +330,15 @@ class TestRoPEPerformance:
         HEAD_DIM = mellum_config["head_dim"]
 
         cos, sin = generate_cos_sin(seq_len, HEAD_DIM)
-        Q = torch.randn(batch, seq_len, N_HEADS, HEAD_DIM, device="cuda", dtype=torch.bfloat16, requires_grad=True)
+        Q = torch.randn(
+            batch,
+            seq_len,
+            N_HEADS,
+            HEAD_DIM,
+            device="cuda",
+            dtype=torch.bfloat16,
+            requires_grad=True,
+        )
 
         def pytorch_fn(q):
             return pytorch_rope(q, cos, sin)

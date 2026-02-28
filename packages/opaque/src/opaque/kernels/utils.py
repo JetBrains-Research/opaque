@@ -42,10 +42,12 @@ def calculate_settings(n: int) -> tuple[int, int]:
 DEVICE_COUNT = torch.cuda.device_count() if torch.cuda.is_available() else 0
 
 if DEVICE_COUNT > 1:
+
     def torch_gpu_device(device):
         """Context manager for multi-GPU."""
         return torch.cuda.device(device)
 else:
+
     def torch_gpu_device(device):
         """No-op context manager for single GPU."""
         return nullcontext()
@@ -55,7 +57,7 @@ else:
 def _get_triton_version():
     """Get triton version as tuple for comparison."""
     version_str = triton.__version__
-    parts = version_str.split('.')
+    parts = version_str.split(".")
     return tuple(int(p) for p in parts[:3] if p.isdigit())
 
 
@@ -64,6 +66,7 @@ _TRITON_VERSION = _get_triton_version()
 if _TRITON_VERSION >= (3, 0, 0):
     try:
         from triton.language.extra import libdevice
+
         triton_tanh = libdevice.tanh
     except ImportError:
         triton_tanh = tl.math.tanh
@@ -80,7 +83,9 @@ else:
 NUM_INT32_ELEMENTS = 2**31
 SAFE_INT32_BUFFER_MULTIPLIER = 4
 BLOCK_SIZE_DEFAULT = 1024
-INT32_SAFETY_BUFFER = NUM_INT32_ELEMENTS - BLOCK_SIZE_DEFAULT * SAFE_INT32_BUFFER_MULTIPLIER
+INT32_SAFETY_BUFFER = (
+    NUM_INT32_ELEMENTS - BLOCK_SIZE_DEFAULT * SAFE_INT32_BUFFER_MULTIPLIER
+)
 
 
 def needs_long_indexing(n_elements: int) -> bool:
@@ -91,6 +96,7 @@ def needs_long_indexing(n_elements: int) -> bool:
 # =============================================================================
 # Linear cross-entropy utilities (ported from cut_cross_entropy)
 # =============================================================================
+
 
 def _build_flat_valids(
     targets: torch.Tensor,

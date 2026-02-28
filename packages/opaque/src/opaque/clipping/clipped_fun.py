@@ -281,10 +281,16 @@ def clipped_fun(
                     # Preserve "loss_values" from nested dict if present (e.g., loss from grad_and_value)
                     if "loss_values" in aux:
                         loss_val = aux["loss_values"]
-                        aux_dict["loss_values"] = loss_val.detach() if isinstance(loss_val, torch.Tensor) else loss_val
+                        aux_dict["loss_values"] = (
+                            loss_val.detach()
+                            if isinstance(loss_val, torch.Tensor)
+                            else loss_val
+                        )
                     else:
                         # No nested "loss_values", use function output
-                        aux_dict["loss_values"] = value.detach() if isinstance(value, torch.Tensor) else value
+                        aux_dict["loss_values"] = (
+                            value.detach() if isinstance(value, torch.Tensor) else value
+                        )
 
                     # Extract user aux from nested dict if present
                     if has_aux:
@@ -295,7 +301,9 @@ def clipped_fun(
                             aux_dict["loss_aux"] = aux
                 else:
                     # aux is not a dict (direct user aux or None)
-                    aux_dict["loss_values"] = value.detach() if isinstance(value, torch.Tensor) else value
+                    aux_dict["loss_values"] = (
+                        value.detach() if isinstance(value, torch.Tensor) else value
+                    )
                     if has_aux:
                         aux_dict["loss_aux"] = aux
 
