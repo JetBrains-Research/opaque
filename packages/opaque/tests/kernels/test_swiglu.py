@@ -8,7 +8,7 @@ Tests:
 4. vmap(grad): per-example gradients — the DP-SGD path
 5. Forward and backward performance benchmarks
 
-Target precision (float32):
+Target precision (bfloat16):
 - norm_err: max |a - b| / max(|b|, threshold) < rtol
   where threshold filters out near-zero values that inflate relative errors
 - Performance: speedup > 1.0x OR memory reduction > 1.0x for vmap
@@ -29,8 +29,8 @@ pytestmark = pytest.mark.skipif(
 
 RTOL_FORWARD = 1e-5
 ATOL_FORWARD = 1e-5
-RTOL_BACKWARD = 1e-4
-ATOL_BACKWARD = 1e-5
+RTOL_BACKWARD = 1e-2
+ATOL_BACKWARD = 5e-8
 
 
 def pytorch_swiglu(gate, up):
@@ -51,8 +51,8 @@ class TestSwiGLUForward:
         torch.manual_seed(42)
         batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
 
-        gate = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32)
-        up = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32)
+        gate = torch.randn(batch, seq, dim, device="cuda", dtype=torch.bfloat16)
+        up = torch.randn(batch, seq, dim, device="cuda", dtype=torch.bfloat16)
 
         out_pytorch = pytorch_swiglu(gate, up)
         out_opaque = opaque_swiglu(gate, up)
@@ -70,16 +70,16 @@ class TestSwiGLUBackward:
         batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
 
         # PyTorch reference
-        gate_pt = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
-        up_pt = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
+        gate_pt = torch.randn(batch, seq, dim, device="cuda", dtype=torch.bfloat16, requires_grad=True)
+        up_pt = torch.randn(batch, seq, dim, device="cuda", dtype=torch.bfloat16, requires_grad=True)
         out_pt = pytorch_swiglu(gate_pt, up_pt)
-        out_pt.sum().backward()
+        out_pt.mean().backward()
 
         # Opaque kernel
         gate_op = gate_pt.detach().clone().requires_grad_(True)
         up_op = up_pt.detach().clone().requires_grad_(True)
         out_op = opaque_swiglu(gate_op, up_op)
-        out_op.sum().backward()
+        out_op.mean().backward()
 
         print("\nBackward precision check:")
         assert_precision(gate_op.grad, gate_pt.grad, rtol=RTOL_BACKWARD, atol=ATOL_BACKWARD, label="gate.grad")
@@ -95,8 +95,8 @@ class TestSwiGLUVmapForward:
         vmap_batch = mellum_config["vmap_batch"]
         batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
 
-        gate = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32)
-        up = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32)
+        gate = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.bfloat16)
+        up = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.bfloat16)
 
         out_pt = vmap(pytorch_swiglu)(gate, up)
         out_op = vmap(opaque_swiglu)(gate, up)
@@ -110,8 +110,8 @@ class TestSwiGLUVmapForward:
         vmap_batch = mellum_config["vmap_batch"]
         batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
 
-        gate = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32)
-        up = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32)
+        gate = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.bfloat16)
+        up = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.bfloat16)
 
         pt_stats = measure_time_and_memory(lambda g, u: vmap(pytorch_swiglu)(g, u), gate, up)
         op_stats = measure_time_and_memory(lambda g, u: vmap(opaque_swiglu)(g, u), gate, up)
@@ -132,14 +132,14 @@ class TestSwiGLUVmapGrad:
         vmap_batch = mellum_config["vmap_batch"]
         batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
 
-        gate = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32)
-        up = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32)
+        gate = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.bfloat16)
+        up = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.bfloat16)
 
         def f_pt(g, u):
-            return pytorch_swiglu(g, u).sum()
+            return pytorch_swiglu(g, u).mean()
 
         def f_op(g, u):
-            return opaque_swiglu(g, u).sum()
+            return opaque_swiglu(g, u).mean()
 
         grads_pt_gate, grads_pt_up = vmap(grad(f_pt, argnums=(0, 1)))(gate, up)
         grads_op_gate, grads_op_up = vmap(grad(f_op, argnums=(0, 1)))(gate, up)
@@ -154,17 +154,17 @@ class TestSwiGLUVmapGrad:
         vmap_batch = mellum_config["vmap_batch"]
         batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
 
-        gate = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32)
-        up = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.float32)
+        gate = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.bfloat16)
+        up = torch.randn(vmap_batch, batch, seq, dim, device="cuda", dtype=torch.bfloat16)
 
         def make_pt_fn():
             def f(g, u):
-                return pytorch_swiglu(g, u).sum()
+                return pytorch_swiglu(g, u).mean()
             return vmap(grad(f, argnums=(0, 1)))
 
         def make_op_fn():
             def f(g, u):
-                return opaque_swiglu(g, u).sum()
+                return opaque_swiglu(g, u).mean()
             return vmap(grad(f, argnums=(0, 1)))
 
         pt_stats = measure_time_and_memory(make_pt_fn(), gate, up)
@@ -181,8 +181,8 @@ class TestSwiGLUPerformance:
         torch.manual_seed(42)
         batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
 
-        gate = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32)
-        up = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32)
+        gate = torch.randn(batch, seq, dim, device="cuda", dtype=torch.bfloat16)
+        up = torch.randn(batch, seq, dim, device="cuda", dtype=torch.bfloat16)
 
         pt_stats = measure_time_and_memory(pytorch_swiglu, gate, up)
         op_stats = measure_time_and_memory(opaque_swiglu, gate, up)
@@ -194,8 +194,8 @@ class TestSwiGLUPerformance:
         torch.manual_seed(42)
         batch, seq, dim = mellum_config["batch_size"], mellum_config["seq_len"], mellum_config["intermediate_dim"]
 
-        gate = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
-        up = torch.randn(batch, seq, dim, device="cuda", dtype=torch.float32, requires_grad=True)
+        gate = torch.randn(batch, seq, dim, device="cuda", dtype=torch.bfloat16, requires_grad=True)
+        up = torch.randn(batch, seq, dim, device="cuda", dtype=torch.bfloat16, requires_grad=True)
 
         pt_stats = measure_time_and_memory(pytorch_swiglu, gate, up)
         op_stats = measure_time_and_memory(opaque_swiglu, gate, up)

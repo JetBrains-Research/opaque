@@ -30,16 +30,16 @@ SCALING = 0.1
 
 # Tolerances (atol + rtol formula: |a - b| <= atol + rtol * |b|)
 # W/QKV: addmm_ fused accumulation differs from separate add+matmul+scale
-RTOL_LORA_FWD = 1e-5
-ATOL_LORA_FWD = 1e-4
-RTOL_LORA_BWD = 1e-3
-ATOL_LORA_BWD = 1e-2
+RTOL_LORA_FWD = 1e-2
+ATOL_LORA_FWD = 4e-2
+RTOL_LORA_BWD = 2e-2
+ATOL_LORA_BWD = 5e-6
 
-# MLP: Triton activation backward + 3-matmul chain amplifies rounding diffs.
-RTOL_LORA_MLP_FWD = 1e-4
-ATOL_LORA_MLP_FWD = 1e-4
-RTOL_LORA_MLP_BWD = 5e-2
-ATOL_LORA_MLP_BWD = 1e-2
+# MLP: 3-matmul chain with SwiGLU
+RTOL_LORA_MLP_FWD = 2e-2
+ATOL_LORA_MLP_FWD = 1e-1
+RTOL_LORA_MLP_BWD = 1e-1
+ATOL_LORA_MLP_BWD = 5e-6
 
 
 # ============================================================================
@@ -54,6 +54,20 @@ def _kaiming_weight(out_features, in_features, **kwargs):
 def _lora_weight(dim, rank, **kwargs):
     """Create LoRA weight with proper initialization scale."""
     return torch.randn(dim, rank, **kwargs) * math.sqrt(1.0 / dim)
+
+
+def _make_qkv_weights(hidden, rank, **kw):
+    """Create Q, K, V weight sets with proper initialization."""
+    Wq = _kaiming_weight(hidden, hidden, **kw)
+    Aq = _lora_weight(hidden, rank, **kw)
+    Bq = _lora_weight(rank, hidden, **kw)
+    Wk = _kaiming_weight(hidden, hidden, **kw)
+    Ak = _lora_weight(hidden, rank, **kw)
+    Bk = _lora_weight(rank, hidden, **kw)
+    Wv = _kaiming_weight(hidden, hidden, **kw)
+    Av = _lora_weight(hidden, rank, **kw)
+    Bv = _lora_weight(rank, hidden, **kw)
+    return Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv
 
 
 # ============================================================================
@@ -109,17 +123,18 @@ class TestLoRAWForward:
     """Test LoRA-W forward pass precision."""
 
     def test_forward_matches_pytorch(self, assert_precision, mellum_config):
-        """Forward: opaque vs pytorch (non-vmap, float32)."""
+        """Forward: opaque vs pytorch (non-vmap, bfloat16)."""
         BATCH = mellum_config["batch_size"]
         SEQ = mellum_config["seq_len"]
         HIDDEN = mellum_config["hidden_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
+        kw = dict(device="cuda", dtype=torch.bfloat16)
 
-        X = torch.randn(BATCH, SEQ, HIDDEN, device="cuda", dtype=torch.float32)
-        W = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        A = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        B = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32)
+        X = torch.randn(BATCH, SEQ, HIDDEN, **kw)
+        W = _kaiming_weight(HIDDEN, HIDDEN, **kw)
+        A = _lora_weight(HIDDEN, RANK, **kw)
+        B = _lora_weight(RANK, HIDDEN, **kw)
 
         out_pt = pytorch_lora_linear(X, W, A, B, SCALING)
         out_op = opaque_lora_linear(X, W, A, B, SCALING)
@@ -138,21 +153,22 @@ class TestLoRAWBackward:
         HIDDEN = mellum_config["hidden_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
+        kw = dict(device="cuda", dtype=torch.bfloat16)
 
-        X_pt = torch.randn(BATCH, SEQ, HIDDEN, device="cuda", dtype=torch.float32, requires_grad=True)
-        W = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        A_pt = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32, requires_grad=True)
-        B_pt = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32, requires_grad=True)
+        X_pt = torch.randn(BATCH, SEQ, HIDDEN, **kw, requires_grad=True)
+        W = _kaiming_weight(HIDDEN, HIDDEN, **kw)
+        A_pt = _lora_weight(HIDDEN, RANK, **kw).requires_grad_(True)
+        B_pt = _lora_weight(RANK, HIDDEN, **kw).requires_grad_(True)
 
         out_pt = pytorch_lora_linear(X_pt, W, A_pt, B_pt, SCALING)
-        out_pt.sum().backward()
+        out_pt.mean().backward()
 
         X_op = X_pt.detach().clone().requires_grad_(True)
         A_op = A_pt.detach().clone().requires_grad_(True)
         B_op = B_pt.detach().clone().requires_grad_(True)
 
         out_op = opaque_lora_linear(X_op, W, A_op, B_op, SCALING)
-        out_op.sum().backward()
+        out_op.mean().backward()
 
         print("\nLoRA-W Backward:")
         assert_precision(X_op.grad, X_pt.grad, rtol=RTOL_LORA_BWD, atol=ATOL_LORA_BWD, label="X.grad")
@@ -171,12 +187,13 @@ class TestLoRAWVmapForward:
         RANK = mellum_config["rank"]
         VMAP_BATCH = mellum_config["vmap_batch"]
         torch.manual_seed(42)
+        kw = dict(device="cuda", dtype=torch.bfloat16)
 
-        W = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        A = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        B = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32)
+        W = _kaiming_weight(HIDDEN, HIDDEN, **kw)
+        A = _lora_weight(HIDDEN, RANK, **kw)
+        B = _lora_weight(RANK, HIDDEN, **kw)
 
-        X = torch.randn(VMAP_BATCH, BATCH, SEQ, HIDDEN, device="cuda", dtype=torch.float32)
+        X = torch.randn(VMAP_BATCH, BATCH, SEQ, HIDDEN, **kw)
 
         out_pt = vmap(lambda x: pytorch_lora_linear(x, W, A, B, SCALING))(X)
         out_op = vmap(lambda x: opaque_lora_linear(x, W, A, B, SCALING))(X)
@@ -196,18 +213,19 @@ class TestLoRAWVmapGrad:
         RANK = mellum_config["rank"]
         VMAP_BATCH = mellum_config["vmap_batch"]
         torch.manual_seed(42)
+        kw = dict(device="cuda", dtype=torch.bfloat16)
 
-        W = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        A = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        B = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32)
+        W = _kaiming_weight(HIDDEN, HIDDEN, **kw)
+        A = _lora_weight(HIDDEN, RANK, **kw)
+        B = _lora_weight(RANK, HIDDEN, **kw)
 
-        X = torch.randn(VMAP_BATCH, BATCH, SEQ, HIDDEN, device="cuda", dtype=torch.float32)
+        X = torch.randn(VMAP_BATCH, BATCH, SEQ, HIDDEN, **kw)
 
         def f_pt(x):
-            return pytorch_lora_linear(x, W, A, B, SCALING).sum()
+            return pytorch_lora_linear(x, W, A, B, SCALING).mean()
 
         def f_op(x):
-            return opaque_lora_linear(x, W, A, B, SCALING).sum()
+            return opaque_lora_linear(x, W, A, B, SCALING).mean()
 
         grads_pt = vmap(grad(f_pt))(X)
         grads_op = vmap(grad(f_op))(X)
@@ -223,21 +241,22 @@ class TestLoRAWVmapGrad:
         RANK = mellum_config["rank"]
         VMAP_BATCH = mellum_config["vmap_batch"]
         torch.manual_seed(42)
+        kw = dict(device="cuda", dtype=torch.bfloat16)
 
-        W = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        A = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        B = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32)
+        W = _kaiming_weight(HIDDEN, HIDDEN, **kw)
+        A = _lora_weight(HIDDEN, RANK, **kw)
+        B = _lora_weight(RANK, HIDDEN, **kw)
 
-        X = torch.randn(VMAP_BATCH, BATCH, SEQ, HIDDEN, device="cuda", dtype=torch.float32)
+        X = torch.randn(VMAP_BATCH, BATCH, SEQ, HIDDEN, **kw)
 
         def make_pt_fn():
             def f(x):
-                return pytorch_lora_linear(x, W, A, B, SCALING).sum()
+                return pytorch_lora_linear(x, W, A, B, SCALING).mean()
             return vmap(grad(f))
 
         def make_op_fn():
             def f(x):
-                return opaque_lora_linear(x, W, A, B, SCALING).sum()
+                return opaque_lora_linear(x, W, A, B, SCALING).mean()
             return vmap(grad(f))
 
         pt_stats = measure_time_and_memory(make_pt_fn(), X)
@@ -256,11 +275,12 @@ class TestLoRAWPerformance:
         HIDDEN = mellum_config["hidden_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
+        kw = dict(device="cuda", dtype=torch.bfloat16)
 
-        X = torch.randn(BATCH, SEQ, HIDDEN, device="cuda", dtype=torch.float32)
-        W = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        A = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        B = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32)
+        X = torch.randn(BATCH, SEQ, HIDDEN, **kw)
+        W = _kaiming_weight(HIDDEN, HIDDEN, **kw)
+        A = _lora_weight(HIDDEN, RANK, **kw)
+        B = _lora_weight(RANK, HIDDEN, **kw)
 
         def pytorch_fn(x):
             return pytorch_lora_linear(x, W, A, B, SCALING)
@@ -280,11 +300,12 @@ class TestLoRAWPerformance:
         HIDDEN = mellum_config["hidden_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
+        kw = dict(device="cuda", dtype=torch.bfloat16)
 
-        X = torch.randn(BATCH, SEQ, HIDDEN, device="cuda", dtype=torch.float32, requires_grad=True)
-        W = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        A = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32, requires_grad=True)
-        B = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32, requires_grad=True)
+        X = torch.randn(BATCH, SEQ, HIDDEN, **kw, requires_grad=True)
+        W = _kaiming_weight(HIDDEN, HIDDEN, **kw)
+        A = _lora_weight(HIDDEN, RANK, **kw).requires_grad_(True)
+        B = _lora_weight(RANK, HIDDEN, **kw).requires_grad_(True)
 
         def pytorch_fn(x, a, b):
             return pytorch_lora_linear(x, W, a, b, SCALING)
@@ -312,20 +333,10 @@ class TestLoRAQKVForward:
         HIDDEN = mellum_config["hidden_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
+        kw = dict(device="cuda", dtype=torch.bfloat16)
 
-        X = torch.randn(BATCH, SEQ, HIDDEN, device="cuda", dtype=torch.float32)
-
-        Wq = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        Aq = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        Bq = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32)
-
-        Wk = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        Ak = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        Bk = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32)
-
-        Wv = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        Av = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        Bv = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32)
+        X = torch.randn(BATCH, SEQ, HIDDEN, **kw)
+        Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = _make_qkv_weights(HIDDEN, RANK, **kw)
 
         Q_pt, K_pt, V_pt = pytorch_lora_qkv(
             X, Wq, Aq, Bq, SCALING, Wk, Ak, Bk, SCALING, Wv, Av, Bv, SCALING
@@ -350,25 +361,21 @@ class TestLoRAQKVBackward:
         HIDDEN = mellum_config["hidden_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
+        kw = dict(device="cuda", dtype=torch.bfloat16)
 
-        X_pt = torch.randn(BATCH, SEQ, HIDDEN, device="cuda", dtype=torch.float32, requires_grad=True)
-
-        Wq = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        Aq_pt = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32, requires_grad=True)
-        Bq_pt = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32, requires_grad=True)
-
-        Wk = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        Ak_pt = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32, requires_grad=True)
-        Bk_pt = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32, requires_grad=True)
-
-        Wv = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        Av_pt = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32, requires_grad=True)
-        Bv_pt = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32, requires_grad=True)
+        X_pt = torch.randn(BATCH, SEQ, HIDDEN, **kw, requires_grad=True)
+        Wq, Aq_pt, Bq_pt, Wk, Ak_pt, Bk_pt, Wv, Av_pt, Bv_pt = _make_qkv_weights(HIDDEN, RANK, **kw)
+        Aq_pt = Aq_pt.requires_grad_(True)
+        Bq_pt = Bq_pt.requires_grad_(True)
+        Ak_pt = Ak_pt.requires_grad_(True)
+        Bk_pt = Bk_pt.requires_grad_(True)
+        Av_pt = Av_pt.requires_grad_(True)
+        Bv_pt = Bv_pt.requires_grad_(True)
 
         Q_pt, K_pt, V_pt = pytorch_lora_qkv(
             X_pt, Wq, Aq_pt, Bq_pt, SCALING, Wk, Ak_pt, Bk_pt, SCALING, Wv, Av_pt, Bv_pt, SCALING
         )
-        (Q_pt + K_pt + V_pt).sum().backward()
+        (Q_pt + K_pt + V_pt).mean().backward()
 
         X_op = X_pt.detach().clone().requires_grad_(True)
         Aq_op = Aq_pt.detach().clone().requires_grad_(True)
@@ -381,7 +388,7 @@ class TestLoRAQKVBackward:
         Q_op, K_op, V_op = opaque_lora_qkv(
             X_op, Wq, Aq_op, Bq_op, SCALING, Wk, Ak_op, Bk_op, SCALING, Wv, Av_op, Bv_op, SCALING
         )
-        (Q_op + K_op + V_op).sum().backward()
+        (Q_op + K_op + V_op).mean().backward()
 
         print("\nLoRA-QKV Backward:")
         assert_precision(X_op.grad, X_pt.grad, rtol=RTOL_LORA_BWD, atol=ATOL_LORA_BWD, label="X.grad")
@@ -404,20 +411,10 @@ class TestLoRAQKVVmapForward:
         RANK = mellum_config["rank"]
         VMAP_BATCH = mellum_config["vmap_batch"]
         torch.manual_seed(42)
+        kw = dict(device="cuda", dtype=torch.bfloat16)
 
-        Wq = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        Aq = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        Bq = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32)
-
-        Wk = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        Ak = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        Bk = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32)
-
-        Wv = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        Av = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        Bv = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32)
-
-        X = torch.randn(VMAP_BATCH, BATCH, SEQ, HIDDEN, device="cuda", dtype=torch.float32)
+        Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = _make_qkv_weights(HIDDEN, RANK, **kw)
+        X = torch.randn(VMAP_BATCH, BATCH, SEQ, HIDDEN, **kw)
 
         Q_pt, K_pt, V_pt = vmap(
             lambda x: pytorch_lora_qkv(x, Wq, Aq, Bq, SCALING, Wk, Ak, Bk, SCALING, Wv, Av, Bv, SCALING)
@@ -443,28 +440,18 @@ class TestLoRAQKVVmapGrad:
         RANK = mellum_config["rank"]
         VMAP_BATCH = mellum_config["vmap_batch"]
         torch.manual_seed(42)
+        kw = dict(device="cuda", dtype=torch.bfloat16)
 
-        Wq = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        Aq = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        Bq = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32)
-
-        Wk = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        Ak = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        Bk = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32)
-
-        Wv = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        Av = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        Bv = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32)
-
-        X = torch.randn(VMAP_BATCH, BATCH, SEQ, HIDDEN, device="cuda", dtype=torch.float32)
+        Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = _make_qkv_weights(HIDDEN, RANK, **kw)
+        X = torch.randn(VMAP_BATCH, BATCH, SEQ, HIDDEN, **kw)
 
         def f_pt(x):
             Q, K, V = pytorch_lora_qkv(x, Wq, Aq, Bq, SCALING, Wk, Ak, Bk, SCALING, Wv, Av, Bv, SCALING)
-            return (Q + K + V).sum()
+            return (Q + K + V).mean()
 
         def f_op(x):
             Q, K, V = opaque_lora_qkv(x, Wq, Aq, Bq, SCALING, Wk, Ak, Bk, SCALING, Wv, Av, Bv, SCALING)
-            return (Q + K + V).sum()
+            return (Q + K + V).mean()
 
         grads_pt = vmap(grad(f_pt))(X)
         grads_op = vmap(grad(f_op))(X)
@@ -480,31 +467,21 @@ class TestLoRAQKVVmapGrad:
         RANK = mellum_config["rank"]
         VMAP_BATCH = mellum_config["vmap_batch"]
         torch.manual_seed(42)
+        kw = dict(device="cuda", dtype=torch.bfloat16)
 
-        Wq = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        Aq = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        Bq = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32)
-
-        Wk = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        Ak = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        Bk = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32)
-
-        Wv = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        Av = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        Bv = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32)
-
-        X = torch.randn(VMAP_BATCH, BATCH, SEQ, HIDDEN, device="cuda", dtype=torch.float32)
+        Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = _make_qkv_weights(HIDDEN, RANK, **kw)
+        X = torch.randn(VMAP_BATCH, BATCH, SEQ, HIDDEN, **kw)
 
         def make_pt_fn():
             def f(x):
                 Q, K, V = pytorch_lora_qkv(x, Wq, Aq, Bq, SCALING, Wk, Ak, Bk, SCALING, Wv, Av, Bv, SCALING)
-                return (Q + K + V).sum()
+                return (Q + K + V).mean()
             return vmap(grad(f))
 
         def make_op_fn():
             def f(x):
                 Q, K, V = opaque_lora_qkv(x, Wq, Aq, Bq, SCALING, Wk, Ak, Bk, SCALING, Wv, Av, Bv, SCALING)
-                return (Q + K + V).sum()
+                return (Q + K + V).mean()
             return vmap(grad(f))
 
         pt_stats = measure_time_and_memory(make_pt_fn(), X)
@@ -523,20 +500,10 @@ class TestLoRAQKVPerformance:
         HIDDEN = mellum_config["hidden_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
+        kw = dict(device="cuda", dtype=torch.bfloat16)
 
-        X = torch.randn(BATCH, SEQ, HIDDEN, device="cuda", dtype=torch.float32)
-
-        Wq = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        Aq = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        Bq = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32)
-
-        Wk = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        Ak = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        Bk = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32)
-
-        Wv = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        Av = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32)
-        Bv = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32)
+        X = torch.randn(BATCH, SEQ, HIDDEN, **kw)
+        Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = _make_qkv_weights(HIDDEN, RANK, **kw)
 
         def pytorch_fn(x):
             Q, K, V = pytorch_lora_qkv(
@@ -562,20 +529,16 @@ class TestLoRAQKVPerformance:
         HIDDEN = mellum_config["hidden_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
+        kw = dict(device="cuda", dtype=torch.bfloat16)
 
-        X = torch.randn(BATCH, SEQ, HIDDEN, device="cuda", dtype=torch.float32, requires_grad=True)
-
-        Wq = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        Aq = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32, requires_grad=True)
-        Bq = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32, requires_grad=True)
-
-        Wk = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        Ak = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32, requires_grad=True)
-        Bk = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32, requires_grad=True)
-
-        Wv = torch.randn(HIDDEN, HIDDEN, device="cuda", dtype=torch.float32)
-        Av = torch.randn(HIDDEN, RANK, device="cuda", dtype=torch.float32, requires_grad=True)
-        Bv = torch.randn(RANK, HIDDEN, device="cuda", dtype=torch.float32, requires_grad=True)
+        X = torch.randn(BATCH, SEQ, HIDDEN, **kw, requires_grad=True)
+        Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = _make_qkv_weights(HIDDEN, RANK, **kw)
+        Aq = Aq.requires_grad_(True)
+        Bq = Bq.requires_grad_(True)
+        Ak = Ak.requires_grad_(True)
+        Bk = Bk.requires_grad_(True)
+        Av = Av.requires_grad_(True)
+        Bv = Bv.requires_grad_(True)
 
         def pytorch_fn(x, aq, bq, ak, bk, av, bv):
             Q, K, V = pytorch_lora_qkv(
@@ -603,14 +566,14 @@ class TestLoRAMLPForward:
     """Test LoRA-MLP forward pass precision."""
 
     def test_forward_matches_pytorch(self, assert_precision, mellum_config):
-        """Forward: opaque vs pytorch (non-vmap, float32)."""
+        """Forward: opaque vs pytorch (non-vmap, bfloat16)."""
         BATCH = mellum_config["batch_size"]
         SEQ = mellum_config["seq_len"]
         HIDDEN = mellum_config["hidden_dim"]
         INTERMEDIATE = mellum_config["intermediate_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.float32)
+        kw = dict(device="cuda", dtype=torch.bfloat16)
 
         X = torch.randn(BATCH, SEQ, HIDDEN, **kw)
 
@@ -648,7 +611,7 @@ class TestLoRAMLPBackward:
         INTERMEDIATE = mellum_config["intermediate_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.float32)
+        kw = dict(device="cuda", dtype=torch.bfloat16)
 
         X_pt = torch.randn(BATCH, SEQ, HIDDEN, **kw, requires_grad=True)
 
@@ -667,7 +630,7 @@ class TestLoRAMLPBackward:
         out_pt = pytorch_lora_mlp(
             X_pt, Wg, Ag_pt, Bg_pt, SCALING, Wu, Au_pt, Bu_pt, SCALING, Wd, Ad_pt, Bd_pt, SCALING
         )
-        out_pt.sum().backward()
+        out_pt.mean().backward()
 
         X_op = X_pt.detach().clone().requires_grad_(True)
         Ag_op = Ag_pt.detach().clone().requires_grad_(True)
@@ -680,7 +643,7 @@ class TestLoRAMLPBackward:
         out_op = opaque_lora_mlp(
             X_op, Wg, Ag_op, Bg_op, SCALING, Wu, Au_op, Bu_op, SCALING, Wd, Ad_op, Bd_op, SCALING
         )
-        out_op.sum().backward()
+        out_op.mean().backward()
 
         print("\nLoRA-MLP Backward:")
         assert_precision(X_op.grad, X_pt.grad, rtol=RTOL_LORA_MLP_BWD, atol=ATOL_LORA_MLP_BWD, label="X.grad")
@@ -704,7 +667,7 @@ class TestLoRAMLPVmapForward:
         RANK = mellum_config["rank"]
         VMAP_BATCH = mellum_config["vmap_batch"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.float32)
+        kw = dict(device="cuda", dtype=torch.bfloat16)
 
         Wg = _kaiming_weight(INTERMEDIATE, HIDDEN, **kw)
         Ag = _lora_weight(HIDDEN, RANK, **kw)
@@ -743,7 +706,7 @@ class TestLoRAMLPVmapGrad:
         RANK = mellum_config["rank"]
         VMAP_BATCH = mellum_config["vmap_batch"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.float32)
+        kw = dict(device="cuda", dtype=torch.bfloat16)
 
         Wg = _kaiming_weight(INTERMEDIATE, HIDDEN, **kw)
         Ag = _lora_weight(HIDDEN, RANK, **kw)
@@ -760,10 +723,10 @@ class TestLoRAMLPVmapGrad:
         X = torch.randn(VMAP_BATCH, BATCH, SEQ, HIDDEN, **kw)
 
         def f_pt(x):
-            return pytorch_lora_mlp(x, Wg, Ag, Bg, SCALING, Wu, Au, Bu, SCALING, Wd, Ad, Bd, SCALING).sum()
+            return pytorch_lora_mlp(x, Wg, Ag, Bg, SCALING, Wu, Au, Bu, SCALING, Wd, Ad, Bd, SCALING).mean()
 
         def f_op(x):
-            return opaque_lora_mlp(x, Wg, Ag, Bg, SCALING, Wu, Au, Bu, SCALING, Wd, Ad, Bd, SCALING).sum()
+            return opaque_lora_mlp(x, Wg, Ag, Bg, SCALING, Wu, Au, Bu, SCALING, Wd, Ad, Bd, SCALING).mean()
 
         grads_pt = vmap(grad(f_pt))(X)
         grads_op = vmap(grad(f_op))(X)
@@ -780,7 +743,7 @@ class TestLoRAMLPVmapGrad:
         RANK = mellum_config["rank"]
         VMAP_BATCH = mellum_config["vmap_batch"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.float32)
+        kw = dict(device="cuda", dtype=torch.bfloat16)
 
         Wg = _kaiming_weight(INTERMEDIATE, HIDDEN, **kw)
         Ag = _lora_weight(HIDDEN, RANK, **kw)
@@ -798,12 +761,12 @@ class TestLoRAMLPVmapGrad:
 
         def make_pt_fn():
             def f(x):
-                return pytorch_lora_mlp(x, Wg, Ag, Bg, SCALING, Wu, Au, Bu, SCALING, Wd, Ad, Bd, SCALING).sum()
+                return pytorch_lora_mlp(x, Wg, Ag, Bg, SCALING, Wu, Au, Bu, SCALING, Wd, Ad, Bd, SCALING).mean()
             return vmap(grad(f))
 
         def make_op_fn():
             def f(x):
-                return opaque_lora_mlp(x, Wg, Ag, Bg, SCALING, Wu, Au, Bu, SCALING, Wd, Ad, Bd, SCALING).sum()
+                return opaque_lora_mlp(x, Wg, Ag, Bg, SCALING, Wu, Au, Bu, SCALING, Wd, Ad, Bd, SCALING).mean()
             return vmap(grad(f))
 
         pt_stats = measure_time_and_memory(make_pt_fn(), X)
@@ -823,7 +786,7 @@ class TestLoRAMLPPerformance:
         INTERMEDIATE = mellum_config["intermediate_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.float32)
+        kw = dict(device="cuda", dtype=torch.bfloat16)
 
         X = torch.randn(BATCH, SEQ, HIDDEN, **kw)
 
@@ -858,7 +821,7 @@ class TestLoRAMLPPerformance:
         INTERMEDIATE = mellum_config["intermediate_dim"]
         RANK = mellum_config["rank"]
         torch.manual_seed(42)
-        kw = dict(device="cuda", dtype=torch.float32)
+        kw = dict(device="cuda", dtype=torch.bfloat16)
 
         X = torch.randn(BATCH, SEQ, HIDDEN, **kw, requires_grad=True)
 

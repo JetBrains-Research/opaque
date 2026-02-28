@@ -4,9 +4,6 @@ Opaque Kernels: vmap-compatible Triton kernels for DP-SGD training.
 All kernels use new-style PyTorch autograd.Function API with custom vmap rules.
 """
 
-# Normalization layers
-from .rms_layernorm import Opaque_RMSNorm, opaque_rms_norm
-
 # Loss functions
 from .cross_entropy import Opaque_CrossEntropyLoss, opaque_cross_entropy_loss
 from .linear_cross_entropy import (
@@ -47,9 +44,6 @@ from .lora import (
 )
 
 __all__ = [
-    # Normalization
-    "Opaque_RMSNorm",
-    "opaque_rms_norm",
     # Loss
     "Opaque_CrossEntropyLoss",
     "opaque_cross_entropy_loss",

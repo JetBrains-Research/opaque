@@ -6,7 +6,6 @@ Replaces model components with Opaque's vmap-compatible Triton kernels at class
 level. Applied at `import opaque` time when CUDA and Triton are available.
 
 Patched components:
-- RMSNorm: Standard (LLaMA, Mistral, Qwen2, Qwen3, Phi3, Granite) and Gemma (weight+1 trick)
 - MLP activations: SwiGLU (LLaMA, Mistral, Qwen2, Qwen3, Phi3, Granite, Cohere, Cohere2) and GeGLU (Gemma, Gemma2)
 - RoPE: apply_rotary_pos_emb for all supported models (standard half-split rotation)
 - Cross-entropy loss: ForCausalLM loss via LOSS_MAPPING (fp32 fallback)
@@ -37,25 +36,6 @@ _disabled = os.environ.get("OPAQUE_NO_KERNEL_PATCH", "0") == "1"
 # =============================================================================
 # Patch targets
 # =============================================================================
-
-# Standard RMSNorm: self.weight, self.variance_epsilon
-_STANDARD_RMSNORM = [
-    ("transformers.models.llama.modeling_llama", "LlamaRMSNorm"),
-    ("transformers.models.mistral.modeling_mistral", "MistralRMSNorm"),
-    ("transformers.models.qwen2.modeling_qwen2", "Qwen2RMSNorm"),
-    ("transformers.models.qwen3.modeling_qwen3", "Qwen3RMSNorm"),
-    ("transformers.models.phi3.modeling_phi3", "Phi3RMSNorm"),
-    ("transformers.models.granite.modeling_granite", "GraniteRMSNorm"),
-]
-
-# LayerNorm: NOT patched. PyTorch's F.layer_norm has a native C++ vmap batching rule
-# that's ~2x faster than our autograd.Function dispatch. Cohere/Cohere2 use native LayerNorm.
-
-# Gemma RMSNorm: self.eps, effective_weight = 1.0 + self.weight
-_GEMMA_RMSNORM = [
-    ("transformers.models.gemma.modeling_gemma", "GemmaRMSNorm"),
-    ("transformers.models.gemma2.modeling_gemma2", "Gemma2RMSNorm"),
-]
 
 # SwiGLU MLP: separate gate_proj, up_proj, down_proj
 _SWIGLU_MLP = [
@@ -99,24 +79,6 @@ _ROPE_MODELS = [
 # =============================================================================
 # Replacement forward methods
 # =============================================================================
-
-def _opaque_rmsnorm_forward(self, hidden_states):
-    """Standard RMSNorm forward using Opaque Triton kernel."""
-    from opaque.kernels import Opaque_RMSNorm
-
-    result = Opaque_RMSNorm.apply(hidden_states, self.weight, self.variance_epsilon)
-    return result[0] if isinstance(result, tuple) else result
-
-
-def _opaque_gemma_rmsnorm_forward(self, hidden_states):
-    """Gemma RMSNorm forward using Opaque Triton kernel (weight+1 trick)."""
-    from opaque.kernels import Opaque_RMSNorm
-
-    effective_weight = (1.0 + self.weight).float()
-    result = Opaque_RMSNorm.apply(hidden_states, effective_weight, self.eps)
-    output = result[0] if isinstance(result, tuple) else result
-    return output.type_as(hidden_states)
-
 
 def _opaque_swiglu_mlp_forward(self, x):
     """SwiGLU MLP forward using Opaque Triton kernel."""
@@ -810,7 +772,6 @@ def apply_kernel_patches() -> None:
     """Replace HF model components with Opaque Triton kernels.
 
     Patches at class/module level for:
-    - RMSNorm: LLaMA, Mistral, Qwen2, Phi3, Gemma, Gemma2
     - MLP activations: SwiGLU and GeGLU variants
     - RoPE: apply_rotary_pos_emb for all supported models
     - Cross-entropy loss: ForCausalLM via LOSS_MAPPING
@@ -834,16 +795,6 @@ def apply_kernel_patches() -> None:
         return
 
     patched = []
-
-    # Standard RMSNorm
-    for path, cls_name in _STANDARD_RMSNORM:
-        if _patch_forward(path, cls_name, _opaque_rmsnorm_forward):
-            patched.append(cls_name)
-
-    # Gemma RMSNorm (weight+1)
-    for path, cls_name in _GEMMA_RMSNORM:
-        if _patch_forward(path, cls_name, _opaque_gemma_rmsnorm_forward):
-            patched.append(cls_name)
 
     # SwiGLU MLP
     for path, cls_name in _SWIGLU_MLP:

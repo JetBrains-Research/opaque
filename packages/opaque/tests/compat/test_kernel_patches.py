@@ -40,56 +40,6 @@ def _get_tokenizer(model_name):
 
 
 # =============================================================================
-# RMSNorm Tests
-# =============================================================================
-
-@pytest.mark.gpu
-class TestRMSNormPatches:
-    """Test that patched RMSNorm produces correct outputs."""
-
-    def test_llama_rmsnorm_output_matches(self, device):
-        """Patched LlamaRMSNorm output should match original."""
-        from transformers.models.llama.modeling_llama import LlamaRMSNorm
-
-        hidden_dim = 256
-        norm = LlamaRMSNorm(hidden_dim).to(device)
-
-        x = torch.randn(2, 16, hidden_dim, device=device, dtype=torch.float32)
-
-        # The module is already patched at import time. Verify it works correctly.
-        out = norm(x)
-
-        # Compare with manual PyTorch reference
-        variance = x.pow(2).mean(-1, keepdim=True)
-        ref = x * torch.rsqrt(variance + norm.variance_epsilon) * norm.weight
-
-        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), \
-            f"LlamaRMSNorm output mismatch: max diff {(out - ref).abs().max():.2e}"
-
-    def test_gemma_rmsnorm_weight_plus_one(self, device):
-        """GemmaRMSNorm should correctly apply weight+1 trick."""
-        try:
-            from transformers.models.gemma.modeling_gemma import GemmaRMSNorm
-        except ImportError:
-            pytest.skip("Gemma not available in this transformers version")
-
-        hidden_dim = 256
-        norm = GemmaRMSNorm(hidden_dim).to(device)
-
-        x = torch.randn(2, 16, hidden_dim, device=device, dtype=torch.float32)
-
-        out = norm(x)
-
-        # Reference: RMSNorm with effective_weight = 1 + weight
-        effective_weight = (1.0 + norm.weight).float()
-        variance = x.pow(2).mean(-1, keepdim=True)
-        ref = (x * torch.rsqrt(variance + norm.eps) * effective_weight).type_as(x)
-
-        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), \
-            f"GemmaRMSNorm output mismatch: max diff {(out - ref).abs().max():.2e}"
-
-
-# =============================================================================
 # MLP Tests
 # =============================================================================
 
@@ -175,22 +125,6 @@ class TestMLPPatches:
 class TestGradients:
     """Test that gradients through patched modules are correct."""
 
-    def test_backward_through_patched_rmsnorm(self, device):
-        """Gradients should flow correctly through patched RMSNorm."""
-        from transformers.models.llama.modeling_llama import LlamaRMSNorm
-
-        hidden_dim = 256
-        norm = LlamaRMSNorm(hidden_dim).to(device)
-
-        x = torch.randn(2, 16, hidden_dim, device=device, requires_grad=True)
-        out = norm(x)
-        loss = out.sum()
-        loss.backward()
-
-        assert x.grad is not None, "No gradient computed through patched RMSNorm"
-        assert not torch.isnan(x.grad).any(), "NaN in gradients"
-        assert not torch.isinf(x.grad).any(), "Inf in gradients"
-
     def test_backward_through_patched_mlp(self, device):
         """Gradients should flow correctly through patched MLP."""
         from transformers.models.llama.modeling_llama import LlamaMLP
@@ -218,25 +152,6 @@ class TestGradients:
 class TestVmapCompatibility:
     """Test that patched modules work under vmap for DP-SGD."""
 
-    def test_vmap_patched_rmsnorm(self, device):
-        """Patched RMSNorm should produce correct output under vmap."""
-        from transformers.models.llama.modeling_llama import LlamaRMSNorm
-
-        hidden_dim = 256
-        norm = LlamaRMSNorm(hidden_dim).to(device)
-
-        # Batched input for vmap
-        x = torch.randn(4, 2, 16, hidden_dim, device=device)
-
-        out = torch.vmap(norm)(x)
-
-        assert out.shape == x.shape, f"Shape mismatch: {out.shape} vs {x.shape}"
-        assert not torch.isnan(out).any(), "NaN in vmap RMSNorm output"
-        # Verify each sample matches non-batched forward
-        for i in range(x.shape[0]):
-            ref = norm(x[i])
-            assert torch.allclose(out[i], ref, rtol=RTOL, atol=ATOL), \
-                f"vmap output[{i}] mismatch vs sequential"
 
     def test_vmap_patched_mlp(self, device):
         """Patched MLP should produce correct output under vmap."""
@@ -331,12 +246,12 @@ class TestConfiguration:
     def test_patch_stores_original_forward(self):
         """Patched classes should preserve original forward."""
         try:
-            from transformers.models.llama.modeling_llama import LlamaRMSNorm
+            from transformers.models.llama.modeling_llama import LlamaMLP
         except ImportError:
             pytest.skip("transformers not available")
 
-        if hasattr(LlamaRMSNorm, "_opaque_original_forward"):
-            assert callable(LlamaRMSNorm._opaque_original_forward)
+        if hasattr(LlamaMLP, "_opaque_original_forward"):
+            assert callable(LlamaMLP._opaque_original_forward)
 
 
 # =============================================================================
@@ -526,26 +441,6 @@ class TestLoRAPatches:
 class TestQwen3Patches:
     """Test kernel patches for Qwen3 models."""
 
-    def test_qwen3_rmsnorm_output_matches(self, device):
-        """Patched Qwen3RMSNorm output should match PyTorch reference."""
-        try:
-            from transformers.models.qwen3.modeling_qwen3 import Qwen3RMSNorm
-        except ImportError:
-            pytest.skip("Qwen3 not available in this transformers version")
-
-        hidden_dim = 256
-        norm = Qwen3RMSNorm(hidden_dim).to(device)
-
-        x = torch.randn(2, 16, hidden_dim, device=device, dtype=torch.float32)
-        out = norm(x)
-
-        # PyTorch reference
-        variance = x.pow(2).mean(-1, keepdim=True)
-        ref = x * torch.rsqrt(variance + norm.variance_epsilon) * norm.weight
-
-        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), \
-            f"Qwen3RMSNorm output mismatch: max diff {(out - ref).abs().max():.2e}"
-
     def test_qwen3_swiglu_mlp_matches(self, device):
         """Patched Qwen3MLP should match PyTorch SwiGLU reference."""
         try:
@@ -568,66 +463,9 @@ class TestQwen3Patches:
         assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), \
             f"Qwen3MLP output mismatch: max diff {(out - ref).abs().max():.2e}"
 
-    def test_backward_through_qwen3_rmsnorm(self, device):
-        """Gradients should flow through patched Qwen3RMSNorm."""
-        try:
-            from transformers.models.qwen3.modeling_qwen3 import Qwen3RMSNorm
-        except ImportError:
-            pytest.skip("Qwen3 not available")
-
-        hidden_dim = 256
-        norm = Qwen3RMSNorm(hidden_dim).to(device)
-        x = torch.randn(2, 16, hidden_dim, device=device, requires_grad=True)
-
-        out = norm(x)
-        out.sum().backward()
-
-        assert x.grad is not None, "No gradient through patched Qwen3RMSNorm"
-        assert not torch.isnan(x.grad).any(), "NaN in gradients"
-
-    def test_vmap_qwen3_rmsnorm(self, device):
-        """Patched Qwen3RMSNorm should produce correct output under vmap."""
-        try:
-            from transformers.models.qwen3.modeling_qwen3 import Qwen3RMSNorm
-        except ImportError:
-            pytest.skip("Qwen3 not available")
-
-        hidden_dim = 256
-        norm = Qwen3RMSNorm(hidden_dim).to(device)
-
-        x = torch.randn(4, 2, 16, hidden_dim, device=device)
-        out = torch.vmap(norm)(x)
-
-        assert out.shape == x.shape
-        assert not torch.isnan(out).any(), "NaN in vmap Qwen3RMSNorm output"
-        for i in range(x.shape[0]):
-            ref = norm(x[i])
-            assert torch.allclose(out[i], ref, rtol=RTOL, atol=ATOL)
-
-
 @pytest.mark.gpu
 class TestGranitePatches:
     """Test kernel patches for Granite models."""
-
-    def test_granite_rmsnorm_output_matches(self, device):
-        """Patched GraniteRMSNorm output should match PyTorch reference."""
-        try:
-            from transformers.models.granite.modeling_granite import GraniteRMSNorm
-        except ImportError:
-            pytest.skip("Granite not available in this transformers version")
-
-        hidden_dim = 256
-        norm = GraniteRMSNorm(hidden_dim).to(device)
-
-        x = torch.randn(2, 16, hidden_dim, device=device, dtype=torch.float32)
-        out = norm(x)
-
-        # PyTorch reference
-        variance = x.pow(2).mean(-1, keepdim=True)
-        ref = x * torch.rsqrt(variance + norm.variance_epsilon) * norm.weight
-
-        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), \
-            f"GraniteRMSNorm output mismatch: max diff {(out - ref).abs().max():.2e}"
 
     def test_granite_swiglu_mlp_matches(self, device):
         """Patched GraniteMLP should match PyTorch SwiGLU reference."""

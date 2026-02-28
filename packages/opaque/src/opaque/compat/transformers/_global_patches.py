@@ -32,7 +32,7 @@ def apply_global_patches() -> None:
     1. Shared utilities - required by all models
     2. Standard models - can work independently after shared patches
     3. Custom models - can work independently after shared patches
-    4. Triton kernel optimizations - replace RMSNorm/MLP with vmap-compatible Triton kernels
+    4. Triton kernel optimizations - replace MLP/RoPE/CE with vmap-compatible Triton kernels
 
     Each model's patches are independent from other models.
     """
