@@ -123,17 +123,39 @@ class _LoRAWBackward(torch.autograd.Function):
     def vmap(info, in_dims, grad_out, X, W, A, B, scaling):
         grad_out_bdim, X_bdim, W_bdim, A_bdim, B_bdim, scaling_bdim = in_dims
 
-        # Merge vmap batch into regular batch
-        batched_shape = X.shape
+        B_vmap = X.shape[0]
+        hidden_dim = X.shape[-1]
+        out_features = W.shape[0]
+
+        # dX: merge approach works (spatially parallel — each token independent)
         X_merged = X.reshape(-1, *X.shape[2:])
         grad_out_merged = grad_out.reshape(-1, *grad_out.shape[2:])
+        X_flat = X_merged.reshape(-1, hidden_dim)
+        grad_out_flat = grad_out_merged.reshape(-1, out_features)
 
-        dX, dA, dB = _lora_w_backward_impl(
-            grad_out_merged, X_merged, W, A, B, scaling,
-        )
+        dX_flat = torch.mm(grad_out_flat, W)
+        if A is not None and B is not None:
+            grad_out_Bt_flat = grad_out_flat @ B.t()
+            dX_flat.addmm_(grad_out_Bt_flat, A.t(), alpha=scaling, beta=1)
+        dX = dX_flat.reshape(X.shape)
 
-        dX = dX.reshape(batched_shape)
-        return (dX, dA, dB), (X_bdim, A_bdim, B_bdim)
+        # dA, dB: per-sample computation using bmm (NOT merged!)
+        # Merging would sum across vmap samples, giving wrong per-sample grads.
+        if A is not None and B is not None:
+            X_3d = X.reshape(B_vmap, -1, hidden_dim)
+            grad_out_3d = grad_out.reshape(B_vmap, -1, out_features)
+
+            # dA[i] = X[i].T @ (grad_out[i] @ B.T) * scaling
+            grad_out_Bt = grad_out_3d @ B.t()  # [B_vmap, tokens, rank]
+            dA = torch.bmm(X_3d.transpose(-2, -1), grad_out_Bt) * scaling
+
+            # dB[i] = (X[i] @ A).T @ grad_out[i] * scaling
+            XA = X_3d @ A  # [B_vmap, tokens, rank]
+            dB = torch.bmm(XA.transpose(-2, -1), grad_out_3d) * scaling
+        else:
+            dA = dB = None
+
+        return (dX, dA, dB), (0, 0 if dA is not None else None, 0 if dB is not None else None)
 
 
 class _LoRAWBackwardLite(torch.autograd.Function):
@@ -321,25 +343,64 @@ class _LoRAQKVBackward(torch.autograd.Function):
         grad_Q_bdim = in_dims[0]
         X_bdim = in_dims[3]
 
-        # Merge vmap batch into regular batch
+        B_vmap = X.shape[0]
+        hidden_dim = X.shape[-1]
+
+        # dX: merge approach works (spatially parallel)
         X_merged = X.reshape(-1, *X.shape[2:])
         grad_Q_merged = grad_Q.reshape(-1, *grad_Q.shape[2:])
         grad_K_merged = grad_K.reshape(-1, *grad_K.shape[2:])
         grad_V_merged = grad_V.reshape(-1, *grad_V.shape[2:])
 
-        dX, dAq, dBq, dAk, dBk, dAv, dBv = _lora_qkv_backward_impl(
-            grad_Q_merged, grad_K_merged, grad_V_merged,
-            X_merged, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv,
-        )
+        X_flat = X_merged.reshape(-1, hidden_dim)
+        grad_Q_flat = grad_Q_merged.reshape(-1, grad_Q.shape[-1])
+        grad_K_flat = grad_K_merged.reshape(-1, grad_K.shape[-1])
+        grad_V_flat = grad_V_merged.reshape(-1, grad_V.shape[-1])
 
-        dX = dX.reshape(X.shape)
+        # dX from base weights (merged is fine — spatially parallel)
+        dX_flat = torch.mm(grad_Q_flat, Wq)
+        dX_flat.addmm_(grad_K_flat, Wk, beta=1, alpha=1)
+        dX_flat.addmm_(grad_V_flat, Wv, beta=1, alpha=1)
 
-        # in_dims for: dX, dAq, dBq, dAk, dBk, dAv, dBv
-        # dX is batched, LoRA weight grads are not
-        Aq_bdim = in_dims[5]  # None (not batched)
+        # dX from LoRA contributions
+        grad_Q_Bqt = grad_K_Bkt = grad_V_Bvt = None
+        if Aq is not None and Bq is not None:
+            grad_Q_Bqt = grad_Q_flat @ Bq.t()
+            dX_flat.addmm_(grad_Q_Bqt, Aq.t(), alpha=Sq, beta=1)
+        if Ak is not None and Bk is not None:
+            grad_K_Bkt = grad_K_flat @ Bk.t()
+            dX_flat.addmm_(grad_K_Bkt, Ak.t(), alpha=Sk, beta=1)
+        if Av is not None and Bv is not None:
+            grad_V_Bvt = grad_V_flat @ Bv.t()
+            dX_flat.addmm_(grad_V_Bvt, Av.t(), alpha=Sv, beta=1)
+
+        dX = dX_flat.reshape(X.shape)
+
+        # dA, dB: per-sample computation using bmm (NOT merged!)
+        X_3d = X.reshape(B_vmap, -1, hidden_dim)
+        grad_Q_3d = grad_Q.reshape(B_vmap, -1, grad_Q.shape[-1])
+        grad_K_3d = grad_K.reshape(B_vmap, -1, grad_K.shape[-1])
+        grad_V_3d = grad_V.reshape(B_vmap, -1, grad_V.shape[-1])
+
+        def _per_sample_lora_grads(X_3d, grad_3d, A, B, S):
+            if A is None or B is None:
+                return None, None
+            grad_Bt = grad_3d @ B.t()  # [B_vmap, tokens, rank]
+            dA = torch.bmm(X_3d.transpose(-2, -1), grad_Bt) * S
+            XA = X_3d @ A  # [B_vmap, tokens, rank]
+            dB = torch.bmm(XA.transpose(-2, -1), grad_3d) * S
+            return dA, dB
+
+        dAq, dBq = _per_sample_lora_grads(X_3d, grad_Q_3d, Aq, Bq, Sq)
+        dAk, dBk = _per_sample_lora_grads(X_3d, grad_K_3d, Ak, Bk, Sk)
+        dAv, dBv = _per_sample_lora_grads(X_3d, grad_V_3d, Av, Bv, Sv)
+
+        def _bdim(t):
+            return 0 if t is not None else None
+
         return (
             (dX, dAq, dBq, dAk, dBk, dAv, dBv),
-            (X_bdim, Aq_bdim, Aq_bdim, Aq_bdim, Aq_bdim, Aq_bdim, Aq_bdim),
+            (0, _bdim(dAq), _bdim(dBq), _bdim(dAk), _bdim(dBk), _bdim(dAv), _bdim(dBv)),
         )
 
 
@@ -600,24 +661,68 @@ class _LoRAMLPBackward(torch.autograd.Function):
         grad_out_bdim = in_dims[0]
         X_bdim = in_dims[1]
 
-        # Merge vmap batch into regular batch
+        B_vmap = X.shape[0]
+        hidden_dim = X.shape[-1]
+        inter_dim = Wg.shape[0]  # intermediate dimension
+
+        # Merge for dX and activation backward (spatially parallel)
         X_merged = X.reshape(-1, *X.shape[2:])
         grad_out_merged = grad_out.reshape(-1, *grad_out.shape[2:])
         gate_merged = gate.reshape(-1, *gate.shape[2:])
         up_merged = up.reshape(-1, *up.shape[2:])
 
-        dX, dAg, dBg, dAu, dBu, dAd, dBd = _lora_mlp_backward_impl(
-            grad_out_merged, X_merged, Wg, Ag, Bg, Sg, Wu, Au, Bu, Su, Wd, Ad, Bd, Sd,
-            gate_merged, up_merged, activation_type,
-        )
+        X_flat = X_merged.reshape(-1, hidden_dim)
+        grad_out_flat = grad_out_merged.reshape(-1, grad_out.shape[-1])
+        gate_flat = gate_merged.reshape(-1, inter_dim)
+        up_flat = up_merged.reshape(-1, inter_dim)
 
-        dX = dX.reshape(X.shape)
+        # Backward through down projection (dX path — merged is fine)
+        dh = grad_out_flat @ Wd
+        if Ad is not None and Bd is not None:
+            dh.addmm_(grad_out_flat @ Bd.t(), Ad.t(), alpha=Sd, beta=1)
 
-        # dX is batched, LoRA weight grads are not
-        Ag_bdim = in_dims[3]  # None (not batched)
+        # Fused activation backward (merged)
+        act_backward_fused = _ACTIVATION_BACKWARD_FUSED[activation_type]
+        h, dgate, dup = act_backward_fused(dh, gate_flat, up_flat)
+
+        # dX from base weights (merged — spatially parallel)
+        torch.mm(dgate, Wg, out=X_flat)
+        X_flat.addmm_(dup, Wu, beta=1, alpha=1)
+        if Ag is not None and Bg is not None:
+            X_flat.addmm_(dgate @ Bg.t(), Ag.t(), alpha=Sg, beta=1)
+        if Au is not None and Bu is not None:
+            X_flat.addmm_(dup @ Bu.t(), Au.t(), alpha=Su, beta=1)
+        dX = X_flat.reshape(X.shape)
+
+        # Per-sample LoRA weight grads using bmm (NOT merged!)
+        X_3d = X.reshape(B_vmap, -1, hidden_dim)
+        grad_out_3d = grad_out.reshape(B_vmap, -1, grad_out.shape[-1])
+        h_3d = h.reshape(B_vmap, -1, inter_dim)
+        dgate_3d = dgate.reshape(B_vmap, -1, inter_dim)
+        dup_3d = dup.reshape(B_vmap, -1, inter_dim)
+
+        def _per_sample_lora_grads(input_3d, grad_3d, A, B, S):
+            if A is None or B is None:
+                return None, None
+            grad_Bt = grad_3d @ B.t()
+            dA = torch.bmm(input_3d.transpose(-2, -1), grad_Bt) * S
+            XA = input_3d @ A
+            dB = torch.bmm(XA.transpose(-2, -1), grad_3d) * S
+            return dA, dB
+
+        # Down LoRA grads use h as input, grad_out as gradient
+        dAd, dBd = _per_sample_lora_grads(h_3d, grad_out_3d, Ad, Bd, Sd)
+        # Gate LoRA grads use X as input, dgate as gradient
+        dAg, dBg = _per_sample_lora_grads(X_3d, dgate_3d, Ag, Bg, Sg)
+        # Up LoRA grads use X as input, dup as gradient
+        dAu, dBu = _per_sample_lora_grads(X_3d, dup_3d, Au, Bu, Su)
+
+        def _bdim(t):
+            return 0 if t is not None else None
+
         return (
             (dX, dAg, dBg, dAu, dBu, dAd, dBd),
-            (X_bdim, Ag_bdim, Ag_bdim, Ag_bdim, Ag_bdim, Ag_bdim, Ag_bdim),
+            (0, _bdim(dAg), _bdim(dBg), _bdim(dAu), _bdim(dBu), _bdim(dAd), _bdim(dBd)),
         )
 
 
