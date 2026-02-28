@@ -8,7 +8,7 @@ Tests:
 4. Forward and backward performance benchmarks
 
 Config: Mellum-4b scale (uses mellum_config from conftest).
-Parametrized over vocab sizes: 32768 (single-chunk) and 98304 (chunked path).
+Parametrized over vocab sizes: 32768 (single-chunk) and 128256 (Mellum-4b, chunked path).
 """
 
 import pytest
@@ -29,7 +29,7 @@ RTOL_CE_BACKWARD = 1e-4
 ATOL_CE_BACKWARD = 1e-6
 
 # Vocab sizes: single-chunk (<= 65536) and chunked (> 65536)
-VOCAB_SIZES = [32768, 98304]
+VOCAB_SIZES = [32768, 128256]
 
 
 # ============================================================================

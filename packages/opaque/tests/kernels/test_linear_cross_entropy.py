@@ -11,7 +11,7 @@ Tests:
 
 Uses bf16 throughout — CCE backward requires half precision.
 Config: Mellum-4b scale (uses mellum_config from conftest).
-Parametrized over vocab sizes: 32768 (single-chunk) and 98304 (chunked path).
+Parametrized over vocab sizes: 32768 (single-chunk) and 128256 (Mellum-4b, chunked path).
 Reference computes in fp32 for comparison baseline.
 
 CCE shift=True is always enabled: position i predicts labels[i+1] (HF label shifting).
@@ -39,7 +39,7 @@ RTOL_BACKWARD = 1e-2
 ATOL_BACKWARD = 2e-3
 
 # Vocab sizes: single-chunk (<= 65536) and chunked (> 65536)
-VOCAB_SIZES = [32768, 98304]
+VOCAB_SIZES = [32768, 128256]
 
 
 # ============================================================================

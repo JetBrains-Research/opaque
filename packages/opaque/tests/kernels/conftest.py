@@ -18,14 +18,14 @@ import torch
 # ============================================================================
 
 MELLUM_CONFIG = {
-    "batch_size": 8,
-    "seq_len": 512,
+    "batch_size": 4,
+    "seq_len": 1024,
     "hidden_dim": 3072,
     "intermediate_dim": 8256,  # FFN intermediate size
     "n_heads": 24,
     "head_dim": 128,
-    "vocab_size": 98304,
-    "rank": 64,  # LoRA rank
+    "vocab_size": 128256,
+    "rank": 16,  # LoRA rank
     "vmap_batch": 4,
 }
 
