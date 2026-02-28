@@ -81,10 +81,14 @@ def opaque_linear_ce(hidden_states, weight, labels, ignore_index=-100,
 
     Kernel returns nll_sum (unreduced). We reduce here to match
     the PyTorch reference (F.cross_entropy with reduction='mean').
+    Scaling is applied to weight before calling (not inside kernel),
+    so autograd correctly propagates gradients to original weight.
     """
+    if scaling != 0:
+        weight = weight / scaling
     nll_sum = Opaque_LinearCrossEntropyLoss.apply(
         hidden_states, weight, labels,
-        ignore_index, softcap, scaling,
+        ignore_index, softcap,
     )
     shifted_labels = labels[..., 1:].contiguous().flatten()
     n_valid = (shifted_labels != ignore_index).sum().float().clamp(min=1)
@@ -622,7 +626,7 @@ class TestLinearCEWrapper:
 
         # Manual: .apply() returns nll_sum, reduce ourselves
         nll_sum = Opaque_LinearCrossEntropyLoss.apply(
-            hidden, weight, labels, -100, 0, 0,
+            hidden, weight, labels, -100, 0,
         )
         shifted = labels[..., 1:].contiguous().flatten()
         n_valid = (shifted != -100).sum().float().clamp(min=1)

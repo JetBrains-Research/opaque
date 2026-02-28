@@ -256,16 +256,20 @@ def _opaque_fused_ce_causal_lm_forward(
         if logit_scale is not None and logit_scale != 1.0:
             weight = weight * logit_scale
 
+        # Granite divisive scaling: logits / logits_scaling
+        # Applied to weight before kernel (same as Cohere) so autograd
+        # correctly chains the gradient back to the original weight.
+        logits_scaling = getattr(self.config, "logits_scaling", None)
+        if logits_scaling is not None and logits_scaling != 1.0:
+            weight = weight / logits_scaling
+
         # Gemma2 softcapping: softcap * tanh(logits / softcap)
         softcap = getattr(self.config, "final_logit_softcapping", 0) or 0
-
-        # Granite divisive scaling: logits / logits_scaling
-        logits_scaling = getattr(self.config, "logits_scaling", 0) or 0
 
         # Kernel returns nll_sum (unreduced) — reduce here
         nll_sum = Opaque_LinearCrossEntropyLoss.apply(
             hidden_states, weight, labels,
-            -100, softcap, logits_scaling,
+            -100, softcap,
         )
 
         num_items_in_batch = kwargs.get("num_items_in_batch")

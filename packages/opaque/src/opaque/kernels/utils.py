@@ -86,3 +86,75 @@ INT32_SAFETY_BUFFER = NUM_INT32_ELEMENTS - BLOCK_SIZE_DEFAULT * SAFE_INT32_BUFFE
 def needs_long_indexing(n_elements: int) -> bool:
     """Check if tensor requires int64 indexing."""
     return n_elements > INT32_SAFETY_BUFFER
+
+
+# =============================================================================
+# Linear cross-entropy utilities (ported from cut_cross_entropy)
+# =============================================================================
+
+def _build_flat_valids(
+    targets: torch.Tensor,
+    ignore_index: int,
+) -> torch.Tensor | None:
+    """Build flat index tensor of valid (non-ignored) token positions.
+
+    Assumes targets are already pre-shifted and flattened.
+    Returns None if all tokens are valid (optimization).
+    """
+    valids = (targets != ignore_index).nonzero().to(torch.int32)
+    assert valids.size(1) == 1
+    return valids.squeeze(1) if valids.numel() != targets.numel() else None
+
+
+def b_bin_fn(b: int) -> int:
+    """Batch size binning for autotune key stability."""
+    if b >= 1024:
+        return 1024
+    elif b <= 128:
+        return 128
+    else:
+        return 512
+
+
+# =============================================================================
+# Triton JIT utilities for fused linear cross-entropy kernels
+# =============================================================================
+
+if _TRITON_VERSION >= (3, 0, 0):
+    try:
+        from triton.language.extra.libdevice import log1p as _tl_log1p
+    except ImportError:
+        _tl_log1p = tl.math.log1p
+else:
+    _tl_log1p = tl.math.log1p
+
+
+@triton.jit
+def tl_softcapping(v, softcap):
+    return triton_tanh(v / softcap) * softcap
+
+
+@triton.jit
+def tl_softcapping_grad(dv, v, softcap):
+    v = v / softcap
+    return dv * (1 - v * v)
+
+
+@triton.jit
+def tl_logaddexp(a, b):
+    minx = tl.minimum(a, b)
+    mx = tl.maximum(a, b)
+    return _tl_log1p(tl.exp(minx - mx)) + mx
+
+
+@triton.jit
+def tl_lock_add(ptrs, v, mask, lock_ptr):
+    while tl.atomic_cas(lock_ptr, 0, 1) == 1:
+        pass
+
+    cur_v = tl.load(ptrs, mask=mask, other=0.0, eviction_policy="evict_last")
+    new_v = v + cur_v
+    tl.store(ptrs, new_v, mask=mask, eviction_policy="evict_last")
+
+    tl.debug_barrier()
+    tl.atomic_xchg(lock_ptr, 0)
