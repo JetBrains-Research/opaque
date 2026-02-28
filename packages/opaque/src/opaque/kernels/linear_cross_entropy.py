@@ -18,8 +18,7 @@ import torch
 
 from cut_cross_entropy.cce_lse_forward import cce_lse_forward_kernel
 from cut_cross_entropy.cce_backward import cce_backward_kernel
-from cut_cross_entropy.indexed_dot import indexed_neg_dot_forward_kernel
-from cut_cross_entropy.utils import _build_flat_valids, _handle_eps
+from cut_cross_entropy.utils import _build_flat_valids, TensorInfo
 
 
 # =============================================================================
@@ -48,19 +47,16 @@ def _linear_ce_forward(
     e = hidden_states.contiguous().flatten(0, -2)  # (N, D)
     targets = labels.contiguous().flatten()          # (N,)
 
-    valids = _build_flat_valids(targets, ignore_index, shift=True)
+    valids = _build_flat_valids(targets, ignore_index, shift=1)
 
-    # Streaming LSE: log(Σ exp(e @ c[v].T)) — tiled in SRAM, never writes full logits
-    lse = cce_lse_forward_kernel(e, weight, valids, softcap=softcap)
-
-    # Neg dot: -e·c[target] — per-token dot product with correct class only
-    neg_dot = indexed_neg_dot_forward_kernel(
-        e, weight, targets, shift=True,
-        valids=valids, softcap=softcap, out_dtype=lse.dtype,
+    # Fused forward: streaming LSE + neg_correct_logit in one kernel pass
+    lse_ret = cce_lse_forward_kernel(
+        e, weight, bias=None, valids=valids, softcap=softcap,
+        targets=targets, shift=1,
     )
 
-    # NLL = neg_dot + lse = -e·c[t] + log(Σ exp(e·c[v]))
-    nll = neg_dot.add_(lse)
+    # NLL = neg_correct_logit + lse = -e·c[t] + log(Σ exp(e·c[v]))
+    nll = lse_ret.neg_correct_logit.add_(lse_ret.lse)
 
     return nll, valids
 
@@ -79,27 +75,32 @@ class _LinearCEBackward(torch.autograd.Function):
     @staticmethod
     def forward(
         grad_out, hidden_states, weight, labels,
-        softcap, filter_eps, ignore_index,
+        softcap, ignore_index,
     ):
         e = hidden_states.contiguous().flatten(0, -2)
         targets = labels.contiguous().flatten()
-        valids = _build_flat_valids(targets, ignore_index, shift=True)
-        lse = cce_lse_forward_kernel(e, weight, valids, softcap=softcap)
+        valids = _build_flat_valids(targets, ignore_index, shift=1)
+        lse = cce_lse_forward_kernel(e, weight, bias=None, valids=valids, softcap=softcap).lse
 
-        resolved_eps = _handle_eps(filter_eps, e.dtype)
-
-        # Ensure CCE backward computes weight gradient even when weight.requires_grad
-        # is False — functorch's grad(f, argnums=1) may need it via vmap dispatch.
-        weight_bwd = weight if weight.requires_grad else weight.detach().requires_grad_(True)
-
-        de, dc = cce_backward_kernel(
-            grad_out, e, weight_bwd, lse, valids,
-            softcap, resolved_eps,
-            targets=targets, shift=True, grad_scale=1.0,
+        # Always request both de and dc — functorch's vmap(grad()) may need either
+        # regardless of the tensor's requires_grad flag.
+        de, dc, _dbias = cce_backward_kernel(
+            grad_out,
+            None,  # dlse
+            e,
+            TensorInfo(e.dtype, True),
+            weight,
+            TensorInfo(weight.dtype, True),
+            None,  # bias
+            None,  # bias_info
+            lse, valids, softcap,
+            None,  # filter_eps disabled
+            targets=targets, shift=1, grad_scale=1.0,
+            accum_e_fp32=True,
+            accum_c_fp32=True,
+            filter_e_grad=False,
+            filter_c_grad=False,
         )
-
-        if dc is None:
-            dc = torch.zeros_like(weight)
 
         return de, dc
 
@@ -113,39 +114,46 @@ class _LinearCEBackward(torch.autograd.Function):
 
     @staticmethod
     def vmap(info, in_dims, grad_out, hidden_states, weight, labels,
-             softcap, filter_eps, ignore_index):
+             softcap, ignore_index):
         (grad_bdim, h_bdim, w_bdim, lab_bdim,
-         sc_bdim, fe_bdim, ii_bdim) = in_dims
+         sc_bdim, ii_bdim) = in_dims
 
         assert w_bdim is None, "weight should not be batched"
         assert sc_bdim is None, "softcap should not be batched"
-        assert fe_bdim is None, "filter_eps should not be batched"
         assert ii_bdim is None, "ignore_index should not be batched"
 
         B_vmap = hidden_states.shape[0]
         de_list = []
         dc_list = []
 
-        # Ensure CCE backward computes weight gradient for vmap(grad(f, argnums=1))
-        weight_bwd = weight if weight.requires_grad else weight.detach().requires_grad_(True)
-
         for i in range(B_vmap):
             h_i = hidden_states[i].contiguous().flatten(0, -2)
             t_i = labels[i].contiguous().flatten()
             g_i = grad_out[i] if grad_bdim is not None else grad_out
 
-            valids_i = _build_flat_valids(t_i, ignore_index, shift=True)
-            lse_i = cce_lse_forward_kernel(h_i, weight_bwd, valids_i, softcap=softcap)
+            valids_i = _build_flat_valids(t_i, ignore_index, shift=1)
+            lse_i = cce_lse_forward_kernel(h_i, weight, bias=None, valids=valids_i, softcap=softcap).lse
 
-            resolved_eps = _handle_eps(filter_eps, h_i.dtype)
-
-            de_i, dc_i = cce_backward_kernel(
-                g_i, h_i, weight_bwd, lse_i, valids_i,
-                softcap, resolved_eps,
-                targets=t_i, shift=True, grad_scale=1.0,
+            # Always request both de and dc — functorch's vmap(grad()) may need either
+            de_i, dc_i, _dbias_i = cce_backward_kernel(
+                g_i,
+                None,  # dlse
+                h_i,
+                TensorInfo(h_i.dtype, True),
+                weight,
+                TensorInfo(weight.dtype, True),
+                None,  # bias
+                None,  # bias_info
+                lse_i, valids_i, softcap,
+                None,  # filter_eps disabled
+                targets=t_i, shift=1, grad_scale=1.0,
+                accum_e_fp32=True,
+                accum_c_fp32=True,
+                filter_e_grad=False,
+                filter_c_grad=False,
             )
             de_list.append(de_i)
-            dc_list.append(dc_i if dc_i is not None else torch.zeros_like(weight))
+            dc_list.append(dc_i)
 
         de = torch.stack(de_list)
         dc = torch.stack(dc_list)
@@ -211,7 +219,6 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
         # Save raw tensors — _LinearCEBackward recomputes valids and lse
         ctx.save_for_backward(hidden_states, weight, labels)
         ctx.softcap = logit_softcapping if logit_softcapping != 0 else None
-        ctx.filter_eps = "auto"
         ctx.ignore_index = ignore_index
 
     @staticmethod
@@ -220,7 +227,7 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
 
         de, dc = _LinearCEBackward.apply(
             grad_loss, hidden_states, weight, labels,
-            ctx.softcap, ctx.filter_eps, ctx.ignore_index,
+            ctx.softcap, ctx.ignore_index,
         )
 
         de = de.reshape(hidden_states.shape)
