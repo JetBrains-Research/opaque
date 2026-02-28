@@ -1,6 +1,6 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""vmap compatibility patches for HuggingFace Transformers models.
+"""vmap compatibility and kernel optimization patches for HuggingFace Transformers models.
 
 Patches are applied automatically at `import opaque` time.
 No user action required - just import opaque and use clipped_grad with any
@@ -11,10 +11,11 @@ Disable auto-patching with: OPAQUE_NO_PATCH=1
 Supported models:
 - GPT-2
 - LLaMA (and LLaMA-based: Mistral, DeepSeek, etc.)
-- Qwen2
-- Phi, Phi-3
-- OLMo
+- Qwen2, Qwen3
+- Phi-3
 - Gemma, Gemma2
+- Granite
+- Cohere, Cohere2
 
 Attention implementations:
 - eager: ✅ Fully supported (explicitly patched, tested on CPU and CUDA)
@@ -31,9 +32,11 @@ Training features:
 - torch.compile: ✅ Fully supported
 - CUDA: ✅ Fully supported
 
-Testing:
-- tests/compat/ - Patch-specific compatibility tests (18 tests covering attention, PEFT, architectures)
+## Testing
+
+- tests/compat/ - Patch-specific compatibility tests
 - tests/validation/ - End-to-end DP training validation
+- tests/kernels/ - Kernel unit tests
 
 Note: SDPA is the default attention implementation in recent transformers versions.
 It works with our patches but may show performance warnings due to missing batching
@@ -44,8 +47,16 @@ from opaque.compat.transformers._global_patches import (
     apply_global_patches,
     is_globally_patched,
 )
+from opaque.compat.transformers._kernel_patches import (
+    apply_kernel_patches,
+    is_kernel_patched,
+    patch_lora_model,
+)
 
 __all__ = [
     "apply_global_patches",
+    "apply_kernel_patches",
     "is_globally_patched",
+    "is_kernel_patched",
+    "patch_lora_model",
 ]

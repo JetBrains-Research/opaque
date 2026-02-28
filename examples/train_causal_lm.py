@@ -59,7 +59,6 @@ from transformers import (
 )
 
 import opaque.accounting as acc
-import opaque.auditing as auditing
 from opaque.accounting import calibration as cal, Accountant
 from opaque.clipping import adaptive_clipped_grad, clipped_grad
 from opaque.noise import gaussian_noise

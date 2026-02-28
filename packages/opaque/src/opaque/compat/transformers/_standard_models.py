@@ -3,7 +3,7 @@
 """Standard model patches for HuggingFace transformers.
 
 These patches work for models that use standard eager attention:
-LLaMA, Mistral, Qwen2, Phi, Phi3, OLMo, Gemma.
+LLaMA, Mistral, Qwen2, Phi3, Gemma, Gemma2.
 """
 
 import importlib
@@ -17,10 +17,12 @@ _STANDARD_MODEL_MODULES = [
     "transformers.models.llama.modeling_llama",
     "transformers.models.mistral.modeling_mistral",
     "transformers.models.qwen2.modeling_qwen2",
-    "transformers.models.phi.modeling_phi",
+    "transformers.models.qwen3.modeling_qwen3",
     "transformers.models.phi3.modeling_phi3",
-    "transformers.models.olmo.modeling_olmo",
     "transformers.models.gemma.modeling_gemma",
+    "transformers.models.granite.modeling_granite",
+    "transformers.models.cohere.modeling_cohere",
+    "transformers.models.cohere2.modeling_cohere2",
 ]
 
 
@@ -85,7 +87,7 @@ def apply_standard_model_patches() -> None:
     """Apply patches to standard models.
 
     Patches models that use standard eager attention:
-    - LLaMA, Mistral, Qwen2, Phi, Phi3, OLMo, Gemma
+    - LLaMA, Mistral, Qwen2, Phi3, Gemma, Gemma2
 
     Note: Requires apply_shared_patches() to be called first.
     """

@@ -8,15 +8,11 @@ import pytest
 import torch
 
 from opaque.profiling import (
-    Checkpoint,
     MemoryStats,
     StepMetrics,
     StepTimer,
     TrainingProfiler,
-    empty_cache,
     get_memory_stats,
-    print_memory,
-    reset_peak_memory,
 )
 
 

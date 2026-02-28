@@ -38,12 +38,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
-
 import torch
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
 
 
 @dataclass
@@ -375,9 +370,7 @@ class TrainingProfiler:
             >>> with profiler.step(batch_size=32):
             ...     train_step(batch)
         """
-        timer = StepTimer(
-            self.device, track_memory=track_memory, batch_size=batch_size
-        )
+        timer = StepTimer(self.device, track_memory=track_memory, batch_size=batch_size)
 
         # Create wrapper that records metrics after step
         class RecordingTimer:
@@ -494,31 +487,37 @@ class TrainingProfiler:
         ]
 
         if self.num_steps > 0:
-            lines.extend([
-                f"Total steps:           {self.num_steps}",
-                f"Total time:            {self.total_time:.1f}s",
-                f"Avg step time:         {self.avg_step_time:.2f}s (with warmup)",
-                f"Avg step time:         {self.avg_step_time_stable:.2f}s (stable)",
-                f"Steps per minute:      {60.0 / self.avg_step_time_stable:.1f}",
-                f"Avg throughput:        {self.avg_throughput:.1f} samples/s",
-            ])
+            lines.extend(
+                [
+                    f"Total steps:           {self.num_steps}",
+                    f"Total time:            {self.total_time:.1f}s",
+                    f"Avg step time:         {self.avg_step_time:.2f}s (with warmup)",
+                    f"Avg step time:         {self.avg_step_time_stable:.2f}s (stable)",
+                    f"Steps per minute:      {60.0 / self.avg_step_time_stable:.1f}",
+                    f"Avg throughput:        {self.avg_throughput:.1f} samples/s",
+                ]
+            )
 
         mem = get_memory_stats(self.device)
         if mem.total_gb > 0:
-            lines.extend([
-                "",
-                "Memory:",
-                f"  Peak allocated:      {self.peak_memory_gb:.2f} GB",
-                f"  Current allocated:   {mem.allocated_gb:.2f} GB",
-                f"  Total GPU memory:    {mem.total_gb:.2f} GB",
-                f"  Utilization:         {self.peak_memory_gb / mem.total_gb:.1%}",
-            ])
+            lines.extend(
+                [
+                    "",
+                    "Memory:",
+                    f"  Peak allocated:      {self.peak_memory_gb:.2f} GB",
+                    f"  Current allocated:   {mem.allocated_gb:.2f} GB",
+                    f"  Total GPU memory:    {mem.total_gb:.2f} GB",
+                    f"  Utilization:         {self.peak_memory_gb / mem.total_gb:.1%}",
+                ]
+            )
 
         if self.checkpoints:
-            lines.extend([
-                "",
-                "Checkpoints:",
-            ])
+            lines.extend(
+                [
+                    "",
+                    "Checkpoints:",
+                ]
+            )
             for cp in self.checkpoints:
                 lines.append(
                     f"  [{cp.timestamp:7.1f}s] {cp.name}: {cp.memory.peak_gb:.2f} GB peak"
