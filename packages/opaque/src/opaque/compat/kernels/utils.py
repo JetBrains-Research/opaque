@@ -121,6 +121,26 @@ def b_bin_fn(b: int) -> int:
     else:
         return 512
 
+def ensure_cuda_tensors(*tensors: torch.Tensor, fn_name: str) -> None:
+    """Validate that all tensors are CUDA tensors for Triton kernels.
+
+    Args:
+        *tensors: Input tensors to validate
+        fn_name: Public API function name for error reporting
+
+    Raises:
+        RuntimeError: If any tensor is not on CUDA
+    """
+    for tensor in tensors:
+        if not torch.is_tensor(tensor):
+            continue
+        if tensor.device.type != "cuda":
+            raise RuntimeError(
+                f"{fn_name} requires CUDA tensors (Triton kernel backend); "
+                f"got device={tensor.device.type}. "
+                "Use non-kernel PyTorch path on MPS/CPU."
+            )
+
 
 # =============================================================================
 # Triton JIT utilities for fused linear cross-entropy kernels

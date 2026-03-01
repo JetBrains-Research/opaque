@@ -20,7 +20,10 @@ import pytest
 import torch
 import torch.nn.functional as F
 from torch.func import vmap, grad
-from opaque.kernels.lora import (
+
+pytest.importorskip("triton")
+
+from opaque.compat.kernels.lora import (
     Opaque_LoRA_W,
     Opaque_LoRA_QKV,
     Opaque_LoRA_MLP,

@@ -17,6 +17,11 @@ Key validations:
 
 import pytest
 import torch
+from tests.conftest import (
+    get_default_gpu_device,
+    gpu_memory_gate_reason,
+    has_min_gpu_memory,
+)
 
 from opaque import clipped_grad, gaussian_noise
 from opaque.random import key
@@ -452,22 +457,26 @@ class TestGPT2LoRADPTraining:
 
 
 def _has_sufficient_gpu_memory() -> bool:
-    """Check if we have a GPU with sufficient memory for Mellum-4b (needs ~16GB)."""
-    if not torch.cuda.is_available():
+    """Check if active GPU has enough available memory for Mellum-4b."""
+    device = get_default_gpu_device()
+    if device is None:
         return False
-    try:
-        # Need at least 16GB for Mellum-4b in fp16
-        total_memory = torch.cuda.get_device_properties(0).total_memory
-        return total_memory >= 16 * (1024**3)
-    except Exception:
-        return False
+    return has_min_gpu_memory(16, device=device)
+
+
+def _mellum_gate_reason() -> str:
+    """Build consistent skip reason for Mellum memory gate."""
+    device = get_default_gpu_device()
+    if device is None:
+        return "No GPU available (CUDA or MPS)"
+    return gpu_memory_gate_reason(16, device=device)
 
 
 @pytest.mark.gpu
 @pytest.mark.slow
 @pytest.mark.skipif(
     not _has_sufficient_gpu_memory(),
-    reason="Requires GPU with >=16GB memory for Mellum-4b",
+    reason=_mellum_gate_reason(),
 )
 class TestMellumLoRADPTraining:
     """Heavy load tests with Mellum-4b.

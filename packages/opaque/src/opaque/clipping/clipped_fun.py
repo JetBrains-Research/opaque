@@ -28,6 +28,49 @@ class ClippedFunAux(NamedTuple):
     loss_aux: Any | None
 
 
+def _resolve_accumulation_dtype(
+    tensor: torch.Tensor,
+    requested_dtype: torch.dtype | None,
+) -> torch.dtype | None:
+    """Resolve safe accumulation dtype for reductions.
+
+    If dtype is explicitly requested, use it. Otherwise, promote low-precision
+    floating reductions (fp16/bf16) to float32 for numerical stability.
+    """
+    if requested_dtype is not None:
+        return requested_dtype
+    if torch.is_floating_point(tensor) and tensor.dtype in (
+        torch.float16,
+        torch.bfloat16,
+    ):
+        return torch.float32
+    return None
+
+
+def _sum_clipped_tensor(
+    tensor: torch.Tensor,
+    *,
+    dim: int,
+    requested_dtype: torch.dtype | None,
+) -> torch.Tensor:
+    """Sum with safe accumulation dtype and user-facing output dtype semantics.
+
+    If `requested_dtype` is set, the output is returned in that dtype.
+    Otherwise, low-precision tensors use float32 internally for reduction, then
+    cast back to the original dtype so public API dtype behavior remains stable.
+    """
+    accumulation_dtype = _resolve_accumulation_dtype(tensor, requested_dtype)
+    summed = torch.sum(tensor, dim=dim, dtype=accumulation_dtype)
+
+    if requested_dtype is not None:
+        return summed
+
+    if accumulation_dtype is not None and summed.dtype != tensor.dtype:
+        return summed.to(dtype=tensor.dtype)
+
+    return summed
+
+
 def _with_extra_batch_axis(fun, batch_argnums):
     """Wraps a function to add an extra batch axis to the batch_argnums."""
     batch_argnums = normalize_to_tuple(batch_argnums)
@@ -142,7 +185,8 @@ def _microbatch_accumulate(
 
         # Accumulate clipped gradients (SUM)
         microbatch_sum = tree_map(
-            lambda x: torch.sum(x, dim=0, dtype=dtype), clipped_values
+            lambda x: _sum_clipped_tensor(x, dim=0, requested_dtype=dtype),
+            clipped_values,
         )
         if accumulated_grads is None:
             accumulated_grads = microbatch_sum
@@ -328,7 +372,8 @@ def clipped_fun(
 
             # Sum clipped values across batch dimension
             result = tree_map(
-                lambda x: torch.sum(x, dim=0, dtype=dtype), clipped_values
+                lambda x: _sum_clipped_tensor(x, dim=0, requested_dtype=dtype),
+                clipped_values,
             )
         else:
             # Manual microbatch accumulation: process in chunks, accumulate as we go

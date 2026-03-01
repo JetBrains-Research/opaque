@@ -53,6 +53,9 @@ docs = [
 
 [tool.pytest.ini_options]
 markers = [
-  "gpu: Test requires GPU (CUDA or MPS) — skipped automatically when no GPU is available",
+  "gpu: GPU sweep test (runs when CUDA is available; only mps_compatible subset runs on MPS)",
+  "mps_compatible: GPU-marked test is explicitly safe to run on MPS",
+  "cuda: Test requires CUDA specifically",
+  "mps: Test requires Apple Metal (MPS) specifically",
   "slow: Test takes >5 s on CPU (calibration, model download, multi-step training)",
 ]

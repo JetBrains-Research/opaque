@@ -218,7 +218,7 @@ Available vmap groups: `shared`, `standard`, `gemma2`, `phi3`.
 All kernels are available as standalone functions without patching:
 
 ```python
-from opaque.kernels import opaque_swiglu, opaque_cross_entropy_loss
+from opaque.compat.kernels import opaque_swiglu, opaque_cross_entropy_loss
 
 # Direct usage
 h = opaque_swiglu(gate, up)
@@ -246,7 +246,7 @@ this uses ~2 GB per sample. Re-enable fused CE or reduce batch size.
 
 ## Implementation details
 
-Source code: `packages/opaque/src/opaque/kernels/`
+Source code: `packages/opaque/src/opaque/compat/kernels/`
 
 | File | Lines | Description |
 |------|-------|-------------|

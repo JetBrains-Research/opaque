@@ -6,6 +6,7 @@ import torch
 from .utils import (
     MAX_FUSED_SIZE,
     calculate_settings,
+    ensure_cuda_tensors,
     torch_gpu_device,
     triton_cast,
     triton_tanh,
@@ -472,6 +473,7 @@ def opaque_cross_entropy_loss(logits, labels, logit_softcapping=0, logit_scaling
         logit_softcapping: Gemma 2 softcap value (0 = disabled).
         logit_scaling: Cohere logit scale value (0 = disabled).
     """
+    ensure_cuda_tensors(logits, labels, fn_name="opaque_cross_entropy_loss")
     losses, _ = Opaque_CrossEntropyLoss.apply(
         logits, labels, logit_softcapping, logit_scaling
     )

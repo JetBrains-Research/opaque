@@ -33,103 +33,31 @@ cost of 16x more sequential computation.
 LoRA dramatically reduces the gradient memory because only the adapter
 parameters (~0.1% of model) require per-example gradients.
 
-## MemoryProfiler
+## TrainingProfiler
 
-`MemoryProfiler` is a context manager that tracks memory at key points in
-your training loop.
-
-```python
-from opaque.profiling import MemoryProfiler
-from opaque import clipped_grad
-
-grad_fn, state = clipped_grad(loss_fn, l2_clip_norm=1.0, microbatch_size=16)
-
-profiler = MemoryProfiler()
-with profiler:
-    grads, state = grad_fn(params, batch, targets, state=state)
-    profiler.mark("after_grad")
-
-    noisy_grads, noise_state = noise_fn(grads, noise_state)
-    profiler.mark("after_noise")
-
-print(profiler.report())
-```
-
-Output:
-
-```
-============================================================
-Memory Profile Report (CUDA)
-============================================================
-Peak Memory:          2.45 GB
-Total Available:     23.50 GB
-Peak Utilization:    10.4%
-
-Timeline:
-------------------------------------------------------------
-Label                         Memory (GB)      Delta (GB)
-------------------------------------------------------------
-start                                0.15            +0.00
-after_grad                           1.92            +1.77
-after_noise                          1.93            +0.01
-end                                  1.45            -0.48
-============================================================
-```
-
-### Detailed CUDA statistics
-
-Pass `detailed=True` for additional CUDA memory allocator information:
+Use `TrainingProfiler` to track checkpoints and step-level metrics in your
+training loop.
 
 ```python
-profiler = MemoryProfiler(device="cuda")
-with profiler:
-    grads, state = grad_fn(params, batch, targets, state=state)
-    profiler.mark("after_grad")
+from opaque.profiling import TrainingProfiler
 
-print(profiler.report(detailed=True))
+profiler = TrainingProfiler(device)
+profiler.mark("start")
+
+for batch in dataloader:
+    with profiler.step(batch_size=len(batch["input_ids"])):
+        train_step(batch)
+
+    # Current step + memory metrics for logging
+    metrics = profiler.current_metrics()
+    # e.g., metrics["step_time_sec"], metrics["memory_peak_gb"]
+
+profiler.mark("end")
+print(profiler.final_summary())
 ```
 
-The detailed report includes:
-
-- **Reserved** -- memory cached by PyTorch's allocator (always >= allocated).
-- **Efficiency** -- allocated / reserved ratio. Below 80% suggests
-  fragmentation.
-- **Alloc Retries** -- failed allocations that needed retry, indicating
-  fragmentation.
-- **OOM Count** -- out-of-memory errors encountered.
-
-### Component tracking
-
-Pass `track_components=True` to `mark()` for a breakdown into parameters,
-gradients, activations, and other allocations:
-
-```python
-profiler.mark("after_forward", track_components=True)
-```
-
-Component tracking uses `gc.get_objects()` and is slow (100-500ms). Use it
-sparingly at critical checkpoints. It does not work inside `clipped_grad`
-because vmap creates and destroys tensors that are not visible to Python's
-garbage collector.
-
-## One-shot profiling
-
-`profile_memory` profiles a single training step without manual
-instrumentation:
-
-```python
-from opaque.profiling import profile_memory
-
-profile = profile_memory(
-    model=model,
-    sample_batch=(data, targets),
-    loss_fn=loss_fn,
-    l2_clip_norm=1.0,
-    microbatch_size=16,
-)
-
-print(profile)
-```
+For one-off checkpoints without a profiler, use `print_memory(device, label)`
+or `get_memory_stats(device)`.
 
 ## Microbatch size vs throughput
 
@@ -147,46 +75,37 @@ The relationship is not purely linear because GPU utilization drops for very
 small microbatches. In practice, `microbatch_size >= 4` maintains reasonable
 GPU utilization. Below that, the overhead of launching kernels dominates.
 
-The `safety_margin` parameter in `find_max_microbatch_size` (default 0.9)
-reserves 10% of GPU memory for PyTorch's CUDA allocator overhead,
-fragmentation, and temporary tensors. Reduce it if you see OOM errors
-during training that did not occur during profiling.
+## Microbatch tuning workflow
 
-## Auto-tuning microbatch size
-
-`find_max_microbatch_size` finds the largest microbatch that fits in GPU
-memory via binary search:
+Opaque currently does not expose an automatic microbatch search helper.
+Use a short manual sweep with `TrainingProfiler`:
 
 ```python
-from opaque.profiling import find_max_microbatch_size
+from opaque import clipped_grad
+from opaque.profiling import TrainingProfiler, reset_peak_memory
 
-optimal = find_max_microbatch_size(
-    model=model,
-    sample_batch=(data, targets),
-    batch_size=128,
-    loss_fn=loss_fn,
-    l2_clip_norm=1.0,
-    safety_margin=0.9,  # use 90% of available memory
-)
+def try_microbatch(candidate_mb: int) -> float:
+    grad_fn, clip_state = clipped_grad(
+        loss_fn,
+        l2_clip_norm=1.0,
+        batch_argnums=(1, 2),
+        microbatch_size=candidate_mb,
+    )
 
-grad_fn, state = clipped_grad(
-    loss_fn,
-    l2_clip_norm=1.0,
-    batch_argnums=(1, 2),
-    microbatch_size=optimal,
-)
+    reset_peak_memory(device)
+    profiler = TrainingProfiler(device)
+    with profiler.step(batch_size=len(batch_x)):
+        _grads, _aux = grad_fn(params, batch_x, batch_y, state=clip_state)
+
+    return profiler.current_metrics()["memory_peak_gb"]
 ```
 
-**Parameters:**
+Recommended process:
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `model` | `nn.Module` | The model to profile |
-| `sample_batch` | `tuple` | Representative input batch |
-| `batch_size` | `int` | Target training batch size |
-| `loss_fn` | `Callable` | Per-example loss function |
-| `l2_clip_norm` | `float` | Clip norm for gradient clipping |
-| `safety_margin` | `float` | Fraction of memory to use (default: 0.9) |
+1. Start with `microbatch_size = batch_size`.
+2. Halve until OOM stops.
+3. Run a 20-50 step smoke loop.
+4. Select the largest stable value.
 
 ## Device support
 
@@ -205,24 +124,19 @@ establish the memory baseline, then account for the AllReduce overhead when
 scaling.
 
 If memory is tight, reduce `microbatch_size` to leave headroom for AllReduce.
-A typical pattern:
-
-```python
-single_gpu_max = find_max_microbatch_size(model, sample_batch, ...)
-# Leave 20% headroom for AllReduce
-distributed_microbatch = int(single_gpu_max * 0.8)
-```
+Start from your single-device stable value and reduce by 10-20% for DDP.
 
 ## Common profiling patterns
 
-**Profile → auto-tune → train:** Profile the model once during setup, use
-the result to configure training:
+**Profile → tune → train:** Profile your training step, choose a stable
+`microbatch_size`, then train with that value:
 
 ```python
-from opaque.profiling import find_max_microbatch_size
-
-optimal = find_max_microbatch_size(model, sample_batch, batch_size, loss_fn, l2_clip_norm=1.0)
-grad_fn, state = clipped_grad(loss_fn, l2_clip_norm=1.0, microbatch_size=optimal)
+profiler = TrainingProfiler(device)
+for _ in range(20):
+    with profiler.step(batch_size=len(batch_x)):
+        train_step()
+print(profiler.final_summary())
 ```
 
 **Compare configurations:** Profile multiple LoRA ranks or model sizes to
@@ -231,14 +145,14 @@ find the best memory-accuracy trade-off:
 ```python
 for rank in [4, 8, 16]:
     model = get_peft_model(base_model, LoraConfig(r=rank))
-    max_mb = find_max_microbatch_size(model, sample_batch, batch_size, loss_fn)
-    print(f"LoRA r={rank}: max microbatch = {max_mb}")
+    # Run short profiling loop and pick largest stable microbatch manually
+    print(f"LoRA r={rank}: compare peak memory with TrainingProfiler")
 ```
 
 ## Troubleshooting
 
-**Out of memory:** Use `find_max_microbatch_size` to automatically select
-the largest feasible microbatch size. If the model itself does not fit, use
+**Out of memory:** Reduce `microbatch_size` and re-profile with
+`TrainingProfiler`. If the model itself does not fit, use
 LoRA or another parameter-efficient method to reduce the trainable
 parameter count.
 

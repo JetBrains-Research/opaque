@@ -13,12 +13,22 @@ concurrency:
 
 jobs:
   test:
-    name: Tests - Py${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    name: Tests - ${{ matrix.name }} - Py${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        include:
+          - name: CPU
+            os: ubuntu-latest
+            python-version: "3.11"
+            marker-expression: "not gpu"
+            coverage-suffix: ""
+          - name: MPS
+            os: macos-latest
+            python-version: "3.11"
+            marker-expression: "not gpu or mps_compatible"
+            coverage-suffix: "-mps"
 
     steps:
       - uses: actions/checkout@v4
@@ -43,24 +53,24 @@ jobs:
         run: |
           uv run pytest packages/opaque-accounting/tests \
             --cov=opaque_accounting \
-            --cov-report=xml:coverage-accounting.xml \
+            --cov-report=xml:coverage-accounting${{ matrix.coverage-suffix }}.xml \
             -v
 
-      - name: Run core tests (skip GPU-only)
+      - name: Run core tests
         run: |
           uv run pytest packages/opaque/tests \
-            -m "not gpu" \
+            -m "${{ matrix.marker-expression }}" \
             --cov=opaque \
-            --cov-report=xml:coverage-core.xml \
+            --cov-report=xml:coverage-core${{ matrix.coverage-suffix }}.xml \
             -v
 
       - uses: codecov/codecov-action@v4
         with:
-          files: ./coverage-accounting.xml,./coverage-core.xml
+          files: ./coverage-accounting${{ matrix.coverage-suffix }}.xml,./coverage-core${{ matrix.coverage-suffix }}.xml
           fail_ci_if_error: false
 
-  test-gpu:
-    name: GPU Tests
+  test-cuda:
+    name: CUDA Tests
     runs-on: GPU-runner-001
     needs: [test]
 
@@ -78,10 +88,10 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev --group compat --all-packages
 
-      - name: Run GPU tests
+      - name: Run CUDA tests
         run: |
           uv run pytest packages/opaque/tests \
-            -m "gpu" \
+            -m "gpu or cuda" \
             --cov=opaque \
             --cov-report=xml \
             -v
@@ -89,7 +99,7 @@ jobs:
       - uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
-          flags: gpu
+          flags: cuda
           fail_ci_if_error: false
 
   build-opaque-dp:

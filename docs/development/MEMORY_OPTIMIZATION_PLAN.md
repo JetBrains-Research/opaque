@@ -25,7 +25,7 @@ Improve memory efficiency of DP-SGD training on JetBrains Mellum-4b to enable:
 ### Code Organization
 Opaque uses a 2-layer architecture to stay framework-agnostic:
 
-**Layer 1: Generic Operations** (`src/opaque/kernels/`)
+**Layer 1: Generic Operations** (`src/opaque/compat/kernels/`)
 - Pure Triton kernels and tensor operations
 - Framework-agnostic (PyTorch, JAX, etc.)
 - Reusable building blocks
@@ -84,7 +84,7 @@ Baseline established with Mellum-4b at batch=4, seq=1024, bf16, LoRA r=16.
 - SwiGLU: Creates 2 intermediate activations
 - 64 RMSNorm ops + 32 SwiGLU ops per forward = ~0.5 GB intermediates
 
-**Implemented kernels** (`src/opaque/kernels/`):
+**Implemented kernels** (`src/opaque/compat/kernels/`):
 
 | Kernel | File | Description |
 |--------|------|-------------|
@@ -121,7 +121,7 @@ SwiGLU/GeGLU forward is slower than native PyTorch (`F.silu(gate)*up` = ~0.10ms)
 
 **Goal:** Enable training with all 7 LoRA modules efficiently
 
-**Implemented kernels** (`src/opaque/kernels/lora.py`):
+**Implemented kernels** (`src/opaque/compat/kernels/lora.py`):
 
 | Kernel | Description |
 |--------|-------------|
@@ -147,7 +147,7 @@ SwiGLU/GeGLU forward is slower than native PyTorch (`F.silu(gate)*up` = ~0.10ms)
 - Standard CE: allocate (batch*seq, vocab) = (4*1024, 128256) in memory
 - Chunked CE: process vocab in chunks, only store logsumexp
 
-**Implemented:** `src/opaque/kernels/cross_entropy.py`
+**Implemented:** `src/opaque/compat/kernels/cross_entropy.py`
 - Triton forward+backward kernels with BLOCK_SIZE up to 65536
 - `Opaque_CrossEntropyLoss` with vmap support
 - Integrated via `LOSS_MAPPING` patch in `_kernel_patches.py`
@@ -166,7 +166,7 @@ SwiGLU/GeGLU forward is slower than native PyTorch (`F.silu(gate)*up` = ~0.10ms)
 
 **Solution:** Ported CCE Triton kernels into our codebase with native vmap support.
 
-**Implemented:** `src/opaque/kernels/linear_cross_entropy.py` (846 lines)
+**Implemented:** `src/opaque/compat/kernels/linear_cross_entropy.py` (846 lines)
 
 Three Triton kernels (ported from Apple CCE, simplified):
 - `_linear_ce_forward_kernel`: 2D tiled grid, tiled matmul E@C.T, per-block LSE with lock-based atomic `logaddexp`, batch grouping (GROUP_B=8)
@@ -395,7 +395,7 @@ See `tests/research/test_memory_optimization_approaches*.py` for full test code.
 ## References
 
 - **Baseline config:** `examples/train_causal_lm.py` (mellum-kstack preset)
-- **Kernel sources:** `packages/opaque/src/opaque/kernels/`
+- **Kernel sources:** `packages/opaque/src/opaque/compat/kernels/`
 - **Kernel patches:** `packages/opaque/src/opaque/compat/transformers/_kernel_patches.py`
 - **Tests:** `packages/opaque/tests/kernels/` (105 tests)
 - **PyTorch vmap+autograd pattern:** PyTorch #128020 (ezyang)

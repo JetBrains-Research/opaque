@@ -21,16 +21,20 @@ class TestPoissonSamplerKeys:
         dataset = TensorDataset(torch.randn(1000, 10))
 
         with pytest.raises(TypeError, match="key"):
-            PoissonSampler(dataset, sample_rate=0.1, num_epochs=5)
+            PoissonSampler(dataset, sample_rate=0.1, num_iterations=5)
 
     def test_reproducibility_with_same_key(self):
         """Same key should produce same samples."""
         dataset = TensorDataset(torch.randn(1000, 10))
 
-        sampler1 = PoissonSampler(dataset, sample_rate=0.1, num_epochs=5, key=key(42))
+        sampler1 = PoissonSampler(
+            dataset, sample_rate=0.1, num_iterations=5, key=key(42)
+        )
         batches1 = list(sampler1)
 
-        sampler2 = PoissonSampler(dataset, sample_rate=0.1, num_epochs=5, key=key(42))
+        sampler2 = PoissonSampler(
+            dataset, sample_rate=0.1, num_iterations=5, key=key(42)
+        )
         batches2 = list(sampler2)
 
         assert len(batches1) == len(batches2)
@@ -41,10 +45,14 @@ class TestPoissonSamplerKeys:
         """Different keys should produce different samples."""
         dataset = TensorDataset(torch.randn(1000, 10))
 
-        sampler1 = PoissonSampler(dataset, sample_rate=0.1, num_epochs=5, key=key(42))
+        sampler1 = PoissonSampler(
+            dataset, sample_rate=0.1, num_iterations=5, key=key(42)
+        )
         batches1 = list(sampler1)
 
-        sampler2 = PoissonSampler(dataset, sample_rate=0.1, num_epochs=5, key=key(43))
+        sampler2 = PoissonSampler(
+            dataset, sample_rate=0.1, num_iterations=5, key=key(43)
+        )
         batches2 = list(sampler2)
 
         # Should be different (statistical test)
@@ -58,14 +66,14 @@ class TestPoissonSamplerKeys:
         # Simulate rank 0
         rank0_key = base_key  # No shift
         sampler_rank0 = PoissonSampler(
-            dataset, sample_rate=0.1, num_epochs=5, key=rank0_key
+            dataset, sample_rate=0.1, num_iterations=5, key=rank0_key
         )
         batches_rank0 = list(sampler_rank0)
 
         # Simulate rank 1 (fold in rank)
         rank1_key = fold_in(base_key, 1)
         sampler_rank1 = PoissonSampler(
-            dataset, sample_rate=0.1, num_epochs=5, key=rank1_key
+            dataset, sample_rate=0.1, num_iterations=5, key=rank1_key
         )
         batches_rank1 = list(sampler_rank1)
 
@@ -78,7 +86,7 @@ class TestPoissonSamplerKeys:
 
         # Use fold_in for per-step reproducible sampling
         k = fold_in(key(42), 0)
-        sampler = PoissonSampler(dataset, sample_rate=0.1, num_epochs=5, key=k)
+        sampler = PoissonSampler(dataset, sample_rate=0.1, num_iterations=5, key=k)
 
         batches = list(sampler)
         assert len(batches) > 0
@@ -91,7 +99,7 @@ class TestPoissonSamplerKeys:
         sampler = PoissonSampler(
             dataset,
             sample_rate=0.1,
-            num_epochs=5,
+            num_iterations=5,
             key=key(42),
         )
 
@@ -108,7 +116,7 @@ class TestTruncatedPoissonSamplerKeys:
 
         with pytest.raises(TypeError, match="key"):
             TruncatedPoissonSampler(
-                dataset, sample_rate=0.1, max_batch_size=50, num_epochs=5
+                dataset, sample_rate=0.1, max_batch_size=50, num_iterations=5
             )
 
     def test_reproducibility_with_same_key(self):
@@ -119,7 +127,7 @@ class TestTruncatedPoissonSamplerKeys:
             dataset,
             sample_rate=0.1,
             max_batch_size=50,
-            num_epochs=5,
+            num_iterations=5,
             key=key(42),
         )
         batches1 = list(sampler1)
@@ -128,7 +136,7 @@ class TestTruncatedPoissonSamplerKeys:
             dataset,
             sample_rate=0.1,
             max_batch_size=50,
-            num_epochs=5,
+            num_iterations=5,
             key=key(42),
         )
         batches2 = list(sampler2)
@@ -145,7 +153,7 @@ class TestTruncatedPoissonSamplerKeys:
             dataset,
             sample_rate=0.5,  # High rate to frequently exceed max
             max_batch_size=50,
-            num_epochs=10,
+            num_iterations=10,
             key=key(42),
         )
 
@@ -253,14 +261,14 @@ class TestCrossValidationWithNumpy:
 
         # Our implementation with key
         sampler_key = PoissonSampler(
-            dataset, sample_rate=0.1, num_epochs=1, key=key(42)
+            dataset, sample_rate=0.1, num_iterations=1, key=key(42)
         )
         batches_key = list(sampler_key)
 
         # Reference numpy implementation
         rng = np.random.default_rng(42)
         batches_numpy = []
-        for _ in range(1):  # num_epochs=1
+        for _ in range(1):  # num_iterations=1
             mask = rng.random(len(dataset)) < 0.1
             indices = np.where(mask)[0].tolist()
             if indices:

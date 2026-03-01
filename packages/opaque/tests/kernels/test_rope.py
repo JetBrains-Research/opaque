@@ -14,9 +14,14 @@ import pytest
 import torch
 from torch.func import vmap, grad
 
-from opaque.kernels.rope_embedding import Opaque_RoPE
+pytest.importorskip("triton")
 
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+from opaque.compat.kernels.rope_embedding import Opaque_RoPE
+
+pytestmark = [
+    pytest.mark.cuda,
+    pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required"),
+]
 
 # RoPE: elementwise cos/sin multiply, same math in Triton and PyTorch
 RTOL_FORWARD = 8e-3

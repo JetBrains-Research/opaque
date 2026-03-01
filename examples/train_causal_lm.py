@@ -43,12 +43,13 @@ USAGE:
 """
 
 import argparse
+import importlib.util
+import os
 import time
-import warnings
 
 import torch
 import torchopt
-from datasets import load_dataset, Dataset
+from datasets import load_dataset
 from peft import LoraConfig, get_peft_model
 from torch.utils.data import DataLoader
 from transformers import (
@@ -61,6 +62,7 @@ from transformers import (
 import opaque.accounting as acc
 from opaque.accounting import calibration as cal, Accountant
 from opaque.clipping import adaptive_clipped_grad, clipped_grad
+from opaque.compat.transformers import is_kernel_patched
 from opaque.noise import gaussian_noise
 from opaque.profiling import TrainingProfiler, print_memory, reset_peak_memory
 from opaque.random import key, fold_in
@@ -74,6 +76,109 @@ except ImportError:
     WANDB_AVAILABLE = False
 
 
+def _select_device() -> tuple[torch.device, str]:
+    """Select best available device with user-facing label."""
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        return device, torch.cuda.get_device_name(0)
+
+    if torch.backends.mps.is_available():
+        device = torch.device("mps")
+        return device, "Apple Silicon"
+
+    return torch.device("cpu"), "CPU"
+
+
+def _is_dtype_supported(device: torch.device, dtype: torch.dtype) -> bool:
+    """Check whether a dtype can be allocated on a specific device."""
+    try:
+        torch.empty((1,), device=device, dtype=dtype)
+        return True
+    except (RuntimeError, TypeError):
+        return False
+
+
+def _resolve_model_dtype(
+    requested_name: str,
+    device: torch.device,
+) -> tuple[str, torch.dtype, str | None]:
+    """Resolve requested dtype with safe fallback for unsupported device paths."""
+    dtype_map = {
+        "float32": torch.float32,
+        "float16": torch.float16,
+        "bfloat16": torch.bfloat16,
+    }
+    requested_dtype = dtype_map[requested_name]
+
+    if _is_dtype_supported(device, requested_dtype):
+        return requested_name, requested_dtype, None
+
+    fallback_order = {
+        "cuda": ["float16", "bfloat16", "float32"],
+        "mps": ["float16", "float32"],
+        "cpu": ["float32", "bfloat16", "float16"],
+    }
+    for fallback_name in fallback_order.get(device.type, ["float32"]):
+        fallback_dtype = dtype_map[fallback_name]
+        if _is_dtype_supported(device, fallback_dtype):
+            reason = (
+                f"Requested dtype '{requested_name}' is not supported on {device.type}; "
+                f"using '{fallback_name}' instead."
+            )
+            return fallback_name, fallback_dtype, reason
+
+    raise RuntimeError(
+        f"No supported dtype found for device={device.type}. "
+        f"Requested dtype was '{requested_name}'."
+    )
+
+
+def _kernel_mode_summary(device: torch.device, dtype_name: str) -> tuple[str, str]:
+    """Return concise status of kernel optimization mode for this run."""
+    if os.environ.get("OPAQUE_NO_PATCH", "0") == "1":
+        return "disabled", "OPAQUE_NO_PATCH=1"
+
+    if os.environ.get("OPAQUE_NO_KERNEL_PATCH", "0") == "1":
+        return "disabled", "OPAQUE_NO_KERNEL_PATCH=1"
+
+    if device.type != "cuda":
+        return "disabled", f"device={device.type} (Triton kernels are CUDA-only)"
+
+    if importlib.util.find_spec("triton") is None:
+        return "disabled", "triton package not installed"
+
+    if dtype_name not in {"float16", "bfloat16"}:
+        return "partial", f"dtype={dtype_name} (fused CE requires fp16/bf16)"
+
+    patched = is_kernel_patched()
+    if patched:
+        return "enabled", "global kernel patches applied"
+    return "partial", "kernel patch state unavailable"
+
+
+def _print_runtime_mode_report(
+    device: torch.device,
+    device_label: str,
+    dtype_name: str,
+    dtype: torch.dtype,
+    dtype_warning: str | None,
+) -> None:
+    """Print active runtime mode so fallback behavior is explicit."""
+    kernel_mode, kernel_reason = _kernel_mode_summary(device, dtype_name)
+
+    print("\nRuntime mode:")
+    print(f"  Device: {device} ({device_label})")
+    print(f"  Dtype: {dtype_name} ({dtype})")
+    if dtype_warning:
+        print(f"  Dtype fallback: {dtype_warning}")
+    print(f"  Kernel optimizations: {kernel_mode} ({kernel_reason})")
+
+    if device.type == "cpu":
+        print("  Note: CPU path prioritizes correctness over throughput.")
+    elif device.type == "mps":
+        print("  Note: MPS uses compatibility fallbacks when CUDA-only kernels are unavailable.")
+
+
 def parse_args():
     """Parse command-line arguments with logical groups."""
     parser = argparse.ArgumentParser(
@@ -84,9 +189,9 @@ def parse_args():
     parser.add_argument(
         "--preset",
         type=str,
-        choices=["smoke", "mellum-kstack"],
+        choices=["custom", "smoke", "mellum-kstack"],
         default="smoke",
-        help="Apply preset configuration (smoke=quick test ~2min, medium=longer test ~10min, mellum-kstack=full production). Overrides other args.",
+        help="Apply preset configuration (custom=keep explicit args, smoke=quick test ~2min, mellum-kstack=full production).",
     )
 
     model_group = parser.add_argument_group("model", "Model and tokenizer settings")
@@ -365,6 +470,9 @@ def parse_args():
         _set("use_eager_attention", True)
         _set("dtype", "bfloat16")
         _set("microbatch_size", 4)
+    elif args.preset == "custom":
+        # Keep all user-provided/default CLI arguments unchanged.
+        pass
 
     return args
 
@@ -383,8 +491,6 @@ def main():
     # Initialize W&B if enabled
     use_wandb = args.wandb and WANDB_AVAILABLE
     if use_wandb:
-        import os
-
         # Read entity from env var if not specified
         entity = args.wandb_entity or os.environ.get("WANDB_ENTITY")
 
@@ -406,17 +512,12 @@ def main():
         print("Warning: --wandb specified but wandb not installed. Continuing without W&B.")
 
     # Setup device
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-        device_name = torch.cuda.get_device_name(0)
-        print(f"\nUsing device: {device} ({device_name})")
-    elif torch.backends.mps.is_available():
-        device = torch.device("mps")
-        print(f"\nUsing device: {device} (Apple Silicon)")
-    else:
-        device = torch.device("cpu")
+    device, device_name = _select_device()
+    if device.type == "cpu":
         print(f"\nUsing device: {device}")
         print("Warning: Training on CPU will be slow")
+    else:
+        print(f"\nUsing device: {device} ({device_name})")
 
     # Set seed
     torch.manual_seed(args.seed)
@@ -449,19 +550,14 @@ def main():
         if hasattr(config, attr):
             setattr(config, attr, 0.0)
 
-    # Map dtype string to torch dtype
-    dtype_map = {
-        "float32": torch.float32,
-        "float16": torch.float16,
-        "bfloat16": torch.bfloat16,
-    }
-    torch_dtype = dtype_map[args.dtype]
-    print(f"Using dtype: {args.dtype} ({torch_dtype})")
+    dtype_name, torch_dtype, dtype_warning = _resolve_model_dtype(args.dtype, device)
+    args.dtype = dtype_name
+    _print_runtime_mode_report(device, device_name, dtype_name, torch_dtype, dtype_warning)
 
     # Load model
     model_kwargs = {
         "config": config,
-        "torch_dtype": torch_dtype,
+        "dtype": torch_dtype,
         "trust_remote_code": True,
     }
     if use_eager:
@@ -471,7 +567,14 @@ def main():
     # Initialize profiler
     profiler = TrainingProfiler(device)
 
-    model = AutoModelForCausalLM.from_pretrained(args.model_name, **model_kwargs)
+    try:
+        model = AutoModelForCausalLM.from_pretrained(args.model_name, **model_kwargs)
+    except TypeError as exc:
+        if "unexpected keyword argument 'dtype'" not in str(exc):
+            raise
+        model_kwargs.pop("dtype")
+        model_kwargs["torch_dtype"] = torch_dtype
+        model = AutoModelForCausalLM.from_pretrained(args.model_name, **model_kwargs)
     model = model.to(device)
     profiler.mark("model_loaded")
     print_memory(device, "After model load")
@@ -515,7 +618,7 @@ def main():
     if len(dataset) > 0:
         sample = dataset[0]
         sample_text = sample[args.dataset_text_field]
-        print(f"\n  Sample data (first example):")
+        print("\n  Sample data (first example):")
         print(f"    Text length: {len(sample_text)} chars")
         print(f"    Preview: {sample_text[:200]}...")
 
@@ -577,7 +680,7 @@ def main():
     # = 1 / sample_rate (since we sample sample_rate fraction each step)
     expected_steps_per_epoch = int(1.0 / sample_rate)
 
-    print(f"\nPoisson sampling setup:")
+    print("\nPoisson sampling setup:")
     print(f"  Sample rate: {sample_rate:.4f}")
     print(f"  Expected batch size: {args.batch_size}")
     print(f"  Expected steps per epoch: ~{expected_steps_per_epoch}")
@@ -670,11 +773,11 @@ def main():
     # Calibrate noise multiplier from target privacy budget
     # sample_rate already computed above
     total_steps = args.num_epochs * expected_steps_per_epoch
-    print(f"\nCalibrating privacy parameters...")
+    print("\nCalibrating privacy parameters...")
     print(f"  Total steps: {total_steps}")
     print(f"  Sample rate: {sample_rate:.6f}")
     print(f"  Target: ε={args.target_epsilon}, δ={args.target_delta}")
-    print(f"  (This may take 1-3 minutes...)")
+    print("  (This may take 1-3 minutes...)")
 
     start_time = time.time()
     budget = cal.epsilon_budget(args.target_epsilon, delta=args.target_delta)

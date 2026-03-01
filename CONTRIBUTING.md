@@ -127,8 +127,11 @@ uv run pytest packages/opaque/tests/clipping/test_clipped_fun.py -v
 Tests use pytest markers for filtering:
 
 ```bash
-# GPU tests (requires CUDA or MPS)
+# GPU tests (runs when CUDA is available)
 uv run pytest -m gpu
+
+# MPS-compatible GPU subset (lightweight compatibility checks)
+uv run pytest -m mps_compatible
 
 # Non-GPU tests only
 uv run pytest -m "not gpu"
@@ -146,14 +149,15 @@ Some tests require a CUDA GPU. These are located in `packages/opaque/tests/distr
 use `torch.distributed` with NCCL backend:
 
 ```bash
-# Run GPU tests (requires CUDA or MPS GPU)
+# Run GPU tests (requires CUDA)
 uv run pytest -m gpu -v
 
 # Run distributed tests (requires 2+ GPUs)
 uv run pytest packages/opaque/tests/distributed/ -v
 ```
 
-GPU tests are marked with `@pytest.mark.gpu` and are automatically filtered in CI.
+`@pytest.mark.gpu` tests run when CUDA is available. On MPS, only tests marked
+`@pytest.mark.mps_compatible` are allowed to run.
 
 ---
 

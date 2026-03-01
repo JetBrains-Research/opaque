@@ -83,14 +83,14 @@ _ROPE_MODELS = [
 
 def _opaque_swiglu_mlp_forward(self, x):
     """SwiGLU MLP forward using Opaque Triton kernel."""
-    from opaque.kernels import Opaque_SwiGLU
+    from opaque.compat.kernels.swiglu import Opaque_SwiGLU
 
     return self.down_proj(Opaque_SwiGLU.apply(self.gate_proj(x), self.up_proj(x)))
 
 
 def _opaque_phi3_mlp_forward(self, hidden_states):
     """Phi3 MLP forward (combined gate_up_proj) using Opaque Triton kernel."""
-    from opaque.kernels import Opaque_SwiGLU
+    from opaque.compat.kernels.swiglu import Opaque_SwiGLU
 
     gate, up = self.gate_up_proj(hidden_states).chunk(2, dim=-1)
     return self.down_proj(Opaque_SwiGLU.apply(gate, up))
@@ -98,14 +98,14 @@ def _opaque_phi3_mlp_forward(self, hidden_states):
 
 def _opaque_geglu_exact_mlp_forward(self, x):
     """Gemma MLP forward using Opaque GeGLU exact kernel."""
-    from opaque.kernels import Opaque_GeGLU_Exact
+    from opaque.compat.kernels.geglu import Opaque_GeGLU_Exact
 
     return self.down_proj(Opaque_GeGLU_Exact.apply(self.gate_proj(x), self.up_proj(x)))
 
 
 def _opaque_geglu_approx_mlp_forward(self, x):
     """Gemma2 MLP forward using Opaque GeGLU approx kernel."""
-    from opaque.kernels import Opaque_GeGLU_Approx
+    from opaque.compat.kernels.geglu import Opaque_GeGLU_Approx
 
     return self.down_proj(Opaque_GeGLU_Approx.apply(self.gate_proj(x), self.up_proj(x)))
 
@@ -126,7 +126,7 @@ def _opaque_apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_di
     Falls back to PyTorch when cos/sin cannot be reduced to 2D (e.g., when
     position_ids create truly per-batch-element cos/sin).
     """
-    from opaque.kernels import Opaque_RoPE_QK
+    from opaque.compat.kernels.rope_embedding import Opaque_RoPE_QK
 
     # HF provides cos/sin as (batch, seq_len, head_dim) or (seq_len, head_dim).
     # The kernel needs 2D (seq_len, head_dim) after squeeze.
@@ -157,7 +157,7 @@ def _opaque_causal_lm_loss(
 
     Supports all vocab sizes via chunked computation for vocab > 65536.
     """
-    from opaque.kernels import Opaque_CrossEntropyLoss
+    from opaque.compat.kernels.cross_entropy import Opaque_CrossEntropyLoss
 
     logits = logits.float()
 
@@ -274,7 +274,7 @@ def _opaque_fused_ce_causal_lm_forward(
 
     # Fused path requires half precision (CCE backward constraint)
     if hidden_states.dtype in (torch.bfloat16, torch.float16):
-        from opaque.kernels import Opaque_LinearCrossEntropyLoss
+        from opaque.compat.kernels.linear_cross_entropy import Opaque_LinearCrossEntropyLoss
 
         weight = self.lm_head.weight
 
@@ -339,7 +339,7 @@ def _opaque_lora_linear_forward(self, x, *args, **kwargs):
     Replaces peft.tuners.lora.Linear.forward. Uses Opaque_LoRA_W which
     computes base projection + LoRA delta in a single call.
     """
-    from opaque.kernels import Opaque_LoRA_W
+    from opaque.compat.kernels.lora import Opaque_LoRA_W
 
     if self.disable_adapters or not self.active_adapters:
         return self.base_layer(x)
@@ -548,7 +548,7 @@ def _opaque_fused_lora_mlp_forward(self, x):
     Replaces separate gate_proj + up_proj + activation + down_proj
     with a single fused kernel call.
     """
-    from opaque.kernels import Opaque_LoRA_MLP
+    from opaque.compat.kernels.lora import Opaque_LoRA_MLP
 
     activation_type = self._opaque_activation_type
     dtype = x.dtype
@@ -615,7 +615,7 @@ def _opaque_fused_lora_qkv(self, hidden_states):
     Replaces 3 separate q_proj/k_proj/v_proj LoRA calls with a single
     fused kernel call that shares X computation across all three projections.
     """
-    from opaque.kernels import Opaque_LoRA_QKV
+    from opaque.compat.kernels.lora import Opaque_LoRA_QKV
 
     dtype = hidden_states.dtype
 
