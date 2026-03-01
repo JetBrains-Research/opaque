@@ -874,7 +874,9 @@ def apply_kernel_patches() -> None:
         return
 
     patched = []
-    skip = os.environ.get("OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES", "").lower().split(",")
+    skip = (
+        os.environ.get("OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES", "").lower().split(",")
+    )
     if "all" in skip:
         _is_kernel_patched = True
         return

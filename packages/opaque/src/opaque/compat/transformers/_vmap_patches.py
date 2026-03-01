@@ -41,7 +41,9 @@ def apply_vmap_patches() -> None:
     if _is_vmap_patched:
         return
 
-    skip = os.environ.get("OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES", "").lower().split(",")
+    skip = (
+        os.environ.get("OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES", "").lower().split(",")
+    )
     if "all" in skip:
         _is_vmap_patched = True
         return
