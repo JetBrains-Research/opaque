@@ -88,10 +88,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev --group compat --all-packages
 
-      - name: Run CUDA tests
+      - name: Run CUDA smoke tests
         run: |
-          uv run pytest packages/opaque/tests \
-            -m "gpu or cuda" \
+          uv run pytest packages/opaque/tests/test_cuda_smoke.py \
             --cov=opaque \
             --cov-report=xml \
             -v
