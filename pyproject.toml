@@ -57,5 +57,6 @@ markers = [
   "mps_compatible: GPU-marked test is explicitly safe to run on MPS",
   "cuda: Test requires CUDA specifically",
   "mps: Test requires Apple Metal (MPS) specifically",
+  "hf_auth_required: Test requires authenticated HuggingFace access (gated/private models)",
   "slow: Test takes >5 s on CPU (calibration, model download, multi-step training)",
 ]

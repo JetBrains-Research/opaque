@@ -62,6 +62,7 @@ class TestMultiArchitectureCompatibility:
         )
         assert len(grads) > 0
 
+    @pytest.mark.hf_auth_required
     def test_gemma2_architecture(self, device):
         """Test Gemma2 architecture (custom sliding window attention).
 
