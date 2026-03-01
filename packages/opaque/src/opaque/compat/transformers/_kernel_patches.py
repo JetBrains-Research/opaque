@@ -274,7 +274,9 @@ def _opaque_fused_ce_causal_lm_forward(
 
     # Fused path requires half precision (CCE backward constraint)
     if hidden_states.dtype in (torch.bfloat16, torch.float16):
-        from opaque.compat.kernels.linear_cross_entropy import Opaque_LinearCrossEntropyLoss
+        from opaque.compat.kernels.linear_cross_entropy import (
+            Opaque_LinearCrossEntropyLoss,
+        )
 
         weight = self.lm_head.weight
 

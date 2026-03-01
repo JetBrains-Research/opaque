@@ -29,9 +29,7 @@ def pytest_runtest_setup(item):
                 "gpu-marked test is disabled on MPS unless marked mps_compatible"
             )
         if not running_on_mps and not torch.cuda.is_available():
-            pytest.skip(
-                "gpu-marked tests require CUDA"
-            )
+            pytest.skip("gpu-marked tests require CUDA")
 
     if "cuda" in item.keywords and not torch.cuda.is_available():
         pytest.skip("CUDA not available")
@@ -58,11 +56,15 @@ def get_default_device():
         if requested == "cuda":
             if torch.cuda.is_available():
                 return torch.device("cuda")
-            raise RuntimeError("OPAQUE_TEST_DEVICE=cuda requested but CUDA is unavailable")
+            raise RuntimeError(
+                "OPAQUE_TEST_DEVICE=cuda requested but CUDA is unavailable"
+            )
         if requested == "mps":
             if torch.backends.mps.is_available():
                 return torch.device("mps")
-            raise RuntimeError("OPAQUE_TEST_DEVICE=mps requested but MPS is unavailable")
+            raise RuntimeError(
+                "OPAQUE_TEST_DEVICE=mps requested but MPS is unavailable"
+            )
         raise RuntimeError(
             f"Invalid OPAQUE_TEST_DEVICE={requested!r}. Expected one of: cpu, cuda, mps"
         )
@@ -316,7 +318,12 @@ def gpu_memory_gate_reason(min_gb, device=None):
             if hasattr(torch.mps, "current_allocated_memory"):
                 allocated = int(torch.mps.current_allocated_memory())
 
-            if recommended and recommended > 0 and allocated is not None and allocated >= 0:
+            if (
+                recommended
+                and recommended > 0
+                and allocated is not None
+                and allocated >= 0
+            ):
                 free_gb = max(0, recommended - allocated) / (1024**3)
                 return (
                     f"Requires >= {min_gb}GB free MPS memory "

@@ -121,6 +121,7 @@ def b_bin_fn(b: int) -> int:
     else:
         return 512
 
+
 def ensure_cuda_tensors(*tensors: torch.Tensor, fn_name: str) -> None:
     """Validate that all tensors are CUDA tensors for Triton kernels.
 

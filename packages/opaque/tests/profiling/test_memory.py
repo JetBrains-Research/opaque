@@ -111,7 +111,9 @@ class TestStepTimer:
         assert isinstance(metrics, StepMetrics)
         assert metrics.batch_size == 32
 
-    @pytest.mark.skipif(not torch.backends.mps.is_available(), reason="MPS not available")
+    @pytest.mark.skipif(
+        not torch.backends.mps.is_available(), reason="MPS not available"
+    )
     def test_mps_synchronizes_before_timing(self, monkeypatch):
         """MPS timer should synchronize before measuring elapsed time."""
         calls = {"count": 0}

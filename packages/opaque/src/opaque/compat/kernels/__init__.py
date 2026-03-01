@@ -46,7 +46,9 @@ except ModuleNotFoundError as import_error:
         if logit_scaling != 0:
             transformed = transformed * logit_scaling
         if logit_softcapping != 0:
-            transformed = logit_softcapping * torch.tanh(transformed / logit_softcapping)
+            transformed = logit_softcapping * torch.tanh(
+                transformed / logit_softcapping
+            )
         return transformed
 
     def _rotate_half(x: torch.Tensor) -> torch.Tensor:
@@ -87,7 +89,9 @@ except ModuleNotFoundError as import_error:
                 num_items_in_batch = num_items_in_batch.to(nll_sum.device)
             return nll_sum / num_items_in_batch
 
-        n_valid = (shifted_labels.reshape(-1) != ignore_index).sum().float().clamp(min=1)
+        n_valid = (
+            (shifted_labels.reshape(-1) != ignore_index).sum().float().clamp(min=1)
+        )
         return nll_sum / n_valid
 
     def opaque_swiglu(gate, up):
