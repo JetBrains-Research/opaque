@@ -17,18 +17,22 @@ components:
 - **Eager attention forward** -- replaces model-specific attention with
   vmap-compatible implementations that use dynamic shapes.
 
-These patches are applied for LLaMA, Mistral, Qwen2, Phi, Phi-3, OLMo,
-Gemma, and Gemma2 models. Models not in this list may still work if their
-attention implementation follows the standard Transformers pattern.
+These patches are applied for LLaMA, Mistral, Qwen2, Qwen3, Phi-3,
+Gemma, Gemma2, Granite, Cohere, and Cohere2 models. DeepSeek models
+inherit LLaMA patches automatically. GPT-2 works without patches (simple
+architecture). Other models may work if their attention implementation
+follows the standard Transformers pattern.
 
 To disable auto-patching (e.g., for debugging), set the environment
 variable before importing:
 
 ```python
 import os
-os.environ["OPAQUE_NO_PATCH"] = "1"
+os.environ["OPAQUE_SKIP_COMPAT_PATCHES"] = "all"
 import opaque
 ```
+
+For finer control, see [Kernel Optimizations — Configuration](kernel-optimizations.md#configuration).
 
 ### Why patches are needed
 
@@ -201,6 +205,7 @@ or add modules only if accuracy is insufficient.
 |---------|--------|-------|
 | Mixed precision (fp16/bf16) | Supported | Pass `dtype` to `clipped_grad` for accumulation dtype |
 | LoRA / PEFT adapters | Supported | Use `make_functional(partition_trainable=True)` |
+| Kernel optimizations | Supported | Auto-applied on import; see [Kernel Optimizations](kernel-optimizations.md) |
 | Gradient checkpointing | Not supported | Incompatible with vmap; use microbatching instead |
 | `torch.compile` | Supported | Works with vmap and patches |
 
@@ -215,12 +220,15 @@ Opaque's auto-patching covers these model families:
 
 | Model family | Tested sizes | Notes |
 |-------------|-------------|-------|
+| GPT-2 | 124M, 355M | Works without patches; good for prototyping |
 | LLaMA / Llama 3 | 7B, 8B, 70B (LoRA) | Recommended starting point |
+| DeepSeek | 7B | Uses LLaMA architecture; inherits patches |
 | Mistral | 7B | Similar architecture to LLaMA |
-| Qwen2 | 0.5B, 7B | |
-| Phi / Phi-3 | 3.8B | Smaller, good for experimentation |
-| OLMo | 7B | Open-source, Apache 2.0 |
-| Gemma / Gemma2 | 2B, 7B | |
+| Qwen2 / Qwen3 | 0.5B, 7B | |
+| Phi-3 | 3.8B | Combined gate_up_proj variant |
+| Gemma / Gemma2 | 2B, 7B | GeGLU activation, softcap attention (Gemma2) |
+| Granite | 3B, 8B | Divisive logit scaling |
+| Cohere / Cohere2 | 8B | Multiplicative logit scaling |
 
 **What makes a model vmap-compatible:** The model must not use
 `torch.nonzero`, data-dependent control flow (`if tensor.item() > 0`), or
@@ -262,10 +270,10 @@ Disable it: do not call `model.gradient_checkpointing_enable()`.
 **Flash Attention errors under vmap:** Set `attn_implementation="sdpa"` or
 `attn_implementation="eager"` when loading the model.
 
-**Model not in patched list:** If your model is not LLaMA, Mistral, Qwen2,
-Phi, Phi-3, OLMo, Gemma, or Gemma2, it may still work if its attention
-follows the standard pattern. Try it; if it fails under vmap, the error
-message will indicate which operation needs a vmap rule.
+**Model not in patched list:** If your model is not in the table above,
+it may still work if its attention follows the standard Transformers
+pattern. Try it; if it fails under vmap, the error message will indicate
+which operation needs a vmap rule.
 
 **`make_functional` fails:** Some models use non-standard parameter
 registration. Ensure the model is a standard `nn.Module` with parameters

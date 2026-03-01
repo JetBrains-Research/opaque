@@ -6,11 +6,14 @@ Patches are applied automatically at `import opaque` time.
 No user action required - just import opaque and use clipped_grad with any
 supported HuggingFace model.
 
-Disable auto-patching with: OPAQUE_NO_PATCH=1
+Control with environment variables:
+- OPAQUE_SKIP_TRANSFORMERS_PATCHES: "all" or "vmap,kernels"
+- OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES: "all" or "shared,standard,gemma2,phi3"
+- OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES: "all" or "swiglu,rope,ce,fused_ce,lora"
 
 Supported models:
-- GPT-2
-- LLaMA (and LLaMA-based: Mistral, DeepSeek, etc.)
+- GPT-2 (works without patches)
+- LLaMA, Llama 3 (and LLaMA-based: DeepSeek, Mistral, etc.)
 - Qwen2, Qwen3
 - Phi-3
 - Gemma, Gemma2
@@ -18,45 +21,76 @@ Supported models:
 - Cohere, Cohere2
 
 Attention implementations:
-- eager: ✅ Fully supported (explicitly patched, tested on CPU and CUDA)
-- sdpa: ✅ Fully supported (uses patched repeat_kv, default in transformers, tested on CPU and CUDA)
-- flash_attention_2: ❌ Not compatible (uses torch.nonzero for unpadding, which outputs dynamic shapes incompatible with vmap)
-  * Cannot be patched without rewriting the entire kernel (defeats performance purpose)
-- flex_attention: ❌ Not compatible (tensor metadata issues with vmap, known upstream PyTorch limitation)
-  * May be fixable in future PyTorch versions as flex_attention matures
+- eager: Fully supported (explicitly patched, tested on CPU and CUDA)
+- sdpa: Fully supported (uses patched repeat_kv, default in transformers, tested on CPU and CUDA)
+- flash_attention_2: Not compatible (uses torch.nonzero for unpadding, dynamic shapes incompatible with vmap)
+- flex_attention: Not compatible (tensor metadata issues with vmap, known upstream PyTorch limitation)
 
 Training features:
-- Mixed precision (fp16/bfloat16): ✅ Fully supported
-- Gradient checkpointing: ❌ Not compatible (autograd.Function incompatible with vmap)
-- PEFT/LoRA: ✅ Fully supported (LoRA, IA3, Prefix tuning, P-tuning, Prompt tuning tested)
-- torch.compile: ✅ Fully supported
-- CUDA: ✅ Fully supported
-
-## Testing
-
-- tests/compat/ - Patch-specific compatibility tests
-- tests/validation/ - End-to-end DP training validation
-- tests/kernels/ - Kernel unit tests
+- Mixed precision (fp16/bfloat16): Fully supported
+- Gradient checkpointing: Not compatible (autograd.Function incompatible with vmap)
+- PEFT/LoRA: Fully supported (LoRA, IA3, Prefix tuning, P-tuning, Prompt tuning tested)
+- torch.compile: Fully supported
+- CUDA: Fully supported
 
 Note: SDPA is the default attention implementation in recent transformers versions.
 It works with our patches but may show performance warnings due to missing batching
 rules for scaled_dot_product_attention. This is expected and does not affect correctness.
 """
 
-from opaque.compat.transformers._global_patches import (
-    apply_global_patches,
-    is_globally_patched,
-)
+import os
+
 from opaque.compat.transformers._kernel_patches import (
     apply_kernel_patches,
     is_kernel_patched,
     patch_lora_model,
 )
+from opaque.compat.transformers._vmap_patches import (
+    apply_vmap_patches,
+    is_vmap_patched,
+)
+
+_is_transformers_patched = False
+
+
+def apply_transformers_patches() -> None:
+    """Apply all HuggingFace Transformers patches.
+
+    Controlled by environment variables:
+    - OPAQUE_SKIP_TRANSFORMERS_PATCHES: "all" or "vmap,kernels"
+    - OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES: "all" or "shared,standard,gemma2,phi3"
+    - OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES: "all" or "swiglu,rope,ce,fused_ce,lora"
+    """
+    global _is_transformers_patched
+
+    if _is_transformers_patched:
+        return
+
+    skip = os.environ.get("OPAQUE_SKIP_TRANSFORMERS_PATCHES", "").lower().split(",")
+    if "all" in skip:
+        _is_transformers_patched = True
+        return
+
+    if "vmap" not in skip:
+        apply_vmap_patches()
+
+    if "kernels" not in skip:
+        apply_kernel_patches()
+
+    _is_transformers_patched = True
+
+
+def is_transformers_patched() -> bool:
+    """Check if Transformers patches have been applied."""
+    return _is_transformers_patched
+
 
 __all__ = [
-    "apply_global_patches",
+    "apply_transformers_patches",
     "apply_kernel_patches",
-    "is_globally_patched",
+    "apply_vmap_patches",
+    "is_transformers_patched",
     "is_kernel_patched",
+    "is_vmap_patched",
     "patch_lora_model",
 ]

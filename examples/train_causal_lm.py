@@ -313,51 +313,58 @@ def parse_args():
 
     args = parser.parse_args()
 
-    # Apply preset configurations
+    # Helper: only set preset value if CLI didn't provide an explicit override
+    _defaults = {a.dest: a.default for a in parser._actions}
+
+    def _set(name, value):
+        if getattr(args, name, None) == _defaults.get(name):
+            setattr(args, name, value)
+
+    # Apply preset configurations (CLI args take precedence)
     if args.preset == "smoke":
         # Quick smoke test with GPT-2 (~100 steps, ~2-3 minutes)
-        args.model_name = "gpt2"
-        args.dataset = "ag_news"
-        args.dataset_text_field = "text"
-        args.num_train_samples = 1000
-        args.num_eval_samples = 100
-        args.num_epochs = 3
-        args.batch_size = 32
-        args.eval_batch_size = 8  # Small eval batches
-        args.log_steps = 10
-        args.eval_steps = 10
-        args.target_epsilon = 3.0
-        args.learning_rate = 1e-5
-        args.lora_r = 4
-        args.lora_alpha = 8
-        args.max_seq_len = 512
-        args.lora_budget_modules = ["c_attn", "c_proj"]
-        args.use_eager_attention = True  # Required: SDPA incompatible with vmap
-        args.dtype = "bfloat16"  # Use bfloat16 by default
-        args.audit = False
+        _set("model_name", "gpt2")
+        _set("dataset", "ag_news")
+        _set("dataset_text_field", "text")
+        _set("num_train_samples", 1000)
+        _set("num_eval_samples", 100)
+        _set("num_epochs", 3)
+        _set("batch_size", 32)
+        _set("eval_batch_size", 8)
+        _set("log_steps", 10)
+        _set("eval_steps", 10)
+        _set("target_epsilon", 3.0)
+        _set("learning_rate", 1e-5)
+        _set("lora_r", 4)
+        _set("lora_alpha", 8)
+        _set("max_seq_len", 512)
+        _set("lora_budget_modules", ["c_attn", "c_proj"])
+        _set("use_eager_attention", True)
+        _set("dtype", "bfloat16")
+        _set("audit", False)
     elif args.preset == "mellum-kstack":
         # Golden configuration for Mellum-4b + KStack training on H200
         # Memory analysis: Model=7.5 GiB, Activations per example=~17 GiB (bfloat16, seq_len=1024)
         # With microbatch_size=4: 7.5 + (4×17) = ~75 GiB peak memory usage
-        args.model_name = "JetBrains/Mellum-4b-base"
-        args.dataset = "JetBrains/KStack"
-        args.dataset_text_field = "content"
-        args.num_train_samples = 50000
-        args.num_eval_samples = 1000
-        args.num_epochs = 3
-        args.batch_size = 128  # Large batch for better privacy amplification
-        args.eval_batch_size = 4  # Small batches for eval to avoid OOM
-        args.log_steps = 2  # Frequent logging
-        args.eval_steps = 10  # Regular evaluation
-        args.target_epsilon = 10.0
-        args.learning_rate = 5e-5
-        args.lora_r = 16
-        args.lora_alpha = 32
-        args.max_seq_len = 1024
-        args.lora_budget_modules = ["q_proj", "v_proj"]  # Minimal LoRA for memory efficiency
-        args.use_eager_attention = True  # Required: SDPA incompatible with vmap
-        args.dtype = "bfloat16"  # Required: Cuts memory by ~50% vs FP32
-        args.microbatch_size = 4  # Required: Process 4 examples at a time (vmap limitation)
+        _set("model_name", "JetBrains/Mellum-4b-base")
+        _set("dataset", "JetBrains/KStack")
+        _set("dataset_text_field", "content")
+        _set("num_train_samples", 50000)
+        _set("num_eval_samples", 1000)
+        _set("num_epochs", 3)
+        _set("batch_size", 128)
+        _set("eval_batch_size", 4)
+        _set("log_steps", 2)
+        _set("eval_steps", 10)
+        _set("target_epsilon", 10.0)
+        _set("learning_rate", 5e-5)
+        _set("lora_r", 16)
+        _set("lora_alpha", 32)
+        _set("max_seq_len", 1024)
+        _set("lora_budget_modules", ["q_proj", "v_proj"])
+        _set("use_eager_attention", True)
+        _set("dtype", "bfloat16")
+        _set("microbatch_size", 4)
 
     return args
 

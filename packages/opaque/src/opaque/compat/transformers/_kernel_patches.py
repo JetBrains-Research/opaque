@@ -12,7 +12,8 @@ Patched components:
 - Fused linear + CE: ForCausalLM.forward replaced to skip lm_head materialization (bf16/fp16)
 - LoRA: peft.tuners.lora.Linear forward + auto-fused QKV (Opaque_LoRA_QKV) and MLP (Opaque_LoRA_MLP) via get_peft_model hook
 
-Disable with: OPAQUE_NO_KERNEL_PATCH=1
+Disable all with: OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all
+Skip specific kernels: OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=swiglu,rope,ce,fused_ce,lora
 """
 
 from __future__ import annotations
@@ -30,7 +31,6 @@ logger = logging.getLogger(__name__)
 
 # Track patching state
 _is_kernel_patched = False
-_disabled = os.environ.get("OPAQUE_NO_KERNEL_PATCH", "0") == "1"
 
 
 # =============================================================================
@@ -856,14 +856,14 @@ def apply_kernel_patches() -> None:
     - Cross-entropy loss: ForCausalLM via LOSS_MAPPING
     - LoRA: peft.tuners.lora.Linear forward
 
-    No-op when CUDA/Triton unavailable or OPAQUE_NO_KERNEL_PATCH=1.
+    No-op when CUDA/Triton unavailable or OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all.
     """
     global _is_kernel_patched
 
     if _is_kernel_patched:
         return
 
-    if _disabled or not torch.cuda.is_available():
+    if not torch.cuda.is_available():
         _is_kernel_patched = True
         return
 
@@ -874,7 +874,10 @@ def apply_kernel_patches() -> None:
         return
 
     patched = []
-    skip = os.environ.get("OPAQUE_SKIP_PATCHES", "").lower().split(",")
+    skip = os.environ.get("OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES", "").lower().split(",")
+    if "all" in skip:
+        _is_kernel_patched = True
+        return
 
     # SwiGLU MLP
     if "swiglu" not in skip:

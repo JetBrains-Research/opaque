@@ -96,8 +96,8 @@ Baseline established with Mellum-4b at batch=4, seq=1024, bf16, LoRA r=16.
 | Utilities | `utils.py` | `calculate_settings`, `torch_gpu_device`, Triton helpers |
 
 **Integration:** `_kernel_patches.py` patches at class level for all supported models.
-Applied automatically at `import opaque` time. Disable with `OPAQUE_NO_KERNEL_PATCH=1`,
-selectively skip with `OPAQUE_SKIP_PATCHES=swiglu,rope,...`.
+Applied automatically at `import opaque` time. Disable with `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all`,
+selectively skip with `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=swiglu,rope,...`.
 
 **Supported models:** LLaMA, Mistral, Qwen2, Qwen3, Phi3, Gemma, Gemma2, Granite, Cohere, Cohere2.
 
@@ -208,7 +208,7 @@ Stripped from CCE (not needed): bias, logit_avg, gradient filtering, Kahan summa
 
 ---
 
-### Phase 4: Dtype Precision Guards — NOT STARTED
+### Phase 4: Dtype Precision Guards — COMPLETED
 
 **Problem:**
 - PyTorch silently upcasts to fp32 in many ops
@@ -220,6 +220,9 @@ Stripped from CCE (not needed): bias, logit_avg, gradient filtering, Kahan summa
 1. Audit current dtypes in `clipped_fun.py`, `gaussian_noise.py`
 2. Add explicit `dtype` parameter enforcement
 3. Validate memory consistency
+
+**NO CHANGES MADE**:
+- Opaque is already amp compilant
 
 ---
 
@@ -267,11 +270,23 @@ PYTHONUNBUFFERED=1 uv run python examples/train_causal_lm.py \
 
 ### Disable/Skip Patches
 ```bash
-# Disable all kernel patches
-OPAQUE_NO_KERNEL_PATCH=1
+# Disable all patching
+OPAQUE_SKIP_COMPAT_PATCHES=all
 
-# Selectively skip specific patches
-OPAQUE_SKIP_PATCHES=fused_ce,swiglu,rope
+# Disable all transformers patches (vmap + kernels)
+OPAQUE_SKIP_TRANSFORMERS_PATCHES=all
+
+# Disable only kernel optimizations
+OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all
+
+# Selectively skip specific kernels
+OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=fused_ce,swiglu,rope
+
+# Disable all vmap compatibility patches
+OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES=all
+
+# Selectively skip vmap groups
+OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES=gemma2,phi3
 ```
 
 ---
@@ -280,7 +295,7 @@ OPAQUE_SKIP_PATCHES=fused_ce,swiglu,rope
 
 If issues arise:
 
-**Numerical Issues:** Use `OPAQUE_SKIP_PATCHES=<kernel>` to disable specific patches
+**Numerical Issues:** Use `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=<kernel>` to disable specific patches
 
 **Memory Regression:** Profile for leaks, check for fp32 upcasting
 
