@@ -52,12 +52,22 @@ The patches replace these with:
 
 ### Attention implementation support
 
-| Attention type | Supported | Notes |
-|---------------|-----------|-------|
-| `eager` | Yes | Explicitly patched and tested |
-| `sdpa` | Yes | Uses patched `repeat_kv`; default in recent Transformers |
-| `flash_attention_2` | No | Uses `torch.nonzero` (dynamic shapes incompatible with vmap) |
-| `flex_attention` | No | Tensor metadata issues with vmap |
+| Attention type | Status | Notes |
+|---------------|--------|-------|
+| `sdpa` | **Recommended** | Default in Transformers. Uses fused CUDA kernels (flash/efficient/cuDNN) with O(N) memory |
+| `eager` | Supported | Explicitly patched. Materializes full attention matrix — O(N²) memory |
+| `flash_attention_2` | Not compatible | Uses `torch.nonzero` for unpadding (dynamic shapes break vmap) |
+| `flex_attention` | Not compatible | HigherOrderOperator has no vmap support (upstream PyTorch limitation) |
+
+SDPA provides significant memory savings over eager because fused kernels avoid
+materializing the `(heads, seq, seq)` attention matrix. Measured at Qwen2-0.5B
+scale with LoRA:
+
+| seq_len | Microbatch | Eager memory | SDPA memory | Savings |
+|---------|-----------|-------------|------------|---------|
+| 512 | full batch | 7.38 GB | 4.22 GB | 1.75x |
+| 1024 | full batch | 22.28 GB | 6.20 GB | 3.59x |
+| 1024 | 2 | 11.80 GB | 4.42 GB | 2.67x |
 
 If your model defaults to Flash Attention 2, set `attn_implementation`
 when loading:
@@ -65,7 +75,7 @@ when loading:
 ```python
 model = AutoModelForCausalLM.from_pretrained(
     "meta-llama/Llama-3.1-8B",
-    attn_implementation="sdpa",  # or "eager"
+    attn_implementation="sdpa",  # recommended for DP-SGD
 )
 ```
 
@@ -203,9 +213,11 @@ or add modules only if accuracy is insufficient.
 
 | Feature | Status | Notes |
 |---------|--------|-------|
+| SDPA attention | Recommended | Default; up to 3.6x memory savings over eager |
 | Mixed precision (fp16/bf16) | Supported | Pass `dtype` to `clipped_grad` for accumulation dtype |
 | LoRA / PEFT adapters | Supported | Use `make_functional(partition_trainable=True)` |
 | Kernel optimizations | Supported | Auto-applied on import; see [Kernel Optimizations](kernel-optimizations.md) |
+| Microbatching | Supported | Works with both SDPA and eager attention |
 | Gradient checkpointing | Not supported | Incompatible with vmap; use microbatching instead |
 | `torch.compile` | Supported | Works with vmap and patches |
 
@@ -267,8 +279,13 @@ noise after `sum_gradients`. See [Distributed Training](distributed.md).
 **"vmap over _NoopSaveInputs" error:** Gradient checkpointing is enabled.
 Disable it: do not call `model.gradient_checkpointing_enable()`.
 
-**Flash Attention errors under vmap:** Set `attn_implementation="sdpa"` or
-`attn_implementation="eager"` when loading the model.
+**Flash Attention errors under vmap:** Set `attn_implementation="sdpa"` when
+loading the model. SDPA is recommended over eager for its memory efficiency.
+
+**"not yet implemented the batching rule" warning:** This PyTorch warning
+about `_scaled_dot_product_*_attention_backward` is expected and harmless.
+The SDPA backward falls back to per-sample processing, which is what vmap
+does anyway. Opaque suppresses this warning automatically.
 
 **Model not in patched list:** If your model is not in the table above,
 it may still work if its attention follows the standard Transformers

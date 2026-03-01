@@ -29,6 +29,22 @@ def vmap_create_causal_mask(
     When using keep_batch_dim=True (recommended), the batch dimension is preserved
     through vmap, allowing SDPA to work correctly with microbatching.
     """
+    # When no padding mask is provided, return None so that:
+    # - SDPA uses is_causal=True (avoids batch dimension issues under vmap)
+    # - Eager attention skips mask addition (our patched eager handles this)
+    # The original create_causal_mask also returns None for SDPA in this case.
+    # Note: past_key_values may be a DynamicCache even in training (HF's
+    # @check_model_inputs resolves use_cache=None to config.use_cache=True),
+    # so we check for actual cached data rather than just None.
+    if attention_mask is None:
+        has_cached_data = (
+            past_key_values is not None
+            and hasattr(past_key_values, "get_seq_length")
+            and past_key_values.get_seq_length() > 0
+        )
+        if not has_cached_data:
+            return None
+
     # Detect if we're under vmap with batch dimension removed (keep_batch_dim=False)
     # or with batch dimension kept (keep_batch_dim=True)
     if input_embeds.ndim == 2:

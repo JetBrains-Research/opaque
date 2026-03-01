@@ -204,7 +204,7 @@ def parse_args():
     model_group.add_argument(
         "--use_eager_attention",
         action="store_true",
-        help="Force eager attention implementation",
+        help="Force eager attention (default: use SDPA, which is faster and uses less memory)",
     )
 
     data_group = parser.add_argument_group("data", "Dataset and tokenization settings")
@@ -444,7 +444,6 @@ def parse_args():
         _set("lora_alpha", 8)
         _set("max_seq_len", 512)
         _set("lora_budget_modules", ["c_attn", "c_proj"])
-        _set("use_eager_attention", True)
         _set("dtype", "bfloat16")
         _set("audit", False)
     elif args.preset == "mellum-kstack":
@@ -467,7 +466,6 @@ def parse_args():
         _set("lora_alpha", 32)
         _set("max_seq_len", 1024)
         _set("lora_budget_modules", ["q_proj", "v_proj"])
-        _set("use_eager_attention", True)
         _set("dtype", "bfloat16")
         _set("microbatch_size", 4)
     elif args.preset == "custom":
@@ -522,15 +520,10 @@ def main():
     # Set seed
     torch.manual_seed(args.seed)
 
-    # Force eager attention for DP-SGD training
-    # SDPA (scaled_dot_product_attention) has compatibility issues with vmap for some models
-    # TODO: Re-enable SDPA support after fixing vmap compatibility issues
-    use_eager = True
-    if not args.use_eager_attention:
-        print("Auto-enabling eager attention (required for DP-SGD with vmap)")
-
-    # Legacy checks (kept for reference, but now always using eager)
-    # use_eager = args.use_eager_attention or device.type == "mps" or (args.microbatch_size is not None and args.microbatch_size > 1)
+    # Attention implementation: SDPA is the default in recent HuggingFace Transformers
+    # and provides up to 3.6x memory savings over eager at seq_len=1024 with vmap.
+    # Use --use_eager_attention to override (e.g., for debugging).
+    use_eager = args.use_eager_attention or device.type == "mps"
 
     # Load model config and disable dropout
     print(f"\nLoading model: {args.model_name}...")
