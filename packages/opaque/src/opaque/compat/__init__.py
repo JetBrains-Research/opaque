@@ -31,11 +31,7 @@ def apply_compat_patches() -> None:
         return
 
     raw_skip = os.environ.get("OPAQUE_SKIP_COMPAT_PATCHES", "")
-    skip = {
-        entry.strip().lower()
-        for entry in raw_skip.split(",")
-        if entry.strip()
-    }
+    skip = {entry.strip().lower() for entry in raw_skip.split(",") if entry.strip()}
 
     if "all" in skip:
         _is_patched = True

@@ -63,9 +63,7 @@ from opaque.utils import make_functional
 
 _opaque_skip_compat_raw = os.environ.get("OPAQUE_SKIP_COMPAT_PATCHES", "")
 _opaque_skip_compat = {
-    item.strip().lower()
-    for item in _opaque_skip_compat_raw.split(",")
-    if item.strip()
+    item.strip().lower() for item in _opaque_skip_compat_raw.split(",") if item.strip()
 }
 
 if "all" not in _opaque_skip_compat:
