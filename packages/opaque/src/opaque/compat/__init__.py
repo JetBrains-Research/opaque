@@ -51,3 +51,6 @@ def apply_compat_patches() -> None:
 def is_compat_patched() -> bool:
     """Check if compatibility patches have been applied."""
     return _is_patched
+
+
+__all__ = ["apply_compat_patches", "is_compat_patched"]

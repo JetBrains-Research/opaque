@@ -69,7 +69,12 @@ def apply_transformers_patches() -> None:
     if _is_transformers_patched:
         return
 
-    skip = os.environ.get("OPAQUE_SKIP_TRANSFORMERS_PATCHES", "").lower().split(",")
+    raw_skip = os.environ.get("OPAQUE_SKIP_TRANSFORMERS_PATCHES", "")
+    skip = {
+        entry.strip().lower()
+        for entry in raw_skip.split(",")
+        if entry.strip()
+    }
     if "all" in skip:
         _is_transformers_patched = True
         return
