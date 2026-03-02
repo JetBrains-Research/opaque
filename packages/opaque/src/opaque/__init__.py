@@ -15,8 +15,6 @@ Modules:
 - ``opaque.compat``: HuggingFace auto-patching for vmap compatibility
 """
 
-import os
-
 # Lazy imports for optional dependencies
 try:
     from opaque import accounting, auditing, distributed, sampling
@@ -50,25 +48,24 @@ from opaque.sampling import (
     PoissonSampler,
     TruncatedPoissonSampler,
 )
+from opaque._env import parse_skip_env
 from opaque.utils import make_functional
 
 # =============================================================================
-# Auto-patching for HuggingFace Transformers vmap compatibility
+# Auto-patching for compatible libraries
 # =============================================================================
-# Disable with: OPAQUE_NO_PATCH=1
-#
-# These patches make HuggingFace models work with vmap (required for clipped_grad).
-# They replace functions that use hardcoded shapes or data-dependent control flow
-# with vmap-compatible versions using dynamic shapes.
+# Environment variables (each accepts "all" or comma-separated names):
+#   OPAQUE_SKIP_COMPAT_PATCHES=all (or transformers)
+#   OPAQUE_SKIP_TRANSFORMERS_PATCHES=all (or vmap,kernels)
+#   OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES=all (or shared,standard,gemma2,phi3)
+#   OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all (or swiglu,rope,ce,fused_ce,lora)
 
-if not os.environ.get("OPAQUE_NO_PATCH"):
-    try:
-        from opaque.compat.transformers import apply_global_patches
+_opaque_skip_compat = parse_skip_env("OPAQUE_SKIP_COMPAT_PATCHES")
 
-        apply_global_patches()
-    except ImportError:
-        # transformers not installed, skip patching
-        pass
+if "all" not in _opaque_skip_compat:
+    from opaque.compat import apply_compat_patches
+
+    apply_compat_patches()
 
 __all__ = [
     # Clipping

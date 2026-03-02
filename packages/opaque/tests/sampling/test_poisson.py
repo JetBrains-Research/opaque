@@ -15,10 +15,10 @@ class TestPoissonSampler:
     def test_init_basic(self):
         """Test basic initialization."""
         dataset = TensorDataset(torch.randn(1000, 10))
-        sampler = PoissonSampler(dataset, sample_rate=0.1, num_epochs=5, key=key(0))
+        sampler = PoissonSampler(dataset, sample_rate=0.1, num_iterations=5, key=key(0))
 
         assert sampler.sample_rate == 0.1
-        assert sampler.num_epochs == 5
+        assert sampler.num_iterations == 5
         assert len(sampler) == 5
 
     def test_init_invalid_sample_rate(self):
@@ -31,17 +31,19 @@ class TestPoissonSampler:
         with pytest.raises(ValueError, match="sample_rate must be in"):
             PoissonSampler(dataset, sample_rate=1.5, key=key(0))
 
-    def test_init_invalid_num_epochs(self):
-        """Test that invalid num_epochs raises error."""
+    def test_init_invalid_num_iterations(self):
+        """Test that invalid num_iterations raises error."""
         dataset = TensorDataset(torch.randn(100, 10))
 
-        with pytest.raises(ValueError, match="num_epochs must be"):
-            PoissonSampler(dataset, sample_rate=0.1, num_epochs=0, key=key(0))
+        with pytest.raises(ValueError, match="num_iterations must be"):
+            PoissonSampler(dataset, sample_rate=0.1, num_iterations=0, key=key(0))
 
     def test_iteration_produces_variable_batches(self):
         """Test that iteration produces variable-sized batches."""
         dataset = TensorDataset(torch.randn(1000, 10))
-        sampler = PoissonSampler(dataset, sample_rate=0.1, num_epochs=10, key=key(42))
+        sampler = PoissonSampler(
+            dataset, sample_rate=0.1, num_iterations=10, key=key(42)
+        )
 
         batch_sizes = [len(batch) for batch in sampler]
 
@@ -54,7 +56,7 @@ class TestPoissonSampler:
         sampler = PoissonSampler(
             dataset,
             sample_rate=0.1,
-            num_epochs=100,
+            num_iterations=100,
             key=key(42),
         )
 
@@ -74,7 +76,7 @@ class TestPoissonSampler:
         sampler = PoissonSampler(
             dataset,
             sample_rate=0.1,
-            num_epochs=500,
+            num_iterations=500,
             key=key(42),
         )
 
@@ -92,7 +94,9 @@ class TestPoissonSampler:
     def test_no_duplicate_indices_within_batch(self):
         """Test that each batch has unique indices."""
         dataset = TensorDataset(torch.randn(100, 10))
-        sampler = PoissonSampler(dataset, sample_rate=0.5, num_epochs=20, key=key(42))
+        sampler = PoissonSampler(
+            dataset, sample_rate=0.5, num_iterations=20, key=key(42)
+        )
 
         for batch_indices in sampler:
             # No duplicates within batch
@@ -104,7 +108,9 @@ class TestPoissonSampler:
     def test_indices_in_valid_range(self):
         """Test that indices are within valid range."""
         dataset = TensorDataset(torch.randn(500, 10))
-        sampler = PoissonSampler(dataset, sample_rate=0.1, num_epochs=10, key=key(42))
+        sampler = PoissonSampler(
+            dataset, sample_rate=0.1, num_iterations=10, key=key(42)
+        )
 
         for batch_indices in sampler:
             assert all(0 <= idx < 500 for idx in batch_indices)
@@ -128,10 +134,14 @@ class TestPoissonSampler:
         """Test that results are reproducible with same generator seed."""
         dataset = TensorDataset(torch.randn(1000, 10))
 
-        sampler1 = PoissonSampler(dataset, sample_rate=0.1, num_epochs=5, key=key(42))
+        sampler1 = PoissonSampler(
+            dataset, sample_rate=0.1, num_iterations=5, key=key(42)
+        )
         batches1 = list(sampler1)
 
-        sampler2 = PoissonSampler(dataset, sample_rate=0.1, num_epochs=5, key=key(42))
+        sampler2 = PoissonSampler(
+            dataset, sample_rate=0.1, num_iterations=5, key=key(42)
+        )
         batches2 = list(sampler2)
 
         # Same seed should produce same batches
@@ -141,7 +151,9 @@ class TestPoissonSampler:
     def test_integration_with_dataloader(self):
         """Test integration with PyTorch DataLoader."""
         dataset = TensorDataset(torch.randn(1000, 10), torch.randn(1000, 5))
-        sampler = PoissonSampler(dataset, sample_rate=0.1, num_epochs=5, key=key(42))
+        sampler = PoissonSampler(
+            dataset, sample_rate=0.1, num_iterations=5, key=key(42)
+        )
 
         # Use batch_sampler parameter (not sampler)
         loader = DataLoader(dataset, batch_sampler=sampler)
@@ -153,7 +165,7 @@ class TestPoissonSampler:
             assert y.shape[1] == 5
             batch_sizes.append(X.shape[0])
 
-        # Should have 5 batches (num_epochs)
+        # Should have 5 batches (num_iterations)
         assert len(batch_sizes) == 5
 
         # Batch sizes should be variable
@@ -167,12 +179,12 @@ class TestTruncatedPoissonSampler:
         """Test basic initialization."""
         dataset = TensorDataset(torch.randn(1000, 10))
         sampler = TruncatedPoissonSampler(
-            dataset, sample_rate=0.1, max_batch_size=50, num_epochs=5, key=key(0)
+            dataset, sample_rate=0.1, max_batch_size=50, num_iterations=5, key=key(0)
         )
 
         assert sampler.sample_rate == 0.1
         assert sampler.max_batch_size == 50
-        assert sampler.num_epochs == 5
+        assert sampler.num_iterations == 5
 
     def test_init_invalid_max_batch_size(self):
         """Test that invalid max_batch_size raises error."""
@@ -190,7 +202,7 @@ class TestTruncatedPoissonSampler:
             dataset,
             sample_rate=0.5,  # High rate to ensure truncation
             max_batch_size=100,
-            num_epochs=50,
+            num_iterations=50,
             key=key(42),
         )
 
@@ -220,14 +232,14 @@ class TestTruncatedPoissonSampler:
             dataset,
             sample_rate=0.05,
             max_batch_size=10000,
-            num_epochs=20,
+            num_iterations=20,
             key=key(42),
         )
 
         sampler_regular = PoissonSampler(
             dataset,
             sample_rate=0.05,
-            num_epochs=20,
+            num_iterations=20,
             key=key(42),
         )
 
@@ -244,7 +256,7 @@ class TestTruncatedPoissonSampler:
             dataset,
             sample_rate=0.5,
             max_batch_size=100,
-            num_epochs=20,
+            num_iterations=20,
             key=key(42),
         )
 
@@ -262,7 +274,7 @@ class TestTruncatedPoissonSampler:
             dataset,
             sample_rate=1.0,  # Include all examples
             max_batch_size=50,  # Force truncation
-            num_epochs=100,
+            num_iterations=100,
             key=key(42),
         )
 
@@ -289,7 +301,7 @@ class TestTruncatedPoissonSampler:
             dataset,
             sample_rate=0.5,
             max_batch_size=100,
-            num_epochs=5,
+            num_iterations=5,
             key=key(42),
         )
 
@@ -314,7 +326,9 @@ class TestEdgeCases:
     def test_sample_rate_one(self):
         """Test with sample_rate=1.0 (include all examples)."""
         dataset = TensorDataset(torch.randn(100, 10))
-        sampler = PoissonSampler(dataset, sample_rate=1.0, num_epochs=5, key=key(42))
+        sampler = PoissonSampler(
+            dataset, sample_rate=1.0, num_iterations=5, key=key(42)
+        )
 
         batch_sizes = [len(batch) for batch in sampler]
 
@@ -327,7 +341,7 @@ class TestEdgeCases:
         sampler = PoissonSampler(
             dataset,
             sample_rate=0.001,
-            num_epochs=100,
+            num_iterations=100,
             key=key(42),
         )
 
@@ -344,7 +358,7 @@ class TestEdgeCases:
             dataset,
             sample_rate=0.5,
             max_batch_size=1,
-            num_epochs=20,
+            num_iterations=20,
             key=key(42),
         )
 

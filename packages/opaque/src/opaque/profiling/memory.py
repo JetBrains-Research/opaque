@@ -60,6 +60,10 @@ class MemoryStats:
     peak_gb: float = 0.0
     free_gb: float = 0.0
     total_gb: float = 0.0
+    exact_peak: bool = False
+    exact_reserved: bool = False
+    known_free: bool = False
+    known_total: bool = False
 
     @property
     def utilization(self) -> float:
@@ -68,7 +72,7 @@ class MemoryStats:
             return self.peak_gb / self.total_gb
         return 0.0
 
-    def to_dict(self, prefix: str = "memory/") -> dict[str, float]:
+    def to_dict(self, prefix: str = "memory/") -> dict[str, float | bool]:
         """Convert to dict for WANDB logging.
 
         Args:
@@ -84,6 +88,10 @@ class MemoryStats:
             f"{prefix}free_gb": self.free_gb,
             f"{prefix}total_gb": self.total_gb,
             f"{prefix}utilization": self.utilization,
+            f"{prefix}peak_exact": self.exact_peak,
+            f"{prefix}reserved_exact": self.exact_reserved,
+            f"{prefix}free_known": self.known_free,
+            f"{prefix}total_known": self.known_total,
         }
 
     def __str__(self) -> str:
@@ -123,6 +131,10 @@ def get_memory_stats(device: torch.device | str) -> MemoryStats:
             peak_gb=peak,
             free_gb=free,
             total_gb=total,
+            exact_peak=True,
+            exact_reserved=True,
+            known_free=True,
+            known_total=True,
         )
     elif device.type == "mps":
         allocated = torch.mps.current_allocated_memory() / (1024**3)
@@ -133,9 +145,18 @@ def get_memory_stats(device: torch.device | str) -> MemoryStats:
             peak_gb=allocated,
             free_gb=0.0,  # MPS doesn't expose this
             total_gb=0.0,
+            exact_peak=False,
+            exact_reserved=False,
+            known_free=False,
+            known_total=False,
         )
     else:
-        return MemoryStats()
+        return MemoryStats(
+            exact_peak=False,
+            exact_reserved=False,
+            known_free=False,
+            known_total=False,
+        )
 
 
 def reset_peak_memory(device: torch.device | str) -> None:
@@ -265,6 +286,8 @@ class StepTimer:
         # Sync GPU before measuring time
         if self.device.type == "cuda":
             torch.cuda.synchronize(self.device)
+        elif self.device.type == "mps" and torch.backends.mps.is_available():
+            torch.mps.synchronize()
 
         self.elapsed = time.perf_counter() - self._start_time
 
@@ -326,11 +349,17 @@ class TrainingProfiler:
     step_times: list[float] = field(default_factory=list)
     step_peak_memories: list[float] = field(default_factory=list)
     step_batch_sizes: list[int] = field(default_factory=list)
+    _observed_peak_gb: float = 0.0
     _start_time: float = field(default_factory=time.perf_counter)
 
     def __post_init__(self):
         if isinstance(self.device, str):
             self.device = torch.device(self.device)
+
+    def _update_observed_peak(self, peak_gb: float) -> None:
+        """Track software high-water mark across checkpoints and steps."""
+        if peak_gb > self._observed_peak_gb:
+            self._observed_peak_gb = peak_gb
 
     def mark(self, name: str) -> MemoryStats:
         """Record a named checkpoint with current memory state.
@@ -347,6 +376,7 @@ class TrainingProfiler:
             >>> profiler.mark("training_complete")
         """
         stats = get_memory_stats(self.device)
+        self._update_observed_peak(stats.peak_gb)
         self.checkpoints.append(
             Checkpoint(
                 name=name,
@@ -387,6 +417,9 @@ class TrainingProfiler:
                 inner_self.profiler.step_peak_memories.append(
                     inner_self.timer.peak_memory_gb
                 )
+                inner_self.profiler._update_observed_peak(
+                    inner_self.timer.peak_memory_gb
+                )
                 inner_self.profiler.step_batch_sizes.append(inner_self.timer.batch_size)
 
         return RecordingTimer(timer, self)
@@ -418,9 +451,9 @@ class TrainingProfiler:
     @property
     def peak_memory_gb(self) -> float:
         """Maximum peak memory across all steps."""
-        if not self.step_peak_memories:
-            return get_memory_stats(self.device).peak_gb
-        return max(self.step_peak_memories)
+        current_peak = get_memory_stats(self.device).peak_gb
+        step_peak = max(self.step_peak_memories) if self.step_peak_memories else 0.0
+        return max(self._observed_peak_gb, step_peak, current_peak)
 
     @property
     def avg_throughput(self) -> float:
@@ -430,7 +463,7 @@ class TrainingProfiler:
             return total_samples / self.total_time
         return 0.0
 
-    def current_metrics(self, prefix: str = "") -> dict[str, float]:
+    def current_metrics(self, prefix: str = "") -> dict[str, float | bool]:
         """Get current metrics as dict for WANDB logging.
 
         Args:
@@ -454,7 +487,11 @@ class TrainingProfiler:
             "avg_step_time_sec": self.avg_step_time_stable,
             "memory_allocated_gb": mem.allocated_gb,
             "memory_reserved_gb": mem.reserved_gb,
-            "memory_peak_gb": mem.peak_gb,
+            "memory_peak_gb": self.peak_memory_gb,
+            "memory_peak_exact": mem.exact_peak,
+            "memory_reserved_exact": mem.exact_reserved,
+            "memory_free_known": mem.known_free,
+            "memory_total_known": mem.known_total,
         }
 
         if prefix:
@@ -508,6 +545,15 @@ class TrainingProfiler:
                     f"  Current allocated:   {mem.allocated_gb:.2f} GB",
                     f"  Total GPU memory:    {mem.total_gb:.2f} GB",
                     f"  Utilization:         {self.peak_memory_gb / mem.total_gb:.1%}",
+                ]
+            )
+        elif self.peak_memory_gb > 0:
+            lines.extend(
+                [
+                    "",
+                    "Memory:",
+                    f"  Peak allocated:      {self.peak_memory_gb:.2f} GB",
+                    "  Note: peak/free/total are approximate on this backend.",
                 ]
             )
 

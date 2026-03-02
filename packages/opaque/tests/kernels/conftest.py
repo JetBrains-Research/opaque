@@ -13,6 +13,31 @@ import pytest
 import torch
 
 
+MIN_KERNEL_CUDA_MEM_GB = 24
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip CUDA kernel stress suite when runner GPU memory is insufficient."""
+    if not torch.cuda.is_available():
+        return
+
+    try:
+        total_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+    except Exception:
+        return
+
+    if total_gb >= MIN_KERNEL_CUDA_MEM_GB:
+        return
+
+    reason = (
+        f"Kernel stress tests require >= {MIN_KERNEL_CUDA_MEM_GB}GB CUDA memory "
+        f"(found {total_gb:.2f}GB)."
+    )
+    skip_marker = pytest.mark.skip(reason=reason)
+    for item in items:
+        item.add_marker(skip_marker)
+
+
 # ============================================================================
 # Mellum-4b model configuration
 # ============================================================================

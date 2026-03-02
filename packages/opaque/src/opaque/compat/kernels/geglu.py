@@ -5,7 +5,12 @@ import math
 import triton
 import triton.language as tl
 import torch
-from .utils import triton_tanh, torch_gpu_device, INT32_SAFETY_BUFFER
+from .utils import (
+    ensure_cuda_tensors,
+    triton_tanh,
+    torch_gpu_device,
+    INT32_SAFETY_BUFFER,
+)
 
 BLOCK_SIZE = 1024
 
@@ -517,10 +522,12 @@ class Opaque_GeGLU_Approx(torch.autograd.Function):
 
 # Convenience wrappers
 def opaque_geglu_exact(gate, up):
+    ensure_cuda_tensors(gate, up, fn_name="opaque_geglu_exact")
     return Opaque_GeGLU_Exact.apply(gate, up)
 
 
 def opaque_geglu_approx(gate, up):
+    ensure_cuda_tensors(gate, up, fn_name="opaque_geglu_approx")
     return Opaque_GeGLU_Approx.apply(gate, up)
 
 

@@ -15,9 +15,14 @@ import torch
 import torch.nn.functional as F
 from torch.func import vmap, grad
 
-from opaque.kernels.geglu import Opaque_GeGLU_Exact, Opaque_GeGLU_Approx
+pytest.importorskip("triton")
 
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+from opaque.compat.kernels.geglu import Opaque_GeGLU_Exact, Opaque_GeGLU_Approx
+
+pytestmark = [
+    pytest.mark.cuda,
+    pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required"),
+]
 
 # GeGLU uses tanh approximation in Triton, so tolerances are tighter with rtol/atol
 RTOL_FORWARD = 2e-3

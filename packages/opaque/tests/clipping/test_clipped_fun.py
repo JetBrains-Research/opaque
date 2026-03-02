@@ -262,6 +262,21 @@ def test_clipped_fun_dtype_controls_accumulation():
     assert clipped_grad.dtype == torch.float64
 
 
+def test_clipped_fun_default_uses_stable_accumulation_with_cast_back():
+    """Default path should use stable accumulation but preserve output dtype."""
+
+    def identity_fn(x):
+        return x
+
+    clipped_fn, clip_state = clipped_fun(identity_fn, l2_clip_norm=float("inf"))
+    data = torch.tensor([1.0, 2.0, 3.0], dtype=torch.bfloat16)
+
+    result, _ = clipped_fn(data, state=clip_state)
+    expected = torch.sum(data, dim=0, dtype=torch.float32).to(torch.bfloat16)
+    assert result.dtype == torch.bfloat16
+    assert torch.allclose(result, expected)
+
+
 def test_clipped_fun_pytree_params():
     """Test clip_sum with PyTree (dict) parameters."""
 

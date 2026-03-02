@@ -16,9 +16,14 @@ import torch
 import torch.nn.functional as F
 from torch.func import vmap, grad
 
-from opaque.kernels.cross_entropy import Opaque_CrossEntropyLoss
+pytest.importorskip("triton")
 
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+from opaque.compat.kernels.cross_entropy import Opaque_CrossEntropyLoss
+
+pytestmark = [
+    pytest.mark.cuda,
+    pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required"),
+]
 
 # Cross entropy tolerances (accumulation over large vocab dimension)
 RTOL_CE_FORWARD = 1e-4

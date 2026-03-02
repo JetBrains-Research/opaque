@@ -3,7 +3,7 @@
 import triton
 import triton.language as tl
 import torch
-from .utils import torch_gpu_device, INT32_SAFETY_BUFFER
+from .utils import ensure_cuda_tensors, torch_gpu_device, INT32_SAFETY_BUFFER
 
 BLOCK_SIZE = 1024
 
@@ -267,6 +267,7 @@ class Opaque_SwiGLU(torch.autograd.Function):
 
 def opaque_swiglu(gate, up):
     """Convenience wrapper."""
+    ensure_cuda_tensors(gate, up, fn_name="opaque_swiglu")
     return Opaque_SwiGLU.apply(gate, up)
 
 

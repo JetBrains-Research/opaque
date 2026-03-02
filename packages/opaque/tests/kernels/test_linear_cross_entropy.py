@@ -23,7 +23,9 @@ import torch
 import torch.nn.functional as F
 from torch.func import vmap, grad
 
-from opaque.kernels.linear_cross_entropy import (
+pytest.importorskip("triton")
+
+from opaque.compat.kernels.linear_cross_entropy import (
     Opaque_LinearCrossEntropyLoss,
     opaque_linear_cross_entropy_loss,
 )

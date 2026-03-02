@@ -257,20 +257,26 @@ accumulated in-place, so peak memory is proportional to
 
 ### Choosing microbatch size
 
-Use `find_max_microbatch_size` to automatically find the largest microbatch
-that fits in GPU memory:
+Use `TrainingProfiler` to compare a few candidate microbatch sizes and select
+the largest stable value for your device:
 
 ```python
-from opaque.profiling import find_max_microbatch_size
+from opaque.profiling import TrainingProfiler, reset_peak_memory
 
-optimal = find_max_microbatch_size(
-    model=model,
-    sample_batch=(sample_x, sample_y),
-    batch_size=batch_size,
-    loss_fn=loss_fn,
-    l2_clip_norm=1.0,
-    safety_margin=0.9,  # use 90% of available memory
-)
+profiler = TrainingProfiler(device)
+for optimal in [64, 32, 16, 8, 4, 2, 1]:
+    grad_fn, clip_state = clipped_grad(
+        loss_fn,
+        l2_clip_norm=1.0,
+        batch_argnums=(1, 2),
+        microbatch_size=optimal,
+    )
+
+    reset_peak_memory(device)
+    with profiler.step(batch_size=batch_size):
+        grads, aux = grad_fn(params, batch_x, batch_y, state=clip_state)
+
+    print(optimal, profiler.current_metrics()["memory_peak_gb"])
 
 grad_fn, clip_state = clipped_grad(
     loss_fn,

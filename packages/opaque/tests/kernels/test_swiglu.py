@@ -21,9 +21,14 @@ import torch
 import torch.nn.functional as F
 from torch.func import vmap, grad
 
-from opaque.kernels.swiglu import Opaque_SwiGLU
+pytest.importorskip("triton")
 
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+from opaque.compat.kernels.swiglu import Opaque_SwiGLU
+
+pytestmark = [
+    pytest.mark.cuda,
+    pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required"),
+]
 
 RTOL_FORWARD = 1e-5
 ATOL_FORWARD = 1e-5

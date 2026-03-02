@@ -36,20 +36,25 @@ grad_fn, state = clipped_grad(
 )
 ```
 
-Use `find_max_microbatch_size` from `opaque.profiling` to automatically
-find the largest microbatch that fits in memory:
+Use `TrainingProfiler` from `opaque.profiling` to test a few microbatch
+values and keep the largest stable one:
 
 ```python
-from opaque.profiling import find_max_microbatch_size
+from opaque.profiling import TrainingProfiler, reset_peak_memory
 
-optimal = find_max_microbatch_size(
-    model=model,
-    sample_batch=(sample_x, sample_y),
-    batch_size=batch_size,
-    loss_fn=loss_fn,
+profiler = TrainingProfiler(device)
+for candidate in [32, 16, 8, 4, 2, 1]:
+  grad_fn, state = clipped_grad(
+    loss_fn,
     l2_clip_norm=1.0,
-    safety_margin=0.9,
-)
+    batch_argnums=(1, 2),
+    microbatch_size=candidate,
+  )
+  reset_peak_memory(device)
+  with profiler.step(batch_size=batch_size):
+    grads, aux = grad_fn(params, x, y, state=state)
+
+  print(candidate, profiler.current_metrics()["memory_peak_gb"])
 ```
 
 **Memory comparison:**
@@ -89,6 +94,24 @@ Opaque supports `torch.nn.parallel.DistributedDataParallel` (DDP). FSDP,
 Tensor Parallel, and Pipeline Parallel are not supported. Multi-node DDP
 should work but is not extensively tested. The NCCL backend is recommended;
 Gloo and MPI are not tested.
+
+## Kernel patching lives in `opaque.compat`
+
+Kernel optimization and patching for HuggingFace models is part of
+`opaque.compat.transformers` and is CUDA+Triton only.
+
+Low-level Triton-backed `Opaque_*` autograd classes (for example,
+`Opaque_SwiGLU`, `Opaque_RoPE_QK`, `Opaque_LinearCrossEntropyLoss`) are
+internal implementation details and should not be imported directly in user
+code.
+
+On CPU/MPS (or without Triton), Opaque falls back to non-kernel compatibility
+paths. To control patching behavior, use the `OPAQUE_SKIP_COMPAT_PATCHES` and
+`OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES` environment variables. See
+[Kernel Optimizations](user-guide/kernel-optimizations.md#configuration).
+
+Advanced users can still call kernel wrappers directly via
+`opaque.compat.kernels`.
 
 ## In-place operations under vmap
 

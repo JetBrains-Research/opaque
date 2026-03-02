@@ -30,6 +30,7 @@ from triton import Config
 from .utils import (
     _build_flat_valids,
     b_bin_fn,
+    ensure_cuda_tensors,
     tl_lock_add,
     tl_logaddexp,
     tl_softcapping,
@@ -944,6 +945,12 @@ def opaque_linear_cross_entropy_loss(
     Returns:
         loss: scalar tensor
     """
+    ensure_cuda_tensors(
+        hidden_states,
+        weight,
+        labels,
+        fn_name="opaque_linear_cross_entropy_loss",
+    )
     nll_sum = Opaque_LinearCrossEntropyLoss.apply(
         hidden_states,
         weight,

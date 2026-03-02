@@ -20,6 +20,8 @@ For DP-SGD:
 import torch
 import torch.nn.functional as F
 
+from .utils import ensure_cuda_tensors
+
 from .swiglu import _triton_swiglu_forward, _triton_swiglu_backward_fused
 from .geglu import (
     _triton_geglu_exact_forward,
@@ -1261,6 +1263,7 @@ def opaque_lora_w(X, W, A, B, scaling):
     Returns:
         Output tensor (batch, seq_len, out_features)
     """
+    ensure_cuda_tensors(X, W, A, B, fn_name="opaque_lora_w")
     return Opaque_LoRA_W.apply(X, W, A, B, scaling)
 
 
@@ -1270,6 +1273,19 @@ def opaque_lora_qkv(X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv):
     Returns:
         Tuple of (Q, K, V)
     """
+    ensure_cuda_tensors(
+        X,
+        Wq,
+        Aq,
+        Bq,
+        Wk,
+        Ak,
+        Bk,
+        Wv,
+        Av,
+        Bv,
+        fn_name="opaque_lora_qkv",
+    )
     return Opaque_LoRA_QKV.apply(X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv)
 
 
@@ -1285,6 +1301,19 @@ def opaque_lora_mlp(
     Returns:
         Output tensor (batch, seq_len, hidden_dim)
     """
+    ensure_cuda_tensors(
+        X,
+        Wg,
+        Ag,
+        Bg,
+        Wu,
+        Au,
+        Bu,
+        Wd,
+        Ad,
+        Bd,
+        fn_name="opaque_lora_mlp",
+    )
     if isinstance(activation, str):
         activation_type = _ACTIVATION_NAMES[activation]
     else:

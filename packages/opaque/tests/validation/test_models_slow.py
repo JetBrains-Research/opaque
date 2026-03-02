@@ -9,6 +9,8 @@ import pytest
 
 from tests.conftest import (
     MODEL_CONFIGS,
+    get_default_gpu_device,
+    gpu_memory_gate_reason,
     has_min_gpu_memory,
     load_model_with_lora,
     run_dp_training_step,
@@ -31,12 +33,16 @@ class TestRealModelsSingleGPU:
     def test_model_lora_dp_training(self, model_key):
         """Run DP-SGD training with LoRA using shared test utilities."""
         config = MODEL_CONFIGS[model_key]
+        gpu_device = get_default_gpu_device()
 
-        if not has_min_gpu_memory(config["min_mem_gb"]):
-            pytest.skip(f"Requires CUDA GPU with >= {config['min_mem_gb']}GB memory")
+        if gpu_device is None:
+            pytest.skip("No GPU available (CUDA or MPS)")
+
+        if not has_min_gpu_memory(config["min_mem_gb"], device=gpu_device):
+            pytest.skip(gpu_memory_gate_reason(config["min_mem_gb"], device=gpu_device))
 
         # Load model using shared utility
-        model, tokenizer = load_model_with_lora(config, device="cuda")
+        model, tokenizer = load_model_with_lora(config, device=str(gpu_device))
 
         # Run training using shared utility
         grads, state = run_dp_training_step(

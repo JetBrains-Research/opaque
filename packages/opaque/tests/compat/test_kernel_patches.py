@@ -12,6 +12,11 @@ import torch.nn.functional as F
 
 pytest.importorskip("transformers")
 
+pytestmark = pytest.mark.skipif(
+    not torch.cuda.is_available(),
+    reason="Kernel patch compatibility tests require CUDA/Triton",
+)
+
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 from peft import LoraConfig, get_peft_model  # noqa: E402
 
@@ -49,6 +54,7 @@ def _get_tokenizer(model_name):
 class TestMLPPatches:
     """Test that patched MLP forward produces correct outputs."""
 
+    @pytest.mark.hf_auth_required
     def test_swiglu_mlp_matches(self, device):
         """Patched LlamaMLP should match PyTorch reference."""
         from transformers.models.llama.modeling_llama import LlamaMLP
@@ -71,6 +77,7 @@ class TestMLPPatches:
             f"LlamaMLP output mismatch: max diff {(out - ref).abs().max():.2e}"
         )
 
+    @pytest.mark.hf_auth_required
     def test_geglu_exact_mlp_matches(self, device):
         """Patched GemmaMLP should match PyTorch reference."""
         try:
@@ -96,6 +103,7 @@ class TestMLPPatches:
             f"GemmaMLP output mismatch: max diff {(out - ref).abs().max():.2e}"
         )
 
+    @pytest.mark.hf_auth_required
     def test_geglu_approx_mlp_matches(self, device):
         """Patched Gemma2MLP should match PyTorch reference."""
         try:
@@ -131,6 +139,7 @@ class TestMLPPatches:
 class TestGradients:
     """Test that gradients through patched modules are correct."""
 
+    @pytest.mark.hf_auth_required
     def test_backward_through_patched_mlp(self, device):
         """Gradients should flow correctly through patched MLP."""
         from transformers.models.llama.modeling_llama import LlamaMLP
@@ -159,6 +168,7 @@ class TestGradients:
 class TestVmapCompatibility:
     """Test that patched modules work under vmap for DP-SGD."""
 
+    @pytest.mark.hf_auth_required
     def test_vmap_patched_mlp(self, device):
         """Patched MLP should produce correct output under vmap."""
         from transformers.models.llama.modeling_llama import LlamaMLP
@@ -576,7 +586,7 @@ class TestFusedLoRAMLP:
 
     def test_fused_lora_mlp_forward(self, device):
         """Fused LoRA MLP forward should match PyTorch matmul reference."""
-        from opaque.kernels import Opaque_LoRA_MLP
+        from opaque.compat.kernels.lora import Opaque_LoRA_MLP
 
         torch.manual_seed(42)
         batch, seq, hidden, intermediate, rank = 2, 16, 256, 512, 8
@@ -612,7 +622,7 @@ class TestFusedLoRAMLP:
 
     def test_fused_lora_mlp_backward(self, device):
         """Fused LoRA MLP should produce correct gradients."""
-        from opaque.kernels import Opaque_LoRA_MLP
+        from opaque.compat.kernels.lora import Opaque_LoRA_MLP
 
         torch.manual_seed(42)
         batch, seq, hidden, intermediate, rank = 2, 16, 256, 512, 8
@@ -640,6 +650,7 @@ class TestFusedLoRAMLP:
         assert Ag.grad is not None, "No gradient for gate LoRA A"
         assert Bd.grad is not None, "No gradient for down LoRA B"
 
+    @pytest.mark.hf_auth_required
     def test_auto_fuse_on_get_peft_model(self, device):
         """get_peft_model should auto-fuse MLP layers with LoRA on gate/up/down."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
@@ -666,6 +677,7 @@ class TestFusedLoRAMLP:
                 "MLP should have _opaque_original_forward after auto-fuse"
             )
 
+    @pytest.mark.hf_auth_required
     def test_fused_lora_mlp_model_forward_backward(self, device):
         """Full model with fused LoRA MLP should produce valid forward+backward."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
@@ -698,6 +710,7 @@ class TestFusedLoRAMLP:
                 assert not torch.isnan(p.grad).any(), f"NaN in gradient for {name}"
         assert has_grad, "No gradients computed"
 
+    @pytest.mark.hf_auth_required
     def test_patch_lora_model_manual(self, device):
         """patch_lora_model() should work for manually loaded PEFT models."""
         from opaque.compat.transformers import patch_lora_model
@@ -746,7 +759,7 @@ class TestFusedLoRAQKV:
 
     def test_fused_lora_qkv_forward(self, device):
         """Fused LoRA QKV forward should match PyTorch matmul reference."""
-        from opaque.kernels import Opaque_LoRA_QKV
+        from opaque.compat.kernels.lora import Opaque_LoRA_QKV
 
         torch.manual_seed(42)
         batch, seq, hidden, q_out, kv_out, rank = 2, 16, 256, 256, 64, 8
@@ -797,7 +810,7 @@ class TestFusedLoRAQKV:
 
     def test_fused_lora_qkv_backward(self, device):
         """Fused LoRA QKV should produce correct gradients."""
-        from opaque.kernels import Opaque_LoRA_QKV
+        from opaque.compat.kernels.lora import Opaque_LoRA_QKV
 
         torch.manual_seed(42)
         batch, seq, hidden, q_out, kv_out, rank = 2, 16, 256, 256, 64, 8
@@ -839,6 +852,7 @@ class TestFusedLoRAQKV:
         assert Ak.grad is not None, "No gradient for K LoRA A"
         assert Bv.grad is not None, "No gradient for V LoRA B"
 
+    @pytest.mark.hf_auth_required
     def test_auto_fuse_qkv_on_get_peft_model(self, device):
         """get_peft_model should auto-fuse QKV layers with LoRA on q/k/v."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
@@ -865,6 +879,7 @@ class TestFusedLoRAQKV:
                 "Attention should have _opaque_original_forward after auto-fuse"
             )
 
+    @pytest.mark.hf_auth_required
     def test_fused_lora_qkv_model_forward_backward(self, device):
         """Full model with fused LoRA QKV should produce valid forward+backward."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
@@ -945,6 +960,7 @@ class TestFusedLoRAQKV:
                 "Qwen3 attention should NOT have fused QKV (q_norm/k_norm)"
             )
 
+    @pytest.mark.hf_auth_required
     def test_patch_lora_model_manual_qkv(self, device):
         """patch_lora_model() should fuse QKV for manually loaded PEFT models."""
         from opaque.compat.transformers import patch_lora_model
@@ -981,6 +997,7 @@ class TestFusedLoRAQKV:
             "QKV should be fused after patch_lora_model()"
         )
 
+    @pytest.mark.hf_auth_required
     def test_fused_qkv_clipped_grad(self, device):
         """Fused QKV should work end-to-end with clipped_grad (DP-SGD)."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")

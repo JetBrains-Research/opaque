@@ -15,7 +15,7 @@ Three implementations:
 import triton
 import triton.language as tl
 import torch
-from .utils import calculate_settings, torch_gpu_device
+from .utils import calculate_settings, ensure_cuda_tensors, torch_gpu_device
 
 ROPE_GROUP_SIZE: int = 4
 
@@ -711,6 +711,7 @@ def opaque_rope(Q, cos, sin):
     Returns:
         Q_rot: Rotated tensor, same shape as input
     """
+    ensure_cuda_tensors(Q, cos, sin, fn_name="opaque_rope")
     return Opaque_RoPE.apply(Q, cos, sin)
 
 
@@ -727,6 +728,10 @@ def opaque_rope_qk(Q, K, cos, sin, rope_indices=None):
     Returns:
         Tuple of (Q_rot, K_rot)
     """
+    tensors = [Q, K, cos, sin]
+    if rope_indices is not None:
+        tensors.append(rope_indices)
+    ensure_cuda_tensors(*tensors, fn_name="opaque_rope_qk")
     return Opaque_RoPE_QK.apply(Q, K, cos, sin, rope_indices)
 
 

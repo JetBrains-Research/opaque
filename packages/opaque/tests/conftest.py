@@ -1,5 +1,7 @@
 """Pytest configuration and shared fixtures for Opaque tests."""
 
+import os
+
 import pytest
 import torch
 
@@ -11,9 +13,29 @@ import torch
 
 def pytest_runtest_setup(item):
     """Auto-skip tests based on markers and environment capabilities."""
+    requested_device = os.environ.get("OPAQUE_TEST_DEVICE", "").strip().lower()
+    running_on_mps = requested_device == "mps" or (
+        requested_device == ""
+        and torch.backends.mps.is_available()
+        and not torch.cuda.is_available()
+    )
+
     if "gpu" in item.keywords:
         if not (torch.cuda.is_available() or torch.backends.mps.is_available()):
             pytest.skip("No GPU available (CUDA or MPS)")
+        is_mps_compatible = "mps_compatible" in item.keywords
+        if running_on_mps and not is_mps_compatible:
+            pytest.skip(
+                "gpu-marked test is disabled on MPS unless marked mps_compatible"
+            )
+        if not running_on_mps and not torch.cuda.is_available():
+            pytest.skip("gpu-marked tests require CUDA")
+
+    if "cuda" in item.keywords and not torch.cuda.is_available():
+        pytest.skip("CUDA not available")
+
+    if "mps" in item.keywords and not torch.backends.mps.is_available():
+        pytest.skip("MPS not available")
 
 
 # ---------------------------------------------------------------------------
@@ -27,12 +49,45 @@ def get_default_device():
     Returns:
         torch.device: Best available device
     """
+    requested = os.environ.get("OPAQUE_TEST_DEVICE", "").strip().lower()
+    if requested:
+        if requested == "cpu":
+            return torch.device("cpu")
+        if requested == "cuda":
+            if torch.cuda.is_available():
+                return torch.device("cuda")
+            raise RuntimeError(
+                "OPAQUE_TEST_DEVICE=cuda requested but CUDA is unavailable"
+            )
+        if requested == "mps":
+            if torch.backends.mps.is_available():
+                return torch.device("mps")
+            raise RuntimeError(
+                "OPAQUE_TEST_DEVICE=mps requested but MPS is unavailable"
+            )
+        raise RuntimeError(
+            f"Invalid OPAQUE_TEST_DEVICE={requested!r}. Expected one of: cpu, cuda, mps"
+        )
+
     if torch.cuda.is_available():
         return torch.device("cuda")
     elif torch.backends.mps.is_available():
         return torch.device("mps")
     else:
         return torch.device("cpu")
+
+
+def get_default_gpu_device():
+    """Get the default GPU device for testing (CUDA > MPS).
+
+    Returns:
+        torch.device | None: Best available GPU device, or None if no GPU exists
+    """
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return None
 
 
 @pytest.fixture
@@ -164,22 +219,129 @@ def build_text_batch(batch_size):
     return (base_texts * repeats)[:batch_size]
 
 
-def has_min_gpu_memory(min_gb):
+def has_min_gpu_memory(min_gb, device=None):
     """Check if GPU has minimum required memory.
 
     Args:
         min_gb: Minimum required GB of GPU memory
+        device: Optional GPU device to check (defaults to CUDA > MPS)
 
     Returns:
         bool: True if GPU has sufficient memory
     """
-    if not torch.cuda.is_available():
+    if device is None:
+        gpu_device = get_default_gpu_device()
+    else:
+        gpu_device = torch.device(device)
+
+    if gpu_device is None:
         return False
-    try:
-        total_bytes = torch.cuda.get_device_properties(0).total_memory
-        return total_bytes >= min_gb * (1024**3)
-    except Exception:
+
+    required_bytes = int(min_gb * (1024**3))
+
+    if gpu_device.type == "cuda":
+        try:
+            free_bytes, _total_from_driver = torch.cuda.mem_get_info(0)
+            if free_bytes > 0:
+                return free_bytes >= required_bytes
+        except Exception:
+            pass
+        try:
+            total_bytes = torch.cuda.get_device_properties(0).total_memory
+            return total_bytes >= required_bytes
+        except Exception:
+            return False
+
+    if gpu_device.type == "mps":
+        try:
+            recommended_bytes = None
+            allocated_bytes = None
+
+            if hasattr(torch.mps, "recommended_max_memory"):
+                candidate = int(torch.mps.recommended_max_memory())
+                if candidate > 0:
+                    recommended_bytes = candidate
+
+            if hasattr(torch.mps, "current_allocated_memory"):
+                candidate = int(torch.mps.current_allocated_memory())
+                if candidate >= 0:
+                    allocated_bytes = candidate
+
+            if recommended_bytes is not None and allocated_bytes is not None:
+                free_bytes = max(0, recommended_bytes - allocated_bytes)
+                return free_bytes >= required_bytes
+
+            if recommended_bytes is not None:
+                return recommended_bytes >= required_bytes
+        except Exception:
+            return False
         return False
+
+    return False
+
+
+def gpu_memory_gate_reason(min_gb, device=None):
+    """Return standardized skip reason for GPU memory gating.
+
+    Args:
+        min_gb: Minimum required GB of GPU memory
+        device: Optional GPU device to describe
+
+    Returns:
+        str: Human-readable reason string
+    """
+    if device is None:
+        gpu_device = get_default_gpu_device()
+    else:
+        gpu_device = torch.device(device)
+
+    if gpu_device is None:
+        return f"Requires GPU with >= {min_gb}GB memory"
+
+    if gpu_device.type == "cuda":
+        try:
+            free_bytes, _total_from_driver = torch.cuda.mem_get_info(0)
+            free_gb = free_bytes / (1024**3)
+            return (
+                f"Requires >= {min_gb}GB free CUDA memory "
+                f"(currently {free_gb:.2f}GB free)"
+            )
+        except Exception:
+            return f"Requires CUDA GPU with >= {min_gb}GB memory"
+
+    if gpu_device.type == "mps":
+        try:
+            recommended = None
+            allocated = None
+            if hasattr(torch.mps, "recommended_max_memory"):
+                recommended = int(torch.mps.recommended_max_memory())
+            if hasattr(torch.mps, "current_allocated_memory"):
+                allocated = int(torch.mps.current_allocated_memory())
+
+            if (
+                recommended
+                and recommended > 0
+                and allocated is not None
+                and allocated >= 0
+            ):
+                free_gb = max(0, recommended - allocated) / (1024**3)
+                return (
+                    f"Requires >= {min_gb}GB free MPS memory "
+                    f"(estimated {free_gb:.2f}GB free)"
+                )
+
+            if recommended and recommended > 0:
+                recommended_gb = recommended / (1024**3)
+                return (
+                    f"Requires >= {min_gb}GB MPS recommended memory "
+                    f"(currently {recommended_gb:.2f}GB)"
+                )
+        except Exception:
+            pass
+
+        return f"Requires MPS memory introspection and >= {min_gb}GB available"
+
+    return f"Requires GPU with >= {min_gb}GB memory"
 
 
 def load_model_with_lora(

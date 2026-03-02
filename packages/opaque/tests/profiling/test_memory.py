@@ -72,6 +72,8 @@ class TestGetMemoryStats:
         stats = get_memory_stats("cpu")
         assert stats.allocated_gb == 0.0
         assert stats.peak_gb == 0.0
+        assert stats.exact_peak is False
+        assert stats.known_total is False
 
     @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
     def test_cuda_returns_real_values(self):
@@ -80,6 +82,10 @@ class TestGetMemoryStats:
         stats = get_memory_stats("cuda")
         assert stats.total_gb > 0
         assert stats.allocated_gb > 0
+        assert stats.exact_peak is True
+        assert stats.exact_reserved is True
+        assert stats.known_total is True
+        assert stats.known_free is True
         del x
         torch.cuda.empty_cache()
 
@@ -104,6 +110,25 @@ class TestStepTimer:
         metrics = timer.metrics
         assert isinstance(metrics, StepMetrics)
         assert metrics.batch_size == 32
+
+    @pytest.mark.skipif(
+        not torch.backends.mps.is_available(), reason="MPS not available"
+    )
+    def test_mps_synchronizes_before_timing(self, monkeypatch):
+        """MPS timer should synchronize before measuring elapsed time."""
+        calls = {"count": 0}
+
+        def _sync() -> None:
+            calls["count"] += 1
+
+        monkeypatch.setattr(torch.mps, "synchronize", _sync)
+
+        timer = StepTimer("mps", track_memory=False)
+        with timer:
+            x = torch.randn(16, 16, device="mps")
+            _ = x @ x.T
+
+        assert calls["count"] == 1
 
 
 class TestTrainingProfiler:
@@ -151,6 +176,25 @@ class TestTrainingProfiler:
         metrics = profiler.current_metrics()
         assert "step_time_sec" in metrics
         assert "memory_peak_gb" in metrics
+        assert "memory_peak_exact" in metrics
+        assert "memory_reserved_exact" in metrics
+        assert "memory_total_known" in metrics
+
+    def test_software_peak_tracking_from_checkpoints(self, monkeypatch):
+        """Profiler should keep high-water peak from checkpoints."""
+        profiler = TrainingProfiler("cpu")
+
+        peaks = iter([0.10, 0.35, 0.20])
+
+        def fake_stats(_device):
+            peak = next(peaks)
+            return MemoryStats(peak_gb=peak)
+
+        monkeypatch.setattr("opaque.profiling.memory.get_memory_stats", fake_stats)
+
+        profiler.mark("a")
+        profiler.mark("b")
+        assert profiler.peak_memory_gb == pytest.approx(0.35)
 
     @pytest.mark.parametrize("device", DEVICES)
     def test_final_summary(self, device):

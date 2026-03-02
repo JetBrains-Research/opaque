@@ -25,7 +25,7 @@ Improve memory efficiency of DP-SGD training on JetBrains Mellum-4b to enable:
 ### Code Organization
 Opaque uses a 2-layer architecture to stay framework-agnostic:
 
-**Layer 1: Generic Operations** (`src/opaque/kernels/`)
+**Layer 1: Generic Operations** (`src/opaque/compat/kernels/`)
 - Pure Triton kernels and tensor operations
 - Framework-agnostic (PyTorch, JAX, etc.)
 - Reusable building blocks
@@ -84,7 +84,7 @@ Baseline established with Mellum-4b at batch=4, seq=1024, bf16, LoRA r=16.
 - SwiGLU: Creates 2 intermediate activations
 - 64 RMSNorm ops + 32 SwiGLU ops per forward = ~0.5 GB intermediates
 
-**Implemented kernels** (`src/opaque/kernels/`):
+**Implemented kernels** (`src/opaque/compat/kernels/`):
 
 | Kernel | File | Description |
 |--------|------|-------------|
@@ -96,8 +96,8 @@ Baseline established with Mellum-4b at batch=4, seq=1024, bf16, LoRA r=16.
 | Utilities | `utils.py` | `calculate_settings`, `torch_gpu_device`, Triton helpers |
 
 **Integration:** `_kernel_patches.py` patches at class level for all supported models.
-Applied automatically at `import opaque` time. Disable with `OPAQUE_NO_KERNEL_PATCH=1`,
-selectively skip with `OPAQUE_SKIP_PATCHES=swiglu,rope,...`.
+Applied automatically at `import opaque` time. Disable with `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all`,
+selectively skip with `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=swiglu,rope,...`.
 
 **Supported models:** LLaMA, Mistral, Qwen2, Qwen3, Phi3, Gemma, Gemma2, Granite, Cohere, Cohere2.
 
@@ -121,7 +121,7 @@ SwiGLU/GeGLU forward is slower than native PyTorch (`F.silu(gate)*up` = ~0.10ms)
 
 **Goal:** Enable training with all 7 LoRA modules efficiently
 
-**Implemented kernels** (`src/opaque/kernels/lora.py`):
+**Implemented kernels** (`src/opaque/compat/kernels/lora.py`):
 
 | Kernel | Description |
 |--------|-------------|
@@ -147,7 +147,7 @@ SwiGLU/GeGLU forward is slower than native PyTorch (`F.silu(gate)*up` = ~0.10ms)
 - Standard CE: allocate (batch*seq, vocab) = (4*1024, 128256) in memory
 - Chunked CE: process vocab in chunks, only store logsumexp
 
-**Implemented:** `src/opaque/kernels/cross_entropy.py`
+**Implemented:** `src/opaque/compat/kernels/cross_entropy.py`
 - Triton forward+backward kernels with BLOCK_SIZE up to 65536
 - `Opaque_CrossEntropyLoss` with vmap support
 - Integrated via `LOSS_MAPPING` patch in `_kernel_patches.py`
@@ -166,7 +166,7 @@ SwiGLU/GeGLU forward is slower than native PyTorch (`F.silu(gate)*up` = ~0.10ms)
 
 **Solution:** Ported CCE Triton kernels into our codebase with native vmap support.
 
-**Implemented:** `src/opaque/kernels/linear_cross_entropy.py` (846 lines)
+**Implemented:** `src/opaque/compat/kernels/linear_cross_entropy.py` (846 lines)
 
 Three Triton kernels (ported from Apple CCE, simplified):
 - `_linear_ce_forward_kernel`: 2D tiled grid, tiled matmul E@C.T, per-block LSE with lock-based atomic `logaddexp`, batch grouping (GROUP_B=8)
@@ -208,7 +208,7 @@ Stripped from CCE (not needed): bias, logit_avg, gradient filtering, Kahan summa
 
 ---
 
-### Phase 4: Dtype Precision Guards — NOT STARTED
+### Phase 4: Dtype Precision Guards — ATTEMPTED (NO CHANGES NEEDED)
 
 **Problem:**
 - PyTorch silently upcasts to fp32 in many ops
@@ -216,10 +216,14 @@ Stripped from CCE (not needed): bias, logit_avg, gradient filtering, Kahan summa
 
 **Memory Savings:** 0.5-2 GB (prevents accidental doubling)
 
-**Tasks:**
-1. Audit current dtypes in `clipped_fun.py`, `gaussian_noise.py`
-2. Add explicit `dtype` parameter enforcement
-3. Validate memory consistency
+**Assessment result:**
+- Existing kernels and wrappers already run with correct default autocast behavior.
+- New-style `autograd.Function` (`setup_context`) is incompatible with
+  `@torch.amp.custom_fwd` / `@torch.amp.custom_bwd` (PyTorch issue #132388),
+  so the planned decorator-based guard path is not applicable right now.
+
+**Current status:**
+- No additional code changes identified for Phase 4 at this time.
 
 ---
 
@@ -267,11 +271,23 @@ PYTHONUNBUFFERED=1 uv run python examples/train_causal_lm.py \
 
 ### Disable/Skip Patches
 ```bash
-# Disable all kernel patches
-OPAQUE_NO_KERNEL_PATCH=1
+# Disable all patching
+OPAQUE_SKIP_COMPAT_PATCHES=all
 
-# Selectively skip specific patches
-OPAQUE_SKIP_PATCHES=fused_ce,swiglu,rope
+# Disable all transformers patches (vmap + kernels)
+OPAQUE_SKIP_TRANSFORMERS_PATCHES=all
+
+# Disable only kernel optimizations
+OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all
+
+# Selectively skip specific kernels
+OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=fused_ce,swiglu,rope
+
+# Disable all vmap compatibility patches
+OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES=all
+
+# Selectively skip vmap groups
+OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES=gemma2,phi3
 ```
 
 ---
@@ -280,7 +296,7 @@ OPAQUE_SKIP_PATCHES=fused_ce,swiglu,rope
 
 If issues arise:
 
-**Numerical Issues:** Use `OPAQUE_SKIP_PATCHES=<kernel>` to disable specific patches
+**Numerical Issues:** Use `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=<kernel>` to disable specific patches
 
 **Memory Regression:** Profile for leaks, check for fp32 upcasting
 
@@ -380,7 +396,7 @@ See `tests/research/test_memory_optimization_approaches*.py` for full test code.
 ## References
 
 - **Baseline config:** `examples/train_causal_lm.py` (mellum-kstack preset)
-- **Kernel sources:** `packages/opaque/src/opaque/kernels/`
+- **Kernel sources:** `packages/opaque/src/opaque/compat/kernels/`
 - **Kernel patches:** `packages/opaque/src/opaque/compat/transformers/_kernel_patches.py`
 - **Tests:** `packages/opaque/tests/kernels/` (105 tests)
 - **PyTorch vmap+autograd pattern:** PyTorch #128020 (ezyang)

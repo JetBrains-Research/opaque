@@ -100,6 +100,8 @@ understanding, or jump to a specific topic.
   and gradient aggregation.
 - **[HuggingFace Compatibility](huggingface.md)** -- Using HuggingFace
   Transformers models with Opaque, including LoRA fine-tuning.
+- **[Kernel Optimizations](kernel-optimizations.md)** -- Fused Triton kernels
+  for memory-efficient DP training: SwiGLU, RoPE, cross-entropy, LoRA fusion.
 - **[Memory Profiling](memory-profiling.md)** -- Microbatch auto-tuning and
   memory tracking.
 - **[Privacy Auditing](auditing.md)** -- Empirical privacy validation via
