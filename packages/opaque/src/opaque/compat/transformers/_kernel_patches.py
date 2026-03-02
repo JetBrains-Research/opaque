@@ -20,12 +20,13 @@ from __future__ import annotations
 
 import importlib
 import logging
-import os
 import sys
 import types
 
 import torch
 import torch.nn as nn
+
+from opaque._env import parse_skip_env
 
 logger = logging.getLogger(__name__)
 
@@ -876,9 +877,7 @@ def apply_kernel_patches() -> None:
         return
 
     patched = []
-    skip = (
-        os.environ.get("OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES", "").lower().split(",")
-    )
+    skip = parse_skip_env("OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES")
     if "all" in skip:
         _is_kernel_patched = True
         return

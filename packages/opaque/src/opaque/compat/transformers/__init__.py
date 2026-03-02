@@ -40,9 +40,9 @@ for SDPA backward is expected and harmless — it falls back to per-sample proce
 which is what vmap does anyway for per-example gradients.
 """
 
-import os
 import warnings
 
+from opaque._env import parse_skip_env
 from opaque.compat.transformers._kernel_patches import (
     apply_kernel_patches,
     is_kernel_patched,
@@ -69,8 +69,7 @@ def apply_transformers_patches() -> None:
     if _is_transformers_patched:
         return
 
-    raw_skip = os.environ.get("OPAQUE_SKIP_TRANSFORMERS_PATCHES", "")
-    skip = {entry.strip().lower() for entry in raw_skip.split(",") if entry.strip()}
+    skip = parse_skip_env("OPAQUE_SKIP_TRANSFORMERS_PATCHES")
     if "all" in skip:
         _is_transformers_patched = True
         return

@@ -12,7 +12,7 @@ Environment variables (each accepts "all" or comma-separated names):
   OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all (or swiglu,rope,ce,fused_ce,lora)
 """
 
-import os
+from opaque._env import parse_skip_env
 
 _is_patched = False
 
@@ -30,8 +30,7 @@ def apply_compat_patches() -> None:
     if _is_patched:
         return
 
-    raw_skip = os.environ.get("OPAQUE_SKIP_COMPAT_PATCHES", "")
-    skip = {entry.strip().lower() for entry in raw_skip.split(",") if entry.strip()}
+    skip = parse_skip_env("OPAQUE_SKIP_COMPAT_PATCHES")
 
     if "all" in skip:
         _is_patched = True

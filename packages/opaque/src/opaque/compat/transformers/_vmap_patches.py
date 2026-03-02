@@ -18,7 +18,8 @@ Skip specific groups: OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES=gemma2,phi3
 from __future__ import annotations
 
 import logging
-import os
+
+from opaque._env import parse_skip_env
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +42,7 @@ def apply_vmap_patches() -> None:
     if _is_vmap_patched:
         return
 
-    skip = (
-        os.environ.get("OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES", "").lower().split(",")
-    )
+    skip = parse_skip_env("OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES")
     if "all" in skip:
         _is_vmap_patched = True
         return

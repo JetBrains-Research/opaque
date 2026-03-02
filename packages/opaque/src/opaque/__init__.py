@@ -15,8 +15,6 @@ Modules:
 - ``opaque.compat``: HuggingFace auto-patching for vmap compatibility
 """
 
-import os
-
 # Lazy imports for optional dependencies
 try:
     from opaque import accounting, auditing, distributed, sampling
@@ -50,6 +48,7 @@ from opaque.sampling import (
     PoissonSampler,
     TruncatedPoissonSampler,
 )
+from opaque._env import parse_skip_env
 from opaque.utils import make_functional
 
 # =============================================================================
@@ -61,10 +60,7 @@ from opaque.utils import make_functional
 #   OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES=all (or shared,standard,gemma2,phi3)
 #   OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all (or swiglu,rope,ce,fused_ce,lora)
 
-_opaque_skip_compat_raw = os.environ.get("OPAQUE_SKIP_COMPAT_PATCHES", "")
-_opaque_skip_compat = {
-    item.strip().lower() for item in _opaque_skip_compat_raw.split(",") if item.strip()
-}
+_opaque_skip_compat = parse_skip_env("OPAQUE_SKIP_COMPAT_PATCHES")
 
 if "all" not in _opaque_skip_compat:
     from opaque.compat import apply_compat_patches
