@@ -175,8 +175,10 @@ See `docs/development/MEMORY_OPTIMIZATION_PLAN.md` for full details.
 - Phase 3: Chunked cross-entropy
 - Phase 3b: Fused linear cross-entropy (ported from Apple CCE)
 
+**Attempted / no code changes needed:**
+- Phase 4: Dtype precision guards (new-style `autograd.Function` is incompatible with `@torch.amp.custom_fwd` / `@custom_bwd`, PyTorch #132388)
+
 **Not started:**
-- Phase 4: Dtype precision guards
 - Phase 5: CPU offloading (frozen embeddings, activation offload)
 - Phase 6: Research (4-bit quantization, hybrid checkpointing)
 

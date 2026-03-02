@@ -208,7 +208,7 @@ Stripped from CCE (not needed): bias, logit_avg, gradient filtering, Kahan summa
 
 ---
 
-### Phase 4: Dtype Precision Guards — NOT STARTED
+### Phase 4: Dtype Precision Guards — ATTEMPTED (NO CHANGES NEEDED)
 
 **Problem:**
 - PyTorch silently upcasts to fp32 in many ops
@@ -216,13 +216,14 @@ Stripped from CCE (not needed): bias, logit_avg, gradient filtering, Kahan summa
 
 **Memory Savings:** 0.5-2 GB (prevents accidental doubling)
 
-**Tasks:**
-1. Audit current dtypes in `clipped_fun.py`, `gaussian_noise.py`
-2. Add explicit `dtype` parameter enforcement
-3. Validate memory consistency
+**Assessment result:**
+- Existing kernels and wrappers already run with correct default autocast behavior.
+- New-style `autograd.Function` (`setup_context`) is incompatible with
+  `@torch.amp.custom_fwd` / `@torch.amp.custom_bwd` (PyTorch issue #132388),
+  so the planned decorator-based guard path is not applicable right now.
 
-**Current status**:
-- Not started yet (tracked for a dedicated dtype audit pass)
+**Current status:**
+- No additional code changes identified for Phase 4 at this time.
 
 ---
 
