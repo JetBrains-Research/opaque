@@ -61,7 +61,14 @@ from opaque.utils import make_functional
 #   OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES=all (or shared,standard,gemma2,phi3)
 #   OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all (or swiglu,rope,ce,fused_ce,lora)
 
-if "all" not in os.environ.get("OPAQUE_SKIP_COMPAT_PATCHES", "").lower().split(","):
+_opaque_skip_compat_raw = os.environ.get("OPAQUE_SKIP_COMPAT_PATCHES", "")
+_opaque_skip_compat = {
+    item.strip().lower()
+    for item in _opaque_skip_compat_raw.split(",")
+    if item.strip()
+}
+
+if "all" not in _opaque_skip_compat:
     from opaque.compat import apply_compat_patches
 
     apply_compat_patches()

@@ -208,7 +208,7 @@ Stripped from CCE (not needed): bias, logit_avg, gradient filtering, Kahan summa
 
 ---
 
-### Phase 4: Dtype Precision Guards — COMPLETED
+### Phase 4: Dtype Precision Guards — NOT STARTED
 
 **Problem:**
 - PyTorch silently upcasts to fp32 in many ops
@@ -221,8 +221,8 @@ Stripped from CCE (not needed): bias, logit_avg, gradient filtering, Kahan summa
 2. Add explicit `dtype` parameter enforcement
 3. Validate memory consistency
 
-**NO CHANGES MADE**:
-- Opaque is already amp compilant
+**Current status**:
+- Not started yet (tracked for a dedicated dtype audit pass)
 
 ---
 

@@ -111,7 +111,7 @@ qkv_proj), Cohere (no transpose).
 | LLaMA | SwiGLU | Yes | Yes | Yes | QKV + MLP |
 | Mistral | SwiGLU | Yes | Yes | Yes | QKV + MLP |
 | Qwen2 | SwiGLU | Yes | Yes | Yes | MLP only |
-| Qwen3 | SwiGLU | — | Yes | Yes | MLP only |
+| Qwen3 | SwiGLU | Yes | Yes | Yes | MLP only |
 | Phi3 | SwiGLU | Yes | Yes | — | — |
 | Gemma | GeGLU Exact | Yes | Yes | Yes | QKV + MLP |
 | Gemma2 | GeGLU Approx | Yes | Yes | Yes (softcap) | QKV + MLP |

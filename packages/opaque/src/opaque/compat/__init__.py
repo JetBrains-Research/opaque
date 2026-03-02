@@ -30,7 +30,16 @@ def apply_compat_patches() -> None:
     if _is_patched:
         return
 
-    skip = os.environ.get("OPAQUE_SKIP_COMPAT_PATCHES", "").lower().split(",")
+    raw_skip = os.environ.get("OPAQUE_SKIP_COMPAT_PATCHES", "")
+    skip = {
+        entry.strip().lower()
+        for entry in raw_skip.split(",")
+        if entry.strip()
+    }
+
+    if "all" in skip:
+        _is_patched = True
+        return
 
     if "transformers" not in skip:
         try:
