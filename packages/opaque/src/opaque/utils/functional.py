@@ -11,6 +11,28 @@ import torch  # noqa: E402
 import torch.nn as nn  # noqa: E402
 
 
+def _set_module_params(module: nn.Module, params_dict: dict[str, torch.Tensor]) -> None:
+    """Set named parameters/buffers directly on a module.
+
+    Unlike ``torch.func.functional_call``, this does NOT restore the original
+    parameters after the forward pass. This is required for gradient
+    checkpointing compatibility: checkpoint recomputation during backward
+    accesses ``self.weight`` etc. on the module, and ``functional_call``
+    would have already restored the originals by then.
+    """
+    for name, value in params_dict.items():
+        parts = name.split(".")
+        obj = module
+        for part in parts[:-1]:
+            obj = getattr(obj, part)
+        if parts[-1] in obj._parameters:
+            obj._parameters[parts[-1]] = value
+        elif parts[-1] in obj._buffers:
+            obj._buffers[parts[-1]] = value
+        else:
+            setattr(obj, parts[-1], value)
+
+
 def make_functional(
     mod: nn.Module,
     disable_autograd_tracking: bool = False,
@@ -129,24 +151,19 @@ def make_functional(
         ...     # ... assign grads and step optimizer
 
     Note:
-        This function creates a deep copy of the module and moves it to the "meta" device,
-        which means the copied module has no actual parameter storage. The functional model
-        uses the provided parameters during forward passes.
-
-        If the module has an `allow_grad_accumulation()` method (used in some advanced
-        modules), it will be called on the stateless copy.
+        Parameters are pre-set on the module before each ``functional_call``
+        so that gradient checkpointing recomputation during backward sees the
+        correct parameters (``functional_call``'s context-manager restore
+        becomes a no-op because the "originals" are the same tensors).
+        The module's original parameters are overwritten; use the returned
+        ``params`` / ``trainable`` / ``frozen`` dicts as the source of truth.
 
     See Also:
         - PyTorch migration guide: https://pytorch.org/docs/master/func.migrating.html
-        - torch.func.functional_call: The underlying primitive used by this function
     """
     # Extract parameters with their requires_grad status
     params_dict = dict(mod.named_parameters())
 
-    # For functional_call, we don't actually need to create a stateless copy
-    # The original module works fine, and functional_call will replace parameters
-    # Creating a meta device copy breaks some models (like HuggingFace transformers)
-    # that have buffers or special initialization logic
     stateless_mod = mod
 
     # Optionally detach parameters from autograd graph
@@ -169,16 +186,10 @@ def make_functional(
         }
 
         def fmodel_dict(params_dict_input, *args, **kwargs):
-            """Functional version that takes dict parameters.
-
-            Args:
-                params_dict_input: Dict of parameter tensors.
-                *args: Positional arguments for the module's forward method.
-                **kwargs: Keyword arguments for the module's forward method.
-
-            Returns:
-                Output of the module's forward pass.
-            """
+            # Pre-set params so checkpoint recomputation sees them even after
+            # functional_call's context manager restores "originals" (which
+            # are now the same tensors we just set).
+            _set_module_params(stateless_mod, params_dict_input)
             return torch.func.functional_call(
                 stateless_mod, params_dict_input, args, kwargs
             )
@@ -191,19 +202,10 @@ def make_functional(
         params_values = tuple(params_dict.values())
 
         def fmodel_tuple(new_params_values, *args, **kwargs):
-            """Functional version that takes tuple parameters.
-
-            Args:
-                new_params_values: Tuple of parameter tensors.
-                *args: Positional arguments for the module's forward method.
-                **kwargs: Keyword arguments for the module's forward method.
-
-            Returns:
-                Output of the module's forward pass.
-            """
-            # Reconstruct parameter dict from tuple
-            new_params_dict = dict(zip(params_names, new_params_values, strict=True))
-            # Call module with external parameters
+            new_params_dict = dict(
+                zip(params_names, new_params_values, strict=True)
+            )
+            _set_module_params(stateless_mod, new_params_dict)
             return torch.func.functional_call(
                 stateless_mod, new_params_dict, args, kwargs
             )

@@ -292,6 +292,12 @@ def parse_args():
         help="Maximum training steps (overrides num_epochs if set)",
     )
     train_group.add_argument("--seed", type=int, default=42, help="Random seed")
+    train_group.add_argument(
+        "--gradient_checkpointing",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable gradient checkpointing for memory savings (trades compute for memory)",
+    )
 
     lora_group = parser.add_argument_group("lora", "LoRA adapter settings")
     lora_group.add_argument("--lora_r", type=int, default=4, help="LoRA rank")
@@ -702,6 +708,12 @@ def main():
     print(f"  Expected batch size: {args.batch_size}")
     print(f"  Expected steps per epoch: ~{expected_steps_per_epoch}")
     print(f"Eval batches: {len(eval_loader)}")
+
+    if args.gradient_checkpointing:
+        model.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": False}
+        )
+        print("\nGradient checkpointing: enabled")
 
     # Convert to functional (only LoRA parameters)
     print("\nConverting to functional form (LoRA parameters only)...")

@@ -195,7 +195,7 @@ for candidate_mb in [64, 32, 16, 8, 4, 2, 1]:
     print(candidate_mb, profiler.current_metrics()["memory_peak_gb"])
 ```
 
-See [Memory Profiling](memory-profiling.md) for details.
+See [Memory Optimizations](memory-optimizations.md) for details.
 
 ## Adaptive clipping
 
@@ -295,9 +295,8 @@ The loss function passed to `clipped_grad` must:
 2. **Accept batched arguments** at the positions specified by `batch_argnums`.
    These arguments have a batch dimension that `vmap` maps over.
 3. **Be compatible with `torch.func`**. Operations using in-place mutation,
-   data-dependent control flow, or non-functional layers may fail under `vmap`.
-   Gradient checkpointing (`torch.utils.checkpoint`) is incompatible; use
-   microbatching instead (see [Known Limitations](../limitations.md)).
+   data-dependent control flow, or non-functional layers may fail under `vmap`
+   (see [Known Limitations](../limitations.md)).
 
 ## Common patterns
 

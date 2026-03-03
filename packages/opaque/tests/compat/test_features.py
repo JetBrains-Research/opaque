@@ -3,9 +3,6 @@
 """Test various training features with vmap/clipped_grad.
 
 Tests mixed precision and torch.compile.
-
-Known incompatibilities (not tested):
-- Gradient checkpointing: Uses autograd.Function which is incompatible with vmap
 """
 
 import pytest

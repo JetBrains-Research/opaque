@@ -158,7 +158,7 @@ export WANDB_ENTITY="federated-compute"
 
 1. **Functional-first**: Immutable state, pure functions, explicit RNG keys
 2. **vmap-native**: All operations support `torch.func.vmap` for per-example gradients
-3. **No gradient checkpointing**: Incompatible with vmap; use microbatching instead
+3. **Gradient checkpointing**: Supported via `compat.pytorch` patches (first-order only); combinable with microbatching
 4. **Triton kernels**: Operation-level fusion instead of graph-level optimization
 5. **Pre-shift in CE kernels**: Labels shifted in Python, not kernel, for trivial vmap merge
 6. **Skip frozen weight gradients**: LoRA training skips `dC` for `lm_head` (~1/3 backward saved)

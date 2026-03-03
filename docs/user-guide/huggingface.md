@@ -26,17 +26,6 @@ inherit LLaMA patches automatically. GPT-2 works without patches (simple
 architecture). Other models may work if their attention implementation
 follows the standard Transformers pattern.
 
-To disable auto-patching (e.g., for debugging), set the environment
-variable before importing:
-
-```python
-import os
-os.environ["OPAQUE_SKIP_COMPAT_PATCHES"] = "all"
-import opaque
-```
-
-For finer control, see [Kernel Optimizations — Configuration](kernel-optimizations.md#configuration).
-
 ### Why patches are needed
 
 `torch.func.vmap` removes the batch dimension: a function that normally
@@ -81,6 +70,36 @@ model = AutoModelForCausalLM.from_pretrained(
     attn_implementation="sdpa",
 )
 ```
+
+## Model compatibility
+
+Opaque's auto-patching covers these model families. The table shows both
+vmap compatibility and which fused Triton kernels are applied per model:
+
+| Model | Tested sizes | SwiGLU/GeGLU | RoPE | CE | Fused Linear CE | LoRA Fusion |
+|-------|-------------|--------------|------|----|-----------------|-------------|
+| LLaMA / Llama 3 | 7B, 8B, 70B (LoRA) | SwiGLU | Yes | Yes | Yes | QKV + MLP |
+| Mistral | 7B | SwiGLU | Yes | Yes | Yes | QKV + MLP |
+| Qwen2 / Qwen3 | 0.5B, 7B | SwiGLU | Yes | Yes | Yes | MLP only |
+| Phi-3 | 3.8B | SwiGLU | Yes | Yes | -- | -- |
+| Gemma | 2B, 7B | GeGLU Exact | Yes | Yes | Yes | QKV + MLP |
+| Gemma2 | 2B, 7B | GeGLU Approx | Yes | Yes | Yes (softcap) | QKV + MLP |
+| Granite | 3B, 8B | SwiGLU | Yes | Yes | Yes | QKV + MLP |
+| Cohere | 8B | SwiGLU | -- | Yes | Yes | MLP only |
+| Cohere2 | 8B | SwiGLU | -- | Yes | Yes | QKV + MLP |
+| GPT-2 | 124M, 355M | -- | -- | -- | -- | -- |
+| DeepSeek | 7B | (inherits LLaMA patches) |||||
+
+**What makes a model vmap-compatible:** The model must not use
+`torch.nonzero`, data-dependent control flow (`if tensor.item() > 0`), or
+operations that depend on the batch dimension being a specific index. Most
+standard Transformer architectures work. Encoder-only models (BERT, RoBERTa)
+typically work without patches.
+
+**Sequence length and memory:** Attention is $O(\text{seq}^2)$ in memory
+(for eager/SDPA). Combined with per-example gradients, long sequences
+significantly increase memory. Use shorter sequences (512-1024) when possible,
+or reduce the microbatch size.
 
 ## Functional model conversion
 
@@ -207,6 +226,84 @@ standard parameters, it may not work with `vmap`.
 Start with `r=8` and `target_modules=["q_proj", "v_proj"]`. Increase rank
 or add modules only if accuracy is insufficient.
 
+## Patched operations
+
+Opaque replaces standard PyTorch operations with fused Triton kernels for
+supported models. These are applied automatically on `import opaque` and
+require no code changes. See [Memory Optimizations — Kernel benchmarks](memory-optimizations.md#kernel-benchmarks)
+for performance numbers.
+
+### Activation functions
+
+| Kernel | Operation | Models |
+|--------|-----------|--------|
+| SwiGLU | `silu(gate) * up` | LLaMA, Mistral, Qwen2, Qwen3, Phi3, Granite, Cohere, Cohere2 |
+| GeGLU Exact | `gelu(gate) * up` (erf-based) | Gemma |
+| GeGLU Approx | `gelu_tanh(gate) * up` | Gemma2 |
+
+Each fuses the forward activation into one kernel and provides a fused backward
+that reads 3 tensors and writes 2-3 in a single pass.
+
+### Rotary position embeddings (RoPE)
+
+Fused RoPE applies rotary embeddings to Q and K tensors simultaneously. Supports
+grouped-query attention (GQA) where Q and K have different head counts.
+
+Patched models: LLaMA, Mistral, Qwen2, Qwen3, Phi3, Gemma, Gemma2, Granite.
+
+### Cross-entropy loss
+
+Chunked Triton cross-entropy processes the vocabulary dimension in blocks (up to
+65536), avoiding materialization of the full `(batch*seq, vocab)` logits tensor.
+
+### Fused linear cross-entropy
+
+The most impactful optimization. Standard cross-entropy requires materializing
+`logits = hidden_states @ lm_head.T` — for Mellum-4b with 128K vocab, this is
+~2 GB per forward pass. Fused linear cross-entropy computes the loss directly
+from hidden states and weight matrix using tiled matrix multiplication inside
+the Triton kernel, never materializing the full logits tensor.
+
+Key design decisions:
+- **Pre-shift in Python** — `hidden_states[..., :-1, :]` and `labels[..., 1:]`
+  so vmap merge is a trivial reshape
+- **Skip weight gradient when frozen** — in DP-SGD LoRA training, `lm_head`
+  is frozen, so ~1/3 of backward compute is skipped entirely
+- **Weight scaling outside kernel** — Cohere (multiplicative), Granite
+  (divisive), and Gemma2 (softcapping) are handled correctly
+
+Patched models: LLaMA, Mistral, Qwen2, Qwen3, Gemma, Gemma2, Granite,
+Cohere, Cohere2.
+
+### Fused LoRA operations
+
+Three LoRA fusion levels, applied automatically when LoRA adapters are detected:
+
+| Kernel | Description |
+|--------|-------------|
+| `Opaque_LoRA_W` | Single linear: `x @ W.T + x @ A @ B * s` — avoids intermediate `x @ A` |
+| `Opaque_LoRA_QKV` | Fused Q+K+V: shares input across 3 projections in one call |
+| `Opaque_LoRA_MLP` | Fused gate+up+down: 3 projections + activation in one call |
+
+**LoRA_W** patches `peft.tuners.lora.Linear.forward` and applies to all LoRA
+layers. **LoRA_QKV** and **LoRA_MLP** are auto-fused when all projections in an
+attention block or MLP block have LoRA adapters with no bias.
+
+QKV fusion eligible models: LLaMA, Mistral, Gemma, Gemma2, Granite, Cohere2.
+Excluded: Qwen2 (bias on Q/K/V), Qwen3 (q_norm/k_norm), Phi3 (combined
+qkv_proj), Cohere (no transpose).
+
+### Using kernels directly
+
+All kernels are available as standalone functions without patching:
+
+```python
+from opaque.compat.kernels import opaque_swiglu, opaque_cross_entropy_loss
+
+h = opaque_swiglu(gate, up)
+loss = opaque_cross_entropy_loss(logits, labels)
+```
+
 ## Feature compatibility
 
 | Feature | Status | Notes |
@@ -214,42 +311,69 @@ or add modules only if accuracy is insufficient.
 | SDPA attention | Recommended | Default; up to 3.6x memory savings over eager |
 | Mixed precision (fp16/bf16) | Supported | Pass `dtype` to `clipped_grad` for accumulation dtype |
 | LoRA / PEFT adapters | Supported | Use `make_functional(partition_trainable=True)` |
-| Kernel optimizations | Supported | Auto-applied on import; see [Kernel Optimizations](kernel-optimizations.md) |
+| Kernel optimizations | Supported | Auto-applied on import; see [Patched operations](#patched-operations) |
 | Microbatching | Supported | Works with both SDPA and eager attention |
-| Gradient checkpointing | Not supported | Incompatible with vmap; use microbatching instead |
+| Gradient checkpointing | Supported | See [Memory Optimizations](memory-optimizations.md#gradient-checkpointing) |
 | `torch.compile` | Supported | Works with vmap and patches |
 
-Gradient checkpointing (`model.gradient_checkpointing_enable()`) uses
-`autograd.Function` internally, which is incompatible with `vmap`. Use
-the `microbatch_size` parameter on `clipped_grad` as an alternative for
-memory reduction. See [Known Limitations](../limitations.md) for details.
+## Configuration
 
-## Model selection
+Opaque patches are controlled by environment variables. Each accepts `all`
+to skip everything in that group, or a comma-separated list for selective skip.
 
-Opaque's auto-patching covers these model families:
+| Variable | Scope | Values |
+|----------|-------|--------|
+| `OPAQUE_SKIP_COMPAT_PATCHES` | All patching | `all` |
+| `OPAQUE_SKIP_PYTORCH_CHECKPOINT_PATCHES` | Checkpoint compat | `all` |
+| `OPAQUE_SKIP_TRANSFORMERS_PATCHES` | HF Transformers | `all`, or `vmap,kernels` |
+| `OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES` | vmap compat | `all`, or `shared,standard,gemma2,phi3` |
+| `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES` | Triton kernels | `all`, or `swiglu,rope,ce,fused_ce,lora` |
 
-| Model family | Tested sizes | Notes |
-|-------------|-------------|-------|
-| GPT-2 | 124M, 355M | Works without patches; good for prototyping |
-| LLaMA / Llama 3 | 7B, 8B, 70B (LoRA) | Recommended starting point |
-| DeepSeek | 7B | Uses LLaMA architecture; inherits patches |
-| Mistral | 7B | Similar architecture to LLaMA |
-| Qwen2 / Qwen3 | 0.5B, 7B | |
-| Phi-3 | 3.8B | Combined gate_up_proj variant |
-| Gemma / Gemma2 | 2B, 7B | GeGLU activation, softcap attention (Gemma2) |
-| Granite | 3B, 8B | Divisive logit scaling |
-| Cohere / Cohere2 | 8B | Multiplicative logit scaling |
+### Disabling all patching
 
-**What makes a model vmap-compatible:** The model must not use
-`torch.nonzero`, data-dependent control flow (`if tensor.item() > 0`), or
-operations that depend on the batch dimension being a specific index. Most
-standard Transformer architectures work. Encoder-only models (BERT, RoBERTa)
-typically work without patches.
+```python
+import os
+os.environ["OPAQUE_SKIP_COMPAT_PATCHES"] = "all"
+import opaque
+```
 
-**Sequence length and memory:** Attention is $O(\text{seq}^2)$ in memory
-(for eager/SDPA). Combined with per-example gradients, long sequences
-significantly increase memory. Use shorter sequences (512-1024) when possible,
-or reduce the microbatch size.
+### Disabling kernel optimizations
+
+```python
+import os
+os.environ["OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES"] = "all"
+import opaque
+```
+
+This disables all kernel optimizations. The library still works — models use
+standard PyTorch operations with vmap patches still applied.
+
+### Selectively skipping kernels
+
+```bash
+# Skip only fused linear CE
+OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=fused_ce python train.py
+
+# Skip multiple
+OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=swiglu,rope,fused_ce python train.py
+```
+
+Available kernel names: `swiglu`, `rope`, `ce`, `fused_ce`, `lora`.
+
+### Disabling vmap patches
+
+Vmap patches make HuggingFace models compatible with `vmap(grad())`. These
+are required for DP-SGD training but can be skipped for debugging:
+
+```bash
+# Skip all vmap patches (models will NOT work with vmap)
+OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES=all python train.py
+
+# Skip only Gemma2-specific patches
+OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES=gemma2 python train.py
+```
+
+Available vmap groups: `shared`, `standard`, `gemma2`, `phi3`.
 
 ## Other models
 
@@ -319,8 +443,9 @@ noise after `sum_gradients`. See [Distributed Training](distributed.md).
 
 ## Troubleshooting
 
-**"vmap over _NoopSaveInputs" error:** Gradient checkpointing is enabled.
-Disable it: do not call `model.gradient_checkpointing_enable()`.
+**"vmap over _NoopSaveInputs" error:** This should not occur if `import opaque`
+was called before enabling gradient checkpointing. Ensure Opaque is imported
+first so its checkpoint compatibility patches are applied.
 
 **Flash Attention errors under vmap:** Set `attn_implementation="sdpa"` when
 loading the model. SDPA is the default and recommended implementation.
@@ -337,8 +462,23 @@ for how to use `with_batch_dim` to add vmap support.
 registration. Ensure the model is a standard `nn.Module` with parameters
 accessible via `model.parameters()`.
 
+**Numerical differences after enabling kernel patches:** All kernels are
+numerically equivalent to PyTorch reference implementations within
+floating-point precision. If you see significant differences, file a bug report.
+
+**Performance regression with kernel patches:** Some kernels (SwiGLU/GeGLU
+forward) have higher dispatch overhead than native PyTorch for small tensors.
+The net effect on end-to-end training is positive due to backward pass and
+memory savings. Use `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES` to isolate
+which kernel causes the issue.
+
+**LoRA fusion not applied:** Auto-fusion requires all projections in a group
+(Q+K+V or gate+up+down) to have LoRA adapters with no bias. Check your
+`LoraConfig.target_modules` and model architecture.
+
 ## API reference
 
 See [Utilities API Reference](../api/utilities.md) for
 `make_functional` signatures and [Clipping API Reference](../api/clipping.md)
 for `clipped_grad` with `partition_trainable` examples.
+See the [Kernels API](../api/index.md) for complete kernel function signatures.
