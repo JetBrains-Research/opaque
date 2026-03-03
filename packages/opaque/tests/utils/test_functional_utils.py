@@ -367,3 +367,61 @@ class TestWithBatchDimDoubleWrapGuard:
 
         wrapped = with_batch_dim(fn, batch_argnums=0)
         assert wrapped._opaque_batchified is True
+
+
+class TestWithBatchDimPositionalNormalization:
+    """Tests for signature-based positional arg → kwarg normalization."""
+
+    def test_positional_batch_kwarg_unsqueezed(self):
+        """batch_kwargs arg passed positionally should still be processed."""
+        calls = []
+
+        def fn(self, input_ids=None):
+            calls.append(input_ids.shape)
+            return input_ids
+
+        wrapped = with_batch_dim(fn, batch_kwargs={"input_ids": 2}, min_ndim=2)
+        sentinel = object()  # stand-in for self
+        ids = torch.randn(5)  # 1D → should be unsqueezed
+        out = wrapped(sentinel, ids)  # input_ids passed positionally
+        assert calls[-1] == (1, 5), "fn should see unsqueezed input_ids"
+        assert out.shape == (5,), "output should be squeezed back"
+
+    def test_positional_mixed_with_keyword(self):
+        """Some args positional, some keyword — all should be processed."""
+        calls = {}
+
+        def fn(self, input_ids=None, attention_mask=None, inputs_embeds=None):
+            calls["input_ids"] = input_ids.shape if input_ids is not None else None
+            calls["attention_mask"] = (
+                attention_mask.shape if attention_mask is not None else None
+            )
+            return input_ids
+
+        wrapped = with_batch_dim(
+            fn,
+            batch_kwargs={"input_ids": 2, "attention_mask": 2, "inputs_embeds": 3},
+            min_ndim=2,
+        )
+        sentinel = object()
+        ids = torch.randn(5)  # positional
+        mask = torch.randn(5)  # keyword
+        out = wrapped(sentinel, ids, attention_mask=mask)
+        assert calls["input_ids"] == (1, 5)
+        assert calls["attention_mask"] == (1, 5)
+        assert out.shape == (5,)
+
+    def test_batched_positional_is_noop(self):
+        """Already-batched positional arg should not be unsqueezed."""
+        calls = []
+
+        def fn(self, input_ids=None):
+            calls.append(input_ids.shape)
+            return input_ids
+
+        wrapped = with_batch_dim(fn, batch_kwargs={"input_ids": 2}, min_ndim=2)
+        sentinel = object()
+        ids = torch.randn(4, 5)  # 2D → at threshold → no-op
+        out = wrapped(sentinel, ids)
+        assert calls[-1] == (4, 5)
+        assert out.shape == (4, 5)
