@@ -36,7 +36,6 @@ def _make_small_model(model_name, device="cuda"):
     """Create a small 2-layer model for testing."""
     config = AutoConfig.from_pretrained(model_name)
     config.num_hidden_layers = 2
-    config._attn_implementation = "eager"
     model = AutoModelForCausalLM.from_config(config).to(device)
     return model, config
 
@@ -205,7 +204,6 @@ class TestEndToEnd:
         """Full pipeline: Qwen2 + LoRA + clipped_grad with kernel patches."""
         config = AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
@@ -442,7 +440,6 @@ class TestCPUFallback:
         """Full Llama model with LoRA should forward+backward correctly on CPU."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 1
-        config._attn_implementation = "eager"
         model = AutoModelForCausalLM.from_config(config)  # CPU
 
         lora_config = LoraConfig(
@@ -840,7 +837,6 @@ class TestFusedLoRAMLP:
         """get_peft_model should auto-fuse MLP layers with LoRA on gate/up/down."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
@@ -862,7 +858,6 @@ class TestFusedLoRAMLP:
         """Full model with fused LoRA MLP should produce valid forward+backward."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
@@ -897,7 +892,6 @@ class TestFusedLoRAMLP:
 
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
 
@@ -1036,7 +1030,6 @@ class TestFusedLoRAQKV:
         """get_peft_model should auto-fuse QKV layers with LoRA on q/k/v."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
@@ -1060,7 +1053,6 @@ class TestFusedLoRAQKV:
         """Full model with fused LoRA QKV should produce valid forward+backward."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
@@ -1092,7 +1084,6 @@ class TestFusedLoRAQKV:
         """Qwen2 attention should NOT be fused (has bias=True on Q/K/V)."""
         config = AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
@@ -1118,7 +1109,6 @@ class TestFusedLoRAQKV:
             pytest.skip("Qwen3 not available")
 
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
@@ -1143,7 +1133,6 @@ class TestFusedLoRAQKV:
 
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
 
@@ -1177,7 +1166,6 @@ class TestFusedLoRAQKV:
         """Fused QKV should work end-to-end with clipped_grad (DP-SGD)."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(

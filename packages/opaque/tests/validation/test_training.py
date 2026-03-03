@@ -505,7 +505,6 @@ class TestMellumLoRADPTraining:
             model_name,
             torch_dtype=torch.float16,  # Use fp16 for memory efficiency
             device_map="auto",  # Automatically place on available devices
-            attn_implementation="eager",  # Required for vmap compatibility
         )
         if model.config.pad_token_id is None:
             model.config.pad_token_id = tokenizer.pad_token_id
@@ -937,7 +936,6 @@ class TestMultiArchitectureModels:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float32,
-            attn_implementation="eager",
         )
         if model.config.pad_token_id is None:
             model.config.pad_token_id = tokenizer.pad_token_id
@@ -971,7 +969,6 @@ class TestMultiArchitectureModels:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float32,
-            attn_implementation="eager",
         )
         if model.config.pad_token_id is None:
             model.config.pad_token_id = tokenizer.pad_token_id
@@ -1005,7 +1002,6 @@ class TestMultiArchitectureModels:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float32,
-            attn_implementation="eager",
             trust_remote_code=True,
         )
         if model.config.pad_token_id is None:
@@ -1130,7 +1126,7 @@ class TestMultiArchitectureModels:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float32,
-            attn_implementation="eager",
+            attn_implementation="eager",  # Gemma2 sliding window masking incompatible with vmap
         )
         if model.config.pad_token_id is None:
             model.config.pad_token_id = tokenizer.pad_token_id
@@ -1164,7 +1160,7 @@ class TestMultiArchitectureModels:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float32,
-            attn_implementation="eager",
+            attn_implementation="eager",  # Mistral sliding window masking incompatible with vmap
         )
         if model.config.pad_token_id is None:
             model.config.pad_token_id = tokenizer.pad_token_id
@@ -1198,7 +1194,7 @@ class TestMultiArchitectureModels:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float32,
-            attn_implementation="eager",
+            attn_implementation="eager",  # Phi-3 sliding window masking incompatible with vmap
             trust_remote_code=True,
         )
         if model.config.pad_token_id is None:
@@ -1271,7 +1267,6 @@ class TestMultiArchitectureModels:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float32,
-            attn_implementation="eager",
             trust_remote_code=True,
         )
         if model.config.pad_token_id is None:
@@ -1306,7 +1301,6 @@ class TestMultiArchitectureModels:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float32,
-            attn_implementation="eager",
         )
         if model.config.pad_token_id is None:
             model.config.pad_token_id = tokenizer.pad_token_id
@@ -1410,7 +1404,6 @@ class TestMultiArchitectureModels:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float32,
-            attn_implementation="eager",
             trust_remote_code=True,
         )
         if model.config.pad_token_id is None:

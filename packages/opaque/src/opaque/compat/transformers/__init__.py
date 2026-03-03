@@ -40,8 +40,6 @@ for SDPA backward is expected and harmless — it falls back to per-sample proce
 which is what vmap does anyway for per-example gradients.
 """
 
-import warnings
-
 from opaque._env import parse_skip_env
 from opaque.compat.transformers._kernel_patches import (
     apply_kernel_patches,
@@ -86,15 +84,6 @@ def apply_transformers_patches() -> None:
     # final version.  Also patches PEFT model classes.
     if "vmap" not in skip:
         apply_batchify_patches()
-
-    # Suppress PyTorch warning about missing vmap batching rules for SDPA backward.
-    # This is harmless: the backward falls back to per-sample processing, which is
-    # exactly what vmap does for per-example gradient computation.
-    warnings.filterwarnings(
-        "ignore",
-        message=r".*not yet implemented the batching rule for aten::_scaled_dot_product.*",
-        category=UserWarning,
-    )
 
     _is_transformers_patched = True
 

@@ -26,14 +26,15 @@ def vmap_create_causal_mask(
     Under vmap with with_batch_dim: inputs_embeds (1, seq, hidden) -> mask (1, 1, seq, seq)
     Under vmap without with_batch_dim: inputs_embeds (seq, hidden) -> mask (1, 1, seq, seq)
     """
-    # When no padding mask is provided, return None so that:
-    # - SDPA uses is_causal=True (avoids batch dimension issues under vmap)
-    # - Eager attention skips mask addition (our patched eager handles this)
-    # The original create_causal_mask also returns None for SDPA in this case.
+    # When no padding mask is provided AND the attention backend handles
+    # causality internally (SDPA uses is_causal=True, flash uses masking
+    # kernels), return None to avoid materializing the full mask tensor.
+    # Eager attention needs an explicit causal mask — never skip for eager.
     # Note: past_key_values may be a DynamicCache even in training (HF's
     # @check_model_inputs resolves use_cache=None to config.use_cache=True),
     # so we check for actual cached data rather than just None.
-    if attention_mask is None:
+    attn_impl = getattr(config, "_attn_implementation", None)
+    if attention_mask is None and attn_impl != "eager":
         has_cached_data = (
             past_key_values is not None
             and hasattr(past_key_values, "get_seq_length")

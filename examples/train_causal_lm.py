@@ -202,9 +202,18 @@ def parse_args():
         help="HuggingFace model name or local path",
     )
     model_group.add_argument(
-        "--use_eager_attention",
-        action="store_true",
-        help="Force eager attention (default: use SDPA, which is faster and uses less memory)",
+        "--attention",
+        type=str,
+        choices=["eager", "sdpa"],
+        default="sdpa",
+        help="Attention implementation (default: sdpa, which is faster and uses less memory)",
+    )
+    model_group.add_argument(
+        "--sdpa_backend",
+        type=str,
+        choices=["flash", "efficient", "cudnn", "math"],
+        default=None,
+        help="Force a specific SDPA backend (default: None = PyTorch auto-selects)",
     )
 
     data_group = parser.add_argument_group("data", "Dataset and tokenization settings")
@@ -522,8 +531,20 @@ def main():
 
     # Attention implementation: SDPA is the default in recent HuggingFace Transformers
     # and provides up to 3.6x memory savings over eager at seq_len=1024 with vmap.
-    # Use --use_eager_attention to override (e.g., for debugging).
-    use_eager = args.use_eager_attention or device.type == "mps"
+    # Use --attention eager to override (e.g., for debugging).
+    use_eager = args.attention == "eager" or device.type == "mps"
+
+    # When a specific SDPA backend is requested, enable only that one globally.
+    if not use_eager and args.sdpa_backend is not None:
+        backends = {
+            "flash": torch.backends.cuda.enable_flash_sdp,
+            "efficient": torch.backends.cuda.enable_mem_efficient_sdp,
+            "cudnn": torch.backends.cuda.enable_cudnn_sdp,
+            "math": torch.backends.cuda.enable_math_sdp,
+        }
+        for name, setter in backends.items():
+            setter(name == args.sdpa_backend)
+        print(f"SDPA backend forced: {args.sdpa_backend}")
 
     # Load model config and disable dropout
     print(f"\nLoading model: {args.model_name}...")
@@ -554,8 +575,11 @@ def main():
         "trust_remote_code": True,
     }
     if use_eager:
-        print("Using eager attention implementation")
+        print("Attention: eager")
         model_kwargs["attn_implementation"] = "eager"
+    else:
+        backend_label = args.sdpa_backend or "auto"
+        print(f"Attention: sdpa (backend={backend_label})")
 
     # Initialize profiler
     profiler = TrainingProfiler(device)

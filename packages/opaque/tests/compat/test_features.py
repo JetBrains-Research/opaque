@@ -24,7 +24,6 @@ class TestMixedPrecision:
         """Test models with mixed precision dtypes."""
         config = AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
@@ -66,7 +65,6 @@ class TestTorchCompile:
         """Test that models work with torch.compile."""
         config = AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(

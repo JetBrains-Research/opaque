@@ -22,14 +22,12 @@ class TestPEFTMethods:
 
     def test_lora(self, qwen2_config, qwen2_tokenizer, device):
         """Test LoRA (Low-Rank Adaptation)."""
-        qwen2_config._attn_implementation = "eager"
         model = prepare_lora_model(qwen2_config).to(device)
         grads, _ = run_clipped_grad_test(model, qwen2_tokenizer)
         assert len(grads) > 0
 
     def test_ia3(self, qwen2_config, qwen2_tokenizer, device):
         """Test IA3 (Infused Adapter by Inhibiting and Augmenting Inner Activations)."""
-        qwen2_config._attn_implementation = "eager"
         model = AutoModelForCausalLM.from_config(qwen2_config)
 
         ia3_config = IA3Config(
@@ -50,7 +48,6 @@ class TestPEFTMethods:
 
     def test_prefix_tuning(self, qwen2_config, qwen2_tokenizer, device):
         """Test Prefix Tuning."""
-        qwen2_config._attn_implementation = "eager"
         model = AutoModelForCausalLM.from_config(qwen2_config)
 
         prefix_config = PrefixTuningConfig(
@@ -63,7 +60,6 @@ class TestPEFTMethods:
 
     def test_prompt_tuning(self, qwen2_config, qwen2_tokenizer, device):
         """Test Prompt Tuning."""
-        qwen2_config._attn_implementation = "eager"
         model = AutoModelForCausalLM.from_config(qwen2_config)
 
         prompt_config = PromptTuningConfig(
@@ -76,7 +72,6 @@ class TestPEFTMethods:
 
     def test_p_tuning(self, qwen2_config, qwen2_tokenizer, device):
         """Test P-Tuning."""
-        qwen2_config._attn_implementation = "eager"
         model = AutoModelForCausalLM.from_config(qwen2_config)
 
         p_tuning_config = PromptEncoderConfig(
