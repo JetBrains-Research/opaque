@@ -71,20 +71,6 @@ def _sum_clipped_tensor(
     return summed
 
 
-def _with_extra_batch_axis(fun, batch_argnums):
-    """Wraps a function to add an extra batch axis to the batch_argnums."""
-    batch_argnums = normalize_to_tuple(batch_argnums)
-
-    def wrapped_fun(*args, **kwargs):
-        args_with_group_axis = list(args)
-        for i in batch_argnums:
-            args_with_group_axis[i] = tree_map(
-                lambda x: x.unsqueeze(1) if isinstance(x, torch.Tensor) else x, args[i]
-            )
-        return fun(*args_with_group_axis, **kwargs)
-
-    return wrapped_fun
-
 
 def _microbatch_accumulate(
     per_example_fn,
@@ -223,7 +209,6 @@ def clipped_fun(
     has_aux: bool = False,
     *,
     batch_argnums: int | tuple[int, ...] = 0,
-    keep_batch_dim: bool = True,
     l2_clip_norm: float = 1.0,
     normalize_by: float = 1.0,
     return_aux: bool = False,
@@ -263,9 +248,6 @@ def clipped_fun(
         batch_argnums: Specifies which argument(s) of `fun` contain the batch
             dimension. All arguments specified here must have the same size along the
             0th axis.
-        keep_batch_dim: If True, batch inputs will be passed to `fun` with a leading
-            batch axis of size 1. If False, this size 1 axis will be dropped
-            (reducing the rank of the batch args by 1 before passing to `fun`).
         l2_clip_norm: The maximum L2 norm allowed.
         normalize_by: Divide the clipped output by this value before returning.
         return_aux: If True, the returned Callable will return a per-example aux
@@ -403,10 +385,6 @@ def clipped_fun(
         )
 
         return result, aux
-
-    # Apply keep_batch_dim wrapper if needed
-    if keep_batch_dim:
-        clipped_fn = _with_extra_batch_axis(clipped_fn, batch_argnums)
 
     # Calculate L2 sensitivity bound
     l2_norm_bound = l2_clip_norm / normalize_by

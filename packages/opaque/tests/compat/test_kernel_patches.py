@@ -262,15 +262,6 @@ class TestConfiguration:
         # After import opaque, patches should be applied (or skipped if no CUDA)
         assert isinstance(is_kernel_patched(), bool)
 
-    def test_patch_stores_original_forward(self):
-        """Patched classes should preserve original forward."""
-        try:
-            from transformers.models.llama.modeling_llama import LlamaMLP
-        except ImportError:
-            pytest.skip("transformers not available")
-
-        if hasattr(LlamaMLP, "_opaque_original_forward"):
-            assert callable(LlamaMLP._opaque_original_forward)
 
 
 # =============================================================================
@@ -458,17 +449,13 @@ class TestLoRAPatches:
 
     def test_lora_class_patched(self):
         """peft.tuners.lora.Linear should have patched forward."""
-        from opaque.compat.transformers._kernel_patches import (
-            _opaque_lora_linear_forward,
-        )
-
         try:
             from peft.tuners.lora import Linear as PeftLoRALinear
         except ImportError:
             pytest.skip("peft not available")
 
         if torch.cuda.is_available():
-            assert PeftLoRALinear.forward is _opaque_lora_linear_forward
+            assert PeftLoRALinear.forward.__qualname__.startswith("_make_lora_linear_forward")
 
 
 # =============================================================================
@@ -670,12 +657,7 @@ class TestFusedLoRAMLP:
         layers = model.model.model.layers
         for layer in layers:
             mlp = layer.mlp
-            assert hasattr(mlp, "_opaque_activation_type"), (
-                "MLP should have _opaque_activation_type after auto-fuse"
-            )
-            assert hasattr(mlp, "_opaque_original_forward"), (
-                "MLP should have _opaque_original_forward after auto-fuse"
-            )
+            assert "forward" in vars(mlp), "MLP forward should be fused"
 
     @pytest.mark.hf_auth_required
     def test_fused_lora_mlp_model_forward_backward(self, device):
@@ -721,29 +703,28 @@ class TestFusedLoRAMLP:
 
         model = AutoModelForCausalLM.from_config(config)
 
-        # Use the original get_peft_model to avoid auto-hook (simulate loading from checkpoint)
-        import peft
+        # Use peft.mapping.get_peft_model to bypass auto-hook (simulate loading from checkpoint)
+        from peft.mapping_func import get_peft_model as raw_get_peft_model
 
-        original_get_peft_model = peft._opaque_original_get_peft_model
         lora_config = LoraConfig(
             r=8,
             lora_alpha=16,
             lora_dropout=0.0,
             target_modules=["gate_proj", "up_proj", "down_proj"],
         )
-        model = original_get_peft_model(model, lora_config).to(device)
+        model = raw_get_peft_model(model, lora_config).to(device)
 
-        # MLP should NOT be fused yet
+        # MLP should NOT be fused yet (no instance-level forward override)
         layers = model.model.model.layers
-        assert not hasattr(layers[0].mlp, "_opaque_activation_type"), (
+        assert "forward" not in vars(layers[0].mlp), (
             "MLP should not be fused before patch_lora_model()"
         )
 
         # Manually apply
         patch_lora_model(model)
 
-        # MLP should now be fused
-        assert hasattr(layers[0].mlp, "_opaque_activation_type"), (
+        # MLP should now be fused (instance-level forward override)
+        assert "forward" in vars(layers[0].mlp), (
             "MLP should be fused after patch_lora_model()"
         )
 
@@ -875,9 +856,6 @@ class TestFusedLoRAQKV:
             assert hasattr(attn, "_opaque_fused_qkv"), (
                 "Attention should have _opaque_fused_qkv after auto-fuse"
             )
-            assert hasattr(attn, "_opaque_original_forward"), (
-                "Attention should have _opaque_original_forward after auto-fuse"
-            )
 
     @pytest.mark.hf_auth_required
     def test_fused_lora_qkv_model_forward_backward(self, device):
@@ -971,17 +949,16 @@ class TestFusedLoRAQKV:
 
         model = AutoModelForCausalLM.from_config(config)
 
-        # Use the original get_peft_model to avoid auto-hook
-        import peft
+        # Use peft.mapping.get_peft_model to bypass auto-hook
+        from peft.mapping_func import get_peft_model as raw_get_peft_model
 
-        original_get_peft_model = peft._opaque_original_get_peft_model
         lora_config = LoraConfig(
             r=8,
             lora_alpha=16,
             lora_dropout=0.0,
             target_modules=["q_proj", "k_proj", "v_proj"],
         )
-        model = original_get_peft_model(model, lora_config).to(device)
+        model = raw_get_peft_model(model, lora_config).to(device)
 
         # QKV should NOT be fused yet
         layers = model.model.model.layers

@@ -149,7 +149,7 @@ class TestGPT2LoRADPTraining:
             """Loss for single example using HF built-in loss."""
             all_params = {**frozen_params, **trainable_params}
 
-            # With keep_batch_dim=True (default), inputs already have batch dimension
+            # Batchify patches add batch dim automatically for batchless inputs
             outputs = fmodel(
                 all_params,
                 input_ids_single,

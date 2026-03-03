@@ -211,13 +211,12 @@ class _RoPEBackward(torch.autograd.Function):
 
         assert cos_bdim is None and sin_bdim is None
 
-        vmap_batch = grad_Q.shape[0]
-        batch, seq_len, n_heads, head_dim = grad_Q.shape[1:]
+        head_dim = grad_Q.shape[-1]
+        n_heads = grad_Q.shape[-2]
+        seq_len = grad_Q.shape[-3]
 
-        # Merge vmap batch into batch dim, in-place (internal gradient, safe to mutate)
-        dQ = grad_Q.reshape(
-            vmap_batch * batch * seq_len, n_heads * head_dim
-        ).contiguous()
+        # Merge all leading dims into rows — works for both 4D and 5D input
+        dQ = grad_Q.reshape(-1, n_heads * head_dim).contiguous()
         n_rows = dQ.shape[0]
 
         BLOCK_SIZE, num_warps = calculate_settings(head_dim // 2)
@@ -331,11 +330,12 @@ class Opaque_RoPE(torch.autograd.Function):
         sin_sq = sin.squeeze()
 
         batched_shape = Q.shape
-        vmap_batch = batched_shape[0]
-        batch, seq_len, n_heads, head_dim = batched_shape[1:]
+        head_dim = Q.shape[-1]
+        n_heads = Q.shape[-2]
+        seq_len = Q.shape[-3]
 
-        # Merge vmap batch into batch dim, in-place (vmap copy, safe to mutate)
-        Q_out = Q.reshape(vmap_batch * batch * seq_len, n_heads * head_dim).contiguous()
+        # Merge all leading dims into rows — works for both 4D and 5D input
+        Q_out = Q.reshape(-1, n_heads * head_dim).contiguous()
         n_rows = Q_out.shape[0]
 
         BLOCK_SIZE, num_warps = calculate_settings(head_dim // 2)
@@ -421,17 +421,14 @@ class _RoPE_QK_Backward(torch.autograd.Function):
         assert cos_bdim is None and sin_bdim is None
         assert hi_bdim is None and sl_bdim is None
 
-        vmap_batch = grad_Q.shape[0]
-        batch, n_heads_Q, _, head_dim = grad_Q.shape[1:]
-        n_heads_K = grad_K.shape[2]
+        head_dim = grad_Q.shape[-1]
+        n_heads_Q = grad_Q.shape[-3]
+        n_heads_K = grad_K.shape[-3]
 
-        # Merge vmap batch into batch dim, in-place (internal gradients, safe to mutate)
-        dQ = grad_Q.reshape(
-            vmap_batch * batch, n_heads_Q, seq_len, head_dim
-        ).contiguous()
-        dK = grad_K.reshape(
-            vmap_batch * batch, n_heads_K, seq_len, head_dim
-        ).contiguous()
+        # Collapse all leading dims — works for both 4D and 5D input
+        total_batch = grad_Q[..., 0, 0, 0].numel()
+        dQ = grad_Q.reshape(total_batch, n_heads_Q, seq_len, head_dim).contiguous()
+        dK = grad_K.reshape(total_batch, n_heads_K, seq_len, head_dim).contiguous()
 
         if not has_indices:
             rope_ptr_local = cos.new_empty(1, dtype=torch.int32)
@@ -442,7 +439,7 @@ class _RoPE_QK_Backward(torch.autograd.Function):
 
         with torch_gpu_device(dQ.device):
             _rope_embedding_qk_kernel_heuristics[
-                (vmap_batch * batch * seq_len, n_heads_Q)
+                (total_batch * seq_len, n_heads_Q)
             ](
                 dQ,
                 dQ.stride(0),
@@ -589,13 +586,15 @@ class Opaque_RoPE_QK(torch.autograd.Function):
         sin_sq = sin.squeeze()
 
         has_indices = rope_indices is not None
-        vmap_batch = Q.shape[0]
-        batch, n_heads_Q, seq_len, head_dim = Q.shape[1:]
-        n_heads_K = K.shape[2]
+        head_dim = Q.shape[-1]
+        seq_len = Q.shape[-2]
+        n_heads_Q = Q.shape[-3]
+        n_heads_K = K.shape[-3]
 
-        # Merge vmap batch into batch dim, in-place (vmap copy, safe to mutate)
-        Q_out = Q.reshape(vmap_batch * batch, n_heads_Q, seq_len, head_dim).contiguous()
-        K_out = K.reshape(vmap_batch * batch, n_heads_K, seq_len, head_dim).contiguous()
+        # Collapse all leading dims — works for both 4D and 5D input
+        total_batch = Q[..., 0, 0, 0].numel()
+        Q_out = Q.reshape(total_batch, n_heads_Q, seq_len, head_dim).contiguous()
+        K_out = K.reshape(total_batch, n_heads_K, seq_len, head_dim).contiguous()
 
         if has_indices:
             rope_ptr = rope_indices.reshape(-1).to(dtype=torch.int32, device=Q.device)
@@ -606,7 +605,7 @@ class Opaque_RoPE_QK(torch.autograd.Function):
 
         with torch_gpu_device(Q.device):
             _rope_embedding_qk_kernel_heuristics[
-                (vmap_batch * batch * seq_len, n_heads_Q)
+                (total_batch * seq_len, n_heads_Q)
             ](
                 Q_out,
                 Q_out.stride(0),

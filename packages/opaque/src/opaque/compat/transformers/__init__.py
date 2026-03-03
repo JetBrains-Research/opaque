@@ -48,6 +48,7 @@ from opaque.compat.transformers._kernel_patches import (
     is_kernel_patched,
     patch_lora_model,
 )
+from opaque.compat.transformers._shared import apply_batchify_patches
 from opaque.compat.transformers._vmap_patches import (
     apply_vmap_patches,
     is_vmap_patched,
@@ -79,6 +80,12 @@ def apply_transformers_patches() -> None:
 
     if "kernels" not in skip:
         apply_kernel_patches()
+
+    # Batchify must run AFTER kernel patches: kernel patches may replace
+    # model forward methods (e.g. fused CE), and batchify must wrap the
+    # final version.  Also patches PEFT model classes.
+    if "vmap" not in skip:
+        apply_batchify_patches()
 
     # Suppress PyTorch warning about missing vmap batching rules for SDPA backward.
     # This is harmless: the backward falls back to per-sample processing, which is

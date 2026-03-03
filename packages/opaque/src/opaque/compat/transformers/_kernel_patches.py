@@ -82,33 +82,49 @@ _ROPE_MODELS = [
 # =============================================================================
 
 
-def _opaque_swiglu_mlp_forward(self, x):
+def _make_swiglu_mlp_forward(original):
     """SwiGLU MLP forward using Opaque Triton kernel."""
-    from opaque.compat.kernels.swiglu import Opaque_SwiGLU
+    def forward(self, x):
+        if not x.is_cuda:
+            return original(self, x)
+        from opaque.compat.kernels.swiglu import Opaque_SwiGLU
 
-    return self.down_proj(Opaque_SwiGLU.apply(self.gate_proj(x), self.up_proj(x)))
+        return self.down_proj(Opaque_SwiGLU.apply(self.gate_proj(x), self.up_proj(x)))
+    return forward
 
 
-def _opaque_phi3_mlp_forward(self, hidden_states):
+def _make_phi3_mlp_forward(original):
     """Phi3 MLP forward (combined gate_up_proj) using Opaque Triton kernel."""
-    from opaque.compat.kernels.swiglu import Opaque_SwiGLU
+    def forward(self, hidden_states):
+        if not hidden_states.is_cuda:
+            return original(self, hidden_states)
+        from opaque.compat.kernels.swiglu import Opaque_SwiGLU
 
-    gate, up = self.gate_up_proj(hidden_states).chunk(2, dim=-1)
-    return self.down_proj(Opaque_SwiGLU.apply(gate, up))
+        gate, up = self.gate_up_proj(hidden_states).chunk(2, dim=-1)
+        return self.down_proj(Opaque_SwiGLU.apply(gate, up))
+    return forward
 
 
-def _opaque_geglu_exact_mlp_forward(self, x):
+def _make_geglu_exact_mlp_forward(original):
     """Gemma MLP forward using Opaque GeGLU exact kernel."""
-    from opaque.compat.kernels.geglu import Opaque_GeGLU_Exact
+    def forward(self, x):
+        if not x.is_cuda:
+            return original(self, x)
+        from opaque.compat.kernels.geglu import Opaque_GeGLU_Exact
 
-    return self.down_proj(Opaque_GeGLU_Exact.apply(self.gate_proj(x), self.up_proj(x)))
+        return self.down_proj(Opaque_GeGLU_Exact.apply(self.gate_proj(x), self.up_proj(x)))
+    return forward
 
 
-def _opaque_geglu_approx_mlp_forward(self, x):
+def _make_geglu_approx_mlp_forward(original):
     """Gemma2 MLP forward using Opaque GeGLU approx kernel."""
-    from opaque.compat.kernels.geglu import Opaque_GeGLU_Approx
+    def forward(self, x):
+        if not x.is_cuda:
+            return original(self, x)
+        from opaque.compat.kernels.geglu import Opaque_GeGLU_Approx
 
-    return self.down_proj(Opaque_GeGLU_Approx.apply(self.gate_proj(x), self.up_proj(x)))
+        return self.down_proj(Opaque_GeGLU_Approx.apply(self.gate_proj(x), self.up_proj(x)))
+    return forward
 
 
 def _rotate_half(x):
@@ -124,9 +140,18 @@ def _opaque_apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_di
     Replaces HF's apply_rotary_pos_emb at module level. Uses Opaque_RoPE_QK
     which processes Q and K together with GQA support.
 
-    Falls back to PyTorch when cos/sin cannot be reduced to 2D (e.g., when
-    position_ids create truly per-batch-element cos/sin).
+    Falls back to PyTorch when:
+    - cos/sin cannot be reduced to 2D (e.g., variable position_ids)
+    - tensors are not on CUDA (Triton requires CUDA)
     """
+    # Triton kernels require CUDA
+    if not q.is_cuda:
+        cos_u = cos.unsqueeze(unsqueeze_dim)
+        sin_u = sin.unsqueeze(unsqueeze_dim)
+        q_embed = (q * cos_u) + (_rotate_half(q) * sin_u)
+        k_embed = (k * cos_u) + (_rotate_half(k) * sin_u)
+        return q_embed, k_embed
+
     from opaque.compat.kernels.rope_embedding import Opaque_RoPE_QK
 
     # HF provides cos/sin as (batch, seq_len, head_dim) or (seq_len, head_dim).
@@ -145,6 +170,38 @@ def _opaque_apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_di
     return q_embed, k_embed
 
 
+def _pytorch_causal_lm_loss(
+    logits,
+    labels,
+    vocab_size: int,
+    num_items_in_batch=None,
+    ignore_index: int = -100,
+    shift_labels=None,
+    **kwargs,
+) -> torch.Tensor:
+    """Standard PyTorch cross-entropy loss for non-CUDA devices."""
+    logits = logits.float()
+
+    if shift_labels is None:
+        labels = nn.functional.pad(labels, (0, 1), value=ignore_index)
+        shift_labels = labels[..., 1:].contiguous()
+
+    logits_flat = logits.view(-1, vocab_size)
+    shift_labels_flat = shift_labels.view(-1)
+
+    if num_items_in_batch is not None:
+        loss = nn.functional.cross_entropy(
+            logits_flat, shift_labels_flat, ignore_index=ignore_index, reduction="sum",
+        )
+        if torch.is_tensor(num_items_in_batch):
+            num_items_in_batch = num_items_in_batch.to(loss.device)
+        return loss / num_items_in_batch
+    else:
+        return nn.functional.cross_entropy(
+            logits_flat, shift_labels_flat, ignore_index=ignore_index,
+        )
+
+
 def _opaque_causal_lm_loss(
     logits,
     labels,
@@ -157,7 +214,15 @@ def _opaque_causal_lm_loss(
     """CausalLM loss using Opaque cross-entropy Triton kernel.
 
     Supports all vocab sizes via chunked computation for vocab > 65536.
+    Falls back to PyTorch cross-entropy on non-CUDA devices.
     """
+    # Triton kernels require CUDA — fall back to standard CE on CPU/MPS
+    if not logits.is_cuda:
+        return _pytorch_causal_lm_loss(
+            logits, labels, vocab_size, num_items_in_batch, ignore_index,
+            shift_labels, **kwargs,
+        )
+
     from opaque.compat.kernels.cross_entropy import Opaque_CrossEntropyLoss
 
     logits = logits.float()
@@ -201,22 +266,7 @@ _FUSED_CE_CAUSAL_LM = [
 ]
 
 
-def _opaque_fused_ce_causal_lm_forward(
-    self,
-    input_ids=None,
-    attention_mask=None,
-    position_ids=None,
-    past_key_values=None,
-    inputs_embeds=None,
-    labels=None,
-    use_cache=None,
-    output_attentions=None,
-    output_hidden_states=None,
-    return_dict=None,
-    cache_position=None,
-    num_logits_to_keep=0,
-    **kwargs,
-):
+def _make_fused_ce_causal_lm_forward(original):
     """ForCausalLM forward with fused linear + cross-entropy loss.
 
     When labels are provided and hidden_states are bf16/fp16, skips lm_head
@@ -224,162 +274,192 @@ def _opaque_fused_ce_causal_lm_forward(
     using CCE Triton kernels. Avoids materializing the full (B, S, V) logit
     tensor — saves ~1 GB per sample for 128K vocab models.
     """
-    # No labels → inference → use original forward
-    if labels is None:
-        return self._opaque_original_forward(
+    def forward(
+        self,
+        input_ids=None,
+        attention_mask=None,
+        position_ids=None,
+        past_key_values=None,
+        inputs_embeds=None,
+        labels=None,
+        use_cache=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+        cache_position=None,
+        num_logits_to_keep=0,
+        **kwargs,
+    ):
+        # No labels → inference → use original forward
+        if labels is None:
+            return original(
+                self,
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                inputs_embeds=inputs_embeds,
+                labels=labels,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+                cache_position=cache_position,
+                num_logits_to_keep=num_logits_to_keep,
+                **kwargs,
+            )
+
+        # Resolve config defaults
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
+        )
+        output_hidden_states = (
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
+        )
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
+
+        # Call backbone
+        outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
             past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
-            labels=labels,
             use_cache=use_cache,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
             cache_position=cache_position,
-            num_logits_to_keep=num_logits_to_keep,
             **kwargs,
         )
+        hidden_states = outputs[0]
 
-    # Resolve config defaults
-    output_attentions = (
-        output_attentions
-        if output_attentions is not None
-        else self.config.output_attentions
-    )
-    output_hidden_states = (
-        output_hidden_states
-        if output_hidden_states is not None
-        else self.config.output_hidden_states
-    )
-    return_dict = (
-        return_dict if return_dict is not None else self.config.use_return_dict
-    )
+        # Fused path requires half precision on CUDA (CCE backward constraint)
+        if hidden_states.is_cuda and hidden_states.dtype in (torch.bfloat16, torch.float16):
+            from opaque.compat.kernels.linear_cross_entropy import (
+                Opaque_LinearCrossEntropyLoss,
+            )
 
-    # Call backbone
-    outputs = self.model(
-        input_ids=input_ids,
-        attention_mask=attention_mask,
-        position_ids=position_ids,
-        past_key_values=past_key_values,
-        inputs_embeds=inputs_embeds,
-        use_cache=use_cache,
-        output_attentions=output_attentions,
-        output_hidden_states=output_hidden_states,
-        return_dict=return_dict,
-        cache_position=cache_position,
-        **kwargs,
-    )
-    hidden_states = outputs[0]
+            weight = self.lm_head.weight
 
-    # Fused path requires half precision (CCE backward constraint)
-    if hidden_states.dtype in (torch.bfloat16, torch.float16):
-        from opaque.compat.kernels.linear_cross_entropy import (
-            Opaque_LinearCrossEntropyLoss,
-        )
+            # Cohere-style multiplicative logit scaling: logits * scale
+            logit_scale = getattr(self.config, "logit_scale", None)
+            if logit_scale is not None and logit_scale != 1.0:
+                weight = weight * logit_scale
 
-        weight = self.lm_head.weight
+            # Granite divisive scaling: logits / logits_scaling
+            # Applied to weight before kernel (same as Cohere) so autograd
+            # correctly chains the gradient back to the original weight.
+            logits_scaling = getattr(self.config, "logits_scaling", None)
+            if logits_scaling is not None and logits_scaling != 1.0:
+                weight = weight / logits_scaling
 
-        # Cohere-style multiplicative logit scaling: logits * scale
-        logit_scale = getattr(self.config, "logit_scale", None)
-        if logit_scale is not None and logit_scale != 1.0:
-            weight = weight * logit_scale
+            # Gemma2 softcapping: softcap * tanh(logits / softcap)
+            softcap = getattr(self.config, "final_logit_softcapping", 0) or 0
 
-        # Granite divisive scaling: logits / logits_scaling
-        # Applied to weight before kernel (same as Cohere) so autograd
-        # correctly chains the gradient back to the original weight.
-        logits_scaling = getattr(self.config, "logits_scaling", None)
-        if logits_scaling is not None and logits_scaling != 1.0:
-            weight = weight / logits_scaling
+            # Kernel returns nll_sum (unreduced) — reduce here
+            nll_sum = Opaque_LinearCrossEntropyLoss.apply(
+                hidden_states,
+                weight,
+                labels,
+                -100,
+                softcap,
+            )
 
-        # Gemma2 softcapping: softcap * tanh(logits / softcap)
-        softcap = getattr(self.config, "final_logit_softcapping", 0) or 0
+            num_items_in_batch = kwargs.get("num_items_in_batch")
+            if num_items_in_batch is not None:
+                if torch.is_tensor(num_items_in_batch):
+                    num_items_in_batch = num_items_in_batch.to(nll_sum.device)
+                loss = nll_sum / num_items_in_batch
+            else:
+                shifted_labels = labels[..., 1:].contiguous().flatten()
+                n_valid = (shifted_labels != -100).sum().float().clamp(min=1)
+                loss = nll_sum / n_valid
 
-        # Kernel returns nll_sum (unreduced) — reduce here
-        nll_sum = Opaque_LinearCrossEntropyLoss.apply(
-            hidden_states,
-            weight,
-            labels,
-            -100,
-            softcap,
-        )
-
-        num_items_in_batch = kwargs.get("num_items_in_batch")
-        if num_items_in_batch is not None:
-            if torch.is_tensor(num_items_in_batch):
-                num_items_in_batch = num_items_in_batch.to(nll_sum.device)
-            loss = nll_sum / num_items_in_batch
+            logits = None
         else:
-            shifted_labels = labels[..., 1:].contiguous().flatten()
-            n_valid = (shifted_labels != -100).sum().float().clamp(min=1)
-            loss = nll_sum / n_valid
+            # fp32 fallback: materialize logits, use existing CE kernel via LOSS_MAPPING
+            logits = self.lm_head(hidden_states[..., -num_logits_to_keep:, :])
+            loss = self.loss_function(logits, labels, self.vocab_size, **kwargs)
 
-        logits = None
-    else:
-        # fp32 fallback: materialize logits, use existing CE kernel via LOSS_MAPPING
-        logits = self.lm_head(hidden_states[..., -num_logits_to_keep:, :])
-        loss = self.loss_function(logits, labels, self.vocab_size, **kwargs)
+        if not return_dict:
+            output = (logits,) + outputs[1:]
+            return (loss,) + output if loss is not None else output
 
-    if not return_dict:
-        output = (logits,) + outputs[1:]
-        return (loss,) + output if loss is not None else output
+        from transformers.modeling_outputs import CausalLMOutputWithPast
 
-    from transformers.modeling_outputs import CausalLMOutputWithPast
+        return CausalLMOutputWithPast(
+            loss=loss,
+            logits=logits,
+            past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
 
-    return CausalLMOutputWithPast(
-        loss=loss,
-        logits=logits,
-        past_key_values=outputs.past_key_values,
-        hidden_states=outputs.hidden_states,
-        attentions=outputs.attentions,
-    )
+    return forward
 
 
-def _opaque_lora_linear_forward(self, x, *args, **kwargs):
+def _make_lora_linear_forward(original):
     """LoRA linear forward using Opaque kernel (vmap-compatible).
 
     Replaces peft.tuners.lora.Linear.forward. Uses Opaque_LoRA_W which
     computes base projection + LoRA delta in a single call.
+    Falls back to PEFT's original forward on non-CUDA devices.
     """
-    from opaque.compat.kernels.lora import Opaque_LoRA_W
+    def forward(self, x, *args, **kwargs):
+        if not x.is_cuda:
+            return original(self, x, *args, **kwargs)
 
-    if self.disable_adapters or not self.active_adapters:
-        return self.base_layer(x)
+        from opaque.compat.kernels.lora import Opaque_LoRA_W
 
-    active = self.active_adapters[0]
-    if active not in self.lora_A:
-        return self.base_layer(x)
+        if self.disable_adapters or not self.active_adapters:
+            return self.base_layer(x)
 
-    dropout = self.lora_dropout[active]
-    x_input = dropout(x)
+        active = self.active_adapters[0]
+        if active not in self.lora_A:
+            return self.base_layer(x)
 
-    W = self.base_layer.weight
-    # PEFT stores lora_A as (rank, in_features), kernel expects (in_features, rank)
-    # Cast to input dtype for mixed precision compatibility
-    A = self.lora_A[active].weight.T.to(x_input.dtype)
-    # PEFT stores lora_B as (out_features, rank), kernel expects (rank, out_features)
-    B = self.lora_B[active].weight.T.to(x_input.dtype)
-    scaling = self.scaling[active]
+        dropout = self.lora_dropout[active]
+        x_input = dropout(x)
 
-    result = Opaque_LoRA_W.apply(x_input, W, A, B, scaling)
+        W = self.base_layer.weight
+        # Conv1D stores weight as (in_features, out_features); F.linear expects
+        # (out_features, in_features).  PEFT sets fan_in_fan_out=True for Conv1D.
+        if getattr(self, "fan_in_fan_out", False):
+            W = W.T
+        # PEFT stores lora_A as (rank, in_features), kernel expects (in_features, rank)
+        # Cast to input dtype for mixed precision compatibility
+        A = self.lora_A[active].weight.T.to(x_input.dtype)
+        # PEFT stores lora_B as (out_features, rank), kernel expects (rank, out_features)
+        B = self.lora_B[active].weight.T.to(x_input.dtype)
+        scaling = self.scaling[active]
 
-    # Add base layer bias if present (kernel does F.linear without bias)
-    if self.base_layer.bias is not None:
-        result = result + self.base_layer.bias
+        result = Opaque_LoRA_W.apply(x_input, W, A, B, scaling)
 
-    # Handle additional active adapters (rare, but support it)
-    for adapter in self.active_adapters[1:]:
-        if adapter in self.lora_A:
-            dropout_i = self.lora_dropout[adapter]
-            x_i = dropout_i(x)
-            A_i = self.lora_A[adapter].weight.T
-            B_i = self.lora_B[adapter].weight.T
-            scaling_i = self.scaling[adapter]
-            lora_out = (x_i @ A_i) @ B_i * scaling_i
-            result = result + lora_out
+        # Add base layer bias if present (kernel does F.linear without bias)
+        if self.base_layer.bias is not None:
+            result = result + self.base_layer.bias
 
-    return result
+        # Handle additional active adapters (rare, but support it)
+        for adapter in self.active_adapters[1:]:
+            if adapter in self.lora_A:
+                dropout_i = self.lora_dropout[adapter]
+                x_i = dropout_i(x)
+                A_i = self.lora_A[adapter].weight.T
+                B_i = self.lora_B[adapter].weight.T
+                scaling_i = self.scaling[adapter]
+                lora_out = (x_i @ A_i) @ B_i * scaling_i
+                result = result + lora_out
+
+        return result
+
+    return forward
 
 
 # =============================================================================
@@ -387,19 +467,20 @@ def _opaque_lora_linear_forward(self, x, *args, **kwargs):
 # =============================================================================
 
 
-def _patch_forward(module_path: str, class_name: str, new_forward) -> bool:
-    """Patch a class's forward method if the module is available."""
+def _patch_forward(module_path: str, class_name: str, forward_factory) -> bool:
+    """Patch a class's forward method if the module is available.
+
+    ``forward_factory`` is called with the original forward and must return
+    the replacement.  This captures the original via closure — no attribute
+    is stashed on the class.
+    """
     try:
         module = importlib.import_module(module_path)
         cls = getattr(module, class_name, None)
         if cls is None:
             return False
 
-        # Store original forward for potential restoration
-        if not hasattr(cls, "_opaque_original_forward"):
-            cls._opaque_original_forward = cls.forward
-
-        cls.forward = new_forward
+        cls.forward = forward_factory(cls.forward)
         return True
 
     except (ImportError, RuntimeError):
@@ -412,10 +493,6 @@ def _patch_rope_functions(patched: list) -> None:
         try:
             module = importlib.import_module(module_path)
             if hasattr(module, "apply_rotary_pos_emb"):
-                if not hasattr(module, "_opaque_original_apply_rotary_pos_emb"):
-                    module._opaque_original_apply_rotary_pos_emb = (
-                        module.apply_rotary_pos_emb
-                    )
                 module.apply_rotary_pos_emb = _opaque_apply_rotary_pos_emb
                 patched.append(f"{module_path.split('.')[-1]}.apply_rotary_pos_emb")
         except (ImportError, RuntimeError):
@@ -439,7 +516,7 @@ def _patch_cross_entropy_loss(patched: list) -> None:
 def _patch_fused_ce(patched: list) -> None:
     """Patch ForCausalLM.forward to use fused linear + cross-entropy loss."""
     for path, cls_name in _FUSED_CE_CAUSAL_LM:
-        if _patch_forward(path, cls_name, _opaque_fused_ce_causal_lm_forward):
+        if _patch_forward(path, cls_name, _make_fused_ce_causal_lm_forward):
             patched.append(f"{cls_name}(fused_ce)")
 
 
@@ -448,10 +525,7 @@ def _patch_lora_forward(patched: list) -> None:
     try:
         from peft.tuners.lora import Linear as PeftLoRALinear
 
-        if not hasattr(PeftLoRALinear, "_opaque_original_forward"):
-            PeftLoRALinear._opaque_original_forward = PeftLoRALinear.forward
-
-        PeftLoRALinear.forward = _opaque_lora_linear_forward
+        PeftLoRALinear.forward = _make_lora_linear_forward(PeftLoRALinear.forward)
         patched.append("peft.LoRA.Linear")
 
     except (ImportError, RuntimeError):
@@ -461,21 +535,20 @@ def _patch_lora_forward(patched: list) -> None:
     try:
         import peft
 
-        if not hasattr(peft, "_opaque_original_get_peft_model"):
-            peft._opaque_original_get_peft_model = peft.get_peft_model
+        _original_get_peft_model = peft.get_peft_model
 
-            def _patched_get_peft_model(model, peft_config=None, *args, **kwargs):
-                result = peft._opaque_original_get_peft_model(
-                    model, peft_config, *args, **kwargs
-                )
-                try:
-                    _auto_fuse_lora(result)
-                except Exception as e:
-                    logger.debug(f"opaque: Fused LoRA MLP auto-patch skipped: {e}")
-                return result
+        def _patched_get_peft_model(model, peft_config=None, *args, **kwargs):
+            result = _original_get_peft_model(
+                model, peft_config, *args, **kwargs
+            )
+            try:
+                _auto_fuse_lora(result)
+            except Exception as e:
+                logger.debug(f"opaque: Fused LoRA MLP auto-patch skipped: {e}")
+            return result
 
-            peft.get_peft_model = _patched_get_peft_model
-            patched.append("peft.get_peft_model(auto-fuse)")
+        peft.get_peft_model = _patched_get_peft_model
+        patched.append("peft.get_peft_model(auto-fuse)")
 
     except (ImportError, RuntimeError):
         pass
@@ -545,54 +618,61 @@ def _is_phi3_style_mlp(mlp):
     return hasattr(mlp, "gate_up_proj") and not hasattr(mlp, "gate_proj")
 
 
-def _opaque_fused_lora_mlp_forward(self, x):
-    """Fused LoRA MLP forward using Opaque_LoRA_MLP kernel.
+def _make_fused_lora_mlp_forward(original_forward, activation_type):
+    """Create fused LoRA MLP forward using Opaque_LoRA_MLP kernel.
 
     Replaces separate gate_proj + up_proj + activation + down_proj
     with a single fused kernel call.
+
+    Args:
+        original_forward: Bound method of the MLP instance.
+        activation_type: 0=SwiGLU, 1=GeGLU_exact, 2=GeGLU_approx.
     """
-    from opaque.compat.kernels.lora import Opaque_LoRA_MLP
+    def forward(self, x):
+        if not x.is_cuda:
+            return original_forward(x)
+        from opaque.compat.kernels.lora import Opaque_LoRA_MLP
 
-    activation_type = self._opaque_activation_type
-    dtype = x.dtype
+        dtype = x.dtype
 
-    Wg, Ag, Bg, Sg = _extract_lora_params(self.gate_proj)
-    Wu, Au, Bu, Su = _extract_lora_params(self.up_proj)
-    Wd, Ad, Bd, Sd = _extract_lora_params(self.down_proj)
+        Wg, Ag, Bg, Sg = _extract_lora_params(self.gate_proj)
+        Wu, Au, Bu, Su = _extract_lora_params(self.up_proj)
+        Wd, Ad, Bd, Sd = _extract_lora_params(self.down_proj)
 
-    # Cast LoRA weights to input dtype for mixed precision
-    if Ag is not None:
-        Ag, Bg = Ag.to(dtype), Bg.to(dtype)
-    if Au is not None:
-        Au, Bu = Au.to(dtype), Bu.to(dtype)
-    if Ad is not None:
-        Ad, Bd = Ad.to(dtype), Bd.to(dtype)
+        # Cast LoRA weights to input dtype for mixed precision
+        if Ag is not None:
+            Ag, Bg = Ag.to(dtype), Bg.to(dtype)
+        if Au is not None:
+            Au, Bu = Au.to(dtype), Bu.to(dtype)
+        if Ad is not None:
+            Ad, Bd = Ad.to(dtype), Bd.to(dtype)
 
-    out, _gate, _up, _h = Opaque_LoRA_MLP.apply(
-        x,
-        Wg,
-        Ag,
-        Bg,
-        Sg,
-        Wu,
-        Au,
-        Bu,
-        Su,
-        Wd,
-        Ad,
-        Bd,
-        Sd,
-        activation_type,
-    )
+        out, _gate, _up, _h = Opaque_LoRA_MLP.apply(
+            x,
+            Wg,
+            Ag,
+            Bg,
+            Sg,
+            Wu,
+            Au,
+            Bu,
+            Su,
+            Wd,
+            Ad,
+            Bd,
+            Sd,
+            activation_type,
+        )
 
-    # Add biases if present (most models don't have MLP bias)
-    if getattr(self.gate_proj, "base_layer", self.gate_proj).bias is not None:
-        # Biases are rare in MLP but handle gracefully by falling back
-        return self._opaque_original_forward(x)
-    if getattr(self.down_proj, "base_layer", self.down_proj).bias is not None:
-        return self._opaque_original_forward(x)
+        # Add biases if present (most models don't have MLP bias)
+        if getattr(self.gate_proj, "base_layer", self.gate_proj).bias is not None:
+            return original_forward(x)
+        if getattr(self.down_proj, "base_layer", self.down_proj).bias is not None:
+            return original_forward(x)
 
-    return out
+        return out
+
+    return forward
 
 
 # =============================================================================
@@ -651,72 +731,86 @@ def _opaque_fused_lora_qkv(self, hidden_states):
     )
 
 
-def _opaque_fused_qkv_attention_forward(
-    self,
-    hidden_states,
-    position_embeddings,
-    attention_mask=None,
-    past_key_values=None,
-    cache_position=None,
-    **kwargs,
-):
-    """Attention forward with fused QKV LoRA projection.
+def _make_fused_qkv_attention_forward(original_forward):
+    """Create attention forward with fused QKV LoRA projection.
 
     Replaces the standard attention forward when Q/K/V all have LoRA adapters.
     Uses Opaque_LoRA_QKV for the projection step, then continues with the
     standard RoPE + attention + o_proj pipeline.
 
     Uses negative indexing (transpose(-3, -2)) for vmap safety.
+
+    Args:
+        original_forward: Bound method of the attention instance.
     """
-    input_shape = hidden_states.shape[:-1]
-    hidden_shape = (*input_shape, -1, self.head_dim)
+    def forward(
+        self,
+        hidden_states,
+        position_embeddings,
+        attention_mask=None,
+        past_key_values=None,
+        cache_position=None,
+        **kwargs,
+    ):
+        if not hidden_states.is_cuda:
+            return original_forward(
+                hidden_states, position_embeddings,
+                attention_mask=attention_mask,
+                past_key_values=past_key_values,
+                cache_position=cache_position,
+                **kwargs,
+            )
+        input_shape = hidden_states.shape[:-1]
+        hidden_shape = (*input_shape, -1, self.head_dim)
 
-    # Fused QKV projection via Opaque_LoRA_QKV
-    Q, K, V = self._opaque_fused_qkv(hidden_states)
-    query_states = Q.view(hidden_shape).transpose(-3, -2)
-    key_states = K.view(hidden_shape).transpose(-3, -2)
-    value_states = V.view(hidden_shape).transpose(-3, -2)
+        # Fused QKV projection via Opaque_LoRA_QKV
+        Q, K, V = self._opaque_fused_qkv(hidden_states)
+        query_states = Q.view(hidden_shape).transpose(-3, -2)
+        key_states = K.view(hidden_shape).transpose(-3, -2)
+        value_states = V.view(hidden_shape).transpose(-3, -2)
 
-    # RoPE — resolve from the attention class's own module (already patched)
-    model_module = sys.modules[type(self).__module__]
-    apply_rotary_pos_emb = model_module.apply_rotary_pos_emb
-    cos, sin = position_embeddings
-    query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+        # RoPE — resolve from the attention class's own module (already patched)
+        model_module = sys.modules[type(self).__module__]
+        apply_rotary_pos_emb = model_module.apply_rotary_pos_emb
+        cos, sin = position_embeddings
+        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
-    # KV cache (training: past_key_values is None)
-    if past_key_values is not None:
-        cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
-        key_states, value_states = past_key_values.update(
+        # KV cache (training: past_key_values is None)
+        if past_key_values is not None:
+            cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
+            key_states, value_states = past_key_values.update(
+                key_states,
+                value_states,
+                self.layer_idx,
+                cache_kwargs,
+            )
+
+        # Attention dispatch — resolve from the class's own module (already patched)
+        eager_attention_forward = model_module.eager_attention_forward
+        if self.config._attn_implementation != "eager":
+            ALL_ATTENTION_FUNCTIONS = model_module.ALL_ATTENTION_FUNCTIONS
+            attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        else:
+            attention_interface = eager_attention_forward
+
+        attn_output, attn_weights = attention_interface(
+            self,
+            query_states,
             key_states,
             value_states,
-            self.layer_idx,
-            cache_kwargs,
+            attention_mask,
+            dropout=0.0 if not self.training else self.attention_dropout,
+            scaling=self.scaling,
+            **kwargs,
         )
 
-    # Attention dispatch — resolve from the class's own module (already patched)
-    eager_attention_forward = model_module.eager_attention_forward
-    if self.config._attn_implementation != "eager":
-        ALL_ATTENTION_FUNCTIONS = model_module.ALL_ATTENTION_FUNCTIONS
-        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
-    else:
-        attention_interface = eager_attention_forward
+        attn_output = attn_output.reshape(*input_shape, -1).contiguous()
 
-    attn_output, attn_weights = attention_interface(
-        self,
-        query_states,
-        key_states,
-        value_states,
-        attention_mask,
-        dropout=0.0 if not self.training else self.attention_dropout,
-        scaling=self.scaling,
-        **kwargs,
-    )
+        # O projection (still uses individual LoRA_W via patched peft.Linear.forward)
+        attn_output = self.o_proj(attn_output)
+        return attn_output, attn_weights
 
-    attn_output = attn_output.reshape(*input_shape, -1).contiguous()
-
-    # O projection (still uses individual LoRA_W via patched peft.Linear.forward)
-    attn_output = self.o_proj(attn_output)
-    return attn_output, attn_weights
+    return forward
 
 
 def _find_decoder_layers(model):
@@ -775,12 +869,8 @@ def _auto_fuse_lora(model):
                     _opaque_fused_lora_qkv,
                     attn,
                 )
-                if not hasattr(attn, "_opaque_original_forward"):
-                    attn._opaque_original_forward = attn.forward
-                attn.forward = types.MethodType(
-                    _opaque_fused_qkv_attention_forward,
-                    attn,
-                )
+                fused_qkv_fwd = _make_fused_qkv_attention_forward(attn.forward)
+                attn.forward = types.MethodType(fused_qkv_fwd, attn)
                 qkv_count += 1
 
         # --- MLP fusion ---
@@ -814,12 +904,8 @@ def _auto_fuse_lora(model):
 
         activation_type = _MLP_ACTIVATION_MAP[cls_name]
 
-        # Store activation type and original forward on the MLP module
-        mlp._opaque_activation_type = activation_type
-        if not hasattr(mlp, "_opaque_original_forward"):
-            mlp._opaque_original_forward = mlp.forward
-
-        mlp.forward = types.MethodType(_opaque_fused_lora_mlp_forward, mlp)
+        fused_mlp_fwd = _make_fused_lora_mlp_forward(mlp.forward, activation_type)
+        mlp.forward = types.MethodType(fused_mlp_fwd, mlp)
         mlp_count += 1
 
     if qkv_count > 0 or mlp_count > 0:
@@ -885,22 +971,22 @@ def apply_kernel_patches() -> None:
     # SwiGLU MLP
     if "swiglu" not in skip:
         for path, cls_name in _SWIGLU_MLP:
-            if _patch_forward(path, cls_name, _opaque_swiglu_mlp_forward):
+            if _patch_forward(path, cls_name, _make_swiglu_mlp_forward):
                 patched.append(cls_name)
 
         # Phi3 MLP (combined gate_up_proj)
         for path, cls_name in _PHI3_MLP:
-            if _patch_forward(path, cls_name, _opaque_phi3_mlp_forward):
+            if _patch_forward(path, cls_name, _make_phi3_mlp_forward):
                 patched.append(cls_name)
 
         # GeGLU exact MLP (Gemma)
         for path, cls_name in _GEGLU_EXACT_MLP:
-            if _patch_forward(path, cls_name, _opaque_geglu_exact_mlp_forward):
+            if _patch_forward(path, cls_name, _make_geglu_exact_mlp_forward):
                 patched.append(cls_name)
 
         # GeGLU approx MLP (Gemma2)
         for path, cls_name in _GEGLU_APPROX_MLP:
-            if _patch_forward(path, cls_name, _opaque_geglu_approx_mlp_forward):
+            if _patch_forward(path, cls_name, _make_geglu_approx_mlp_forward):
                 patched.append(cls_name)
 
     # RoPE

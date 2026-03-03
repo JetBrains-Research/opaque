@@ -49,7 +49,7 @@ from opaque.sampling import (
     TruncatedPoissonSampler,
 )
 from opaque._env import parse_skip_env
-from opaque.utils import make_functional
+from opaque.utils import make_functional, with_batch_dim
 
 # =============================================================================
 # Auto-patching for compatible libraries
@@ -97,4 +97,5 @@ __all__ = [
     "distributed",
     # Utils
     "make_functional",
+    "with_batch_dim",
 ]

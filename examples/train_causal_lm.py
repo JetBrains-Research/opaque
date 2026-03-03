@@ -699,7 +699,6 @@ def main():
 
     # Define per-example loss
     def per_example_loss_fn(trainable, tokens_batch):
-        # tokens_batch has shape (1, seq_len) when keep_batch_dim=True
         # Use HuggingFace's built-in loss (handles shifting internally)
         output = fmodel(merged_params(trainable), tokens_batch, labels=tokens_batch)
         return output.loss
@@ -746,7 +745,6 @@ def main():
             target_quantile=1.0 - args.target_clip_rate,
             clip_norm_max=args.clip_norm_max,
             microbatch_size=args.microbatch_size,
-            keep_batch_dim=True,
             return_aux=True,
             key=key(args.seed),
         )
@@ -757,7 +755,6 @@ def main():
             batch_argnums=(1,),
             l2_clip_norm=args.clip_norm,
             microbatch_size=args.microbatch_size,
-            keep_batch_dim=True,
             return_aux=True,
         )
 

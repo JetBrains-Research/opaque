@@ -50,7 +50,6 @@ a `sensitivity()` method used to calibrate noise.
 | `has_aux` | `bool` | `False` | If True, `loss_fn` returns `(loss, aux)`. The aux data is returned per-example. |
 | `l2_clip_norm` | `float` | required | Maximum L2 norm for per-example gradients. |
 | `batch_argnums` | `int \| tuple[int, ...]` | `1` | Which arguments have a batch dimension. |
-| `keep_batch_dim` | `bool` | `True` | If True, batch inputs are passed to `loss_fn` with a leading batch axis of size 1. If False, the size-1 axis is dropped. |
 | `microbatch_size` | `int \| None` | `None` | Process batch in chunks to reduce memory. |
 | `normalize_by` | `float` | `1.0` | Divide the clipped output and sensitivity by this value. Useful for averaging (set to batch size). |
 | `pre_clipping_transform` | `Callable` | identity | Transform applied to each per-example gradient before clipping. |
