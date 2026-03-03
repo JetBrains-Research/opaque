@@ -40,8 +40,8 @@ Opaque uses a 2-layer architecture to stay framework-agnostic:
 **Constraint: Vmap Compatibility**
 - Opaque uses `torch.func.vmap` for per-example gradients (DP-SGD requirement)
 - Standard optimizations often break with vmap:
-  - Gradient checkpointing (uses `requires_grad_()`)
-  - Flash Attention (SDPA incompatible with vmap)
+  - Gradient checkpointing (fixed via monkey-patches in Phase 5)
+  - Flash Attention 2 (uses `torch.nonzero` — dynamic shapes break vmap)
   - In-place operations (vmap needs functional purity)
 - Our optimizations must use vmap-compatible patterns:
   - Triton kernels (operation-level fusion)
