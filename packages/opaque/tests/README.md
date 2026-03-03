@@ -46,7 +46,7 @@ tests/
 - ✅ Mixed precision (fp16, bfloat16)
 - ✅ CUDA/MPS/CPU support (cross-platform)
 - ✅ torch.compile integration
-- ✅ Multiple model architectures (Qwen2, Gemma2, DeepSeek, Phi-2)
+- ✅ Multiple model architectures (Qwen2, Gemma2, DeepSeek, Phi-3)
 - ✅ PEFT methods (LoRA, IA3, Prefix tuning, P-tuning, Prompt tuning)
 - ❌ Gradient checkpointing (known incompatibility with vmap)
 
@@ -68,7 +68,7 @@ pytest -m test -v
 pytest -m "not test" -v
 ```
 
-**Results**: 15 passing, 2 skipped (large model downloads)
+**Results**: 57 passing, 2 skipped (MPS-only tests on non-Apple hardware)
 
 ---
 

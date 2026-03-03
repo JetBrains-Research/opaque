@@ -10,12 +10,15 @@ gradient computation. No manual patching is needed.
 On import, Opaque applies patches to the following HuggingFace Transformers
 components:
 
-- **Causal mask creation** (`transformers.masking_utils.create_causal_mask`)
-  -- handles arbitrary batch dimensions under vmap.
+- **Causal mask creation** (`create_causal_mask`, `_ignore_causal_mask_sdpa`)
+  -- handles arbitrary batch dimensions under vmap, including sliding-window
+  models (Gemma2, Phi-3, Mistral).
 - **Key-value head repetition** (`repeat_kv`) -- uses negative indexing to
   work with both batched (4D) and unbatched (3D) tensors.
 - **Eager attention forward** -- replaces model-specific attention with
   vmap-compatible implementations that use dynamic shapes.
+- **Batchify wrappers** -- automatically adds/removes the batch dimension
+  for model forward methods called under `vmap(grad(...))`.
 
 These patches are applied for LLaMA, Mistral, Qwen2, Qwen3, Phi-3,
 Gemma, Gemma2, Granite, Cohere, and Cohere2 models. DeepSeek models
@@ -54,14 +57,15 @@ The patches replace these with:
 
 | Attention type | Status | Notes |
 |---------------|--------|-------|
-| `sdpa` | **Recommended** | Default in Transformers. Uses fused CUDA kernels (flash/efficient/cuDNN) with O(N) memory |
-| `eager` | Supported | Explicitly patched. Materializes full attention matrix — O(N²) memory |
+| `sdpa` | **Recommended** | Fused CUDA kernels (flash/efficient/cuDNN) with O(N) memory |
+| `eager` | Supported | Materializes full attention matrix — O(N²) memory |
 | `flash_attention_2` | Not compatible | Uses `torch.nonzero` for unpadding (dynamic shapes break vmap) |
 | `flex_attention` | Not compatible | HigherOrderOperator has no vmap support (upstream PyTorch limitation) |
 
-SDPA provides significant memory savings over eager because fused kernels avoid
-materializing the `(heads, seq, seq)` attention matrix. Measured at Qwen2-0.5B
-scale with LoRA:
+SDPA is the default attention implementation in Transformers and requires no
+configuration. It provides significant memory savings over eager because fused
+kernels avoid materializing the `(heads, seq, seq)` attention matrix. Measured
+at Qwen2-0.5B scale with LoRA:
 
 | seq_len | Microbatch | Eager memory | SDPA memory | Savings |
 |---------|-----------|-------------|------------|---------|
@@ -69,13 +73,12 @@ scale with LoRA:
 | 1024 | full batch | 22.28 GB | 6.20 GB | 3.59x |
 | 1024 | 2 | 11.80 GB | 4.42 GB | 2.67x |
 
-If your model defaults to Flash Attention 2, set `attn_implementation`
-when loading:
+If your model defaults to Flash Attention 2, override to SDPA when loading:
 
 ```python
 model = AutoModelForCausalLM.from_pretrained(
     "meta-llama/Llama-3.1-8B",
-    attn_implementation="sdpa",  # recommended for DP-SGD
+    attn_implementation="sdpa",
 )
 ```
 
@@ -91,8 +94,7 @@ model = AutoModelForCausalLM.from_pretrained("gpt2")
 fmodel, params = make_functional(model)
 
 def loss_fn(params, input_ids, labels):
-    out = fmodel(params, input_ids=input_ids.unsqueeze(0),
-                 labels=labels.unsqueeze(0))
+    out = fmodel(params, input_ids=input_ids, labels=labels)
     return out.loss
 
 grad_fn, clip_state = clipped_grad(
@@ -117,9 +119,8 @@ For parameter-efficient fine-tuning (LoRA, adapters), use
 fmodel, trainable, frozen = make_functional(model, partition_trainable=True)
 
 def loss_fn(trainable_params, input_ids, labels):
-    out = fmodel(trainable_params, frozen,
-                 input_ids=input_ids.unsqueeze(0),
-                 labels=labels.unsqueeze(0))
+    all_params = {**frozen, **trainable_params}
+    out = fmodel(all_params, input_ids=input_ids, labels=labels)
     return out.loss
 
 grad_fn, clip_state = clipped_grad(
@@ -146,10 +147,7 @@ from opaque import make_functional, clipped_grad, gaussian_noise
 from opaque.random import key
 
 # Load model with LoRA adapters
-model = AutoModelForCausalLM.from_pretrained(
-    "meta-llama/Llama-3.1-8B",
-    attn_implementation="sdpa",
-)
+model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.1-8B")
 lora_config = LoraConfig(
     r=8,
     lora_alpha=16,
@@ -253,6 +251,54 @@ typically work without patches.
 significantly increase memory. Use shorter sequences (512-1024) when possible,
 or reduce the microbatch size.
 
+## Other models
+
+Models not in the table above may work if their architecture follows
+the standard Transformers pattern. If a model fails under `vmap`, the most
+common cause is that its `forward` method assumes a batch dimension that
+`vmap` has stripped.
+
+### Wrapping the loss function
+
+Use `with_batch_dim` to add a leading batch dimension to the arguments
+that `vmap` unbatches:
+
+```python
+from opaque.utils.functional import with_batch_dim
+
+def loss_fn(params, input_ids, labels):
+    out = fmodel(params, input_ids=input_ids, labels=labels)
+    return out.loss
+
+loss_fn = with_batch_dim(loss_fn, batch_argnums=(1, 2))
+
+grad_fn, clip_state = clipped_grad(
+    loss_fn, argnums=0, batch_argnums=(1, 2), l2_clip_norm=1.0,
+)
+```
+
+`batch_argnums` specifies which positional arguments get `unsqueeze(0)`.
+Under `vmap`, `input_ids` arrives as `(seq,)`; the wrapper makes it
+`(1, seq)` before the model sees it.
+
+### Wrapping the model forward
+
+Alternatively, patch the model's forward method once. This is what Opaque
+does internally for supported HuggingFace models:
+
+```python
+model.forward = with_batch_dim(
+    model.forward,
+    batch_kwargs={"input_ids": 2, "attention_mask": 2, "labels": 2, "inputs_embeds": 3},
+    min_ndim=2,
+)
+```
+
+`batch_kwargs` maps keyword argument names to their expected minimum
+number of dimensions. When a tensor has fewer dimensions than the
+threshold, `unsqueeze(0)` is applied on entry and `squeeze(0)` on the
+output. When the tensor already has the expected shape, it is a no-op.
+
 ## Distributed HuggingFace models
 
 DDP works with patched HuggingFace models. The patches are applied once
@@ -263,10 +309,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 
 dist.init_process_group("nccl")
-model = AutoModelForCausalLM.from_pretrained(
-    "meta-llama/Llama-3.1-8B",
-    attn_implementation="sdpa",
-)
+model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.1-8B")
 # DDP wraps the model; make_functional unwraps it
 fmodel, trainable, frozen = make_functional(model, partition_trainable=True)
 ```
@@ -280,17 +323,15 @@ noise after `sum_gradients`. See [Distributed Training](distributed.md).
 Disable it: do not call `model.gradient_checkpointing_enable()`.
 
 **Flash Attention errors under vmap:** Set `attn_implementation="sdpa"` when
-loading the model. SDPA is recommended over eager for its memory efficiency.
+loading the model. SDPA is the default and recommended implementation.
 
 **"not yet implemented the batching rule" warning:** This PyTorch warning
-about `_scaled_dot_product_*_attention_backward` is expected and harmless.
-The SDPA backward falls back to per-sample processing, which is what vmap
-does anyway. Opaque suppresses this warning automatically.
+about `_scaled_dot_product_*_attention_backward` indicates that SDPA backward
+falls back to per-sample processing under vmap. A fix has been submitted
+upstream to PyTorch to add proper batching rules for SDPA backward.
 
-**Model not in patched list:** If your model is not in the table above,
-it may still work if its attention follows the standard Transformers
-pattern. Try it; if it fails under vmap, the error message will indicate
-which operation needs a vmap rule.
+**Model not in patched list:** See [Other models](#other-models)
+for how to use `with_batch_dim` to add vmap support.
 
 **`make_functional` fails:** Some models use non-standard parameter
 registration. Ensure the model is a standard `nn.Module` with parameters

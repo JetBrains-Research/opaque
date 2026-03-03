@@ -21,8 +21,8 @@ Supported models:
 - Cohere, Cohere2
 
 Attention implementations:
-- eager: Fully supported (explicitly patched, tested on CPU and CUDA)
-- sdpa: Recommended (uses fused kernels, up to 3.6x memory savings over eager at seq=1024)
+- sdpa: Recommended. Fused CUDA kernels (flash/efficient/cuDNN), up to 3.6x memory savings over eager.
+- eager: Supported. Materializes full attention matrix — O(N²) memory.
 - flash_attention_2: Not compatible (uses torch.nonzero for unpadding, dynamic shapes incompatible with vmap)
 - flex_attention: Not compatible (tensor metadata issues with vmap, known upstream PyTorch limitation)
 
@@ -32,12 +32,6 @@ Training features:
 - PEFT/LoRA: Fully supported (LoRA, IA3, Prefix tuning, P-tuning, Prompt tuning tested)
 - torch.compile: Fully supported
 - CUDA: Fully supported
-
-Note: SDPA is the default and recommended attention implementation. It uses fused CUDA
-kernels (flash/efficient/cuDNN) that avoid materializing the full attention matrix,
-providing significant memory savings. A PyTorch warning about "missing batching rules"
-for SDPA backward is expected and harmless — it falls back to per-sample processing,
-which is what vmap does anyway for per-example gradients.
 """
 
 from opaque._env import parse_skip_env
