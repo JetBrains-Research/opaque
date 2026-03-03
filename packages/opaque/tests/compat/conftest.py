@@ -33,7 +33,6 @@ def qwen2_config():
     """Small Qwen2 config for fast testing."""
     config = AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
     config.num_hidden_layers = 2
-    config._attn_implementation = "eager"
     return config
 
 

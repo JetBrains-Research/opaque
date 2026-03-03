@@ -149,7 +149,7 @@ class TestGPT2LoRADPTraining:
             """Loss for single example using HF built-in loss."""
             all_params = {**frozen_params, **trainable_params}
 
-            # With keep_batch_dim=True (default), inputs already have batch dimension
+            # Batchify patches add batch dim automatically for batchless inputs
             outputs = fmodel(
                 all_params,
                 input_ids_single,
@@ -505,7 +505,6 @@ class TestMellumLoRADPTraining:
             model_name,
             torch_dtype=torch.float16,  # Use fp16 for memory efficiency
             device_map="auto",  # Automatically place on available devices
-            attn_implementation="eager",  # Required for vmap compatibility
         )
         if model.config.pad_token_id is None:
             model.config.pad_token_id = tokenizer.pad_token_id
@@ -937,7 +936,6 @@ class TestMultiArchitectureModels:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float32,
-            attn_implementation="eager",
         )
         if model.config.pad_token_id is None:
             model.config.pad_token_id = tokenizer.pad_token_id
@@ -971,7 +969,6 @@ class TestMultiArchitectureModels:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float32,
-            attn_implementation="eager",
         )
         if model.config.pad_token_id is None:
             model.config.pad_token_id = tokenizer.pad_token_id
@@ -1005,7 +1002,6 @@ class TestMultiArchitectureModels:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float32,
-            attn_implementation="eager",
             trust_remote_code=True,
         )
         if model.config.pad_token_id is None:
@@ -1130,7 +1126,6 @@ class TestMultiArchitectureModels:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float32,
-            attn_implementation="eager",
         )
         if model.config.pad_token_id is None:
             model.config.pad_token_id = tokenizer.pad_token_id
@@ -1164,7 +1159,6 @@ class TestMultiArchitectureModels:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float32,
-            attn_implementation="eager",
         )
         if model.config.pad_token_id is None:
             model.config.pad_token_id = tokenizer.pad_token_id
@@ -1198,7 +1192,6 @@ class TestMultiArchitectureModels:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float32,
-            attn_implementation="eager",
             trust_remote_code=True,
         )
         if model.config.pad_token_id is None:
@@ -1271,7 +1264,6 @@ class TestMultiArchitectureModels:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float32,
-            attn_implementation="eager",
             trust_remote_code=True,
         )
         if model.config.pad_token_id is None:
@@ -1306,7 +1298,6 @@ class TestMultiArchitectureModels:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float32,
-            attn_implementation="eager",
         )
         if model.config.pad_token_id is None:
             model.config.pad_token_id = tokenizer.pad_token_id
@@ -1410,7 +1401,6 @@ class TestMultiArchitectureModels:
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float32,
-            attn_implementation="eager",
             trust_remote_code=True,
         )
         if model.config.pad_token_id is None:

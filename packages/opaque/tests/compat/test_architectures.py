@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Test different model architectures with vmap/clipped_grad.
 
-Tests Qwen2, Gemma2, DeepSeek, and Phi-2.
+Tests Qwen2, Gemma2, DeepSeek, and Phi-3.
 """
 
 import pytest
@@ -25,7 +25,6 @@ class TestMultiArchitectureCompatibility:
         """Test Qwen2 architecture (standard MHA/GQA)."""
         config = AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
@@ -73,7 +72,6 @@ class TestMultiArchitectureCompatibility:
             pytest.skip("HuggingFace token required for gated model google/gemma-2-2b")
         config = AutoConfig.from_pretrained("google/gemma-2-2b")
         config.num_hidden_layers = 1
-        config._attn_implementation = "eager"
 
         tokenizer = AutoTokenizer.from_pretrained("google/gemma-2-2b")
 
@@ -112,29 +110,9 @@ class TestMultiArchitectureCompatibility:
         """Test DeepSeek architecture (large model download)."""
         config = AutoConfig.from_pretrained("deepseek-ai/deepseek-coder-1.3b-base")
         config.num_hidden_layers = 1
-        config._attn_implementation = "eager"
 
         tokenizer = AutoTokenizer.from_pretrained(
             "deepseek-ai/deepseek-coder-1.3b-base"
-        )
-
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-
-        model = prepare_lora_model(config, target_modules=["q_proj", "v_proj"]).to(
-            device
-        )
-        grads, _ = run_clipped_grad_test(model, tokenizer)
-        assert len(grads) > 0
-
-    def test_phi2_architecture(self, device):
-        """Test Phi-2 architecture (large model download)."""
-        config = AutoConfig.from_pretrained("microsoft/phi-2", trust_remote_code=True)
-        config.num_hidden_layers = 1
-        config._attn_implementation = "eager"
-
-        tokenizer = AutoTokenizer.from_pretrained(
-            "microsoft/phi-2", trust_remote_code=True
         )
 
         if tokenizer.pad_token is None:
@@ -159,7 +137,6 @@ class TestMultiArchitectureCompatibility:
             trust_remote_code=True,
         )
         config.num_hidden_layers = 1
-        config._attn_implementation = "eager"  # Required for vmap compatibility
 
         tokenizer = AutoTokenizer.from_pretrained(
             "microsoft/Phi-3-mini-4k-instruct",

@@ -69,11 +69,11 @@ def clip_pytree(
     # Handle norm=0 or NaN: set scale to 0
     scale = torch.where(torch.isfinite(scale), scale, torch.tensor(0.0))
 
-    # Apply scale
+    # Apply scale (cast to input dtype to avoid 0D-vs-0D promotion to float32)
     def scale_leaf(t):
         if not isinstance(t, torch.Tensor):
             return t
-        return scale * t
+        return scale.to(dtype=t.dtype) * t
 
     clipped = tree_map(
         lambda t: scale_leaf(t) if isinstance(t, torch.Tensor) else t, pytree

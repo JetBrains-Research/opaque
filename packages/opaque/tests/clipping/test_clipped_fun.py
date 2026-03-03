@@ -94,7 +94,6 @@ def test_clipped_fun_scalar_basic():
     """Basic test: clip_sum with scalar param and batch data."""
 
     def loss_fn(param, data):
-        # With keep_batch_dim=True (default), data has shape (1,)
         return 0.5 * ((data - param) ** 2).mean()
 
     clipped_grad_fn, clip_state = clipped_fun(
@@ -135,20 +134,23 @@ def test_clipped_fun_return_norms():
     assert all(aux.grad_norms >= 0)
 
 
-def test_clipped_fun_keep_batch_dim_true():
-    """Test keep_batch_dim=True passes size-1 batch dim to loss."""
+def test_clipped_fun_with_batch_dim():
+    """Test with_batch_dim utility adds size-1 batch dim to loss args."""
+    from opaque import with_batch_dim
 
     def loss_fn(param, data):
-        # Expect data to have shape (1,)
+        # Expect data to have shape (1,) thanks to with_batch_dim wrapper
         assert data.shape == (1,)
         return 0.5 * ((data - param) ** 2).mean()
 
+    # Wrap the grad function so batch args get unsqueeze(0) under vmap
+    wrapped_grad = with_batch_dim(grad(loss_fn), batch_argnums=1)
+
     clipped_grad_fn, clip_state = clipped_fun(
-        grad(loss_fn),
+        wrapped_grad,
         batch_argnums=1,
         l2_clip_norm=1.0,
         normalize_by=3.0,
-        keep_batch_dim=True,
     )
 
     param = torch.tensor(3.0, requires_grad=True)
@@ -181,7 +183,6 @@ def test_clipped_fun_has_aux_true():
 
     # Test on a simple function (not grad) that returns aux
     def fn_with_aux(x, data):
-        # data has shape (1,) due to keep_batch_dim
         value = x + data  # Return a tensor
         user_aux = data * 2  # Some auxiliary value (tensor)
         return value, user_aux

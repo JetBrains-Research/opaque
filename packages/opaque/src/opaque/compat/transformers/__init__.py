@@ -21,8 +21,8 @@ Supported models:
 - Cohere, Cohere2
 
 Attention implementations:
-- eager: Fully supported (explicitly patched, tested on CPU and CUDA)
-- sdpa: Recommended (uses fused kernels, up to 3.6x memory savings over eager at seq=1024)
+- sdpa: Recommended. Fused CUDA kernels (flash/efficient/cuDNN), up to 3.6x memory savings over eager.
+- eager: Supported. Materializes full attention matrix — O(N²) memory.
 - flash_attention_2: Not compatible (uses torch.nonzero for unpadding, dynamic shapes incompatible with vmap)
 - flex_attention: Not compatible (tensor metadata issues with vmap, known upstream PyTorch limitation)
 
@@ -32,15 +32,7 @@ Training features:
 - PEFT/LoRA: Fully supported (LoRA, IA3, Prefix tuning, P-tuning, Prompt tuning tested)
 - torch.compile: Fully supported
 - CUDA: Fully supported
-
-Note: SDPA is the default and recommended attention implementation. It uses fused CUDA
-kernels (flash/efficient/cuDNN) that avoid materializing the full attention matrix,
-providing significant memory savings. A PyTorch warning about "missing batching rules"
-for SDPA backward is expected and harmless — it falls back to per-sample processing,
-which is what vmap does anyway for per-example gradients.
 """
-
-import warnings
 
 from opaque._env import parse_skip_env
 from opaque.compat.transformers._kernel_patches import (
@@ -48,6 +40,7 @@ from opaque.compat.transformers._kernel_patches import (
     is_kernel_patched,
     patch_lora_model,
 )
+from opaque.compat.transformers._shared import apply_batchify_patches
 from opaque.compat.transformers._vmap_patches import (
     apply_vmap_patches,
     is_vmap_patched,
@@ -80,14 +73,11 @@ def apply_transformers_patches() -> None:
     if "kernels" not in skip:
         apply_kernel_patches()
 
-    # Suppress PyTorch warning about missing vmap batching rules for SDPA backward.
-    # This is harmless: the backward falls back to per-sample processing, which is
-    # exactly what vmap does for per-example gradient computation.
-    warnings.filterwarnings(
-        "ignore",
-        message=r".*not yet implemented the batching rule for aten::_scaled_dot_product.*",
-        category=UserWarning,
-    )
+    # Batchify must run AFTER kernel patches: kernel patches may replace
+    # model forward methods (e.g. fused CE), and batchify must wrap the
+    # final version.  Also patches PEFT model classes.
+    if "vmap" not in skip:
+        apply_batchify_patches()
 
     _is_transformers_patched = True
 

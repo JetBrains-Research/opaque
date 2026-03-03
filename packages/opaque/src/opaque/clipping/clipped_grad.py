@@ -57,7 +57,6 @@ def clipped_grad(
     l2_clip_norm: float,
     normalize_by: float = 1.0,
     batch_argnums: int | tuple[int, ...] = 1,
-    keep_batch_dim: bool = True,
     return_aux: bool = False,
     pre_clipping_transform: Callable = lambda x: x,
     microbatch_size: int | None = None,
@@ -127,10 +126,6 @@ def clipped_grad(
             of integers. All arguments specified here must have the same size along
             their first dimension (the batch dimension). The default value of 1 assumes
             the signature of loss_fn is `loss_fn(params, batch)`.
-        keep_batch_dim: If True, batch inputs will be passed to `loss_fn` with a leading
-            batch axis of size 1. If False, this size 1 axis will be dropped
-            (reducing the rank of the batch args by 1 before passing to `fun`). The
-            default value of True assumes that `fun` expects inputs with a batch axis.
         return_aux: If True, the transformed function will also return a per-example
             aux NamedTuple containing loss values, gradient norms, and loss aux.
         pre_clipping_transform: An optional function to apply to the per-example
@@ -185,7 +180,6 @@ def clipped_grad(
         has_aux=return_aux or _force_grad_norms,
         batch_argnums=batch_argnums,
         l2_clip_norm=l2_clip_norm,
-        keep_batch_dim=keep_batch_dim,
         normalize_by=normalize_by,
         return_aux=return_aux or _force_grad_norms,
         microbatch_size=microbatch_size,

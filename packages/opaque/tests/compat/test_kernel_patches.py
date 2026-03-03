@@ -36,7 +36,6 @@ def _make_small_model(model_name, device="cuda"):
     """Create a small 2-layer model for testing."""
     config = AutoConfig.from_pretrained(model_name)
     config.num_hidden_layers = 2
-    config._attn_implementation = "eager"
     model = AutoModelForCausalLM.from_config(config).to(device)
     return model, config
 
@@ -205,7 +204,6 @@ class TestEndToEnd:
         """Full pipeline: Qwen2 + LoRA + clipped_grad with kernel patches."""
         config = AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
@@ -262,15 +260,203 @@ class TestConfiguration:
         # After import opaque, patches should be applied (or skipped if no CUDA)
         assert isinstance(is_kernel_patched(), bool)
 
-    def test_patch_stores_original_forward(self):
-        """Patched classes should preserve original forward."""
-        try:
-            from transformers.models.llama.modeling_llama import LlamaMLP
-        except ImportError:
-            pytest.skip("transformers not available")
 
-        if hasattr(LlamaMLP, "_opaque_original_forward"):
-            assert callable(LlamaMLP._opaque_original_forward)
+# =============================================================================
+# Batchify forward integration tests (CPU — no CUDA required)
+# =============================================================================
+
+
+class TestBatchifyForward:
+    """Test batchify_forward unsqueeze/squeeze round-trip with a real model."""
+
+    def test_batchify_1d_input_ids(self):
+        """1D input_ids should be unsqueezed, output logits squeezed back."""
+        from opaque.compat.transformers._shared import batchify_forward
+
+        config = AutoConfig.from_pretrained("openai-community/gpt2")
+        config.num_hidden_layers = 1
+        model = AutoModelForCausalLM.from_config(config)
+
+        # Wrap with batchify
+        model.forward = batchify_forward(model.forward)
+
+        # 1D inputs — simulates what vmap(grad()) sees per example
+        seq_len = 8
+        input_ids = torch.randint(0, config.vocab_size, (seq_len,))
+        labels = input_ids.clone()
+
+        outputs = model(input_ids=input_ids, labels=labels)
+
+        # Logits should be squeezed back to 2D (seq, vocab) not 3D (1, seq, vocab)
+        assert outputs.logits.ndim == 2, (
+            f"Expected 2D logits (seq, vocab), got shape {outputs.logits.shape}"
+        )
+        assert outputs.logits.shape[0] == seq_len
+        # Loss is scalar — unaffected by squeeze
+        assert outputs.loss.ndim == 0
+
+    def test_batchify_2d_input_ids_is_noop(self):
+        """2D input_ids (already batched) should pass through unchanged."""
+        from opaque.compat.transformers._shared import batchify_forward
+
+        config = AutoConfig.from_pretrained("openai-community/gpt2")
+        config.num_hidden_layers = 1
+        model = AutoModelForCausalLM.from_config(config)
+
+        model.forward = batchify_forward(model.forward)
+
+        batch, seq_len = 3, 8
+        input_ids = torch.randint(0, config.vocab_size, (batch, seq_len))
+        labels = input_ids.clone()
+
+        outputs = model(input_ids=input_ids, labels=labels)
+
+        # 3D logits preserved — no squeeze
+        assert outputs.logits.ndim == 3
+        assert outputs.logits.shape == (batch, seq_len, config.vocab_size)
+
+    def test_batchify_positional_input_ids(self):
+        """input_ids passed positionally should also be batchified."""
+        from opaque.compat.transformers._shared import batchify_forward
+
+        config = AutoConfig.from_pretrained("openai-community/gpt2")
+        config.num_hidden_layers = 1
+        model = AutoModelForCausalLM.from_config(config)
+
+        model.forward = batchify_forward(model.forward)
+
+        seq_len = 8
+        input_ids = torch.randint(0, config.vocab_size, (seq_len,))
+
+        # Pass input_ids positionally (as functional_call does)
+        outputs = model(input_ids)
+
+        assert outputs.logits.ndim == 2, (
+            f"Expected 2D logits, got shape {outputs.logits.shape}"
+        )
+
+
+# =============================================================================
+# CPU fallback tests (no CUDA required)
+# =============================================================================
+
+
+class TestCPUFallback:
+    """Test that patched kernels fall back to original on CPU."""
+
+    @pytest.mark.hf_auth_required
+    def test_swiglu_mlp_cpu(self):
+        """Patched LlamaMLP should produce correct output on CPU."""
+        from transformers.models.llama.modeling_llama import LlamaMLP
+
+        config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
+        config.num_hidden_layers = 1
+        mlp = LlamaMLP(config)  # CPU
+
+        x = torch.randn(2, 16, config.hidden_size)
+        out = mlp(x)
+
+        gate = mlp.gate_proj(x)
+        up = mlp.up_proj(x)
+        ref = mlp.down_proj(F.silu(gate) * up)
+
+        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), (
+            f"CPU SwiGLU mismatch: max diff {(out - ref).abs().max():.2e}"
+        )
+
+    @pytest.mark.hf_auth_required
+    def test_geglu_exact_mlp_cpu(self):
+        """Patched GemmaMLP should produce correct output on CPU."""
+        try:
+            from transformers.models.gemma.modeling_gemma import GemmaMLP
+        except ImportError:
+            pytest.skip("Gemma not available")
+
+        config = AutoConfig.from_pretrained("google/gemma-2b")
+        config.num_hidden_layers = 1
+        mlp = GemmaMLP(config)  # CPU
+
+        x = torch.randn(2, 16, config.hidden_size)
+        out = mlp(x)
+
+        gate = mlp.gate_proj(x)
+        up = mlp.up_proj(x)
+        ref = mlp.down_proj(F.gelu(gate, approximate="none") * up)
+
+        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), (
+            f"CPU GeGLU exact mismatch: max diff {(out - ref).abs().max():.2e}"
+        )
+
+    def test_cross_entropy_loss_cpu(self):
+        """Patched CE loss should produce correct output on CPU."""
+        from opaque.compat.transformers._kernel_patches import _opaque_causal_lm_loss
+
+        batch, seq_len, vocab_size = 2, 16, 1000
+        logits = torch.randn(batch, seq_len, vocab_size)
+        labels = torch.randint(0, vocab_size, (batch, seq_len))
+        labels[:, -2:] = -100
+
+        loss = _opaque_causal_lm_loss(logits, labels, vocab_size)
+
+        import torch.nn as nn
+
+        labels_ref = nn.functional.pad(labels, (0, 1), value=-100)
+        shift_labels = labels_ref[..., 1:].contiguous()
+        logits_flat = logits.float().view(-1, vocab_size)
+        shift_labels_flat = shift_labels.view(-1)
+        ref = F.cross_entropy(logits_flat, shift_labels_flat, ignore_index=-100)
+
+        assert torch.allclose(loss, ref, rtol=1e-3, atol=1e-3), (
+            f"CPU CE loss mismatch: got {loss.item():.6f}, expected {ref.item():.6f}"
+        )
+
+    def test_lora_linear_cpu(self):
+        """Patched LoRA linear should produce correct output on CPU."""
+        from peft.tuners.lora import Linear as PeftLoRALinear
+
+        in_features, out_features, rank = 256, 512, 8
+        base_linear = torch.nn.Linear(in_features, out_features, bias=False)
+
+        lora_layer = PeftLoRALinear(
+            base_linear, "default", r=rank, lora_alpha=16, lora_dropout=0.0
+        )
+
+        x = torch.randn(2, 16, in_features)
+        out = lora_layer(x)
+
+        base_out = base_linear(x)
+        A_weight = lora_layer.lora_A["default"].weight
+        B_weight = lora_layer.lora_B["default"].weight
+        scaling = lora_layer.scaling["default"]
+        lora_delta = F.linear(F.linear(x, A_weight), B_weight) * scaling
+        ref = base_out + lora_delta
+
+        assert torch.allclose(out, ref, rtol=RTOL, atol=ATOL), (
+            f"CPU LoRA mismatch: max diff {(out - ref).abs().max():.2e}"
+        )
+
+    @pytest.mark.hf_auth_required
+    def test_full_model_cpu_forward_backward(self):
+        """Full Llama model with LoRA should forward+backward correctly on CPU."""
+        config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
+        config.num_hidden_layers = 1
+        model = AutoModelForCausalLM.from_config(config)  # CPU
+
+        lora_config = LoraConfig(
+            r=4, lora_alpha=8, target_modules=["q_proj", "v_proj"], lora_dropout=0.0
+        )
+        model = get_peft_model(model, lora_config)
+
+        input_ids = torch.randint(0, config.vocab_size, (2, 8))
+        outputs = model(input_ids, labels=input_ids)
+
+        assert not torch.isnan(outputs.loss), "NaN loss on CPU"
+        outputs.loss.backward()
+
+        has_grad = any(
+            p.grad is not None for p in model.parameters() if p.requires_grad
+        )
+        assert has_grad, "No gradients computed on CPU"
 
 
 # =============================================================================
@@ -458,17 +644,15 @@ class TestLoRAPatches:
 
     def test_lora_class_patched(self):
         """peft.tuners.lora.Linear should have patched forward."""
-        from opaque.compat.transformers._kernel_patches import (
-            _opaque_lora_linear_forward,
-        )
-
         try:
             from peft.tuners.lora import Linear as PeftLoRALinear
         except ImportError:
             pytest.skip("peft not available")
 
         if torch.cuda.is_available():
-            assert PeftLoRALinear.forward is _opaque_lora_linear_forward
+            assert PeftLoRALinear.forward.__qualname__.startswith(
+                "_make_lora_linear_forward"
+            )
 
 
 # =============================================================================
@@ -655,7 +839,6 @@ class TestFusedLoRAMLP:
         """get_peft_model should auto-fuse MLP layers with LoRA on gate/up/down."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
@@ -670,19 +853,13 @@ class TestFusedLoRAMLP:
         layers = model.model.model.layers
         for layer in layers:
             mlp = layer.mlp
-            assert hasattr(mlp, "_opaque_activation_type"), (
-                "MLP should have _opaque_activation_type after auto-fuse"
-            )
-            assert hasattr(mlp, "_opaque_original_forward"), (
-                "MLP should have _opaque_original_forward after auto-fuse"
-            )
+            assert "forward" in vars(mlp), "MLP forward should be fused"
 
     @pytest.mark.hf_auth_required
     def test_fused_lora_mlp_model_forward_backward(self, device):
         """Full model with fused LoRA MLP should produce valid forward+backward."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
@@ -717,33 +894,31 @@ class TestFusedLoRAMLP:
 
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
 
-        # Use the original get_peft_model to avoid auto-hook (simulate loading from checkpoint)
-        import peft
+        # Use peft.mapping.get_peft_model to bypass auto-hook (simulate loading from checkpoint)
+        from peft.mapping_func import get_peft_model as raw_get_peft_model
 
-        original_get_peft_model = peft._opaque_original_get_peft_model
         lora_config = LoraConfig(
             r=8,
             lora_alpha=16,
             lora_dropout=0.0,
             target_modules=["gate_proj", "up_proj", "down_proj"],
         )
-        model = original_get_peft_model(model, lora_config).to(device)
+        model = raw_get_peft_model(model, lora_config).to(device)
 
-        # MLP should NOT be fused yet
+        # MLP should NOT be fused yet (no instance-level forward override)
         layers = model.model.model.layers
-        assert not hasattr(layers[0].mlp, "_opaque_activation_type"), (
+        assert "forward" not in vars(layers[0].mlp), (
             "MLP should not be fused before patch_lora_model()"
         )
 
         # Manually apply
         patch_lora_model(model)
 
-        # MLP should now be fused
-        assert hasattr(layers[0].mlp, "_opaque_activation_type"), (
+        # MLP should now be fused (instance-level forward override)
+        assert "forward" in vars(layers[0].mlp), (
             "MLP should be fused after patch_lora_model()"
         )
 
@@ -857,7 +1032,6 @@ class TestFusedLoRAQKV:
         """get_peft_model should auto-fuse QKV layers with LoRA on q/k/v."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
@@ -875,16 +1049,12 @@ class TestFusedLoRAQKV:
             assert hasattr(attn, "_opaque_fused_qkv"), (
                 "Attention should have _opaque_fused_qkv after auto-fuse"
             )
-            assert hasattr(attn, "_opaque_original_forward"), (
-                "Attention should have _opaque_original_forward after auto-fuse"
-            )
 
     @pytest.mark.hf_auth_required
     def test_fused_lora_qkv_model_forward_backward(self, device):
         """Full model with fused LoRA QKV should produce valid forward+backward."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
@@ -916,7 +1086,6 @@ class TestFusedLoRAQKV:
         """Qwen2 attention should NOT be fused (has bias=True on Q/K/V)."""
         config = AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
@@ -942,7 +1111,6 @@ class TestFusedLoRAQKV:
             pytest.skip("Qwen3 not available")
 
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(
@@ -967,21 +1135,19 @@ class TestFusedLoRAQKV:
 
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
 
-        # Use the original get_peft_model to avoid auto-hook
-        import peft
+        # Use peft.mapping.get_peft_model to bypass auto-hook
+        from peft.mapping_func import get_peft_model as raw_get_peft_model
 
-        original_get_peft_model = peft._opaque_original_get_peft_model
         lora_config = LoraConfig(
             r=8,
             lora_alpha=16,
             lora_dropout=0.0,
             target_modules=["q_proj", "k_proj", "v_proj"],
         )
-        model = original_get_peft_model(model, lora_config).to(device)
+        model = raw_get_peft_model(model, lora_config).to(device)
 
         # QKV should NOT be fused yet
         layers = model.model.model.layers
@@ -1002,7 +1168,6 @@ class TestFusedLoRAQKV:
         """Fused QKV should work end-to-end with clipped_grad (DP-SGD)."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2
-        config._attn_implementation = "eager"
 
         model = AutoModelForCausalLM.from_config(config)
         lora_config = LoraConfig(

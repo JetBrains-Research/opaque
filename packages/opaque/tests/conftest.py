@@ -375,7 +375,6 @@ def load_model_with_lora(
 
     # Load model config and model
     config = AutoConfig.from_pretrained(model_id, trust_remote_code=trust_remote_code)
-    config._attn_implementation = "eager"  # For vmap compatibility
 
     model = AutoModelForCausalLM.from_pretrained(
         model_id,

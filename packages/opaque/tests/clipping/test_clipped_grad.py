@@ -327,41 +327,38 @@ def test_clipped_grad_zero_gradients():
     assert (grad_aux.grad_norms < 1e-7).all(), "All norms should be zero"
 
 
-def test_clipped_grad_keep_batch_dim():
-    """Test keep_batch_dim parameter affects loss function signature."""
-
-    def loss_no_batch(param, data):
-        # Expects data without batch dim (will unsqueeze in real usage)
-        return ((data.unsqueeze(0) - param) ** 2).mean()
+def test_clipped_grad_with_batch_dim():
+    """Test with_batch_dim utility works with clipped_grad."""
+    from opaque import with_batch_dim
 
     def loss_with_batch(param, data):
         # Expects data with batch dim of size 1
+        assert data.shape == (1,), f"Expected (1,), got {data.shape}"
+        return ((data - param) ** 2).mean()
+
+    def loss_no_batch(param, data):
+        # Expects data without batch dim (scalar per-example)
         return ((data - param) ** 2).mean()
 
     param = torch.tensor(1.0)
     data = torch.tensor([0.5, 1.5, 2.0])
 
-    # Test keep_batch_dim=False
-    grad_fn_no_batch, clip_state_no_batch = clipped_grad(
-        loss_no_batch,
+    # Without with_batch_dim: loss receives scalar per-example
+    grad_fn, clip_state = clipped_grad(
+        loss_no_batch, argnums=0, batch_argnums=1, l2_clip_norm=10.0
+    )
+    grad_no_batch, _ = grad_fn(param, data, state=clip_state)
+
+    # With with_batch_dim: loss receives (1,) per-example
+    grad_fn2, clip_state2 = clipped_grad(
+        with_batch_dim(loss_with_batch, batch_argnums=1),
         argnums=0,
         batch_argnums=1,
         l2_clip_norm=10.0,
-        keep_batch_dim=False,
     )
-    grad_no_batch, _ = grad_fn_no_batch(param, data, state=clip_state_no_batch)
+    grad_with_batch, _ = grad_fn2(param, data, state=clip_state2)
 
-    # Test keep_batch_dim=True
-    grad_fn_with_batch, clip_state_with_batch = clipped_grad(
-        loss_with_batch,
-        argnums=0,
-        batch_argnums=1,
-        l2_clip_norm=10.0,
-        keep_batch_dim=True,
-    )
-    grad_with_batch, _ = grad_fn_with_batch(param, data, state=clip_state_with_batch)
-
-    # Both should produce gradients (exact values may differ due to loss function)
+    # Both should produce non-zero gradients
     assert grad_no_batch.abs() > 1e-6, "Should have non-zero gradient"
     assert grad_with_batch.abs() > 1e-6, "Should have non-zero gradient"
 

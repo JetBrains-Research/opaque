@@ -23,20 +23,18 @@ def vmap_create_causal_mask(
     Handles arbitrary batch dimensions from vmap.
 
     Original: inputs_embeds (batch, seq, hidden) -> mask (batch, 1, seq, seq)
-    With keep_batch_dim=True: inputs_embeds (1, seq, hidden) -> mask (1, 1, seq, seq)
-    With keep_batch_dim=False: inputs_embeds (seq, hidden) -> mask (1, 1, seq, seq)
-
-    When using keep_batch_dim=True (recommended), the batch dimension is preserved
-    through vmap, allowing SDPA to work correctly with microbatching.
+    Under vmap with with_batch_dim: inputs_embeds (1, seq, hidden) -> mask (1, 1, seq, seq)
+    Under vmap without with_batch_dim: inputs_embeds (seq, hidden) -> mask (1, 1, seq, seq)
     """
-    # When no padding mask is provided, return None so that:
-    # - SDPA uses is_causal=True (avoids batch dimension issues under vmap)
-    # - Eager attention skips mask addition (our patched eager handles this)
-    # The original create_causal_mask also returns None for SDPA in this case.
+    # When no padding mask is provided AND the attention backend handles
+    # causality internally (SDPA uses is_causal=True, flash uses masking
+    # kernels), return None to avoid materializing the full mask tensor.
+    # Eager attention needs an explicit causal mask — never skip for eager.
     # Note: past_key_values may be a DynamicCache even in training (HF's
     # @check_model_inputs resolves use_cache=None to config.use_cache=True),
     # so we check for actual cached data rather than just None.
-    if attention_mask is None:
+    attn_impl = getattr(config, "_attn_implementation", None)
+    if attention_mask is None and attn_impl != "eager":
         has_cached_data = (
             past_key_values is not None
             and hasattr(past_key_values, "get_seq_length")
@@ -45,14 +43,13 @@ def vmap_create_causal_mask(
         if not has_cached_data:
             return None
 
-    # Detect if we're under vmap with batch dimension removed (keep_batch_dim=False)
-    # or with batch dimension kept (keep_batch_dim=True)
+    # Detect batchless input (under vmap without with_batch_dim) vs batched
     if input_embeds.ndim == 2:
-        # Under vmap with keep_batch_dim=False: (seq_len, hidden_dim)
+        # Under vmap without batch dim: (seq_len, hidden_dim)
         batch_size = 1
         seq_len = input_embeds.shape[0]
     else:
-        # Normal execution or vmap with keep_batch_dim=True: (batch, seq_len, hidden_dim)
+        # Normal execution or under vmap with batch dim: (batch, seq_len, hidden_dim)
         batch_size = input_embeds.shape[0]
         seq_len = input_embeds.shape[1]
 
@@ -179,8 +176,117 @@ def vmap_repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
 
 
 # =============================================================================
+# Batchify wrapper for model forward methods
+# =============================================================================
+
+
+def batchify_forward(original_forward):
+    """Wrap a model ``forward`` to handle batchless inputs under vmap.
+
+    Under ``vmap(grad(...))``, per-example inputs lack the batch dimension:
+    ``input_ids`` is 1-D ``(seq,)`` instead of 2-D ``(batch, seq)``.
+    HuggingFace models universally assume batched inputs, so this wrapper
+    adds the batch dimension on entry and strips it on exit.
+
+    This is analogous to PyTorch's *batchify* pattern in ``attention.cpp``
+    for unbatched SDPA inputs.
+
+    The wrapper is a no-op for normal (already-batched) inputs.
+
+    Delegates to :func:`opaque.utils.functional.with_batch_dim`.
+    """
+    from opaque.utils.functional import with_batch_dim
+
+    return with_batch_dim(
+        original_forward,
+        batch_kwargs={
+            "input_ids": 2,
+            "attention_mask": 2,
+            "labels": 2,
+            "position_ids": 2,
+            "inputs_embeds": 3,
+        },
+        min_ndim=2,
+    )
+
+
+# =============================================================================
 # Patch application
 # =============================================================================
+
+
+def apply_batchify_patches() -> None:
+    """Apply batchify wrappers to all supported model classes.
+
+    This must run AFTER both vmap patches and kernel patches, because kernel
+    patches (e.g. fused cross-entropy) may replace ``ForCausalLM.forward``
+    and batchify must wrap the *final* version.
+
+    Patches:
+    - ``*ForCausalLM`` and ``*LMHeadModel`` classes in all supported HF modules
+    - ``PeftModel*`` classes (handles prefix/prompt tuning batch dims)
+    """
+    import importlib
+
+    # All HF model modules that may contain CausalLM classes
+    _ALL_MODEL_MODULES = [
+        "transformers.models.llama.modeling_llama",
+        "transformers.models.mistral.modeling_mistral",
+        "transformers.models.qwen2.modeling_qwen2",
+        "transformers.models.qwen3.modeling_qwen3",
+        "transformers.models.phi3.modeling_phi3",
+        "transformers.models.gemma.modeling_gemma",
+        "transformers.models.gemma2.modeling_gemma2",
+        "transformers.models.granite.modeling_granite",
+        "transformers.models.cohere.modeling_cohere",
+        "transformers.models.cohere2.modeling_cohere2",
+        "transformers.models.gpt2.modeling_gpt2",
+    ]
+
+    for module_path in _ALL_MODEL_MODULES:
+        try:
+            module = importlib.import_module(module_path)
+            for name in dir(module):
+                if not (name.endswith("ForCausalLM") or name.endswith("LMHeadModel")):
+                    continue
+                cls = getattr(module, name)
+                if isinstance(cls, type) and hasattr(cls, "forward"):
+                    cls.forward = batchify_forward(cls.forward)
+        except (ImportError, RuntimeError):
+            pass
+
+    # PEFT wraps base models with PeftModel* classes that also assume
+    # batched inputs (e.g., for prefix tuning attention masks).
+    try:
+        import peft
+
+        for name in dir(peft):
+            cls = getattr(peft, name, None)
+            if (
+                isinstance(cls, type)
+                and hasattr(cls, "forward")
+                and name.startswith("PeftModel")
+            ):
+                cls.forward = batchify_forward(cls.forward)
+    except ImportError:
+        pass
+
+
+def _vmap_safe_ignore_causal_mask_sdpa(
+    padding_mask, query_length, kv_length, kv_offset, local_attention_size=None
+) -> bool:
+    """vmap-safe ``_ignore_causal_mask_sdpa``.
+
+    The original calls ``padding_mask.all()`` — data-dependent control flow
+    that breaks under vmap.  When ``padding_mask is None`` all remaining
+    checks use Python ints so we delegate to the original.  When a mask is
+    present we return ``False`` (force mask creation — needed for padding anyway).
+    """
+    if padding_mask is not None:
+        return False
+    return _vmap_safe_ignore_causal_mask_sdpa._original(
+        padding_mask, query_length, kv_length, kv_offset, local_attention_size
+    )
 
 
 def apply_shared_patches() -> None:
@@ -188,6 +294,7 @@ def apply_shared_patches() -> None:
 
     Patches:
     - transformers.masking_utils.create_causal_mask
+    - transformers.masking_utils._ignore_causal_mask_sdpa (vmap-safe)
     - transformers.integrations.sdpa_attention.repeat_kv
 
     These are required by all models (standard models, Gemma2, etc.).
@@ -198,6 +305,15 @@ def apply_shared_patches() -> None:
 
         if hasattr(masking_utils, "create_causal_mask"):
             masking_utils.create_causal_mask = vmap_create_causal_mask
+
+        # Patch _ignore_causal_mask_sdpa for sliding-window models (Gemma2, Phi-3, Mistral).
+        # The original calls padding_mask.all() which is data-dependent control flow
+        # incompatible with vmap.
+        if hasattr(masking_utils, "_ignore_causal_mask_sdpa"):
+            _vmap_safe_ignore_causal_mask_sdpa._original = (
+                masking_utils._ignore_causal_mask_sdpa
+            )
+            masking_utils._ignore_causal_mask_sdpa = _vmap_safe_ignore_causal_mask_sdpa
     except ImportError:
         pass
 

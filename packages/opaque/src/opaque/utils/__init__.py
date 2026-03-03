@@ -1,6 +1,6 @@
 """Utility functions for opaque."""
 
-from opaque.utils.functional import make_functional
+from opaque.utils.functional import make_functional, with_batch_dim
 from opaque.utils.pytree import (
     global_norm,
     merge,
@@ -18,4 +18,5 @@ __all__ = [
     "partition",
     "merge",
     "make_functional",
+    "with_batch_dim",
 ]

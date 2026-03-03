@@ -77,11 +77,11 @@ def _lora_w_backward_impl(grad_out, X, W, A, B, scaling):
         dB = torch.empty_like(B)
         dB.addmm_(At_Xt, grad_out_flat, alpha=scaling, beta=0)
 
-    # dX: reuse X_flat buffer (LoRA grads already computed above)
-    torch.mm(grad_out_flat, W, out=X_flat)
+    # dX: allocate fresh buffer (X may be shared across multiple LoRA layers)
+    dX_flat = torch.mm(grad_out_flat, W)
     if A is not None and B is not None:
-        X_flat.addmm_(grad_out_Bt, A.t(), alpha=scaling, beta=1)
-    dX = X_flat.reshape(*batch_shape, hidden_dim)
+        dX_flat.addmm_(grad_out_Bt, A.t(), alpha=scaling, beta=1)
+    dX = dX_flat.reshape(*batch_shape, hidden_dim)
 
     return dX, dA, dB
 
@@ -207,10 +207,17 @@ class Opaque_LoRA_W(torch.autograd.Function):
         out = F.linear(X, W)  # X @ W.T
 
         if A is not None and B is not None:
-            # Fused add+matmul+scale: out += scaling * (XA @ B)
+            # Out-of-place addmm: same fused BLAS call as addmm_ but doesn't
+            # mutate `out`, avoiding autograd version-counter conflicts when
+            # both X and A/B require grad (e.g. manual per-sample gradients).
             XA = X @ A
-            out_flat = out.reshape(-1, out.shape[-1])
-            out_flat.addmm_(XA.reshape(-1, XA.shape[-1]), B, alpha=scaling, beta=1)
+            out = torch.addmm(
+                out.reshape(-1, out.shape[-1]),
+                XA.reshape(-1, XA.shape[-1]),
+                B,
+                alpha=scaling,
+                beta=1,
+            ).reshape(out.shape)
 
         return out
 
