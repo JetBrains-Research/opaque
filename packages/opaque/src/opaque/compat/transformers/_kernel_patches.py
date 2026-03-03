@@ -84,17 +84,20 @@ _ROPE_MODELS = [
 
 def _make_swiglu_mlp_forward(original):
     """SwiGLU MLP forward using Opaque Triton kernel."""
+
     def forward(self, x):
         if not x.is_cuda:
             return original(self, x)
         from opaque.compat.kernels.swiglu import Opaque_SwiGLU
 
         return self.down_proj(Opaque_SwiGLU.apply(self.gate_proj(x), self.up_proj(x)))
+
     return forward
 
 
 def _make_phi3_mlp_forward(original):
     """Phi3 MLP forward (combined gate_up_proj) using Opaque Triton kernel."""
+
     def forward(self, hidden_states):
         if not hidden_states.is_cuda:
             return original(self, hidden_states)
@@ -102,28 +105,37 @@ def _make_phi3_mlp_forward(original):
 
         gate, up = self.gate_up_proj(hidden_states).chunk(2, dim=-1)
         return self.down_proj(Opaque_SwiGLU.apply(gate, up))
+
     return forward
 
 
 def _make_geglu_exact_mlp_forward(original):
     """Gemma MLP forward using Opaque GeGLU exact kernel."""
+
     def forward(self, x):
         if not x.is_cuda:
             return original(self, x)
         from opaque.compat.kernels.geglu import Opaque_GeGLU_Exact
 
-        return self.down_proj(Opaque_GeGLU_Exact.apply(self.gate_proj(x), self.up_proj(x)))
+        return self.down_proj(
+            Opaque_GeGLU_Exact.apply(self.gate_proj(x), self.up_proj(x))
+        )
+
     return forward
 
 
 def _make_geglu_approx_mlp_forward(original):
     """Gemma2 MLP forward using Opaque GeGLU approx kernel."""
+
     def forward(self, x):
         if not x.is_cuda:
             return original(self, x)
         from opaque.compat.kernels.geglu import Opaque_GeGLU_Approx
 
-        return self.down_proj(Opaque_GeGLU_Approx.apply(self.gate_proj(x), self.up_proj(x)))
+        return self.down_proj(
+            Opaque_GeGLU_Approx.apply(self.gate_proj(x), self.up_proj(x))
+        )
+
     return forward
 
 
@@ -191,14 +203,19 @@ def _pytorch_causal_lm_loss(
 
     if num_items_in_batch is not None:
         loss = nn.functional.cross_entropy(
-            logits_flat, shift_labels_flat, ignore_index=ignore_index, reduction="sum",
+            logits_flat,
+            shift_labels_flat,
+            ignore_index=ignore_index,
+            reduction="sum",
         )
         if torch.is_tensor(num_items_in_batch):
             num_items_in_batch = num_items_in_batch.to(loss.device)
         return loss / num_items_in_batch
     else:
         return nn.functional.cross_entropy(
-            logits_flat, shift_labels_flat, ignore_index=ignore_index,
+            logits_flat,
+            shift_labels_flat,
+            ignore_index=ignore_index,
         )
 
 
@@ -219,8 +236,13 @@ def _opaque_causal_lm_loss(
     # Triton kernels require CUDA — fall back to standard CE on CPU/MPS
     if not logits.is_cuda:
         return _pytorch_causal_lm_loss(
-            logits, labels, vocab_size, num_items_in_batch, ignore_index,
-            shift_labels, **kwargs,
+            logits,
+            labels,
+            vocab_size,
+            num_items_in_batch,
+            ignore_index,
+            shift_labels,
+            **kwargs,
         )
 
     from opaque.compat.kernels.cross_entropy import Opaque_CrossEntropyLoss
@@ -274,6 +296,7 @@ def _make_fused_ce_causal_lm_forward(original):
     using CCE Triton kernels. Avoids materializing the full (B, S, V) logit
     tensor — saves ~1 GB per sample for 128K vocab models.
     """
+
     def forward(
         self,
         input_ids=None,
@@ -341,7 +364,10 @@ def _make_fused_ce_causal_lm_forward(original):
         hidden_states = outputs[0]
 
         # Fused path requires half precision on CUDA (CCE backward constraint)
-        if hidden_states.is_cuda and hidden_states.dtype in (torch.bfloat16, torch.float16):
+        if hidden_states.is_cuda and hidden_states.dtype in (
+            torch.bfloat16,
+            torch.float16,
+        ):
             from opaque.compat.kernels.linear_cross_entropy import (
                 Opaque_LinearCrossEntropyLoss,
             )
@@ -412,6 +438,7 @@ def _make_lora_linear_forward(original):
     computes base projection + LoRA delta in a single call.
     Falls back to PEFT's original forward on non-CUDA devices.
     """
+
     def forward(self, x, *args, **kwargs):
         if not x.is_cuda:
             return original(self, x, *args, **kwargs)
@@ -538,9 +565,7 @@ def _patch_lora_forward(patched: list) -> None:
         _original_get_peft_model = peft.get_peft_model
 
         def _patched_get_peft_model(model, peft_config=None, *args, **kwargs):
-            result = _original_get_peft_model(
-                model, peft_config, *args, **kwargs
-            )
+            result = _original_get_peft_model(model, peft_config, *args, **kwargs)
             try:
                 _auto_fuse_lora(result)
             except Exception as e:
@@ -628,6 +653,7 @@ def _make_fused_lora_mlp_forward(original_forward, activation_type):
         original_forward: Bound method of the MLP instance.
         activation_type: 0=SwiGLU, 1=GeGLU_exact, 2=GeGLU_approx.
     """
+
     def forward(self, x):
         if not x.is_cuda:
             return original_forward(x)
@@ -743,6 +769,7 @@ def _make_fused_qkv_attention_forward(original_forward):
     Args:
         original_forward: Bound method of the attention instance.
     """
+
     def forward(
         self,
         hidden_states,
@@ -754,7 +781,8 @@ def _make_fused_qkv_attention_forward(original_forward):
     ):
         if not hidden_states.is_cuda:
             return original_forward(
-                hidden_states, position_embeddings,
+                hidden_states,
+                position_embeddings,
                 attention_mask=attention_mask,
                 past_key_values=past_key_values,
                 cache_position=cache_position,
@@ -773,7 +801,9 @@ def _make_fused_qkv_attention_forward(original_forward):
         model_module = sys.modules[type(self).__module__]
         apply_rotary_pos_emb = model_module.apply_rotary_pos_emb
         cos, sin = position_embeddings
-        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+        query_states, key_states = apply_rotary_pos_emb(
+            query_states, key_states, cos, sin
+        )
 
         # KV cache (training: past_key_values is None)
         if past_key_values is not None:
@@ -789,7 +819,9 @@ def _make_fused_qkv_attention_forward(original_forward):
         eager_attention_forward = model_module.eager_attention_forward
         if self.config._attn_implementation != "eager":
             ALL_ATTENTION_FUNCTIONS = model_module.ALL_ATTENTION_FUNCTIONS
-            attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+            attention_interface = ALL_ATTENTION_FUNCTIONS[
+                self.config._attn_implementation
+            ]
         else:
             attention_interface = eager_attention_forward
 

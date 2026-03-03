@@ -344,6 +344,7 @@ def with_batch_dim(
 
         # Process positional args
         for i in batch_argnums:
+
             def _unsqueeze_arg(x, _threshold=min_ndim):
                 nonlocal unsqueezed
                 if isinstance(x, torch.Tensor) and _needs_unsqueeze(x, _threshold):

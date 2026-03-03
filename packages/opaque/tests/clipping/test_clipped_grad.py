@@ -352,7 +352,9 @@ def test_clipped_grad_with_batch_dim():
     # With with_batch_dim: loss receives (1,) per-example
     grad_fn2, clip_state2 = clipped_grad(
         with_batch_dim(loss_with_batch, batch_argnums=1),
-        argnums=0, batch_argnums=1, l2_clip_norm=10.0,
+        argnums=0,
+        batch_argnums=1,
+        l2_clip_norm=10.0,
     )
     grad_with_batch, _ = grad_fn2(param, data, state=clip_state2)
 

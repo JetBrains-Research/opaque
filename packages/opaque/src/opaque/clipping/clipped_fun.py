@@ -71,7 +71,6 @@ def _sum_clipped_tensor(
     return summed
 
 
-
 def _microbatch_accumulate(
     per_example_fn,
     args,

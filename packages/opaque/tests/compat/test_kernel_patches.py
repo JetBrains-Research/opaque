@@ -650,7 +650,9 @@ class TestLoRAPatches:
             pytest.skip("peft not available")
 
         if torch.cuda.is_available():
-            assert PeftLoRALinear.forward.__qualname__.startswith("_make_lora_linear_forward")
+            assert PeftLoRALinear.forward.__qualname__.startswith(
+                "_make_lora_linear_forward"
+            )
 
 
 # =============================================================================

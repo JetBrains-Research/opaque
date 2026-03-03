@@ -438,9 +438,7 @@ class _RoPE_QK_Backward(torch.autograd.Function):
         BLOCK_SIZE, num_warps = calculate_settings(head_dim)
 
         with torch_gpu_device(dQ.device):
-            _rope_embedding_qk_kernel_heuristics[
-                (total_batch * seq_len, n_heads_Q)
-            ](
+            _rope_embedding_qk_kernel_heuristics[(total_batch * seq_len, n_heads_Q)](
                 dQ,
                 dQ.stride(0),
                 dQ.stride(1),
@@ -604,9 +602,7 @@ class Opaque_RoPE_QK(torch.autograd.Function):
         BLOCK_SIZE, num_warps = calculate_settings(head_dim)
 
         with torch_gpu_device(Q.device):
-            _rope_embedding_qk_kernel_heuristics[
-                (total_batch * seq_len, n_heads_Q)
-            ](
+            _rope_embedding_qk_kernel_heuristics[(total_batch * seq_len, n_heads_Q)](
                 Q_out,
                 Q_out.stride(0),
                 Q_out.stride(1),

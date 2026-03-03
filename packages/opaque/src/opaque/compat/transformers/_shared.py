@@ -313,9 +313,7 @@ def apply_shared_patches() -> None:
             _vmap_safe_ignore_causal_mask_sdpa._original = (
                 masking_utils._ignore_causal_mask_sdpa
             )
-            masking_utils._ignore_causal_mask_sdpa = (
-                _vmap_safe_ignore_causal_mask_sdpa
-            )
+            masking_utils._ignore_causal_mask_sdpa = _vmap_safe_ignore_causal_mask_sdpa
     except ImportError:
         pass
 
