@@ -72,7 +72,6 @@ class TestMultiArchitectureCompatibility:
             pytest.skip("HuggingFace token required for gated model google/gemma-2-2b")
         config = AutoConfig.from_pretrained("google/gemma-2-2b")
         config.num_hidden_layers = 1
-        config._attn_implementation = "eager"  # Gemma2 sliding window masking has data-dependent control flow under vmap
 
         tokenizer = AutoTokenizer.from_pretrained("google/gemma-2-2b")
 
@@ -138,7 +137,6 @@ class TestMultiArchitectureCompatibility:
             trust_remote_code=True,
         )
         config.num_hidden_layers = 1
-        config._attn_implementation = "eager"  # Phi-3 sliding window masking has data-dependent control flow under vmap
 
         tokenizer = AutoTokenizer.from_pretrained(
             "microsoft/Phi-3-mini-4k-instruct",

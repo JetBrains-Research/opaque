@@ -190,7 +190,6 @@ MODEL_CONFIGS = {
         "trust_remote_code": True,
         "batch_size": 8,
         "accum_steps": 16,
-        "attn_implementation": "eager",  # Sliding window masking incompatible with vmap
     },
 }
 
@@ -376,9 +375,6 @@ def load_model_with_lora(
 
     # Load model config and model
     config = AutoConfig.from_pretrained(model_id, trust_remote_code=trust_remote_code)
-    attn_impl = model_config.get("attn_implementation")
-    if attn_impl:
-        config._attn_implementation = attn_impl
 
     model = AutoModelForCausalLM.from_pretrained(
         model_id,

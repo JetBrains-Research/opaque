@@ -272,11 +272,29 @@ def apply_batchify_patches() -> None:
         pass
 
 
+def _vmap_safe_ignore_causal_mask_sdpa(
+    padding_mask, query_length, kv_length, kv_offset, local_attention_size=None
+) -> bool:
+    """vmap-safe ``_ignore_causal_mask_sdpa``.
+
+    The original calls ``padding_mask.all()`` — data-dependent control flow
+    that breaks under vmap.  When ``padding_mask is None`` all remaining
+    checks use Python ints so we delegate to the original.  When a mask is
+    present we return ``False`` (force mask creation — needed for padding anyway).
+    """
+    if padding_mask is not None:
+        return False
+    return _vmap_safe_ignore_causal_mask_sdpa._original(
+        padding_mask, query_length, kv_length, kv_offset, local_attention_size
+    )
+
+
 def apply_shared_patches() -> None:
     """Apply patches to shared utilities used by all models.
 
     Patches:
     - transformers.masking_utils.create_causal_mask
+    - transformers.masking_utils._ignore_causal_mask_sdpa (vmap-safe)
     - transformers.integrations.sdpa_attention.repeat_kv
 
     These are required by all models (standard models, Gemma2, etc.).
@@ -287,6 +305,17 @@ def apply_shared_patches() -> None:
 
         if hasattr(masking_utils, "create_causal_mask"):
             masking_utils.create_causal_mask = vmap_create_causal_mask
+
+        # Patch _ignore_causal_mask_sdpa for sliding-window models (Gemma2, Phi-3, Mistral).
+        # The original calls padding_mask.all() which is data-dependent control flow
+        # incompatible with vmap.
+        if hasattr(masking_utils, "_ignore_causal_mask_sdpa"):
+            _vmap_safe_ignore_causal_mask_sdpa._original = (
+                masking_utils._ignore_causal_mask_sdpa
+            )
+            masking_utils._ignore_causal_mask_sdpa = (
+                _vmap_safe_ignore_causal_mask_sdpa
+            )
     except ImportError:
         pass
 
