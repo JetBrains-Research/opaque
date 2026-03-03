@@ -227,9 +227,28 @@ Stripped from CCE (not needed): bias, logit_avg, gradient filtering, Kahan summa
 
 ---
 
-### Phase 5: CPU Offloading — NOT STARTED
+### Phase 5: Gradient Checkpointing — COMPLETED
 
-**Research completed (Feb 2025):** Analysis of Unsloth's memory optimizations revealed that their 4-6x batch size improvement comes primarily from gradient checkpointing with CPU offloading (~50% of savings) — blocked by vmap.
+**Problem:**
+- `torch.utils.checkpoint` was incompatible with `vmap(grad())` due to:
+  1. `saved_tensors_hooks` blocked by safety decorator on `grad_and_value_impl`
+  2. `_NoopSaveInputs` (checkpoint internal) missing vmap batching rule
+  3. `_CheckpointFrame` tensor-count validation failing under vmap
+  4. `create_graph=True` in backward trapping recomputed activations (defeating checkpoint)
+  5. PEFT keeping decoder layers in eval mode, silently bypassing checkpoint
+
+**Solution:** Five monkey-patches in `opaque.compat.pytorch._checkpoint_patches`:
+1. Remove `doesnt_support_saved_tensors_hooks` from `grad_and_value_impl` / `_vjp_with_argnums`
+2. Add vmap batching rule to `_NoopSaveInputs`
+3. Disable `_CheckpointFrame.check_recomputed_tensors_match`
+4. Force `create_graph=False` in `_autograd_grad` (safe for first-order only)
+5. Force `use_reentrant=False` and fix PEFT training mode in `gradient_checkpointing_enable()`
+
+**Results:** ~81% GPU memory savings on Mellum-4b (58.2 GB → 10.9 GB peak).
+
+---
+
+### Phase 6: CPU Offloading — NOT STARTED
 
 **Applicable options:**
 - **Frozen embedding offloading** (low risk): Move 128K vocab embeddings to CPU, ~1-2 GB savings, ~5-10% slower forward
@@ -239,11 +258,10 @@ Both patterns confirmed working in vmap compatibility tests (Appendix B).
 
 ---
 
-### Phase 6: Research — NOT STARTED
+### Phase 7: Research — NOT STARTED
 
-**High-risk explorations after Phase 5:**
+**High-risk explorations:**
 - 4-bit quantization with vmap (bitsandbytes blocked, but simulated NF4 works)
-- Hybrid checkpointing (standard checkpoint for embedding/output layers only)
 
 ---
 
@@ -369,19 +387,19 @@ See `tests/research/test_memory_optimization_approaches*.py` for full test code.
 | **Hybrid model (CPU frozen + GPU trainable)** | `test_model_with_cpu_frozen_layers` | Works |
 | **Chunked batch processing** | `test_chunked_batch_processing` | Works |
 
-### CONFIRMED NOT WORKING
+### CONFIRMED NOT WORKING (without patches)
 
-| Technique | Test | Error |
-|-----------|------|-------|
-| `torch.utils.checkpoint(use_reentrant=True)` | `test_standard_checkpoint_reentrant` | Must override setup_context |
-| `torch.utils.checkpoint(use_reentrant=False)` | `test_standard_checkpoint_non_reentrant` | `_NoopSaveInputs` no vmap support |
-| `bitsandbytes.nn.Linear4bit` | `test_bitsandbytes_linear_4bit` | Must override setup_context |
-| `bitsandbytes.nn.Linear8bitLt` | `test_bitsandbytes_linear_8bit` | Must override setup_context |
-| `cut_cross_entropy.linear_cross_entropy` | `test_cut_cross_entropy_with_fixed_inputs` | Must override setup_context |
+| Technique | Test | Error | Status |
+|-----------|------|-------|--------|
+| `torch.utils.checkpoint(use_reentrant=True)` | `test_standard_checkpoint_reentrant` | Must override setup_context | Fundamentally incompatible |
+| `torch.utils.checkpoint(use_reentrant=False)` | `test_standard_checkpoint_non_reentrant` | `_NoopSaveInputs` no vmap support | **Fixed in Phase 5** via monkey-patches |
+| `bitsandbytes.nn.Linear4bit` | `test_bitsandbytes_linear_4bit` | Must override setup_context | |
+| `bitsandbytes.nn.Linear8bitLt` | `test_bitsandbytes_linear_8bit` | Must override setup_context | |
+| `cut_cross_entropy.linear_cross_entropy` | `test_cut_cross_entropy_with_fixed_inputs` | Must override setup_context | **Replaced in Phase 3b** with ported kernels |
 
 ### Key Findings
 
-1. **Manual checkpoint WORKS**: Using `torch.autograd.Function` with custom `vmap()` and manual recomputation in backward is vmap-compatible.
+1. **Gradient checkpointing WORKS (with patches)**: Phase 5 monkey-patches PyTorch internals to enable `torch.utils.checkpoint(use_reentrant=False)` under vmap. ~81% memory savings on Mellum-4b.
 
 2. **CPU offloading WORKS**: Moving activations to CPU in `setup_context` and fetching in `backward` works with vmap.
 
