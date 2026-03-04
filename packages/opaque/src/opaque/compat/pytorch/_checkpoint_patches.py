@@ -213,9 +213,7 @@ def apply_checkpoint_patches() -> None:
                 pending.clear()
 
             # Snapshot originals (what functional_call will restore on exit).
-            all_named = dict(
-                (*module.named_parameters(), *module.named_buffers())
-            )
+            all_named = dict((*module.named_parameters(), *module.named_buffers()))
             if isinstance(parameter_and_buffer_dicts, dict):
                 keys = parameter_and_buffer_dicts.keys()
             else:
