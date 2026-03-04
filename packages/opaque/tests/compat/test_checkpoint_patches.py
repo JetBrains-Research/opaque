@@ -58,9 +58,7 @@ class TestCheckpointPatches:
 
         def f(x):
             h = checkpoint(
-                lambda x: F.gelu(
-                    torch.func.functional_call(model, params, (x,))
-                ),
+                lambda x: F.gelu(torch.func.functional_call(model, params, (x,))),
                 x,
                 use_reentrant=False,
             )
@@ -71,9 +69,7 @@ class TestCheckpointPatches:
 
         # Reference: no checkpoint
         def f_ref(x):
-            return F.gelu(
-                torch.func.functional_call(model, params, (x,))
-            ).sum()
+            return F.gelu(torch.func.functional_call(model, params, (x,))).sum()
 
         g_ref = vmap(grad(f_ref))(x)
         torch.testing.assert_close(g, g_ref, rtol=1e-4, atol=1e-5)

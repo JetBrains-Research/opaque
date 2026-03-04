@@ -134,20 +134,14 @@ def apply_checkpoint_patches() -> None:
     _OrigSaveOnCpu = autograd_graph.save_on_cpu
 
     class _VmapSaveOnCpu(_OrigSaveOnCpu):
-        def __init__(
-            self, pin_memory: bool = False, device_type: str = "cuda"
-        ) -> None:
+        def __init__(self, pin_memory: bool = False, device_type: str = "cuda") -> None:
             device_module = getattr(torch, device_type, torch.cuda)
 
             def pack_to_cpu(tensor):  # type: ignore[no-untyped-def]
                 if not pin_memory:
                     return (tensor.device, tensor.cpu())
-                is_pinnable = (
-                    device_module.is_available() and not tensor.is_sparse
-                )
-                packed = torch.empty_like(
-                    tensor, device="cpu", pin_memory=is_pinnable
-                )
+                is_pinnable = device_module.is_available() and not tensor.is_sparse
+                packed = torch.empty_like(tensor, device="cpu", pin_memory=is_pinnable)
                 packed.copy_(tensor, non_blocking=is_pinnable)
                 return (tensor.device, packed)
 

@@ -198,9 +198,7 @@ def make_functional(
         params_values = tuple(params_dict.values())
 
         def fmodel_tuple(new_params_values, *args, **kwargs):
-            new_params_dict = dict(
-                zip(params_names, new_params_values, strict=True)
-            )
+            new_params_dict = dict(zip(params_names, new_params_values, strict=True))
             return torch.func.functional_call(
                 stateless_mod, new_params_dict, args, kwargs
             )
