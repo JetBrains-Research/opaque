@@ -1,75 +1,10 @@
 # Known Limitations
 
-## Gradient checkpointing incompatibility
+## Gradient checkpointing
 
-Gradient checkpointing (`torch.utils.checkpoint.checkpoint`) is
-incompatible with `torch.func.vmap`, which Opaque uses for per-example
-gradient computation.
-
-**Error:**
-
-```
-RuntimeError: You tried to vmap over _NoopSaveInputs, but it does not have
-vmap support.
-```
-
-**When this happens:**
-
-- Explicit use of `torch.utils.checkpoint.checkpoint` in a model's
-  `forward` method.
-- Calling `model.gradient_checkpointing_enable()` on a HuggingFace
-  Transformers model.
-- Third-party models that enable checkpointing by default.
-
-**Solution:** Use microbatching instead. The `microbatch_size` parameter on
-`clipped_grad` achieves similar memory savings by processing the batch in
-chunks:
-
-```python
-from opaque import clipped_grad
-
-grad_fn, state = clipped_grad(
-    loss_fn,
-    l2_clip_norm=1.0,
-    batch_argnums=(1, 2),
-    microbatch_size=16,
-)
-```
-
-Use `TrainingProfiler` from `opaque.profiling` to test a few microbatch
-values and keep the largest stable one:
-
-```python
-from opaque.profiling import TrainingProfiler, reset_peak_memory
-
-profiler = TrainingProfiler(device)
-for candidate in [32, 16, 8, 4, 2, 1]:
-  grad_fn, state = clipped_grad(
-    loss_fn,
-    l2_clip_norm=1.0,
-    batch_argnums=(1, 2),
-    microbatch_size=candidate,
-  )
-  reset_peak_memory(device)
-  with profiler.step(batch_size=batch_size):
-    grads, aux = grad_fn(params, x, y, state=state)
-
-  print(candidate, profiler.current_metrics()["memory_peak_gb"])
-```
-
-**Memory comparison:**
-
-| Technique | Memory | Compute | Opaque compatible |
-|-----------|--------|---------|-------------------|
-| No optimization | O(batch_size) | 1x | Yes |
-| Gradient checkpointing | O(sqrt(batch_size)) | ~2x | No |
-| Microbatching (size m) | O(m) | 1x | Yes |
-
-**Root cause:** PyTorch's checkpoint uses `autograd.Function` internally.
-`torch.func.vmap` requires functions to implement vmap rules, and the
-checkpoint `autograd.Function` does not. This is tracked in
-[PyTorch #165880](https://github.com/pytorch/pytorch/issues/165880). When
-PyTorch resolves this, Opaque will automatically support checkpointing.
+Supported under `vmap(grad(...))` via automatic patches. See
+[Memory Optimizations](user-guide/memory-optimizations.md#gradient-checkpointing)
+for usage and limitations.
 
 ## Flash Attention 2 incompatibility
 
@@ -108,7 +43,7 @@ code.
 On CPU/MPS (or without Triton), Opaque falls back to non-kernel compatibility
 paths. To control patching behavior, use the `OPAQUE_SKIP_COMPAT_PATCHES` and
 `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES` environment variables. See
-[Kernel Optimizations](user-guide/kernel-optimizations.md#configuration).
+[HuggingFace Compatibility](user-guide/huggingface.md#configuration).
 
 Advanced users can still call kernel wrappers directly via
 `opaque.compat.kernels`.

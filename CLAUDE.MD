@@ -158,7 +158,7 @@ export WANDB_ENTITY="federated-compute"
 
 1. **Functional-first**: Immutable state, pure functions, explicit RNG keys
 2. **vmap-native**: All operations support `torch.func.vmap` for per-example gradients
-3. **No gradient checkpointing**: Incompatible with vmap; use microbatching instead
+3. **Gradient checkpointing**: Supported via `compat.pytorch` patches (first-order only); combinable with microbatching
 4. **Triton kernels**: Operation-level fusion instead of graph-level optimization
 5. **Pre-shift in CE kernels**: Labels shifted in Python, not kernel, for trivial vmap merge
 6. **Skip frozen weight gradients**: LoRA training skips `dC` for `lm_head` (~1/3 backward saved)
@@ -174,13 +174,14 @@ See `docs/development/MEMORY_OPTIMIZATION_PLAN.md` for full details.
 - Phase 2: Fused LoRA operations (W, QKV, MLP)
 - Phase 3: Chunked cross-entropy
 - Phase 3b: Fused linear cross-entropy (ported from Apple CCE)
+- Phase 5: Gradient checkpointing under vmap (~81% savings on Mellum-4b)
 
 **Attempted / no code changes needed:**
 - Phase 4: Dtype precision guards (new-style `autograd.Function` is incompatible with `@torch.amp.custom_fwd` / `@custom_bwd`, PyTorch #132388)
 
 **Not started:**
-- Phase 5: CPU offloading (frozen embeddings, activation offload)
-- Phase 6: Research (4-bit quantization, hybrid checkpointing)
+- Phase 6: CPU offloading (frozen embeddings, activation offload)
+- Phase 7: Research (4-bit quantization)
 
 ---
 

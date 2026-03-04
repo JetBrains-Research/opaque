@@ -99,15 +99,14 @@ understanding, or jump to a specific topic.
 - **[Distributed Training](distributed.md)** -- DDP with synchronized noise
   and gradient aggregation.
 - **[HuggingFace Compatibility](huggingface.md)** -- Using HuggingFace
-  Transformers models with Opaque, including LoRA fine-tuning.
-- **[Kernel Optimizations](kernel-optimizations.md)** -- Fused Triton kernels
-  for memory-efficient DP training: SwiGLU, RoPE, cross-entropy, LoRA fusion.
-- **[Memory Profiling](memory-profiling.md)** -- Microbatch auto-tuning and
-  memory tracking.
+  Transformers models with Opaque, including LoRA, fused Triton kernels,
+  and model compatibility.
+- **[Memory Optimizations](memory-optimizations.md)** -- Microbatching,
+  gradient checkpointing, fused kernels, profiling, and configuration.
 - **[Privacy Auditing](auditing.md)** -- Empirical privacy validation via
   membership inference.
 
 ### Reference
 
-- **[Known Limitations](../limitations.md)** -- Gradient checkpointing
-  incompatibility and other constraints.
+- **[Known Limitations](../limitations.md)** -- Flash Attention, DDP-only,
+  in-place operations, and other constraints.

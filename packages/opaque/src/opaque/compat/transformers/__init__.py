@@ -28,7 +28,7 @@ Attention implementations:
 
 Training features:
 - Mixed precision (fp16/bfloat16): Fully supported
-- Gradient checkpointing: Not compatible (autograd.Function incompatible with vmap)
+- Gradient checkpointing: Supported (enable with model.gradient_checkpointing_enable())
 - PEFT/LoRA: Fully supported (LoRA, IA3, Prefix tuning, P-tuning, Prompt tuning tested)
 - torch.compile: Fully supported
 - CUDA: Fully supported

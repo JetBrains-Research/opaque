@@ -286,7 +286,7 @@ grad_fn, clip_state = clipped_grad(
 )
 ```
 
-See [Memory Profiling](memory-profiling.md) for more details on memory
+See [Memory Optimizations](memory-optimizations.md) for more details on memory
 analysis tools.
 
 ### Privacy equivalence

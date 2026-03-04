@@ -90,7 +90,7 @@ nav:
     - Optimizers: user-guide/optimizers.md
     - Distributed Training: user-guide/distributed.md
     - HuggingFace Compatibility: user-guide/huggingface.md
-    - Memory Profiling: user-guide/memory-profiling.md
+    - Memory Optimizations: user-guide/memory-optimizations.md
     - Privacy Auditing: user-guide/auditing.md
     - Known Limitations: limitations.md
   - Mechanisms:
