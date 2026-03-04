@@ -151,12 +151,12 @@ def make_functional(
         ...     # ... assign grads and step optimizer
 
     Note:
-        Parameters are pre-set on the module before each ``functional_call``
-        so that gradient checkpointing recomputation during backward sees the
-        correct parameters (``functional_call``'s context-manager restore
-        becomes a no-op because the "originals" are the same tensors).
-        The module's original parameters are overwritten; use the returned
-        ``params`` / ``trainable`` / ``frozen`` dicts as the source of truth.
+        Gradient checkpointing compatibility is handled by Patches 7-8 in
+        ``opaque.compat.pytorch._checkpoint_patches``.  Those patches make
+        ``functional_call`` record its (module, params) on a thread-local
+        stack, and make ``checkpoint`` replay that context before
+        recomputation.  This wrapper is purely functional — it delegates
+        entirely to ``torch.func.functional_call``.
 
     See Also:
         - PyTorch migration guide: https://pytorch.org/docs/master/func.migrating.html
@@ -186,10 +186,6 @@ def make_functional(
         }
 
         def fmodel_dict(params_dict_input, *args, **kwargs):
-            # Pre-set params so checkpoint recomputation sees them even after
-            # functional_call's context manager restores "originals" (which
-            # are now the same tensors we just set).
-            _set_module_params(stateless_mod, params_dict_input)
             return torch.func.functional_call(
                 stateless_mod, params_dict_input, args, kwargs
             )
@@ -205,7 +201,6 @@ def make_functional(
             new_params_dict = dict(
                 zip(params_names, new_params_values, strict=True)
             )
-            _set_module_params(stateless_mod, new_params_dict)
             return torch.func.functional_call(
                 stateless_mod, new_params_dict, args, kwargs
             )

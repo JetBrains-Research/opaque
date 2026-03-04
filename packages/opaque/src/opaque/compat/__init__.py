@@ -40,6 +40,15 @@ def apply_compat_patches() -> None:
         _is_patched = True
         return
 
+    # PyTorch patches must run before transformers patches so that
+    # ``torch.utils.checkpoint.checkpoint`` is already patched when
+    # transformers does ``from torch.utils.checkpoint import checkpoint``
+    # at import time.
+    if "pytorch" not in skip:
+        from opaque.compat.pytorch import apply_pytorch_patches
+
+        apply_pytorch_patches()
+
     if "transformers" not in skip:
         try:
             from opaque.compat.transformers import apply_transformers_patches
@@ -47,11 +56,6 @@ def apply_compat_patches() -> None:
             apply_transformers_patches()
         except ImportError:
             pass
-
-    if "pytorch" not in skip:
-        from opaque.compat.pytorch import apply_pytorch_patches
-
-        apply_pytorch_patches()
 
     _is_patched = True
 

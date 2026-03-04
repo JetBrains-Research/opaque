@@ -43,6 +43,41 @@ class TestCheckpointPatches:
         g_ref = vmap(grad(f_ref))(x)
         torch.testing.assert_close(g, g_ref, rtol=1e-4, atol=1e-5)
 
+    def test_functional_call_param_context_protocol(self, device):
+        """Patches 7-8: functional_call + checkpoint protocol restores params.
+
+        Verifies that checkpoint recomputation sees the correct parameters
+        from functional_call's thread-local context, WITHOUT any manual
+        _set_module_params calls.
+        """
+        model = torch.nn.Linear(32, 32, bias=False).to(device)
+
+        # Use functional_call directly (no _set_module_params hack)
+        new_weight = torch.randn(32, 32, device=device)
+        params = {"weight": new_weight}
+
+        def f(x):
+            h = checkpoint(
+                lambda x: F.gelu(
+                    torch.func.functional_call(model, params, (x,))
+                ),
+                x,
+                use_reentrant=False,
+            )
+            return h.sum()
+
+        x = torch.randn(4, 32, device=device)
+        g = vmap(grad(f))(x)
+
+        # Reference: no checkpoint
+        def f_ref(x):
+            return F.gelu(
+                torch.func.functional_call(model, params, (x,))
+            ).sum()
+
+        g_ref = vmap(grad(f_ref))(x)
+        torch.testing.assert_close(g, g_ref, rtol=1e-4, atol=1e-5)
+
     def test_checkpoint_saves_memory(self, device):
         """Checkpoint with patches actually reduces peak GPU memory."""
         if device.type != "cuda":
