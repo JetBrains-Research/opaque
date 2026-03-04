@@ -19,18 +19,40 @@ def _set_module_params(module: nn.Module, params_dict: dict[str, torch.Tensor]) 
     checkpointing compatibility: checkpoint recomputation during backward
     accesses ``self.weight`` etc. on the module, and ``functional_call``
     would have already restored the originals by then.
+
+    Uses a per-module cache to avoid repeated string splitting and getattr
+    traversal on subsequent calls.
     """
+    # Build or retrieve cached (target_dict, key) resolution for this module.
+    cache = getattr(module, "_opaque_param_cache", None)
+    if cache is None:
+        cache = {}
+        # Build from ALL named params/buffers so the cache works for any
+        # subset (e.g. scoped per-layer dicts from _scope_params).
+        for name, _ in (*module.named_parameters(), *module.named_buffers()):
+            parts = name.split(".")
+            obj = module
+            for part in parts[:-1]:
+                obj = getattr(obj, part)
+            leaf = parts[-1]
+            if leaf in obj._parameters:
+                cache[name] = (obj._parameters, leaf)
+            elif leaf in obj._buffers:
+                cache[name] = (obj._buffers, leaf)
+            else:
+                cache[name] = (None, (obj, leaf))
+        module._opaque_param_cache = cache  # type: ignore[attr-defined]
+
     for name, value in params_dict.items():
-        parts = name.split(".")
-        obj = module
-        for part in parts[:-1]:
-            obj = getattr(obj, part)
-        if parts[-1] in obj._parameters:
-            obj._parameters[parts[-1]] = value
-        elif parts[-1] in obj._buffers:
-            obj._buffers[parts[-1]] = value
+        target, key = cache[name]
+        if target is not None:
+            # Fast path: direct dict assignment (_parameters or _buffers)
+            if target.get(key) is not value:
+                target[key] = value
         else:
-            setattr(obj, parts[-1], value)
+            # Fallback: setattr
+            obj, attr = key
+            setattr(obj, attr, value)
 
 
 def make_functional(
