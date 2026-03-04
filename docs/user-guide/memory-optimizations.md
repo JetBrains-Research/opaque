@@ -134,6 +134,18 @@ with functorch). No special kwargs needed.
   in practice.
 - Skip patches with: `OPAQUE_SKIP_PYTORCH_CHECKPOINT_PATCHES=all`
 
+### CPU offloading of saved tensors
+
+`torch.autograd.graph.save_on_cpu` moves tensors saved for backward to
+pinned CPU memory during forward and reloads them during backward. When
+combined with gradient checkpointing, it offloads the checkpoint inputs
+(inter-layer hidden states); checkpoint handles intermediates separately.
+
+```python
+with torch.autograd.graph.save_on_cpu(pin_memory=True):
+    grads, aux = grad_fn(params, batch)
+```
+
 ## Fused Triton kernels
 
 Opaque includes fused Triton kernels that replace standard PyTorch operations

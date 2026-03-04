@@ -43,6 +43,7 @@ USAGE:
 """
 
 import argparse
+import contextlib
 import importlib.util
 import os
 import time
@@ -297,6 +298,12 @@ def parse_args():
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Enable gradient checkpointing for memory savings (trades compute for memory)",
+    )
+    train_group.add_argument(
+        "--cpu_offload",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Offload saved tensors to CPU via save_on_cpu (works with or without checkpointing)",
     )
 
     lora_group = parser.add_argument_group("lora", "LoRA adapter settings")
@@ -715,6 +722,14 @@ def main():
         )
         print("\nGradient checkpointing: enabled")
 
+    offload_ctx = (
+        torch.autograd.graph.save_on_cpu(pin_memory=True)
+        if args.cpu_offload
+        else contextlib.nullcontext()
+    )
+    if args.cpu_offload:
+        print(f"CPU offload: enabled (save_on_cpu, works {'with' if args.gradient_checkpointing else 'without'} checkpointing)")
+
     # Convert to functional (only LoRA parameters)
     print("\nConverting to functional form (LoRA parameters only)...")
     print("  (This may take 1-2 minutes for large models...)")
@@ -885,9 +900,10 @@ def main():
             # Time the training step using profiler
             with profiler.step(batch_size=len(tokens)):
                 # Compute clipped gradients (with state passing)
-                (grads_tuple, aux), clip_state = grad_fn(
-                    trainable_params, tokens, state=clip_state
-                )
+                with offload_ctx:
+                    (grads_tuple, aux), clip_state = grad_fn(
+                        trainable_params, tokens, state=clip_state
+                    )
                 current_clip_norm = clip_state.clip_norm
 
                 # Add Gaussian noise

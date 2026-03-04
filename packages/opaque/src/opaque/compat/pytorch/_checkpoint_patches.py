@@ -35,11 +35,13 @@ _is_checkpoint_patched = False
 def apply_checkpoint_patches() -> None:
     """Patch PyTorch to allow gradient checkpointing under vmap(grad(...)).
 
-    Applies four patches:
+    Applies six patches:
     1. Remove doesnt_support_saved_tensors_hooks from grad/vjp internals
     2. Add vmap batching rule to checkpoint's _NoopSaveInputs
     3. Disable checkpoint tensor-count validation (fails under vmap)
     4. Use create_graph=False in _autograd_grad (safe for first-order only)
+    5. Fix save_on_cpu to use empty_like (vmap-compatible async pinned transfers)
+    6. Force use_reentrant=False in HuggingFace's gradient_checkpointing_enable
 
     No-op when OPAQUE_SKIP_PYTORCH_CHECKPOINT_PATCHES=all.
     """
@@ -110,7 +112,49 @@ def apply_checkpoint_patches() -> None:
 
     eager_transforms._autograd_grad = _autograd_grad_no_create_graph
 
-    # Patch 5: Force use_reentrant=False in HuggingFace's
+    # Patch 5: Fix save_on_cpu to work under vmap.
+    # PyTorch's save_on_cpu uses torch.empty(tensor.size(), ...) which
+    # returns the logical (unbatched) shape under vmap. The subsequent
+    # copy_() then fails because the destination is unbatched while the
+    # source is batched. Using empty_like preserves vmap batch dimensions
+    # via its EXISTING_BDIM batching rule, so both tensors are batched
+    # and copy_() works. Async pinned memory transfers are preserved.
+    import torch
+    import torch.autograd.graph as autograd_graph
+
+    _OrigSaveOnCpu = autograd_graph.save_on_cpu
+
+    class _VmapSaveOnCpu(_OrigSaveOnCpu):
+        def __init__(
+            self, pin_memory: bool = False, device_type: str = "cuda"
+        ) -> None:
+            device_module = getattr(torch, device_type, torch.cuda)
+
+            def pack_to_cpu(tensor):  # type: ignore[no-untyped-def]
+                if not pin_memory:
+                    return (tensor.device, tensor.cpu())
+                is_pinnable = (
+                    device_module.is_available() and not tensor.is_sparse
+                )
+                packed = torch.empty_like(
+                    tensor, device="cpu", pin_memory=is_pinnable
+                )
+                packed.copy_(tensor, non_blocking=is_pinnable)
+                return (tensor.device, packed)
+
+            def unpack_from_cpu(packed):  # type: ignore[no-untyped-def]
+                device, tensor = packed
+                return tensor.to(device, non_blocking=pin_memory)
+
+            # Skip _OrigSaveOnCpu.__init__ (it would install the broken
+            # hooks); go directly to the grandparent saved_tensors_hooks.
+            torch.autograd.graph.saved_tensors_hooks.__init__(
+                self, pack_to_cpu, unpack_from_cpu
+            )
+
+    autograd_graph.save_on_cpu = _VmapSaveOnCpu
+
+    # Patch 6: Force use_reentrant=False in HuggingFace's
     # gradient_checkpointing_enable(). HF defaults to use_reentrant=True,
     # which is fundamentally incompatible with functorch transforms.
     try:
