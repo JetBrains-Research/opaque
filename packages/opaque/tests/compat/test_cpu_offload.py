@@ -1,73 +1,137 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for vmap-compatible save_on_cpu (Patch 5 in _checkpoint_patches)."""
+"""Tests for vmap-compatible save_on_cpu (Patch 5 in _checkpoint_patches).
+
+Verifies that save_on_cpu produces correct clipped gradients and actually
+offloads tensors to CPU when used with Opaque's clipped_grad pipeline.
+"""
 
 import pytest
 import torch
-import torch.nn as nn
-from torch.func import grad, vmap
-from torch.utils.checkpoint import checkpoint
 
 pytestmark = pytest.mark.skipif(
     not torch.cuda.is_available(), reason="save_on_cpu requires CUDA"
 )
 
 
-class CheckpointedMLP(nn.Module):
-    def __init__(self, hidden: int = 256, layers: int = 4):
-        super().__init__()
-        self.layers = nn.ModuleList(
-            [nn.Linear(hidden, hidden) for _ in range(layers)]
+class TestSaveOnCpuWithClippedGrad:
+    def test_clipped_grad_correctness(self):
+        """save_on_cpu produces identical clipped gradients."""
+        from opaque import clipped_grad
+
+        W = torch.randn(32, 32, device="cuda")
+
+        def loss_fn(w, x):
+            return (x @ w).relu().sum()
+
+        grad_fn, state = clipped_grad(
+            loss_fn, argnums=0, batch_argnums=(1,), l2_clip_norm=1.0
         )
 
-    def forward(self, x):
-        for layer in self.layers:
-            x = checkpoint(self._layer_forward, layer, x, use_reentrant=False)
-        return x.sum()
+        x = torch.randn(4, 32, device="cuda")
+        grads_vanilla, _ = grad_fn(W, x, state=state)
 
-    @staticmethod
-    def _layer_forward(layer, x):
-        return layer(x).relu()
-
-
-class TestSaveOnCpuVmap:
-    def test_basic_vmap_grad(self):
-        """save_on_cpu works with vmap(grad(...))."""
-        import opaque  # noqa: F401 — applies patches
-
-        def loss_fn(x):
-            return (x**2).sum()
-
-        x = torch.randn(4, 8, device="cuda")
-        grads_vanilla = vmap(grad(loss_fn))(x)
         with torch.autograd.graph.save_on_cpu(pin_memory=True):
-            grads_offload = vmap(grad(loss_fn))(x)
+            grads_offload, _ = grad_fn(W, x, state=state)
+
         torch.testing.assert_close(grads_offload, grads_vanilla)
 
-    def test_with_checkpoint(self):
-        """save_on_cpu composes with gradient checkpointing under vmap."""
-        import opaque  # noqa: F401 — applies patches
+    def test_clipped_grad_with_checkpoint(self):
+        """save_on_cpu + checkpoint produces correct clipped gradients."""
+        from torch.utils.checkpoint import checkpoint
 
-        def loss_fn(x):
-            def block(h):
-                return (h * 2).relu()
+        from opaque import clipped_grad
 
-            h = checkpoint(block, x, use_reentrant=False)
-            h = checkpoint(block, h, use_reentrant=False)
+        W1 = torch.randn(32, 32, device="cuda")
+        W2 = torch.randn(32, 32, device="cuda")
+
+        def block(h, w):
+            return (h @ w).relu()
+
+        def loss_fn(w1, w2, x):
+            h = checkpoint(block, x, w1, use_reentrant=False)
+            h = checkpoint(block, h, w2, use_reentrant=False)
             return h.sum()
 
-        x = torch.randn(4, 8, device="cuda")
-        grads_vanilla = vmap(grad(loss_fn))(x)
+        grad_fn, state = clipped_grad(
+            loss_fn, argnums=(0, 1), batch_argnums=(2,), l2_clip_norm=1.0
+        )
+
+        x = torch.randn(4, 32, device="cuda")
+        grads_vanilla, _ = grad_fn(W1, W2, x, state=state)
+
         with torch.autograd.graph.save_on_cpu(pin_memory=True):
-            grads_offload = vmap(grad(loss_fn))(x)
-        torch.testing.assert_close(grads_offload, grads_vanilla)
+            grads_offload, _ = grad_fn(W1, W2, x, state=state)
+
+        for g_v, g_o in zip(grads_vanilla, grads_offload):
+            torch.testing.assert_close(g_o, g_v)
 
     def test_no_pin_memory(self):
-        """save_on_cpu(pin_memory=False) uses .cpu() path."""
-        import opaque  # noqa: F401 — applies patches
+        """save_on_cpu(pin_memory=False) path works with clipped_grad."""
+        from opaque import clipped_grad
 
-        x = torch.randn(4, 8, device="cuda")
-        grads_vanilla = vmap(grad(lambda x: (x**2).sum()))(x)
+        W = torch.randn(32, 32, device="cuda")
+
+        def loss_fn(w, x):
+            return (x @ w).relu().sum()
+
+        grad_fn, state = clipped_grad(
+            loss_fn, argnums=0, batch_argnums=(1,), l2_clip_norm=1.0
+        )
+
+        x = torch.randn(4, 32, device="cuda")
+        grads_vanilla, _ = grad_fn(W, x, state=state)
+
         with torch.autograd.graph.save_on_cpu(pin_memory=False):
-            grads_offload = vmap(grad(lambda x: (x**2).sum()))(x)
+            grads_offload, _ = grad_fn(W, x, state=state)
+
         torch.testing.assert_close(grads_offload, grads_vanilla)
+
+    def test_offload_reduces_gpu_memory(self):
+        """save_on_cpu moves saved activations to CPU, reducing GPU peak.
+
+        Uses an activation-dominated workload (small weights, long sequences,
+        many layers) to isolate the offloading effect. On real models, savings
+        depend on the activation-to-weight ratio and microbatch size — see
+        benchmarks in docs/user-guide/memory-optimizations.md.
+        """
+        import gc
+
+        from opaque import clipped_grad
+
+        d, layers = 64, 32
+        Ws = [torch.randn(d, d, device="cuda") for _ in range(layers)]
+
+        def loss_fn(ws, x):
+            h = x
+            for w in ws:
+                h = (h @ w).relu()
+            return h.sum()
+
+        grad_fn, state = clipped_grad(
+            loss_fn, argnums=0, batch_argnums=(1,), l2_clip_norm=1.0,
+            microbatch_size=None,
+        )
+        x = torch.randn(8, 4096, d, device="cuda")
+
+        grad_fn(Ws, x, state=state)
+        gc.collect()
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+        grad_fn(Ws, x, state=state)
+        peak_vanilla = torch.cuda.max_memory_allocated()
+
+        gc.collect()
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+        with torch.autograd.graph.save_on_cpu(pin_memory=True):
+            grad_fn(Ws, x, state=state)
+        peak_offload = torch.cuda.max_memory_allocated()
+
+        savings = (peak_vanilla - peak_offload) / peak_vanilla
+        assert savings > 0.3, (
+            f"Expected >30% GPU memory savings, got {savings:.1%} "
+            f"(vanilla={peak_vanilla / 1e6:.0f}MB, "
+            f"offload={peak_offload / 1e6:.0f}MB)"
+        )
+
