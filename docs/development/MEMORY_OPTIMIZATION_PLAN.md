@@ -237,24 +237,54 @@ Stripped from CCE (not needed): bias, logit_avg, gradient filtering, Kahan summa
   4. `create_graph=True` in backward trapping recomputed activations (defeating checkpoint)
   5. PEFT keeping decoder layers in eval mode, silently bypassing checkpoint
 
-**Solution:** Five monkey-patches in `opaque.compat.pytorch._checkpoint_patches`:
+**Solution:** Eight monkey-patches in `opaque.compat.pytorch._checkpoint_patches`:
 1. Remove `doesnt_support_saved_tensors_hooks` from `grad_and_value_impl` / `_vjp_with_argnums`
 2. Add vmap batching rule to `_NoopSaveInputs`
 3. Disable `_CheckpointFrame.check_recomputed_tensors_match`
 4. Force `create_graph=False` in `_autograd_grad` (safe for first-order only)
-5. Force `use_reentrant=False` and fix PEFT training mode in `gradient_checkpointing_enable()`
+5. Fix `save_on_cpu` to use `empty_like` (vmap-compatible async pinned transfers)
+6. Force `use_reentrant=False` and fix PEFT training mode in `gradient_checkpointing_enable()`; also fix HF's stale `checkpoint` binding
+7. Record `(module, params)` on a thread-local stack in `functional_call`
+8. Capture param context in `checkpoint`, replay via `_set_module_params` before recomputation
+
+Patches 7-8 form a protocol between `functional_call` and `checkpoint`: `functional_call` announces which params it's running with; `checkpoint` captures that and replays it during recomputation.  This keeps `make_functional` purely functional — no parameter mutation.
 
 **Results:** ~81% GPU memory savings on Mellum-4b (58.2 GB → 10.9 GB peak).
 
 ---
 
-### Phase 6: CPU Offloading — NOT STARTED
+### Phase 6: CPU Offloading — IN PROGRESS
 
-**Applicable options:**
-- **Frozen embedding offloading** (low risk): Move 128K vocab embeddings to CPU, ~1-2 GB savings, ~5-10% slower forward
-- **Activation offloading for frozen layers** (medium risk): Offload base model activations to CPU via `autograd.Function` with vmap support
+**Problem:**
+- Saved activations during backward consume significant GPU memory
+- PyTorch's `save_on_cpu` was incompatible with vmap (`torch.empty` returns
+  unbatched shape under vmap, causing shape mismatches in `copy_()`)
 
-Both patterns confirmed working in vmap compatibility tests (Appendix B).
+**Completed — `save_on_cpu` vmap fix (Patch 5):**
+Patch 5 in `_checkpoint_patches.py` replaces PyTorch's `save_on_cpu` with a
+vmap-compatible version that uses `empty_like` (preserves batch dimensions via
+`EXISTING_BDIM` batching rule) instead of `empty(tensor.size(), ...)`.  Async
+pinned-memory transfers are preserved.
+
+Users can now wrap any `clipped_grad` call with `save_on_cpu` to offload
+saved activations to CPU:
+```python
+with torch.autograd.graph.save_on_cpu(pin_memory=True):
+    grads, state = grad_fn(params, x, state=state)
+```
+
+Combines with gradient checkpointing — `save_on_cpu` offloads the subset of
+tensors that checkpoint doesn't recompute (boundary activations between
+checkpoint segments).
+
+**Test results** (4 tests in `test_cpu_offload.py`, all pass):
+- `test_clipped_grad_correctness` — identical gradients with/without offload
+- `test_clipped_grad_with_checkpoint` — combined checkpoint + offload
+- `test_no_pin_memory` — non-pinned path works
+- `test_offload_reduces_gpu_memory` — >30% GPU memory savings on activation-dominated workload
+
+**Remaining option (not yet started):**
+- **Frozen embedding offloading** (low risk): Move 128K vocab embedding *weight* to CPU permanently, ~1-2 GB static GPU savings, ~5-10% slower forward
 
 ---
 
@@ -401,7 +431,7 @@ See `tests/research/test_memory_optimization_approaches*.py` for full test code.
 
 1. **Gradient checkpointing WORKS (with patches)**: Phase 5 monkey-patches PyTorch internals to enable `torch.utils.checkpoint(use_reentrant=False)` under vmap. ~81% memory savings on Mellum-4b.
 
-2. **CPU offloading WORKS**: Moving activations to CPU in `setup_context` and fetching in `backward` works with vmap.
+2. **CPU offloading WORKS**: PyTorch's `save_on_cpu` is now vmap-compatible (Patch 5 in Phase 5). Moving activations to CPU in `setup_context` and fetching in `backward` also works with vmap.
 
 3. **Fused CE WORKS (custom impl)**: We ported CCE Triton kernels with native vmap support. The original `cut_cross_entropy` library does NOT work (missing vmap support).
 
