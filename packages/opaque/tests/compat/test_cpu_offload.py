@@ -9,9 +9,12 @@ offloads tensors to CPU when used with Opaque's clipped_grad pipeline.
 import pytest
 import torch
 
-pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="save_on_cpu requires CUDA"
-)
+pytestmark = [
+    pytest.mark.gpu,
+    pytest.mark.skipif(
+        not torch.cuda.is_available(), reason="save_on_cpu requires CUDA"
+    ),
+]
 
 
 class TestSaveOnCpuWithClippedGrad:

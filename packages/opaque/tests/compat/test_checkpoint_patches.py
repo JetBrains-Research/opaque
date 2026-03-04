@@ -14,10 +14,13 @@ from torch.utils.checkpoint import checkpoint
 
 from opaque.compat.pytorch import is_checkpoint_patched
 
-pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available(),
-    reason="Checkpoint patch tests require CUDA",
-)
+pytestmark = [
+    pytest.mark.gpu,
+    pytest.mark.skipif(
+        not torch.cuda.is_available(),
+        reason="Checkpoint patch tests require CUDA",
+    ),
+]
 
 
 class TestCheckpointPatches:

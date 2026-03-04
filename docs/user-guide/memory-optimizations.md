@@ -95,6 +95,7 @@ time via `opaque.compat.pytorch`.
 **With PyTorch directly** (non-reentrant checkpoint only):
 
 ```python
+import opaque  # must be imported before checkpoint to apply patches
 from torch.utils.checkpoint import checkpoint
 
 def my_model(x):
