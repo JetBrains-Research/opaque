@@ -1,7 +1,5 @@
 """Tests for auditing statistical helpers (one_run/stats.py)."""
 
-import numpy as np
-import pytest
 
 from opaque.auditing.one_run.stats import one_run_p_value
 

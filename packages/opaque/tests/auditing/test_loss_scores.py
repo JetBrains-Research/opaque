@@ -210,16 +210,25 @@ class TestReferenceScores:
         loader = DataLoader(dataset, batch_size=32)
 
         ref_scores = loss_scores(
-            loss_fn, ref_params, batch_argnums=(1,), dataloader=loader,
+            loss_fn,
+            ref_params,
+            batch_argnums=(1,),
+            dataloader=loader,
         )
         scores = loss_scores(
-            loss_fn, params, batch_argnums=(1,), dataloader=loader,
+            loss_fn,
+            params,
+            batch_argnums=(1,),
+            dataloader=loader,
             reference_scores=ref_scores,
         )
 
         # Manually compute expected: -loss(params) - (-loss(ref_params))
         raw_scores = loss_scores(
-            loss_fn, params, batch_argnums=(1,), dataloader=loader,
+            loss_fn,
+            params,
+            batch_argnums=(1,),
+            dataloader=loader,
         )
         expected = raw_scores - ref_scores
         np.testing.assert_allclose(scores, expected, atol=1e-5)
@@ -240,7 +249,10 @@ class TestReferenceScores:
 
         with pytest.raises(ValueError, match="reference_scores shape"):
             loss_scores(
-                loss_fn, params, batch_argnums=(1,), dataloader=loader,
+                loss_fn,
+                params,
+                batch_argnums=(1,),
+                dataloader=loader,
                 reference_scores=wrong_ref,
             )
 
