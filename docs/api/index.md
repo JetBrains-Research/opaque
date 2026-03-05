@@ -52,7 +52,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 - **[Auditing](auditing.md)**: Empirical privacy validation
   - `auditing.coin_flip()`, `auditing.loss_scores()`, `auditing.one_run()` - Three-step workflow
   - `OneRunEstimate.epsilon_at()` - Epsilon bound (one-run method)
-  - `auc()`, `beta_at()`, `summary()` - Attack metrics and reporting
+  - `auc()`, `beta_at()` - Attack metrics
 
 - **[Distributed](distributed.md)**: Multi-GPU training with DDP
   - `sum_gradients()` - Sum clipped gradients across GPUs (for DP training)

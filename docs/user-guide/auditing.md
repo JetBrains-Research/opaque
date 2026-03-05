@@ -52,7 +52,8 @@ scores = auditing.loss_scores(
 
 # 4. Estimate: build the one-run estimate
 estimate = auditing.one_run(scores, coin_flip=cf)
-print(estimate.summary(delta=1e-5, theoretical_epsilon=target_eps))
+print(f"ε (empirical): {estimate.epsilon_at(delta=1e-5):.4f}")
+print(f"AUC: {estimate.auc():.4f}")
 ```
 
 ## Integration with training
@@ -84,7 +85,7 @@ scores = auditing.loss_scores(
     dataloader=canary_loader,
 )
 estimate = auditing.one_run(scores, coin_flip=cf)
-print(estimate.summary(delta=1e-5, theoretical_epsilon=target_epsilon))
+print(f"ε (empirical): {estimate.epsilon_at(delta=1e-5):.4f}")
 ```
 
 See [examples/train_causal_lm.py](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_causal_lm.py)

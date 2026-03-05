@@ -310,7 +310,7 @@ class TestOneRunFunction:
 
 
 class TestOneRunEstimateRepr:
-    """Tests for OneRunEstimate __repr__ and summary."""
+    """Tests for OneRunEstimate __repr__."""
 
     def test_repr(self):
         estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
@@ -319,32 +319,6 @@ class TestOneRunEstimateRepr:
         assert "n_in=50" in r
         assert "n_out=50" in r
         assert "auc=" in r
-
-    def test_summary(self):
-        estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
-        s = estimate.summary()
-        assert "Audit Summary" in s
-        assert "Samples:" in s
-        assert "AUC:" in s
-        assert "one-run" in s
-        assert "\u03b2 @" in s
-
-    def test_summary_custom_params(self):
-        estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
-        s = estimate.summary(significance=0.01, delta=1e-5)
-        assert "\u03b1=0.01" in s
-        assert "\u03b4=1.00e-05" in s
-
-    def test_summary_theoretical_epsilon(self):
-        estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
-        s = estimate.summary(theoretical_epsilon=3.0)
-        assert "theoretical" in s
-        assert "3.0000" in s
-
-    def test_summary_without_theoretical_epsilon(self):
-        estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
-        s = estimate.summary()
-        assert "theoretical" not in s
 
 
 class TestCoinFlipFunction:

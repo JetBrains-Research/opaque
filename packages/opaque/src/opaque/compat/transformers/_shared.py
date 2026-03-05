@@ -180,6 +180,46 @@ def vmap_repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
 # =============================================================================
 
 
+def _disable_kv_cache(forward_fn):
+    """Wrap forward to disable KV cache when no existing cache is passed.
+
+    HuggingFace models default to ``config.use_cache = True``, which creates
+    a ``DynamicCache`` on every forward pass — even during training where it
+    is never used.  Under ``vmap``, these cache objects leak memory due to
+    circular references (cache → tensors → autograd metadata → cache) that
+    defeat Python's reference counting.
+
+    This wrapper forces ``use_cache=False`` when ``past_key_values`` is
+    ``None`` or an empty cache, matching the approach used by Unsloth
+    (``if past_key_values is None and self.training: use_cache = False``).
+    Unlike Unsloth, we don't gate on ``self.training`` to avoid side effects
+    with LoRA modules — the condition ``past_key_values is None`` is
+    sufficient since the cache is only useful for autoregressive generation
+    with an existing cache.
+    """
+    if getattr(forward_fn, "_opaque_cache_disabled", False):
+        return forward_fn
+
+    def wrapper(*args, **kwargs):
+        past = kwargs.get("past_key_values")
+        has_cached_data = (
+            past is not None
+            and (
+                not hasattr(past, "get_seq_length")
+                or past.get_seq_length() > 0
+            )
+        )
+        if not has_cached_data:
+            kwargs["use_cache"] = False
+        return forward_fn(*args, **kwargs)
+
+    wrapper._opaque_cache_disabled = True
+    # Preserve attributes that batchify_forward checks
+    if hasattr(forward_fn, "_opaque_batchified"):
+        wrapper._opaque_batchified = forward_fn._opaque_batchified
+    return wrapper
+
+
 def batchify_forward(original_forward):
     """Wrap a model ``forward`` to handle batchless inputs under vmap.
 
@@ -198,7 +238,7 @@ def batchify_forward(original_forward):
     from opaque.utils.functional import with_batch_dim
 
     return with_batch_dim(
-        original_forward,
+        _disable_kv_cache(original_forward),
         batch_kwargs={
             "input_ids": 2,
             "attention_mask": 2,

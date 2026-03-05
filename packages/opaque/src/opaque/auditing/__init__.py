@@ -21,7 +21,7 @@ Quick start (one-run auditing, Steinke et al. 2023)::
                                    batch_argnums=(1,),
                                    dataloader=canary_loader)
     estimate = auditing.one_run(scores, coin_flip=cf)
-    print(estimate.summary(delta=1e-5))
+    print(f"ε (empirical): {estimate.epsilon_at(delta=1e-5):.4f}")
 
 References:
     - Steinke, Nasr, Jagielski (2023), https://arxiv.org/abs/2305.08846

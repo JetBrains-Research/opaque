@@ -118,7 +118,7 @@ scores = auditing.loss_scores(
     batch_argnums=(1,), dataloader=canary_loader,
 )
 estimate = auditing.one_run(scores, coin_flip=cf)
-print(estimate.summary(delta=1e-5))
+print(f"ε (empirical): {estimate.epsilon_at(delta=1e-5):.4f}")
 ```
 
 ## Next steps

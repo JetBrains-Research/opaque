@@ -176,15 +176,6 @@ estimate.beta_at(*, alpha) -> float | np.ndarray
 
 Type-II error at given Type-I error rate. `beta = 1 - TPR` at `alpha = FPR`.
 
-### summary
-
-```python
-estimate.summary(*, significance=0.05, delta=0.0, theoretical_epsilon=None) -> str
-```
-
-Formatted multi-line report. Includes `theoretical_epsilon` for comparison
-when provided.
-
 ---
 
 ## Quick reference
@@ -195,8 +186,8 @@ when provided.
 | `auditing.loss_scores(loss_fn, ...)` | Membership scores -> `np.ndarray` |
 | `auditing.one_run(scores, coin_flip=cf)` | Estimate privacy -> `OneRunEstimate` |
 | `cf.train_indices(len(dataset))` | Training indices for `dataset.select()` |
+| `cf.canary_subset(dataset)` | `Subset` of canary examples for DataLoader |
 | `estimate.epsilon_at(delta=)` | Epsilon bound (one-run method) |
 | `estimate.auc()` | Attack AUC |
 | `estimate.auc(confidence=, key=)` | AUC with confidence interval |
 | `estimate.beta_at(alpha=)` | Type-II error at given FPR |
-| `estimate.summary(theoretical_epsilon=)` | Formatted report with comparison |

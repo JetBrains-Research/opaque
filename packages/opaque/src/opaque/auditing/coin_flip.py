@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from torch.utils.data import Subset
 
 from opaque.random import RngKey, fold_in
 
@@ -73,6 +74,31 @@ class CoinFlip:
         """
         excluded = set(self.out_indices.tolist())
         return [i for i in range(dataset_size) if i not in excluded]
+
+    def canary_subset(self, dataset: Any) -> Subset:
+        """Return a ``Subset`` containing only canary examples.
+
+        Args:
+            dataset: The full dataset (before filtering out held-out canaries).
+
+        Returns:
+            ``torch.utils.data.Subset`` over canary indices.
+        """
+        return Subset(dataset, self.canary_indices.tolist())
+
+    def train_subset(self, dataset: Any) -> Subset:
+        """Return a ``Subset`` containing all training examples.
+
+        Includes all non-canary examples plus included canaries (coin = heads).
+        Excludes held-out canaries (coin = tails).
+
+        Args:
+            dataset: The full dataset.
+
+        Returns:
+            ``torch.utils.data.Subset`` over training indices.
+        """
+        return Subset(dataset, self.train_indices(len(dataset)))
 
     def split_scores(self, scores: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Split per-canary scores into in-group and out-group.

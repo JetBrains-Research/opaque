@@ -253,49 +253,6 @@ class OneRunEstimate:
         tpr = tpr_at_given_fpr(alpha, self.tp_counts, self.fp_counts)
         return 1.0 - tpr
 
-    # ------------------------------------------------------------------
-    # Display
-    # ------------------------------------------------------------------
-
-    def summary(
-        self,
-        *,
-        significance: float = 0.05,
-        delta: float = 0.0,
-        theoretical_epsilon: float | None = None,
-    ) -> str:
-        """Multi-line summary of all metrics.
-
-        Args:
-            significance: Allowed failure probability for epsilon bounds.
-            delta: DP delta parameter.
-            theoretical_epsilon: If provided, display alongside empirical
-                bound for comparison.
-
-        Returns:
-            Formatted string with all metrics.
-        """
-        eps = self.epsilon_at(significance=significance, delta=delta)
-
-        lines = [
-            "Audit Summary",
-            "\u2500" * 40,
-            f"  Samples:              {self.n_in} in, {self.n_out} out",
-            f"  AUC:                  {self.auc():.4f}",
-            f"  \u03b5 (one-run):          {eps:.4f}",
-        ]
-
-        if theoretical_epsilon is not None:
-            lines.append(f"  \u03b5 (theoretical):      {theoretical_epsilon:.4f}")
-
-        lines.extend(
-            [
-                f"  \u03b2 @ \u03b1=0.01:           {self.beta_at(alpha=0.01):.4f}",
-                f"  \u03b2 @ \u03b1=0.10:           {self.beta_at(alpha=0.1):.4f}",
-                f"  (\u03b1={significance}, \u03b4={delta:.2e})",
-            ]
-        )
-        return "\n".join(lines)
 
 
 def _auc_from_counts(tn_counts: np.ndarray, fn_counts: np.ndarray) -> float:
