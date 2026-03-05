@@ -143,19 +143,13 @@ for privacy metrics.
 ### epsilon_at
 
 ```python
-estimate.epsilon_at(*, delta=0.0, significance=0.05) -> float
+estimate.epsilon_at(*, delta=0.0, significance=0.05, threshold=None, eps_max=20.0, tol=1e-4) -> float
 ```
 
-Epsilon lower bound. Uses the one-run likelihood-ratio test.
-
-### epsilon_one_run
-
-```python
-estimate.epsilon_one_run(*, significance=0.05, delta=0.0, threshold=None, eps_max=20.0, tol=1e-4) -> float
-```
-
-Likelihood-ratio test from Steinke et al. (2023). Tests both positive-only
-and two-sided guesses per threshold, with Bonferroni correction.
+Epsilon lower bound using the one-run likelihood-ratio test (Steinke et al. 2023).
+Tests both positive-only and two-sided guesses per threshold, with Bonferroni
+correction. When `threshold` is provided, uses that specific threshold instead
+of searching over all Pareto-optimal thresholds.
 
 ### auc
 
@@ -173,14 +167,6 @@ estimate.beta_at(*, alpha) -> float | np.ndarray
 ```
 
 Type-II error at given Type-I error rate. `beta = 1 - TPR` at `alpha = FPR`.
-
-### max_accuracy
-
-```python
-estimate.max_accuracy(*, prevalence=None) -> float
-```
-
-Best-case classification accuracy across all thresholds.
 
 ### summary
 

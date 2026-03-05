@@ -36,12 +36,13 @@ def loss_scores(
             :func:`~opaque.clipped_grad`. Must be vmap-compatible.
         *args: Non-batched arguments to ``loss_fn`` (e.g., model parameters).
         batch_argnums: Indices of ``loss_fn`` positional arguments that come
-            from dataset batches.
+            from dataset batches. Must be sorted, unique, non-negative.
         dataset: Dataset to score. Must support ``len()`` and indexing.
         indices: If provided, only score these dataset indices.
         collate_fn: Collate function for the DataLoader.
         batch_unpack: Callable mapping a DataLoader batch to a tuple of
-            tensors, one per ``batch_argnums`` position.
+            tensors, one per ``batch_argnums`` position. Required for
+            dict-style batches (e.g., HuggingFace collators).
         batch_size: Batch size for scoring. Default: 256.
 
     Returns:
@@ -74,6 +75,8 @@ def loss_scores(
     import torch
     from torch.utils.data import DataLoader, Subset
 
+    _validate_batch_argnums(batch_argnums, len(args))
+
     if indices is not None:
         subset = Subset(dataset, np.asarray(indices).tolist())
     else:
@@ -95,12 +98,16 @@ def loss_scores(
     all_scores: list[np.ndarray] = []
     with torch.no_grad():
         for batch in loader:
-            # Extract batched tensors from the DataLoader batch
             if batch_unpack is not None:
                 batch_tensors = batch_unpack(batch)
             elif isinstance(batch, dict):
-                keys = list(batch.keys())
-                batch_tensors = tuple(batch[keys[i]] for i in range(len(batch_argnums)))
+                raise TypeError(
+                    "loss_scores() received a dict batch from the DataLoader, "
+                    "but no `batch_unpack` was provided. For dict-style batches "
+                    "(e.g., HuggingFace collators), pass a `batch_unpack` function "
+                    "that maps the batch dict to a tuple of tensors matching "
+                    "`batch_argnums`."
+                )
             elif isinstance(batch, (list, tuple)):
                 batch_tensors = tuple(batch[i] for i in range(len(batch_argnums)))
             else:
@@ -114,6 +121,23 @@ def loss_scores(
     return np.concatenate(all_scores)
 
 
+def _validate_batch_argnums(batch_argnums: tuple[int, ...], n_non_batch: int) -> None:
+    """Validate batch_argnums constraints."""
+    if not batch_argnums:
+        raise ValueError("batch_argnums must be non-empty")
+    if any(a < 0 for a in batch_argnums):
+        raise ValueError(f"batch_argnums must be non-negative, got {batch_argnums}")
+    if len(set(batch_argnums)) != len(batch_argnums):
+        raise ValueError(f"batch_argnums must be unique, got {batch_argnums}")
+    n_total = n_non_batch + len(batch_argnums)
+    if max(batch_argnums) >= n_total:
+        raise ValueError(
+            f"batch_argnums index {max(batch_argnums)} out of range for "
+            f"{n_total} total arguments ({n_non_batch} non-batched + "
+            f"{len(batch_argnums)} batched)"
+        )
+
+
 def _merge_args(
     args: tuple[Any, ...],
     batch_tensors: tuple[Any, ...],
@@ -123,8 +147,7 @@ def _merge_args(
     n_total = len(args) + len(batch_argnums)
     result: list[Any] = [None] * n_total
 
-    batch_argnums_sorted = sorted(batch_argnums)
-    for pos, tensor in zip(batch_argnums_sorted, batch_tensors):
+    for pos, tensor in zip(batch_argnums, batch_tensors):
         result[pos] = tensor
 
     arg_iter = iter(args)

@@ -50,8 +50,9 @@ def one_run(scores: np.ndarray, *, coin_flip: CoinFlip) -> OneRunEstimate:
 
         cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
         scores = auditing.loss_scores(loss_fn, params,
-                                       coin_flip=cf, dataset=dataset,
-                                       batch_argnums=(1,))
+                                       batch_argnums=(1,),
+                                       dataset=dataset,
+                                       indices=cf.canary_indices)
         estimate = auditing.one_run(scores, coin_flip=cf)
         print(estimate.epsilon_at(delta=1e-5))
     """
@@ -114,25 +115,6 @@ class OneRunEstimate:
         *,
         delta: float = 0.0,
         significance: float = 0.05,
-    ) -> float:
-        """Epsilon lower bound at the given delta.
-
-        Uses the one-run likelihood-ratio test from Steinke et al. (2023).
-
-        Args:
-            delta: DP delta parameter. Default: 0 (pure DP).
-            significance: Allowed failure probability (1 - confidence).
-
-        Returns:
-            Epsilon lower bound at the specified confidence level.
-        """
-        return self.epsilon_one_run(significance=significance, delta=delta)
-
-    def epsilon_one_run(
-        self,
-        *,
-        significance: float = 0.05,
-        delta: float = 0.0,
         threshold: float | None = None,
         eps_max: float = 20.0,
         tol: float = 1e-4,
@@ -141,12 +123,14 @@ class OneRunEstimate:
 
         Uses a likelihood-ratio test tailored for DP auditing. For each
         Pareto-optimal threshold, tries both positive-only guesses
-        and two-sided guesses per Algorithm 1 of the paper.
+        and two-sided guesses per Algorithm 1 of the paper, with
+        Bonferroni correction over all thresholds and variants.
 
         Args:
-            significance: Allowed failure probability (1 - confidence).
             delta: DP delta parameter. Default: 0 (pure DP).
-            threshold: If provided, use this specific threshold.
+            significance: Allowed failure probability (1 - confidence).
+            threshold: If provided, use this specific threshold instead
+                of searching over all Pareto-optimal thresholds.
             eps_max: Maximum epsilon to search. Default: 20.0.
             tol: Binary search tolerance. Default: 1e-4.
 
@@ -163,11 +147,14 @@ class OneRunEstimate:
             fp = int(np.sum(self.out_scores >= threshold))
             tn = int(np.sum(self.out_scores < threshold))
 
+            # Bonferroni over the two variants (positive-only and two-sided)
+            sig_corrected = significance / 2.0
+
             eps_pos = epsilon_one_run_search(
-                tp + fp, tp, m, significance, delta, eps_max, tol
+                tp + fp, tp, m, sig_corrected, delta, eps_max, tol
             )
             eps_both = epsilon_one_run_search(
-                m, tp + tn, m, significance, delta, eps_max, tol
+                m, tp + tn, m, sig_corrected, delta, eps_max, tol
             )
             return max(eps_pos, eps_both)
 
@@ -216,9 +203,7 @@ class OneRunEstimate:
             Float AUC if ``confidence`` is None, otherwise
             ``(lower, upper)`` tuple.
         """
-        tnr = self.tn_counts / self.tn_counts[-1]
-        fnr = self.fn_counts / self.fn_counts[-1]
-        point = float(0.5 * np.dot(tnr[:-1] + tnr[1:], fnr[1:] - fnr[:-1]))
+        point = _auc_from_counts(self.tn_counts, self.fn_counts)
 
         if confidence is None:
             return point
@@ -234,10 +219,8 @@ class OneRunEstimate:
         for i in range(num_samples):
             in_sample = rng.choice(self.in_scores, size=self.n_in)
             out_sample = rng.choice(self.out_scores, size=self.n_out)
-            values[i] = one_run(
-                np.concatenate([in_sample, out_sample]),
-                coin_flip=_synthetic_coin_flip(self.n_in, self.n_out),
-            ).auc()
+            _, tn, fn = get_tn_fn_counts(in_sample, out_sample)
+            values[i] = _auc_from_counts(tn, fn)
 
         # Bias-corrected bootstrap
         prop_less = (np.sum(values < point) + 1) / (num_samples + 2)
@@ -262,31 +245,6 @@ class OneRunEstimate:
         tpr = tpr_at_given_fpr(alpha, self.tp_counts, self.fp_counts)
         return 1.0 - tpr
 
-    def max_accuracy(self, *, prevalence: float | None = None) -> float:
-        """Maximum classification accuracy achievable.
-
-        Args:
-            prevalence: Fraction of positives in population.
-                Default: use sample ratio.
-
-        Returns:
-            Maximum accuracy across all thresholds.
-        """
-        if prevalence is not None and not 0.0 <= prevalence <= 1.0:
-            raise ValueError(f"prevalence must be in [0, 1], got {prevalence}")
-
-        n_pos = self.fn_counts[-1]
-        n_neg = self.tn_counts[-1]
-
-        if prevalence is None:
-            prevalence = n_pos / (n_pos + n_neg)
-
-        tp_counts = n_pos - self.fn_counts
-        tnr = self.tn_counts / n_neg
-        tpr = tp_counts / n_pos
-
-        return float(np.max(tpr * prevalence + tnr * (1 - prevalence)))
-
     # ------------------------------------------------------------------
     # Display
     # ------------------------------------------------------------------
@@ -309,7 +267,7 @@ class OneRunEstimate:
         Returns:
             Formatted string with all metrics.
         """
-        eps = self.epsilon_one_run(significance=significance, delta=delta)
+        eps = self.epsilon_at(significance=significance, delta=delta)
 
         lines = [
             "Audit Summary",
@@ -326,24 +284,14 @@ class OneRunEstimate:
             [
                 f"  \u03b2 @ \u03b1=0.01:           {self.beta_at(alpha=0.01):.4f}",
                 f"  \u03b2 @ \u03b1=0.10:           {self.beta_at(alpha=0.1):.4f}",
-                f"  Max accuracy:         {self.max_accuracy():.4f}",
                 f"  (\u03b1={significance}, \u03b4={delta})",
             ]
         )
         return "\n".join(lines)
 
 
-class _SyntheticCoinFlip:
-    """Minimal CoinFlip-like object for bootstrap resampling."""
-
-    def __init__(self, n_in: int, n_out: int) -> None:
-        self.num_canaries = n_in + n_out
-        self._in_mask = np.array([True] * n_in + [False] * n_out)
-
-    def split_scores(self, scores: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        scores = np.asarray(scores, dtype=float)
-        return scores[self._in_mask], scores[~self._in_mask]
-
-
-def _synthetic_coin_flip(n_in: int, n_out: int) -> _SyntheticCoinFlip:
-    return _SyntheticCoinFlip(n_in, n_out)
+def _auc_from_counts(tn_counts: np.ndarray, fn_counts: np.ndarray) -> float:
+    """Compute AUC from precomputed TN/FN count arrays."""
+    tnr = tn_counts / tn_counts[-1]
+    fnr = fn_counts / fn_counts[-1]
+    return float(0.5 * np.dot(tnr[:-1] + tnr[1:], fnr[1:] - fnr[:-1]))

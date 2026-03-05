@@ -684,6 +684,7 @@ def main():
 
     # Privacy auditing setup: designate canaries and remove held-out ones
     audit_cf = None
+    audit_dataset = None
     if args.audit:
         print(f"\nSetting up privacy auditing with {args.audit_canaries} canaries...")
         audit_cf = auditing.coin_flip(
@@ -691,6 +692,7 @@ def main():
             num_canaries=args.audit_canaries,
             key=key(args.seed),
         )
+        audit_dataset = train_dataset  # Keep reference before filtering
         train_dataset = train_dataset.select(audit_cf.train_indices(len(train_dataset)))
         print(
             f"  Canaries: {len(audit_cf.in_indices)} in, "
@@ -1034,7 +1036,7 @@ def main():
             per_example_loss_fn,
             trainable_params,
             batch_argnums=(1,),
-            dataset=train_dataset,
+            dataset=audit_dataset,
             indices=audit_cf.canary_indices,
             collate_fn=data_collator,
             batch_unpack=lambda b: (b["input_ids"].to(device),),

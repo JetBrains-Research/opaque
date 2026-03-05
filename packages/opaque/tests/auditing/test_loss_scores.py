@@ -199,17 +199,17 @@ class TestLossScoresDictBatch:
         )
         assert scores.shape == (50,)
 
-    def test_dict_batch_auto_unpack(self, dict_dataset_setup):
-        """Test dict-style batches without batch_unpack (auto-detect)."""
+    def test_dict_batch_without_unpack_raises(self, dict_dataset_setup):
+        """Test that dict-style batches without batch_unpack raise TypeError."""
         params, dataset, loss_fn, collate_fn = dict_dataset_setup
-        scores = loss_scores(
-            loss_fn,
-            params,
-            batch_argnums=(1,),
-            dataset=dataset,
-            collate_fn=collate_fn,
-        )
-        assert scores.shape == (50,)
+        with pytest.raises(TypeError, match="batch_unpack"):
+            loss_scores(
+                loss_fn,
+                params,
+                batch_argnums=(1,),
+                dataset=dataset,
+                collate_fn=collate_fn,
+            )
 
 
 class TestEndToEnd:

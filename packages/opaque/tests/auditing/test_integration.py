@@ -32,11 +32,11 @@ def test_basic_audit_workflow():
     result = _make_estimate(in_scores, out_scores)
 
     # Test epsilon estimation with explicit threshold
-    eps = result.epsilon_one_run(significance=0.05, delta=1e-5, threshold=4.0)
+    eps = result.epsilon_at(significance=0.05, delta=1e-5, threshold=4.0)
     assert eps > 0, "Should detect privacy leakage"
 
     # Test epsilon with Bonferroni (default)
-    eps_bonf = result.epsilon_one_run(significance=0.05, delta=1e-5)
+    eps_bonf = result.epsilon_at(significance=0.05, delta=1e-5)
     assert eps_bonf > 0, "Bonferroni should also detect leakage"
 
     # Test utility metrics
@@ -44,7 +44,6 @@ def test_basic_audit_workflow():
     assert result.beta_at(alpha=0.05) < 0.95, (
         "Beta should be below 1 for detectable leakage"
     )
-    assert result.max_accuracy() > 0.5, "Accuracy should exceed random"
 
 
 def test_audit_with_auc_ci():
@@ -66,7 +65,7 @@ def test_no_privacy_leakage():
     scores = np.random.normal(loc=3.0, scale=1.0, size=100)
     result = _make_estimate(scores[:50], scores[50:])
 
-    eps = result.epsilon_one_run(significance=0.05, delta=0)
+    eps = result.epsilon_at(significance=0.05, delta=0)
     assert eps < 0.5, "Should detect minimal leakage"
 
     assert 0.4 < result.auc() < 0.6, "AUC should be near random"
@@ -78,7 +77,7 @@ def test_perfect_attack():
 
     assert result.auc() > 0.99, "Perfect attack should have AUC ~1.0"
 
-    eps = result.epsilon_one_run(significance=0.05, delta=0, threshold=50)
+    eps = result.epsilon_at(significance=0.05, delta=0, threshold=50)
     assert eps > 2.5, "Perfect attack should give large epsilon"
 
 
@@ -107,8 +106,8 @@ def test_one_run_audit():
     out_scores = np.random.normal(loc=3.0, scale=1.0, size=100)
     result = _make_estimate(in_scores, out_scores)
 
-    eps_one_run = result.epsilon_one_run(significance=0.05, delta=1e-5)
-    assert eps_one_run > 0, "Should detect privacy leakage"
+    eps = result.epsilon_at(significance=0.05, delta=1e-5)
+    assert eps > 0, "Should detect privacy leakage"
 
 
 def test_all_metrics_on_single_result():
@@ -120,10 +119,9 @@ def test_all_metrics_on_single_result():
     )
 
     # Epsilon
-    assert result.epsilon_one_run(significance=0.05, delta=1e-5) > 0
+    assert result.epsilon_at(significance=0.05, delta=1e-5) > 0
     assert result.epsilon_at(delta=1e-5) > 0
 
     # All utility metrics
     assert 0.5 < result.auc() < 1.0
     assert result.beta_at(alpha=0.05) <= 1.0
-    assert result.max_accuracy() > 0.5

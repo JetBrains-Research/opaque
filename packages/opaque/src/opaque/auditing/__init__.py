@@ -13,8 +13,9 @@ Quick start (one-run auditing, Steinke et al. 2023)::
     # ... DP-SGD training loop ...
 
     scores = auditing.loss_scores(loss_fn, params,
-                                   coin_flip=cf, dataset=dataset,
-                                   batch_argnums=(1,))
+                                   batch_argnums=(1,),
+                                   dataset=dataset,
+                                   indices=cf.canary_indices)
     estimate = auditing.one_run(scores, coin_flip=cf)
     print(estimate.summary(delta=1e-5))
 

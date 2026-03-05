@@ -108,8 +108,9 @@ tries both positive-only guesses and two-sided guesses, taking
 the best result with Bonferroni correction.
 
 ```python
-estimate.epsilon_at(delta=1e-5)                 # convenience (calls epsilon_one_run)
-estimate.epsilon_one_run(significance=0.05)     # explicit
+estimate.epsilon_at(delta=1e-5)                       # default significance=0.05
+estimate.epsilon_at(delta=1e-5, significance=0.01)    # stricter confidence
+estimate.epsilon_at(delta=1e-5, threshold=4.0)        # specific threshold
 ```
 
 ## Attack metrics
@@ -117,7 +118,6 @@ estimate.epsilon_one_run(significance=0.05)     # explicit
 ```python
 estimate.auc()                  # ROC AUC (0.5 = random, 1.0 = perfect)
 estimate.beta_at(alpha=0.01)    # Type-II error at 1% FPR
-estimate.max_accuracy()         # Best threshold accuracy
 ```
 
 AUC confidence intervals:
