@@ -24,7 +24,6 @@ cross-validation = [
     { name = "riskcal", specifier = ">=1.2.0" },
 ]
 dev = [
-    { name = "keyrings-alt", specifier = ">=5.0.0" },
     { name = "pytest", specifier = ">=7.0.0" },
     { name = "pytest-cov", specifier = ">=4.0.0" },
     { name = "ruff", specifier = ">=0.1.0" },
@@ -40,6 +39,7 @@ examples = [
     { name = "datasets", specifier = ">=2.0.0" },
     { name = "jetbrains-cadence" },
     { name = "jupyter", specifier = ">=1.0.0" },
+    { name = "keyrings-alt", specifier = ">=5.0.0" },
     { name = "matplotlib", specifier = ">=3.10.7" },
     { name = "peft", specifier = ">=0.18.0" },
     { name = "torchopt", specifier = ">=0.7.3" },
