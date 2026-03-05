@@ -13,6 +13,7 @@ dev = [
   "pytest-cov>=4.0.0",
   "ruff>=0.1.0",
   "scipy>=1.11.0",         # Statistical tests
+  "keyrings-alt>=5.0.0",   # Keyring backend for headless environments (cadence login)
 ]
 
 # Compatibility testing with HuggingFace ecosystem
@@ -40,6 +41,7 @@ examples = [
   "matplotlib>=3.10.7",
   "torchvision>=0.25.0",
   "wandb>=0.16.0",
+  "jetbrains-cadence",
 ]
 
 # Documentation building

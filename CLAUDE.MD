@@ -131,26 +131,21 @@ uvx ruff format packages/
 cargo test --workspace
 
 # Training (Mellum-4b with DP-SGD LoRA)
-uv run python examples/train_causal_lm.py --preset mellum-kstack --wandb --max_steps 100
+uv run python examples/train_causal_lm.py --preset mellum-kstack --trackio --max_steps 100
 
 # Training without kernel patches (baseline)
-OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all uv run python examples/train_causal_lm.py --preset mellum-kstack --wandb --max_steps 100
+OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all uv run python examples/train_causal_lm.py --preset mellum-kstack --trackio --max_steps 100
 ```
 
 ---
 
-## W&B Configuration
+## Experiment Tracking (W&B)
 
-- Project: `opaque`
-- Entity: `federated-compute`
+- Entity: `federated-compute`, Project: `opaque`
 - Instance: `https://jetbrains.wandb.io`
 - Always use `PYTHONUNBUFFERED=1` for real-time output
-
-```bash
-export WANDB_API_KEY="local-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"
-export WANDB_BASE_URL="https://jetbrains.wandb.io"
-export WANDB_ENTITY="federated-compute"
-```
+- Offline by default; goes online when `WANDB_API_KEY` is set
+- Env vars: `WANDB_API_KEY`, `WANDB_BASE_URL`, `WANDB_ENTITY`, `WANDB_PROJECT`, `WANDB_NAME`
 
 ---
 
