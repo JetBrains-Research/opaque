@@ -32,7 +32,7 @@ USAGE:
     --learning_rate 5e-5 \\
     --lora_r 16 --lora_alpha 32 \\
     --max_seq_len 1024 \\
-    --lora_budget_modules q_proj k_proj v_proj o_proj \\
+    --lora_modules q_proj k_proj v_proj o_proj \\
     --audit --audit_canaries 1000 \\
     --no_wandb
 """
@@ -41,11 +41,12 @@ import argparse
 import contextlib
 import importlib.util
 import os
+import sys
 import time
 
 import torch
 import torchopt
-from datasets import load_dataset
+from datasets import Dataset, load_dataset
 from peft import LoraConfig, get_peft_model
 from torch.utils.data import DataLoader
 from transformers import (
@@ -172,6 +173,38 @@ def _print_runtime_mode_report(
         print("  Note: MPS uses compatibility fallbacks when CUDA-only kernels are unavailable.")
 
 
+def _load_streaming_subset(
+    dataset_name: str,
+    dataset_subset: str | None,
+    dataset_split: str,
+    dataset_text_field: str,
+    total_needed: int,
+) -> Dataset:
+    """Stream only required rows, then materialize to in-memory static Dataset."""
+    print("  Streaming source dataset and materializing required subset...")
+    stream_ds = load_dataset(
+        dataset_name,
+        name=dataset_subset,
+        split=dataset_split,
+        streaming=True,
+    )
+
+    rows = list(stream_ds.take(total_needed))
+    if rows and dataset_text_field not in rows[0]:
+        raise ValueError(
+            f"Text field '{dataset_text_field}' not found in streamed sample. "
+            f"Available fields: {list(rows[0].keys())}"
+        )
+
+    if len(rows) < total_needed:
+        raise ValueError(
+            f"Stream ended after {len(rows)} examples, but {total_needed} are required "
+            f"(train + eval)."
+        )
+
+    return Dataset.from_list(rows)
+
+
 def parse_args():
     """Parse command-line arguments with logical groups."""
     parser = argparse.ArgumentParser(
@@ -212,6 +245,14 @@ def parse_args():
     data_group = parser.add_argument_group("data", "Dataset and tokenization settings")
     data_group.add_argument(
         "--dataset", type=str, default="ag_news", help="HuggingFace dataset name"
+    )
+    data_group.add_argument(
+        "--dataset_subset",
+        "--dataset_name",
+        dest="dataset_subset",
+        type=str,
+        default=None,
+        help="Optional dataset subset (HF load_dataset 'name' argument), e.g. 'stage1-auto-format'.",
     )
     data_group.add_argument(
         "--dataset_split", type=str, default="train", help="Dataset split for training"
@@ -302,7 +343,7 @@ def parse_args():
     lora_group.add_argument("--lora_r", type=int, default=4, help="LoRA rank")
     lora_group.add_argument("--lora_alpha", type=int, default=8, help="LoRA alpha")
     lora_group.add_argument(
-        "--lora_budget_modules",
+        "--lora_modules",
         type=str,
         nargs="+",
         default=["c_attn", "c_proj"],
@@ -401,8 +442,8 @@ def parse_args():
     audit_group.add_argument(
         "--audit_batch_size",
         type=int,
-        default=4,
-        help="Batch size for auditing scoring (vmapped, forward-only so less memory than training)",
+        default=None,
+        help="Batch size for auditing scoring (default: same as microbatch_size; forward-only so less memory than training)",
     )
 
     tracking_group = parser.add_argument_group("tracking", "Experiment tracking (W&B)")
@@ -432,11 +473,20 @@ def parse_args():
 
     args = parser.parse_args()
 
-    # Helper: only set preset value if CLI didn't provide an explicit override
-    _defaults = {a.dest: a.default for a in parser._actions}
+    # Track which options were explicitly provided on CLI.
+    # This avoids ambiguity when an explicit value equals the parser default.
+    provided_dests = set()
+    argv_tokens = sys.argv[1:]
+    for action in parser._actions:
+        if not action.option_strings:
+            continue
+        for opt in action.option_strings:
+            if any(token == opt or token.startswith(f"{opt}=") for token in argv_tokens):
+                provided_dests.add(action.dest)
+                break
 
     def _set(name, value):
-        if getattr(args, name, None) == _defaults.get(name):
+        if name not in provided_dests:
             setattr(args, name, value)
 
     # Apply preset configurations (CLI args take precedence)
@@ -449,7 +499,6 @@ def parse_args():
         _set("num_eval_samples", 100)
         _set("num_epochs", 3)
         _set("batch_size", 32)
-        _set("eval_batch_size", 8)
         _set("log_steps", 10)
         _set("eval_steps", 10)
         _set("target_epsilon", 3.0)
@@ -457,13 +506,13 @@ def parse_args():
         _set("lora_r", 4)
         _set("lora_alpha", 8)
         _set("max_seq_len", 512)
-        _set("lora_budget_modules", ["c_attn", "c_proj"])
+        _set("lora_modules", ["c_attn", "c_proj"])
         _set("dtype", "bfloat16")
         _set("audit", False)
     elif args.preset == "mellum-kstack":
         # Golden configuration for Mellum-4b + KStack training on H200
-        # Memory analysis: Model=7.5 GiB, Activations per example=~17 GiB (bfloat16, seq_len=1024)
-        # With microbatch_size=4: 7.5 + (4×17) = ~75 GiB peak memory usage
+        # Memory: Model=7.5 GiB. Throughput saturates at mb=16 (~20 samples/s, 58 GB peak).
+        # mb=32 gives same speed but 108 GB. With --gradient_checkpointing, mb=32+ fits easily.
         _set("model_name", "JetBrains/Mellum-4b-base")
         _set("dataset", "JetBrains/KStack")
         _set("dataset_text_field", "content")
@@ -471,7 +520,6 @@ def parse_args():
         _set("num_eval_samples", 1000)
         _set("num_epochs", 3)
         _set("batch_size", 128)
-        _set("eval_batch_size", 4)
         _set("log_steps", 2)
         _set("eval_steps", 10)
         _set("target_epsilon", 10.0)
@@ -479,9 +527,17 @@ def parse_args():
         _set("lora_r", 16)
         _set("lora_alpha", 32)
         _set("max_seq_len", 1024)
-        _set("lora_budget_modules", ["q_proj", "v_proj"])
+        _set("lora_modules", [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        ])
         _set("dtype", "bfloat16")
-        _set("microbatch_size", 4)
+        _set("microbatch_size", 16)
     elif args.preset == "custom":
         # Keep all user-provided/default CLI arguments unchanged.
         pass
@@ -495,6 +551,10 @@ def main():
     # Set eval_batch_size to batch_size if not specified
     if args.eval_batch_size is None:
         args.eval_batch_size = args.batch_size
+
+    # Set audit_batch_size to microbatch_size if not specified (forward-only, so at least as cheap)
+    if args.audit_batch_size is None:
+        args.audit_batch_size = args.microbatch_size or args.batch_size
 
     print("=" * 80)
     print("DP-SGD LoRA Training for Causal Language Models")
@@ -609,7 +669,7 @@ def main():
     lora_config = LoraConfig(
         r=args.lora_r,
         lora_alpha=args.lora_alpha,
-        target_modules=args.lora_budget_modules,
+        target_modules=args.lora_modules,
         lora_dropout=0.0,
         bias="none",
         task_type="CAUSAL_LM",
@@ -621,13 +681,22 @@ def main():
 
     # Load and prepare dataset
     print(f"\nLoading dataset: {args.dataset}...")
+    if args.dataset_subset:
+        print(f"  Subset: {args.dataset_subset}")
     print(f"  Split: {args.dataset_split}")
     print(f"  Text field: {args.dataset_text_field}")
-    dataset = load_dataset(args.dataset, split=args.dataset_split)
+
+    total_needed = args.num_train_samples + args.num_eval_samples
+    dataset = _load_streaming_subset(
+        dataset_name=args.dataset,
+        dataset_subset=args.dataset_subset,
+        dataset_split=args.dataset_split,
+        dataset_text_field=args.dataset_text_field,
+        total_needed=total_needed,
+    )
     print(f"  Total examples in dataset: {len(dataset)}")
 
     # Validate we have enough data
-    total_needed = args.num_train_samples + args.num_eval_samples
     if len(dataset) < total_needed:
         raise ValueError(
             f"Dataset has {len(dataset)} examples but need {total_needed} "
@@ -1024,7 +1093,7 @@ def main():
 
                 metrics = {
                     "eval/loss": current_eval_loss,
-                    "privacy/epsilon_theoretical": epsilon,
+                    "privacy/epsilon": epsilon,
                 }
                 eval_msg = f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}"
 
