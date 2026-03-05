@@ -40,7 +40,10 @@ from opaque.compat.transformers._kernel_patches import (
     is_kernel_patched,
     patch_lora_model,
 )
-from opaque.compat.transformers._shared import apply_batchify_patches, apply_kv_cache_patches
+from opaque.compat.transformers._shared import (
+    apply_batchify_patches,
+    apply_kv_cache_patches,
+)
 from opaque.compat.transformers._vmap_patches import (
     apply_vmap_patches,
     is_vmap_patched,
