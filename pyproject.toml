@@ -40,6 +40,8 @@ examples = [
   "matplotlib>=3.10.7",
   "torchvision>=0.25.0",
   "wandb>=0.16.0",
+  "jetbrains-cadence",
+  "keyrings-alt>=5.0.0",   # Keyring backend for headless environments (cadence login)
 ]
 
 # Documentation building

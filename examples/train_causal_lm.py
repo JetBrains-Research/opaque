@@ -16,12 +16,7 @@ USAGE:
   python examples/train_causal_lm.py
 
   # Full production training on Mellum-4b + KStack (~3-5 hours)
-  # Configure W&B (optional):
-  export WANDB_API_KEY='your-key-here'
-  export WANDB_BASE_URL='https://jetbrains.wandb.io'  # For JetBrains W&B instance
-  export WANDB_ENTITY='federated-compute'  # Your team/entity name
-
-  python examples/train_causal_lm.py --preset mellum-kstack --wandb
+  python examples/train_causal_lm.py --preset mellum-kstack
 
   # Or customize individual parameters:
   python examples/train_causal_lm.py \\
@@ -39,7 +34,7 @@ USAGE:
     --max_seq_len 1024 \\
     --lora_budget_modules q_proj k_proj v_proj o_proj \\
     --audit --audit_canaries 1000 \\
-    --wandb
+    --no_wandb
 """
 
 import argparse
@@ -70,11 +65,7 @@ from opaque.random import key, fold_in
 from opaque.sampling import PoissonSampler
 from opaque.utils import make_functional
 
-try:
-    import wandb
-    WANDB_AVAILABLE = True
-except ImportError:
-    WANDB_AVAILABLE = False
+import wandb
 
 
 def _select_device() -> tuple[torch.device, str]:
@@ -413,29 +404,29 @@ def parse_args():
         help="Batch size used in auditing and eval",
     )
 
-    wandb_group = parser.add_argument_group("wandb", "Weights & Biases tracking")
-    wandb_group.add_argument(
-        "--wandb",
+    tracking_group = parser.add_argument_group("tracking", "Experiment tracking (W&B)")
+    tracking_group.add_argument(
+        "--no_wandb",
         action="store_true",
-        help="Enable Weights & Biases tracking (requires WANDB_API_KEY env var)",
+        help="Disable experiment tracking (wandb is enabled by default, offline if no credentials)",
     )
-    wandb_group.add_argument(
+    tracking_group.add_argument(
         "--wandb_project",
         type=str,
-        default="opaque",
-        help="W&B project name (default: opaque)",
+        default=os.environ.get("WANDB_PROJECT", "opaque"),
+        help="W&B project name (default: WANDB_PROJECT env var or 'opaque')",
     )
-    wandb_group.add_argument(
-        "--wandb_entity",
-        type=str,
-        default=None,
-        help="W&B entity/team name (default: read from WANDB_ENTITY env var or use personal account)",
-    )
-    wandb_group.add_argument(
+    tracking_group.add_argument(
         "--wandb_run_name",
         type=str,
-        default=None,
-        help="W&B run name (default: auto-generated from model and hyperparameters)",
+        default=os.environ.get("WANDB_NAME"),
+        help="Run name (default: WANDB_NAME env var or auto-generated from model and hyperparameters)",
+    )
+    tracking_group.add_argument(
+        "--wandb_entity",
+        type=str,
+        default=os.environ.get("WANDB_ENTITY"),
+        help="W&B entity/team (default: WANDB_ENTITY env var)",
     )
 
     args = parser.parse_args()
@@ -508,12 +499,9 @@ def main():
     print("DP-SGD LoRA Training for Causal Language Models")
     print("=" * 80)
 
-    # Initialize W&B if enabled
-    use_wandb = args.wandb and WANDB_AVAILABLE
+    # Initialize wandb (enabled by default, offline if no credentials)
+    use_wandb = not args.no_wandb
     if use_wandb:
-        # Read entity from env var if not specified
-        entity = args.wandb_entity or os.environ.get("WANDB_ENTITY")
-
         # Generate default run name from key parameters if not specified
         if args.wandb_run_name is None:
             model_short = args.model_name.split('/')[-1]
@@ -521,15 +509,16 @@ def main():
         else:
             run_name = args.wandb_run_name
 
+        # Offline by default; set WANDB_MODE=online (or WANDB_API_KEY) to sync
+        if not os.environ.get("WANDB_MODE"):
+            os.environ["WANDB_MODE"] = "online" if os.environ.get("WANDB_API_KEY") else "offline"
         wandb.init(
             project=args.wandb_project,
-            entity=entity,
+            entity=args.wandb_entity,
             name=run_name,
             config=vars(args),
         )
-        print(f"W&B initialized: {wandb.run.url}")
-    elif args.wandb and not WANDB_AVAILABLE:
-        print("Warning: --wandb specified but wandb not installed. Continuing without W&B.")
+        print(f"W&B initialized (mode: {os.environ.get('WANDB_MODE', 'online')})")
 
     # Setup device
     device, device_name = _select_device()
@@ -944,12 +933,11 @@ def main():
                         "train/grad_norm_mean": mean_grad_norm,
                         "train/clipped_grad_norm_mean": clipped_grad_norm_mean,
                         "train/noise_std": stddev,
-                        "train/step": global_step,
-                        "train/step_time_sec": perf_metrics["step_time_sec"],
-                        "train/throughput_samples_per_sec": perf_metrics["throughput_samples_sec"],
-                        "memory/allocated_gb": perf_metrics["memory_allocated_gb"],
-                        "memory/reserved_gb": perf_metrics["memory_reserved_gb"],
-                        "memory/peak_gb": perf_metrics["memory_peak_gb"],
+                        "perf/step_time_sec": perf_metrics["step_time_sec"],
+                        "perf/throughput_samples_per_sec": perf_metrics["throughput_samples_sec"],
+                        "perf/allocated_gb": perf_metrics["memory_allocated_gb"],
+                        "perf/reserved_gb": perf_metrics["memory_reserved_gb"],
+                        "perf/peak_gb": perf_metrics["memory_peak_gb"],
                     }, step=global_step)
 
                 # Console logging
@@ -1023,6 +1011,9 @@ def main():
     profiler.mark("training_complete")
     print("\n" + profiler.final_summary())
     print("\n" + profiler.checkpoint_summary())
+
+    if use_wandb:
+        wandb.finish()
 
     return 0
 
