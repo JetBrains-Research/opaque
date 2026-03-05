@@ -254,7 +254,6 @@ class OneRunEstimate:
         return 1.0 - tpr
 
 
-
 def _auc_from_counts(tn_counts: np.ndarray, fn_counts: np.ndarray) -> float:
     """Compute AUC from precomputed TN/FN count arrays."""
     tnr = tn_counts / tn_counts[-1]

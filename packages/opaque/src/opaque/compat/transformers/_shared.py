@@ -202,12 +202,8 @@ def _disable_kv_cache(forward_fn):
 
     def wrapper(*args, **kwargs):
         past = kwargs.get("past_key_values")
-        has_cached_data = (
-            past is not None
-            and (
-                not hasattr(past, "get_seq_length")
-                or past.get_seq_length() > 0
-            )
+        has_cached_data = past is not None and (
+            not hasattr(past, "get_seq_length") or past.get_seq_length() > 0
         )
         if not has_cached_data:
             kwargs["use_cache"] = False
