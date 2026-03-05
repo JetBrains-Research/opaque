@@ -267,18 +267,18 @@ class TestConfiguration:
 
 
 class TestBatchifyForward:
-    """Test batchify_forward unsqueeze/squeeze round-trip with a real model."""
+    """Test _batchify_forward unsqueeze/squeeze round-trip with a real model."""
 
     def test_batchify_1d_input_ids(self):
         """1D input_ids should be unsqueezed, output logits squeezed back."""
-        from opaque.compat.transformers._shared import batchify_forward
+        from opaque.compat.transformers._shared import _batchify_forward
 
         config = AutoConfig.from_pretrained("openai-community/gpt2")
         config.num_hidden_layers = 1
         model = AutoModelForCausalLM.from_config(config)
 
         # Wrap with batchify
-        model.forward = batchify_forward(model.forward)
+        model.forward = _batchify_forward(model.forward)
 
         # 1D inputs — simulates what vmap(grad()) sees per example
         seq_len = 8
@@ -297,13 +297,13 @@ class TestBatchifyForward:
 
     def test_batchify_2d_input_ids_is_noop(self):
         """2D input_ids (already batched) should pass through unchanged."""
-        from opaque.compat.transformers._shared import batchify_forward
+        from opaque.compat.transformers._shared import _batchify_forward
 
         config = AutoConfig.from_pretrained("openai-community/gpt2")
         config.num_hidden_layers = 1
         model = AutoModelForCausalLM.from_config(config)
 
-        model.forward = batchify_forward(model.forward)
+        model.forward = _batchify_forward(model.forward)
 
         batch, seq_len = 3, 8
         input_ids = torch.randint(0, config.vocab_size, (batch, seq_len))
@@ -317,13 +317,13 @@ class TestBatchifyForward:
 
     def test_batchify_positional_input_ids(self):
         """input_ids passed positionally should also be batchified."""
-        from opaque.compat.transformers._shared import batchify_forward
+        from opaque.compat.transformers._shared import _batchify_forward
 
         config = AutoConfig.from_pretrained("openai-community/gpt2")
         config.num_hidden_layers = 1
         model = AutoModelForCausalLM.from_config(config)
 
-        model.forward = batchify_forward(model.forward)
+        model.forward = _batchify_forward(model.forward)
 
         seq_len = 8
         input_ids = torch.randint(0, config.vocab_size, (seq_len,))
