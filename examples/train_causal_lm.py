@@ -683,23 +683,18 @@ def main():
     )
 
     # Privacy auditing setup: designate canaries and remove held-out ones
-    audit_state = None
+    audit_cf = None
     if args.audit:
         print(f"\nSetting up privacy auditing with {args.audit_canaries} canaries...")
-        audit_state = auditing.setup(
+        audit_cf = auditing.coin_flip(
             train_dataset,
             num_canaries=args.audit_canaries,
             key=key(args.seed),
-            batch_argnums=(1,),
-            collate_fn=data_collator,
-            batch_unpack=lambda b: (b["input_ids"].to(device),),
-            batch_size=args.audit_batch_size,
         )
-        train_dataset = train_dataset.select(audit_state.train_indices)
-        exp = audit_state.coin_flip
+        train_dataset = train_dataset.select(audit_cf.train_indices(len(train_dataset)))
         print(
-            f"  Canaries: {len(exp.in_indices)} in, "
-            f"{len(exp.out_indices)} out (held out from training)"
+            f"  Canaries: {len(audit_cf.in_indices)} in, "
+            f"{len(audit_cf.out_indices)} out (held out from training)"
         )
         print(f"  Training set: {len(train_dataset)} examples")
 
@@ -1029,13 +1024,23 @@ def main():
     print(f"  Final epsilon: {accounting.epsilon_at(args.target_delta):.3f}")
 
     # Privacy auditing: score canaries and compute empirical epsilon
-    if args.audit and audit_state is not None:
+    if args.audit and audit_cf is not None:
         print("\n" + "-" * 80)
         print("Privacy Auditing")
         print("-" * 80)
-        print(f"Scoring {audit_state.coin_flip.num_canaries} canaries...")
+        print(f"Scoring {audit_cf.num_canaries} canaries...")
 
-        audit_result = audit_state.evaluate(per_example_loss_fn, trainable_params)
+        scores = auditing.loss_scores(
+            per_example_loss_fn,
+            trainable_params,
+            batch_argnums=(1,),
+            dataset=train_dataset,
+            indices=audit_cf.canary_indices,
+            collate_fn=data_collator,
+            batch_unpack=lambda b: (b["input_ids"].to(device),),
+            batch_size=args.audit_batch_size,
+        )
+        audit_result = auditing.one_run(scores, coin_flip=audit_cf)
         print(audit_result.summary(
             delta=args.target_delta,
             theoretical_epsilon=args.target_epsilon,

@@ -1,4 +1,4 @@
-"""Tests for auditing.score and OneRunEstimator.evaluate."""
+"""Tests for auditing.loss_scores."""
 
 import numpy as np
 import pytest
@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch.utils.data import TensorDataset
 
 import opaque.auditing as auditing
-from opaque.auditing import AuditResult, score
+from opaque.auditing import CoinFlip, OneRunEstimate, loss_scores, one_run
 from opaque.random import key
 
 
@@ -31,13 +31,13 @@ def linear_setup():
     return params, dataset, loss_fn
 
 
-class TestScore:
-    """Tests for auditing.score (replacement for score_by_loss)."""
+class TestLossScores:
+    """Tests for auditing.loss_scores."""
 
     def test_basic_scoring(self, linear_setup):
-        """Test that score returns correct shape."""
+        """Test that loss_scores returns correct shape."""
         params, dataset, loss_fn = linear_setup
-        scores = score(
+        scores = loss_scores(
             loss_fn,
             params,
             batch_argnums=(1, 2),
@@ -49,7 +49,7 @@ class TestScore:
         """Test scoring a subset via indices."""
         params, dataset, loss_fn = linear_setup
         indices = np.array([0, 10, 20, 30, 40])
-        scores = score(
+        scores = loss_scores(
             loss_fn,
             params,
             batch_argnums=(1, 2),
@@ -61,27 +61,26 @@ class TestScore:
     def test_scores_are_negative_loss(self, linear_setup):
         """Test that scores are negated losses (higher = better fit)."""
         params, dataset, loss_fn = linear_setup
-        scores = score(
+        scores = loss_scores(
             loss_fn,
             params,
             batch_argnums=(1, 2),
             dataset=dataset,
         )
         # Perfect model: losses near 0, scores near 0 (but negative of near-0)
-        # All scores should be <= 0 (negative loss)
-        assert np.all(scores <= 1e-3)  # Near-zero losses
+        assert np.all(scores <= 1e-3)
 
     def test_batch_size_does_not_affect_result(self, linear_setup):
         """Test that different batch sizes give same scores."""
         params, dataset, loss_fn = linear_setup
-        scores_32 = score(
+        scores_32 = loss_scores(
             loss_fn,
             params,
             batch_argnums=(1, 2),
             dataset=dataset,
             batch_size=32,
         )
-        scores_128 = score(
+        scores_128 = loss_scores(
             loss_fn,
             params,
             batch_argnums=(1, 2),
@@ -95,25 +94,24 @@ class TestScore:
         params, dataset, loss_fn = linear_setup
         random_params = torch.randn_like(params)
 
-        scores_trained = score(
+        scores_trained = loss_scores(
             loss_fn,
             params,
             batch_argnums=(1, 2),
             dataset=dataset,
         )
-        scores_random = score(
+        scores_random = loss_scores(
             loss_fn,
             random_params,
             batch_argnums=(1, 2),
             dataset=dataset,
         )
 
-        # Trained model should have higher scores (lower loss)
         assert np.mean(scores_trained) > np.mean(scores_random)
 
 
-class TestScoreSingleArg:
-    """Tests for score with single batch arg (HF-like pattern)."""
+class TestLossScoresSingleArg:
+    """Tests for loss_scores with single batch arg (HF-like pattern)."""
 
     @pytest.fixture()
     def single_arg_setup(self):
@@ -134,7 +132,7 @@ class TestScoreSingleArg:
     def test_single_batch_arg(self, single_arg_setup):
         """Test scoring with a single batched argument."""
         params, dataset, loss_fn = single_arg_setup
-        scores = score(
+        scores = loss_scores(
             loss_fn,
             params,
             batch_argnums=(1,),
@@ -145,7 +143,7 @@ class TestScoreSingleArg:
     def test_with_batch_unpack(self, single_arg_setup):
         """Test scoring with custom batch_unpack function."""
         params, dataset, loss_fn = single_arg_setup
-        scores = score(
+        scores = loss_scores(
             loss_fn,
             params,
             batch_argnums=(1,),
@@ -155,8 +153,8 @@ class TestScoreSingleArg:
         assert scores.shape == (100,)
 
 
-class TestScoreDictBatch:
-    """Tests for score with dict-style batches (HuggingFace pattern)."""
+class TestLossScoresDictBatch:
+    """Tests for loss_scores with dict-style batches (HuggingFace pattern)."""
 
     @pytest.fixture()
     def dict_dataset_setup(self):
@@ -191,7 +189,7 @@ class TestScoreDictBatch:
     def test_dict_batch_with_unpack(self, dict_dataset_setup):
         """Test dict-style batches with batch_unpack."""
         params, dataset, loss_fn, collate_fn = dict_dataset_setup
-        scores = score(
+        scores = loss_scores(
             loss_fn,
             params,
             batch_argnums=(1,),
@@ -204,7 +202,7 @@ class TestScoreDictBatch:
     def test_dict_batch_auto_unpack(self, dict_dataset_setup):
         """Test dict-style batches without batch_unpack (auto-detect)."""
         params, dataset, loss_fn, collate_fn = dict_dataset_setup
-        scores = score(
+        scores = loss_scores(
             loss_fn,
             params,
             batch_argnums=(1,),
@@ -214,132 +212,35 @@ class TestScoreDictBatch:
         assert scores.shape == (50,)
 
 
-class TestEvaluate:
-    """Tests for OneRunEstimator.evaluate."""
+class TestEndToEnd:
+    """Tests for end-to-end workflow: coin_flip -> loss_scores -> one_run."""
 
-    def test_evaluate_returns_audit_result(self, linear_setup):
-        """Test that evaluate returns an AuditResult."""
+    def test_full_workflow(self, linear_setup):
+        """Test the full coin_flip -> loss_scores -> one_run flow."""
         params, dataset, loss_fn = linear_setup
-        audit_state = auditing.setup(
-            dataset,
-            num_canaries=50,
-            key=key(42),
+
+        cf = auditing.coin_flip(dataset, num_canaries=50, key=key(42))
+        scores = loss_scores(
+            loss_fn,
+            params,
             batch_argnums=(1, 2),
+            dataset=dataset,
+            indices=cf.canary_indices,
         )
 
-        # Train briefly (just use the true params as "trained")
-        audit = audit_state.evaluate(loss_fn, params)
+        estimate = one_run(scores, coin_flip=cf)
 
-        assert isinstance(audit, AuditResult)
-        assert audit.n_in + audit.n_out == 50
+        assert isinstance(estimate, OneRunEstimate)
+        assert estimate.n_in + estimate.n_out == 50
+        assert 0.0 <= estimate.auc() <= 1.0
+        assert estimate.epsilon_at(delta=0.0) >= 0.0
 
-    def test_evaluate_epsilon_at(self, linear_setup):
-        """Test that evaluate result uses one_run method for epsilon_at."""
-        params, dataset, loss_fn = linear_setup
-        audit_state = auditing.setup(
-            dataset,
-            num_canaries=50,
-            key=key(42),
-            batch_argnums=(1, 2),
-        )
-
-        audit = audit_state.evaluate(loss_fn, params)
-
-        # epsilon_at should use one_run
-        eps = audit.epsilon_at(delta=0.0)
-        assert isinstance(eps, float)
-
-    def test_end_to_end_workflow(self, linear_setup):
-        """Test the full setup -> train -> evaluate flow."""
-        _, dataset, loss_fn = linear_setup
-
-        # Setup
-        audit_state = auditing.setup(
-            dataset,
-            num_canaries=50,
-            key=key(42),
-            batch_argnums=(1, 2),
-        )
-        from torch.utils.data import Subset
-
-        train_data = Subset(dataset, audit_state.train_indices)
-        assert len(train_data) == 200 - len(audit_state.coin_flip.out_indices)
-
-        # "Train" on subset (just use fresh random params)
-        torch.manual_seed(0)
-        params = torch.randn(10)
-
-        # Evaluate
-        audit = audit_state.evaluate(loss_fn, params)
-
-        # Should have valid metrics
-        assert 0.0 <= audit.auc() <= 1.0
-        assert audit.epsilon_at(delta=0.0) >= 0.0
-
-        # Summary should work
-        s = audit.summary()
+        s = estimate.summary()
         assert "one-run" in s
         assert "Audit Summary" in s
 
-
-class TestEvaluateStoredConfig:
-    """Tests for evaluate() using config stored at setup() time."""
-
-    def test_setup_stores_config(self, linear_setup):
-        """Test that setup() stores scoring config in OneRunEstimator."""
-        params, dataset, loss_fn = linear_setup
-        audit_state = auditing.setup(
-            dataset,
-            num_canaries=50,
-            key=key(42),
-            batch_argnums=(1, 2),
-        )
-
-        assert audit_state._dataset is dataset
-        assert audit_state._batch_argnums == (1, 2)
-        assert audit_state._batch_size == 256
-
-    def test_evaluate_with_stored_config(self, linear_setup):
-        """Test evaluate() using config from setup() — no extra args."""
-        params, dataset, loss_fn = linear_setup
-        audit_state = auditing.setup(
-            dataset,
-            num_canaries=50,
-            key=key(42),
-            batch_argnums=(1, 2),
-        )
-
-        # evaluate with just loss_fn and params — everything else from setup
-        audit = audit_state.evaluate(loss_fn, params)
-
-        assert isinstance(audit, AuditResult)
-        assert audit.n_in + audit.n_out == 50
-
-    def test_evaluate_override_stored_config(self, linear_setup):
-        """Test that explicit args to evaluate() override setup() config."""
-        params, dataset, loss_fn = linear_setup
-        audit_state = auditing.setup(
-            dataset,
-            num_canaries=50,
-            key=key(42),
-            batch_argnums=(1, 2),
-        )
-
-        # Override batch_size at evaluate time
-        audit = audit_state.evaluate(loss_fn, params, batch_size=16)
-        assert isinstance(audit, AuditResult)
-
-    def test_evaluate_errors_without_batch_argnums(self, linear_setup):
-        """Test that evaluate() errors if batch_argnums wasn't provided anywhere."""
-        params, dataset, loss_fn = linear_setup
-        # setup without batch_argnums
-        audit_state = auditing.setup(dataset, num_canaries=50, key=key(42))
-
-        with pytest.raises(TypeError, match="batch_argnums"):
-            audit_state.evaluate(loss_fn, params)
-
-    def test_setup_with_collate_fn(self):
-        """Test setup stores collate_fn and uses it in evaluate."""
+    def test_with_collate_fn(self):
+        """Test workflow with collate_fn and batch_unpack."""
         torch.manual_seed(42)
         n_samples = 50
         dim = 8
@@ -365,16 +266,17 @@ class TestEvaluateStoredConfig:
         def collate_fn(batch):
             return {"input_ids": torch.stack([b["input_ids"] for b in batch])}
 
-        audit_state = auditing.setup(
-            dataset,
-            num_canaries=20,
-            key=key(42),
+        cf = auditing.coin_flip(dataset, num_canaries=20, key=key(42))
+        scores = loss_scores(
+            loss_fn,
+            params,
             batch_argnums=(1,),
+            dataset=dataset,
+            indices=cf.canary_indices,
             collate_fn=collate_fn,
             batch_unpack=lambda b: (b["input_ids"],),
         )
 
-        # evaluate with just loss_fn + params
-        audit = audit_state.evaluate(loss_fn, params)
-        assert isinstance(audit, AuditResult)
-        assert audit.n_in + audit.n_out == 20
+        estimate = one_run(scores, coin_flip=cf)
+        assert isinstance(estimate, OneRunEstimate)
+        assert estimate.n_in + estimate.n_out == 20

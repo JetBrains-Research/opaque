@@ -1,4 +1,4 @@
-"""Membership scoring utilities for privacy auditing.
+"""Loss-based membership scoring for privacy auditing.
 
 Computes per-example membership scores using the same ``torch.func.vmap``
 and ``batch_argnums`` pattern as :func:`opaque.clipped_grad`. Higher scores
@@ -12,10 +12,10 @@ from typing import Any
 
 import numpy as np
 
-__all__ = ["score"]
+__all__ = ["loss_scores"]
 
 
-def score(
+def loss_scores(
     loss_fn: Callable,
     *args: Any,
     batch_argnums: tuple[int, ...],
@@ -35,25 +35,13 @@ def score(
         loss_fn: Per-example loss function, same as used with
             :func:`~opaque.clipped_grad`. Must be vmap-compatible.
         *args: Non-batched arguments to ``loss_fn`` (e.g., model parameters).
-            These correspond to the argument positions *not* listed in
-            ``batch_argnums``.
         batch_argnums: Indices of ``loss_fn`` positional arguments that come
-            from dataset batches. For example, ``(1,)`` means argument 1 is
-            batched (HuggingFace pattern), ``(1, 2)`` means arguments 1 and 2
-            are batched (PyTorch ``(x, y)`` pattern).
+            from dataset batches.
         dataset: Dataset to score. Must support ``len()`` and indexing.
-        indices: If provided, only score these dataset indices. Typically
-            ``experiment.canary_indices``.
-        collate_fn: Collate function for the DataLoader (e.g.,
-            ``DataCollatorForLanguageModeling``). If ``None``, uses
-            PyTorch default collation.
+        indices: If provided, only score these dataset indices.
+        collate_fn: Collate function for the DataLoader.
         batch_unpack: Callable mapping a DataLoader batch to a tuple of
-            tensors, one per ``batch_argnums`` position. For example::
-
-                batch_unpack=lambda b: (b["input_ids"].to(device),)
-
-            If ``None``, batches are unpacked as tuples/lists: ``batch[0]``,
-            ``batch[1]``, etc.
+            tensors, one per ``batch_argnums`` position.
         batch_size: Batch size for scoring. Default: 256.
 
     Returns:
@@ -62,12 +50,12 @@ def score(
 
     Example (HuggingFace pattern)::
 
-        scores = score(
+        scores = loss_scores(
             per_example_loss_fn,
-            trainable_params,           # arg 0: not batched
-            batch_argnums=(1,),         # arg 1: tokens from dataset
+            trainable_params,
+            batch_argnums=(1,),
             dataset=train_dataset,
-            indices=experiment.canary_indices,
+            indices=cf.canary_indices,
             collate_fn=data_collator,
             batch_unpack=lambda b: (b["input_ids"].to(device),),
             batch_size=32,
@@ -75,10 +63,10 @@ def score(
 
     Example (PyTorch ``(x, y)`` pattern)::
 
-        scores = score(
+        scores = loss_scores(
             loss_fn,
-            params,                     # arg 0: not batched
-            batch_argnums=(1, 2),       # args 1, 2: x, y from dataset
+            params,
+            batch_argnums=(1, 2),
             dataset=dataset,
             batch_size=256,
         )
@@ -111,7 +99,6 @@ def score(
             if batch_unpack is not None:
                 batch_tensors = batch_unpack(batch)
             elif isinstance(batch, dict):
-                # Dict batch (HF-style): use values in order of batch_argnums
                 keys = list(batch.keys())
                 batch_tensors = tuple(batch[keys[i]] for i in range(len(batch_argnums)))
             elif isinstance(batch, (list, tuple)):
@@ -119,7 +106,6 @@ def score(
             else:
                 batch_tensors = (batch,)
 
-            # Merge non-batched args and batch tensors into full arg list
             full_args = _merge_args(args, batch_tensors, batch_argnums)
 
             losses = per_example_fn(*full_args)
@@ -133,20 +119,14 @@ def _merge_args(
     batch_tensors: tuple[Any, ...],
     batch_argnums: tuple[int, ...],
 ) -> list[Any]:
-    """Merge non-batched args and batch tensors into a single arg list.
-
-    Non-batch args go into positions not in ``batch_argnums``.
-    Batch tensors go into the positions specified by ``batch_argnums``.
-    """
+    """Merge non-batched args and batch tensors into a single arg list."""
     n_total = len(args) + len(batch_argnums)
     result: list[Any] = [None] * n_total
 
-    # Place batch tensors at their specified positions
     batch_argnums_sorted = sorted(batch_argnums)
     for pos, tensor in zip(batch_argnums_sorted, batch_tensors):
         result[pos] = tensor
 
-    # Fill remaining positions with non-batch args
     arg_iter = iter(args)
     for i in range(n_total):
         if i not in batch_argnums:

@@ -1,26 +1,17 @@
-"""Internal helper functions for privacy auditing.
+"""ROC curve helpers for one-run privacy auditing.
 
-Low-level utilities for Pareto frontiers, p-value computation,
-and other mathematical operations. All functions are prefixed with ``_``
-to indicate they are internal.
+Pareto-optimal threshold computation and TPR/FPR interpolation
+used by the one-run estimator.
 """
 
 from __future__ import annotations
 
 import numpy as np
-import scipy.special
-import scipy.stats
+
+__all__ = ["get_tn_fn_counts", "pareto_frontier", "tpr_at_given_fpr"]
 
 
-def _log_sub(x: np.ndarray, y: np.ndarray) -> np.ndarray:
-    """Stable computation of log(exp(x) - exp(y))."""
-    if np.any(y > x):
-        raise ValueError(f"y must be <= x, got y={y} and x={x}")
-    with np.errstate(divide="ignore"):
-        return x + np.log1p(-np.exp(y - x))
-
-
-def _pareto_frontier(points: np.ndarray) -> np.ndarray:
+def pareto_frontier(points: np.ndarray) -> np.ndarray:
     """Compute indices of Pareto frontier for a piecewise linear function."""
     if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] != 2:
         raise ValueError(f"Expected at least two 2D points, got shape {points.shape}")
@@ -41,7 +32,7 @@ def _pareto_frontier(points: np.ndarray) -> np.ndarray:
     return indices
 
 
-def _get_tn_fn_counts(
+def get_tn_fn_counts(
     in_scores: np.ndarray,
     out_scores: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -62,12 +53,12 @@ def _get_tn_fn_counts(
     tn_counts = np.searchsorted(out_sorted, thresholds, side="left")
 
     counts = np.stack([fn_counts, tn_counts], axis=1)
-    indices = _pareto_frontier(counts)
+    indices = pareto_frontier(counts)
 
     return thresholds[indices], tn_counts[indices], fn_counts[indices]
 
 
-def _tpr_at_given_fpr(
+def tpr_at_given_fpr(
     fpr: np.ndarray | float,
     tp_counts: np.ndarray,
     fp_counts: np.ndarray,
@@ -95,20 +86,3 @@ def _tpr_at_given_fpr(
     result = (tp_left + q * (tp_right - tp_left)) / n_pos
 
     return float(result) if np.isscalar(fpr) else result
-
-
-def _one_run_p_value(
-    m: int, n_guess: int, n_correct: int, eps: float, delta: float
-) -> float:
-    """P-value for one-shot privacy audit (Nasr et al. 2023)."""
-    q = scipy.special.expit(eps)
-    beta = scipy.stats.binom.sf(n_correct - 1, n_guess, q)
-
-    if delta == 0:
-        return beta
-
-    i_vals = np.arange(1, n_correct + 1)
-    cum_sums = scipy.stats.binom.sf(n_correct - i_vals - 1, n_guess, q) - beta
-    alpha = np.max(cum_sums / i_vals, initial=0)
-
-    return min(beta + alpha * delta * 2 * m, 1.0)
