@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch.utils.data import TensorDataset
 
 import opaque.auditing as auditing
-from opaque.auditing import CoinFlip, OneRunEstimate, loss_scores, one_run
+from opaque.auditing import OneRunEstimate, loss_scores, one_run
 from opaque.random import key
 
 

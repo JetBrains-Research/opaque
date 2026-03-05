@@ -73,7 +73,9 @@ def test_no_privacy_leakage():
 
 def test_perfect_attack():
     """Test auditing with perfect attack separation."""
-    result = _make_estimate(np.arange(50, 100, dtype=float), np.arange(0, 50, dtype=float))
+    result = _make_estimate(
+        np.arange(50, 100, dtype=float), np.arange(0, 50, dtype=float)
+    )
 
     assert result.auc() > 0.99, "Perfect attack should have AUC ~1.0"
 
