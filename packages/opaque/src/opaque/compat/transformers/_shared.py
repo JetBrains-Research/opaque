@@ -197,9 +197,12 @@ def _disable_kv_cache(forward_fn):
     sufficient since the cache is only useful for autoregressive generation
     with an existing cache.
     """
+    import functools
+
     if getattr(forward_fn, "_opaque_cache_disabled", False):
         return forward_fn
 
+    @functools.wraps(forward_fn)
     def wrapper(*args, **kwargs):
         past = kwargs.get("past_key_values")
         has_cached_data = past is not None and (
@@ -210,13 +213,10 @@ def _disable_kv_cache(forward_fn):
         return forward_fn(*args, **kwargs)
 
     wrapper._opaque_cache_disabled = True
-    # Preserve attributes that batchify_forward checks
-    if hasattr(forward_fn, "_opaque_batchified"):
-        wrapper._opaque_batchified = forward_fn._opaque_batchified
     return wrapper
 
 
-def batchify_forward(original_forward):
+def _batchify_forward(original_forward):
     """Wrap a model ``forward`` to handle batchless inputs under vmap.
 
     Under ``vmap(grad(...))``, per-example inputs lack the batch dimension:
@@ -234,7 +234,7 @@ def batchify_forward(original_forward):
     from opaque.utils.functional import with_batch_dim
 
     return with_batch_dim(
-        _disable_kv_cache(original_forward),
+        original_forward,
         batch_kwargs={
             "input_ids": 2,
             "attention_mask": 2,
@@ -250,34 +250,25 @@ def batchify_forward(original_forward):
 # Patch application
 # =============================================================================
 
+# All HF model modules that may contain CausalLM classes
+_ALL_MODEL_MODULES = [
+    "transformers.models.llama.modeling_llama",
+    "transformers.models.mistral.modeling_mistral",
+    "transformers.models.qwen2.modeling_qwen2",
+    "transformers.models.qwen3.modeling_qwen3",
+    "transformers.models.phi3.modeling_phi3",
+    "transformers.models.gemma.modeling_gemma",
+    "transformers.models.gemma2.modeling_gemma2",
+    "transformers.models.granite.modeling_granite",
+    "transformers.models.cohere.modeling_cohere",
+    "transformers.models.cohere2.modeling_cohere2",
+    "transformers.models.gpt2.modeling_gpt2",
+]
 
-def apply_batchify_patches() -> None:
-    """Apply batchify wrappers to all supported model classes.
 
-    This must run AFTER both vmap patches and kernel patches, because kernel
-    patches (e.g. fused cross-entropy) may replace ``ForCausalLM.forward``
-    and batchify must wrap the *final* version.
-
-    Patches:
-    - ``*ForCausalLM`` and ``*LMHeadModel`` classes in all supported HF modules
-    - ``PeftModel*`` classes (handles prefix/prompt tuning batch dims)
-    """
+def _patch_causal_lm_classes(patch_fn) -> None:
+    """Apply a patch function to all CausalLM/LMHeadModel forward methods."""
     import importlib
-
-    # All HF model modules that may contain CausalLM classes
-    _ALL_MODEL_MODULES = [
-        "transformers.models.llama.modeling_llama",
-        "transformers.models.mistral.modeling_mistral",
-        "transformers.models.qwen2.modeling_qwen2",
-        "transformers.models.qwen3.modeling_qwen3",
-        "transformers.models.phi3.modeling_phi3",
-        "transformers.models.gemma.modeling_gemma",
-        "transformers.models.gemma2.modeling_gemma2",
-        "transformers.models.granite.modeling_granite",
-        "transformers.models.cohere.modeling_cohere",
-        "transformers.models.cohere2.modeling_cohere2",
-        "transformers.models.gpt2.modeling_gpt2",
-    ]
 
     for module_path in _ALL_MODEL_MODULES:
         try:
@@ -287,12 +278,10 @@ def apply_batchify_patches() -> None:
                     continue
                 cls = getattr(module, name)
                 if isinstance(cls, type) and hasattr(cls, "forward"):
-                    cls.forward = batchify_forward(cls.forward)
+                    cls.forward = patch_fn(cls.forward)
         except (ImportError, RuntimeError):
             pass
 
-    # PEFT wraps base models with PeftModel* classes that also assume
-    # batched inputs (e.g., for prefix tuning attention masks).
     try:
         import peft
 
@@ -303,9 +292,28 @@ def apply_batchify_patches() -> None:
                 and hasattr(cls, "forward")
                 and name.startswith("PeftModel")
             ):
-                cls.forward = batchify_forward(cls.forward)
+                cls.forward = patch_fn(cls.forward)
     except ImportError:
         pass
+
+
+def apply_kv_cache_patches() -> None:
+    """Disable KV cache in model forward methods.
+
+    Skippable via ``OPAQUE_SKIP_TRANSFORMERS_PATCHES=kv_cache``.
+    """
+    _patch_causal_lm_classes(_disable_kv_cache)
+
+
+def apply_batchify_patches() -> None:
+    """Apply batchify wrappers to all supported model classes.
+
+    This must run AFTER both vmap patches, kernel patches, and kv_cache
+    patches, because it must wrap the *final* version of forward.
+
+    Skippable via ``OPAQUE_SKIP_TRANSFORMERS_PATCHES=batchify``.
+    """
+    _patch_causal_lm_classes(_batchify_forward)
 
 
 def _vmap_safe_ignore_causal_mask_sdpa(
