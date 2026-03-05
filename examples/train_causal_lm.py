@@ -419,8 +419,8 @@ def parse_args():
     tracking_group.add_argument(
         "--wandb_run_name",
         type=str,
-        default=os.environ.get("WANDB_NAME"),
-        help="Run name (default: WANDB_NAME env var or auto-generated from model and hyperparameters)",
+        default=os.environ.get("WANDB_NAME") or os.environ.get("RUN_NAME"),
+        help="Run name (default: WANDB_NAME, then RUN_NAME env var, or auto-generated from model and hyperparameters)",
     )
     tracking_group.add_argument(
         "--wandb_entity",
