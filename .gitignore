@@ -28,7 +28,20 @@ env/
 
 # IDEs
 .vscode/
-.idea/
+.idea/*
+!.idea/runConfigurations/
+!.idea/runConfigurations/*.xml
+!.idea/codeStyles/
+!.idea/codeStyles/*.xml
+!.idea/inspectionProfiles/
+!.idea/inspectionProfiles/*.xml
+!.idea/dictionaries/
+!.idea/dictionaries/*.xml
+!.idea/icon.svg
+!.idea/modules.xml
+!.idea/misc.xml
+!.idea/vcs.xml
+!.idea/*.iml
 *.swp
 *.swo
 *~
