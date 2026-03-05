@@ -4,50 +4,6 @@
 
 ## Module functions
 
-### setup
-
-```python
-auditing.setup(
-    dataset, *,
-    num_canaries=None, key=None,
-    coin_flip=None,
-    batch_argnums=None, collate_fn=None,
-    batch_unpack=None, batch_size=256,
-) -> OneRunEstimator
-```
-
-Set up a one-run privacy audit. Creates (or accepts) a coin-flip
-partition and wraps it with the dataset and scoring configuration.
-
-Either provide `num_canaries` + `key` to create a partition
-automatically, or provide a pre-built `coin_flip`.
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `dataset` | any with `len()` | required | Full training dataset |
-| `num_canaries` | `int` | `None` | Number of canaries to designate |
-| `key` | `RngKey` | `None` | RNG key for reproducibility |
-| `coin_flip` | `CoinFlip` | `None` | Pre-built partition (overrides num_canaries/key) |
-| `batch_argnums` | `tuple[int, ...]` | `None` | Which `loss_fn` args are batched (same as `clipped_grad`) |
-| `collate_fn` | `Callable` | `None` | DataLoader collate function |
-| `batch_unpack` | `Callable` | `None` | Extract tensors from collated batch |
-| `batch_size` | `int` | `256` | Scoring batch size |
-
-```python
-# Create partition automatically
-audit_state = auditing.setup(
-    dataset, num_canaries=1000, key=key(42),
-    batch_argnums=(1,),
-)
-train_data = dataset.select(audit_state.train_indices)
-
-# Or with a pre-built CoinFlip
-cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
-audit_state = auditing.setup(dataset, coin_flip=cf, batch_argnums=(1,))
-```
-
----
-
 ### coin_flip
 
 ```python
@@ -57,15 +13,25 @@ auditing.coin_flip(
 ```
 
 Create a coin-flip partition. Randomly selects `num_canaries` examples
-and flips a fair coin for each. Use when you want to inspect or reuse
-the partition before calling `setup()`.
+and flips a fair coin for each to decide inclusion/exclusion.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `dataset` | any with `len()` | required | Full training dataset |
+| `num_canaries` | `int` | required | Number of canaries to designate |
+| `key` | `RngKey` | required | RNG key for reproducibility |
+
+```python
+cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
+train_data = dataset.select(cf.train_indices(len(dataset)))
+```
 
 ---
 
-### score
+### loss_scores
 
 ```python
-auditing.score(
+auditing.loss_scores(
     loss_fn, *args, *,
     batch_argnums, dataset,
     indices=None, collate_fn=None,
@@ -73,10 +39,54 @@ auditing.score(
 ) -> np.ndarray
 ```
 
-Compute per-example membership scores as negative loss. Lower-level
-utility — most users should use `OneRunEstimator.evaluate()` instead.
+Compute per-example membership scores as negative loss. Higher score =
+lower loss = more likely a training member.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `loss_fn` | `Callable` | required | Per-example loss function (vmap-compatible) |
+| `*args` | any | — | Non-batched arguments (e.g., model parameters) |
+| `batch_argnums` | `tuple[int, ...]` | required | Which `loss_fn` args are batched (same as `clipped_grad`) |
+| `dataset` | any with `len()` | required | Dataset to score |
+| `indices` | `np.ndarray` | `None` | Score only these indices (e.g., `cf.canary_indices`) |
+| `collate_fn` | `Callable` | `None` | DataLoader collate function |
+| `batch_unpack` | `Callable` | `None` | Extract tensors from collated batch |
+| `batch_size` | `int` | `256` | Scoring batch size |
 
 **Returns** `np.ndarray` of shape `(n,)`. Higher = more likely member.
+
+```python
+scores = auditing.loss_scores(
+    loss_fn, params,
+    batch_argnums=(1,),
+    dataset=dataset,
+    indices=cf.canary_indices,
+    collate_fn=data_collator,
+    batch_unpack=lambda b: (b["input_ids"].to(device),),
+)
+```
+
+---
+
+### one_run
+
+```python
+auditing.one_run(scores, *, coin_flip) -> OneRunEstimate
+```
+
+Build a one-run privacy estimate from canary scores. Splits scores by
+the coin-flip partition, precomputes the Pareto-optimal ROC frontier,
+and returns a frozen estimate.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `scores` | `np.ndarray` | required | Per-canary membership scores, shape `(num_canaries,)` |
+| `coin_flip` | `CoinFlip` | required | The coin-flip partition |
+
+```python
+estimate = auditing.one_run(scores, coin_flip=cf)
+print(estimate.epsilon_at(delta=1e-5))
+```
 
 ---
 
@@ -115,54 +125,15 @@ Split per-canary scores into `(in_scores, out_scores)`.
 
 ---
 
-## OneRunEstimator
+## OneRunEstimate
 
 ```python
-class OneRunEstimator
+class OneRunEstimate  # frozen dataclass
 ```
 
-One-run estimator returned by `auditing.setup()`. Call `evaluate()`
-after training to score canaries and produce an `AuditResult`.
-
-| Attribute | Type | Description |
-|---|---|---|
-| `coin_flip` | `CoinFlip` | The coin-flip partition |
-| `train_indices` | `list[int]` | Dataset indices for training (excludes held-out canaries) |
-
-### evaluate
-
-```python
-estimator.evaluate(loss_fn, *args, *, batch_argnums=None, batch_size=None) -> AuditResult
-```
-
-Score canaries and produce audit results. Uses the scoring config
-stored at `setup()` time. Optional `batch_argnums` and `batch_size`
-override stored values.
-
-```python
-audit_state = auditing.setup(dataset, num_canaries=1000, key=key(42),
-                             batch_argnums=(1,), ...)
-train_data = dataset.select(audit_state.train_indices)
-# ... train ...
-result = audit_state.evaluate(loss_fn, trained_params)
-```
-
-### audit
-
-```python
-estimator.audit(scores) -> AuditResult
-```
-
-Split pre-computed scores by coin flip and return an `AuditResult`.
-Use `evaluate()` for the full pipeline (scoring + splitting).
-
----
-
-## AuditResult
-
-```python
-class AuditResult(in_scores, out_scores)
-```
+Precomputed one-run audit estimate, returned by `auditing.one_run()`.
+Holds the Pareto-optimal threshold structure and exposes query methods
+for privacy metrics.
 
 | Attribute | Type | Description |
 |---|---|---|
@@ -172,7 +143,7 @@ class AuditResult(in_scores, out_scores)
 ### epsilon_at
 
 ```python
-audit.epsilon_at(*, delta=0.0, significance=0.05) -> float
+estimate.epsilon_at(*, delta=0.0, significance=0.05) -> float
 ```
 
 Epsilon lower bound. Uses the one-run likelihood-ratio test.
@@ -180,7 +151,7 @@ Epsilon lower bound. Uses the one-run likelihood-ratio test.
 ### epsilon_one_run
 
 ```python
-audit.epsilon_one_run(*, significance=0.05, delta=0.0, threshold=None, eps_max=20.0, tol=1e-4) -> float
+estimate.epsilon_one_run(*, significance=0.05, delta=0.0, threshold=None, eps_max=20.0, tol=1e-4) -> float
 ```
 
 Likelihood-ratio test from Steinke et al. (2023). Tests both positive-only
@@ -189,7 +160,7 @@ and two-sided guesses per threshold, with Bonferroni correction.
 ### auc
 
 ```python
-audit.auc(*, confidence=None, num_samples=1000, key=None) -> float | tuple[float, float]
+estimate.auc(*, confidence=None, num_samples=1000, key=None) -> float | tuple[float, float]
 ```
 
 ROC AUC. Returns point estimate by default, or `(lower, upper)` CI tuple
@@ -198,7 +169,7 @@ when `confidence` is provided.
 ### beta_at
 
 ```python
-audit.beta_at(*, alpha) -> float | np.ndarray
+estimate.beta_at(*, alpha) -> float | np.ndarray
 ```
 
 Type-II error at given Type-I error rate. `beta = 1 - TPR` at `alpha = FPR`.
@@ -206,7 +177,7 @@ Type-II error at given Type-I error rate. `beta = 1 - TPR` at `alpha = FPR`.
 ### max_accuracy
 
 ```python
-audit.max_accuracy(*, prevalence=None) -> float
+estimate.max_accuracy(*, prevalence=None) -> float
 ```
 
 Best-case classification accuracy across all thresholds.
@@ -214,7 +185,7 @@ Best-case classification accuracy across all thresholds.
 ### summary
 
 ```python
-audit.summary(*, significance=0.05, delta=0.0, theoretical_epsilon=None) -> str
+estimate.summary(*, significance=0.05, delta=0.0, theoretical_epsilon=None) -> str
 ```
 
 Formatted multi-line report. Includes `theoretical_epsilon` for comparison
@@ -226,13 +197,12 @@ when provided.
 
 | | |
 |---|---|
-| `auditing.setup(dataset, ...)` | Designate canaries + configure scoring -> `OneRunEstimator` |
-| `auditing.coin_flip(dataset, ...)` | Coin-flip partition only -> `CoinFlip` |
-| `auditing.score(...)` | Raw membership scores |
-| `audit_state.evaluate(loss_fn, params)` | Score canaries, return `AuditResult` |
-| `audit_state.train_indices` | Training indices for `dataset.select()` |
-| `result.epsilon_at(delta=)` | Epsilon bound (one-run method) |
-| `result.auc()` | Attack AUC |
-| `result.auc(confidence=, key=)` | AUC with confidence interval |
-| `result.beta_at(alpha=)` | Type-II error at given FPR |
-| `result.summary(theoretical_epsilon=)` | Formatted report with comparison |
+| `auditing.coin_flip(dataset, ...)` | Coin-flip partition -> `CoinFlip` |
+| `auditing.loss_scores(loss_fn, ...)` | Membership scores -> `np.ndarray` |
+| `auditing.one_run(scores, coin_flip=cf)` | Estimate privacy -> `OneRunEstimate` |
+| `cf.train_indices(len(dataset))` | Training indices for `dataset.select()` |
+| `estimate.epsilon_at(delta=)` | Epsilon bound (one-run method) |
+| `estimate.auc()` | Attack AUC |
+| `estimate.auc(confidence=, key=)` | AUC with confidence interval |
+| `estimate.beta_at(alpha=)` | Type-II error at given FPR |
+| `estimate.summary(theoretical_epsilon=)` | Formatted report with comparison |

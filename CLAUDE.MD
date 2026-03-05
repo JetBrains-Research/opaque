@@ -45,6 +45,14 @@ packages/opaque/
 │   ├── clipping/                # Per-example gradient clipping
 │   ├── noise/                   # Gaussian + correlated noise (MF)
 │   ├── auditing/                # Empirical privacy auditing
+│   │   ├── __init__.py          # Re-exports: coin_flip, one_run, loss_scores
+│   │   ├── coin_flip.py         # CoinFlip class + coin_flip() factory
+│   │   ├── one_run/             # One-run estimator (Steinke et al. 2023)
+│   │   │   ├── estimate.py      # one_run() + OneRunEstimate
+│   │   │   ├── roc.py           # Pareto frontier, TN/FN counts, TPR@FPR
+│   │   │   └── stats.py         # p-value, epsilon binary search
+│   │   └── attacks/             # Membership inference attacks
+│   │       └── loss.py          # loss_scores() via vmap
 │   ├── distributed/             # DDP utilities
 │   ├── sampling/                # Poisson samplers
 │   ├── profiling/               # Memory profiling
