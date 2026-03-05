@@ -33,36 +33,44 @@ train_data = dataset.select(cf.train_indices(len(dataset)))
 ```python
 auditing.loss_scores(
     loss_fn, *args, *,
-    batch_argnums, dataset,
-    indices=None, collate_fn=None,
-    batch_unpack=None, batch_size=256,
+    batch_argnums, dataloader,
+    reference_scores=None,
 ) -> np.ndarray
 ```
 
 Compute per-example membership scores as negative loss. Higher score =
 lower loss = more likely a training member.
 
+The `dataloader` must yield batches compatible with `loss_fn`. Each batch
+should be a tensor (single `batch_argnums`) or a tuple of tensors
+(multiple `batch_argnums`). Use a custom `collate_fn` on the DataLoader
+to handle dict-style batches (e.g., HuggingFace).
+
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `loss_fn` | `Callable` | required | Per-example loss function (vmap-compatible) |
 | `*args` | any | — | Non-batched arguments (e.g., model parameters) |
 | `batch_argnums` | `tuple[int, ...]` | required | Which `loss_fn` args are batched (same as `clipped_grad`) |
-| `dataset` | any with `len()` | required | Dataset to score |
-| `indices` | `np.ndarray` | `None` | Score only these indices (e.g., `cf.canary_indices`) |
-| `collate_fn` | `Callable` | `None` | DataLoader collate function |
-| `batch_unpack` | `Callable` | `None` | Extract tensors from collated batch |
-| `batch_size` | `int` | `256` | Scoring batch size |
+| `dataloader` | iterable | required | Yields tensors or tuples of tensors |
+| `reference_scores` | `np.ndarray` | `None` | Baseline scores to subtract (e.g., from untrained model) |
 
 **Returns** `np.ndarray` of shape `(n,)`. Higher = more likely member.
 
 ```python
+from torch.utils.data import DataLoader, Subset
+
+def canary_collate(examples):
+    batch = data_collator(examples)
+    return (batch["input_ids"].to(device),)
+
+canary_loader = DataLoader(
+    Subset(dataset, cf.canary_indices.tolist()),
+    batch_size=32, collate_fn=canary_collate,
+)
 scores = auditing.loss_scores(
     loss_fn, params,
     batch_argnums=(1,),
-    dataset=dataset,
-    indices=cf.canary_indices,
-    collate_fn=data_collator,
-    batch_unpack=lambda b: (b["input_ids"].to(device),),
+    dataloader=canary_loader,
 )
 ```
 
@@ -147,9 +155,9 @@ estimate.epsilon_at(*, delta=0.0, significance=0.05, threshold=None, eps_max=20.
 ```
 
 Epsilon lower bound using the one-run likelihood-ratio test (Steinke et al. 2023).
-Tests both positive-only and two-sided guesses per threshold, with Bonferroni
-correction. When `threshold` is provided, uses that specific threshold instead
-of searching over all Pareto-optimal thresholds.
+Tests positive-only, negative-only, and two-sided guesses per threshold, with
+Bonferroni correction. When `threshold` is provided, uses that specific threshold
+instead of searching over all Pareto-optimal thresholds.
 
 ### auc
 

@@ -122,7 +122,7 @@ class OneRunEstimate:
         """Epsilon lower bound using the one-run method (Steinke et al. 2023).
 
         Uses a likelihood-ratio test tailored for DP auditing. For each
-        Pareto-optimal threshold, tries both positive-only guesses
+        Pareto-optimal threshold, tries positive-only, negative-only,
         and two-sided guesses per Algorithm 1 of the paper, with
         Bonferroni correction over all thresholds and variants.
 
@@ -147,32 +147,40 @@ class OneRunEstimate:
             fp = int(np.sum(self.out_scores >= threshold))
             tn = int(np.sum(self.out_scores < threshold))
 
-            # Bonferroni over the two variants (positive-only and two-sided)
-            sig_corrected = significance / 2.0
+            # Bonferroni over the three variants (positive-only, negative-only, two-sided)
+            sig_corrected = significance / 3.0
+            fn = int(np.sum(self.in_scores < threshold))
 
             eps_pos = epsilon_one_run_search(
                 tp + fp, tp, m, sig_corrected, delta, eps_max, tol
             )
+            eps_neg = epsilon_one_run_search(
+                fn + tn, tn, m, sig_corrected, delta, eps_max, tol
+            )
             eps_both = epsilon_one_run_search(
                 m, tp + tn, m, sig_corrected, delta, eps_max, tol
             )
-            return max(eps_pos, eps_both)
+            return max(eps_pos, eps_neg, eps_both)
 
         n_thresholds = len(self.thresholds)
-        sig_corrected = significance / (2 * n_thresholds)
+        sig_corrected = significance / (3 * n_thresholds)
         best = 0.0
         for i in range(n_thresholds):
             tp_i = self.n_in - self.fn_counts[i]
             fp_i = self.n_out - self.tn_counts[i]
+            fn_i = self.fn_counts[i]
             tn_i = self.tn_counts[i]
 
             eps_pos = epsilon_one_run_search(
                 tp_i + fp_i, tp_i, m, sig_corrected, delta, eps_max, tol
             )
+            eps_neg = epsilon_one_run_search(
+                fn_i + tn_i, tn_i, m, sig_corrected, delta, eps_max, tol
+            )
             eps_both = epsilon_one_run_search(
                 m, tp_i + tn_i, m, sig_corrected, delta, eps_max, tol
             )
-            best = max(best, eps_pos, eps_both)
+            best = max(best, eps_pos, eps_neg, eps_both)
         return best
 
     # ------------------------------------------------------------------
@@ -226,7 +234,7 @@ class OneRunEstimate:
         prop_less = (np.sum(values < point) + 1) / (num_samples + 2)
         z0 = scipy.stats.norm.ppf(prop_less)
         z_q = scipy.stats.norm.ppf(quantiles)
-        corrected = scipy.stats.norm.cdf(z0 + (z0 + z_q) / (1 - 0.0 * (z0 + z_q)))
+        corrected = scipy.stats.norm.cdf(2 * z0 + z_q)
 
         ci = np.quantile(values, corrected, method="linear")
         return (float(ci[0]), float(ci[1]))
@@ -284,7 +292,7 @@ class OneRunEstimate:
             [
                 f"  \u03b2 @ \u03b1=0.01:           {self.beta_at(alpha=0.01):.4f}",
                 f"  \u03b2 @ \u03b1=0.10:           {self.beta_at(alpha=0.1):.4f}",
-                f"  (\u03b1={significance}, \u03b4={delta})",
+                f"  (\u03b1={significance}, \u03b4={delta:.2e})",
             ]
         )
         return "\n".join(lines)

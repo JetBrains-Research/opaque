@@ -333,7 +333,7 @@ class TestOneRunEstimateRepr:
         estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))
         s = estimate.summary(significance=0.01, delta=1e-5)
         assert "\u03b1=0.01" in s
-        assert "\u03b4=1e-05" in s
+        assert "\u03b4=1.00e-05" in s
 
     def test_summary_theoretical_epsilon(self):
         estimate = _make_estimate(np.arange(50, 100), np.arange(0, 50))

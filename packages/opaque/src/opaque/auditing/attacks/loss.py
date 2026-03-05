@@ -19,11 +19,8 @@ def loss_scores(
     loss_fn: Callable,
     *args: Any,
     batch_argnums: tuple[int, ...],
-    dataset: Any,
-    indices: np.ndarray | None = None,
-    collate_fn: Callable | None = None,
-    batch_unpack: Callable | None = None,
-    batch_size: int = 256,
+    dataloader: Any,
+    reference_scores: np.ndarray | None = None,
 ) -> np.ndarray:
     """Compute membership scores as negative per-example loss.
 
@@ -31,64 +28,68 @@ def loss_scores(
     Uses ``torch.func.vmap`` for per-example loss computation, following
     the same ``batch_argnums`` convention as :func:`~opaque.clipped_grad`.
 
+    The ``dataloader`` must yield batches compatible with ``loss_fn``.
+    Each batch should be a tensor (single ``batch_argnums``) or a tuple
+    of tensors (multiple ``batch_argnums``). Use a custom ``collate_fn``
+    on the DataLoader to handle dict-style batches (e.g., HuggingFace).
+
+    When ``reference_scores`` are provided, the returned scores are
+    ``current - reference``, which equals ``loss(w0) - loss(wt)``
+    (the loss reduction from initial to current model). This matches
+    Algorithm 3 of Steinke et al. (2023).
+
     Args:
         loss_fn: Per-example loss function, same as used with
             :func:`~opaque.clipped_grad`. Must be vmap-compatible.
         *args: Non-batched arguments to ``loss_fn`` (e.g., model parameters).
         batch_argnums: Indices of ``loss_fn`` positional arguments that come
             from dataset batches. Must be sorted, unique, non-negative.
-        dataset: Dataset to score. Must support ``len()`` and indexing.
-        indices: If provided, only score these dataset indices.
-        collate_fn: Collate function for the DataLoader.
-        batch_unpack: Callable mapping a DataLoader batch to a tuple of
-            tensors, one per ``batch_argnums`` position. Required for
-            dict-style batches (e.g., HuggingFace collators).
-        batch_size: Batch size for scoring. Default: 256.
+        dataloader: An iterable of batches (typically a ``DataLoader``).
+            Must yield tensors or tuples of tensors matching
+            ``batch_argnums``.
+        reference_scores: Baseline scores from an untrained model, shape
+            ``(n,)``. When provided, returned scores are the loss reduction
+            ``scores - reference_scores``. Typically obtained by calling
+            ``loss_scores`` on the untrained model before training.
 
     Returns:
         Array of membership scores, shape ``(n,)``. Scores are negated
-        losses (higher = more likely member).
+        losses (higher = more likely member), optionally adjusted by
+        reference scores.
 
     Example (HuggingFace pattern)::
 
-        scores = loss_scores(
-            per_example_loss_fn,
-            trainable_params,
-            batch_argnums=(1,),
-            dataset=train_dataset,
-            indices=cf.canary_indices,
-            collate_fn=data_collator,
-            batch_unpack=lambda b: (b["input_ids"].to(device),),
-            batch_size=32,
+        from torch.utils.data import DataLoader, Subset
+
+        def canary_collate(examples):
+            batch = data_collator(examples)
+            return (batch["input_ids"].to(device),)
+
+        canary_loader = DataLoader(
+            Subset(dataset, cf.canary_indices),
+            batch_size=32, collate_fn=canary_collate,
+        )
+        ref = auditing.loss_scores(
+            loss_fn, initial_params,
+            batch_argnums=(1,), dataloader=canary_loader,
+        )
+        scores = auditing.loss_scores(
+            loss_fn, trained_params,
+            batch_argnums=(1,), dataloader=canary_loader,
+            reference_scores=ref,
         )
 
     Example (PyTorch ``(x, y)`` pattern)::
 
-        scores = loss_scores(
-            loss_fn,
-            params,
-            batch_argnums=(1, 2),
-            dataset=dataset,
-            batch_size=256,
+        loader = DataLoader(dataset, batch_size=256)
+        scores = auditing.loss_scores(
+            loss_fn, params,
+            batch_argnums=(1, 2), dataloader=loader,
         )
     """
     import torch
-    from torch.utils.data import DataLoader, Subset
 
     _validate_batch_argnums(batch_argnums, len(args))
-
-    if indices is not None:
-        subset = Subset(dataset, np.asarray(indices).tolist())
-    else:
-        subset = dataset
-
-    loader_kwargs: dict[str, Any] = {
-        "batch_size": batch_size,
-        "shuffle": False,
-    }
-    if collate_fn is not None:
-        loader_kwargs["collate_fn"] = collate_fn
-    loader = DataLoader(subset, **loader_kwargs)
 
     # Build in_dims for vmap: None for non-batch args, 0 for batch args
     n_args = len(args) + len(batch_argnums)
@@ -97,18 +98,8 @@ def loss_scores(
 
     all_scores: list[np.ndarray] = []
     with torch.no_grad():
-        for batch in loader:
-            if batch_unpack is not None:
-                batch_tensors = batch_unpack(batch)
-            elif isinstance(batch, dict):
-                raise TypeError(
-                    "loss_scores() received a dict batch from the DataLoader, "
-                    "but no `batch_unpack` was provided. For dict-style batches "
-                    "(e.g., HuggingFace collators), pass a `batch_unpack` function "
-                    "that maps the batch dict to a tuple of tensors matching "
-                    "`batch_argnums`."
-                )
-            elif isinstance(batch, (list, tuple)):
+        for batch in dataloader:
+            if isinstance(batch, (list, tuple)):
                 batch_tensors = tuple(batch[i] for i in range(len(batch_argnums)))
             else:
                 batch_tensors = (batch,)
@@ -118,7 +109,18 @@ def loss_scores(
             losses = per_example_fn(*full_args)
             all_scores.append(-losses.detach().cpu().numpy())
 
-    return np.concatenate(all_scores)
+    scores = np.concatenate(all_scores)
+
+    if reference_scores is not None:
+        reference_scores = np.asarray(reference_scores)
+        if reference_scores.shape != scores.shape:
+            raise ValueError(
+                f"reference_scores shape {reference_scores.shape} does not match "
+                f"scores shape {scores.shape}"
+            )
+        scores = scores - reference_scores
+
+    return scores
 
 
 def _validate_batch_argnums(batch_argnums: tuple[int, ...], n_non_batch: int) -> None:

@@ -115,10 +115,7 @@ train_data = dataset.select(cf.train_indices(len(dataset)))
 # ... train with DP-SGD ...
 scores = auditing.loss_scores(
     loss_fn, trained_params,
-    batch_argnums=(1,), dataset=dataset,
-    indices=cf.canary_indices,
-    collate_fn=data_collator,
-    batch_unpack=lambda b: (b["input_ids"].to(device),),
+    batch_argnums=(1,), dataloader=canary_loader,
 )
 estimate = auditing.one_run(scores, coin_flip=cf)
 print(estimate.summary(delta=1e-5))

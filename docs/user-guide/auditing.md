@@ -27,6 +27,7 @@ Only one training run is needed, unlike shadow-model approaches.
 ```python
 import opaque.auditing as auditing
 from opaque.random import key
+from torch.utils.data import DataLoader, Subset
 
 # 1. Partition: designate canaries and flip coins
 cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
@@ -35,13 +36,18 @@ train_data = dataset.select(cf.train_indices(len(dataset)))
 # 2. Train with DP-SGD on train_data ...
 
 # 3. Score: compute membership scores for canaries
+def canary_collate(examples):
+    batch = data_collator(examples)
+    return (batch["input_ids"].to(device),)
+
+canary_loader = DataLoader(
+    Subset(dataset, cf.canary_indices.tolist()),
+    batch_size=32, collate_fn=canary_collate,
+)
 scores = auditing.loss_scores(
     loss_fn, trained_params,
     batch_argnums=(1,),
-    dataset=dataset,
-    indices=cf.canary_indices,
-    collate_fn=data_collator,
-    batch_unpack=lambda b: (b["input_ids"].to(device),),
+    dataloader=canary_loader,
 )
 
 # 4. Estimate: build the one-run estimate
@@ -75,10 +81,7 @@ No changes to the training loop. The dataset is already filtered.
 scores = auditing.loss_scores(
     per_example_loss_fn, trained_params,
     batch_argnums=(1,),
-    dataset=dataset,
-    indices=cf.canary_indices,
-    collate_fn=data_collator,
-    batch_unpack=lambda b: (b["input_ids"].to(device),),
+    dataloader=canary_loader,
 )
 estimate = auditing.one_run(scores, coin_flip=cf)
 print(estimate.summary(delta=1e-5, theoretical_epsilon=target_epsilon))
@@ -89,22 +92,21 @@ for a complete working example with the `--audit` flag.
 
 ### Parameter reference
 
-These parameters on `loss_scores` bridge the gap between how a DataLoader
-yields batches and how the loss function expects arguments:
-
 - **`batch_argnums`**: Which positional arguments of `loss_fn` come from the
-  dataset. `(1,)` means arg 1 is batched; `(1, 2)` means args 1 and 2 are
+  dataloader. `(1,)` means arg 1 is batched; `(1, 2)` means args 1 and 2 are
   batched. Same convention as `clipped_grad`.
-- **`collate_fn`**: How to collate individual examples into a batch (e.g.,
-  `DataCollatorForLanguageModeling` for HuggingFace).
-- **`batch_unpack`**: How to extract tensors from a collated batch. For
-  HuggingFace dict batches: `lambda b: (b["input_ids"].to(device),)`.
+- **`dataloader`**: Any iterable yielding batches. Each batch should be a
+  tensor (single `batch_argnums`) or a tuple of tensors (multiple
+  `batch_argnums`). Use a custom `collate_fn` on the DataLoader to handle
+  dict-style batches (e.g., HuggingFace).
+- **`reference_scores`**: Baseline scores from an untrained model. When
+  provided, returned scores are `scores - reference_scores` (loss reduction).
 
 ## Epsilon estimation
 
 Epsilon is estimated using the one-run likelihood-ratio test from
 Steinke et al. (2023). For each Pareto-optimal threshold, the test
-tries both positive-only guesses and two-sided guesses, taking
+tries positive-only, negative-only, and two-sided guesses, taking
 the best result with Bonferroni correction.
 
 ```python

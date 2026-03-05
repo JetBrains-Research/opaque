@@ -6,16 +6,20 @@ Quick start (one-run auditing, Steinke et al. 2023)::
 
     import opaque.auditing as auditing
     from opaque.random import key
+    from torch.utils.data import DataLoader, Subset
 
     cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
     train_data = dataset.select(cf.train_indices(len(dataset)))
 
     # ... DP-SGD training loop ...
 
+    canary_loader = DataLoader(
+        Subset(dataset, cf.canary_indices.tolist()),
+        batch_size=32, collate_fn=canary_collate,
+    )
     scores = auditing.loss_scores(loss_fn, params,
                                    batch_argnums=(1,),
-                                   dataset=dataset,
-                                   indices=cf.canary_indices)
+                                   dataloader=canary_loader)
     estimate = auditing.one_run(scores, coin_flip=cf)
     print(estimate.summary(delta=1e-5))
 

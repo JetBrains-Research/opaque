@@ -10,15 +10,7 @@ import numpy as np
 import scipy.special
 import scipy.stats
 
-__all__ = ["epsilon_one_run_search", "log_sub", "one_run_p_value"]
-
-
-def log_sub(x: np.ndarray, y: np.ndarray) -> np.ndarray:
-    """Stable computation of log(exp(x) - exp(y))."""
-    if np.any(y > x):
-        raise ValueError(f"y must be <= x, got y={y} and x={x}")
-    with np.errstate(divide="ignore"):
-        return x + np.log1p(-np.exp(y - x))
+__all__ = ["epsilon_one_run_search", "one_run_p_value"]
 
 
 def one_run_p_value(
@@ -60,6 +52,9 @@ def epsilon_one_run_search(
     """One-run epsilon via binary search."""
     if n_guess == 0 or n_correct == 0:
         return 0.0
+
+    while one_run_p_value(m, n_guess, n_correct, eps_max, delta) < significance:
+        eps_max *= 2
 
     eps_lo, eps_hi = 0.0, eps_max
     while eps_hi - eps_lo > tol:

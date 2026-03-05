@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import torch
 import torch.nn.functional as F
-from torch.utils.data import TensorDataset
+from torch.utils.data import DataLoader, Subset, TensorDataset
 
 import opaque.auditing as auditing
 from opaque.auditing import OneRunEstimate, loss_scores, one_run
@@ -37,35 +37,37 @@ class TestLossScores:
     def test_basic_scoring(self, linear_setup):
         """Test that loss_scores returns correct shape."""
         params, dataset, loss_fn = linear_setup
+        loader = DataLoader(dataset, batch_size=64)
         scores = loss_scores(
             loss_fn,
             params,
             batch_argnums=(1, 2),
-            dataset=dataset,
+            dataloader=loader,
         )
         assert scores.shape == (200,)
 
-    def test_scoring_with_indices(self, linear_setup):
-        """Test scoring a subset via indices."""
+    def test_scoring_with_subset(self, linear_setup):
+        """Test scoring a subset via Subset + DataLoader."""
         params, dataset, loss_fn = linear_setup
-        indices = np.array([0, 10, 20, 30, 40])
+        indices = [0, 10, 20, 30, 40]
+        loader = DataLoader(Subset(dataset, indices), batch_size=32)
         scores = loss_scores(
             loss_fn,
             params,
             batch_argnums=(1, 2),
-            dataset=dataset,
-            indices=indices,
+            dataloader=loader,
         )
         assert scores.shape == (5,)
 
     def test_scores_are_negative_loss(self, linear_setup):
         """Test that scores are negated losses (higher = better fit)."""
         params, dataset, loss_fn = linear_setup
+        loader = DataLoader(dataset, batch_size=64)
         scores = loss_scores(
             loss_fn,
             params,
             batch_argnums=(1, 2),
-            dataset=dataset,
+            dataloader=loader,
         )
         # Perfect model: losses near 0, scores near 0 (but negative of near-0)
         assert np.all(scores <= 1e-3)
@@ -77,15 +79,13 @@ class TestLossScores:
             loss_fn,
             params,
             batch_argnums=(1, 2),
-            dataset=dataset,
-            batch_size=32,
+            dataloader=DataLoader(dataset, batch_size=32),
         )
         scores_128 = loss_scores(
             loss_fn,
             params,
             batch_argnums=(1, 2),
-            dataset=dataset,
-            batch_size=128,
+            dataloader=DataLoader(dataset, batch_size=128),
         )
         np.testing.assert_allclose(scores_32, scores_128, atol=1e-5)
 
@@ -93,18 +93,19 @@ class TestLossScores:
         """Test that trained model gives higher scores than random."""
         params, dataset, loss_fn = linear_setup
         random_params = torch.randn_like(params)
+        loader = DataLoader(dataset, batch_size=64)
 
         scores_trained = loss_scores(
             loss_fn,
             params,
             batch_argnums=(1, 2),
-            dataset=dataset,
+            dataloader=loader,
         )
         scores_random = loss_scores(
             loss_fn,
             random_params,
             batch_argnums=(1, 2),
-            dataset=dataset,
+            dataloader=loader,
         )
 
         assert np.mean(scores_trained) > np.mean(scores_random)
@@ -132,23 +133,12 @@ class TestLossScoresSingleArg:
     def test_single_batch_arg(self, single_arg_setup):
         """Test scoring with a single batched argument."""
         params, dataset, loss_fn = single_arg_setup
+        loader = DataLoader(dataset, batch_size=32)
         scores = loss_scores(
             loss_fn,
             params,
             batch_argnums=(1,),
-            dataset=dataset,
-        )
-        assert scores.shape == (100,)
-
-    def test_with_batch_unpack(self, single_arg_setup):
-        """Test scoring with custom batch_unpack function."""
-        params, dataset, loss_fn = single_arg_setup
-        scores = loss_scores(
-            loss_fn,
-            params,
-            batch_argnums=(1,),
-            dataset=dataset,
-            batch_unpack=lambda b: (b[0],),
+            dataloader=loader,
         )
         assert scores.shape == (100,)
 
@@ -182,33 +172,76 @@ class TestLossScoresDictBatch:
             return F.mse_loss(tokens @ params, torch.zeros(1), reduction="sum")
 
         def collate_fn(batch):
-            return {"input_ids": torch.stack([b["input_ids"] for b in batch])}
+            """Collate dict batches into tensor tuples (HF pattern)."""
+            return (torch.stack([b["input_ids"] for b in batch]),)
 
         return params, dataset, loss_fn, collate_fn
 
-    def test_dict_batch_with_unpack(self, dict_dataset_setup):
-        """Test dict-style batches with batch_unpack."""
+    def test_dict_batch_with_collate(self, dict_dataset_setup):
+        """Test dict-style batches with collate that returns tuples."""
         params, dataset, loss_fn, collate_fn = dict_dataset_setup
+        loader = DataLoader(dataset, batch_size=16, collate_fn=collate_fn)
         scores = loss_scores(
             loss_fn,
             params,
             batch_argnums=(1,),
-            dataset=dataset,
-            collate_fn=collate_fn,
-            batch_unpack=lambda b: (b["input_ids"],),
+            dataloader=loader,
         )
         assert scores.shape == (50,)
 
-    def test_dict_batch_without_unpack_raises(self, dict_dataset_setup):
-        """Test that dict-style batches without batch_unpack raise TypeError."""
-        params, dataset, loss_fn, collate_fn = dict_dataset_setup
-        with pytest.raises(TypeError, match="batch_unpack"):
+
+class TestReferenceScores:
+    """Tests for reference_scores subtraction."""
+
+    def test_reference_scores_subtraction(self):
+        """Test that reference_scores are subtracted from current scores."""
+        torch.manual_seed(42)
+        dim = 8
+        n = 50
+
+        tokens = torch.randn(n, dim)
+        dataset = TensorDataset(tokens)
+        params = torch.randn(dim)
+        ref_params = torch.randn(dim)
+
+        def loss_fn(params, tokens):
+            return F.mse_loss(tokens @ params, torch.zeros(1), reduction="sum")
+
+        loader = DataLoader(dataset, batch_size=32)
+
+        ref_scores = loss_scores(
+            loss_fn, ref_params, batch_argnums=(1,), dataloader=loader,
+        )
+        scores = loss_scores(
+            loss_fn, params, batch_argnums=(1,), dataloader=loader,
+            reference_scores=ref_scores,
+        )
+
+        # Manually compute expected: -loss(params) - (-loss(ref_params))
+        raw_scores = loss_scores(
+            loss_fn, params, batch_argnums=(1,), dataloader=loader,
+        )
+        expected = raw_scores - ref_scores
+        np.testing.assert_allclose(scores, expected, atol=1e-5)
+
+    def test_reference_scores_shape_mismatch(self):
+        """Test that mismatched reference_scores raises ValueError."""
+        torch.manual_seed(42)
+        dim = 8
+        tokens = torch.randn(10, dim)
+        dataset = TensorDataset(tokens)
+        params = torch.randn(dim)
+
+        def loss_fn(params, tokens):
+            return F.mse_loss(tokens @ params, torch.zeros(1), reduction="sum")
+
+        loader = DataLoader(dataset, batch_size=32)
+        wrong_ref = np.zeros(5)
+
+        with pytest.raises(ValueError, match="reference_scores shape"):
             loss_scores(
-                loss_fn,
-                params,
-                batch_argnums=(1,),
-                dataset=dataset,
-                collate_fn=collate_fn,
+                loss_fn, params, batch_argnums=(1,), dataloader=loader,
+                reference_scores=wrong_ref,
             )
 
 
@@ -220,12 +253,15 @@ class TestEndToEnd:
         params, dataset, loss_fn = linear_setup
 
         cf = auditing.coin_flip(dataset, num_canaries=50, key=key(42))
+        loader = DataLoader(
+            Subset(dataset, cf.canary_indices.tolist()),
+            batch_size=32,
+        )
         scores = loss_scores(
             loss_fn,
             params,
             batch_argnums=(1, 2),
-            dataset=dataset,
-            indices=cf.canary_indices,
+            dataloader=loader,
         )
 
         estimate = one_run(scores, coin_flip=cf)
@@ -240,7 +276,7 @@ class TestEndToEnd:
         assert "Audit Summary" in s
 
     def test_with_collate_fn(self):
-        """Test workflow with collate_fn and batch_unpack."""
+        """Test workflow with custom collate_fn on DataLoader."""
         torch.manual_seed(42)
         n_samples = 50
         dim = 8
@@ -264,17 +300,19 @@ class TestEndToEnd:
             return F.mse_loss(tokens @ params, torch.zeros(1), reduction="sum")
 
         def collate_fn(batch):
-            return {"input_ids": torch.stack([b["input_ids"] for b in batch])}
+            return (torch.stack([b["input_ids"] for b in batch]),)
 
         cf = auditing.coin_flip(dataset, num_canaries=20, key=key(42))
+        loader = DataLoader(
+            Subset(dataset, cf.canary_indices.tolist()),
+            batch_size=16,
+            collate_fn=collate_fn,
+        )
         scores = loss_scores(
             loss_fn,
             params,
             batch_argnums=(1,),
-            dataset=dataset,
-            indices=cf.canary_indices,
-            collate_fn=collate_fn,
-            batch_unpack=lambda b: (b["input_ids"],),
+            dataloader=loader,
         )
 
         estimate = one_run(scores, coin_flip=cf)

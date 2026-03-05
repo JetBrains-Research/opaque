@@ -47,7 +47,7 @@ import torch
 import torchopt
 from datasets import load_dataset
 from peft import LoraConfig, get_peft_model
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
@@ -56,6 +56,7 @@ from transformers import (
 )
 
 import opaque.accounting as acc
+import opaque.auditing as auditing
 from opaque.accounting import calibration as cal, Accountant
 from opaque.clipping import adaptive_clipped_grad, clipped_grad
 from opaque.compat.transformers import is_kernel_patched
@@ -362,8 +363,8 @@ def parse_args():
     privacy_group.add_argument(
         "--target_delta",
         type=float,
-        default=1e-5,
-        help="Target delta used in accounting and calibration",
+        default=None,
+        help="Target delta for DP accounting. Default: 1/n² where n = training set size.",
     )
     privacy_group.add_argument(
         "--calibration_min",
@@ -400,8 +401,8 @@ def parse_args():
     audit_group.add_argument(
         "--audit_batch_size",
         type=int,
-        default=32,
-        help="Batch size used in auditing and eval",
+        default=1,
+        help="Batch size for auditing scoring (vmapped, so memory ~= batch_size × model activations)",
     )
 
     tracking_group = parser.add_argument_group("tracking", "Experiment tracking (W&B)")
@@ -682,9 +683,16 @@ def main():
         mlm=False,  # False for causal LM (GPT-style)
     )
 
+    # Collate: data_collator handles padding, then extract tensors + move to device.
+    # Used by all DataLoaders that feed into per_example_loss_fn.
+    def collate(examples):
+        batch = data_collator(examples)
+        return batch["input_ids"].to(device), batch["attention_mask"].to(device)
+
     # Privacy auditing setup: designate canaries and remove held-out ones
     audit_cf = None
     audit_dataset = None
+    audit_ref_scores = None
     if args.audit:
         print(f"\nSetting up privacy auditing with {args.audit_canaries} canaries...")
         audit_cf = auditing.coin_flip(
@@ -700,12 +708,14 @@ def main():
         )
         print(f"  Training set: {len(train_dataset)} examples")
 
+    n_train = len(train_dataset)
+
     # Eval DataLoader (standard batching, no privacy requirements)
     eval_loader = DataLoader(
         eval_dataset,
         batch_size=args.eval_batch_size,
         shuffle=False,
-        collate_fn=data_collator,
+        collate_fn=collate,
         drop_last=False,
     )
 
@@ -756,10 +766,48 @@ def main():
         return {**frozen_params, **trainable}
 
     # Define per-example loss
-    def per_example_loss_fn(trainable, tokens_batch):
-        # Use HuggingFace's built-in loss (handles shifting internally)
-        output = fmodel(merged_params(trainable), tokens_batch, labels=tokens_batch)
+    def per_example_loss_fn(trainable, input_ids, attention_mask):
+        output = fmodel(
+            merged_params(trainable), input_ids,
+            attention_mask=attention_mask, labels=input_ids,
+        )
         return output.loss
+
+    # Build canary DataLoader for auditing
+    canary_loader = None
+    if args.audit and audit_cf is not None:
+        canary_loader = DataLoader(
+            Subset(audit_dataset, audit_cf.canary_indices.tolist()),
+            batch_size=args.audit_batch_size,
+            shuffle=False,
+            collate_fn=collate,
+        )
+
+    # Auditing helper: compute scores and run one-run estimator
+    def run_audit(trainable):
+        """Score canaries and report audit metrics. Returns OneRunEstimate or None."""
+        if not args.audit or audit_cf is None:
+            return None
+        scores = auditing.loss_scores(
+            per_example_loss_fn,
+            trainable,
+            batch_argnums=(1, 2),
+            dataloader=canary_loader,
+            reference_scores=audit_ref_scores,
+        )
+        return auditing.one_run(scores, coin_flip=audit_cf)
+
+    # Compute reference (untrained) scores for auditing before any training
+    # Paper Algorithm 3: Score = loss(w0, x) - loss(wℓ, x), so we need w0 losses
+    if args.audit and audit_cf is not None:
+        print("\nComputing reference scores on untrained model...")
+        audit_ref_scores = auditing.loss_scores(
+            per_example_loss_fn,
+            trainable_params,
+            batch_argnums=(1, 2),
+            dataloader=canary_loader,
+        )
+        print(f"  Reference scores: mean={audit_ref_scores.mean():.4f}, std={audit_ref_scores.std():.4f}")
 
     def eval_loss(trainable):
         """Compute eval loss using DataLoader."""
@@ -767,11 +815,10 @@ def main():
             total_loss = 0.0
             total_tokens = 0
 
-            for batch in eval_loader:
-                batch_tokens = batch["input_ids"].to(device)
-                output = fmodel(merged_params(trainable), batch_tokens, labels=batch_tokens)
-                total_loss += output.loss.item() * len(batch_tokens)
-                total_tokens += len(batch_tokens)
+            for input_ids, attention_mask in eval_loader:
+                loss = per_example_loss_fn(trainable, input_ids, attention_mask)
+                total_loss += loss.item() * len(input_ids)
+                total_tokens += len(input_ids)
 
             return total_loss / total_tokens
 
@@ -798,7 +845,7 @@ def main():
         grad_fn, clip_state = adaptive_clipped_grad(
             per_example_loss_fn,
             argnums=0,
-            batch_argnums=(1,),
+            batch_argnums=(1, 2),
             initial_clip_norm=args.clip_norm,
             target_quantile=1.0 - args.target_clip_rate,
             clip_norm_max=args.clip_norm_max,
@@ -810,7 +857,7 @@ def main():
         grad_fn, clip_state = clipped_grad(
             per_example_loss_fn,
             argnums=0,
-            batch_argnums=(1,),
+            batch_argnums=(1, 2),
             l2_clip_norm=args.clip_norm,
             microbatch_size=args.microbatch_size,
             return_aux=True,
@@ -821,10 +868,18 @@ def main():
     # Calibrate noise multiplier from target privacy budget
     # sample_rate already computed above
     total_steps = args.num_epochs * expected_steps_per_epoch
+
+    # Compute delta from training set size: δ = 1/n² (standard convention: δ < 1/n)
+    if args.target_delta is None:
+        args.target_delta = 1.0 / (n_train * n_train)
+    if use_wandb:
+        wandb.config.update({"target_delta": args.target_delta}, allow_val_change=True)
+
     print("\nCalibrating privacy parameters...")
+    print(f"  δ = {args.target_delta:.2e} (n={n_train})")
     print(f"  Total steps: {total_steps}")
     print(f"  Sample rate: {sample_rate:.6f}")
-    print(f"  Target: ε={args.target_epsilon}, δ={args.target_delta}")
+    print(f"  Target: ε={args.target_epsilon}, δ={args.target_delta:.2e}")
     print("  (This may take 1-3 minutes...)")
 
     start_time = time.time()
@@ -890,26 +945,26 @@ def main():
         epoch_loader = DataLoader(
             train_dataset,
             batch_sampler=epoch_sampler,
-            collate_fn=data_collator,
+            collate_fn=collate,
         )
 
         # Iterate through Poisson-sampled batches
         for step_idx, batch in enumerate(epoch_loader):
-            tokens = batch["input_ids"].to(device)
+            input_ids, attention_mask = batch
 
             # Accounting update (must happen even for empty batches)
             accounting |= step_process
 
             # Skip if no examples sampled (rare but possible with Poisson)
-            if len(tokens) == 0:
+            if len(input_ids) == 0:
                 continue
 
             # Time the training step using profiler
-            with profiler.step(batch_size=len(tokens)):
+            with profiler.step(batch_size=len(input_ids)):
                 # Compute clipped gradients (with state passing)
                 with offload_ctx:
                     (grads_tuple, aux), clip_state = grad_fn(
-                        trainable_params, tokens, state=clip_state
+                        trainable_params, input_ids, attention_mask, state=clip_state
                     )
                 current_clip_norm = clip_state.clip_norm
 
@@ -967,22 +1022,35 @@ def main():
                     f"Time: {perf_metrics['step_time_sec']:.2f}s | Mem: {perf_metrics['memory_peak_gb']:.1f}GB"
                 )
 
-            # Expensive operations (eval + privacy) every eval_steps
+            # Expensive operations (eval + privacy + audit) every eval_steps
             if global_step % args.eval_steps == 0:
                 epsilon = accounting.epsilon_at(args.target_delta)
                 current_eval_loss = eval_loss(trainable_params)
 
-                # W&B logging - eval metrics
-                if use_wandb:
-                    wandb.log({
-                        "eval/loss": current_eval_loss,
-                        "privacy/epsilon": epsilon,
-                        "privacy/delta": args.target_delta,
-                    }, step=global_step)
+                # Run auditing at every eval (if enabled)
+                audit_eps = None
+                audit_auc = None
+                if args.audit:
+                    audit_estimate = run_audit(trainable_params)
+                    audit_eps = audit_estimate.epsilon_at(delta=args.target_delta)
+                    audit_auc = audit_estimate.auc()
 
-                print(
-                    f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f} (δ={args.target_delta:.1e})"
-                )
+                # W&B logging - eval + privacy metrics
+                wandb_metrics = {
+                    "eval/loss": current_eval_loss,
+                    "privacy/epsilon_theoretical": epsilon,
+                }
+                if audit_eps is not None:
+                    wandb_metrics["privacy/epsilon_empirical"] = audit_eps
+                    wandb_metrics["privacy/audit_auc"] = audit_auc
+                if use_wandb:
+                    wandb.log(wandb_metrics, step=global_step)
+
+                # Single eval line with optional audit
+                eval_msg = f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}"
+                if audit_eps is not None:
+                    eval_msg += f", ε_audit={audit_eps:.4f}, AUC={audit_auc:.4f}"
+                print(eval_msg)
 
             # Early exit if max_steps reached
             if args.max_steps is not None and global_step >= args.max_steps:
@@ -1021,40 +1089,28 @@ def main():
 
     print("\nPrivacy:")
     print(f"  Target epsilon: {args.target_epsilon:.3f}")
-    print(f"  Target delta: {args.target_delta:.1e}")
+    print(f"  Target delta: {args.target_delta:.2e} (n={n_train})")
     print(f"  Noise multiplier (calibrated): {noise_multiplier:.4f}")
     print(f"  Final epsilon: {accounting.epsilon_at(args.target_delta):.3f}")
 
-    # Privacy auditing: score canaries and compute empirical epsilon
+    # Final privacy auditing summary
     if args.audit and audit_cf is not None:
         print("\n" + "-" * 80)
-        print("Privacy Auditing")
+        print("Privacy Auditing (final)")
         print("-" * 80)
-        print(f"Scoring {audit_cf.num_canaries} canaries...")
-
-        scores = auditing.loss_scores(
-            per_example_loss_fn,
-            trainable_params,
-            batch_argnums=(1,),
-            dataset=audit_dataset,
-            indices=audit_cf.canary_indices,
-            collate_fn=data_collator,
-            batch_unpack=lambda b: (b["input_ids"].to(device),),
-            batch_size=args.audit_batch_size,
-        )
-        audit_result = auditing.one_run(scores, coin_flip=audit_cf)
-        print(audit_result.summary(
-            delta=args.target_delta,
-            theoretical_epsilon=args.target_epsilon,
-        ))
-
-        if use_wandb:
-            wandb.log({
-                "audit/epsilon": audit_result.epsilon_at(
-                    delta=args.target_delta
-                ),
-                "audit/auc": audit_result.auc(),
-            }, step=global_step)
+        audit_result = run_audit(trainable_params)
+        if audit_result is not None:
+            print(audit_result.summary(
+                delta=args.target_delta,
+                theoretical_epsilon=args.target_epsilon,
+            ))
+            if use_wandb:
+                wandb.log({
+                    "privacy/epsilon_empirical": audit_result.epsilon_at(
+                        delta=args.target_delta
+                    ),
+                    "privacy/audit_auc": audit_result.auc(),
+                }, step=global_step)
 
     # Mark training complete and print profiler summary
     profiler.mark("training_complete")
