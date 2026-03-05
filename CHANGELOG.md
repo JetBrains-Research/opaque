@@ -48,9 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `adaptive_clipped_grad()` — Adaptive gradient clipping with explicit state-passing
   - `AdaptiveClipState` — Immutable state with sensitivity computation
 - **Privacy Auditing** (`opaque.auditing`)
-  - `setup()` / `evaluate()` convenience API
-  - `AuditResult` with epsilon estimation, AUROC, bootstrap confidence intervals
-  - `CoinFlipExperiment` for membership inference
+  - `coin_flip()` / `loss_scores()` / `one_run()` three-step API
+  - `OneRunEstimate` with epsilon estimation, AUROC, bootstrap confidence intervals
+  - `CoinFlip` for membership inference partitioning
 - **Memory Profiling** (`opaque.profiling`)
   - `MemoryProfiler`, `profile_memory()`, `find_max_microbatch_size()`
 - **HuggingFace Compatibility** (`opaque.compat`)

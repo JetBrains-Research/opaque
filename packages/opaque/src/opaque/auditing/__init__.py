@@ -1,127 +1,41 @@
 """Empirical privacy auditing for differential privacy.
 
-End-to-end one-run auditing (Steinke et al. 2023)::
+Canary-based auditing with pluggable attacks and estimation methods.
+
+Quick start (one-run auditing, Steinke et al. 2023)::
 
     import opaque.auditing as auditing
     from opaque.random import key
+    from torch.utils.data import DataLoader, Subset
 
-    # Start: set up canaries and coin flips
-    experiment = auditing.setup(dataset, num_canaries=1000, key=key(42))
-    train_loader = DataLoader(experiment.subset(dataset), ...)
+    cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
+    train_data = dataset.select(cf.train_indices(len(dataset)))
 
-    # ... train model ...
+    # ... DP-SGD training loop ...
 
-    # End: score canaries and compute epsilon
-    audit = auditing.evaluate(experiment, loss_fn, params, dataset)
-    audit.epsilon_at(delta=1e-5)
-    print(audit.summary())
-
-Or construct an :class:`AuditResult` directly from pre-computed scores::
-
-    audit = AuditResult(in_scores, out_scores)
-    audit.epsilon_at(delta=1e-5)
+    canary_loader = DataLoader(
+        Subset(dataset, cf.canary_indices.tolist()),
+        batch_size=32, collate_fn=canary_collate,
+    )
+    scores = auditing.loss_scores(loss_fn, params,
+                                   batch_argnums=(1,),
+                                   dataloader=canary_loader)
+    estimate = auditing.one_run(scores, coin_flip=cf)
+    print(f"ε (empirical): {estimate.epsilon_at(delta=1e-5):.4f}")
 
 References:
     - Steinke, Nasr, Jagielski (2023), https://arxiv.org/abs/2305.08846
     - Carlini et al. (2022), https://arxiv.org/abs/2112.03570
 """
 
-from __future__ import annotations
-
-from collections.abc import Callable
-from typing import Any
-
-import numpy as np
-
-from opaque.auditing.audit import AuditResult, CoinFlipExperiment
-from opaque.auditing.scoring import score_by_loss
-from opaque.random import RngKey, fold_in
+from opaque.auditing.attacks import loss_scores
+from opaque.auditing.coin_flip import CoinFlip, coin_flip
+from opaque.auditing.one_run import OneRunEstimate, one_run
 
 __all__ = [
-    "AuditResult",
-    "CoinFlipExperiment",
-    "evaluate",
-    "score_by_loss",
-    "setup",
+    "CoinFlip",
+    "OneRunEstimate",
+    "coin_flip",
+    "loss_scores",
+    "one_run",
 ]
-
-
-def setup(
-    dataset: Any,
-    *,
-    num_canaries: int,
-    key: RngKey,
-) -> CoinFlipExperiment:
-    """Set up a one-run privacy audit experiment.
-
-    Randomly selects ``num_canaries`` examples from the dataset and flips
-    a fair coin for each to decide inclusion/exclusion. This is the entry
-    point for one-run auditing (Steinke et al. 2023).
-
-    Args:
-        dataset: A PyTorch-style dataset with ``len()``.
-        num_canaries: Number of canary examples to designate.
-        key: RNG key for reproducible canary selection and coin flips.
-
-    Returns:
-        A :class:`CoinFlipExperiment` managing the canary assignment.
-
-    Example::
-
-        import opaque.auditing as auditing
-        from opaque.random import key
-
-        experiment = auditing.setup(dataset, num_canaries=1000, key=key(42))
-        train_data = experiment.subset(dataset)
-    """
-    dataset_size = len(dataset)
-    if num_canaries > dataset_size:
-        raise ValueError(
-            f"num_canaries ({num_canaries}) exceeds dataset size ({dataset_size})"
-        )
-
-    rng = np.random.default_rng(key.seed)
-    canary_indices = rng.choice(dataset_size, size=num_canaries, replace=False)
-    coin_key = fold_in(key, 1)  # Derive separate key for coin flips
-    return CoinFlipExperiment(canary_indices, key=coin_key)
-
-
-def evaluate(
-    experiment: CoinFlipExperiment,
-    loss_fn: Callable,
-    params: Any,
-    dataset: Any,
-    *,
-    batch_size: int = 256,
-) -> AuditResult:
-    """Score canaries and produce audit results in one call.
-
-    Computes per-example negative loss as membership score (via
-    ``torch.func.vmap``), then splits scores by coin flip.
-
-    Args:
-        experiment: The :class:`CoinFlipExperiment` from :func:`setup`.
-        loss_fn: Loss function with signature ``loss_fn(params, x, y) -> scalar``.
-            Must be vmap-compatible (same requirement as ``clipped_grad``).
-        params: Trained model parameters.
-        dataset: The full dataset (same one passed to :func:`setup`).
-        batch_size: Batch size for scoring. Default: 256.
-
-    Returns:
-        :class:`AuditResult` with ``epsilon_at()`` defaulting to the
-        ``'one_run'`` method.
-
-    Example::
-
-        audit = auditing.evaluate(experiment, loss_fn, params, dataset)
-        audit.epsilon_at(delta=1e-5)
-        print(audit.summary())
-    """
-    scores = score_by_loss(
-        loss_fn,
-        params,
-        dataset,
-        experiment._canary_indices,
-        batch_size=batch_size,
-    )
-    return experiment.audit(scores)

@@ -177,7 +177,7 @@ grad_fn, clip_state = adaptive_clipped_grad(
 import opaque.auditing as auditing
 from opaque.random import key
 
-experiment = auditing.setup(dataset, num_canaries=1000, key=key(42))
+cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
 ```
 
 ## Training loop patterns

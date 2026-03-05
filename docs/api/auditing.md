@@ -1,238 +1,193 @@
-# Privacy Auditing API
+# Auditing API
 
-The `opaque.auditing` module provides empirical privacy auditing via membership inference on canary examples.
+::: opaque.auditing
 
-## Module-Level Functions
+## Module functions
 
-### auditing.setup
+### coin_flip
 
 ```python
-def setup(
-    dataset: Any,
-    *,
-    num_canaries: int,
-    key: RngKey,
-) -> CoinFlipExperiment:
+auditing.coin_flip(
+    dataset, *, num_canaries, key,
+) -> CoinFlip
 ```
 
-Set up a one-run privacy audit experiment. Randomly selects canary examples and flips a fair coin for each to decide inclusion/exclusion (Steinke et al. 2023).
+Create a coin-flip partition. Randomly selects `num_canaries` examples
+and flips a fair coin for each to decide inclusion/exclusion.
 
 | Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `dataset` | any with `len()` | required | The full training dataset |
-| `num_canaries` | `int` | required | Number of canary examples to designate |
+|---|---|---|---|
+| `dataset` | any with `len()` | required | Full training dataset |
+| `num_canaries` | `int` | required | Number of canaries to designate |
 | `key` | `RngKey` | required | RNG key for reproducibility |
 
-**Returns**: `CoinFlipExperiment` managing the canary assignment.
-
 ```python
-import opaque.auditing as auditing
-from opaque.random import key
-
-experiment = auditing.setup(dataset, num_canaries=1000, key=key(42))
-train_data = experiment.subset(dataset)
+cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
+train_data = dataset.select(cf.train_indices(len(dataset)))
 ```
 
 ---
 
-### auditing.evaluate
+### loss_scores
 
 ```python
-def evaluate(
-    experiment: CoinFlipExperiment,
-    loss_fn: Callable,
-    params: Any,
-    dataset: Any,
-    *,
-    batch_size: int = 256,
-) -> AuditResult:
+auditing.loss_scores(
+    loss_fn, *args, *,
+    batch_argnums, dataloader,
+    reference_scores=None,
+) -> np.ndarray
 ```
 
-Score canaries by negative loss and produce audit results in one call. Uses `torch.func.vmap` for per-example loss computation (same requirement as `clipped_grad`).
+Compute per-example membership scores as negative loss. Higher score =
+lower loss = more likely a training member.
+
+The `dataloader` must yield batches compatible with `loss_fn`. Each batch
+should be a tensor (single `batch_argnums`) or a tuple of tensors
+(multiple `batch_argnums`). Use a custom `collate_fn` on the DataLoader
+to handle dict-style batches (e.g., HuggingFace).
 
 | Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `experiment` | `CoinFlipExperiment` | required | From `auditing.setup()` |
-| `loss_fn` | `Callable` | required | `loss_fn(params, x, y) -> scalar`, vmap-compatible |
-| `params` | any | required | Trained model parameters |
-| `dataset` | any | required | The full dataset (same as passed to `setup`) |
-| `batch_size` | `int` | `256` | Batch size for scoring |
+|---|---|---|---|
+| `loss_fn` | `Callable` | required | Per-example loss function (vmap-compatible) |
+| `*args` | any | — | Non-batched arguments (e.g., model parameters) |
+| `batch_argnums` | `tuple[int, ...]` | required | Which `loss_fn` args are batched (same as `clipped_grad`) |
+| `dataloader` | iterable | required | Yields tensors or tuples of tensors |
+| `reference_scores` | `np.ndarray` | `None` | Baseline scores to subtract (e.g., from untrained model) |
 
-**Returns**: `AuditResult` with `epsilon_at()` defaulting to the `'one_run'` method.
+**Returns** `np.ndarray` of shape `(n,)`. Higher = more likely member.
 
 ```python
-audit = auditing.evaluate(experiment, loss_fn, params, dataset)
-audit.epsilon_at(delta=1e-5)
-print(audit.summary())
+from torch.utils.data import DataLoader, Subset
+
+def canary_collate(examples):
+    batch = data_collator(examples)
+    return (batch["input_ids"].to(device),)
+
+canary_loader = DataLoader(
+    Subset(dataset, cf.canary_indices.tolist()),
+    batch_size=32, collate_fn=canary_collate,
+)
+scores = auditing.loss_scores(
+    loss_fn, params,
+    batch_argnums=(1,),
+    dataloader=canary_loader,
+)
 ```
 
 ---
 
-### auditing.score_by_loss
+### one_run
 
 ```python
-def score_by_loss(
-    loss_fn: Callable,
-    params: Any,
-    dataset: Any,
-    indices: np.ndarray | None = None,
-    *,
-    batch_size: int = 256,
-) -> np.ndarray:
+auditing.one_run(scores, *, coin_flip) -> OneRunEstimate
 ```
 
-Compute membership scores as negative per-example loss. Higher score = lower loss = more likely a training member. Lower-level than `evaluate()` — use when you need raw scores.
+Build a one-run privacy estimate from canary scores. Splits scores by
+the coin-flip partition, precomputes the Pareto-optimal ROC frontier,
+and returns a frozen estimate.
 
 | Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `loss_fn` | `Callable` | required | `loss_fn(params, x, y) -> scalar`, vmap-compatible |
-| `params` | any | required | Model parameters |
-| `dataset` | any | required | Dataset returning `(x, y, ...)` tuples |
-| `indices` | `np.ndarray \| None` | `None` | Score only these indices |
-| `batch_size` | `int` | `256` | Batch size for scoring |
+|---|---|---|---|
+| `scores` | `np.ndarray` | required | Per-canary membership scores, shape `(num_canaries,)` |
+| `coin_flip` | `CoinFlip` | required | The coin-flip partition |
 
-**Returns**: Array of scores, shape `(n,)`.
+```python
+estimate = auditing.one_run(scores, coin_flip=cf)
+print(estimate.epsilon_at(delta=1e-5))
+```
 
 ---
 
-## AuditResult
+## CoinFlip
 
 ```python
-class AuditResult:
-    n_in: int       # Number of held-in canaries
-    n_out: int      # Number of held-out canaries
+class CoinFlip(canary_indices, *, key)
 ```
 
-Privacy audit results computed from canary scores. Construct from `auditing.evaluate()` or directly from pre-computed scores.
+Coin-flip partitioning for canary-based privacy auditing. Each canary
+is independently included or excluded with probability 0.5.
 
-### AuditResult.epsilon_at
+| Attribute | Type | Description |
+|---|---|---|
+| `num_canaries` | `int` | Total canary count |
+| `canary_indices` | `np.ndarray` | All canary dataset indices |
+| `in_indices` | `np.ndarray` | Included in training (heads) |
+| `out_indices` | `np.ndarray` | Excluded from training (tails) |
+
+### train_indices
 
 ```python
-def epsilon_at(
-    self,
-    *,
-    delta: float = 0.0,
-    significance: float = 0.05,
-    method: str | None = None,
-) -> float:
+cf.train_indices(dataset_size) -> list[int]
 ```
 
-Epsilon lower bound at the given delta. Matches the accounting API (`DpProcess.epsilon_at(delta=)`). Method is chosen automatically based on provenance.
+All indices except held-out canaries. Returns `list[int]` for HuggingFace
+`dataset.select()`.
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `delta` | `float` | `0.0` | DP delta parameter |
-| `significance` | `float` | `0.05` | Failure probability (1 - confidence) |
-| `method` | `str \| None` | auto | `'one_run'` or `'clopper_pearson'` |
-
-### AuditResult.auc
+### split_scores
 
 ```python
-def auc(
-    self,
-    *,
-    confidence: float | None = None,
-    num_samples: int = 1000,
-    key: RngKey | None = None,
-) -> float | tuple[float, float]:
+cf.split_scores(scores) -> tuple[np.ndarray, np.ndarray]
 ```
 
-Area under the ROC curve. 0.5 = random guessing, 1.0 = perfect attack.
-
-When `confidence` is provided, returns a confidence interval
-as a `(lower, upper)` tuple instead of a point estimate.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `confidence` | `float \| None` | `None` | If provided, return a symmetric CI at this level (e.g. 0.95 for 95% CI) |
-| `num_samples` | `int` | `1000` | Number of resamples for CI |
-| `key` | `RngKey \| None` | `None` | RNG key for reproducible resampling |
-
-```python
-audit.auc()                              # point estimate -> float
-audit.auc(confidence=0.95, key=key(42))  # 95% CI -> (lower, upper)
-```
-
-### AuditResult.beta_at
-
-```python
-def beta_at(self, *, alpha: float | np.ndarray) -> float | np.ndarray:
-```
-
-Type-II error rate at a given Type-I error rate. Consistent with
-`DpProcess.beta_at(alpha=)` in the accounting module. Higher beta means
-the attack is weaker (more private). Relationship: `beta = 1 - TPR` at
-`alpha = FPR`.
-
-### AuditResult.max_accuracy
-
-```python
-def max_accuracy(self, *, prevalence: float | None = None) -> float:
-```
-
-Maximum classification accuracy across all thresholds.
-
-### AuditResult.summary
-
-```python
-def summary(self, *, significance: float = 0.05, delta: float = 0.0) -> str:
-```
-
-Multi-line formatted summary of all metrics.
+Split per-canary scores into `(in_scores, out_scores)`.
 
 ---
 
-## CoinFlipExperiment
+## OneRunEstimate
 
 ```python
-class CoinFlipExperiment:
-    num_canaries: int          # Total canary count
-    in_indices: np.ndarray     # Canaries included in training
-    out_indices: np.ndarray    # Canaries excluded from training
+class OneRunEstimate  # frozen dataclass
 ```
 
-Manages canary coin flips for one-run auditing. Prefer `auditing.setup()` over direct construction.
+Precomputed one-run audit estimate, returned by `auditing.one_run()`.
+Holds the Pareto-optimal threshold structure and exposes query methods
+for privacy metrics.
 
-### CoinFlipExperiment.subset
+| Attribute | Type | Description |
+|---|---|---|
+| `n_in` | `int` | Number of held-in canaries |
+| `n_out` | `int` | Number of held-out canaries |
+
+### epsilon_at
 
 ```python
-def subset(self, dataset) -> torch.utils.data.Subset:
+estimate.epsilon_at(*, delta=0.0, significance=0.05, threshold=None, eps_max=20.0, tol=1e-4) -> float
 ```
 
-Return a `Subset` for training (excludes held-out canaries).
+Epsilon lower bound using the one-run likelihood-ratio test (Steinke et al. 2023).
+Tests positive-only, negative-only, and two-sided guesses per threshold, with
+Bonferroni correction. When `threshold` is provided, uses that specific threshold
+instead of searching over all Pareto-optimal thresholds.
 
-### CoinFlipExperiment.canary_subset
+### auc
 
 ```python
-def canary_subset(self, dataset) -> torch.utils.data.Subset:
+estimate.auc(*, confidence=None, num_samples=1000, key=None) -> float | tuple[float, float]
 ```
 
-Return a `Subset` containing only canary examples.
+ROC AUC. Returns point estimate by default, or `(lower, upper)` CI tuple
+when `confidence` is provided.
 
-### CoinFlipExperiment.audit
+### beta_at
 
 ```python
-def audit(self, scores: np.ndarray) -> AuditResult:
+estimate.beta_at(*, alpha) -> float | np.ndarray
 ```
 
-Split scores by coin flip and return an `AuditResult`. The result defaults to the `'one_run'` epsilon method.
+Type-II error at given Type-I error rate. `beta = 1 - TPR` at `alpha = FPR`.
 
 ---
 
-## Quick Reference
+## Quick reference
 
-| Function / Method | Purpose |
-|-------------------|---------|
-| `auditing.setup()` | Set up canary experiment |
-| `auditing.evaluate()` | Score canaries and compute audit |
-| `audit.epsilon_at(delta=)` | Epsilon bound (auto-selects method) |
-| `audit.auc()` | Attack AUC (point estimate) |
-| `audit.auc(confidence=0.95, key=)` | AUC with CI |
-| `audit.beta_at(alpha=)` | Type-II error at given Type-I error |
-| `audit.max_accuracy()` | Best-case attack accuracy |
-| `audit.summary()` | Formatted report |
-
-## See Also
-
-- **[Privacy Auditing User Guide](../user-guide/auditing.md)**: Conceptual explanations and workflows
-- **[Privacy Auditing Tutorial](../tutorials/privacy_auditing.ipynb)**: Interactive walkthrough
+| | |
+|---|---|
+| `auditing.coin_flip(dataset, ...)` | Coin-flip partition -> `CoinFlip` |
+| `auditing.loss_scores(loss_fn, ...)` | Membership scores -> `np.ndarray` |
+| `auditing.one_run(scores, coin_flip=cf)` | Estimate privacy -> `OneRunEstimate` |
+| `cf.train_indices(len(dataset))` | Training indices for `dataset.select()` |
+| `cf.canary_subset(dataset)` | `Subset` of canary examples for DataLoader |
+| `estimate.epsilon_at(delta=)` | Epsilon bound (one-run method) |
+| `estimate.auc()` | Attack AUC |
+| `estimate.auc(confidence=, key=)` | AUC with confidence interval |
+| `estimate.beta_at(alpha=)` | Type-II error at given FPR |

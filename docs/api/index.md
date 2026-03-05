@@ -50,9 +50,9 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 ### Validation & Debugging
 
 - **[Auditing](auditing.md)**: Empirical privacy validation
-  - `epsilon_clopper_pearson()`, `epsilon_one_run()` - Estimate epsilon from attacks
-  - `audit()` - Comprehensive privacy audit
-  - `auc()`, `beta_at()` - Attack utility metrics
+  - `auditing.coin_flip()`, `auditing.loss_scores()`, `auditing.one_run()` - Three-step workflow
+  - `OneRunEstimate.epsilon_at()` - Epsilon bound (one-run method)
+  - `auc()`, `beta_at()` - Attack metrics
 
 - **[Distributed](distributed.md)**: Multi-GPU training with DDP
   - `sum_gradients()` - Sum clipped gradients across GPUs (for DP training)
@@ -173,13 +173,12 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 
 | Function / Method                    | Purpose                         | User Guide                                     |
 |--------------------------------------|---------------------------------|------------------------------------------------|
-| `auditing.setup()`                   | Prepare canary experiment       | [Guide](../user-guide/auditing.md)             |
-| `auditing.evaluate()`               | Score canaries and compute audit | [Guide](../user-guide/auditing.md)             |
-| `AuditResult.epsilon_at()`          | Epsilon bound (auto-selects method) | [Guide](../user-guide/auditing.md)          |
-| `AuditResult.epsilon_clopper_pearson()` | Conservative epsilon bound  | [Guide](../user-guide/auditing.md)             |
-| `AuditResult.epsilon_one_run()`     | Tighter bound (Nasr et al.)     | [Guide](../user-guide/auditing.md)             |
-| `AuditResult.auc()`                 | Membership inference AUC        | [Guide](../user-guide/auditing.md)             |
-| `AuditResult.beta_at()`             | Type-II error at given alpha    | [Guide](../user-guide/auditing.md)             |
+| `auditing.coin_flip()`               | Designate canaries + partition  | [Guide](../user-guide/auditing.md)             |
+| `auditing.loss_scores()`            | Compute membership scores       | [Guide](../user-guide/auditing.md)             |
+| `auditing.one_run()`                | Build one-run estimate          | [Guide](../user-guide/auditing.md)             |
+| `OneRunEstimate.epsilon_at()`       | Epsilon bound (one-run method)  | [Guide](../user-guide/auditing.md)             |
+| `OneRunEstimate.auc()`              | Membership inference AUC        | [Guide](../user-guide/auditing.md)             |
+| `OneRunEstimate.beta_at()`          | Type-II error at given alpha    | [Guide](../user-guide/auditing.md)             |
 
 ### Distributed
 

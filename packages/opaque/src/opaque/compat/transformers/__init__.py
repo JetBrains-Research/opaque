@@ -7,7 +7,7 @@ No user action required - just import opaque and use clipped_grad with any
 supported HuggingFace model.
 
 Control with environment variables:
-- OPAQUE_SKIP_TRANSFORMERS_PATCHES: "all" or "vmap,kernels"
+- OPAQUE_SKIP_TRANSFORMERS_PATCHES: "all" or "vmap,kernels,kv_cache,batchify"
 - OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES: "all" or "shared,standard,gemma2,phi3"
 - OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES: "all" or "swiglu,rope,ce,fused_ce,lora"
 
@@ -40,7 +40,10 @@ from opaque.compat.transformers._kernel_patches import (
     is_kernel_patched,
     patch_lora_model,
 )
-from opaque.compat.transformers._shared import apply_batchify_patches
+from opaque.compat.transformers._shared import (
+    apply_batchify_patches,
+    apply_kv_cache_patches,
+)
 from opaque.compat.transformers._vmap_patches import (
     apply_vmap_patches,
     is_vmap_patched,
@@ -53,7 +56,7 @@ def apply_transformers_patches() -> None:
     """Apply all HuggingFace Transformers patches.
 
     Controlled by environment variables:
-    - OPAQUE_SKIP_TRANSFORMERS_PATCHES: "all" or "vmap,kernels"
+    - OPAQUE_SKIP_TRANSFORMERS_PATCHES: "all" or "vmap,kernels,kv_cache,batchify"
     - OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES: "all" or "shared,standard,gemma2,phi3"
     - OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES: "all" or "swiglu,rope,ce,fused_ce,lora"
     """
@@ -73,10 +76,13 @@ def apply_transformers_patches() -> None:
     if "kernels" not in skip:
         apply_kernel_patches()
 
-    # Batchify must run AFTER kernel patches: kernel patches may replace
-    # model forward methods (e.g. fused CE), and batchify must wrap the
-    # final version.  Also patches PEFT model classes.
-    if "vmap" not in skip:
+    # KV cache and batchify must run AFTER kernel patches: kernel patches
+    # may replace model forward methods (e.g. fused CE), and these wrappers
+    # must wrap the *final* version.
+    if "kv_cache" not in skip:
+        apply_kv_cache_patches()
+
+    if "vmap" not in skip and "batchify" not in skip:
         apply_batchify_patches()
 
     _is_transformers_patched = True
