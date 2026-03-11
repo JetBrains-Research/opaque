@@ -91,6 +91,7 @@ target/
 Cargo.lock
 **/*.rs.bk
 *.pdb
+.cargo-local/
 
 # GitHub Agentic Workflows
 .github/aw/

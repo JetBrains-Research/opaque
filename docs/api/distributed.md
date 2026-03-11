@@ -93,7 +93,7 @@ The order of operations matters for DP guarantees:
 
 ```python
 grads, clip_state = grad_fn(params, x, y, state=clip_state)  # 1. Clip
-grads = dist_utils.sum_gradients(grads)                       # 2. Aggregate
+dist_utils.sum_gradients(grads)                               # 2. Aggregate (in-place)
 noisy_grads, noise_state = noise_fn(grads, noise_state)       # 3. Noise
 ```
 

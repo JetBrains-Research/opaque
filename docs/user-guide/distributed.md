@@ -81,8 +81,8 @@ for batch_x, batch_y in loader:
     # 1. Clip (local)
     grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
-    # 2. Aggregate (AllReduce SUM)
-    grads = dist_utils.sum_gradients(grads)
+    # 2. Aggregate (AllReduce SUM, in-place)
+    dist_utils.sum_gradients(grads)
 
     # 3. Noise (identical on every device)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
@@ -122,21 +122,21 @@ in sync.
 
 ## Gradient aggregation
 
-`sum_gradients` performs an AllReduce SUM on a PyTree of tensors:
+`sum_gradients` performs an AllReduce SUM on a PyTree of tensors in-place:
 
 ```python
 import opaque.distributed as dist_utils
 
-grads = dist_utils.sum_gradients(grads)
+dist_utils.sum_gradients(grads)
 ```
 
 This sums the clipped gradient contributions from all devices. After this
 call, every rank holds the same total clipped gradient sum.
 
-For more general reductions, use `reduce_pytree`:
+For more general reductions, use `reduce_pytree` (also in-place):
 
 ```python
-grads = dist_utils.reduce_pytree(grads, op="mean")
+dist_utils.reduce_pytree(grads, op="mean")
 ```
 
 ## Adaptive clipping
@@ -160,7 +160,7 @@ grad_fn, clip_state = adaptive_clipped_grad(
 # In the training loop:
 grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 clip_state = sync(clip_state)   # required in DDP
-grads = dist_utils.sum_gradients(grads)
+dist_utils.sum_gradients(grads)
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
 
@@ -228,17 +228,17 @@ synchronization.
 
 ## `opaque.distributed` API summary
 
-All functions are no-ops (or return input unchanged) when
-`torch.distributed` is not initialized, so the same training code works on
-a single device without changes.
+Functions either mutate in-place (collectives) or return synchronized values
+(state/object helpers). When `torch.distributed` is not initialized,
+collectives are no-ops and value-returning helpers return local values.
 
 | Function | Purpose |
 |----------|---------|
 | `is_distributed()` | `True` if `torch.distributed` is initialized |
 | `get_rank()` | Current rank (0 if not distributed) |
 | `get_world_size()` | Number of devices (1 if not distributed) |
-| `sum_gradients(grads)` | AllReduce SUM on a PyTree of tensors |
-| `reduce_pytree(pytree, op)` | AllReduce on a PyTree (op: `"sum"`, `"mean"`, `"max"`, `"min"`, `"product"`) |
+| `sum_gradients(grads)` | In-place AllReduce SUM on a PyTree of tensors |
+| `reduce_pytree(pytree, op)` | In-place AllReduce on a PyTree (op: `"sum"`, `"mean"`, `"max"`, `"min"`, `"product"`) |
 | `reduce_scalar(value, op)` | Reduce a Python float across ranks |
 | `all_reduce(tensor, op)` | In-place AllReduce on a single tensor |
 | `gather_tensors(tensor, dim)` | Gather variable-size tensors from all ranks and concatenate |

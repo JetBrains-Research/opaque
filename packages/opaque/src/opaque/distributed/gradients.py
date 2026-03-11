@@ -26,8 +26,7 @@ __all__ = [
 def reduce_pytree(
     pytree: Any,
     op: str = "sum",
-    async_op: bool = False,
-) -> tuple[Any, list[Any] | None]:
+) -> None:
     """Reduce a PyTree of tensors across all processes (in-place).
 
     This applies all_reduce to each tensor in the PyTree independently.
@@ -37,13 +36,9 @@ def reduce_pytree(
         pytree: PyTree (nested dict/list/tuple) of tensors to reduce.
         op: Reduction operation. One of: "sum", "mean", "max", "min", "product".
             Default: "sum".
-        async_op: If True, return work handles for asynchronous operation.
-            Default: False (blocking).
 
     Returns:
-        Tuple of (pytree, work_handles):
-            - pytree: Same PyTree with reduced tensors (modified in-place)
-            - work_handles: List of dist.Work handles if async_op=True, else None
+        None. Tensor leaves in ``pytree`` are reduced in-place.
 
     Example:
         >>> import torch
@@ -60,34 +55,27 @@ def reduce_pytree(
         ... }
         >>>
         >>> # Sum across all devices
-        >>> params, _ = reduce_pytree(params, op="sum")
+        >>> reduce_pytree(params, op="sum")
         >>> # params["weight"] is now [[2.0, 4.0], [6.0, 8.0]] (sum across devices)
 
     Notes:
-        - If distributed is not initialized, returns input unchanged
+        - If distributed is not initialized, this is a no-op
         - Operates in-place for memory efficiency
         - Generic reduction - works with any PyTree, not just gradients
+        - Always blocking (no async execution)
     """
     if not is_distributed():
-        return pytree, None
-
-    # Collect work handles if async
-    work_handles: list[Any] | None = [] if async_op else None
+        return
 
     def reduce_leaf(tensor: torch.Tensor) -> torch.Tensor:
         if isinstance(tensor, torch.Tensor):
-            work = all_reduce_tensor(tensor, op=op, async_op=async_op)
-            if async_op and work_handles is not None:
-                work_handles.append(work)
+            all_reduce_tensor(tensor, op=op)
         return tensor
 
     # Apply all_reduce to each tensor in the PyTree
     tree_map(reduce_leaf, pytree)
 
-    return pytree, work_handles
-
-
-def sum_gradients(gradients: Any) -> Any:
+def sum_gradients(gradients: Any) -> None:
     """Sum clipped gradients across all devices (DP-specific helper).
 
     This is a convenience wrapper around reduce_pytree(op="sum") specifically
@@ -98,7 +86,7 @@ def sum_gradients(gradients: Any) -> Any:
         gradients: PyTree of clipped gradients to sum.
 
     Returns:
-        gradients: PyTree with summed gradients (modified in-place).
+        None. Gradient tensors are summed in-place.
 
     Example:
         >>> import torch
@@ -115,7 +103,7 @@ def sum_gradients(gradients: Any) -> Any:
         >>> grads = grad_fn(params, batch_x, batch_y)  # Sum of B clipped grads
         >>>
         >>> # Sum across devices: total 60 examples
-        >>> grads = sum_gradients(grads)
+        >>> sum_gradients(grads)
         >>>
         >>> # Add noise scaled to clip_norm (NOT dependent on batch size!)
         >>> noisy_grads = gaussian_noise(grads, sigma=1.1)
@@ -124,7 +112,6 @@ def sum_gradients(gradients: Any) -> Any:
         - Essential for DP-SGD with Poisson sampling across devices
         - Clipped gradients have sensitivity C (independent of batch size)
         - Noise is added AFTER summing (scaled to C, not B*C)
-        - If distributed is not initialized, returns input unchanged
+        - If distributed is not initialized, this is a no-op
     """
-    gradients, _ = reduce_pytree(gradients, op="sum", async_op=False)
-    return gradients
+    reduce_pytree(gradients, op="sum")

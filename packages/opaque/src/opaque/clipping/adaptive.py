@@ -287,7 +287,7 @@ def adaptive_clipped_grad(
         ...     clip_state = sync_adaptive_clip_state(clip_state)
         ...
         ...     # Sum clipped gradients across devices
-        ...     grad = sum_gradients(grad)
+        ...     sum_gradients(grad)
         ...
         ...     # Add noise and update
         ...     noise_fn, noise_state = gaussian_noise(

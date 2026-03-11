@@ -201,7 +201,7 @@ def reduce_scalar(
     tensor = torch.tensor(value, dtype=torch.float32, device=device)
 
     # All-reduce
-    all_reduce_tensor(tensor, op=op, async_op=False)
+    all_reduce_tensor(tensor, op=op)
 
     # Convert back to float
     return tensor.item()

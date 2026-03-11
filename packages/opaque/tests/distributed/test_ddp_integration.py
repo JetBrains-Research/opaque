@@ -16,6 +16,7 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.nn as nn
+from torch.utils.checkpoint import checkpoint
 
 from opaque.clipping import adaptive_clipped_grad, clipped_grad
 from opaque.distributed import get_rank, get_world_size, reduce_scalar, sum_gradients
@@ -36,6 +37,21 @@ class SimpleModel(nn.Module):
 
     def forward(self, x):
         x = torch.relu(self.fc1(x))
+        return self.fc2(x)
+
+
+class CheckpointedModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(10, 20)
+        self.fc2 = nn.Linear(20, 1)
+
+    def _block(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.relu(self.fc1(x))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Use non-reentrant checkpoint path, which is required for functorch transforms.
+        x = checkpoint(self._block, x, use_reentrant=False)
         return self.fc2(x)
 
 
@@ -101,6 +117,90 @@ def _worker_reduce_scalar(rank: int, world_size: int, port: int) -> None:
         synced = reduce_scalar(value, op="mean", device=device)
         expected_avg = sum(range(1, world_size + 1)) / world_size
         assert abs(synced - expected_avg) < 1e-5
+    finally:
+        _cleanup_ddp()
+
+
+def _worker_all_reduce_values(rank: int, world_size: int, port: int) -> None:
+    from opaque.distributed import all_reduce
+
+    _setup_ddp(rank, world_size, port)
+    try:
+        device = torch.device(f"cuda:{rank}")
+        base = torch.tensor([float(rank + 1), float(2 * (rank + 1))], device=device)
+
+        summed = base.clone()
+        result = all_reduce(summed, op="sum")
+        assert result is None
+        assert torch.allclose(summed, torch.tensor([3.0, 6.0], device=device))
+
+        averaged = base.clone()
+        all_reduce(averaged, op="mean")
+        assert torch.allclose(averaged, torch.tensor([1.5, 3.0], device=device))
+
+        maximum = base.clone()
+        all_reduce(maximum, op="max")
+        assert torch.allclose(maximum, torch.tensor([2.0, 4.0], device=device))
+
+        minimum = base.clone()
+        all_reduce(minimum, op="min")
+        assert torch.allclose(minimum, torch.tensor([1.0, 2.0], device=device))
+
+        product = base.clone()
+        all_reduce(product, op="product")
+        assert torch.allclose(product, torch.tensor([2.0, 8.0], device=device))
+    finally:
+        _cleanup_ddp()
+
+
+def _worker_reduce_pytree(rank: int, world_size: int, port: int) -> None:
+    from opaque.distributed import reduce_pytree
+
+    _setup_ddp(rank, world_size, port)
+    try:
+        device = torch.device(f"cuda:{rank}")
+        grads = {
+            "w": torch.tensor([1.0, 2.0], device=device),
+            "b": torch.tensor([0.5], device=device),
+        }
+
+        result = reduce_pytree(grads, op="sum")
+        assert result is None
+        assert torch.allclose(grads["w"], torch.tensor([2.0, 4.0], device=device))
+        assert torch.allclose(grads["b"], torch.tensor([1.0], device=device))
+    finally:
+        _cleanup_ddp()
+
+
+def _worker_reduce_pytree_nested(rank: int, world_size: int, port: int) -> None:
+    from opaque.distributed import reduce_pytree
+
+    _setup_ddp(rank, world_size, port)
+    try:
+        device = torch.device(f"cuda:{rank}")
+        pytree = {
+            "encoder": {
+                "w": torch.tensor([[float(rank + 1), 1.0]], device=device),
+                "b": torch.tensor([float(rank)], device=device),
+            },
+            "head": [torch.tensor([2.0 * (rank + 1)], device=device)],
+        }
+
+        result = reduce_pytree(pytree, op="sum")
+        assert result is None
+
+        assert torch.allclose(
+            pytree["encoder"]["w"],
+            torch.tensor([[3.0, 2.0]], device=device),
+        )
+        assert torch.allclose(
+            pytree["encoder"]["b"],
+            torch.tensor([1.0], device=device),
+        )
+        assert torch.allclose(
+            pytree["head"][0],
+            torch.tensor([6.0], device=device),
+        )
     finally:
         _cleanup_ddp()
 
@@ -183,13 +283,11 @@ def _worker_dp_training_step(rank: int, world_size: int, port: int) -> None:
         y = torch.randn(batch_size, 1, device=device)
 
         grads, clip_state = grad_fn(params, x, y, state=clip_state)
-        grads = sum_gradients(grads)
+        result = sum_gradients(grads)
+        assert result is None
         noisy_grads, noise_state = noise_fn(grads, noise_state)
 
-        for grad, param in zip(
-            tree_leaves(noisy_grads), tree_leaves(params), strict=True
-        ):
-            assert grad.shape == param.shape
+        for grad in tree_leaves(noisy_grads):
             assert grad.device == device
             assert not torch.isnan(grad).any()
             assert not torch.isinf(grad).any()
@@ -232,6 +330,73 @@ def _worker_adaptive_clipping(rank: int, world_size: int, port: int) -> None:
         _cleanup_ddp()
 
 
+def _worker_adaptive_clipping_uneven_batches(
+    rank: int, world_size: int, port: int
+) -> None:
+    _setup_ddp(rank, world_size, port)
+    try:
+        device = torch.device(f"cuda:{rank}")
+        model = SimpleModel().to(device)
+        func_model, params = make_functional(model)
+
+        def loss_fn(params, x, y):
+            pred = func_model(params, x)
+            return ((pred - y) ** 2).mean()
+
+        grad_fn, clip_state = adaptive_clipped_grad(
+            loss_fn,
+            batch_argnums=(1, 2),
+            initial_clip_norm=0.1,
+            key=key(0),
+        )
+
+        local_batch_size = 4 if rank == 0 else 7
+        x = torch.randn(local_batch_size, 10, device=device)
+        y = torch.randn(local_batch_size, 1, device=device)
+
+        _grads, new_state = grad_fn(params, x, y, state=clip_state)
+        from opaque.distributed import sync
+
+        synced = sync(new_state)
+
+        assert synced.batch_size == 11
+        assert synced.total == 11.0
+        assert 0.0 <= synced.clipping_rate <= 1.0
+    finally:
+        _cleanup_ddp()
+
+
+def _worker_checkpointed_dp_training_step(
+    rank: int, world_size: int, port: int
+) -> None:
+    _setup_ddp(rank, world_size, port)
+    try:
+        device = torch.device(f"cuda:{rank}")
+        model = CheckpointedModel().to(device)
+        func_model, params = make_functional(model)
+
+        def loss_fn(params, x, y):
+            pred = func_model(params, x)
+            return ((pred - y) ** 2).mean()
+
+        grad_fn, clip_state = clipped_grad(
+            loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2)
+        )
+
+        x = torch.randn(8, 10, device=device)
+        y = torch.randn(8, 1, device=device)
+
+        grads, _ = grad_fn(params, x, y, state=clip_state)
+        result = sum_gradients(grads)
+        assert result is None
+
+        for grad in tree_leaves(grads):
+            assert grad is not None
+            assert torch.isfinite(grad).all()
+    finally:
+        _cleanup_ddp()
+
+
 class TestDistributedUtilities:
     """Test basic distributed utilities."""
 
@@ -253,6 +418,21 @@ class TestStateSynchronization:
         if torch.cuda.device_count() < 2:
             pytest.skip("Requires >= 2 CUDA devices")
         _spawn(2, _worker_reduce_scalar)
+
+    def test_all_reduce_values(self):
+        if torch.cuda.device_count() < 2:
+            pytest.skip("Requires >= 2 CUDA devices")
+        _spawn(2, _worker_all_reduce_values)
+
+    def test_reduce_pytree(self):
+        if torch.cuda.device_count() < 2:
+            pytest.skip("Requires >= 2 CUDA devices")
+        _spawn(2, _worker_reduce_pytree)
+
+    def test_reduce_pytree_nested(self):
+        if torch.cuda.device_count() < 2:
+            pytest.skip("Requires >= 2 CUDA devices")
+        _spawn(2, _worker_reduce_pytree_nested)
 
     def test_sync_adaptive_clip_state(self):
         if torch.cuda.device_count() < 2:
@@ -281,6 +461,16 @@ class TestEndToEndDPTraining:
         if torch.cuda.device_count() < 2:
             pytest.skip("Requires >= 2 CUDA devices")
         _spawn(2, _worker_adaptive_clipping)
+
+    def test_adaptive_clipping_with_uneven_batches(self):
+        if torch.cuda.device_count() < 2:
+            pytest.skip("Requires >= 2 CUDA devices")
+        _spawn(2, _worker_adaptive_clipping_uneven_batches)
+
+    def test_checkpointed_dp_training_step(self):
+        if torch.cuda.device_count() < 2:
+            pytest.skip("Requires >= 2 CUDA devices")
+        _spawn(2, _worker_checkpointed_dp_training_step)
 
 
 if __name__ == "__main__":

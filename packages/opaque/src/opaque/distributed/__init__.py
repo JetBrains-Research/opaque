@@ -27,7 +27,7 @@ Example - Standard DP-SGD with Poisson Sampling:
     >>> grads = grad_fn(params, batch_x, batch_y)  # Sum of B_local clipped grads
     >>>
     >>> # Sum across devices: total gradients from all examples
-    >>> grads = dist_utils.sum_gradients(grads)
+    >>> dist_utils.sum_gradients(grads)
     >>>
     >>> # Add noise (sensitivity = C, NOT batch-dependent!)
     >>> noise_fn, noise_state = gaussian_noise(stddev=1.1)
@@ -47,8 +47,6 @@ Example - Adaptive Clipping (Automatic Distributed Detection):
     >>> # to compute global quantile (clip_norm identical everywhere)
     >>> grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 """
-
-from typing import Optional  # noqa: F401  (used in docstrings)
 
 import torch
 import torch.distributed as dist
@@ -138,19 +136,18 @@ def get_world_size() -> int:
 def all_reduce(
     tensor: torch.Tensor,
     op: str = "sum",
-    async_op: bool = False,
-) -> dist.Work | None:
+) -> None:
     """All-reduce a tensor across all processes (in-place).
+
+    This is a thin blocking wrapper over ``torch.distributed.all_reduce``.
+    The input tensor is mutated in-place and no value is returned.
 
     Args:
         tensor: Tensor to reduce. Modified in-place.
         op: Reduction operation. One of: "sum", "mean", "max", "min", "product".
             Default: "sum".
-        async_op: If True, return a work handle for asynchronous operation.
-            Default: False (blocking).
-
     Returns:
-        Optional[dist.Work]: Work handle if async_op=True, else None.
+        None. The operation is always blocking.
 
     Raises:
         ValueError: If op is not a valid reduction operation.
@@ -196,7 +193,7 @@ def all_reduce(
             "Call torch.distributed.init_process_group() first."
         )
 
-    return dist.all_reduce(tensor, op=op_map[op], async_op=async_op)
+    dist.all_reduce(tensor, op=op_map[op])
 
 
 def barrier() -> None:
