@@ -4,6 +4,9 @@ Functional DP-SGD library for PyTorch fine-tuning.
 
 ## Installation
 
+First configure installation from the JetBrains Artifact Registry as described in the
+[root installation docs](../../README.md#installation).
+
 ```bash
 pip install opaque-dp
 ```

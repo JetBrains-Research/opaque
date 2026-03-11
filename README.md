@@ -24,7 +24,7 @@ This repository contains:
 
 ```bash
 # Production release 0.1.0 from JetBrains Artifact Registry
-pip install --index-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/ \
+pip install --extra-index-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/ \
   opaque-dp==0.1.0
 
 # Or with uv
@@ -38,6 +38,7 @@ uv sync
 ```
 
 `opaque-accounting` is installed automatically as a dependency of `opaque-dp`.
+Using `--extra-index-url` keeps PyPI as the primary index for third-party dependencies.
 
 ## Example
 
