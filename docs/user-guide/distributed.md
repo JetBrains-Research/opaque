@@ -230,7 +230,9 @@ synchronization.
 
 Functions either mutate in-place (collectives) or return synchronized values
 (state/object helpers). When `torch.distributed` is not initialized,
-collectives are no-ops and value-returning helpers return local values.
+high-level helpers such as `sum_gradients` and `reduce_pytree` are local
+no-ops, while direct collective wrappers such as `all_reduce` require an
+initialized process group and raise `RuntimeError`.
 
 | Function | Purpose |
 |----------|---------|
