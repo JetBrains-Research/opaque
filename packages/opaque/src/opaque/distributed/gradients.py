@@ -75,6 +75,7 @@ def reduce_pytree(
     # Apply all_reduce to each tensor in the PyTree
     tree_map(reduce_leaf, pytree)
 
+
 def sum_gradients(gradients: Any) -> None:
     """Sum clipped gradients across all devices (DP-specific helper).
 
