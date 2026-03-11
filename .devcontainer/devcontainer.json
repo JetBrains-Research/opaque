@@ -8,6 +8,9 @@
     "ghcr.io/devcontainers/features/python": {
       "version": "3.11"
     },
+    "ghcr.io/devcontainers/features/rust": {
+      "version": "stable"
+    },
     "ghcr.io/va-h/devcontainers-features/uv": {
       "shellautocompletion": true
     },
