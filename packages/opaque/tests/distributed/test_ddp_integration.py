@@ -19,8 +19,8 @@ import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
 
 from opaque.clipping import adaptive_clipped_grad, clipped_grad
-from opaque.distributed import get_rank, get_world_size, reduce_scalar, sum_gradients
-from opaque.noise import gaussian_noise
+from opaque.distributed import get_rank, get_world_size, reduce_scalar, sum_gradients, sync
+from opaque.noise import gaussian_noise, identity_mf_noise
 from opaque.random import key
 from opaque.utils import make_functional
 from opaque.utils.pytree import tree_leaves
@@ -262,6 +262,28 @@ def _worker_shared_noise_is_deterministic(
         _cleanup_ddp()
 
 
+def _worker_sync_noise_states(rank: int, world_size: int, port: int) -> None:
+    _setup_ddp(rank, world_size, port)
+    try:
+        device = torch.device(f"cuda:{rank}")
+        grads = {
+            "weight": torch.zeros(4, 3, device=device),
+            "bias": torch.zeros(3, device=device),
+        }
+
+        gaussian_fn, gaussian_state = gaussian_noise(stddev=1.0, key=key(42))
+        _noisy_gauss, gaussian_state = gaussian_fn(grads, gaussian_state)
+        synced_gaussian_state = sync(gaussian_state)
+        assert synced_gaussian_state.step_counter == 1
+
+        mf_fn, mf_state = identity_mf_noise(grads, stddev=1.0, key=key(42))
+        _noisy_mf, mf_state = mf_fn(grads, mf_state)
+        synced_mf_state = sync(mf_state)
+        assert synced_mf_state.step_counter == 1
+    finally:
+        _cleanup_ddp()
+
+
 def _worker_dp_training_step(rank: int, world_size: int, port: int) -> None:
     _setup_ddp(rank, world_size, port)
     try:
@@ -366,6 +388,49 @@ def _worker_adaptive_clipping_uneven_batches(
         _cleanup_ddp()
 
 
+def _worker_sync_aux_adaptive_clipping(
+    rank: int, world_size: int, port: int
+) -> None:
+    _setup_ddp(rank, world_size, port)
+    try:
+        device = torch.device(f"cuda:{rank}")
+        model = SimpleModel().to(device)
+        func_model, params = make_functional(model)
+
+        def loss_fn(params, x, y):
+            pred = func_model(params, x)
+            return ((pred - y) ** 2).mean()
+
+        grad_fn, clip_state = adaptive_clipped_grad(
+            loss_fn,
+            batch_argnums=(1, 2),
+            initial_clip_norm=0.1,
+            key=key(0),
+            return_aux=True,
+        )
+
+        local_batch_size = 3 if rank == 0 else 5
+        x = torch.randn(local_batch_size, 10, device=device)
+        y = torch.randn(local_batch_size, 1, device=device)
+
+        (_grads, aux), new_state = grad_fn(params, x, y, state=clip_state)
+        synced_aux = sync(aux)
+
+        expected_n = sum(3 if r == 0 else 5 for r in range(world_size))
+        assert synced_aux.loss_values.shape[0] == expected_n
+        assert synced_aux.grad_norms.shape[0] == expected_n
+        assert synced_aux.clipped_grad_norms.shape[0] == expected_n
+
+        local_clipped = float((aux.grad_norms > new_state.clip_norm).sum().item())
+        local_total = float(aux.grad_norms.numel())
+        global_clipped = reduce_scalar(local_clipped, op="sum", device=device)
+        global_total = reduce_scalar(local_total, op="sum", device=device)
+        expected_rate = global_clipped / max(1.0, global_total)
+        assert abs(synced_aux.clipping_rate - expected_rate) < 1e-6
+    finally:
+        _cleanup_ddp()
+
+
 def _worker_checkpointed_dp_training_step(
     rank: int, world_size: int, port: int
 ) -> None:
@@ -448,6 +513,11 @@ class TestDeterministicNoise:
             pytest.skip("Requires >= 2 CUDA devices")
         _spawn(2, _worker_shared_noise_is_deterministic)
 
+    def test_sync_noise_states(self):
+        if torch.cuda.device_count() < 2:
+            pytest.skip("Requires >= 2 CUDA devices")
+        _spawn(2, _worker_sync_noise_states)
+
 
 class TestEndToEndDPTraining:
     """End-to-end DP training with DDP."""
@@ -466,6 +536,11 @@ class TestEndToEndDPTraining:
         if torch.cuda.device_count() < 2:
             pytest.skip("Requires >= 2 CUDA devices")
         _spawn(2, _worker_adaptive_clipping_uneven_batches)
+
+    def test_sync_aux_adaptive_clipping(self):
+        if torch.cuda.device_count() < 2:
+            pytest.skip("Requires >= 2 CUDA devices")
+        _spawn(2, _worker_sync_aux_adaptive_clipping)
 
     def test_checkpointed_dp_training_step(self):
         if torch.cuda.device_count() < 2:

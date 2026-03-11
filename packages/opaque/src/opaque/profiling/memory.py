@@ -40,6 +40,7 @@ import time
 from dataclasses import dataclass, field
 
 import torch
+import torch.distributed as dist
 
 
 @dataclass
@@ -260,6 +261,7 @@ class StepTimer:
         *,
         track_memory: bool = True,
         batch_size: int = 0,
+        distributed: bool = True,
     ):
         """Initialize step timer.
 
@@ -267,15 +269,49 @@ class StepTimer:
             device: PyTorch device (for GPU sync)
             track_memory: Whether to track peak memory during step
             batch_size: Batch size for throughput calculation
+            distributed: If True, in distributed mode reduce elapsed time with
+                max across ranks and batch_size with sum across ranks so
+                throughput reflects global progress.
         """
         if isinstance(device, str):
             device = torch.device(device)
         self.device = device
         self.track_memory = track_memory
         self.batch_size = batch_size
+        self.distributed = distributed
         self.elapsed: float = 0.0
         self.peak_memory_gb: float = 0.0
         self._start_time: float = 0.0
+
+    def _distributed_throughput_adjustment(self) -> None:
+        """Adjust elapsed time and batch size to global values in DDP.
+
+        Uses max elapsed time across ranks (critical path) and sum batch size
+        across ranks (global samples processed this step).
+        """
+        if (
+            not self.distributed
+            or not dist.is_available()
+            or not dist.is_initialized()
+            or dist.get_world_size() <= 1
+        ):
+            return
+
+        backend = dist.get_backend()
+        if backend == "nccl":
+            if not torch.cuda.is_available():
+                return
+            reduce_device = torch.device(f"cuda:{torch.cuda.current_device()}")
+        else:
+            reduce_device = torch.device("cpu")
+
+        elapsed_tensor = torch.tensor(self.elapsed, dtype=torch.float64, device=reduce_device)
+        dist.all_reduce(elapsed_tensor, op=dist.ReduceOp.MAX)
+        self.elapsed = float(elapsed_tensor.item())
+
+        batch_tensor = torch.tensor(float(self.batch_size), dtype=torch.float64, device=reduce_device)
+        dist.all_reduce(batch_tensor, op=dist.ReduceOp.SUM)
+        self.batch_size = int(batch_tensor.item())
 
     def __enter__(self) -> "StepTimer":
         if self.track_memory and self.device.type == "cuda":
@@ -291,6 +327,7 @@ class StepTimer:
             torch.mps.synchronize()
 
         self.elapsed = time.perf_counter() - self._start_time
+        self._distributed_throughput_adjustment()
 
         if self.track_memory:
             stats = get_memory_stats(self.device)
@@ -387,12 +424,20 @@ class TrainingProfiler:
         )
         return stats
 
-    def step(self, *, batch_size: int = 0, track_memory: bool = True) -> StepTimer:
+    def step(
+        self,
+        *,
+        batch_size: int = 0,
+        track_memory: bool = True,
+        distributed: bool = True,
+    ) -> StepTimer:
         """Create a context manager for timing a training step.
 
         Args:
             batch_size: Number of samples in batch (for throughput calc)
             track_memory: Whether to track peak memory during step
+            distributed: If True, automatically compute global throughput in
+                distributed runs using sum(batch_size) and max(step_time).
 
         Returns:
             StepTimer context manager
@@ -401,7 +446,12 @@ class TrainingProfiler:
             >>> with profiler.step(batch_size=32):
             ...     train_step(batch)
         """
-        timer = StepTimer(self.device, track_memory=track_memory, batch_size=batch_size)
+        timer = StepTimer(
+            self.device,
+            track_memory=track_memory,
+            batch_size=batch_size,
+            distributed=distributed,
+        )
 
         # Create wrapper that records metrics after step
         class RecordingTimer:

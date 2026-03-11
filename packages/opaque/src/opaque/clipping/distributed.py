@@ -8,9 +8,13 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import torch
+
 from opaque.distributed import (
+    assert_scalar_equal,
     gather_pytree,
     is_distributed,
+    reduce_scalar,
     register_sync_type,
     sync_object,
 )
@@ -28,6 +32,9 @@ from .types import FixedClipState
 __all__ = [
     "sync_clip_state",
     "sync_adaptive_clip_state",
+    "sync_clipped_fun_aux",
+    "sync_clipped_grad_aux",
+    "sync_adaptive_clipped_grad_aux",
     "sync_aux",
 ]
 
@@ -94,28 +101,11 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
     )
 
 
-def sync_aux(
-    aux: ClippedFunAux | ClippedGradAux | AdaptiveClippedGradAux,
-) -> ClippedFunAux | ClippedGradAux | AdaptiveClippedGradAux:
-    """Gather per-example auxiliary outputs across ranks.
+def _split_aux_fields(aux: object) -> tuple[dict[str, object], dict[str, object]]:
+    """Split NamedTuple fields into tensor-like and scalar/None groups."""
+    tensor_fields: dict[str, object] = {}
+    scalar_fields: dict[str, object] = {}
 
-    Works with any of the clipping aux types (``ClippedFunAux``,
-    ``ClippedGradAux``, ``AdaptiveClippedGradAux``).  Tensor fields are
-    concatenated along the batch dimension; scalar and ``None`` fields are
-    preserved as-is.
-
-    Args:
-        aux: Auxiliary NamedTuple from any clipping function.
-
-    Returns:
-        New aux of the same type with gathered tensor fields.
-    """
-    if not is_distributed():
-        return aux
-
-    # Separate tensor fields (to gather) from scalar/None fields (to keep)
-    tensor_fields = {}
-    scalar_fields = {}
     for field_name in aux._fields:
         value = getattr(aux, field_name)
         if value is None or isinstance(value, (int, float)):
@@ -123,14 +113,100 @@ def sync_aux(
         else:
             tensor_fields[field_name] = value
 
-    gathered = gather_pytree(tensor_fields) if tensor_fields else {}
+    return tensor_fields, scalar_fields
 
-    return type(aux)(**{**gathered, **scalar_fields})
+
+def sync_clipped_fun_aux(aux: ClippedFunAux) -> ClippedFunAux:
+    """Synchronize ``ClippedFunAux`` by gathering per-example tensor fields."""
+    if not is_distributed():
+        return aux
+
+    tensor_fields, scalar_fields = _split_aux_fields(aux)
+    gathered = gather_pytree(tensor_fields) if tensor_fields else {}
+    return ClippedFunAux(**{**gathered, **scalar_fields})
+
+
+def sync_clipped_grad_aux(aux: ClippedGradAux) -> ClippedGradAux:
+    """Synchronize ``ClippedGradAux`` and validate shared clipping norm."""
+    if not is_distributed():
+        return aux
+
+    synced_fun_aux = sync_clipped_fun_aux(
+        ClippedFunAux(
+            loss_values=aux.loss_values,
+            grad_norms=aux.grad_norms,
+            clipped_grad_norms=aux.clipped_grad_norms,
+            loss_aux=aux.loss_aux,
+        )
+    )
+
+    assert_scalar_equal(aux.clipping_norm, name="clipping_norm")
+    return ClippedGradAux(
+        loss_values=synced_fun_aux.loss_values,
+        grad_norms=synced_fun_aux.grad_norms,
+        clipped_grad_norms=synced_fun_aux.clipped_grad_norms,
+        loss_aux=synced_fun_aux.loss_aux,
+        clipping_norm=aux.clipping_norm,
+    )
+
+
+def sync_adaptive_clipped_grad_aux(
+    aux: AdaptiveClippedGradAux,
+) -> AdaptiveClippedGradAux:
+    """Synchronize ``AdaptiveClippedGradAux`` including global clipping rate."""
+    if not is_distributed():
+        return aux
+
+    synced_fun_aux = sync_clipped_fun_aux(
+        ClippedFunAux(
+            loss_values=aux.loss_values,
+            grad_norms=aux.grad_norms,
+            clipped_grad_norms=aux.clipped_grad_norms,
+            loss_aux=aux.loss_aux,
+        )
+    )
+
+    clipping_rate = aux.clipping_rate
+    if clipping_rate is None:
+        global_clipping_rate = None
+    else:
+        local_n = 0.0
+        if isinstance(aux.grad_norms, torch.Tensor):
+            local_n = float(aux.grad_norms.numel())
+
+        local_rate = float(clipping_rate)
+        if local_n > 0:
+            global_weighted_sum = reduce_scalar(local_rate * local_n, op="sum")
+            global_total = reduce_scalar(local_n, op="sum")
+            global_clipping_rate = global_weighted_sum / max(1.0, global_total)
+        else:
+            global_clipping_rate = reduce_scalar(local_rate, op="mean")
+
+    return AdaptiveClippedGradAux(
+        loss_values=synced_fun_aux.loss_values,
+        grad_norms=synced_fun_aux.grad_norms,
+        clipped_grad_norms=synced_fun_aux.clipped_grad_norms,
+        loss_aux=synced_fun_aux.loss_aux,
+        clipping_rate=global_clipping_rate,
+    )
+
+
+def sync_aux(
+    aux: ClippedFunAux | ClippedGradAux | AdaptiveClippedGradAux,
+) -> ClippedFunAux | ClippedGradAux | AdaptiveClippedGradAux:
+    """Synchronize clipping auxiliary outputs across distributed ranks."""
+    if isinstance(aux, AdaptiveClippedGradAux):
+        return sync_adaptive_clipped_grad_aux(aux)
+    if isinstance(aux, ClippedGradAux):
+        return sync_clipped_grad_aux(aux)
+    if isinstance(aux, ClippedFunAux):
+        return sync_clipped_fun_aux(aux)
+    raise TypeError(f"Unsupported aux type for sync_aux: {type(aux)}")
 
 
 # Register all clipping types with the sync dispatcher
 register_sync_type(FixedClipState, sync_clip_state)
 register_sync_type(AdaptiveClipState, sync_adaptive_clip_state)
-register_sync_type(ClippedFunAux, sync_aux)
-register_sync_type(ClippedGradAux, sync_aux)
-register_sync_type(AdaptiveClippedGradAux, sync_aux)
+register_sync_type(ClippedFunAux, sync_clipped_fun_aux)
+register_sync_type(ClippedGradAux, sync_clipped_grad_aux)
+register_sync_type(AdaptiveClippedGradAux, sync_adaptive_clipped_grad_aux)
