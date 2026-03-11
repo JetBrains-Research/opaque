@@ -84,56 +84,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tutorial 06**: LoRA HuggingFace DP Training
 - Updated all tutorials to use functional accounting API
 
-## [0.1.0] - 2025-11-11
-
-**Stage 1 Complete**: Full single-device gradient clipping API with PyTree support.
-
-### Added
-
-- **Gradient Clipping** (`opaque.clipping`)
-  - `clip_pytree()` - Low-level PyTree clipping with all edge cases (zero, inf, NaN-safe)
-  - `clipped_fun()` - Primary API for clipping function outputs
-  - `clipped_grad()` - High-level gradient clipping wrapper
-  - Support for nested PyTrees (dictionaries of tensors)
-  - Microbatching support for memory efficiency
-  - `BoundedSensitivityCallable` wrapper with `sensitivity()` method
-  - `AuxiliaryOutput` for auxiliary outputs
-- **PyTree Utilities** (`opaque.utils`)
-  - `tree_map()` - Apply function to PyTree leaves
-  - `global_norm()` - L2 norm across PyTree
-  - `tree_leaves()` - Extract leaves from PyTree
-  - `make_functional()` - Convert module to functional form
-- **Full JAX-Privacy API parity** for single-device features
-  - All parameters from JAX-Privacy main branch implemented
-  - `return_zero` support for privacy amplification via padding
-  - `has_aux` field in `BoundedSensitivityCallable`
-
-### Changed
-
-- **Migrated to JAX-Privacy main branch API** (from v1.0.0)
-- **Simplified `clipped_grad()`** to ~30 lines using `torch.func.grad(has_aux=True)`
-- **Output signature**: `return_norms=True` now returns `(value, (aux, norms))`
-
-### Tests
-
-- **70 tests passing** with ~90% coverage
-- **25 unit tests** covering all edge cases
-- **45 JAX validation tests** with numerical equivalence (atol=1e-5)
-- All tests validate against JAX-Privacy reference implementation
-
-### Documentation
-
-- **Tutorial 01**: Gradient Clipping from Basics
-- Stage 1 implementation plan
-- Complete TDD workflow documentation
-- 10 documented design decisions with rationale
-
-### Tech Debt
-
-- `prng_argnum` parameter not implemented (requires sophisticated PRNG splitting)
-- `microbatch_size` parameter deferred (requires inmemory_microbatched_fn_general wrapper)
-- `spmd_axis_name` parameter deferred (JAX SPMD only, not needed for single-device)
-
 ## [0.0.0] - 2025-11-08
 
 **Initial Setup**: Project structure and infrastructure.
@@ -174,5 +124,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Port JAX-Privacy's functional API (`experimental/clipping.py`)
 
 ---
-
-**Note**: This project is in early development. Version 0.1.0 will be the first release with working implementations.

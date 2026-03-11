@@ -255,7 +255,7 @@ When you're ready to release a new version:
 
 ```bash
 # Via GitHub CLI
-gh workflow run release.md --field version=0.1.0
+gh workflow run release.md --field version=1.0.0
 
 # Or via GitHub UI: Actions → "Automated Release" → Run workflow
 ```
@@ -279,8 +279,8 @@ Once merged, create the release tag:
 
 ```bash
 git checkout main && git pull
-git tag v0.1.0
-git push origin v0.1.0
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
 ### Step 4: Automatic Publishing
