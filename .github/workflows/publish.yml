@@ -10,19 +10,20 @@ permissions:
   id-token: write
 
 jobs:
-  publish:
-    name: Build and Publish Release
+  extract-version:
+    name: Extract and validate version
     if: |
       github.event.pull_request.merged == true &&
       startsWith(github.event.pull_request.head.ref, 'release/')
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Full history for release notes
-
-      - uses: dtolnay/rust-toolchain@stable
 
       - uses: astral-sh/setup-uv@v3
         with:
@@ -88,57 +89,147 @@ jobs:
             sys.exit(1)
           PYTHON_EOF
 
-      - name: Set version and build wheels
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
+  build-opaque-dp:
+    name: Build opaque-dp
+    needs: [extract-version]
+    runs-on: ubuntu-latest
 
-          # Keep repository sources unchanged on main, but ensure release wheel metadata
-          # pins opaque-accounting to the same release version as opaque-dp.
-          echo "📌 Pinning opaque-accounting==${VERSION} in opaque-dp dependencies..."
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Pin opaque-accounting dependency
+        run: |
+          VERSION="${{ needs.extract-version.outputs.version }}"
+          echo "📌 Pinning opaque-accounting==${VERSION}..."
           
           OPAQUE_DP_PYP="packages/opaque/pyproject.toml"
           if ! grep -q "opaque-accounting" "$OPAQUE_DP_PYP"; then
-            echo "❌ Could not find opaque-accounting dependency in $OPAQUE_DP_PYP"
-            cat "$OPAQUE_DP_PYP"
+            echo "❌ Could not find opaque-accounting dependency"
             exit 1
           fi
           
-          # Show original dependency
-          echo "Original dependency:"
-          grep "opaque-accounting" "$OPAQUE_DP_PYP"
-          
-          # Update dependency version
           sed -i -E "s/\"opaque-accounting[^\"]*\"/\"opaque-accounting==${VERSION}\"/" "$OPAQUE_DP_PYP"
           
-          # Verify modification
           if ! grep -q "opaque-accounting==${VERSION}" "$OPAQUE_DP_PYP"; then
-            echo "❌ Failed to pin opaque-accounting version in $OPAQUE_DP_PYP"
-            echo "Updated dependency:"
-            grep "opaque-accounting" "$OPAQUE_DP_PYP"
+            echo "❌ Failed to pin opaque-accounting version"
             exit 1
           fi
           
-          echo "✅ Successfully pinned opaque-accounting==${VERSION}"
-          echo "Updated dependency:"
-          grep "opaque-accounting" "$OPAQUE_DP_PYP"
+          echo "✅ Pinned opaque-accounting==${VERSION}"
 
-          # Build opaque-dp (pure Python)
-          echo "📦 Building opaque-dp wheel..."
+      - name: Build wheel
+        run: |
+          VERSION="${{ needs.extract-version.outputs.version }}"
           cd packages/opaque
           uv version "$VERSION"
           uv build --wheel
-          cd ../..
 
-          # Build opaque-accounting wheel with maturin (Rust extension)
-          echo "📦 Building opaque-accounting wheel..."
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-opaque-dp
+          path: packages/opaque/dist/*.whl
+
+  build-opaque-accounting:
+    name: Build opaque-accounting - ${{ matrix.platform }}/${{ matrix.arch }}
+    needs: [extract-version]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            arch: amd64
+            runner: ubuntu-latest
+          - platform: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - platform: macos
+            arch: arm64
+            runner: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build wheel
+        run: |
+          VERSION="${{ needs.extract-version.outputs.version }}"
           cd packages/opaque-accounting
           uv version "$VERSION"
           uv build --wheel
-          cd ../..
 
-          # List built wheels
-          echo "✅ Built wheels:"
-          ls -lh packages/*/dist/*.whl
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-opaque-accounting-${{ matrix.platform }}-${{ matrix.arch }}
+          path: packages/opaque-accounting/dist/*.whl
+
+  publish:
+    name: Publish Release
+    needs: [extract-version, build-opaque-dp, build-opaque-accounting]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist/
+          merge-multiple: true
+
+      - name: Verify wheels
+        run: |
+          echo "📦 Collected wheels:"
+          ls -lh dist/
+          
+          WHEEL_COUNT=$(ls dist/*.whl | wc -l)
+          if [ "$WHEEL_COUNT" -lt 2 ]; then
+            echo "❌ Expected at least 2 wheels (opaque-dp + opaque-accounting), found $WHEEL_COUNT"
+            exit 1
+          fi
+          
+          if ! ls dist/opaque_dp-*.whl >/dev/null 2>&1; then
+            echo "❌ Missing opaque-dp wheel"
+            exit 1
+          fi
+          
+          if ! ls dist/opaque_accounting-*.whl >/dev/null 2>&1; then
+            echo "❌ Missing opaque-accounting wheels"
+            exit 1
+          fi
+          
+          echo "✅ All wheels verified"
 
       - name: Authenticate to GCP
         id: gcp-auth
@@ -157,28 +248,8 @@ jobs:
             --repository=jbr-fed-python \
             --location=europe-west4 > ~/.pypirc
 
-      - name: Verify wheels exist
-        run: |
-          echo "Checking for built wheels..."
-          if [ ! -f packages/opaque/dist/*.whl ]; then
-            echo "❌ No wheels found for opaque-dp"
-            ls -lh packages/opaque/dist/
-            exit 1
-          fi
-          if [ ! -f packages/opaque-accounting/dist/*.whl ]; then
-            echo "❌ No wheels found for opaque-accounting"
-            ls -lh packages/opaque-accounting/dist/
-            exit 1
-          fi
-          echo "✅ Wheels verified"
-
       - name: Publish to GCP Artifact Registry
         run: |
-          # Collect wheels into a single directory for publication
-          mkdir -p dist/
-          cp packages/opaque/dist/*.whl dist/
-          cp packages/opaque-accounting/dist/*.whl dist/
-          
           echo "📦 Publishing $(ls dist/*.whl | wc -l) wheels..."
           uv publish \
             --publish-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/ \
@@ -187,7 +258,7 @@ jobs:
       - name: Extract release notes from CHANGELOG
         id: release_notes
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="${{ needs.extract-version.outputs.version }}"
           # Extract section from CHANGELOG.md between this version and next version heading
           NOTES=$(awk "/^## \[$VERSION\]/,/^## \[/ {if (/^## \[/ && !p) {p=1; next} if (/^## \[/ && p) exit; if (p) print}" CHANGELOG.md || echo "Release $VERSION")
           if [ -z "$NOTES" ]; then
@@ -200,11 +271,10 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: opaque-dp v${{ steps.version.outputs.version }}
+          tag_name: v${{ needs.extract-version.outputs.version }}
+          name: opaque-dp v${{ needs.extract-version.outputs.version }}
           body: ${{ steps.release_notes.outputs.notes }}
           draft: false
-          prerelease: ${{ steps.version.outputs.is_prerelease }}
+          prerelease: ${{ needs.extract-version.outputs.is_prerelease }}
           files: |
-            packages/opaque/dist/*.whl
-            packages/opaque-accounting/dist/*.whl
+            dist/*.whl
