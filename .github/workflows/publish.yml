@@ -4,16 +4,6 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
     branches: [main]
-  workflow_dispatch:
-    inputs:
-      test_mode:
-        description: 'Test run (skip publishing to GCP)'
-        required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'false'
-          - 'true'
 
 permissions:
   contents: write
@@ -25,8 +15,7 @@ jobs:
     if: |
       (github.event_name == 'pull_request' &&
        startsWith(github.event.pull_request.head.ref, 'release/') &&
-       (github.event.action != 'closed' || github.event.pull_request.merged == true)) ||
-      github.event_name == 'workflow_dispatch'
+       (github.event.action != 'closed' || github.event.pull_request.merged == true))
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -49,38 +38,21 @@ jobs:
       - name: Extract version from branch name or use current version
         id: version
         run: |
-          # Determine if this is a test run
-          IS_TEST="${{ github.event.inputs.test_mode }}"
-          if [ -z "$IS_TEST" ]; then
-            IS_TEST="false"
+          # Release PR path
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          FULL_VERSION=$(echo "$BRANCH" | sed -n 's/^release\/v\(.*\)$/\1/p')
+
+          if [ -z "$FULL_VERSION" ]; then
+            echo "❌ Could not extract version from branch name: $BRANCH"
+            echo "Expected format: release/vX.Y.Z or release/vX.Y.Z-pre-release"
+            exit 1
           fi
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # For manual testing, use current dev version with test suffix (PEP 440 local version)
-            FULL_VERSION=$(grep '^version = ' packages/opaque/pyproject.toml | sed 's/version = "\(.*\)"/\1/')
-            if [ "$IS_TEST" = "true" ]; then
-              FULL_VERSION="0.1.0rc0+test$(date +%s)"
-            else
-              echo "⚠️  Manual workflow_dispatch requires test_mode=true (to prevent accidental publishing)"
-              exit 1
-            fi
+          if [ "${{ github.event.pull_request.merged }}" = "true" ]; then
+            IS_TEST="false"
           else
-            # Release PR path
-            BRANCH="${{ github.event.pull_request.head.ref }}"
-            FULL_VERSION=$(echo "$BRANCH" | sed -n 's/^release\/v\(.*\)$/\1/p')
-
-            if [ -z "$FULL_VERSION" ]; then
-              echo "❌ Could not extract version from branch name: $BRANCH"
-              echo "Expected format: release/vX.Y.Z or release/vX.Y.Z-pre-release"
-              exit 1
-            fi
-
-            if [ "${{ github.event.pull_request.merged }}" = "true" ]; then
-              IS_TEST="false"
-            else
-              # Pre-merge release PR checks run in test mode automatically.
-              IS_TEST="true"
-            fi
+            # Pre-merge release PR checks run in test mode automatically.
+            IS_TEST="true"
           fi
 
           # Validate PEP 440 and reject non-canonical branch versions.
@@ -169,7 +141,6 @@ jobs:
           cd packages/opaque
           uv version "$VERSION"
           uv build --wheel
-            # Removed unnecessary mkdir and mv commands
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
@@ -214,7 +185,6 @@ jobs:
           cd packages/opaque-accounting
           uv version "$VERSION"
           uv build --wheel
-            # Removed unnecessary mkdir and mv commands
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
