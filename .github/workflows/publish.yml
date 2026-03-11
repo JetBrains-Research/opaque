@@ -53,12 +53,12 @@ jobs:
           if [ -z "$IS_TEST" ]; then
             IS_TEST="false"
           fi
-          
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # For manual testing, use current dev version with test suffix
+            # For manual testing, use current dev version with test suffix (PEP 440 local version)
             FULL_VERSION=$(grep '^version = ' packages/opaque/pyproject.toml | sed 's/version = "\(.*\)"/\1/')
             if [ "$IS_TEST" = "true" ]; then
-              FULL_VERSION="0.1.0rc0.test$(date +%s)"
+              FULL_VERSION="0.1.0rc0+test$(date +%s)"
             else
               echo "⚠️  Manual workflow_dispatch requires test_mode=true (to prevent accidental publishing)"
               exit 1
@@ -73,7 +73,7 @@ jobs:
               echo "Expected format: release/vX.Y.Z or release/vX.Y.Z-pre-release"
               exit 1
             fi
-            
+
             IS_TEST="false"
           fi
 
@@ -118,7 +118,7 @@ jobs:
             print("See PEP 440 for full versioning rules.")
             sys.exit(1)
           PYTHON_EOF
-          
+
           echo "is_test=$IS_TEST" >> $GITHUB_OUTPUT
 
   build-opaque-dp:
@@ -141,20 +141,20 @@ jobs:
         run: |
           VERSION="${{ needs.extract-version.outputs.version }}"
           echo "📌 Pinning opaque-accounting==${VERSION}..."
-          
+
           OPAQUE_DP_PYP="packages/opaque/pyproject.toml"
           if ! grep -q "opaque-accounting" "$OPAQUE_DP_PYP"; then
             echo "❌ Could not find opaque-accounting dependency"
             exit 1
           fi
-          
+
           sed -i -E "s/\"opaque-accounting[^\"]*\"/\"opaque-accounting==${VERSION}\"/" "$OPAQUE_DP_PYP"
-          
+
           if ! grep -q "opaque-accounting==${VERSION}" "$OPAQUE_DP_PYP"; then
             echo "❌ Failed to pin opaque-accounting version"
             exit 1
           fi
-          
+
           echo "✅ Pinned opaque-accounting==${VERSION}"
 
       - name: Build wheel
@@ -244,23 +244,23 @@ jobs:
         run: |
           echo "📦 Collected wheels:"
           ls -lh dist/
-          
+
           WHEEL_COUNT=$(ls dist/*.whl | wc -l)
           if [ "$WHEEL_COUNT" -lt 2 ]; then
             echo "❌ Expected at least 2 wheels (opaque-dp + opaque-accounting), found $WHEEL_COUNT"
             exit 1
           fi
-          
+
           if ! ls dist/opaque_dp-*.whl >/dev/null 2>&1; then
             echo "❌ Missing opaque-dp wheel"
             exit 1
           fi
-          
+
           if ! ls dist/opaque_accounting-*.whl >/dev/null 2>&1; then
             echo "❌ Missing opaque-accounting wheels"
             exit 1
           fi
-          
+
           echo "✅ All wheels verified"
 
       - name: Authenticate to GCP
