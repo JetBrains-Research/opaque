@@ -94,20 +94,50 @@ jobs:
 
           # Keep repository sources unchanged on main, but ensure release wheel metadata
           # pins opaque-accounting to the same release version as opaque-dp.
-          sed -i -E "s/\"opaque-accounting[^\"]*\"/\"opaque-accounting==${VERSION}\"/" packages/opaque/pyproject.toml
-
-          if ! grep -q "opaque-accounting==${VERSION}" packages/opaque/pyproject.toml; then
-            echo "❌ Could not update opaque-accounting dependency spec in packages/opaque/pyproject.toml"
+          echo "📌 Pinning opaque-accounting==${VERSION} in opaque-dp dependencies..."
+          
+          OPAQUE_DP_PYP="packages/opaque/pyproject.toml"
+          if ! grep -q "opaque-accounting" "$OPAQUE_DP_PYP"; then
+            echo "❌ Could not find opaque-accounting dependency in $OPAQUE_DP_PYP"
+            cat "$OPAQUE_DP_PYP"
             exit 1
           fi
+          
+          # Show original dependency
+          echo "Original dependency:"
+          grep "opaque-accounting" "$OPAQUE_DP_PYP"
+          
+          # Update dependency version
+          sed -i -E "s/\"opaque-accounting[^\"]*\"/\"opaque-accounting==${VERSION}\"/" "$OPAQUE_DP_PYP"
+          
+          # Verify modification
+          if ! grep -q "opaque-accounting==${VERSION}" "$OPAQUE_DP_PYP"; then
+            echo "❌ Failed to pin opaque-accounting version in $OPAQUE_DP_PYP"
+            echo "Updated dependency:"
+            grep "opaque-accounting" "$OPAQUE_DP_PYP"
+            exit 1
+          fi
+          
+          echo "✅ Successfully pinned opaque-accounting==${VERSION}"
+          echo "Updated dependency:"
+          grep "opaque-accounting" "$OPAQUE_DP_PYP"
 
-          echo "✅ Set opaque-dp dependency to opaque-accounting==${VERSION} for release build"
+          # Build opaque-dp (pure Python)
+          echo "📦 Building opaque-dp wheel..."
+          cd packages/opaque
+          uv version "$VERSION"
+          uv build --wheel
+          cd ../..
 
-          # Update version in both packages (temporary, not committed)
-          cd packages/opaque && uv version $VERSION && uv build --wheel
-          cd ../opaque-accounting && uv version $VERSION && uv build --wheel
+          # Build opaque-accounting wheel with maturin (Rust extension)
+          echo "📦 Building opaque-accounting wheel..."
+          cd packages/opaque-accounting
+          uv version "$VERSION"
+          uv build --wheel
+          cd ../..
 
           # List built wheels
+          echo "✅ Built wheels:"
           ls -lh packages/*/dist/*.whl
 
       - name: Authenticate to GCP
@@ -127,12 +157,32 @@ jobs:
             --repository=jbr-fed-python \
             --location=europe-west4 > ~/.pypirc
 
+      - name: Verify wheels exist
+        run: |
+          echo "Checking for built wheels..."
+          if [ ! -f packages/opaque/dist/*.whl ]; then
+            echo "❌ No wheels found for opaque-dp"
+            ls -lh packages/opaque/dist/
+            exit 1
+          fi
+          if [ ! -f packages/opaque-accounting/dist/*.whl ]; then
+            echo "❌ No wheels found for opaque-accounting"
+            ls -lh packages/opaque-accounting/dist/
+            exit 1
+          fi
+          echo "✅ Wheels verified"
+
       - name: Publish to GCP Artifact Registry
         run: |
+          # Collect wheels into a single directory for publication
+          mkdir -p dist/
+          cp packages/opaque/dist/*.whl dist/
+          cp packages/opaque-accounting/dist/*.whl dist/
+          
+          echo "📦 Publishing $(ls dist/*.whl | wc -l) wheels..."
           uv publish \
             --publish-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/ \
-            packages/opaque/dist/*.whl \
-            packages/opaque-accounting/dist/*.whl
+            dist/*.whl
 
       - name: Extract release notes from CHANGELOG
         id: release_notes
