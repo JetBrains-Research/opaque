@@ -255,7 +255,7 @@ When you're ready to release a new version:
 
 ```bash
 # Via GitHub CLI
-gh workflow run release.md --field version=1.0.0
+gh workflow run release.md --field version=0.1.0
 
 # Or via GitHub UI: Actions → "Automated Release" → Run workflow
 ```
@@ -273,19 +273,9 @@ The workflow will:
 - Make any edits if needed
 - Merge the PR when ready
 
-### Step 3: Create and Push Tag
+### Step 3: Automatic Publishing
 
-Once merged, create the release tag:
-
-```bash
-git checkout main && git pull
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-### Step 4: Automatic Publishing
-
-The `publish.yml` workflow runs automatically when the tag is pushed:
+After the PR is merged, the release pipeline automatically continues:
 - Builds wheels for both `opaque-dp` and `opaque-accounting`
 - Publishes to GCP Artifact Registry
 - Creates a GitHub Release with notes and artifacts
