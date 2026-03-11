@@ -16,7 +16,7 @@ jobs:
       github.event.pull_request.merged == true &&
       startsWith(github.event.pull_request.head.ref, 'release/')
     runs-on: ubuntu-latest
-    
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,40 +38,40 @@ jobs:
           # Extract version from branch name and validate PEP 440 format
           BRANCH="${{ github.event.pull_request.head.ref }}"
           FULL_VERSION=$(echo "$BRANCH" | sed -n 's/^release\/v\(.*\)$/\1/p')
-          
+
           if [ -z "$FULL_VERSION" ]; then
             echo "❌ Could not extract version from branch name: $BRANCH"
             echo "Expected format: release/vX.Y.Z or release/vX.Y.Z-pre-release"
             exit 1
           fi
-          
+
           # Validate PEP 440 and reject non-canonical branch versions.
           # Phase 1 (release.md) is responsible for normalization.
-          FULL_VERSION="$FULL_VERSION" GITHUB_OUTPUT="$GITHUB_OUTPUT" python3 << 'PYTHON_EOF'
+          FULL_VERSION="$FULL_VERSION" GITHUB_OUTPUT="$GITHUB_OUTPUT" uv run --with packaging python << 'PYTHON_EOF'
           from packaging.version import Version
           import os
           import sys
 
           full_version = os.environ["FULL_VERSION"]
           github_output = os.environ["GITHUB_OUTPUT"]
-          
+
           try:
             # Parse and canonicalize according to PEP 440
             version_obj = Version(full_version)
             canonical = str(version_obj)
             is_prerelease = version_obj.is_prerelease
-            
+
             # Do not auto-correct in publish: fail fast on non-canonical forms.
             if full_version != canonical:
               print(f"❌ Non-canonical version in release branch: {full_version}")
               print(f"Canonical PEP 440 form is: {canonical}")
               print("Please rerun release preparation so branch/version are normalized before publishing.")
               sys.exit(1)
-            
+
             with open(github_output, "a") as f:
               f.write(f"version={canonical}\n")
               f.write(f"is_prerelease={str(is_prerelease).lower()}\n")
-            
+
             print(f"📦 Publishing version: {canonical} (pre-release: {is_prerelease})")
           except Exception as e:
             print(f"❌ Invalid version format: {full_version}")
@@ -102,11 +102,11 @@ jobs:
           fi
 
           echo "✅ Set opaque-dp dependency to opaque-accounting==${VERSION} for release build"
-          
+
           # Update version in both packages (temporary, not committed)
           cd packages/opaque && uv version $VERSION && uv build --wheel
           cd ../opaque-accounting && uv version $VERSION && uv build --wheel
-          
+
           # List built wheels
           ls -lh packages/*/dist/*.whl
 
