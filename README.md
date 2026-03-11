@@ -1,6 +1,6 @@
 # Opaque
 
-**Functional DP-SGD for PyTorch**
+Functional DP-SGD for PyTorch.
 
 Opaque provides composable primitives for differentially private model training
 in PyTorch: per-example gradient clipping, calibrated noise injection,
@@ -23,15 +23,21 @@ This repository contains:
 ## Installation
 
 ```bash
-# Production release from GCP Artifact Registry
+# Production release 0.1.0 from JetBrains Artifact Registry
 pip install --index-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/ \
-  opaque-dp opaque-accounting
+  opaque-dp==0.1.0
+
+# Or with uv
+uv add opaque-dp==0.1.0 \
+  --index https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/
 
 # Development setup (builds both from source)
 git clone https://github.com/JetBrains-Research/opaque.git
 cd opaque
 uv sync
 ```
+
+`opaque-accounting` is installed automatically as a dependency of `opaque-dp`.
 
 ## Example
 

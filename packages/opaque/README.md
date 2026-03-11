@@ -5,7 +5,7 @@ Functional DP-SGD library for PyTorch fine-tuning.
 ## Installation
 
 ```bash
-pip install opaque
+pip install opaque-dp
 ```
 
 This automatically installs `opaque-accounting` as a dependency.
@@ -23,6 +23,7 @@ uv run pytest tests/
 ## Architecture
 
 Built on:
+
 - `opaque.clipping` – Per-example gradient clipping
 - `opaque.noise` – Gaussian + correlated noise
 - `opaque.accounting` – Privacy accounting (via opaque-accounting backend)

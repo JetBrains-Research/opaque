@@ -11,7 +11,7 @@ For complete function signatures, see the
 ## Notebooks
 
 | Tutorial | Task | Components exercised |
-|----------|------|---------------------|
+| -------- | ---- | -------------------- |
 | [DP-SGD Training](dp_sgd_training.ipynb) | Train a model with differential privacy from scratch | `clipped_grad`, `gaussian_noise`, `make_functional`, accounting, calibration |
 | [Privacy Accounting & Calibration](accounting_and_calibration.ipynb) | Explore the accounting API, compare mechanisms, calibrate noise | `DpProcess`, composition, `calibrate`, privacy metrics |
 | [Fine-tuning an LLM](llm_finetuning.ipynb) | Fine-tune a HuggingFace model with DP and LoRA | `make_functional`, `partition_trainable`, PEFT, adaptive clipping |
@@ -24,17 +24,13 @@ The distributed training tutorial requires multiple GPUs and `torchrun`.
 
 ## Running the tutorials
 
-Install Opaque and its tutorial dependencies:
+Install Opaque and its tutorial dependencies from a repository checkout:
 
 ```bash
 git clone https://github.com/JetBrains-Research/opaque.git
 cd opaque
-uv sync --group docs
+uv sync --group examples
 jupyter lab docs/tutorials/
 ```
 
-Or install in an existing environment:
-
-```bash
-pip install opaque-dp[tutorials]
-```
+The notebooks rely on the `examples` dependency group; there is no published `tutorials` extra.
