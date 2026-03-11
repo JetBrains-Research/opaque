@@ -2,7 +2,7 @@ name: Publish Release
 
 on:
   pull_request:
-    types: [closed]
+    types: [opened, synchronize, reopened, closed]
     branches: [main]
   workflow_dispatch:
     inputs:
@@ -23,8 +23,9 @@ jobs:
   extract-version:
     name: Extract and validate version
     if: |
-      (github.event.pull_request.merged == true &&
-       startsWith(github.event.pull_request.head.ref, 'release/')) ||
+      (github.event_name == 'pull_request' &&
+       startsWith(github.event.pull_request.head.ref, 'release/') &&
+       (github.event.action != 'closed' || github.event.pull_request.merged == true)) ||
       github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
@@ -64,7 +65,7 @@ jobs:
               exit 1
             fi
           else
-            # Normal release PR path
+            # Release PR path
             BRANCH="${{ github.event.pull_request.head.ref }}"
             FULL_VERSION=$(echo "$BRANCH" | sed -n 's/^release\/v\(.*\)$/\1/p')
 
@@ -74,7 +75,12 @@ jobs:
               exit 1
             fi
 
-            IS_TEST="false"
+            if [ "${{ github.event.pull_request.merged }}" = "true" ]; then
+              IS_TEST="false"
+            else
+              # Pre-merge release PR checks run in test mode automatically.
+              IS_TEST="true"
+            fi
           fi
 
           # Validate PEP 440 and reject non-canonical branch versions.
