@@ -131,7 +131,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wheels-opaque-dp
-          path: packages/opaque/dist/*.whl
+          path: dist/*opaque_dp*.whl
           retention-days: 30
 
   # Native extension — build per platform
@@ -179,7 +179,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wheels-opaque-accounting-${{ matrix.platform }}-${{ matrix.arch }}
-          path: packages/opaque-accounting/dist/*.whl
+          path: dist/*opaque_accounting*.whl
           retention-days: 30
 
   # Publish all wheels to GCP (main branch only)
