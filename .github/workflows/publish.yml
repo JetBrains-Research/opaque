@@ -160,15 +160,14 @@ jobs:
       - name: Build wheel
         run: |
           VERSION="${{ needs.extract-version.outputs.version }}"
-          cd packages/opaque
           uv version "$VERSION"
-          uv build --wheel
+          uv build -p packages/opaque --wheel
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
           name: wheels-opaque-dp
-          path: packages/opaque/dist/*.whl
+          path: dist/*opaque_dp*.whl
 
   build-opaque-accounting:
     name: Build opaque-accounting - ${{ matrix.platform }}/${{ matrix.arch }}
@@ -204,15 +203,14 @@ jobs:
       - name: Build wheel
         run: |
           VERSION="${{ needs.extract-version.outputs.version }}"
-          cd packages/opaque-accounting
           uv version "$VERSION"
-          uv build --wheel
+          uv build -p packages/opaque-accounting --wheel
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
           name: wheels-opaque-accounting-${{ matrix.platform }}-${{ matrix.arch }}
-          path: packages/opaque-accounting/dist/*.whl
+          path: dist/*opaque_accounting*.whl
 
   publish:
     name: Publish Release
