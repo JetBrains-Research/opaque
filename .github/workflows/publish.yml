@@ -159,13 +159,11 @@ jobs:
 
       - name: Build wheel
         run: |
-          mkdir -p dist
           VERSION="${{ needs.extract-version.outputs.version }}"
           cd packages/opaque
           uv version "$VERSION"
           uv build --wheel
-          # Move wheel to workspace dist/ for consistent collection
-          mv dist/*.whl ../../dist/
+            # Removed unnecessary mkdir and mv commands
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
@@ -206,13 +204,11 @@ jobs:
 
       - name: Build wheel
         run: |
-          mkdir -p dist
           VERSION="${{ needs.extract-version.outputs.version }}"
           cd packages/opaque-accounting
           uv version "$VERSION"
           uv build --wheel
-          # Move wheel to workspace dist/ for consistent collection
-          mv dist/*.whl ../../dist/
+            # Removed unnecessary mkdir and mv commands
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
