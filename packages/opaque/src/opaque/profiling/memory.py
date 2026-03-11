@@ -305,11 +305,15 @@ class StepTimer:
         else:
             reduce_device = torch.device("cpu")
 
-        elapsed_tensor = torch.tensor(self.elapsed, dtype=torch.float64, device=reduce_device)
+        elapsed_tensor = torch.tensor(
+            self.elapsed, dtype=torch.float64, device=reduce_device
+        )
         dist.all_reduce(elapsed_tensor, op=dist.ReduceOp.MAX)
         self.elapsed = float(elapsed_tensor.item())
 
-        batch_tensor = torch.tensor(float(self.batch_size), dtype=torch.float64, device=reduce_device)
+        batch_tensor = torch.tensor(
+            float(self.batch_size), dtype=torch.float64, device=reduce_device
+        )
         dist.all_reduce(batch_tensor, op=dist.ReduceOp.SUM)
         self.batch_size = int(batch_tensor.item())
 

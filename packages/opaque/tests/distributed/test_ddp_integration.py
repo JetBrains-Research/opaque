@@ -19,7 +19,13 @@ import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
 
 from opaque.clipping import adaptive_clipped_grad, clipped_grad
-from opaque.distributed import get_rank, get_world_size, reduce_scalar, sum_gradients, sync
+from opaque.distributed import (
+    get_rank,
+    get_world_size,
+    reduce_scalar,
+    sum_gradients,
+    sync,
+)
 from opaque.noise import gaussian_noise, identity_mf_noise
 from opaque.random import key
 from opaque.utils import make_functional
@@ -388,9 +394,7 @@ def _worker_adaptive_clipping_uneven_batches(
         _cleanup_ddp()
 
 
-def _worker_sync_aux_adaptive_clipping(
-    rank: int, world_size: int, port: int
-) -> None:
+def _worker_sync_aux_adaptive_clipping(rank: int, world_size: int, port: int) -> None:
     _setup_ddp(rank, world_size, port)
     try:
         device = torch.device(f"cuda:{rank}")
