@@ -4,6 +4,16 @@ on:
   pull_request:
     types: [closed]
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: 'Test run (skip publishing to GCP)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 permissions:
   contents: write
@@ -13,12 +23,14 @@ jobs:
   extract-version:
     name: Extract and validate version
     if: |
-      github.event.pull_request.merged == true &&
-      startsWith(github.event.pull_request.head.ref, 'release/')
+      (github.event.pull_request.merged == true &&
+       startsWith(github.event.pull_request.head.ref, 'release/')) ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
       is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+      is_test: ${{ steps.version.outputs.is_test }}
 
     steps:
       - uses: actions/checkout@v4
@@ -33,21 +45,39 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Extract version from branch name
+      - name: Extract version from branch name or use current version
         id: version
         run: |
-          # Extract version from branch name and validate PEP 440 format
-          BRANCH="${{ github.event.pull_request.head.ref }}"
-          FULL_VERSION=$(echo "$BRANCH" | sed -n 's/^release\/v\(.*\)$/\1/p')
+          # Determine if this is a test run
+          IS_TEST="${{ github.event.inputs.test_mode }}"
+          if [ -z "$IS_TEST" ]; then
+            IS_TEST="false"
+          fi
+          
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # For manual testing, use current dev version with test suffix
+            FULL_VERSION=$(grep '^version = ' packages/opaque/pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+            if [ "$IS_TEST" = "true" ]; then
+              FULL_VERSION="0.1.0rc0.test$(date +%s)"
+            else
+              echo "⚠️  Manual workflow_dispatch requires test_mode=true (to prevent accidental publishing)"
+              exit 1
+            fi
+          else
+            # Normal release PR path
+            BRANCH="${{ github.event.pull_request.head.ref }}"
+            FULL_VERSION=$(echo "$BRANCH" | sed -n 's/^release\/v\(.*\)$/\1/p')
 
-          if [ -z "$FULL_VERSION" ]; then
-            echo "❌ Could not extract version from branch name: $BRANCH"
-            echo "Expected format: release/vX.Y.Z or release/vX.Y.Z-pre-release"
-            exit 1
+            if [ -z "$FULL_VERSION" ]; then
+              echo "❌ Could not extract version from branch name: $BRANCH"
+              echo "Expected format: release/vX.Y.Z or release/vX.Y.Z-pre-release"
+              exit 1
+            fi
+            
+            IS_TEST="false"
           fi
 
           # Validate PEP 440 and reject non-canonical branch versions.
-          # Phase 1 (release.md) is responsible for normalization.
           FULL_VERSION="$FULL_VERSION" GITHUB_OUTPUT="$GITHUB_OUTPUT" uv run --with packaging python << 'PYTHON_EOF'
           from packaging.version import Version
           import os
@@ -88,6 +118,8 @@ jobs:
             print("See PEP 440 for full versioning rules.")
             sys.exit(1)
           PYTHON_EOF
+          
+          echo "is_test=$IS_TEST" >> $GITHUB_OUTPUT
 
   build-opaque-dp:
     name: Build opaque-dp
@@ -232,6 +264,7 @@ jobs:
           echo "✅ All wheels verified"
 
       - name: Authenticate to GCP
+        if: needs.extract-version.outputs.is_test == 'false'
         id: gcp-auth
         uses: google-github-actions/auth@v2
         with:
@@ -239,9 +272,11 @@ jobs:
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
 
       - name: Set up Google Cloud SDK
+        if: needs.extract-version.outputs.is_test == 'false'
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure GCP Artifact Registry
+        if: needs.extract-version.outputs.is_test == 'false'
         run: |
           gcloud artifacts print-settings python \
             --project=jetbrains-ml4se-fed \
@@ -249,11 +284,19 @@ jobs:
             --location=europe-west4 > ~/.pypirc
 
       - name: Publish to GCP Artifact Registry
+        if: needs.extract-version.outputs.is_test == 'false'
         run: |
           echo "📦 Publishing $(ls dist/*.whl | wc -l) wheels..."
           uv publish \
             --publish-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/ \
             dist/*.whl
+
+      - name: Test mode - skip publishing
+        if: needs.extract-version.outputs.is_test == 'true'
+        run: |
+          echo "⚠️  TEST MODE: Skipping publish to GCP"
+          echo "📦 Would publish $(ls dist/*.whl | wc -l) wheels:"
+          ls -lh dist/
 
       - name: Extract release notes from CHANGELOG
         id: release_notes
@@ -269,6 +312,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
+        if: needs.extract-version.outputs.is_test == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.extract-version.outputs.version }}
@@ -278,3 +322,20 @@ jobs:
           prerelease: ${{ needs.extract-version.outputs.is_prerelease }}
           files: |
             dist/*.whl
+
+      - name: Test mode - skip GitHub release
+        if: needs.extract-version.outputs.is_test == 'true'
+        run: |
+          echo "⚠️  TEST MODE: Skipping GitHub Release creation"
+          echo "Would create release: v${{ needs.extract-version.outputs.version }}"
+
+      - name: Summary
+        run: |
+          echo "## Publish Workflow Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version**: ${{ needs.extract-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Pre-release**: ${{ needs.extract-version.outputs.is_prerelease }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Test Mode**: ${{ needs.extract-version.outputs.is_test }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Wheels Built And Collected**:" >> $GITHUB_STEP_SUMMARY
+          ls -1 dist/*.whl | sed 's/^dist\//- /' >> $GITHUB_STEP_SUMMARY
