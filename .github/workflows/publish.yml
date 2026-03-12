@@ -20,7 +20,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       is_prerelease: ${{ steps.version.outputs.is_prerelease }}
-      is_test: ${{ steps.version.outputs.is_test }}
+      is_dry_run: ${{ steps.version.outputs.is_dry_run }}
 
     steps:
       - uses: actions/checkout@v4
@@ -49,10 +49,10 @@ jobs:
           fi
 
           if [ "${{ github.event.pull_request.merged }}" = "true" ]; then
-            IS_TEST="false"
+            IS_DRY_RUN="false"
           else
-            # Pre-merge release PR checks run in test mode automatically.
-            IS_TEST="true"
+            # Pre-merge release PR checks run in dry-run mode automatically.
+            IS_DRY_RUN="true"
           fi
 
           # Validate PEP 440 and reject non-canonical branch versions.
@@ -97,7 +97,7 @@ jobs:
             sys.exit(1)
           PYTHON_EOF
 
-          echo "is_test=$IS_TEST" >> $GITHUB_OUTPUT
+          echo "is_dry_run=$IS_DRY_RUN" >> $GITHUB_OUTPUT
 
   build-opaque-dp:
     name: Build opaque-dp
@@ -242,7 +242,7 @@ jobs:
           echo "✅ All wheels verified"
 
       - name: Authenticate to GCP
-        if: needs.extract-version.outputs.is_test == 'false'
+        if: needs.extract-version.outputs.is_dry_run == 'false'
         id: gcp-auth
         uses: google-github-actions/auth@v2
         with:
@@ -250,11 +250,11 @@ jobs:
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
 
       - name: Set up Google Cloud SDK
-        if: needs.extract-version.outputs.is_test == 'false'
+        if: needs.extract-version.outputs.is_dry_run == 'false'
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure GCP Artifact Registry
-        if: needs.extract-version.outputs.is_test == 'false'
+        if: needs.extract-version.outputs.is_dry_run == 'false'
         run: |
           gcloud artifacts print-settings python \
             --project=jetbrains-ml4se-fed \
@@ -262,17 +262,17 @@ jobs:
             --location=europe-west4 > ~/.pypirc
 
       - name: Publish to GCP Artifact Registry
-        if: needs.extract-version.outputs.is_test == 'false'
+        if: needs.extract-version.outputs.is_dry_run == 'false'
         run: |
           echo "📦 Publishing $(ls dist/*.whl | wc -l) wheels..."
           uv publish \
             --publish-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/ \
             dist/*.whl
 
-      - name: Test mode - skip publishing
-        if: needs.extract-version.outputs.is_test == 'true'
+      - name: Dry run - skip publishing
+        if: needs.extract-version.outputs.is_dry_run == 'true'
         run: |
-          echo "⚠️  TEST MODE: Skipping publish to GCP"
+          echo "⚠️  DRY RUN: Skipping publish to GCP"
           echo "📦 Would publish $(ls dist/*.whl | wc -l) wheels:"
           ls -lh dist/
 
@@ -290,7 +290,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
-        if: needs.extract-version.outputs.is_test == 'false'
+        if: needs.extract-version.outputs.is_dry_run == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.extract-version.outputs.version }}
@@ -301,10 +301,10 @@ jobs:
           files: |
             dist/*.whl
 
-      - name: Test mode - skip GitHub release
-        if: needs.extract-version.outputs.is_test == 'true'
+      - name: Dry run - skip GitHub release
+        if: needs.extract-version.outputs.is_dry_run == 'true'
         run: |
-          echo "⚠️  TEST MODE: Skipping GitHub Release creation"
+          echo "⚠️  DRY RUN: Skipping GitHub Release creation"
           echo "Would create release: v${{ needs.extract-version.outputs.version }}"
 
       - name: Summary
@@ -313,7 +313,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version**: ${{ needs.extract-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "**Pre-release**: ${{ needs.extract-version.outputs.is_prerelease }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Test Mode**: ${{ needs.extract-version.outputs.is_test }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Dry Run**: ${{ needs.extract-version.outputs.is_dry_run }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Wheels Built And Collected**:" >> $GITHUB_STEP_SUMMARY
           ls -1 dist/*.whl | sed 's/^dist\//- /' >> $GITHUB_STEP_SUMMARY
