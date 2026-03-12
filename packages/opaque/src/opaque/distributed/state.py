@@ -14,7 +14,7 @@ import torch.distributed as dist
 
 from opaque.utils.pytree import tree_map
 
-from . import all_reduce as all_reduce_tensor
+from . import all_reduce_ as all_reduce_tensor
 from . import get_world_size, is_distributed
 
 __all__ = [
@@ -201,7 +201,7 @@ def reduce_scalar(
     tensor = torch.tensor(value, dtype=torch.float32, device=device)
 
     # All-reduce
-    all_reduce_tensor(tensor, op=op, async_op=False)
+    all_reduce_tensor(tensor, op=op)
 
     # Convert back to float
     return tensor.item()

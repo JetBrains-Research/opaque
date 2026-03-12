@@ -63,7 +63,7 @@ Use a short manual sweep with `TrainingProfiler`:
 
 ```python
 from opaque import clipped_grad
-from opaque.profiling import TrainingProfiler, reset_peak_memory
+from opaque.profiling import StepTimer, TrainingProfiler, reset_peak_memory
 
 def try_microbatch(candidate_mb: int) -> float:
     grad_fn, clip_state = clipped_grad(
@@ -75,8 +75,10 @@ def try_microbatch(candidate_mb: int) -> float:
 
     reset_peak_memory(device)
     profiler = TrainingProfiler(device)
-    with profiler.step(batch_size=len(batch_x)):
+    timer = StepTimer(device, batch_size=len(batch_x))
+    with timer:
         _grads, _aux = grad_fn(params, batch_x, batch_y, state=clip_state)
+    profiler = profiler.add_step(timer)
 
     return profiler.current_metrics()["memory_peak_gb"]
 ```
@@ -207,19 +209,21 @@ Use `TrainingProfiler` to track checkpoints and step-level metrics in your
 training loop.
 
 ```python
-from opaque.profiling import TrainingProfiler
+from opaque.profiling import StepTimer, TrainingProfiler
 
 profiler = TrainingProfiler(device)
-profiler.mark("start")
+profiler, _ = profiler.mark("start")
 
 for batch in dataloader:
-    with profiler.step(batch_size=len(batch["input_ids"])):
+    timer = StepTimer(device, batch_size=len(batch["input_ids"]))
+    with timer:
         train_step(batch)
+    profiler = profiler.add_step(timer)
 
     metrics = profiler.current_metrics()
     # e.g., metrics["step_time_sec"], metrics["memory_peak_gb"]
 
-profiler.mark("end")
+profiler, _ = profiler.mark("end")
 print(profiler.final_summary())
 ```
 

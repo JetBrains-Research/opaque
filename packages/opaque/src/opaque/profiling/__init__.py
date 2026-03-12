@@ -1,26 +1,25 @@
 """Memory profiling and performance diagnostics for DP training.
 
 This module provides tools for tracking memory usage and timing during
-differentially private training.
+differentially private training with explicit profiler state.
 
 Main Components:
-    - TrainingProfiler: Full-featured profiler for training loops
-    - StepTimer: Context manager for timing individual steps
+    - TrainingProfiler: Immutable profiler state for training loops
+    - StepTimer: Context manager for timing an individual step
     - MemoryStats: Dataclass for memory statistics
     - Utility functions: get_memory_stats, print_memory, reset_peak_memory
 
 Example:
-    >>> from opaque.profiling import TrainingProfiler, print_memory
+    >>> from opaque.profiling import StepTimer, TrainingProfiler, print_memory
     >>>
-    >>> # Simple memory check
     >>> print_memory(device, "After model load")
-    >>>
-    >>> # Full profiling
     >>> profiler = TrainingProfiler(device)
-    >>> profiler.mark("model_loaded")
+    >>> profiler, _ = profiler.mark("model_loaded")
     >>> for batch in dataloader:
-    ...     with profiler.step(batch_size=len(batch)):
+    ...     timer = StepTimer(device, batch_size=len(batch))
+    ...     with timer:
     ...         train_step(batch)
+    ...     profiler = profiler.add_step(timer)
     >>> print(profiler.final_summary())
 """
 

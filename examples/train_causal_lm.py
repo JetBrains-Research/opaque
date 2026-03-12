@@ -18,6 +18,9 @@ USAGE:
   # Full production training on Mellum-4b + KStack (~3-5 hours)
   python examples/train_causal_lm.py --preset mellum-kstack
 
+  # 4-GPU distributed run with torchrun
+  torchrun --nproc_per_node=4 examples/train_causal_lm.py --preset mellum-kstack
+
   # Or customize individual parameters:
   python examples/train_causal_lm.py \\
     --model_name "JetBrains/Mellum-4b-base" \\
@@ -45,6 +48,7 @@ import sys
 import time
 
 import torch
+import torch.distributed as dist
 import torchopt
 from datasets import Dataset, load_dataset
 from peft import LoraConfig, get_peft_model
@@ -61,18 +65,23 @@ import opaque.auditing as auditing
 from opaque.accounting import calibration as cal, Accountant
 from opaque.clipping import adaptive_clipped_grad, clipped_grad
 from opaque.compat.transformers import is_kernel_patched
+from opaque.distributed import sum_gradients_, sync
 from opaque.noise import gaussian_noise
-from opaque.profiling import TrainingProfiler, print_memory, reset_peak_memory
+from opaque.profiling import StepTimer, TrainingProfiler, print_memory, reset_peak_memory
 from opaque.random import key, fold_in
 from opaque.sampling import PoissonSampler
+from opaque.sampling.distributed import local_shard
 from opaque.utils import make_functional
-
 import wandb
 
 
-def _select_device() -> tuple[torch.device, str]:
+def _select_device(local_rank: int | None = None) -> tuple[torch.device, str]:
     """Select best available device with user-facing label."""
     if torch.cuda.is_available():
+        if local_rank is not None:
+            torch.cuda.set_device(local_rank)
+            device = torch.device(f"cuda:{local_rank}")
+            return device, torch.cuda.get_device_name(local_rank)
         device = torch.device("cuda")
         return device, torch.cuda.get_device_name(0)
 
@@ -81,6 +90,27 @@ def _select_device() -> tuple[torch.device, str]:
         return device, "Apple Silicon"
 
     return torch.device("cpu"), "CPU"
+
+
+def _init_distributed() -> tuple[bool, int, int, int]:
+    """Initialize torch.distributed when launched via torchrun."""
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    rank = int(os.environ.get("RANK", "0"))
+    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+
+    if world_size <= 1:
+        return False, 0, 1, 0
+
+    if not dist.is_initialized():
+        backend = "nccl" if torch.cuda.is_available() else "gloo"
+        dist.init_process_group(backend=backend, init_method="env://")
+
+    return True, rank, world_size, local_rank
+
+
+def _cleanup_distributed() -> None:
+    if dist.is_available() and dist.is_initialized():
+        dist.destroy_process_group()
 
 
 def _is_dtype_supported(device: torch.device, dtype: torch.dtype) -> bool:
@@ -548,6 +578,9 @@ def parse_args():
 def main():
     args = parse_args()
 
+    is_ddp, rank, world_size, local_rank = _init_distributed()
+    is_main_process = rank == 0
+
     # Set eval_batch_size to batch_size if not specified
     if args.eval_batch_size is None:
         args.eval_batch_size = args.batch_size
@@ -556,12 +589,13 @@ def main():
     if args.audit_batch_size is None:
         args.audit_batch_size = args.microbatch_size or args.batch_size
 
-    print("=" * 80)
-    print("DP-SGD LoRA Training for Causal Language Models")
-    print("=" * 80)
+    if is_main_process:
+        print("=" * 80)
+        print("DP-SGD LoRA Training for Causal Language Models")
+        print("=" * 80)
 
     # Initialize wandb (enabled by default, offline if no credentials)
-    use_wandb = not args.no_wandb
+    use_wandb = (not args.no_wandb) and is_main_process
     if use_wandb:
         # Generate default run name from key parameters if not specified
         if args.wandb_run_name is None:
@@ -582,12 +616,15 @@ def main():
         print(f"W&B initialized (mode: {os.environ.get('WANDB_MODE', 'online')})")
 
     # Setup device
-    device, device_name = _select_device()
-    if device.type == "cpu":
-        print(f"\nUsing device: {device}")
-        print("Warning: Training on CPU will be slow")
-    else:
-        print(f"\nUsing device: {device} ({device_name})")
+    device, device_name = _select_device(local_rank if is_ddp else None)
+    if is_main_process:
+        if device.type == "cpu":
+            print(f"\nUsing device: {device}")
+            print("Warning: Training on CPU will be slow")
+        else:
+            print(f"\nUsing device: {device} ({device_name})")
+        if is_ddp:
+            print(f"Distributed mode: rank={rank}/{world_size}, local_rank={local_rank}")
 
     # Set seed
     torch.manual_seed(args.seed)
@@ -656,7 +693,7 @@ def main():
         model_kwargs["torch_dtype"] = torch_dtype
         model = AutoModelForCausalLM.from_pretrained(args.model_name, **model_kwargs)
     model = model.to(device)
-    profiler.mark("model_loaded")
+    profiler, _ = profiler.mark("model_loaded")
     print_memory(device, "After model load")
 
     # Load tokenizer
@@ -676,7 +713,7 @@ def main():
     )
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
-    profiler.mark("lora_applied")
+    profiler, _ = profiler.mark("lora_applied")
     print_memory(device, "After LoRA")
 
     # Load and prepare dataset
@@ -777,6 +814,10 @@ def main():
         )
         print(f"  Training set: {len(train_dataset)} examples")
 
+    global_train_size = len(train_dataset)
+    if is_ddp:
+        train_dataset = local_shard(train_dataset, rank=rank, world_size=world_size)
+
     # Eval DataLoader (standard batching, no privacy requirements)
     eval_loader = DataLoader(
         eval_dataset,
@@ -788,7 +829,8 @@ def main():
 
     # For training: Poisson sampling (not uniform shuffling!)
     # Poisson: each example independently sampled with probability sample_rate each step
-    sample_rate = args.batch_size / len(train_dataset)
+    # sample_rate is defined globally (across all ranks).
+    sample_rate = args.batch_size / global_train_size
 
     # Expected number of steps to process full dataset with Poisson sampling
     # = 1 / sample_rate (since we sample sample_rate fraction each step)
@@ -826,7 +868,7 @@ def main():
     param_names = list(trainable_params.keys())
     elapsed = time.time() - start_time
     print(f"Trainable parameters: {len(param_names)} (took {elapsed:.1f}s)")
-    profiler.mark("functional_conversion")
+    profiler, _ = profiler.mark("functional_conversion")
     print_memory(device, "After functional conversion")
 
     def merged_params(trainable):
@@ -933,14 +975,15 @@ def main():
     # sample_rate already computed above
     total_steps = args.num_epochs * expected_steps_per_epoch
 
-    # Compute delta from training set size: δ = 1/n² (standard convention: δ < 1/n)
+    # Compute delta from training set size: δ = 1/n^1.1 (keeps δ below 1/n while
+    # being less conservative than the previous 1/n² heuristic on smaller runs).
     if args.target_delta is None:
-        args.target_delta = 1.0 / (len(train_dataset) ** 2)
+        args.target_delta = 1.0 / (global_train_size ** 1.1)
     if use_wandb:
         wandb.config.update({"target_delta": args.target_delta}, allow_val_change=True)
 
     print("\nCalibrating privacy parameters...")
-    print(f"  δ = {args.target_delta:.2e} (n={len(train_dataset)})")
+    print(f"  δ = {args.target_delta:.2e} (n={global_train_size})")
     print(f"  Total steps: {total_steps}")
     print(f"  Sample rate: {sample_rate:.6f}")
     print(f"  Target: ε={args.target_epsilon}, δ={args.target_delta:.2e}")
@@ -988,7 +1031,7 @@ def main():
 
     # Reset peak memory before training to get accurate training peak
     reset_peak_memory(device)
-    profiler.mark("training_start")
+    profiler, _ = profiler.mark("training_start")
     print_memory(device, "Before training")
 
     for epoch in range(args.num_epochs):
@@ -1001,7 +1044,7 @@ def main():
             train_dataset,
             sample_rate=sample_rate,
             num_iterations=expected_steps_per_epoch,
-            key=fold_in(key(args.seed), epoch),
+            key=fold_in(key(args.seed), rank, epoch),
         )
         print("Creating DataLoader...")
 
@@ -1024,7 +1067,8 @@ def main():
                 continue
 
             # Time the training step using profiler
-            with profiler.step(batch_size=len(input_ids)):
+            step_timer = StepTimer(device, batch_size=len(input_ids))
+            with step_timer:
                 # Compute clipped gradients (with state passing)
                 with offload_ctx:
                     (grads_tuple, aux), clip_state = grad_fn(
@@ -1032,9 +1076,16 @@ def main():
                     )
                 current_clip_norm = clip_state.clip_norm
 
+                if is_ddp:
+                    clip_state, aux = sync(clip_state, aux)
+                    current_clip_norm = clip_state.clip_norm
+                    sum_gradients_(grads_tuple)
+
                 # Add Gaussian noise
                 stddev = noise_multiplier * clip_state.sensitivity()
                 noisy_grads, noise_state = noise_fn(grads_tuple, noise_state)
+                if is_ddp:
+                    noise_state = sync(noise_state)
 
                 # Optimizer step (no adapter wrapper - optimizer used directly)
                 updates, opt_state = base_opt.update(
@@ -1043,6 +1094,8 @@ def main():
 
                 # Apply updates
                 trainable_params = torchopt.apply_updates(trainable_params, updates)
+
+            profiler = profiler.add_step(step_timer)
 
             # Extract metrics from aux
             avg_loss = aux.loss_values.mean().item()
@@ -1059,6 +1112,8 @@ def main():
             # Log training metrics every log_steps
             if global_step % args.log_steps == 0:
                 num_clipped = int(clip_rate * len(aux.grad_norms))
+                log_profiler = sync(profiler) if is_ddp else profiler
+                profiler = log_profiler  # flush pending steps so next sync covers only new records
                 perf_metrics = profiler.current_metrics()
 
                 # W&B logging
@@ -1123,7 +1178,7 @@ def main():
     print("Training Complete!")
     print("=" * 80)
     print(f"Model: {args.model_name}")
-    print(f"Dataset: {args.dataset} ({len(train_dataset)} train samples)")
+    print(f"Dataset: {args.dataset} ({global_train_size} train samples)")
     print("\nTraining results:")
     print(f"  Total steps: {global_step}")
     print(f"  Initial loss: {losses[0]:.4f}")
@@ -1146,7 +1201,7 @@ def main():
 
     final_epsilon = accounting.epsilon_at(args.target_delta)
     print("\nPrivacy:")
-    print(f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e} (n={len(train_dataset)})")
+    print(f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e} (n={global_train_size})")
     print(f"  Noise multiplier: {noise_multiplier:.4f}")
     print(f"  Final ε (theoretical): {final_epsilon:.4f}")
     if args.audit:
@@ -1164,12 +1219,17 @@ def main():
             }, step=global_step)
 
     # Mark training complete and print profiler summary
-    profiler.mark("training_complete")
-    print("\n" + profiler.final_summary())
-    print("\n" + profiler.checkpoint_summary())
+    profiler, _ = profiler.mark("training_complete")
+    summary_profiler = sync(profiler) if is_ddp else profiler
+    print("\n" + summary_profiler.final_summary())
+    print("\n" + summary_profiler.checkpoint_summary())
 
     if use_wandb:
         wandb.finish()
+
+    if is_ddp:
+        dist.barrier(device_ids=[local_rank])
+        _cleanup_distributed()
 
     return 0
 

@@ -145,34 +145,45 @@ class TestTrainingProfiler:
     def test_mark_creates_checkpoint(self, device):
         """Should create checkpoint with mark()."""
         profiler = TrainingProfiler(device)
-        stats = profiler.mark("test_point")
+        profiler, stats = profiler.mark("test_point")
         assert len(profiler.checkpoints) == 1
         assert profiler.checkpoints[0].name == "test_point"
         assert isinstance(stats, MemoryStats)
 
     @pytest.mark.parametrize("device", DEVICES)
-    def test_step_context_manager(self, device):
-        """Should work as context manager."""
+    def test_add_step(self, device):
+        """Should record completed step metrics."""
         profiler = TrainingProfiler(device)
-        with profiler.step(batch_size=32):
+        timer = StepTimer(device, batch_size=32)
+        with timer:
             x = torch.randn(100, 100)
             _ = x @ x.T
+        profiler = profiler.add_step(timer)
         assert profiler.num_steps == 1
         assert profiler.step_times[0] > 0
         assert profiler.step_batch_sizes[0] == 32
 
     def test_avg_step_time_stable(self):
         """Should exclude first step for stable average."""
-        profiler = TrainingProfiler("cpu")
-        profiler.step_times = [10.0, 2.0, 2.0, 2.0]
+        profiler = TrainingProfiler(
+            "cpu",
+            step_metrics=(
+                StepMetrics(step_time=10.0, batch_size=1, throughput=0.1),
+                StepMetrics(step_time=2.0, batch_size=1, throughput=0.5),
+                StepMetrics(step_time=2.0, batch_size=1, throughput=0.5),
+                StepMetrics(step_time=2.0, batch_size=1, throughput=0.5),
+            ),
+        )
         assert profiler.avg_step_time_stable == pytest.approx(2.0)
 
     @pytest.mark.parametrize("device", DEVICES)
     def test_current_metrics(self, device):
         """Should return current metrics dict."""
         profiler = TrainingProfiler(device)
-        with profiler.step(batch_size=32):
+        timer = StepTimer(device, batch_size=32)
+        with timer:
             pass
+        profiler = profiler.add_step(timer)
         metrics = profiler.current_metrics()
         assert "step_time_sec" in metrics
         assert "memory_peak_gb" in metrics
@@ -192,19 +203,21 @@ class TestTrainingProfiler:
 
         monkeypatch.setattr("opaque.profiling.memory.get_memory_stats", fake_stats)
 
-        profiler.mark("a")
-        profiler.mark("b")
+        profiler, _ = profiler.mark("a")
+        profiler, _ = profiler.mark("b")
         assert profiler.peak_memory_gb == pytest.approx(0.35)
 
     @pytest.mark.parametrize("device", DEVICES)
     def test_final_summary(self, device):
         """Should generate comprehensive summary."""
         profiler = TrainingProfiler(device)
-        profiler.mark("start")
+        profiler, _ = profiler.mark("start")
         for _ in range(3):
-            with profiler.step(batch_size=16):
+            timer = StepTimer(device, batch_size=16)
+            with timer:
                 pass
-        profiler.mark("end")
+            profiler = profiler.add_step(timer)
+        profiler, _ = profiler.mark("end")
         summary = profiler.final_summary()
         assert "Training Performance Summary" in summary
         assert "Total steps:" in summary

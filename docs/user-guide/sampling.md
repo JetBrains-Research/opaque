@@ -261,7 +261,7 @@ Use `TrainingProfiler` to compare a few candidate microbatch sizes and select
 the largest stable value for your device:
 
 ```python
-from opaque.profiling import TrainingProfiler, reset_peak_memory
+from opaque.profiling import StepTimer, TrainingProfiler, reset_peak_memory
 
 profiler = TrainingProfiler(device)
 for optimal in [64, 32, 16, 8, 4, 2, 1]:
@@ -273,8 +273,10 @@ for optimal in [64, 32, 16, 8, 4, 2, 1]:
     )
 
     reset_peak_memory(device)
-    with profiler.step(batch_size=batch_size):
+    timer = StepTimer(device, batch_size=batch_size)
+    with timer:
         grads, aux = grad_fn(params, batch_x, batch_y, state=clip_state)
+    profiler = profiler.add_step(timer)
 
     print(optimal, profiler.current_metrics()["memory_peak_gb"])
 

@@ -46,6 +46,16 @@ class TestNonDistributed:
         with pytest.raises(RuntimeError, match="not initialized"):
             dist_utils.all_reduce(tensor)
 
+    def test_all_reduce_inplace_raises_without_init(self):
+        """all_reduce_() raises RuntimeError when not initialized."""
+        tensor = torch.tensor([1.0, 2.0, 3.0])
+
+        if dist_utils.is_distributed():
+            pytest.skip("Distributed already initialized")
+
+        with pytest.raises(RuntimeError, match="not initialized"):
+            dist_utils.all_reduce_(tensor)
+
     def test_barrier_no_op_without_init(self):
         """barrier() is no-op when not initialized."""
         # Skip if distributed is initialized
@@ -57,17 +67,19 @@ class TestNonDistributed:
 
 
 class TestAllReduceValidation:
-    """Tests for all_reduce() parameter validation."""
+    """Tests for all_reduce/all_reduce_ parameter validation."""
 
     def test_invalid_op_raises(self):
-        """all_reduce() raises ValueError for invalid op."""
+        """all_reduce() and all_reduce_() raise ValueError for invalid op."""
         tensor = torch.tensor([1.0])
 
         with pytest.raises(ValueError, match="Invalid reduction operation"):
             dist_utils.all_reduce(tensor, op="invalid_op")
+        with pytest.raises(ValueError, match="Invalid reduction operation"):
+            dist_utils.all_reduce_(tensor, op="invalid_op")
 
     def test_valid_operations(self):
-        """all_reduce() accepts all valid operations."""
+        """all_reduce() and all_reduce_() accept all valid operations."""
         valid_ops = ["sum", "mean", "max", "min", "product"]
 
         # Just test that these don't raise ValueError during validation
@@ -78,10 +90,12 @@ class TestAllReduceValidation:
             if dist_utils.is_distributed():
                 # Actually execute if initialized
                 dist_utils.all_reduce(tensor, op=op)
+                dist_utils.all_reduce_(tensor, op=op)
             else:
                 # Just check it gets past parameter validation
                 try:
                     dist_utils.all_reduce(tensor, op=op)
+                    dist_utils.all_reduce_(tensor, op=op)
                 except RuntimeError as e:
                     # Expected if not initialized
                     assert "not initialized" in str(e)
@@ -97,9 +111,12 @@ class TestModuleExports:
             "get_rank",
             "get_world_size",
             "all_reduce",
+            "all_reduce_",
             "barrier",
             "reduce_pytree",
+            "reduce_pytree_",
             "sum_gradients",
+            "sum_gradients_",
             "reduce_scalar",
             "gather_tensors",
             "gather_pytree",

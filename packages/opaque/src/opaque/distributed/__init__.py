@@ -48,8 +48,6 @@ Example - Adaptive Clipping (Automatic Distributed Detection):
     >>> grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 """
 
-from typing import Optional  # noqa: F401  (used in docstrings)
-
 import torch
 import torch.distributed as dist
 
@@ -59,11 +57,14 @@ __all__ = [
     "get_rank",
     "get_world_size",
     "all_reduce",
+    "all_reduce_",
     "barrier",
     # PyTree reduction
     "reduce_pytree",
+    "reduce_pytree_",
     # DP-specific helpers
     "sum_gradients",
+    "sum_gradients_",
     # Scalar reduction
     "reduce_scalar",
     "assert_pytree_equal",
@@ -135,22 +136,21 @@ def get_world_size() -> int:
     return 1
 
 
-def all_reduce(
+def all_reduce_(
     tensor: torch.Tensor,
     op: str = "sum",
-    async_op: bool = False,
-) -> dist.Work | None:
+) -> None:
     """All-reduce a tensor across all processes (in-place).
+
+    This is a thin blocking wrapper over ``torch.distributed.all_reduce``.
+    The input tensor is mutated in-place and no value is returned.
 
     Args:
         tensor: Tensor to reduce. Modified in-place.
         op: Reduction operation. One of: "sum", "mean", "max", "min", "product".
             Default: "sum".
-        async_op: If True, return a work handle for asynchronous operation.
-            Default: False (blocking).
-
     Returns:
-        Optional[dist.Work]: Work handle if async_op=True, else None.
+        None. The operation is always blocking.
 
     Raises:
         ValueError: If op is not a valid reduction operation.
@@ -168,12 +168,12 @@ def all_reduce(
         >>> t = torch.tensor([1.0, 2.0, 3.0])
         >>>
         >>> # Sum across all devices (in-place)
-        >>> dist_utils.all_reduce(t, op="sum")
+        >>> dist_utils.all_reduce_(t, op="sum")
         >>> print(t)  # [2.0, 4.0, 6.0] (sum of rank 0 and rank 1)
         >>>
         >>> # Average across all devices
         >>> t = torch.tensor([1.0, 2.0, 3.0])
-        >>> dist_utils.all_reduce(t, op="mean")
+        >>> dist_utils.all_reduce_(t, op="mean")
         >>> print(t)  # [1.0, 2.0, 3.0] (average of rank 0 and rank 1)
     """
     # Map string to ReduceOp
@@ -196,7 +196,28 @@ def all_reduce(
             "Call torch.distributed.init_process_group() first."
         )
 
-    return dist.all_reduce(tensor, op=op_map[op], async_op=async_op)
+    dist.all_reduce(tensor, op=op_map[op])
+
+
+def all_reduce(
+    tensor: torch.Tensor,
+    op: str = "sum",
+) -> torch.Tensor:
+    """All-reduce a tensor across all processes and return a reduced copy.
+
+    This is the functional counterpart to ``all_reduce_``.
+
+    Args:
+        tensor: Tensor to reduce.
+        op: Reduction operation. One of: "sum", "mean", "max", "min", "product".
+            Default: "sum".
+
+    Returns:
+        Reduced tensor copy. The input tensor is unchanged.
+    """
+    reduced = tensor.clone()
+    all_reduce_(reduced, op=op)
+    return reduced
 
 
 def barrier() -> None:
@@ -224,7 +245,9 @@ def barrier() -> None:
 # Import submodules AFTER core functions are defined (avoid circular import)
 from .gradients import (  # noqa: E402
     reduce_pytree,
+    reduce_pytree_,
     sum_gradients,
+    sum_gradients_,
 )
 from .state import (  # noqa: E402
     assert_pytree_equal,
@@ -246,18 +269,20 @@ def register_sync_type(state_type: type, sync_fn: object) -> None:
     _SYNC_REGISTRY[state_type] = sync_fn
 
 
-def sync(state: object) -> object:
-    """Synchronize a state or auxiliary object across distributed ranks.
+def sync(*states: object) -> object | tuple[object, ...]:
+    """Synchronize one or more state/auxiliary objects across distributed ranks.
 
-    Auto-dispatches to the right specialized sync function based on the
-    type of *state*.  Works with all clipping states, noise states, and
-    auxiliary output types.
+    Auto-dispatches to the right specialized sync function based on each
+    object's type. Works with clipping states/aux, noise states, and
+    profiling objects.
 
     Args:
-        state: Any registered state or aux object.
+        *states: One or more registered state/aux objects.
 
     Returns:
-        Synchronized copy of *state*.
+        - If one argument is provided: synchronized object.
+        - If multiple arguments are provided: tuple of synchronized objects
+          in the same order.
 
     Raises:
         TypeError: If no sync function is registered for the type.
@@ -268,18 +293,25 @@ def sync(state: object) -> object:
 
         clip_state = sync(clip_state)       # dispatches to sync_clip_state
         noise_state = sync(noise_state)     # dispatches to sync_gaussian_noise_state
-        aux = sync(aux)                     # dispatches to sync_aux
+        aux = sync(aux)                     # dispatches to aux sync handler
+        clip_state, aux = sync(clip_state, aux)
     """
-    # Lazy registration: ensure clipping and noise modules have registered
-    # their sync types even if the user only imported opaque.distributed.
-    if not _SYNC_REGISTRY:
-        import opaque.clipping.distributed  # noqa: F401
-        import opaque.noise.distributed  # noqa: F401
 
-    state_type = type(state)
-    if state_type in _SYNC_REGISTRY:
-        return _SYNC_REGISTRY[state_type](state)
-    raise TypeError(
-        f"No sync function registered for {state_type.__name__}. "
-        f"Registered types: {[t.__name__ for t in _SYNC_REGISTRY]}"
-    )
+    def _sync_one(single_state: object) -> object:
+        state_type = type(single_state)
+        if state_type not in _SYNC_REGISTRY:
+            import opaque.clipping.distributed  # noqa: F401
+            import opaque.noise.distributed  # noqa: F401
+            import opaque.profiling.distributed  # noqa: F401
+        if state_type in _SYNC_REGISTRY:
+            return _SYNC_REGISTRY[state_type](single_state)
+        raise TypeError(
+            f"No sync function registered for {state_type.__name__}. "
+            f"Registered types: {[t.__name__ for t in _SYNC_REGISTRY]}"
+        )
+
+    if len(states) == 1:
+        return _sync_one(states[0])
+    if len(states) > 1:
+        return tuple(_sync_one(single_state) for single_state in states)
+    return ()

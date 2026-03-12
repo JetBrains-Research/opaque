@@ -26,7 +26,7 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
-from opaque import clipped_grad, make_functional
+from opaque import clipped_grad, make_functional, with_batch_dim
 from opaque.utils.pytree import tree_map
 from tests.conftest import (
     MODEL_CONFIGS,
@@ -152,8 +152,14 @@ def _run_ddp_scaling_test(
             outputs = fmodel(all_params, ids, attention_mask=mask, labels=lbls)
             return outputs.loss
 
+        # Supported HF models should work batchless via Opaque patches.
+        # For remote-code models, use the explicit helper to add a batch dim.
+        grad_loss_fn = per_example_loss
+        if config.get("trust_remote_code", False):
+            grad_loss_fn = with_batch_dim(per_example_loss, batch_argnums=(2, 3, 4))
+
         grad_fn, clip_state = clipped_grad(
-            per_example_loss,
+            grad_loss_fn,
             argnums=0,
             batch_argnums=(2, 3, 4),
             l2_clip_norm=L2_CLIP_NORM,
