@@ -240,5 +240,5 @@ jobs:
           UV_PUBLISH_PASSWORD: ${{ steps.gcp-auth.outputs.access_token }}
         run: |
           uv publish \
-            --publish-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/ \
+            --publish-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/ \
             dist/*.whl

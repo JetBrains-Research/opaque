@@ -275,7 +275,7 @@ jobs:
         run: |
           echo "📦 Publishing $(ls dist/*.whl | wc -l) wheels..."
           uv publish \
-            --publish-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/ \
+            --publish-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/ \
             dist/*.whl
 
       - name: Dry run - skip publishing
