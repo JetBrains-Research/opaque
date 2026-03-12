@@ -4,6 +4,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
     branches: [main]
+  push:
+    tags: ['v*']
 
 permissions:
   contents: write
@@ -15,7 +17,8 @@ jobs:
     if: |
       (github.event_name == 'pull_request' &&
        startsWith(github.event.pull_request.head.ref, 'release/') &&
-       (github.event.action != 'closed' || github.event.pull_request.merged == true))
+       (github.event.action != 'closed' || github.event.pull_request.merged == true)) ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -35,24 +38,37 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Extract version from branch name or use current version
+      - name: Extract version from branch name or tag
         id: version
         run: |
-          # Release PR path
-          BRANCH="${{ github.event.pull_request.head.ref }}"
-          FULL_VERSION=$(echo "$BRANCH" | sed -n 's/^release\/v\(.*\)$/\1/p')
-
-          if [ -z "$FULL_VERSION" ]; then
-            echo "❌ Could not extract version from branch name: $BRANCH"
-            echo "Expected format: release/vX.Y.Z or release/vX.Y.Z-pre-release"
-            exit 1
-          fi
-
-          if [ "${{ github.event.pull_request.merged }}" = "true" ]; then
-            IS_DRY_RUN="false"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # Release PR path: release/vX.Y.Z → X.Y.Z
+            BRANCH="${{ github.event.pull_request.head.ref }}"
+            FULL_VERSION=$(echo "$BRANCH" | sed -n 's/^release\/v\(.*\)$/\1/p')
+            
+            if [ -z "$FULL_VERSION" ]; then
+              echo "❌ Could not extract version from branch name: $BRANCH"
+              echo "Expected format: release/vX.Y.Z or release/vX.Y.Z-pre-release"
+              exit 1
+            fi
+            
+            if [ "${{ github.event.pull_request.merged }}" = "true" ]; then
+              IS_DRY_RUN="false"
+            else
+              # Pre-merge release PR checks run in dry-run mode automatically.
+              IS_DRY_RUN="true"
+            fi
           else
-            # Pre-merge release PR checks run in dry-run mode automatically.
-            IS_DRY_RUN="true"
+            # Tag push path: v X.Y.Z → X.Y.Z (always publish, not dry-run)
+            TAG="${{ github.ref_name }}"
+            FULL_VERSION=$(echo "$TAG" | sed -n 's/^v\(.*\)$/\1/p')
+            
+            if [ -z "$FULL_VERSION" ]; then
+              echo "❌ Could not extract version from tag: $TAG"
+              exit 1
+            fi
+            
+            IS_DRY_RUN="false"
           fi
 
           # Validate PEP 440 and reject non-canonical branch versions.
