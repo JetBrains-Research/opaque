@@ -212,6 +212,7 @@ jobs:
     name: Publish Release
     needs: [extract-version, build-opaque-dp, build-opaque-accounting]
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write
       id-token: write
