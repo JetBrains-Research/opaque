@@ -6,18 +6,23 @@ on:
     tags: [ 'v*' ]
   workflow_dispatch:
 
-# Needed for pushing versioned docs to gh-pages
+# Needed to update mike state (gh-pages) and deploy via GitHub Pages workflow
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
-  group: "docs"
+  group: "pages"
   cancel-in-progress: false
 
 jobs:
   deploy:
     name: Deploy versioned docs
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - name: Checkout code
@@ -47,12 +52,31 @@ jobs:
       - name: Deploy docs for main as latest
         if: github.ref == 'refs/heads/main'
         run: |
-          uv run --group docs mike deploy --push --update-aliases main latest
-          uv run --group docs mike set-default --push latest
+          uv run --group docs mike deploy --update-aliases main latest
+          uv run --group docs mike set-default latest
 
       - name: Deploy docs for release tag
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          uv run --group docs mike deploy --push "$VERSION"
-          uv run --group docs mike set-default --push latest
+          uv run --group docs mike deploy "$VERSION"
+          uv run --group docs mike set-default latest
+
+      - name: Push updated gh-pages state
+        run: |
+          git push origin gh-pages
+
+      - name: Export gh-pages content
+        run: |
+          rm -rf pages-site
+          mkdir -p pages-site
+          git archive gh-pages | tar -x -C pages-site
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages-site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
