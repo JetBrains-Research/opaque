@@ -245,6 +245,16 @@ uv run mkdocs build
 - **Tutorials**: `docs/tutorials/`
 - **API reference**: Auto-generated from docstrings
 
+### Documentation Versioning
+
+Docs are deployed with `mike` and versioned on `gh-pages`.
+
+- **Push to `main`** updates the rolling docs alias: `latest`
+- **Push tag `vX.Y.Z`** publishes immutable docs version: `X.Y.Z`
+- Default docs version remains `latest`
+
+This keeps release docs stable while allowing continuous docs updates on `main`.
+
 ---
 
 ## Creating a Release

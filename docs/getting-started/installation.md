@@ -11,8 +11,10 @@ Install the latest release (`0.1.0`) from the JetBrains Artifact Registry:
 
 ```bash
 pip install opaque-dp==0.1.0 \
-  --index-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/
+  --extra-index-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/
 ```
+
+`opaque-accounting` is installed automatically as a dependency.
 
 Or with uv:
 
@@ -58,7 +60,7 @@ uv sync --group docs
 uv run mkdocs serve
 ```
 
-Visit http://localhost:8000 to view the docs.
+Visit <http://localhost:8000> to view the docs.
 
 ## Verify Installation
 

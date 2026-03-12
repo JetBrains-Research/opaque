@@ -104,6 +104,7 @@ jobs:
 
   build-opaque-dp:
     name: Build opaque-dp
+    if: github.ref == 'refs/heads/main'
     needs: [test]
     runs-on: ubuntu-latest
 
@@ -131,12 +132,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wheels-opaque-dp
-          path: packages/opaque/dist/*.whl
+          path: dist/*opaque_dp*.whl
           retention-days: 30
 
   # Native extension — build per platform
   build-opaque-accounting:
     name: Build opaque-accounting - ${{ matrix.platform }}/${{ matrix.arch }}
+    if: github.ref == 'refs/heads/main'
     needs: [test]
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -179,7 +181,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wheels-opaque-accounting-${{ matrix.platform }}-${{ matrix.arch }}
-          path: packages/opaque-accounting/dist/*.whl
+          path: dist/*opaque_accounting*.whl
           retention-days: 30
 
   # Publish all wheels to GCP (main branch only)

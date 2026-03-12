@@ -2,7 +2,7 @@ name: Publish Release
 
 on:
   pull_request:
-    types: [closed]
+    types: [opened, synchronize, reopened, closed]
     branches: [main]
 
 permissions:
@@ -10,19 +10,22 @@ permissions:
   id-token: write
 
 jobs:
-  publish:
-    name: Build and Publish Release
+  extract-version:
+    name: Extract and validate version
     if: |
-      github.event.pull_request.merged == true &&
-      startsWith(github.event.pull_request.head.ref, 'release/')
+      (github.event_name == 'pull_request' &&
+       startsWith(github.event.pull_request.head.ref, 'release/') &&
+       (github.event.action != 'closed' || github.event.pull_request.merged == true))
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+      is_dry_run: ${{ steps.version.outputs.is_dry_run }}
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Full history for release notes
-
-      - uses: dtolnay/rust-toolchain@stable
 
       - uses: astral-sh/setup-uv@v3
         with:
@@ -32,10 +35,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Extract version from branch name
+      - name: Extract version from branch name or use current version
         id: version
         run: |
-          # Extract version from branch name and validate PEP 440 format
+          # Release PR path
           BRANCH="${{ github.event.pull_request.head.ref }}"
           FULL_VERSION=$(echo "$BRANCH" | sed -n 's/^release\/v\(.*\)$/\1/p')
 
@@ -45,8 +48,14 @@ jobs:
             exit 1
           fi
 
+          if [ "${{ github.event.pull_request.merged }}" = "true" ]; then
+            IS_DRY_RUN="false"
+          else
+            # Pre-merge release PR checks run in dry-run mode automatically.
+            IS_DRY_RUN="true"
+          fi
+
           # Validate PEP 440 and reject non-canonical branch versions.
-          # Phase 1 (release.md) is responsible for normalization.
           FULL_VERSION="$FULL_VERSION" GITHUB_OUTPUT="$GITHUB_OUTPUT" uv run --with packaging python << 'PYTHON_EOF'
           from packaging.version import Version
           import os
@@ -88,29 +97,152 @@ jobs:
             sys.exit(1)
           PYTHON_EOF
 
-      - name: Set version and build wheels
+          echo "is_dry_run=$IS_DRY_RUN" >> $GITHUB_OUTPUT
+
+  build-opaque-dp:
+    name: Build opaque-dp
+    needs: [extract-version]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Pin opaque-accounting dependency
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="${{ needs.extract-version.outputs.version }}"
+          echo "📌 Pinning opaque-accounting==${VERSION}..."
 
-          # Keep repository sources unchanged on main, but ensure release wheel metadata
-          # pins opaque-accounting to the same release version as opaque-dp.
-          sed -i -E "s/\"opaque-accounting[^\"]*\"/\"opaque-accounting==${VERSION}\"/" packages/opaque/pyproject.toml
-
-          if ! grep -q "opaque-accounting==${VERSION}" packages/opaque/pyproject.toml; then
-            echo "❌ Could not update opaque-accounting dependency spec in packages/opaque/pyproject.toml"
+          OPAQUE_DP_PYP="packages/opaque/pyproject.toml"
+          if ! grep -q "opaque-accounting" "$OPAQUE_DP_PYP"; then
+            echo "❌ Could not find opaque-accounting dependency"
             exit 1
           fi
 
-          echo "✅ Set opaque-dp dependency to opaque-accounting==${VERSION} for release build"
+          sed -i -E "s/\"opaque-accounting[^\"]*\"/\"opaque-accounting==${VERSION}\"/" "$OPAQUE_DP_PYP"
 
-          # Update version in both packages (temporary, not committed)
-          cd packages/opaque && uv version $VERSION && uv build --wheel
-          cd ../opaque-accounting && uv version $VERSION && uv build --wheel
+          if ! grep -q "opaque-accounting==${VERSION}" "$OPAQUE_DP_PYP"; then
+            echo "❌ Failed to pin opaque-accounting version"
+            exit 1
+          fi
 
-          # List built wheels
-          ls -lh packages/*/dist/*.whl
+          echo "✅ Pinned opaque-accounting==${VERSION}"
+
+      - name: Build wheel
+        run: |
+          VERSION="${{ needs.extract-version.outputs.version }}"
+          cd packages/opaque
+          uv version "$VERSION"
+          uv build --wheel
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-opaque-dp
+          path: dist/*opaque_dp*.whl
+
+  build-opaque-accounting:
+    name: Build opaque-accounting - ${{ matrix.platform }}/${{ matrix.arch }}
+    needs: [extract-version]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            arch: amd64
+            runner: ubuntu-latest
+          - platform: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - platform: macos
+            arch: arm64
+            runner: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build wheel
+        run: |
+          VERSION="${{ needs.extract-version.outputs.version }}"
+          cd packages/opaque-accounting
+          uv version "$VERSION"
+          uv build --wheel
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-opaque-accounting-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/*opaque_accounting*.whl
+
+  publish:
+    name: Publish Release
+    needs: [extract-version, build-opaque-dp, build-opaque-accounting]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist/
+          merge-multiple: true
+
+      - name: Verify wheels
+        run: |
+          echo "📦 Collected wheels:"
+          ls -lh dist/
+
+          WHEEL_COUNT=$(ls dist/*.whl | wc -l)
+          if [ "$WHEEL_COUNT" -lt 2 ]; then
+            echo "❌ Expected at least 2 wheels (opaque-dp + opaque-accounting), found $WHEEL_COUNT"
+            exit 1
+          fi
+
+          if ! ls dist/opaque_dp-*.whl >/dev/null 2>&1; then
+            echo "❌ Missing opaque-dp wheel"
+            exit 1
+          fi
+
+          if ! ls dist/opaque_accounting-*.whl >/dev/null 2>&1; then
+            echo "❌ Missing opaque-accounting wheels"
+            exit 1
+          fi
+
+          echo "✅ All wheels verified"
 
       - name: Authenticate to GCP
+        if: needs.extract-version.outputs.is_dry_run == 'false'
         id: gcp-auth
         uses: google-github-actions/auth@v2
         with:
@@ -118,9 +250,11 @@ jobs:
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
 
       - name: Set up Google Cloud SDK
+        if: needs.extract-version.outputs.is_dry_run == 'false'
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure GCP Artifact Registry
+        if: needs.extract-version.outputs.is_dry_run == 'false'
         run: |
           gcloud artifacts print-settings python \
             --project=jetbrains-ml4se-fed \
@@ -128,16 +262,24 @@ jobs:
             --location=europe-west4 > ~/.pypirc
 
       - name: Publish to GCP Artifact Registry
+        if: needs.extract-version.outputs.is_dry_run == 'false'
         run: |
+          echo "📦 Publishing $(ls dist/*.whl | wc -l) wheels..."
           uv publish \
             --publish-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/ \
-            packages/opaque/dist/*.whl \
-            packages/opaque-accounting/dist/*.whl
+            dist/*.whl
+
+      - name: Dry run - skip publishing
+        if: needs.extract-version.outputs.is_dry_run == 'true'
+        run: |
+          echo "⚠️  DRY RUN: Skipping publish to GCP"
+          echo "📦 Would publish $(ls dist/*.whl | wc -l) wheels:"
+          ls -lh dist/
 
       - name: Extract release notes from CHANGELOG
         id: release_notes
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="${{ needs.extract-version.outputs.version }}"
           # Extract section from CHANGELOG.md between this version and next version heading
           NOTES=$(awk "/^## \[$VERSION\]/,/^## \[/ {if (/^## \[/ && !p) {p=1; next} if (/^## \[/ && p) exit; if (p) print}" CHANGELOG.md || echo "Release $VERSION")
           if [ -z "$NOTES" ]; then
@@ -148,13 +290,30 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
+        if: needs.extract-version.outputs.is_dry_run == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: opaque-dp v${{ steps.version.outputs.version }}
+          tag_name: v${{ needs.extract-version.outputs.version }}
+          name: opaque-dp v${{ needs.extract-version.outputs.version }}
           body: ${{ steps.release_notes.outputs.notes }}
           draft: false
-          prerelease: ${{ steps.version.outputs.is_prerelease }}
+          prerelease: ${{ needs.extract-version.outputs.is_prerelease }}
           files: |
-            packages/opaque/dist/*.whl
-            packages/opaque-accounting/dist/*.whl
+            dist/*.whl
+
+      - name: Dry run - skip GitHub release
+        if: needs.extract-version.outputs.is_dry_run == 'true'
+        run: |
+          echo "⚠️  DRY RUN: Skipping GitHub Release creation"
+          echo "Would create release: v${{ needs.extract-version.outputs.version }}"
+
+      - name: Summary
+        run: |
+          echo "## Publish Workflow Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version**: ${{ needs.extract-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Pre-release**: ${{ needs.extract-version.outputs.is_prerelease }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Dry Run**: ${{ needs.extract-version.outputs.is_dry_run }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Wheels Built And Collected**:" >> $GITHUB_STEP_SUMMARY
+          ls -1 dist/*.whl | sed 's/^dist\//- /' >> $GITHUB_STEP_SUMMARY

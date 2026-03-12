@@ -1,5 +1,7 @@
 # Changelog
 
+<!-- markdownlint-disable MD024 -->
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
@@ -9,88 +11,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.0] - 2026-03-11
 
-### Added
-
-- Comprehensive documentation refresh for all user-facing docs
-- Cross-linking between documentation sections
-- **Privacy Accounting**: Universal `@lru_cache` on all `pld()` implementations (maxsize=8) for automatic memoization
-
-### Changed
-
-- **Privacy Accounting**: Discretization config now required at Rust FFI boundary (no implicit defaults)
-- **Privacy Accounting**: `cached()` now primarily serves as merge barrier with increased cache size (maxsize=16, up from 8)
-- Accounting: removed `accumulate()` in favor of `parallel_poisson()`
-- Accounting: `adaclip()` now returns an `AdaClip` process (class in transformations submodule)
-- Accounting: all DP processes implement `state_dict()` for serialization
-- Accounting: top-level `opaque.accounting` exports functions only
-
-## [0.2.0] - 2025-11-14
-
-**Complete DP-SGD library with functional API, Rust-based accounting, and HuggingFace integration.**
+**First public release of Opaque's functional DP-SGD stack for PyTorch.**
 
 ### Added
 
-- **Privacy Accounting** (`opaque.accounting`)
-  - Rust-based PLD engine (`opaque_accounting` via PyO3)
-  - Mechanism constructors: `gaussian()`, `poisson()`, `truncated_poisson()`, `accumulate()`, `adaclip()`, `eps_delta()`, `identity()`
-  - Composition via `*` (repeat) and `|` (compose) operators on `DpProcess` objects
-  - Privacy metrics: `.epsilon_at()`, `.delta_at()`, `.advantage()`, `.beta_at()`, `.risk_at()`
-  - `Accountant` class for training-loop integration with optional budget checking
-  - Calibration: `calibrate()` with target factories `epsilon()`, `delta()`, `advantage()`, `beta()`, `risk()`
-  - Configurable PLD precision via `DiscretizationConfig`
-- **Noise Injection** (`opaque.noise`)
-  - `gaussian_noise()` — Stateful Gaussian noise with reproducible RNG
-  - `truncated_gaussian_noise()` — Truncated Gaussian within bounds
-  - Matrix factorization noise: `band_mf_noise()`, `blt_mf_noise()`, `dense_mf_noise()`, `custom_mf_noise()`, `identity_mf_noise()`
-- **Sampling Mechanisms** (`opaque.sampling`)
-  - `PoissonSampler` — Standard Poisson sampling for privacy amplification
-  - `TruncatedPoissonSampler` — Bounded batch sizes
-  - `CyclicPoissonSampling` — Cyclic Poisson for BandMF amplification
-- **Adaptive Clipping** (`opaque.clipping.adaptive`)
-  - `adaptive_clipped_grad()` — Adaptive gradient clipping with explicit state-passing
-  - `AdaptiveClipState` — Immutable state with sensitivity computation
-- **Privacy Auditing** (`opaque.auditing`)
-  - `coin_flip()` / `loss_scores()` / `one_run()` three-step API
-  - `OneRunEstimate` with epsilon estimation, AUROC, bootstrap confidence intervals
-  - `CoinFlip` for membership inference partitioning
-- **Memory Profiling** (`opaque.profiling`)
-  - `MemoryProfiler`, `profile_memory()`, `find_max_microbatch_size()`
-- **HuggingFace Compatibility** (`opaque.compat`)
-  - Auto-patching for vmap-compatible forward passes
-  - Supported: LLaMA, Mistral, Qwen2, Phi, OLMo, Gemma2
+- Functional DP-SGD primitives built on `torch.func`, including per-example gradient clipping, Gaussian and bounded Gaussian noise, and Poisson-family samplers
+- Rust-backed privacy accounting via `opaque-accounting`, including calibration, composition, matrix-factorization mechanisms, and multiple privacy metrics
+- Distributed DP training helpers, empirical privacy auditing, and memory profiling utilities
+- HuggingFace compatibility patches, fused kernel optimizations, and gradient-checkpointed LLM fine-tuning support
 
 ### Changed
 
-- **Modular Architecture**: Split clipping module into proper package structure
-  - `clipping/types.py` — Type definitions (`ClipState`, `FixedClipState`, `AdaptiveClipState`, auxiliary outputs)
-  - `clipping/pytree.py` — Low-level PyTree clipping
-  - `clipping/clipped_fun.py` — Primary clipping API
-  - `clipping/clipped_grad.py` — Gradient clipping wrapper
-  - `clipping/adaptive.py` — Adaptive clipping with explicit state
-- **API Organization**: Reorganized package exports for clarity
-  - Top-level exports: `clip_pytree`, `clipped_fun`, `clipped_grad`, `adaptive_clipped_grad`
-  - Submodule exports: `opaque.accounting`, `opaque.noise`, `opaque.sampling`, `opaque.auditing`
+- Refactored privacy accounting around query-time discretization, universal PLD caching, and function-first `opaque.accounting` exports
+- Simplified the sampling and RNG APIs with immutable keys, automatic distributed sharding, and `local_shard()` / variadic `fold_in()` helpers
+- Redesigned the auditing API around `coin_flip()`, `loss_scores()`, and `one_run()` for HuggingFace-oriented workflows
+- Reworked memory profiling, Transformers patching, and kernel integration for more stable CPU, MPS, and CUDA behavior
 
-### Tests
+### Fixed
 
-- **458 tests passing** (108 auditing + 55 accounting + 56 optimizer + 239 other)
-- **Parallel execution** with pytest-xdist (~3.17x speedup)
-- Numerical equivalence with JAX-Privacy confirmed (atol=1e-5)
+- Stabilized fused kernels, gradient checkpointing, training scripts, and compatibility tests across the supported device matrix
+- Fixed Artifact Registry publishing and release workflow validation for the automated release pipeline
 
 ### Documentation
 
-- **Tutorial 02**: Differential Privacy Noise and Accounting (functional API)
-- **Tutorial 03**: Complete DP-SGD Training
-- **Tutorial 04**: Functional DP Training with TorchOpt
-- **Tutorial 05**: Sampling and Microbatching
-- **Tutorial 06**: LoRA HuggingFace DP Training
-- Updated all tutorials to use functional accounting API
+- Refreshed the documentation set across landing pages, user guides, mechanisms reference, tutorials, and release instructions
 
 ## [0.0.0] - 2025-11-08
 
 **Initial Setup**: Project structure and infrastructure.
 
 ### Added
+
 - Initial project structure and repository setup
 - Package structure (`src/opaque/`)
 - Comprehensive documentation using Material for MkDocs
@@ -118,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - .gitignore - Git ignore patterns
 
 ### Project Decisions
+
 - Use Material for MkDocs for documentation (over Sphinx)
 - Use `torch.utils._pytree` for PyTree operations (with wrapper layer)
 - Follow strict TDD workflow: tests before implementation
