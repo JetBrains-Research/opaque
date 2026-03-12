@@ -164,6 +164,14 @@ dist_utils.sum_gradients(grads)
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
 
+When syncing several objects in the same phase, `sync` accepts variadic
+arguments and returns them in order:
+
+```python
+clip_state, aux = sync(clip_state, aux)
+noise_state = sync(noise_state)
+```
+
 `sync()` auto-dispatches based on the type of the state object. For
 `AdaptiveClipState`, it aggregates `num_clipped` and `total` across ranks
 (sum), recomputes the global clipping rate, and updates `clip_norm`. After
@@ -246,7 +254,7 @@ initialized process group and raise `RuntimeError`.
 | `gather_tensors(tensor, dim)` | Gather variable-size tensors from all ranks and concatenate |
 | `gather_pytree(pytree)` | Gather and concatenate tensor leaves of a PyTree |
 | `assert_pytree_equal(pytree, name)` | Assert a PyTree is identical across ranks (fingerprint check) |
-| `sync(state)` | Dispatch to the right sync function for any state/aux type |
+| `sync(*states)` | Dispatch to the right sync function for one or more state/aux/profiler objects |
 | `sync_object(state, field_ops)` | Synchronize scalar fields of a dataclass across ranks |
 | `assert_scalar_equal(v, name)` | Raise `RuntimeError` if a scalar differs across ranks |
 | `barrier()` | Blocking barrier across all ranks |
@@ -263,6 +271,7 @@ following types are registered:
 | `ClippedFunAux`, `ClippedGradAux`, `AdaptiveClippedGradAux` | Gather aux tensors across ranks |
 | `GaussianNoiseState` | Assert seed and step counter match across ranks |
 | `MFNoiseState` | Assert seed and step counter match for MF noise |
+| `TrainingProfiler` | Aggregate pending step/checkpoint records into a global profiler snapshot |
 
 Rectified and truncated Gaussian noise also return `GaussianNoiseState`,
 so `sync()` handles them automatically — no extra helpers needed.

@@ -243,18 +243,20 @@ def register_sync_type(state_type: type, sync_fn: object) -> None:
     _SYNC_REGISTRY[state_type] = sync_fn
 
 
-def sync(state: object) -> object:
-    """Synchronize a state or auxiliary object across distributed ranks.
+def sync(*states: object) -> object | tuple[object, ...]:
+    """Synchronize one or more state/auxiliary objects across distributed ranks.
 
-    Auto-dispatches to the right specialized sync function based on the
-    type of *state*.  Works with all clipping states, noise states, and
-    auxiliary output types.
+    Auto-dispatches to the right specialized sync function based on each
+    object's type. Works with clipping states/aux, noise states, and
+    profiling objects.
 
     Args:
-        state: Any registered state or aux object.
+        *states: One or more registered state/aux objects.
 
     Returns:
-        Synchronized copy of *state*.
+        - If one argument is provided: synchronized object.
+        - If multiple arguments are provided: tuple of synchronized objects
+          in the same order.
 
     Raises:
         TypeError: If no sync function is registered for the type.
@@ -265,18 +267,25 @@ def sync(state: object) -> object:
 
         clip_state = sync(clip_state)       # dispatches to sync_clip_state
         noise_state = sync(noise_state)     # dispatches to sync_gaussian_noise_state
-        aux = sync(aux)                     # dispatches to sync_aux
+        aux = sync(aux)                     # dispatches to aux sync handler
+        clip_state, aux = sync(clip_state, aux)
     """
-    # Lazy registration: ensure clipping and noise modules have registered
-    # their sync types even if the user only imported opaque.distributed.
-    if not _SYNC_REGISTRY:
-        import opaque.clipping.distributed  # noqa: F401
-        import opaque.noise.distributed  # noqa: F401
 
-    state_type = type(state)
-    if state_type in _SYNC_REGISTRY:
-        return _SYNC_REGISTRY[state_type](state)
-    raise TypeError(
-        f"No sync function registered for {state_type.__name__}. "
-        f"Registered types: {[t.__name__ for t in _SYNC_REGISTRY]}"
-    )
+    def _sync_one(single_state: object) -> object:
+        state_type = type(single_state)
+        if state_type not in _SYNC_REGISTRY:
+            import opaque.clipping.distributed  # noqa: F401
+            import opaque.noise.distributed  # noqa: F401
+            import opaque.profiling.distributed  # noqa: F401
+        if state_type in _SYNC_REGISTRY:
+            return _SYNC_REGISTRY[state_type](single_state)
+        raise TypeError(
+            f"No sync function registered for {state_type.__name__}. "
+            f"Registered types: {[t.__name__ for t in _SYNC_REGISTRY]}"
+        )
+
+    if len(states) == 1:
+        return _sync_one(states[0])
+    if len(states) > 1:
+        return tuple(_sync_one(single_state) for single_state in states)
+    return ()

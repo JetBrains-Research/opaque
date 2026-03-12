@@ -1,29 +1,32 @@
 """Memory and timing profiling tools for DP training.
 
 This module provides lightweight tools for tracking memory usage and timing
-during differentially private training. Designed for easy integration with
-training loops and WANDB logging.
+during differentially private training. Profiling history is modeled as
+explicit immutable state so it can be threaded through training loops and
+safely synchronized across distributed ranks.
 
 Key Components:
     - MemoryStats: Dataclass for GPU memory statistics
-    - StepTimer: Context manager for timing training steps
-    - TrainingProfiler: Main class for tracking memory + timing over training
+    - StepTimer: Context manager for timing individual training steps
+    - TrainingProfiler: Immutable profiler state for memory + timing history
     - Utility functions: get_memory_stats, print_memory, reset_peak_memory
 
 Example - Basic usage in training loop:
-    >>> from opaque.profiling import TrainingProfiler
+    >>> from opaque.profiling import StepTimer, TrainingProfiler
     >>>
     >>> profiler = TrainingProfiler(device)
-    >>> profiler.mark("model_loaded")
+    >>> profiler, _ = profiler.mark("model_loaded")
     >>>
     >>> for step, batch in enumerate(dataloader):
-    ...     with profiler.step():
+    ...     timer = StepTimer(device, batch_size=len(batch))
+    ...     with timer:
     ...         grads = compute_gradients(batch)
     ...         update_params(grads)
+    ...     profiler = profiler.add_step(timer)
     ...
     ...     if step % 10 == 0:
-    ...         print(profiler.summary())
-    ...         wandb.log(profiler.to_dict())
+    ...         print(profiler.step_summary())
+    ...         wandb.log(profiler.current_metrics())
 
 Example - Simple memory tracking:
     >>> from opaque.profiling import get_memory_stats, print_memory
@@ -37,10 +40,9 @@ Example - Simple memory tracking:
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import torch
-import torch.distributed as dist
 
 
 @dataclass
@@ -216,7 +218,7 @@ def empty_cache(device: torch.device | str) -> None:
         torch.mps.empty_cache()
 
 
-@dataclass
+@dataclass(frozen=True)
 class StepMetrics:
     """Metrics for a single training step.
 
@@ -261,7 +263,6 @@ class StepTimer:
         *,
         track_memory: bool = True,
         batch_size: int = 0,
-        distributed: bool = True,
     ):
         """Initialize step timer.
 
@@ -269,53 +270,15 @@ class StepTimer:
             device: PyTorch device (for GPU sync)
             track_memory: Whether to track peak memory during step
             batch_size: Batch size for throughput calculation
-            distributed: If True, in distributed mode reduce elapsed time with
-                max across ranks and batch_size with sum across ranks so
-                throughput reflects global progress.
         """
         if isinstance(device, str):
             device = torch.device(device)
         self.device = device
         self.track_memory = track_memory
         self.batch_size = batch_size
-        self.distributed = distributed
         self.elapsed: float = 0.0
         self.peak_memory_gb: float = 0.0
         self._start_time: float = 0.0
-
-    def _distributed_throughput_adjustment(self) -> None:
-        """Adjust elapsed time and batch size to global values in DDP.
-
-        Uses max elapsed time across ranks (critical path) and sum batch size
-        across ranks (global samples processed this step).
-        """
-        if (
-            not self.distributed
-            or not dist.is_available()
-            or not dist.is_initialized()
-            or dist.get_world_size() <= 1
-        ):
-            return
-
-        backend = dist.get_backend()
-        if backend == "nccl":
-            if not torch.cuda.is_available():
-                return
-            reduce_device = torch.device(f"cuda:{torch.cuda.current_device()}")
-        else:
-            reduce_device = torch.device("cpu")
-
-        elapsed_tensor = torch.tensor(
-            self.elapsed, dtype=torch.float64, device=reduce_device
-        )
-        dist.all_reduce(elapsed_tensor, op=dist.ReduceOp.MAX)
-        self.elapsed = float(elapsed_tensor.item())
-
-        batch_tensor = torch.tensor(
-            float(self.batch_size), dtype=torch.float64, device=reduce_device
-        )
-        dist.all_reduce(batch_tensor, op=dist.ReduceOp.SUM)
-        self.batch_size = int(batch_tensor.item())
 
     def __enter__(self) -> "StepTimer":
         if self.track_memory and self.device.type == "cuda":
@@ -331,7 +294,6 @@ class StepTimer:
             torch.mps.synchronize()
 
         self.elapsed = time.perf_counter() - self._start_time
-        self._distributed_throughput_adjustment()
 
         if self.track_memory:
             stats = get_memory_stats(self.device)
@@ -349,7 +311,7 @@ class StepTimer:
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class Checkpoint:
     """A named memory/time checkpoint during training."""
 
@@ -358,23 +320,25 @@ class Checkpoint:
     memory: MemoryStats
 
 
-@dataclass
+@dataclass(frozen=True)
 class TrainingProfiler:
-    """Profiler for tracking memory and timing throughout training.
+    """Immutable profiler state for tracking memory and timing throughout training.
 
-    Designed for easy integration with training loops:
-    - mark() to record checkpoints at key points
-    - step() context manager for per-step timing
-    - Automatic statistics aggregation
-    - Easy WANDB integration
+    Designed for explicit state threading in training loops:
+    - mark() returns a new profiler state plus current memory stats
+    - add_step() returns a new profiler state with an appended step record
+    - sync(profiler) reduces pending local records into global aggregates
+    - current_metrics()/final_summary() read from explicit profiler state
 
     Example:
         >>> profiler = TrainingProfiler("cuda")
-        >>> profiler.mark("model_loaded")
+        >>> profiler, _ = profiler.mark("model_loaded")
         >>>
         >>> for step, batch in enumerate(dataloader):
-        ...     with profiler.step(batch_size=len(batch)):
+        ...     timer = StepTimer("cuda", batch_size=len(batch))
+        ...     with timer:
         ...         train_step(batch)
+        ...     profiler = profiler.add_step(timer)
         ...
         ...     if step % 10 == 0:
         ...         # Log to console
@@ -387,102 +351,102 @@ class TrainingProfiler:
     """
 
     device: torch.device | str
-    checkpoints: list[Checkpoint] = field(default_factory=list)
-    step_times: list[float] = field(default_factory=list)
-    step_peak_memories: list[float] = field(default_factory=list)
-    step_batch_sizes: list[int] = field(default_factory=list)
+    synced_checkpoints: tuple[Checkpoint, ...] = field(default_factory=tuple)
+    pending_checkpoints: tuple[Checkpoint, ...] = field(default_factory=tuple)
+    synced_steps: tuple[StepMetrics, ...] = field(default_factory=tuple)
+    pending_steps: tuple[StepMetrics, ...] = field(default_factory=tuple)
     _observed_peak_gb: float = 0.0
     _start_time: float = field(default_factory=time.perf_counter)
 
     def __post_init__(self):
         if isinstance(self.device, str):
-            self.device = torch.device(self.device)
+            object.__setattr__(self, "device", torch.device(self.device))
 
-    def _update_observed_peak(self, peak_gb: float) -> None:
-        """Track software high-water mark across checkpoints and steps."""
-        if peak_gb > self._observed_peak_gb:
-            self._observed_peak_gb = peak_gb
+    @property
+    def checkpoints(self) -> tuple[Checkpoint, ...]:
+        """All checkpoints, with synced entries before pending local entries."""
+        return self.synced_checkpoints + self.pending_checkpoints
 
-    def mark(self, name: str) -> MemoryStats:
-        """Record a named checkpoint with current memory state.
+    @property
+    def step_metrics(self) -> tuple[StepMetrics, ...]:
+        """All step metrics, with synced entries before pending local entries."""
+        return self.synced_steps + self.pending_steps
+
+    @property
+    def is_fully_synced(self) -> bool:
+        """Whether there are no pending local records left to synchronize."""
+        return not self.pending_steps and not self.pending_checkpoints
+
+    def mark(self, name: str) -> tuple["TrainingProfiler", MemoryStats]:
+        """Record a named checkpoint and return updated profiler state.
 
         Args:
             name: Name for this checkpoint (e.g., "model_loaded", "after_warmup")
 
         Returns:
-            Current MemoryStats
+            Tuple of (updated profiler, current MemoryStats)
 
         Example:
-            >>> profiler.mark("model_loaded")
+            >>> profiler, _ = profiler.mark("model_loaded")
             >>> # ... training ...
-            >>> profiler.mark("training_complete")
+            >>> profiler, _ = profiler.mark("training_complete")
         """
         stats = get_memory_stats(self.device)
-        self._update_observed_peak(stats.peak_gb)
-        self.checkpoints.append(
-            Checkpoint(
-                name=name,
-                timestamp=time.perf_counter() - self._start_time,
-                memory=stats,
-            )
+        peak_gb = max(self._observed_peak_gb, stats.peak_gb)
+        checkpoint = Checkpoint(
+            name=name,
+            timestamp=time.perf_counter() - self._start_time,
+            memory=stats,
         )
-        return stats
+        profiler = replace(
+            self,
+            pending_checkpoints=self.pending_checkpoints + (checkpoint,),
+            _observed_peak_gb=peak_gb,
+        )
+        return profiler, stats
 
-    def step(
-        self,
-        *,
-        batch_size: int = 0,
-        track_memory: bool = True,
-        distributed: bool = True,
-    ) -> StepTimer:
-        """Create a context manager for timing a training step.
+    def add_step(self, step: StepMetrics | StepTimer) -> "TrainingProfiler":
+        """Return updated profiler state with a recorded step.
 
         Args:
-            batch_size: Number of samples in batch (for throughput calc)
-            track_memory: Whether to track peak memory during step
-            distributed: If True, automatically compute global throughput in
-                distributed runs using sum(batch_size) and max(step_time).
+            step: Completed step measurement or timer.
 
         Returns:
-            StepTimer context manager
+            Updated profiler state.
 
         Example:
-            >>> with profiler.step(batch_size=32):
+            >>> timer = StepTimer("cuda", batch_size=32)
+            >>> with timer:
             ...     train_step(batch)
+            >>> profiler = profiler.add_step(timer)
         """
-        timer = StepTimer(
-            self.device,
-            track_memory=track_memory,
-            batch_size=batch_size,
-            distributed=distributed,
+        metrics = step.metrics if isinstance(step, StepTimer) else step
+        peak_gb = max(self._observed_peak_gb, metrics.peak_memory_gb)
+        return replace(
+            self,
+            pending_steps=self.pending_steps + (metrics,),
+            _observed_peak_gb=peak_gb,
         )
-
-        # Create wrapper that records metrics after step
-        class RecordingTimer:
-            def __init__(inner_self, timer: StepTimer, profiler: TrainingProfiler):
-                inner_self.timer = timer
-                inner_self.profiler = profiler
-
-            def __enter__(inner_self) -> StepTimer:
-                return inner_self.timer.__enter__()
-
-            def __exit__(inner_self, *args):
-                inner_self.timer.__exit__(*args)
-                inner_self.profiler.step_times.append(inner_self.timer.elapsed)
-                inner_self.profiler.step_peak_memories.append(
-                    inner_self.timer.peak_memory_gb
-                )
-                inner_self.profiler._update_observed_peak(
-                    inner_self.timer.peak_memory_gb
-                )
-                inner_self.profiler.step_batch_sizes.append(inner_self.timer.batch_size)
-
-        return RecordingTimer(timer, self)
 
     @property
     def num_steps(self) -> int:
         """Number of training steps recorded."""
-        return len(self.step_times)
+        return len(self.synced_steps) + len(self.pending_steps)
+
+    @property
+    def step_times(self) -> tuple[float, ...]:
+        """Step times in seconds."""
+        return tuple(step.step_time for step in self.step_metrics)
+
+    @property
+    def step_peak_memories(self) -> tuple[float, ...]:
+        """Peak memory for each recorded step."""
+        return tuple(step.peak_memory_gb for step in self.step_metrics)
+
+    @property
+    def step_batch_sizes(self) -> tuple[int, ...]:
+        """Batch size for each recorded step."""
+        return tuple(step.batch_size for step in self.step_metrics)
 
     @property
     def total_time(self) -> float:
@@ -492,22 +456,22 @@ class TrainingProfiler:
     @property
     def avg_step_time(self) -> float:
         """Average step time in seconds."""
-        if not self.step_times:
+        if not self.step_metrics:
             return 0.0
-        return sum(self.step_times) / len(self.step_times)
+        return self.total_time / self.num_steps
 
     @property
     def avg_step_time_stable(self) -> float:
         """Average step time excluding first step (warmup)."""
-        if len(self.step_times) <= 1:
+        if self.num_steps <= 1:
             return self.avg_step_time
-        return sum(self.step_times[1:]) / len(self.step_times[1:])
+        return sum(self.step_times[1:]) / (self.num_steps - 1)
 
     @property
     def peak_memory_gb(self) -> float:
         """Maximum peak memory across all steps."""
         current_peak = get_memory_stats(self.device).peak_gb
-        step_peak = max(self.step_peak_memories) if self.step_peak_memories else 0.0
+        step_peak = max(self.step_peak_memories) if self.step_metrics else 0.0
         return max(self._observed_peak_gb, step_peak, current_peak)
 
     @property
@@ -527,18 +491,16 @@ class TrainingProfiler:
         Returns:
             Dict with performance and memory metrics
         """
-        if not self.step_times:
+        if not self.step_metrics:
             return {}
 
-        last_step_time = self.step_times[-1]
-        last_batch_size = self.step_batch_sizes[-1] if self.step_batch_sizes else 0
-        last_throughput = last_batch_size / last_step_time if last_step_time > 0 else 0
+        last_step = self.step_metrics[-1]
 
         mem = get_memory_stats(self.device)
 
         metrics = {
-            "step_time_sec": last_step_time,
-            "throughput_samples_sec": last_throughput,
+            "step_time_sec": last_step.step_time,
+            "throughput_samples_sec": last_step.throughput,
             "avg_step_time_sec": self.avg_step_time_stable,
             "memory_allocated_gb": mem.allocated_gb,
             "memory_reserved_gb": mem.reserved_gb,
@@ -556,18 +518,15 @@ class TrainingProfiler:
 
     def step_summary(self) -> str:
         """One-line summary of recent step performance."""
-        if not self.step_times:
+        if not self.step_metrics:
             return "No steps recorded"
 
-        last_time = self.step_times[-1]
-        last_mem = self.step_peak_memories[-1] if self.step_peak_memories else 0
-        last_batch = self.step_batch_sizes[-1] if self.step_batch_sizes else 0
-        throughput = last_batch / last_time if last_time > 0 else 0
+        last_step = self.step_metrics[-1]
 
         return (
-            f"Step: {last_time:.2f}s | "
-            f"Mem: {last_mem:.1f}GB | "
-            f"Throughput: {throughput:.1f} samples/s"
+            f"Step: {last_step.step_time:.2f}s | "
+            f"Mem: {last_step.peak_memory_gb:.1f}GB | "
+            f"Throughput: {last_step.throughput:.1f} samples/s"
         )
 
     def final_summary(self) -> str:
@@ -643,10 +602,6 @@ class TrainingProfiler:
             prev_mem = cp.memory.peak_gb
         return "\n".join(lines)
 
-
-# Keep backwards compatibility with old API by re-exporting key functions
-# The old API had MemoryProfile, MemoryTracker, profile_memory, find_max_microbatch_size
-# We'll keep the simple utility functions and add the new TrainingProfiler
 
 __all__ = [
     # New API

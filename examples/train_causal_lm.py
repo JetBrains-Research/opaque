@@ -64,7 +64,7 @@ from opaque.clipping import adaptive_clipped_grad, clipped_grad
 from opaque.compat.transformers import is_kernel_patched
 from opaque.distributed import sum_gradients, sync
 from opaque.noise import gaussian_noise
-from opaque.profiling import TrainingProfiler, print_memory, reset_peak_memory
+from opaque.profiling import StepTimer, TrainingProfiler, print_memory, reset_peak_memory
 from opaque.random import key, fold_in
 from opaque.sampling import PoissonSampler
 from opaque.sampling.distributed import local_shard
@@ -690,7 +690,7 @@ def main():
         model_kwargs["torch_dtype"] = torch_dtype
         model = AutoModelForCausalLM.from_pretrained(args.model_name, **model_kwargs)
     model = model.to(device)
-    profiler.mark("model_loaded")
+    profiler, _ = profiler.mark("model_loaded")
     print_memory(device, "After model load")
 
     # Load tokenizer
@@ -710,7 +710,7 @@ def main():
     )
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
-    profiler.mark("lora_applied")
+    profiler, _ = profiler.mark("lora_applied")
     print_memory(device, "After LoRA")
 
     # Load and prepare dataset
@@ -865,7 +865,7 @@ def main():
     param_names = list(trainable_params.keys())
     elapsed = time.time() - start_time
     print(f"Trainable parameters: {len(param_names)} (took {elapsed:.1f}s)")
-    profiler.mark("functional_conversion")
+    profiler, _ = profiler.mark("functional_conversion")
     print_memory(device, "After functional conversion")
 
     def merged_params(trainable):
@@ -1028,7 +1028,7 @@ def main():
 
     # Reset peak memory before training to get accurate training peak
     reset_peak_memory(device)
-    profiler.mark("training_start")
+    profiler, _ = profiler.mark("training_start")
     print_memory(device, "Before training")
 
     for epoch in range(args.num_epochs):
@@ -1064,7 +1064,8 @@ def main():
                 continue
 
             # Time the training step using profiler
-            with profiler.step(batch_size=len(input_ids)):
+            step_timer = StepTimer(device, batch_size=len(input_ids))
+            with step_timer:
                 # Compute clipped gradients (with state passing)
                 with offload_ctx:
                     (grads_tuple, aux), clip_state = grad_fn(
@@ -1073,11 +1074,9 @@ def main():
                 current_clip_norm = clip_state.clip_norm
 
                 if is_ddp:
-                    if args.adaptive_clipping:
-                        clip_state = sync(clip_state)
-                        current_clip_norm = clip_state.clip_norm
+                    clip_state, aux = sync(clip_state, aux)
+                    current_clip_norm = clip_state.clip_norm
                     sum_gradients(grads_tuple)
-                    aux = sync(aux)
 
                 # Add Gaussian noise
                 stddev = noise_multiplier * clip_state.sensitivity()
@@ -1092,6 +1091,8 @@ def main():
 
                 # Apply updates
                 trainable_params = torchopt.apply_updates(trainable_params, updates)
+
+            profiler = profiler.add_step(step_timer)
 
             # Extract metrics from aux
             avg_loss = aux.loss_values.mean().item()
@@ -1108,6 +1109,8 @@ def main():
             # Log training metrics every log_steps
             if global_step % args.log_steps == 0:
                 num_clipped = int(clip_rate * len(aux.grad_norms))
+                log_profiler = sync(profiler) if is_ddp else profiler
+                profiler = log_profiler  # flush pending steps so next sync covers only new records
                 perf_metrics = profiler.current_metrics()
 
                 # W&B logging
@@ -1213,9 +1216,10 @@ def main():
             }, step=global_step)
 
     # Mark training complete and print profiler summary
-    profiler.mark("training_complete")
-    print("\n" + profiler.final_summary())
-    print("\n" + profiler.checkpoint_summary())
+    profiler, _ = profiler.mark("training_complete")
+    summary_profiler = sync(profiler) if is_ddp else profiler
+    print("\n" + summary_profiler.final_summary())
+    print("\n" + summary_profiler.checkpoint_summary())
 
     if use_wandb:
         wandb.finish()

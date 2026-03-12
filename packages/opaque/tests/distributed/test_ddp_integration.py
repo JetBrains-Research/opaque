@@ -27,6 +27,7 @@ from opaque.distributed import (
     sync,
 )
 from opaque.noise import gaussian_noise, identity_mf_noise
+from opaque.profiling import StepTimer, TrainingProfiler
 from opaque.random import key
 from opaque.utils import make_functional
 from opaque.utils.pytree import tree_leaves
@@ -290,6 +291,52 @@ def _worker_sync_noise_states(rank: int, world_size: int, port: int) -> None:
         _cleanup_ddp()
 
 
+def _worker_sync_profiler(rank: int, world_size: int, port: int) -> None:
+    _setup_ddp(rank, world_size, port)
+    try:
+        device = torch.device(f"cuda:{rank}")
+        profiler = TrainingProfiler(device)
+
+        timer = StepTimer(device, batch_size=4)
+        with timer:
+            x = torch.randn(1024 + 512 * rank, device=device)
+            _ = (x * x).sum()
+        profiler = profiler.add_step(timer)
+
+        # --- first sync ---
+        synced_profiler = sync(profiler)
+        assert synced_profiler is not profiler          # must be a new object
+        assert synced_profiler.num_steps == 1
+        # batch_size is summed across ranks (4 per rank × world_size)
+        assert synced_profiler.step_batch_sizes[-1] == world_size * 4
+        # original profiler must be unchanged
+        assert profiler.step_batch_sizes[-1] == 4
+        # pending records moved to synced; nothing left to flush
+        assert synced_profiler.is_fully_synced
+        # step time uses max across ranks (rank 1 does more work → rank 1 ≥ rank 0)
+        assert synced_profiler.step_metrics[-1].step_time >= 0.0
+
+        # peak is consistent across ranks after sync
+        local_peak = float(synced_profiler._observed_peak_gb)
+        peak_min = reduce_scalar(local_peak, op="min", device=device)
+        peak_max = reduce_scalar(local_peak, op="max", device=device)
+        assert abs(peak_max - peak_min) < 1e-6
+
+        # --- second sync is idempotent: returns the same object ---
+        twice_synced = sync(synced_profiler)
+        assert twice_synced is synced_profiler
+
+        # --- checkpoint sync ---
+        profiler_with_mark, _ = synced_profiler.mark("after_sync")
+        assert not profiler_with_mark.is_fully_synced          # mark adds a pending checkpoint
+        synced_with_mark = sync(profiler_with_mark)
+        assert synced_with_mark.is_fully_synced
+        assert len(synced_with_mark.synced_checkpoints) == 1
+        assert synced_with_mark.synced_checkpoints[0].name == "after_sync"
+    finally:
+        _cleanup_ddp()
+
+
 def _worker_dp_training_step(rank: int, world_size: int, port: int) -> None:
     _setup_ddp(rank, world_size, port)
     try:
@@ -521,6 +568,11 @@ class TestDeterministicNoise:
         if torch.cuda.device_count() < 2:
             pytest.skip("Requires >= 2 CUDA devices")
         _spawn(2, _worker_sync_noise_states)
+
+    def test_sync_profiler(self):
+        if torch.cuda.device_count() < 2:
+            pytest.skip("Requires >= 2 CUDA devices")
+        _spawn(2, _worker_sync_profiler)
 
 
 class TestEndToEndDPTraining:
