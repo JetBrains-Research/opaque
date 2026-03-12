@@ -1,171 +1,171 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/limitations/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/limitations/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/api/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/api/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/api/accounting/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/api/accounting/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/api/auditing/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/api/auditing/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/api/clipping/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/api/clipping/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/api/distributed/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/api/distributed/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/api/noise/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/api/noise/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/api/optimizers/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/api/optimizers/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/api/rng/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/api/rng/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/api/sampling/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/api/sampling/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/api/utilities/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/api/utilities/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/development/MEMORY_OPTIMIZATION_PLAN/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/development/MEMORY_OPTIMIZATION_PLAN/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/development/parallelism_compatibility/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/development/parallelism_compatibility/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/getting-started/installation/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/getting-started/installation/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/getting-started/quickstart/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/getting-started/quickstart/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/mechanisms/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/mechanisms/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/mechanisms/band-mf/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/mechanisms/band-mf/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/mechanisms/blt/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/mechanisms/blt/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/mechanisms/dense-mf/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/mechanisms/dense-mf/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/mechanisms/gaussian/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/mechanisms/gaussian/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/mechanisms/rectified-gaussian/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/mechanisms/rectified-gaussian/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/mechanisms/truncated-gaussian/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/mechanisms/truncated-gaussian/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/tutorials/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/tutorials/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/tutorials/accounting_and_calibration/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/tutorials/accounting_and_calibration/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/tutorials/distributed_training/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/tutorials/distributed_training/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/tutorials/dp_sgd_training/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/tutorials/dp_sgd_training/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/tutorials/llm_finetuning/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/tutorials/llm_finetuning/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/tutorials/privacy_auditing/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/tutorials/privacy_auditing/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/tutorials/sampling_and_microbatching/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/tutorials/sampling_and_microbatching/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/user-guide/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/user-guide/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/user-guide/accounting/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/user-guide/accounting/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/user-guide/auditing/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/user-guide/auditing/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/user-guide/clipping/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/user-guide/clipping/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/user-guide/distributed/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/user-guide/distributed/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/user-guide/dp-concepts/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/user-guide/dp-concepts/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/user-guide/huggingface/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/user-guide/huggingface/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/user-guide/memory-optimizations/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/user-guide/memory-optimizations/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/user-guide/noise/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/user-guide/noise/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/user-guide/optimizers/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/user-guide/optimizers/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/user-guide/rng-key/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/user-guide/rng-key/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
     <url>
-         <loc>https://opaque.readthedocs.io/0.1.0/user-guide/sampling/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/0.1.0/user-guide/sampling/</loc>
          <lastmod>2026-03-12</lastmod>
     </url>
 </urlset>
