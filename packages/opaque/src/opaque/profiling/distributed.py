@@ -92,8 +92,10 @@ def sync_training_profiler(profiler: TrainingProfiler) -> TrainingProfiler:
 
     return replace(
         profiler,
-        step_metrics=profiler.step_metrics[: profiler._synced_steps] + tuple(synced_steps),
-        checkpoints=profiler.checkpoints[: profiler._synced_checkpoints] + tuple(synced_checkpoints),
+        step_metrics=profiler.step_metrics[: profiler._synced_steps]
+        + tuple(synced_steps),
+        checkpoints=profiler.checkpoints[: profiler._synced_checkpoints]
+        + tuple(synced_checkpoints),
         _synced_steps=len(profiler.step_metrics),
         _synced_checkpoints=len(profiler.checkpoints),
         _observed_peak_gb=observed_peak_gb,

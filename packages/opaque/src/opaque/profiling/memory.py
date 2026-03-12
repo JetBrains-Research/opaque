@@ -365,10 +365,9 @@ class TrainingProfiler:
     @property
     def is_fully_synced(self) -> bool:
         """Whether there are no pending local records left to synchronize."""
-        return (
-            self._synced_steps == len(self.step_metrics)
-            and self._synced_checkpoints == len(self.checkpoints)
-        )
+        return self._synced_steps == len(
+            self.step_metrics
+        ) and self._synced_checkpoints == len(self.checkpoints)
 
     def mark(self, name: str) -> tuple["TrainingProfiler", MemoryStats]:
         """Record a named checkpoint and return updated profiler state.
