@@ -327,7 +327,7 @@ class TrainingProfiler:
     Designed for explicit state threading in training loops:
     - mark() returns a new profiler state plus current memory stats
     - add_step() returns a new profiler state with an appended step record
-    - sync(profiler) reduces pending local records into global aggregates
+    - sync(profiler) reduces only the unsynchronized suffix into global aggregates
     - current_metrics()/final_summary() read from explicit profiler state
 
     Example:
@@ -351,10 +351,10 @@ class TrainingProfiler:
     """
 
     device: torch.device | str
-    synced_checkpoints: tuple[Checkpoint, ...] = field(default_factory=tuple)
-    pending_checkpoints: tuple[Checkpoint, ...] = field(default_factory=tuple)
-    synced_steps: tuple[StepMetrics, ...] = field(default_factory=tuple)
-    pending_steps: tuple[StepMetrics, ...] = field(default_factory=tuple)
+    checkpoints: tuple[Checkpoint, ...] = field(default_factory=tuple)
+    step_metrics: tuple[StepMetrics, ...] = field(default_factory=tuple)
+    _synced_checkpoints: int = 0
+    _synced_steps: int = 0
     _observed_peak_gb: float = 0.0
     _start_time: float = field(default_factory=time.perf_counter)
 
@@ -363,19 +363,12 @@ class TrainingProfiler:
             object.__setattr__(self, "device", torch.device(self.device))
 
     @property
-    def checkpoints(self) -> tuple[Checkpoint, ...]:
-        """All checkpoints, with synced entries before pending local entries."""
-        return self.synced_checkpoints + self.pending_checkpoints
-
-    @property
-    def step_metrics(self) -> tuple[StepMetrics, ...]:
-        """All step metrics, with synced entries before pending local entries."""
-        return self.synced_steps + self.pending_steps
-
-    @property
     def is_fully_synced(self) -> bool:
         """Whether there are no pending local records left to synchronize."""
-        return not self.pending_steps and not self.pending_checkpoints
+        return (
+            self._synced_steps == len(self.step_metrics)
+            and self._synced_checkpoints == len(self.checkpoints)
+        )
 
     def mark(self, name: str) -> tuple["TrainingProfiler", MemoryStats]:
         """Record a named checkpoint and return updated profiler state.
@@ -400,7 +393,7 @@ class TrainingProfiler:
         )
         profiler = replace(
             self,
-            pending_checkpoints=self.pending_checkpoints + (checkpoint,),
+            checkpoints=self.checkpoints + (checkpoint,),
             _observed_peak_gb=peak_gb,
         )
         return profiler, stats
@@ -424,14 +417,14 @@ class TrainingProfiler:
         peak_gb = max(self._observed_peak_gb, metrics.peak_memory_gb)
         return replace(
             self,
-            pending_steps=self.pending_steps + (metrics,),
+            step_metrics=self.step_metrics + (metrics,),
             _observed_peak_gb=peak_gb,
         )
 
     @property
     def num_steps(self) -> int:
         """Number of training steps recorded."""
-        return len(self.synced_steps) + len(self.pending_steps)
+        return len(self.step_metrics)
 
     @property
     def step_times(self) -> tuple[float, ...]:

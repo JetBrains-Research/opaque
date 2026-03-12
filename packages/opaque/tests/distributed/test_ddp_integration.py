@@ -331,8 +331,9 @@ def _worker_sync_profiler(rank: int, world_size: int, port: int) -> None:
         assert not profiler_with_mark.is_fully_synced  # mark adds a pending checkpoint
         synced_with_mark = sync(profiler_with_mark)
         assert synced_with_mark.is_fully_synced
-        assert len(synced_with_mark.synced_checkpoints) == 1
-        assert synced_with_mark.synced_checkpoints[0].name == "after_sync"
+        assert len(synced_with_mark.checkpoints) == 1
+        assert synced_with_mark.checkpoints[0].name == "after_sync"
+        assert synced_with_mark._synced_checkpoints == len(synced_with_mark.checkpoints)
     finally:
         _cleanup_ddp()
 

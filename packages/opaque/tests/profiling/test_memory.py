@@ -167,7 +167,7 @@ class TestTrainingProfiler:
         """Should exclude first step for stable average."""
         profiler = TrainingProfiler(
             "cpu",
-            synced_steps=(
+            step_metrics=(
                 StepMetrics(step_time=10.0, batch_size=1, throughput=0.1),
                 StepMetrics(step_time=2.0, batch_size=1, throughput=0.5),
                 StepMetrics(step_time=2.0, batch_size=1, throughput=0.5),

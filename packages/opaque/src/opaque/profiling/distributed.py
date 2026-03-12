@@ -19,15 +19,15 @@ __all__ = ["sync_training_profiler"]
 
 
 def sync_training_profiler(profiler: TrainingProfiler) -> TrainingProfiler:
-    """Synchronize pending profiler records across distributed ranks.
+    """Synchronize unsynchronized profiler records across distributed ranks.
 
-    This helper aggregates only the pending local suffix of the profiler:
+    This helper aggregates only the unsynchronized suffix of the profiler:
     - step time uses max across ranks (critical path)
     - batch size uses sum across ranks (global samples)
     - peak memory uses max across ranks
 
-    Calling ``sync(profiler)`` multiple times is safe because synchronized
-    records are moved into the synced prefix of the immutable profiler state.
+    Calling ``sync(profiler)`` multiple times is safe because the profiler
+    tracks cursor positions for already synchronized records.
     """
     if not is_distributed():
         return profiler
@@ -41,19 +41,22 @@ def sync_training_profiler(profiler: TrainingProfiler) -> TrainingProfiler:
         else torch.device(profiler.device)
     )
 
+    unsynced_steps = profiler.step_metrics[profiler._synced_steps :]
+    unsynced_checkpoints = profiler.checkpoints[profiler._synced_checkpoints :]
+
     assert_scalar_equal(
-        float(len(profiler.pending_steps)),
-        name="TrainingProfiler.pending_steps",
+        float(len(unsynced_steps)),
+        name="TrainingProfiler.unsynced_steps",
         device=device,
     )
     assert_scalar_equal(
-        float(len(profiler.pending_checkpoints)),
-        name="TrainingProfiler.pending_checkpoints",
+        float(len(unsynced_checkpoints)),
+        name="TrainingProfiler.unsynced_checkpoints",
         device=device,
     )
 
     synced_steps = []
-    for step in profiler.pending_steps:
+    for step in unsynced_steps:
         step_time = reduce_scalar(float(step.step_time), op="max", device=device)
         batch_size = int(reduce_scalar(float(step.batch_size), op="sum", device=device))
         peak_memory_gb = reduce_scalar(
@@ -70,7 +73,7 @@ def sync_training_profiler(profiler: TrainingProfiler) -> TrainingProfiler:
         )
 
     synced_checkpoints = []
-    for checkpoint in profiler.pending_checkpoints:
+    for checkpoint in unsynced_checkpoints:
         timestamp = reduce_scalar(float(checkpoint.timestamp), op="max", device=device)
         peak_gb = reduce_scalar(
             float(checkpoint.memory.peak_gb), op="max", device=device
@@ -89,10 +92,10 @@ def sync_training_profiler(profiler: TrainingProfiler) -> TrainingProfiler:
 
     return replace(
         profiler,
-        synced_steps=profiler.synced_steps + tuple(synced_steps),
-        pending_steps=(),
-        synced_checkpoints=profiler.synced_checkpoints + tuple(synced_checkpoints),
-        pending_checkpoints=(),
+        step_metrics=profiler.step_metrics[: profiler._synced_steps] + tuple(synced_steps),
+        checkpoints=profiler.checkpoints[: profiler._synced_checkpoints] + tuple(synced_checkpoints),
+        _synced_steps=len(profiler.step_metrics),
+        _synced_checkpoints=len(profiler.checkpoints),
         _observed_peak_gb=observed_peak_gb,
     )
 

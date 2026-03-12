@@ -271,7 +271,7 @@ following types are registered:
 | `ClippedFunAux`, `ClippedGradAux`, `AdaptiveClippedGradAux` | Gather aux tensors across ranks |
 | `GaussianNoiseState` | Assert seed and step counter match across ranks |
 | `MFNoiseState` | Assert seed and step counter match for MF noise |
-| `TrainingProfiler` | Aggregate pending step/checkpoint records into a global profiler snapshot |
+| `TrainingProfiler` | Aggregate only unsynchronized step/checkpoint suffix into a global profiler snapshot |
 
 Rectified and truncated Gaussian noise also return `GaussianNoiseState`,
 so `sync()` handles them automatically — no extra helpers needed.
