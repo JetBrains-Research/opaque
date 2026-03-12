@@ -138,7 +138,9 @@ def _worker_all_reduce_values(rank: int, world_size: int, port: int) -> None:
         base = torch.tensor([float(rank + 1), float(2 * (rank + 1))], device=device)
 
         result = all_reduce(base, op="sum")
-        assert torch.allclose(base, torch.tensor([float(rank + 1), float(2 * (rank + 1))], device=device))
+        assert torch.allclose(
+            base, torch.tensor([float(rank + 1), float(2 * (rank + 1))], device=device)
+        )
         assert torch.allclose(result, torch.tensor([3.0, 6.0], device=device))
 
         averaged = base.clone()
@@ -376,7 +378,9 @@ def _worker_dp_training_step(rank: int, world_size: int, port: int) -> None:
 
         grads, clip_state = grad_fn(params, x, y, state=clip_state)
         summed_grads = sum_gradients(grads)
-        for grad, summed in zip(tree_leaves(grads), tree_leaves(summed_grads), strict=False):
+        for grad, summed in zip(
+            tree_leaves(grads), tree_leaves(summed_grads), strict=False
+        ):
             assert grad is not summed
         noisy_grads, noise_state = noise_fn(summed_grads, noise_state)
 
