@@ -24,6 +24,7 @@ from opaque.distributed import (
     get_world_size,
     reduce_scalar,
     sum_gradients,
+    sum_gradients_,
     sync,
 )
 from opaque.noise import gaussian_noise, identity_mf_noise
@@ -129,39 +130,36 @@ def _worker_reduce_scalar(rank: int, world_size: int, port: int) -> None:
 
 
 def _worker_all_reduce_values(rank: int, world_size: int, port: int) -> None:
-    from opaque.distributed import all_reduce
+    from opaque.distributed import all_reduce, all_reduce_
 
     _setup_ddp(rank, world_size, port)
     try:
         device = torch.device(f"cuda:{rank}")
         base = torch.tensor([float(rank + 1), float(2 * (rank + 1))], device=device)
 
-        summed = base.clone()
-        result = all_reduce(summed, op="sum")
-        assert result is None
-        assert torch.allclose(summed, torch.tensor([3.0, 6.0], device=device))
+        result = all_reduce(base, op="sum")
+        assert torch.allclose(base, torch.tensor([float(rank + 1), float(2 * (rank + 1))], device=device))
+        assert torch.allclose(result, torch.tensor([3.0, 6.0], device=device))
 
         averaged = base.clone()
-        all_reduce(averaged, op="mean")
+        inplace_result = all_reduce_(averaged, op="mean")
+        assert inplace_result is None
         assert torch.allclose(averaged, torch.tensor([1.5, 3.0], device=device))
 
-        maximum = base.clone()
-        all_reduce(maximum, op="max")
+        maximum = all_reduce(base, op="max")
         assert torch.allclose(maximum, torch.tensor([2.0, 4.0], device=device))
 
-        minimum = base.clone()
-        all_reduce(minimum, op="min")
+        minimum = all_reduce(base, op="min")
         assert torch.allclose(minimum, torch.tensor([1.0, 2.0], device=device))
 
-        product = base.clone()
-        all_reduce(product, op="product")
+        product = all_reduce(base, op="product")
         assert torch.allclose(product, torch.tensor([2.0, 8.0], device=device))
     finally:
         _cleanup_ddp()
 
 
 def _worker_reduce_pytree(rank: int, world_size: int, port: int) -> None:
-    from opaque.distributed import reduce_pytree
+    from opaque.distributed import reduce_pytree, reduce_pytree_
 
     _setup_ddp(rank, world_size, port)
     try:
@@ -171,8 +169,19 @@ def _worker_reduce_pytree(rank: int, world_size: int, port: int) -> None:
             "b": torch.tensor([0.5], device=device),
         }
 
+        local_grads = {
+            "w": grads["w"].clone(),
+            "b": grads["b"].clone(),
+        }
+
         result = reduce_pytree(grads, op="sum")
-        assert result is None
+        assert torch.allclose(grads["w"], local_grads["w"])
+        assert torch.allclose(grads["b"], local_grads["b"])
+        assert torch.allclose(result["w"], torch.tensor([2.0, 4.0], device=device))
+        assert torch.allclose(result["b"], torch.tensor([1.0], device=device))
+
+        inplace_result = reduce_pytree_(grads, op="sum")
+        assert inplace_result is None
         assert torch.allclose(grads["w"], torch.tensor([2.0, 4.0], device=device))
         assert torch.allclose(grads["b"], torch.tensor([1.0], device=device))
     finally:
@@ -193,19 +202,26 @@ def _worker_reduce_pytree_nested(rank: int, world_size: int, port: int) -> None:
             "head": [torch.tensor([2.0 * (rank + 1)], device=device)],
         }
 
+        original_w = pytree["encoder"]["w"].clone()
+        original_b = pytree["encoder"]["b"].clone()
+        original_head = pytree["head"][0].clone()
+
         result = reduce_pytree(pytree, op="sum")
-        assert result is None
+
+        assert torch.allclose(pytree["encoder"]["w"], original_w)
+        assert torch.allclose(pytree["encoder"]["b"], original_b)
+        assert torch.allclose(pytree["head"][0], original_head)
 
         assert torch.allclose(
-            pytree["encoder"]["w"],
+            result["encoder"]["w"],
             torch.tensor([[3.0, 2.0]], device=device),
         )
         assert torch.allclose(
-            pytree["encoder"]["b"],
+            result["encoder"]["b"],
             torch.tensor([1.0], device=device),
         )
         assert torch.allclose(
-            pytree["head"][0],
+            result["head"][0],
             torch.tensor([6.0], device=device),
         )
     finally:
@@ -359,9 +375,10 @@ def _worker_dp_training_step(rank: int, world_size: int, port: int) -> None:
         y = torch.randn(batch_size, 1, device=device)
 
         grads, clip_state = grad_fn(params, x, y, state=clip_state)
-        result = sum_gradients(grads)
-        assert result is None
-        noisy_grads, noise_state = noise_fn(grads, noise_state)
+        summed_grads = sum_gradients(grads)
+        for grad, summed in zip(tree_leaves(grads), tree_leaves(summed_grads), strict=False):
+            assert grad is not summed
+        noisy_grads, noise_state = noise_fn(summed_grads, noise_state)
 
         for grad in tree_leaves(noisy_grads):
             assert grad.device == device
@@ -504,7 +521,7 @@ def _worker_checkpointed_dp_training_step(
         y = torch.randn(8, 1, device=device)
 
         grads, _ = grad_fn(params, x, y, state=clip_state)
-        result = sum_gradients(grads)
+        result = sum_gradients_(grads)
         assert result is None
 
         for grad in tree_leaves(grads):

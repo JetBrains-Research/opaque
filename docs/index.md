@@ -97,7 +97,7 @@ noise).
 from opaque.distributed import sum_gradients
 
 grads, clip_state = grad_fn(params, local_batch, state=clip_state)
-sum_gradients(grads)
+grads = sum_gradients(grads)
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
 

@@ -281,7 +281,7 @@ from opaque.distributed import sync
 
 grads, clip_state = grad_fn(params, batch, state=clip_state)
 clip_state = sync(clip_state)  # aggregate counts across ranks
-dist_utils.sum_gradients(grads)
+grads = dist_utils.sum_gradients(grads)
 ```
 
 `sync()` dispatches to `sync_adaptive_clip_state` internally, which aggregates

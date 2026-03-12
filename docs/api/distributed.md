@@ -8,7 +8,7 @@ The `opaque.distributed` module provides composable primitives for multi-GPU
 DP training:
 
 - **Core**: `is_distributed()`, `get_rank()`, `get_world_size()`
-- **Gradient aggregation**: `sum_gradients()` (AllReduce SUM on PyTrees)
+- **Gradient aggregation**: `sum_gradients()` (copy-returning) and `sum_gradients_()` (in-place)
 - **State sync**: `sync()`, `sync_object()`, `reduce_scalar()`, `gather_tensors()`
 
 DDP is the only supported parallelism strategy.
@@ -36,6 +36,11 @@ See [User Guide: Distributed Training](../user-guide/distributed.md) for usage.
         show_source: true
         heading_level: 3
 
+::: opaque.distributed.all_reduce_
+    options:
+        show_source: true
+        heading_level: 3
+
 ::: opaque.distributed.barrier
     options:
         show_source: true
@@ -48,7 +53,17 @@ See [User Guide: Distributed Training](../user-guide/distributed.md) for usage.
         show_source: true
         heading_level: 3
 
+::: opaque.distributed.sum_gradients_
+    options:
+        show_source: true
+        heading_level: 3
+
 ::: opaque.distributed.reduce_pytree
+    options:
+        show_source: true
+        heading_level: 3
+
+::: opaque.distributed.reduce_pytree_
     options:
         show_source: true
         heading_level: 3
@@ -93,7 +108,7 @@ The order of operations matters for DP guarantees:
 
 ```python
 grads, clip_state = grad_fn(params, x, y, state=clip_state)  # 1. Clip
-dist_utils.sum_gradients(grads)                               # 2. Aggregate (in-place)
+grads = dist_utils.sum_gradients(grads)                       # 2. Aggregate (copy)
 noisy_grads, noise_state = noise_fn(grads, noise_state)       # 3. Noise
 ```
 

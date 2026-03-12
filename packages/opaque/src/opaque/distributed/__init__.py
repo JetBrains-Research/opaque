@@ -27,7 +27,7 @@ Example - Standard DP-SGD with Poisson Sampling:
     >>> grads = grad_fn(params, batch_x, batch_y)  # Sum of B_local clipped grads
     >>>
     >>> # Sum across devices: total gradients from all examples
-    >>> dist_utils.sum_gradients(grads)
+    >>> grads = dist_utils.sum_gradients(grads)
     >>>
     >>> # Add noise (sensitivity = C, NOT batch-dependent!)
     >>> noise_fn, noise_state = gaussian_noise(stddev=1.1)
@@ -57,11 +57,14 @@ __all__ = [
     "get_rank",
     "get_world_size",
     "all_reduce",
+    "all_reduce_",
     "barrier",
     # PyTree reduction
     "reduce_pytree",
+    "reduce_pytree_",
     # DP-specific helpers
     "sum_gradients",
+    "sum_gradients_",
     # Scalar reduction
     "reduce_scalar",
     "assert_pytree_equal",
@@ -133,7 +136,7 @@ def get_world_size() -> int:
     return 1
 
 
-def all_reduce(
+def all_reduce_(
     tensor: torch.Tensor,
     op: str = "sum",
 ) -> None:
@@ -165,12 +168,12 @@ def all_reduce(
         >>> t = torch.tensor([1.0, 2.0, 3.0])
         >>>
         >>> # Sum across all devices (in-place)
-        >>> dist_utils.all_reduce(t, op="sum")
+        >>> dist_utils.all_reduce_(t, op="sum")
         >>> print(t)  # [2.0, 4.0, 6.0] (sum of rank 0 and rank 1)
         >>>
         >>> # Average across all devices
         >>> t = torch.tensor([1.0, 2.0, 3.0])
-        >>> dist_utils.all_reduce(t, op="mean")
+        >>> dist_utils.all_reduce_(t, op="mean")
         >>> print(t)  # [1.0, 2.0, 3.0] (average of rank 0 and rank 1)
     """
     # Map string to ReduceOp
@@ -194,6 +197,27 @@ def all_reduce(
         )
 
     dist.all_reduce(tensor, op=op_map[op])
+
+
+def all_reduce(
+    tensor: torch.Tensor,
+    op: str = "sum",
+) -> torch.Tensor:
+    """All-reduce a tensor across all processes and return a reduced copy.
+
+    This is the functional counterpart to ``all_reduce_``.
+
+    Args:
+        tensor: Tensor to reduce.
+        op: Reduction operation. One of: "sum", "mean", "max", "min", "product".
+            Default: "sum".
+
+    Returns:
+        Reduced tensor copy. The input tensor is unchanged.
+    """
+    reduced = tensor.clone()
+    all_reduce_(reduced, op=op)
+    return reduced
 
 
 def barrier() -> None:
@@ -221,7 +245,9 @@ def barrier() -> None:
 # Import submodules AFTER core functions are defined (avoid circular import)
 from .gradients import (  # noqa: E402
     reduce_pytree,
+    reduce_pytree_,
     sum_gradients,
+    sum_gradients_,
 )
 from .state import (  # noqa: E402
     assert_pytree_equal,

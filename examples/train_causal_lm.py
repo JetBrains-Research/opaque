@@ -62,7 +62,7 @@ import opaque.auditing as auditing
 from opaque.accounting import calibration as cal, Accountant
 from opaque.clipping import adaptive_clipped_grad, clipped_grad
 from opaque.compat.transformers import is_kernel_patched
-from opaque.distributed import sum_gradients, sync
+from opaque.distributed import sum_gradients_, sync
 from opaque.noise import gaussian_noise
 from opaque.profiling import StepTimer, TrainingProfiler, print_memory, reset_peak_memory
 from opaque.random import key, fold_in
@@ -1076,7 +1076,7 @@ def main():
                 if is_ddp:
                     clip_state, aux = sync(clip_state, aux)
                     current_clip_norm = clip_state.clip_norm
-                    sum_gradients(grads_tuple)
+                    sum_gradients_(grads_tuple)
 
                 # Add Gaussian noise
                 stddev = noise_multiplier * clip_state.sensitivity()

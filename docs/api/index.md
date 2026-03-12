@@ -55,8 +55,8 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `auc()`, `beta_at()` - Attack metrics
 
 - **[Distributed](distributed.md)**: Multi-GPU training with DDP
-  - `sum_gradients()` - Sum clipped gradients across GPUs (for DP training)
-  - `reduce_pytree()` - Generic PyTree reduction
+  - `sum_gradients()` / `sum_gradients_()` - Copy/default and in-place DP gradient summation
+  - `reduce_pytree()` / `reduce_pytree_()` - Copy/default and in-place generic PyTree reduction
   - `sync()` - Auto-dispatch sync for any state/aux type
   - `sync_object()` - Synchronize scalar fields of a dataclass
   - `is_distributed()`, `get_rank()`, `get_world_size()` - Distributed utilities
@@ -184,8 +184,8 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 
 | Function               | Purpose                     | User Guide                                 |
 |------------------------|-----------------------------|--------------------------------------------|
-| `sum_gradients()`      | Sum clipped gradients (DP-specific) | [Guide](../user-guide/distributed.md) |
-| `reduce_pytree()`      | Generic PyTree reduction    | [Guide](../user-guide/distributed.md)      |
+| `sum_gradients()` / `sum_gradients_()` | DP gradient summation (copy / in-place) | [Guide](../user-guide/distributed.md) |
+| `reduce_pytree()` / `reduce_pytree_()` | Generic PyTree reduction (copy / in-place) | [Guide](../user-guide/distributed.md) |
 | `reduce_scalar()`      | Reduce scalar across devices | [Guide](../user-guide/distributed.md)      |
 | `gather_tensors()`     | Gather tensors from all ranks | [Guide](../user-guide/distributed.md)      |
 | `sync()`               | Auto-dispatch sync for any state/aux | [Guide](../user-guide/distributed.md) |

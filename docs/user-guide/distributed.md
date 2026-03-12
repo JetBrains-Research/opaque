@@ -81,8 +81,8 @@ for batch_x, batch_y in loader:
     # 1. Clip (local)
     grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
-    # 2. Aggregate (AllReduce SUM, in-place)
-    dist_utils.sum_gradients(grads)
+    # 2. Aggregate (AllReduce SUM, copy-returning)
+    grads = dist_utils.sum_gradients(grads)
 
     # 3. Noise (identical on every device)
     noisy_grads, noise_state = noise_fn(grads, noise_state)
@@ -122,21 +122,28 @@ in sync.
 
 ## Gradient aggregation
 
-`sum_gradients` performs an AllReduce SUM on a PyTree of tensors in-place:
+`sum_gradients` performs an AllReduce SUM on a PyTree of tensors and returns
+a reduced copy:
 
 ```python
 import opaque.distributed as dist_utils
 
-dist_utils.sum_gradients(grads)
+grads = dist_utils.sum_gradients(grads)
 ```
 
 This sums the clipped gradient contributions from all devices. After this
-call, every rank holds the same total clipped gradient sum.
+call, every rank holds the same total clipped gradient sum in `grads`.
 
-For more general reductions, use `reduce_pytree` (also in-place):
+For more general reductions, use:
+
+- `reduce_pytree(pytree, op)` to return a reduced copy
+- `reduce_pytree_(pytree, op)` for in-place reduction
+- `sum_gradients_(grads)` for in-place DP-specific sum
 
 ```python
-dist_utils.reduce_pytree(grads, op="mean")
+avg_grads = dist_utils.reduce_pytree(grads, op="mean")
+dist_utils.reduce_pytree_(grads, op="sum")
+dist_utils.sum_gradients_(grads)
 ```
 
 ## Adaptive clipping
@@ -160,7 +167,7 @@ grad_fn, clip_state = adaptive_clipped_grad(
 # In the training loop:
 grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 clip_state = sync(clip_state)   # required in DDP
-dist_utils.sum_gradients(grads)
+grads = dist_utils.sum_gradients(grads)
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
 
@@ -236,21 +243,24 @@ synchronization.
 
 ## `opaque.distributed` API summary
 
-Functions either mutate in-place (collectives) or return synchronized values
-(state/object helpers). When `torch.distributed` is not initialized,
-high-level helpers such as `sum_gradients` and `reduce_pytree` are local
-no-ops, while direct collective wrappers such as `all_reduce` require an
-initialized process group and raise `RuntimeError`.
+Functions are split into copy-returning defaults and explicit in-place `_`
+variants. When `torch.distributed` is not initialized, high-level helpers such
+as `sum_gradients` and `reduce_pytree` are local no-ops, while direct
+collective wrappers such as `all_reduce` / `all_reduce_` require an initialized
+process group and raise `RuntimeError`.
 
 | Function | Purpose |
 |----------|---------|
 | `is_distributed()` | `True` if `torch.distributed` is initialized |
 | `get_rank()` | Current rank (0 if not distributed) |
 | `get_world_size()` | Number of devices (1 if not distributed) |
-| `sum_gradients(grads)` | In-place AllReduce SUM on a PyTree of tensors |
-| `reduce_pytree(pytree, op)` | In-place AllReduce on a PyTree (op: `"sum"`, `"mean"`, `"max"`, `"min"`, `"product"`) |
+| `sum_gradients(grads)` | Return a summed-copy of a gradient PyTree |
+| `sum_gradients_(grads)` | In-place AllReduce SUM on a gradient PyTree |
+| `reduce_pytree(pytree, op)` | Return a reduced copy of a PyTree (op: `"sum"`, `"mean"`, `"max"`, `"min"`, `"product"`) |
+| `reduce_pytree_(pytree, op)` | In-place AllReduce on a PyTree (op: `"sum"`, `"mean"`, `"max"`, `"min"`, `"product"`) |
 | `reduce_scalar(value, op)` | Reduce a Python float across ranks |
-| `all_reduce(tensor, op)` | In-place AllReduce on a single tensor |
+| `all_reduce(tensor, op)` | Return an all-reduced tensor copy |
+| `all_reduce_(tensor, op)` | In-place AllReduce on a single tensor |
 | `gather_tensors(tensor, dim)` | Gather variable-size tensors from all ranks and concatenate |
 | `gather_pytree(pytree)` | Gather and concatenate tensor leaves of a PyTree |
 | `assert_pytree_equal(pytree, name)` | Assert a PyTree is identical across ranks (fingerprint check) |
