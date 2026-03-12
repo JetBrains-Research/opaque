@@ -1,7 +1,7 @@
 site_name: Opaque
 site_description: Functional DP-SGD for PyTorch
 site_author: Opaque Contributors
-site_url: https://opaque.readthedocs.io
+site_url: https://jetbrains-research.github.io/opaque/
 
 repo_name: JetBrains-Research/opaque
 repo_url: https://github.com/JetBrains-Research/opaque
