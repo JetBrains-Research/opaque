@@ -18,6 +18,9 @@ USAGE:
   # Full production training on Mellum-4b + KStack (~3-5 hours)
   python examples/train_causal_lm.py --preset mellum-kstack
 
+  # 4-GPU distributed run with torchrun
+  torchrun --nproc_per_node=4 examples/train_causal_lm.py --preset mellum-kstack
+
   # Or customize individual parameters:
   python examples/train_causal_lm.py \\
     --model_name "JetBrains/Mellum-4b-base" \\
