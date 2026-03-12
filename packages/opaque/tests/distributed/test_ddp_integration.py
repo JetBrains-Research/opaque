@@ -305,7 +305,7 @@ def _worker_sync_profiler(rank: int, world_size: int, port: int) -> None:
 
         # --- first sync ---
         synced_profiler = sync(profiler)
-        assert synced_profiler is not profiler          # must be a new object
+        assert synced_profiler is not profiler  # must be a new object
         assert synced_profiler.num_steps == 1
         # batch_size is summed across ranks (4 per rank × world_size)
         assert synced_profiler.step_batch_sizes[-1] == world_size * 4
@@ -328,7 +328,7 @@ def _worker_sync_profiler(rank: int, world_size: int, port: int) -> None:
 
         # --- checkpoint sync ---
         profiler_with_mark, _ = synced_profiler.mark("after_sync")
-        assert not profiler_with_mark.is_fully_synced          # mark adds a pending checkpoint
+        assert not profiler_with_mark.is_fully_synced  # mark adds a pending checkpoint
         synced_with_mark = sync(profiler_with_mark)
         assert synced_with_mark.is_fully_synced
         assert len(synced_with_mark.synced_checkpoints) == 1

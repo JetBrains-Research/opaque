@@ -35,7 +35,11 @@ def sync_training_profiler(profiler: TrainingProfiler) -> TrainingProfiler:
     if profiler.is_fully_synced:
         return profiler
 
-    device = profiler.device if isinstance(profiler.device, torch.device) else torch.device(profiler.device)
+    device = (
+        profiler.device
+        if isinstance(profiler.device, torch.device)
+        else torch.device(profiler.device)
+    )
 
     assert_scalar_equal(
         float(len(profiler.pending_steps)),
@@ -51,9 +55,7 @@ def sync_training_profiler(profiler: TrainingProfiler) -> TrainingProfiler:
     synced_steps = []
     for step in profiler.pending_steps:
         step_time = reduce_scalar(float(step.step_time), op="max", device=device)
-        batch_size = int(
-            reduce_scalar(float(step.batch_size), op="sum", device=device)
-        )
+        batch_size = int(reduce_scalar(float(step.batch_size), op="sum", device=device))
         peak_memory_gb = reduce_scalar(
             float(step.peak_memory_gb), op="max", device=device
         )
