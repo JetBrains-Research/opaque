@@ -230,23 +230,15 @@ jobs:
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
-
-      - name: Configure GCP Artifact Registry
-        if: steps.check_release.outputs.is_release == 'false'
-        run: |
-          gcloud artifacts print-settings python \
-            --project=jetbrains-ml4se-fed \
-            --repository=jbr-fed-python \
-            --location=europe-west4 > ~/.pypirc
-
-      - uses: astral-sh/setup-uv@v3
-        if: steps.check_release.outputs.is_release == 'false'
-        with:
-          version: "latest"
+          token_format: access_token
+          access_token_lifetime: 3600s
 
       - name: Publish dev builds to GCP
         if: steps.check_release.outputs.is_release == 'false'
+        env:
+          UV_PUBLISH_USERNAME: oauth2accesstoken
+          UV_PUBLISH_PASSWORD: ${{ steps.gcp-auth.outputs.access_token }}
         run: |
           uv publish \
-            --publish-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/ \
+            --publish-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/ \
             dist/*.whl
