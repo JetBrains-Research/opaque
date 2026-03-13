@@ -382,6 +382,14 @@ def parse_args():
 
     dp_group = parser.add_argument_group("dp", "DP-SGD clipping and noise")
     dp_group.add_argument(
+        "--shard",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Shard dataset across DDP ranks (default). "
+        "Use --no_shard to replicate full dataset on each rank "
+        "(uses parallel_poisson accounting).",
+    )
+    dp_group.add_argument(
         "--clip_norm",
         type=float,
         default=1.0,
@@ -815,7 +823,9 @@ def main():
         print(f"  Training set: {len(train_dataset)} examples")
 
     global_train_size = len(train_dataset)
-    if is_ddp:
+    use_shard = is_ddp and args.shard
+    use_parallel_poisson = is_ddp and not args.shard
+    if use_shard:
         train_dataset = local_shard(train_dataset, rank=rank, world_size=world_size)
 
     # Eval DataLoader (standard batching, no privacy requirements)
@@ -832,12 +842,21 @@ def main():
     # sample_rate is defined globally (across all ranks).
     sample_rate = args.batch_size / global_train_size
 
+    # With --no_shard each rank has the full dataset, so lower per-rank rate
+    # to keep the total expected batch = batch_size.
+    sampler_rate = sample_rate / world_size if use_parallel_poisson else sample_rate
+
     # Expected number of steps to process full dataset with Poisson sampling
     # = 1 / sample_rate (since we sample sample_rate fraction each step)
     expected_steps_per_epoch = int(1.0 / sample_rate)
 
     print("\nPoisson sampling setup:")
-    print(f"  Sample rate: {sample_rate:.4f}")
+    if use_parallel_poisson:
+        print(f"  Mode: parallel_poisson (no shard, world_size={world_size})")
+        print(f"  Global sample rate: {sample_rate:.6f}")
+        print(f"  Per-rank sample rate: {sampler_rate:.6f}")
+    else:
+        print(f"  Sample rate: {sample_rate:.6f}")
     print(f"  Expected batch size: {args.batch_size}")
     print(f"  Expected steps per epoch: ~{expected_steps_per_epoch}")
     print(f"Eval batches: {len(eval_loader)}")
@@ -983,17 +1002,32 @@ def main():
         wandb.config.update({"target_delta": args.target_delta}, allow_val_change=True)
 
     print("\nCalibrating privacy parameters...")
+    if use_parallel_poisson:
+        print(f"  Accounting: parallel_poisson (world_size={world_size})")
     print(f"  δ = {args.target_delta:.2e} (n={global_train_size})")
     print(f"  Total steps: {total_steps}")
     print(f"  Sample rate: {sample_rate:.6f}")
+    if use_parallel_poisson:
+        print(f"  Per-rank rate: {sampler_rate:.6f}")
     print(f"  Target: ε={args.target_epsilon}, δ={args.target_delta:.2e}")
     print("  (This may take 1-3 minutes...)")
 
     start_time = time.time()
     budget = cal.epsilon_budget(args.target_epsilon, delta=args.target_delta)
+    if use_parallel_poisson:
+        _pp_rate = sampler_rate
+        _pp_workers = world_size
+        process_fn = lambda nm: acc.parallel_poisson(
+            acc.gaussian(nm), sample_rate=_pp_rate, num_workers=_pp_workers,
+        ) * total_steps
+    else:
+        _poisson_rate = sample_rate
+        process_fn = lambda nm: acc.poisson(
+            acc.gaussian(nm), sample_rate=_poisson_rate,
+        ) * total_steps
     calibration = cal.calibrate(
         budget,
-        lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=sample_rate) * total_steps,
+        process_fn,
         param_min=args.calibration_min,
         param_max=args.calibration_max,
         tolerance=args.calibration_tolerance,
@@ -1014,7 +1048,12 @@ def main():
     # Accounting (all pld() calls automatically cached with maxsize=8)
     # Using acc.cached() here increases cache to maxsize=16 and creates merge barrier
     accounting = Accountant()
-    step_process = acc.cached(acc.poisson(acc.gaussian(noise_multiplier), sample_rate))
+    if use_parallel_poisson:
+        step_process = acc.cached(acc.parallel_poisson(
+            acc.gaussian(noise_multiplier), sample_rate=sampler_rate, num_workers=world_size,
+        ))
+    else:
+        step_process = acc.cached(acc.poisson(acc.gaussian(noise_multiplier), sample_rate))
 
     # Initialize noise function
     noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_state.sensitivity(), key=key(args.seed))
@@ -1042,7 +1081,7 @@ def main():
         # Create Poisson sampler for this epoch
         epoch_sampler = PoissonSampler(
             train_dataset,
-            sample_rate=sample_rate,
+            sample_rate=sampler_rate,
             num_iterations=expected_steps_per_epoch,
             key=fold_in(key(args.seed), rank, epoch),
         )
@@ -1201,6 +1240,8 @@ def main():
 
     final_epsilon = accounting.epsilon_at(args.target_delta)
     print("\nPrivacy:")
+    if use_parallel_poisson:
+        print(f"  Accounting: parallel_poisson (world_size={world_size})")
     print(f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e} (n={global_train_size})")
     print(f"  Noise multiplier: {noise_multiplier:.4f}")
     print(f"  Final ε (theoretical): {final_epsilon:.4f}")
