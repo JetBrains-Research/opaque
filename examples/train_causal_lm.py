@@ -838,19 +838,20 @@ def main():
     )
 
     # For training: Poisson sampling (not uniform shuffling!)
-    # Poisson: each example independently sampled with probability sample_rate each step
-    # sample_rate is defined globally (across all ranks).
+    # Poisson: each example independently sampled with probability sample_rate each step.
+    # In parallel Poisson mode each rank samples independently from the full dataset,
+    # so we divide by world_size to keep the global expected batch size = args.batch_size.
     sample_rate = args.batch_size / global_train_size
+    if use_parallel_poisson:
+        sample_rate /= world_size
 
-    # Expected number of steps to process full dataset with Poisson sampling
-    # = 1 / sample_rate (since we sample sample_rate fraction each step)
-    expected_steps_per_epoch = int(1.0 / sample_rate)
+    expected_steps_per_epoch = int(global_train_size / args.batch_size)
 
     print("\nPoisson sampling setup:")
     if use_parallel_poisson:
         print(f"  Mode: parallel_poisson (no shard, world_size={world_size})")
-    print(f"  Sample rate: {sample_rate:.6f}")
-    print(f"  Expected batch size: {args.batch_size}")
+    print(f"  Sample rate (per rank): {sample_rate:.6f}")
+    print(f"  Expected global batch size: {args.batch_size}")
     print(f"  Expected steps per epoch: ~{expected_steps_per_epoch}")
     print(f"Eval batches: {len(eval_loader)}")
 
