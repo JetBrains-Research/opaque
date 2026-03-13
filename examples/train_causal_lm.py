@@ -842,10 +842,6 @@ def main():
     # sample_rate is defined globally (across all ranks).
     sample_rate = args.batch_size / global_train_size
 
-    # With --no_shard each rank has the full dataset, so lower per-rank rate
-    # to keep the total expected batch = batch_size.
-    sampler_rate = sample_rate / world_size if use_parallel_poisson else sample_rate
-
     # Expected number of steps to process full dataset with Poisson sampling
     # = 1 / sample_rate (since we sample sample_rate fraction each step)
     expected_steps_per_epoch = int(1.0 / sample_rate)
@@ -853,10 +849,7 @@ def main():
     print("\nPoisson sampling setup:")
     if use_parallel_poisson:
         print(f"  Mode: parallel_poisson (no shard, world_size={world_size})")
-        print(f"  Global sample rate: {sample_rate:.6f}")
-        print(f"  Per-rank sample rate: {sampler_rate:.6f}")
-    else:
-        print(f"  Sample rate: {sample_rate:.6f}")
+    print(f"  Sample rate: {sample_rate:.6f}")
     print(f"  Expected batch size: {args.batch_size}")
     print(f"  Expected steps per epoch: ~{expected_steps_per_epoch}")
     print(f"Eval batches: {len(eval_loader)}")
@@ -1007,23 +1000,18 @@ def main():
     print(f"  δ = {args.target_delta:.2e} (n={global_train_size})")
     print(f"  Total steps: {total_steps}")
     print(f"  Sample rate: {sample_rate:.6f}")
-    if use_parallel_poisson:
-        print(f"  Per-rank rate: {sampler_rate:.6f}")
     print(f"  Target: ε={args.target_epsilon}, δ={args.target_delta:.2e}")
     print("  (This may take 1-3 minutes...)")
 
     start_time = time.time()
     budget = cal.epsilon_budget(args.target_epsilon, delta=args.target_delta)
     if use_parallel_poisson:
-        _pp_rate = sampler_rate
-        _pp_workers = world_size
         process_fn = lambda nm: acc.parallel_poisson(
-            acc.gaussian(nm), sample_rate=_pp_rate, num_workers=_pp_workers,
+            acc.gaussian(nm), sample_rate=sample_rate, num_workers=world_size,
         ) * total_steps
     else:
-        _poisson_rate = sample_rate
         process_fn = lambda nm: acc.poisson(
-            acc.gaussian(nm), sample_rate=_poisson_rate,
+            acc.gaussian(nm), sample_rate=sample_rate,
         ) * total_steps
     calibration = cal.calibrate(
         budget,
@@ -1050,7 +1038,7 @@ def main():
     accounting = Accountant()
     if use_parallel_poisson:
         step_process = acc.cached(acc.parallel_poisson(
-            acc.gaussian(noise_multiplier), sample_rate=sampler_rate, num_workers=world_size,
+            acc.gaussian(noise_multiplier), sample_rate=sample_rate, num_workers=world_size,
         ))
     else:
         step_process = acc.cached(acc.poisson(acc.gaussian(noise_multiplier), sample_rate))
@@ -1081,7 +1069,7 @@ def main():
         # Create Poisson sampler for this epoch
         epoch_sampler = PoissonSampler(
             train_dataset,
-            sample_rate=sampler_rate,
+            sample_rate=sample_rate,
             num_iterations=expected_steps_per_epoch,
             key=fold_in(key(args.seed), rank, epoch),
         )
