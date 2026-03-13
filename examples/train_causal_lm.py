@@ -446,6 +446,12 @@ def parse_args():
         help="Target delta for DP accounting. Default: 1/n² where n = training set size.",
     )
     privacy_group.add_argument(
+        "--noise_multiplier",
+        type=float,
+        default=None,
+        help="Use a fixed noise multiplier instead of calibrating from target_epsilon",
+    )
+    privacy_group.add_argument(
         "--calibration_min",
         type=float,
         default=0.11,
@@ -995,44 +1001,48 @@ def main():
     if use_wandb:
         wandb.config.update({"target_delta": args.target_delta}, allow_val_change=True)
 
-    print("\nCalibrating privacy parameters...")
-    if use_parallel_poisson:
-        print(f"  Accounting: parallel_poisson (world_size={world_size})")
-    print(f"  δ = {args.target_delta:.2e} (n={global_train_size})")
-    print(f"  Total steps: {total_steps}")
-    print(f"  Sample rate: {sample_rate:.6f}")
-    print(f"  Target: ε={args.target_epsilon}, δ={args.target_delta:.2e}")
-    print("  (This may take 1-3 minutes...)")
-
-    start_time = time.time()
-    budget = cal.epsilon_budget(args.target_epsilon, delta=args.target_delta)
-    if use_parallel_poisson:
-        process_fn = lambda nm: acc.parallel_poisson(
-            acc.gaussian(nm), sample_rate=sample_rate, num_workers=world_size,
-        ) * total_steps
+    if args.noise_multiplier is not None:
+        noise_multiplier = args.noise_multiplier
+        print(f"\nUsing fixed noise multiplier: {noise_multiplier:.4f} (skipping calibration)")
     else:
-        process_fn = lambda nm: acc.poisson(
-            acc.gaussian(nm), sample_rate=sample_rate,
-        ) * total_steps
-    calibration = cal.calibrate(
-        budget,
-        process_fn,
-        param_min=args.calibration_min,
-        param_max=args.calibration_max,
-        tolerance=args.calibration_tolerance,
-    )
-    noise_multiplier = calibration.param
-    elapsed = time.time() - start_time
+        print("\nCalibrating privacy parameters...")
+        if use_parallel_poisson:
+            print(f"  Accounting: parallel_poisson (world_size={world_size})")
+        print(f"  δ = {args.target_delta:.2e} (n={global_train_size})")
+        print(f"  Total steps: {total_steps}")
+        print(f"  Sample rate: {sample_rate:.6f}")
+        print(f"  Target: ε={args.target_epsilon}, δ={args.target_delta:.2e}")
+        print("  (This may take 1-3 minutes...)")
 
-    print(f"\nCalibrated privacy parameters (took {elapsed:.1f}s):")
-    print(
-        f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.1e} | "
-        f"Achieved ε≈{calibration.achieved:.3f}"
-    )
-    print(
-        f"  Noise multiplier: {noise_multiplier:.4f} "
-        f"(iterations={calibration.iterations}, converged={calibration.converged})"
-    )
+        start_time = time.time()
+        budget = cal.epsilon_budget(args.target_epsilon, delta=args.target_delta)
+        if use_parallel_poisson:
+            process_fn = lambda nm: acc.parallel_poisson(
+                acc.gaussian(nm), sample_rate=sample_rate, num_workers=world_size,
+            ) * total_steps
+        else:
+            process_fn = lambda nm: acc.poisson(
+                acc.gaussian(nm), sample_rate=sample_rate,
+            ) * total_steps
+        calibration = cal.calibrate(
+            budget,
+            process_fn,
+            param_min=args.calibration_min,
+            param_max=args.calibration_max,
+            tolerance=args.calibration_tolerance,
+        )
+        noise_multiplier = calibration.param
+        elapsed = time.time() - start_time
+
+        print(f"\nCalibrated privacy parameters (took {elapsed:.1f}s):")
+        print(
+            f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.1e} | "
+            f"Achieved ε≈{calibration.achieved:.3f}"
+        )
+        print(
+            f"  Noise multiplier: {noise_multiplier:.4f} "
+            f"(iterations={calibration.iterations}, converged={calibration.converged})"
+        )
 
     # Accounting (all pld() calls automatically cached with maxsize=8)
     # Using acc.cached() here increases cache to maxsize=16 and creates merge barrier
