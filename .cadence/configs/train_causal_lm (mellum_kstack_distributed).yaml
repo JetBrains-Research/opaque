@@ -1,12 +1,12 @@
-# 2-GPU distributed training for parallel Poisson experiments.
+# 4-GPU distributed training for parallel Poisson experiments.
 #
 # Sharded baseline (default --shard):
-#   RUN_NAME="pp-sharded-2gpu" uv run cadence execution start \
+#   RUN_NAME="pp-sharded-4gpu" uv run cadence execution start \
 #     --preset ".cadence/configs/train_causal_lm (mellum_kstack_distributed).yaml" \
 #     -e EXTRA_ARGS="--max_steps 100"
 #
 # Parallel Poisson (--no_shard):
-#   RUN_NAME="pp-parallel-2gpu" uv run cadence execution start \
+#   RUN_NAME="pp-parallel-4gpu" uv run cadence execution start \
 #     --preset ".cadence/configs/train_causal_lm (mellum_kstack_distributed).yaml" \
 #     -e EXTRA_ARGS="--no_shard --max_steps 100"
 
@@ -15,12 +15,13 @@ working_dir: "."
 cmd:
   - |-
     uv sync --group examples
-    uv run torchrun --nproc_per_node=2 examples/train_causal_lm.py --preset mellum-kstack $EXTRA_ARGS
+    uv run torchrun --nproc_per_node=4 examples/train_causal_lm.py --preset mellum-kstack --gradient_checkpointing --microbatch_size 8 $EXTRA_ARGS
 provisioning:
-  gpu_type: a100
+  gpu_type: a10g
   gpu_count: 4
-  cpu_count: 64
-  ram: 800
+  cpu_count: 48
+  ram: 192
+  blank: false
 teamcity:
   url: https://api.cadence.jetbrains.com
   build_conf_id: JbrFed_JetTrain
