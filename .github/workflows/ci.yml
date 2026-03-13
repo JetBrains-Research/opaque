@@ -233,6 +233,11 @@ jobs:
           token_format: access_token
           access_token_lifetime: 3600s
 
+      - uses: astral-sh/setup-uv@v3
+        if: steps.check_release.outputs.is_release == 'false'
+        with:
+          version: "latest"
+
       - name: Publish dev builds to GCP
         if: steps.check_release.outputs.is_release == 'false'
         env:
