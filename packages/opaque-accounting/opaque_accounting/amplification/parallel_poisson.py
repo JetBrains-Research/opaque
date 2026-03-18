@@ -102,6 +102,11 @@ def parallel_poisson(
         num_workers: Number of parallel workers running Poisson sampling
             independently.
 
+    Notes:
+        Truncation is selected automatically inside the Rust implementation
+        from query-time discretization settings
+        (``log_x_mass_truncation_bound``) to balance speed and conservativeness.
+
     Returns:
         A :class:`ParallelPoisson` process.
 

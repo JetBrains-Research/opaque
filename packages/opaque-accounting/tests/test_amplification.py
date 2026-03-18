@@ -206,6 +206,26 @@ class TestPoissonRectifiedGaussian:
         assert math.isfinite(eps) and eps > 0
 
 
+class TestParallelPoissonAutoTruncation:
+    """Automatic truncation from query-time discretization settings."""
+
+    def test_auto_respects_query_time_discretization_overrides(self):
+        nm = 0.8
+        q = 0.0032
+        m = 8
+        delta = 1e-8
+        auto = acc.parallel_poisson(
+            acc.gaussian(nm), sample_rate=q, num_workers=m
+        )
+
+        eps_tight = auto.epsilon_at(delta, log_x_mass_truncation_bound=-50.0)
+        eps_loose = auto.epsilon_at(delta, log_x_mass_truncation_bound=-15.0)
+
+        # Looser truncation bound allows more aggressive k truncation, producing
+        # a conservative (not tighter) epsilon.
+        assert eps_loose >= eps_tight - 1e-10
+
+
 class TestPoissonTruncatedGaussian:
     """Poisson subsampling with truncated Gaussian inner."""
 
