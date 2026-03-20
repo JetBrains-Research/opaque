@@ -214,9 +214,7 @@ class TestParallelPoissonAutoTruncation:
         q = 0.0032
         m = 8
         delta = 1e-8
-        auto = acc.parallel_poisson(
-            acc.gaussian(nm), sample_rate=q, num_workers=m
-        )
+        auto = acc.parallel_poisson(acc.gaussian(nm), sample_rate=q, num_workers=m)
 
         eps_tight = auto.epsilon_at(delta, log_x_mass_truncation_bound=-50.0)
         eps_loose = auto.epsilon_at(delta, log_x_mass_truncation_bound=-15.0)
