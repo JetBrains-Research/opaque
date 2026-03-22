@@ -112,6 +112,8 @@ class AdaClip(DpProcess):
                 z_eff = self.effective_noise_multiplier
                 return _native.gaussian_pld(z_eff, config.to_native())
             case MipGaussian():
+                if all(s == 0.0 for s in self.inner.sensitivities):
+                    return _native.identity_pld(config.to_native())
                 z_eff = self.effective_noise_multiplier
                 return _native.mip_gaussian_pld(
                     z_eff,

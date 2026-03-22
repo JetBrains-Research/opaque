@@ -81,6 +81,16 @@ class TestMipGaussianConstructor:
         step = acc.poisson(proc, sample_rate=0.01)
         assert step.epsilon_at(1e-5) == 0.0
 
+    def test_all_zero_norms_composes_with_adaclip(self):
+        proc = mip_gaussian(0.8, [0.0, 0.0, 0.0])
+        step = acc.adaclip(proc, batch_size=256)
+        assert step.epsilon_at(1e-5) >= 0.0
+
+    def test_all_zero_norms_composes_with_poisson_adaclip(self):
+        proc = mip_gaussian(0.8, [0.0, 0.0, 0.0])
+        step = acc.poisson(acc.adaclip(proc, batch_size=256), sample_rate=0.01)
+        assert step.epsilon_at(1e-5) >= 0.0
+
 
 # ---------------------------------------------------------------------------
 # PLD computation
