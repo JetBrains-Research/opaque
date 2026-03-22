@@ -220,11 +220,21 @@ estimate" above).
 
 | Quantity | Relation | Computational cost |
 |---|---|---|
-| $\varepsilon_{\mathrm{stoch}}^{\mathrm{exact}}$ (exact stochastic f-MIP) | $\le \varepsilon_{\mathrm{RMS}}$ | $O(N \cdot T \cdot G\log G)$ — infeasible |
-| $\varepsilon_{\mathrm{RMS}}$ (this implementation) | $\le \varepsilon_{\mathrm{DP}}$ | $O(T \cdot G\log G)$ — same as standard |
-| $\varepsilon_{\mathrm{DP}}$ (standard worst-case) | — | $O(T \cdot G\log G)$ — same as standard |
+| $\varepsilon_{\mathrm{stoch}}^{\mathrm{exact}}$ (exact multi-step f-MIP) | — | $O(N \cdot T \cdot G\log G)$ — infeasible |
+| $\varepsilon_{\mathrm{mixture}}$ (`--accounting mixture`) | $\approx \varepsilon_{\mathrm{stoch}}^{\mathrm{exact}}$ | $O(T \cdot B \cdot G\log G)$ — ~100 bins/step |
+| $\varepsilon_{\mathrm{RMS}}$ (`--accounting rms`) | $\le \varepsilon_{\mathrm{DP}}$ | $O(T \cdot G\log G)$ — same as standard |
+| $\varepsilon_{\mathrm{DP}}$ (`--accounting standard`) | — | $O(T \cdot G\log G)$ — same as standard |
 
-where $G$ is the PLD grid size.
+where $G$ is the PLD grid size and $B$ is the number of sensitivity bins.
+
+**RMS vs mixture:** RMS applies Jensen's inequality per step, losing
+tightness when the sensitivity distribution has high variance (mix of
+near-zero and near-1 sensitivities). Mixture keeps the full binned
+distribution and computes the exact single-step stochastic f-MIP.
+Both share the same multi-step approximation: they average per step
+then compose, rather than composing per-example then averaging.
+When all examples are clipped ($s_i = 1$), the mixture automatically
+reduces to a standard Gaussian PLD (no extra cost).
 
 ## Interpretation
 
@@ -245,15 +255,13 @@ It is the natural privacy measure when:
 ## Usage
 
 ```bash
-python train_causal_lm.py \
-    --rms_accounting \
-    --target_epsilon 3.0 \
-    --target_delta 1e-5 \
-    ...
+# Jensen bound (fast, slightly loose)
+python train_causal_lm.py --accounting rms ...
+
+# Binned mixture (exact per-step, tighter)
+python train_causal_lm.py --accounting mixture ...
 ```
 
-The flag adds negligible overhead: `s_rms` is computed inside the
-clipping layer alongside the already-computed clipped gradient norms
-and returned in `aux.s_rms`. Calibration still uses standard worst-case
-DP (so the noise level is unchanged); the RMS $\varepsilon$ is reported
-alongside as a tighter post-hoc measure.
+Both modes add negligible overhead. Calibration still uses standard
+worst-case DP (the noise level is unchanged); the tighter $\varepsilon$
+is reported alongside as a post-hoc measure.
