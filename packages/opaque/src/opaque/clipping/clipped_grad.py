@@ -11,6 +11,17 @@ from opaque.clipping.clipped_fun import clipped_fun
 from opaque.clipping.types import FixedClipState
 
 
+def _compute_s_rms(clipped_grad_norms: Any, clipping_norm: float) -> float | None:
+    """Compute RMS sensitivity from clipped gradient norms.
+
+    Returns √(mean(s²)) where s_i = ||g_i||_clipped / C ∈ [0, 1].
+    """
+    if clipped_grad_norms is None or clipping_norm <= 0:
+        return None
+    s_squared = (clipped_grad_norms / clipping_norm).pow(2)
+    return max(s_squared.mean().sqrt().item(), 1e-8)
+
+
 class ClippedGradAux(NamedTuple):
     """Loss-aware auxiliary outputs from clipped_grad.
 
@@ -20,6 +31,8 @@ class ClippedGradAux(NamedTuple):
         clipped_grad_norms: Per-example gradient L2 norms after clipping (if return_aux=True).
         loss_aux: Per-example auxiliary outputs from loss function (if has_aux=True).
         clipping_norm: The L2 clipping norm used for this computation.
+        s_rms: RMS sensitivity √(mean(s²)) where s_i = ||g_i||_clipped / C ∈ [0, 1].
+            Useful for tighter privacy accounting (stochastic f-MIP).
     """
 
     loss_values: Any | None
@@ -27,6 +40,7 @@ class ClippedGradAux(NamedTuple):
     clipped_grad_norms: Any | None
     loss_aux: Any | None
     clipping_norm: float
+    s_rms: float | None = None
 
 
 def _validate_static_args(argnums, batch_argnums, normalize_by):
@@ -201,6 +215,7 @@ def clipped_grad(
                         clipped_grad_norms=aux.clipped_grad_norms,
                         loss_aux=None,
                         clipping_norm=l2_clip_norm,
+                        s_rms=_compute_s_rms(aux.clipped_grad_norms, l2_clip_norm),
                     )
                     return (clipped_grads, grad_aux), returned_state
                 return result, returned_state
@@ -221,6 +236,7 @@ def clipped_grad(
                 clipped_grad_norms=aux.clipped_grad_norms,
                 loss_aux=aux.loss_aux,
                 clipping_norm=l2_clip_norm,
+                s_rms=_compute_s_rms(aux.clipped_grad_norms, l2_clip_norm),
             )
             return (clipped_grads, grad_aux), returned_state
 

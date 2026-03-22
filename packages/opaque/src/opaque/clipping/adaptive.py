@@ -14,7 +14,7 @@ from typing import Any, NamedTuple, cast
 
 import torch
 
-from opaque.clipping.clipped_grad import clipped_grad
+from opaque.clipping.clipped_grad import _compute_s_rms, clipped_grad
 from opaque.clipping.types import ClipState
 from opaque.random import RngKey, fold_in, generator_from_key
 
@@ -33,6 +33,8 @@ class AdaptiveClippedGradAux(NamedTuple):
         clipped_grad_norms: L2 norms after clipping (if return_aux=True).
         loss_aux: Auxiliary outputs from loss function (if has_aux=True).
         clipping_rate: Fraction of per-example gradients clipped at this step.
+        s_rms: RMS sensitivity √(mean(s²)) where s_i = ||g_i||_clipped / C ∈ [0, 1].
+            Useful for tighter privacy accounting (stochastic f-MIP).
     """
 
     loss_values: Any | None
@@ -40,6 +42,7 @@ class AdaptiveClippedGradAux(NamedTuple):
     clipped_grad_norms: Any | None
     loss_aux: Any | None
     clipping_rate: float | None
+    s_rms: float | None = None
 
 
 @dataclass(frozen=True)
@@ -428,6 +431,11 @@ def adaptive_clipped_grad(
         )
 
         if user_wants_return_aux:
+            clipped_norms = (
+                aux.clipped_grad_norms
+                if aux is not None and hasattr(aux, "clipped_grad_norms")
+                else None
+            )
             adaptive_aux = AdaptiveClippedGradAux(
                 loss_values=(
                     aux.loss_values
@@ -439,17 +447,14 @@ def adaptive_clipped_grad(
                     if aux is not None and hasattr(aux, "grad_norms")
                     else None
                 ),
-                clipped_grad_norms=(
-                    aux.clipped_grad_norms
-                    if aux is not None and hasattr(aux, "clipped_grad_norms")
-                    else None
-                ),
+                clipped_grad_norms=clipped_norms,
                 loss_aux=(
                     aux.loss_aux
                     if aux is not None and hasattr(aux, "loss_aux")
                     else None
                 ),
                 clipping_rate=new_state.clipping_rate,
+                s_rms=_compute_s_rms(clipped_norms, state.clip_norm),
             )
             return (grads, adaptive_aux), new_state
 

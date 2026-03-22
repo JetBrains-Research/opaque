@@ -26,7 +26,7 @@ from .adaptive import (
     _sample_noisy_clipping_rate,
 )
 from .clipped_fun import ClippedFunAux
-from .clipped_grad import ClippedGradAux
+from .clipped_grad import ClippedGradAux, _compute_s_rms
 from .types import FixedClipState
 
 __all__ = [
@@ -147,6 +147,7 @@ def sync_clipped_grad_aux(aux: ClippedGradAux) -> ClippedGradAux:
         clipped_grad_norms=synced_fun_aux.clipped_grad_norms,
         loss_aux=synced_fun_aux.loss_aux,
         clipping_norm=aux.clipping_norm,
+        s_rms=_compute_s_rms(synced_fun_aux.clipped_grad_norms, aux.clipping_norm),
     )
 
 
@@ -182,12 +183,17 @@ def sync_adaptive_clipped_grad_aux(
         else:
             global_clipping_rate = reduce_scalar(local_rate, op="mean")
 
+    # s_rms needs to be recomputed from the globally gathered clipped norms.
+    # AdaptiveClippedGradAux does not carry the clipping norm, so we leave
+    # s_rms as None here — the training loop should recompute from
+    # aux.clipped_grad_norms / clip_state.clip_norm after sync.
     return AdaptiveClippedGradAux(
         loss_values=synced_fun_aux.loss_values,
         grad_norms=synced_fun_aux.grad_norms,
         clipped_grad_norms=synced_fun_aux.clipped_grad_norms,
         loss_aux=synced_fun_aux.loss_aux,
         clipping_rate=global_clipping_rate,
+        # s_rms=None: recomputed by caller after sync with global clip_norm.
     )
 
 

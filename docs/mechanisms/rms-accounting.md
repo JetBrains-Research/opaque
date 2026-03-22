@@ -1,10 +1,10 @@
-# Stochastic f-MIP Accounting
+# RMS Sensitivity Accounting
 
-Per-example sensitivity accounting for membership inference privacy,
-based on the stochastic composition framework of
+Per-example sensitivity accounting that produces tighter privacy
+bounds than worst-case DP, based on the stochastic f-MIP framework of
 [Leemann et al. (2023)](https://arxiv.org/abs/2306.07273).
 Standard DP-SGD accounting assumes every example has worst-case
-sensitivity (the clipping bound $C$). Stochastic f-MIP uses the
+sensitivity (the clipping bound $C$). RMS accounting uses the
 *observed* per-example sensitivities to produce a tighter privacy
 guarantee that reflects the average-case attacker.
 
@@ -249,13 +249,14 @@ It is the natural privacy measure when:
 
 ```bash
 python train_causal_lm.py \
-    --mip_accounting \
+    --rms_accounting \
     --target_epsilon 3.0 \
     --target_delta 1e-5 \
     ...
 ```
 
-The flag adds negligible overhead: one `.pow(2).mean().sqrt()` per step
-on the already-computed clipped gradient norms. Calibration still uses
-standard worst-case DP (so the noise level is unchanged); the MIP
-$\varepsilon$ is reported alongside as a tighter post-hoc measure.
+The flag adds negligible overhead: `s_rms` is computed inside the
+clipping layer alongside the already-computed clipped gradient norms
+and returned in `aux.s_rms`. Calibration still uses standard worst-case
+DP (so the noise level is unchanged); the RMS $\varepsilon$ is reported
+alongside as a tighter post-hoc measure.
