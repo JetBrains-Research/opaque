@@ -105,46 +105,28 @@ By Theorem 1, the single-step stochastic f-MIP is
 
 $$\delta_{\mathrm{stoch}}^{(1)}(\varepsilon) = \frac{1}{N}\sum_{i=1}^N \delta_{\mathrm{Gauss}}\!\left(\varepsilon;\, \frac{\sigma}{s_i}\right).$$
 
-This is **exact** — no approximation.
+This is **exact** — no approximation. Note the sum is over all $N$
+training examples, not just the batch.
 
-## RMS approximation for composition
+## RMS approximation
 
-### The composition problem
+### Population RMS bound (Theorem 2)
 
-After $T$ steps, exact stochastic f-MIP requires composing per-example
-PLDs individually:
+Define the **population RMS sensitivity**:
 
-$$\delta_{\mathrm{stoch}}^{(T)}(\varepsilon) = \frac{1}{N}\sum_{i=1}^N \delta\!\left(\mathrm{PLD}_i^{(1)} \circledast \cdots \circledast \mathrm{PLD}_i^{(T)},\; \varepsilon\right),$$
+$$s_{\mathrm{rms}}^{\mathrm{pop}} = \sqrt{\frac{1}{N}\sum_{i=1}^N s_i^2}.$$
 
-where $\mathrm{PLD}_i^{(t)}$ is example $i$'s privacy loss
-distribution at step $t$ and $\circledast$ is PLD convolution. This
-requires $O(N)$ PLD compositions — computationally infeasible for large
-datasets.
+**Theorem 2** (Population RMS is a valid upper bound on single-step
+stochastic f-MIP). *For each step $t$,*
 
-### RMS sensitivity
-
-At each step $t$, define
-
-$$s_{\mathrm{rms}}^{(t)} = \sqrt{\frac{1}{|B_t|}\sum_{i \in B_t} \left(s_i^{(t)}\right)^2},$$
-
-where $B_t$ is the batch at step $t$. The **RMS accounting** replaces
-the worst-case Gaussian PLD with
-
-$$\mathrm{PLD}_{\mathrm{rms}}^{(t)} = \mathrm{PLD}_{\mathrm{Gauss}}\!\left(\frac{\sigma}{s_{\mathrm{rms}}^{(t)}}\right)$$
-
-and composes these across steps using standard PLD convolution.
-
-**Theorem 2** (RMS is a valid upper bound on single-step stochastic
-f-MIP). *For each step $t$,*
-
-$$\delta_{\mathrm{stoch}}^{(t)}(\varepsilon) \le \delta_{\mathrm{Gauss}}\!\left(\varepsilon;\, \frac{\sigma}{s_{\mathrm{rms}}^{(t)}}\right) \quad \text{for all } \varepsilon \ge 0.$$
+$$\delta_{\mathrm{stoch}}^{(t)}(\varepsilon) \le \delta_{\mathrm{Gauss}}\!\left(\varepsilon;\, \frac{\sigma}{s_{\mathrm{rms}}^{\mathrm{pop}}}\right) \quad \text{for all } \varepsilon \ge 0.$$
 
 **Proof.** The Gaussian hockey-stick divergence
 $\delta_{\mathrm{Gauss}}(\varepsilon;\, \sigma/s)$ as a function of
 $s^2$ is convex (see Lemma below). By Jensen's inequality applied to
 the exact single-step identity (Theorem 1):
 
-$$\delta_{\mathrm{stoch}}^{(t)}(\varepsilon) = \mathbb{E}_i\!\left[\delta_{\mathrm{Gauss}}\!\left(\varepsilon;\, \frac{\sigma}{s_i}\right)\right] \le \delta_{\mathrm{Gauss}}\!\left(\varepsilon;\, \frac{\sigma}{\sqrt{\mathbb{E}[s_i^2]}}\right) = \delta_{\mathrm{Gauss}}\!\left(\varepsilon;\, \frac{\sigma}{s_{\mathrm{rms}}}\right). \qquad \square$$
+$$\delta_{\mathrm{stoch}}^{(t)}(\varepsilon) = \frac{1}{N}\sum_{i=1}^N \delta_{\mathrm{Gauss}}\!\left(\varepsilon;\, \frac{\sigma}{s_i}\right) \le \delta_{\mathrm{Gauss}}\!\left(\varepsilon;\, \frac{\sigma}{\sqrt{\frac{1}{N}\sum_i s_i^2}}\right) = \delta_{\mathrm{Gauss}}\!\left(\varepsilon;\, \frac{\sigma}{s_{\mathrm{rms}}^{\mathrm{pop}}}\right). \qquad \square$$
 
 **Lemma** (Convexity in $s^2$). *Let $\varphi(u) = \delta_{\mathrm{Gauss}}(\varepsilon;\, \sigma/\!\sqrt{u})$ for $u = s^2$. Then $\varphi$ is convex on $(0, \infty)$ for all $\varepsilon \ge 0$.*
 
@@ -170,29 +152,67 @@ linearly in $s^2$). $\square$
 
 **Remark.** The convexity direction means the RMS bound *overestimates*
 privacy loss (reports a larger $\delta$), making it a *conservative*
-(safe) approximation.
+(safe) approximation — **provided** we use the true population RMS.
+
+### Batch RMS in practice
+
+Theorem 2 requires the population quantity $s_{\mathrm{rms}}^{\mathrm{pop}}$
+(over all $N$ training examples), but at each step we only observe
+sensitivities for the Poisson-sampled batch $B_t$. The implementation
+uses the **batch RMS**:
+
+$$\hat{s}_{\mathrm{rms}}^{(t)} = \sqrt{\frac{1}{|B_t|}\sum_{i \in B_t} \left(s_i^{(t)}\right)^2}.$$
+
+Since Poisson sampling includes each example independently with
+probability $q$ (independently of gradient norms), $(\hat{s}_{\mathrm{rms}})^2$
+is an **unbiased estimator** of $({s}_{\mathrm{rms}}^{\mathrm{pop}})^2$:
+
+$$\mathbb{E}\!\left[(\hat{s}_{\mathrm{rms}})^2\right] = \frac{1}{N}\sum_{i=1}^N s_i^2 = (s_{\mathrm{rms}}^{\mathrm{pop}})^2.$$
+
+However, being unbiased does not make it a deterministic upper bound.
+The batch estimate can underestimate the population RMS (if the batch
+happens to contain examples with smaller-than-average gradients),
+which would make the reported $\varepsilon$ optimistic at that step.
+
+**In practice this matters little:** over $T$ steps of training, the
+estimation errors are independent and approximately cancel. The composed
+$\varepsilon$ converges to the value obtained with population RMS as
+$T$ grows. For typical training runs ($T \ge 100$, $|B| \ge 32$) the
+deviation is negligible.
+
+**To obtain a rigorous bound**, one could use a one-sided confidence
+interval on $\mathbb{E}[s_i^2]$:
+
+$$\hat{\mu}_{\mathrm{upper}} = (\hat{s}_{\mathrm{rms}})^2 + z_{1-\alpha}\,\frac{\hat{\sigma}_{s^2}}{\sqrt{|B_t|}},$$
+
+where $\hat{\sigma}_{s^2}$ is the sample standard deviation of $s_i^2$
+within the batch and $z_{1-\alpha}$ is the normal quantile. Using
+$s_{\mathrm{rms}}^{\mathrm{corrected}} = \sqrt{\hat{\mu}_{\mathrm{upper}}}$
+would give a bound valid with probability $1 - \alpha$ per step.
+The current implementation does not apply this correction.
 
 ### Tightness relative to worst-case DP
 
-**Theorem 3** (RMS is strictly tighter than worst-case DP).
+**Theorem 3** (Population RMS is strictly tighter than worst-case DP).
 *If the sensitivity distribution is non-degenerate (not all $s_i = 1$),
 then for all $\varepsilon \ge 0$:*
 
-$$\delta_{\mathrm{stoch}}(\varepsilon) \le \delta_{\mathrm{Gauss}}\!\left(\varepsilon;\, \frac{\sigma}{s_{\mathrm{rms}}}\right) < \delta_{\mathrm{Gauss}}\!\left(\varepsilon;\, \sigma\right) = \delta_{\mathrm{DP}}(\varepsilon).$$
+$$\delta_{\mathrm{stoch}}(\varepsilon) \le \delta_{\mathrm{Gauss}}\!\left(\varepsilon;\, \frac{\sigma}{s_{\mathrm{rms}}^{\mathrm{pop}}}\right) < \delta_{\mathrm{Gauss}}\!\left(\varepsilon;\, \sigma\right) = \delta_{\mathrm{DP}}(\varepsilon).$$
 
 **Proof.** The first inequality is Theorem 2. The second follows from
-$s_{\mathrm{rms}} < 1$ when any $s_i < 1$ (i.e., any example has
-gradient norm below the clipping bound), which gives
-$\sigma/s_{\mathrm{rms}} > \sigma$, and
+$s_{\mathrm{rms}}^{\mathrm{pop}} < 1$ when any $s_i < 1$ (i.e., any
+example has gradient norm below the clipping bound), which gives
+$\sigma/s_{\mathrm{rms}}^{\mathrm{pop}} > \sigma$, and
 $\delta_{\mathrm{Gauss}}(\varepsilon;\, \sigma')$ is strictly
 decreasing in $\sigma'$. $\square$
 
 **Remark.** The gap between RMS and worst-case DP is controlled by
-$s_{\mathrm{rms}}$. When most examples are well within the clipping
-bound ($s_{\mathrm{rms}} \ll 1$), the effective noise multiplier
-$\sigma / s_{\mathrm{rms}} \gg \sigma$ and the privacy improvement is
-substantial. When all examples hit the clipping bound
-($s_{\mathrm{rms}} = 1$), RMS accounting reduces to standard DP.
+$s_{\mathrm{rms}}^{\mathrm{pop}}$. When most examples are well within
+the clipping bound ($s_{\mathrm{rms}}^{\mathrm{pop}} \ll 1$), the
+effective noise multiplier $\sigma / s_{\mathrm{rms}}^{\mathrm{pop}}
+\gg \sigma$ and the privacy improvement is substantial. When all
+examples hit the clipping bound ($s_{\mathrm{rms}}^{\mathrm{pop}} = 1$),
+RMS accounting reduces to standard DP.
 
 ## Composition across steps
 
@@ -204,30 +224,36 @@ $$\mathrm{PLD}_{\mathrm{total}} = \circledast_{t=1}^{T}\; \mathrm{PoissonSubsamp
 and $\varepsilon$ at target $\delta$ is read off from
 $\mathrm{PLD}_{\mathrm{total}}$ as usual.
 
-**What this measures:** At each step, the composed PLD uses the RMS
-sensitivity of that step's batch. This is an upper bound on the
-single-step stochastic f-MIP (Theorem 2), and PLD composition
-preserves the ordering (if $\delta_A(\varepsilon) \le \delta_B(\varepsilon)$
-for all $\varepsilon$ at each step, then the composed $\delta$ inherits
-this). Therefore:
+**With population RMS (Theorem 2 + composition):**
 
-**Corollary.** *The RMS-composed $\varepsilon$ at any target $\delta$
-satisfies*
+**Corollary.** *If population RMS sensitivities are used at each step,
+the composed $\varepsilon$ satisfies*
 
-$$\varepsilon_{\mathrm{stoch}}^{\mathrm{exact}} \le \varepsilon_{\mathrm{RMS}} \le \varepsilon_{\mathrm{DP}}.$$
+$$\varepsilon_{\mathrm{stoch}}^{\mathrm{exact}} \le \varepsilon_{\mathrm{RMS}}^{\mathrm{pop}} \le \varepsilon_{\mathrm{DP}}.$$
 
 The left inequality is the per-step Jensen bound (Theorem 2) propagated
-through composition. The right inequality is Theorem 3.
+through composition (PLD composition preserves ordering). The right
+inequality is Theorem 3.
+
+**With batch RMS (this implementation):** The implementation uses the
+batch RMS $\hat{s}_{\mathrm{rms}}$ as an unbiased estimate of the
+population RMS. The composed $\varepsilon$ is an *estimate* of
+$\varepsilon_{\mathrm{RMS}}^{\mathrm{pop}}$, not a deterministic bound.
+In practice, the estimation errors across $T$ steps are independent and
+approximately cancel, so the composed result closely tracks the
+population-RMS value.
 
 ## Summary of guarantees
 
-| Quantity | Relation | Computational cost |
+| Quantity | Relation | Notes |
 |---|---|---|
-| $\varepsilon_{\mathrm{stoch}}^{\mathrm{exact}}$ (exact stochastic f-MIP) | $\le \varepsilon_{\mathrm{RMS}}$ | $O(N \cdot T \cdot G\log G)$ — infeasible |
-| $\varepsilon_{\mathrm{RMS}}$ (this implementation) | $\le \varepsilon_{\mathrm{DP}}$ | $O(T \cdot G\log G)$ — same as standard |
-| $\varepsilon_{\mathrm{DP}}$ (standard worst-case) | — | $O(T \cdot G\log G)$ — same as standard |
+| $\varepsilon_{\mathrm{stoch}}^{\mathrm{exact}}$ | $\le \varepsilon_{\mathrm{RMS}}^{\mathrm{pop}}$ | Exact stochastic f-MIP; $O(NT)$ cost |
+| $\varepsilon_{\mathrm{RMS}}^{\mathrm{pop}}$ (population RMS) | $\le \varepsilon_{\mathrm{DP}}$ | Rigorous bound; requires all $N$ sensitivities |
+| $\varepsilon_{\mathrm{RMS}}^{\mathrm{batch}}$ (this implementation) | $\approx \varepsilon_{\mathrm{RMS}}^{\mathrm{pop}}$ | Unbiased estimate; uses batch only |
+| $\varepsilon_{\mathrm{DP}}$ (standard worst-case) | — | Standard DP-SGD accounting |
 
-where $G$ is the PLD grid size.
+The batch estimate converges to the population value as $|B| \to \infty$
+or $T \to \infty$.
 
 ## Interpretation
 
