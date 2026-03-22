@@ -55,7 +55,9 @@ class Repeated(DpProcess):
         match self.inner:
             case Gaussian(noise_multiplier=nm) if nm < _SPA_THRESHOLD:
                 return _native.spa_gaussian_pld(nm).self_compose(self.count)
-            case Poisson(inner=Gaussian(noise_multiplier=nm), sample_rate=q) if nm < _SPA_THRESHOLD:
+            case Poisson(inner=Gaussian(noise_multiplier=nm), sample_rate=q) if (
+                nm < _SPA_THRESHOLD
+            ):
                 return _native.spa_poisson_gaussian_pld(nm, q).self_compose(self.count)
             case _:
                 return None
