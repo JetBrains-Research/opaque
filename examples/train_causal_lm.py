@@ -434,6 +434,14 @@ def parse_args():
         "privacy", "Privacy accounting and noise calibration"
     )
     privacy_group.add_argument(
+        "--mip_accounting",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Use MIP (per-example sensitivity) accounting for tighter epsilon. "
+        "Calibration still uses standard Gaussian; MIP is applied per-epoch "
+        "using observed gradient norms. Only supported with --shard (Poisson sampling).",
+    )
+    privacy_group.add_argument(
         "--target_epsilon",
         type=float,
         default=3.0,
@@ -831,6 +839,8 @@ def main():
     global_train_size = len(train_dataset)
     use_shard = is_ddp and args.shard
     use_parallel_poisson = is_ddp and not args.shard
+    if args.mip_accounting and use_parallel_poisson:
+        raise ValueError("--mip_accounting is not supported with --no_shard (parallel_poisson).")
     if use_shard:
         train_dataset = local_shard(train_dataset, rank=rank, world_size=world_size)
 
@@ -1047,7 +1057,12 @@ def main():
     # Accounting (all pld() calls automatically cached with maxsize=8)
     # Using acc.cached() here increases cache to maxsize=16 and creates merge barrier
     accounting = Accountant()
-    if use_parallel_poisson:
+    if args.mip_accounting:
+        # MIP mode: step_process is built per-epoch from observed gradient norms.
+        # We set step_process to None here; the training loop handles composition.
+        step_process = None
+        print("  Accounting: MIP Gaussian (per-epoch, from observed gradient norms)")
+    elif use_parallel_poisson:
         step_process = acc.cached(acc.parallel_poisson(
             acc.gaussian(noise_multiplier), sample_rate=sample_rate, num_workers=world_size,
         ))
@@ -1065,6 +1080,7 @@ def main():
     losses = []
     clip_norms_history = []
     clip_rates_history = []
+    epoch_sensitivities: list[float] = []  # per-example sensitivities for MIP accounting
     global_step = 0
 
     # Reset peak memory before training to get accurate training peak
@@ -1097,8 +1113,10 @@ def main():
         for step_idx, batch in enumerate(epoch_loader):
             (input_ids,) = batch
 
-            # Accounting update (must happen even for empty batches)
-            accounting |= step_process
+            # Accounting update (must happen even for empty batches).
+            # In MIP mode, accounting is deferred to end-of-epoch.
+            if not args.mip_accounting:
+                accounting |= step_process
 
             # Skip if no examples sampled (rare but possible with Poisson)
             if len(input_ids) == 0:
@@ -1144,6 +1162,12 @@ def main():
             losses.append(avg_loss)
             clip_norms_history.append(current_clip_norm)
             clip_rates_history.append(clip_rate)
+
+            # Collect per-example sensitivities for MIP accounting
+            if args.mip_accounting:
+                # sensitivity = clipped_grad_norm / clip_norm ∈ [0, 1]
+                sensitivities = (aux.clipped_grad_norms / current_clip_norm).tolist()
+                epoch_sensitivities.extend(sensitivities)
 
             global_step += 1
 
@@ -1207,6 +1231,27 @@ def main():
                 print(f"\nReached max_steps={args.max_steps}, stopping training.")
                 break
 
+        # MIP accounting: compose one mip_gaussian process for the whole epoch.
+        # Each step is poisson(mip_gaussian(nm, norms), rate) repeated for the
+        # number of steps that actually ran (step_idx + 1, including empty batches).
+        if args.mip_accounting:
+            epoch_steps = step_idx + 1
+            if epoch_sensitivities:
+                mip_inner = acc.mip_gaussian(noise_multiplier, epoch_sensitivities)
+            else:
+                # All batches were empty (extremely unlikely) — use standard gaussian
+                mip_inner = acc.gaussian(noise_multiplier)
+            if args.adaptive_clipping:
+                mip_inner = acc.adaclip(mip_inner, batch_size=args.batch_size)
+            epoch_process = acc.poisson(mip_inner, sample_rate=sample_rate)
+            accounting |= epoch_process * epoch_steps
+            print(
+                f"  MIP accounting: {epoch_steps} steps, "
+                f"{len(epoch_sensitivities)} examples, "
+                f"ε={accounting.epsilon_at(args.target_delta):.4f}"
+            )
+            epoch_sensitivities.clear()
+
         # Break outer epoch loop if max_steps reached
         if args.max_steps is not None and global_step >= args.max_steps:
             break
@@ -1239,7 +1284,9 @@ def main():
 
     final_epsilon = accounting.epsilon_at(args.target_delta)
     print("\nPrivacy:")
-    if use_parallel_poisson:
+    if args.mip_accounting:
+        print("  Accounting: MIP Gaussian (per-epoch, from observed gradient norms)")
+    elif use_parallel_poisson:
         print(f"  Accounting: parallel_poisson (world_size={world_size})")
     print(f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e} (n={global_train_size})")
     print(f"  Noise multiplier: {noise_multiplier:.4f}")
