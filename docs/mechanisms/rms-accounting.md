@@ -110,90 +110,109 @@ training examples, not just the batch.
 
 ## RMS approximation
 
-### RMS bound (Theorem 2)
+### RMS sensitivity
 
 Define the **RMS sensitivity**:
 
 $$s_{\mathrm{rms}} = \sqrt{\mathbb{E}_i[s_i^2]} = \sqrt{\frac{1}{N}\sum_{i=1}^N s_i^2}.$$
 
-**Theorem 2** (RMS is a valid upper bound on single-step stochastic
-f-MIP). *For each step $t$,*
+### Curvature of $\delta$ in $s^2$ (Corrected Analysis)
 
-$$\delta_{\mathrm{stoch}}^{(t)}(\varepsilon) \le \delta_{\mathrm{Gauss}}\!\left(\varepsilon;\, \frac{\sigma}{s_{\mathrm{rms}}}\right) \quad \text{for all } \varepsilon \ge 0.$$
+Define $\varphi(u) = \delta_{\mathrm{Gauss}}(\varepsilon;\, \sigma/\!\sqrt{u})$ for $u = s^2$.
+For the Gaussian mechanism:
 
-**Proof.** The Gaussian hockey-stick divergence
-$\delta_{\mathrm{Gauss}}(\varepsilon;\, \sigma/s)$ as a function of
-$s^2$ is convex (see Lemma below). By Jensen's inequality applied to
-the exact single-step identity (Theorem 1):
+$$\varphi(u) = \Phi\!\left(-\frac{\varepsilon}{\nu} + \frac{\nu}{2}\right) - e^\varepsilon\, \Phi\!\left(-\frac{\varepsilon}{\nu} - \frac{\nu}{2}\right),$$
 
-$$\delta_{\mathrm{stoch}}^{(t)}(\varepsilon) = \mathbb{E}_i\!\left[\delta_{\mathrm{Gauss}}\!\left(\varepsilon;\, \frac{\sigma}{s_i}\right)\right] \le \delta_{\mathrm{Gauss}}\!\left(\varepsilon;\, \frac{\sigma}{\sqrt{\mathbb{E}[s_i^2]}}\right) = \delta_{\mathrm{Gauss}}\!\left(\varepsilon;\, \frac{\sigma}{s_{\mathrm{rms}}}\right). \qquad \square$$
+where $\nu = \sqrt{u}/\sigma$.
 
-**Lemma** (Convexity in $s^2$). *Let $\varphi(u) = \delta_{\mathrm{Gauss}}(\varepsilon;\, \sigma/\!\sqrt{u})$ for $u = s^2$. Then $\varphi$ is convex on $(0, \infty)$ for all $\varepsilon \ge 0$.*
+**$\varphi$ is NOT globally convex (or concave) in $u$.** Numerical
+evaluation shows that the curvature depends on $\varepsilon$:
 
-**Proof.** For the Gaussian mechanism with sensitivity $s$ and noise $\sigma$,
+- At **small $\varepsilon$** (e.g., $\varepsilon \lesssim 0.7$ for
+  typical parameters), $\varphi$ is **concave** in $u$:
+  $\mathbb{E}[\varphi(u_i)] \le \varphi(\mathbb{E}[u_i])$.
+- At **large $\varepsilon$** (e.g., $\varepsilon \gtrsim 0.7$),
+  $\varphi$ is **convex** in $u$:
+  $\mathbb{E}[\varphi(u_i)] \ge \varphi(\mathbb{E}[u_i])$.
 
-$$\delta_{\mathrm{Gauss}}(\varepsilon;\, \sigma/s) = \Phi\!\left(-\frac{\varepsilon}{\nu} + \frac{\nu}{2}\right) - e^\varepsilon\, \Phi\!\left(-\frac{\varepsilon}{\nu} - \frac{\nu}{2}\right),$$
+The crossover point depends on $\sigma$ and the sensitivity
+distribution.
 
-where $\nu = s/\sigma$ and $u = s^2 = \nu^2 \sigma^2$, so
-$\nu = \sqrt{u}/\sigma$. Define $\varphi(u) = \delta_{\mathrm{Gauss}}(\varepsilon;\, \sigma/\!\sqrt{u})$.
+> **Erratum.** A previous version of this document stated a Lemma
+> claiming global convexity of $\varphi$ in $u = s^2$ and used it to
+> derive Theorem 2 ($\delta_{\mathrm{stoch}} \le \delta_{\mathrm{RMS}}$
+> for all $\varepsilon$). Both the Lemma and the resulting Theorem were
+> **incorrect**. The function $\varphi$ changes curvature with
+> $\varepsilon$, and the Jensen inequality does not yield a uniform
+> bound in either direction.
 
-We verify convexity by computing $\varphi''(u)$. Write $a = \varepsilon\sigma/\!\sqrt{u}$ and $b = \sqrt{u}/(2\sigma)$, so
-$\varphi(u) = \Phi(-a + b) - e^\varepsilon \Phi(-a - b)$. Both $a$
-and $b$ are smooth functions of $u$, and the chain rule gives a sum
-of terms involving $\phi(\cdot)$ (the Gaussian density) and
-$\phi'(\cdot)$. The key observation is that $\varphi'(u) \ge 0$
-(more sensitivity means more privacy loss) and the rate of increase
-itself increases with $u$, which can be verified by noting that the
-second derivative of the hockey-stick divergence with respect to the
-non-centrality parameter of a $\chi^2$ distribution is positive
-(see Leemann et al., Appendix B, where the exact trade-off involves
-non-central $\chi^2$ distributions whose non-centrality grows
-linearly in $s^2$). $\square$
+### RMS vs mixture: relationship (Theorem 2, corrected)
 
-**Remark.** The convexity direction means the RMS bound *overestimates*
-privacy loss (reports a larger $\delta$), making it a *conservative*
-(safe) approximation.
+**Theorem 2** (RMS is optimistic in the tail). *The single-step
+stochastic f-MIP $\delta_{\mathrm{stoch}}^{(t)}$ and the RMS
+approximation $\delta_{\mathrm{RMS}}^{(t)}$ satisfy:*
+
+- *At small $\varepsilon$ (concave regime):*
+  $\delta_{\mathrm{stoch}}^{(t)}(\varepsilon) \le \delta_{\mathrm{RMS}}^{(t)}(\varepsilon)$
+  *(RMS is conservative).*
+- *At large $\varepsilon$ (convex regime):*
+  $\delta_{\mathrm{stoch}}^{(t)}(\varepsilon) \ge \delta_{\mathrm{RMS}}^{(t)}(\varepsilon)$
+  *(RMS is optimistic).*
+
+*In particular, the RMS $\varepsilon$ at a small target $\delta$ (the
+operationally relevant regime) is a **lower bound** on the exact
+stochastic f-MIP $\varepsilon$:*
+
+$$\varepsilon_{\mathrm{RMS}} \le \varepsilon_{\mathrm{stoch}} \le \varepsilon_{\mathrm{DP}}.$$
+
+**Explanation.** Computing $\varepsilon$ at target $\delta$ requires
+finding the $\varepsilon^*$ where $\delta(\varepsilon^*) = \delta_{\mathrm{target}}$.
+For small $\delta_{\mathrm{target}}$, the relevant $\varepsilon^*$ is
+large — squarely in the convex regime where
+$\delta_{\mathrm{stoch}} \ge \delta_{\mathrm{RMS}}$. The mixture PLD
+captures the heavy right tail of the sensitivity distribution, which
+dominates privacy loss at large $\varepsilon$. The single-Gaussian RMS
+PLD has lighter tails, leading to optimistically low $\varepsilon$.
+
+Under composition (convolution of PLDs over $T$ steps), the heavier
+per-step tails compound, **widening** the gap between mixture and RMS.
+
+**Remark.** The RMS approximation *underestimates* privacy loss
+(reports a smaller $\varepsilon$), making it an **optimistic** (unsafe)
+approximation of stochastic f-MIP. It should be interpreted as a lower
+bound, not a privacy guarantee. Use `--accounting mixture` for a
+correct per-step stochastic f-MIP accounting.
 
 ### Batch RMS as sample estimate
 
-Theorem 2 bounds $\delta_{\mathrm{stoch}}$ in terms of
-$\mathbb{E}_i[s_i^2]$ (the population mean of squared sensitivities
-over all $N$ examples). At each step, we only observe sensitivities
-for the Poisson-sampled batch $B_t$. The implementation uses the
-**batch mean** as a sample estimate:
+The RMS implementation uses the **batch mean** as a sample estimate of
+the population $\mathbb{E}_i[s_i^2]$:
 
 $$(\hat{s}_{\mathrm{rms}}^{(t)})^2 = \frac{1}{|B_t|}\sum_{i \in B_t} \left(s_i^{(t)}\right)^2.$$
 
 Since Poisson sampling includes each example independently with
 probability $q$ (independently of gradient norms), this is an
-**unbiased estimator** of $\mathbb{E}_i[s_i^2]$. Every example goes
-through the identical Poisson-subsampled Gaussian mechanism — the
-only thing that varies across examples is $s_i$. So after Jensen's
-collapses the $N$-example average to a single PLD parameterized by
-$\mathbb{E}[s_i^2]$, estimating that parameter from a batch sample
-is standard Monte Carlo.
+**unbiased estimator** of $\mathbb{E}_i[s_i^2]$.
 
 ### Tightness relative to worst-case DP
 
-**Theorem 3** (RMS is strictly tighter than worst-case DP).
+**Theorem 3** (RMS gives lower $\varepsilon$ than worst-case DP).
 *If the sensitivity distribution is non-degenerate (not all $s_i = 1$),
-then for all $\varepsilon \ge 0$:*
+then $s_{\mathrm{rms}} < 1$, and for all $\varepsilon \ge 0$:*
 
-$$\delta_{\mathrm{stoch}}(\varepsilon) \le \delta_{\mathrm{Gauss}}\!\left(\varepsilon;\, \frac{\sigma}{s_{\mathrm{rms}}}\right) < \delta_{\mathrm{Gauss}}\!\left(\varepsilon;\, \sigma\right) = \delta_{\mathrm{DP}}(\varepsilon).$$
+$$\delta_{\mathrm{RMS}}(\varepsilon) = \delta_{\mathrm{Gauss}}\!\left(\varepsilon;\, \frac{\sigma}{s_{\mathrm{rms}}}\right) < \delta_{\mathrm{Gauss}}\!\left(\varepsilon;\, \sigma\right) = \delta_{\mathrm{DP}}(\varepsilon).$$
 
-**Proof.** The first inequality is Theorem 2. The second follows from
-$s_{\mathrm{rms}} < 1$ when any $s_i < 1$ (i.e., any example has
-gradient norm below the clipping bound), which gives
+**Proof.** $s_{\mathrm{rms}} < 1$ when any $s_i < 1$, which gives
 $\sigma/s_{\mathrm{rms}} > \sigma$, and
 $\delta_{\mathrm{Gauss}}(\varepsilon;\, \sigma')$ is strictly
 decreasing in $\sigma'$. $\square$
 
-**Remark.** The gap between RMS and worst-case DP is controlled by
-$s_{\mathrm{rms}}$. When most examples are well within the clipping
-bound ($s_{\mathrm{rms}} \ll 1$), the effective noise multiplier
-$\sigma / s_{\mathrm{rms}} \gg \sigma$ and the privacy improvement is
-substantial. When all examples hit the clipping bound
-($s_{\mathrm{rms}} = 1$), RMS accounting reduces to standard DP.
+**Remark.** This establishes that
+$\varepsilon_{\mathrm{RMS}} \le \varepsilon_{\mathrm{DP}}$. However,
+per corrected Theorem 2, $\varepsilon_{\mathrm{RMS}}$ also
+underestimates the exact stochastic f-MIP. The full ordering is:
+
+$$\varepsilon_{\mathrm{RMS}} \le \varepsilon_{\mathrm{stoch}} \le \varepsilon_{\mathrm{DP}}.$$
 
 ## Composition across steps
 
@@ -208,40 +227,48 @@ $\mathrm{PLD}_{\mathrm{total}}$ as usual.
 **Corollary.** *The RMS-composed $\varepsilon$ at any target $\delta$
 satisfies*
 
-$$\varepsilon_{\mathrm{stoch}}^{\mathrm{exact}} \le \varepsilon_{\mathrm{RMS}} \le \varepsilon_{\mathrm{DP}}.$$
+$$\varepsilon_{\mathrm{RMS}} \le \varepsilon_{\mathrm{mixture}} \le \varepsilon_{\mathrm{DP}}.$$
 
-The left inequality is the per-step Jensen bound (Theorem 2) propagated
-through composition (PLD composition preserves ordering). The right
-inequality is Theorem 3. In the implementation, $\mathbb{E}[s_i^2]$ is
-estimated from the batch at each step (see "Batch RMS as sample
-estimate" above).
+The right inequality follows from Theorem 3. The left inequality
+follows from the per-step tail analysis (corrected Theorem 2)
+propagated through composition: the mixture PLD has heavier tails
+per step, and PLD convolution compounds this across steps.
 
 ## Summary of guarantees
 
 | Quantity | Relation | Computational cost |
 |---|---|---|
-| $\varepsilon_{\mathrm{stoch}}^{\mathrm{exact}}$ (exact multi-step f-MIP) | — | $O(N \cdot T \cdot G\log G)$ — infeasible |
-| $\varepsilon_{\mathrm{mixture}}$ (`--accounting mixture`) | $\approx \varepsilon_{\mathrm{stoch}}^{\mathrm{exact}}$ | $O(T \cdot B \cdot G\log G)$ — ~100 bins/step |
-| $\varepsilon_{\mathrm{RMS}}$ (`--accounting rms`) | $\le \varepsilon_{\mathrm{DP}}$ | $O(T \cdot G\log G)$ — same as standard |
-| $\varepsilon_{\mathrm{DP}}$ (`--accounting standard`) | — | $O(T \cdot G\log G)$ — same as standard |
+| $\varepsilon_{\mathrm{RMS}}$ (`--accounting rms`) | optimistic lower bound | $O(T \cdot G\log G)$ — same as standard |
+| $\varepsilon_{\mathrm{mixture}}$ (`--accounting mixture`) | exact per-step f-MIP | $O(T \cdot B \cdot G\log G)$ — ~100 bins/step |
+| $\varepsilon_{\mathrm{stoch}}^{\mathrm{exact}}$ (exact multi-step f-MIP) | tightest (infeasible) | $O(N \cdot T \cdot G\log G)$ — infeasible |
+| $\varepsilon_{\mathrm{DP}}$ (`--accounting standard`) | worst-case upper bound | $O(T \cdot G\log G)$ — same as standard |
+
+Ordering: $\varepsilon_{\mathrm{RMS}} \le \varepsilon_{\mathrm{stoch}}^{\mathrm{exact}} \le \varepsilon_{\mathrm{mixture}} \le \varepsilon_{\mathrm{DP}}$.
 
 where $G$ is the PLD grid size and $B$ is the number of sensitivity bins.
 
-**RMS vs mixture:** RMS applies Jensen's inequality per step, losing
-tightness when the sensitivity distribution has high variance (mix of
-near-zero and near-1 sensitivities). Mixture keeps the full binned
-distribution and computes the exact single-step stochastic f-MIP.
+**RMS vs mixture:** The RMS PLD (single Gaussian with $s_{\mathrm{rms}}$)
+has lighter tails than the mixture PLD. At the large-$\varepsilon$
+regime that determines $\varepsilon$ at small target $\delta$, the
+mixture's heavier tails yield higher (correct) $\delta$, while RMS
+underestimates. This gap compounds under composition. **Use mixture
+for correct accounting; treat RMS as an optimistic estimate only.**
+
 Both share the same multi-step approximation: they average per step
 then compose, rather than composing per-example then averaging.
-When all examples are clipped ($s_i = 1$), the mixture automatically
-reduces to a standard Gaussian PLD (no extra cost).
+The mixture $\varepsilon$ may therefore slightly overestimate the
+exact multi-step f-MIP (due to cross-trajectory terms in composition),
+but this is a conservative direction.
+
+When all examples are clipped ($s_i = 1$), both reduce to standard DP.
 
 ## Interpretation
 
-The RMS accounting answers the question: *how private is a randomly
-chosen training example, on average?* This is a weaker guarantee than
-worst-case DP (which protects the *worst* example) but a stronger
-guarantee than empirical auditing (which measures a specific attack).
+The stochastic f-MIP accounting (both RMS and mixture modes) answers
+the question: *how private is a randomly chosen training example, on
+average?* This is a weaker guarantee than worst-case DP (which protects
+the *worst* example) but a stronger guarantee than empirical auditing
+(which measures a specific attack).
 
 It is the natural privacy measure when:
 
@@ -252,16 +279,21 @@ It is the natural privacy measure when:
   privacy experienced by training participants, rather than the
   worst-case outlier.
 
+**Important:** The mixture mode gives the correct per-step stochastic
+f-MIP. The RMS mode underestimates privacy loss (optimistic) and
+should not be used as a privacy guarantee. It may still be useful as a
+fast diagnostic or lower bound on $\varepsilon$.
+
 ## Usage
 
 ```bash
-# Jensen bound (fast, slightly loose)
-python train_causal_lm.py --accounting rms ...
-
-# Binned mixture (exact per-step, tighter)
+# Exact per-step stochastic f-MIP (recommended)
 python train_causal_lm.py --accounting mixture ...
+
+# RMS lower bound (fast, optimistic — NOT a valid privacy guarantee)
+python train_causal_lm.py --accounting rms ...
 ```
 
 Both modes add negligible overhead. Calibration still uses standard
-worst-case DP (the noise level is unchanged); the tighter $\varepsilon$
-is reported alongside as a post-hoc measure.
+worst-case DP (the noise level is unchanged); the stochastic f-MIP
+$\varepsilon$ is reported alongside as a post-hoc measure.

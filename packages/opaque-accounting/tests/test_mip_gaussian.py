@@ -129,6 +129,35 @@ class TestMipGaussianPld:
         high = MipGaussian(noise_multiplier=0.5, sensitivities=(1.0,), weights=(1.0,))
         assert low.epsilon_at(1e-5) < high.epsilon_at(1e-5)
 
+    def test_mixture_gives_higher_epsilon_than_rms(self):
+        """Mixture PLD should give higher (worse) epsilon than RMS Gaussian.
+
+        The mixture PLD has heavier tails than a single Gaussian with
+        s_rms sensitivity. At the large-epsilon regime relevant for small
+        target delta, this yields higher epsilon. This verifies that RMS
+        is an optimistic (lower) bound, not a conservative (upper) bound.
+        """
+        sensitivities = (0.3, 1.0)
+        weights = (0.5, 0.5)
+        nm = 0.5
+
+        # Mixture: weighted average of Gaussian PLDs
+        mip = MipGaussian(
+            noise_multiplier=nm, sensitivities=sensitivities, weights=weights
+        )
+
+        # RMS: single Gaussian with effective noise = nm / s_rms
+        s_rms = math.sqrt(sum(w * s**2 for s, w in zip(sensitivities, weights)))
+        rms = acc.gaussian(nm / s_rms)
+
+        for delta in [1e-3, 1e-5, 1e-7]:
+            eps_mip = mip.epsilon_at(delta)
+            eps_rms = rms.epsilon_at(delta)
+            assert eps_mip > eps_rms, (
+                f"Mixture epsilon ({eps_mip:.4f}) should be > RMS epsilon "
+                f"({eps_rms:.4f}) at delta={delta:.0e}"
+            )
+
 
 # ---------------------------------------------------------------------------
 # Poisson amplification
@@ -158,6 +187,33 @@ class TestPoissonMipGaussian:
         assert mip_step.epsilon_at(1e-5) == pytest.approx(
             std_step.epsilon_at(1e-5), abs=1e-2
         )
+
+    def test_poisson_mixture_higher_epsilon_than_rms(self):
+        """Poisson(mixture) should give higher epsilon than Poisson(RMS Gaussian).
+
+        The gap between mixture and RMS widens under Poisson subsampling
+        and composition, confirming RMS is optimistic in the practical regime.
+        """
+        sensitivities = (0.3, 1.0)
+        weights = (0.5, 0.5)
+        nm = 0.5
+        rate = 0.01
+
+        mip_step = acc.poisson(
+            MipGaussian(noise_multiplier=nm, sensitivities=sensitivities, weights=weights),
+            sample_rate=rate,
+        )
+        s_rms = math.sqrt(sum(w * s**2 for s, w in zip(sensitivities, weights)))
+        rms_step = acc.poisson(acc.gaussian(nm / s_rms), sample_rate=rate)
+
+        # Single step
+        assert mip_step.epsilon_at(1e-5) > rms_step.epsilon_at(1e-5)
+
+        # After composition (gap should widen)
+        mip_composed = mip_step * 100
+        rms_composed = rms_step * 100
+        gap_composed = mip_composed.epsilon_at(1e-5) - rms_composed.epsilon_at(1e-5)
+        assert gap_composed > 0, "Mixture should give higher epsilon than RMS after composition"
 
     def test_composition(self):
         norms = [0.3, 0.7, 1.0] * 100

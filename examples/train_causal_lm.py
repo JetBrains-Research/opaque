@@ -440,10 +440,10 @@ def parse_args():
         choices=["standard", "rms", "mixture"],
         help="Privacy accounting mode. "
         "'standard': worst-case DP (default). "
-        "'rms': per-step RMS sensitivity — Jensen bound on stochastic f-MIP, "
-        "one Gaussian PLD per step (fast, slightly loose). "
+        "'rms': per-step RMS sensitivity — optimistic lower bound on stochastic f-MIP, "
+        "one Gaussian PLD per step (fast, but underestimates privacy cost). "
         "'mixture': per-step binned sensitivity mixture — exact single-step "
-        "stochastic f-MIP via weighted mixture of Gaussian PLDs (tighter, "
+        "stochastic f-MIP via weighted mixture of Gaussian PLDs (recommended, "
         "~100 bins per step). "
         "Both rms and mixture require --shard (Poisson sampling).",
     )
