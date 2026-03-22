@@ -224,6 +224,28 @@ class TestParallelPoissonAutoTruncation:
         assert eps_loose >= eps_tight - 1e-10
 
 
+class TestParallelPoissonRateOne:
+    """rate == 1.0 degenerate case: every example appears in all microbatches."""
+
+    def test_rate_1_does_not_produce_nan(self):
+        """Should return a finite positive epsilon without NaN/inf."""
+        import math
+
+        for m in [2, 4, 8]:
+            pp = acc.parallel_poisson(acc.gaussian(0.8), sample_rate=1.0, num_workers=m)
+            eps = pp.epsilon_at(1e-5)
+            assert math.isfinite(eps) and eps > 0, (
+                f"m={m}: expected finite positive epsilon, got {eps}"
+            )
+
+    def test_rate_1_epsilon_increases_with_microbatches(self):
+        """More microbatches at rate=1.0 → more privacy cost."""
+        delta = 1e-5
+        eps2 = acc.parallel_poisson(acc.gaussian(0.8), sample_rate=1.0, num_workers=2).epsilon_at(delta)
+        eps4 = acc.parallel_poisson(acc.gaussian(0.8), sample_rate=1.0, num_workers=4).epsilon_at(delta)
+        assert eps2 < eps4, f"Expected eps2={eps2} < eps4={eps4}"
+
+
 class TestPoissonTruncatedGaussian:
     """Poisson subsampling with truncated Gaussian inner."""
 

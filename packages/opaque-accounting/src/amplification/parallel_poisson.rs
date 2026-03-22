@@ -61,7 +61,17 @@ pub fn parallel_poisson_gaussian_pld(
     let tail_budget = config.tail_mass_truncation / 2.0;
     let one_sided_x_tail_mass = 0.5 * log_mass.exp();
 
-    let full_log_probs = binomial_log_probs(microbatches, rate);
+    // When rate == 1.0 every example appears in all `microbatches` microbatches
+    // (K = m always). binomial_log_probs would compute ln(1 - q) = ln(0) = -inf and
+    // ln(q / (1 - q)) = +inf, producing NaNs. Instead construct the degenerate
+    // distribution directly: P(K = m) = 1, P(K < m) = 0.
+    let full_log_probs = if (rate - 1.0).abs() < 1e-15 {
+        let mut lp = vec![f64::NEG_INFINITY; microbatches + 1];
+        lp[microbatches] = 0.0; // ln(1.0) = 0.0
+        lp
+    } else {
+        binomial_log_probs(microbatches, rate)
+    };
     let effective_k = auto_k_max_from_x_tail_mass(
         &full_log_probs,
         microbatches,
@@ -494,6 +504,57 @@ mod tests {
 
         let delta_rem = mixture_gaussian_get_delta(1.0, Adjacency::Remove, &c).unwrap();
         assert_relative_eq!(delta_rem, 0.15768284088654105, epsilon = 1e-6);
+    }
+
+    // ---- rate == 1.0 fast-path ----
+
+    /// When rate == 1.0 the Binomial is degenerate (K = m always).
+    /// Previously binomial_log_probs would compute ln(0) / ln(inf) → NaN.
+    /// Verify the fast-path returns a finite, positive epsilon.
+    #[test]
+    fn test_rate_1_does_not_produce_nan() {
+        let cfg = default_config();
+        for &m in &[2_usize, 4, 8] {
+            let result = parallel_poisson_gaussian_pld(0.8, 1.0, m, &cfg);
+            assert!(result.is_ok(), "m={} should succeed", m);
+            let eps = result.unwrap().epsilon_at(1e-5);
+            assert!(
+                eps.is_finite() && eps > 0.0,
+                "m={}: expected finite positive epsilon, got {}",
+                m,
+                eps
+            );
+        }
+    }
+
+    /// With rate == 1.0, every example appears in all m microbatches, so the
+    /// mechanism is a plain Gaussian with sensitivity = m and noise σ.
+    /// Scaling both by 1/m gives an equivalent noise_multiplier = σ/m.
+    /// Check that our PLD matches gaussian_pld(σ/m) within discretization error.
+    #[test]
+    fn test_rate_1_matches_gaussian_sensitivity_m() {
+        use crate::mechanisms::gaussian_pld;
+
+        let cfg = default_config();
+        // Use σ=0.8, m=2 → effective noise_multiplier = 0.4 (in allowed range).
+        let sigma = 0.8_f64;
+        let m = 2_usize;
+        let effective_nm = sigma / m as f64; // 0.4
+
+        let pld_pp = parallel_poisson_gaussian_pld(sigma, 1.0, m, &cfg).unwrap();
+        let pld_g = gaussian_pld(effective_nm, &cfg).unwrap();
+
+        for &delta in &[1e-3_f64, 1e-5, 1e-7] {
+            let eps_pp = pld_pp.epsilon_at(delta);
+            let eps_g = pld_g.epsilon_at(delta);
+            assert!(
+                (eps_pp - eps_g).abs() < 1e-3,
+                "δ={}: parallel_poisson(rate=1) ε={} vs gaussian(σ/m) ε={}",
+                delta,
+                eps_pp,
+                eps_g
+            );
+        }
     }
 
     /// Helper: construct MixtureConstants from arbitrary sensitivities and probs.
