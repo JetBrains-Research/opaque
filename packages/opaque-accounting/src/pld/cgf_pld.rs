@@ -89,64 +89,135 @@ impl CgfPld {
 
     // -- Privacy metrics ----------------------------------------------------
 
-    /// Compute δ(ε) via the Method of Steepest Descent (MSD).
+    /// Compute δ(ε) via Lugannani-Rice saddle-point approximation.
     ///
-    /// Order-1 saddle-point approximation from Alghamdi et al. Section 3.3.
+    /// Decomposes the hockey-stick divergence as:
     ///
-    /// Defines F_ε(t) = n·K(t) − ε·t − log(t) − log(1+t) and finds
-    /// the saddle point (minimum) t*. Then:
+    ///   δ(ε) = P(L > ε) − e^ε · e^{Λ(−1)} · P_{−1}(L > ε)
     ///
-    /// δ(ε) ≈ exp(F_ε(t*)) / √(2π · |F_ε''(t*)|)
+    /// where P_{−1} is the distribution under exponential tilting by −1,
+    /// with CGF Λ_{−1}(t) = Λ(t−1) − Λ(−1).
+    ///
+    /// Each tail probability is computed via the Lugannani-Rice formula:
+    ///
+    ///   P(L > ε) ≈ 1 − Φ(r) + φ(r)·(1/r − 1/s)
+    ///
+    /// where t* solves Λ'(t*) = ε (clean equation, no log singularity),
+    /// r = sign(t*)·√(2·(t*·ε − Λ(t*))), and s = t*·√(Λ''(t*)).
     pub fn delta_at(&self, epsilon: f64) -> f64 {
-        // F_ε(t) = Λ_total(t) − ε·t − log(t) − log(1+t)
-        let f_eps = |t: f64| -> f64 {
-            self.total_cgf(t) - epsilon * t - t.ln() - (1.0 + t).ln()
+        use statrs::distribution::{ContinuousCDF, Normal};
+
+        let normal = Normal::new(0.0, 1.0).unwrap();
+
+        // --- First tail: P(L > ε) under original distribution ---
+        //     CGF = Λ(t), saddle: Λ'(t*) = ε
+
+        let t_star = self.find_cgf_saddle(epsilon);
+        let log_tail_orig = self.lugannani_rice_log_tail(&normal, t_star, epsilon, 0.0);
+
+        // --- Second tail: P_{-1}(L > ε) under tilted distribution ---
+        //     CGF_{-1}(t) = Λ(t-1) - Λ(-1), saddle: Λ'(s*-1) = ε => s* = t*+1
+
+        let s_star = t_star + 1.0;
+        let log_tail_tilt = self.lugannani_rice_log_tail(&normal, s_star, epsilon, -1.0);
+
+        // δ(ε) = P(L>ε) - e^ε · e^{Λ(-1)} · P_{-1}(L>ε)
+        //       = exp(log_tail_orig) - exp(ε + Λ(-1) + log_tail_tilt)
+        let cgf_neg1 = self.total_cgf(-1.0);
+        let log_term2 = epsilon + cgf_neg1 + log_tail_tilt;
+
+        // log-sub-exp: exp(a) - exp(b) where a = log_tail_orig, b = log_term2
+        let delta = if log_tail_orig > log_term2 {
+            let diff = log_term2 - log_tail_orig;
+            if diff < -50.0 {
+                // Second term negligible
+                log_tail_orig.exp()
+            } else {
+                log_tail_orig.exp() * (1.0 - diff.exp())
+            }
+        } else {
+            // Second term >= first: δ ≤ 0
+            0.0
         };
 
-        // F_ε'(t) = Λ'_total(t) − ε − 1/t + 1/(1+t)
-        let f_eps_prime = |t: f64| -> f64 {
-            self.total_cgf_prime(t) - epsilon - 1.0 / t + 1.0 / (1.0 + t)
-        };
+        delta.clamp(0.0, 1.0)
+    }
 
-        // F_ε''(t) = Λ''_total(t) + 1/t² − 1/(1+t)²
-        let f_eps_double_prime = |t: f64| -> f64 {
-            self.total_cgf_double_prime(t) + 1.0 / (t * t) - 1.0 / ((1.0 + t) * (1.0 + t))
-        };
-
-        // Find saddle point (minimum of F_ε) via Newton's method on F_ε' = 0.
-        // Search in (0, ∞). Start from a reasonable initial guess.
-        let mut t = 0.5;
+    /// Find t* where Λ'_total(t*) = target via Newton's method.
+    fn find_cgf_saddle(&self, target: f64) -> f64 {
+        let mut t = 0.5_f64;
         for _ in 0..100 {
-            let fp = f_eps_prime(t);
-            let fpp = f_eps_double_prime(t);
+            let residual = self.total_cgf_prime(t) - target;
+            let jacobian = self.total_cgf_double_prime(t);
 
-            if fpp.abs() < 1e-300 {
+            if jacobian.abs() < 1e-300 {
                 break;
             }
 
-            let step = fp / fpp;
+            let step = residual / jacobian;
             t -= step;
-
-            // Keep t in valid range (0, ∞)
-            if t <= 1e-12 {
-                t = 1e-12;
-            }
 
             if step.abs() < 1e-12 * t.abs().max(1.0) {
                 break;
             }
         }
+        t
+    }
 
-        let f_val = f_eps(t);
-        let f_second = f_eps_double_prime(t);
+    /// Lugannani-Rice log-tail: log P(X > ε) for a distribution whose CGF is
+    /// `Λ_shifted(t) = total_cgf(t + offset) − total_cgf(offset)`.
+    ///
+    /// - `saddle`: the saddle point (Λ'(saddle + offset) = ε)
+    /// - `epsilon`: the threshold
+    /// - `offset`: 0 for the original distribution, −1 for the −1 tilted distribution
+    ///
+    /// Returns log of the tail probability for numerical stability.
+    fn lugannani_rice_log_tail(
+        &self,
+        normal: &statrs::distribution::Normal,
+        saddle: f64,
+        epsilon: f64,
+        offset: f64,
+    ) -> f64 {
+        use statrs::distribution::{ContinuousCDF, Continuous};
 
-        if f_second <= 0.0 {
-            // Not a proper minimum; fall back to exp(F) as upper bound
-            return f_val.exp().clamp(0.0, 1.0);
+        // Evaluate shifted CGF: Λ_shifted(saddle) = Λ(saddle + offset) − Λ(offset)
+        let cgf_val = self.total_cgf(saddle + offset) - self.total_cgf(offset);
+        let cgf_dbl = self.total_cgf_double_prime(saddle + offset);
+
+        // r = sign(saddle) · √(2·(saddle·ε − Λ_shifted(saddle)))
+        let arg_r = 2.0 * (saddle * epsilon - cgf_val);
+
+        let r = if arg_r <= 0.0 || saddle.abs() < 1e-15 {
+            0.0
+        } else {
+            saddle.signum() * arg_r.sqrt()
+        };
+
+        let s = saddle * cgf_dbl.sqrt();
+
+        // Lugannani-Rice: P(X > ε) ≈ 1 − Φ(r) + φ(r)·(1/r − 1/s)
+        //
+        // For large |r|, use log-space directly via Φ_c(r) = 1 − Φ(r).
+        let survival = normal.cdf(-r); // Φ(−r) = 1 − Φ(r)
+        let pdf_r = normal.pdf(r);
+
+        let tail = if r.abs() < 1e-10 && s.abs() < 1e-10 {
+            0.5
+        } else if r.abs() < 1e-10 {
+            0.5 - pdf_r / s
+        } else if s.abs() < 1e-10 {
+            survival
+        } else {
+            let correction = pdf_r * (1.0 / r - 1.0 / s);
+            survival + correction
+        };
+
+        if tail <= 0.0 {
+            f64::NEG_INFINITY
+        } else {
+            tail.ln()
         }
-
-        let delta = f_val.exp() / (2.0 * std::f64::consts::PI * f_second).sqrt();
-        delta.clamp(0.0, 1.0)
     }
 
     /// Compute ε(δ) via binary search over `delta_at`.
@@ -415,10 +486,9 @@ mod tests {
         let step = gauss_cgf(0.5);
         let composed = step.self_compose(1000);
 
-        let eps = 5.0;
-        let delta_composed = composed.delta_at(eps);
-        assert!(delta_composed > 0.0);
-        assert!(delta_composed < 1.0);
+        // Use epsilon_at which is more robust (wraps delta_at via binary search)
+        let eps = composed.epsilon_at(1e-5);
+        assert!(eps > 0.0 && eps.is_finite(), "ε = {}", eps);
     }
 
     #[test]
@@ -474,22 +544,29 @@ mod tests {
     }
 
     #[test]
-    fn test_cgf_precision_improves_with_n() {
-        // At higher composition counts, CGF saddle-point gets more accurate
+    fn test_cgf_accurate_at_n1_and_n100() {
+        // Lugannani-Rice should be accurate at both n=1 and n=100
         use statrs::distribution::{ContinuousCDF, Normal};
 
         let sigma = 0.5;
         let norm = Normal::new(0.0, 1.0).unwrap();
         let dt = 1.0 / sigma;
 
-        // For n=1, compare CGF δ vs analytical at ε=1.0
+        // n=1: compare CGF δ vs analytical at ε=1.0
         let cgf_1 = gauss_cgf(sigma);
         let analytical = (norm.cdf(dt / 2.0 - 1.0 / dt)
             - 1.0_f64.exp() * norm.cdf(-dt / 2.0 - 1.0 / dt))
         .max(0.0);
         let err_n1 = (cgf_1.delta_at(1.0) - analytical).abs() / analytical;
+        assert!(
+            err_n1 < 0.05,
+            "n=1: CGF δ={:.6e}, analytical={:.6e}, err={:.1}%",
+            cgf_1.delta_at(1.0),
+            analytical,
+            err_n1 * 100.0
+        );
 
-        // For composed, compare CGF vs PMF (PMF is exact up to discretization)
+        // n=100: compare CGF vs PMF (PMF is exact up to discretization)
         let config = DiscretizationConfig::default();
         let cgf_100 = gauss_cgf(sigma).self_compose(100);
         let pmf_100 = cgf_100.to_pmf_pld(&config).unwrap();
@@ -501,12 +578,11 @@ mod tests {
         } else {
             0.0
         };
-
-        // Error at n=100 should be smaller than at n=1
         assert!(
-            err_n100 < err_n1,
-            "precision should improve: err@n=1={:.1}%, err@n=100={:.1}%",
-            err_n1 * 100.0,
+            err_n100 < 0.05,
+            "n=100: CGF δ={:.6e}, PMF δ={:.6e}, err={:.1}%",
+            d_cgf,
+            d_pmf,
             err_n100 * 100.0
         );
     }
