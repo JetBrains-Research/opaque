@@ -6,6 +6,7 @@ import pytest
 
 import opaque_accounting as acc
 from opaque_accounting.base import DpProcess
+from opaque_accounting.mechanisms.identity import Identity
 from opaque_accounting.mechanisms.mip_gaussian import (
     MipGaussian,
     mip_gaussian,
@@ -70,6 +71,11 @@ class TestMipGaussianConstructor:
     def test_rejects_zero_noise(self):
         with pytest.raises(ValueError, match="positive"):
             mip_gaussian(0.0, [0.5])
+
+    def test_all_zero_norms_returns_identity(self):
+        proc = mip_gaussian(0.8, [0.0, 0.0, 0.0])
+        assert isinstance(proc, Identity)
+        assert proc.epsilon_at(1e-5) == 0.0
 
 
 # ---------------------------------------------------------------------------
