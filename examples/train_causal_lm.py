@@ -435,13 +435,12 @@ def parse_args():
     )
     privacy_group.add_argument(
         "--mip_accounting",
-        type=str,
-        choices=["rms", "histogram"],
-        default=None,
-        help="Use MIP (stochastic f-DP) accounting for tighter epsilon. "
-        "'rms': per-step RMS sensitivity (cheap, valid upper bound on stochastic f-MIP). "
-        "'histogram': per-epoch full histogram via mip_gaussian (exact single-step, expensive). "
-        "Calibration still uses standard Gaussian; MIP is applied using observed gradient norms. "
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Use stochastic f-MIP accounting for tighter epsilon. "
+        "Computes per-step RMS sensitivity and adjusts the effective noise multiplier. "
+        "Valid upper bound on exact stochastic f-MIP (Jensen's), strictly tighter than "
+        "worst-case DP. Same computational cost as standard accounting. "
         "Only supported with --shard (Poisson sampling).",
     )
     privacy_group.add_argument(
@@ -842,7 +841,7 @@ def main():
     global_train_size = len(train_dataset)
     use_shard = is_ddp and args.shard
     use_parallel_poisson = is_ddp and not args.shard
-    if args.mip_accounting is not None and use_parallel_poisson:
+    if args.mip_accounting and use_parallel_poisson:
         raise ValueError("--mip_accounting is not supported with --no_shard (parallel_poisson).")
     if use_shard:
         train_dataset = local_shard(train_dataset, rank=rank, world_size=world_size)
@@ -1060,16 +1059,10 @@ def main():
     # Accounting (all pld() calls automatically cached with maxsize=8)
     # Using acc.cached() here increases cache to maxsize=16 and creates merge barrier
     accounting = Accountant()
-    if args.mip_accounting == "histogram":
-        # Histogram MIP mode: step_process is built per-epoch from observed gradient norms.
-        # We set step_process to None here; the training loop handles composition.
+    if args.mip_accounting:
+        # MIP mode: step_process is built per-step using s_rms.
         step_process = None
-        print("  Accounting: MIP Gaussian histogram (per-epoch, from observed gradient norms)")
-    elif args.mip_accounting == "rms":
-        # RMS MIP mode: step_process is built per-step using s_rms.
-        # We set step_process to None here; the training loop handles composition.
-        step_process = None
-        print("  Accounting: MIP RMS (per-step, stochastic f-MIP upper bound)")
+        print("  Accounting: stochastic f-MIP (per-step RMS sensitivity)")
     elif use_parallel_poisson:
         step_process = acc.cached(acc.parallel_poisson(
             acc.gaussian(noise_multiplier), sample_rate=sample_rate, num_workers=world_size,
@@ -1088,7 +1081,6 @@ def main():
     losses = []
     clip_norms_history = []
     clip_rates_history = []
-    epoch_sensitivities: list[float] = []  # per-example sensitivities for MIP accounting
     global_step = 0
 
     # Reset peak memory before training to get accurate training peak
@@ -1122,12 +1114,11 @@ def main():
             (input_ids,) = batch
 
             # Accounting update (must happen even for empty batches).
-            # In histogram MIP mode, accounting is deferred to end-of-epoch.
-            # In RMS MIP mode, accounting happens per-step after gradient computation.
-            if args.mip_accounting is None:
+            # In MIP mode, per-step accounting happens after gradient computation.
+            if not args.mip_accounting:
                 accounting |= step_process
-            elif args.mip_accounting == "rms" and len(input_ids) == 0:
-                # Empty batch in RMS mode: use standard gaussian (sensitivity=1)
+            elif len(input_ids) == 0:
+                # Empty batch in MIP mode: use standard gaussian (sensitivity=1)
                 accounting |= acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
 
             # Skip if no examples sampled (rare but possible with Poisson)
@@ -1175,8 +1166,8 @@ def main():
             clip_norms_history.append(current_clip_norm)
             clip_rates_history.append(clip_rate)
 
-            # MIP accounting: collect or compose per-example sensitivities
-            if args.mip_accounting == "rms":
+            # Stochastic f-MIP accounting: per-step RMS sensitivity
+            if args.mip_accounting:
                 # s_rms = √(mean(s²)) where s_i = ||g_i||_clipped / C ∈ [0, 1]
                 # Use gaussian(noise_multiplier / s_rms) — valid upper bound on
                 # stochastic f-MIP by Jensen's (δ(ε;σ,s) is convex in s²).
@@ -1184,15 +1175,11 @@ def main():
                 s_rms = s_squared.mean().sqrt().item()
                 s_rms = max(s_rms, 1e-8)  # avoid division by zero
                 effective_nm = noise_multiplier / s_rms
-                rms_inner = acc.gaussian(effective_nm)
+                mip_inner = acc.gaussian(effective_nm)
                 if args.adaptive_clipping:
-                    rms_inner = acc.adaclip(rms_inner, batch_size=args.batch_size)
-                rms_step = acc.poisson(rms_inner, sample_rate)
-                accounting |= rms_step
-            elif args.mip_accounting == "histogram":
-                # sensitivity = clipped_grad_norm / clip_norm ∈ [0, 1]
-                sensitivities = (aux.clipped_grad_norms / current_clip_norm).tolist()
-                epoch_sensitivities.extend(sensitivities)
+                    mip_inner = acc.adaclip(mip_inner, batch_size=args.batch_size)
+                mip_step = acc.poisson(mip_inner, sample_rate)
+                accounting |= mip_step
 
             global_step += 1
 
@@ -1218,7 +1205,7 @@ def main():
                         "perf/reserved_gb": perf_metrics["memory_reserved_gb"],
                         "perf/peak_gb": perf_metrics["memory_peak_gb"],
                     }
-                    if args.mip_accounting == "rms":
+                    if args.mip_accounting:
                         log_dict["privacy/s_rms"] = s_rms
                         log_dict["privacy/effective_nm"] = effective_nm
                     wandb.log(log_dict, step=global_step)
@@ -1260,31 +1247,11 @@ def main():
                 print(f"\nReached max_steps={args.max_steps}, stopping training.")
                 break
 
-        # MIP accounting: compose privacy at epoch end.
-        if args.mip_accounting == "rms":
-            # RMS mode: already composed per-step above. Just log.
+        if args.mip_accounting:
             print(
-                f"  MIP-RMS accounting: "
+                f"  MIP accounting: "
                 f"ε={accounting.epsilon_at(args.target_delta):.4f}"
             )
-        elif args.mip_accounting == "histogram":
-            # Histogram mode: compose one mip_gaussian process for the whole epoch.
-            epoch_steps = step_idx + 1
-            if epoch_sensitivities:
-                mip_inner = acc.mip_gaussian(noise_multiplier, epoch_sensitivities)
-            else:
-                # All batches were empty (extremely unlikely) — use standard gaussian
-                mip_inner = acc.gaussian(noise_multiplier)
-            if args.adaptive_clipping:
-                mip_inner = acc.adaclip(mip_inner, batch_size=args.batch_size)
-            epoch_process = acc.poisson(mip_inner, sample_rate=sample_rate)
-            accounting |= epoch_process * epoch_steps
-            print(
-                f"  MIP-histogram accounting: {epoch_steps} steps, "
-                f"{len(epoch_sensitivities)} examples, "
-                f"ε={accounting.epsilon_at(args.target_delta):.4f}"
-            )
-            epoch_sensitivities.clear()
 
         # Break outer epoch loop if max_steps reached
         if args.max_steps is not None and global_step >= args.max_steps:
@@ -1318,10 +1285,8 @@ def main():
 
     final_epsilon = accounting.epsilon_at(args.target_delta)
     print("\nPrivacy:")
-    if args.mip_accounting == "rms":
-        print("  Accounting: MIP RMS (per-step, stochastic f-MIP upper bound)")
-    elif args.mip_accounting == "histogram":
-        print("  Accounting: MIP Gaussian histogram (per-epoch, from observed gradient norms)")
+    if args.mip_accounting:
+        print("  Accounting: stochastic f-MIP (per-step RMS sensitivity)")
     elif use_parallel_poisson:
         print(f"  Accounting: parallel_poisson (world_size={world_size})")
     print(f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e} (n={global_train_size})")
