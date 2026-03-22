@@ -17,7 +17,7 @@ use super::{validate_noise_multiplier, validate_rate};
 ///
 /// # Arguments
 ///
-/// * `noise_multiplier` — σ/Δ, must be in \[0.1, 1.2\]
+/// * `noise_multiplier` — σ/Δ, must be in \[0.01, 2.5\]
 /// * `rate` — Poisson sampling probability q ∈ (0, 1\]
 /// * `config` — discretization configuration
 ///
@@ -31,6 +31,11 @@ pub fn poisson_gaussian_pld(
 ) -> Result<PrivacyLossDistribution> {
     validate_noise_multiplier(noise_multiplier)?;
     validate_rate(rate)?;
+
+    // Auto-route: small σ → SPA (avoids PLD grid explosion)
+    if noise_multiplier < crate::mechanisms::SPA_NOISE_THRESHOLD {
+        return spa_poisson_gaussian_pld(noise_multiplier, rate);
+    }
 
     let sigma = noise_multiplier;
     let sensitivity = 1.0;

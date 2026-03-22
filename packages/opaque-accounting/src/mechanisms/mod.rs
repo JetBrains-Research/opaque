@@ -32,6 +32,13 @@ pub(crate) const MIN_NOISE_MULTIPLIER: f64 = 0.01;
 /// For σ > 2.5, use `identity()` instead.
 pub(crate) const MAX_NOISE_MULTIPLIER: f64 = 2.5;
 
+/// Noise multiplier threshold for automatic SPA routing.
+///
+/// Below this value, PLD discretization suffers from grid explosion
+/// (ε bounds scale as 1/σ²). The Saddle-Point Accountant handles
+/// small noise multipliers analytically via CGF evaluation.
+pub(crate) const SPA_NOISE_THRESHOLD: f64 = 0.1;
+
 // ---------------------------------------------------------------------------
 // Re-exports
 // ---------------------------------------------------------------------------

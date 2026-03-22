@@ -4,7 +4,7 @@ use crate::discretization::{discretize_symmetric_mechanism, DiscretizationConfig
 use crate::error::{PldError, Result};
 use crate::pld::PrivacyLossDistribution;
 
-use super::{MAX_NOISE_MULTIPLIER, MIN_NOISE_MULTIPLIER};
+use super::{MAX_NOISE_MULTIPLIER, MIN_NOISE_MULTIPLIER, SPA_NOISE_THRESHOLD};
 
 /// Compute the PLD for a Gaussian mechanism.
 ///
@@ -13,8 +13,10 @@ use super::{MAX_NOISE_MULTIPLIER, MIN_NOISE_MULTIPLIER};
 ///
 /// # Arguments
 ///
-/// * `noise_multiplier` — σ/Δ ratio, must be in \[0.01, 2.5\]
-/// * `config` — discretization configuration for PLD grid
+/// * `noise_multiplier` — σ/Δ ratio, must be in \[0.01, 2.5\].
+///   For σ < 0.1, automatically uses the Saddle-Point Accountant (SPA)
+///   instead of PLD discretization to avoid grid explosion.
+/// * `config` — discretization configuration for PLD grid (ignored for SPA path)
 ///
 /// # Errors
 ///
@@ -28,6 +30,11 @@ pub fn gaussian_pld(
             "noise_multiplier must be in [{}, {}], got {}",
             MIN_NOISE_MULTIPLIER, MAX_NOISE_MULTIPLIER, noise_multiplier
         )));
+    }
+
+    // Auto-route: small σ → SPA (avoids PLD grid explosion)
+    if noise_multiplier < SPA_NOISE_THRESHOLD {
+        return spa_gaussian_pld(noise_multiplier);
     }
 
     let bounds = gaussian_epsilon_bounds(noise_multiplier, config.log_mass_truncation_bound);
@@ -165,6 +172,36 @@ mod tests {
                     err
                 );
             }
+        }
+    }
+
+    /// Small σ values auto-route to SPA and produce valid results.
+    #[test]
+    fn test_gaussian_small_sigma_auto_routes_to_spa() {
+        for &sigma in &[0.01, 0.03, 0.05, 0.09] {
+            let pld = gaussian_pld(sigma, &default_config()).unwrap();
+            let eps = pld.epsilon_at(1e-5);
+            assert!(eps > 0.0 && eps.is_finite(), "σ={}: ε={}", sigma, eps);
+        }
+    }
+
+    /// Monotonicity holds across the SPA/PMF boundary.
+    #[test]
+    fn test_gaussian_monotonicity_across_spa_boundary() {
+        let cfg = default_config();
+        // σ=0.09 → SPA, σ=0.1 → PMF (at boundary), σ=0.15 → PMF
+        let sigmas = [0.05, 0.09, 0.1, 0.15, 0.25];
+        let epsilons: Vec<f64> = sigmas
+            .iter()
+            .map(|&s| gaussian_pld(s, &cfg).unwrap().epsilon_at(1e-5))
+            .collect();
+        for w in epsilons.windows(2) {
+            assert!(
+                w[0] > w[1],
+                "ε should decrease with σ: got {} then {}",
+                w[0],
+                w[1]
+            );
         }
     }
 }
