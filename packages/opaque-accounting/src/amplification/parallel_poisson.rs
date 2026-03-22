@@ -12,7 +12,7 @@ use crate::pld::PrivacyLossDistribution;
 use statrs::distribution::{ContinuousCDF, Normal};
 
 use super::poisson::poisson_gaussian_pld;
-use super::{validate_noise_multiplier, validate_rate};
+use super::{validate_noise_multiplier, validate_rate_strict};
 
 /// Compute the PLD for a parallel Poisson-subsampled Gaussian mechanism.
 ///
@@ -31,7 +31,7 @@ use super::{validate_noise_multiplier, validate_rate};
 /// # Arguments
 ///
 /// * `noise_multiplier` — σ/Δ, must be in \[0.1, 1.2\]
-/// * `rate` — Poisson sampling probability q ∈ (0, 1\]
+/// * `rate` — Poisson sampling probability q ∈ (0, 1)
 /// * `microbatches` — number of independent samples m > 0
 /// * `config` — discretization configuration
 ///
@@ -45,7 +45,7 @@ pub fn parallel_poisson_gaussian_pld(
     config: &DiscretizationConfig,
 ) -> Result<PrivacyLossDistribution> {
     validate_noise_multiplier(noise_multiplier)?;
-    validate_rate(rate)?;
+    validate_rate_strict(rate)?;
     if microbatches == 0 {
         return Err(PldError::InvalidParameter(
             "microbatches must be > 0".into(),
@@ -390,6 +390,11 @@ mod tests {
 
     fn default_config() -> DiscretizationConfig {
         DiscretizationConfig::default()
+    }
+
+    #[test]
+    fn test_accumulated_rejects_rate_one() {
+        assert!(parallel_poisson_gaussian_pld(0.5, 1.0, 4, &default_config()).is_err());
     }
 
     #[test]
