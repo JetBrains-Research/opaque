@@ -18,7 +18,9 @@ use crate::discretization::{discretize_asymmetric_mechanism, DiscretizationConfi
 use crate::error::{PldError, Result};
 use crate::pld::PrivacyLossDistribution;
 
-use super::poisson::{poisson_gaussian_epsilon_bounds, poisson_gaussian_get_delta};
+use super::poisson::{
+    inverse_privacy_loss_gaussian, poisson_gaussian_epsilon_bounds, poisson_gaussian_get_delta,
+};
 use super::{validate_noise_multiplier, validate_rate};
 
 /// Compute the PLD for a Poisson-subsampled MIP Gaussian mechanism.
@@ -72,6 +74,10 @@ pub fn poisson_mip_gaussian_pld(
 }
 
 /// Weighted hockey-stick divergence for the Poisson MIP Gaussian mixture.
+///
+/// This is a batched implementation that precomputes epsilon-dependent values
+/// shared across all sensitivity components, avoiding redundant work in the
+/// inner loop.
 fn mip_poisson_get_delta(
     epsilon: f64,
     adjacency: Adjacency,
@@ -80,10 +86,117 @@ fn mip_poisson_get_delta(
     weights: &[f64],
     rate: f64,
 ) -> f64 {
+    let q = rate;
+
+    // If rate == 1 (no subsampling), fall back to per-component calls.
+    if (q - 1.0).abs() < 1e-15 {
+        return sensitivities
+            .iter()
+            .zip(weights.iter())
+            .map(|(&s, &w)| w * poisson_gaussian_get_delta(epsilon, adjacency, sigma, s, rate))
+            .sum();
+    }
+
+    match adjacency {
+        Adjacency::Add => mip_get_delta_add_batch(epsilon, sigma, sensitivities, weights, q),
+        Adjacency::Remove => {
+            mip_get_delta_remove_batch(epsilon, sigma, sensitivities, weights, q)
+        }
+        Adjacency::Replace => {
+            // Replace adjacency: no batched shortcut, use per-component calls.
+            sensitivities
+                .iter()
+                .zip(weights.iter())
+                .map(|(&s, &w)| {
+                    w * poisson_gaussian_get_delta(epsilon, adjacency, sigma, s, rate)
+                })
+                .sum()
+        }
+    }
+}
+
+/// Batched ADD delta: precompute `l_base` once, then loop over sensitivities.
+fn mip_get_delta_add_batch(
+    epsilon: f64,
+    sigma: f64,
+    sensitivities: &[f64],
+    weights: &[f64],
+    q: f64,
+) -> f64 {
+    use crate::numerics::logspace::log_add;
+    use crate::numerics::special::gaussian_log_cdf;
+    use statrs::distribution::{ContinuousCDF, Normal};
+
+    let theoretical_upper = -(1.0 - q).ln();
+    if epsilon >= theoretical_upper - 1e-10 {
+        return 0.0;
+    }
+
+    let exp_neg_eps = (-epsilon).exp();
+    let ratio = (exp_neg_eps - (1.0 - q)) / q;
+    if ratio <= 0.0 {
+        return 0.0;
+    }
+    let l_base = -ratio.ln();
+
+    // Precompute shared log values.
+    let log_1_minus_q = (1.0 - q).ln();
+    let log_q = q.ln();
+    let standard_normal = Normal::new(0.0, 1.0).unwrap();
+
     sensitivities
         .iter()
         .zip(weights.iter())
-        .map(|(&s, &w)| w * poisson_gaussian_get_delta(epsilon, adjacency, sigma, s, rate))
+        .map(|(&s, &w)| {
+            let x_cutoff = inverse_privacy_loss_gaussian(l_base, sigma, s);
+            let z = x_cutoff / sigma;
+            let mu_upper = standard_normal.cdf(z);
+            let log_mu_upper = gaussian_log_cdf(z);
+            let log_cdf_lower = gaussian_log_cdf((x_cutoff - s) / sigma);
+            let log_mu_lower = log_add(log_1_minus_q + log_mu_upper, log_q + log_cdf_lower);
+            w * (mu_upper - (epsilon + log_mu_lower).exp()).max(0.0)
+        })
+        .sum()
+}
+
+/// Batched REMOVE delta: precompute `l_base` once, then loop over sensitivities.
+fn mip_get_delta_remove_batch(
+    epsilon: f64,
+    sigma: f64,
+    sensitivities: &[f64],
+    weights: &[f64],
+    q: f64,
+) -> f64 {
+    use crate::numerics::logspace::log_add;
+    use crate::numerics::special::gaussian_log_cdf;
+
+    let theoretical_lower = (1.0 - q).ln();
+    if epsilon <= theoretical_lower {
+        return (-epsilon.exp_m1()).max(0.0);
+    }
+
+    let exp_eps = epsilon.exp();
+    let ratio = (exp_eps - (1.0 - q)) / q;
+    if ratio <= 0.0 {
+        return (-epsilon.exp_m1()).max(0.0);
+    }
+    let l_base = -ratio.ln();
+
+    // Precompute shared log values.
+    let log_1_minus_q = (1.0 - q).ln();
+    let log_q = q.ln();
+
+    sensitivities
+        .iter()
+        .zip(weights.iter())
+        .map(|(&s, &w)| {
+            let x_cutoff = inverse_privacy_loss_gaussian(l_base, sigma, s);
+            let log_tail_upper = gaussian_log_cdf(-x_cutoff / sigma);
+            let log_tail_shifted = gaussian_log_cdf((s - x_cutoff) / sigma);
+            let log_mu_upper =
+                log_add(log_1_minus_q + log_tail_upper, log_q + log_tail_shifted);
+            w * (log_mu_upper.exp() - (epsilon + log_tail_upper).exp()).max(0.0)
+        })
         .sum()
 }
 

@@ -57,18 +57,28 @@ pub fn mip_gaussian_pld(
 }
 
 /// Weighted hockey-stick divergence for the MIP Gaussian mixture.
+///
+/// Batched: precomputes `exp(epsilon)` and reuses a single Normal distribution
+/// across all K components instead of constructing one per call.
 fn mip_gaussian_delta_at(
     sigma: f64,
     sensitivities: &[f64],
     weights: &[f64],
     epsilon: f64,
 ) -> f64 {
+    use statrs::distribution::{ContinuousCDF, Normal};
+    let standard_normal = Normal::new(0.0, 1.0).unwrap();
+    let exp_eps = epsilon.exp();
+
     sensitivities
         .iter()
         .zip(weights.iter())
         .map(|(&s, &w)| {
             let delta_tilde = s / sigma;
-            w * crate::numerics::gaussian::gaussian_delta_at(delta_tilde, epsilon)
+            let x_upper = 0.5 * delta_tilde - epsilon / delta_tilde;
+            let cdf_x = standard_normal.cdf(x_upper);
+            let cdf_shifted = standard_normal.cdf(x_upper - delta_tilde);
+            w * (cdf_x - exp_eps * cdf_shifted).max(0.0)
         })
         .sum()
 }

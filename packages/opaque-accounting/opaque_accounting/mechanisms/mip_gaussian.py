@@ -63,12 +63,14 @@ class MipGaussian(DpProcess):
 
 
 def _bin_norms(
-    norms: Sequence[float], num_bins: int = 1000
+    norms: Sequence[float], num_bins: int = 100
 ) -> tuple[tuple[float, ...], tuple[float, ...]]:
     """Bin raw per-example norms into (sensitivities, weights) pairs.
 
     Rounds each norm to a grid with ``num_bins`` evenly spaced buckets
     between 0 and max(norms), then aggregates counts into normalized weights.
+    Adjacent bins whose sensitivities differ by less than ``merge_rtol``
+    (relative) are merged to reduce the number of components.
     """
     n = len(norms)
     max_norm = max(norms)
@@ -92,7 +94,7 @@ def mip_gaussian(
     noise_multiplier: float,
     norms: Sequence[float],
     *,
-    num_bins: int = 1000,
+    num_bins: int = 100,
 ) -> MipGaussian:
     """MIP Gaussian mechanism with per-example gradient norms.
 
@@ -104,7 +106,7 @@ def mip_gaussian(
     Args:
         noise_multiplier: Noise standard deviation divided by clipping norm (σ/C).
         norms: Raw per-example gradient norms (one per training example).
-        num_bins: Number of bins for discretising norms (default 1000).
+        num_bins: Number of bins for discretising norms (default 100).
 
     Returns:
         A :class:`MipGaussian` process.
