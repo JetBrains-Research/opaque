@@ -18,7 +18,7 @@ use super::{validate_noise_multiplier, validate_rate};
 /// # Arguments
 ///
 /// * `noise_multiplier` — σ/Δ, must be in \[0.1, 1.2\]
-/// * `rate` — Poisson sampling probability q ∈ (0, 1\]
+/// * `rate` — Poisson sampling probability q ∈ (0, 1)
 /// * `config` — discretization configuration
 ///
 /// # Errors
@@ -345,7 +345,7 @@ mod tests {
     #[test]
     fn test_poisson_rate_monotonicity() {
         let cfg = default_config();
-        let rates = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0];
+        let rates = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5];
         let epsilons: Vec<f64> = rates
             .iter()
             .map(|&q| poisson_gaussian_pld(0.5, q, &cfg).unwrap().epsilon_at(1e-5))

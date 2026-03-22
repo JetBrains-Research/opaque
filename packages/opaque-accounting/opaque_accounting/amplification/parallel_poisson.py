@@ -98,7 +98,7 @@ def parallel_poisson(
     Args:
         inner: A Gaussian or AdaClip mechanism (from :func:`gaussian` or
             :func:`adaclip`).
-        sample_rate: Probability of including each example, in (0, 1].
+        sample_rate: Probability of including each example, in (0, 1).
         num_workers: Number of parallel workers running Poisson sampling
             independently.
 

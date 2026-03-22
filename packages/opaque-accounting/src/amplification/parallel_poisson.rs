@@ -31,7 +31,7 @@ use super::{validate_noise_multiplier, validate_rate};
 /// # Arguments
 ///
 /// * `noise_multiplier` — σ/Δ, must be in \[0.1, 1.2\]
-/// * `rate` — Poisson sampling probability q ∈ (0, 1\]
+/// * `rate` — Poisson sampling probability q ∈ (0, 1)
 /// * `microbatches` — number of independent samples m > 0
 /// * `config` — discretization configuration
 ///
@@ -390,6 +390,11 @@ mod tests {
 
     fn default_config() -> DiscretizationConfig {
         DiscretizationConfig::default()
+    }
+
+    #[test]
+    fn test_accumulated_rejects_rate_one() {
+        assert!(parallel_poisson_gaussian_pld(0.5, 1.0, 4, &default_config()).is_err());
     }
 
     #[test]
