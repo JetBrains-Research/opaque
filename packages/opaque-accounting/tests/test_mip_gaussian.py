@@ -200,7 +200,9 @@ class TestPoissonMipGaussian:
         rate = 0.01
 
         mip_step = acc.poisson(
-            MipGaussian(noise_multiplier=nm, sensitivities=sensitivities, weights=weights),
+            MipGaussian(
+                noise_multiplier=nm, sensitivities=sensitivities, weights=weights
+            ),
             sample_rate=rate,
         )
         s_rms = math.sqrt(sum(w * s**2 for s, w in zip(sensitivities, weights)))
@@ -213,7 +215,9 @@ class TestPoissonMipGaussian:
         mip_composed = mip_step * 100
         rms_composed = rms_step * 100
         gap_composed = mip_composed.epsilon_at(1e-5) - rms_composed.epsilon_at(1e-5)
-        assert gap_composed > 0, "Mixture should give higher epsilon than RMS after composition"
+        assert gap_composed > 0, (
+            "Mixture should give higher epsilon than RMS after composition"
+        )
 
     def test_composition(self):
         norms = [0.3, 0.7, 1.0] * 100
