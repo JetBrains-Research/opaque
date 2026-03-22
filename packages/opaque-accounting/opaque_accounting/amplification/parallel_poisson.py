@@ -98,9 +98,14 @@ def parallel_poisson(
     Args:
         inner: A Gaussian or AdaClip mechanism (from :func:`gaussian` or
             :func:`adaclip`).
-        sample_rate: Probability of including each example, in (0, 1].
+        sample_rate: Probability of including each example, in (0, 1).
         num_workers: Number of parallel workers running Poisson sampling
             independently.
+
+    Notes:
+        Truncation is selected automatically inside the Rust implementation
+        from query-time discretization settings
+        (``log_x_mass_truncation_bound``) to balance speed and conservativeness.
 
     Returns:
         A :class:`ParallelPoisson` process.

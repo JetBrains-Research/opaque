@@ -38,9 +38,9 @@ fn validate_noise_multiplier(nm: f64) -> Result<()> {
 }
 
 fn validate_rate(rate: f64) -> Result<()> {
-    if !(rate > 0.0 && rate <= 1.0) {
+    if !(rate > 0.0 && rate < 1.0) {
         return Err(PldError::InvalidParameter(format!(
-            "sampling rate must be in (0, 1], got {}",
+            "sampling rate must be in (0, 1), got {}",
             rate
         )));
     }

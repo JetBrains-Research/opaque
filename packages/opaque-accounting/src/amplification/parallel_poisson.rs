@@ -31,7 +31,7 @@ use super::{validate_noise_multiplier, validate_rate};
 /// # Arguments
 ///
 /// * `noise_multiplier` — σ/Δ, must be in \[0.1, 1.2\]
-/// * `rate` — Poisson sampling probability q ∈ (0, 1\]
+/// * `rate` — Poisson sampling probability q ∈ (0, 1)
 /// * `microbatches` — number of independent samples m > 0
 /// * `config` — discretization configuration
 ///
@@ -51,7 +51,6 @@ pub fn parallel_poisson_gaussian_pld(
             "microbatches must be > 0".into(),
         ));
     }
-
     // m=1 fallback: exact match with standard Poisson
     if microbatches == 1 {
         return poisson_gaussian_pld(noise_multiplier, rate, config);
@@ -60,15 +59,58 @@ pub fn parallel_poisson_gaussian_pld(
     let sigma = noise_multiplier;
     let log_mass = config.log_mass_truncation_bound;
     let tail_budget = config.tail_mass_truncation / 2.0;
-    let c = MixtureConstants::new(sigma, microbatches, rate);
+    let one_sided_x_tail_mass = 0.5 * log_mass.exp();
+
+    let full_log_probs = binomial_log_probs(microbatches, rate);
+    let effective_k = auto_k_max_from_x_tail_mass(
+        &full_log_probs,
+        microbatches,
+        one_sided_x_tail_mass,
+    );
+    let (normalized_log_probs, head_mass, tail_mass) = if effective_k < microbatches {
+        let head_log_probs = &full_log_probs[..=effective_k];
+        let head_log_mass = log_sumexp(head_log_probs);
+        let head_mass = head_log_mass.exp();
+        let tail_mass = (1.0 - head_mass).clamp(0.0, 1.0);
+        let normalized: Vec<f64> = head_log_probs.iter().map(|&lp| lp - head_log_mass).collect();
+        (normalized, head_mass, tail_mass)
+    } else {
+        (full_log_probs, 1.0, 0.0)
+    };
+
+    let c = MixtureConstants::from_log_probs(sigma, normalized_log_probs);
 
     let bounds_remove = mixture_gaussian_epsilon_bounds(Adjacency::Remove, &c, log_mass)?;
     let bounds_add = mixture_gaussian_epsilon_bounds(Adjacency::Add, &c, log_mass)?;
 
     discretize_asymmetric_mechanism(config, bounds_remove, bounds_add, |epsilon, adj| {
-        mixture_gaussian_get_delta(epsilon, adj, &c)
+        let delta_head = mixture_gaussian_get_delta(epsilon, adj, &c)?;
+        Ok((head_mass * delta_head + tail_mass).clamp(0.0, 1.0))
     })
     .map(|pld| pld.with_tail_budgets(tail_budget, tail_budget))
+}
+
+fn auto_k_max_from_x_tail_mass(
+    full_log_probs: &[f64],
+    microbatches: usize,
+    one_sided_x_tail_mass: f64,
+) -> usize {
+    // `log_mass_truncation_bound` parameterizes x-space truncation as a two-sided
+    // mass budget. For one-sided K-tail truncation, use half that mass.
+    let tail_target = one_sided_x_tail_mass.clamp(0.0, 1.0);
+    if tail_target <= 0.0 {
+        return microbatches;
+    }
+
+    let mut head_mass = 0.0;
+    for (k, &lp) in full_log_probs.iter().enumerate() {
+        head_mass += lp.exp();
+        let tail_mass = (1.0 - head_mass).max(0.0);
+        if tail_mass <= tail_target {
+            return k.min(microbatches);
+        }
+    }
+    microbatches
 }
 
 // ===========================================================================
@@ -87,9 +129,9 @@ struct MixtureConstants {
 }
 
 impl MixtureConstants {
-    fn new(sigma: f64, m: usize, q: f64) -> Self {
+    fn from_log_probs(sigma: f64, log_probs: Vec<f64>) -> Self {
         let variance = sigma * sigma;
-        let log_probs = binomial_log_probs(m, q);
+        let m = log_probs.len() - 1;
         let sensitivities: Vec<f64> = (0..=m).map(|k| k as f64).collect();
 
         let precomputed_remove: Vec<f64> = (0..=m)
@@ -351,6 +393,11 @@ mod tests {
     }
 
     #[test]
+    fn test_accumulated_rejects_rate_one() {
+        assert!(parallel_poisson_gaussian_pld(0.5, 1.0, 4, &default_config()).is_err());
+    }
+
+    #[test]
     fn test_accumulated_rejects_zero_microbatches() {
         assert!(parallel_poisson_gaussian_pld(0.5, 0.01, 0, &default_config()).is_err());
     }
@@ -390,6 +437,27 @@ mod tests {
             eps2,
             eps4,
             eps8
+        );
+    }
+
+    #[test]
+    fn test_accumulated_looser_log_mass_is_not_tighter() {
+        let cfg = default_config();
+        let strict = parallel_poisson_gaussian_pld(0.8, 0.02, 16, &cfg)
+            .unwrap()
+            .epsilon_at(1e-5);
+
+        let mut loose_cfg = default_config();
+        loose_cfg.log_mass_truncation_bound = -20.0;
+        let loose = parallel_poisson_gaussian_pld(0.8, 0.02, 16, &loose_cfg)
+            .unwrap()
+            .epsilon_at(1e-5);
+
+        assert!(
+            loose >= strict,
+            "looser log mass truncation should not tighten ε: {} >= {}",
+            loose,
+            strict
         );
     }
 

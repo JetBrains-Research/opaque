@@ -30,7 +30,7 @@ const MAX_RADIUS: f64 = 100.0;
 ///
 /// * `noise_multiplier` — σ/Δ ratio, must be in \[0.1, 1.2\]
 /// * `radius` — support half-width in sigma units, in \[0.1, 100\]
-/// * `rate` — Poisson sampling probability q ∈ (0, 1\]
+/// * `rate` — Poisson sampling probability q ∈ (0, 1)
 /// * `config` — discretization configuration
 pub fn poisson_truncated_gaussian_pld(
     noise_multiplier: f64,
@@ -392,7 +392,7 @@ mod tests {
     fn test_poisson_truncated_valid_params() {
         let cfg = default_config();
         assert!(poisson_truncated_gaussian_pld(0.5, 3.0, 0.01, &cfg).is_ok());
-        assert!(poisson_truncated_gaussian_pld(0.5, 3.0, 1.0, &cfg).is_ok());
+        assert!(poisson_truncated_gaussian_pld(0.5, 3.0, 0.99, &cfg).is_ok());
     }
 
     /// Poisson subsampling should reduce epsilon compared to base mechanism.
@@ -445,7 +445,7 @@ mod tests {
     #[test]
     fn test_poisson_truncated_rate_monotonicity() {
         let cfg = default_config();
-        let rates = [0.001, 0.01, 0.1, 0.5, 1.0];
+        let rates = [0.001, 0.01, 0.1, 0.5];
         let epsilons: Vec<f64> = rates
             .iter()
             .map(|&q| {
