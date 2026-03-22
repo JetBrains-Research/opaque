@@ -143,8 +143,11 @@ class TestPerSampleAccounting:
 
         # 1. Per-sample trajectory (exact)
         eps_per_sample = per_sample_composed_epsilon(
-            nm, sample_rate, data["sample_sensitivities"],
-            num_steps=num_steps, delta=delta,
+            nm,
+            sample_rate,
+            data["sample_sensitivities"],
+            num_steps=num_steps,
+            delta=delta,
         )
 
         # 2. Mixture (compose per-step mixtures with Poisson)
@@ -163,7 +166,7 @@ class TestPerSampleAccounting:
         ).epsilon_at(delta)
 
         print(f"\n{'Mode':<25} {'ε':>10}")
-        print(f"{'-'*35}")
+        print(f"{'-' * 35}")
         print(f"{'RMS':<25} {eps_rms:10.4f}")
         print(f"{'Per-sample trajectory':<25} {eps_per_sample:10.4f}")
         print(f"{'Mixture':<25} {eps_mixture:10.4f}")
@@ -189,9 +192,9 @@ class TestPerSampleAccounting:
         eps_per_sample = per_sample_composed_epsilon(
             nm, q, [1.0] * N, num_steps=T, delta=1e-5
         )
-        eps_baseline = (
-            acc.poisson(acc.gaussian(nm), sample_rate=q) * T
-        ).epsilon_at(1e-5)
+        eps_baseline = (acc.poisson(acc.gaussian(nm), sample_rate=q) * T).epsilon_at(
+            1e-5
+        )
 
         assert eps_per_sample == pytest.approx(eps_baseline, rel=0.05)
 
@@ -217,8 +220,11 @@ class TestPerSampleAccounting:
         )
 
         eps_per_sample = per_sample_composed_epsilon(
-            nm, sample_rate, data["sample_sensitivities"],
-            num_steps=num_steps, delta=delta,
+            nm,
+            sample_rate,
+            data["sample_sensitivities"],
+            num_steps=num_steps,
+            delta=delta,
         )
         eps_mixture = compose_steps_with_poisson(
             data["step_mixture_processes"], sample_rate
@@ -227,7 +233,7 @@ class TestPerSampleAccounting:
             data["step_rms_processes"], sample_rate
         ).epsilon_at(delta)
 
-        print(f"\nHigh-variance sensitivity test:")
+        print("\nHigh-variance sensitivity test:")
         print(f"  RMS:        {eps_rms:.4f}")
         print(f"  Per-sample: {eps_per_sample:.4f}")
         print(f"  Mixture:    {eps_mixture:.4f}")
