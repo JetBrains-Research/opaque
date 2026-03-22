@@ -62,7 +62,9 @@ class MipGaussian(DpProcess):
         )
 
 
-def _bin_norms(norms: Sequence[float], num_bins: int = 1000) -> tuple[tuple[float, ...], tuple[float, ...]]:
+def _bin_norms(
+    norms: Sequence[float], num_bins: int = 1000
+) -> tuple[tuple[float, ...], tuple[float, ...]]:
     """Bin raw per-example norms into (sensitivities, weights) pairs.
 
     Rounds each norm to a grid with ``num_bins`` evenly spaced buckets

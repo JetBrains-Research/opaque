@@ -58,14 +58,19 @@ class Poisson(DpProcess):
                 )
             case MipGaussian(noise_multiplier=nm, sensitivities=s, weights=w):
                 return _native.poisson_mip_gaussian_pld(
-                    nm, self.sample_rate, list(s), list(w),
+                    nm,
+                    self.sample_rate,
+                    list(s),
+                    list(w),
                     config.to_native(),
                 )
             case AdaClip(inner=MipGaussian() as mg):
                 z_eff = self.inner.effective_noise_multiplier
                 return _native.poisson_mip_gaussian_pld(
-                    z_eff, self.sample_rate,
-                    list(mg.sensitivities), list(mg.weights),
+                    z_eff,
+                    self.sample_rate,
+                    list(mg.sensitivities),
+                    list(mg.weights),
                     config.to_native(),
                 )
             case AdaClip():
@@ -114,7 +119,9 @@ def poisson(
         training = step * 1000
         eps = training.epsilon_at(1e-5)
     """
-    if not isinstance(inner, (Gaussian, RectifiedGaussian, TruncatedGaussian, MipGaussian, AdaClip)):
+    if not isinstance(
+        inner, (Gaussian, RectifiedGaussian, TruncatedGaussian, MipGaussian, AdaClip)
+    ):
         raise TypeError(
             f"poisson() requires a Gaussian, RectifiedGaussian, TruncatedGaussian, "
             f"MipGaussian, or AdaClip inner mechanism, got {type(inner).__name__}. "

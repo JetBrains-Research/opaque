@@ -6,7 +6,11 @@ import pytest
 
 import opaque_accounting as acc
 from opaque_accounting.base import DpProcess
-from opaque_accounting.mechanisms.mip_gaussian import MipGaussian, mip_gaussian, _bin_norms
+from opaque_accounting.mechanisms.mip_gaussian import (
+    MipGaussian,
+    mip_gaussian,
+    _bin_norms,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -165,9 +169,7 @@ class TestAdaClipMipGaussian:
         """AdaClip adds quantile noise cost, so epsilon should increase."""
         inner = mip_gaussian(0.8, [0.5, 1.0] * 50)
         bare = acc.poisson(inner, sample_rate=0.01)
-        with_adaclip = acc.poisson(
-            acc.adaclip(inner, batch_size=256), sample_rate=0.01
-        )
+        with_adaclip = acc.poisson(acc.adaclip(inner, batch_size=256), sample_rate=0.01)
         assert with_adaclip.epsilon_at(1e-5) > bare.epsilon_at(1e-5)
 
 
@@ -180,7 +182,9 @@ class TestTruncatedPoissonMipGaussian:
     def test_raises_not_implemented(self):
         inner = mip_gaussian(0.8, [0.5, 1.0])
         with pytest.raises(NotImplementedError, match="MipGaussian"):
-            acc.truncated_poisson(inner, sample_rate=0.01, batch_size_cap=256, dataset_size=10000).pld()
+            acc.truncated_poisson(
+                inner, sample_rate=0.01, batch_size_cap=256, dataset_size=10000
+            ).pld()
 
 
 # ---------------------------------------------------------------------------
