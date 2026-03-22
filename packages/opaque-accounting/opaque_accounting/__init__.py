@@ -90,6 +90,7 @@ from opaque_accounting.mechanisms import (
     eps_delta,
     gaussian,
     identity,
+    mip_gaussian,
     rectified_gaussian,
     truncated_gaussian,
 )
@@ -117,6 +118,7 @@ __all__ = [
     "truncated_gaussian",
     "eps_delta",
     "identity",
+    "mip_gaussian",
     "band_mf",
     "blt_mf",
     "dense_mf",

@@ -36,6 +36,10 @@ from opaque_accounting.mechanisms.identity import (
     Identity,
     identity,
 )
+from opaque_accounting.mechanisms.mip_gaussian import (
+    MipGaussian,
+    mip_gaussian,
+)
 from opaque_accounting.mechanisms.rectified_gaussian import (
     RectifiedGaussian,
     rectified_gaussian,
@@ -53,6 +57,7 @@ __all__ = [
     "BandMf",
     "BltMf",
     "DenseMf",
+    "MipGaussian",
     "RectifiedGaussian",
     "TruncatedGaussian",
     # Constructor functions
@@ -62,6 +67,7 @@ __all__ = [
     "band_mf",
     "blt_mf",
     "dense_mf",
+    "mip_gaussian",
     "rectified_gaussian",
     "truncated_gaussian",
 ]

@@ -9,12 +9,13 @@ from .. import opaque_accounting as _native
 
 from opaque_accounting.base import DpProcess, Pld
 from opaque_accounting.mechanisms.gaussian import Gaussian
+from opaque_accounting.mechanisms.mip_gaussian import MipGaussian
 from opaque_accounting.mechanisms.rectified_gaussian import RectifiedGaussian
 from opaque_accounting.mechanisms.truncated_gaussian import TruncatedGaussian
 from opaque_accounting.transformations.adaclip import AdaClip
 
 #: Mechanism types accepted by :func:`poisson`.
-_Inner = Gaussian | RectifiedGaussian | TruncatedGaussian | AdaClip
+_Inner = Gaussian | RectifiedGaussian | TruncatedGaussian | MipGaussian | AdaClip
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +56,18 @@ class Poisson(DpProcess):
                 return _native.poisson_truncated_gaussian_pld(
                     nm, r, self.sample_rate, config.to_native()
                 )
+            case MipGaussian(noise_multiplier=nm, sensitivities=s, weights=w):
+                return _native.poisson_mip_gaussian_pld(
+                    nm, self.sample_rate, list(s), list(w),
+                    config.to_native(),
+                )
+            case AdaClip(inner=MipGaussian() as mg):
+                z_eff = self.inner.effective_noise_multiplier
+                return _native.poisson_mip_gaussian_pld(
+                    z_eff, self.sample_rate,
+                    list(mg.sensitivities), list(mg.weights),
+                    config.to_native(),
+                )
             case AdaClip():
                 z_eff = self.inner.effective_noise_multiplier
                 return _native.poisson_gaussian_pld(
@@ -63,8 +76,8 @@ class Poisson(DpProcess):
             case _:
                 raise TypeError(
                     "Poisson requires a Gaussian, RectifiedGaussian, "
-                    "TruncatedGaussian, or AdaClip inner mechanism, got "
-                    f"{type(self.inner).__name__}."
+                    "TruncatedGaussian, MipGaussian, or AdaClip inner "
+                    f"mechanism, got {type(self.inner).__name__}."
                 )
 
 
@@ -101,12 +114,11 @@ def poisson(
         training = step * 1000
         eps = training.epsilon_at(1e-5)
     """
-    if not isinstance(inner, (Gaussian, RectifiedGaussian, TruncatedGaussian, AdaClip)):
+    if not isinstance(inner, (Gaussian, RectifiedGaussian, TruncatedGaussian, MipGaussian, AdaClip)):
         raise TypeError(
             f"poisson() requires a Gaussian, RectifiedGaussian, TruncatedGaussian, "
-            f"or AdaClip inner mechanism, got {type(inner).__name__}. "
+            f"MipGaussian, or AdaClip inner mechanism, got {type(inner).__name__}. "
             "Examples: acc.poisson(acc.gaussian(nm), rate), "
-            "acc.poisson(acc.rectified_gaussian(nm, radius), rate), "
-            "acc.poisson(acc.truncated_gaussian(nm, radius), rate)"
+            "acc.poisson(acc.mip_gaussian(nm, norms), rate)"
         )
     return Poisson(inner=inner, sample_rate=sample_rate)

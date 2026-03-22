@@ -12,6 +12,7 @@
 mod eps_delta;
 mod gaussian;
 mod identity;
+mod mip_gaussian;
 mod rectified_gaussian;
 mod truncated_gaussian;
 
@@ -38,5 +39,6 @@ pub(crate) const MAX_NOISE_MULTIPLIER: f64 = 1.2;
 pub use eps_delta::eps_delta_pld;
 pub use gaussian::gaussian_pld;
 pub use identity::identity_pld;
+pub use mip_gaussian::mip_gaussian_pld;
 pub use rectified_gaussian::rectified_gaussian_pld;
 pub use truncated_gaussian::truncated_gaussian_pld;

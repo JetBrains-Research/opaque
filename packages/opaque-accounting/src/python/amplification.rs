@@ -92,6 +92,40 @@ pub fn py_parallel_poisson_gaussian_pld(
     Ok(PyPld::new(pld))
 }
 
+/// Compute the PLD for a Poisson-subsampled MIP Gaussian mechanism.
+///
+/// Each example has a per-example sensitivity. The PLD is the weighted mixture
+/// of Poisson-subsampled Gaussian PLDs across sensitivity buckets.
+///
+/// Args:
+///     noise_multiplier (float): σ ratio, in [0.1, 1.2].
+///     rate (float): Poisson sampling probability, in (0, 1].
+///     sensitivities (list[float]): Per-bucket sensitivity values, all > 0.
+///     weights (list[float]): Per-bucket weights, must sum to 1.0.
+///     config (DiscretizationConfig): Discretization configuration.
+///
+/// Returns:
+///     Pld: The amplified privacy loss distribution.
+#[pyfunction]
+#[pyo3(name = "poisson_mip_gaussian_pld", signature = (noise_multiplier, rate, sensitivities, weights, config))]
+pub fn py_poisson_mip_gaussian_pld(
+    noise_multiplier: f64,
+    rate: f64,
+    sensitivities: Vec<f64>,
+    weights: Vec<f64>,
+    config: &PyDiscretizationConfig,
+) -> PyResult<PyPld> {
+    let pld = crate::amplification::poisson_mip_gaussian_pld(
+        noise_multiplier,
+        rate,
+        &sensitivities,
+        &weights,
+        &config.inner,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}
+
 /// Compute the PLD for a Poisson-subsampled rectified Gaussian mechanism.
 ///
 /// The rectified (clamped) Gaussian clips noise to [−R·σ, R·σ], giving

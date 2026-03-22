@@ -44,6 +44,10 @@ from .. import opaque_accounting as _native
 
 from opaque_accounting.base import DpProcess, Pld
 from opaque_accounting.mechanisms.gaussian import Gaussian
+from opaque_accounting.mechanisms.mip_gaussian import MipGaussian
+
+#: Mechanism types accepted by :func:`adaclip`.
+_Inner = Gaussian | MipGaussian
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,7 +65,7 @@ class AdaClip(DpProcess):
     understand AdaClip internals.
     """
 
-    inner: Gaussian
+    inner: _Inner
     quantile_noise_multiplier: float
     batch_size: float
 
@@ -107,15 +111,23 @@ class AdaClip(DpProcess):
             case Gaussian():
                 z_eff = self.effective_noise_multiplier
                 return _native.gaussian_pld(z_eff, config.to_native())
+            case MipGaussian():
+                z_eff = self.effective_noise_multiplier
+                return _native.mip_gaussian_pld(
+                    z_eff,
+                    list(self.inner.sensitivities),
+                    list(self.inner.weights),
+                    config.to_native(),
+                )
             case _:
                 raise TypeError(
-                    "AdaClip requires a Gaussian inner mechanism, got "
+                    "AdaClip requires a Gaussian or MipGaussian inner mechanism, got "
                     f"{type(self.inner).__name__}."
                 )
 
 
 def adaclip(
-    inner: Gaussian,
+    inner: _Inner,
     *,
     quantile_noise_multiplier: float = 0.05,
     batch_size: float,
@@ -186,9 +198,9 @@ def adaclip(
             sample_rate=0.01,
         )
     """
-    if not isinstance(inner, Gaussian):
+    if not isinstance(inner, (Gaussian, MipGaussian)):
         raise TypeError(
-            f"adaclip() requires a Gaussian inner mechanism, got {type(inner).__name__}."
+            f"adaclip() requires a Gaussian or MipGaussian inner mechanism, got {type(inner).__name__}."
         )
     if quantile_noise_multiplier <= 0:
         raise ValueError(

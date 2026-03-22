@@ -82,6 +82,33 @@ pub fn py_rectified_gaussian_pld(
     Ok(PyPld::new(pld))
 }
 
+/// Compute the PLD for a MIP Gaussian mechanism with heterogeneous sensitivities.
+///
+/// Each sensitivity level has an associated weight. The mechanism output is a
+/// weighted mixture of Gaussian mechanisms with different sensitivities.
+///
+/// Args:
+///     noise_multiplier (float): σ ratio, in [0.1, 1.2].
+///     sensitivities (list[float]): Per-bucket sensitivity values, all > 0.
+///     weights (list[float]): Per-bucket weights, must sum to 1.0.
+///     config (DiscretizationConfig): Discretization configuration.
+///
+/// Returns:
+///     Pld: The privacy loss distribution.
+#[pyfunction]
+#[pyo3(name = "mip_gaussian_pld", signature = (noise_multiplier, sensitivities, weights, config))]
+pub fn py_mip_gaussian_pld(
+    noise_multiplier: f64,
+    sensitivities: Vec<f64>,
+    weights: Vec<f64>,
+    config: &PyDiscretizationConfig,
+) -> PyResult<PyPld> {
+    let pld =
+        crate::mechanisms::mip_gaussian_pld(noise_multiplier, &sensitivities, &weights, &config.inner)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}
+
 /// Compute the PLD for a truncated (renormalized) Gaussian mechanism.
 ///
 /// The truncated Gaussian samples from N(0, σ²) restricted to [−R·σ, R·σ],
