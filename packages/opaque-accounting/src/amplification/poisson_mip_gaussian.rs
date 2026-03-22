@@ -115,7 +115,33 @@ fn mip_poisson_get_delta(
     }
 }
 
+/// Compute per-component ADD delta for a single sensitivity value.
+#[inline]
+fn component_delta_add(
+    l_base: f64,
+    epsilon: f64,
+    sigma: f64,
+    s: f64,
+    log_1_minus_q: f64,
+    log_q: f64,
+    standard_normal: &statrs::distribution::Normal,
+) -> f64 {
+    use crate::numerics::logspace::log_add;
+    use crate::numerics::special::gaussian_log_cdf;
+    use statrs::distribution::ContinuousCDF;
+
+    let x_cutoff = inverse_privacy_loss_gaussian(l_base, sigma, s);
+    let z = x_cutoff / sigma;
+    let mu_upper = standard_normal.cdf(z);
+    let log_mu_upper = gaussian_log_cdf(z);
+    let log_cdf_lower = gaussian_log_cdf((x_cutoff - s) / sigma);
+    let log_mu_lower = log_add(log_1_minus_q + log_mu_upper, log_q + log_cdf_lower);
+    (mu_upper - (epsilon + log_mu_lower).exp()).max(0.0)
+}
+
 /// Batched ADD delta: precompute `l_base` once, then loop over sensitivities.
+/// The s=1.0 component is computed once and reused for all bins at that sensitivity
+/// (common with adaptive clipping where ~50% of examples are clipped).
 fn mip_get_delta_add_batch(
     epsilon: f64,
     sigma: f64,
@@ -123,10 +149,6 @@ fn mip_get_delta_add_batch(
     weights: &[f64],
     q: f64,
 ) -> f64 {
-    use crate::numerics::logspace::log_add;
-    use crate::numerics::special::gaussian_log_cdf;
-    use statrs::distribution::{ContinuousCDF, Normal};
-
     let theoretical_upper = -(1.0 - q).ln();
     if epsilon >= theoretical_upper - 1e-10 {
         return 0.0;
@@ -139,27 +161,53 @@ fn mip_get_delta_add_batch(
     }
     let l_base = -ratio.ln();
 
-    // Precompute shared log values.
+    // Precompute shared values.
     let log_1_minus_q = (1.0 - q).ln();
     let log_q = q.ln();
-    let standard_normal = Normal::new(0.0, 1.0).unwrap();
+    let standard_normal = statrs::distribution::Normal::new(0.0, 1.0).unwrap();
+
+    // Precompute delta for s=1.0 (the clipped component, typically ~50% weight).
+    let delta_s1 = component_delta_add(
+        l_base, epsilon, sigma, 1.0, log_1_minus_q, log_q, &standard_normal,
+    );
 
     sensitivities
         .iter()
         .zip(weights.iter())
         .map(|(&s, &w)| {
-            let x_cutoff = inverse_privacy_loss_gaussian(l_base, sigma, s);
-            let z = x_cutoff / sigma;
-            let mu_upper = standard_normal.cdf(z);
-            let log_mu_upper = gaussian_log_cdf(z);
-            let log_cdf_lower = gaussian_log_cdf((x_cutoff - s) / sigma);
-            let log_mu_lower = log_add(log_1_minus_q + log_mu_upper, log_q + log_cdf_lower);
-            w * (mu_upper - (epsilon + log_mu_lower).exp()).max(0.0)
+            if (s - 1.0).abs() < 1e-9 {
+                w * delta_s1
+            } else {
+                w * component_delta_add(
+                    l_base, epsilon, sigma, s, log_1_minus_q, log_q, &standard_normal,
+                )
+            }
         })
         .sum()
 }
 
+/// Compute per-component REMOVE delta for a single sensitivity value.
+#[inline]
+fn component_delta_remove(
+    l_base: f64,
+    epsilon: f64,
+    sigma: f64,
+    s: f64,
+    log_1_minus_q: f64,
+    log_q: f64,
+) -> f64 {
+    use crate::numerics::logspace::log_add;
+    use crate::numerics::special::gaussian_log_cdf;
+
+    let x_cutoff = inverse_privacy_loss_gaussian(l_base, sigma, s);
+    let log_tail_upper = gaussian_log_cdf(-x_cutoff / sigma);
+    let log_tail_shifted = gaussian_log_cdf((s - x_cutoff) / sigma);
+    let log_mu_upper = log_add(log_1_minus_q + log_tail_upper, log_q + log_tail_shifted);
+    (log_mu_upper.exp() - (epsilon + log_tail_upper).exp()).max(0.0)
+}
+
 /// Batched REMOVE delta: precompute `l_base` once, then loop over sensitivities.
+/// The s=1.0 component is computed once and reused (see ADD variant for rationale).
 fn mip_get_delta_remove_batch(
     epsilon: f64,
     sigma: f64,
@@ -167,9 +215,6 @@ fn mip_get_delta_remove_batch(
     weights: &[f64],
     q: f64,
 ) -> f64 {
-    use crate::numerics::logspace::log_add;
-    use crate::numerics::special::gaussian_log_cdf;
-
     let theoretical_lower = (1.0 - q).ln();
     if epsilon <= theoretical_lower {
         return (-epsilon.exp_m1()).max(0.0);
@@ -186,16 +231,18 @@ fn mip_get_delta_remove_batch(
     let log_1_minus_q = (1.0 - q).ln();
     let log_q = q.ln();
 
+    // Precompute delta for s=1.0 (the clipped component).
+    let delta_s1 = component_delta_remove(l_base, epsilon, sigma, 1.0, log_1_minus_q, log_q);
+
     sensitivities
         .iter()
         .zip(weights.iter())
         .map(|(&s, &w)| {
-            let x_cutoff = inverse_privacy_loss_gaussian(l_base, sigma, s);
-            let log_tail_upper = gaussian_log_cdf(-x_cutoff / sigma);
-            let log_tail_shifted = gaussian_log_cdf((s - x_cutoff) / sigma);
-            let log_mu_upper =
-                log_add(log_1_minus_q + log_tail_upper, log_q + log_tail_shifted);
-            w * (log_mu_upper.exp() - (epsilon + log_tail_upper).exp()).max(0.0)
+            if (s - 1.0).abs() < 1e-9 {
+                w * delta_s1
+            } else {
+                w * component_delta_remove(l_base, epsilon, sigma, s, log_1_minus_q, log_q)
+            }
         })
         .sum()
 }

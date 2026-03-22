@@ -56,30 +56,20 @@ class Poisson(DpProcess):
                 return _native.poisson_truncated_gaussian_pld(
                     nm, r, self.sample_rate, config.to_native()
                 )
-            case MipGaussian() as mg:
-                if all(v == 0.0 for v in mg.sensitivities):
+            case MipGaussian(noise_multiplier=nm, sensitivities=s, weights=w):
+                if all(v == 0.0 for v in s):
                     return _native.identity_pld(config.to_native())
-                # All sensitivities ≈ 1 → standard Poisson Gaussian.
-                if mg.is_standard_gaussian():
-                    return _native.poisson_gaussian_pld(
-                        mg.noise_multiplier, self.sample_rate, config.to_native()
-                    )
                 return _native.poisson_mip_gaussian_pld(
-                    mg.noise_multiplier,
+                    nm,
                     self.sample_rate,
-                    list(mg.sensitivities),
-                    list(mg.weights),
+                    list(s),
+                    list(w),
                     config.to_native(),
                 )
             case AdaClip(inner=MipGaussian() as mg):
                 if all(v == 0.0 for v in mg.sensitivities):
                     return _native.identity_pld(config.to_native())
                 z_eff = self.inner.effective_noise_multiplier
-                # All sensitivities ≈ 1 → standard Poisson Gaussian.
-                if mg.is_standard_gaussian():
-                    return _native.poisson_gaussian_pld(
-                        z_eff, self.sample_rate, config.to_native()
-                    )
                 return _native.poisson_mip_gaussian_pld(
                     z_eff,
                     self.sample_rate,

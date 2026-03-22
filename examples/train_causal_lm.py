@@ -1064,13 +1064,9 @@ def main():
     # Using acc.cached() here increases cache to maxsize=16 and creates merge barrier
     accounting = Accountant()
     if args.accounting in ("rms", "mixture"):
-        # Per-step accounting: step_process is built per-step from batch sensitivities.
-        # Falls back to standard_step when s_rms ≈ 1 (no benefit from per-step).
+        # Per-step accounting: step_process built per-step from batch sensitivities.
         step_process = None
-        if args.accounting == "rms":
-            print("  Accounting: RMS sensitivity (Jensen bound on stochastic f-MIP)")
-        else:
-            print("  Accounting: mixture (exact single-step stochastic f-MIP, binned)")
+        print(f"  Accounting: {args.accounting}")
     elif use_parallel_poisson:
         step_process = acc.cached(acc.parallel_poisson(
             acc.gaussian(noise_multiplier), sample_rate=sample_rate, num_workers=world_size,
@@ -1176,22 +1172,15 @@ def main():
 
             # Per-step sensitivity accounting (rms or mixture)
             if args.accounting in ("rms", "mixture"):
-                # Normalized per-example sensitivities s_i = ||g_i||_clipped / C ∈ [0, 1]
                 norms = (aux.clipped_grad_norms / current_clip_norm).tolist()
-
                 if args.accounting == "rms":
-                    # Jensen bound: collapse to single Gaussian with σ/s_rms
-                    s_rms = aux.s_rms
-                    if s_rms is None:
-                        s_rms = (aux.clipped_grad_norms / current_clip_norm).pow(2).mean().sqrt().item()
-                        s_rms = max(s_rms, 1e-8)
+                    s_rms = aux.s_rms or max(
+                        (aux.clipped_grad_norms / current_clip_norm).pow(2).mean().sqrt().item(), 1e-8
+                    )
                     effective_nm = noise_multiplier / s_rms
                     inner = acc.gaussian(effective_nm)
                 else:
-                    # Exact single-step: binned mixture of Gaussian PLDs.
-                    # MipGaussian short-circuits to standard Gaussian when all s ≈ 1.
                     inner = acc.mip_gaussian(noise_multiplier, norms)
-
                 if args.adaptive_clipping:
                     inner = acc.adaclip(inner, batch_size=args.batch_size)
                 accounting |= acc.poisson(inner, sample_rate)
@@ -1300,10 +1289,8 @@ def main():
 
     final_epsilon = accounting.epsilon_at(args.target_delta)
     print("\nPrivacy:")
-    if args.accounting == "rms":
-        print("  Accounting: RMS sensitivity (Jensen bound on stochastic f-MIP)")
-    elif args.accounting == "mixture":
-        print("  Accounting: mixture (exact single-step stochastic f-MIP, binned)")
+    if args.accounting != "standard":
+        print(f"  Accounting: {args.accounting}")
     elif use_parallel_poisson:
         print(f"  Accounting: parallel_poisson (world_size={world_size})")
     print(f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e} (n={global_train_size})")

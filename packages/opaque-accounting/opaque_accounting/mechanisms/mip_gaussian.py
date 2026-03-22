@@ -39,10 +39,6 @@ class MipGaussian(DpProcess):
         if isinstance(self.weights, list):
             object.__setattr__(self, "weights", tuple(self.weights))
 
-    def is_standard_gaussian(self, rtol: float = 1e-6) -> bool:
-        """True if all sensitivities are ≈ 1 (reduces to standard Gaussian)."""
-        return all(abs(s - 1.0) <= rtol for s in self.sensitivities)
-
     @functools.lru_cache(maxsize=8)
     def pld(
         self,
@@ -61,9 +57,6 @@ class MipGaussian(DpProcess):
         # All-zero sensitivities → zero privacy loss (identity PLD).
         if all(s == 0.0 for s in self.sensitivities):
             return _native.identity_pld(config.to_native())
-        # All sensitivities ≈ 1 → standard Gaussian (avoids mixture overhead).
-        if self.is_standard_gaussian():
-            return _native.gaussian_pld(self.noise_multiplier, config.to_native())
         return _native.mip_gaussian_pld(
             self.noise_multiplier,
             list(self.sensitivities),
