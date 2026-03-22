@@ -1063,6 +1063,9 @@ def main():
     # Accounting (all pld() calls automatically cached with maxsize=8)
     # Using acc.cached() here increases cache to maxsize=16 and creates merge barrier
     accounting = Accountant()
+    # Per-sample trajectory accounting: accumulate observed sensitivities
+    # to estimate the per-sample epsilon (exact multi-step stochastic f-MIP).
+    accumulated_norms: list[float] = []  # all observed per-example norms
     if args.accounting in ("rms", "mixture"):
         # Per-step accounting: step_process built per-step from batch sensitivities.
         step_process = None
@@ -1173,6 +1176,7 @@ def main():
             # Per-step sensitivity accounting (rms or mixture)
             if args.accounting in ("rms", "mixture"):
                 norms = (aux.clipped_grad_norms / current_clip_norm).tolist()
+                accumulated_norms.extend(norms)
                 if args.accounting == "rms":
                     s_rms = aux.s_rms or max(
                         (aux.clipped_grad_norms / current_clip_norm).pow(2).mean().sqrt().item(), 1e-8
@@ -1233,6 +1237,22 @@ def main():
                     "privacy/epsilon": epsilon,
                 }
                 eval_msg = f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}"
+
+                # Per-sample trajectory epsilon (exact multi-step f-MIP)
+                if args.accounting in ("rms", "mixture") and accumulated_norms:
+                    from opaque_accounting.composition.per_sample import (
+                        per_sample_composed_epsilon,
+                    )
+
+                    eps_per_sample = per_sample_composed_epsilon(
+                        noise_multiplier,
+                        sample_rate,
+                        accumulated_norms,
+                        num_steps=global_step,
+                        delta=args.target_delta,
+                    )
+                    metrics["privacy/epsilon_per_sample"] = eps_per_sample
+                    eval_msg += f", ε_per_sample={eps_per_sample:.3f}"
 
                 if args.audit:
                     audit_estimate = run_audit(trainable_params)
@@ -1296,6 +1316,19 @@ def main():
     print(f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e} (n={global_train_size})")
     print(f"  Noise multiplier: {noise_multiplier:.4f}")
     print(f"  Final ε (theoretical): {final_epsilon:.4f}")
+    if args.accounting in ("rms", "mixture") and accumulated_norms:
+        from opaque_accounting.composition.per_sample import (
+            per_sample_composed_epsilon,
+        )
+
+        final_eps_per_sample = per_sample_composed_epsilon(
+            noise_multiplier,
+            sample_rate,
+            accumulated_norms,
+            num_steps=global_step,
+            delta=args.target_delta,
+        )
+        print(f"  Final ε (per-sample):  {final_eps_per_sample:.4f}")
     if args.audit:
         audit_result = run_audit(trainable_params)
         audit_eps = audit_result.epsilon_at(delta=args.target_delta)
