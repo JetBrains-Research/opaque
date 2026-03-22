@@ -107,7 +107,7 @@ def truncated_poisson(
         isinstance(inner, AdaClip) and isinstance(inner.inner, MipGaussian)
     ):
         raise TypeError(
-            f"truncated_poisson() does not support MipGaussian. "
+            "truncated_poisson() does not support MipGaussian. "
             "Use standard Poisson subsampling instead: "
             "acc.poisson(acc.mip_gaussian(...), rate)"
         )
