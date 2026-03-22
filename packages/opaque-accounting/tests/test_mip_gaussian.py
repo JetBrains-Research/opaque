@@ -179,12 +179,12 @@ class TestAdaClipMipGaussian:
 
 
 class TestTruncatedPoissonMipGaussian:
-    def test_raises_not_implemented(self):
+    def test_rejects_mip_gaussian(self):
         inner = mip_gaussian(0.8, [0.5, 1.0])
-        with pytest.raises(NotImplementedError, match="MipGaussian"):
+        with pytest.raises(TypeError, match="MipGaussian"):
             acc.truncated_poisson(
                 inner, sample_rate=0.01, batch_size_cap=256, dataset_size=10000
-            ).pld()
+            )
 
 
 # ---------------------------------------------------------------------------

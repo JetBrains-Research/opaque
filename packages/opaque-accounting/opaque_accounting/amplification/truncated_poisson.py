@@ -9,11 +9,10 @@ from .. import opaque_accounting as _native
 
 from opaque_accounting.base import DpProcess, Pld
 from opaque_accounting.mechanisms.gaussian import Gaussian
-from opaque_accounting.mechanisms.mip_gaussian import MipGaussian
 from opaque_accounting.transformations.adaclip import AdaClip
 
 #: Mechanism types accepted by :func:`truncated_poisson`.
-_Inner = Gaussian | MipGaussian | AdaClip
+_Inner = Gaussian | AdaClip
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,19 +51,6 @@ class TruncatedPoisson(DpProcess):
                     self.dataset_size,
                     config.to_native(),
                 )
-            case MipGaussian():
-                raise NotImplementedError(
-                    "Truncated Poisson subsampling is not yet supported for "
-                    "MipGaussian. Use standard Poisson subsampling instead: "
-                    "acc.poisson(acc.mip_gaussian(...), rate)"
-                )
-            case AdaClip(inner=MipGaussian()):
-                raise NotImplementedError(
-                    "Truncated Poisson subsampling is not yet supported for "
-                    "AdaClip(MipGaussian). Use standard Poisson subsampling "
-                    "instead: acc.poisson(acc.adaclip(acc.mip_gaussian(...), "
-                    "batch_size=...), rate)"
-                )
             case AdaClip():
                 z_eff = self.inner.effective_noise_multiplier
                 return _native.truncated_poisson_gaussian_pld(
@@ -76,8 +62,8 @@ class TruncatedPoisson(DpProcess):
                 )
             case _:
                 raise TypeError(
-                    "TruncatedPoisson requires a Gaussian, MipGaussian, or "
-                    f"AdaClip inner mechanism, got {type(self.inner).__name__}."
+                    "TruncatedPoisson requires a Gaussian or AdaClip inner "
+                    f"mechanism, got {type(self.inner).__name__}."
                 )
 
 
@@ -115,10 +101,20 @@ def truncated_poisson(
         training = step * 1000
         eps = training.epsilon_at(1e-5)
     """
-    if not isinstance(inner, (Gaussian, MipGaussian, AdaClip)):
+    from opaque_accounting.mechanisms.mip_gaussian import MipGaussian
+
+    if isinstance(inner, MipGaussian) or (
+        isinstance(inner, AdaClip) and isinstance(inner.inner, MipGaussian)
+    ):
         raise TypeError(
-            f"truncated_poisson() requires a Gaussian, MipGaussian, or AdaClip "
-            f"inner mechanism, got {type(inner).__name__}."
+            f"truncated_poisson() does not support MipGaussian. "
+            "Use standard Poisson subsampling instead: "
+            "acc.poisson(acc.mip_gaussian(...), rate)"
+        )
+    if not isinstance(inner, (Gaussian, AdaClip)):
+        raise TypeError(
+            f"truncated_poisson() requires a Gaussian or AdaClip inner "
+            f"mechanism, got {type(inner).__name__}."
         )
     return TruncatedPoisson(
         inner=inner,
