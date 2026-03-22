@@ -57,6 +57,8 @@ class Poisson(DpProcess):
                     nm, r, self.sample_rate, config.to_native()
                 )
             case MipGaussian(noise_multiplier=nm, sensitivities=s, weights=w):
+                if all(v == 0.0 for v in s):
+                    return _native.identity_pld(config.to_native())
                 return _native.poisson_mip_gaussian_pld(
                     nm,
                     self.sample_rate,
@@ -65,6 +67,8 @@ class Poisson(DpProcess):
                     config.to_native(),
                 )
             case AdaClip(inner=MipGaussian() as mg):
+                if all(v == 0.0 for v in mg.sensitivities):
+                    return _native.identity_pld(config.to_native())
                 z_eff = self.inner.effective_noise_multiplier
                 return _native.poisson_mip_gaussian_pld(
                     z_eff,

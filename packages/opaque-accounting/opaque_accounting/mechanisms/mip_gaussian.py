@@ -54,6 +54,9 @@ class MipGaussian(DpProcess):
             pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         )
+        # All-zero sensitivities → zero privacy loss (identity PLD).
+        if all(s == 0.0 for s in self.sensitivities):
+            return _native.identity_pld(config.to_native())
         return _native.mip_gaussian_pld(
             self.noise_multiplier,
             list(self.sensitivities),
@@ -74,8 +77,8 @@ def _bin_norms(
     """
     n = len(norms)
     max_norm = max(norms)
-    # All-zero norms are handled by mip_gaussian() before calling _bin_norms.
-    assert max_norm > 0.0, "all-zero norms should be handled by caller"
+    if max_norm == 0.0:
+        return (0.0,), (1.0,)
 
     bin_width = max_norm / num_bins
     counts: Counter[float] = Counter()
@@ -95,7 +98,7 @@ def mip_gaussian(
     norms: Sequence[float],
     *,
     num_bins: int = 100,
-) -> DpProcess:
+) -> MipGaussian:
     """MIP Gaussian mechanism with per-example gradient norms.
 
     The constructor bins raw per-example gradient norms into discrete
@@ -128,12 +131,6 @@ def mip_gaussian(
         raise ValueError(f"noise_multiplier must be positive, got {noise_multiplier}")
     if num_bins < 1:
         raise ValueError(f"num_bins must be >= 1, got {num_bins}")
-
-    # All-zero norms means zero sensitivity — no privacy loss.
-    if all(v == 0.0 for v in norms):
-        from opaque_accounting.mechanisms.identity import Identity
-
-        return Identity()
 
     sensitivities, weights = _bin_norms(norms, num_bins=num_bins)
     return MipGaussian(
