@@ -1,8 +1,8 @@
-//! Saddle-Point Accountant: mechanism-agnostic CGF-based privacy accounting.
+//! CGF-backed privacy loss distribution: mechanism-agnostic accounting.
 //!
-//! `SpaPld` stores a list of opaque CGF handles with repetition counts.
+//! `CgfPld` stores a list of opaque CGF handles with repetition counts.
 //! No grid, no discretization — CGFs are only evaluated at query time
-//! to find the saddle point and compute the MSD approximation.
+//! via the saddle-point method of steepest descent (MSD).
 //!
 //! Composition is trivial: concatenate component lists (heterogeneous)
 //! or multiply counts (homogeneous). Both are O(1) / O(k).
@@ -25,36 +25,36 @@ use crate::discretization::DiscretizationConfig;
 use crate::error::Result;
 
 // ---------------------------------------------------------------------------
-// SpaPld
+// CgfPld
 // ---------------------------------------------------------------------------
 
-/// Saddle-Point Accountant privacy loss distribution.
+/// CGF-backed privacy loss distribution.
 ///
 /// Stores a list of (CGF, repetition_count) components. The total CGF is:
 ///
 /// Λ_total(t) = Σᵢ countᵢ · Λᵢ(t)
 ///
-/// This is mechanism-agnostic: `SpaPld` never knows what mechanism
+/// This is mechanism-agnostic: `CgfPld` never knows what mechanism
 /// produced the CGFs. All composition operations are trivial (concatenate
 /// or multiply counts). Privacy metrics are computed at query time via
 /// the saddle-point method of steepest descent.
 #[derive(Clone)]
-pub struct SpaPld {
+pub struct CgfPld {
     pub(crate) components: Vec<(Arc<dyn Cgf>, usize)>,
 }
 
-impl fmt::Debug for SpaPld {
+impl fmt::Debug for CgfPld {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let total: usize = self.components.iter().map(|(_, n)| n).sum();
-        f.debug_struct("SpaPld")
+        f.debug_struct("CgfPld")
             .field("num_components", &self.components.len())
             .field("total_compositions", &total)
             .finish()
     }
 }
 
-impl SpaPld {
-    /// Create an SpaPld from a single CGF (count=1).
+impl CgfPld {
+    /// Create a CgfPld from a single CGF (count=1).
     pub fn new(cgf: Arc<dyn Cgf>) -> Self {
         Self {
             components: vec![(cgf, 1)],
@@ -191,20 +191,20 @@ impl SpaPld {
 
     // -- Composition --------------------------------------------------------
 
-    /// Compose with another SpaPld (heterogeneous).
+    /// Compose with another CgfPld (heterogeneous).
     ///
     /// Concatenates the component lists. No math, O(k₁ + k₂).
-    pub fn compose(&self, other: &SpaPld) -> SpaPld {
+    pub fn compose(&self, other: &CgfPld) -> CgfPld {
         let mut components = self.components.clone();
         components.extend(other.components.iter().cloned());
-        SpaPld { components }
+        CgfPld { components }
     }
 
     /// Self-compose: multiply all counts by `count`.
     ///
     /// O(k) where k = number of distinct components.
-    pub fn self_compose(&self, count: usize) -> SpaPld {
-        SpaPld {
+    pub fn self_compose(&self, count: usize) -> CgfPld {
+        CgfPld {
             components: self
                 .components
                 .iter()
@@ -213,9 +213,9 @@ impl SpaPld {
         }
     }
 
-    // -- Materialization (SPA → PmfPld) ------------------------------------
+    // -- Materialization (CgfPld → PmfPld) ----------------------------------
 
-    /// Convert this SPA to a PmfPld by evaluating the delta curve on a grid.
+    /// Convert this CgfPld to a PmfPld by evaluating the delta curve on a grid.
     ///
     /// Used for metrics that require the full PMF (beta_at, risk_at)
     /// and for mixed composition with Pmf-based PLDs.
@@ -295,22 +295,22 @@ mod tests {
     use crate::pld::cgf::GaussianCgf;
     use approx::assert_relative_eq;
 
-    fn gauss_spa(sigma: f64) -> SpaPld {
-        SpaPld::new(Arc::new(GaussianCgf::new(sigma)))
+    fn gauss_cgf(sigma: f64) -> CgfPld {
+        CgfPld::new(Arc::new(GaussianCgf::new(sigma)))
     }
 
     #[test]
     fn test_self_compose_multiplies_counts() {
-        let spa = gauss_spa(1.0);
-        let composed = spa.self_compose(100);
+        let cgf = gauss_cgf(1.0);
+        let composed = cgf.self_compose(100);
         assert_eq!(composed.components.len(), 1);
         assert_eq!(composed.components[0].1, 100);
     }
 
     #[test]
     fn test_compose_concatenates() {
-        let a = gauss_spa(0.5);
-        let b = gauss_spa(1.0);
+        let a = gauss_cgf(0.5);
+        let b = gauss_cgf(1.0);
         let composed = a.compose(&b);
         assert_eq!(composed.components.len(), 2);
     }
@@ -320,8 +320,8 @@ mod tests {
         // (A * 100).compose(B * 50) should give 3 components...
         // but (A * 100) is 1 component, (B * 50) is 1 component,
         // composed = 2 components
-        let a = gauss_spa(0.5).self_compose(100);
-        let b = gauss_spa(1.0).self_compose(50);
+        let a = gauss_cgf(0.5).self_compose(100);
+        let b = gauss_cgf(1.0).self_compose(50);
         let composed = a.compose(&b);
         assert_eq!(composed.components.len(), 2);
         assert_eq!(composed.components[0].1, 100);
@@ -331,17 +331,17 @@ mod tests {
     #[test]
     fn test_delta_at_zero_epsilon_is_positive() {
         // For a non-trivial mechanism, δ(0) > 0 (advantage)
-        let spa = gauss_spa(0.5).self_compose(10);
-        let delta = spa.delta_at(0.0);
+        let cgf = gauss_cgf(0.5).self_compose(10);
+        let delta = cgf.delta_at(0.0);
         assert!(delta > 0.0, "delta(0) = {}", delta);
         assert!(delta <= 1.0, "delta(0) = {}", delta);
     }
 
     #[test]
     fn test_delta_decreases_with_epsilon() {
-        let spa = gauss_spa(0.5).self_compose(100);
+        let cgf = gauss_cgf(0.5).self_compose(100);
         let epsilons = [0.0, 0.5, 1.0, 2.0, 5.0, 10.0];
-        let deltas: Vec<f64> = epsilons.iter().map(|&e| spa.delta_at(e)).collect();
+        let deltas: Vec<f64> = epsilons.iter().map(|&e| cgf.delta_at(e)).collect();
 
         for w in deltas.windows(2) {
             assert!(
@@ -357,12 +357,12 @@ mod tests {
 
     #[test]
     fn test_epsilon_at_and_delta_at_consistent() {
-        let spa = gauss_spa(0.5).self_compose(100);
+        let cgf = gauss_cgf(0.5).self_compose(100);
 
         for &target_delta in &[0.1, 0.01, 1e-3, 1e-5] {
-            let eps = spa.epsilon_at(target_delta);
+            let eps = cgf.epsilon_at(target_delta);
             if eps.is_finite() {
-                let achieved = spa.delta_at(eps);
+                let achieved = cgf.delta_at(eps);
                 assert!(
                     achieved <= target_delta + 1e-6,
                     "eps={}, achieved δ={}, target δ={}",
@@ -375,34 +375,34 @@ mod tests {
     }
 
     #[test]
-    fn test_spa_gaussian_vs_analytical_single_step() {
+    fn test_cgf_gaussian_vs_analytical_single_step() {
         use statrs::distribution::{ContinuousCDF, Normal};
 
-        // For a single Gaussian step, compare SPA δ(ε) to the exact formula:
+        // For a single Gaussian step, compare CGF δ(ε) to the exact formula:
         // δ(ε) = Φ(1/(2σ) − εσ) − e^ε · Φ(−1/(2σ) − εσ)
         let sigma = 0.5;
-        let spa = gauss_spa(sigma);
+        let cgf = gauss_cgf(sigma);
         let n = Normal::new(0.0, 1.0).unwrap();
         let dt = 1.0 / sigma;
 
         for &eps in &[0.5, 1.0, 2.0, 3.0] {
             let analytical =
                 (n.cdf(dt / 2.0 - eps / dt) - eps.exp() * n.cdf(-dt / 2.0 - eps / dt)).max(0.0);
-            let spa_delta = spa.delta_at(eps);
+            let cgf_delta = cgf.delta_at(eps);
 
-            // SPA is an asymptotic approximation — for n=1, allow ~25% relative error.
+            // CGF saddle-point is an asymptotic approximation — for n=1, allow ~25% relative error.
             // Accuracy improves dramatically with composition count.
             let rel_error = if analytical > 1e-10 {
-                (spa_delta - analytical).abs() / analytical
+                (cgf_delta - analytical).abs() / analytical
             } else {
-                (spa_delta - analytical).abs()
+                (cgf_delta - analytical).abs()
             };
             assert!(
                 rel_error < 0.25,
-                "σ={}, ε={}: SPA={:.6e}, analytical={:.6e}, rel_err={:.2}%",
+                "σ={}, ε={}: CGF={:.6e}, analytical={:.6e}, rel_err={:.2}%",
                 sigma,
                 eps,
-                spa_delta,
+                cgf_delta,
                 analytical,
                 rel_error * 100.0
             );
@@ -412,7 +412,7 @@ mod tests {
     #[test]
     fn test_self_compose_1_times_n_equals_direct_n() {
         // Composing 1 step × 1000 should give same as creating with count=1000
-        let step = gauss_spa(0.5);
+        let step = gauss_cgf(0.5);
         let composed = step.self_compose(1000);
 
         let eps = 5.0;
@@ -423,7 +423,7 @@ mod tests {
 
     #[test]
     fn test_more_compositions_means_larger_delta() {
-        let step = gauss_spa(0.5);
+        let step = gauss_cgf(0.5);
         let eps = 5.0;
 
         let d100 = step.self_compose(100).delta_at(eps);
@@ -442,14 +442,72 @@ mod tests {
         let n = 100;
         let eps = 5.0;
 
-        let d_low_noise = gauss_spa(0.3).self_compose(n).delta_at(eps);
-        let d_high_noise = gauss_spa(1.0).self_compose(n).delta_at(eps);
+        let d_low_noise = gauss_cgf(0.3).self_compose(n).delta_at(eps);
+        let d_high_noise = gauss_cgf(1.0).self_compose(n).delta_at(eps);
 
         assert!(
             d_high_noise <= d_low_noise,
             "higher noise should give smaller delta: d(σ=1.0)={} > d(σ=0.3)={}",
             d_high_noise,
             d_low_noise
+        );
+    }
+
+    #[test]
+    fn test_materialization_roundtrip() {
+        // CgfPld → to_pmf_pld() → epsilon_at should approximately match CgfPld.epsilon_at
+        let cgf = gauss_cgf(0.5).self_compose(100);
+        let config = DiscretizationConfig::default();
+        let pmf_pld = cgf.to_pmf_pld(&config).expect("materialization failed");
+
+        let eps_cgf = cgf.epsilon_at(1e-5);
+        let eps_pmf = crate::pld::metrics::epsilon(&pmf_pld, 1e-5);
+
+        let rel_err = (eps_cgf - eps_pmf).abs() / eps_pmf;
+        assert!(
+            rel_err < 0.05,
+            "materialization roundtrip: CGF ε={:.6}, PMF ε={:.6}, rel_err={:.1}%",
+            eps_cgf,
+            eps_pmf,
+            rel_err * 100.0
+        );
+    }
+
+    #[test]
+    fn test_cgf_precision_improves_with_n() {
+        // At higher composition counts, CGF saddle-point gets more accurate
+        use statrs::distribution::{ContinuousCDF, Normal};
+
+        let sigma = 0.5;
+        let norm = Normal::new(0.0, 1.0).unwrap();
+        let dt = 1.0 / sigma;
+
+        // For n=1, compare CGF δ vs analytical at ε=1.0
+        let cgf_1 = gauss_cgf(sigma);
+        let analytical = (norm.cdf(dt / 2.0 - 1.0 / dt)
+            - 1.0_f64.exp() * norm.cdf(-dt / 2.0 - 1.0 / dt))
+        .max(0.0);
+        let err_n1 = (cgf_1.delta_at(1.0) - analytical).abs() / analytical;
+
+        // For composed, compare CGF vs PMF (PMF is exact up to discretization)
+        let config = DiscretizationConfig::default();
+        let cgf_100 = gauss_cgf(sigma).self_compose(100);
+        let pmf_100 = cgf_100.to_pmf_pld(&config).unwrap();
+        let eps_test = cgf_100.epsilon_at(0.1) * 0.8;
+        let d_cgf = cgf_100.delta_at(eps_test);
+        let d_pmf = crate::pld::metrics::delta(&pmf_100, eps_test);
+        let err_n100 = if d_pmf > 1e-12 {
+            (d_cgf - d_pmf).abs() / d_pmf
+        } else {
+            0.0
+        };
+
+        // Error at n=100 should be smaller than at n=1
+        assert!(
+            err_n100 < err_n1,
+            "precision should improve: err@n=1={:.1}%, err@n=100={:.1}%",
+            err_n1 * 100.0,
+            err_n100 * 100.0
         );
     }
 }

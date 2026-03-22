@@ -4,7 +4,7 @@ use crate::discretization::{discretize_symmetric_mechanism, DiscretizationConfig
 use crate::error::{PldError, Result};
 use crate::pld::PrivacyLossDistribution;
 
-use super::{MAX_NOISE_MULTIPLIER, MIN_NOISE_MULTIPLIER, SPA_NOISE_THRESHOLD};
+use super::{MAX_NOISE_MULTIPLIER, MIN_NOISE_MULTIPLIER, CGF_NOISE_THRESHOLD};
 
 /// Compute the PLD for a Gaussian mechanism.
 ///
@@ -14,9 +14,9 @@ use super::{MAX_NOISE_MULTIPLIER, MIN_NOISE_MULTIPLIER, SPA_NOISE_THRESHOLD};
 /// # Arguments
 ///
 /// * `noise_multiplier` — σ/Δ ratio, must be in \[0.01, 2.5\].
-///   For σ < 0.1, automatically uses the Saddle-Point Accountant (SPA)
+///   For σ < 0.1, automatically uses the CGF-backed path
 ///   instead of PLD discretization to avoid grid explosion.
-/// * `config` — discretization configuration for PLD grid (ignored for SPA path)
+/// * `config` — discretization configuration for PLD grid (ignored for CGF path)
 ///
 /// # Errors
 ///
@@ -32,9 +32,9 @@ pub fn gaussian_pld(
         )));
     }
 
-    // Auto-route: small σ → SPA (avoids PLD grid explosion)
-    if noise_multiplier < SPA_NOISE_THRESHOLD {
-        return spa_gaussian_pld(noise_multiplier);
+    // Auto-route: small σ → CGF (avoids PLD grid explosion)
+    if noise_multiplier < CGF_NOISE_THRESHOLD {
+        return cgf_gaussian_pld(noise_multiplier);
     }
 
     let bounds = gaussian_epsilon_bounds(noise_multiplier, config.log_mass_truncation_bound);
@@ -66,7 +66,7 @@ fn gaussian_epsilon_bounds(noise_multiplier: f64, log_mass_truncation_bound: f64
     }
 }
 
-/// Create a Saddle-Point Accountant PLD for a Gaussian mechanism.
+/// Create a CGF-backed PLD for a Gaussian mechanism.
 ///
 /// Unlike `gaussian_pld`, this does not discretize — the privacy loss is
 /// represented analytically via its CGF. Use this for small noise multipliers
@@ -75,7 +75,7 @@ fn gaussian_epsilon_bounds(noise_multiplier: f64, log_mass_truncation_bound: f64
 /// # Arguments
 ///
 /// * `noise_multiplier` — σ/Δ ratio, must be in \[0.01, 2.5\]
-pub fn spa_gaussian_pld(noise_multiplier: f64) -> Result<PrivacyLossDistribution> {
+pub fn cgf_gaussian_pld(noise_multiplier: f64) -> Result<PrivacyLossDistribution> {
     if !(MIN_NOISE_MULTIPLIER..=MAX_NOISE_MULTIPLIER).contains(&noise_multiplier) {
         return Err(PldError::InvalidParameter(format!(
             "noise_multiplier must be in [{}, {}], got {}",
@@ -84,7 +84,7 @@ pub fn spa_gaussian_pld(noise_multiplier: f64) -> Result<PrivacyLossDistribution
     }
 
     let cgf = std::sync::Arc::new(crate::pld::cgf::GaussianCgf::new(noise_multiplier));
-    Ok(PrivacyLossDistribution::new_spa(cgf))
+    Ok(PrivacyLossDistribution::new_cgf(cgf))
 }
 
 #[cfg(test)]
@@ -175,9 +175,9 @@ mod tests {
         }
     }
 
-    /// Small σ values auto-route to SPA and produce valid results.
+    /// Small σ values auto-route to CGF and produce valid results.
     #[test]
-    fn test_gaussian_small_sigma_auto_routes_to_spa() {
+    fn test_gaussian_small_sigma_auto_routes_to_cgf() {
         for &sigma in &[0.01, 0.03, 0.05, 0.09] {
             let pld = gaussian_pld(sigma, &default_config()).unwrap();
             let eps = pld.epsilon_at(1e-5);
@@ -185,11 +185,11 @@ mod tests {
         }
     }
 
-    /// Monotonicity holds across the SPA/PMF boundary.
+    /// Monotonicity holds across the CGF/PMF boundary.
     #[test]
-    fn test_gaussian_monotonicity_across_spa_boundary() {
+    fn test_gaussian_monotonicity_across_cgf_boundary() {
         let cfg = default_config();
-        // σ=0.09 → SPA, σ=0.1 → PMF (at boundary), σ=0.15 → PMF
+        // σ=0.09 → CGF, σ=0.1 → PMF (at boundary), σ=0.15 → PMF
         let sigmas = [0.05, 0.09, 0.1, 0.15, 0.25];
         let epsilons: Vec<f64> = sigmas
             .iter()

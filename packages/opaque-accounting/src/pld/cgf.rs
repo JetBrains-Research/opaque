@@ -2,7 +2,7 @@
 //!
 //! The CGF Λ(t) = log E[exp(t·L)] of a privacy loss random variable L
 //! is the core abstraction for the Saddle-Point Accountant. It is
-//! mechanism-agnostic: `SpaPld` stores opaque `Arc<dyn Cgf>` handles
+//! mechanism-agnostic: `CgfPld` stores opaque `Arc<dyn Cgf>` handles
 //! and never needs to know which mechanism produced them.
 //!
 //! Mechanism-specific code lives only in the implementations below
@@ -13,7 +13,7 @@ use std::fmt::Debug;
 /// A cumulant generating function Λ(t) = log E[exp(t·L)] of a privacy loss RV.
 ///
 /// Implementations are created by mechanism-specific constructor functions
-/// and stored opaquely inside [`super::SpaPld`] via `Arc<dyn Cgf>`.
+/// and stored opaquely inside [`super::CgfPld`] via `Arc<dyn Cgf>`.
 pub trait Cgf: Debug + Send + Sync {
     /// Evaluate Λ(t).
     fn eval(&self, t: f64) -> f64;

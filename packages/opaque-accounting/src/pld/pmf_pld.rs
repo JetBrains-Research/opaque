@@ -4,7 +4,7 @@
 //! mechanisms) and provides composition via FFT convolution.
 //!
 //! This is the original `PrivacyLossDistribution` struct, extracted to
-//! live alongside `SpaPld` under the `PrivacyLossDistribution` enum.
+//! live alongside `CgfPld` under the `PrivacyLossDistribution` enum.
 
 use super::pmf::Pmf;
 use crate::error::Result;

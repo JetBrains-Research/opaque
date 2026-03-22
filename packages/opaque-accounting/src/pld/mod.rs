@@ -6,7 +6,7 @@
 //! - **`Pmf`**: Discretized probability mass function on an ε-grid.
 //!   Composition via FFT convolution. Exact up to discretization.
 //!
-//! - **`Spa`**: Saddle-Point Accountant backed by opaque CGF (Cumulant
+//! - **`Cgf`**: Saddle-Point Accountant backed by opaque CGF (Cumulant
 //!   Generating Function) handles. No grid — CGFs are evaluated only at
 //!   query time. Composition is trivial function addition.
 //!
@@ -17,12 +17,12 @@ pub mod cgf;
 pub(crate) mod metrics;
 pub mod pmf;
 pub(crate) mod pmf_pld;
-pub(crate) mod spa_pld;
+pub(crate) mod cgf_pld;
 
 pub use cgf::Cgf;
 pub use pmf::Pmf;
 pub use pmf_pld::PmfPld;
-pub use spa_pld::SpaPld;
+pub use cgf_pld::CgfPld;
 
 use std::sync::Arc;
 
@@ -36,12 +36,12 @@ use crate::error::Result;
 /// - **`Pmf`**: Discretized PMF + FFT composition. Created by mechanism
 ///   constructors like `gaussian_pld()`, `poisson_gaussian_pld()`, etc.
 ///
-/// - **`Spa`**: Saddle-Point Accountant backed by CGFs. Created by
-///   SPA constructors like `spa_gaussian_pld()`. Composition is O(1).
+/// - **`Cgf`**: Saddle-Point Accountant backed by CGFs. Created by
+///   CGF constructors like `cgf_gaussian_pld()`. Composition is O(1).
 ///
 /// All privacy metrics (`delta_at`, `epsilon_at`, `advantage`, `beta_at`,
 /// `risk_at`) dispatch to the appropriate representation. For metrics
-/// that require the full PMF (beta, risk), the SPA variant auto-materializes.
+/// that require the full PMF (beta, risk), the CGF variant auto-materializes.
 ///
 /// # Examples
 ///
@@ -57,7 +57,7 @@ pub enum PrivacyLossDistribution {
     /// Discretized PMF representation (current, exact up to discretization).
     Pmf(PmfPld),
     /// Saddle-Point Accountant representation (analytical, approximate).
-    Spa(SpaPld),
+    Cgf(CgfPld),
 }
 
 impl PrivacyLossDistribution {
@@ -74,8 +74,8 @@ impl PrivacyLossDistribution {
     }
 
     /// Create a PLD from a single CGF (Saddle-Point Accountant).
-    pub fn new_spa(cgf: Arc<dyn Cgf>) -> Self {
-        Self::Spa(SpaPld::new(cgf))
+    pub fn new_cgf(cgf: Arc<dyn Cgf>) -> Self {
+        Self::Cgf(CgfPld::new(cgf))
     }
 
     // -- Properties ----------------------------------------------------------
@@ -84,25 +84,25 @@ impl PrivacyLossDistribution {
     pub fn is_symmetric(&self) -> bool {
         match self {
             Self::Pmf(p) => p.is_symmetric(),
-            Self::Spa(_) => true, // SPA computes worst-case directly
+            Self::Cgf(_) => true, // CGF computes worst-case directly
         }
     }
 
     /// Set Chernoff tail budgets on all contained PMFs.
-    /// No-op for the SPA variant.
+    /// No-op for the CGF variant.
     pub fn with_tail_budgets(self, right: f64, left: f64) -> Self {
         match self {
             Self::Pmf(p) => Self::Pmf(p.with_tail_budgets(right, left)),
-            Self::Spa(_) => self,
+            Self::Cgf(_) => self,
         }
     }
 
     /// Override the max grid size on all contained PMFs.
-    /// No-op for the SPA variant.
+    /// No-op for the CGF variant.
     pub fn with_max_grid_size(&self, max_grid_size: usize) -> Self {
         match self {
             Self::Pmf(p) => Self::Pmf(p.with_max_grid_size(max_grid_size)),
-            Self::Spa(s) => Self::Spa(s.clone()),
+            Self::Cgf(s) => Self::Cgf(s.clone()),
         }
     }
 
@@ -112,7 +112,7 @@ impl PrivacyLossDistribution {
     pub fn delta_at(&self, epsilon: f64) -> f64 {
         match self {
             Self::Pmf(p) => metrics::delta(p, epsilon).clamp(0.0, 1.0),
-            Self::Spa(s) => s.delta_at(epsilon).clamp(0.0, 1.0),
+            Self::Cgf(s) => s.delta_at(epsilon).clamp(0.0, 1.0),
         }
     }
 
@@ -120,7 +120,7 @@ impl PrivacyLossDistribution {
     pub fn epsilon_at(&self, delta: f64) -> f64 {
         match self {
             Self::Pmf(p) => metrics::epsilon(p, delta),
-            Self::Spa(s) => s.epsilon_at(delta),
+            Self::Cgf(s) => s.epsilon_at(delta),
         }
     }
 
@@ -128,20 +128,20 @@ impl PrivacyLossDistribution {
     pub fn advantage(&self) -> f64 {
         match self {
             Self::Pmf(p) => metrics::advantage(p).clamp(0.0, 1.0),
-            Self::Spa(s) => s.advantage().clamp(0.0, 1.0),
+            Self::Cgf(s) => s.advantage().clamp(0.0, 1.0),
         }
     }
 
     /// Type-II error β at given Type-I error α.
     ///
-    /// For the SPA variant, auto-materializes to PMF first.
+    /// For the CGF variant, auto-materializes to PMF first.
     pub fn beta_at(&self, target_alpha: f64) -> f64 {
         match self {
             Self::Pmf(p) => metrics::beta(p, target_alpha).clamp(0.0, 1.0),
-            Self::Spa(s) => {
+            Self::Cgf(s) => {
                 let pmf = s
                     .to_pmf_pld(&DiscretizationConfig::default())
-                    .expect("SPA materialization failed");
+                    .expect("CGF materialization failed");
                 metrics::beta(&pmf, target_alpha).clamp(0.0, 1.0)
             }
         }
@@ -149,15 +149,15 @@ impl PrivacyLossDistribution {
 
     /// Bayes risk under optimal adversary.
     ///
-    /// For the SPA variant, auto-materializes to PMF first.
+    /// For the CGF variant, auto-materializes to PMF first.
     pub fn risk_at(&self, prior: f64) -> f64 {
         let max_risk = prior.min(1.0 - prior);
         match self {
             Self::Pmf(p) => metrics::bayes_risk(p, prior).clamp(0.0, max_risk),
-            Self::Spa(s) => {
+            Self::Cgf(s) => {
                 let pmf = s
                     .to_pmf_pld(&DiscretizationConfig::default())
-                    .expect("SPA materialization failed");
+                    .expect("CGF materialization failed");
                 metrics::bayes_risk(&pmf, prior).clamp(0.0, max_risk)
             }
         }
@@ -168,17 +168,17 @@ impl PrivacyLossDistribution {
     /// Compose two PLDs.
     ///
     /// - Pmf + Pmf → Pmf (FFT convolution)
-    /// - Spa + Spa → Spa (concatenate component lists)
-    /// - Mixed → materialize Spa to Pmf, then FFT
+    /// - Cgf + Cgf → Cgf (concatenate component lists)
+    /// - Mixed → materialize Cgf to Pmf, then FFT
     pub fn compose(&self, other: &Self) -> Result<Self> {
         match (self, other) {
             (Self::Pmf(a), Self::Pmf(b)) => Ok(Self::Pmf(a.compose(b)?)),
-            (Self::Spa(a), Self::Spa(b)) => Ok(Self::Spa(a.compose(b))),
-            (Self::Spa(s), Self::Pmf(p)) => {
+            (Self::Cgf(a), Self::Cgf(b)) => Ok(Self::Cgf(a.compose(b))),
+            (Self::Cgf(s), Self::Pmf(p)) => {
                 let materialized = s.to_pmf_pld(&DiscretizationConfig::default())?;
                 Ok(Self::Pmf(materialized.compose(p)?))
             }
-            (Self::Pmf(p), Self::Spa(s)) => {
+            (Self::Pmf(p), Self::Cgf(s)) => {
                 let materialized = s.to_pmf_pld(&DiscretizationConfig::default())?;
                 Ok(Self::Pmf(p.compose(&materialized)?))
             }
@@ -188,11 +188,11 @@ impl PrivacyLossDistribution {
     /// Self-compose this PLD `count` times.
     ///
     /// - Pmf: FFT power method O(N log N)
-    /// - Spa: multiply counts O(k) — effectively free
+    /// - Cgf: multiply counts O(k) — effectively free
     pub fn self_compose(&self, count: usize) -> Self {
         match self {
             Self::Pmf(p) => Self::Pmf(p.self_compose(count)),
-            Self::Spa(s) => Self::Spa(s.self_compose(count)),
+            Self::Cgf(s) => Self::Cgf(s.self_compose(count)),
         }
     }
 
@@ -202,7 +202,7 @@ impl PrivacyLossDistribution {
             (Self::Pmf(a), Self::Pmf(b)) => {
                 Ok(Self::Pmf(a.compose_with_max_grid_size(b, max_grid_size)?))
             }
-            // For SPA variants, grid size is irrelevant — delegate to compose()
+            // For CGF variants, grid size is irrelevant — delegate to compose()
             _ => self.compose(other),
         }
     }
@@ -211,7 +211,7 @@ impl PrivacyLossDistribution {
     pub fn self_compose_with_max_grid_size(&self, count: usize, max_grid_size: usize) -> Self {
         match self {
             Self::Pmf(p) => Self::Pmf(p.self_compose_with_max_grid_size(count, max_grid_size)),
-            Self::Spa(s) => Self::Spa(s.self_compose(count)),
+            Self::Cgf(s) => Self::Cgf(s.self_compose(count)),
         }
     }
 }

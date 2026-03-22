@@ -150,9 +150,9 @@ impl PyPld {
                 };
                 format!("Pld({}, {} bins)", sym, grid)
             }
-            crate::PrivacyLossDistribution::Spa(s) => {
+            crate::PrivacyLossDistribution::Cgf(s) => {
                 let n: usize = s.components.iter().map(|(_, count)| count).sum();
-                format!("Pld(spa, {} compositions)", n)
+                format!("Pld(cgf, {} compositions)", n)
             }
         }
     }

@@ -32,9 +32,9 @@ pub fn poisson_gaussian_pld(
     validate_noise_multiplier(noise_multiplier)?;
     validate_rate(rate)?;
 
-    // Auto-route: small σ → SPA (avoids PLD grid explosion)
-    if noise_multiplier < crate::mechanisms::SPA_NOISE_THRESHOLD {
-        return spa_poisson_gaussian_pld(noise_multiplier, rate);
+    // Auto-route: small σ → CGF (avoids PLD grid explosion)
+    if noise_multiplier < crate::mechanisms::CGF_NOISE_THRESHOLD {
+        return cgf_poisson_gaussian_pld(noise_multiplier, rate);
     }
 
     let sigma = noise_multiplier;
@@ -431,7 +431,7 @@ mod tests {
 ///
 /// * `noise_multiplier` — σ/Δ ratio
 /// * `rate` — Poisson sampling probability q ∈ (0, 1]
-pub fn spa_poisson_gaussian_pld(
+pub fn cgf_poisson_gaussian_pld(
     noise_multiplier: f64,
     rate: f64,
 ) -> Result<PrivacyLossDistribution> {
@@ -442,5 +442,5 @@ pub fn spa_poisson_gaussian_pld(
         noise_multiplier,
         rate,
     ));
-    Ok(PrivacyLossDistribution::new_spa(cgf))
+    Ok(PrivacyLossDistribution::new_cgf(cgf))
 }

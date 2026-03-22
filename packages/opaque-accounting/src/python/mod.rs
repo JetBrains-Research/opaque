@@ -25,10 +25,10 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(mechanisms::py_rectified_gaussian_pld, m)?)?;
     m.add_function(wrap_pyfunction!(mechanisms::py_truncated_gaussian_pld, m)?)?;
 
-    // SPA mechanisms
-    m.add_function(wrap_pyfunction!(mechanisms::py_spa_gaussian_pld, m)?)?;
+    // CGF mechanisms
+    m.add_function(wrap_pyfunction!(mechanisms::py_cgf_gaussian_pld, m)?)?;
     m.add_function(wrap_pyfunction!(
-        amplification::py_spa_poisson_gaussian_pld,
+        amplification::py_cgf_poisson_gaussian_pld,
         m
     )?)?;
 

@@ -206,10 +206,10 @@ def gaussian_pld(
     """
     ...
 
-def spa_gaussian_pld(
+def cgf_gaussian_pld(
     noise_multiplier: float,
 ) -> Pld:
-    """Create a Saddle-Point Accountant PLD for a Gaussian mechanism.
+    """Create a CGF-backed PLD for a Gaussian mechanism.
 
     Unlike gaussian_pld(), this does not discretize — the privacy loss is
     represented analytically via its CGF. Suitable for small noise multipliers.
@@ -218,15 +218,15 @@ def spa_gaussian_pld(
         noise_multiplier: Ratio of noise std to sensitivity (σ/Δ).
 
     Returns:
-        The privacy loss distribution (SPA-backed).
+        The privacy loss distribution (CGF-backed).
     """
     ...
 
-def spa_poisson_gaussian_pld(
+def cgf_poisson_gaussian_pld(
     noise_multiplier: float,
     rate: float,
 ) -> Pld:
-    """Create a Saddle-Point Accountant PLD for a Poisson-subsampled Gaussian.
+    """Create a CGF-backed PLD for a Poisson-subsampled Gaussian.
 
     Unlike poisson_gaussian_pld(), this does not discretize.
 
@@ -235,7 +235,7 @@ def spa_poisson_gaussian_pld(
         rate: Poisson sampling probability, in (0, 1].
 
     Returns:
-        The privacy loss distribution (SPA-backed).
+        The privacy loss distribution (CGF-backed).
     """
     ...
 
