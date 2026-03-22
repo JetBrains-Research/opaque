@@ -1,21 +1,21 @@
 //! Privacy metric computations for Privacy Loss Distributions
 //!
 //! This module provides internal metric functions that operate on
-//! `&PrivacyLossDistribution`. Each function handles adjacency worst-case
+//! `&PmfPld`. Each function handles adjacency worst-case
 //! logic (max over REMOVE/ADD for delta/epsilon/advantage, min for beta)
 //! and dense conversion internally.
 //!
 //! Users interact with these metrics through `PrivacyLossDistribution` methods.
 
 use super::pmf::Pmf;
-use super::PrivacyLossDistribution;
+use super::PmfPld;
 
 // ---------------------------------------------------------------------------
-// Public (crate) API — operates on &PrivacyLossDistribution
+// Public (crate) API — operates on &PmfPld
 // ---------------------------------------------------------------------------
 
 /// Compute delta for a given epsilon (worst-case over adjacencies)
-pub(crate) fn delta(pld: &PrivacyLossDistribution, epsilon: f64) -> f64 {
+pub(crate) fn delta(pld: &PmfPld, epsilon: f64) -> f64 {
     let delta_remove = pmf_delta(&pld.pmf_remove, epsilon);
 
     match &pld.pmf_add {
@@ -28,7 +28,7 @@ pub(crate) fn delta(pld: &PrivacyLossDistribution, epsilon: f64) -> f64 {
 }
 
 /// Compute the minimum epsilon for a target delta (worst-case over adjacencies)
-pub(crate) fn epsilon(pld: &PrivacyLossDistribution, target_delta: f64) -> f64 {
+pub(crate) fn epsilon(pld: &PmfPld, target_delta: f64) -> f64 {
     let epsilon_remove = pmf_epsilon(&pld.pmf_remove, target_delta);
 
     match &pld.pmf_add {
@@ -41,7 +41,7 @@ pub(crate) fn epsilon(pld: &PrivacyLossDistribution, target_delta: f64) -> f64 {
 }
 
 /// Compute the advantage / TV privacy (worst-case over adjacencies)
-pub(crate) fn advantage(pld: &PrivacyLossDistribution) -> f64 {
+pub(crate) fn advantage(pld: &PmfPld) -> f64 {
     let advantage_remove = pmf_delta(&pld.pmf_remove, 0.0);
 
     match &pld.pmf_add {
@@ -57,7 +57,7 @@ pub(crate) fn advantage(pld: &PrivacyLossDistribution) -> f64 {
 ///
 /// For symmetric PLDs, uses the single-distribution Neyman-Pearson trade-off.
 /// For asymmetric PLDs, uses the symmetrized two-distribution trade-off.
-pub(crate) fn beta(pld: &PrivacyLossDistribution, target_alpha: f64) -> f64 {
+pub(crate) fn beta(pld: &PmfPld, target_alpha: f64) -> f64 {
     match &pld.pmf_add {
         None => pmf_beta(&pld.pmf_remove, target_alpha),
         Some(pmf_add) => pmf_beta_symmetrized(&pld.pmf_remove, pmf_add, target_alpha),
@@ -67,7 +67,7 @@ pub(crate) fn beta(pld: &PrivacyLossDistribution, target_alpha: f64) -> f64 {
 /// Compute the Bayes risk for a given prior probability
 ///
 /// Uses golden section search to minimize `prior * alpha + (1 - prior) * beta(alpha)`.
-pub(crate) fn bayes_risk(pld: &PrivacyLossDistribution, prior: f64) -> f64 {
+pub(crate) fn bayes_risk(pld: &PmfPld, prior: f64) -> f64 {
     if prior <= 0.0 || prior >= 1.0 {
         return 0.0;
     }
@@ -433,20 +433,20 @@ mod tests {
     use std::collections::BTreeMap;
 
     /// Helper: build a symmetric PLD from a Pmf
-    fn sym_pld(pmf: Pmf) -> PrivacyLossDistribution {
-        PrivacyLossDistribution::new_symmetric(pmf)
+    fn sym_pld(pmf: Pmf) -> PmfPld {
+        PmfPld::new_symmetric(pmf)
     }
 
     /// Helper: build an asymmetric PLD from two Pmfs
-    fn asym_pld(remove: Pmf, add: Pmf) -> PrivacyLossDistribution {
-        PrivacyLossDistribution::new_asymmetric(remove, add)
+    fn asym_pld(remove: Pmf, add: Pmf) -> PmfPld {
+        PmfPld::new_asymmetric(remove, add)
     }
 
     /// Helper: identity PLD (all mass at loss=0)
-    fn identity_pld() -> PrivacyLossDistribution {
+    fn identity_pld() -> PmfPld {
         let mut masses = BTreeMap::new();
         masses.insert(0, 1.0);
-        PrivacyLossDistribution::new_symmetric(Pmf::from_sparse(0.1, masses, 0.0, true, usize::MAX))
+        PmfPld::new_symmetric(Pmf::from_sparse(0.1, masses, 0.0, true, usize::MAX))
     }
 
     // -----------------------------------------------------------------------

@@ -140,13 +140,21 @@ impl PyPld {
     }
 
     fn __repr__(&self) -> String {
-        let grid = self.inner.pmf_remove.probs.len();
-        let sym = if self.inner.pmf_add.is_none() {
-            "symmetric"
-        } else {
-            "asymmetric"
-        };
-        format!("Pld({}, {} bins)", sym, grid)
+        match &self.inner {
+            crate::PrivacyLossDistribution::Pmf(p) => {
+                let grid = p.pmf_remove.probs.len();
+                let sym = if p.pmf_add.is_none() {
+                    "symmetric"
+                } else {
+                    "asymmetric"
+                };
+                format!("Pld({}, {} bins)", sym, grid)
+            }
+            crate::PrivacyLossDistribution::Spa(s) => {
+                let n: usize = s.components.iter().map(|(_, count)| count).sum();
+                format!("Pld(spa, {} compositions)", n)
+            }
+        }
     }
 
     fn __str__(&self) -> String {

@@ -16,6 +16,7 @@ mod truncated_poisson;
 
 pub use parallel_poisson::parallel_poisson_gaussian_pld;
 pub use poisson::poisson_gaussian_pld;
+pub use poisson::spa_poisson_gaussian_pld;
 pub use poisson_rectified_gaussian::poisson_rectified_gaussian_pld;
 pub use poisson_truncated_gaussian::poisson_truncated_gaussian_pld;
 pub use truncated_poisson::truncated_poisson_gaussian_pld;

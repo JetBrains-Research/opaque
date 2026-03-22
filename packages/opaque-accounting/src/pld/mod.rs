@@ -1,503 +1,217 @@
-//! High-level Privacy Loss Distribution with adjacency support
+//! High-level Privacy Loss Distribution with adjacency support.
 //!
-//! This module provides the `PrivacyLossDistribution` wrapper around `Pmf`
-//! that supports different adjacency types (ADD/REMOVE) and handles both
-//! symmetric and asymmetric mechanisms.
+//! This module provides `PrivacyLossDistribution`, an enum with two
+//! representations:
+//!
+//! - **`Pmf`**: Discretized probability mass function on an ε-grid.
+//!   Composition via FFT convolution. Exact up to discretization.
+//!
+//! - **`Spa`**: Saddle-Point Accountant backed by opaque CGF (Cumulant
+//!   Generating Function) handles. No grid — CGFs are evaluated only at
+//!   query time. Composition is trivial function addition.
+//!
+//! Both representations are **mechanism-agnostic**: the PLD never knows
+//! which mechanism produced it.
 
+pub mod cgf;
 pub(crate) mod metrics;
 pub mod pmf;
+pub(crate) mod pmf_pld;
+pub(crate) mod spa_pld;
 
+pub use cgf::Cgf;
 pub use pmf::Pmf;
+pub use pmf_pld::PmfPld;
+pub use spa_pld::SpaPld;
 
+use std::sync::Arc;
+
+use crate::discretization::DiscretizationConfig;
 use crate::error::Result;
 
-/// High-level privacy loss distribution with adjacency support
+/// High-level privacy loss distribution.
 ///
-/// Wraps one or two `Pmf` objects to support differential privacy mechanisms
-/// that may have different privacy loss distributions depending on the adjacency
-/// type (whether a dataset has one more or one fewer element).
+/// An enum over two representations:
 ///
-/// # Adjacency Types
+/// - **`Pmf`**: Discretized PMF + FFT composition. Created by mechanism
+///   constructors like `gaussian_pld()`, `poisson_gaussian_pld()`, etc.
 ///
-/// - **REMOVE adjacency**: Dataset D has one fewer element than D'
-/// - **ADD adjacency**: Dataset D has one more element than D'
+/// - **`Spa`**: Saddle-Point Accountant backed by CGFs. Created by
+///   SPA constructors like `spa_gaussian_pld()`. Composition is O(1).
 ///
-/// # Symmetric vs Asymmetric Mechanisms
-///
-/// - **Symmetric mechanisms** (e.g., Gaussian): Have the same PLD for
-///   both adjacency types. Created with `new_symmetric()`.
-/// - **Asymmetric mechanisms** (e.g., Poisson subsampling, shuffling): Have
-///   different PLDs for each adjacency type. Created with `new_asymmetric()`.
-///
-/// # Privacy Guarantee
-///
-/// The (ε, δ)-DP guarantee is computed by taking the worst case (maximum)
-/// over both adjacency types:
-///
-/// - `delta_at(ε) = max(δ_remove(ε), δ_add(ε))`
-/// - `epsilon_at(δ) = max(ε_remove(δ), ε_add(δ))`
+/// All privacy metrics (`delta_at`, `epsilon_at`, `advantage`, `beta_at`,
+/// `risk_at`) dispatch to the appropriate representation. For metrics
+/// that require the full PMF (beta, risk), the SPA variant auto-materializes.
 ///
 /// # Examples
-///
-/// ## From a Gaussian mechanism
 ///
 /// ```rust,ignore
 /// use opaque_accounting::mechanisms::gaussian_pld;
 ///
-/// let pld = gaussian(1.1).pld()?;
-///
+/// let pld = gaussian_pld(1.1, &config)?;
 /// let delta = pld.delta_at(1.0);
 /// let epsilon = pld.epsilon_at(1e-5);
-/// let advantage = pld.advantage();
 /// ```
-///
 #[derive(Debug, Clone)]
-pub struct PrivacyLossDistribution {
-    /// PLD for REMOVE adjacency (D has fewer elements than D')
-    pub(crate) pmf_remove: Pmf,
-
-    /// PLD for ADD adjacency (D has more elements than D')
-    ///
-    /// If `None`, this is a symmetric mechanism and `pmf_remove` is used for both.
-    pub(crate) pmf_add: Option<Pmf>,
+pub enum PrivacyLossDistribution {
+    /// Discretized PMF representation (current, exact up to discretization).
+    Pmf(PmfPld),
+    /// Saddle-Point Accountant representation (analytical, approximate).
+    Spa(SpaPld),
 }
 
 impl PrivacyLossDistribution {
-    /// Create a symmetric privacy loss distribution
-    ///
-    /// For symmetric mechanisms like Gaussian noise,
-    /// the privacy loss distribution is the same regardless of adjacency type.
-    ///
-    /// # Arguments
-    ///
-    /// * `pmf` - The privacy loss PMF (same for both adjacencies)
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// use std::collections::BTreeMap;
-    /// use opaque_accounting::PrivacyLossDistribution;
-    /// use opaque_accounting::pld::pmf::Pmf;
-    ///
-    /// let mut masses = BTreeMap::new();
-    /// masses.insert(0, 0.5);
-    /// masses.insert(5, 0.5);
-    ///
-    /// let pmf = Pmf::from_sparse(0.1, masses, 0.0, true, usize::MAX);
-    /// let pld = PrivacyLossDistribution::new_symmetric(pmf);
-    ///
-    /// assert!(pld.is_symmetric());
-    /// ```
+    // -- Constructors -------------------------------------------------------
+
+    /// Create a PLD from a symmetric PMF (same for ADD and REMOVE adjacencies).
     pub(crate) fn new_symmetric(pmf: Pmf) -> Self {
-        Self {
-            pmf_remove: pmf,
-            pmf_add: None,
-        }
+        Self::Pmf(PmfPld::new_symmetric(pmf))
     }
 
-    /// Create an asymmetric privacy loss distribution
-    ///
-    /// For asymmetric mechanisms like Poisson subsampling or shuffling,
-    /// the privacy loss distribution depends on the adjacency type.
-    ///
-    /// # Arguments
-    ///
-    /// * `pmf_remove` - PLD for REMOVE adjacency (D has fewer elements than D')
-    /// * `pmf_add` - PLD for ADD adjacency (D has more elements than D')
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// use std::collections::BTreeMap;
-    /// use opaque_accounting::PrivacyLossDistribution;
-    /// use opaque_accounting::pld::pmf::Pmf;
-    ///
-    /// let mut masses_remove = BTreeMap::new();
-    /// masses_remove.insert(0, 0.3);
-    /// masses_remove.insert(5, 0.7);
-    ///
-    /// let mut masses_add = BTreeMap::new();
-    /// masses_add.insert(0, 0.4);
-    /// masses_add.insert(5, 0.6);
-    ///
-    /// let pmf_remove = Pmf::from_sparse(0.1, masses_remove, 0.0, true, usize::MAX);
-    /// let pmf_add = Pmf::from_sparse(0.1, masses_add, 0.0, true, usize::MAX);
-    ///
-    /// let pld = PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add);
-    ///
-    /// assert!(!pld.is_symmetric());
-    /// ```
+    /// Create a PLD from asymmetric PMFs (different for ADD and REMOVE).
     pub(crate) fn new_asymmetric(pmf_remove: Pmf, pmf_add: Pmf) -> Self {
-        Self {
-            pmf_remove,
-            pmf_add: Some(pmf_add),
-        }
+        Self::Pmf(PmfPld::new_asymmetric(pmf_remove, pmf_add))
     }
 
-    /// Check if this PLD is symmetric
-    ///
-    /// Returns `true` if the mechanism has the same privacy loss distribution
-    /// for both ADD and REMOVE adjacency types.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// use opaque_accounting::pld::*;
-    ///
-    /// // Gaussian is symmetric (same PLD for ADD and REMOVE)
-    /// let pld = gaussian(1.1).pld()?;
-    /// assert!(pld.is_symmetric());
-    /// ```
+    /// Create a PLD from a single CGF (Saddle-Point Accountant).
+    pub fn new_spa(cgf: Arc<dyn Cgf>) -> Self {
+        Self::Spa(SpaPld::new(cgf))
+    }
+
+    // -- Properties ----------------------------------------------------------
+
+    /// Check if this PLD is symmetric (same for both adjacency types).
     pub fn is_symmetric(&self) -> bool {
-        self.pmf_add.is_none()
+        match self {
+            Self::Pmf(p) => p.is_symmetric(),
+            Self::Spa(_) => true, // SPA computes worst-case directly
+        }
     }
 
     /// Set Chernoff tail budgets on all contained PMFs.
-    ///
-    /// Propagates the budgets to both the REMOVE and ADD (if present) PMFs.
-    /// This controls how much mass may be truncated during `self_compose`:
-    ///
-    /// * `right` — right-tail budget (added to `infinity_mass`)
-    /// * `left` — left-tail budget (added to `negative_infinity_mass`)
-    pub fn with_tail_budgets(mut self, right: f64, left: f64) -> Self {
-        self.pmf_remove.right_tail_budget = right;
-        self.pmf_remove.left_tail_budget = left;
-        if let Some(ref mut pmf_add) = self.pmf_add {
-            pmf_add.right_tail_budget = right;
-            pmf_add.left_tail_budget = left;
+    /// No-op for the SPA variant.
+    pub fn with_tail_budgets(self, right: f64, left: f64) -> Self {
+        match self {
+            Self::Pmf(p) => Self::Pmf(p.with_tail_budgets(right, left)),
+            Self::Spa(_) => self,
         }
-        self
     }
 
     /// Override the max grid size on all contained PMFs.
-    ///
-    /// After `compose()` or `self_compose()`, the result PMF is automatically
-    /// coarsened if it exceeds this limit. Use `usize::MAX` to disable
-    /// post-composition coarsening.
+    /// No-op for the SPA variant.
     pub fn with_max_grid_size(&self, max_grid_size: usize) -> Self {
-        Self {
-            pmf_remove: self.pmf_remove.with_max_grid_size(max_grid_size),
-            pmf_add: self
-                .pmf_add
-                .as_ref()
-                .map(|p| p.with_max_grid_size(max_grid_size)),
+        match self {
+            Self::Pmf(p) => Self::Pmf(p.with_max_grid_size(max_grid_size)),
+            Self::Spa(s) => Self::Spa(s.clone()),
         }
     }
 
-    /// Get delta for a given epsilon
-    ///
-    /// Computes the minimum δ such that the mechanism is (ε, δ)-DP.
-    /// For asymmetric mechanisms, this is the maximum over both adjacency types.
-    ///
-    /// # Arguments
-    ///
-    /// * `epsilon` - The privacy parameter ε
-    ///
-    /// # Returns
-    ///
-    /// The corresponding δ value (worst case over adjacencies)
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// use opaque_accounting::mechanisms::gaussian_pld;
-    ///
-    /// let pld = gaussian(1.1).pld()?;
-    /// let delta = pld.delta_at(1.0);
-    /// assert!(delta >= 0.0 && delta <= 1.0);
-    /// ```
+    // -- Privacy metrics (dispatch) ------------------------------------------
+
+    /// Smallest δ achieving (ε, δ)-DP.
     pub fn delta_at(&self, epsilon: f64) -> f64 {
-        metrics::delta(self, epsilon).clamp(0.0, 1.0)
+        match self {
+            Self::Pmf(p) => metrics::delta(p, epsilon).clamp(0.0, 1.0),
+            Self::Spa(s) => s.delta_at(epsilon).clamp(0.0, 1.0),
+        }
     }
 
-    /// Get epsilon for a given delta
-    ///
-    /// Computes the minimum ε such that the mechanism is (ε, δ)-DP.
-    /// For asymmetric mechanisms, this is the maximum over both adjacency types.
-    ///
-    /// # Arguments
-    ///
-    /// * `delta` - The privacy parameter δ
-    ///
-    /// # Returns
-    ///
-    /// The corresponding ε value (worst case over adjacencies)
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// use opaque_accounting::mechanisms::gaussian_pld;
-    ///
-    /// let pld = gaussian(1.1).pld()?;
-    /// let epsilon = pld.epsilon_at(1e-5);
-    /// assert!(epsilon >= 0.0);
-    /// ```
+    /// Smallest ε achieving (ε, δ)-DP.
     pub fn epsilon_at(&self, delta: f64) -> f64 {
-        metrics::epsilon(self, delta)
+        match self {
+            Self::Pmf(p) => metrics::epsilon(p, delta),
+            Self::Spa(s) => s.epsilon_at(delta),
+        }
     }
 
-    /// Compute the advantage (TV privacy) directly from the PLD
-    ///
-    /// The advantage represents the maximum discriminative power of any attacker,
-    /// defined as max(TPR - FPR) over all possible thresholds.
-    ///
-    /// This computes directly from the privacy loss distribution without
-    /// going through (ε,δ) approximation, giving more accurate results.
-    ///
-    /// For asymmetric mechanisms, returns the worst-case (maximum) advantage
-    /// over both adjacency types.
-    ///
-    /// # Returns
-    ///
-    /// The advantage value in [0, 1], where:
-    /// - 0 means perfect privacy (attacker does no better than random guessing)
-    /// - 1 means no privacy (attacker can perfectly distinguish)
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// use opaque_accounting::mechanisms::gaussian_pld;
-    ///
-    /// let pld = gaussian(1.1).pld()?;
-    /// let advantage = pld.advantage();
-    /// assert!(advantage >= 0.0 && advantage <= 1.0);
-    /// ```
+    /// Total-variation advantage (f-DP). 0 = perfect privacy, 1 = none.
     pub fn advantage(&self) -> f64 {
-        metrics::advantage(self).clamp(0.0, 1.0)
+        match self {
+            Self::Pmf(p) => metrics::advantage(p).clamp(0.0, 1.0),
+            Self::Spa(s) => s.advantage().clamp(0.0, 1.0),
+        }
     }
 
-    /// Compute the trade-off function β(α) directly from the PLD
+    /// Type-II error β at given Type-I error α.
     ///
-    /// Maps false positive rate (α) to false negative rate (β) for the
-    /// optimal hypothesis test distinguishing neighboring datasets.
-    ///
-    /// This computes directly from the privacy loss distribution without
-    /// going through (ε,δ) approximation, giving more accurate results.
-    ///
-    /// For asymmetric mechanisms, returns the worst-case (minimum) β
-    /// over both adjacency types (lower β means attacker is more powerful).
-    ///
-    /// # Arguments
-    ///
-    /// * `alpha` - False positive rate (Type I error rate) in [0, 1]
-    ///
-    /// # Returns
-    ///
-    /// The false negative rate β in [0, 1]
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// use opaque_accounting::mechanisms::gaussian_pld;
-    ///
-    /// let pld = gaussian(1.1).pld()?;
-    ///
-    /// // At 1% false positive rate, what's the false negative rate?
-    /// let beta = pld.beta_at(0.01);
-    /// assert!(beta >= 0.0 && beta <= 1.0);
-    /// ```
+    /// For the SPA variant, auto-materializes to PMF first.
     pub fn beta_at(&self, target_alpha: f64) -> f64 {
-        metrics::beta(self, target_alpha).clamp(0.0, 1.0)
+        match self {
+            Self::Pmf(p) => metrics::beta(p, target_alpha).clamp(0.0, 1.0),
+            Self::Spa(s) => {
+                let pmf = s
+                    .to_pmf_pld(&DiscretizationConfig::default())
+                    .expect("SPA materialization failed");
+                metrics::beta(&pmf, target_alpha).clamp(0.0, 1.0)
+            }
+        }
     }
 
-    /// Compute the Bayes risk for a given prior probability
+    /// Bayes risk under optimal adversary.
     ///
-    /// Bayes risk measures the maximum accuracy of an attack against privacy
-    /// of a single record under a binary prior (e.g., accuracy of attribute
-    /// inference attacks).
-    ///
-    /// # Algorithm
-    ///
-    /// Bayes risk is computed as:
-    /// ```text
-    /// Bayes risk = min over α: prior * α + (1 - prior) * β(α)
-    /// ```
-    ///
-    /// This uses Brent's method for bounded scalar optimization over α ∈ [0, 1].
-    ///
-    /// # Arguments
-    ///
-    /// * `prior` - Prior probability that the sensitive attribute takes value 1,
-    ///   must be in [0, 1]
-    ///
-    /// # Returns
-    ///
-    /// The Bayes risk value in [0, 0.5], where:
-    /// - 0 means no privacy (attacker achieves perfect accuracy)
-    /// - 0.5 means perfect privacy (attacker does no better than random guessing)
-    ///
-    /// # References
-    ///
-    /// Kulynych et al. (2025), Proposition D.1. <https://arxiv.org/abs/2507.06969>
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// use opaque_accounting::mechanisms::gaussian_pld;
-    ///
-    /// let pld = gaussian(1.1).pld()?;
-    ///
-    /// // With uniform prior (50% probability for each value)
-    /// let risk = pld.risk_at(0.5);
-    /// assert!(risk >= 0.0 && risk <= 0.5);
-    /// ```
+    /// For the SPA variant, auto-materializes to PMF first.
     pub fn risk_at(&self, prior: f64) -> f64 {
         let max_risk = prior.min(1.0 - prior);
-        metrics::bayes_risk(self, prior).clamp(0.0, max_risk)
-    }
-
-    /// Compose two privacy loss distributions
-    ///
-    /// Computes the PLD of the composition of two mechanisms.
-    /// Handles all combinations of symmetric and asymmetric mechanisms:
-    ///
-    /// - Symmetric + Symmetric → Symmetric result
-    /// - Symmetric + Asymmetric → Asymmetric result
-    /// - Asymmetric + Asymmetric → Asymmetric result
-    ///
-    /// # Arguments
-    ///
-    /// * `other` - The PLD to compose with
-    ///
-    /// # Returns
-    ///
-    /// A new `PrivacyLossDistribution` representing the composition
-    ///
-    /// # Errors
-    ///
-    /// Returns error if PMFs have incompatible parameters (discretization, pessimistic_estimate)
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// use opaque_accounting::mechanisms::gaussian_pld;
-    ///
-    /// let pld1 = gaussian(1.1).pld()?;
-    /// let pld2 = gaussian(0.8).pld()?;
-    ///
-    /// let composed = pld1.compose(&pld2)?;
-    /// // Composition increases privacy loss
-    /// assert!(composed.delta_at(1.0) >= pld1.delta_at(1.0));
-    /// ```
-    pub fn compose(&self, other: &Self) -> Result<Self> {
-        // Compose REMOVE adjacency PMFs
-        let pmf_remove = self
-            .pmf_remove
-            .clone()
-            .compose(other.pmf_remove.clone(), 0.0)?;
-
-        // Handle ADD adjacency based on symmetry
-        let pmf_add = match (&self.pmf_add, &other.pmf_add) {
-            // Both symmetric → result is symmetric
-            (None, None) => None,
-
-            // Self symmetric, other asymmetric → use self.pmf_remove (symmetric)
-            (None, Some(other_add)) => {
-                let composed = self.pmf_remove.clone().compose(other_add.clone(), 0.0)?;
-                Some(composed)
+        match self {
+            Self::Pmf(p) => metrics::bayes_risk(p, prior).clamp(0.0, max_risk),
+            Self::Spa(s) => {
+                let pmf = s
+                    .to_pmf_pld(&DiscretizationConfig::default())
+                    .expect("SPA materialization failed");
+                metrics::bayes_risk(&pmf, prior).clamp(0.0, max_risk)
             }
-
-            // Self asymmetric, other symmetric → use other.pmf_remove (symmetric)
-            (Some(self_add), None) => {
-                let composed = self_add.clone().compose(other.pmf_remove.clone(), 0.0)?;
-                Some(composed)
-            }
-
-            // Both asymmetric → compose both ADD PMFs
-            (Some(self_add), Some(other_add)) => {
-                let composed = self_add.clone().compose(other_add.clone(), 0.0)?;
-                Some(composed)
-            }
-        };
-
-        Ok(Self {
-            pmf_remove,
-            pmf_add,
-        })
-    }
-
-    /// Self-compose this PLD multiple times
-    ///
-    /// Efficiently computes the result of composing this PLD with itself `count` times.
-    /// Uses the efficient FFT power method for dense PMFs.
-    ///
-    /// # Arguments
-    ///
-    /// * `count` - Number of times to self-compose (must be >= 1)
-    ///
-    /// # Returns
-    ///
-    /// A new `PrivacyLossDistribution` representing the `count`-fold composition
-    ///
-    /// # Panics
-    ///
-    /// Panics if `count` is 0
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// use opaque_accounting::mechanisms::gaussian_pld;
-    ///
-    /// let pld = gaussian(1.1).pld()?;
-    ///
-    /// // Compose with itself 100 times (e.g., 100 training steps)
-    /// let composed = pld.self_compose(100);
-    /// let epsilon = composed.epsilon_at(1e-5);
-    /// ```
-    pub fn self_compose(&self, count: usize) -> Self {
-        let pmf_remove = self.pmf_remove.clone().self_compose(count);
-
-        let pmf_add = self
-            .pmf_add
-            .as_ref()
-            .map(|pmf| pmf.clone().self_compose(count));
-
-        Self {
-            pmf_remove,
-            pmf_add,
         }
     }
 
-    /// Compose two PLDs with an explicit `max_grid_size` override.
+    // -- Composition (dispatch) ----------------------------------------------
+
+    /// Compose two PLDs.
     ///
-    /// Same as `compose()` but overrides the max grid size used for
-    /// post-composition coarsening.
-    pub fn compose_with_max_grid_size(&self, other: &Self, max_grid_size: usize) -> Result<Self> {
-        let lhs = Self {
-            pmf_remove: self.pmf_remove.with_max_grid_size(max_grid_size),
-            pmf_add: self
-                .pmf_add
-                .as_ref()
-                .map(|p| p.with_max_grid_size(max_grid_size)),
-        };
-        let rhs = Self {
-            pmf_remove: other.pmf_remove.with_max_grid_size(max_grid_size),
-            pmf_add: other
-                .pmf_add
-                .as_ref()
-                .map(|p| p.with_max_grid_size(max_grid_size)),
-        };
-        lhs.compose(&rhs)
+    /// - Pmf + Pmf → Pmf (FFT convolution)
+    /// - Spa + Spa → Spa (concatenate component lists)
+    /// - Mixed → materialize Spa to Pmf, then FFT
+    pub fn compose(&self, other: &Self) -> Result<Self> {
+        match (self, other) {
+            (Self::Pmf(a), Self::Pmf(b)) => Ok(Self::Pmf(a.compose(b)?)),
+            (Self::Spa(a), Self::Spa(b)) => Ok(Self::Spa(a.compose(b))),
+            (Self::Spa(s), Self::Pmf(p)) => {
+                let materialized = s.to_pmf_pld(&DiscretizationConfig::default())?;
+                Ok(Self::Pmf(materialized.compose(p)?))
+            }
+            (Self::Pmf(p), Self::Spa(s)) => {
+                let materialized = s.to_pmf_pld(&DiscretizationConfig::default())?;
+                Ok(Self::Pmf(p.compose(&materialized)?))
+            }
+        }
     }
 
-    /// Self-compose with an explicit `max_grid_size` override.
+    /// Self-compose this PLD `count` times.
     ///
-    /// Same as `self_compose()` but overrides the max grid size used for
-    /// post-composition coarsening.
+    /// - Pmf: FFT power method O(N log N)
+    /// - Spa: multiply counts O(k) — effectively free
+    pub fn self_compose(&self, count: usize) -> Self {
+        match self {
+            Self::Pmf(p) => Self::Pmf(p.self_compose(count)),
+            Self::Spa(s) => Self::Spa(s.self_compose(count)),
+        }
+    }
+
+    /// Compose with explicit `max_grid_size` override.
+    pub fn compose_with_max_grid_size(&self, other: &Self, max_grid_size: usize) -> Result<Self> {
+        match (self, other) {
+            (Self::Pmf(a), Self::Pmf(b)) => {
+                Ok(Self::Pmf(a.compose_with_max_grid_size(b, max_grid_size)?))
+            }
+            // For SPA variants, grid size is irrelevant — delegate to compose()
+            _ => self.compose(other),
+        }
+    }
+
+    /// Self-compose with explicit `max_grid_size` override.
     pub fn self_compose_with_max_grid_size(&self, count: usize, max_grid_size: usize) -> Self {
-        let pmf_remove = self
-            .pmf_remove
-            .clone()
-            .self_compose_with_max_grid_size(count, max_grid_size);
-
-        let pmf_add = self.pmf_add.as_ref().map(|pmf| {
-            pmf.clone()
-                .self_compose_with_max_grid_size(count, max_grid_size)
-        });
-
-        Self {
-            pmf_remove,
-            pmf_add,
+        match self {
+            Self::Pmf(p) => Self::Pmf(p.self_compose_with_max_grid_size(count, max_grid_size)),
+            Self::Spa(s) => Self::Spa(s.self_compose(count)),
         }
     }
 }
@@ -540,12 +254,11 @@ mod tests {
         let pld = PrivacyLossDistribution::new_symmetric(pmf);
 
         // For symmetric PLD, pmf_add should be None (pmf_remove used for both)
-        assert!(pld.pmf_add.is_none());
+        assert!(pld.is_symmetric());
 
-        // Wrapping the single PMF in two PLDs should give identical deltas
+        // Querying delta should give valid result
         let epsilon = 1.0;
-        let pld_r = PrivacyLossDistribution::new_symmetric(pld.pmf_remove.clone());
-        let delta = pld_r.delta_at(epsilon);
+        let delta = pld.delta_at(epsilon);
         assert!(delta >= 0.0 && delta <= 1.0);
     }
 
@@ -555,18 +268,13 @@ mod tests {
         let pmf_add = create_test_pmf(0, 0.4, 0.6);
         let pld = PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add);
 
-        // Asymmetric PLD should have both PMFs
-        assert!(pld.pmf_add.is_some());
+        // Asymmetric PLD should not be symmetric
+        assert!(!pld.is_symmetric());
 
-        // Verify both produce valid deltas
+        // Verify it produces valid deltas
         let epsilon = 1.0;
-        let pld_r = PrivacyLossDistribution::new_symmetric(pld.pmf_remove.clone());
-        let pld_a = PrivacyLossDistribution::new_symmetric(pld.pmf_add.unwrap().clone());
-        let delta_remove = pld_r.delta_at(epsilon);
-        let delta_add = pld_a.delta_at(epsilon);
-
-        assert!(delta_remove >= 0.0 && delta_remove <= 1.0);
-        assert!(delta_add >= 0.0 && delta_add <= 1.0);
+        let delta = pld.delta_at(epsilon);
+        assert!(delta >= 0.0 && delta <= 1.0);
     }
 
     #[test]

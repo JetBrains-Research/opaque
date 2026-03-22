@@ -401,7 +401,7 @@ mod tests {
     #[test]
     fn test_poisson_rectified_rejects_bad_params() {
         let cfg = default_config();
-        assert!(poisson_rectified_gaussian_pld(0.05, 3.0, 0.01, &cfg).is_err()); // bad nm
+        assert!(poisson_rectified_gaussian_pld(0.005, 3.0, 0.01, &cfg).is_err()); // bad nm
         assert!(poisson_rectified_gaussian_pld(0.5, 0.05, 0.01, &cfg).is_err()); // bad radius
         assert!(poisson_rectified_gaussian_pld(0.5, 3.0, 0.0, &cfg).is_err()); // bad rate
         assert!(poisson_rectified_gaussian_pld(0.5, 3.0, 1.5, &cfg).is_err()); // bad rate

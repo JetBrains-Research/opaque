@@ -26,6 +26,25 @@ pub fn py_poisson_gaussian_pld(
     Ok(PyPld::new(pld))
 }
 
+/// Create a Saddle-Point Accountant PLD for a Poisson-subsampled Gaussian.
+///
+/// Args:
+///     noise_multiplier (float): σ/Δ ratio, in [0.01, 2.5].
+///     rate (float): Poisson sampling probability, in (0, 1].
+///
+/// Returns:
+///     Pld: The privacy loss distribution (SPA-backed).
+#[pyfunction]
+#[pyo3(name = "spa_poisson_gaussian_pld", signature = (noise_multiplier, rate))]
+pub fn py_spa_poisson_gaussian_pld(
+    noise_multiplier: f64,
+    rate: f64,
+) -> PyResult<PyPld> {
+    let pld = crate::amplification::spa_poisson_gaussian_pld(noise_multiplier, rate)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}
+
 /// Compute the PLD for a truncated Poisson-subsampled Gaussian mechanism.
 ///
 /// This is the actual sampling used in production DP-SGD. Unlike standard

@@ -232,12 +232,12 @@ mod tests {
 
     #[test]
     fn test_rectified_rejects_below_min_nm() {
-        assert!(rectified_gaussian_pld(0.09, 3.0, &default_config()).is_err());
+        assert!(rectified_gaussian_pld(0.009, 3.0, &default_config()).is_err());
     }
 
     #[test]
     fn test_rectified_rejects_above_max_nm() {
-        assert!(rectified_gaussian_pld(1.21, 3.0, &default_config()).is_err());
+        assert!(rectified_gaussian_pld(2.51, 3.0, &default_config()).is_err());
     }
 
     #[test]

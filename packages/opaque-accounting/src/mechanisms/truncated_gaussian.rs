@@ -201,8 +201,8 @@ mod tests {
 
     #[test]
     fn test_truncated_rejects_bad_nm() {
-        assert!(truncated_gaussian_pld(0.09, 3.0, &default_config()).is_err());
-        assert!(truncated_gaussian_pld(1.21, 3.0, &default_config()).is_err());
+        assert!(truncated_gaussian_pld(0.009, 3.0, &default_config()).is_err());
+        assert!(truncated_gaussian_pld(2.51, 3.0, &default_config()).is_err());
     }
 
     #[test]

@@ -321,8 +321,8 @@ mod tests {
     #[test]
     fn test_poisson_rejects_bad_noise_multiplier() {
         let cfg = default_config();
-        assert!(poisson_gaussian_pld(0.05, 0.01, &cfg).is_err());
-        assert!(poisson_gaussian_pld(1.5, 0.01, &cfg).is_err());
+        assert!(poisson_gaussian_pld(0.005, 0.01, &cfg).is_err());
+        assert!(poisson_gaussian_pld(2.6, 0.01, &cfg).is_err());
     }
 
     #[test]
@@ -415,4 +415,27 @@ mod tests {
             );
         }
     }
+}
+
+/// Create a Saddle-Point Accountant PLD for a Poisson-subsampled Gaussian.
+///
+/// Unlike `poisson_gaussian_pld`, this does not discretize — the privacy loss
+/// is represented analytically via its CGF.
+///
+/// # Arguments
+///
+/// * `noise_multiplier` — σ/Δ ratio
+/// * `rate` — Poisson sampling probability q ∈ (0, 1]
+pub fn spa_poisson_gaussian_pld(
+    noise_multiplier: f64,
+    rate: f64,
+) -> Result<PrivacyLossDistribution> {
+    validate_noise_multiplier(noise_multiplier)?;
+    validate_rate(rate)?;
+
+    let cgf = std::sync::Arc::new(crate::pld::cgf::SubsampledGaussianCgf::new(
+        noise_multiplier,
+        rate,
+    ));
+    Ok(PrivacyLossDistribution::new_spa(cgf))
 }

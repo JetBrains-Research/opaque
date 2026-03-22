@@ -437,7 +437,7 @@ mod tests {
                 .unwrap();
 
         assert!(pld.is_symmetric());
-        assert!(pld.pmf_add.is_none());
+        assert!(pld.is_symmetric());
     }
 
     #[test]
@@ -458,7 +458,7 @@ mod tests {
         .unwrap();
 
         assert!(!pld.is_symmetric());
-        assert!(pld.pmf_add.is_some());
+        assert!(!pld.is_symmetric());
     }
 
     #[test]

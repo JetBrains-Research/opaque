@@ -21,15 +21,16 @@ mod truncated_gaussian;
 
 /// Minimum supported noise multiplier.
 ///
-/// Values below this threshold cause numerical instability in discretization
-/// (grid explosion, unreliable epsilon bounds).
-pub(crate) const MIN_NOISE_MULTIPLIER: f64 = 0.1;
+/// Values below this threshold cause numerical instability in PLD discretization
+/// (grid explosion). The Saddle-Point Accountant (SPA) handles small noise
+/// multipliers via analytical CGF evaluation without discretization.
+pub(crate) const MIN_NOISE_MULTIPLIER: f64 = 0.01;
 
 /// Maximum supported noise multiplier.
 ///
-/// Values above this threshold cause numerical instability
-/// (x-to-ε compression artifacts, unreliable beta/risk metrics).
-pub(crate) const MAX_NOISE_MULTIPLIER: f64 = 1.2;
+/// Values above this threshold provide near-perfect privacy.
+/// For σ > 2.5, use `identity()` instead.
+pub(crate) const MAX_NOISE_MULTIPLIER: f64 = 2.5;
 
 // ---------------------------------------------------------------------------
 // Re-exports
@@ -37,6 +38,7 @@ pub(crate) const MAX_NOISE_MULTIPLIER: f64 = 1.2;
 
 pub use eps_delta::eps_delta_pld;
 pub use gaussian::gaussian_pld;
+pub use gaussian::spa_gaussian_pld;
 pub use identity::identity_pld;
 pub use rectified_gaussian::rectified_gaussian_pld;
 pub use truncated_gaussian::truncated_gaussian_pld;

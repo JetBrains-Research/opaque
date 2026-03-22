@@ -13,12 +13,12 @@ use super::{MAX_NOISE_MULTIPLIER, MIN_NOISE_MULTIPLIER};
 ///
 /// # Arguments
 ///
-/// * `noise_multiplier` — σ/Δ ratio, must be in \[0.1, 1.2\]
+/// * `noise_multiplier` — σ/Δ ratio, must be in \[0.01, 2.5\]
 /// * `config` — discretization configuration for PLD grid
 ///
 /// # Errors
 ///
-/// Returns `InvalidParameter` if `noise_multiplier` is outside \[0.1, 1.2\].
+/// Returns `InvalidParameter` if `noise_multiplier` is outside \[0.01, 2.5\].
 pub fn gaussian_pld(
     noise_multiplier: f64,
     config: &DiscretizationConfig,
@@ -59,6 +59,27 @@ fn gaussian_epsilon_bounds(noise_multiplier: f64, log_mass_truncation_bound: f64
     }
 }
 
+/// Create a Saddle-Point Accountant PLD for a Gaussian mechanism.
+///
+/// Unlike `gaussian_pld`, this does not discretize — the privacy loss is
+/// represented analytically via its CGF. Use this for small noise multipliers
+/// where PLD grid explosion is a problem.
+///
+/// # Arguments
+///
+/// * `noise_multiplier` — σ/Δ ratio, must be in \[0.01, 2.5\]
+pub fn spa_gaussian_pld(noise_multiplier: f64) -> Result<PrivacyLossDistribution> {
+    if !(MIN_NOISE_MULTIPLIER..=MAX_NOISE_MULTIPLIER).contains(&noise_multiplier) {
+        return Err(PldError::InvalidParameter(format!(
+            "noise_multiplier must be in [{}, {}], got {}",
+            MIN_NOISE_MULTIPLIER, MAX_NOISE_MULTIPLIER, noise_multiplier
+        )));
+    }
+
+    let cgf = std::sync::Arc::new(crate::pld::cgf::GaussianCgf::new(noise_multiplier));
+    Ok(PrivacyLossDistribution::new_spa(cgf))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -69,12 +90,12 @@ mod tests {
 
     #[test]
     fn test_gaussian_rejects_below_min() {
-        assert!(gaussian_pld(0.09, &default_config()).is_err());
+        assert!(gaussian_pld(0.009, &default_config()).is_err());
     }
 
     #[test]
     fn test_gaussian_rejects_above_max() {
-        assert!(gaussian_pld(1.21, &default_config()).is_err());
+        assert!(gaussian_pld(2.51, &default_config()).is_err());
     }
 
     #[test]

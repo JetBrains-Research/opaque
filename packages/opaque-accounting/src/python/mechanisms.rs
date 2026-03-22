@@ -57,6 +57,24 @@ pub fn py_identity_pld(config: &PyDiscretizationConfig) -> PyResult<PyPld> {
     Ok(PyPld::new(pld))
 }
 
+/// Create a Saddle-Point Accountant PLD for a Gaussian mechanism.
+///
+/// Unlike gaussian_pld(), this does not discretize — the privacy loss is
+/// represented analytically via its CGF. Suitable for small noise multipliers.
+///
+/// Args:
+///     noise_multiplier (float): σ/Δ ratio, in [0.01, 2.5].
+///
+/// Returns:
+///     Pld: The privacy loss distribution (SPA-backed).
+#[pyfunction]
+#[pyo3(name = "spa_gaussian_pld", signature = (noise_multiplier))]
+pub fn py_spa_gaussian_pld(noise_multiplier: f64) -> PyResult<PyPld> {
+    let pld = crate::mechanisms::spa_gaussian_pld(noise_multiplier)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}
+
 /// Compute the PLD for a rectified (clamped) Gaussian mechanism.
 ///
 /// The rectified Gaussian adds noise N(0, σ²) clamped to [−R·σ, R·σ].
