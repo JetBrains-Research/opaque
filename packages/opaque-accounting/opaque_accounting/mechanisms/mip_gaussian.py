@@ -31,6 +31,14 @@ class MipGaussian(DpProcess):
     sensitivities: tuple[float, ...]
     weights: tuple[float, ...]
 
+    def __post_init__(self) -> None:
+        # JSON round-trip deserializes tuples as lists; coerce back so
+        # the frozen dataclass stays hashable (required by lru_cache).
+        if isinstance(self.sensitivities, list):
+            object.__setattr__(self, "sensitivities", tuple(self.sensitivities))
+        if isinstance(self.weights, list):
+            object.__setattr__(self, "weights", tuple(self.weights))
+
     @functools.lru_cache(maxsize=8)
     def pld(
         self,
