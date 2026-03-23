@@ -502,6 +502,53 @@ impl PrivacyLossDistribution {
     }
 }
 
+impl std::ops::Div<f64> for PrivacyLossDistribution {
+    type Output = PrivacyLossDistribution;
+
+    /// Divide all probability masses by a scalar.
+    fn div(self, divisor: f64) -> PrivacyLossDistribution {
+        PrivacyLossDistribution {
+            pmf_remove: self.pmf_remove / divisor,
+            pmf_add: self.pmf_add.map(|p| p / divisor),
+        }
+    }
+}
+
+impl PrivacyLossDistribution {
+    /// Fallible element-wise addition of two PLDs.
+    pub fn try_add(self, other: PrivacyLossDistribution) -> Result<PrivacyLossDistribution> {
+        let pmf_add = match (&self.pmf_add, &other.pmf_add) {
+            (Some(a), Some(b)) => Some(a.clone().try_add(b.clone())?),
+            (None, None) => None,
+            (Some(a), None) => Some(a.clone().try_add(other.pmf_remove.clone())?),
+            (None, Some(b)) => Some(self.pmf_remove.clone().try_add(b.clone())?),
+        };
+        let pmf_remove = self.pmf_remove.try_add(other.pmf_remove)?;
+        Ok(PrivacyLossDistribution { pmf_remove, pmf_add })
+    }
+}
+
+impl std::ops::Add for PrivacyLossDistribution {
+    type Output = PrivacyLossDistribution;
+
+    /// Element-wise addition of two PLDs.
+    ///
+    /// For asymmetric PLDs, adds both `pmf_remove` and `pmf_add` separately.
+    /// If one side is symmetric and the other asymmetric, the symmetric side's
+    /// `pmf_remove` is used as its `pmf_add`.
+    fn add(self, other: PrivacyLossDistribution) -> PrivacyLossDistribution {
+        let pmf_add = match (&self.pmf_add, &other.pmf_add) {
+            (Some(a), Some(b)) => Some(a.clone() + b.clone()),
+            (None, None) => None,
+            (Some(a), None) => Some(a.clone() + other.pmf_remove.clone()),
+            (None, Some(b)) => Some(self.pmf_remove.clone() + b.clone()),
+        };
+        let pmf_remove = self.pmf_remove + other.pmf_remove;
+
+        PrivacyLossDistribution { pmf_remove, pmf_add }
+    }
+}
+
 // Note: In the functional API, PrivacyLossDistribution is a pure data structure.
 // It does not implement the old Mechanism trait, which is specific to the legacy API.
 

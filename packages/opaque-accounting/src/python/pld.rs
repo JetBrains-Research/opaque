@@ -139,6 +139,27 @@ impl PyPld {
         self.compose(other)
     }
 
+    /// ``a + b`` is element-wise PMF addition (for building mixture PLDs).
+    ///
+    /// The result does NOT sum to 1. Normalize with ``/`` afterwards.
+    /// Example: ``mixture = pld_a / 2 + pld_b / 2``
+    fn __add__(&self, other: &PyPld) -> PyResult<PyPld> {
+        let result = self.inner.clone().try_add(other.inner.clone()).map_err(to_py_err)?;
+        Ok(PyPld { inner: result })
+    }
+
+    /// ``pld / k`` divides all probability masses by k.
+    fn __truediv__(&self, divisor: f64) -> PyResult<PyPld> {
+        if divisor <= 0.0 || !divisor.is_finite() {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "divisor must be positive and finite, got {divisor}"
+            )));
+        }
+        Ok(PyPld {
+            inner: self.inner.clone() / divisor,
+        })
+    }
+
     fn __repr__(&self) -> String {
         let grid = self.inner.pmf_remove.probs.len();
         let sym = if self.inner.pmf_add.is_none() {

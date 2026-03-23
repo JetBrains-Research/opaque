@@ -9,12 +9,14 @@ the **base Gaussian mechanism** at its observed sensitivity — no Poisson
 subsampling mixture needed.  We only compose over the ~q·T steps where the
 sample actually participated.
 
-The f-MIP epsilon is found by averaging the hockey-stick divergences across
-samples and inverting: find the smallest ε such that
+The f-MIP epsilon is found by constructing the mixture PLD — the weighted
+average of per-sample PLDs — and computing epsilon on it:
 
-    (1/N) Σ_i  H_ε(PLD_i)  ≤  δ
+    mixture_pld = (1/N) Σ_i PLD_i
+    ε = mixture_pld.epsilon_at(δ)
 
-This is tighter than averaging per-sample epsilons (Jensen's inequality).
+This is equivalent to finding the smallest ε such that
+(1/N) Σ_i H_ε(PLD_i) ≤ δ, since hockey-stick is linear in the PLD.
 """
 
 from __future__ import annotations
@@ -23,86 +25,21 @@ from collections import Counter
 from typing import Sequence
 
 import opaque_accounting as acc
-from opaque_accounting.base import DpProcess
+from opaque_accounting.base import DpProcess, Pld
 from opaque_accounting.mechanisms.mip_gaussian import MipGaussian
 
 
-def _build_per_sample_processes(
-    noise_multiplier: float,
-    sample_step_sensitivities: Sequence[Sequence[float]],
-) -> list[tuple[DpProcess, int]]:
-    """Build composed DpProcess for each distinct sample profile.
-
-    Returns a list of (process, weight) pairs where weight is the number
-    of samples sharing that profile.  Samples with zero participations are
-    included as (identity, count).
-    """
-    # Group samples by their sensitivity profile (as sorted tuple) for dedup
-    profile_counts: Counter[tuple[float, ...]] = Counter()
-    for sensitivities in sample_step_sensitivities:
-        key = tuple(round(s, 6) for s in sensitivities)
-        profile_counts[key] += 1
-
-    result: list[tuple[DpProcess, int]] = []
-    for profile, count in profile_counts.items():
-        if not profile:
-            result.append((acc.identity(), count))
-            continue
-
-        sens_counts: Counter[float] = Counter(profile)
-        process: DpProcess = acc.identity()
-        for s, k in sens_counts.items():
-            s_clamped = max(s, 1e-8)
-            mip = MipGaussian(
-                noise_multiplier=noise_multiplier,
-                sensitivities=(s_clamped,),
-                weights=(1.0,),
-            )
-            process = process | (mip * k)
-        result.append((process, count))
-
-    return result
-
-
-def _bisect_fmip_epsilon(
+def _build_mixture_pld(
     processes_and_weights: list[tuple[DpProcess, int]],
     total_samples: int,
-    delta: float,
-    eps_lo: float = 0.0,
-    eps_hi: float | None = None,
-    tol: float = 1e-6,
-    max_iter: int = 100,
-) -> float:
-    """Binary search for ε such that avg delta_at(ε) across samples = delta.
-
-    Finds the smallest ε where (1/N) Σ_i w_i · H_ε(PLD_i) ≤ δ.
-    """
-
-    def avg_delta(eps: float) -> float:
-        total = 0.0
-        for process, weight in processes_and_weights:
-            total += process.delta_at(eps) * weight
-        return total / total_samples
-
-    # Find upper bound if not given
-    if eps_hi is None:
-        eps_hi = 1.0
-        while avg_delta(eps_hi) > delta:
-            eps_hi *= 2.0
-            if eps_hi > 1e6:
-                return float("inf")
-
-    # Binary search
-    for _ in range(max_iter):
-        if eps_hi - eps_lo < tol:
-            break
-        mid = (eps_lo + eps_hi) / 2.0
-        if avg_delta(mid) > delta:
-            eps_lo = mid
-        else:
-            eps_hi = mid
-
-    return eps_hi
+) -> Pld:
+    """Build the mixture PLD: (1/N) Σ_i w_i · PLD_i."""
+    mixture: Pld | None = None
+    for process, weight in processes_and_weights:
+        pld = process.pld()
+        scaled = pld / (total_samples / weight)
+        mixture = scaled if mixture is None else mixture + scaled
+    return mixture
 
 
 def per_sample_expost_epsilon(
@@ -114,8 +51,8 @@ def per_sample_expost_epsilon(
 
     For each sample, composes the base Gaussian mechanism only over the steps
     where that sample was included in the batch (using the observed gradient
-    norm at each such step).  Then finds the smallest ε such that the average
-    hockey-stick divergence across all samples is ≤ δ.
+    norm at each such step).  Then constructs the mixture PLD (weighted average
+    of per-sample PLDs) and computes epsilon on it.
 
     Args:
         noise_multiplier: Noise multiplier σ/C.
@@ -141,9 +78,32 @@ def per_sample_expost_epsilon(
         return 0.0
 
     n = len(sample_step_sensitivities)
-    processes = _build_per_sample_processes(noise_multiplier, sample_step_sensitivities)
 
-    return _bisect_fmip_epsilon(processes, n, delta)
+    # Group samples by their sensitivity profile for dedup
+    profile_counts: Counter[tuple[float, ...]] = Counter()
+    for sensitivities in sample_step_sensitivities:
+        key = tuple(round(s, 6) for s in sensitivities)
+        profile_counts[key] += 1
+
+    processes: list[tuple[DpProcess, int]] = []
+    for profile, count in profile_counts.items():
+        if not profile:
+            processes.append((acc.identity(), count))
+            continue
+
+        sens_counts: Counter[float] = Counter(profile)
+        process: DpProcess = acc.identity()
+        for s, k in sens_counts.items():
+            s_clamped = max(s, 1e-8)
+            mip = MipGaussian(
+                noise_multiplier=noise_multiplier,
+                sensitivities=(s_clamped,),
+                weights=(1.0,),
+            )
+            process = process | (mip * k)
+        processes.append((process, count))
+
+    return _build_mixture_pld(processes, n).epsilon_at(delta)
 
 
 def per_sample_expost_epsilon_fixed(
@@ -211,4 +171,4 @@ def per_sample_expost_epsilon_fixed(
         process = mip * c
         processes.append((process, num_samples))
 
-    return _bisect_fmip_epsilon(processes, n, delta)
+    return _build_mixture_pld(processes, n).epsilon_at(delta)

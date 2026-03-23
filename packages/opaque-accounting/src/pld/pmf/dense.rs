@@ -447,6 +447,98 @@ impl Pmf {
         coarsened.max_grid_size = self.max_grid_size;
         coarsened
     }
+
+    /// Element-wise addition of two PMFs (fallible version).
+    ///
+    /// Adds probability masses at each grid point. The result does NOT
+    /// necessarily sum to 1 — callers must normalize (e.g., via `/`).
+    ///
+    /// Used for constructing mixture PLDs: `(pld_a / 2.0) + (pld_b / 2.0)`.
+    ///
+    /// # Errors
+    ///
+    /// * `PldError::PessimisticMismatch` — if `pessimistic_estimate` flags differ
+    /// * `PldError::DiscretizationMismatch` — if discretizations are incompatible
+    pub fn try_add(self, other: Pmf) -> Result<Pmf> {
+        let action = self.validate_composable(&other)?;
+
+        let (lhs, rhs) = match action {
+            None => (self, other),
+            Some(CoarsenAction::CoarsenSelf(f)) => (self.coarsen(f), other),
+            Some(CoarsenAction::CoarsenOther(f)) => (self, other.coarsen(f)),
+        };
+
+        // Find union extent
+        let min_idx = lhs.lower_loss_index.min(rhs.lower_loss_index);
+        let lhs_upper = lhs.lower_loss_index + lhs.probs.len() as i64;
+        let rhs_upper = rhs.lower_loss_index + rhs.probs.len() as i64;
+        let max_upper = lhs_upper.max(rhs_upper);
+        let result_len = (max_upper - min_idx) as usize;
+
+        let mut result_probs = vec![0.0; result_len];
+
+        // Accumulate lhs
+        let lhs_offset = (lhs.lower_loss_index - min_idx) as usize;
+        for (i, &p) in lhs.probs.iter().enumerate() {
+            result_probs[lhs_offset + i] += p;
+        }
+
+        // Accumulate rhs
+        let rhs_offset = (rhs.lower_loss_index - min_idx) as usize;
+        for (i, &p) in rhs.probs.iter().enumerate() {
+            result_probs[rhs_offset + i] += p;
+        }
+
+        Ok(Pmf {
+            discretization: lhs.discretization,
+            lower_loss_index: min_idx,
+            probs: result_probs,
+            infinity_mass: lhs.infinity_mass + rhs.infinity_mass,
+            negative_infinity_mass: lhs.negative_infinity_mass + rhs.negative_infinity_mass,
+            pessimistic_estimate: lhs.pessimistic_estimate,
+            max_grid_size: lhs.max_grid_size.max(rhs.max_grid_size),
+            right_tail_budget: combine_budgets(lhs.right_tail_budget, rhs.right_tail_budget),
+            left_tail_budget: combine_budgets(lhs.left_tail_budget, rhs.left_tail_budget),
+        })
+    }
+}
+
+impl std::ops::Div<f64> for Pmf {
+    type Output = Pmf;
+
+    /// Divide all probability masses by a scalar.
+    ///
+    /// Grid geometry is unchanged. Used for normalizing mixture PLDs.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `divisor` is not positive and finite.
+    fn div(mut self, divisor: f64) -> Pmf {
+        assert!(
+            divisor > 0.0 && divisor.is_finite(),
+            "Pmf divisor must be positive and finite, got {divisor}"
+        );
+        for p in &mut self.probs {
+            *p /= divisor;
+        }
+        self.infinity_mass /= divisor;
+        self.negative_infinity_mass /= divisor;
+        self.right_tail_budget /= divisor;
+        self.left_tail_budget /= divisor;
+        self
+    }
+}
+
+impl std::ops::Add for Pmf {
+    type Output = Pmf;
+
+    /// Element-wise addition of two PMFs.
+    ///
+    /// Panics on incompatible parameters. Use `try_add` for fallible version.
+    fn add(self, other: Pmf) -> Pmf {
+        self.try_add(other)
+            .expect("Pmf addition failed (mismatched discretization or pessimistic_estimate)")
+    }
 }
 
 #[cfg(test)]
@@ -705,5 +797,67 @@ mod tests {
             assert_relative_eq!(m, a, epsilon = 1e-12);
         }
         assert_relative_eq!(manual.infinity_mass, auto.infinity_mass, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn test_div_halves_all_masses() {
+        let pmf = Pmf {
+            discretization: 0.1,
+            lower_loss_index: -2,
+            probs: vec![0.2, 0.3, 0.5],
+            infinity_mass: 0.04,
+            negative_infinity_mass: 0.02,
+            pessimistic_estimate: true,
+            max_grid_size: usize::MAX,
+            right_tail_budget: 0.01,
+            left_tail_budget: 0.005,
+        };
+        let halved = pmf / 2.0;
+        assert_relative_eq!(halved.probs[0], 0.1, epsilon = 1e-15);
+        assert_relative_eq!(halved.probs[1], 0.15, epsilon = 1e-15);
+        assert_relative_eq!(halved.probs[2], 0.25, epsilon = 1e-15);
+        assert_relative_eq!(halved.infinity_mass, 0.02, epsilon = 1e-15);
+        assert_relative_eq!(halved.negative_infinity_mass, 0.01, epsilon = 1e-15);
+        assert_relative_eq!(halved.right_tail_budget, 0.005, epsilon = 1e-15);
+        // Grid unchanged
+        assert_eq!(halved.lower_loss_index, -2);
+        assert_relative_eq!(halved.discretization, 0.1, epsilon = 1e-15);
+    }
+
+    #[test]
+    fn test_add_identical_then_div_roundtrips() {
+        let pmf = Pmf::new(0.1, -1, vec![0.25, 0.5, 0.25], 0.0, true, usize::MAX);
+        let sum = pmf.clone() + pmf.clone();
+        let avg = sum / 2.0;
+        assert_eq!(avg.probs.len(), pmf.probs.len());
+        for (a, o) in avg.probs.iter().zip(pmf.probs.iter()) {
+            assert_relative_eq!(a, o, epsilon = 1e-15);
+        }
+    }
+
+    #[test]
+    fn test_add_different_extents() {
+        // pmf_a covers indices [0, 1, 2], pmf_b covers [1, 2, 3]
+        let pmf_a = Pmf::new(0.1, 0, vec![0.2, 0.3, 0.5], 0.0, true, usize::MAX);
+        let pmf_b = Pmf::new(0.1, 1, vec![0.4, 0.4, 0.2], 0.0, true, usize::MAX);
+        let sum = pmf_a + pmf_b;
+        // Union extent: [0, 1, 2, 3]
+        assert_eq!(sum.lower_loss_index, 0);
+        assert_eq!(sum.probs.len(), 4);
+        assert_relative_eq!(sum.probs[0], 0.2, epsilon = 1e-15); // only a
+        assert_relative_eq!(sum.probs[1], 0.7, epsilon = 1e-15); // 0.3 + 0.4
+        assert_relative_eq!(sum.probs[2], 0.9, epsilon = 1e-15); // 0.5 + 0.4
+        assert_relative_eq!(sum.probs[3], 0.2, epsilon = 1e-15); // only b
+    }
+
+    #[test]
+    fn test_add_sums_tail_masses() {
+        let mut pmf_a = Pmf::new(0.1, 0, vec![0.8], 0.1, true, usize::MAX);
+        pmf_a.negative_infinity_mass = 0.1;
+        let mut pmf_b = Pmf::new(0.1, 0, vec![0.7], 0.2, true, usize::MAX);
+        pmf_b.negative_infinity_mass = 0.1;
+        let sum = pmf_a + pmf_b;
+        assert_relative_eq!(sum.infinity_mass, 0.3, epsilon = 1e-15);
+        assert_relative_eq!(sum.negative_infinity_mass, 0.2, epsilon = 1e-15);
     }
 }
