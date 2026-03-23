@@ -46,6 +46,7 @@ def per_sample_expost_epsilon(
     noise_multiplier: float,
     sample_step_sensitivities: Sequence[Sequence[float]],
     delta: float,
+    total_samples: int | None = None,
 ) -> float:
     """Stochastic f-MIP epsilon via per-sample ex-post composition.
 
@@ -61,6 +62,10 @@ def per_sample_expost_epsilon(
             each inner list equals the number of participations for that
             sample (NOT the total number of training steps).
         delta: Target delta for epsilon computation.
+        total_samples: Total number of samples in the dataset. If larger than
+            ``len(sample_step_sensitivities)``, the remaining samples are
+            assumed to have never participated (identity / zero privacy loss).
+            Defaults to ``len(sample_step_sensitivities)``.
 
     Returns:
         f-MIP epsilon (ε such that avg hockey-stick ≤ δ).
@@ -77,7 +82,8 @@ def per_sample_expost_epsilon(
     if not sample_step_sensitivities:
         return 0.0
 
-    n = len(sample_step_sensitivities)
+    n_observed = len(sample_step_sensitivities)
+    n = max(n_observed, total_samples or 0)
 
     # Group samples by their sensitivity profile for dedup
     profile_counts: Counter[tuple[float, ...]] = Counter()
@@ -102,6 +108,11 @@ def per_sample_expost_epsilon(
             )
             process = process | (mip * k)
         processes.append((process, count))
+
+    # Samples that never participated have zero privacy loss (identity).
+    n_unobserved = n - n_observed
+    if n_unobserved > 0:
+        processes.append((acc.identity(), n_unobserved))
 
     return _build_mixture_pld(processes, n).epsilon_at(delta)
 

@@ -1065,7 +1065,9 @@ def main():
     accounting = Accountant()
     # Per-sample trajectory accounting: accumulate observed sensitivities
     # to estimate the per-sample epsilon (exact multi-step stochastic f-MIP).
-    accumulated_norms: list[float] = []  # all observed per-example norms
+    # Maps dataset sample index → list of per-step normalized sensitivities.
+    sample_trajectories: dict[int, list[float]] = {}
+    accumulated_norms: list[float] = []  # all observed per-example norms (legacy, for rms)
     if args.accounting in ("rms", "mixture"):
         # Per-step accounting: step_process built per-step from batch sensitivities.
         step_process = None
@@ -1177,6 +1179,10 @@ def main():
             if args.accounting in ("rms", "mixture"):
                 norms = (aux.clipped_grad_norms / current_clip_norm).tolist()
                 accumulated_norms.extend(norms)
+                # Track per-sample trajectories for true f-MIP accounting
+                batch_indices = epoch_sampler.last_indices
+                for idx, s in zip(batch_indices, norms):
+                    sample_trajectories.setdefault(idx, []).append(s)
                 if args.accounting == "rms":
                     s_rms = aux.s_rms or max(
                         (aux.clipped_grad_norms / current_clip_norm).pow(2).mean().sqrt().item(), 1e-8
@@ -1238,19 +1244,20 @@ def main():
                 }
                 eval_msg = f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}"
 
-                # Ex-post per-sample epsilon (Formulation B: compose base
-                # Gaussian only at the ~q*T steps each sample participated)
-                if args.accounting in ("rms", "mixture") and accumulated_norms:
+                # Ex-post per-sample epsilon (true f-MIP: compose base
+                # Gaussian only at the ~q*T steps each sample participated,
+                # using actual per-sample sensitivity trajectories)
+                if args.accounting in ("rms", "mixture") and sample_trajectories:
                     from opaque_accounting.composition.per_sample import (
-                        per_sample_expost_epsilon_fixed,
+                        per_sample_expost_epsilon,
                     )
 
-                    num_participations = round(sample_rate * global_step)
-                    eps_expost = per_sample_expost_epsilon_fixed(
+                    trajectories = list(sample_trajectories.values())
+                    eps_expost = per_sample_expost_epsilon(
                         noise_multiplier,
-                        accumulated_norms,
-                        num_participations=max(num_participations, 1),
+                        trajectories,
                         delta=args.target_delta,
+                        total_samples=global_train_size,
                     )
                     metrics["privacy/epsilon_expost"] = eps_expost
                     eval_msg += f", ε_expost={eps_expost:.3f}"
@@ -1317,17 +1324,17 @@ def main():
     print(f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e} (n={global_train_size})")
     print(f"  Noise multiplier: {noise_multiplier:.4f}")
     print(f"  Final ε (theoretical): {final_epsilon:.4f}")
-    if args.accounting in ("rms", "mixture") and accumulated_norms:
+    if args.accounting in ("rms", "mixture") and sample_trajectories:
         from opaque_accounting.composition.per_sample import (
-            per_sample_expost_epsilon_fixed,
+            per_sample_expost_epsilon,
         )
 
-        num_participations = max(round(sample_rate * global_step), 1)
-        final_eps_expost = per_sample_expost_epsilon_fixed(
+        trajectories = list(sample_trajectories.values())
+        final_eps_expost = per_sample_expost_epsilon(
             noise_multiplier,
-            accumulated_norms,
-            num_participations=num_participations,
+            trajectories,
             delta=args.target_delta,
+            total_samples=global_train_size,
         )
         print(f"  Final ε (ex-post):     {final_eps_expost:.4f}")
     if args.audit:

@@ -82,6 +82,10 @@ class PoissonSampler(Sampler):
         # Convert RngKey to numpy generator
         self.generator = np.random.default_rng(key.seed)
 
+        # Stores the indices yielded by the most recent __iter__ step,
+        # so callers can correlate per-example outputs with dataset indices.
+        self.last_indices: list[int] = []
+
     def __iter__(self) -> Iterator[list[int]]:
         """Yield variable-size batches as lists of indices.
 
@@ -96,13 +100,15 @@ class PoissonSampler(Sampler):
             while True:
                 included = self.generator.random(self._num_samples) < self.sample_rate
                 indices = np.where(included)[0]
-                yield indices.tolist()
+                self.last_indices = indices.tolist()
+                yield self.last_indices
         else:
             # Fixed number of iterations
             for _ in range(self.num_iterations):
                 included = self.generator.random(self._num_samples) < self.sample_rate
                 indices = np.where(included)[0]
-                yield indices.tolist()
+                self.last_indices = indices.tolist()
+                yield self.last_indices
 
     def __len__(self) -> int:
         """Return number of batches.
