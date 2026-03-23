@@ -1,11 +1,12 @@
-"""Compare ex-post per-sample accounting vs mixture vs RMS.
+"""Compare stochastic f-MIP accounting vs mixture vs RMS.
 
 Simulates DP-SGD training with Poisson sampling and heterogeneous
 sensitivities, then computes epsilon under four accounting modes:
 
-1. **Ex-post per-sample** (Formulation B, Feldman & Zrnic 2021):
+1. **f-MIP** (stochastic, per-sample ex-post):
    For each sample, compose only the base Gaussian mechanism at the ~q·T
-   steps where it was actually in the batch.  No Poisson subsampling wrapper.
+   steps where it was actually in the batch.  Then find ε such that the
+   average hockey-stick divergence across samples ≤ δ.
 
 2. **Mixture** (exact per-step, cross-trajectory composition):
    At each step, build a mixture PLD from the batch's sensitivity
@@ -16,17 +17,6 @@ sensitivities, then computes epsilon under four accounting modes:
    then compose across steps with Poisson amplification.
 
 4. **Worst-case baseline**: Poisson(Gaussian(nm, 1)) composed T steps.
-
-Note: Ex-post composes fewer steps (~q·T) but WITHOUT subsampling
-amplification.  The amplified approaches (RMS, mixture, baseline) compose
-all T steps but benefit from Poisson amplification at each step.  For small
-sampling rates the amplification benefit dominates, so:
-
-  ε_RMS ≤ ε_mixture ≤ ε_baseline ≤ ε_expost  (typically)
-
-The ex-post approach is still valuable for per-sample heterogeneity: samples
-with small sensitivities get much lower ex-post epsilon even if the average
-is higher.
 """
 
 import math
@@ -179,8 +169,8 @@ class TestExpostPerSampleAccounting:
             sensitivity_fn=sensitivity_fn,
         )
 
-        # 1. Ex-post per-sample (no amplification, ~q*T base Gaussian steps)
-        eps_expost = per_sample_expost_epsilon(
+        # 1. f-MIP (avg hockey-stick across per-sample composed PLDs)
+        eps_fmip = per_sample_expost_epsilon(
             nm,
             data["sample_participations"],
             delta=delta,
@@ -206,8 +196,7 @@ class TestExpostPerSampleAccounting:
         print(f"{'RMS (amplified)':<25} {eps_rms:10.4f}")
         print(f"{'Mixture (amplified)':<25} {eps_mixture:10.4f}")
         print(f"{'Baseline (amplified)':<25} {eps_baseline:10.4f}")
-        print(f"{'Ex-post (no amplif.)':<25} {eps_expost:10.4f}")
-        print(f"\nAmplification benefit: {eps_expost / eps_rms:.1f}x worse without it")
+        print(f"{'f-MIP (per-sample)':<25} {eps_fmip:10.4f}")
 
         # Amplified approaches maintain their ordering
         assert eps_rms < eps_mixture, (
@@ -216,11 +205,9 @@ class TestExpostPerSampleAccounting:
         assert eps_mixture < eps_baseline, (
             f"Mixture ({eps_mixture:.4f}) should be < baseline ({eps_baseline:.4f})"
         )
-        # Ex-post loses amplification → higher epsilon for small q
-        assert eps_expost > eps_rms, (
-            f"Ex-post ({eps_expost:.4f}) should be > RMS ({eps_rms:.4f}) "
-            f"because amplification dominates at q={sample_rate}"
-        )
+        # f-MIP should be positive and finite
+        assert eps_fmip > 0
+        assert eps_fmip < float("inf")
 
     def test_uniform_sensitivity_expost_vs_baseline(self):
         """When all sensitivities=1, compare ex-post vs baseline."""
@@ -301,13 +288,17 @@ class TestExpostPerSampleAccounting:
         )
 
     def test_zero_participations(self):
-        """Sample that was never in a batch contributes zero epsilon."""
+        """Sample that was never in a batch contributes zero hockey-stick."""
         nm = 0.8
         delta = 1e-5
 
         # One sample with participations, one without
-        eps = per_sample_expost_epsilon(nm, [[0.5, 0.5, 0.5], []], delta=delta)
+        eps_two = per_sample_expost_epsilon(nm, [[0.5, 0.5, 0.5], []], delta=delta)
         eps_single = per_sample_expost_epsilon(nm, [[0.5, 0.5, 0.5]], delta=delta)
 
-        # Average should be half of the single sample's epsilon
-        assert eps == pytest.approx(eps_single / 2, rel=1e-3)
+        # With f-MIP: avg hockey-stick for 2 samples (one zero) at target δ
+        # means the participating sample's hockey-stick can be up to 2δ.
+        # So ε_two < ε_single (the threshold is lower because the budget
+        # is shared, but the zero sample's contribution allows more room).
+        assert eps_two < eps_single
+        assert eps_two > 0
