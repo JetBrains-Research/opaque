@@ -10,9 +10,13 @@ the **base Gaussian mechanism** at its observed sensitivity — no Poisson
 subsampling mixture needed.  We only compose over the ~q·T steps where the
 sample actually participated.
 
-This is tighter than the ex-ante formulation (composing
-PoissonSubsample(Gaussian) for all T steps) because it avoids the cross-terms
-introduced by convolving mixture PLDs.
+Note: the *average* ex-post epsilon across all samples is generally LOOSER
+than the ex-ante formulation (composing PoissonSubsample(Gaussian) for all T
+steps).  The ex-ante PLD equals the Binomial mixture of ex-post PLDs, and
+finding a single ε threshold for the mixture is at least as good as averaging
+individual ε thresholds (Jensen's inequality on the hockey-stick divergence).
+The value of the ex-post approach is per-sample heterogeneity: individual
+samples with few participations or small sensitivities get much lower epsilon.
 """
 
 from __future__ import annotations
