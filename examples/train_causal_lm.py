@@ -1238,21 +1238,22 @@ def main():
                 }
                 eval_msg = f"  → Eval: loss={current_eval_loss:.4f}, ε={epsilon:.3f}"
 
-                # Per-sample trajectory epsilon (exact multi-step f-MIP)
+                # Ex-post per-sample epsilon (Formulation B: compose base
+                # Gaussian only at the ~q*T steps each sample participated)
                 if args.accounting in ("rms", "mixture") and accumulated_norms:
                     from opaque_accounting.composition.per_sample import (
-                        per_sample_composed_epsilon,
+                        per_sample_expost_epsilon_fixed,
                     )
 
-                    eps_per_sample = per_sample_composed_epsilon(
+                    num_participations = round(sample_rate * global_step)
+                    eps_expost = per_sample_expost_epsilon_fixed(
                         noise_multiplier,
-                        sample_rate,
                         accumulated_norms,
-                        num_steps=global_step,
+                        num_participations=max(num_participations, 1),
                         delta=args.target_delta,
                     )
-                    metrics["privacy/epsilon_per_sample"] = eps_per_sample
-                    eval_msg += f", ε_per_sample={eps_per_sample:.3f}"
+                    metrics["privacy/epsilon_expost"] = eps_expost
+                    eval_msg += f", ε_expost={eps_expost:.3f}"
 
                 if args.audit:
                     audit_estimate = run_audit(trainable_params)
@@ -1318,17 +1319,17 @@ def main():
     print(f"  Final ε (theoretical): {final_epsilon:.4f}")
     if args.accounting in ("rms", "mixture") and accumulated_norms:
         from opaque_accounting.composition.per_sample import (
-            per_sample_composed_epsilon,
+            per_sample_expost_epsilon_fixed,
         )
 
-        final_eps_per_sample = per_sample_composed_epsilon(
+        num_participations = max(round(sample_rate * global_step), 1)
+        final_eps_expost = per_sample_expost_epsilon_fixed(
             noise_multiplier,
-            sample_rate,
             accumulated_norms,
-            num_steps=global_step,
+            num_participations=num_participations,
             delta=args.target_delta,
         )
-        print(f"  Final ε (per-sample):  {final_eps_per_sample:.4f}")
+        print(f"  Final ε (ex-post):     {final_eps_expost:.4f}")
     if args.audit:
         audit_result = run_audit(trainable_params)
         audit_eps = audit_result.epsilon_at(delta=args.target_delta)
