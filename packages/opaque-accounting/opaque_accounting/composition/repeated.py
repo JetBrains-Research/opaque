@@ -18,6 +18,10 @@ class Repeated(DpProcess):
     def _leaf_and_count(self) -> tuple[DpProcess, int]:
         return (self.inner, self.count)
 
+    @functools.lru_cache(maxsize=1)
+    def cgf(self) -> Pld:
+        return self.inner.cgf().self_compose(self.count)
+
     @functools.lru_cache(maxsize=8)
     def pld(
         self,

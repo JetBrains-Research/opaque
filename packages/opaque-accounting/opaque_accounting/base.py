@@ -290,6 +290,27 @@ class DpProcess(ABC):
             max_grid_size=max_grid_size,
         ).risk_at(prior)
 
+    # -- CGF path (explicit opt-in) -------------------------------------------
+
+    def cgf(self) -> Pld:
+        """Return a CGF-backed PLD (no grid, O(1) composition).
+
+        The CGF (Cumulant Generating Function) path uses Lugannani-Rice
+        saddle-point approximation for delta_at/epsilon_at/advantage.
+        For beta_at/risk_at, the CGF auto-materializes to PMF on demand.
+
+        Not all mechanisms support CGF. Raises :exc:`NotImplementedError`
+        for mechanisms without an analytical CGF (e.g., rectified_gaussian).
+
+        Example::
+
+            proc = acc.poisson(acc.gaussian(1.1), 0.01) * 1000
+            eps = proc.cgf().epsilon_at(1e-5)  # fast, no grid
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not have a CGF implementation"
+        )
+
     # -- Composition operators -----------------------------------------------
 
     def _leaf_and_count(self) -> tuple[DpProcess, int]:

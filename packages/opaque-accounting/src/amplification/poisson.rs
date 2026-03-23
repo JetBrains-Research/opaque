@@ -32,11 +32,6 @@ pub fn poisson_gaussian_pld(
     validate_noise_multiplier(noise_multiplier)?;
     validate_rate(rate)?;
 
-    // Auto-route: small σ → CGF (avoids PLD grid explosion)
-    if noise_multiplier < crate::mechanisms::CGF_NOISE_THRESHOLD {
-        return cgf_poisson_gaussian_pld(noise_multiplier, rate);
-    }
-
     let sigma = noise_multiplier;
     let sensitivity = 1.0;
     let log_mass = config.log_mass_truncation_bound;
@@ -46,6 +41,21 @@ pub fn poisson_gaussian_pld(
         poisson_gaussian_epsilon_bounds(sigma, sensitivity, rate, Adjacency::Remove, log_mass);
     let bounds_add =
         poisson_gaussian_epsilon_bounds(sigma, sensitivity, rate, Adjacency::Add, log_mass);
+
+    // Fall back to CGF if grid would need coarsening or is too large for composition.
+    let eff_disc_remove = config.effective_discretization(&bounds_remove);
+    let eff_disc_add = config.effective_discretization(&bounds_add);
+    let coarsening = (eff_disc_remove / config.discretization)
+        .max(eff_disc_add / config.discretization);
+
+    let grid_remove = ((bounds_remove.epsilon_upper - bounds_remove.epsilon_lower) / eff_disc_remove).ceil() as usize;
+    let grid_add = ((bounds_add.epsilon_upper - bounds_add.epsilon_lower) / eff_disc_add).ceil() as usize;
+    let grid_too_large = grid_remove.max(grid_add) as f64
+        > config.max_grid_size as f64 * crate::mechanisms::MAX_GRID_FRACTION;
+
+    if coarsening > crate::mechanisms::MAX_COARSENING_FACTOR || grid_too_large {
+        return cgf_poisson_gaussian_pld(noise_multiplier, rate);
+    }
 
     discretize_asymmetric_mechanism(config, bounds_remove, bounds_add, |epsilon, adj| {
         Ok(poisson_gaussian_get_delta(

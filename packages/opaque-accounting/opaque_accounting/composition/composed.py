@@ -15,6 +15,10 @@ class Composed(DpProcess):
     left: DpProcess
     right: DpProcess
 
+    @functools.lru_cache(maxsize=1)
+    def cgf(self) -> Pld:
+        return self.left.cgf().compose(self.right.cgf())
+
     @functools.lru_cache(maxsize=8)
     def pld(
         self,

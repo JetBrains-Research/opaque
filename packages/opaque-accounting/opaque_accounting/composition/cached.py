@@ -28,6 +28,10 @@ class CachedProcess(DpProcess):
 
     inner: DpProcess
 
+    @functools.lru_cache(maxsize=1)
+    def cgf(self) -> Pld:
+        return self.inner.cgf()
+
     @functools.lru_cache(maxsize=16)
     def pld(
         self,

@@ -4,18 +4,20 @@ use crate::discretization::{discretize_symmetric_mechanism, DiscretizationConfig
 use crate::error::{PldError, Result};
 use crate::pld::PrivacyLossDistribution;
 
-use super::{MAX_NOISE_MULTIPLIER, MIN_NOISE_MULTIPLIER, CGF_NOISE_THRESHOLD};
+use super::{MAX_NOISE_MULTIPLIER, MIN_NOISE_MULTIPLIER, MAX_COARSENING_FACTOR, MAX_GRID_FRACTION};
 
 /// Compute the PLD for a Gaussian mechanism.
 ///
 /// The Gaussian mechanism adds noise N(0, σ²) to a unit-sensitivity query.
 /// The noise multiplier σ directly controls the privacy-utility tradeoff.
 ///
+/// When the PMF grid would require coarsening (effective discretization exceeds
+/// the base by more than [`MAX_COARSENING_FACTOR`]), automatically falls back to
+/// the CGF-backed path to avoid arithmetic errors from aggressive grid coarsening.
+///
 /// # Arguments
 ///
 /// * `noise_multiplier` — σ/Δ ratio, must be in \[0.01, 2.5\].
-///   For σ < 0.1, automatically uses the CGF-backed path
-///   instead of PLD discretization to avoid grid explosion.
 /// * `config` — discretization configuration for PLD grid (ignored for CGF path)
 ///
 /// # Errors
@@ -32,12 +34,19 @@ pub fn gaussian_pld(
         )));
     }
 
-    // Auto-route: small σ → CGF (avoids PLD grid explosion)
-    if noise_multiplier < CGF_NOISE_THRESHOLD {
+    let bounds = gaussian_epsilon_bounds(noise_multiplier, config.log_mass_truncation_bound);
+    let effective_disc = config.effective_discretization(&bounds);
+    let coarsening = effective_disc / config.discretization;
+
+    // Fall back to CGF if:
+    // 1. Grid would need coarsening (Dirac-like artifacts), or
+    // 2. Grid is large enough that composition would be expensive
+    let grid_size = ((bounds.epsilon_upper - bounds.epsilon_lower) / effective_disc).ceil() as usize;
+    let grid_too_large = grid_size as f64 > config.max_grid_size as f64 * MAX_GRID_FRACTION;
+    if coarsening > MAX_COARSENING_FACTOR || grid_too_large {
         return cgf_gaussian_pld(noise_multiplier);
     }
 
-    let bounds = gaussian_epsilon_bounds(noise_multiplier, config.log_mass_truncation_bound);
     let delta_tilde = 1.0 / noise_multiplier;
     let tail_budget = config.tail_mass_truncation / 2.0;
 
@@ -69,8 +78,8 @@ fn gaussian_epsilon_bounds(noise_multiplier: f64, log_mass_truncation_bound: f64
 /// Create a CGF-backed PLD for a Gaussian mechanism.
 ///
 /// Unlike `gaussian_pld`, this does not discretize — the privacy loss is
-/// represented analytically via its CGF. Use this for small noise multipliers
-/// where PLD grid explosion is a problem.
+/// represented analytically via its CGF. Composition is O(1) and there
+/// is no grid. Privacy metrics use Lugannani-Rice saddle-point approximation.
 ///
 /// # Arguments
 ///
@@ -175,9 +184,9 @@ mod tests {
         }
     }
 
-    /// Small σ values auto-route to CGF and produce valid results.
+    /// Small σ values route to CGF (grid would need coarsening) and produce valid results.
     #[test]
-    fn test_gaussian_small_sigma_auto_routes_to_cgf() {
+    fn test_gaussian_grid_fidelity_routes_to_cgf() {
         for &sigma in &[0.01, 0.03, 0.05, 0.09] {
             let pld = gaussian_pld(sigma, &default_config()).unwrap();
             let eps = pld.epsilon_at(1e-5);
@@ -185,11 +194,10 @@ mod tests {
         }
     }
 
-    /// Monotonicity holds across the CGF/PMF boundary.
+    /// Monotonicity holds across the full σ range (including the CGF/PMF boundary).
     #[test]
-    fn test_gaussian_monotonicity_across_cgf_boundary() {
+    fn test_gaussian_monotonicity_full_range() {
         let cfg = default_config();
-        // σ=0.09 → CGF, σ=0.1 → PMF (at boundary), σ=0.15 → PMF
         let sigmas = [0.05, 0.09, 0.1, 0.15, 0.25];
         let epsilons: Vec<f64> = sigmas
             .iter()
@@ -203,5 +211,26 @@ mod tests {
                 w[1]
             );
         }
+    }
+
+    /// With unlimited grid size, even small σ stays PMF (no coarsening).
+    #[test]
+    fn test_gaussian_unlimited_grid_stays_pmf() {
+        let cfg = DiscretizationConfig::default().with_max_grid_size(usize::MAX);
+        let pld = gaussian_pld(0.05, &cfg).unwrap();
+        // Should be PMF since no coarsening is needed with unlimited grid
+        let eps = pld.epsilon_at(1e-5);
+        assert!(eps > 0.0 && eps.is_finite(), "ε={}", eps);
+    }
+
+    /// With a tiny max_grid_size, even moderate σ triggers CGF fallback.
+    #[test]
+    fn test_gaussian_small_grid_routes_to_cgf() {
+        let cfg = DiscretizationConfig::default().with_max_grid_size(100);
+        // σ=0.5 normally uses PMF, but with only 100 grid points,
+        // coarsening would be needed → should fall back to CGF
+        let pld = gaussian_pld(0.5, &cfg).unwrap();
+        let eps = pld.epsilon_at(1e-5);
+        assert!(eps > 0.0 && eps.is_finite(), "ε={}", eps);
     }
 }

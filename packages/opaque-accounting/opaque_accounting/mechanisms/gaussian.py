@@ -22,6 +22,10 @@ class Gaussian(DpProcess):
 
     noise_multiplier: float
 
+    @functools.lru_cache(maxsize=1)
+    def cgf(self) -> Pld:
+        return _native.cgf_gaussian_pld(self.noise_multiplier)
+
     @functools.lru_cache(maxsize=8)
     def pld(
         self,

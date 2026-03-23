@@ -32,12 +32,22 @@ pub(crate) const MIN_NOISE_MULTIPLIER: f64 = 0.01;
 /// For σ > 2.5, use `identity()` instead.
 pub(crate) const MAX_NOISE_MULTIPLIER: f64 = 2.5;
 
-/// Noise multiplier threshold for automatic CGF routing.
+/// Maximum acceptable grid coarsening factor before switching to CGF.
 ///
-/// Below this value, PLD discretization suffers from grid explosion
-/// (ε bounds scale as 1/σ²). The CGF-backed path handles small noise
-/// multipliers analytically without discretization.
-pub(crate) const CGF_NOISE_THRESHOLD: f64 = 0.1;
+/// When the epsilon grid at base discretization exceeds `max_grid_size`,
+/// the effective discretization is coarsened by a power-of-2 factor.
+/// If this factor exceeds this threshold, the CGF path is used instead
+/// to avoid arithmetic errors from aggressive grid coarsening (the PMF
+/// becomes Dirac-like with mass concentrated in too few grid cells).
+pub(crate) const MAX_COARSENING_FACTOR: f64 = 1.0;
+
+/// Maximum fraction of `max_grid_size` to use for a single-step PMF.
+///
+/// Even without coarsening, a large PMF grid makes self_compose()
+/// expensive (FFT convolution grows the grid linearly with composition
+/// count). When the grid exceeds this fraction of `max_grid_size`, we
+/// prefer CGF for better composition performance.
+pub(crate) const MAX_GRID_FRACTION: f64 = 0.5;
 
 // ---------------------------------------------------------------------------
 // Re-exports

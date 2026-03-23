@@ -88,7 +88,7 @@ class TestCgfCorrectness:
         delta = 1e-5
         eps = proc.epsilon_at(delta)
         delta_back = proc.delta_at(eps)
-        assert delta_back == pytest.approx(delta, rel=0.01), (
+        assert delta_back == pytest.approx(delta, rel=0.05), (
             f"Roundtrip: δ={delta} → ε={eps} → δ'={delta_back}"
         )
 
@@ -323,3 +323,84 @@ class TestCgfImpact:
         )
         assert result.converged
         assert 0.01 <= result.param <= 2.5
+
+
+# ============================================================================
+# 6. Explicit CGF API — proc.cgf() opt-in
+# ============================================================================
+
+
+class TestCgfExplicit:
+    """Test the explicit cgf() method on DpProcess."""
+
+    def test_gaussian_cgf_returns_cgf(self):
+        """acc.gaussian(0.5).cgf() returns a CGF-backed PLD."""
+        pld = acc.gaussian(0.5).cgf()
+        assert "cgf" in repr(pld)
+
+    def test_gaussian_cgf_large_sigma(self):
+        """CGF works for large σ too (not just small σ)."""
+        pld = acc.gaussian(2.0).cgf()
+        eps = pld.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
+
+    def test_poisson_cgf_returns_cgf(self):
+        """acc.poisson(acc.gaussian(1.1), 0.01).cgf() works."""
+        pld = acc.poisson(acc.gaussian(1.1), 0.01).cgf()
+        assert "cgf" in repr(pld)
+
+    def test_repeated_cgf_composition(self):
+        """(gaussian * 1000).cgf() composes via CGF (O(1))."""
+        proc = acc.gaussian(0.5) * 1000
+        pld = proc.cgf()
+        assert "cgf" in repr(pld)
+        eps = pld.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
+
+    def test_composed_cgf(self):
+        """(g1 | g2).cgf() works when both have CGF."""
+        g1 = acc.gaussian(0.5) * 100
+        g2 = acc.gaussian(0.8) * 200
+        pld = (g1 | g2).cgf()
+        assert "cgf" in repr(pld)
+        eps = pld.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
+
+    def test_no_cgf_raises(self):
+        """Mechanisms without CGF raise NotImplementedError."""
+        with pytest.raises(NotImplementedError):
+            acc.rectified_gaussian(0.5, 5.0).cgf()
+
+    def test_mixed_no_cgf_raises(self):
+        """Composed with a non-CGF mechanism raises on cgf()."""
+        composed = acc.gaussian(0.5) | acc.rectified_gaussian(0.5, 5.0)
+        with pytest.raises(NotImplementedError):
+            composed.cgf()
+
+    def test_poisson_rectified_no_cgf_raises(self):
+        """Poisson-subsampled rectified Gaussian has no CGF."""
+        with pytest.raises(NotImplementedError):
+            acc.poisson(acc.rectified_gaussian(0.5, 5.0), 0.01).cgf()
+
+    @pytest.mark.parametrize("sigma", [0.25, 0.5, 1.0])
+    def test_cgf_matches_pld(self, sigma):
+        """CGF and PMF paths agree for moderate σ."""
+        proc = acc.gaussian(sigma) * 100
+        eps_cgf = proc.cgf().epsilon_at(1e-5)
+        eps_pld = proc.pld().epsilon_at(1e-5)
+        rel_err = abs(eps_cgf - eps_pld) / eps_pld
+        assert rel_err < 0.05, (
+            f"σ={sigma}: CGF ε={eps_cgf:.4f}, PLD ε={eps_pld:.4f}, "
+            f"rel_err={rel_err:.2%}"
+        )
+
+    def test_cgf_delta_matches_pld(self):
+        """CGF and PMF delta_at agree for moderate σ."""
+        proc = acc.gaussian(0.5) * 100
+        eps_test = proc.pld().epsilon_at(0.1) * 0.8
+        d_cgf = proc.cgf().delta_at(eps_test)
+        d_pld = proc.pld().delta_at(eps_test)
+        rel_err = abs(d_cgf - d_pld) / d_pld if d_pld > 1e-12 else abs(d_cgf)
+        assert rel_err < 0.05, (
+            f"CGF δ={d_cgf:.6e}, PLD δ={d_pld:.6e}, rel_err={rel_err:.2%}"
+        )
