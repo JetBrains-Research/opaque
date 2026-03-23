@@ -17,7 +17,6 @@ introduced by convolving mixture PLDs.
 
 from __future__ import annotations
 
-import math
 from collections import Counter
 from typing import Sequence
 

@@ -147,10 +147,15 @@ class TestExpostPerSampleAccounting:
         delta = 1e-5
 
         eps_fixed = per_sample_expost_epsilon_fixed(
-            nm, [s], num_participations=num_parts, delta=delta,
+            nm,
+            [s],
+            num_participations=num_parts,
+            delta=delta,
         )
         eps_varying = per_sample_expost_epsilon(
-            nm, [[s] * num_parts], delta=delta,
+            nm,
+            [[s] * num_parts],
+            delta=delta,
         )
 
         assert eps_fixed == pytest.approx(eps_varying, rel=1e-3)
@@ -176,7 +181,9 @@ class TestExpostPerSampleAccounting:
 
         # 1. Ex-post per-sample (no amplification, ~q*T base Gaussian steps)
         eps_expost = per_sample_expost_epsilon(
-            nm, data["sample_participations"], delta=delta,
+            nm,
+            data["sample_participations"],
+            delta=delta,
         )
 
         # 2. Mixture (compose per-step mixtures with Poisson)
@@ -226,13 +233,16 @@ class TestExpostPerSampleAccounting:
         # Ex-post with fixed participations: each sample in ~q*T steps
         num_parts = round(q * T)
         eps_expost = per_sample_expost_epsilon_fixed(
-            nm, [1.0] * N, num_participations=num_parts, delta=delta,
+            nm,
+            [1.0] * N,
+            num_participations=num_parts,
+            delta=delta,
         )
-        eps_baseline = (
-            acc.poisson(acc.gaussian(nm), sample_rate=q) * T
-        ).epsilon_at(delta)
+        eps_baseline = (acc.poisson(acc.gaussian(nm), sample_rate=q) * T).epsilon_at(
+            delta
+        )
 
-        print(f"\nUniform sensitivity test:")
+        print("\nUniform sensitivity test:")
         print(f"  Ex-post (q*T={num_parts} base Gaussian steps): {eps_expost:.4f}")
         print(f"  Baseline (T={T} Poisson-subsampled steps):     {eps_baseline:.4f}")
 
@@ -262,7 +272,9 @@ class TestExpostPerSampleAccounting:
         )
 
         eps_expost = per_sample_expost_epsilon(
-            nm, data["sample_participations"], delta=delta,
+            nm,
+            data["sample_participations"],
+            delta=delta,
         )
         eps_mixture = compose_steps_with_poisson(
             data["step_mixture_processes"], sample_rate
@@ -271,7 +283,7 @@ class TestExpostPerSampleAccounting:
             data["step_rms_processes"], sample_rate
         ).epsilon_at(delta)
 
-        print(f"\nHigh-variance sensitivity test:")
+        print("\nHigh-variance sensitivity test:")
         print(f"  Ex-post:  {eps_expost:.4f}")
         print(f"  RMS:      {eps_rms:.4f}")
         print(f"  Mixture:  {eps_mixture:.4f}")
@@ -283,7 +295,10 @@ class TestExpostPerSampleAccounting:
     def test_empty_inputs(self):
         """Empty inputs return 0."""
         assert per_sample_expost_epsilon(0.8, [], delta=1e-5) == 0.0
-        assert per_sample_expost_epsilon_fixed(0.8, [], num_participations=10, delta=1e-5) == 0.0
+        assert (
+            per_sample_expost_epsilon_fixed(0.8, [], num_participations=10, delta=1e-5)
+            == 0.0
+        )
 
     def test_zero_participations(self):
         """Sample that was never in a batch contributes zero epsilon."""
