@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from .. import opaque_accounting as _native
 
 from opaque_accounting.base import CgfPld, DpProcess, PmfPld
-from opaque_accounting.discretization import DiscretizationConfig
+from opaque_accounting.discretization import _make_native_config
 from opaque_accounting.mechanisms.gaussian import Gaussian
 from opaque_accounting.mechanisms.rectified_gaussian import RectifiedGaussian
 from opaque_accounting.mechanisms.truncated_gaussian import TruncatedGaussian
@@ -47,25 +47,25 @@ class Poisson(DpProcess):
                     f"{type(self.inner).__name__}"
                 )
 
-    @functools.lru_cache(maxsize=8)
-    def pmf(self, config: DiscretizationConfig) -> PmfPld:
+    def pmf(self, **kwargs: object) -> PmfPld:
+        cfg = _make_native_config(**kwargs)
         match self.inner:
             case Gaussian(noise_multiplier=nm):
                 return PmfPld(_native.poisson_gaussian_pld(
-                    nm, self.sample_rate, config.to_native()
+                    nm, self.sample_rate, cfg
                 ))
             case RectifiedGaussian(noise_multiplier=nm, radius=r):
                 return PmfPld(_native.poisson_rectified_gaussian_pld(
-                    nm, r, self.sample_rate, config.to_native()
+                    nm, r, self.sample_rate, cfg
                 ))
             case TruncatedGaussian(noise_multiplier=nm, radius=r):
                 return PmfPld(_native.poisson_truncated_gaussian_pld(
-                    nm, r, self.sample_rate, config.to_native()
+                    nm, r, self.sample_rate, cfg
                 ))
             case AdaClip():
                 z_eff = self.inner.effective_noise_multiplier
                 return PmfPld(_native.poisson_gaussian_pld(
-                    z_eff, self.sample_rate, config.to_native()
+                    z_eff, self.sample_rate, cfg
                 ))
             case _:
                 raise TypeError(

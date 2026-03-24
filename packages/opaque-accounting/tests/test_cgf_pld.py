@@ -19,7 +19,6 @@ import pytest
 
 import opaque_accounting as acc
 from opaque_accounting import opaque_accounting as _native
-from opaque_accounting.discretization import DiscretizationConfig
 
 
 # ============================================================================
@@ -159,7 +158,7 @@ class TestCgfVsAnalytical:
         """
         sigma = 0.5
         cgf = _native.cgf_gaussian_pld(sigma).self_compose(n)
-        pmf = _native.gaussian_pld(sigma, DiscretizationConfig().to_native())
+        pmf = _native.gaussian_pld(sigma, _native.DiscretizationConfig())
         pmf_composed = pmf.self_compose(n)
 
         # Compare epsilon_at (more stable than delta_at for comparison)
@@ -185,7 +184,7 @@ class TestCgfVsPmfOverlap:
 
     def _get_both_plds(self, sigma: float = 0.1):
         """Build both CGF and PMF PLDs for the same σ."""
-        config = DiscretizationConfig().to_native()
+        config = _native.DiscretizationConfig()
         cgf = _native.cgf_gaussian_pld(sigma)
         pmf = _native.gaussian_pld(sigma, config)
         return cgf, pmf
@@ -393,7 +392,7 @@ class TestCgfExplicit:
         """CGF and PMF paths agree for moderate σ."""
         proc = acc.gaussian(sigma) * 100
         eps_cgf = proc.cgf().epsilon_at(1e-5)
-        eps_pld = proc.pmf(acc.DiscretizationConfig()).epsilon_at(1e-5)
+        eps_pld = proc.pmf().epsilon_at(1e-5)
         rel_err = abs(eps_cgf - eps_pld) / eps_pld
         assert rel_err < 0.05, (
             f"σ={sigma}: CGF ε={eps_cgf:.4f}, PLD ε={eps_pld:.4f}, "
@@ -403,9 +402,9 @@ class TestCgfExplicit:
     def test_cgf_delta_matches_pld(self):
         """CGF and PMF delta_at agree for moderate σ."""
         proc = acc.gaussian(0.5) * 100
-        eps_test = proc.pmf(acc.DiscretizationConfig()).epsilon_at(0.1) * 0.8
+        eps_test = proc.pmf().epsilon_at(0.1) * 0.8
         d_cgf = proc.cgf().delta_at(eps_test)
-        d_pld = proc.pmf(acc.DiscretizationConfig()).delta_at(eps_test)
+        d_pld = proc.pmf().delta_at(eps_test)
         rel_err = abs(d_cgf - d_pld) / d_pld if d_pld > 1e-12 else abs(d_cgf)
         assert rel_err < 0.05, (
             f"CGF δ={d_cgf:.6e}, PLD δ={d_pld:.6e}, rel_err={rel_err:.2%}"

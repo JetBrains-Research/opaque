@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from .. import opaque_accounting as _native
 
 from opaque_accounting.base import CgfPld, DpProcess, PmfPld
-from opaque_accounting.discretization import DiscretizationConfig
+from opaque_accounting.discretization import _make_native_config
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,10 +27,9 @@ class TruncatedGaussian(DpProcess):
             self.noise_multiplier, self.radius
         ))
 
-    @functools.lru_cache(maxsize=8)
-    def pmf(self, config: DiscretizationConfig) -> PmfPld:
+    def pmf(self, **kwargs: object) -> PmfPld:
         return PmfPld(_native.truncated_gaussian_pld(
-            self.noise_multiplier, self.radius, config.to_native()
+            self.noise_multiplier, self.radius, _make_native_config(**kwargs)
         ))
 
 
@@ -52,6 +51,6 @@ def truncated_gaussian(noise_multiplier: float, radius: float) -> TruncatedGauss
     Example::
 
         proc = acc.truncated_gaussian(1.1, radius=5.0)
-        eps = proc.pmf(acc.DiscretizationConfig()).epsilon_at(1e-5)
+        eps = proc.pmf().epsilon_at(1e-5)
     """
     return TruncatedGaussian(noise_multiplier, radius)

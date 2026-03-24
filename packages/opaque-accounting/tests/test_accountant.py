@@ -271,7 +271,7 @@ class TestAccountantTrainingLoop:
 
         result = acc.calibrate(
             budget=budget,
-            process=lambda nm: (acc.poisson(acc.gaussian(nm), 0.01) * 100).pmf(acc.DiscretizationConfig()),
+            process=lambda nm: (acc.poisson(acc.gaussian(nm), 0.01) * 100).pmf(),
             param_min=0.5,
             param_max=1.2,
         )

@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from .. import opaque_accounting as _native
 
 from opaque_accounting.base import DpProcess, PmfPld
-from opaque_accounting.discretization import DiscretizationConfig
+from opaque_accounting.discretization import _make_native_config
 from opaque_accounting.mechanisms.gaussian import Gaussian
 
 
@@ -64,12 +64,11 @@ class AdaClip(DpProcess):
         s = _native.adaclip_sensitivity(self.inner.noise_multiplier, sigma_b)
         return 1.0 / s
 
-    @functools.lru_cache(maxsize=8)
-    def pmf(self, config: DiscretizationConfig) -> PmfPld:
+    def pmf(self, **kwargs: object) -> PmfPld:
         match self.inner:
             case Gaussian():
                 z_eff = self.effective_noise_multiplier
-                return PmfPld(_native.gaussian_pld(z_eff, config.to_native()))
+                return PmfPld(_native.gaussian_pld(z_eff, _make_native_config(**kwargs)))
             case _:
                 raise TypeError(
                     "AdaClip requires a Gaussian inner mechanism, got "

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from .. import opaque_accounting as _native
 
 from opaque_accounting.base import CgfPld, DpProcess, PmfPld
-from opaque_accounting.discretization import DiscretizationConfig
+from opaque_accounting.discretization import _make_native_config
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,9 +21,8 @@ class Gaussian(DpProcess):
     def cgf(self) -> CgfPld:
         return CgfPld(_native.cgf_gaussian_pld(self.noise_multiplier))
 
-    @functools.lru_cache(maxsize=8)
-    def pmf(self, config: DiscretizationConfig) -> PmfPld:
-        return PmfPld(_native.gaussian_pld(self.noise_multiplier, config.to_native()))
+    def pmf(self, **kwargs: object) -> PmfPld:
+        return PmfPld(_native.gaussian_pld(self.noise_multiplier, _make_native_config(**kwargs)))
 
 
 def gaussian(noise_multiplier: float) -> Gaussian:

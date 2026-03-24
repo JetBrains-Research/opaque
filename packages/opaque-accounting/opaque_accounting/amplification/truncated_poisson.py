@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from .. import opaque_accounting as _native
 
 from opaque_accounting.base import CgfPld, DpProcess, PmfPld
-from opaque_accounting.discretization import DiscretizationConfig
+from opaque_accounting.discretization import _make_native_config
 from opaque_accounting.mechanisms.gaussian import Gaussian
 from opaque_accounting.transformations.adaclip import AdaClip
 
@@ -43,8 +43,8 @@ class TruncatedPoisson(DpProcess):
                     f"{type(self.inner).__name__}"
                 )
 
-    @functools.lru_cache(maxsize=8)
-    def pmf(self, config: DiscretizationConfig) -> PmfPld:
+    def pmf(self, **kwargs: object) -> PmfPld:
+        cfg = _make_native_config(**kwargs)
         match self.inner:
             case Gaussian(noise_multiplier=nm):
                 return PmfPld(_native.truncated_poisson_gaussian_pld(
@@ -52,7 +52,7 @@ class TruncatedPoisson(DpProcess):
                     self.sample_rate,
                     self.batch_size_cap,
                     self.dataset_size,
-                    config.to_native(),
+                    cfg,
                 ))
             case AdaClip():
                 z_eff = self.inner.effective_noise_multiplier
@@ -61,7 +61,7 @@ class TruncatedPoisson(DpProcess):
                     self.sample_rate,
                     self.batch_size_cap,
                     self.dataset_size,
-                    config.to_native(),
+                    cfg,
                 ))
             case _:
                 raise TypeError(
@@ -97,7 +97,7 @@ def truncated_poisson(
         batch = 250
         step = acc.truncated_poisson(acc.gaussian(0.8), batch / n, batch, n)
         training = step * 1000
-        eps = training.pmf(acc.DiscretizationConfig()).epsilon_at(1e-5)
+        eps = training.pmf().epsilon_at(1e-5)
     """
     if not isinstance(inner, (Gaussian, AdaClip)):
         raise TypeError(

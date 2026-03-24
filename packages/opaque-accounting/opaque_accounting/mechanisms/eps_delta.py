@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from .. import opaque_accounting as _native
 
 from opaque_accounting.base import CgfPld, DpProcess, PmfPld
-from opaque_accounting.discretization import DiscretizationConfig
+from opaque_accounting.discretization import _make_native_config
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,9 +27,8 @@ class EpsDelta(DpProcess):
             )
         return CgfPld(_native.cgf_eps_delta_pld(self.epsilon))
 
-    @functools.lru_cache(maxsize=8)
-    def pmf(self, config: DiscretizationConfig) -> PmfPld:
-        return PmfPld(_native.eps_delta_pld(self.epsilon, self.delta, config.to_native()))
+    def pmf(self, **kwargs: object) -> PmfPld:
+        return PmfPld(_native.eps_delta_pld(self.epsilon, self.delta, _make_native_config(**kwargs)))
 
 
 def eps_delta(epsilon: float, delta: float = 0.0) -> DpProcess:
@@ -50,6 +49,6 @@ def eps_delta(epsilon: float, delta: float = 0.0) -> DpProcess:
         external = acc.eps_delta(3.0, 1e-5)
         training = acc.poisson(acc.gaussian(1.1), 0.01) * 1000
         total = external | training
-        eps = total.pmf(acc.DiscretizationConfig()).epsilon_at(1e-5)
+        eps = total.pmf().epsilon_at(1e-5)
     """
     return EpsDelta(epsilon, delta)

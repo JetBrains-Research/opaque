@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from .. import opaque_accounting as _native
 
 from opaque_accounting.base import CgfPld, DpProcess, PmfPld
-from opaque_accounting.discretization import DiscretizationConfig
+from opaque_accounting.discretization import _make_native_config
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,12 +40,11 @@ class MfGaussian(DpProcess):
             self.noise_multiplier, self.sensitivity
         ))
 
-    @functools.lru_cache(maxsize=8)
-    def pmf(self, config: DiscretizationConfig) -> PmfPld:
+    def pmf(self, **kwargs: object) -> PmfPld:
         return PmfPld(_native.mf_gaussian_pld(
             self.noise_multiplier,
             self.sensitivity,
-            config.to_native(),
+            _make_native_config(**kwargs),
         ))
 
 

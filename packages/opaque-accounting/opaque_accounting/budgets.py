@@ -52,7 +52,7 @@ class Budget(Protocol):
         """Evaluate the metric on a materialized PLD.
 
         Args:
-            pld: The materialized PLD (from ``process.pmf(config)`` or
+            pld: The materialized PLD (from ``process.pmf()`` or
                 ``process.cgf()``).
 
         Returns:

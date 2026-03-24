@@ -1,38 +1,30 @@
-"""Private module for PLD discretization configuration management."""
+"""Private module — builds native DiscretizationConfig from keyword arguments."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from . import opaque_accounting as _native
 
+# Default values matching Google's dp_accounting library.
+_DEFAULT_DISCRETIZATION: float = 1e-4
+_DEFAULT_LOG_MASS_TRUNCATION_BOUND: float = -50.0
+_DEFAULT_PESSIMISTIC_ESTIMATE: bool = True
+_DEFAULT_MAX_GRID_SIZE: int = 10_000_000
 
-@dataclass(frozen=True, slots=True)
-class DiscretizationConfig:
-    """Discretization configuration for PLD computation.
 
-    Args:
-        discretization: Grid spacing for the PLD PMF. Smaller = tighter, slower.
-        log_x_mass_truncation_bound: Log tail mass cutoff in x-space. Tails below exp(bound) are truncated.
-        pessimistic_estimate: Round upward for safe upper bounds (True) or downward (False).
-        max_grid_size: Maximum grid bins before automatic coarsening.
+def _make_native_config(
+    discretization: float = _DEFAULT_DISCRETIZATION,
+    log_mass_truncation_bound: float = _DEFAULT_LOG_MASS_TRUNCATION_BOUND,
+    pessimistic_estimate: bool = _DEFAULT_PESSIMISTIC_ESTIMATE,
+    max_grid_size: int = _DEFAULT_MAX_GRID_SIZE,
+) -> _native.DiscretizationConfig:
+    """Build a native DiscretizationConfig from keyword arguments.
+
+    This is the single place that converts Python kwargs into the Rust
+    FFI config object.
     """
-
-    discretization: float = 1e-4
-    log_x_mass_truncation_bound: float = -50.0
-    pessimistic_estimate: bool = True
-    max_grid_size: int = 10_000_000
-
-    def to_native(self) -> _native.DiscretizationConfig:
-        """Convert to Rust DiscretizationConfig for FFI calls."""
-        return _native.DiscretizationConfig(
-            discretization=self.discretization,
-            log_mass_truncation_bound=self.log_x_mass_truncation_bound,
-            pessimistic_estimate=self.pessimistic_estimate,
-            max_grid_size=self.max_grid_size,
-        )
-
-
-__all__ = [
-    "DiscretizationConfig",
-]
+    return _native.DiscretizationConfig(
+        discretization=discretization,
+        log_mass_truncation_bound=log_mass_truncation_bound,
+        pessimistic_estimate=pessimistic_estimate,
+        max_grid_size=max_grid_size,
+    )

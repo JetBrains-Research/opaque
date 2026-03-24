@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from .. import opaque_accounting as _native
 
 from opaque_accounting.base import CgfPld, DpProcess, PmfPld
-from opaque_accounting.discretization import DiscretizationConfig
+from opaque_accounting.discretization import _make_native_config
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,9 +23,8 @@ class Identity(DpProcess):
     def cgf(self) -> CgfPld:
         return CgfPld(_native.cgf_identity_pld())
 
-    @functools.lru_cache(maxsize=8)
-    def pmf(self, config: DiscretizationConfig) -> PmfPld:
-        return PmfPld(_native.identity_pld(config.to_native()))
+    def pmf(self, **kwargs: object) -> PmfPld:
+        return PmfPld(_native.identity_pld(_make_native_config(**kwargs)))
 
 
 def identity() -> DpProcess:

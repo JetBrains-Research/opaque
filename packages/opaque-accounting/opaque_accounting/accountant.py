@@ -23,7 +23,6 @@ from opaque_accounting.budgets import (
     EpsilonBudget,
     RiskBudget,
 )
-from opaque_accounting.discretization import DiscretizationConfig
 from opaque_accounting.mechanisms import Identity
 
 __all__ = ["Accountant"]
@@ -98,18 +97,17 @@ class Accountant:
         new_acct._process = self._process | process
         return new_acct
 
-    def pmf(self, config: DiscretizationConfig | None = None) -> PmfPld:
+    def pmf(self, **kwargs: object) -> PmfPld:
         """Materialize the accumulated process as a PMF-backed PLD.
 
         Args:
-            config: Discretization parameters. If None, uses defaults.
+            **kwargs: Discretization parameters forwarded to
+                :func:`~opaque_accounting.discretization._make_native_config`.
 
         Returns:
             A PmfPld with the full metric suite.
         """
-        if config is None:
-            config = DiscretizationConfig()
-        return self._process.pmf(config)
+        return self._process.pmf(**kwargs)
 
     def cgf(self) -> CgfPld:
         """Materialize the accumulated process as a CGF-backed PLD.
@@ -135,12 +133,12 @@ class Accountant:
 
         needs_pmf = isinstance(self._budget, (BetaBudget, RiskBudget))
         if needs_pmf:
-            pld: CgfPld | PmfPld = self._process.pmf(DiscretizationConfig())
+            pld: CgfPld | PmfPld = self._process.pmf()
         else:
             try:
                 pld = self._process.cgf()
             except NotImplementedError:
-                pld = self._process.pmf(DiscretizationConfig())
+                pld = self._process.pmf()
         achieved = self._budget.evaluate(pld)
         return achieved > self._budget.value
 

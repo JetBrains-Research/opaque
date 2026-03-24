@@ -7,7 +7,6 @@ import pytest
 
 import opaque_accounting as acc
 from opaque_accounting.base import DpProcess
-from opaque_accounting import DiscretizationConfig
 from opaque_accounting.composition import CachedProcess, Composed, Repeated
 
 # ── Node dataclass tests ─────────────────────────────────────────────
@@ -95,9 +94,8 @@ class TestCachedProcess:
     def test_caches_pmf(self):
         """Second pmf() call returns cached result."""
         cp = CachedProcess(acc.gaussian(0.8))
-        config = DiscretizationConfig()
-        pmf1 = cp.pmf(config)
-        pmf2 = cp.pmf(config)
+        pmf1 = cp.pmf()
+        pmf2 = cp.pmf()
         assert pmf1 is pmf2
 
     def test_pld_returns_valid(self):
@@ -273,20 +271,18 @@ class TestCompositionProperties:
     @pytest.mark.slow
     def test_epsilon_decreases_with_noise(self):
         """More noise → lower epsilon."""
-        cfg = acc.DiscretizationConfig()
         sigmas = [0.3, 0.5, 0.8, 1.2]
         epsilons = [
-            (acc.poisson(acc.gaussian(s), 0.01) * 100).pmf(cfg).epsilon_at(1e-5) for s in sigmas
+            (acc.poisson(acc.gaussian(s), 0.01) * 100).pmf().epsilon_at(1e-5) for s in sigmas
         ]
         for i in range(1, len(epsilons)):
             assert epsilons[i] < epsilons[i - 1]
 
     def test_lower_sample_rate_better_privacy(self):
         """Lower q → lower epsilon (privacy amplification)."""
-        cfg = acc.DiscretizationConfig()
         rates = [0.01, 0.001, 0.0001]
         epsilons = [
-            (acc.poisson(acc.gaussian(0.8), q) * 100).pmf(cfg).epsilon_at(1e-5) for q in rates
+            (acc.poisson(acc.gaussian(0.8), q) * 100).pmf().epsilon_at(1e-5) for q in rates
         ]
         for i in range(1, len(epsilons)):
             assert epsilons[i] < epsilons[i - 1]

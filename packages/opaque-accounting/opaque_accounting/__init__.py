@@ -5,7 +5,7 @@ This module provides a compositional API for tracking privacy guarantees:
 - **Mechanisms**: gaussian(), band_mf(), blt_mf(), dense_mf(), etc.
 - **Amplification**: poisson(), cyclic_poisson(), truncated_poisson(), etc.
 - **Composition**: Combine processes using ``*`` (repeat) or ``|`` (compose)
-- **Materialization**: ``process.pmf(config)`` or ``process.cgf()`` → Pld
+- **Materialization**: ``process.pmf()`` or ``process.cgf()`` → Pld
 - **Metrics**: Query privacy on the Pld: epsilon_at(), delta_at(), advantage(), etc.
 
 The underlying implementation uses Google's PLD accounting via the
@@ -23,7 +23,7 @@ Example::
     epsilon = training.cgf().epsilon_at(1e-5)
 
     # PMF path (grid-based):
-    epsilon = training.pmf(acc.DiscretizationConfig()).epsilon_at(1e-5)
+    epsilon = training.pmf().epsilon_at(1e-5)
 
 For calibration (finding noise for target privacy budget), use the
 :mod:`opaque_accounting.calibration` submodule.
@@ -79,7 +79,6 @@ from opaque_accounting.composition import (
     compose,
     repeat,
 )
-from opaque_accounting.discretization import DiscretizationConfig
 
 # Mechanisms
 from opaque_accounting.mechanisms import (
@@ -109,8 +108,6 @@ __all__ = [
     "transformations",
     # Accountant
     "Accountant",
-    # Discretization
-    "DiscretizationConfig",
     # Mechanisms (factories only; classes via subpackage import)
     "gaussian",
     "rectified_gaussian",

@@ -23,7 +23,7 @@ from opaque_accounting.base import (
     DpProcess,
     PmfPld,
 )
-from opaque_accounting.discretization import DiscretizationConfig
+from opaque_accounting.discretization import _make_native_config
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,12 +59,11 @@ class BandMf(DpProcess):
             self.noise_multiplier, self.sensitivity()
         ))
 
-    @functools.lru_cache(maxsize=8)
-    def pmf(self, config: DiscretizationConfig) -> PmfPld:
+    def pmf(self, **kwargs: object) -> PmfPld:
         return PmfPld(_native.mf_gaussian_pld(
             self.noise_multiplier,
             self.sensitivity(),
-            config.to_native(),
+            _make_native_config(**kwargs),
         ))
 
 
@@ -97,7 +96,7 @@ def band_mf(
         import opaque_accounting as acc
 
         proc = acc.band_mf(noise_multiplier=1.0, n_steps=1000, bands=10)
-        eps = proc.pmf(acc.DiscretizationConfig()).epsilon_at(1e-5)
+        eps = proc.pmf().epsilon_at(1e-5)
     """
     if noise_multiplier <= 0:
         raise ValueError(f"noise_multiplier must be positive, got {noise_multiplier}")

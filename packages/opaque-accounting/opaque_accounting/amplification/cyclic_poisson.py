@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from .. import opaque_accounting as _native
 
 from opaque_accounting.base import CgfPld, DpProcess, PmfPld
-from opaque_accounting.discretization import DiscretizationConfig
+from opaque_accounting.discretization import _make_native_config
 from opaque_accounting.mechanisms.band_mf import BandMf
 
 
@@ -47,13 +47,12 @@ class CyclicPoisson(DpProcess):
             .self_compose(self.num_groups)
         )
 
-    @functools.lru_cache(maxsize=8)
-    def pmf(self, config: DiscretizationConfig) -> PmfPld:
+    def pmf(self, **kwargs: object) -> PmfPld:
         sensitivity = self.inner.sensitivity()
         effective_nm = self.inner.noise_multiplier / sensitivity
 
         per_group_pld = _native.poisson_gaussian_pld(
-            effective_nm, self.sample_rate, config.to_native()
+            effective_nm, self.sample_rate, _make_native_config(**kwargs)
         )
         return PmfPld(per_group_pld.self_compose(self.num_groups))
 
@@ -80,7 +79,7 @@ def cyclic_poisson(
             acc.band_mf(noise_multiplier=1.0, n_steps=1000, bands=10),
             sample_rate=0.01,
         )
-        eps = proc.pmf(acc.DiscretizationConfig()).epsilon_at(1e-5)
+        eps = proc.pmf().epsilon_at(1e-5)
     """
     if not isinstance(inner, BandMf):
         raise TypeError(

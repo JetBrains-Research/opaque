@@ -9,7 +9,7 @@ from .. import opaque_accounting as _native
 
 from opaque_accounting.amplification.poisson import Poisson
 from opaque_accounting.base import CgfPld, DpProcess, PmfPld
-from opaque_accounting.discretization import DiscretizationConfig
+from opaque_accounting.discretization import _make_native_config
 from opaque_accounting.mechanisms.gaussian import Gaussian
 from opaque_accounting.transformations.adaclip import AdaClip
 
@@ -44,8 +44,8 @@ class ParallelPoisson(DpProcess):
                     f"{type(self.inner).__name__}"
                 )
 
-    @functools.lru_cache(maxsize=8)
-    def pmf(self, config: DiscretizationConfig) -> PmfPld:
+    def pmf(self, **kwargs: object) -> PmfPld:
+        cfg = _make_native_config(**kwargs)
         match self.inner:
             case Poisson(
                 inner=Gaussian(noise_multiplier=nm),
@@ -55,7 +55,7 @@ class ParallelPoisson(DpProcess):
                     nm,
                     rate,
                     self.num_workers,
-                    config.to_native(),
+                    cfg,
                 ))
             case Poisson(
                 inner=AdaClip() as ac,
@@ -66,7 +66,7 @@ class ParallelPoisson(DpProcess):
                     z_eff,
                     rate,
                     self.num_workers,
-                    config.to_native(),
+                    cfg,
                 ))
             case _:
                 raise TypeError(
@@ -101,7 +101,7 @@ def parallel_poisson(
             acc.gaussian(1.1), sample_rate=0.01, num_workers=4,
         )
         training = step * 500
-        eps = training.pmf(acc.DiscretizationConfig()).epsilon_at(1e-5)
+        eps = training.pmf().epsilon_at(1e-5)
     """
     if not isinstance(inner, (Gaussian, AdaClip)):
         raise TypeError(

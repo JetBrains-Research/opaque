@@ -37,12 +37,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import fields
-from typing import TYPE_CHECKING
 
 from . import opaque_accounting as _native
-
-if TYPE_CHECKING:
-    from opaque_accounting.discretization import DiscretizationConfig
 
 __all__ = ["DpProcess", "CgfPld", "PmfPld"]
 
@@ -83,21 +79,19 @@ class CgfPld:
         """Total-variation advantage (f-DP). 0 = perfect privacy, 1 = none."""
         return self._pld.advantage()
 
-    def pmf(self, config: DiscretizationConfig | None = None) -> PmfPld:
+    def pmf(self, **kwargs: object) -> PmfPld:
         """Materialize this CGF to a PMF-backed PLD.
 
         Args:
-            config: Discretization parameters. If None, uses defaults.
+            **kwargs: Discretization parameters forwarded to
+                :func:`~opaque_accounting.discretization._make_native_config`.
 
         Returns:
             A PmfPld with the full metric suite (beta_at, risk_at, etc.).
         """
-        if config is None:
-            from opaque_accounting.discretization import DiscretizationConfig as DC
+        from opaque_accounting.discretization import _make_native_config
 
-            config = DC()
-        native_config = config.to_native()
-        return PmfPld(self._pld.to_pmf(native_config))
+        return PmfPld(self._pld.to_pmf(_make_native_config(**kwargs)))
 
     def compose(self, other: CgfPld) -> CgfPld:
         """Compose with another CGF-backed PLD."""
@@ -194,7 +188,7 @@ class DpProcess(ABC):
 
     Supports:
 
-    - **Materialization**: ``pmf(config)`` (grid-based), ``cgf()`` (saddle-point)
+    - **Materialization**: ``pmf()`` (grid-based), ``cgf()`` (saddle-point)
     - **Composition**: ``a | b`` (heterogeneous), ``a * k`` (homogeneous)
 
     Example::
@@ -208,7 +202,7 @@ class DpProcess(ABC):
         eps = training.cgf().epsilon_at(1e-5)
 
         # PMF path (grid-based, exact up to discretization):
-        eps = training.pmf(acc.DiscretizationConfig()).epsilon_at(1e-5)
+        eps = training.pmf().epsilon_at(1e-5)
     """
 
     def __init_subclass__(cls, **kwargs: object) -> None:
@@ -217,11 +211,13 @@ class DpProcess(ABC):
         _PROCESS_REGISTRY[cls.__name__] = cls
 
     @abstractmethod
-    def pmf(self, config: DiscretizationConfig) -> PmfPld:
+    def pmf(self, **kwargs: object) -> PmfPld:
         """Materialize to a PMF-backed PLD (discretized grid).
 
         Args:
-            config: Discretization parameters (grid spacing, truncation, etc.).
+            **kwargs: Discretization parameters forwarded to
+                :func:`~opaque_accounting.discretization._make_native_config`.
+                See that function for available keyword arguments.
         """
         ...
 
@@ -231,7 +227,7 @@ class DpProcess(ABC):
         Uses Lugannani-Rice saddle-point approximation for
         ``epsilon_at``, ``delta_at``, ``advantage``.
 
-        For ``beta_at`` / ``risk_at``, call ``.pmf(config)`` on the
+        For ``beta_at`` / ``risk_at``, call ``.pmf()`` on the
         returned :class:`CgfPld` to materialize to a :class:`PmfPld`.
 
         Not all mechanisms support CGF. Raises :exc:`NotImplementedError`

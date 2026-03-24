@@ -29,7 +29,7 @@ import riskcal.analysis as rc_analysis  # noqa: E402
 from dp_accounting.pld import privacy_loss_distribution as pld_lib  # noqa: E402
 
 import opaque_accounting as acc  # noqa: E402
-from opaque_accounting import DiscretizationConfig, calibration as cal  # noqa: E402
+from opaque_accounting import calibration as cal  # noqa: E402
 
 # ============================================================================
 # Helpers
@@ -284,10 +284,9 @@ class TestTruncatedPoissonValidity:
         steps = 500
         g = acc.gaussian(sigma)
         # cap=50 (heavy truncation: expected_batch=100, cap < expected)
-        dc = DiscretizationConfig()
-        eps_small_cap = (acc.truncated_poisson(g, q, 50, n) * steps).pmf(dc).epsilon_at(1e-5)
+        eps_small_cap = (acc.truncated_poisson(g, q, 50, n) * steps).pmf().epsilon_at(1e-5)
         # cap=500 (light truncation: expected_batch=100, cap >> expected)
-        eps_large_cap = (acc.truncated_poisson(g, q, 500, n) * steps).pmf(dc).epsilon_at(1e-5)
+        eps_large_cap = (acc.truncated_poisson(g, q, 500, n) * steps).pmf().epsilon_at(1e-5)
         assert eps_large_cap <= eps_small_cap + 1e-10, (
             f"Larger cap should give ≤ epsilon: cap=500 → {eps_large_cap}, cap=50 → {eps_small_cap}"
         )
@@ -298,7 +297,7 @@ class TestTruncatedPoissonValidity:
         g = acc.gaussian(sigma)
         epsilons = []
         for steps in [10, 100, 500, 1000]:
-            eps = (acc.truncated_poisson(g, 0.005, 250, 50_000) * steps).pmf(DiscretizationConfig()).epsilon_at(
+            eps = (acc.truncated_poisson(g, 0.005, 250, 50_000) * steps).pmf().epsilon_at(
                 1e-5
             )
             epsilons.append(eps)
@@ -309,17 +308,16 @@ class TestTruncatedPoissonValidity:
         """TruncatedPoisson epsilon > 0 for non-trivial mechanism."""
         g = acc.gaussian(0.8)
         proc = acc.truncated_poisson(g, 0.005, 250, 50_000) * 100
-        assert proc.pmf(DiscretizationConfig()).epsilon_at(1e-5) > 0
+        assert proc.pmf().epsilon_at(1e-5) > 0
 
     def test_fallback_when_no_truncation(self):
         """When batch_size_cap >> expected batch, result ≈ standard Poisson."""
         # expected_batch = 100000 * 0.001 = 100, cap = 100000 (no truncation)
         g = acc.gaussian(0.8)
         steps = 500
-        dc = DiscretizationConfig()
         eps_trunc = (
             acc.truncated_poisson(g, 0.001, 100_000, 100_000) * steps
-        ).pmf(dc).epsilon_at(1e-5)
+        ).pmf().epsilon_at(1e-5)
         eps_poisson = (acc.poisson(g, 0.001) * steps).cgf().epsilon_at(1e-5)
         assert eps_trunc == pytest.approx(eps_poisson, rel=1e-6)
 
@@ -337,14 +335,13 @@ class TestParallelPoissonCrossValidation:
     @pytest.mark.parametrize("num_workers", [2, 4])
     def test_parallel_poisson_vs_reference(self, sigma, q, num_workers):
         """ParallelPoisson(G(σ), q, k) should give sensible epsilon."""
-        dc = DiscretizationConfig()
         proc = (
             acc.parallel_poisson(
                 acc.gaussian(sigma), sample_rate=q, num_workers=num_workers
             )
             * 500
         )
-        eps = proc.pmf(dc).epsilon_at(1e-5)
+        eps = proc.pmf().epsilon_at(1e-5)
 
         # Must be finite and positive
         assert math.isfinite(eps) and eps > 0
@@ -385,9 +382,8 @@ class TestAdaClipCrossValidation:
         z_eff = 1.0 / s
 
         # Verify effective noise via PLD
-        dc = DiscretizationConfig()
-        ref = _native.gaussian_pld(z_eff, dc.to_native())
-        assert proc.pmf(dc).epsilon_at(1e-5) == pytest.approx(ref.epsilon_at(1e-5), rel=1e-12)
+        ref = acc.gaussian(z_eff).pmf()
+        assert proc.pmf().epsilon_at(1e-5) == pytest.approx(ref.epsilon_at(1e-5), rel=1e-12)
 
         from opaque_accounting.transformations import AdaClip
 
@@ -396,16 +392,15 @@ class TestAdaClipCrossValidation:
     @pytest.mark.parametrize("batch_size", [200, 1000, 2000])
     def test_adaclip_increases_privacy_cost(self, batch_size):
         """AdaClip reduces effective noise → higher epsilon (more privacy cost)."""
-        dc = DiscretizationConfig()
         g = acc.gaussian(1.0)
         a = acc.adaclip(g, batch_size=batch_size)
         # z_eff < sigma so epsilon should be larger
-        assert a.pmf(dc).epsilon_at(1e-5) > g.cgf().epsilon_at(1e-5)
+        assert a.pmf().epsilon_at(1e-5) > g.cgf().epsilon_at(1e-5)
 
     def test_adaclip_composed_with_poisson(self):
         """AdaClip result composes with poisson() normally."""
         step = acc.poisson(acc.adaclip(acc.gaussian(1.1), batch_size=1000), 0.01) * 1000
-        eps = step.pmf(DiscretizationConfig()).epsilon_at(1e-5)
+        eps = step.pmf().epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
 
@@ -480,8 +475,7 @@ class TestMetricsConsistency:
 
     def test_identity_zero_epsilon(self):
         """Identity mechanism should have ε≈0 for any δ."""
-        dc = DiscretizationConfig()
-        pmf = acc.identity().pmf(dc)
+        pmf = acc.identity().pmf()
         assert pmf.epsilon_at(1e-5) == pytest.approx(0.0, abs=1e-8)
         assert pmf.epsilon_at(1e-10) == pytest.approx(0.0, abs=1e-8)
 
@@ -553,7 +547,7 @@ class TestCalibrationCrossValidation:
 
         result = cal.calibrate(
             cal.epsilon_budget(target_eps, delta=delta),
-            lambda nm: (acc.poisson(acc.gaussian(nm), q) * steps).pmf(DiscretizationConfig()),
+            lambda nm: (acc.poisson(acc.gaussian(nm), q) * steps).pmf(),
             0.1,
             1.2,
         )
@@ -567,7 +561,7 @@ class TestCalibrationCrossValidation:
         """Calibrated noise → check advantage against riskcal."""
         result = cal.calibrate(
             cal.advantage_budget(0.15),
-            lambda nm: (acc.poisson(acc.gaussian(nm), 0.01) * 500).pmf(DiscretizationConfig()),
+            lambda nm: (acc.poisson(acc.gaussian(nm), 0.01) * 500).pmf(),
             0.3,
             1.2,
         )
