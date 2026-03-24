@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from .. import opaque_accounting as _native
 
-from opaque_accounting.base import DpProcess, PmfPld
+from opaque_accounting.base import CgfPld, DpProcess, PmfPld
 from opaque_accounting.discretization import DiscretizationConfig
 
 
@@ -20,6 +20,12 @@ class RectifiedGaussian(DpProcess):
 
     noise_multiplier: float
     radius: float
+
+    @functools.lru_cache(maxsize=1)
+    def cgf(self) -> CgfPld:
+        return CgfPld(_native.cgf_rectified_gaussian_pld(
+            self.noise_multiplier, self.radius
+        ))
 
     @functools.lru_cache(maxsize=8)
     def pmf(self, config: DiscretizationConfig) -> PmfPld:

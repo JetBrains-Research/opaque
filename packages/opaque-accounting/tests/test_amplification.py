@@ -193,10 +193,11 @@ class TestPoissonRectifiedGaussian:
         eps = p.pmf(DiscretizationConfig()).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
-    def test_no_cgf(self):
-        """Poisson-subsampled rectified Gaussian has no CGF."""
-        with pytest.raises(NotImplementedError):
-            acc.poisson(acc.rectified_gaussian(1.1, 5.0), 0.01).cgf()
+    def test_cgf_works(self):
+        """Poisson-subsampled rectified Gaussian supports CGF."""
+        p = acc.poisson(acc.rectified_gaussian(1.1, 5.0), 0.01)
+        eps = p.cgf().epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
 
     def test_epsilon_le_poisson_gaussian(self):
         """Poisson + rectified should give ε ≤ Poisson + standard Gaussian."""
@@ -226,10 +227,11 @@ class TestPoissonTruncatedGaussian:
         eps = p.pmf(DiscretizationConfig()).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
-    def test_no_cgf(self):
-        """Poisson-subsampled truncated Gaussian has no CGF."""
-        with pytest.raises(NotImplementedError):
-            acc.poisson(acc.truncated_gaussian(1.1, 5.0), 0.01).cgf()
+    def test_cgf_works(self):
+        """Poisson-subsampled truncated Gaussian supports CGF."""
+        p = acc.poisson(acc.truncated_gaussian(1.1, 5.0), 0.01)
+        eps = p.cgf().epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
 
     def test_epsilon_le_poisson_gaussian(self):
         """Poisson + truncated should give ε ≤ Poisson + standard Gaussian."""

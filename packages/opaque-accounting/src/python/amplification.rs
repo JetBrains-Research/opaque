@@ -45,6 +45,67 @@ pub fn py_cgf_poisson_gaussian_pld(
     Ok(PyPld::new(pld))
 }
 
+/// Create a CGF-backed PLD for a truncated Poisson-subsampled Gaussian.
+#[pyfunction]
+#[pyo3(name = "cgf_truncated_poisson_gaussian_pld", signature = (noise_multiplier, rate, batch_size_max, dataset_size))]
+pub fn py_cgf_truncated_poisson_gaussian_pld(
+    noise_multiplier: f64,
+    rate: f64,
+    batch_size_max: usize,
+    dataset_size: usize,
+) -> PyResult<PyPld> {
+    let pld = crate::amplification::cgf_truncated_poisson_gaussian_pld(
+        noise_multiplier, rate, batch_size_max, dataset_size,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}
+
+/// Create a CGF-backed PLD for a parallel Poisson-subsampled Gaussian.
+#[pyfunction]
+#[pyo3(name = "cgf_parallel_poisson_gaussian_pld", signature = (noise_multiplier, rate, microbatches))]
+pub fn py_cgf_parallel_poisson_gaussian_pld(
+    noise_multiplier: f64,
+    rate: f64,
+    microbatches: usize,
+) -> PyResult<PyPld> {
+    let pld = crate::amplification::cgf_parallel_poisson_gaussian_pld(
+        noise_multiplier, rate, microbatches,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}
+
+/// Create a CGF-backed PLD for a Poisson-subsampled rectified Gaussian.
+#[pyfunction]
+#[pyo3(name = "cgf_poisson_rectified_gaussian_pld", signature = (noise_multiplier, radius, rate))]
+pub fn py_cgf_poisson_rectified_gaussian_pld(
+    noise_multiplier: f64,
+    radius: f64,
+    rate: f64,
+) -> PyResult<PyPld> {
+    let pld = crate::amplification::cgf_poisson_rectified_gaussian_pld(
+        noise_multiplier, radius, rate,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}
+
+/// Create a CGF-backed PLD for a Poisson-subsampled truncated Gaussian.
+#[pyfunction]
+#[pyo3(name = "cgf_poisson_truncated_gaussian_pld", signature = (noise_multiplier, radius, rate))]
+pub fn py_cgf_poisson_truncated_gaussian_pld(
+    noise_multiplier: f64,
+    radius: f64,
+    rate: f64,
+) -> PyResult<PyPld> {
+    let pld = crate::amplification::cgf_poisson_truncated_gaussian_pld(
+        noise_multiplier, radius, rate,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}
+
 /// Compute the PLD for a truncated Poisson-subsampled Gaussian mechanism.
 ///
 /// This is the actual sampling used in production DP-SGD. Unlike standard

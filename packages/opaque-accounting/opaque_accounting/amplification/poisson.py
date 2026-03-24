@@ -30,6 +30,14 @@ class Poisson(DpProcess):
         match self.inner:
             case Gaussian(noise_multiplier=nm):
                 return CgfPld(_native.cgf_poisson_gaussian_pld(nm, self.sample_rate))
+            case RectifiedGaussian(noise_multiplier=nm, radius=r):
+                return CgfPld(_native.cgf_poisson_rectified_gaussian_pld(
+                    nm, r, self.sample_rate
+                ))
+            case TruncatedGaussian(noise_multiplier=nm, radius=r):
+                return CgfPld(_native.cgf_poisson_truncated_gaussian_pld(
+                    nm, r, self.sample_rate
+                ))
             case AdaClip():
                 z_eff = self.inner.effective_noise_multiplier
                 return CgfPld(_native.cgf_poisson_gaussian_pld(z_eff, self.sample_rate))

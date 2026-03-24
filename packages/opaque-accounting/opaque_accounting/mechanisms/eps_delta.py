@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from .. import opaque_accounting as _native
 
-from opaque_accounting.base import DpProcess, PmfPld
+from opaque_accounting.base import CgfPld, DpProcess, PmfPld
 from opaque_accounting.discretization import DiscretizationConfig
 
 
@@ -17,6 +17,15 @@ class EpsDelta(DpProcess):
 
     epsilon: float
     delta: float
+
+    @functools.lru_cache(maxsize=1)
+    def cgf(self) -> CgfPld:
+        if self.delta > 0:
+            raise NotImplementedError(
+                "CGF not available for (ε,δ)-DP with δ>0 (infinite MGF). "
+                "Use .pmf(config) instead."
+            )
+        return CgfPld(_native.cgf_eps_delta_pld(self.epsilon))
 
     @functools.lru_cache(maxsize=8)
     def pmf(self, config: DiscretizationConfig) -> PmfPld:

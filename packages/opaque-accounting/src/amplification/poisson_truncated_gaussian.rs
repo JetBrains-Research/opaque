@@ -367,6 +367,31 @@ fn epsilon_bounds_truncated(
     }
 }
 
+/// Create a CGF-backed PLD for a Poisson-subsampled truncated Gaussian mechanism.
+///
+/// Uses Gauss-Hermite quadrature with truncated domain.
+pub fn cgf_poisson_truncated_gaussian_pld(
+    noise_multiplier: f64,
+    radius: f64,
+    rate: f64,
+) -> Result<PrivacyLossDistribution> {
+    use std::sync::Arc;
+    use crate::pld::cgf::SubsampledTruncatedGaussianCgf;
+
+    validate_noise_multiplier(noise_multiplier)?;
+    validate_rate(rate)?;
+    if !(MIN_RADIUS..=MAX_RADIUS).contains(&radius) {
+        return Err(crate::error::PldError::InvalidParameter(format!(
+            "radius must be in [{}, {}], got {}",
+            MIN_RADIUS, MAX_RADIUS, radius
+        )));
+    }
+
+    Ok(PrivacyLossDistribution::new_cgf(Arc::new(
+        SubsampledTruncatedGaussianCgf::new(noise_multiplier, radius, rate),
+    )))
+}
+
 // ===========================================================================
 // Tests
 // ===========================================================================

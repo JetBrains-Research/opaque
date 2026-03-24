@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from .. import opaque_accounting as _native
 
 from opaque_accounting.amplification.poisson import Poisson
-from opaque_accounting.base import DpProcess, PmfPld
+from opaque_accounting.base import CgfPld, DpProcess, PmfPld
 from opaque_accounting.discretization import DiscretizationConfig
 from opaque_accounting.mechanisms.gaussian import Gaussian
 from opaque_accounting.transformations.adaclip import AdaClip
@@ -25,6 +25,24 @@ class ParallelPoisson(DpProcess):
 
     inner: Poisson
     num_workers: int
+
+    @functools.lru_cache(maxsize=1)
+    def cgf(self) -> CgfPld:
+        match self.inner:
+            case Poisson(inner=Gaussian(noise_multiplier=nm), sample_rate=rate):
+                return CgfPld(_native.cgf_parallel_poisson_gaussian_pld(
+                    nm, rate, self.num_workers
+                ))
+            case Poisson(inner=AdaClip() as ac, sample_rate=rate):
+                z_eff = ac.effective_noise_multiplier
+                return CgfPld(_native.cgf_parallel_poisson_gaussian_pld(
+                    z_eff, rate, self.num_workers
+                ))
+            case _:
+                raise NotImplementedError(
+                    f"CGF not available for ParallelPoisson with "
+                    f"{type(self.inner).__name__}"
+                )
 
     @functools.lru_cache(maxsize=8)
     def pmf(self, config: DiscretizationConfig) -> PmfPld:

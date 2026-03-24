@@ -105,8 +105,29 @@ impl CgfPld {
     /// where t* solves Λ'(t*) = ε (clean equation, no log singularity),
     /// r = sign(t*)·√(2·(t*·ε − Λ(t*))), and s = t*·√(Λ''(t*)).
     pub fn delta_at(&self, epsilon: f64) -> f64 {
-        use statrs::distribution::{ContinuousCDF, Normal};
+        // --- Handle degenerate distributions (Λ''=0 everywhere) ---
+        // Check if Λ'' is essentially zero (point-mass or identity distribution).
+        // Test at multiple points to be sure.
+        let dbl_0 = self.total_cgf_double_prime(0.0);
+        let dbl_half = self.total_cgf_double_prime(0.5);
+        if dbl_0.abs() < 1e-20 && dbl_half.abs() < 1e-20 {
+            // Degenerate: L is a.s. constant = Λ'(0).
+            // δ(ε) = max(0, 1 − exp(ε − L_const)) for L_const ≤ ε,
+            //       = 1 − exp(ε − L_const) when L_const > ε (but clamped)
+            // Actually: P(L > ε) = I(L_const > ε), and
+            //   P_Q(L > ε) = P_Q(L > ε) = I(L_const > ε) (same event under Q)
+            // More precisely: δ(ε) = P(L > ε) − e^ε P_Q(L > ε)
+            // For identity (L=0): P(L>ε) = 0 for ε≥0, so δ=0.
+            // For pure ε-DP (L=ε₀): P(L>ε) = I(ε₀>ε), P_Q(L>ε)=exp(-ε₀)·I(ε₀>ε)
+            //   δ(ε) = I(ε₀>ε)·(1 − exp(ε−ε₀))
+            let l_const = self.total_cgf_prime(0.0);
+            if l_const <= epsilon {
+                return 0.0;
+            }
+            return (1.0 - (epsilon - l_const).exp()).clamp(0.0, 1.0);
+        }
 
+        use statrs::distribution::{ContinuousCDF, Normal};
         let normal = Normal::new(0.0, 1.0).unwrap();
 
         // --- First tail: P(L > ε) under original distribution ---

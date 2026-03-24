@@ -75,6 +75,49 @@ pub fn py_cgf_gaussian_pld(noise_multiplier: f64) -> PyResult<PyPld> {
     Ok(PyPld::new(pld))
 }
 
+/// Create a CGF-backed PLD for the identity mechanism.
+#[pyfunction]
+#[pyo3(name = "cgf_identity_pld", signature = ())]
+pub fn py_cgf_identity_pld() -> PyPld {
+    PyPld::new(crate::mechanisms::cgf_identity_pld())
+}
+
+/// Create a CGF-backed PLD for a pure ε-DP mechanism (δ=0).
+#[pyfunction]
+#[pyo3(name = "cgf_eps_delta_pld", signature = (epsilon))]
+pub fn py_cgf_eps_delta_pld(epsilon: f64) -> PyResult<PyPld> {
+    let pld = crate::mechanisms::cgf_eps_delta_pld(epsilon)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}
+
+/// Create a CGF-backed PLD for a truncated Gaussian mechanism.
+#[pyfunction]
+#[pyo3(name = "cgf_truncated_gaussian_pld", signature = (noise_multiplier, radius))]
+pub fn py_cgf_truncated_gaussian_pld(noise_multiplier: f64, radius: f64) -> PyResult<PyPld> {
+    let pld = crate::mechanisms::cgf_truncated_gaussian_pld(noise_multiplier, radius)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}
+
+/// Create a CGF-backed PLD for a rectified Gaussian mechanism.
+#[pyfunction]
+#[pyo3(name = "cgf_rectified_gaussian_pld", signature = (noise_multiplier, radius))]
+pub fn py_cgf_rectified_gaussian_pld(noise_multiplier: f64, radius: f64) -> PyResult<PyPld> {
+    let pld = crate::mechanisms::cgf_rectified_gaussian_pld(noise_multiplier, radius)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}
+
+/// Create a CGF-backed PLD for a matrix factorization Gaussian mechanism.
+#[pyfunction]
+#[pyo3(name = "cgf_mf_gaussian_pld", signature = (noise_multiplier, sensitivity))]
+pub fn py_cgf_mf_gaussian_pld(noise_multiplier: f64, sensitivity: f64) -> PyResult<PyPld> {
+    let pld = crate::matrix_factorization::cgf_mf_gaussian_pld(noise_multiplier, sensitivity)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}
+
 /// Compute the PLD for a rectified (clamped) Gaussian mechanism.
 ///
 /// The rectified Gaussian adds noise N(0, σ²) clamped to [−R·σ, R·σ].

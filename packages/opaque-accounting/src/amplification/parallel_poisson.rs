@@ -337,6 +337,56 @@ fn mixture_gaussian_epsilon_bounds(
     })
 }
 
+/// Create a CGF-backed PLD for a parallel Poisson-subsampled Gaussian mechanism.
+///
+/// Models the parallel Poisson as a mixture of Gaussian mechanisms with
+/// sensitivities 0, 1, ..., m, weighted by Binomial(m, q) probabilities.
+///
+/// Λ(t) = log Σ_{k=0}^{m} Binom(m,q,k) · exp(Λ_k(t))
+///
+/// where Λ_k(t) = t(1+t)·k²/(2σ²) is the CGF of a Gaussian with sensitivity k.
+pub fn cgf_parallel_poisson_gaussian_pld(
+    noise_multiplier: f64,
+    rate: f64,
+    microbatches: usize,
+) -> Result<PrivacyLossDistribution> {
+    use std::sync::Arc;
+    use crate::pld::cgf::{Cgf, GaussianCgf, IdentityCgf, MixtureCgf};
+
+    validate_noise_multiplier(noise_multiplier)?;
+    validate_rate(rate)?;
+    if microbatches == 0 {
+        return Err(PldError::InvalidParameter("microbatches must be > 0".into()));
+    }
+
+    if microbatches == 1 {
+        use crate::pld::cgf::SubsampledGaussianCgf;
+        return Ok(PrivacyLossDistribution::new_cgf(Arc::new(
+            SubsampledGaussianCgf::new(noise_multiplier, rate),
+        )));
+    }
+
+    let log_probs = binomial_log_probs(microbatches, rate);
+    let mut components: Vec<(Arc<dyn Cgf>, f64)> = Vec::with_capacity(microbatches + 1);
+
+    for k in 0..=microbatches {
+        let log_w = log_probs[k];
+        if log_w < -300.0 {
+            continue; // Skip negligible components
+        }
+        let cgf: Arc<dyn Cgf> = if k == 0 {
+            Arc::new(IdentityCgf)
+        } else {
+            // Gaussian with sensitivity k → effective σ_eff = σ/k
+            Arc::new(GaussianCgf::new(noise_multiplier / k as f64))
+        };
+        components.push((cgf, log_w));
+    }
+
+    let mixture = MixtureCgf::new_log_weights(components);
+    Ok(PrivacyLossDistribution::new_cgf(Arc::new(mixture)))
+}
+
 // ===========================================================================
 // Tests
 // ===========================================================================

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from .. import opaque_accounting as _native
 
-from opaque_accounting.base import DpProcess, PmfPld
+from opaque_accounting.base import CgfPld, DpProcess, PmfPld
 from opaque_accounting.discretization import DiscretizationConfig
 from opaque_accounting.mechanisms.gaussian import Gaussian
 from opaque_accounting.transformations.adaclip import AdaClip
@@ -24,6 +24,24 @@ class TruncatedPoisson(DpProcess):
     sample_rate: float
     batch_size_cap: int
     dataset_size: int
+
+    @functools.lru_cache(maxsize=1)
+    def cgf(self) -> CgfPld:
+        match self.inner:
+            case Gaussian(noise_multiplier=nm):
+                return CgfPld(_native.cgf_truncated_poisson_gaussian_pld(
+                    nm, self.sample_rate, self.batch_size_cap, self.dataset_size
+                ))
+            case AdaClip():
+                z_eff = self.inner.effective_noise_multiplier
+                return CgfPld(_native.cgf_truncated_poisson_gaussian_pld(
+                    z_eff, self.sample_rate, self.batch_size_cap, self.dataset_size
+                ))
+            case _:
+                raise NotImplementedError(
+                    f"CGF not available for TruncatedPoisson with "
+                    f"{type(self.inner).__name__}"
+                )
 
     @functools.lru_cache(maxsize=8)
     def pmf(self, config: DiscretizationConfig) -> PmfPld:

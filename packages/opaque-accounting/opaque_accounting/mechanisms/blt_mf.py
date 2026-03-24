@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from .. import opaque_accounting as _native
 
 from opaque_accounting.base import (
+    CgfPld,
     DpProcess,
     PmfPld,
 )
@@ -88,6 +89,12 @@ class BltMf(DpProcess):
             )
 
         return float(sens_sq.sqrt())
+
+    @functools.lru_cache(maxsize=1)
+    def cgf(self) -> CgfPld:
+        return CgfPld(_native.cgf_mf_gaussian_pld(
+            self.noise_multiplier, self.sensitivity()
+        ))
 
     @functools.lru_cache(maxsize=8)
     def pmf(self, config: DiscretizationConfig) -> PmfPld:

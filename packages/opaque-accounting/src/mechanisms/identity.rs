@@ -1,9 +1,11 @@
 //! Identity (zero privacy loss) mechanism PLD constructor.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use crate::discretization::DiscretizationConfig;
 use crate::error::Result;
+use crate::pld::cgf::IdentityCgf;
 use crate::pld::pmf::Pmf;
 use crate::pld::PrivacyLossDistribution;
 
@@ -23,6 +25,13 @@ pub fn identity_pld(config: &DiscretizationConfig) -> Result<PrivacyLossDistribu
         config.max_grid_size,
     );
     Ok(PrivacyLossDistribution::new_symmetric(pmf))
+}
+
+/// Create a CGF-backed PLD for the identity mechanism.
+///
+/// Returns a trivial CGF with Λ(t) = 0 for all t.
+pub fn cgf_identity_pld() -> PrivacyLossDistribution {
+    PrivacyLossDistribution::new_cgf(Arc::new(IdentityCgf))
 }
 
 #[cfg(test)]

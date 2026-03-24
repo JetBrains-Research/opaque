@@ -367,21 +367,26 @@ class TestCgfExplicit:
         eps = pld.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
-    def test_no_cgf_raises(self):
-        """Mechanisms without CGF raise NotImplementedError."""
+    def test_eps_delta_with_delta_no_cgf(self):
+        """eps_delta with delta > 0 has no CGF (infinite MGF)."""
         with pytest.raises(NotImplementedError):
-            acc.rectified_gaussian(0.5, 5.0).cgf()
+            acc.eps_delta(1.0, 1e-5).cgf()
 
-    def test_mixed_no_cgf_raises(self):
-        """Composed with a non-CGF mechanism raises on cgf()."""
+    def test_rectified_gaussian_cgf_works(self):
+        """Rectified Gaussian now supports CGF."""
+        eps = acc.rectified_gaussian(0.5, 5.0).cgf().epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
+
+    def test_mixed_composition_cgf_works(self):
+        """Composed Gaussian + RectifiedGaussian CGF works."""
         composed = acc.gaussian(0.5) | acc.rectified_gaussian(0.5, 5.0)
-        with pytest.raises(NotImplementedError):
-            composed.cgf()
+        eps = composed.cgf().epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
 
-    def test_poisson_rectified_no_cgf_raises(self):
-        """Poisson-subsampled rectified Gaussian has no CGF."""
-        with pytest.raises(NotImplementedError):
-            acc.poisson(acc.rectified_gaussian(0.5, 5.0), 0.01).cgf()
+    def test_poisson_rectified_cgf_works(self):
+        """Poisson-subsampled rectified Gaussian supports CGF."""
+        eps = acc.poisson(acc.rectified_gaussian(0.5, 5.0), 0.01).cgf().epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps > 0
 
     @pytest.mark.parametrize("sigma", [0.25, 0.5, 1.0])
     def test_cgf_matches_pld(self, sigma):

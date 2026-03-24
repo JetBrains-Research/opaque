@@ -217,6 +217,51 @@ fn truncated_epsilon_bounds(
     }
 }
 
+/// Create a CGF-backed PLD for a truncated Poisson-subsampled Gaussian mechanism.
+///
+/// Models the truncated Poisson as a mixture of two Poisson-subsampled Gaussian
+/// mechanisms:
+/// - Component 1 (weight 1−p_trunc): standard SubsampledGaussianCgf(σ, rate)
+/// - Component 2 (weight p_trunc): SubsampledGaussianCgf(σ/2, q_cond) (doubled sensitivity)
+pub fn cgf_truncated_poisson_gaussian_pld(
+    noise_multiplier: f64,
+    rate: f64,
+    batch_size_max: usize,
+    dataset_size: usize,
+) -> Result<PrivacyLossDistribution> {
+    use std::sync::Arc;
+    use crate::pld::cgf::{MixtureCgf, SubsampledGaussianCgf};
+
+    validate_noise_multiplier(noise_multiplier)?;
+    validate_rate(rate)?;
+    if batch_size_max == 0 {
+        return Err(PldError::InvalidParameter("batch_size_max must be > 0".into()));
+    }
+    if dataset_size == 0 {
+        return Err(PldError::InvalidParameter("dataset_size must be > 0".into()));
+    }
+
+    let p_trunc = truncation_probability(dataset_size, rate, batch_size_max);
+
+    // No truncation → standard Poisson CGF
+    if p_trunc == 0.0 {
+        return Ok(PrivacyLossDistribution::new_cgf(Arc::new(
+            SubsampledGaussianCgf::new(noise_multiplier, rate),
+        )));
+    }
+
+    let q_cond = conditional_sampling_probability(dataset_size, rate, batch_size_max, p_trunc);
+
+    // Component 1: standard Poisson Gaussian
+    let cgf1: Arc<dyn crate::pld::cgf::Cgf> = Arc::new(SubsampledGaussianCgf::new(noise_multiplier, rate));
+    // Component 2: doubled sensitivity (σ/2) at conditional rate
+    let effective_sigma = noise_multiplier / 2.0;
+    let cgf2: Arc<dyn crate::pld::cgf::Cgf> = Arc::new(SubsampledGaussianCgf::new(effective_sigma, q_cond));
+
+    let mixture = MixtureCgf::new(vec![(cgf1, 1.0 - p_trunc), (cgf2, p_trunc)]);
+    Ok(PrivacyLossDistribution::new_cgf(Arc::new(mixture)))
+}
+
 // ===========================================================================
 // Tests
 // ===========================================================================

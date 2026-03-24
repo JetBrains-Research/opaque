@@ -1,9 +1,11 @@
 //! (ε, δ)-DP mechanism PLD constructor.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use crate::discretization::DiscretizationConfig;
 use crate::error::{PldError, Result};
+use crate::pld::cgf::PureEpsDpCgf;
 use crate::pld::pmf::Pmf;
 use crate::pld::PrivacyLossDistribution;
 
@@ -46,6 +48,30 @@ pub fn eps_delta_pld(
 
     let pmf = Pmf::from_sparse(disc, masses, delta, true, config.max_grid_size);
     Ok(PrivacyLossDistribution::new_symmetric(pmf))
+}
+
+/// Create a CGF-backed PLD for a pure ε-DP mechanism (δ = 0).
+///
+/// Only works for δ = 0. For δ > 0, the moment generating function diverges
+/// and the CGF/SPA approach is not applicable — use `eps_delta_pld` (PMF) instead.
+///
+/// # Arguments
+///
+/// * `epsilon` — Privacy loss, must be ≥ 0.
+///
+/// # Errors
+///
+/// Returns `InvalidParameter` if epsilon < 0.
+pub fn cgf_eps_delta_pld(epsilon: f64) -> Result<PrivacyLossDistribution> {
+    if epsilon < 0.0 {
+        return Err(PldError::InvalidParameter(format!(
+            "epsilon must be non-negative, got {}",
+            epsilon
+        )));
+    }
+    Ok(PrivacyLossDistribution::new_cgf(Arc::new(
+        PureEpsDpCgf::new(epsilon),
+    )))
 }
 
 #[cfg(test)]

@@ -37,6 +37,7 @@ mod mf_gaussian;
 pub mod sensitivity;
 
 pub use mf_gaussian::mf_gaussian_pld;
+pub use mf_gaussian::cgf_mf_gaussian_pld;
 pub use sensitivity::{
     banded_sensitivity, blt_sensitivity_squared, fixed_epoch_sensitivity,
     general_sensitivity_upper_bound, max_participation_for_linear_fn,

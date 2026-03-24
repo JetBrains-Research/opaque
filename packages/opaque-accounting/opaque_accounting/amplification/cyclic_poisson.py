@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from .. import opaque_accounting as _native
 
-from opaque_accounting.base import DpProcess, PmfPld
+from opaque_accounting.base import CgfPld, DpProcess, PmfPld
 from opaque_accounting.discretization import DiscretizationConfig
 from opaque_accounting.mechanisms.band_mf import BandMf
 
@@ -37,6 +37,15 @@ class CyclicPoisson(DpProcess):
     def num_groups(self) -> int:
         """Number of independent groups: ceil(n_steps / bands)."""
         return math.ceil(self.inner.n_steps / self.inner.bands)
+
+    @functools.lru_cache(maxsize=1)
+    def cgf(self) -> CgfPld:
+        sensitivity = self.inner.sensitivity()
+        effective_nm = self.inner.noise_multiplier / sensitivity
+        return CgfPld(
+            _native.cgf_poisson_gaussian_pld(effective_nm, self.sample_rate)
+            .self_compose(self.num_groups)
+        )
 
     @functools.lru_cache(maxsize=8)
     def pmf(self, config: DiscretizationConfig) -> PmfPld:

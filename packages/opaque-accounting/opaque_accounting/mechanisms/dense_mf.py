@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from .. import opaque_accounting as _native
 
 from opaque_accounting.base import (
+    CgfPld,
     DpProcess,
     PmfPld,
 )
@@ -61,6 +62,12 @@ class DenseMf(DpProcess):
 
         C = self._optimized_strategy()
         return fixed_epoch_sensitivity(C, self.epochs)
+
+    @functools.lru_cache(maxsize=1)
+    def cgf(self) -> CgfPld:
+        return CgfPld(_native.cgf_mf_gaussian_pld(
+            self.noise_multiplier, self.sensitivity()
+        ))
 
     @functools.lru_cache(maxsize=8)
     def pmf(self, config: DiscretizationConfig) -> PmfPld:

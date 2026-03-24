@@ -22,8 +22,11 @@
 //! - Chen & Hale (2024). "The Bounded Gaussian Mechanism for Differential
 //!   Privacy." J. Privacy and Confidentiality, 14(1).
 
+use std::sync::Arc;
+
 use crate::discretization::{discretize_symmetric_mechanism, DiscretizationConfig, EpsilonBounds};
 use crate::error::{PldError, Result};
+use crate::pld::cgf::RectifiedGaussianCgf;
 use crate::pld::PrivacyLossDistribution;
 use statrs::distribution::{ContinuousCDF, Normal};
 
@@ -161,6 +164,30 @@ fn rectified_gaussian_delta_at(sigma: f64, sensitivity: f64, radius: f64, epsilo
 ///
 /// The maximum privacy loss occurs either at the domain boundary or at the
 /// point mass with the largest density ratio.
+/// Create a CGF-backed PLD for a rectified (clamped) Gaussian mechanism.
+///
+/// Uses Gauss-Hermite quadrature for the interior plus analytic point mass terms.
+pub fn cgf_rectified_gaussian_pld(
+    noise_multiplier: f64,
+    radius: f64,
+) -> Result<PrivacyLossDistribution> {
+    if !(MIN_NOISE_MULTIPLIER..=MAX_NOISE_MULTIPLIER).contains(&noise_multiplier) {
+        return Err(PldError::InvalidParameter(format!(
+            "noise_multiplier must be in [{}, {}], got {}",
+            MIN_NOISE_MULTIPLIER, MAX_NOISE_MULTIPLIER, noise_multiplier
+        )));
+    }
+    if !(MIN_RADIUS..=MAX_RADIUS).contains(&radius) {
+        return Err(PldError::InvalidParameter(format!(
+            "radius must be in [{}, {}], got {}",
+            MIN_RADIUS, MAX_RADIUS, radius
+        )));
+    }
+    Ok(PrivacyLossDistribution::new_cgf(Arc::new(
+        RectifiedGaussianCgf::new(noise_multiplier, radius),
+    )))
+}
+
 fn rectified_gaussian_epsilon_bounds(
     sigma: f64,
     sensitivity: f64,

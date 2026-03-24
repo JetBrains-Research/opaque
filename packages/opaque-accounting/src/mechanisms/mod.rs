@@ -54,8 +54,12 @@ pub(crate) const MAX_GRID_FRACTION: f64 = 0.5;
 // ---------------------------------------------------------------------------
 
 pub use eps_delta::eps_delta_pld;
+pub use eps_delta::cgf_eps_delta_pld;
 pub use gaussian::gaussian_pld;
 pub use gaussian::cgf_gaussian_pld;
 pub use identity::identity_pld;
+pub use identity::cgf_identity_pld;
 pub use rectified_gaussian::rectified_gaussian_pld;
+pub use rectified_gaussian::cgf_rectified_gaussian_pld;
 pub use truncated_gaussian::truncated_gaussian_pld;
+pub use truncated_gaussian::cgf_truncated_gaussian_pld;

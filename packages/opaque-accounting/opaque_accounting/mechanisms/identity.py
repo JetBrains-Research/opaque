@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from .. import opaque_accounting as _native
 
-from opaque_accounting.base import DpProcess, PmfPld
+from opaque_accounting.base import CgfPld, DpProcess, PmfPld
 from opaque_accounting.discretization import DiscretizationConfig
 
 
@@ -18,6 +18,10 @@ class Identity(DpProcess):
     Identity element of composition:
     ``Identity() | a`` → ``a`` and ``a | Identity()`` → ``a``.
     """
+
+    @functools.lru_cache(maxsize=1)
+    def cgf(self) -> CgfPld:
+        return CgfPld(_native.cgf_identity_pld())
 
     @functools.lru_cache(maxsize=8)
     def pmf(self, config: DiscretizationConfig) -> PmfPld:

@@ -19,8 +19,11 @@
 //! - BLT: Choquette-Choo et al. (2024) <https://arxiv.org/abs/2404.16706>
 //! - Dense MF: Denisov et al. (2022) <https://arxiv.org/abs/2202.08312>
 
+use std::sync::Arc;
+
 use crate::discretization::{discretize_symmetric_mechanism, DiscretizationConfig, EpsilonBounds};
 use crate::error::{PldError, Result};
+use crate::pld::cgf::GaussianCgf;
 use crate::pld::PrivacyLossDistribution;
 
 /// Minimum effective noise multiplier for MF mechanisms.
@@ -120,6 +123,56 @@ pub fn mf_gaussian_pld(
         crate::numerics::gaussian::gaussian_delta_at(delta_tilde, epsilon)
     })
     .map(|pld| pld.with_tail_budgets(tail_budget, tail_budget))
+}
+
+/// Create a CGF-backed PLD for a matrix factorization Gaussian mechanism.
+///
+/// Like `mf_gaussian_pld`, but returns a CGF-backed PLD using the exact
+/// Gaussian CGF with effective noise multiplier σ/S. No grid needed.
+///
+/// # Arguments
+///
+/// * `noise_multiplier` — Raw noise std σ. Must be positive.
+/// * `sensitivity` — L2 sensitivity S. Must be positive.
+///
+/// # Errors
+///
+/// Returns `InvalidParameter` if parameters are out of range.
+pub fn cgf_mf_gaussian_pld(
+    noise_multiplier: f64,
+    sensitivity: f64,
+) -> Result<PrivacyLossDistribution> {
+    if !noise_multiplier.is_finite() || noise_multiplier <= 0.0 {
+        return Err(PldError::InvalidParameter(format!(
+            "noise_multiplier must be a positive finite number, got {}",
+            noise_multiplier
+        )));
+    }
+    if !sensitivity.is_finite() || sensitivity <= 0.0 {
+        return Err(PldError::InvalidParameter(format!(
+            "sensitivity must be a positive finite number, got {}",
+            sensitivity
+        )));
+    }
+
+    let effective_nm = noise_multiplier / sensitivity;
+
+    if effective_nm < MF_MIN_EFFECTIVE_NOISE_MULTIPLIER {
+        return Err(PldError::InvalidParameter(format!(
+            "effective noise multiplier σ/S = {:.6e} is below minimum {:.6e}",
+            effective_nm, MF_MIN_EFFECTIVE_NOISE_MULTIPLIER
+        )));
+    }
+    if effective_nm > MF_MAX_EFFECTIVE_NOISE_MULTIPLIER {
+        return Err(PldError::InvalidParameter(format!(
+            "effective noise multiplier σ/S = {:.6e} exceeds maximum {:.6e}",
+            effective_nm, MF_MAX_EFFECTIVE_NOISE_MULTIPLIER
+        )));
+    }
+
+    Ok(PrivacyLossDistribution::new_cgf(Arc::new(
+        GaussianCgf::new(effective_nm),
+    )))
 }
 
 /// X-space truncation → epsilon bounds for a Gaussian mechanism with

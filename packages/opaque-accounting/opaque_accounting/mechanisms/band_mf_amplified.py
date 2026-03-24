@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from .. import opaque_accounting as _native
 
-from opaque_accounting.base import DpProcess, PmfPld
+from opaque_accounting.base import CgfPld, DpProcess, PmfPld
 from opaque_accounting.discretization import DiscretizationConfig
 
 
@@ -33,6 +33,14 @@ class BandMfAmplified(DpProcess):
     sensitivity: float
     sample_rate: float
     num_groups: int
+
+    @functools.lru_cache(maxsize=1)
+    def cgf(self) -> CgfPld:
+        effective_nm = self.noise_multiplier / self.sensitivity
+        return CgfPld(
+            _native.cgf_poisson_gaussian_pld(effective_nm, self.sample_rate)
+            .self_compose(self.num_groups)
+        )
 
     @functools.lru_cache(maxsize=8)
     def pmf(self, config: DiscretizationConfig) -> PmfPld:

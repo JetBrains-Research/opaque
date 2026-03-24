@@ -38,8 +38,11 @@
 //! - Chen & Hale (2024). "The Bounded Gaussian Mechanism for Differential
 //!   Privacy." J. Privacy and Confidentiality, 14(1).
 
+use std::sync::Arc;
+
 use crate::discretization::{discretize_symmetric_mechanism, DiscretizationConfig, EpsilonBounds};
 use crate::error::{PldError, Result};
+use crate::pld::cgf::TruncatedGaussianCgf;
 use crate::pld::PrivacyLossDistribution;
 use statrs::distribution::{ContinuousCDF, Normal};
 
@@ -153,6 +156,35 @@ fn truncated_gaussian_delta_at(sigma: f64, sensitivity: f64, radius: f64, epsilo
 ///
 /// The privacy loss ℓ(x) = −Δx/σ² + Δ²/(2σ²) + log(Z₁/Z₀) is linear in x
 /// and monotonically decreasing. So:
+/// Create a CGF-backed PLD for a truncated Gaussian mechanism.
+///
+/// Uses Gauss-Hermite quadrature to evaluate the CGF numerically.
+///
+/// # Arguments
+///
+/// * `noise_multiplier` — σ/Δ ratio, must be in [0.01, 2.5]
+/// * `radius` — support half-width in sigma units, must be in [0.1, 100]
+pub fn cgf_truncated_gaussian_pld(
+    noise_multiplier: f64,
+    radius: f64,
+) -> Result<PrivacyLossDistribution> {
+    if !(MIN_NOISE_MULTIPLIER..=MAX_NOISE_MULTIPLIER).contains(&noise_multiplier) {
+        return Err(crate::error::PldError::InvalidParameter(format!(
+            "noise_multiplier must be in [{}, {}], got {}",
+            MIN_NOISE_MULTIPLIER, MAX_NOISE_MULTIPLIER, noise_multiplier
+        )));
+    }
+    if !(MIN_RADIUS..=MAX_RADIUS).contains(&radius) {
+        return Err(crate::error::PldError::InvalidParameter(format!(
+            "radius must be in [{}, {}], got {}",
+            MIN_RADIUS, MAX_RADIUS, radius
+        )));
+    }
+    Ok(PrivacyLossDistribution::new_cgf(Arc::new(
+        TruncatedGaussianCgf::new(noise_multiplier, radius),
+    )))
+}
+
 ///   ε_max = ℓ(−Rσ) = Δ·(Δ/2 + Rσ)/σ² + log(Z₁/Z₀)
 ///   ε_min = ℓ(Rσ)  = Δ·(Δ/2 − Rσ)/σ² + log(Z₁/Z₀)
 fn truncated_gaussian_epsilon_bounds(

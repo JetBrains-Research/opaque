@@ -27,10 +27,18 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // CGF mechanisms
     m.add_function(wrap_pyfunction!(mechanisms::py_cgf_gaussian_pld, m)?)?;
-    m.add_function(wrap_pyfunction!(
-        amplification::py_cgf_poisson_gaussian_pld,
-        m
-    )?)?;
+    m.add_function(wrap_pyfunction!(mechanisms::py_cgf_identity_pld, m)?)?;
+    m.add_function(wrap_pyfunction!(mechanisms::py_cgf_eps_delta_pld, m)?)?;
+    m.add_function(wrap_pyfunction!(mechanisms::py_cgf_truncated_gaussian_pld, m)?)?;
+    m.add_function(wrap_pyfunction!(mechanisms::py_cgf_rectified_gaussian_pld, m)?)?;
+    m.add_function(wrap_pyfunction!(mechanisms::py_cgf_mf_gaussian_pld, m)?)?;
+
+    // CGF amplification
+    m.add_function(wrap_pyfunction!(amplification::py_cgf_poisson_gaussian_pld, m)?)?;
+    m.add_function(wrap_pyfunction!(amplification::py_cgf_truncated_poisson_gaussian_pld, m)?)?;
+    m.add_function(wrap_pyfunction!(amplification::py_cgf_parallel_poisson_gaussian_pld, m)?)?;
+    m.add_function(wrap_pyfunction!(amplification::py_cgf_poisson_rectified_gaussian_pld, m)?)?;
+    m.add_function(wrap_pyfunction!(amplification::py_cgf_poisson_truncated_gaussian_pld, m)?)?;
 
     // Amplification
     m.add_function(wrap_pyfunction!(amplification::py_poisson_gaussian_pld, m)?)?;

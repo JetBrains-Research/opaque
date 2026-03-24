@@ -15,11 +15,15 @@ mod poisson_truncated_gaussian;
 mod truncated_poisson;
 
 pub use parallel_poisson::parallel_poisson_gaussian_pld;
+pub use parallel_poisson::cgf_parallel_poisson_gaussian_pld;
 pub use poisson::poisson_gaussian_pld;
 pub use poisson::cgf_poisson_gaussian_pld;
 pub use poisson_rectified_gaussian::poisson_rectified_gaussian_pld;
+pub use poisson_rectified_gaussian::cgf_poisson_rectified_gaussian_pld;
 pub use poisson_truncated_gaussian::poisson_truncated_gaussian_pld;
+pub use poisson_truncated_gaussian::cgf_poisson_truncated_gaussian_pld;
 pub use truncated_poisson::truncated_poisson_gaussian_pld;
+pub use truncated_poisson::cgf_truncated_poisson_gaussian_pld;
 
 use crate::error::{PldError, Result};
 use crate::mechanisms::{MAX_NOISE_MULTIPLIER, MIN_NOISE_MULTIPLIER};
