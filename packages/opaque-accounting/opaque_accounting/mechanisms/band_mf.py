@@ -22,9 +22,7 @@ from opaque_accounting.base import (
     DpProcess,
     Pld,
 )
-from opaque_accounting.discretization import (
-    get_discretization,
-)
+from opaque_accounting.discretization import DiscretizationConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,12 +30,7 @@ class BandMf(DpProcess):
     """BandMF mechanism — banded Toeplitz correlated noise.
 
     Represents the privacy cost of an entire BandMF training run
-    under single participation. Each user contributes one gradient at
-    one step; the sensitivity equals the maximum column norm of the
-    optimized encoder matrix (= 1 for the standard Toeplitz optimization).
-
-    For cyclic Poisson amplification, wrap with
-    :func:`~opaque.accounting.amplification.cyclic_poisson.cyclic_poisson`.
+    under single participation.
     """
 
     noise_multiplier: float
@@ -55,29 +48,12 @@ class BandMf(DpProcess):
 
     @functools.lru_cache(maxsize=1)
     def sensitivity(self) -> float:
-        """L2 sensitivity under single participation.
-
-        For the standard Toeplitz optimization (coefficients normalized
-        to L2 norm 1), this equals 1.0.
-        """
+        """L2 sensitivity under single participation."""
         coefs = self._optimized_coefs()
         return float(coefs.norm())
 
     @functools.lru_cache(maxsize=8)
-    def pld(
-        self,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
-        max_grid_size: int | None = None,
-    ) -> Pld:
-        config = get_discretization(
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
-            max_grid_size=max_grid_size,
-        )
+    def pmf(self, config: DiscretizationConfig) -> Pld:
         return _native.mf_gaussian_pld(
             self.noise_multiplier,
             self.sensitivity(),
@@ -111,15 +87,10 @@ def band_mf(
 
     Example::
 
-        import opaque.accounting as acc
+        import opaque_accounting as acc
 
-        # BandMF without subsampling
         proc = acc.band_mf(noise_multiplier=1.0, n_steps=1000, bands=10)
-        eps = proc.epsilon_at(1e-5)
-
-        # BandMF with cyclic Poisson amplification (recommended)
-        proc = acc.cyclic_poisson(acc.band_mf(1.0, 1000, 10), sample_rate=0.01)
-        eps = proc.epsilon_at(1e-5)
+        eps = proc.pmf(acc.DiscretizationConfig()).epsilon_at(1e-5)
     """
     if noise_multiplier <= 0:
         raise ValueError(f"noise_multiplier must be positive, got {noise_multiplier}")

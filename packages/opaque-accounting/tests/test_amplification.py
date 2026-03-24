@@ -6,6 +6,7 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 import opaque_accounting as acc
+from opaque_accounting import DiscretizationConfig
 from opaque_accounting.amplification import (
     ParallelPoisson,
     Poisson,
@@ -38,9 +39,9 @@ class TestPoissonDataclass:
         assert Poisson(Gaussian(0.8), 0.01) == Poisson(Gaussian(0.8), 0.01)
         assert Poisson(Gaussian(0.8), 0.01) != Poisson(Gaussian(0.8), 0.02)
 
-    def test_pld_returns_valid(self):
-        pld = Poisson(Gaussian(0.8), 0.01).pld()
-        eps = pld.epsilon_at(1e-5)
+    def test_pmf_returns_valid(self):
+        pmf = Poisson(Gaussian(0.8), 0.01).pmf(DiscretizationConfig())
+        eps = pmf.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
 
@@ -63,9 +64,9 @@ class TestTruncatedPoissonDataclass:
     def test_is_dp_process(self):
         assert isinstance(TruncatedPoisson(Gaussian(0.8), 0.01, 128, 10_000), DpProcess)
 
-    def test_pld_returns_valid(self):
-        pld = TruncatedPoisson(Gaussian(0.8), 0.01, 128, 10_000).pld()
-        eps = pld.epsilon_at(1e-5)
+    def test_pmf_returns_valid(self):
+        pmf = TruncatedPoisson(Gaussian(0.8), 0.01, 128, 10_000).pmf(DiscretizationConfig())
+        eps = pmf.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
 
@@ -86,9 +87,9 @@ class TestParallelPoissonDataclass:
     def test_is_dp_process(self):
         assert isinstance(ParallelPoisson(Poisson(Gaussian(0.8), 0.01), 4), DpProcess)
 
-    def test_pld_returns_valid(self):
-        pld = ParallelPoisson(Poisson(Gaussian(0.8), 0.01), 4).pld()
-        eps = pld.epsilon_at(1e-5)
+    def test_pmf_returns_valid(self):
+        pmf = ParallelPoisson(Poisson(Gaussian(0.8), 0.01), 4).pmf(DiscretizationConfig())
+        eps = pmf.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
 
@@ -111,19 +112,19 @@ class TestPoissonConstructor:
 
     def test_accepts_adaclip(self):
         step = acc.poisson(acc.adaclip(acc.gaussian(0.8), batch_size=1000), 0.01)
-        eps = step.epsilon_at(1e-5)
+        eps = step.cgf().epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_propagates_config(self):
-        """Config is now query-time, so this test verifies pld() accepts discretization."""
+        """Config is now query-time, so this test verifies pmf() accepts DiscretizationConfig."""
         g = acc.gaussian(0.8)
         p = acc.poisson(g, 0.01)
-        # Config is query-time - verify pld() accepts discretization parameter
-        pld1 = p.pld(discretization=1e-3)
-        pld2 = p.pld(discretization=1e-4)
+        # Config is query-time - verify pmf() accepts different discretization configs
+        pmf1 = p.pmf(DiscretizationConfig(discretization=1e-3))
+        pmf2 = p.pmf(DiscretizationConfig(discretization=1e-4))
         # Both should compute successfully (different discretizations)
-        eps1 = pld1.epsilon_at(1e-5)
-        eps2 = pld2.epsilon_at(1e-5)
+        eps1 = pmf1.epsilon_at(1e-5)
+        eps2 = pmf2.epsilon_at(1e-5)
         assert math.isfinite(eps1) and eps1 > 0
         assert math.isfinite(eps2) and eps2 > 0
 
@@ -148,7 +149,7 @@ class TestTruncatedPoissonConstructor:
             128,
             10_000,
         )
-        eps = step.epsilon_at(1e-5)
+        eps = step.pmf(DiscretizationConfig()).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
 
@@ -187,22 +188,28 @@ class TestPoissonRectifiedGaussian:
         assert isinstance(p, Poisson)
         assert isinstance(p.inner, RectifiedGaussian)
 
-    def test_pld_returns_valid(self):
+    def test_pmf_returns_valid(self):
         p = acc.poisson(acc.rectified_gaussian(1.1, 5.0), 0.01)
-        eps = p.epsilon_at(1e-5)
+        eps = p.pmf(DiscretizationConfig()).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
+
+    def test_no_cgf(self):
+        """Poisson-subsampled rectified Gaussian has no CGF."""
+        with pytest.raises(NotImplementedError):
+            acc.poisson(acc.rectified_gaussian(1.1, 5.0), 0.01).cgf()
 
     def test_epsilon_le_poisson_gaussian(self):
         """Poisson + rectified should give ε ≤ Poisson + standard Gaussian."""
         nm, R, rate = 1.0, 5.0, 0.01
-        eps_gauss = acc.poisson(acc.gaussian(nm), rate).epsilon_at(1e-5)
-        eps_rect = acc.poisson(acc.rectified_gaussian(nm, R), rate).epsilon_at(1e-5)
+        cfg = DiscretizationConfig()
+        eps_gauss = acc.poisson(acc.gaussian(nm), rate).pmf(cfg).epsilon_at(1e-5)
+        eps_rect = acc.poisson(acc.rectified_gaussian(nm, R), rate).pmf(cfg).epsilon_at(1e-5)
         assert eps_rect <= eps_gauss + 1e-6
 
     def test_composition_works(self):
         step = acc.poisson(acc.rectified_gaussian(1.1, 5.0), 0.01)
         training = step * 100
-        eps = training.epsilon_at(1e-5)
+        eps = training.pmf(DiscretizationConfig()).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
 
@@ -214,27 +221,34 @@ class TestPoissonTruncatedGaussian:
         assert isinstance(p, Poisson)
         assert isinstance(p.inner, TruncatedGaussian)
 
-    def test_pld_returns_valid(self):
+    def test_pmf_returns_valid(self):
         p = acc.poisson(acc.truncated_gaussian(1.1, 5.0), 0.01)
-        eps = p.epsilon_at(1e-5)
+        eps = p.pmf(DiscretizationConfig()).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
+
+    def test_no_cgf(self):
+        """Poisson-subsampled truncated Gaussian has no CGF."""
+        with pytest.raises(NotImplementedError):
+            acc.poisson(acc.truncated_gaussian(1.1, 5.0), 0.01).cgf()
 
     def test_epsilon_le_poisson_gaussian(self):
         """Poisson + truncated should give ε ≤ Poisson + standard Gaussian."""
         nm, R, rate = 1.0, 5.0, 0.01
-        eps_gauss = acc.poisson(acc.gaussian(nm), rate).epsilon_at(1e-5)
-        eps_trunc = acc.poisson(acc.truncated_gaussian(nm, R), rate).epsilon_at(1e-5)
+        cfg = DiscretizationConfig()
+        eps_gauss = acc.poisson(acc.gaussian(nm), rate).pmf(cfg).epsilon_at(1e-5)
+        eps_trunc = acc.poisson(acc.truncated_gaussian(nm, R), rate).pmf(cfg).epsilon_at(1e-5)
         assert eps_trunc <= eps_gauss + 1e-6
 
     def test_epsilon_le_poisson_rectified(self):
         """Poisson + truncated ≤ Poisson + rectified."""
         nm, R, rate = 1.0, 5.0, 0.01
-        eps_rect = acc.poisson(acc.rectified_gaussian(nm, R), rate).epsilon_at(1e-5)
-        eps_trunc = acc.poisson(acc.truncated_gaussian(nm, R), rate).epsilon_at(1e-5)
+        cfg = DiscretizationConfig()
+        eps_rect = acc.poisson(acc.rectified_gaussian(nm, R), rate).pmf(cfg).epsilon_at(1e-5)
+        eps_trunc = acc.poisson(acc.truncated_gaussian(nm, R), rate).pmf(cfg).epsilon_at(1e-5)
         assert eps_trunc <= eps_rect + 1e-6
 
     def test_composition_works(self):
         step = acc.poisson(acc.truncated_gaussian(1.1, 5.0), 0.01)
         training = step * 100
-        eps = training.epsilon_at(1e-5)
+        eps = training.pmf(DiscretizationConfig()).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0

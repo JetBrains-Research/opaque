@@ -11,9 +11,7 @@ from opaque_accounting.base import (
     DpProcess,
     Pld,
 )
-from opaque_accounting.discretization import (
-    get_discretization,
-)
+from opaque_accounting.discretization import DiscretizationConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,20 +22,7 @@ class EpsDelta(DpProcess):
     delta: float
 
     @functools.lru_cache(maxsize=8)
-    def pld(
-        self,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
-        max_grid_size: int | None = None,
-    ) -> Pld:
-        config = get_discretization(
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
-            max_grid_size=max_grid_size,
-        )
+    def pmf(self, config: DiscretizationConfig) -> Pld:
         return _native.eps_delta_pld(self.epsilon, self.delta, config.to_native())
 
 
@@ -56,12 +41,9 @@ def eps_delta(epsilon: float, delta: float = 0.0) -> DpProcess:
 
     Example::
 
-        # External mechanism with (3.0, 1e-5)-DP
         external = acc.eps_delta(3.0, 1e-5)
-
-        # Compose with DP-SGD
         training = acc.poisson(acc.gaussian(1.1), 0.01) * 1000
         total = external | training
-        eps = total.epsilon_at(1e-5)
+        eps = total.pmf(acc.DiscretizationConfig()).epsilon_at(1e-5)
     """
     return EpsDelta(epsilon, delta)

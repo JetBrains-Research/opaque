@@ -21,9 +21,7 @@ from opaque_accounting.base import (
     DpProcess,
     Pld,
 )
-from opaque_accounting.discretization import (
-    get_discretization,
-)
+from opaque_accounting.discretization import DiscretizationConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,11 +29,7 @@ class DenseMf(DpProcess):
     """Dense MF mechanism — dense matrix factorization correlated noise.
 
     Represents the privacy cost of an entire dense MF training run under
-    fixed-epoch participation.  The strategy matrix and sensitivity are
-    computed internally from the given parameters.
-
-    Note: Dense optimization materializes the full n x n matrix. For
-    large ``n_steps``, prefer :class:`BandMf` or :class:`BltMf`.
+    fixed-epoch participation.
     """
 
     noise_multiplier: float
@@ -69,20 +63,7 @@ class DenseMf(DpProcess):
         return fixed_epoch_sensitivity(C, self.epochs)
 
     @functools.lru_cache(maxsize=8)
-    def pld(
-        self,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
-        max_grid_size: int | None = None,
-    ) -> Pld:
-        config = get_discretization(
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
-            max_grid_size=max_grid_size,
-        )
+    def pmf(self, config: DiscretizationConfig) -> Pld:
         return _native.mf_gaussian_pld(
             self.noise_multiplier,
             self.sensitivity(),
@@ -100,20 +81,12 @@ def dense_mf(
 ) -> DenseMf:
     """Dense MF mechanism — dense matrix factorization correlated noise.
 
-    Creates a privacy accounting process for the dense MF mechanism.
-    The strategy matrix is optimized internally for the given participation
-    pattern and the sensitivity is computed from the result.
-
-    Note: Dense optimization materializes the full n x n matrix. For
-    large ``n_steps``, prefer :func:`band_mf` or :func:`blt_mf`.
-
     Args:
         noise_multiplier: Raw noise standard deviation sigma. Must be positive.
         n_steps: Number of training iterations. Must be >= 1.
         epochs: Number of epochs (for fixed-epoch participation). Must
             divide ``n_steps``.
-        bands: Number of bands in the strategy (optional, for banded
-            optimization).
+        bands: Number of bands in the strategy (optional).
         equal_norm: If True, optimize with equal column norm constraint.
 
     Returns:
@@ -121,10 +94,8 @@ def dense_mf(
 
     Example::
 
-        import opaque.accounting as acc
-
         proc = acc.dense_mf(noise_multiplier=1.0, n_steps=100, epochs=2)
-        eps = proc.epsilon_at(1e-5)
+        eps = proc.pmf(acc.DiscretizationConfig()).epsilon_at(1e-5)
     """
     if noise_multiplier <= 0:
         raise ValueError(f"noise_multiplier must be positive, got {noise_multiplier}")

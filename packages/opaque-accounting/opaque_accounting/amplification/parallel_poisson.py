@@ -9,6 +9,7 @@ from .. import opaque_accounting as _native
 
 from opaque_accounting.amplification.poisson import Poisson
 from opaque_accounting.base import DpProcess, Pld
+from opaque_accounting.discretization import DiscretizationConfig
 from opaque_accounting.mechanisms.gaussian import Gaussian
 from opaque_accounting.transformations.adaclip import AdaClip
 
@@ -17,33 +18,16 @@ from opaque_accounting.transformations.adaclip import AdaClip
 class ParallelPoisson(DpProcess):
     """Poisson-subsampled Gaussian mechanism under parallel worker execution.
 
-    When Poisson sampling runs independently on multiple workers (e.g., in
-    multi-worker PyTorch DataLoader or DDP training), unique examples can
-    appear in multiple workers' samples. This mechanism accounts for that
-    sampling duplication in the privacy calculation.
+    When Poisson sampling runs independently on multiple workers, unique
+    examples can appear in multiple workers' samples. This mechanism
+    accounts for that sampling duplication in the privacy calculation.
     """
 
     inner: Poisson
     num_workers: int
 
     @functools.lru_cache(maxsize=8)
-    def pld(
-        self,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
-        max_grid_size: int | None = None,
-    ) -> Pld:
-        from opaque_accounting.discretization import get_discretization
-
-        config = get_discretization(
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
-            max_grid_size=max_grid_size,
-        )
-
+    def pmf(self, config: DiscretizationConfig) -> Pld:
         match self.inner:
             case Poisson(
                 inner=Gaussian(noise_multiplier=nm),
@@ -85,22 +69,10 @@ def parallel_poisson(
     appear in multiple workers' batches — this mechanism accounts for that
     sampling duplication in the privacy calculation.
 
-    This is the accounting mechanism for parallel training setups where:
-
-    - Multi-worker PyTorch DataLoader with Poisson sampling on each worker
-    - DDP training where each rank runs Poisson sampling independently
-    - Any other parallel training where the same Poisson sampler runs on N
-      workers
-
-    Like :func:`poisson` and :func:`truncated_poisson`, this is a full wrapper:
-    pass the inner Gaussian mechanism and sample rate directly.
-
     Args:
-        inner: A Gaussian or AdaClip mechanism (from :func:`gaussian` or
-            :func:`adaclip`).
+        inner: A Gaussian or AdaClip mechanism.
         sample_rate: Probability of including each example, in (0, 1].
-        num_workers: Number of parallel workers running Poisson sampling
-            independently.
+        num_workers: Number of parallel workers.
 
     Returns:
         A :class:`ParallelPoisson` process.
@@ -111,13 +83,12 @@ def parallel_poisson(
             acc.gaussian(1.1), sample_rate=0.01, num_workers=4,
         )
         training = step * 500
-        eps = training.epsilon_at(1e-5)
+        eps = training.pmf(acc.DiscretizationConfig()).epsilon_at(1e-5)
     """
     if not isinstance(inner, (Gaussian, AdaClip)):
         raise TypeError(
             f"parallel_poisson() requires a Gaussian or AdaClip inner mechanism, "
-            f"got {type(inner).__name__}. "
-            "Use: acc.parallel_poisson(acc.gaussian(nm), sample_rate=q, num_workers=k)"
+            f"got {type(inner).__name__}."
         )
     poisson_inner = Poisson(inner=inner, sample_rate=sample_rate)
     return ParallelPoisson(inner=poisson_inner, num_workers=num_workers)

@@ -23,7 +23,7 @@ class TestAccountantBasics:
         acct = Accountant()
 
         # Should have zero privacy cost (identity process)
-        eps = acct.epsilon_at(1e-5)
+        eps = acct.pmf().epsilon_at(1e-5)
         assert eps < 1e-10
 
     def test_init_with_budget(self):
@@ -43,8 +43,8 @@ class TestAccountantBasics:
         assert acct2 is not acct1
 
         # acct2 has accumulated privacy
-        eps1 = acct1.epsilon_at(1e-5)
-        eps2 = acct2.epsilon_at(1e-5)
+        eps1 = acct1.pmf().epsilon_at(1e-5)
+        eps2 = acct2.cgf().epsilon_at(1e-5)
         assert eps2 > eps1
 
     def test_composition_returns_accountant(self):
@@ -67,7 +67,7 @@ class TestAccountantMetrics:
         acct = Accountant()
         acct = acct | (acc.poisson(acc.gaussian(1.1), 0.01) * 100)
 
-        eps = acct.epsilon_at(1e-5)
+        eps = acct.cgf().epsilon_at(1e-5)
         assert eps > 0
         assert eps < 100  # Sanity check
 
@@ -76,7 +76,7 @@ class TestAccountantMetrics:
         acct = Accountant()
         acct = acct | (acc.poisson(acc.gaussian(1.1), 0.01) * 100)
 
-        delta = acct.delta_at(1.0)
+        delta = acct.cgf().delta_at(1.0)
         assert 0 <= delta <= 1
 
     def test_advantage(self):
@@ -84,7 +84,7 @@ class TestAccountantMetrics:
         acct = Accountant()
         acct = acct | acc.gaussian(1.0)
 
-        adv = acct.advantage()
+        adv = acct.cgf().advantage()
         assert 0 <= adv <= 1
 
     def test_beta_at(self):
@@ -92,7 +92,7 @@ class TestAccountantMetrics:
         acct = Accountant()
         acct = acct | (acc.gaussian(1.0) * 10)
 
-        beta = acct.beta_at(0.05)
+        beta = acct.cgf().beta_at(0.05)
         assert 0 <= beta <= 1
 
     def test_risk_at(self):
@@ -100,7 +100,7 @@ class TestAccountantMetrics:
         acct = Accountant()
         acct = acct | (acc.gaussian(1.0) * 10)
 
-        risk = acct.risk_at(0.5)
+        risk = acct.cgf().risk_at(0.5)
         assert 0 <= risk <= 0.5
 
     def test_metrics_delegate_to_process(self):
@@ -108,8 +108,8 @@ class TestAccountantMetrics:
         acct = Accountant()
         acct = acct | acc.gaussian(1.0)
 
-        eps_from_acct = acct.epsilon_at(1e-5)
-        eps_from_process = acct._process.epsilon_at(1e-5)
+        eps_from_acct = acct.cgf().epsilon_at(1e-5)
+        eps_from_process = acct._process.cgf().epsilon_at(1e-5)
 
         assert eps_from_acct == eps_from_process
 
@@ -171,11 +171,11 @@ class TestAccountantFunctional:
         acct1 = Accountant()
         step = acc.poisson(acc.gaussian(1.1), 0.01)
 
-        eps1_before = acct1.epsilon_at(1e-5)
+        eps1_before = acct1.pmf().epsilon_at(1e-5)
 
         _ = acct1 | step
 
-        eps1_after = acct1.epsilon_at(1e-5)
+        eps1_after = acct1.pmf().epsilon_at(1e-5)
 
         # Original should be unchanged
         assert eps1_before == eps1_after
@@ -188,7 +188,7 @@ class TestAccountantFunctional:
         for _ in range(10):
             acct = acct | step
 
-        eps = acct.epsilon_at(1e-5)
+        eps = acct.cgf().epsilon_at(1e-5)
 
         # Should have accumulated privacy loss
         assert eps > 0
@@ -200,7 +200,7 @@ class TestAccountantFunctional:
         acct = acct | (acc.poisson(acc.gaussian(1.1), 0.01) * 10)
         acct = acct | acc.gaussian(0.5)
 
-        eps = acct.epsilon_at(1e-5)
+        eps = acct.cgf().epsilon_at(1e-5)
         assert eps > 0
 
     def test_budget_persists_through_composition(self):
@@ -226,8 +226,8 @@ class TestAccountantFunctional:
         acct2 = (acct1 | step1) | step2
         acct3 = acct1 | (step1 | step2)
 
-        eps2 = acct2.epsilon_at(1e-5)
-        eps3 = acct3.epsilon_at(1e-5)
+        eps2 = acct2.cgf().epsilon_at(1e-5)
+        eps3 = acct3.cgf().epsilon_at(1e-5)
 
         assert abs(eps2 - eps3) < 1e-10
 
@@ -267,19 +267,20 @@ class TestAccountantTrainingLoop:
     @pytest.mark.slow
     def test_calibration_then_train(self):
         """Calibrate noise, then use Accountant to track budget."""
-        budget = acc.epsilon_budget(2.0, delta=1e-5)
+        budget = acc.epsilon_budget(5.0, delta=1e-5)
 
         result = acc.calibrate(
             budget=budget,
-            process=lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 100,
-            param_min=0.1,
+            process=lambda nm: (acc.poisson(acc.gaussian(nm), 0.01) * 100).pmf(acc.DiscretizationConfig()),
+            param_min=0.5,
             param_max=1.2,
         )
+        assert result.converged
 
         acct = Accountant(budget=budget)
         acct = acct | (acc.poisson(acc.gaussian(result.param), 0.01) * 100)
 
-        achieved = acct.epsilon_at(1e-5)
+        achieved = acct.pmf().epsilon_at(1e-5)
         assert abs(achieved - budget.value) < 0.5
 
     def test_mixed_mechanisms(self):
@@ -291,5 +292,5 @@ class TestAccountantTrainingLoop:
         acct = acct | (acc.poisson(acc.gaussian(1.0), 0.01) * 20)
         acct = acct | acc.gaussian(0.3)
 
-        eps = acct.epsilon_at(1e-5)
+        eps = acct.cgf().epsilon_at(1e-5)
         assert eps > 0.5

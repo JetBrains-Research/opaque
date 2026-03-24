@@ -6,6 +6,7 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 import opaque_accounting as acc
+from opaque_accounting import DiscretizationConfig
 from opaque_accounting.amplification import (
     CyclicPoisson,
 )
@@ -15,6 +16,8 @@ from opaque_accounting.mechanisms import (
     BltMf,
     DenseMf,
 )
+
+_CFG = DiscretizationConfig()
 
 # ── BandMf dataclass tests ──────────────────────────────────────────
 
@@ -43,7 +46,7 @@ class TestBandMfDataclass:
     @pytest.mark.slow
     def test_pld_returns_valid(self):
         proc = BandMf(1.0, 100, 5)
-        eps = proc.epsilon_at(1e-5)
+        eps = proc.pmf(_CFG).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_sensitivity_is_one_for_normalized_toeplitz(self):
@@ -112,7 +115,7 @@ class TestCyclicPoissonDataclass:
 
     def test_pld_returns_valid(self):
         proc = acc.cyclic_poisson(acc.band_mf(1.0, 100, 5), 0.01)
-        eps = proc.epsilon_at(1e-5)
+        eps = proc.pmf(_CFG).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_matches_manual_poisson_composition(self):
@@ -125,16 +128,16 @@ class TestCyclicPoissonDataclass:
         num_groups = math.ceil(n_steps / bands)
         manual = acc.poisson(acc.gaussian(nm / sensitivity), rate) * num_groups
 
-        eps_proc = proc.epsilon_at(1e-5)
-        eps_manual = manual.epsilon_at(1e-5)
+        eps_proc = proc.pmf(_CFG).epsilon_at(1e-5)
+        eps_manual = manual.cgf().epsilon_at(1e-5)
         assert eps_proc == pytest.approx(eps_manual, rel=1e-6)
 
     def test_more_groups_higher_epsilon(self):
         """More groups → more composition → higher epsilon."""
         # Fewer groups (larger bands)
-        eps_small = acc.cyclic_poisson(acc.band_mf(1.0, 100, 50), 0.01).epsilon_at(1e-5)
+        eps_small = acc.cyclic_poisson(acc.band_mf(1.0, 100, 50), 0.01).pmf(_CFG).epsilon_at(1e-5)
         # More groups (smaller bands)
-        eps_large = acc.cyclic_poisson(acc.band_mf(1.0, 100, 5), 0.01).epsilon_at(1e-5)
+        eps_large = acc.cyclic_poisson(acc.band_mf(1.0, 100, 5), 0.01).pmf(_CFG).epsilon_at(1e-5)
         assert eps_small < eps_large
 
     def test_transparent_to_inner(self):
@@ -190,7 +193,7 @@ class TestBltMfDataclass:
 
     def test_pld_returns_valid(self):
         proc = acc.blt_mf(1.0, 50, max_buffers=3)
-        eps = proc.epsilon_at(1e-5)
+        eps = proc.pmf(_CFG).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_sensitivity_positive(self):
@@ -246,7 +249,7 @@ class TestDenseMfDataclass:
 
     def test_pld_returns_valid(self):
         proc = acc.dense_mf(1.0, 20)
-        eps = proc.epsilon_at(1e-5)
+        eps = proc.pmf(_CFG).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_sensitivity_positive(self):
@@ -256,7 +259,7 @@ class TestDenseMfDataclass:
     def test_multi_epoch(self):
         """Multi-epoch dense MF computes successfully."""
         proc = acc.dense_mf(1.0, 20, epochs=2)
-        eps = proc.epsilon_at(1e-5)
+        eps = proc.pmf(_CFG).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
 
@@ -293,13 +296,13 @@ class TestMfComposition:
     def test_band_mf_composes_with_gaussian(self):
         """BandMf | Gaussian works."""
         proc = acc.band_mf(1.0, 100, 5) | acc.gaussian(1.0)
-        eps = proc.epsilon_at(1e-5)
+        eps = proc.pmf(_CFG).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_cyclic_poisson_composes_with_gaussian(self):
         """CyclicPoisson | Gaussian works."""
         proc = acc.cyclic_poisson(acc.band_mf(1.0, 100, 5), 0.01) | acc.gaussian(1.0)
-        eps = proc.epsilon_at(1e-5)
+        eps = proc.pmf(_CFG).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_class_tree_visible(self):

@@ -11,9 +11,7 @@ from opaque_accounting.base import (
     DpProcess,
     Pld,
 )
-from opaque_accounting.discretization import (
-    get_discretization,
-)
+from opaque_accounting.discretization import DiscretizationConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,20 +25,7 @@ class TruncatedGaussian(DpProcess):
     radius: float
 
     @functools.lru_cache(maxsize=8)
-    def pld(
-        self,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
-        max_grid_size: int | None = None,
-    ) -> Pld:
-        config = get_discretization(
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
-            max_grid_size=max_grid_size,
-        )
+    def pmf(self, config: DiscretizationConfig) -> Pld:
         return _native.truncated_gaussian_pld(
             self.noise_multiplier, self.radius, config.to_native()
         )
@@ -64,11 +49,6 @@ def truncated_gaussian(noise_multiplier: float, radius: float) -> TruncatedGauss
     Example::
 
         proc = acc.truncated_gaussian(1.1, radius=5.0)
-        eps = proc.epsilon_at(1e-5)
-
-        # Compose with Poisson subsampling
-        step = acc.poisson(acc.truncated_gaussian(1.1, 5.0), sample_rate=0.01)
-        training = step * 1000
-        eps = training.epsilon_at(1e-5)
+        eps = proc.pmf(acc.DiscretizationConfig()).epsilon_at(1e-5)
     """
     return TruncatedGaussian(noise_multiplier, radius)

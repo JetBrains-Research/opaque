@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from .. import opaque_accounting as _native
 
 from opaque_accounting.base import DpProcess, Pld
+from opaque_accounting.discretization import DiscretizationConfig
 from opaque_accounting.mechanisms.gaussian import Gaussian
 from opaque_accounting.mechanisms.rectified_gaussian import RectifiedGaussian
 from opaque_accounting.mechanisms.truncated_gaussian import TruncatedGaussian
@@ -39,23 +40,7 @@ class Poisson(DpProcess):
                 )
 
     @functools.lru_cache(maxsize=8)
-    def pld(
-        self,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
-        max_grid_size: int | None = None,
-    ) -> Pld:
-        from opaque_accounting.discretization import get_discretization
-
-        config = get_discretization(
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
-            max_grid_size=max_grid_size,
-        )
-
+    def pmf(self, config: DiscretizationConfig) -> Pld:
         match self.inner:
             case Gaussian(noise_multiplier=nm):
                 return _native.poisson_gaussian_pld(
@@ -103,24 +88,13 @@ def poisson(
 
     Example::
 
-        # Standard Gaussian
         step = acc.poisson(acc.gaussian(1.1), sample_rate=0.01)
-
-        # Tighter bounds with rectified Gaussian
-        step = acc.poisson(acc.rectified_gaussian(1.1, 5.0), sample_rate=0.01)
-
-        # Tightest bounds with truncated Gaussian
-        step = acc.poisson(acc.truncated_gaussian(1.1, 5.0), sample_rate=0.01)
-
         training = step * 1000
-        eps = training.epsilon_at(1e-5)
+        eps = training.cgf().epsilon_at(1e-5)
     """
     if not isinstance(inner, (Gaussian, RectifiedGaussian, TruncatedGaussian, AdaClip)):
         raise TypeError(
             f"poisson() requires a Gaussian, RectifiedGaussian, TruncatedGaussian, "
-            f"or AdaClip inner mechanism, got {type(inner).__name__}. "
-            "Examples: acc.poisson(acc.gaussian(nm), rate), "
-            "acc.poisson(acc.rectified_gaussian(nm, radius), rate), "
-            "acc.poisson(acc.truncated_gaussian(nm, radius), rate)"
+            f"or AdaClip inner mechanism, got {type(inner).__name__}."
         )
     return Poisson(inner=inner, sample_rate=sample_rate)

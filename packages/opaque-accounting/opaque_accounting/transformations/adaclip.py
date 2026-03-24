@@ -20,19 +20,6 @@ The ``AdaClip`` process exposes :attr:`effective_noise_multiplier` which
 encapsulates the combined sensitivity formula.  Poisson amplification
 wrappers use that property directly — they do not need to understand
 AdaClip internals.
-
-Batch size in training vs. calibration
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*  **Training loop**: pass the exact ``clip_state.batch_size`` (which is
-   summed across ranks in distributed training).
-*  **Calibration** (batch size unknown a priori):
-
-   - Standard Poisson: use ``sample_rate × dataset_size`` (expected m).
-   - Truncated Poisson: use ``batch_size_cap`` (pessimistic maximum).
-
-   Always verify the actual privacy spend at runtime.  The accountant
-   can check per-step whether the budget is exceeded; the training loop
-   should stop early if so.
 """
 
 from __future__ import annotations
@@ -43,6 +30,7 @@ from dataclasses import dataclass
 from .. import opaque_accounting as _native
 
 from opaque_accounting.base import DpProcess, Pld
+from opaque_accounting.discretization import DiscretizationConfig
 from opaque_accounting.mechanisms.gaussian import Gaussian
 
 
@@ -55,10 +43,6 @@ class AdaClip(DpProcess):
     accounting.  The :attr:`effective_noise_multiplier` property computes the
     adjusted noise multiplier that accounts for the extra privacy cost of
     the quantile estimator.
-
-    When wrapped in a Poisson amplification layer, only the
-    ``effective_noise_multiplier`` matters — the wrapper does not need to
-    understand AdaClip internals.
     """
 
     inner: Gaussian
@@ -67,9 +51,7 @@ class AdaClip(DpProcess):
 
     @property
     def effective_noise_multiplier(self) -> float:
-        """Noise multiplier adjusted for the quantile estimator’s privacy cost.
-
-        This is the z_eff from Andrew et al. 2021 Theorem 1:
+        """Noise multiplier adjusted for the quantile estimator's privacy cost.
 
         .. math::
 
@@ -77,32 +59,13 @@ class AdaClip(DpProcess):
 
         where *z* is the base noise multiplier and
         *σ_b = batch_size × quantile_noise_multiplier*.
-
-        Callers (e.g. Poisson amplification wrappers) should use this value
-        instead of the base ``inner.noise_multiplier``.
         """
         sigma_b = self.batch_size * self.quantile_noise_multiplier
         s = _native.adaclip_sensitivity(self.inner.noise_multiplier, sigma_b)
         return 1.0 / s
 
     @functools.lru_cache(maxsize=8)
-    def pld(
-        self,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
-        max_grid_size: int | None = None,
-    ) -> Pld:
-        from opaque_accounting.discretization import get_discretization
-
-        config = get_discretization(
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
-            max_grid_size=max_grid_size,
-        )
-
+    def pmf(self, config: DiscretizationConfig) -> Pld:
         match self.inner:
             case Gaussian():
                 z_eff = self.effective_noise_multiplier
@@ -132,59 +95,23 @@ def adaclip(
 
         z_{\\text{eff}} = \\frac{1}{\\sqrt{1/z^2 + 1/(4\\,\\sigma_b^2)}}
 
-    where *z* is the base noise multiplier and *σ_b = batch_size × multiplier*.
-
-    The resulting ``AdaClip`` process exposes
-    :attr:`~AdaClip.effective_noise_multiplier` which encapsulates this
-    formula.  Poisson amplification wrappers use that property directly;
-    they do **not** need to know about AdaClip internals.
-
-    Calibration guidance
-    ~~~~~~~~~~~~~~~~~~~~
-    During calibration the exact per-step batch size is unknown.  Use
-    an approximation and verify the budget at runtime:
-
-    - **Standard Poisson**: ``batch_size = sample_rate × dataset_size``
-      (expected batch size).
-    - **Truncated Poisson**: ``batch_size = batch_size_cap`` (pessimistic
-      maximum).
-
-    The accountant can check whether the budget is exceeded after each
-    training step using the *actual* batch size from
-    ``clip_state.batch_size``.  The training loop should stop early if
-    the budget is exceeded.
-
     Args:
         inner: The base Gaussian mechanism (from :func:`gaussian`).
-        quantile_noise_multiplier: Noise std on the clipping *fraction*
-            (value in [0, 1]).  Andrew et al. recommend 1/20 = 0.05,
-            corresponding to σ_b = m/20 on the clipped-count sum.
-        batch_size: Number of examples per training step.  Used to convert
-            the fraction-level multiplier to the absolute σ_b needed by
-            ``adaclip_sensitivity()``.  In the training loop pass the
-            actual batch size from ``clip_state.batch_size``; during
-            calibration use the expected or pessimistic batch size.
+        quantile_noise_multiplier: Noise std on the clipping *fraction*.
+            Default 0.05 (matching Andrew et al.).
+        batch_size: Number of examples per training step.
 
     Returns:
-        An :class:`AdaClip` process with an
-        :attr:`~AdaClip.effective_noise_multiplier` property.
+        An :class:`AdaClip` process.
 
     Example::
 
-        # --- In training loop (exact batch size from state) ---
-        step = acc.adaclip(
-            acc.gaussian(noise_multiplier),
-            batch_size=clip_state.batch_size,   # actual
-        )
-        accountant = accountant | step
-
-        # --- During calibration (approximate batch size) ---
-        batch_approx = sample_rate * dataset_size          # Poisson
-        # or: batch_approx = batch_size_cap                # Truncated Poisson
         step = acc.poisson(
-            acc.adaclip(acc.gaussian(1.1), batch_size=batch_approx),
+            acc.adaclip(acc.gaussian(1.1), batch_size=500),
             sample_rate=0.01,
         )
+        training = step * 1000
+        eps = training.cgf().epsilon_at(1e-5)
     """
     if not isinstance(inner, Gaussian):
         raise TypeError(

@@ -34,7 +34,7 @@ class TestCgfCorrectness:
     def test_gaussian_small_sigma(self, sigma):
         """gaussian(σ) for small σ → finite positive ε."""
         proc = acc.gaussian(sigma)
-        eps = proc.epsilon_at(1e-5)
+        eps = proc.cgf().epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0, f"σ={sigma}: ε={eps}"
 
     @pytest.mark.parametrize("sigma", [0.01, 0.05, 0.09])
@@ -42,34 +42,34 @@ class TestCgfCorrectness:
     def test_poisson_small_sigma(self, sigma, q):
         """poisson(gaussian(σ), q) * 1000 for small σ → finite positive ε."""
         proc = acc.poisson(acc.gaussian(sigma), q) * 1000
-        eps = proc.epsilon_at(1e-5)
+        eps = proc.cgf().epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0, f"σ={sigma}, q={q}: ε={eps}"
 
     @pytest.mark.parametrize("sigma", [0.03, 0.05])
     def test_all_metrics_work(self, sigma):
         """All privacy metrics return valid results on CGF-backed PLDs."""
-        proc = acc.gaussian(sigma) * 100
+        pld = (acc.gaussian(sigma) * 100).cgf()
         # epsilon_at
-        eps = proc.epsilon_at(1e-5)
+        eps = pld.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
         # delta_at
-        delta = proc.delta_at(eps * 0.5)
+        delta = pld.delta_at(eps * 0.5)
         assert 0.0 <= delta <= 1.0
         # advantage
-        adv = proc.advantage()
+        adv = pld.advantage()
         assert 0.0 <= adv <= 1.0
         # beta_at (materializes to PMF)
-        beta = proc.beta_at(0.1)
+        beta = pld.beta_at(0.1)
         assert 0.0 <= beta <= 1.0
         # risk_at (materializes to PMF)
-        risk = proc.risk_at(0.5)
+        risk = pld.risk_at(0.5)
         assert 0.0 <= risk <= 0.5
 
     @pytest.mark.parametrize("sigma", [0.01, 0.03, 0.05, 0.09])
     def test_monotonicity_in_sigma(self, sigma):
         """Smaller σ → larger ε (more privacy loss)."""
-        eps_small = acc.gaussian(sigma).epsilon_at(1e-5)
-        eps_large = acc.gaussian(min(sigma * 2, 0.5)).epsilon_at(1e-5)
+        eps_small = acc.gaussian(sigma).cgf().epsilon_at(1e-5)
+        eps_large = acc.gaussian(min(sigma * 2, 0.5)).cgf().epsilon_at(1e-5)
         assert eps_small > eps_large, (
             f"σ={sigma}: ε={eps_small}, σ={sigma*2}: ε={eps_large}"
         )
@@ -77,17 +77,17 @@ class TestCgfCorrectness:
     def test_monotonicity_in_steps(self):
         """More steps → larger ε."""
         g = acc.gaussian(0.05)
-        eps_100 = (g * 100).epsilon_at(1e-5)
-        eps_1000 = (g * 1000).epsilon_at(1e-5)
+        eps_100 = (g * 100).cgf().epsilon_at(1e-5)
+        eps_1000 = (g * 1000).cgf().epsilon_at(1e-5)
         assert eps_1000 > eps_100
 
     @pytest.mark.parametrize("sigma", [0.03, 0.05])
     def test_epsilon_delta_roundtrip(self, sigma):
         """ε(δ) → δ(ε) ≈ δ for CGF-backed PLDs."""
-        proc = acc.gaussian(sigma) * 100
+        pld = (acc.gaussian(sigma) * 100).cgf()
         delta = 1e-5
-        eps = proc.epsilon_at(delta)
-        delta_back = proc.delta_at(eps)
+        eps = pld.epsilon_at(delta)
+        delta_back = pld.delta_at(eps)
         assert delta_back == pytest.approx(delta, rel=0.05), (
             f"Roundtrip: δ={delta} → ε={eps} → δ'={delta_back}"
         )
@@ -95,8 +95,8 @@ class TestCgfCorrectness:
     @pytest.mark.parametrize("sigma", [0.03, 0.05])
     def test_advantage_equals_delta_at_zero(self, sigma):
         """advantage() == delta_at(0) by definition."""
-        proc = acc.gaussian(sigma) * 100
-        assert proc.advantage() == pytest.approx(proc.delta_at(0.0), rel=1e-6)
+        pld = (acc.gaussian(sigma) * 100).cgf()
+        assert pld.advantage() == pytest.approx(pld.delta_at(0.0), rel=1e-6)
 
 
 # ============================================================================
@@ -263,7 +263,7 @@ class TestCgfComposition:
         g1 = acc.gaussian(0.05) * 500
         g2 = acc.gaussian(0.08) * 500
         composed = g1 | g2
-        eps = composed.epsilon_at(1e-5)
+        eps = composed.cgf().epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_cgf_plus_pmf(self):
@@ -271,19 +271,19 @@ class TestCgfComposition:
         g_small = acc.gaussian(0.05) * 500
         g_large = acc.gaussian(0.8) * 500
         composed = g_small | g_large
-        eps = composed.epsilon_at(1e-5)
+        eps = composed.cgf().epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
         # Should be larger than either alone
-        eps_small = g_small.epsilon_at(1e-5)
-        eps_large = g_large.epsilon_at(1e-5)
+        eps_small = g_small.cgf().epsilon_at(1e-5)
+        eps_large = g_large.cgf().epsilon_at(1e-5)
         assert eps > eps_small
         assert eps > eps_large
 
     def test_self_compose(self):
         """Self-compose × 10000 works for very small σ."""
         proc = acc.gaussian(0.05) * 10000
-        eps = proc.epsilon_at(1e-5)
+        eps = proc.cgf().epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
 
@@ -297,17 +297,17 @@ class TestCgfImpact:
 
     def test_small_sigma_gaussian(self):
         """gaussian(0.05) * 1000 → finite ε (was impossible before)."""
-        eps = (acc.gaussian(0.05) * 1000).epsilon_at(1e-5)
+        eps = (acc.gaussian(0.05) * 1000).cgf().epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_small_sigma_poisson(self):
         """poisson(gaussian(0.05), 0.01) * 1000 → finite ε."""
-        eps = (acc.poisson(acc.gaussian(0.05), 0.01) * 1000).epsilon_at(1e-5)
+        eps = (acc.poisson(acc.gaussian(0.05), 0.01) * 1000).cgf().epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_very_small_sigma(self):
         """gaussian(0.01) * 10000 → finite ε."""
-        eps = (acc.gaussian(0.01) * 10000).epsilon_at(1e-5)
+        eps = (acc.gaussian(0.01) * 10000).cgf().epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_calibration_extended_range(self):
@@ -317,7 +317,7 @@ class TestCgfImpact:
         # Target ε=500 at δ=1e-5 — achievable in [0.01, 2.5] * 1000
         result = cal.calibrate(
             cal.epsilon_budget(500.0, delta=1e-5),
-            lambda nm: acc.gaussian(nm) * 1000,
+            lambda nm: (acc.gaussian(nm) * 1000).cgf(),
             0.01,
             2.5,
         )
@@ -387,7 +387,7 @@ class TestCgfExplicit:
         """CGF and PMF paths agree for moderate σ."""
         proc = acc.gaussian(sigma) * 100
         eps_cgf = proc.cgf().epsilon_at(1e-5)
-        eps_pld = proc.pld().epsilon_at(1e-5)
+        eps_pld = proc.pmf(acc.DiscretizationConfig()).epsilon_at(1e-5)
         rel_err = abs(eps_cgf - eps_pld) / eps_pld
         assert rel_err < 0.05, (
             f"σ={sigma}: CGF ε={eps_cgf:.4f}, PLD ε={eps_pld:.4f}, "
@@ -397,9 +397,9 @@ class TestCgfExplicit:
     def test_cgf_delta_matches_pld(self):
         """CGF and PMF delta_at agree for moderate σ."""
         proc = acc.gaussian(0.5) * 100
-        eps_test = proc.pld().epsilon_at(0.1) * 0.8
+        eps_test = proc.pmf(acc.DiscretizationConfig()).epsilon_at(0.1) * 0.8
         d_cgf = proc.cgf().delta_at(eps_test)
-        d_pld = proc.pld().delta_at(eps_test)
+        d_pld = proc.pmf(acc.DiscretizationConfig()).delta_at(eps_test)
         rel_err = abs(d_cgf - d_pld) / d_pld if d_pld > 1e-12 else abs(d_cgf)
         assert rel_err < 0.05, (
             f"CGF δ={d_cgf:.6e}, PLD δ={d_pld:.6e}, rel_err={rel_err:.2%}"

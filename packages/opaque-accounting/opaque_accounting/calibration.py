@@ -7,12 +7,12 @@ This module provides a generic binary search framework.  Privacy budget
 Example::
 
     from opaque_accounting import calibration as cal
-    import opaque.accounting as acc
+    import opaque_accounting as acc
 
     budget = cal.epsilon_budget(3.0, delta=1e-5)
     result = cal.calibrate(
         budget,
-        lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000,
+        lambda nm: (acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000).cgf(),
         param_min=0.1, param_max=5.0,
     )
 
@@ -26,7 +26,7 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from opaque_accounting.base import DpProcess
+from opaque_accounting.base import Pld
 
 # Re-export budgets so ``from opaque_accounting.calibration import Budget``
 # and ``from opaque_accounting import calibration as cal; cal.epsilon_budget(...)``
@@ -79,7 +79,7 @@ class CalibrateResult:
 
 def calibrate(
     budget: Budget,
-    process: Callable[[float], DpProcess],
+    process: Callable[[float], Pld],
     param_min: float,
     param_max: float,
     tolerance: float = 1e-6,
@@ -88,125 +88,45 @@ def calibrate(
     """Binary search for parameter achieving target privacy metric.
 
     Finds the value of a parameter (e.g., noise_multiplier) such that
-    the resulting DpProcess achieves a target privacy guarantee.
-
-    **Metric Direction:**
-    Each budget declares a ``decreasing`` property that tells the search
-    whether the metric decreases (True) or increases (False) as the
-    calibrated parameter grows.  Epsilon/delta/advantage are decreasing;
-    beta/risk are increasing.  The binary search adapts automatically.
-
-    **Parameters:**
+    the resulting PLD achieves a target privacy guarantee.
 
     Args:
         budget: Calibration budget (created with epsilon_budget(), delta_budget(), etc.)
-            - Must have: budget.value (float), budget.evaluate(process) → float
-            - Common budgets: epsilon_budget(3.0, 1e-5), delta_budget(1e-5, 3.0), advantage_budget(0.1)
-            - Budgets validate themselves: epsilon_budget(-1.0) raises ValueError
+            - Must have: budget.value (float), budget.evaluate(pld) → float
 
-        process: Callable taking a float parameter and returning a DpProcess.
-            Must be deterministic (same input → same process).
-            Example: ``lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000``
+        process: Callable taking a float parameter and returning a materialized Pld.
+            Must be deterministic (same input → same output).
+            Example: ``lambda nm: (acc.poisson(acc.gaussian(nm), 0.01) * 1000).cgf()``
 
-            Important: If process() raises an exception, it propagates immediately.
-
-        param_min: Lower bound for search (usually produces more private result)
-            - Assumed to satisfy: metric(param_min) > budget.value
-            - Example: 0.5 for noise_multiplier at high privacy
-
-        param_max: Upper bound for search (usually produces less private result)
-            - Assumed to satisfy: metric(param_max) < budget.value
-            - Example: 3.0 for noise_multiplier at lower privacy
-
-        tolerance: Convergence threshold
-            - Stops early when |achieved - budget.value| < tolerance
-            - Default: 1e-6 (very tight, suitable for most applications)
-            - Use 1e-2 for faster convergence, 1e-8 for maximum precision
-
-        max_iterations: Maximum binary search iterations
-            - Each iteration halves the search space
-            - 100 iterations gives ~1e-30 precision (rarely needed)
-            - If not converged after max_iterations, returns False for converged
+        param_min: Lower bound for search.
+        param_max: Upper bound for search.
+        tolerance: Convergence threshold (default: 1e-6).
+        max_iterations: Maximum binary search iterations (default: 100).
 
     Returns:
-        CalibrateResult with:
-        - param: Found parameter value
-        - achieved: Metric value at found parameter
-        - target: Target metric value (for comparison)
-        - iterations: Number of iterations performed
-        - converged: True if |achieved - target| < tolerance
+        CalibrateResult with param, achieved, target, iterations, converged.
 
     Raises:
-        ValueError: If param_min >= param_max
-        ValueError: If bounds don't bracket the target (both val_min/val_max above or below target)
-        ValueError: If budget evaluation returns inf or nan at the bounds
-        Exception: If process() or budget.evaluate() raises an exception
+        ValueError: If param_min >= param_max, bounds don't bracket, or NaN/inf.
 
-    **Examples:**
-
-    **Example 1: Standard (ε, δ)-DP**::
-
-        import opaque.accounting as acc
-        from opaque_accounting import calibration as cal
+    Example::
 
         budget = cal.epsilon_budget(3.0, delta=1e-5)
         result = cal.calibrate(
             budget,
-            lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000,
-            param_min=0.7,
-            param_max=1.2,
+            lambda nm: (acc.poisson(acc.gaussian(nm), 0.01) * 1000).cgf(),
+            param_min=0.7, param_max=1.2,
         )
-
         print(f"Use noise_multiplier = {result.param:.4f}")
-        print(f"Achieves epsilon = {result.achieved:.6f}")
-        print(f"Converged: {result.converged}")
-
-    **Example 2: Multi-phase training**::
-
-        def multiphase(nm):
-            phase1 = acc.poisson(acc.gaussian(nm), 0.01) * 500
-            phase2 = acc.poisson(acc.gaussian(nm * 0.8), 0.01) * 500
-            phase3 = acc.poisson(acc.gaussian(nm * 0.5), 0.01) * 500
-            return phase1 | phase2 | phase3
-
-        result = cal.calibrate(
-            cal.epsilon_budget(5.0, delta=1e-5),
-            multiphase,
-            param_min=0.5,
-            param_max=3.0,
-            tolerance=0.01,
-        )
-
-    **Example 3: Different privacy metrics**::
-
-        process = lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000
-
-        # f-DP advantage
-        result = cal.calibrate(cal.advantage_budget(0.1), process, 0.5, 2.0)
-
-        # (α, β) error rates
-        result = cal.calibrate(cal.beta_budget(0.05, alpha=0.01), process, 0.5, 2.0)
-
-        # Bayes risk
-        result = cal.calibrate(cal.risk_budget(0.1, prior=0.5), process, 0.5, 2.0)
-
-    **Troubleshooting:**
-
-    - *ValueError: bounds don't bracket budget*
-      → Try expanding param_min/param_max range
-    - *ValueError: budget evaluation returned infinity*
-      → Privacy budget may be unreachable with your mechanism; try higher param_min or lower budget value
-    - *Not converging within max_iterations*
-      → Increase tolerance or max_iterations; check that param changes actually affect metric
     """
     if param_min >= param_max:
         raise ValueError(f"param_min ({param_min}) must be < param_max ({param_max})")
 
     # Check bounds bracket the budget
-    proc_min = process(param_min)
-    proc_max = process(param_max)
-    val_min = budget.evaluate(proc_min)
-    val_max = budget.evaluate(proc_max)
+    pld_min = process(param_min)
+    pld_max = process(param_max)
+    val_min = budget.evaluate(pld_min)
+    val_max = budget.evaluate(pld_max)
 
     # Validate bounds don't return inf/nan
     if math.isnan(val_min) or math.isnan(val_max):
@@ -221,16 +141,14 @@ def calibrate(
             f"Budget evaluation returned infinity at bounds: "
             f"at param_min={param_min}: {val_min}, at param_max={param_max}: {val_max}. "
             f"This typically means the privacy target is unreachable with these parameter bounds. "
-            f"Try expanding the search range or checking that process() produces valid DpProcess objects."
+            f"Try expanding the search range."
         )
 
     # Determine search direction from the budget
     decreasing = budget.decreasing
     if decreasing:
-        # metric decreases with param: val_min is high, val_max is low
         lo_val, hi_val = val_min, val_max
     else:
-        # metric increases with param: val_min is low, val_max is high
         lo_val, hi_val = val_max, val_min
 
     if not (hi_val <= budget.value <= lo_val):
@@ -249,14 +167,14 @@ def calibrate(
     for iteration in range(max_iterations):
         iterations = iteration + 1
         mid = (lo + hi) / 2
-        proc = process(mid)
-        current = budget.evaluate(proc)
+        pld = process(mid)
+        current = budget.evaluate(pld)
 
         if math.isnan(current):
             raise ValueError(
                 f"Budget evaluation returned NaN at param={mid} "
                 f"(iteration {iterations}). Check that process() "
-                f"produces valid DpProcess objects for all parameter values."
+                f"produces valid Pld objects for all parameter values."
             )
 
         # Check convergence
@@ -277,8 +195,8 @@ def calibrate(
 
     # Max iterations reached - return best estimate
     mid = (lo + hi) / 2
-    proc = process(mid)
-    current = budget.evaluate(proc)
+    pld = process(mid)
+    current = budget.evaluate(pld)
 
     return CalibrateResult(
         param=mid,

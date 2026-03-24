@@ -7,6 +7,7 @@ import pytest
 
 import opaque_accounting as acc
 from opaque_accounting.base import DpProcess
+from opaque_accounting import DiscretizationConfig
 from opaque_accounting.composition import CachedProcess, Composed, Repeated
 
 # ── Node dataclass tests ─────────────────────────────────────────────
@@ -36,11 +37,11 @@ class TestComposed:
         a = acc.gaussian(0.8)
         b = acc.gaussian(0.5)
         composed = Composed(a, b)
-        eps = composed.epsilon_at(1e-5)
+        eps = composed.cgf().epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
         # eps of composition > eps of each part
-        assert eps > a.epsilon_at(1e-5)
-        assert eps > b.epsilon_at(1e-5)
+        assert eps > a.cgf().epsilon_at(1e-5)
+        assert eps > b.cgf().epsilon_at(1e-5)
 
 
 class TestRepeated:
@@ -70,10 +71,10 @@ class TestRepeated:
     def test_pld_self_composes(self):
         step = acc.gaussian(0.8)
         r = Repeated(step, 10)
-        eps = r.epsilon_at(1e-5)
+        eps = r.cgf().epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
         # 10x composition > single step
-        assert eps > step.epsilon_at(1e-5)
+        assert eps > step.cgf().epsilon_at(1e-5)
 
 
 class TestCachedProcess:
@@ -91,16 +92,17 @@ class TestCachedProcess:
         with pytest.raises(FrozenInstanceError):
             cp.inner = acc.gaussian(1.0)  # type: ignore[misc]
 
-    def test_caches_pld(self):
-        """Second pld() call returns cached result."""
+    def test_caches_pmf(self):
+        """Second pmf() call returns cached result."""
         cp = CachedProcess(acc.gaussian(0.8))
-        pld1 = cp.pld()
-        pld2 = cp.pld()
-        assert pld1 is pld2
+        config = DiscretizationConfig()
+        pmf1 = cp.pmf(config)
+        pmf2 = cp.pmf(config)
+        assert pmf1 is pmf2
 
     def test_pld_returns_valid(self):
         cp = CachedProcess(acc.gaussian(0.8))
-        eps = cp.epsilon_at(1e-5)
+        eps = cp.cgf().epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_opaque_merge_barrier(self):
@@ -155,7 +157,7 @@ class TestRepeatOperator:
         step = acc.poisson(acc.gaussian(0.8), 0.01)
         a = step * 100
         b = 100 * step
-        assert a.epsilon_at(1e-5) == pytest.approx(b.epsilon_at(1e-5))
+        assert a.cgf().epsilon_at(1e-5) == pytest.approx(b.cgf().epsilon_at(1e-5))
 
     def test_nested_repeat_flattens(self):
         """(step * 3) * 4 → Repeated(step, 12)."""
@@ -243,15 +245,15 @@ class TestComposeFunctions:
 
     def test_repeat_matches_mul(self):
         step = acc.poisson(acc.gaussian(0.8), 0.01)
-        via_op = (step * 100).epsilon_at(1e-5)
-        via_fn = acc.repeat(step, 100).epsilon_at(1e-5)
+        via_op = (step * 100).cgf().epsilon_at(1e-5)
+        via_fn = acc.repeat(step, 100).cgf().epsilon_at(1e-5)
         assert via_op == pytest.approx(via_fn)
 
     def test_compose_matches_or(self):
         a = acc.gaussian(0.8)
         b = acc.gaussian(0.5)
-        via_op = (a | b).epsilon_at(1e-5)
-        via_fn = acc.compose(a, b).epsilon_at(1e-5)
+        via_op = (a | b).cgf().epsilon_at(1e-5)
+        via_fn = acc.compose(a, b).cgf().epsilon_at(1e-5)
         assert via_op == pytest.approx(via_fn)
 
 
@@ -264,25 +266,27 @@ class TestCompositionProperties:
         deltas = [1e-5]
         step_counts = [1, 10, 100, 500]
         for d in deltas:
-            epsilons = [(step * k).epsilon_at(d) for k in step_counts]
+            epsilons = [(step * k).cgf().epsilon_at(d) for k in step_counts]
             for i in range(1, len(epsilons)):
                 assert epsilons[i] > epsilons[i - 1]
 
     @pytest.mark.slow
     def test_epsilon_decreases_with_noise(self):
         """More noise → lower epsilon."""
+        cfg = acc.DiscretizationConfig()
         sigmas = [0.3, 0.5, 0.8, 1.2]
         epsilons = [
-            (acc.poisson(acc.gaussian(s), 0.01) * 100).epsilon_at(1e-5) for s in sigmas
+            (acc.poisson(acc.gaussian(s), 0.01) * 100).pmf(cfg).epsilon_at(1e-5) for s in sigmas
         ]
         for i in range(1, len(epsilons)):
             assert epsilons[i] < epsilons[i - 1]
 
     def test_lower_sample_rate_better_privacy(self):
         """Lower q → lower epsilon (privacy amplification)."""
+        cfg = acc.DiscretizationConfig()
         rates = [0.01, 0.001, 0.0001]
         epsilons = [
-            (acc.poisson(acc.gaussian(0.8), q) * 100).epsilon_at(1e-5) for q in rates
+            (acc.poisson(acc.gaussian(0.8), q) * 100).pmf(cfg).epsilon_at(1e-5) for q in rates
         ]
         for i in range(1, len(epsilons)):
             assert epsilons[i] < epsilons[i - 1]
@@ -290,8 +294,8 @@ class TestCompositionProperties:
     def test_sublinear_composition_growth(self):
         """10x more steps → < 10x more epsilon (sublinear composition)."""
         step = acc.poisson(acc.gaussian(0.5), 0.01)
-        eps_1k = (step * 1000).epsilon_at(1e-5)
-        eps_10k = (step * 10000).epsilon_at(1e-5)
+        eps_1k = (step * 1000).cgf().epsilon_at(1e-5)
+        eps_10k = (step * 10000).cgf().epsilon_at(1e-5)
         growth = eps_10k / eps_1k
         assert 1.5 < growth < 10.0
 
@@ -300,9 +304,9 @@ class TestCompositionProperties:
         phase1 = acc.poisson(acc.gaussian(0.5), 0.01) * 100
         phase2 = acc.poisson(acc.gaussian(0.8), 0.01) * 100
         combined = phase1 | phase2
-        eps_combined = combined.epsilon_at(1e-5)
-        eps1 = phase1.epsilon_at(1e-5)
-        eps2 = phase2.epsilon_at(1e-5)
+        eps_combined = combined.cgf().epsilon_at(1e-5)
+        eps1 = phase1.cgf().epsilon_at(1e-5)
+        eps2 = phase2.cgf().epsilon_at(1e-5)
         assert eps_combined > max(eps1, eps2)
 
     def test_accumulate_in_loop(self):

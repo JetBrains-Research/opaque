@@ -1,10 +1,9 @@
 """DpProcess: stateless composable DP process algebra.
 
 Mechanism constructors store parameters as frozen-dataclass fields.
-The PLD is computed on demand via the ``pld()`` method, which is automatically
-cached via ``@lru_cache`` on each implementation.  Use
-:func:`~opaque.accounting.composition.cached` to increase cache size or as
-a merge barrier.
+The PLD is materialized on demand via ``pmf(config)`` (discretized grid)
+or ``cgf()`` (saddle-point / Lugannani-Rice).  Privacy metrics live on
+the returned :class:`Pld` object, not on DpProcess itself.
 
 Composition Optimizations
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -38,9 +37,12 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import fields
-from typing import TypeAlias
+from typing import TYPE_CHECKING, TypeAlias
 
 from . import opaque_accounting as _native
+
+if TYPE_CHECKING:
+    from opaque_accounting.discretization import DiscretizationConfig
 
 Pld: TypeAlias = _native.Pld
 
@@ -52,25 +54,29 @@ _PROCESS_REGISTRY: dict[str, type[DpProcess]] = {}
 
 
 class DpProcess(ABC):
-    """A differential privacy process backed by a PLD.
+    """A differential privacy process — pure structural node.
 
-    Abstract base class for all mechanisms.  Subclasses implement
-    :meth:`pld` to compute the Privacy Loss Distribution on demand.
-    Results are automatically cached via ``@lru_cache`` on each
-    implementation.
+    Stores mechanism parameters as frozen-dataclass fields.
+    Materialize to a :class:`Pld` via :meth:`pmf` or :meth:`cgf`,
+    then query privacy metrics on the returned Pld.
 
     Supports:
 
-    - **Privacy metrics**: epsilon_at(), delta_at(), advantage(), beta_at(), risk_at()
+    - **Materialization**: ``pmf(config)`` (grid-based), ``cgf()`` (saddle-point)
     - **Composition**: ``a | b`` (heterogeneous), ``a * k`` (homogeneous)
 
     Example::
 
-        import opaque.accounting as acc
+        import opaque_accounting as acc
 
         step = acc.poisson(acc.gaussian(1.1), 0.01)
         training = step * 1000
-        eps = training.epsilon_at(1e-5)
+
+        # CGF path (fast, no grid):
+        eps = training.cgf().epsilon_at(1e-5)
+
+        # PMF path (grid-based, exact up to discretization):
+        eps = training.pmf(acc.DiscretizationConfig()).epsilon_at(1e-5)
     """
 
     def __init_subclass__(cls, **kwargs: object) -> None:
@@ -79,27 +85,34 @@ class DpProcess(ABC):
         _PROCESS_REGISTRY[cls.__name__] = cls
 
     @abstractmethod
-    def pld(
-        self,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
-        max_grid_size: int | None = None,
-    ) -> Pld:
-        """Compute the Privacy Loss Distribution.
-
-        Results are automatically cached via ``@lru_cache`` on each
-        implementation.  Use :func:`~opaque.accounting.composition.cached`
-        to increase cache size or as a merge barrier.
+    def pmf(self, config: DiscretizationConfig) -> Pld:
+        """Materialize to a PMF-backed (discretized grid) PLD.
 
         Args:
-            discretization: Grid spacing for PLD (query-time override).
-            log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
-            pessimistic_estimate: Whether to use pessimistic rounding (query-time override).
-            max_grid_size: Maximum grid size before coarsening (query-time override).
+            config: Discretization parameters (grid spacing, truncation, etc.).
         """
         ...
+
+    def cgf(self) -> Pld:
+        """Materialize to a CGF-backed PLD (no grid, O(1) composition).
+
+        Uses Lugannani-Rice saddle-point approximation for
+        delta_at/epsilon_at/advantage.  For beta_at/risk_at, the CGF
+        auto-materializes to PMF on demand.
+
+        Not all mechanisms support CGF. Raises :exc:`NotImplementedError`
+        for mechanisms without an analytical CGF (e.g., rectified_gaussian).
+
+        Example::
+
+            proc = acc.poisson(acc.gaussian(1.1), 0.01) * 1000
+            eps = proc.cgf().epsilon_at(1e-5)  # fast, no grid
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not have a CGF implementation"
+        )
+
+    # -- Serialization -------------------------------------------------------
 
     def state_dict(self) -> dict[str, object]:
         """Serialize this process into a plain dict.
@@ -164,152 +177,6 @@ class DpProcess(ABC):
 
         # Instantiate using dataclass constructor
         return process_cls(**data)
-
-    # -- Privacy metrics (compute PLD each time) -----------------------------
-
-    def epsilon_at(
-        self,
-        delta: float,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
-        max_grid_size: int | None = None,
-    ) -> float:
-        """Smallest ε achieving (ε, δ)-DP.
-
-        Args:
-            delta: Failure probability.
-            discretization: Grid spacing (query-time override).
-            log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
-            pessimistic_estimate: Whether to use pessimistic rounding (query-time override).
-            max_grid_size: Maximum grid size before coarsening (query-time override).
-        """
-        return self.pld(
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
-            max_grid_size=max_grid_size,
-        ).epsilon_at(delta)
-
-    def delta_at(
-        self,
-        epsilon: float,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
-        max_grid_size: int | None = None,
-    ) -> float:
-        """Smallest δ achieving (ε, δ)-DP.
-
-        Args:
-            epsilon: Privacy budget.
-            discretization: Grid spacing (query-time override).
-            log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
-            pessimistic_estimate: Whether to use pessimistic rounding (query-time override).
-            max_grid_size: Maximum grid size before coarsening (query-time override).
-        """
-        return self.pld(
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
-            max_grid_size=max_grid_size,
-        ).delta_at(epsilon)
-
-    def advantage(
-        self,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
-        max_grid_size: int | None = None,
-    ) -> float:
-        """Total-variation advantage (f-DP).
-
-        Args:
-            discretization: Grid spacing (query-time override).
-            log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
-            pessimistic_estimate: Whether to use pessimistic rounding (query-time override).
-            max_grid_size: Maximum grid size before coarsening (query-time override).
-        """
-        return self.pld(
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
-            max_grid_size=max_grid_size,
-        ).advantage()
-
-    def beta_at(
-        self,
-        alpha: float,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
-        max_grid_size: int | None = None,
-    ) -> float:
-        """Type-II error at given Type-I error α.
-
-        Args:
-            alpha: Type-I error rate.
-            discretization: Grid spacing (query-time override).
-            log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
-            pessimistic_estimate: Whether to use pessimistic rounding (query-time override).
-            max_grid_size: Maximum grid size before coarsening (query-time override).
-        """
-        return self.pld(
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
-            max_grid_size=max_grid_size,
-        ).beta_at(alpha)
-
-    def risk_at(
-        self,
-        prior: float,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
-        max_grid_size: int | None = None,
-    ) -> float:
-        """Bayes risk under optimal adversary.
-
-        Args:
-            prior: Prior probability.
-            discretization: Grid spacing (query-time override).
-            log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
-            pessimistic_estimate: Whether to use pessimistic rounding (query-time override).
-            max_grid_size: Maximum grid size before coarsening (query-time override).
-        """
-        return self.pld(
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
-            max_grid_size=max_grid_size,
-        ).risk_at(prior)
-
-    # -- CGF path (explicit opt-in) -------------------------------------------
-
-    def cgf(self) -> Pld:
-        """Return a CGF-backed PLD (no grid, O(1) composition).
-
-        The CGF (Cumulant Generating Function) path uses Lugannani-Rice
-        saddle-point approximation for delta_at/epsilon_at/advantage.
-        For beta_at/risk_at, the CGF auto-materializes to PMF on demand.
-
-        Not all mechanisms support CGF. Raises :exc:`NotImplementedError`
-        for mechanisms without an analytical CGF (e.g., rectified_gaussian).
-
-        Example::
-
-            proc = acc.poisson(acc.gaussian(1.1), 0.01) * 1000
-            eps = proc.cgf().epsilon_at(1e-5)  # fast, no grid
-        """
-        raise NotImplementedError(
-            f"{type(self).__name__} does not have a CGF implementation"
-        )
 
     # -- Composition operators -----------------------------------------------
 

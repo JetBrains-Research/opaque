@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from .. import opaque_accounting as _native
 
 from opaque_accounting.base import DpProcess, Pld
+from opaque_accounting.discretization import DiscretizationConfig
 from opaque_accounting.mechanisms.gaussian import Gaussian
 from opaque_accounting.transformations.adaclip import AdaClip
 
@@ -25,23 +26,7 @@ class TruncatedPoisson(DpProcess):
     dataset_size: int
 
     @functools.lru_cache(maxsize=8)
-    def pld(
-        self,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
-        max_grid_size: int | None = None,
-    ) -> Pld:
-        from opaque_accounting.discretization import get_discretization
-
-        config = get_discretization(
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
-            max_grid_size=max_grid_size,
-        )
-
+    def pmf(self, config: DiscretizationConfig) -> Pld:
         match self.inner:
             case Gaussian(noise_multiplier=nm):
                 return _native.truncated_poisson_gaussian_pld(
@@ -79,13 +64,10 @@ def truncated_poisson(
     sampling can produce larger batches. This gives tighter privacy bounds than
     standard Poisson subsampling.
 
-    **Use this for production DP-SGD** when you have a fixed batch size limit.
-
     Args:
-        inner: The base Gaussian mechanism (from :func:`gaussian`) or
-            an :func:`adaclip` transform applied to a Gaussian.
+        inner: The base Gaussian mechanism or an :func:`adaclip` transform.
         sample_rate: Probability of including each example (batch_size / dataset_size).
-        batch_size_cap: Maximum batch size (actual batches are capped at this value).
+        batch_size_cap: Maximum batch size.
         dataset_size: Total number of examples in the dataset.
 
     Returns:
@@ -93,13 +75,11 @@ def truncated_poisson(
 
     Example::
 
-        # CIFAR-10: n=50k, batch=250, σ=0.8
         n = 50_000
         batch = 250
-        g = acc.gaussian(0.8)
-        step = acc.truncated_poisson(g, batch / n, batch, n)
+        step = acc.truncated_poisson(acc.gaussian(0.8), batch / n, batch, n)
         training = step * 1000
-        eps = training.epsilon_at(1e-5)
+        eps = training.pmf(acc.DiscretizationConfig()).epsilon_at(1e-5)
     """
     if not isinstance(inner, (Gaussian, AdaClip)):
         raise TypeError(

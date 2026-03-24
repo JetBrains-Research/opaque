@@ -21,9 +21,7 @@ from opaque_accounting.base import (
     DpProcess,
     Pld,
 )
-from opaque_accounting.discretization import (
-    get_discretization,
-)
+from opaque_accounting.discretization import DiscretizationConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,12 +57,7 @@ class BltMf(DpProcess):
 
     @functools.lru_cache(maxsize=1)
     def sensitivity(self) -> float:
-        """L2 sensitivity under the configured participation pattern.
-
-        For single participation (min_sep=1, max_participations=1), this
-        is the maximum column norm of the BLT encoder matrix.  For
-        min-sep participation, uses the min-sep sensitivity computation.
-        """
+        """L2 sensitivity under the configured participation pattern."""
         from opaque.noise.matrix_factorization.buffered_toeplitz import (
             sensitivity_squared,
             toeplitz_coefs,
@@ -84,10 +77,8 @@ class BltMf(DpProcess):
         )
 
         if k == 1:
-            # Single participation: closed-form BLT sensitivity
             sens_sq = sensitivity_squared(blt, n=self.n_steps)
         else:
-            # Min-sep participation: via Toeplitz coefficients
             coefs = toeplitz_coefs(blt, self.n_steps)
             sens_sq = minsep_sensitivity_squared(
                 strategy_coef=coefs,
@@ -99,20 +90,7 @@ class BltMf(DpProcess):
         return float(sens_sq.sqrt())
 
     @functools.lru_cache(maxsize=8)
-    def pld(
-        self,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
-        max_grid_size: int | None = None,
-    ) -> Pld:
-        config = get_discretization(
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
-            max_grid_size=max_grid_size,
-        )
+    def pmf(self, config: DiscretizationConfig) -> Pld:
         return _native.mf_gaussian_pld(
             self.noise_multiplier,
             self.sensitivity(),
@@ -131,10 +109,6 @@ def blt_mf(
 ) -> BltMf:
     """BLT mechanism — Buffered Linear Toeplitz correlated noise.
 
-    Creates a privacy accounting process for the BLT mechanism.  The BLT
-    encoder is optimized internally for the given participation pattern
-    and the sensitivity is computed from the result.
-
     Args:
         noise_multiplier: Raw noise standard deviation sigma. Must be positive.
         n_steps: Number of training iterations. Must be >= 1.
@@ -148,10 +122,8 @@ def blt_mf(
 
     Example::
 
-        import opaque.accounting as acc
-
         proc = acc.blt_mf(noise_multiplier=1.0, n_steps=1000)
-        eps = proc.epsilon_at(1e-5)
+        eps = proc.pmf(acc.DiscretizationConfig()).epsilon_at(1e-5)
     """
     if noise_multiplier <= 0:
         raise ValueError(f"noise_multiplier must be positive, got {noise_multiplier}")

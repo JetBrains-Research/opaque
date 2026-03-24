@@ -6,6 +6,7 @@ import functools
 from dataclasses import dataclass
 
 from opaque_accounting.base import DpProcess, Pld
+from opaque_accounting.discretization import DiscretizationConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,17 +24,5 @@ class Repeated(DpProcess):
         return self.inner.cgf().self_compose(self.count)
 
     @functools.lru_cache(maxsize=8)
-    def pld(
-        self,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
-        max_grid_size: int | None = None,
-    ) -> Pld:
-        return self.inner.pld(
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
-            max_grid_size=max_grid_size,
-        ).self_compose(self.count)
+    def pmf(self, config: DiscretizationConfig) -> Pld:
+        return self.inner.pmf(config).self_compose(self.count)

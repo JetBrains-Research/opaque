@@ -29,8 +29,7 @@ import riskcal.analysis as rc_analysis  # noqa: E402
 from dp_accounting.pld import privacy_loss_distribution as pld_lib  # noqa: E402
 
 import opaque_accounting as acc  # noqa: E402
-from opaque_accounting import calibration as cal  # noqa: E402
-from opaque_accounting.discretization import get_discretization  # noqa: E402
+from opaque_accounting import DiscretizationConfig, calibration as cal  # noqa: E402
 
 # ============================================================================
 # Helpers
@@ -85,7 +84,7 @@ class TestGaussianEpsilon:
     @pytest.mark.parametrize("sigma", SIGMAS)
     @pytest.mark.parametrize("delta", DELTAS)
     def test_epsilon(self, sigma, delta):
-        ours = acc.gaussian(sigma).epsilon_at(delta)
+        ours = acc.gaussian(sigma).cgf().epsilon_at(delta)
         ref = _ref_epsilon(sigma, delta)
         assert ours == pytest.approx(ref, rel=1e-8), (
             f"Gaussian(σ={sigma}) eps@δ={delta}: ours={ours}, ref={ref}"
@@ -98,8 +97,8 @@ class TestGaussianDelta:
     @pytest.mark.parametrize("sigma", [0.3, 0.5, 0.8, 1.2])
     def test_delta(self, sigma):
         # Pick an epsilon value in a reasonable range
-        eps = acc.gaussian(sigma).epsilon_at(1e-5) * 0.8
-        ours = acc.gaussian(sigma).delta_at(eps)
+        eps = acc.gaussian(sigma).cgf().epsilon_at(1e-5) * 0.8
+        ours = acc.gaussian(sigma).cgf().delta_at(eps)
         ref = _ref_delta(sigma, eps)
         # delta_at has slightly lower precision than epsilon_at due to
         # different internal search/interpolation paths; rel~1e-7 is expected.
@@ -120,7 +119,7 @@ class TestPoissonEpsilon:
     @pytest.mark.parametrize("q", SAMPLE_RATES)
     @pytest.mark.parametrize("steps", [10, 50, 200, 500, 1000])
     def test_epsilon(self, sigma, q, steps):
-        ours = (acc.poisson(acc.gaussian(sigma), q) * steps).epsilon_at(1e-5)
+        ours = (acc.poisson(acc.gaussian(sigma), q) * steps).cgf().epsilon_at(1e-5)
         ref = _ref_epsilon(sigma, 1e-5, sampling_prob=q, steps=steps)
         assert ours == pytest.approx(ref, abs=ATOL), (
             f"Poisson(G({sigma}),{q})*{steps} eps@1e-5: ours={ours}, ref={ref}"
@@ -133,7 +132,7 @@ class TestPoissonHighSteps:
     @pytest.mark.parametrize("sigma", [0.8, 1.2])
     @pytest.mark.parametrize("q", [0.001, 0.0001])
     def test_3000_steps(self, sigma, q):
-        ours = (acc.poisson(acc.gaussian(sigma), q) * 3000).epsilon_at(1e-5)
+        ours = (acc.poisson(acc.gaussian(sigma), q) * 3000).cgf().epsilon_at(1e-5)
         ref = _ref_epsilon(sigma, 1e-5, sampling_prob=q, steps=3000)
         assert ours == pytest.approx(ref, abs=ATOL), (
             f"Poisson(G({sigma}),{q})*3000 eps@1e-5: ours={ours}, ref={ref}"
@@ -147,8 +146,8 @@ class TestPoissonDelta:
     @pytest.mark.parametrize("q", [0.001, 0.0001])
     @pytest.mark.parametrize("steps", [100, 500])
     def test_delta(self, sigma, q, steps):
-        eps = (acc.poisson(acc.gaussian(sigma), q) * steps).epsilon_at(1e-5) * 0.8
-        ours = (acc.poisson(acc.gaussian(sigma), q) * steps).delta_at(eps)
+        eps = (acc.poisson(acc.gaussian(sigma), q) * steps).cgf().epsilon_at(1e-5) * 0.8
+        ours = (acc.poisson(acc.gaussian(sigma), q) * steps).cgf().delta_at(eps)
         ref = _ref_delta(sigma, eps, sampling_prob=q, steps=steps)
         assert ours == pytest.approx(ref, abs=ATOL), (
             f"Poisson(G({sigma}),{q})*{steps} delta@ε={eps}: ours={ours}, ref={ref}"
@@ -169,7 +168,7 @@ class TestTripleEpsilon:
     def test_triple_epsilon(self, sigma, q, steps):
         # opaque
         proc = acc.poisson(acc.gaussian(sigma), q) * steps
-        eps_ours = proc.epsilon_at(1e-5)
+        eps_ours = proc.cgf().epsilon_at(1e-5)
 
         # dp_accounting
         ref_pld = _ref_gaussian_pld(sigma, q).self_compose(steps)
@@ -179,7 +178,7 @@ class TestTripleEpsilon:
         # At alpha=0, beta = 1-advantage, so advantage = 1-beta
         # We verify riskcal and dp_accounting agree on advantage
         adv_riskcal = rc_analysis.get_advantage_from_pld(ref_pld)
-        adv_ours = proc.advantage()
+        adv_ours = proc.cgf().advantage()
 
         assert eps_ours == pytest.approx(eps_ref, abs=ATOL)
         assert adv_ours == pytest.approx(adv_riskcal, abs=ATOL)
@@ -192,7 +191,7 @@ class TestTripleBeta:
     @pytest.mark.parametrize("alpha", [0.01, 0.05, 0.1])
     def test_beta_single_gaussian(self, sigma, alpha):
         proc = acc.gaussian(sigma)
-        beta_ours = proc.beta_at(alpha)
+        beta_ours = proc.cgf().beta_at(alpha)
 
         ref_pld = _ref_gaussian_pld(sigma)
         beta_riskcal = float(rc_analysis.get_beta_from_pld(ref_pld, alpha=alpha))
@@ -207,7 +206,7 @@ class TestTripleBeta:
     @pytest.mark.parametrize("alpha", [0.01, 0.1])
     def test_beta_poisson(self, sigma, q, steps, alpha):
         proc = acc.poisson(acc.gaussian(sigma), q) * steps
-        beta_ours = proc.beta_at(alpha)
+        beta_ours = proc.cgf().beta_at(alpha)
 
         ref_pld = _ref_gaussian_pld(sigma, q).self_compose(steps)
         beta_riskcal = float(rc_analysis.get_beta_from_pld(ref_pld, alpha=alpha))
@@ -224,7 +223,7 @@ class TestTripleAdvantage:
     @pytest.mark.parametrize("sigma", SIGMAS)
     def test_gaussian_advantage(self, sigma):
         proc = acc.gaussian(sigma)
-        adv_ours = proc.advantage()
+        adv_ours = proc.cgf().advantage()
 
         ref_pld = _ref_gaussian_pld(sigma)
         adv_riskcal = rc_analysis.get_advantage_from_pld(ref_pld)
@@ -238,7 +237,7 @@ class TestTripleAdvantage:
     @pytest.mark.parametrize("steps", [100, 500])
     def test_poisson_advantage(self, sigma, q, steps):
         proc = acc.poisson(acc.gaussian(sigma), q) * steps
-        adv_ours = proc.advantage()
+        adv_ours = proc.cgf().advantage()
 
         ref_pld = _ref_gaussian_pld(sigma, q).self_compose(steps)
         adv_riskcal = rc_analysis.get_advantage_from_pld(ref_pld)
@@ -253,7 +252,7 @@ class TestTripleRisk:
     @pytest.mark.parametrize("prior", [0.3, 0.5, 0.7])
     def test_gaussian_risk(self, sigma, prior):
         proc = acc.gaussian(sigma)
-        risk_ours = proc.risk_at(prior)
+        risk_ours = proc.cgf().risk_at(prior)
 
         ref_pld = _ref_gaussian_pld(sigma)
         risk_riskcal = float(rc_analysis.get_bayes_risk_from_pld(ref_pld, prior))
@@ -285,9 +284,10 @@ class TestTruncatedPoissonValidity:
         steps = 500
         g = acc.gaussian(sigma)
         # cap=50 (heavy truncation: expected_batch=100, cap < expected)
-        eps_small_cap = (acc.truncated_poisson(g, q, 50, n) * steps).epsilon_at(1e-5)
+        dc = DiscretizationConfig()
+        eps_small_cap = (acc.truncated_poisson(g, q, 50, n) * steps).pmf(dc).epsilon_at(1e-5)
         # cap=500 (light truncation: expected_batch=100, cap >> expected)
-        eps_large_cap = (acc.truncated_poisson(g, q, 500, n) * steps).epsilon_at(1e-5)
+        eps_large_cap = (acc.truncated_poisson(g, q, 500, n) * steps).pmf(dc).epsilon_at(1e-5)
         assert eps_large_cap <= eps_small_cap + 1e-10, (
             f"Larger cap should give ≤ epsilon: cap=500 → {eps_large_cap}, cap=50 → {eps_small_cap}"
         )
@@ -298,7 +298,7 @@ class TestTruncatedPoissonValidity:
         g = acc.gaussian(sigma)
         epsilons = []
         for steps in [10, 100, 500, 1000]:
-            eps = (acc.truncated_poisson(g, 0.005, 250, 50_000) * steps).epsilon_at(
+            eps = (acc.truncated_poisson(g, 0.005, 250, 50_000) * steps).pmf(DiscretizationConfig()).epsilon_at(
                 1e-5
             )
             epsilons.append(eps)
@@ -309,17 +309,18 @@ class TestTruncatedPoissonValidity:
         """TruncatedPoisson epsilon > 0 for non-trivial mechanism."""
         g = acc.gaussian(0.8)
         proc = acc.truncated_poisson(g, 0.005, 250, 50_000) * 100
-        assert proc.epsilon_at(1e-5) > 0
+        assert proc.pmf(DiscretizationConfig()).epsilon_at(1e-5) > 0
 
     def test_fallback_when_no_truncation(self):
         """When batch_size_cap >> expected batch, result ≈ standard Poisson."""
         # expected_batch = 100000 * 0.001 = 100, cap = 100000 (no truncation)
         g = acc.gaussian(0.8)
         steps = 500
+        dc = DiscretizationConfig()
         eps_trunc = (
             acc.truncated_poisson(g, 0.001, 100_000, 100_000) * steps
-        ).epsilon_at(1e-5)
-        eps_poisson = (acc.poisson(g, 0.001) * steps).epsilon_at(1e-5)
+        ).pmf(dc).epsilon_at(1e-5)
+        eps_poisson = (acc.poisson(g, 0.001) * steps).cgf().epsilon_at(1e-5)
         assert eps_trunc == pytest.approx(eps_poisson, rel=1e-6)
 
 
@@ -336,13 +337,14 @@ class TestParallelPoissonCrossValidation:
     @pytest.mark.parametrize("num_workers", [2, 4])
     def test_parallel_poisson_vs_reference(self, sigma, q, num_workers):
         """ParallelPoisson(G(σ), q, k) should give sensible epsilon."""
+        dc = DiscretizationConfig()
         proc = (
             acc.parallel_poisson(
                 acc.gaussian(sigma), sample_rate=q, num_workers=num_workers
             )
             * 500
         )
-        eps = proc.epsilon_at(1e-5)
+        eps = proc.pmf(dc).epsilon_at(1e-5)
 
         # Must be finite and positive
         assert math.isfinite(eps) and eps > 0
@@ -350,7 +352,7 @@ class TestParallelPoissonCrossValidation:
         # Compare with non-parallel: parallel sampling should account for duplication
         # (when same example appears in multiple workers)
         proc_no_acc = acc.poisson(acc.gaussian(sigma), q) * 500
-        eps_no_acc = proc_no_acc.epsilon_at(1e-5)
+        eps_no_acc = proc_no_acc.cgf().epsilon_at(1e-5)
         # Both should be reasonable
         assert math.isfinite(eps_no_acc) and eps_no_acc > 0
 
@@ -383,9 +385,9 @@ class TestAdaClipCrossValidation:
         z_eff = 1.0 / s
 
         # Verify effective noise via PLD
-        config = get_discretization()
-        ref = _native.gaussian_pld(z_eff, config.to_native())
-        assert proc.epsilon_at(1e-5) == pytest.approx(ref.epsilon_at(1e-5), rel=1e-12)
+        dc = DiscretizationConfig()
+        ref = _native.gaussian_pld(z_eff, dc.to_native())
+        assert proc.pmf(dc).epsilon_at(1e-5) == pytest.approx(ref.epsilon_at(1e-5), rel=1e-12)
 
         from opaque_accounting.transformations import AdaClip
 
@@ -394,15 +396,16 @@ class TestAdaClipCrossValidation:
     @pytest.mark.parametrize("batch_size", [200, 1000, 2000])
     def test_adaclip_increases_privacy_cost(self, batch_size):
         """AdaClip reduces effective noise → higher epsilon (more privacy cost)."""
+        dc = DiscretizationConfig()
         g = acc.gaussian(1.0)
         a = acc.adaclip(g, batch_size=batch_size)
         # z_eff < sigma so epsilon should be larger
-        assert a.epsilon_at(1e-5) > g.epsilon_at(1e-5)
+        assert a.pmf(dc).epsilon_at(1e-5) > g.cgf().epsilon_at(1e-5)
 
     def test_adaclip_composed_with_poisson(self):
         """AdaClip result composes with poisson() normally."""
         step = acc.poisson(acc.adaclip(acc.gaussian(1.1), batch_size=1000), 0.01) * 1000
-        eps = step.epsilon_at(1e-5)
+        eps = step.pmf(DiscretizationConfig()).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
 
@@ -417,10 +420,10 @@ class TestMetricsConsistency:
     @pytest.mark.parametrize("sigma", [0.3, 0.5, 0.8, 1.2])
     def test_epsilon_delta_roundtrip(self, sigma):
         """epsilon_at(δ) -> delta_at(ε) ≈ δ."""
-        proc = acc.gaussian(sigma)
+        cgf = acc.gaussian(sigma).cgf()
         delta = 1e-5
-        eps = proc.epsilon_at(delta)
-        delta_back = proc.delta_at(eps)
+        eps = cgf.epsilon_at(delta)
+        delta_back = cgf.delta_at(eps)
         assert delta_back == pytest.approx(delta, abs=ATOL), (
             f"Roundtrip failed: δ={delta} → ε={eps} → δ'={delta_back}"
         )
@@ -428,9 +431,9 @@ class TestMetricsConsistency:
     @pytest.mark.parametrize("sigma", [0.3, 0.5, 0.8, 1.2])
     def test_advantage_equals_delta_at_zero(self, sigma):
         """advantage() == delta_at(0) (by definition of f-DP advantage)."""
-        proc = acc.gaussian(sigma)
-        adv = proc.advantage()
-        d0 = proc.delta_at(0.0)
+        cgf = acc.gaussian(sigma).cgf()
+        adv = cgf.advantage()
+        d0 = cgf.delta_at(0.0)
         assert adv == pytest.approx(d0, abs=1e-10), (
             f"advantage={adv} != delta_at(0)={d0}"
         )
@@ -438,17 +441,17 @@ class TestMetricsConsistency:
     @pytest.mark.parametrize("sigma", [0.5, 0.8, 1.2])
     def test_advantage_poisson_equals_delta_at_zero(self, sigma):
         """advantage() == delta_at(0) for Poisson-subsampled too."""
-        proc = acc.poisson(acc.gaussian(sigma), 0.01) * 500
-        adv = proc.advantage()
-        d0 = proc.delta_at(0.0)
+        cgf = (acc.poisson(acc.gaussian(sigma), 0.01) * 500).cgf()
+        adv = cgf.advantage()
+        d0 = cgf.delta_at(0.0)
         assert adv == pytest.approx(d0, abs=1e-10)
 
     @pytest.mark.parametrize("sigma", [0.5, 0.8, 1.2])
     def test_risk_bounds(self, sigma):
         """Risk must be in [0, min(prior, 1-prior)] for optimal adversary."""
-        proc = acc.gaussian(sigma)
+        cgf = acc.gaussian(sigma).cgf()
         for prior in [0.3, 0.5, 0.7]:
-            r = proc.risk_at(prior)
+            r = cgf.risk_at(prior)
             assert 0 <= r <= min(prior, 1 - prior) + 1e-10, (
                 f"Risk out of bounds: risk={r}, prior={prior}"
             )
@@ -456,10 +459,10 @@ class TestMetricsConsistency:
     @pytest.mark.parametrize("sigma", [0.5, 0.8, 1.2])
     def test_risk_symmetry(self, sigma):
         """risk_at(p) == risk_at(1-p) for symmetric mechanisms."""
-        proc = acc.gaussian(sigma)
+        cgf = acc.gaussian(sigma).cgf()
         for prior in [0.2, 0.3, 0.4]:
-            r1 = proc.risk_at(prior)
-            r2 = proc.risk_at(1.0 - prior)
+            r1 = cgf.risk_at(prior)
+            r2 = cgf.risk_at(1.0 - prior)
             assert r1 == pytest.approx(r2, abs=1e-10), (
                 f"Risk asymmetry: risk({prior})={r1}, risk({1 - prior})={r2}"
             )
@@ -467,9 +470,9 @@ class TestMetricsConsistency:
     @pytest.mark.parametrize("sigma", [0.5, 0.8, 1.2])
     def test_beta_monotone_in_alpha(self, sigma):
         """beta_at(α) must be non-increasing in α."""
-        proc = acc.gaussian(sigma)
+        cgf = acc.gaussian(sigma).cgf()
         alphas = [0.001, 0.01, 0.05, 0.1, 0.2, 0.5]
-        betas = [proc.beta_at(a) for a in alphas]
+        betas = [cgf.beta_at(a) for a in alphas]
         for i in range(len(betas) - 1):
             assert betas[i] >= betas[i + 1] - 1e-10, (
                 f"Beta not monotone: β({alphas[i]})={betas[i]} > β({alphas[i + 1]})={betas[i + 1]}"
@@ -477,9 +480,10 @@ class TestMetricsConsistency:
 
     def test_identity_zero_epsilon(self):
         """Identity mechanism should have ε≈0 for any δ."""
-        proc = acc.identity()
-        assert proc.epsilon_at(1e-5) == pytest.approx(0.0, abs=1e-8)
-        assert proc.epsilon_at(1e-10) == pytest.approx(0.0, abs=1e-8)
+        dc = DiscretizationConfig()
+        pmf = acc.identity().pmf(dc)
+        assert pmf.epsilon_at(1e-5) == pytest.approx(0.0, abs=1e-8)
+        assert pmf.epsilon_at(1e-10) == pytest.approx(0.0, abs=1e-8)
 
 
 # ============================================================================
@@ -494,7 +498,7 @@ class TestCompositionCrossValidation:
         """Compose different mechanisms: (G(0.5)*100 | G(1.0)*200)."""
         # opaque
         proc = (acc.gaussian(0.5) * 100) | (acc.gaussian(1.0) * 200)
-        eps_ours = proc.epsilon_at(1e-5)
+        eps_ours = proc.cgf().epsilon_at(1e-5)
 
         # dp_accounting
         pld_a = _ref_gaussian_pld(0.5).self_compose(100)
@@ -511,7 +515,7 @@ class TestCompositionCrossValidation:
         p1 = acc.poisson(acc.gaussian(0.8), 0.001) * 500
         p2 = acc.poisson(acc.gaussian(0.8), 0.0005) * 500
         proc = p1 | p2
-        eps_ours = proc.epsilon_at(1e-5)
+        eps_ours = proc.cgf().epsilon_at(1e-5)
 
         # dp_accounting
         pld1 = _ref_gaussian_pld(0.8, 0.001).self_compose(500)
@@ -527,8 +531,8 @@ class TestCompositionCrossValidation:
             acc.gaussian(0.8), 0.001
         )
         proc_repeat = acc.poisson(acc.gaussian(0.8), 0.001) * 2
-        eps_compose = proc_compose.epsilon_at(1e-5)
-        eps_repeat = proc_repeat.epsilon_at(1e-5)
+        eps_compose = proc_compose.cgf().epsilon_at(1e-5)
+        eps_repeat = proc_repeat.cgf().epsilon_at(1e-5)
         assert eps_compose == pytest.approx(eps_repeat, abs=1e-10)
 
 
@@ -549,7 +553,7 @@ class TestCalibrationCrossValidation:
 
         result = cal.calibrate(
             cal.epsilon_budget(target_eps, delta=delta),
-            lambda nm: acc.poisson(acc.gaussian(nm), q) * steps,
+            lambda nm: (acc.poisson(acc.gaussian(nm), q) * steps).pmf(DiscretizationConfig()),
             0.1,
             1.2,
         )
@@ -563,7 +567,7 @@ class TestCalibrationCrossValidation:
         """Calibrated noise → check advantage against riskcal."""
         result = cal.calibrate(
             cal.advantage_budget(0.15),
-            lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 500,
+            lambda nm: (acc.poisson(acc.gaussian(nm), 0.01) * 500).pmf(DiscretizationConfig()),
             0.3,
             1.2,
         )
@@ -586,35 +590,35 @@ class TestNumericalStability:
     def test_smallest_sigma(self):
         """σ=0.1 (boundary, high privacy loss) — should compute without overflow."""
         proc = acc.gaussian(0.1)
-        eps = proc.epsilon_at(1e-5)
+        eps = proc.cgf().epsilon_at(1e-5)
         assert math.isfinite(eps)
         assert eps > 50  # very high epsilon expected
 
     def test_largest_sigma(self):
         """σ=1.2 (boundary, low privacy loss) — should compute without underflow."""
         proc = acc.gaussian(1.2)
-        eps = proc.epsilon_at(1e-5)
+        eps = proc.cgf().epsilon_at(1e-5)
         assert math.isfinite(eps)
         assert eps < 5  # relatively low epsilon
 
     def test_very_small_delta(self):
         """δ=1e-10 — tight delta should work."""
-        proc = acc.gaussian(1.0)
-        eps = proc.epsilon_at(1e-10)
+        cgf = acc.gaussian(1.0).cgf()
+        eps = cgf.epsilon_at(1e-10)
         assert math.isfinite(eps)
-        assert eps > proc.epsilon_at(1e-5)  # tighter delta → higher epsilon
+        assert eps > cgf.epsilon_at(1e-5)  # tighter delta → higher epsilon
 
     def test_very_small_sample_rate(self):
         """q=1e-5 — very small batches."""
         proc = acc.poisson(acc.gaussian(1.0), 1e-5) * 1000
-        eps = proc.epsilon_at(1e-5)
+        eps = proc.cgf().epsilon_at(1e-5)
         assert math.isfinite(eps)
         assert eps > 0
 
     def test_many_steps(self):
         """3000 steps — verify no accumulation of error."""
         proc = acc.poisson(acc.gaussian(0.8), 0.001) * 3000
-        eps_ours = proc.epsilon_at(1e-5)
+        eps_ours = proc.cgf().epsilon_at(1e-5)
         eps_ref = _ref_epsilon(0.8, 1e-5, sampling_prob=0.001, steps=3000)
         assert eps_ours == pytest.approx(eps_ref, abs=ATOL)
 
@@ -623,12 +627,12 @@ class TestNumericalStability:
         g = acc.gaussian(0.8)
         step = acc.poisson(g, 0.001)
         repeated = step * 1000
-        eps_repeated = repeated.epsilon_at(1e-5)
+        eps_repeated = repeated.cgf().epsilon_at(1e-5)
 
         # Same via composition loop (small)
         composed = step | step | step | step | step  # 5 steps
         composed = composed * 200  # 1000 steps
-        eps_composed = composed.epsilon_at(1e-5)
+        eps_composed = composed.cgf().epsilon_at(1e-5)
 
         assert eps_repeated == pytest.approx(eps_composed, abs=ATOL)
 
@@ -638,13 +642,13 @@ class TestNumericalStability:
         epsilons = []
         for steps in [1, 10, 50, 100, 500, 1000]:
             proc = acc.poisson(g, 0.001) * steps
-            epsilons.append(proc.epsilon_at(1e-5))
+            epsilons.append(proc.cgf().epsilon_at(1e-5))
         for i in range(len(epsilons) - 1):
             assert epsilons[i] <= epsilons[i + 1] + 1e-10
 
     def test_epsilon_monotone_in_noise(self):
         """More noise → lower epsilon (monotonicity)."""
         sigmas = [0.1, 0.3, 0.5, 0.8, 1.0, 1.2]
-        epsilons = [acc.gaussian(s).epsilon_at(1e-5) for s in sigmas]
+        epsilons = [acc.gaussian(s).cgf().epsilon_at(1e-5) for s in sigmas]
         for i in range(len(epsilons) - 1):
             assert epsilons[i] >= epsilons[i + 1] - 1e-10

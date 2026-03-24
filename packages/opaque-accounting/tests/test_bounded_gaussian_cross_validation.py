@@ -37,6 +37,9 @@ from dp_accounting.pld import privacy_loss_distribution as pld_lib  # noqa: E402
 from scipy import integrate, stats  # noqa: E402
 
 import opaque_accounting as acc  # noqa: E402
+from opaque_accounting import DiscretizationConfig  # noqa: E402
+
+_CFG = DiscretizationConfig()
 
 # ============================================================================
 # Pure-Python δ(ε) via numerical quadrature
@@ -172,7 +175,7 @@ class TestRectifiedGaussianQuadrature:
     def test_epsilon_vs_quadrature(self, sigma, radius, delta):
         """ε from Rust PLD matches ε implied by Python quadrature δ(ε)."""
         proc = acc.rectified_gaussian(sigma, radius)
-        eps_rust = proc.epsilon_at(delta)
+        eps_rust = proc.pmf(_CFG).epsilon_at(delta)
 
         # Verify: quadrature δ at eps_rust should be ≈ delta
         delta_quad = _rectified_gaussian_delta_quadrature(sigma, radius, eps_rust)
@@ -189,11 +192,12 @@ class TestRectifiedGaussianQuadrature:
     def test_delta_at_vs_quadrature(self, sigma, radius):
         """δ(ε) from Rust PLD matches Python quadrature directly."""
         proc = acc.rectified_gaussian(sigma, radius)
+        pmf = proc.pmf(_CFG)
         # Pick a few epsilon values in a reasonable range
-        eps_max = proc.epsilon_at(1e-8)  # high ε end
-        eps_mid = proc.epsilon_at(1e-4)  # mid range
+        eps_max = pmf.epsilon_at(1e-8)  # high ε end
+        eps_mid = pmf.epsilon_at(1e-4)  # mid range
         for eps in [eps_mid, eps_max * 0.5]:
-            delta_rust = proc.delta_at(eps)
+            delta_rust = pmf.delta_at(eps)
             delta_quad = _rectified_gaussian_delta_quadrature(sigma, radius, eps)
             assert delta_rust == pytest.approx(delta_quad, rel=0.02), (
                 f"RectifiedGaussian(σ={sigma}, R={radius}): "
@@ -215,7 +219,7 @@ class TestTruncatedGaussianQuadrature:
     def test_epsilon_vs_quadrature(self, sigma, radius, delta):
         """ε from Rust PLD matches ε implied by Python quadrature δ(ε)."""
         proc = acc.truncated_gaussian(sigma, radius)
-        eps_rust = proc.epsilon_at(delta)
+        eps_rust = proc.pmf(_CFG).epsilon_at(delta)
 
         delta_quad = _truncated_gaussian_delta_quadrature(sigma, radius, eps_rust)
 
@@ -229,10 +233,11 @@ class TestTruncatedGaussianQuadrature:
     def test_delta_at_vs_quadrature(self, sigma, radius):
         """δ(ε) from Rust PLD matches Python quadrature directly."""
         proc = acc.truncated_gaussian(sigma, radius)
-        eps_max = proc.epsilon_at(1e-8)
-        eps_mid = proc.epsilon_at(1e-4)
+        pmf = proc.pmf(_CFG)
+        eps_max = pmf.epsilon_at(1e-8)
+        eps_mid = pmf.epsilon_at(1e-4)
         for eps in [eps_mid, eps_max * 0.5]:
-            delta_rust = proc.delta_at(eps)
+            delta_rust = pmf.delta_at(eps)
             delta_quad = _truncated_gaussian_delta_quadrature(sigma, radius, eps)
             assert delta_rust == pytest.approx(delta_quad, rel=0.02), (
                 f"TruncatedGaussian(σ={sigma}, R={radius}): "
@@ -253,7 +258,7 @@ class TestBoundedGaussianOrdering:
     def test_ordering_from_quadrature(self, sigma, radius):
         """δ_trunc ≤ δ_rect at the same ε, verified via quadrature."""
         # Pick epsilon that gives moderate delta for the rectified case
-        eps = acc.rectified_gaussian(sigma, radius).epsilon_at(1e-4) * 0.9
+        eps = acc.rectified_gaussian(sigma, radius).pmf(_CFG).epsilon_at(1e-4) * 0.9
 
         delta_rect = _rectified_gaussian_delta_quadrature(sigma, radius, eps)
         delta_trunc = _truncated_gaussian_delta_quadrature(sigma, radius, eps)
@@ -268,9 +273,9 @@ class TestBoundedGaussianOrdering:
     def test_ordering_from_rust(self, sigma, radius):
         """ε_trunc ≤ ε_rect ≤ ε_gauss at δ=1e-5, from Rust PLD."""
         delta = 1e-5
-        eps_gauss = acc.gaussian(sigma).epsilon_at(delta)
-        eps_rect = acc.rectified_gaussian(sigma, radius).epsilon_at(delta)
-        eps_trunc = acc.truncated_gaussian(sigma, radius).epsilon_at(delta)
+        eps_gauss = acc.gaussian(sigma).cgf().epsilon_at(delta)
+        eps_rect = acc.rectified_gaussian(sigma, radius).pmf(_CFG).epsilon_at(delta)
+        eps_trunc = acc.truncated_gaussian(sigma, radius).pmf(_CFG).epsilon_at(delta)
 
         assert eps_trunc <= eps_rect + 1e-6, (
             f"σ={sigma}, R={radius}: trunc ε={eps_trunc:.6f} > rect ε={eps_rect:.6f}"
@@ -295,7 +300,7 @@ class TestRectifiedGaussianConvergence:
     @pytest.mark.parametrize("sigma", CONVERGENCE_SIGMAS)
     @pytest.mark.parametrize("delta", CONVERGENCE_DELTAS)
     def test_epsilon_convergence(self, sigma, delta):
-        eps_rect = acc.rectified_gaussian(sigma, LARGE_RADIUS).epsilon_at(delta)
+        eps_rect = acc.rectified_gaussian(sigma, LARGE_RADIUS).pmf(_CFG).epsilon_at(delta)
         eps_ref = _ref_gaussian_epsilon(sigma, delta)
 
         # At R=50, the point masses are ~exp(-R²/2) ≈ 0, so the mechanisms
@@ -312,7 +317,7 @@ class TestTruncatedGaussianConvergence:
     @pytest.mark.parametrize("sigma", CONVERGENCE_SIGMAS)
     @pytest.mark.parametrize("delta", CONVERGENCE_DELTAS)
     def test_epsilon_convergence(self, sigma, delta):
-        eps_trunc = acc.truncated_gaussian(sigma, LARGE_RADIUS).epsilon_at(delta)
+        eps_trunc = acc.truncated_gaussian(sigma, LARGE_RADIUS).pmf(_CFG).epsilon_at(delta)
         eps_ref = _ref_gaussian_epsilon(sigma, delta)
 
         assert eps_trunc == pytest.approx(eps_ref, abs=1e-4), (
@@ -339,7 +344,7 @@ class TestPoissonRectifiedConvergence:
     def test_poisson_convergence(self, sigma, q, steps):
         eps_rect = (
             acc.poisson(acc.rectified_gaussian(sigma, LARGE_RADIUS), q) * steps
-        ).epsilon_at(1e-5)
+        ).pmf(_CFG).epsilon_at(1e-5)
         eps_ref = _ref_poisson_gaussian_epsilon(sigma, 1e-5, sample_rate=q, steps=steps)
 
         # Composed over many steps, allow slightly larger tolerance
@@ -358,7 +363,7 @@ class TestPoissonTruncatedConvergence:
     def test_poisson_convergence(self, sigma, q, steps):
         eps_trunc = (
             acc.poisson(acc.truncated_gaussian(sigma, LARGE_RADIUS), q) * steps
-        ).epsilon_at(1e-5)
+        ).pmf(_CFG).epsilon_at(1e-5)
         eps_ref = _ref_poisson_gaussian_epsilon(sigma, 1e-5, sample_rate=q, steps=steps)
 
         assert eps_trunc == pytest.approx(eps_ref, abs=1e-3), (
@@ -381,8 +386,9 @@ class TestBoundedGaussianInvariants:
         """advantage() == delta_at(0) for both mechanisms."""
         for mech_fn in [acc.rectified_gaussian, acc.truncated_gaussian]:
             proc = mech_fn(sigma, radius)
-            adv = proc.advantage()
-            d0 = proc.delta_at(0.0)
+            pmf = proc.pmf(_CFG)
+            adv = pmf.delta_at(0.0)
+            d0 = pmf.delta_at(0.0)
             assert adv == pytest.approx(d0, abs=1e-8), (
                 f"{type(proc).__name__}(σ={sigma}, R={radius}): "
                 f"advantage={adv} != delta_at(0)={d0}"
@@ -394,9 +400,10 @@ class TestBoundedGaussianInvariants:
         """epsilon_at(δ) → delta_at(ε) ≈ δ."""
         for mech_fn in [acc.rectified_gaussian, acc.truncated_gaussian]:
             proc = mech_fn(sigma, radius)
+            pmf = proc.pmf(_CFG)
             delta = 1e-5
-            eps = proc.epsilon_at(delta)
-            delta_back = proc.delta_at(eps)
+            eps = pmf.epsilon_at(delta)
+            delta_back = pmf.delta_at(eps)
             assert delta_back == pytest.approx(delta, abs=1e-6), (
                 f"{type(proc).__name__}(σ={sigma}, R={radius}): "
                 f"δ={delta} → ε={eps} → δ'={delta_back}"
@@ -407,7 +414,7 @@ class TestBoundedGaussianInvariants:
         """Larger R → higher ε (closer to unbounded Gaussian)."""
         for mech_fn in [acc.rectified_gaussian, acc.truncated_gaussian]:
             radii = [1.0, 2.0, 3.0, 5.0, 10.0]
-            epsilons = [mech_fn(sigma, r).epsilon_at(1e-5) for r in radii]
+            epsilons = [mech_fn(sigma, r).pmf(_CFG).epsilon_at(1e-5) for r in radii]
             for i in range(len(epsilons) - 1):
                 assert epsilons[i] <= epsilons[i + 1] + 1e-6, (
                     f"{mech_fn.__name__}(σ={sigma}): "
@@ -420,7 +427,7 @@ class TestBoundedGaussianInvariants:
         """Higher σ → lower ε (more noise = more private)."""
         for mech_fn in [acc.rectified_gaussian, acc.truncated_gaussian]:
             sigmas = [0.3, 0.5, 0.8, 1.0]
-            epsilons = [mech_fn(s, radius).epsilon_at(1e-5) for s in sigmas]
+            epsilons = [mech_fn(s, radius).pmf(_CFG).epsilon_at(1e-5) for s in sigmas]
             for i in range(len(epsilons) - 1):
                 assert epsilons[i] >= epsilons[i + 1] - 1e-6, (
                     f"{mech_fn.__name__}(R={radius}): "

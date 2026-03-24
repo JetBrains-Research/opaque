@@ -11,9 +11,7 @@ from opaque_accounting.base import (
     DpProcess,
     Pld,
 )
-from opaque_accounting.discretization import (
-    get_discretization,
-)
+from opaque_accounting.discretization import DiscretizationConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,20 +25,7 @@ class Gaussian(DpProcess):
         return _native.cgf_gaussian_pld(self.noise_multiplier)
 
     @functools.lru_cache(maxsize=8)
-    def pld(
-        self,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
-        max_grid_size: int | None = None,
-    ) -> Pld:
-        config = get_discretization(
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
-            max_grid_size=max_grid_size,
-        )
+    def pmf(self, config: DiscretizationConfig) -> Pld:
         return _native.gaussian_pld(self.noise_multiplier, config.to_native())
 
 
@@ -61,13 +46,10 @@ def gaussian(noise_multiplier: float) -> Gaussian:
 
         # Single Gaussian query
         proc = acc.gaussian(1.1)
-        eps = proc.epsilon_at(1e-5)
+        eps = proc.cgf().epsilon_at(1e-5)
 
         # Composed 1000 times
         training = acc.gaussian(1.1) * 1000
-        eps = training.epsilon_at(1e-5)
-
-        # Query-time discretization override
-        eps = proc.epsilon_at(1e-5, discretization=1e-3)
+        eps = training.cgf().epsilon_at(1e-5)
     """
     return Gaussian(noise_multiplier)

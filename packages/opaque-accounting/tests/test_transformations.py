@@ -21,7 +21,8 @@ class TestAdaclipConstructor:
         base = acc.gaussian(0.8)
         result = acc.adaclip(base, batch_size=1000)
         # Effective noise should reduce, so epsilon should increase.
-        assert result.epsilon_at(1e-5) > base.epsilon_at(1e-5)
+        cfg = acc.DiscretizationConfig()
+        assert result.pmf(cfg).epsilon_at(1e-5) > base.pmf(cfg).epsilon_at(1e-5)
 
     def test_rejects_non_gaussian(self):
         with pytest.raises(TypeError, match="Gaussian"):
@@ -31,8 +32,9 @@ class TestAdaclipConstructor:
         """AdaClip ε ≥ base ε (extra cost from quantile noise)."""
         base = acc.gaussian(0.8)
         ac = acc.adaclip(acc.gaussian(0.8), batch_size=1000)
-        eps_base = base.epsilon_at(1e-5)
-        eps_ac = ac.epsilon_at(1e-5)
+        cfg = acc.DiscretizationConfig()
+        eps_base = base.pmf(cfg).epsilon_at(1e-5)
+        eps_ac = ac.pmf(cfg).epsilon_at(1e-5)
         assert eps_ac >= eps_base - 1e-6
 
 
@@ -83,7 +85,7 @@ class TestEffectiveNoiseMultiplier:
             acc.gaussian(ac.effective_noise_multiplier), sample_rate=0.01
         )
 
-        eps_ac = step_ac.epsilon_at(1e-5)
-        eps_eff = step_eff.epsilon_at(1e-5)
+        eps_ac = step_ac.cgf().epsilon_at(1e-5)
+        eps_eff = step_eff.cgf().epsilon_at(1e-5)
         # Should match: both use the same z_eff
         assert abs(eps_ac - eps_eff) < 1e-6

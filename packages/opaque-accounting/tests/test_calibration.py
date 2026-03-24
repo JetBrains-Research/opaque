@@ -32,7 +32,7 @@ class TestEpsilonBudget:
     def test_evaluate(self):
         t = cal.epsilon_budget(3.0, delta=1e-5)
         proc = acc.gaussian(0.8)
-        val = t.evaluate(proc)
+        val = t.evaluate(proc.cgf())
         assert math.isfinite(val)
 
     def test_rejects_negative_epsilon(self):
@@ -117,7 +117,7 @@ class TestRiskBudget:
 
 class TestCalibrateErrors:
     def _process(self, nm):
-        return acc.poisson(acc.gaussian(nm), 0.01) * 1000
+        return (acc.poisson(acc.gaussian(nm), 0.01) * 1000).pmf(acc.DiscretizationConfig())
 
     def test_param_min_ge_max(self):
         with pytest.raises(ValueError, match="param_min"):
@@ -139,7 +139,7 @@ class TestCalibrateEpsilon:
     """Calibrate noise multiplier for target epsilon — verify roundtrip."""
 
     def _process(self, nm):
-        return acc.poisson(acc.gaussian(nm), 0.01) * 1000
+        return (acc.poisson(acc.gaussian(nm), 0.01) * 1000).pmf(acc.DiscretizationConfig())
 
     def test_basic(self):
         result = cal.calibrate(
@@ -186,7 +186,7 @@ class TestCalibrateDifferentBatchSizes:
 
         result = cal.calibrate(
             cal.epsilon_budget(5.0, delta=1e-4),
-            lambda nm: acc.poisson(acc.gaussian(nm), q) * 1000,
+            lambda nm: (acc.poisson(acc.gaussian(nm), q) * 1000).pmf(acc.DiscretizationConfig()),
             0.1,
             1.2,
         )
@@ -201,7 +201,7 @@ class TestCalibrateAdvantage:
     def test_roundtrip(self):
         result = cal.calibrate(
             cal.advantage_budget(0.1),
-            lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 500,
+            lambda nm: (acc.poisson(acc.gaussian(nm), 0.01) * 500).pmf(acc.DiscretizationConfig()),
             0.3,
             1.2,
         )
@@ -221,7 +221,7 @@ class TestCalibrateBeta:
     def test_roundtrip(self):
         result = cal.calibrate(
             cal.beta_budget(0.5, alpha=0.1),
-            lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 500,
+            lambda nm: (acc.poisson(acc.gaussian(nm), 0.01) * 500).pmf(acc.DiscretizationConfig()),
             0.3,
             1.2,
         )
@@ -232,7 +232,7 @@ class TestCalibrateBeta:
         """Stricter (higher) beta target → more noise."""
 
         def process(nm):
-            return acc.poisson(acc.gaussian(nm), 0.01) * 500
+            return (acc.poisson(acc.gaussian(nm), 0.01) * 500).pmf(acc.DiscretizationConfig())
 
         result_low = cal.calibrate(cal.beta_budget(0.3, alpha=0.1), process, 0.3, 1.2)
         result_high = cal.calibrate(cal.beta_budget(0.7, alpha=0.1), process, 0.3, 1.2)

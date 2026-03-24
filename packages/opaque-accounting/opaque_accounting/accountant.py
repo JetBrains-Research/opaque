@@ -14,7 +14,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Any
 
-from opaque_accounting.base import DpProcess
+from opaque_accounting.base import DpProcess, Pld
 from opaque_accounting.budgets import (
     AdvantageBudget,
     BetaBudget,
@@ -23,6 +23,7 @@ from opaque_accounting.budgets import (
     EpsilonBudget,
     RiskBudget,
 )
+from opaque_accounting.discretization import DiscretizationConfig
 from opaque_accounting.mechanisms import Identity
 
 __all__ = ["Accountant"]
@@ -34,19 +35,21 @@ class Accountant:
     Tracks accumulated privacy by composing processes over time.
     Provides a functional API: composing returns a new Accountant instead of mutating.
 
+    Materialize the accumulated process via ``pmf(config)`` or ``cgf()``,
+    then query privacy metrics on the returned Pld.
+
     Example::
 
-        import opaque.accounting as acc
-        from opaque_accounting.accountant import Accountant
+        import opaque_accounting as acc
 
-        acct = Accountant()
+        acct = acc.Accountant()
         step = acc.poisson(acc.gaussian(1.1), 0.01)
 
         for i in range(num_steps):
             acct = acct | step
 
             if i % 100 == 0:
-                eps = acct.epsilon_at(1e-5)
+                eps = acct.cgf().epsilon_at(1e-5)
                 print(f"Step {i}: ε={eps:.2f}")
 
     With an optional privacy budget::
@@ -54,12 +57,11 @@ class Accountant:
         from opaque_accounting import calibration as cal
 
         budget = cal.epsilon_budget(3.0, delta=1e-5)
-        acct = Accountant(budget=budget)
+        acct = acc.Accountant(budget=budget)
         step = acc.poisson(acc.gaussian(1.1), 0.01)
 
         for i in range(num_steps):
             acct = acct | step
-
             if acct.budget_exceeded:
                 print("Privacy budget exhausted!")
                 break
@@ -70,117 +72,59 @@ class Accountant:
 
         Args:
             budget: Optional privacy budget. If provided, enables
-                budget_exceeded checks. Should be a Budget from the
-                budgets module (e.g., epsilon_budget(3.0, delta=1e-5)).
+                budget_exceeded checks.
         """
         self._process: DpProcess = Identity()
         self._budget: Budget | None = budget
 
+    @property
+    def process(self) -> DpProcess:
+        """The accumulated DpProcess tree."""
+        return self._process
+
     def __or__(self, process: DpProcess) -> Accountant:
         """Compose a new process onto this accountant.
 
-        Returns a new Accountant with the composed process.  The original
+        Returns a new Accountant with the composed process. The original
         accountant is not modified.
 
-        Merge optimization is automatic: ``DpProcess.__or__`` uses
-        structural equality to collapse identical steps into a single
-        :class:`~opaque.accounting.composition.Repeated` node.
-
         Args:
-            process: DpProcess to compose (e.g., from poisson(), gaussian(), etc.)
+            process: DpProcess to compose.
 
         Returns:
             New Accountant with composed process.
-
-        Example::
-
-            acct = Accountant()
-            step = poisson(gaussian(1.1), 0.01)
-            acct = acct | step  # One step
-            acct = acct | step  # Collapsed into Repeated(step, 2)
         """
         new_acct = Accountant(budget=self._budget)
         new_acct._process = self._process | process
         return new_acct
 
-    def epsilon_at(self, delta: float) -> float:
-        """Get epsilon for a target delta.
-
-        Computes (ε, δ)-DP parameter epsilon at the given delta.
+    def pmf(self, config: DiscretizationConfig | None = None) -> Pld:
+        """Materialize the accumulated process as a PMF-backed PLD.
 
         Args:
-            delta: Target failure probability. Typically 1e-5 or 1e-6.
+            config: Discretization parameters. If None, uses defaults.
 
         Returns:
-            Privacy budget epsilon. Lower is more private.
-
-        Example::
-
-            acct = Accountant()
-            step = poisson(gaussian(1.1), 0.01)
-            for i in range(1000):
-                acct = acct | step
-
-            eps = acct.epsilon_at(1e-5)
-            print(f"Privacy: (ε={eps:.2f}, δ=1e-5)")
+            A materialized Pld for querying privacy metrics.
         """
-        return self._process.epsilon_at(delta)
+        if config is None:
+            config = DiscretizationConfig()
+        return self._process.pmf(config)
 
-    def delta_at(self, epsilon: float) -> float:
-        """Get delta for a target epsilon.
-
-        Computes (ε, δ)-DP parameter delta at the given epsilon.
-
-        Args:
-            epsilon: Privacy budget.
+    def cgf(self) -> Pld:
+        """Materialize the accumulated process as a CGF-backed PLD.
 
         Returns:
-            Failure probability delta. Lower is better.
+            A materialized Pld for querying privacy metrics.
         """
-        return self._process.delta_at(epsilon)
-
-    def advantage(self) -> float:
-        """Get f-DP advantage (total-variation privacy).
-
-        Represents the maximum probability of distinguishing neighboring
-        datasets. Lower is more private (0 = perfectly private).
-
-        Returns:
-            Advantage in [0, 1].
-        """
-        return self._process.advantage()
-
-    def beta_at(self, alpha: float) -> float:
-        """Get Type-II error rate (hypothesis testing interpretation).
-
-        Args:
-            alpha: Type-I error rate (false positive). Must be in [0, 1].
-
-        Returns:
-            Type-II error rate (false negative) in [0, 1].
-            Higher is more private (attacker makes more mistakes).
-        """
-        return self._process.beta_at(alpha)
-
-    def risk_at(self, prior: float) -> float:
-        """Get Bayes risk under an optimal adversary.
-
-        Args:
-            prior: Prior probability that data came from D (vs D').
-                Typically 0.5 for balanced prior.
-
-        Returns:
-            Bayes risk in [0, 0.5]. Higher is more private.
-        """
-        return self._process.risk_at(prior)
+        return self._process.cgf()
 
     @property
     def budget_exceeded(self) -> bool:
         """Check if accumulated privacy exceeds the budget.
 
-        Returns False if no budget was specified. Otherwise, evaluates the
-        target metric on the accumulated process and checks if it violates
-        the budget bound.
+        Returns False if no budget was specified. Otherwise, materializes
+        via CGF and checks the budget metric.
 
         Returns:
             True if privacy budget is violated, False otherwise.
@@ -188,7 +132,11 @@ class Accountant:
         if self._budget is None:
             return False
 
-        achieved = self._budget.evaluate(self._process)
+        try:
+            pld = self._process.cgf()
+        except NotImplementedError:
+            pld = self._process.pmf(DiscretizationConfig())
+        achieved = self._budget.evaluate(pld)
         return achieved > self._budget.value
 
     # -- Serialization -------------------------------------------------------
@@ -198,13 +146,6 @@ class Accountant:
 
         Returns a JSON-compatible dictionary that captures the full process
         tree.  Restore with :meth:`from_state_dict`.
-
-        Example::
-
-            state = acct.state_dict()
-            # ... save to disk, send over network, etc.
-            acct2 = Accountant.from_state_dict(state)
-            assert acct2.epsilon_at(1e-5) == acct.epsilon_at(1e-5)
         """
         state: dict[str, Any] = {"process": self._process.state_dict()}
         if self._budget is not None:

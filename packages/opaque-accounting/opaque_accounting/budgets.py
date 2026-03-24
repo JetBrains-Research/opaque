@@ -15,9 +15,10 @@ Example::
 
     from opaque_accounting import budgets
 
-    budget = targets.epsilon_budget(3.0, delta=1e-5)
-    budget.evaluate(process)  # → achieved epsilon
-    budget.value              # → 3.0
+    budget = budgets.epsilon_budget(3.0, delta=1e-5)
+    pld = process.cgf()
+    budget.evaluate(pld)  # → achieved epsilon
+    budget.value           # → 3.0
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from opaque_accounting.base import DpProcess
+from opaque_accounting.base import Pld
 
 # =============================================================================
 # Budget protocol
@@ -36,24 +37,23 @@ class Budget(Protocol):
     """Protocol for privacy budgets.
 
     A budget defines:
-    - **evaluate(process)**: Compute metric value for a process
+    - **evaluate(pld)**: Compute metric value for a materialized PLD
     - **value**: Budget threshold value to achieve
     - **name**: Human-readable name for debugging
     - **decreasing**: Whether the metric decreases as the calibrated parameter
-      increases.  For noise_multiplier calibration this is ``True`` for
-      privacy-loss metrics (epsilon, delta, advantage) and ``False`` for
-      privacy-gain metrics (beta, risk) which *increase* with noise.
+      increases.
     """
 
     value: float
     name: str
     decreasing: bool
 
-    def evaluate(self, process: DpProcess) -> float:
-        """Evaluate the metric on a DP process.
+    def evaluate(self, pld: Pld) -> float:
+        """Evaluate the metric on a materialized PLD.
 
         Args:
-            process: The DP process to evaluate.
+            pld: The materialized PLD (from ``process.pmf(config)`` or
+                ``process.cgf()``).
 
         Returns:
             Metric value (e.g., epsilon, advantage, beta).
@@ -95,9 +95,9 @@ class EpsilonBudget:
     def decreasing(self) -> bool:
         return True
 
-    def evaluate(self, process: DpProcess) -> float:
+    def evaluate(self, pld: Pld) -> float:
         """Get epsilon at the target delta."""
-        return process.epsilon_at(self.delta)
+        return pld.epsilon_at(self.delta)
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,9 +129,9 @@ class DeltaBudget:
     def decreasing(self) -> bool:
         return True
 
-    def evaluate(self, process: DpProcess) -> float:
+    def evaluate(self, pld: Pld) -> float:
         """Get delta at the target epsilon."""
-        return process.delta_at(self.epsilon)
+        return pld.delta_at(self.epsilon)
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,9 +161,9 @@ class AdvantageBudget:
     def decreasing(self) -> bool:
         return True
 
-    def evaluate(self, process: DpProcess) -> float:
+    def evaluate(self, pld: Pld) -> float:
         """Get f-DP advantage."""
-        return process.advantage()
+        return pld.advantage()
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,9 +195,9 @@ class BetaBudget:
     def decreasing(self) -> bool:
         return False
 
-    def evaluate(self, process: DpProcess) -> float:
+    def evaluate(self, pld: Pld) -> float:
         """Get beta at the target alpha."""
-        return process.beta_at(self.alpha)
+        return pld.beta_at(self.alpha)
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,9 +229,9 @@ class RiskBudget:
     def decreasing(self) -> bool:
         return False
 
-    def evaluate(self, process: DpProcess) -> float:
+    def evaluate(self, pld: Pld) -> float:
         """Get Bayes risk at the target prior."""
-        return process.risk_at(self.prior)
+        return pld.risk_at(self.prior)
 
 
 # =============================================================================
@@ -254,7 +254,7 @@ def epsilon_budget(epsilon: float, delta: float) -> EpsilonBudget:
         target = cal.epsilon_budget(3.0, delta=1e-5)
         result = cal.calibrate(
             target,
-            lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000,
+            lambda nm: (acc.poisson(acc.gaussian(nm), 0.01) * 1000).cgf(),
             0.1, 5.0,
         )
     """
@@ -270,15 +270,6 @@ def delta_budget(delta: float, epsilon: float) -> DeltaBudget:
 
     Returns:
         Calibration target.
-
-    Example::
-
-        target = cal.delta_budget(1e-6, epsilon=3.0)
-        result = cal.calibrate(
-            target,
-            lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000,
-            0.1, 5.0,
-        )
     """
     return DeltaBudget(delta=delta, epsilon=epsilon)
 
@@ -287,19 +278,10 @@ def advantage_budget(advantage: float) -> AdvantageBudget:
     """Create a target for f-DP: find noise achieving target advantage.
 
     Args:
-        advantage: Target advantage value (TV distance between neighboring datasets).
+        advantage: Target advantage value (TV distance).
 
     Returns:
         Calibration target.
-
-    Example::
-
-        target = cal.advantage_budget(0.1)
-        result = cal.calibrate(
-            target,
-            lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000,
-            0.1, 5.0,
-        )
     """
     return AdvantageBudget(advantage=advantage)
 
@@ -313,15 +295,6 @@ def beta_budget(beta: float, alpha: float) -> BetaBudget:
 
     Returns:
         Calibration target.
-
-    Example::
-
-        target = cal.beta_budget(0.05, alpha=0.01)
-        result = cal.calibrate(
-            target,
-            lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000,
-            0.1, 5.0,
-        )
     """
     return BetaBudget(beta=beta, alpha=alpha)
 
@@ -335,15 +308,6 @@ def risk_budget(risk: float, prior: float) -> RiskBudget:
 
     Returns:
         Calibration target.
-
-    Example::
-
-        target = cal.risk_budget(0.1, prior=0.5)
-        result = cal.calibrate(
-            target,
-            lambda nm: acc.poisson(acc.gaussian(nm), 0.01) * 1000,
-            0.1, 5.0,
-        )
     """
     return RiskBudget(risk=risk, prior=prior)
 

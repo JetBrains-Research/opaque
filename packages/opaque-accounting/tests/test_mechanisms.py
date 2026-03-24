@@ -6,6 +6,7 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 import opaque_accounting as acc
+from opaque_accounting import DiscretizationConfig
 from opaque_accounting.base import DpProcess
 from opaque_accounting.mechanisms import (
     EpsDelta,
@@ -37,20 +38,19 @@ class TestGaussianDataclass:
         assert Gaussian(1.0) == Gaussian(1.0)
         assert Gaussian(1.0) != Gaussian(1.1)
 
-    def test_pld_with_query_config(self):
-        """Config is now query-time - test pld() with different discretization."""
+    def test_pmf_with_query_config(self):
+        """Config is now query-time - test pmf() with different discretization."""
         g = Gaussian(1.0)
         # Both should compute successfully with different query configs
-        pld1 = g.pld(discretization=1e-3)
-        pld2 = g.pld(discretization=1e-4)
-        eps1 = pld1.epsilon_at(1e-5)
-        eps2 = pld2.epsilon_at(1e-5)
+        pmf1 = g.pmf(DiscretizationConfig(discretization=1e-3))
+        pmf2 = g.pmf(DiscretizationConfig(discretization=1e-4))
+        eps1 = pmf1.epsilon_at(1e-5)
+        eps2 = pmf2.epsilon_at(1e-5)
         assert math.isfinite(eps1) and eps1 > 0
         assert math.isfinite(eps2) and eps2 > 0
 
-    def test_pld_returns_valid(self):
-        pld = Gaussian(0.8).pld()
-        eps = pld.epsilon_at(1e-5)
+    def test_cgf_returns_valid(self):
+        eps = Gaussian(0.8).cgf().epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
 
@@ -74,9 +74,9 @@ class TestEpsDeltaDataclass:
         assert EpsDelta(1.0, 1e-5) == EpsDelta(1.0, 1e-5)
         assert EpsDelta(1.0, 1e-5) != EpsDelta(2.0, 1e-5)
 
-    def test_pld_returns_valid(self):
-        pld = EpsDelta(1.0, 1e-5).pld()
-        d = pld.delta_at(1.0)
+    def test_pmf_returns_valid(self):
+        pmf = EpsDelta(1.0, 1e-5).pmf(DiscretizationConfig())
+        d = pmf.delta_at(1.0)
         assert math.isfinite(d)
 
 
@@ -93,8 +93,8 @@ class TestGaussianConstructor:
 
     def test_default_config_none(self):
         g = acc.gaussian(1.1)
-        # config is None or module default, either way pld works
-        eps = g.epsilon_at(1e-5)
+        # config is None or module default, either way cgf works
+        eps = g.cgf().epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
 
@@ -122,7 +122,7 @@ class TestIdentityConstructor:
 
     def test_zero_epsilon(self):
         i = acc.identity()
-        eps = i.epsilon_at(1e-5)
+        eps = i.pmf(DiscretizationConfig()).epsilon_at(1e-5)
         assert eps == pytest.approx(0.0, abs=1e-10)
 
 
@@ -140,11 +140,11 @@ class TestIdentityDataclass:
         assert dataclasses.is_dataclass(i)
 
     def test_zero_epsilon(self):
-        eps = Identity().epsilon_at(1e-5)
+        eps = Identity().pmf(DiscretizationConfig()).epsilon_at(1e-5)
         assert eps == pytest.approx(0.0, abs=1e-10)
 
     def test_zero_advantage(self):
-        adv = Identity().advantage()
+        adv = Identity().pmf(DiscretizationConfig()).advantage()
         assert adv == pytest.approx(0.0, abs=1e-10)
 
     def test_equality(self):
@@ -175,25 +175,25 @@ class TestRectifiedGaussianDataclass:
         assert RectifiedGaussian(1.0, 5.0) != RectifiedGaussian(1.1, 5.0)
         assert RectifiedGaussian(1.0, 5.0) != RectifiedGaussian(1.0, 3.0)
 
-    def test_pld_returns_valid(self):
-        pld = RectifiedGaussian(0.8, 5.0).pld()
-        eps = pld.epsilon_at(1e-5)
+    def test_pmf_returns_valid(self):
+        pmf = RectifiedGaussian(0.8, 5.0).pmf(DiscretizationConfig())
+        eps = pmf.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
-    def test_pld_with_query_config(self):
+    def test_pmf_with_query_config(self):
         g = RectifiedGaussian(1.0, 5.0)
-        pld1 = g.pld(discretization=1e-3)
-        pld2 = g.pld(discretization=1e-4)
-        eps1 = pld1.epsilon_at(1e-5)
-        eps2 = pld2.epsilon_at(1e-5)
+        pmf1 = g.pmf(DiscretizationConfig(discretization=1e-3))
+        pmf2 = g.pmf(DiscretizationConfig(discretization=1e-4))
+        eps1 = pmf1.epsilon_at(1e-5)
+        eps2 = pmf2.epsilon_at(1e-5)
         assert math.isfinite(eps1) and eps1 > 0
         assert math.isfinite(eps2) and eps2 > 0
 
     def test_epsilon_le_gaussian(self):
         """Rectified Gaussian should give ε ≤ standard Gaussian (tighter)."""
         nm, R = 1.0, 5.0
-        eps_gauss = Gaussian(nm).epsilon_at(1e-5)
-        eps_rect = RectifiedGaussian(nm, R).epsilon_at(1e-5)
+        eps_gauss = Gaussian(nm).cgf().epsilon_at(1e-5)
+        eps_rect = RectifiedGaussian(nm, R).pmf(DiscretizationConfig()).epsilon_at(1e-5)
         assert eps_rect <= eps_gauss + 1e-6
 
 
@@ -208,7 +208,7 @@ class TestRectifiedGaussianConstructor:
 
     def test_epsilon_at_works(self):
         g = acc.rectified_gaussian(1.1, 5.0)
-        eps = g.epsilon_at(1e-5)
+        eps = g.pmf(DiscretizationConfig()).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
 
@@ -236,32 +236,32 @@ class TestTruncatedGaussianDataclass:
         assert TruncatedGaussian(1.0, 5.0) != TruncatedGaussian(1.1, 5.0)
         assert TruncatedGaussian(1.0, 5.0) != TruncatedGaussian(1.0, 3.0)
 
-    def test_pld_returns_valid(self):
-        pld = TruncatedGaussian(0.8, 5.0).pld()
-        eps = pld.epsilon_at(1e-5)
+    def test_pmf_returns_valid(self):
+        pmf = TruncatedGaussian(0.8, 5.0).pmf(DiscretizationConfig())
+        eps = pmf.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
-    def test_pld_with_query_config(self):
+    def test_pmf_with_query_config(self):
         g = TruncatedGaussian(1.0, 5.0)
-        pld1 = g.pld(discretization=1e-3)
-        pld2 = g.pld(discretization=1e-4)
-        eps1 = pld1.epsilon_at(1e-5)
-        eps2 = pld2.epsilon_at(1e-5)
+        pmf1 = g.pmf(DiscretizationConfig(discretization=1e-3))
+        pmf2 = g.pmf(DiscretizationConfig(discretization=1e-4))
+        eps1 = pmf1.epsilon_at(1e-5)
+        eps2 = pmf2.epsilon_at(1e-5)
         assert math.isfinite(eps1) and eps1 > 0
         assert math.isfinite(eps2) and eps2 > 0
 
     def test_epsilon_le_gaussian(self):
         """Truncated Gaussian should give ε ≤ standard Gaussian (tighter)."""
         nm, R = 1.0, 5.0
-        eps_gauss = Gaussian(nm).epsilon_at(1e-5)
-        eps_trunc = TruncatedGaussian(nm, R).epsilon_at(1e-5)
+        eps_gauss = Gaussian(nm).cgf().epsilon_at(1e-5)
+        eps_trunc = TruncatedGaussian(nm, R).pmf(DiscretizationConfig()).epsilon_at(1e-5)
         assert eps_trunc <= eps_gauss + 1e-6
 
     def test_epsilon_le_rectified(self):
         """Truncated Gaussian should give ε ≤ rectified Gaussian (tightest)."""
         nm, R = 1.0, 5.0
-        eps_rect = RectifiedGaussian(nm, R).epsilon_at(1e-5)
-        eps_trunc = TruncatedGaussian(nm, R).epsilon_at(1e-5)
+        eps_rect = RectifiedGaussian(nm, R).pmf(DiscretizationConfig()).epsilon_at(1e-5)
+        eps_trunc = TruncatedGaussian(nm, R).pmf(DiscretizationConfig()).epsilon_at(1e-5)
         assert eps_trunc <= eps_rect + 1e-6
 
 
@@ -276,5 +276,5 @@ class TestTruncatedGaussianConstructor:
 
     def test_epsilon_at_works(self):
         g = acc.truncated_gaussian(1.1, 5.0)
-        eps = g.epsilon_at(1e-5)
+        eps = g.pmf(DiscretizationConfig()).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0

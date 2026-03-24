@@ -11,9 +11,7 @@ from opaque_accounting.base import (
     DpProcess,
     Pld,
 )
-from opaque_accounting.discretization import (
-    get_discretization,
-)
+from opaque_accounting.discretization import DiscretizationConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,20 +23,7 @@ class Identity(DpProcess):
     """
 
     @functools.lru_cache(maxsize=8)
-    def pld(
-        self,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
-        max_grid_size: int | None = None,
-    ) -> Pld:
-        config = get_discretization(
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
-            max_grid_size=max_grid_size,
-        )
+    def pmf(self, config: DiscretizationConfig) -> Pld:
         return _native.identity_pld(config.to_native())
 
 
@@ -49,11 +34,5 @@ def identity() -> DpProcess:
 
     Returns:
         An :class:`Identity` process (ε=0 for any δ).
-
-    Example::
-
-        # Identity has ε=0 for any δ
-        proc = acc.identity()
-        eps = proc.epsilon_at(1e-5)  # ~0
     """
     return Identity()

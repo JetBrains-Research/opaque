@@ -124,5 +124,5 @@ def test_accountant_state_dict_roundtrip():
     acct = acct | step
     state = acct.state_dict()
     restored = Accountant.from_state_dict(state)
-    eps = restored.epsilon_at(1e-5)
+    eps = restored.cgf().epsilon_at(1e-5)
     assert math.isfinite(eps) and eps > 0
