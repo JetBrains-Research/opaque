@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from .. import opaque_accounting as _native
 
 from opaque_accounting.amplification.poisson import Poisson
-from opaque_accounting.base import DpProcess, Pld
+from opaque_accounting.base import DpProcess, PmfPld
 from opaque_accounting.discretization import DiscretizationConfig
 from opaque_accounting.mechanisms.gaussian import Gaussian
 from opaque_accounting.transformations.adaclip import AdaClip
@@ -27,29 +27,29 @@ class ParallelPoisson(DpProcess):
     num_workers: int
 
     @functools.lru_cache(maxsize=8)
-    def pmf(self, config: DiscretizationConfig) -> Pld:
+    def pmf(self, config: DiscretizationConfig) -> PmfPld:
         match self.inner:
             case Poisson(
                 inner=Gaussian(noise_multiplier=nm),
                 sample_rate=rate,
             ):
-                return _native.parallel_poisson_gaussian_pld(
+                return PmfPld(_native.parallel_poisson_gaussian_pld(
                     nm,
                     rate,
                     self.num_workers,
                     config.to_native(),
-                )
+                ))
             case Poisson(
                 inner=AdaClip() as ac,
                 sample_rate=rate,
             ):
                 z_eff = ac.effective_noise_multiplier
-                return _native.parallel_poisson_gaussian_pld(
+                return PmfPld(_native.parallel_poisson_gaussian_pld(
                     z_eff,
                     rate,
                     self.num_workers,
                     config.to_native(),
-                )
+                ))
             case _:
                 raise TypeError(
                     "ParallelPoisson requires a Poisson inner mechanism, got "

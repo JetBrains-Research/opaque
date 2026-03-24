@@ -19,7 +19,7 @@ from .. import opaque_accounting as _native
 
 from opaque_accounting.base import (
     DpProcess,
-    Pld,
+    PmfPld,
 )
 from opaque_accounting.discretization import DiscretizationConfig
 
@@ -90,12 +90,12 @@ class BltMf(DpProcess):
         return float(sens_sq.sqrt())
 
     @functools.lru_cache(maxsize=8)
-    def pmf(self, config: DiscretizationConfig) -> Pld:
-        return _native.mf_gaussian_pld(
+    def pmf(self, config: DiscretizationConfig) -> PmfPld:
+        return PmfPld(_native.mf_gaussian_pld(
             self.noise_multiplier,
             self.sensitivity(),
             config.to_native(),
-        )
+        ))
 
 
 def blt_mf(

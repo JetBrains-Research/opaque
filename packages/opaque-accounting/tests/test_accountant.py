@@ -92,7 +92,7 @@ class TestAccountantMetrics:
         acct = Accountant()
         acct = acct | (acc.gaussian(1.0) * 10)
 
-        beta = acct.cgf().beta_at(0.05)
+        beta = acct.cgf().pmf().beta_at(0.05)
         assert 0 <= beta <= 1
 
     def test_risk_at(self):
@@ -100,7 +100,7 @@ class TestAccountantMetrics:
         acct = Accountant()
         acct = acct | (acc.gaussian(1.0) * 10)
 
-        risk = acct.cgf().risk_at(0.5)
+        risk = acct.cgf().pmf().risk_at(0.5)
         assert 0 <= risk <= 0.5
 
     def test_metrics_delegate_to_process(self):

@@ -14,7 +14,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Any
 
-from opaque_accounting.base import DpProcess, Pld
+from opaque_accounting.base import CgfPld, DpProcess, PmfPld
 from opaque_accounting.budgets import (
     AdvantageBudget,
     BetaBudget,
@@ -98,24 +98,24 @@ class Accountant:
         new_acct._process = self._process | process
         return new_acct
 
-    def pmf(self, config: DiscretizationConfig | None = None) -> Pld:
+    def pmf(self, config: DiscretizationConfig | None = None) -> PmfPld:
         """Materialize the accumulated process as a PMF-backed PLD.
 
         Args:
             config: Discretization parameters. If None, uses defaults.
 
         Returns:
-            A materialized Pld for querying privacy metrics.
+            A PmfPld with the full metric suite.
         """
         if config is None:
             config = DiscretizationConfig()
         return self._process.pmf(config)
 
-    def cgf(self) -> Pld:
+    def cgf(self) -> CgfPld:
         """Materialize the accumulated process as a CGF-backed PLD.
 
         Returns:
-            A materialized Pld for querying privacy metrics.
+            A CgfPld with epsilon_at, delta_at, advantage, and pmf().
         """
         return self._process.cgf()
 
@@ -124,7 +124,8 @@ class Accountant:
         """Check if accumulated privacy exceeds the budget.
 
         Returns False if no budget was specified. Otherwise, materializes
-        via CGF and checks the budget metric.
+        via CGF (for epsilon/delta/advantage budgets) or PMF (for
+        beta/risk budgets) and checks the budget metric.
 
         Returns:
             True if privacy budget is violated, False otherwise.
@@ -132,10 +133,14 @@ class Accountant:
         if self._budget is None:
             return False
 
-        try:
-            pld = self._process.cgf()
-        except NotImplementedError:
-            pld = self._process.pmf(DiscretizationConfig())
+        needs_pmf = isinstance(self._budget, (BetaBudget, RiskBudget))
+        if needs_pmf:
+            pld: CgfPld | PmfPld = self._process.pmf(DiscretizationConfig())
+        else:
+            try:
+                pld = self._process.cgf()
+            except NotImplementedError:
+                pld = self._process.pmf(DiscretizationConfig())
         achieved = self._budget.evaluate(pld)
         return achieved > self._budget.value
 

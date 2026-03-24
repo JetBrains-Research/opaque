@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from .. import opaque_accounting as _native
 
-from opaque_accounting.base import DpProcess, Pld
+from opaque_accounting.base import CgfPld, DpProcess, PmfPld
 from opaque_accounting.discretization import DiscretizationConfig
 from opaque_accounting.mechanisms.gaussian import Gaussian
 from opaque_accounting.mechanisms.rectified_gaussian import RectifiedGaussian
@@ -26,13 +26,13 @@ class Poisson(DpProcess):
     sample_rate: float
 
     @functools.lru_cache(maxsize=1)
-    def cgf(self) -> Pld:
+    def cgf(self) -> CgfPld:
         match self.inner:
             case Gaussian(noise_multiplier=nm):
-                return _native.cgf_poisson_gaussian_pld(nm, self.sample_rate)
+                return CgfPld(_native.cgf_poisson_gaussian_pld(nm, self.sample_rate))
             case AdaClip():
                 z_eff = self.inner.effective_noise_multiplier
-                return _native.cgf_poisson_gaussian_pld(z_eff, self.sample_rate)
+                return CgfPld(_native.cgf_poisson_gaussian_pld(z_eff, self.sample_rate))
             case _:
                 raise NotImplementedError(
                     f"CGF not available for Poisson-subsampled "
@@ -40,25 +40,25 @@ class Poisson(DpProcess):
                 )
 
     @functools.lru_cache(maxsize=8)
-    def pmf(self, config: DiscretizationConfig) -> Pld:
+    def pmf(self, config: DiscretizationConfig) -> PmfPld:
         match self.inner:
             case Gaussian(noise_multiplier=nm):
-                return _native.poisson_gaussian_pld(
+                return PmfPld(_native.poisson_gaussian_pld(
                     nm, self.sample_rate, config.to_native()
-                )
+                ))
             case RectifiedGaussian(noise_multiplier=nm, radius=r):
-                return _native.poisson_rectified_gaussian_pld(
+                return PmfPld(_native.poisson_rectified_gaussian_pld(
                     nm, r, self.sample_rate, config.to_native()
-                )
+                ))
             case TruncatedGaussian(noise_multiplier=nm, radius=r):
-                return _native.poisson_truncated_gaussian_pld(
+                return PmfPld(_native.poisson_truncated_gaussian_pld(
                     nm, r, self.sample_rate, config.to_native()
-                )
+                ))
             case AdaClip():
                 z_eff = self.inner.effective_noise_multiplier
-                return _native.poisson_gaussian_pld(
+                return PmfPld(_native.poisson_gaussian_pld(
                     z_eff, self.sample_rate, config.to_native()
-                )
+                ))
             case _:
                 raise TypeError(
                     "Poisson requires a Gaussian, RectifiedGaussian, "

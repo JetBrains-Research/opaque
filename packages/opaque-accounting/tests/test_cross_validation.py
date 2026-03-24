@@ -191,7 +191,7 @@ class TestTripleBeta:
     @pytest.mark.parametrize("alpha", [0.01, 0.05, 0.1])
     def test_beta_single_gaussian(self, sigma, alpha):
         proc = acc.gaussian(sigma)
-        beta_ours = proc.cgf().beta_at(alpha)
+        beta_ours = proc.cgf().pmf().beta_at(alpha)
 
         ref_pld = _ref_gaussian_pld(sigma)
         beta_riskcal = float(rc_analysis.get_beta_from_pld(ref_pld, alpha=alpha))
@@ -206,7 +206,7 @@ class TestTripleBeta:
     @pytest.mark.parametrize("alpha", [0.01, 0.1])
     def test_beta_poisson(self, sigma, q, steps, alpha):
         proc = acc.poisson(acc.gaussian(sigma), q) * steps
-        beta_ours = proc.cgf().beta_at(alpha)
+        beta_ours = proc.cgf().pmf().beta_at(alpha)
 
         ref_pld = _ref_gaussian_pld(sigma, q).self_compose(steps)
         beta_riskcal = float(rc_analysis.get_beta_from_pld(ref_pld, alpha=alpha))
@@ -252,7 +252,7 @@ class TestTripleRisk:
     @pytest.mark.parametrize("prior", [0.3, 0.5, 0.7])
     def test_gaussian_risk(self, sigma, prior):
         proc = acc.gaussian(sigma)
-        risk_ours = proc.cgf().risk_at(prior)
+        risk_ours = proc.cgf().pmf().risk_at(prior)
 
         ref_pld = _ref_gaussian_pld(sigma)
         risk_riskcal = float(rc_analysis.get_bayes_risk_from_pld(ref_pld, prior))

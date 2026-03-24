@@ -58,11 +58,12 @@ class TestCgfCorrectness:
         # advantage
         adv = pld.advantage()
         assert 0.0 <= adv <= 1.0
-        # beta_at (materializes to PMF)
-        beta = pld.beta_at(0.1)
+        # beta_at (requires PMF)
+        pmf_pld = pld.pmf()
+        beta = pmf_pld.beta_at(0.1)
         assert 0.0 <= beta <= 1.0
-        # risk_at (materializes to PMF)
-        risk = pld.risk_at(0.5)
+        # risk_at (requires PMF)
+        risk = pmf_pld.risk_at(0.5)
         assert 0.0 <= risk <= 0.5
 
     @pytest.mark.parametrize("sigma", [0.01, 0.03, 0.05, 0.09])

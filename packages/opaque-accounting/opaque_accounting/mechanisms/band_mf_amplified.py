@@ -16,10 +16,7 @@ from dataclasses import dataclass
 
 from .. import opaque_accounting as _native
 
-from opaque_accounting.base import (
-    DpProcess,
-    Pld,
-)
+from opaque_accounting.base import DpProcess, PmfPld
 from opaque_accounting.discretization import DiscretizationConfig
 
 
@@ -38,12 +35,12 @@ class BandMfAmplified(DpProcess):
     num_groups: int
 
     @functools.lru_cache(maxsize=8)
-    def pmf(self, config: DiscretizationConfig) -> Pld:
+    def pmf(self, config: DiscretizationConfig) -> PmfPld:
         effective_nm = self.noise_multiplier / self.sensitivity
         per_group_pld = _native.poisson_gaussian_pld(
             effective_nm, self.sample_rate, config.to_native()
         )
-        return per_group_pld.self_compose(self.num_groups)
+        return PmfPld(per_group_pld.self_compose(self.num_groups))
 
 
 def band_mf_amplified(

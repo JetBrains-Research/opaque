@@ -139,6 +139,33 @@ impl PyPld {
         self.compose(other)
     }
 
+    /// Whether this PLD is CGF-backed (saddle-point, no grid).
+    fn is_cgf(&self) -> bool {
+        matches!(self.inner, PrivacyLossDistribution::Cgf(_))
+    }
+
+    /// Materialize a CGF-backed PLD to a PMF-backed PLD.
+    ///
+    /// If already PMF-backed, returns a clone unchanged.
+    ///
+    /// Args:
+    ///     config (DiscretizationConfig): Grid parameters.
+    ///
+    /// Returns:
+    ///     Pld: A PMF-backed PLD.
+    #[pyo3(text_signature = "(self, config)")]
+    fn to_pmf(&self, config: &PyDiscretizationConfig) -> PyResult<PyPld> {
+        match &self.inner {
+            PrivacyLossDistribution::Pmf(_) => Ok(self.clone()),
+            PrivacyLossDistribution::Cgf(cgf) => {
+                let pmf_pld = cgf.to_pmf_pld(&config.inner).map_err(to_py_err)?;
+                Ok(PyPld {
+                    inner: PrivacyLossDistribution::Pmf(pmf_pld),
+                })
+            }
+        }
+    }
+
     fn __repr__(&self) -> String {
         match &self.inner {
             crate::PrivacyLossDistribution::Pmf(p) => {

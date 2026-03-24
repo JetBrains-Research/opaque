@@ -26,7 +26,7 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from opaque_accounting.base import Pld
+from opaque_accounting.base import CgfPld, PmfPld
 
 # Re-export budgets so ``from opaque_accounting.calibration import Budget``
 # and ``from opaque_accounting import calibration as cal; cal.epsilon_budget(...)``
@@ -79,7 +79,7 @@ class CalibrateResult:
 
 def calibrate(
     budget: Budget,
-    process: Callable[[float], Pld],
+    process: Callable[[float], CgfPld | PmfPld],
     param_min: float,
     param_max: float,
     tolerance: float = 1e-6,

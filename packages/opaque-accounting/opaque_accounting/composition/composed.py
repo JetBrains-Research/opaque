@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 from dataclasses import dataclass
 
-from opaque_accounting.base import DpProcess, Pld
+from opaque_accounting.base import CgfPld, DpProcess, PmfPld
 from opaque_accounting.discretization import DiscretizationConfig
 
 
@@ -17,11 +17,9 @@ class Composed(DpProcess):
     right: DpProcess
 
     @functools.lru_cache(maxsize=1)
-    def cgf(self) -> Pld:
-        return self.left.cgf().compose(self.right.cgf())
+    def cgf(self) -> CgfPld:
+        return self.left.cgf() | self.right.cgf()
 
     @functools.lru_cache(maxsize=8)
-    def pmf(self, config: DiscretizationConfig) -> Pld:
-        left_pld = self.left.pmf(config)
-        right_pld = self.right.pmf(config)
-        return left_pld.compose(right_pld)
+    def pmf(self, config: DiscretizationConfig) -> PmfPld:
+        return self.left.pmf(config) | self.right.pmf(config)

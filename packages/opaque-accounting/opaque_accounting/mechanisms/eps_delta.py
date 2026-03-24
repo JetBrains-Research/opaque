@@ -7,10 +7,7 @@ from dataclasses import dataclass
 
 from .. import opaque_accounting as _native
 
-from opaque_accounting.base import (
-    DpProcess,
-    Pld,
-)
+from opaque_accounting.base import DpProcess, PmfPld
 from opaque_accounting.discretization import DiscretizationConfig
 
 
@@ -22,8 +19,8 @@ class EpsDelta(DpProcess):
     delta: float
 
     @functools.lru_cache(maxsize=8)
-    def pmf(self, config: DiscretizationConfig) -> Pld:
-        return _native.eps_delta_pld(self.epsilon, self.delta, config.to_native())
+    def pmf(self, config: DiscretizationConfig) -> PmfPld:
+        return PmfPld(_native.eps_delta_pld(self.epsilon, self.delta, config.to_native()))
 
 
 def eps_delta(epsilon: float, delta: float = 0.0) -> DpProcess:

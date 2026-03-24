@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 from dataclasses import dataclass
 
-from opaque_accounting.base import DpProcess, Pld
+from opaque_accounting.base import CgfPld, DpProcess, PmfPld
 from opaque_accounting.discretization import DiscretizationConfig
 
 
@@ -20,9 +20,9 @@ class Repeated(DpProcess):
         return (self.inner, self.count)
 
     @functools.lru_cache(maxsize=1)
-    def cgf(self) -> Pld:
-        return self.inner.cgf().self_compose(self.count)
+    def cgf(self) -> CgfPld:
+        return self.inner.cgf() * self.count
 
     @functools.lru_cache(maxsize=8)
-    def pmf(self, config: DiscretizationConfig) -> Pld:
-        return self.inner.pmf(config).self_compose(self.count)
+    def pmf(self, config: DiscretizationConfig) -> PmfPld:
+        return self.inner.pmf(config) * self.count

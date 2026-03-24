@@ -39,7 +39,8 @@ except ImportError as e:
         "-m crates/dp-accounting/Cargo.toml"
     ) from e
 
-# Base
+# Base types
+from opaque_accounting.base import CgfPld, PmfPld
 
 # Import submodules for re-export
 from . import (
@@ -100,6 +101,9 @@ from opaque_accounting.mechanisms import (
 from opaque_accounting.transformations import adaclip
 
 __all__ = [
+    # PLD types
+    "CgfPld",
+    "PmfPld",
     # Submodules
     "accountant",
     "amplification",

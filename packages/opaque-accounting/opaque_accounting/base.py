@@ -37,16 +37,148 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import fields
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING
 
 from . import opaque_accounting as _native
 
 if TYPE_CHECKING:
     from opaque_accounting.discretization import DiscretizationConfig
 
-Pld: TypeAlias = _native.Pld
+__all__ = ["DpProcess", "CgfPld", "PmfPld"]
 
-__all__ = ["DpProcess", "Pld"]
+
+# ---------------------------------------------------------------------------
+# PLD wrappers — thin Python types that restrict the API surface
+# ---------------------------------------------------------------------------
+
+
+class CgfPld:
+    """CGF-backed PLD (saddle-point, no grid).
+
+    Exposes only metrics computable analytically via the CGF:
+    ``epsilon_at``, ``delta_at``, ``advantage``.
+
+    For metrics requiring the full distribution (``beta_at``, ``risk_at``),
+    materialize to a :class:`PmfPld` first via :meth:`pmf`.
+
+    Supports composition (``|``, ``*``) — result stays CGF-backed.
+    """
+
+    __slots__ = ("_pld",)
+
+    def __init__(self, pld: _native.Pld) -> None:
+        if not pld.is_cgf():
+            raise TypeError("CgfPld requires a CGF-backed native Pld")
+        self._pld = pld
+
+    def epsilon_at(self, delta: float) -> float:
+        """Smallest epsilon achieving (epsilon, delta)-DP."""
+        return self._pld.epsilon_at(delta)
+
+    def delta_at(self, epsilon: float) -> float:
+        """Smallest delta achieving (epsilon, delta)-DP."""
+        return self._pld.delta_at(epsilon)
+
+    def advantage(self) -> float:
+        """Total-variation advantage (f-DP). 0 = perfect privacy, 1 = none."""
+        return self._pld.advantage()
+
+    def pmf(self, config: DiscretizationConfig | None = None) -> PmfPld:
+        """Materialize this CGF to a PMF-backed PLD.
+
+        Args:
+            config: Discretization parameters. If None, uses defaults.
+
+        Returns:
+            A PmfPld with the full metric suite (beta_at, risk_at, etc.).
+        """
+        if config is None:
+            from opaque_accounting.discretization import DiscretizationConfig as DC
+
+            config = DC()
+        native_config = config.to_native()
+        return PmfPld(self._pld.to_pmf(native_config))
+
+    def compose(self, other: CgfPld) -> CgfPld:
+        """Compose with another CGF-backed PLD."""
+        return CgfPld(self._pld.compose(other._pld))
+
+    def self_compose(self, count: int) -> CgfPld:
+        """Self-compose this PLD *count* times."""
+        return CgfPld(self._pld.self_compose(count))
+
+    def __mul__(self, count: int) -> CgfPld:
+        return self.self_compose(count)
+
+    def __rmul__(self, count: int) -> CgfPld:
+        return self.self_compose(count)
+
+    def __or__(self, other: CgfPld) -> CgfPld:
+        return self.compose(other)
+
+    def __repr__(self) -> str:
+        return f"CgfPld({self._pld!r})"
+
+    def __str__(self) -> str:
+        return str(self._pld)
+
+
+class PmfPld:
+    """PMF-backed PLD (discretized grid).
+
+    Exposes the full metric suite: ``epsilon_at``, ``delta_at``,
+    ``advantage``, ``beta_at``, ``risk_at``.
+
+    Supports composition (``|``, ``*``) — result stays PMF-backed.
+    """
+
+    __slots__ = ("_pld",)
+
+    def __init__(self, pld: _native.Pld) -> None:
+        self._pld = pld
+
+    def epsilon_at(self, delta: float) -> float:
+        """Smallest epsilon achieving (epsilon, delta)-DP."""
+        return self._pld.epsilon_at(delta)
+
+    def delta_at(self, epsilon: float) -> float:
+        """Smallest delta achieving (epsilon, delta)-DP."""
+        return self._pld.delta_at(epsilon)
+
+    def advantage(self) -> float:
+        """Total-variation advantage (f-DP). 0 = perfect privacy, 1 = none."""
+        return self._pld.advantage()
+
+    def beta_at(self, alpha: float) -> float:
+        """Type-II error (beta) at a given Type-I error (alpha)."""
+        return self._pld.beta_at(alpha)
+
+    def risk_at(self, prior: float) -> float:
+        """Bayes risk under an optimal adversary."""
+        return self._pld.risk_at(prior)
+
+    def compose(self, other: PmfPld) -> PmfPld:
+        """Compose with another PMF-backed PLD."""
+        return PmfPld(self._pld.compose(other._pld))
+
+    def self_compose(self, count: int) -> PmfPld:
+        """Self-compose this PLD *count* times."""
+        return PmfPld(self._pld.self_compose(count))
+
+    def __mul__(self, count: int) -> PmfPld:
+        return self.self_compose(count)
+
+    def __rmul__(self, count: int) -> PmfPld:
+        return self.self_compose(count)
+
+    def __or__(self, other: PmfPld) -> PmfPld:
+        return self.compose(other)
+
+    def __repr__(self) -> str:
+        return f"PmfPld({self._pld!r})"
+
+    def __str__(self) -> str:
+        return str(self._pld)
 
 # Global registry of DpProcess subclasses for polymorphic deserialization.
 # Automatically populated when each subclass is defined via __init_subclass__.
@@ -85,20 +217,22 @@ class DpProcess(ABC):
         _PROCESS_REGISTRY[cls.__name__] = cls
 
     @abstractmethod
-    def pmf(self, config: DiscretizationConfig) -> Pld:
-        """Materialize to a PMF-backed (discretized grid) PLD.
+    def pmf(self, config: DiscretizationConfig) -> PmfPld:
+        """Materialize to a PMF-backed PLD (discretized grid).
 
         Args:
             config: Discretization parameters (grid spacing, truncation, etc.).
         """
         ...
 
-    def cgf(self) -> Pld:
+    def cgf(self) -> CgfPld:
         """Materialize to a CGF-backed PLD (no grid, O(1) composition).
 
         Uses Lugannani-Rice saddle-point approximation for
-        delta_at/epsilon_at/advantage.  For beta_at/risk_at, the CGF
-        auto-materializes to PMF on demand.
+        ``epsilon_at``, ``delta_at``, ``advantage``.
+
+        For ``beta_at`` / ``risk_at``, call ``.pmf(config)`` on the
+        returned :class:`CgfPld` to materialize to a :class:`PmfPld`.
 
         Not all mechanisms support CGF. Raises :exc:`NotImplementedError`
         for mechanisms without an analytical CGF (e.g., rectified_gaussian).

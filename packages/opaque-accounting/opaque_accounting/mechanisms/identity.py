@@ -7,10 +7,7 @@ from dataclasses import dataclass
 
 from .. import opaque_accounting as _native
 
-from opaque_accounting.base import (
-    DpProcess,
-    Pld,
-)
+from opaque_accounting.base import DpProcess, PmfPld
 from opaque_accounting.discretization import DiscretizationConfig
 
 
@@ -23,8 +20,8 @@ class Identity(DpProcess):
     """
 
     @functools.lru_cache(maxsize=8)
-    def pmf(self, config: DiscretizationConfig) -> Pld:
-        return _native.identity_pld(config.to_native())
+    def pmf(self, config: DiscretizationConfig) -> PmfPld:
+        return PmfPld(_native.identity_pld(config.to_native()))
 
 
 def identity() -> DpProcess:

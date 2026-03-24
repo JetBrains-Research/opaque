@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from opaque_accounting.base import Pld
+from opaque_accounting.base import CgfPld, PmfPld
 
 # =============================================================================
 # Budget protocol
@@ -48,7 +48,7 @@ class Budget(Protocol):
     name: str
     decreasing: bool
 
-    def evaluate(self, pld: Pld) -> float:
+    def evaluate(self, pld: CgfPld | PmfPld) -> float:
         """Evaluate the metric on a materialized PLD.
 
         Args:
@@ -95,7 +95,7 @@ class EpsilonBudget:
     def decreasing(self) -> bool:
         return True
 
-    def evaluate(self, pld: Pld) -> float:
+    def evaluate(self, pld: CgfPld | PmfPld) -> float:
         """Get epsilon at the target delta."""
         return pld.epsilon_at(self.delta)
 
@@ -129,7 +129,7 @@ class DeltaBudget:
     def decreasing(self) -> bool:
         return True
 
-    def evaluate(self, pld: Pld) -> float:
+    def evaluate(self, pld: CgfPld | PmfPld) -> float:
         """Get delta at the target epsilon."""
         return pld.delta_at(self.epsilon)
 
@@ -161,7 +161,7 @@ class AdvantageBudget:
     def decreasing(self) -> bool:
         return True
 
-    def evaluate(self, pld: Pld) -> float:
+    def evaluate(self, pld: CgfPld | PmfPld) -> float:
         """Get f-DP advantage."""
         return pld.advantage()
 
@@ -195,7 +195,7 @@ class BetaBudget:
     def decreasing(self) -> bool:
         return False
 
-    def evaluate(self, pld: Pld) -> float:
+    def evaluate(self, pld: CgfPld | PmfPld) -> float:
         """Get beta at the target alpha."""
         return pld.beta_at(self.alpha)
 
@@ -229,7 +229,7 @@ class RiskBudget:
     def decreasing(self) -> bool:
         return False
 
-    def evaluate(self, pld: Pld) -> float:
+    def evaluate(self, pld: CgfPld | PmfPld) -> float:
         """Get Bayes risk at the target prior."""
         return pld.risk_at(self.prior)
 

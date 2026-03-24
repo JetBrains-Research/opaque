@@ -18,10 +18,7 @@ from dataclasses import dataclass
 
 from .. import opaque_accounting as _native
 
-from opaque_accounting.base import (
-    DpProcess,
-    Pld,
-)
+from opaque_accounting.base import DpProcess, PmfPld
 from opaque_accounting.discretization import (
     get_discretization,
 )
@@ -47,18 +44,18 @@ class MfGaussian(DpProcess):
         log_x_mass_truncation_bound: float | None = None,
         pessimistic_estimate: bool | None = None,
         max_grid_size: int | None = None,
-    ) -> Pld:
+    ) -> PmfPld:
         config = get_discretization(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         )
-        return _native.mf_gaussian_pld(
+        return PmfPld(_native.mf_gaussian_pld(
             self.noise_multiplier,
             self.sensitivity,
             config.to_native(),
-        )
+        ))
 
 
 def mf_gaussian(noise_multiplier: float, sensitivity: float) -> MfGaussian:

@@ -4,7 +4,7 @@
 Rust computes PLDs; Python owns composition and dispatch.
 
 The extension exports two classes (:class:`Pld` and :class:`DiscretizationConfig`)
-and seven functions for creating PLDs from mechanism parameters.
+and functions for creating PLDs from mechanism parameters.
 
 Example::
 
@@ -18,98 +18,53 @@ Example::
 from __future__ import annotations
 
 # ---------------------------------------------------------------------------
-# Pld — opaque PLD handle
+# Pld — opaque PLD handle (Rust-backed)
 # ---------------------------------------------------------------------------
 
 class Pld:
-    """An opaque Privacy Loss Distribution (PLD).
+    """An opaque Privacy Loss Distribution (PLD) — Rust-backed.
 
-    Created by mechanism/amplification functions.  Supports privacy metric
-    queries and composition.
-
-    Example::
-
-        import opaque_accounting as dp
-        pld = dp.gaussian_pld(1.1)
-        print(pld.epsilon_at(1e-5))
-        composed = pld.self_compose(1000)
-        print(composed.epsilon_at(1e-5))
+    This is the low-level native type. Users should typically interact with
+    :class:`~opaque_accounting.base.CgfPld` or
+    :class:`~opaque_accounting.base.PmfPld` wrappers instead.
     """
 
     def epsilon_at(self, delta: float) -> float:
-        """Smallest ε achieving (ε, δ)-DP.
-
-        Args:
-            delta: Failure probability (typically 1e-5 to 1e-7).
-
-        Returns:
-            Epsilon value.
-        """
+        """Smallest ε achieving (ε, δ)-DP."""
         ...
 
     def delta_at(self, epsilon: float) -> float:
-        """Smallest δ achieving (ε, δ)-DP.
-
-        Args:
-            epsilon: Privacy budget. Must be >= 0.
-
-        Returns:
-            Delta value.
-        """
+        """Smallest δ achieving (ε, δ)-DP."""
         ...
 
     def advantage(self) -> float:
-        """Total-variation advantage.
-
-        Returns:
-            Advantage in [0, 1]. Lower is more private.
-        """
+        """Total-variation advantage in [0, 1]."""
         ...
 
     def beta_at(self, alpha: float) -> float:
-        """Type-II error (β) at a given Type-I error (α).
-
-        Args:
-            alpha: Type-I error rate in [0, 1].
-
-        Returns:
-            Beta value in [0, 1].
-        """
+        """Type-II error (β) at a given Type-I error (α)."""
         ...
 
     def risk_at(self, prior: float) -> float:
-        """Bayes risk under an optimal adversary.
-
-        Args:
-            prior: Prior probability (typically 0.5).
-
-        Returns:
-            Risk value in [0, 0.5].
-        """
+        """Bayes risk under an optimal adversary."""
         ...
 
     def compose(self, other: Pld) -> Pld:
-        """Compose this PLD with another (heterogeneous composition).
-
-        Args:
-            other: The other PLD to compose with.
-
-        Returns:
-            A new composed PLD.
-
-        Raises:
-            ValueError: If composition fails (mismatched discretization).
-        """
+        """Compose this PLD with another (heterogeneous composition)."""
         ...
 
     def self_compose(self, count: int) -> Pld:
-        """Self-compose this PLD *count* times (homogeneous repetition).
+        """Self-compose this PLD *count* times (homogeneous repetition)."""
+        ...
 
-        Args:
-            count: Repetition count. Must be > 0.
+    def is_cgf(self) -> bool:
+        """Whether this PLD is CGF-backed (saddle-point, no grid)."""
+        ...
 
-        Returns:
-            A new self-composed PLD.
+    def to_pmf(self, config: DiscretizationConfig) -> Pld:
+        """Materialize a CGF-backed PLD to a PMF-backed PLD.
+
+        If already PMF-backed, returns a clone unchanged.
         """
         ...
 
@@ -190,53 +145,20 @@ def gaussian_pld(
     noise_multiplier: float,
     config: DiscretizationConfig,
 ) -> Pld:
-    """Compute the PLD for a Gaussian mechanism with sensitivity 1.
-
-    Args:
-        noise_multiplier: Ratio of noise std to sensitivity (σ/Δ).
-        config: PLD discretization configuration.
-
-    Returns:
-        The privacy loss distribution.
-
-    Example::
-
-        pld = dp.gaussian_pld(1.1, config)
-        pld.epsilon_at(1e-5)  # ~3.92
-    """
+    """Compute the PLD for a Gaussian mechanism with sensitivity 1."""
     ...
 
 def cgf_gaussian_pld(
     noise_multiplier: float,
 ) -> Pld:
-    """Create a CGF-backed PLD for a Gaussian mechanism.
-
-    Unlike gaussian_pld(), this does not discretize — the privacy loss is
-    represented analytically via its CGF. Suitable for small noise multipliers.
-
-    Args:
-        noise_multiplier: Ratio of noise std to sensitivity (σ/Δ).
-
-    Returns:
-        The privacy loss distribution (CGF-backed).
-    """
+    """Create a CGF-backed PLD for a Gaussian mechanism."""
     ...
 
 def cgf_poisson_gaussian_pld(
     noise_multiplier: float,
     rate: float,
 ) -> Pld:
-    """Create a CGF-backed PLD for a Poisson-subsampled Gaussian.
-
-    Unlike poisson_gaussian_pld(), this does not discretize.
-
-    Args:
-        noise_multiplier: σ/Δ ratio.
-        rate: Poisson sampling probability, in (0, 1].
-
-    Returns:
-        The privacy loss distribution (CGF-backed).
-    """
+    """Create a CGF-backed PLD for a Poisson-subsampled Gaussian."""
     ...
 
 def eps_delta_pld(
@@ -244,29 +166,13 @@ def eps_delta_pld(
     delta: float,
     config: DiscretizationConfig,
 ) -> Pld:
-    """Compute the PLD for a fixed (ε, δ)-mechanism.
-
-    Args:
-        epsilon: Privacy loss, >= 0.
-        delta: Failure probability, in [0, 1].
-        config: PLD discretization configuration.
-
-    Returns:
-        The privacy loss distribution.
-    """
+    """Compute the PLD for a fixed (ε, δ)-mechanism."""
     ...
 
 def identity_pld(
     config: DiscretizationConfig,
 ) -> Pld:
-    """Compute the PLD for the identity (zero-privacy-loss) mechanism.
-
-    Args:
-        config: PLD discretization configuration.
-
-    Returns:
-        The identity PLD (neutral element for composition).
-    """
+    """Compute the PLD for the identity (zero-privacy-loss) mechanism."""
     ...
 
 def rectified_gaussian_pld(
@@ -274,18 +180,7 @@ def rectified_gaussian_pld(
     radius: float,
     config: DiscretizationConfig,
 ) -> Pld:
-    """Compute the PLD for a rectified (clamped) Gaussian mechanism.
-
-    Noise is sampled from a standard Gaussian and clamped to [−R·σ, R·σ].
-
-    Args:
-        noise_multiplier: Ratio of noise std to sensitivity (σ/Δ).
-        radius: Support half-width in sigma units.
-        config: PLD discretization configuration.
-
-    Returns:
-        The privacy loss distribution.
-    """
+    """Compute the PLD for a rectified (clamped) Gaussian mechanism."""
     ...
 
 def truncated_gaussian_pld(
@@ -293,18 +188,7 @@ def truncated_gaussian_pld(
     radius: float,
     config: DiscretizationConfig,
 ) -> Pld:
-    """Compute the PLD for a truncated (renormalized) Gaussian mechanism.
-
-    Noise is sampled from a Gaussian restricted to [−R·σ, R·σ] with renormalized density.
-
-    Args:
-        noise_multiplier: Ratio of noise std to sensitivity (σ/Δ).
-        radius: Support half-width in sigma units.
-        config: PLD discretization configuration.
-
-    Returns:
-        The privacy loss distribution.
-    """
+    """Compute the PLD for a truncated (renormalized) Gaussian mechanism."""
     ...
 
 # ---------------------------------------------------------------------------
@@ -316,22 +200,7 @@ def poisson_gaussian_pld(
     rate: float,
     config: DiscretizationConfig,
 ) -> Pld:
-    """Compute the PLD for a Poisson-subsampled Gaussian mechanism.
-
-    Args:
-        noise_multiplier: σ/Δ ratio.
-        rate: Poisson sampling probability, in (0, 1].
-        config: PLD discretization configuration.
-
-    Returns:
-        The amplified privacy loss distribution.
-
-    Example::
-
-        pld = dp.poisson_gaussian_pld(1.1, 0.01, config)
-        training = pld.self_compose(1000)
-        training.epsilon_at(1e-5)
-    """
+    """Compute the PLD for a Poisson-subsampled Gaussian mechanism."""
     ...
 
 def truncated_poisson_gaussian_pld(
@@ -341,21 +210,7 @@ def truncated_poisson_gaussian_pld(
     dataset_size: int,
     config: DiscretizationConfig,
 ) -> Pld:
-    """Compute the PLD for a truncated Poisson-subsampled Gaussian mechanism.
-
-    Production DP-SGD sampling: caps batch at *batch_size_max* for
-    predictable memory usage and tighter privacy bounds.
-
-    Args:
-        noise_multiplier: σ/Δ ratio.
-        rate: Poisson sampling probability, in (0, 1].
-        batch_size_max: Maximum batch size.
-        dataset_size: Total dataset size.
-        config: PLD discretization configuration.
-
-    Returns:
-        The amplified privacy loss distribution.
-    """
+    """Compute the PLD for a truncated Poisson-subsampled Gaussian mechanism."""
     ...
 
 def parallel_poisson_gaussian_pld(
@@ -364,20 +219,7 @@ def parallel_poisson_gaussian_pld(
     microbatches: int,
     config: DiscretizationConfig,
 ) -> Pld:
-    """Compute the PLD for a parallel Poisson-subsampled Gaussian mechanism.
-
-    Models summing multiple independent Poisson samples before adding noise once.
-    Use cases: gradient accumulation (m microbatches) or parallel workers (K workers).
-
-    Args:
-        noise_multiplier: σ/Δ ratio.
-        rate: Poisson sampling probability, in (0, 1].
-        microbatches: Number of independent samples, > 0.
-        config: PLD discretization configuration.
-
-    Returns:
-        The amplified privacy loss distribution.
-    """
+    """Compute the PLD for a parallel Poisson-subsampled Gaussian mechanism."""
     ...
 
 def poisson_rectified_gaussian_pld(
@@ -386,20 +228,7 @@ def poisson_rectified_gaussian_pld(
     rate: float,
     config: DiscretizationConfig,
 ) -> Pld:
-    """Compute the PLD for a Poisson-subsampled rectified Gaussian mechanism.
-
-    The rectified (clamped) Gaussian clips noise to [−R·σ, R·σ], giving tighter
-    privacy bounds than the standard unbounded Gaussian.
-
-    Args:
-        noise_multiplier: σ/Δ ratio.
-        radius: Support half-width in sigma units.
-        rate: Poisson sampling probability, in (0, 1].
-        config: PLD discretization configuration.
-
-    Returns:
-        The amplified privacy loss distribution.
-    """
+    """Compute the PLD for a Poisson-subsampled rectified Gaussian mechanism."""
     ...
 
 def poisson_truncated_gaussian_pld(
@@ -408,20 +237,7 @@ def poisson_truncated_gaussian_pld(
     rate: float,
     config: DiscretizationConfig,
 ) -> Pld:
-    """Compute the PLD for a Poisson-subsampled truncated Gaussian mechanism.
-
-    The truncated (renormalized) Gaussian restricts noise to [−R·σ, R·σ]
-    with renormalized density, giving even tighter privacy bounds.
-
-    Args:
-        noise_multiplier: σ/Δ ratio.
-        radius: Support half-width in sigma units.
-        rate: Poisson sampling probability, in (0, 1].
-        config: PLD discretization configuration.
-
-    Returns:
-        The amplified privacy loss distribution.
-    """
+    """Compute the PLD for a Poisson-subsampled truncated Gaussian mechanism."""
     ...
 
 # ---------------------------------------------------------------------------
@@ -433,25 +249,7 @@ def mf_gaussian_pld(
     sensitivity: float,
     config: DiscretizationConfig,
 ) -> Pld:
-    """Compute the PLD for a matrix factorization Gaussian mechanism.
-
-    Computes the privacy guarantee for the entire MF training run as a
-    single Gaussian mechanism with effective noise multiplier σ/S.
-
-    Args:
-        noise_multiplier: Raw noise std σ (before MF). Must be positive.
-        sensitivity: L2 sensitivity of the encoder matrix. Must be positive.
-        config: PLD discretization configuration.
-
-    Returns:
-        The privacy loss distribution for the entire MF training run.
-
-    Example::
-
-        config = dp.DiscretizationConfig()
-        pld = dp.mf_gaussian_pld(1.0, 2.5, config)
-        pld.epsilon_at(1e-5)
-    """
+    """Compute the PLD for a matrix factorization Gaussian mechanism."""
     ...
 
 def max_participation_for_linear_fn(
@@ -459,19 +257,7 @@ def max_participation_for_linear_fn(
     min_sep: int = 1,
     max_participations: int | None = None,
 ) -> float:
-    """Solve max_u <x, u> where u respects min-sep participation.
-
-    Uses dynamic programming (Algorithm 3, VecSens) from
-    Choquette-Choo et al. (2023).
-
-    Args:
-        x: Vector of values to optimize over.
-        min_sep: Minimum separation between selections (>= 1).
-        max_participations: Optional upper bound on selections.
-
-    Returns:
-        The optimal inner product.
-    """
+    """Solve max_u <x, u> where u respects min-sep participation."""
     ...
 
 def minsep_true_max_participations(
@@ -479,29 +265,13 @@ def minsep_true_max_participations(
     min_sep: int,
     max_participations: int | None = None,
 ) -> int:
-    """Maximum participations under a min-sep constraint.
-
-    Args:
-        n: Number of rounds.
-        min_sep: Minimum separation between participations.
-        max_participations: Optional upper bound.
-
-    Returns:
-        Effective maximum participations.
-    """
+    """Maximum participations under a min-sep constraint."""
     ...
 
 def single_participation_sensitivity(
     column_norms: list[float],
 ) -> float:
-    """L2 sensitivity under single participation.
-
-    Args:
-        column_norms: L2 norms of encoder matrix columns.
-
-    Returns:
-        Maximum column norm (the sensitivity).
-    """
+    """L2 sensitivity under single participation."""
     ...
 
 def banded_sensitivity(
@@ -509,16 +279,7 @@ def banded_sensitivity(
     min_sep: int = 1,
     max_participations: int | None = None,
 ) -> float:
-    """Exact L2 sensitivity for banded Gram matrices under min-sep participation.
-
-    Args:
-        gram_diag: Diagonal of Gram matrix X = C^T C.
-        min_sep: Minimum separation between participations.
-        max_participations: Optional upper bound.
-
-    Returns:
-        The exact L2 sensitivity.
-    """
+    """Exact L2 sensitivity for banded Gram matrices under min-sep participation."""
     ...
 
 def general_sensitivity_upper_bound(
@@ -527,17 +288,7 @@ def general_sensitivity_upper_bound(
     min_sep: int = 1,
     max_participations: int | None = None,
 ) -> float:
-    """Upper bound on L2 sensitivity for general Gram matrices.
-
-    Args:
-        gram_matrix: Flattened row-major Gram matrix X = C^T C.
-        n: Matrix dimension.
-        min_sep: Minimum separation between participations.
-        max_participations: Optional upper bound.
-
-    Returns:
-        An upper bound on the L2 sensitivity.
-    """
+    """Upper bound on L2 sensitivity for general Gram matrices."""
     ...
 
 def fixed_epoch_sensitivity(
@@ -545,16 +296,7 @@ def fixed_epoch_sensitivity(
     n: int,
     epochs: int,
 ) -> float:
-    """L2 sensitivity under fixed-epoch participation.
-
-    Args:
-        gram_matrix: Flattened row-major Gram matrix X = C^T C.
-        n: Matrix dimension (total rounds).
-        epochs: Number of epochs (must divide n).
-
-    Returns:
-        The L2 sensitivity under fixed-epoch participation.
-    """
+    """L2 sensitivity under fixed-epoch participation."""
     ...
 
 def blt_sensitivity_squared(
@@ -562,18 +304,7 @@ def blt_sensitivity_squared(
     output_scale: list[float],
     n: float,
 ) -> float:
-    """Sensitivity squared for a BLT strategy matrix.
-
-    Implements Lemma 5.3 of the BLT paper.
-
-    Args:
-        buf_decay: Decay factors for each buffer, each in (0, 1).
-        output_scale: Scale factors for each buffer.
-        n: Number of iterations (use float('inf') for asymptotic limit).
-
-    Returns:
-        The sensitivity squared.
-    """
+    """Sensitivity squared for a BLT strategy matrix."""
     ...
 
 def toeplitz_minsep_sensitivity_squared(
@@ -582,20 +313,7 @@ def toeplitz_minsep_sensitivity_squared(
     min_sep: int = 1,
     max_participations: int | None = None,
 ) -> float:
-    """Sensitivity squared for a Toeplitz matrix under min-sep participation.
-
-    Implements BSR Theorem 2 closed-form for non-negative, non-increasing
-    Toeplitz coefficients.
-
-    Args:
-        strategy_coef: Toeplitz coefficients (non-negative, non-increasing).
-        n: Matrix dimension (total rounds).
-        min_sep: Minimum separation between participations.
-        max_participations: Optional upper bound.
-
-    Returns:
-        The sensitivity squared.
-    """
+    """Sensitivity squared for a Toeplitz matrix under min-sep participation."""
     ...
 
 # ---------------------------------------------------------------------------
@@ -606,15 +324,5 @@ def adaclip_sensitivity(
     noise_multiplier: float,
     quantile_noise_std: float,
 ) -> float:
-    """Combined sensitivity for adaptive clipping (Andrew et al. 2021).
-
-    Returns z̃ = sqrt(1/z² + 1/(4·σ_b²)).
-
-    Args:
-        noise_multiplier: Gradient noise multiplier z.
-        quantile_noise_std: Std of quantile estimator noise σ_b.
-
-    Returns:
-        Combined sensitivity z̃.
-    """
+    """Combined sensitivity for adaptive clipping (Andrew et al. 2021)."""
     ...
