@@ -19,7 +19,7 @@ import pytest
 
 import opaque_accounting as acc
 from opaque_accounting import opaque_accounting as _native
-from opaque_accounting.discretization import get_discretization
+from opaque_accounting.discretization import DiscretizationConfig
 
 
 # ============================================================================
@@ -159,7 +159,7 @@ class TestCgfVsAnalytical:
         """
         sigma = 0.5
         cgf = _native.cgf_gaussian_pld(sigma).self_compose(n)
-        pmf = _native.gaussian_pld(sigma, get_discretization().to_native())
+        pmf = _native.gaussian_pld(sigma, DiscretizationConfig().to_native())
         pmf_composed = pmf.self_compose(n)
 
         # Compare epsilon_at (more stable than delta_at for comparison)
@@ -185,7 +185,7 @@ class TestCgfVsPmfOverlap:
 
     def _get_both_plds(self, sigma: float = 0.1):
         """Build both CGF and PMF PLDs for the same σ."""
-        config = get_discretization().to_native()
+        config = DiscretizationConfig().to_native()
         cgf = _native.cgf_gaussian_pld(sigma)
         pmf = _native.gaussian_pld(sigma, config)
         return cgf, pmf

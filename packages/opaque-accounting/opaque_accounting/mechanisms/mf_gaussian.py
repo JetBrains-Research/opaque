@@ -18,10 +18,8 @@ from dataclasses import dataclass
 
 from .. import opaque_accounting as _native
 
-from opaque_accounting.base import DpProcess, PmfPld
-from opaque_accounting.discretization import (
-    get_discretization,
-)
+from opaque_accounting.base import CgfPld, DpProcess, PmfPld
+from opaque_accounting.discretization import DiscretizationConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,21 +34,14 @@ class MfGaussian(DpProcess):
     noise_multiplier: float
     sensitivity: float
 
+    @functools.lru_cache(maxsize=1)
+    def cgf(self) -> CgfPld:
+        return CgfPld(_native.cgf_mf_gaussian_pld(
+            self.noise_multiplier, self.sensitivity
+        ))
+
     @functools.lru_cache(maxsize=8)
-    def pld(
-        self,
-        *,
-        discretization: float | None = None,
-        log_x_mass_truncation_bound: float | None = None,
-        pessimistic_estimate: bool | None = None,
-        max_grid_size: int | None = None,
-    ) -> PmfPld:
-        config = get_discretization(
-            discretization=discretization,
-            log_x_mass_truncation_bound=log_x_mass_truncation_bound,
-            pessimistic_estimate=pessimistic_estimate,
-            max_grid_size=max_grid_size,
-        )
+    def pmf(self, config: DiscretizationConfig) -> PmfPld:
         return PmfPld(_native.mf_gaussian_pld(
             self.noise_multiplier,
             self.sensitivity,
@@ -83,6 +74,6 @@ def mf_gaussian(noise_multiplier: float, sensitivity: float) -> MfGaussian:
 
         # BandMF with pre-computed sensitivity
         proc = acc.mf_gaussian(noise_multiplier=1.0, sensitivity=2.5)
-        eps = proc.epsilon_at(1e-5)
+        eps = proc.cgf().epsilon_at(1e-5)
     """
     return MfGaussian(noise_multiplier, sensitivity)

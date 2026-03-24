@@ -79,11 +79,7 @@ from opaque_accounting.composition import (
     compose,
     repeat,
 )
-from opaque_accounting.discretization import (
-    DiscretizationConfig,
-    get_discretization,
-    set_discretization,
-)
+from opaque_accounting.discretization import DiscretizationConfig
 
 # Mechanisms
 from opaque_accounting.mechanisms import (
@@ -115,8 +111,6 @@ __all__ = [
     "Accountant",
     # Discretization
     "DiscretizationConfig",
-    "set_discretization",
-    "get_discretization",
     # Mechanisms (factories only; classes via subpackage import)
     "gaussian",
     "rectified_gaussian",
