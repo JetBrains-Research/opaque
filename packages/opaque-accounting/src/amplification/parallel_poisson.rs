@@ -339,19 +339,20 @@ fn mixture_gaussian_epsilon_bounds(
 
 /// Create a CGF-backed PLD for a parallel Poisson-subsampled Gaussian mechanism.
 ///
-/// Models the parallel Poisson as a mixture of Gaussian mechanisms with
-/// sensitivities 0, 1, ..., m, weighted by Binomial(m, q) probabilities.
+/// Uses the exact MoG (Mixture-of-Gaussians) CGF for tight privacy accounting.
+/// The output distribution when the target is present is a mixture:
+///   P(x) = Σ_k Binom(m,q,k) · N(x; k, σ²)
 ///
-/// Λ(t) = log Σ_{k=0}^{m} Binom(m,q,k) · exp(Λ_k(t))
-///
-/// where Λ_k(t) = t(1+t)·k²/(2σ²) is the CGF of a Gaussian with sensitivity k.
+/// The CGF follows the convention in `saddle_point_math.md`:
+///   Λ(t) = log E_Q[(P/Q)^{1+t}]
+/// computed via Gauss-Hermite quadrature over Q = N(0, σ²).
 pub fn cgf_parallel_poisson_gaussian_pld(
     noise_multiplier: f64,
     rate: f64,
     microbatches: usize,
 ) -> Result<PrivacyLossDistribution> {
     use std::sync::Arc;
-    use crate::pld::cgf::{Cgf, GaussianCgf, IdentityCgf, MixtureCgf};
+    use crate::pld::cgf::MogGaussianCgf;
 
     validate_noise_multiplier(noise_multiplier)?;
     validate_rate(rate)?;
@@ -359,32 +360,9 @@ pub fn cgf_parallel_poisson_gaussian_pld(
         return Err(PldError::InvalidParameter("microbatches must be > 0".into()));
     }
 
-    if microbatches == 1 {
-        use crate::pld::cgf::SubsampledGaussianCgf;
-        return Ok(PrivacyLossDistribution::new_cgf(Arc::new(
-            SubsampledGaussianCgf::new(noise_multiplier, rate),
-        )));
-    }
-
-    let log_probs = binomial_log_probs(microbatches, rate);
-    let mut components: Vec<(Arc<dyn Cgf>, f64)> = Vec::with_capacity(microbatches + 1);
-
-    for k in 0..=microbatches {
-        let log_w = log_probs[k];
-        if log_w < -300.0 {
-            continue; // Skip negligible components
-        }
-        let cgf: Arc<dyn Cgf> = if k == 0 {
-            Arc::new(IdentityCgf)
-        } else {
-            // Gaussian with sensitivity k → effective σ_eff = σ/k
-            Arc::new(GaussianCgf::new(noise_multiplier / k as f64))
-        };
-        components.push((cgf, log_w));
-    }
-
-    let mixture = MixtureCgf::new_log_weights(components);
-    Ok(PrivacyLossDistribution::new_cgf(Arc::new(mixture)))
+    // m=1 is standard Poisson subsampling — use MoG with Binom(1,q)
+    let mog = MogGaussianCgf::from_binomial(noise_multiplier, microbatches, rate);
+    Ok(PrivacyLossDistribution::new_cgf(Arc::new(mog)))
 }
 
 // ===========================================================================
@@ -481,6 +459,79 @@ mod tests {
 
         let delta_rem = mixture_gaussian_get_delta(1.0, Adjacency::Remove, &c).unwrap();
         assert_relative_eq!(delta_rem, 0.15768284088654105, epsilon = 1e-6);
+    }
+
+    // ---- MoG CGF integration tests ----
+
+    #[test]
+    fn test_cgf_parallel_poisson_composed_agrees_with_pmf() {
+        // With composition (n=100), compare CGF (MogGaussianCgf) vs PMF.
+        let cfg = default_config();
+        let sigma = 1.0;
+        let q = 0.01;
+        let m = 4;
+        let delta = 1e-5;
+        let n = 100;
+
+        let pld_pmf = parallel_poisson_gaussian_pld(sigma, q, m, &cfg)
+            .unwrap().self_compose(n);
+        let eps_pmf = pld_pmf.epsilon_at(delta);
+
+        let pld_cgf = cgf_parallel_poisson_gaussian_pld(sigma, q, m)
+            .unwrap().self_compose(n);
+        let eps_cgf = pld_cgf.epsilon_at(delta);
+
+        let rel_err = (eps_cgf - eps_pmf).abs() / eps_pmf;
+        assert!(
+            rel_err < 0.10,
+            "Composed CGF and PMF epsilon should be close: cgf={}, pmf={}, rel_err={:.2}%",
+            eps_cgf, eps_pmf, rel_err * 100.0
+        );
+    }
+
+    #[test]
+    fn test_cgf_mog_composed_tighter_than_old_mixture() {
+        // MogGaussianCgf (exact) should give ε ≤ old MixtureCgf (upper bound).
+        use std::sync::Arc;
+        use crate::pld::cgf::{Cgf, GaussianCgf, IdentityCgf, MixtureCgf};
+
+        let sigma = 1.0;
+        let q = 0.1;
+        let m = 4;
+        let delta = 1e-5;
+        let n = 100;
+
+        // New tight MoG approach
+        let pld_new = cgf_parallel_poisson_gaussian_pld(sigma, q, m)
+            .unwrap().self_compose(n);
+        let eps_new = pld_new.epsilon_at(delta);
+
+        // Old MixtureCgf upper bound
+        let log_probs = binomial_log_probs(m, q);
+        let mut components: Vec<(Arc<dyn Cgf>, f64)> = Vec::new();
+        for k in 0..=m {
+            let log_w = log_probs[k];
+            if log_w < -300.0 { continue; }
+            let cgf: Arc<dyn Cgf> = if k == 0 {
+                Arc::new(IdentityCgf)
+            } else {
+                Arc::new(GaussianCgf::new(sigma / k as f64))
+            };
+            components.push((cgf, log_w));
+        }
+        let pld_old = PrivacyLossDistribution::new_cgf(
+            Arc::new(MixtureCgf::new_log_weights(components))
+        ).self_compose(n);
+        let eps_old = pld_old.epsilon_at(delta);
+
+        assert!(
+            eps_new <= eps_old + 0.01,
+            "MoG CGF should be tighter: new={}, old={}", eps_new, eps_old
+        );
+
+        // The improvement should be meaningful for q=0.1, m=4
+        let improvement = (eps_old - eps_new) / eps_old * 100.0;
+        eprintln!("MoG CGF improvement: {:.1}% (new={:.4}, old={:.4})", improvement, eps_new, eps_old);
     }
 
     /// Helper: construct MixtureConstants from arbitrary sensitivities and probs.

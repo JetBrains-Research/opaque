@@ -583,6 +583,133 @@ impl Cgf for MixtureCgf {
 }
 
 // ---------------------------------------------------------------------------
+// Mixture-of-Gaussians (MoG) CGF — tight accounting
+// ---------------------------------------------------------------------------
+
+/// Exact CGF for the Mixture-of-Gaussians privacy loss.
+///
+/// Models the REMOVE adjacency where:
+///   P(x) = Σ_k  w_k · N(x; k, σ²)   (output when target present, sensitivity k)
+///   Q(x) = N(x; 0, σ²)               (output when target absent)
+///
+/// Following the convention in `saddle_point_math.md`:
+///   L = log(P/Q), sampled under P.
+///   Λ(t) = log E_P[e^{tL}] = log E_Q[(P/Q)^{1+t}]
+///
+/// The second form enables Gauss-Hermite quadrature over Q = N(0, σ²).
+///
+/// Key property: Λ(−1) = log E_Q[(P/Q)^0] = 0 (exact, not approximate).
+///
+/// For Poisson subsampling (m=1): P/Q = q·exp((2x−1)/(2σ²)) + (1−q).
+/// For parallel Poisson (m workers): P/Q = Σ_k Binom(m,q,k)·exp((2kx−k²)/(2σ²)).
+///
+/// This is **tighter** than `MixtureCgf` over `GaussianCgf` components.
+#[derive(Debug, Clone)]
+pub struct MogGaussianCgf {
+    /// Component log-weights: log(w_k).
+    log_weights: Vec<f64>,
+    /// Per-component constant in P_k/Q ratio: −k² / (2σ²).
+    ratio_const: Vec<f64>,
+    /// Per-component linear coefficient: k√2 / σ (for GH node z, with x = σ√2z).
+    ratio_linear: Vec<f64>,
+    /// Gauss-Hermite nodes.
+    gh_nodes: Vec<f64>,
+    /// Gauss-Hermite weights.
+    gh_weights: Vec<f64>,
+}
+
+impl MogGaussianCgf {
+    /// Create from (sensitivity, log_weight) pairs.
+    ///
+    /// Each component k contributes: P_k(x)/Q(x) = exp((2kx − k²)/(2σ²)).
+    pub fn new(sigma: f64, sensitivities_and_log_weights: Vec<(f64, f64)>) -> Self {
+        let (nodes, weights) = gauss_hermite_nodes_weights(GH_ORDER);
+        let inv_2sigma_sq = 1.0 / (2.0 * sigma * sigma);
+        let sqrt2_over_sigma = std::f64::consts::SQRT_2 / sigma;
+
+        let mut log_weights = Vec::with_capacity(sensitivities_and_log_weights.len());
+        let mut ratio_const = Vec::with_capacity(sensitivities_and_log_weights.len());
+        let mut ratio_linear = Vec::with_capacity(sensitivities_and_log_weights.len());
+
+        for &(k, log_w) in &sensitivities_and_log_weights {
+            log_weights.push(log_w);
+            // P_k/Q at x = σ√2z: exp(k√2z/σ − k²/(2σ²))
+            ratio_const.push(-k * k * inv_2sigma_sq);
+            ratio_linear.push(k * sqrt2_over_sigma);
+        }
+
+        Self { log_weights, ratio_const, ratio_linear, gh_nodes: nodes, gh_weights: weights }
+    }
+
+    /// Create from Binomial(m, q) distribution over integer sensitivities 0..=m.
+    pub fn from_binomial(sigma: f64, m: usize, q: f64) -> Self {
+        let log_probs = binomial_log_probs_internal(m, q);
+        let mut components = Vec::with_capacity(m + 1);
+        for (k, &log_w) in log_probs.iter().enumerate() {
+            if log_w < -300.0 { continue; }
+            components.push((k as f64, log_w));
+        }
+        Self::new(sigma, components)
+    }
+
+    fn eval_raw(&self, t: f64) -> f64 {
+        let n_comp = self.log_weights.len();
+        let exponent = 1.0 + t; // Λ(t) = log E_Q[(P/Q)^{1+t}]
+
+        let mut log_integrand: Vec<f64> = Vec::with_capacity(self.gh_nodes.len());
+
+        for (&z, &w) in self.gh_nodes.iter().zip(self.gh_weights.iter()) {
+            if w <= 0.0 { continue; }
+
+            // log(P/Q) at node z via log-sum-exp: log(Σ_k w_k exp(const_k + linear_k·z))
+            let mut log_terms: Vec<f64> = Vec::with_capacity(n_comp);
+            for j in 0..n_comp {
+                log_terms.push(self.log_weights[j] + self.ratio_const[j] + self.ratio_linear[j] * z);
+            }
+
+            let max_lt = log_terms.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            if max_lt == f64::NEG_INFINITY { continue; }
+            let sum_exp: f64 = log_terms.iter().map(|&lt| (lt - max_lt).exp()).sum();
+            let log_ratio = max_lt + sum_exp.ln(); // log(P(x)/Q(x))
+
+            // log(w · (P/Q)^{1+t}) = log(w) + (1+t) · log(P/Q)
+            log_integrand.push(w.ln() + exponent * log_ratio);
+        }
+
+        if log_integrand.is_empty() { return 0.0; }
+
+        let max_log = log_integrand.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let sum: f64 = log_integrand.iter().map(|&lt| (lt - max_log).exp()).sum();
+        max_log + sum.ln() - 0.5 * std::f64::consts::PI.ln()
+    }
+}
+
+impl Cgf for MogGaussianCgf {
+    fn eval(&self, t: f64) -> f64 { self.eval_raw(t) }
+    fn eval_prime(&self, t: f64) -> f64 {
+        let h = FD_STEP;
+        (self.eval_raw(t + h) - self.eval_raw(t - h)) / (2.0 * h)
+    }
+    fn eval_double_prime(&self, t: f64) -> f64 {
+        let h = FD_STEP;
+        (self.eval_raw(t + h) - 2.0 * self.eval_raw(t) + self.eval_raw(t - h)) / (h * h)
+    }
+}
+
+/// Compute Binomial(m, q) log-probabilities via stable recurrence.
+fn binomial_log_probs_internal(m: usize, q: f64) -> Vec<f64> {
+    let mut log_probs = Vec::with_capacity(m + 1);
+    let log_1mq = (1.0 - q).ln();
+    let log_q_ratio = (q / (1.0 - q)).ln();
+    log_probs.push(m as f64 * log_1mq);
+    for k in 1..=m {
+        let prev = log_probs[k - 1];
+        log_probs.push(prev + ((m - k + 1) as f64 / k as f64).ln() + log_q_ratio);
+    }
+    log_probs
+}
+
+// ---------------------------------------------------------------------------
 // Subsampled Truncated Gaussian CGF
 // ---------------------------------------------------------------------------
 
@@ -793,5 +920,44 @@ mod tests {
         let (_, weights) = gauss_hermite_nodes_weights(20);
         let sum: f64 = weights.iter().sum();
         assert_relative_eq!(sum / std::f64::consts::PI.sqrt(), 1.0, epsilon = 1e-10);
+    }
+
+    // --- MogGaussianCgf tests ---
+
+    #[test]
+    fn test_mog_cgf_at_zero() {
+        // Λ(0) = log E_Q[(P/Q)^1] = log ∫ P = 0
+        let cgf = MogGaussianCgf::from_binomial(1.0, 4, 0.01);
+        assert_relative_eq!(cgf.eval(0.0), 0.0, epsilon = 1e-8);
+    }
+
+    #[test]
+    fn test_mog_cgf_at_minus_one_is_zero() {
+        // Λ(-1) = log E_Q[(P/Q)^0] = log 1 = 0
+        let cgf = MogGaussianCgf::from_binomial(1.0, 4, 0.1);
+        assert_relative_eq!(cgf.eval(-1.0), 0.0, epsilon = 1e-8);
+    }
+
+    #[test]
+    fn test_mog_cgf_single_component_matches_gaussian() {
+        // MoG with single component (k=1, weight=1) matches GaussianCgf
+        let sigma = 0.5;
+        let gauss = GaussianCgf::new(sigma);
+        let mog = MogGaussianCgf::new(sigma, vec![(1.0, 0.0)]); // (sensitivity=1, log_weight=0)
+
+        for &t in &[-1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0] {
+            let (m, g) = (mog.eval(t), gauss.eval(t));
+            assert!((m - g).abs() / g.abs().max(1.0) < 0.01,
+                "Mismatch at t={}: mog={}, gauss={}", t, m, g);
+        }
+    }
+
+    #[test]
+    fn test_mog_cgf_positive_for_positive_t() {
+        // Λ(t) ≥ 0 for t ≥ 0 (Jensen's inequality: (P/Q)^{1+t} ≥ E[(P/Q)]^{1+t} = 1)
+        let cgf = MogGaussianCgf::from_binomial(1.0, 4, 0.1);
+        for &t in &[0.0, 0.5, 1.0, 2.0, 5.0] {
+            assert!(cgf.eval(t) >= -1e-8, "Λ({}) = {} should be >= 0", t, cgf.eval(t));
+        }
     }
 }
