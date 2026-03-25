@@ -309,11 +309,11 @@ import opaque.accounting as acc
 
 # BandMF (with cyclic Poisson amplification)
 proc = acc.cyclic_poisson(acc.band_mf(1.0, 1000, 10), sample_rate=0.01)
-eps = proc.epsilon_at(1e-5)
+eps = proc.cgf().epsilon_at(1e-5)
 
 # BLT (multi-epoch)
 proc = acc.blt_mf(1.0, 5000, min_sep=100, max_participations=5)
-eps = proc.epsilon_at(1e-5)
+eps = proc.cgf().epsilon_at(1e-5)
 ```
 
 See [Privacy Accounting — Matrix factorization mechanisms](accounting.md#matrix-factorization-mechanisms)

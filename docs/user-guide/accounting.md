@@ -10,11 +10,11 @@ for each mechanism, see the [Mechanisms](../mechanisms/index.md) reference.
 
 ## Core concepts
 
-### DpProcess
+### DpProcess and materialization
 
 Every mechanism constructor returns a `DpProcess`. Composition operators
-produce new `DpProcess` instances. Privacy metrics are computed on demand from
-the underlying PLD.
+produce new `DpProcess` instances. To query privacy metrics, first
+**materialize** the process into a PLD via `.cgf()` or `.pmf()`:
 
 ```python
 import opaque.accounting as acc
@@ -26,11 +26,20 @@ p = acc.poisson(acc.gaussian(0.8), sample_rate=0.01)
 # Composition produces new DpProcess instances
 training = p * 1000
 
-# Privacy metrics (all derived from the same PLD)
-eps = training.epsilon_at(delta=1e-5)
-adv = training.advantage()
-beta = training.beta_at(alpha=0.01)
+# Materialize to a PLD, then query metrics
+eps = training.cgf().epsilon_at(delta=1e-5)
 ```
+
+There are two materialization paths:
+
+| Path | Returns | Metrics | Best for |
+|------|---------|---------|----------|
+| `.cgf()` | `CgfPld` | `epsilon_at`, `delta_at`, `advantage` | Fast queries, no grid needed |
+| `.pmf(**kwargs)` | `PmfPld` | All 5 metrics (including `beta_at`, `risk_at`) | Full metric suite |
+
+Use `.cgf()` by default — it is faster and requires no discretization grid.
+Use `.pmf()` when you need `beta_at` or `risk_at`, or when the mechanism
+does not support a CGF (e.g., `rectified_gaussian`).
 
 ### Composition operators
 
@@ -54,7 +63,7 @@ warmup = acc.poisson(acc.gaussian(0.3), sample_rate=0.01) * 100
 main = acc.poisson(acc.gaussian(0.5), sample_rate=0.01) * 900
 total = warmup | main
 
-eps = total.epsilon_at(delta=1e-5)
+eps = total.cgf().epsilon_at(delta=1e-5)
 ```
 
 Composition is automatically optimized: identical processes are merged into
@@ -69,7 +78,7 @@ typically uses Poisson sampling.
 
 ```python
 g = acc.gaussian(0.8)
-eps = g.epsilon_at(delta=1e-5)
+eps = g.cgf().epsilon_at(delta=1e-5)
 ```
 
 ### `acc.poisson(inner, sample_rate)`
@@ -82,7 +91,7 @@ subsampling. Accepts `gaussian()`, `rectified_gaussian()`,
 ```python
 step = acc.poisson(acc.gaussian(0.8), sample_rate=256 / 50_000)
 training = step * 1000
-eps = training.epsilon_at(delta=1e-5)
+eps = training.cgf().epsilon_at(delta=1e-5)
 ```
 
 ### `acc.truncated_poisson(inner, sample_rate, batch_size_cap, dataset_size)`
@@ -125,8 +134,10 @@ Composable with `poisson()` for subsampled accounting.
 ```python
 step = acc.poisson(acc.rectified_gaussian(1.1, bound_multiplier=5.0), sample_rate=0.01)
 training = step * 1000
-eps = training.epsilon_at(delta=1e-5)  # tighter than acc.gaussian(1.1)
+eps = training.pmf().epsilon_at(delta=1e-5)  # tighter than acc.gaussian(1.1)
 ```
+
+Note: `rectified_gaussian` does not support the CGF path; use `.pmf()`.
 
 ### `acc.truncated_gaussian(noise_multiplier, bound_multiplier)`
 
@@ -140,8 +151,10 @@ Composable with `poisson()` for subsampled accounting.
 ```python
 step = acc.poisson(acc.truncated_gaussian(1.1, bound_multiplier=5.0), sample_rate=0.01)
 training = step * 1000
-eps = training.epsilon_at(delta=1e-5)  # tightest of the three
+eps = training.pmf().epsilon_at(delta=1e-5)  # tightest of the three
 ```
+
+Note: `truncated_gaussian` does not support the CGF path; use `.pmf()`.
 
 Both bounded variants give tighter ε than `acc.gaussian()`. Truncated is
 always at least as tight as rectified. For most workloads, prefer truncated.
@@ -179,7 +192,7 @@ value when building up a process programmatically.
 process = acc.identity()
 for step_proc in step_list:
     process = process | step_proc
-eps = process.epsilon_at(delta=1e-5)
+eps = process.cgf().epsilon_at(delta=1e-5)
 ```
 
 ## Matrix factorization mechanisms
@@ -197,7 +210,7 @@ sensitivity from the optimized encoder.
 
 ```python
 proc = acc.band_mf(noise_multiplier=1.0, n_steps=1000, bands=10)
-eps = proc.epsilon_at(delta=1e-5)
+eps = proc.cgf().epsilon_at(delta=1e-5)
 ```
 
 For subsampling amplification, wrap with `cyclic_poisson` (see below).
@@ -210,11 +223,11 @@ multi-epoch training via `min_sep` and `max_participations`.
 ```python
 # Single participation
 proc = acc.blt_mf(noise_multiplier=1.0, n_steps=5000)
-eps = proc.epsilon_at(delta=1e-5)
+eps = proc.cgf().epsilon_at(delta=1e-5)
 
 # Multi-epoch: each user participates up to 5 times, at least 100 steps apart
 proc = acc.blt_mf(1.0, 5000, min_sep=100, max_participations=5)
-eps = proc.epsilon_at(delta=1e-5)
+eps = proc.cgf().epsilon_at(delta=1e-5)
 ```
 
 ### `acc.dense_mf(noise_multiplier, n_steps, *, epochs)`
@@ -224,7 +237,7 @@ so use only for short training runs (n < 100).
 
 ```python
 proc = acc.dense_mf(noise_multiplier=1.0, n_steps=50, epochs=2)
-eps = proc.epsilon_at(delta=1e-5)
+eps = proc.cgf().epsilon_at(delta=1e-5)
 ```
 
 ### `acc.cyclic_poisson(inner, sample_rate)`
@@ -238,7 +251,7 @@ proc = acc.cyclic_poisson(
     acc.band_mf(noise_multiplier=1.0, n_steps=1000, bands=10),
     sample_rate=0.01,
 )
-eps = proc.epsilon_at(delta=1e-5)
+eps = proc.cgf().epsilon_at(delta=1e-5)
 ```
 
 ### Calibrating MF noise
@@ -260,8 +273,19 @@ noise_multiplier = result.param
 
 ## Privacy metrics
 
-All metrics are methods on `DpProcess`. They compute the underlying PLD on
-demand and cache the result.
+Privacy metrics live on the materialized PLD objects (`CgfPld` or `PmfPld`),
+not on `DpProcess` itself. First materialize via `.cgf()` or `.pmf()`, then
+query metrics on the result.
+
+**`CgfPld`** (from `.cgf()`) — fast, no discretization grid:
+
+| Method | Returns | Interpretation |
+|--------|---------|----------------|
+| `.epsilon_at(delta)` | float | Smallest epsilon for (epsilon, delta)-DP |
+| `.delta_at(epsilon)` | float | Smallest delta for (epsilon, delta)-DP |
+| `.advantage()` | float | f-DP total-variation advantage (0 = perfect privacy) |
+
+**`PmfPld`** (from `.pmf()`) — full metric suite:
 
 | Method | Returns | Interpretation |
 |--------|---------|----------------|
@@ -271,14 +295,21 @@ demand and cache the result.
 | `.beta_at(alpha)` | float | Type-II error at Type-I error alpha (higher = more private) |
 | `.risk_at(prior)` | float | Bayes risk under optimal adversary (higher = more private) |
 
+A `CgfPld` can be further materialized to a `PmfPld` via `.pmf()`:
+
 ```python
 training = acc.poisson(acc.gaussian(1.1), sample_rate=0.01) * 1000
 
-eps = training.epsilon_at(delta=1e-5)
-delta = training.delta_at(epsilon=3.0)
-adv = training.advantage()
-beta = training.beta_at(alpha=0.01)
-risk = training.risk_at(prior=0.5)
+# CGF path (fast, no grid)
+cgf = training.cgf()
+eps = cgf.epsilon_at(delta=1e-5)
+delta = cgf.delta_at(epsilon=3.0)
+adv = cgf.advantage()
+
+# For beta_at / risk_at, materialize to PMF
+pmf = training.pmf()
+beta = pmf.beta_at(alpha=0.01)
+risk = pmf.risk_at(prior=0.5)
 ```
 
 See [DP Concepts](dp-concepts.md#privacy-metrics) for the meaning of each
@@ -334,7 +365,8 @@ sample_rate = result.param
 ## Accountant
 
 The `Accountant` class provides step-by-step privacy tracking during training.
-It wraps a `DpProcess` and provides budget checking.
+It wraps a `DpProcess` and provides budget checking. Materialize the
+accumulated process via `.cgf()` or `.pmf()` to query privacy metrics.
 
 ```python
 from opaque.accounting.accountant import Accountant
@@ -349,7 +381,7 @@ for batch in dataloader:
         print("Privacy budget exhausted")
         break
 
-eps = acct.epsilon_at(delta=1e-5)
+eps = acct.cgf().epsilon_at(delta=1e-5)
 ```
 
 `Accountant` is functional: `acct | step` returns a new `Accountant` without
@@ -365,26 +397,20 @@ state = acct.state_dict()
 acct = Accountant.from_state_dict(state)
 ```
 
-## Discretization
+## Discretization (PMF path)
 
-PLD computation uses a discretized grid. The default parameters are suitable
-for most use cases. For tighter bounds at the cost of computation, adjust the
-discretization:
+The PMF materialization path uses a discretized grid. The default parameters
+are suitable for most use cases. For tighter bounds at the cost of
+computation, pass discretization keyword arguments to `.pmf()`:
 
 ```python
-from opaque.accounting import set_discretization
-
 # Tighter (slower)
-set_discretization(discretization=1e-5, max_grid_size=50_000_000)
+pmf = training.pmf(discretization=1e-5, max_grid_size=50_000_000)
+eps = pmf.epsilon_at(delta=1e-5)
 
 # Faster (looser)
-set_discretization(discretization=1e-3)
-```
-
-Parameters can also be overridden per query:
-
-```python
-eps = training.epsilon_at(delta=1e-5, discretization=1e-5)
+pmf = training.pmf(discretization=1e-3)
+eps = pmf.epsilon_at(delta=1e-5)
 ```
 
 | Parameter | Default | Effect |
@@ -393,6 +419,9 @@ eps = training.epsilon_at(delta=1e-5, discretization=1e-5)
 | `log_x_mass_truncation_bound` | -50.0 | Log tail mass cutoff. |
 | `pessimistic_estimate` | True | Round upward for safe guarantees. |
 | `max_grid_size` | 10,000,000 | Maximum grid bins before coarsening. |
+
+The CGF path (`.cgf()`) does not use a grid, so these parameters do not
+apply to it.
 
 ## API reference
 

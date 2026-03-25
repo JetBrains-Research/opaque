@@ -81,7 +81,7 @@ for epoch in range(10):
 
         accountant = accountant | step_proc
 
-    print(f"Epoch {epoch+1}/10 - epsilon={accountant.epsilon_at(delta):.2f}")
+    print(f"Epoch {epoch+1}/10 - epsilon={accountant.cgf().epsilon_at(delta):.2f}")
 ```
 
 ## What this does

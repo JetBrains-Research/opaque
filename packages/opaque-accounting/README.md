@@ -49,18 +49,18 @@ import opaque.accounting as acc
 
 # Single Gaussian mechanism
 step = acc.gaussian(0.5)
-print(step.epsilon_at(1e-5))
+print(step.cgf().epsilon_at(1e-5))
 
 # DP-SGD: Poisson-subsampled Gaussian, 1000 steps
 training = acc.poisson(acc.gaussian(0.5), sample_rate=0.01) * 1000
-eps = training.epsilon_at(delta=1e-5)
+eps = training.cgf().epsilon_at(delta=1e-5)
 print(f"DP-SGD: epsilon={eps:.2f}")
 
 # Heterogeneous composition (warmup + training)
 warmup = acc.poisson(acc.gaussian(0.15), 0.001) * 100
 training = acc.poisson(acc.gaussian(0.25), 0.001) * 400
 total = warmup | training
-print(total.epsilon_at(1e-5))
+print(total.cgf().epsilon_at(1e-5))
 ```
 
 ### Rust
@@ -101,7 +101,10 @@ opaque_accounting (Rust crate)
 
 ### Pld type
 
-All functions return `PrivacyLossDistribution` (exposed as `Pld` in Python):
+All functions return `PrivacyLossDistribution` (exposed as `Pld` in Python).
+In the Python API, `Pld` is wrapped by `CgfPld` (CGF-backed, no grid) or
+`PmfPld` (PMF-backed, discretized grid). Materialize a `DpProcess` via
+`.cgf()` or `.pmf()` to get the appropriate wrapper.
 
 | Method | Returns | Description |
 |--------|---------|-------------|

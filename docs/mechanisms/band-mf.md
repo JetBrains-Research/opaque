@@ -98,7 +98,7 @@ proc = acc.cyclic_poisson(
     acc.band_mf(noise_multiplier=1.0, n_steps=1000, bands=10),
     sample_rate=0.01,
 )
-eps = proc.epsilon_at(delta=1e-5)
+eps = proc.cgf().epsilon_at(delta=1e-5)
 ```
 
 | Amplification | Supported | Notes |
@@ -145,11 +145,11 @@ proc = acc.cyclic_poisson(
     acc.band_mf(noise_multiplier=1.0, n_steps=1000, bands=10),
     sample_rate=0.01,
 )
-eps = proc.epsilon_at(delta=1e-5)
+eps = proc.cgf().epsilon_at(delta=1e-5)
 
 # BandMF without amplification (for comparison)
 proc_no_amp = acc.band_mf(noise_multiplier=1.0, n_steps=1000, bands=10)
-eps_no_amp = proc_no_amp.epsilon_at(delta=1e-5)
+eps_no_amp = proc_no_amp.cgf().epsilon_at(delta=1e-5)
 
 print(f"With cyclic Poisson: ε={eps:.4f}")
 print(f"Without amplification: ε={eps_no_amp:.4f}")

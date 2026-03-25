@@ -117,11 +117,11 @@ import opaque.accounting as acc
 
 # Single epoch
 proc = acc.dense_mf(noise_multiplier=1.0, n_steps=50)
-eps = proc.epsilon_at(delta=1e-5)
+eps = proc.cgf().epsilon_at(delta=1e-5)
 
 # Two epochs (each user participates twice)
 proc = acc.dense_mf(noise_multiplier=1.0, n_steps=50, epochs=2)
-eps = proc.epsilon_at(delta=1e-5)
+eps = proc.cgf().epsilon_at(delta=1e-5)
 ```
 
 ### Calibration
@@ -150,7 +150,7 @@ band  = acc.band_mf(nm, n_steps=n, bands=10)
 gauss = acc.gaussian(nm) * n  # independent noise, n compositions
 
 for name, proc in [("Dense MF", dense), ("BandMF", band), ("Gaussian×n", gauss)]:
-    print(f"{name:12s}  ε = {proc.epsilon_at(1e-5):.4f}")
+    print(f"{name:12s}  ε = {proc.cgf().epsilon_at(1e-5):.4f}")
 ```
 
 ## Parameter guide

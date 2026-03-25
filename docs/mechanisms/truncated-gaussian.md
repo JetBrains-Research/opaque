@@ -91,7 +91,7 @@ the normalization constants correctly.
 ```python
 step = acc.poisson(acc.truncated_gaussian(1.0, radius=5.0), sample_rate=0.01)
 training = step * 1000
-eps = training.epsilon_at(delta=1e-5)  # tightest of the three
+eps = training.pmf().epsilon_at(delta=1e-5)  # tightest of the three
 ```
 
 **Full ordering with Poisson amplification**:
@@ -143,7 +143,7 @@ step = acc.poisson(
     sample_rate=0.01,
 )
 training = step * 1000
-eps = training.epsilon_at(delta=1e-5)
+eps = training.pmf().epsilon_at(delta=1e-5)
 
 # Compare all three variants at the same noise level
 for name, mech in [
@@ -152,7 +152,7 @@ for name, mech in [
     ("Truncated", acc.truncated_gaussian(1.0, radius=5.0)),
 ]:
     proc = acc.poisson(mech, sample_rate=0.01) * 1000
-    print(f"{name:10s}  ε = {proc.epsilon_at(1e-5):.4f}")
+    print(f"{name:10s}  ε = {proc.pmf().epsilon_at(1e-5):.4f}")
 ```
 
 ### Calibration

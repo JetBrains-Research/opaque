@@ -190,7 +190,7 @@ The standard DP definition. Given a target $\delta$, compute the smallest $\vare
 such that the mechanism is $(\varepsilon, \delta)$-DP.
 
 ```python
-eps = training.epsilon_at(delta=1e-5)
+eps = training.cgf().epsilon_at(delta=1e-5)
 ```
 
 This is the most widely reported metric in the DP literature. Use it for
@@ -218,7 +218,7 @@ An advantage of 0 means the adversary cannot distinguish at all (perfect
 privacy); an advantage of 1 means perfect distinguishing.
 
 ```python
-adv = training.advantage()
+adv = training.cgf().advantage()
 ```
 
 ### ($\alpha$, $\beta$) error rates
@@ -232,7 +232,7 @@ hypothesis (that the data was not in the training set) without high false
 negative rates.
 
 ```python
-beta = training.beta_at(alpha=0.01)
+beta = training.pmf().beta_at(alpha=0.01)
 ```
 
 This metric is useful for understanding the operational meaning of a privacy
@@ -245,7 +245,7 @@ Given a prior probability $\pi$ that a record is in the dataset, the Bayes
 risk measures the adversary's expected error under the optimal decision rule:
 
 ```python
-risk = training.risk_at(prior=0.5)
+risk = training.pmf().risk_at(prior=0.5)
 ```
 
 A risk of 0.5 means the adversary does no better than random guessing.
@@ -255,13 +255,14 @@ This metric is natural for decision-theoretic reasoning about privacy.
 
 | Metric | Best for | Opaque method |
 |--------|----------|---------------|
-| $(\varepsilon, \delta)$-DP | Compliance, published comparisons | `.epsilon_at(delta)` |
-| Advantage | Quick scalar privacy summary | `.advantage()` |
-| $(\alpha, \beta)$ | Understanding operational privacy | `.beta_at(alpha)` |
-| Bayes risk | Decision-theoretic analysis | `.risk_at(prior)` |
+| $(\varepsilon, \delta)$-DP | Compliance, published comparisons | `.cgf().epsilon_at(delta)` |
+| Advantage | Quick scalar privacy summary | `.cgf().advantage()` |
+| $(\alpha, \beta)$ | Understanding operational privacy | `.pmf().beta_at(alpha)` |
+| Bayes risk | Decision-theoretic analysis | `.pmf().risk_at(prior)` |
 
-All four metrics are derived from the same PLD, so they are mutually
-consistent. You can query all of them from the same `DpProcess` object.
+All four metrics are derived from the same PLD. Materialize a `DpProcess`
+via `.cgf()` (fast, supports epsilon/delta/advantage) or `.pmf()` (full
+metric suite including beta_at and risk_at), then query metrics on the result.
 
 ## Key trade-offs in DP training
 

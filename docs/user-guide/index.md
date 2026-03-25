@@ -66,7 +66,7 @@ for batch in dataloader:
     if acct.budget_exceeded:
         break
 
-print(f"Final privacy: epsilon={acct.epsilon_at(1e-5):.2f}")
+print(f"Final privacy: epsilon={acct.cgf().epsilon_at(1e-5):.2f}")
 ```
 
 The sections below explain each part. Read them in order for a complete

@@ -1,7 +1,7 @@
 //! Analytic Gaussian mechanism functions
 //!
 //! Closed-form and numerical routines for the Gaussian mechanism's
-//! privacy loss properties, used by both the functional and legacy APIs.
+//! privacy loss properties.
 
 use statrs::distribution::{ContinuousCDF, Normal};
 

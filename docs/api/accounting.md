@@ -4,15 +4,15 @@ Differential privacy accounting using Privacy Loss Distributions (PLD).
 
 This module provides a compositional API for tracking privacy guarantees.
 Mechanism constructors return `DpProcess` objects that compose with `*` (repeat)
-and `|` (heterogeneous compose). Privacy metrics are queried directly on the
-resulting process.
+and `|` (heterogeneous compose). Privacy metrics are queried on the materialized
+PLD (`CgfPld` or `PmfPld`).
 
 ```python
 import opaque.accounting as acc
 
 step = acc.poisson(acc.gaussian(0.8), sample_rate=0.01)
 training = step * 1000
-epsilon = training.epsilon_at(1e-5)
+epsilon = training.cgf().epsilon_at(1e-5)
 ```
 
 The underlying implementation uses Google's PLD accounting via the
@@ -26,20 +26,18 @@ The underlying implementation uses Google's PLD accounting via the
 
 ### `DpProcess`
 
-Abstract base class for all privacy processes. Subclasses implement `pld()` to
-compute the Privacy Loss Distribution on demand. Results are automatically
-cached via `@lru_cache` (maxsize=8). Use `cached()` for larger cache
-size (16) or as an opaque merge barrier.
+Abstract base class for all privacy processes. Subclasses implement `pmf()` to
+compute the PMF-backed PLD and optionally `cgf()` for the CGF-backed PLD.
 
-**Privacy metrics:**
+**Materialization methods:**
 
-| Method               | Returns                                         |
-|----------------------|-------------------------------------------------|
-| `epsilon_at(delta)`  | Smallest epsilon achieving (epsilon, delta)-DP   |
-| `delta_at(epsilon)`  | Smallest delta achieving (epsilon, delta)-DP     |
-| `advantage()`        | Total-variation advantage (f-DP)                 |
-| `beta_at(alpha)`     | Type-II error at given Type-I error alpha        |
-| `risk_at(prior)`     | Bayes risk under optimal adversary               |
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `pmf(**kwargs)` | `PmfPld` | Materialize to a PMF-backed PLD (discretized grid) |
+| `cgf()` | `CgfPld` | Materialize to a CGF-backed PLD (no grid, saddle-point) |
+
+Not all mechanisms support `.cgf()`. Mechanisms without an analytical CGF
+(e.g., `rectified_gaussian`) raise `NotImplementedError` — use `.pmf()` instead.
 
 **Composition operators:**
 
@@ -65,13 +63,43 @@ phase1 = acc.poisson(acc.gaussian(0.5), 0.01) * 500
 phase2 = acc.poisson(acc.gaussian(0.3), 0.01) * 500
 total = phase1 | phase2
 
-eps = total.epsilon_at(1e-5)
+eps = total.cgf().epsilon_at(1e-5)
 ```
 
-### `DiscretizationConfig`
+### `CgfPld`
 
-Controls PLD discretization precision. Configuration is applied at **query time**
-when computing privacy metrics via `pld()`, not stored in process structure.
+CGF-backed PLD — fast, no discretization grid. Created by calling `.cgf()` on a
+`DpProcess`. Supports composition (`*`, `|`) that stays CGF-backed.
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `epsilon_at(delta)` | float | Smallest epsilon achieving (epsilon, delta)-DP |
+| `delta_at(epsilon)` | float | Smallest delta achieving (epsilon, delta)-DP |
+| `advantage()` | float | Total-variation advantage (f-DP) |
+| `pmf(**kwargs)` | `PmfPld` | Materialize to PMF for `beta_at`/`risk_at` |
+| `compose(other)` | `CgfPld` | Heterogeneous composition |
+| `self_compose(k)` | `CgfPld` | Homogeneous k-fold composition |
+
+### `PmfPld`
+
+PMF-backed PLD — discretized grid, full metric suite. Created by calling
+`.pmf()` on a `DpProcess` or `CgfPld`. Supports composition (`*`, `|`)
+that stays PMF-backed.
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `epsilon_at(delta)` | float | Smallest epsilon achieving (epsilon, delta)-DP |
+| `delta_at(epsilon)` | float | Smallest delta achieving (epsilon, delta)-DP |
+| `advantage()` | float | Total-variation advantage (f-DP) |
+| `beta_at(alpha)` | float | Type-II error at given Type-I error alpha |
+| `risk_at(prior)` | float | Bayes risk under optimal adversary |
+| `compose(other)` | `PmfPld` | Heterogeneous composition |
+| `self_compose(k)` | `PmfPld` | Homogeneous k-fold composition |
+
+### Discretization (PMF path)
+
+The `.pmf()` method accepts keyword arguments to control grid precision.
+These parameters only apply to the PMF path — the CGF path requires no grid.
 
 | Parameter                      | Default      | Description                                      |
 |--------------------------------|--------------|--------------------------------------------------|
@@ -80,37 +108,24 @@ when computing privacy metrics via `pld()`, not stored in process structure.
 | `pessimistic_estimate`         | `True`       | Round upward for safe upper bounds               |
 | `max_grid_size`                | `10_000_000` | Coarsen grid if it exceeds this many bins        |
 
-**Query-time configuration (recommended):**
-
 ```python
 # Create processes without config
 proc = acc.poisson(acc.gaussian(0.8), 0.01)
 
-# Apply config at query time
-eps_coarse = proc.epsilon_at(1e-5, discretization=1e-3)  # faster, less accurate
-eps_fine = proc.epsilon_at(1e-5, discretization=1e-5)    # slower, more accurate
+# PMF path with custom discretization
+eps_coarse = proc.pmf(discretization=1e-3).epsilon_at(1e-5)  # faster, less accurate
+eps_fine = proc.pmf(discretization=1e-5).epsilon_at(1e-5)    # slower, more accurate
+
+# CGF path (no grid, no discretization params)
+eps_cgf = proc.cgf().epsilon_at(1e-5)
 ```
-
-**Module-level discretization defaults:**
-
-Set default config for all queries when not overridden:
-
-```python
-acc.set_discretization(discretization=1e-4)  # Apply to all queries
-proc = acc.poisson(acc.gaussian(0.8), 0.01)
-eps = proc.epsilon_at(1e-5)  # Uses 1e-4 default
-```
-
-- `acc.set_discretization(discretization=1e-4, ...)` -- Set global default
-- `acc.get_discretization()` -- Return current `DiscretizationConfig`
 
 ---
 
 ## Mechanism Functions
 
-All mechanism constructors return a `DpProcess`. Discretization is configured
-at query time via `epsilon_at(..., discretization=...)` or module-level via
-`set_discretization()`.
+All mechanism constructors return a `DpProcess`. Materialize via `.cgf()` or
+`.pmf()` to query privacy metrics.
 
 ### `gaussian(noise_multiplier) -> DpProcess`
 
@@ -171,9 +186,10 @@ noise to `[-R*sigma, R*sigma]`; the excess tail mass becomes point masses at
 the boundaries. Tighter than the standard Gaussian.
 
 - `noise_multiplier` (float): Ratio of noise std to sensitivity.
-- `bound_multiplier` (float): Bound radius in units of sigma (R ≥ 1).
+- `bound_multiplier` (float): Bound radius in units of sigma (R >= 1).
 
 Composable with `poisson()` for subsampled accounting.
+Does not support `.cgf()` — use `.pmf()`.
 
 ```python
 step = acc.poisson(acc.rectified_gaussian(1.1, 5.0), sample_rate=0.01)
@@ -186,9 +202,10 @@ over `[-R*sigma, R*sigma]` (no point masses at boundaries). Always at least as
 tight as the rectified variant.
 
 - `noise_multiplier` (float): Ratio of noise std to sensitivity.
-- `bound_multiplier` (float): Bound radius in units of sigma (R ≥ 1).
+- `bound_multiplier` (float): Bound radius in units of sigma (R >= 1).
 
 Composable with `poisson()` for subsampled accounting.
+Does not support `.cgf()` — use `.pmf()`.
 
 ### `adaclip(inner, *, quantile_noise_multiplier, batch_size) -> DpProcess`
 
@@ -241,7 +258,7 @@ is computed from the optimized encoder matrix.
 
 ```python
 proc = acc.band_mf(noise_multiplier=1.0, n_steps=1000, bands=10)
-eps = proc.epsilon_at(1e-5)
+eps = proc.cgf().epsilon_at(1e-5)
 ```
 
 ### `blt_mf(noise_multiplier, n_steps, *, min_sep=1, max_participations=1, error="max", max_buffers=10) -> DpProcess`
@@ -258,7 +275,7 @@ patterns via `min_sep` and `max_participations`.
 
 ```python
 proc = acc.blt_mf(1.0, 5000, min_sep=100, max_participations=5)
-eps = proc.epsilon_at(1e-5)
+eps = proc.cgf().epsilon_at(1e-5)
 ```
 
 ### `dense_mf(noise_multiplier, n_steps, *, epochs=1, bands=None, equal_norm=False) -> DpProcess`
@@ -273,7 +290,7 @@ Dense MF with optimal strategy matrix. Materializes the full n x n matrix.
 
 ```python
 proc = acc.dense_mf(noise_multiplier=1.0, n_steps=50, epochs=2)
-eps = proc.epsilon_at(1e-5)
+eps = proc.cgf().epsilon_at(1e-5)
 ```
 
 ### `cyclic_poisson(inner, sample_rate) -> DpProcess`
@@ -289,7 +306,7 @@ Poisson-subsampled Gaussian. Only accepts `BandMf` inner processes.
 proc = acc.cyclic_poisson(
     acc.band_mf(1.0, 1000, 10), sample_rate=0.01,
 )
-eps = proc.epsilon_at(1e-5)
+eps = proc.cgf().epsilon_at(1e-5)
 ```
 
 ---
@@ -312,7 +329,7 @@ Heterogeneous two-process composition. Equivalent to `left | right`.
 Increases the LRU cache size from 8 to 16 entries and acts as an opaque merge
 barrier: the composition optimizer will not look through a cached node.
 
-**Note**: All `pld()` methods are automatically cached with `maxsize=8` via
+**Note**: All `pmf()` methods are automatically cached with `maxsize=8` via
 `@lru_cache`. Use `cached()` when you need:
 - A larger cache (16 entries instead of 8)
 - An explicit merge barrier to prevent composition optimizations
@@ -320,12 +337,12 @@ barrier: the composition optimizer will not look through a cached node.
 ```python
 # All queries automatically cached (maxsize=8)
 step = acc.poisson(acc.gaussian(0.5), 0.01)
-eps = step.epsilon_at(1e-5)   # Cached automatically
-adv = step.advantage()         # Cache hit
+cgf = step.cgf()
+eps = cgf.epsilon_at(1e-5)   # Cached automatically
 
 # Use cached() for merge barrier or larger cache
 training = acc.cached(step * 1000)
-eps = training.epsilon_at(1e-5)   # Cached with maxsize=16
+eps = training.cgf().epsilon_at(1e-5)   # Cached with maxsize=16
 ```
 
 ---
@@ -350,6 +367,8 @@ It provides a functional API: composing a new process returns a fresh
 Merge optimization is automatic. Composing the same `step` repeatedly in a loop
 produces a single `Repeated` node internally.
 
+Materialize the accumulated process via `.cgf()` or `.pmf()` to query metrics.
+
 ```python
 from opaque.accounting.accountant import Accountant
 
@@ -360,7 +379,7 @@ for i in range(num_steps):
     acct = acct | step
 
     if i % 100 == 0:
-        eps = acct.epsilon_at(1e-5)
+        eps = acct.cgf().epsilon_at(1e-5)
         print(f"Step {i}: eps={eps:.2f}")
 ```
 
@@ -383,8 +402,7 @@ for i in range(num_steps):
         break
 ```
 
-**Methods:** `epsilon_at(delta)`, `delta_at(epsilon)`, `advantage()`,
-`beta_at(alpha)`, `risk_at(prior)`, `budget_exceeded` (property).
+**Methods:** `cgf()`, `pmf(**kwargs)`, `budget_exceeded` (property).
 
 ### Serialization
 

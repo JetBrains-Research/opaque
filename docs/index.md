@@ -54,9 +54,10 @@ import opaque.accounting as acc
 step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate=0.01)
 training = step * 1000
 
-eps = training.epsilon_at(delta=1e-5)
-adv = training.advantage()
-beta = training.beta_at(alpha=0.01)
+# Materialize to a PLD, then query metrics
+eps = training.cgf().epsilon_at(delta=1e-5)
+adv = training.cgf().advantage()
+beta = training.pmf().beta_at(alpha=0.01)  # beta_at requires PMF path
 ```
 
 ## Noise calibration

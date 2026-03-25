@@ -39,7 +39,9 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `rectified_gaussian()`, `truncated_gaussian()` - Bounded Gaussian mechanisms
   - `band_mf()`, `blt_mf()`, `dense_mf()`, `cyclic_poisson()` - Matrix factorization mechanisms
   - `DpProcess` operators: `*` (repeat), `|` (compose)
-  - `.epsilon_at()`, `.delta_at()`, `.advantage()`, `.beta_at()`, `.risk_at()` - Privacy metrics
+  - Materialize: `.cgf()` -> `CgfPld`, `.pmf()` -> `PmfPld`
+  - Privacy metrics on `CgfPld`: `.epsilon_at()`, `.delta_at()`, `.advantage()`
+  - Additional metrics on `PmfPld`: `.beta_at()`, `.risk_at()`
   - `calibrate()` - Binary-search noise multiplier for target privacy
 
 - **[Sampling](sampling.md)**: Privacy-amplifying sampling
@@ -144,11 +146,13 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 |---------------------------|-----------------------------------|-------------------------------------------------------------------------|
 | `process * k`             | Repeat k times                    | [Guide](../user-guide/accounting.md#core-concepts)                      |
 | `a \| b`                  | Heterogeneous composition         | [Guide](../user-guide/accounting.md#core-concepts)                      |
-| `.epsilon_at(delta)`      | Query (ε, δ)-DP                   | [Guide](../user-guide/accounting.md#privacy-metrics)                    |
-| `.delta_at(epsilon)`      | Query δ for given ε               | [Guide](../user-guide/accounting.md#privacy-metrics)                    |
-| `.advantage()`            | Query f-DP advantage              | [Guide](../user-guide/accounting.md#privacy-metrics)                    |
-| `.beta_at(alpha)`         | Query (α, β) error rates          | [Guide](../user-guide/accounting.md#privacy-metrics)                    |
-| `.risk_at(prior)`         | Query Bayes risk                  | [Guide](../user-guide/accounting.md#privacy-metrics)                    |
+| `.cgf()`                  | Materialize to CGF-backed PLD     | [Guide](../user-guide/accounting.md#dpprocess-and-materialization)      |
+| `.pmf(**kwargs)`          | Materialize to PMF-backed PLD     | [Guide](../user-guide/accounting.md#dpprocess-and-materialization)      |
+| `.epsilon_at(delta)`      | Query (ε, δ)-DP (on CgfPld/PmfPld) | [Guide](../user-guide/accounting.md#privacy-metrics)                  |
+| `.delta_at(epsilon)`      | Query δ for given ε (on CgfPld/PmfPld) | [Guide](../user-guide/accounting.md#privacy-metrics)              |
+| `.advantage()`            | Query f-DP advantage (on CgfPld/PmfPld) | [Guide](../user-guide/accounting.md#privacy-metrics)             |
+| `.beta_at(alpha)`         | Query (α, β) error rates (PmfPld only) | [Guide](../user-guide/accounting.md#privacy-metrics)              |
+| `.risk_at(prior)`         | Query Bayes risk (PmfPld only)    | [Guide](../user-guide/accounting.md#privacy-metrics)                    |
 
 ### Calibration
 

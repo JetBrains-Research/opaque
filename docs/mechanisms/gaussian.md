@@ -67,7 +67,7 @@ makes the mechanism behave as if noise were 100$\times$ larger.
 ```python
 step = acc.poisson(acc.gaussian(1.0), sample_rate=0.01)
 training = step * 1000
-eps = training.epsilon_at(delta=1e-5)
+eps = training.cgf().epsilon_at(delta=1e-5)
 ```
 
 ### Truncated Poisson subsampling (`truncated_poisson`)
@@ -85,7 +85,7 @@ step = acc.truncated_poisson(
     batch_size_cap=batch, dataset_size=n,
 )
 training = step * 1000
-eps = training.epsilon_at(delta=1e-5)
+eps = training.cgf().epsilon_at(delta=1e-5)
 ```
 
 ### Parallel Poisson subsampling (`parallel_poisson`)
@@ -129,11 +129,12 @@ step = acc.poisson(acc.gaussian(1.0), sample_rate=0.01)
 # Composed over training
 training = step * 1000
 
-# Query multiple metrics
-eps   = training.epsilon_at(delta=1e-5)
-delta = training.delta_at(epsilon=3.0)
-adv   = training.advantage()
-beta  = training.beta_at(alpha=0.01)
+# Query metrics via CGF (fast, no grid)
+cgf   = training.cgf()
+eps   = cgf.epsilon_at(delta=1e-5)
+delta = cgf.delta_at(epsilon=3.0)
+adv   = cgf.advantage()
+beta  = training.pmf().beta_at(alpha=0.01)  # beta_at requires PMF
 ```
 
 ### Calibration

@@ -101,5 +101,5 @@ dense     = acc.dense_mf(1.0, 50, epochs=2)
 for name, proc in [("Gaussian", gauss), ("Rectified", rect),
                     ("Truncated", trunc), ("BandMF", band),
                     ("BLT", blt), ("Dense", dense)]:
-    print(f"{name:12s}  ε = {proc.epsilon_at(1e-5):.4f}")
+    print(f"{name:12s}  ε = {proc.cgf().epsilon_at(1e-5):.4f}")
 ```

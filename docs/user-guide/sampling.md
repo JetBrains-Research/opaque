@@ -23,11 +23,11 @@ import opaque.accounting as acc
 
 # Without subsampling: full dataset
 full = acc.gaussian(1.0) * 1000
-print(full.epsilon_at(1e-5))  # large
+print(full.cgf().epsilon_at(1e-5))  # large
 
 # With Poisson subsampling: sample_rate = 0.01
 subsampled = acc.poisson(acc.gaussian(1.0), sample_rate=0.01) * 1000
-print(subsampled.epsilon_at(1e-5))  # much smaller
+print(subsampled.cgf().epsilon_at(1e-5))  # much smaller
 ```
 
 The sample rate is typically `batch_size / dataset_size`:

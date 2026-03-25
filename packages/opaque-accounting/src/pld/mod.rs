@@ -216,8 +216,8 @@ impl PrivacyLossDistribution {
     }
 }
 
-// Note: In the functional API, PrivacyLossDistribution is a pure data structure.
-// It does not implement the old Mechanism trait, which is specific to the legacy API.
+// PrivacyLossDistribution is a pure data structure — it does not implement
+// any mechanism trait.
 
 #[cfg(test)]
 mod tests {

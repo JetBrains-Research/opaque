@@ -93,7 +93,7 @@ code path for numerical stability.
 ```python
 step = acc.poisson(acc.rectified_gaussian(1.0, radius=5.0), sample_rate=0.01)
 training = step * 1000
-eps = training.epsilon_at(delta=1e-5)
+eps = training.pmf().epsilon_at(delta=1e-5)
 ```
 
 | Amplification | Supported | Notes |
@@ -138,11 +138,11 @@ step = acc.poisson(
     sample_rate=0.01,
 )
 training = step * 1000
-eps = training.epsilon_at(delta=1e-5)
+eps = training.pmf().epsilon_at(delta=1e-5)
 
 # Compare with standard Gaussian
 step_gauss = acc.poisson(acc.gaussian(1.0), sample_rate=0.01)
-eps_gauss = (step_gauss * 1000).epsilon_at(delta=1e-5)
+eps_gauss = (step_gauss * 1000).cgf().epsilon_at(delta=1e-5)
 print(f"Rectified: ε={eps:.4f},  Gaussian: ε={eps_gauss:.4f}")
 ```
 

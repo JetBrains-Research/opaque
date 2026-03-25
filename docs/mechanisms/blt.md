@@ -147,7 +147,7 @@ import opaque.accounting as acc
 
 # Single participation
 proc = acc.blt_mf(noise_multiplier=1.0, n_steps=10000)
-eps = proc.epsilon_at(delta=1e-5)
+eps = proc.cgf().epsilon_at(delta=1e-5)
 
 # Multi-epoch
 proc = acc.blt_mf(
@@ -156,7 +156,7 @@ proc = acc.blt_mf(
     min_sep=100,
     max_participations=5,
 )
-eps = proc.epsilon_at(delta=1e-5)
+eps = proc.cgf().epsilon_at(delta=1e-5)
 ```
 
 ### Calibration

@@ -268,7 +268,7 @@ step = acc.poisson(
     sample_rate,
 )
 training = step * num_steps
-eps = training.epsilon_at(1e-5)
+eps = training.cgf().epsilon_at(1e-5)
 ```
 
 ### Distributed adaptive clipping
