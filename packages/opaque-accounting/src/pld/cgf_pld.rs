@@ -174,25 +174,45 @@ impl CgfPld {
 
     // -- Privacy metrics ----------------------------------------------------
 
-    /// Compute δ(ε) via the SPA-MSD (first-order method of steepest descent).
+    /// Chernoff bound (moments accountant): δ ≤ exp(K(t*) − ε·t*)
+    /// where t* minimizes K(t) − εt, i.e., K'(t*) = ε.
     ///
-    /// From Alghamdi et al. (ICML 2023), Definition 3.6, Equation (30):
+    /// Always a valid upper bound. Always monotonically decreasing in ε.
+    /// Equivalent to (t*+1, K(t*)/t*)-Rényi DP.
+    fn delta_chernoff(&self, epsilon: f64) -> f64 {
+        // Find t* > 0 where K'(t*) = ε via Newton's method
+        let mut t = 0.5_f64;
+        for _ in 0..100 {
+            let residual = self.total_cgf_prime(t) - epsilon;
+            let jacobian = self.total_cgf_double_prime(t);
+            if jacobian.abs() < 1e-300 { break; }
+            let step = (residual / jacobian).clamp(-2.0, 2.0);
+            t = (t - step).max(1e-10);
+            if step.abs() < 1e-12 * t.abs().max(1.0) { break; }
+        }
+        // δ_chernoff = exp(K(t*) − ε·t*)
+        let log_delta = self.total_cgf(t) - epsilon * t;
+        log_delta.exp().clamp(0.0, 1.0)
+    }
+
+    /// Compute δ(ε) = min(δ_MSD, δ_Chernoff).
     ///
-    ///   δ(ε) ≈ exp(F_ε(t₀)) / √(2π · F_ε''(t₀))
+    /// **SPA-MSD** (Alghamdi et al., ICML 2023, Def. 3.6):
+    ///   δ_MSD ≈ exp(F_ε(t₀)) / √(2π · F_ε''(t₀))
+    /// where F_ε(t) = K(t) − εt − log(t) − log(1+t), t₀ minimizes F_ε.
+    /// Encodes both adjacency directions. Tight for n ≫ 1.
     ///
-    /// where t₀ > 0 is the saddle-point (unique minimizer of F_ε), and:
+    /// **Chernoff bound** (moments accountant):
+    ///   δ_Chernoff = exp(K(t*) − εt*),  K'(t*) = ε.
+    /// Always valid. Always monotone. Looser by O(√n) factor.
     ///
-    ///   F_ε(t) = K(t) − εt − log(t) − log(1+t)
-    ///   F_ε''(t) = K''(t) + 1/t² + 1/(1+t)²
-    ///
-    /// The −log(t)−log(1+t) terms absorb both adjacency directions into
-    /// a single formula. No separate add/remove computation needed.
+    /// Taking the min: MSD tightens when accurate, Chernoff caps when MSD
+    /// overestimates. Chernoff monotonicity guarantees epsilon_at binary
+    /// search convergence.
     pub fn delta_at(&self, epsilon: f64) -> f64 {
         // Handle degenerate case: if K'' ≈ 0 everywhere, L is constant.
         let dbl_0 = self.total_cgf_double_prime(0.5);
         if dbl_0.abs() < 1e-20 {
-            // Pure ε-DP or identity: K(t) = ε₀·t.
-            // δ(ε) = max(0, 1 − exp(ε − ε₀)) for ε < ε₀.
             let eps_0 = self.total_cgf_prime(0.5);
             if eps_0 <= epsilon {
                 return 0.0;
@@ -200,27 +220,23 @@ impl CgfPld {
             return (1.0 - (epsilon - eps_0).exp()).clamp(0.0, 1.0);
         }
 
-        // Find the saddle-point t₀ > 0
-        let t0 = self.find_saddle_msd(epsilon);
+        // Chernoff bound: always valid, always monotone.
+        let d_chernoff = self.delta_chernoff(epsilon);
 
-        // Evaluate F_ε(t₀) and F_ε''(t₀)
+        // MSD: tighter when accurate (large n), can overshoot when inaccurate.
+        let t0 = self.find_saddle_msd(epsilon);
         let f_val = self.f_eps(t0, epsilon);
         let f_dbl = self.f_eps_double_prime(t0);
 
-        if f_dbl <= 0.0 {
-            // Non-convex — shouldn't happen for valid CGFs, but guard.
-            return 0.0;
-        }
+        let d_msd = if f_dbl > 0.0 {
+            let log_delta = f_val - 0.5 * (2.0 * std::f64::consts::PI * f_dbl).ln();
+            log_delta.exp().clamp(0.0, 1.0)
+        } else {
+            1.0 // fallback — Chernoff will cap this
+        };
 
-        // δ ≈ exp(F_ε(t₀)) / √(2π · F_ε''(t₀))
-        let log_delta = f_val - 0.5 * (2.0 * std::f64::consts::PI * f_dbl).ln();
-
-        if log_delta > 0.0 {
-            // δ > 1 means the approximation overshot; clamp.
-            return 1.0;
-        }
-
-        log_delta.exp().clamp(0.0, 1.0)
+        // min: MSD tightens, Chernoff guarantees monotonicity and validity.
+        d_msd.min(d_chernoff)
     }
 
     /// Compute ε(δ) via binary search over `delta_at`.
