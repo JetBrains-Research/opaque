@@ -1109,6 +1109,19 @@ def main():
     profiler, _ = profiler.mark("training_start")
     print_memory(device, "Before training")
 
+    # Step-0 eval: log baseline metrics before any training
+    initial_eval_loss = eval_loss(trainable_params)
+    initial_epsilon = accounting.epsilon_at(args.target_delta)
+    initial_noise_std = noise_multiplier * args.clip_norm
+    print(f"  → Step 0 eval: loss={initial_eval_loss:.4f}, ε={initial_epsilon:.3f}")
+    if use_wandb:
+        wandb.log({
+            "eval/loss": initial_eval_loss,
+            "privacy/epsilon": initial_epsilon,
+            "train/noise_std": initial_noise_std,
+            "train/clip_norm": args.clip_norm,
+        }, step=0)
+
     for epoch in range(args.num_epochs):
         print(f"\nEpoch {epoch + 1}/{args.num_epochs}")
         print("-" * 80)
@@ -1223,6 +1236,8 @@ def main():
             # Expensive operations (eval + privacy + audit) every eval_steps
             if global_step % args.eval_steps == 0:
                 current_eval_loss = eval_loss(trainable_params)
+                # Cache PLD before eval so it serves as opaque boundary
+                accounting = acc.cached(accounting)
                 epsilon = accounting.epsilon_at(args.target_delta)
 
                 metrics = {
