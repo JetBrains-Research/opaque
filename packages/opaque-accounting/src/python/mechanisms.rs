@@ -1,4 +1,4 @@
-//! Base mechanism PLD constructors: Gaussian, eps-delta, identity.
+//! Base mechanism PLD constructors: Gaussian, eps-delta, identity, truncated Gaussian.
 
 use pyo3::prelude::*;
 
@@ -53,31 +53,6 @@ pub fn py_eps_delta_pld(
 #[pyo3(name = "identity_pld", signature = (config))]
 pub fn py_identity_pld(config: &PyDiscretizationConfig) -> PyResult<PyPld> {
     let pld = crate::mechanisms::identity_pld(&config.inner)
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
-    Ok(PyPld::new(pld))
-}
-
-/// Compute the PLD for a rectified (clamped) Gaussian mechanism.
-///
-/// The rectified Gaussian adds noise N(0, σ²) clamped to [−R·σ, R·σ].
-/// This is post-processing of the standard Gaussian, giving strictly tighter
-/// privacy bounds for finite radius.
-///
-/// Args:
-///     noise_multiplier (float): σ/Δ ratio, in [0.1, 1.2].
-///     radius (float): Support half-width in sigma units, in [0.1, 100].
-///     config (DiscretizationConfig): Discretization configuration.
-///
-/// Returns:
-///     Pld: The privacy loss distribution.
-#[pyfunction]
-#[pyo3(name = "rectified_gaussian_pld", signature = (noise_multiplier, radius, config))]
-pub fn py_rectified_gaussian_pld(
-    noise_multiplier: f64,
-    radius: f64,
-    config: &PyDiscretizationConfig,
-) -> PyResult<PyPld> {
-    let pld = crate::mechanisms::rectified_gaussian_pld(noise_multiplier, radius, &config.inner)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
     Ok(PyPld::new(pld))
 }

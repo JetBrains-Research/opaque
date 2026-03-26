@@ -326,13 +326,12 @@ impact on model quality.
 
 ### Independent noise (DP-SGD)
 
-Standard DP-SGD adds independent noise at each training step. Three Gaussian
-variants are available, ordered from weakest to strongest privacy guarantee at
-the same noise level:
+Standard DP-SGD adds independent noise at each training step. Two Gaussian
+variants are available:
 
-$$\text{Truncated} \leq \text{Rectified} \leq \text{Gaussian}$$
+$$\\text{Truncated} \\leq \\text{Gaussian}$$
 
-Truncated and rectified Gaussian mechanisms add bounded noise (clamped to
+The truncated Gaussian mechanism adds bounded noise (clamped to
 $[-R\sigma, R\sigma]$), which gives tighter privacy accounting than
 unbounded Gaussian noise. The privacy improvement is free — the noise
 magnitude is identical. See [Mechanisms](../mechanisms/index.md) for the

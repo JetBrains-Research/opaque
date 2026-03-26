@@ -67,7 +67,7 @@ from opaque.accounting import calibration as cal, Accountant
 from opaque.clipping import adaptive_clipped_grad, clipped_grad
 from opaque.compat.transformers import is_kernel_patched
 from opaque.distributed import sum_gradients_, sync
-from opaque.noise import gaussian_noise, rectified_gaussian_noise, truncated_gaussian_noise
+from opaque.noise import gaussian_noise, truncated_gaussian_noise
 from opaque.profiling import StepTimer, TrainingProfiler, print_memory, reset_peak_memory
 from opaque.random import key, fold_in
 from opaque.sampling import PoissonSampler
@@ -423,10 +423,10 @@ def parse_args():
     dp_group.add_argument(
         "--noise-mechanism",
         type=str,
-        choices=["gaussian", "rectified_gaussian", "truncated_gaussian"],
+        choices=["gaussian", "truncated_gaussian"],
         default="gaussian",
-        help="Noise mechanism: gaussian (standard), rectified_gaussian (clamped, tighter accounting), "
-             "or truncated_gaussian (renormalized, tightest accounting)",
+        help="Noise mechanism: gaussian (standard) "
+             "or truncated_gaussian (renormalized, tighter accounting)",
     )
     dp_group.add_argument(
         "--noise-radius",
@@ -1020,10 +1020,7 @@ def main():
         wandb.config.update({"target_delta": args.target_delta}, allow_val_change=True)
 
     # Noise injection — bind mechanism-specific parameters once.
-    if args.noise_mechanism == "rectified_gaussian":
-        mechanism = functools.partial(acc.rectified_gaussian, radius=args.noise_radius)
-        make_noise = functools.partial(rectified_gaussian_noise, radius=args.noise_radius)
-    elif args.noise_mechanism == "truncated_gaussian":
+    if args.noise_mechanism == "truncated_gaussian":
         mechanism = functools.partial(acc.truncated_gaussian, radius=args.noise_radius)
         make_noise = functools.partial(truncated_gaussian_noise, radius=args.noise_radius)
     else:

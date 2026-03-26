@@ -55,11 +55,10 @@ from .. import opaque_accounting as _native
 
 from opaque_accounting.base import DpProcess, Pld
 from opaque_accounting.mechanisms.gaussian import Gaussian
-from opaque_accounting.mechanisms.rectified_gaussian import RectifiedGaussian
 from opaque_accounting.mechanisms.truncated_gaussian import TruncatedGaussian
 
 #: Mechanism types accepted as AdaClip inner.
-_Inner = Gaussian | RectifiedGaussian | TruncatedGaussian
+_Inner = Gaussian | TruncatedGaussian
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,7 +70,7 @@ class AdaClip(DpProcess):
     accounting.
 
     For a Gaussian ``inner``, :attr:`effective_noise_multiplier` gives the
-    tight z_eff from Theorem 1.  For rectified / truncated Gaussian the
+    tight z_eff from Theorem 1.  For truncated Gaussian the
     ``pld()`` method composes the inner mechanism's PLD with the bit
     mechanism's PLD (Gaussian, noise multiplier = 2 σ_b).
     """
@@ -164,7 +163,7 @@ def adaclip(
     where *z* is the base noise multiplier and
     *σ_b = batch_size × fraction_noise_std*.
 
-    For rectified / truncated Gaussian ``inner``, the inner PLD and the
+    For truncated Gaussian ``inner``, the inner PLD and the
     bit PLD are composed independently (valid but conservative).
 
     Calibration guidance
@@ -183,7 +182,7 @@ def adaclip(
     the budget is exceeded.
 
     Args:
-        inner: The base mechanism -- gaussian(), rectified_gaussian(),
+        inner: The base mechanism -- gaussian()
             or truncated_gaussian().
         fraction_noise_std: Noise std on the clipping *fraction*
             (value in [0, 1]).  Andrew et al. recommend 1/20 = 0.05,
@@ -215,9 +214,9 @@ def adaclip(
             sample_rate=0.01,
         )
     """
-    if not isinstance(inner, (Gaussian, RectifiedGaussian, TruncatedGaussian)):
+    if not isinstance(inner, (Gaussian, TruncatedGaussian)):
         raise TypeError(
-            f"adaclip() requires a Gaussian, RectifiedGaussian, or "
+            f"adaclip() requires a Gaussian or "
             f"TruncatedGaussian inner mechanism, got {type(inner).__name__}."
         )
     if fraction_noise_std <= 0:

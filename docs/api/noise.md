@@ -14,8 +14,6 @@ Opaque provides several noise mechanisms:
 - **`gaussian_noise()`** — Standard (unbounded) Gaussian noise. The default for most DP-SGD workflows.
 - **`truncated_gaussian_noise()`** — Bounded Gaussian noise (renormalized density). The tail mass
   is redistributed over the bounded interval — no point masses at the boundaries.
-- **`rectified_gaussian_noise()`** — Bounded Gaussian noise (clamped). Standard Gaussian clamped
-  to `[-radius, radius]`. The excess tail mass becomes point masses at the boundaries.
 
 ### Correlated Noise (DP-FTRL / Matrix Factorization)
 
@@ -51,10 +49,6 @@ across ranks. It auto-dispatches based on type:
 ## Bounded Gaussian — Truncated (renormalized)
 
 ::: opaque.noise.truncated_gaussian_noise
-
-## Bounded Gaussian — Rectified (clamped)
-
-::: opaque.noise.rectified_gaussian_noise
 
 ## Matrix Factorization Noise
 

@@ -117,36 +117,11 @@ sampled from a Gaussian centered on that element and truncated to the bounds.
 Pair with `acc.truncated_gaussian(noise_multiplier, radius)` for
 accounting.
 
-### Rectified (clamped)
-
-`rectified_gaussian_noise` draws from a standard Gaussian and clamps the result
-to `[-radius, radius]`. The excess tail mass becomes point masses at the
-boundaries.
-
-```python
-from opaque import rectified_gaussian_noise
-from opaque.random import key
-
-noise_fn, noise_state = rectified_gaussian_noise(
-    stddev=1.0,
-    radius=5.0,
-    key=key(42),
-)
-noisy_grads, noise_state = noise_fn(grads, noise_state)
-```
-
-The `radius` is specified in units of `stddev`. For example, `radius=5.0`
-clamps the noise to $[-5\sigma, 5\sigma]$. Both the noise function and the
-accounting API use the same convention.
-
-Pair with `acc.rectified_gaussian(noise_multiplier, radius)` for
-accounting.
-
 ### Which variant to use
 
-Both give tighter ε than `acc.gaussian()`. Truncated is always at least as
-tight as rectified because its density is smoother (no point masses). For most
-workloads, prefer truncated.
+The truncated Gaussian gives tighter ε than `acc.gaussian()` because its
+bounded density limits worst-case hockey-stick divergence. For most
+workloads, prefer truncated when bounded noise is desired.
 
 ## Matrix-factorization noise (DP-FTRL)
 

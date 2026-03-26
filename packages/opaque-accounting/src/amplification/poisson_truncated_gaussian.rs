@@ -1,11 +1,15 @@
 //! Poisson-subsampled truncated Gaussian mechanism PLD.
 //!
 //! Exact PLD for Poisson-subsampled DP-SGD with truncated (renormalized)
-//! Gaussian noise. The density is normalized over [−Rσ, Rσ] — no point
-//! masses, just tighter tails from the normalization constants Z₀, Z₁.
+//! Gaussian noise. The density is normalized over [−Rσ, Rσ].
+//!
+//! The worst-case privacy loss depends on where the distribution centers
+//! (determined by the query output) fall within the support domain. In DP-SGD,
+//! inputs are L2-clipped to norm Δ, so per-coordinate values satisfy |x| ≤ Δ.
+//! The PLD constructor optimizes over centers in [−Δ, Δ] to provide a sound bound.
 
 use crate::adjacency::Adjacency;
-use crate::discretization::{discretize_asymmetric_mechanism, DiscretizationConfig, EpsilonBounds};
+use crate::discretization::{discretize_asymmetric_mechanism, DiscretizationConfig};
 use crate::error::Result;
 use crate::pld::PrivacyLossDistribution;
 use statrs::distribution::{ContinuousCDF, Normal};
@@ -17,14 +21,16 @@ const MIN_RADIUS: f64 = 0.1;
 /// Maximum supported radius (sigma units).
 const MAX_RADIUS: f64 = 100.0;
 
+/// Number of grid points for worst-case center search.
+const CENTER_SEARCH_POINTS: usize = 200;
+
 /// Compute the PLD for a Poisson-subsampled truncated Gaussian mechanism.
 ///
 /// Each record is sampled independently with probability `rate`. The noise
 /// mechanism is a truncated (renormalized) Gaussian with support [−R·σ, R·σ].
 ///
-/// The truncated Gaussian density is:
-///   f_μ(x) = φ((x−μ)/σ) / (σ · Z_μ)  for x ∈ [−Rσ, Rσ]
-/// where Z_μ = Φ((Rσ−μ)/σ) − Φ((−Rσ−μ)/σ) is the normalization constant.
+/// The worst-case δ(ε) is computed by searching over distribution centers
+/// in [−Δ, Δ], the L2-clipped input domain.
 ///
 /// # Arguments
 ///
@@ -47,42 +53,25 @@ pub fn poisson_truncated_gaussian_pld(
     let log_mass = config.log_mass_truncation_bound;
     let tail_budget = config.tail_mass_truncation / 2.0;
 
-    // Normalization constants
-    let n01 = Normal::new(0.0, 1.0).unwrap();
-    let z0 = n01.cdf(radius) - n01.cdf(-radius);
-    let z1 = n01.cdf(radius - sensitivity / sigma) - n01.cdf(-radius - sensitivity / sigma);
-
-    let bounds_remove = epsilon_bounds_truncated(
+    // Use Gaussian Poisson epsilon bounds (always a safe envelope).
+    let bounds_remove = super::poisson::poisson_gaussian_epsilon_bounds(
         sigma,
         sensitivity,
-        radius,
         rate,
-        z0,
-        z1,
         Adjacency::Remove,
         log_mass,
     );
-    let bounds_add = epsilon_bounds_truncated(
+    let bounds_add = super::poisson::poisson_gaussian_epsilon_bounds(
         sigma,
         sensitivity,
-        radius,
         rate,
-        z0,
-        z1,
         Adjacency::Add,
         log_mass,
     );
 
     discretize_asymmetric_mechanism(config, bounds_remove, bounds_add, |epsilon, adj| {
-        Ok(get_delta_truncated(
-            epsilon,
-            adj,
-            sigma,
-            sensitivity,
-            radius,
-            rate,
-            z0,
-            z1,
+        Ok(get_delta_truncated_worst_case(
+            epsilon, adj, sigma, sensitivity, radius, rate,
         ))
     })
     .map(|pld| pld.with_tail_budgets(tail_budget, tail_budget))
@@ -102,17 +91,57 @@ fn validate_radius(radius: f64) -> Result<()> {
 // Hockey-stick divergence
 // ===========================================================================
 
-/// Hockey-stick δ(ε) for Poisson-subsampled truncated Gaussian.
-///
-/// No point masses — the entire density is continuous on [−Rσ, Rσ].
+/// Compute normalization constants Z(μ₀) and Z(μ₁) for truncated Gaussians
+/// centered at μ₀ and μ₁ = μ₀ + Δ on the domain [−Rσ, Rσ].
+fn normalization_constants(
+    sigma: f64,
+    sensitivity: f64,
+    radius: f64,
+    mu0: f64,
+) -> (f64, f64) {
+    let n01 = Normal::new(0.0, 1.0).unwrap();
+    let r_abs = radius * sigma;
+    let mu1 = mu0 + sensitivity;
+    let z0 = n01.cdf((r_abs - mu0) / sigma) - n01.cdf((-r_abs - mu0) / sigma);
+    let z1 = n01.cdf((r_abs - mu1) / sigma) - n01.cdf((-r_abs - mu1) / sigma);
+    (z0, z1)
+}
+
+/// Hockey-stick δ(ε) for Poisson-subsampled truncated Gaussian,
+/// maximized over worst-case distribution centers in [−Δ, Δ].
+fn get_delta_truncated_worst_case(
+    epsilon: f64,
+    adjacency: Adjacency,
+    sigma: f64,
+    sensitivity: f64,
+    radius: f64,
+    rate: f64,
+) -> f64 {
+    // After L2 clipping to norm Δ, per-coordinate inputs are in [−Δ, Δ].
+    let search_lo = -sensitivity;
+    let search_hi = sensitivity;
+    let step = (search_hi - search_lo) / (CENTER_SEARCH_POINTS as f64);
+
+    let mut max_delta = 0.0_f64;
+    for i in 0..=CENTER_SEARCH_POINTS {
+        let mu0 = search_lo + step * (i as f64);
+        let (z0, z1) = normalization_constants(sigma, sensitivity, radius, mu0);
+        if z0 <= 0.0 || z1 <= 0.0 {
+            continue;
+        }
+        let d = get_delta_truncated(epsilon, adjacency, sigma, sensitivity, radius, rate, mu0, z0, z1);
+        max_delta = max_delta.max(d);
+    }
+    max_delta
+}
+
+/// Hockey-stick δ(ε) for a specific center μ₀.
 ///
 /// # Large-radius delegation
 ///
 /// When Z₀ ≈ Z₁ ≈ 1 (radius large enough that the truncation is
-/// negligible), the truncated Gaussian is effectively identical to the
-/// unbounded Gaussian.  In this regime we delegate to the numerically-stable
-/// log-space implementation in `poisson.rs` to avoid floating-point
-/// amplification artifacts in the Connect-the-Dots discretization.
+/// negligible), delegates to the numerically-stable log-space
+/// implementation in `poisson.rs`.
 #[allow(clippy::too_many_arguments)]
 fn get_delta_truncated(
     epsilon: f64,
@@ -121,12 +150,12 @@ fn get_delta_truncated(
     sensitivity: f64,
     radius: f64,
     rate: f64,
+    mu0: f64,
     z0: f64,
     z1: f64,
 ) -> f64 {
-    // When normalisation constants are effectively 1, the truncated density
-    // coincides with the unbounded Gaussian density.  Delegate to the standard
-    // Poisson delta which uses log-space tail arithmetic.
+    // When normalisation constants are effectively 1, delegate to standard
+    // Poisson delta (log-space tail arithmetic).
     if (z0 - 1.0).abs() < 1e-10 && (z1 - 1.0).abs() < 1e-10 {
         return crate::amplification::poisson::poisson_gaussian_get_delta(
             epsilon,
@@ -139,15 +168,16 @@ fn get_delta_truncated(
 
     match adjacency {
         Adjacency::Remove => {
-            get_delta_remove_truncated(epsilon, sigma, sensitivity, radius, rate, z0, z1)
+            get_delta_remove_truncated(epsilon, sigma, sensitivity, radius, rate, mu0, z0, z1)
         }
         Adjacency::Add => {
-            get_delta_add_truncated(epsilon, sigma, sensitivity, radius, rate, z0, z1)
+            get_delta_add_truncated(epsilon, sigma, sensitivity, radius, rate, mu0, z0, z1)
         }
         Adjacency::Replace => {
             let d_rem =
-                get_delta_remove_truncated(epsilon, sigma, sensitivity, radius, rate, z0, z1);
-            let d_add = get_delta_add_truncated(epsilon, sigma, sensitivity, radius, rate, z0, z1);
+                get_delta_remove_truncated(epsilon, sigma, sensitivity, radius, rate, mu0, z0, z1);
+            let d_add =
+                get_delta_add_truncated(epsilon, sigma, sensitivity, radius, rate, mu0, z0, z1);
             d_rem.max(d_add)
         }
     }
@@ -158,43 +188,41 @@ fn get_delta_truncated(
 /// p_D(x)  = q·f₁(x) + (1−q)·f₀(x)
 /// p_D'(x) = f₀(x)
 ///
-/// where f_μ(x) = φ((x−μ)/σ) / (σ·Z_μ).
-///
-/// Integrand: q·f₁(x) − (e^ε − (1−q))·f₀(x)
-///          = (q/Z₁)·φ̃₁(x) − ((e^ε−(1−q))/Z₀)·φ̃₀(x)
-/// where φ̃_μ(x) = φ((x−μ)/σ)/σ is the un-normalized Gaussian density.
+/// where f_μ(x) = φ((x−μ)/σ) / (σ·Z_μ), with μ₀ and μ₁ = μ₀ + Δ.
+#[allow(clippy::too_many_arguments)]
 fn get_delta_remove_truncated(
     epsilon: f64,
     sigma: f64,
     sensitivity: f64,
     radius: f64,
     rate: f64,
+    mu0: f64,
     z0: f64,
     z1: f64,
 ) -> f64 {
     let n01 = Normal::new(0.0, 1.0).unwrap();
     let q = rate;
     let r_abs = radius * sigma;
+    let mu1 = mu0 + sensitivity;
     let exp_eps = epsilon.exp();
 
     if exp_eps <= 1.0 - q {
         return (1.0 - exp_eps).max(0.0);
     }
 
-    let a_shifted = q / z1; // coefficient of un-normalized shifted density
-    let a_base = (exp_eps - (1.0 - q)) / z0; // coefficient of un-normalized base density
+    let a_shifted = q / z1;
+    let a_base = (exp_eps - (1.0 - q)) / z0;
 
     if a_base <= 0.0 {
-        // Entire integrand is non-negative
         return 1.0 - exp_eps;
     }
 
     // Crossover: a_shifted · φ̃₁(x) = a_base · φ̃₀(x)
-    // exp(Δx/σ² − Δ²/(2σ²)) = a_base / a_shifted
+    // φ̃₁(x)/φ̃₀(x) = exp(Δ(x − μ₀ − Δ/2)/σ²)
+    // exp(Δ(x − μ₀ − Δ/2)/σ²) = a_base / a_shifted
     let ratio = a_base / a_shifted;
-    let x_cross = sensitivity / 2.0 + sigma * sigma / sensitivity * ratio.ln();
+    let x_cross = mu0 + sensitivity / 2.0 + sigma * sigma / sensitivity * ratio.ln();
 
-    // Integrate from max(x_cross, −Rσ) to Rσ
     let int_lo = x_cross.max(-r_abs);
     let int_hi = r_abs;
 
@@ -202,12 +230,11 @@ fn get_delta_remove_truncated(
         return 0.0;
     }
 
-    let cdf_base_hi = n01.cdf(int_hi / sigma);
-    let cdf_base_lo = n01.cdf(int_lo / sigma);
-    let cdf_shift_hi = n01.cdf((int_hi - sensitivity) / sigma);
-    let cdf_shift_lo = n01.cdf((int_lo - sensitivity) / sigma);
+    let cdf_base_hi = n01.cdf((int_hi - mu0) / sigma);
+    let cdf_base_lo = n01.cdf((int_lo - mu0) / sigma);
+    let cdf_shift_hi = n01.cdf((int_hi - mu1) / sigma);
+    let cdf_shift_lo = n01.cdf((int_lo - mu1) / sigma);
 
-    // δ = (q/Z₁)·[Φ(...) − Φ(...)] − ((e^ε−(1−q))/Z₀)·[Φ(...) − Φ(...)]
     (a_shifted * (cdf_shift_hi - cdf_shift_lo) - a_base * (cdf_base_hi - cdf_base_lo)).max(0.0)
 }
 
@@ -215,21 +242,21 @@ fn get_delta_remove_truncated(
 ///
 /// p_D(x)  = f₀(x)
 /// p_D'(x) = q·f₁(x) + (1−q)·f₀(x)
-///
-/// Integrand: (1−e^ε·(1−q))·f₀(x) − e^ε·q·f₁(x)
-///          = ((1−e^ε·(1−q))/Z₀)·φ̃₀(x) − (e^ε·q/Z₁)·φ̃₁(x)
+#[allow(clippy::too_many_arguments)]
 fn get_delta_add_truncated(
     epsilon: f64,
     sigma: f64,
     sensitivity: f64,
     radius: f64,
     rate: f64,
+    mu0: f64,
     z0: f64,
     z1: f64,
 ) -> f64 {
     let n01 = Normal::new(0.0, 1.0).unwrap();
     let q = rate;
     let r_abs = radius * sigma;
+    let mu1 = mu0 + sensitivity;
     let exp_eps = epsilon.exp();
 
     let theoretical_upper = if q < 1.0 {
@@ -241,27 +268,24 @@ fn get_delta_add_truncated(
         return 0.0;
     }
 
-    let a_base = (1.0 - exp_eps * (1.0 - q)) / z0; // coefficient of base density
-    let a_shifted = exp_eps * q / z1; // coefficient of shifted density [subtracted]
+    let a_base = (1.0 - exp_eps * (1.0 - q)) / z0;
+    let a_shifted = exp_eps * q / z1;
 
     if a_base <= 0.0 {
         return 0.0;
     }
 
     // Crossover: a_base · φ̃₀(x) = a_shifted · φ̃₁(x)
-    //   φ̃₁/φ̃₀ = exp(Δ(x−Δ/2)/σ²) must equal a_base/a_shifted
-    //   x_cross = Δ/2 + σ²/Δ · ln(a_base / a_shifted)
-    // Integrand positive for x < x_cross
+    // φ̃₁(x)/φ̃₀(x) = exp(Δ(x − μ₀ − Δ/2)/σ²)
     let ratio = a_base / a_shifted;
     let x_cross = if ratio > 0.0 && ratio.is_finite() {
-        sensitivity / 2.0 + sigma * sigma / sensitivity * ratio.ln()
+        mu0 + sensitivity / 2.0 + sigma * sigma / sensitivity * ratio.ln()
     } else if ratio <= 0.0 {
         f64::NEG_INFINITY
     } else {
-        f64::INFINITY // a_shifted ≈ 0 → integrand positive everywhere
+        f64::INFINITY
     };
 
-    // Integrand positive for x < x_cross
     let int_lo = -r_abs;
     let int_hi = x_cross.min(r_abs);
 
@@ -269,102 +293,12 @@ fn get_delta_add_truncated(
         return 0.0;
     }
 
-    let cdf_base_hi = n01.cdf(int_hi / sigma);
-    let cdf_base_lo = n01.cdf(int_lo / sigma);
-    let cdf_shift_hi = n01.cdf((int_hi - sensitivity) / sigma);
-    let cdf_shift_lo = n01.cdf((int_lo - sensitivity) / sigma);
+    let cdf_base_hi = n01.cdf((int_hi - mu0) / sigma);
+    let cdf_base_lo = n01.cdf((int_lo - mu0) / sigma);
+    let cdf_shift_hi = n01.cdf((int_hi - mu1) / sigma);
+    let cdf_shift_lo = n01.cdf((int_lo - mu1) / sigma);
 
     (a_base * (cdf_base_hi - cdf_base_lo) - a_shifted * (cdf_shift_hi - cdf_shift_lo)).max(0.0)
-}
-
-// ===========================================================================
-// Epsilon bounds
-// ===========================================================================
-
-/// Epsilon bounds for Poisson-subsampled truncated Gaussian.
-#[allow(clippy::too_many_arguments)]
-fn epsilon_bounds_truncated(
-    sigma: f64,
-    sensitivity: f64,
-    radius: f64,
-    rate: f64,
-    z0: f64,
-    z1: f64,
-    adjacency: Adjacency,
-    log_mass: f64,
-) -> EpsilonBounds {
-    let n01 = Normal::new(0.0, 1.0).unwrap();
-    let q = rate;
-    let r_abs = radius * sigma;
-    let sigma_sq = sigma * sigma;
-
-    // Gaussian mass truncation range (same approach as standard Poisson)
-    let half_mass = 0.5 * log_mass.exp();
-    let z = n01.inverse_cdf(half_mass); // negative
-    let lower_x_base = sigma * z; // negative
-    let upper_x_base = -sigma * z; // positive
-
-    // Base truncated Gaussian privacy loss includes normalization:
-    // L_base(x) = Δ·(-Δ/2 - x)/σ² + ln(Z₀/Z₁)
-    // Note: using the Poisson convention from poisson.rs where
-    // L_raw(x) = Δ·(-Δ/2 - x)/σ², the truncated version adds ln(Z₀/Z₁)
-    let log_z_ratio = (z0 / z1).ln(); // ln(Z₀/Z₁)
-
-    // Poisson REMOVE privacy loss for truncated base mechanism
-    let l_rem = |x: f64| -> f64 {
-        let l_raw = sensitivity * (-0.5 * sensitivity - x) / sigma_sq + log_z_ratio;
-        if (q - 1.0).abs() < 1e-15 {
-            l_raw
-        } else {
-            (q * l_raw.exp() + (1.0 - q)).ln()
-        }
-    };
-    let l_add = |x: f64| -> f64 { -l_rem(-x) };
-
-    match adjacency {
-        Adjacency::Remove => {
-            let lower_x = (lower_x_base - sensitivity).max(-r_abs);
-            let upper_x = upper_x_base.min(r_abs);
-            EpsilonBounds {
-                epsilon_lower: l_rem(upper_x),
-                epsilon_upper: l_rem(lower_x),
-            }
-        }
-        Adjacency::Add => {
-            let lower_x = lower_x_base.max(-r_abs);
-            let upper_x = (upper_x_base + sensitivity).min(r_abs);
-            EpsilonBounds {
-                epsilon_lower: l_add(upper_x),
-                epsilon_upper: l_add(lower_x),
-            }
-        }
-        Adjacency::Replace => {
-            let b_rem = epsilon_bounds_truncated(
-                sigma,
-                sensitivity,
-                radius,
-                rate,
-                z0,
-                z1,
-                Adjacency::Remove,
-                log_mass,
-            );
-            let b_add = epsilon_bounds_truncated(
-                sigma,
-                sensitivity,
-                radius,
-                rate,
-                z0,
-                z1,
-                Adjacency::Add,
-                log_mass,
-            );
-            EpsilonBounds {
-                epsilon_lower: b_rem.epsilon_lower.min(b_add.epsilon_lower),
-                epsilon_upper: b_rem.epsilon_upper.max(b_add.epsilon_upper),
-            }
-        }
-    }
 }
 
 // ===========================================================================
@@ -413,14 +347,11 @@ mod tests {
         );
     }
 
-    /// Poisson-subsampled truncated ε ≤ Poisson-subsampled rectified ε ≤ Poisson Gaussian ε.
+    /// Poisson-subsampled truncated ε ≤ Poisson Gaussian ε.
     #[test]
-    fn test_poisson_truncated_tighter_than_rectified() {
+    fn test_poisson_truncated_tighter_than_gaussian() {
         let cfg = default_config();
         let eps_gauss = crate::amplification::poisson_gaussian_pld(0.5, 0.01, &cfg)
-            .unwrap()
-            .epsilon_at(1e-5);
-        let eps_rect = crate::amplification::poisson_rectified_gaussian_pld(0.5, 3.0, 0.01, &cfg)
             .unwrap()
             .epsilon_at(1e-5);
         let eps_trunc = poisson_truncated_gaussian_pld(0.5, 3.0, 0.01, &cfg)
@@ -428,15 +359,9 @@ mod tests {
             .epsilon_at(1e-5);
 
         assert!(
-            eps_trunc <= eps_rect + 1e-4,
-            "truncated ε={:.6} should ≤ rectified ε={:.6}",
+            eps_trunc <= eps_gauss + 1e-4,
+            "truncated ε={:.6} should ≤ Gaussian ε={:.6}",
             eps_trunc,
-            eps_rect
-        );
-        assert!(
-            eps_rect <= eps_gauss + 1e-4,
-            "rectified ε={:.6} should ≤ Gaussian ε={:.6}",
-            eps_rect,
             eps_gauss
         );
     }
@@ -464,7 +389,10 @@ mod tests {
         }
     }
 
-    /// At large radius, should converge to standard Poisson Gaussian.
+    /// At large radius, should be close to standard Poisson Gaussian.
+    /// With centers restricted to [-Δ, Δ] (clipped input domain), the
+    /// With centers restricted to [-Δ, Δ] (clipped input domain), the
+    /// normalization constants are ≈1 at R=50, so the gap is negligible.
     #[test]
     fn test_poisson_truncated_converges_to_gaussian() {
         let cfg = default_config();

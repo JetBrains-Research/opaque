@@ -1,11 +1,10 @@
 # Truncated Gaussian Mechanism
 
 The truncated Gaussian mechanism samples noise from a Gaussian
-**renormalized** over a bounded interval $[-R\sigma, R\sigma]$. Unlike
-the [rectified variant](rectified-gaussian.md) which clamps, truncation
-resamples: the density is smoothly rescaled so that no probability mass
-sits at the boundaries. This gives the **tightest privacy bounds** among
-all three Gaussian variants.
+**renormalized** over a bounded interval $[-R\\sigma, R\\sigma]$. The
+density is smoothly rescaled so that no probability mass sits at the
+boundaries. This gives **tighter privacy bounds** than the standard
+Gaussian at the same noise level.
 
 ## Idea
 
@@ -139,10 +138,9 @@ step = acc.poisson(
 training = step * 1000
 eps = training.epsilon_at(delta=1e-5)
 
-# Compare all three variants at the same noise level
+# Compare truncated vs standard
 for name, mech in [
     ("Gaussian",  acc.gaussian(1.0)),
-    ("Rectified", acc.rectified_gaussian(1.0, radius=5.0)),
     ("Truncated", acc.truncated_gaussian(1.0, radius=5.0)),
 ]:
     proc = acc.poisson(mech, sample_rate=0.01) * 1000

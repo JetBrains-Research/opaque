@@ -76,7 +76,7 @@ eps = g.epsilon_at(delta=1e-5)
 
 Standard Poisson-subsampled mechanism. Each example is included independently
 with probability `sample_rate`. This provides privacy amplification through
-subsampling. Accepts `gaussian()`, `rectified_gaussian()`,
+subsampling. Accepts `gaussian()`,
 `truncated_gaussian()`, or `adaclip()` as the inner mechanism.
 
 ```python
@@ -112,27 +112,12 @@ step = acc.parallel_poisson(
 )
 ```
 
-### `acc.rectified_gaussian(noise_multiplier, radius)`
-
-Bounded Gaussian mechanism — rectified variant. Clamps standard Gaussian
-noise to `[-R*sigma, R*sigma]`; the excess tail mass becomes point masses
-at the boundaries. Tighter than `acc.gaussian()` because the bounded
-support limits worst-case hockey-stick divergence.
-
-Use this when adding noise via `rectified_gaussian_noise()`.
-Composable with `poisson()` for subsampled accounting.
-
-```python
-step = acc.poisson(acc.rectified_gaussian(1.1, radius=5.0), sample_rate=0.01)
-training = step * 1000
-eps = training.epsilon_at(delta=1e-5)  # tighter than acc.gaussian(1.1)
-```
-
 ### `acc.truncated_gaussian(noise_multiplier, radius)`
 
 Bounded Gaussian mechanism — truncated variant. The density is renormalized
-over `[-R*sigma, R*sigma]` (no point masses at boundaries). Always at least
-as tight as the rectified variant.
+over `[-R*sigma, R*sigma]` (no point masses at boundaries). Tighter than
+`acc.gaussian()` because the bounded support limits worst-case hockey-stick
+divergence.
 
 Use this when adding noise via `truncated_gaussian_noise()`.
 Composable with `poisson()` for subsampled accounting.
@@ -140,11 +125,11 @@ Composable with `poisson()` for subsampled accounting.
 ```python
 step = acc.poisson(acc.truncated_gaussian(1.1, radius=5.0), sample_rate=0.01)
 training = step * 1000
-eps = training.epsilon_at(delta=1e-5)  # tightest of the three
+eps = training.epsilon_at(delta=1e-5)  # tighter than acc.gaussian(1.1)
 ```
 
-Both bounded variants give tighter ε than `acc.gaussian()`. Truncated is
-always at least as tight as rectified. For most workloads, prefer truncated.
+The truncated variant gives tighter ε than `acc.gaussian()`. For most
+workloads, prefer truncated when bounded noise is desired.
 
 ### `acc.adaclip(inner, *, fraction_noise_std, batch_size)`
 

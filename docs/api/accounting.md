@@ -124,7 +124,7 @@ sensitivity-1 queries. Base mechanism for DP-SGD.
 Poisson-subsampled mechanism (standard DP-SGD step). `sample_rate` is
 `batch_size / dataset_size`.
 
-- `inner` (Gaussian | RectifiedGaussian | TruncatedGaussian | AdaClip): Base mechanism
+- `inner` (Gaussian | TruncatedGaussian | AdaClip): Base mechanism
 - `sample_rate` (float): Probability of including each example, in (0, 1]
 
 ```python
@@ -164,26 +164,11 @@ step = acc.parallel_poisson(
 )
 ```
 
-### `rectified_gaussian(noise_multiplier, radius) -> DpProcess`
-
-Bounded Gaussian mechanism — rectified variant. Clamps standard Gaussian
-noise to `[-R*sigma, R*sigma]`; the excess tail mass becomes point masses at
-the boundaries. Tighter than the standard Gaussian.
-
-- `noise_multiplier` (float): Ratio of noise std to sensitivity.
-- `radius` (float): Bound radius in units of sigma (R ≥ 1).
-
-Composable with `poisson()` for subsampled accounting.
-
-```python
-step = acc.poisson(acc.rectified_gaussian(1.1, 5.0), sample_rate=0.01)
-```
-
 ### `truncated_gaussian(noise_multiplier, radius) -> DpProcess`
 
 Bounded Gaussian mechanism — truncated variant. The density is renormalized
-over `[-R*sigma, R*sigma]` (no point masses at boundaries). Always at least as
-tight as the rectified variant.
+over `[-R*sigma, R*sigma]` (no point masses at boundaries). Tighter than
+the standard Gaussian.
 
 - `noise_multiplier` (float): Ratio of noise std to sensitivity.
 - `radius` (float): Bound radius in units of sigma (R ≥ 1).
@@ -197,7 +182,7 @@ noisy quantile estimation using the combined sensitivity formula. Returns an
 `AdaClip` process with the effective noise multiplier, composable with
 `poisson()` or `truncated_poisson()`.
 
-- `inner` (Gaussian | RectifiedGaussian | TruncatedGaussian): Base mechanism (from `gaussian()`, `rectified_gaussian()`, or `truncated_gaussian()`)
+- `inner` (Gaussian | TruncatedGaussian): Base mechanism (from `gaussian()` or `truncated_gaussian()`)
 - `fraction_noise_std` (float): Noise std on the clipping fraction. Default: 0.05.
 - `batch_size` (float): Expected batch size, used to compute the absolute noise std for the quantile query.
 
