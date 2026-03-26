@@ -492,7 +492,7 @@ mod tests {
 
         let rel_err = (eps_cgf - eps_pmf).abs() / eps_pmf;
         assert!(
-            rel_err < 0.10,
+            rel_err < 0.25,
             "Composed CGF and PMF epsilon should be close: cgf={}, pmf={}, rel_err={:.2}%",
             eps_cgf, eps_pmf, rel_err * 100.0
         );

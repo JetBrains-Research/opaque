@@ -292,8 +292,15 @@ impl CgfPld {
     }
 
     /// Find t* where Λ'_total(t*) = target via Newton's method.
+    ///
+    /// For positive targets (remove direction), starts near t=0.5.
+    /// For negative targets (add direction saddle), starts near t=-0.5
+    /// since the saddle is in the negative half-plane.
     fn find_cgf_saddle(&self, target: f64) -> f64 {
-        let mut t = 0.5_f64;
+        // Choose initial point: for the add direction (target < 0),
+        // the saddle is at t < 0 (between -1 and 0 for typical mechanisms).
+        let mut t = if target >= 0.0 { 0.5_f64 } else { -0.5_f64 };
+
         for _ in 0..100 {
             let residual = self.total_cgf_prime(t) - target;
             let jacobian = self.total_cgf_double_prime(t);
@@ -303,7 +310,10 @@ impl CgfPld {
             }
 
             let step = residual / jacobian;
-            t -= step;
+            // Dampen large steps to avoid overshooting
+            let max_step = 2.0;
+            let clamped_step = step.clamp(-max_step, max_step);
+            t -= clamped_step;
 
             if step.abs() < 1e-12 * t.abs().max(1.0) {
                 break;

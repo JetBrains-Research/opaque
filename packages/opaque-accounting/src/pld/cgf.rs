@@ -81,13 +81,18 @@ impl Cgf for GaussianCgf {
 
 /// CGF for the Poisson-subsampled Gaussian mechanism.
 ///
-/// Privacy loss for the subsampled mechanism uses a mixture:
-/// with probability q the sample is included (Gaussian privacy loss),
-/// with probability 1−q it is not (zero privacy loss).
+/// Models the remove adjacency where:
+///   P(x) = q · N(x; Δ, σ²) + (1−q) · N(x; 0, σ²)  (target may be sampled)
+///   Q(x) = N(x; 0, σ²)                               (target absent)
 ///
-/// Λ_sub(t) = log E_x[ (q · exp(L(x)) + 1−q)^t ]
+/// Following `saddle_point_math.md`:
+///   Λ(t) = log E_Q[(P/Q)^{1+t}]
 ///
-/// where L(x) = (1 − 2x) / (2σ²), x ~ N(0, σ²).
+/// where P/Q = q · exp((2x−1)/(2σ²)) + (1−q).
+///
+/// Key property: Λ(−1) = 0 (since (P/Q)^0 = 1).
+///
+/// At q = 1, reduces to the standard Gaussian CGF: Λ(t) = t(1+t)/(2σ²).
 ///
 /// Evaluated via Gauss-Hermite quadrature; derivatives via central
 /// finite differences.
@@ -99,6 +104,8 @@ pub struct SubsampledGaussianCgf {
     pub(crate) rate: f64,
     /// Pre-computed 1 / (2σ²).
     inv_2sigma_sq: f64,
+    /// Pre-computed √2 / σ.
+    sqrt2_over_sigma: f64,
     /// Gauss-Hermite nodes (standard normal).
     gh_nodes: Vec<f64>,
     /// Gauss-Hermite weights.
@@ -118,60 +125,45 @@ impl SubsampledGaussianCgf {
             sigma,
             rate,
             inv_2sigma_sq: 1.0 / (2.0 * sigma * sigma),
+            sqrt2_over_sigma: std::f64::consts::SQRT_2 / sigma,
             gh_nodes: nodes,
             gh_weights: weights,
         }
     }
 
-    /// Evaluate the CGF Λ(t) via Gauss-Hermite quadrature.
+    /// Evaluate Λ(t) = log E_Q[(P/Q)^{1+t}] via Gauss-Hermite quadrature.
     ///
-    /// We compute E_{x~N(0,σ²)}[ (q·exp(L(x)) + 1−q)^t ]
-    /// where L(x) = (1 − 2x) / (2σ²).
-    ///
-    /// Change of variables for Gauss-Hermite: x = σ·√2·z where the
-    /// quadrature integrates against exp(-z²). The weights already
-    /// include the √π normalization factor.
+    /// P/Q = q · exp((2x−1)/(2σ²)) + (1−q).
+    /// With change of variables x = σ√2·z:
+    ///   P/Q = q · exp(√2z/σ − 1/(2σ²)) + (1−q).
     fn eval_raw(&self, t: f64) -> f64 {
         let q = self.rate;
         let one_minus_q = 1.0 - q;
-        let sqrt2 = std::f64::consts::SQRT_2;
+        let exponent = 1.0 + t;
 
-        // Use log-sum-exp for numerical stability.
-        // We compute log(Σ wᵢ · fᵢ) where fᵢ can be very large.
-        let mut log_vals: Vec<f64> = Vec::with_capacity(self.gh_nodes.len());
-        let mut log_weights: Vec<f64> = Vec::with_capacity(self.gh_nodes.len());
+        let mut log_terms: Vec<f64> = Vec::with_capacity(self.gh_nodes.len());
 
         for (&z, &w) in self.gh_nodes.iter().zip(self.gh_weights.iter()) {
             if w <= 0.0 {
                 continue;
             }
-            // Privacy loss at quadrature point x = σ√2·z
-            let loss = self.inv_2sigma_sq - sqrt2 * z / self.sigma;
-            // Mixture: q·exp(L) + (1-q)
-            let mixture = q * loss.exp() + one_minus_q;
-            if mixture <= 0.0 {
+            // log(P_1/Q) at x = σ√2·z:  √2z/σ − 1/(2σ²)
+            let log_p1_over_q = self.sqrt2_over_sigma * z - self.inv_2sigma_sq;
+            // P/Q = q·exp(log_p1_over_q) + (1−q)
+            let ratio = q * log_p1_over_q.exp() + one_minus_q;
+            if ratio <= 0.0 {
                 continue;
             }
-            // log(w · mixture^t) = log(w) + t·log(mixture)
-            log_weights.push(w.ln());
-            log_vals.push(t * mixture.ln());
+            // log(w · ratio^{1+t})
+            log_terms.push(w.ln() + exponent * ratio.ln());
         }
 
-        if log_vals.is_empty() {
+        if log_terms.is_empty() {
             return 0.0;
         }
 
-        // log-sum-exp: log(Σ exp(aᵢ)) where aᵢ = log(wᵢ) + t·log(mixture_i)
-        let log_terms: Vec<f64> = log_weights
-            .iter()
-            .zip(log_vals.iter())
-            .map(|(&lw, &lv)| lw + lv)
-            .collect();
-
         let max_log = log_terms.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
         let sum_exp: f64 = log_terms.iter().map(|&lt| (lt - max_log).exp()).sum();
-
-        // Result: log(E[f]) = log(Σ wᵢ fᵢ / √π) = max + log(sum_exp) - log(√π)
         max_log + sum_exp.ln() - 0.5 * std::f64::consts::PI.ln()
     }
 }
@@ -313,31 +305,29 @@ impl TruncatedGaussianCgf {
 
     fn eval_raw(&self, t: f64) -> f64 {
         let sqrt2 = std::f64::consts::SQRT_2;
-        let r_clip = self.radius / sqrt2; // Domain in GH coordinates: z ∈ [-R/√2, R/√2]
+        let r_clip = self.radius / sqrt2;
         let sensitivity = 1.0;
+        let exponent = 1.0 + t;
 
-        // Privacy loss at x: L(x) = -Δx/σ² + Δ²/(2σ²) + log(Z₁/Z₀)
-        // The base term that's constant in x:
-        let loss_const = sensitivity * sensitivity * self.inv_2sigma_sq + self.log_z_ratio;
+        // log(P_trunc/Q_trunc) at x = Δx/σ² − Δ²/(2σ²) − log(Z₁/Z₀)
+        // constant part: Δ²/(2σ²) + log(Z₁/Z₀)
+        let ratio_const = sensitivity * sensitivity * self.inv_2sigma_sq + self.log_z_ratio;
 
-        // We want: Λ(t) = log E_{x~TN(0,σ²,[-Rσ,Rσ])}[exp(t·L(x))]
-        // = log { (1/Z₀) ∫_{-Rσ}^{Rσ} exp(t·L(x)) · (1/(σ√(2π))) · exp(-x²/(2σ²)) dx }
-        // With change of variables x = σ√2·z:
-        // = log { (1/Z₀) · (1/√π) ∫ exp(t·L(σ√2·z)) · exp(-z²) dz }
-        // where the integral domain is z ∈ [-R/√2, R/√2]
+        // Λ(t) = log E_{Q_trunc}[(P_trunc/Q_trunc)^{1+t}]
+        // = log { (1/Z₀) · (1/√π) ∫_{-R/√2}^{R/√2} (P/Q)^{1+t} · exp(-z²) dz }
 
         let mut log_terms: Vec<f64> = Vec::with_capacity(self.gh_nodes.len());
 
         for (&z, &w) in self.gh_nodes.iter().zip(self.gh_weights.iter()) {
-            // Skip nodes outside the truncated domain
             if z < -r_clip || z > r_clip || w <= 0.0 {
                 continue;
             }
 
             let x = self.sigma * sqrt2 * z;
-            let loss = -sensitivity * x / (self.sigma * self.sigma) + loss_const;
-            // log(w · exp(t·L)) = log(w) + t·L
-            log_terms.push(w.ln() + t * loss);
+            // log(P_trunc/Q_trunc) = Δx/σ² − const
+            let log_p_over_q = sensitivity * x / (self.sigma * self.sigma) - ratio_const;
+            // log(w · (P/Q)^{1+t}) = log(w) + (1+t)·log(P/Q)
+            log_terms.push(w.ln() + exponent * log_p_over_q);
         }
 
         if log_terms.is_empty() {
@@ -441,11 +431,15 @@ impl RectifiedGaussianCgf {
         let sqrt2 = std::f64::consts::SQRT_2;
         let r_clip = self.radius / sqrt2;
         let sensitivity = 1.0;
+        let exponent = 1.0 + t;
 
-        // Interior: L(x) = Δ(Δ/2 - x)/σ² (same as Gaussian, on bounded domain)
-        // E_interior[exp(tL)] = (1/p_interior) ∫_{-Rσ}^{Rσ} exp(tL(x)) · (1/(σ√2π)) · exp(-x²/(2σ²)) dx
-        // With x = σ√2·z:
-        // = (1/(p_interior·√π)) · ∫ exp(tL(σ√2z)) exp(-z²) dz  [z ∈ [-R/√2, R/√2]]
+        // Λ(t) = log E_Q[(P/Q)^{1+t}] where P = Rect(Δ,σ,R), Q = Rect(0,σ,R).
+        //
+        // Interior: P(x)/Q(x) = exp(Δ(2x−Δ)/(2σ²)) for x ∈ (−Rσ, Rσ)
+        //   = exp((2x−1)/(2σ²)) for Δ=1
+        //   = exp(x/σ² − 1/(2σ²))
+        //
+        // With x = σ√2z: log(P/Q) = √2z/σ − 1/(2σ²)
 
         let mut log_interior_terms: Vec<f64> = Vec::with_capacity(self.gh_nodes.len());
 
@@ -454,11 +448,10 @@ impl RectifiedGaussianCgf {
                 continue;
             }
             let x = self.sigma * sqrt2 * z;
-            let loss = sensitivity * (sensitivity / 2.0 - x) / (self.sigma * self.sigma);
-            log_interior_terms.push(w.ln() + t * loss);
+            let log_p_over_q = sensitivity * (x - sensitivity / 2.0) / (self.sigma * self.sigma);
+            log_interior_terms.push(w.ln() + exponent * log_p_over_q);
         }
 
-        // Interior contribution (un-normalized by √π but we'll handle later)
         let log_interior_unnorm = if log_interior_terms.is_empty() {
             f64::NEG_INFINITY
         } else {
@@ -472,31 +465,29 @@ impl RectifiedGaussianCgf {
                 .sum();
             max_log + sum_exp.ln() - 0.5 * std::f64::consts::PI.ln()
         };
-        // This is log(∫ exp(tL) φ(x/σ)/σ dx) over [-Rσ, Rσ]
-        // The actual interior mass-weighted contribution is: p_interior * E_interior[exp(tL)]
-        // But ∫ φ(x/σ)/σ dx over [-Rσ, Rσ] = p_interior, so log_interior_unnorm already
-        // includes the p_interior weight.
 
-        // Point mass contributions:
-        // p_L · exp(t · ε_L) and p_R · exp(t · ε_R)
+        // Point mass contributions: (P/Q)^{1+t} at boundaries.
+        // eps_left = log(p_L(0)/p_L(Δ)) = log(Q_left/P_left), so log(P_left/Q_left) = -eps_left
+        // eps_right = log(p_R(0)/p_R(Δ)) = log(Q_right/P_right), so log(P_right/Q_right) = -eps_right
+        //
+        // The point mass P/Q ratio at left: P_left/Q_left = exp(-eps_left)
+        // p_Q_left · (P_left/Q_left)^{1+t} = p_left · exp(-(1+t) · eps_left)
         let log_left = if self.p_left > 0.0 && self.eps_left.is_finite() {
-            self.p_left.ln() + t * self.eps_left
+            self.p_left.ln() - exponent * self.eps_left
         } else {
             f64::NEG_INFINITY
         };
 
         let log_right = if self.p_right > 0.0 && self.eps_right.is_finite() {
-            self.p_right.ln() + t * self.eps_right
+            self.p_right.ln() - exponent * self.eps_right
         } else {
             f64::NEG_INFINITY
         };
 
-        // Λ(t) = log(interior + left + right)
-        // Use log-sum-exp over the three terms
         let terms = [log_interior_unnorm, log_left, log_right];
         let max_t = terms.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
         if max_t.is_infinite() && max_t < 0.0 {
-            return 0.0; // All terms are -inf
+            return 0.0;
         }
         let sum: f64 = terms.iter().map(|&lt| (lt - max_t).exp()).sum();
         max_t + sum.ln()
@@ -715,17 +706,25 @@ fn binomial_log_probs_internal(m: usize, q: f64) -> Vec<f64> {
 
 /// CGF for the Poisson-subsampled truncated Gaussian mechanism.
 ///
-/// Λ(t) = log E_{x~TN}[ (q · exp(L_trunc(x)) + 1−q)^t ]
+/// Following `saddle_point_math.md`:
+///   Λ(t) = log E_{Q_trunc}[(P_sub/Q_trunc)^{1+t}]
 ///
-/// where L_trunc(x) is the truncated Gaussian privacy loss and x is drawn
-/// from TruncatedNormal(0, σ², [-Rσ, Rσ]).
+/// where P_sub = q·P_trunc + (1−q)·Q_trunc, and
+///   P_trunc/Q_trunc = exp(Δx/σ² − Δ²/(2σ²) − log(Z₁/Z₀))
+///
+/// (positive coefficient on x — P_trunc shifts output by +Δ).
+///
+/// Key property: Λ(−1) = 0.
 #[derive(Debug, Clone)]
 pub struct SubsampledTruncatedGaussianCgf {
     sigma: f64,
     radius: f64,
     rate: f64,
     inv_2sigma_sq: f64,
-    log_z_ratio: f64,
+    /// Pre-computed log(P_trunc/Q_trunc) constant part: Δ²/(2σ²) + log(Z₁/Z₀).
+    /// The full log-ratio is: Δx/σ² − log_ratio_const.
+    log_ratio_const: f64,
+    /// log(Z₀) for normalization of the GH integral over truncated domain.
     log_z0: f64,
     gh_nodes: Vec<f64>,
     gh_weights: Vec<f64>,
@@ -747,7 +746,9 @@ impl SubsampledTruncatedGaussianCgf {
             radius,
             rate,
             inv_2sigma_sq: 1.0 / (2.0 * sigma_sq),
-            log_z_ratio,
+            // log(P_trunc/Q_trunc) = Δx/σ² − Δ²/(2σ²) − log(Z₁/Z₀)
+            // constant part = Δ²/(2σ²) + log(Z₁/Z₀)
+            log_ratio_const: sensitivity * sensitivity / (2.0 * sigma_sq) + log_z_ratio,
             log_z0: z0.ln(),
             gh_nodes: nodes,
             gh_weights: weights,
@@ -760,39 +761,34 @@ impl SubsampledTruncatedGaussianCgf {
         let q = self.rate;
         let one_minus_q = 1.0 - q;
         let sensitivity = 1.0;
-        let loss_const = sensitivity * sensitivity * self.inv_2sigma_sq + self.log_z_ratio;
+        let exponent = 1.0 + t;
 
         let mut log_terms: Vec<f64> = Vec::with_capacity(self.gh_nodes.len());
-        let mut log_weights_vec: Vec<f64> = Vec::with_capacity(self.gh_nodes.len());
 
         for (&z, &w) in self.gh_nodes.iter().zip(self.gh_weights.iter()) {
             if z < -r_clip || z > r_clip || w <= 0.0 {
                 continue;
             }
             let x = self.sigma * sqrt2 * z;
-            let loss = -sensitivity * x / (self.sigma * self.sigma) + loss_const;
-            let mixture = q * loss.exp() + one_minus_q;
-            if mixture <= 0.0 {
+            // log(P_trunc/Q_trunc) = Δx/σ² − const
+            let log_p_over_q = sensitivity * x / (self.sigma * self.sigma)
+                - self.log_ratio_const;
+            // P_sub/Q = q·(P_trunc/Q_trunc) + (1−q)
+            let ratio = q * log_p_over_q.exp() + one_minus_q;
+            if ratio <= 0.0 {
                 continue;
             }
-            log_weights_vec.push(w.ln());
-            log_terms.push(t * mixture.ln());
+            log_terms.push(w.ln() + exponent * ratio.ln());
         }
 
         if log_terms.is_empty() {
             return 0.0;
         }
 
-        let combined: Vec<f64> = log_weights_vec
-            .iter()
-            .zip(log_terms.iter())
-            .map(|(&lw, &lv)| lw + lv)
-            .collect();
+        let max_log = log_terms.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let sum_exp: f64 = log_terms.iter().map(|&lt| (lt - max_log).exp()).sum();
 
-        let max_log = combined.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        let sum_exp: f64 = combined.iter().map(|&lt| (lt - max_log).exp()).sum();
-
-        // Normalize by Z₀ and √π
+        // Normalize: divide by Z₀ (truncated domain) and √π (GH normalization)
         max_log + sum_exp.ln() - 0.5 * std::f64::consts::PI.ln() - self.log_z0
     }
 }
