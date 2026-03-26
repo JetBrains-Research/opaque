@@ -111,7 +111,7 @@ from opaque.noise import rectified_gaussian_noise
 from opaque.random import key
 
 noise_fn, noise_state = rectified_gaussian_noise(
-    stddev=noise_multiplier * clip_state.sensitivity(),
+    stddev=noise_multiplier * clip_state.clip_norm,
     radius=5.0,          # clamp to ±5σ
     key=key(42),
 )

@@ -29,7 +29,7 @@ class TestAdaptiveClippedGrad:
         )
 
         # Check initial state
-        assert clip_state.clip_norm == 1.0
+        assert clip_state.next_clip_norm == 1.0
         assert clip_state.clipping_rate == 0.0
 
         # Compute gradients
@@ -40,7 +40,7 @@ class TestAdaptiveClippedGrad:
         grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Check state updated
-        assert isinstance(clip_state.clip_norm, float)
+        assert isinstance(clip_state.next_clip_norm, float)
         assert isinstance(clip_state.clipping_rate, float)
         assert grads.shape == params.shape
 
@@ -65,14 +65,14 @@ class TestAdaptiveClippedGrad:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        initial_clip_norm = clip_state.clip_norm
+        initial_clip_norm = clip_state.next_clip_norm
 
         # First step
         _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Threshold should increase (many gradients clipped)
         assert clip_state.clipping_rate > 0.5
-        assert clip_state.clip_norm > initial_clip_norm
+        assert clip_state.next_clip_norm > initial_clip_norm
 
     def test_threshold_decreases_when_too_few_clipped(self):
         """Test that threshold decreases when clipping rate < target quantile."""
@@ -95,14 +95,14 @@ class TestAdaptiveClippedGrad:
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
 
-        initial_clip_norm = clip_state.clip_norm
+        initial_clip_norm = clip_state.next_clip_norm
 
         # First step
         _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Threshold should decrease (few gradients clipped)
         assert clip_state.clipping_rate < 0.5
-        assert clip_state.clip_norm < initial_clip_norm
+        assert clip_state.next_clip_norm < initial_clip_norm
 
     def test_geometric_update_formula(self):
         """Test proportional update: C_{t+1} = C_t * exp(η * (ρ̃ - γ))."""
@@ -211,7 +211,7 @@ class TestAdaptiveClippedGrad:
             _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         # Threshold should be clamped
-        assert clip_norm_min <= clip_state.clip_norm <= clip_norm_max
+        assert clip_norm_min <= clip_state.next_clip_norm <= clip_norm_max
 
     def test_step_counter_increments(self):
         """Test that step counter increments correctly."""
@@ -306,7 +306,7 @@ class TestAdaptiveClippedGrad:
 
         # Low quantile should result in higher threshold (clip fewer)
         # High quantile should result in lower threshold (clip more)
-        assert clip_state_low.clip_norm > clip_state_high.clip_norm
+        assert clip_state_low.next_clip_norm > clip_state_high.next_clip_norm
 
     def test_different_learning_rates(self):
         """Test that learning rate affects adaptation speed."""
@@ -347,8 +347,8 @@ class TestAdaptiveClippedGrad:
             )
 
         # Fast should have adapted more
-        assert abs(clip_state_fast.clip_norm - 0.01) > abs(
-            clip_state_slow.clip_norm - 0.01
+        assert abs(clip_state_fast.next_clip_norm - 0.01) > abs(
+            clip_state_slow.next_clip_norm - 0.01
         )
 
     def test_kwargs_passed_to_clipped_grad(self):
@@ -454,7 +454,7 @@ class TestAdaptiveClippedGrad:
             torch.testing.assert_close(grads_mb, grads_no_mb, rtol=1e-5, atol=1e-6)
 
             # State updates should be identical
-            assert math.isclose(state_mb.clip_norm, state_no_mb.clip_norm, rel_tol=1e-5)
+            assert math.isclose(state_mb.next_clip_norm, state_no_mb.next_clip_norm, rel_tol=1e-5)
             assert math.isclose(
                 state_mb.clipping_rate, state_no_mb.clipping_rate, rel_tol=1e-5
             )

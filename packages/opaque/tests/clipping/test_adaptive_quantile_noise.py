@@ -76,7 +76,7 @@ class TestQuantileNoise:
             _, state2 = grad_fn2(params, batch_x, batch_y, state=state2)
 
             # Clip norms should be identical (same noise sequence)
-            assert state1.clip_norm == state2.clip_norm
+            assert state1.next_clip_norm == state2.next_clip_norm
             assert state1.step == state2.step
 
     def test_quantile_noise_different_keys_produce_different_paths(self):
@@ -166,7 +166,7 @@ class TestQuantileNoise:
 
         # Adaptation paths should diverge with high noise
         # With fraction_noise_std=0.5, this should reliably cause different decisions
-        assert state_no_noise.clip_norm != state_noise.clip_norm
+        assert state_no_noise.next_clip_norm != state_noise.next_clip_norm
 
     def test_state_preserves_key_and_step(self):
         """Test that state correctly preserves key and step counter."""
@@ -225,11 +225,11 @@ class TestQuantileNoise:
         assert state.step == 1
 
 
-class TestQuantileNoiseSensitivity:
-    """Tests for sensitivity computation with quantile noise."""
+class TestQuantileNoiseClipNorm:
+    """Tests for clip_norm with quantile noise."""
 
-    def test_sensitivity_unchanged_by_quantile_noise(self):
-        """Test that quantile noise doesn't affect sensitivity calculation."""
+    def test_clip_norm_unchanged_by_quantile_noise(self):
+        """Test that quantile noise doesn't affect initial clip_norm."""
 
         def loss_fn(params, x, y):
             pred = x @ params
@@ -252,12 +252,12 @@ class TestQuantileNoiseSensitivity:
             batch_argnums=(1, 2),
         )
 
-        # Sensitivity should be identical (same clip_norm)
-        assert state_no_noise.sensitivity() == state_noise.sensitivity()
-        assert state_no_noise.sensitivity() == 1.0  # clip_norm=1.0
+        # clip_norm should be identical (same initial_clip_norm)
+        assert state_no_noise.clip_norm == state_noise.clip_norm
+        assert state_no_noise.clip_norm == 1.0
 
-    def test_sensitivity_equals_clip_norm(self):
-        """Test sensitivity equals clip_norm."""
+    def test_clip_norm_matches_initial(self):
+        """Test clip_norm equals initial_clip_norm before any steps."""
 
         def loss_fn(params, x, y):
             pred = x @ params
@@ -271,5 +271,4 @@ class TestQuantileNoiseSensitivity:
             batch_argnums=(1, 2),
         )
 
-        # sensitivity() now takes no parameters and returns clip_norm
-        assert state.sensitivity() == 5.0
+        assert state.clip_norm == 5.0

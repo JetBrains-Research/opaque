@@ -298,19 +298,19 @@ def sync_object(
         >>>
         >>> @dataclass
         >>> class AdaptiveClipState:
-        ...     clip_norm: float
+        ...     next_clip_norm: float
         ...     step: int
         ...     clipping_rate: float
         >>>
         >>> # Each device has different state after local update
-        >>> state = AdaptiveClipState(clip_norm=1.0, step=100, clipping_rate=0.8)
+        >>> state = AdaptiveClipState(next_clip_norm=1.0, step=100, clipping_rate=0.8)
         >>>
-        >>> # Synchronize clip_norm and clipping_rate (but not step)
+        >>> # Synchronize next_clip_norm and clipping_rate (but not step)
         >>> state = dist_state.sync_object(
         ...     state,
-        ...     field_ops={"clip_norm": "mean", "clipping_rate": "mean"}
+        ...     field_ops={"next_clip_norm": "mean", "clipping_rate": "mean"}
         ... )
-        >>> # state.clip_norm and state.clipping_rate now averaged across devices
+        >>> # state.next_clip_norm and state.clipping_rate now averaged across devices
         >>> # state.step unchanged (not synchronized)
 
     Notes:

@@ -124,7 +124,7 @@ from opaque.random import key
 noise_fn, noise_state = band_mf_noise(
     grad_template=params,    # pytree with correct shapes/dtypes
     n_steps=1000,
-    stddev=noise_multiplier * clip_state.sensitivity(),
+    stddev=noise_multiplier * clip_state.clip_norm,
     key=key(42),
     bands=10,
 )
@@ -198,7 +198,7 @@ result = acc.calibrate(
 key_samp, key_noise = split(key(42), num=2)
 grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=1)
 noise_fn, noise_state = band_mf_noise(
-    params, n_steps, stddev=result.param * clip_state.sensitivity(),
+    params, n_steps, stddev=result.param * clip_state.clip_norm,
     key=key_noise, bands=bands,
 )
 sampler = CyclicPoissonSampler(

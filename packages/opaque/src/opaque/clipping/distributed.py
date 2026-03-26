@@ -50,7 +50,7 @@ def sync_clip_state(state: FixedClipState) -> FixedClipState:
     if not isinstance(state, FixedClipState):
         raise TypeError(f"Expected FixedClipState, got {type(state)}")
 
-    return sync_object(state, field_ops={"l2_norm_bound": "assert_equal"})
+    return sync_object(state, field_ops={"clip_norm": "assert_equal"})
 
 
 def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
@@ -86,7 +86,7 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
     )
 
     new_clip_norm = _adaptive_clip_norm_update(
-        base_clip_norm=synced.base_clip_norm,
+        base_clip_norm=synced.clip_norm,
         noisy_clipping_rate=noisy_global_rate,
         target_quantile=synced.target_quantile,
         learning_rate=synced.learning_rate,
@@ -96,7 +96,7 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
 
     return replace(
         synced,
-        clip_norm=float(new_clip_norm),
+        next_clip_norm=float(new_clip_norm),
         clipping_rate=float(global_rate),
     )
 

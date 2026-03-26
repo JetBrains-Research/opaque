@@ -55,7 +55,7 @@ grad_fn, clip_state = clipped_grad(
     l2_clip_norm=1.0,
 )
 noise_fn, noise_state = gaussian_noise(
-    stddev=noise_multiplier * clip_state.sensitivity(),
+    stddev=noise_multiplier * clip_state.clip_norm,
     key=key(42),
 )
 

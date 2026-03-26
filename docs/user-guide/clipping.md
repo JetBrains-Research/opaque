@@ -38,8 +38,8 @@ grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 3. Each per-example gradient is clipped to L2 norm at most `l2_clip_norm`.
 4. The clipped gradients are summed across the batch.
 
-The returned `clip_state` is a `FixedClipState` containing the clip norm and
-a `sensitivity()` method used to calibrate noise.
+The returned `clip_state` is a `FixedClipState` containing the clip norm
+used to calibrate noise.
 
 ### Parameters
 
@@ -80,7 +80,7 @@ The sensitivity is the maximum change in the clipped gradient sum when one
 example is added, removed, or replaced. Noise is calibrated to this value.
 
 ```python
-sensitivity = clip_state.sensitivity()
+sensitivity = clip_state.clip_norm
 # With l2_clip_norm=1.0: sensitivity = 1.0
 
 noise_fn, noise_state = gaussian_noise(

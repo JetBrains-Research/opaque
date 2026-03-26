@@ -31,7 +31,7 @@ differential privacy.
 Use `sync()` from `opaque.distributed` to synchronize any clipping state or aux
 object. It auto-dispatches to the right function based on type:
 
-- **`sync(FixedClipState)`** → asserts `l2_norm_bound` matches across ranks.
+- **`sync(FixedClipState)`** → asserts `clip_norm` matches across ranks.
 - **`sync(AdaptiveClipState)`** → aggregates counts and recomputes global adaptive clip norm.
 - **`sync(ClippedFunAux | ClippedGradAux | AdaptiveClippedGradAux)`** → gathers aux across ranks.
 

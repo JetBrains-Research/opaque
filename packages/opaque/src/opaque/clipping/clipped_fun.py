@@ -390,7 +390,7 @@ def clipped_fun(
 
     # Create fixed clip state
     clip_state = FixedClipState(
-        l2_norm_bound=l2_norm_bound,
+        clip_norm=l2_norm_bound,
     )
 
     # Wrap function to accept and return state

@@ -50,7 +50,7 @@ class AdaptiveClipState(ClipState):
     as part of the output, enabling pure functional composition.
 
     Attributes:
-        clip_norm: Current clipping threshold C_t.
+        next_clip_norm: Clipping threshold for the *next* step C_{t+1}.
         clipping_rate: Fraction of gradients clipped in last call (for monitoring).
         key: RNG key for quantile noise (None if no noise).
         step: Step counter for key derivation.
@@ -61,6 +61,7 @@ class AdaptiveClipState(ClipState):
     """
 
     clip_norm: float
+    next_clip_norm: float
     clipping_rate: float
     key: RngKey
     step: int
@@ -69,15 +70,14 @@ class AdaptiveClipState(ClipState):
     target_quantile: float
     clip_norm_min: float
     clip_norm_max: float
-    base_clip_norm: float
     num_clipped: float
     total: float
     batch_size: int
 
     def __post_init__(self):
         """Validate state values."""
-        if self.clip_norm <= 0:
-            raise ValueError(f"clip_norm must be positive, got {self.clip_norm}")
+        if self.next_clip_norm <= 0:
+            raise ValueError(f"next_clip_norm must be positive, got {self.next_clip_norm}")
         if not 0 <= self.clipping_rate <= 1:
             raise ValueError(
                 f"clipping_rate must be in [0, 1], got {self.clipping_rate}"
@@ -87,26 +87,6 @@ class AdaptiveClipState(ClipState):
                 "fraction_noise_std must be > 0, "
                 f"got {self.fraction_noise_std}"
             )
-
-    def sensitivity(self) -> float:
-        """L2 sensitivity of the gradients produced by the last ``grad_fn`` call.
-
-        Returns ``base_clip_norm`` — the clipping threshold that was actually
-        used to clip the gradients, **not** the updated ``clip_norm`` (which
-        is the threshold for the *next* step).
-
-        For replace-one neighboring, double this value when calibrating noise.
-
-        Returns:
-            L2 sensitivity (float).
-
-        Example:
-            >>> grad, clip_state = grad_fn(params, x, y, state=clip_state)
-            >>> sens = clip_state.sensitivity()
-            >>> noise_fn, ns = gaussian_noise(stddev=noise_multiplier * sens)
-            >>> noisy_grad, ns = noise_fn(grad, ns)
-        """
-        return self.base_clip_norm
 
 
 def _compute_clipping_stats(
@@ -295,7 +275,7 @@ def adaptive_clipped_grad(
         ...
         ...     # Add noise and update
         ...     noise_fn, noise_state = gaussian_noise(
-        ...         stddev=clip_state.sensitivity() * 1.1, key=key(2))
+        ...         stddev=clip_state.clip_norm * 1.1, key=key(2))
         ...     noisy_grad, noise_state = noise_fn(grad, noise_state)
         ...     # ... optimizer step
 
@@ -366,7 +346,7 @@ def adaptive_clipped_grad(
                 loss_fn,
                 argnums=argnums,
                 has_aux=has_aux,
-                l2_clip_norm=state.clip_norm,
+                l2_clip_norm=state.next_clip_norm,
                 return_aux=user_wants_return_aux,
                 _force_grad_norms=not user_wants_return_aux,
                 **clipped_grad_kwargs,
@@ -391,7 +371,7 @@ def adaptive_clipped_grad(
         batch_size = grad_norms.numel() if grad_norms is not None else 0
         if grad_norms is not None:
             num_clipped, total, clipping_rate = _compute_clipping_stats(
-                grad_norms, state.clip_norm
+                grad_norms, state.next_clip_norm
             )
 
             noisy_clipping_rate = _sample_noisy_clipping_rate(
@@ -402,7 +382,7 @@ def adaptive_clipped_grad(
             )
 
             new_clip_norm = _adaptive_clip_norm_update(
-                base_clip_norm=state.clip_norm,
+                base_clip_norm=state.next_clip_norm,
                 noisy_clipping_rate=noisy_clipping_rate,
                 target_quantile=config["target_quantile"],
                 learning_rate=config["learning_rate"],
@@ -411,12 +391,13 @@ def adaptive_clipped_grad(
             )
         else:
             # No norms available (shouldn't happen)
-            new_clip_norm = state.clip_norm
+            new_clip_norm = state.next_clip_norm
             clipping_rate = 0.0
 
         # Create new state (IMMUTABLE) with incremented step
         new_state = AdaptiveClipState(
-            clip_norm=new_clip_norm,
+            clip_norm=state.next_clip_norm,
+            next_clip_norm=new_clip_norm,
             clipping_rate=clipping_rate,
             key=state.key,
             step=state.step + 1,
@@ -425,7 +406,6 @@ def adaptive_clipped_grad(
             target_quantile=state.target_quantile,
             clip_norm_min=state.clip_norm_min,
             clip_norm_max=state.clip_norm_max,
-            base_clip_norm=state.clip_norm,
             num_clipped=num_clipped,
             total=total,
             batch_size=batch_size,
@@ -462,6 +442,7 @@ def adaptive_clipped_grad(
     # Create initial state
     initial_state = AdaptiveClipState(
         clip_norm=initial_clip_norm,
+        next_clip_norm=initial_clip_norm,
         clipping_rate=0.0,
         key=key,
         step=0,
@@ -470,7 +451,6 @@ def adaptive_clipped_grad(
         target_quantile=target_quantile,
         clip_norm_min=clip_norm_min,
         clip_norm_max=clip_norm_max,
-        base_clip_norm=initial_clip_norm,
         num_clipped=0.0,
         total=0.0,
         batch_size=0,

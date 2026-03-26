@@ -30,7 +30,7 @@ from opaque import gaussian_noise
 from opaque.random import key
 
 noise_fn, noise_state = gaussian_noise(
-    stddev=noise_multiplier * clip_state.sensitivity(), key=key(42),
+    stddev=noise_multiplier * clip_state.clip_norm, key=key(42),
 )
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```

@@ -112,7 +112,7 @@ $$\varepsilon_{\text{Poisson-truncated}} \leq \varepsilon_{\text{Poisson-rectifi
 from opaque import truncated_gaussian_noise
 from opaque.random import key
 
-stddev = noise_multiplier * clip_state.sensitivity()
+stddev = noise_multiplier * clip_state.clip_norm
 
 noise_fn, noise_state = truncated_gaussian_noise(
     stddev=stddev,

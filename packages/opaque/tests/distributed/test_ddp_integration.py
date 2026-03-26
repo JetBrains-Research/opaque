@@ -239,6 +239,7 @@ def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> N
     try:
         state = AdaptiveClipState(
             clip_norm=float(rank + 1),
+            next_clip_norm=float(rank + 1),
             clipping_rate=0.5 + 0.1 * rank,
             key=rng_key(42),
             step=100,
@@ -247,7 +248,6 @@ def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> N
             target_quantile=0.5,
             clip_norm_min=0.01,
             clip_norm_max=100.0,
-            base_clip_norm=float(rank + 1),
             num_clipped=float(3 * (rank + 1)),
             total=float(10 * (rank + 1)),
             batch_size=8 * (rank + 1),

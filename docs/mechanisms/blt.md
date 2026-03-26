@@ -117,7 +117,7 @@ from opaque.random import key
 noise_fn, noise_state = blt_mf_noise(
     grad_template=params,
     n_steps=10000,
-    stddev=noise_multiplier * clip_state.sensitivity(),
+    stddev=noise_multiplier * clip_state.clip_norm,
     key=key(42),
     max_buffers=10,
 )

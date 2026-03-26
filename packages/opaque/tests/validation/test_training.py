@@ -857,8 +857,8 @@ class TestEndToEndDPTraining:
         assert len(losses) == num_steps
         assert all(loss > 0 for loss in losses)
 
-    def test_sensitivity_from_clip_state(self, gpt2_with_lora, sample_batch):
-        """Test that clip_state provides correct sensitivity for noise calibration."""
+    def test_clip_norm_from_clip_state(self, gpt2_with_lora, sample_batch):
+        """Test that clip_state provides correct clip_norm for noise calibration."""
         model, _ = gpt2_with_lora
         input_ids, attention_mask = sample_batch
         labels = input_ids.clone()
@@ -894,7 +894,7 @@ class TestEndToEndDPTraining:
         )
 
         # Verify sensitivity matches clip_norm
-        sensitivity = clip_state.sensitivity()
+        sensitivity = clip_state.clip_norm
         assert sensitivity == clip_norm
 
         # Compute gradients to ensure state works

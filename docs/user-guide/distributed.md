@@ -60,7 +60,7 @@ grad_fn, clip_state = clipped_grad(
     loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2),
 )
 noise_fn, noise_state = gaussian_noise(
-    stddev=1.1 * clip_state.sensitivity(), key=key(42),
+    stddev=1.1 * clip_state.clip_norm, key=key(42),
 )
 
 # Poisson sampler (shard dataset)
@@ -186,7 +186,7 @@ the call, `clip_state.clip_norm` is identical on every device.
 
 For fixed clipping (`clipped_grad`), the state is deterministic and does
 not need synchronization. You can optionally validate with
-`sync(clip_state)`, which asserts that `l2_norm_bound` matches across
+`sync(clip_state)`, which asserts that `clip_norm` matches across
 ranks and raises `RuntimeError` if it does not.
 
 ## Poisson sampling
@@ -276,7 +276,7 @@ following types are registered:
 
 | Type | Behavior |
 |------|----------|
-| `FixedClipState` | Assert `l2_norm_bound` matches across ranks |
+| `FixedClipState` | Assert `clip_norm` matches across ranks |
 | `AdaptiveClipState` | Aggregate counts, recompute global clipping rate, update `clip_norm` |
 | `ClippedFunAux`, `ClippedGradAux`, `AdaptiveClippedGradAux` | Gather aux tensors across ranks |
 | `GaussianNoiseState` | Assert seed and step counter match across ranks |

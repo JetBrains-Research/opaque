@@ -1168,7 +1168,7 @@ def main():
                     clip_state, aux = sync(clip_state, aux)
                     sum_gradients_(grads_tuple)
 
-                noise_stddev = noise_multiplier * clip_state.sensitivity()
+                noise_stddev = noise_multiplier * clip_state.clip_norm
                 noisy_grads, noise_state = noise_fn(
                     grads_tuple, noise_state, stddev=noise_stddev,
                 )

@@ -35,7 +35,7 @@ grad_fn, clip_state = clipped_grad(
     loss_fn, l2_clip_norm=1.0, argnums=0, batch_argnums=1,
 )
 noise_fn, noise_state = gaussian_noise(
-    stddev=noise_multiplier * clip_state.sensitivity(), key=key(42),
+    stddev=noise_multiplier * clip_state.clip_norm, key=key(42),
 )
 
 # Optimizer
