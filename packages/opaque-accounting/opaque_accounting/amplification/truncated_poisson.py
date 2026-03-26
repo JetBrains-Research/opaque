@@ -42,6 +42,8 @@ class TruncatedPoisson(DpProcess):
             max_grid_size=max_grid_size,
         )
 
+        native_cfg = config.to_native()
+
         match self.inner:
             case Gaussian(noise_multiplier=nm):
                 return _native.truncated_poisson_gaussian_pld(
@@ -49,21 +51,21 @@ class TruncatedPoisson(DpProcess):
                     self.sample_rate,
                     self.batch_size_cap,
                     self.dataset_size,
-                    config.to_native(),
+                    native_cfg,
                 )
-            case AdaClip():
-                z_eff = self.inner.effective_noise_multiplier
+            case AdaClip(inner=Gaussian()) as ac:
+                # Tight: z_eff combines both into one Gaussian.
                 return _native.truncated_poisson_gaussian_pld(
-                    z_eff,
+                    ac.effective_noise_multiplier,
                     self.sample_rate,
                     self.batch_size_cap,
                     self.dataset_size,
-                    config.to_native(),
+                    native_cfg,
                 )
             case _:
                 raise TypeError(
-                    "TruncatedPoisson requires a Gaussian or AdaClip inner "
-                    f"mechanism, got {type(self.inner).__name__}."
+                    "TruncatedPoisson requires a Gaussian or AdaClip(Gaussian) "
+                    f"inner mechanism, got {type(self.inner).__name__}."
                 )
 
 

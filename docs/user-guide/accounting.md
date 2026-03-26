@@ -146,7 +146,7 @@ eps = training.epsilon_at(delta=1e-5)  # tightest of the three
 Both bounded variants give tighter ε than `acc.gaussian()`. Truncated is
 always at least as tight as rectified. For most workloads, prefer truncated.
 
-### `acc.adaclip(inner, *, quantile_noise_multiplier, batch_size)`
+### `acc.adaclip(inner, *, fraction_noise_std, batch_size)`
 
 Accounts for the additional privacy cost of adaptive clipping (the noisy
 quantile query). Use this when using `adaptive_clipped_grad`.
@@ -154,7 +154,7 @@ quantile query). Use this when using `adaptive_clipped_grad`.
 ```python
 step = acc.poisson(
     acc.adaclip(acc.gaussian(0.8),
-                quantile_noise_multiplier=0.05,
+                fraction_noise_std=0.05,
                 batch_size=256),
     sample_rate=0.01,
 )

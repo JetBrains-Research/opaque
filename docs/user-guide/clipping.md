@@ -263,7 +263,7 @@ import opaque.accounting as acc
 
 step = acc.poisson(
     acc.adaclip(acc.gaussian(noise_multiplier),
-                quantile_noise_multiplier=0.05,
+                fraction_noise_std=0.05,
                 batch_size=batch_size),
     sample_rate,
 )

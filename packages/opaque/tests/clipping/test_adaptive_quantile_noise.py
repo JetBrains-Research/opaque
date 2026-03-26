@@ -20,23 +20,23 @@ class TestQuantileNoise:
         with pytest.raises(TypeError, match="key"):
             adaptive_clipped_grad(
                 loss_fn,
-                quantile_noise_multiplier=0.1,
+                fraction_noise_std=0.1,
                 batch_argnums=(1, 2),
             )
 
-    def test_invalid_quantile_noise_multiplier(self):
-        """Test that negative/zero quantile_noise_multiplier raises error."""
+    def test_invalid_fraction_noise_std(self):
+        """Test that negative/zero fraction_noise_std raises error."""
 
         def loss_fn(params, x, y):
             pred = x @ params
             return ((pred - y) ** 2).mean()
 
         with pytest.raises(
-            ValueError, match="quantile_noise_multiplier must be positive"
+            ValueError, match="fraction_noise_std must be positive"
         ):
             adaptive_clipped_grad(
                 loss_fn,
-                quantile_noise_multiplier=-1.0,
+                fraction_noise_std=-1.0,
                 key=key(42),
                 batch_argnums=(1, 2),
             )
@@ -52,7 +52,7 @@ class TestQuantileNoise:
         grad_fn1, state1 = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
-            quantile_noise_multiplier=0.1,
+            fraction_noise_std=0.1,
             key=key(42),
             batch_argnums=(1, 2),
         )
@@ -60,7 +60,7 @@ class TestQuantileNoise:
         grad_fn2, state2 = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
-            quantile_noise_multiplier=0.1,
+            fraction_noise_std=0.1,
             key=key(42),
             batch_argnums=(1, 2),
         )
@@ -96,7 +96,7 @@ class TestQuantileNoise:
         grad_fn1, state1 = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
-            quantile_noise_multiplier=1.0,  # Very large noise to increase chance of divergence
+            fraction_noise_std=1.0,  # Very large noise to increase chance of divergence
             key=key(42),
             batch_argnums=(1, 2),
         )
@@ -104,7 +104,7 @@ class TestQuantileNoise:
         grad_fn2, state2 = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
-            quantile_noise_multiplier=1.0,
+            fraction_noise_std=1.0,
             key=key(99),  # Different key
             batch_argnums=(1, 2),
         )
@@ -147,7 +147,7 @@ class TestQuantileNoise:
         grad_fn_noise, state_noise = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
-            quantile_noise_multiplier=0.5,  # Increased noise for clear divergence
+            fraction_noise_std=0.5,  # Increased noise for clear divergence
             key=key(42),
             batch_argnums=(1, 2),
         )
@@ -165,7 +165,7 @@ class TestQuantileNoise:
             _, state_noise = grad_fn_noise(params, batch_x, batch_y, state=state_noise)
 
         # Adaptation paths should diverge with high noise
-        # With quantile_noise_multiplier=0.5, this should reliably cause different decisions
+        # With fraction_noise_std=0.5, this should reliably cause different decisions
         assert state_no_noise.clip_norm != state_noise.clip_norm
 
     def test_state_preserves_key_and_step(self):
@@ -178,7 +178,7 @@ class TestQuantileNoise:
         grad_fn, state = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
-            quantile_noise_multiplier=0.1,
+            fraction_noise_std=0.1,
             key=key(42),
             batch_argnums=(1, 2),
         )
@@ -207,7 +207,7 @@ class TestQuantileNoise:
         grad_fn, state = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
-            quantile_noise_multiplier=0.1,
+            fraction_noise_std=0.1,
             key=key(42),
             return_aux=True,
             batch_argnums=(1, 2),
@@ -247,7 +247,7 @@ class TestQuantileNoiseSensitivity:
         _, state_noise = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=1.0,
-            quantile_noise_multiplier=0.1,
+            fraction_noise_std=0.1,
             key=key(42),
             batch_argnums=(1, 2),
         )
@@ -266,7 +266,7 @@ class TestQuantileNoiseSensitivity:
         _, state = adaptive_clipped_grad(
             loss_fn,
             initial_clip_norm=5.0,
-            quantile_noise_multiplier=0.1,
+            fraction_noise_std=0.1,
             key=key(42),
             batch_argnums=(1, 2),
         )

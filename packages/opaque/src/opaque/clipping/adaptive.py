@@ -21,7 +21,7 @@ from opaque.random import RngKey, fold_in, generator_from_key
 # Andrew et al. (2021): sigma_b = m/20 on clipped counts.
 # In this implementation we add noise directly to clipped fraction b_t,
 # so stddev on fraction is sigma_b / m = 1/20 = 0.05.
-_DEFAULT_QUANTILE_NOISE_MULTIPLIER = 0.05
+_DEFAULT_FRACTION_NOISE_STD = 0.05
 
 
 class AdaptiveClippedGradAux(NamedTuple):
@@ -64,7 +64,7 @@ class AdaptiveClipState(ClipState):
     clipping_rate: float
     key: RngKey
     step: int
-    quantile_noise_multiplier: float
+    fraction_noise_std: float
     learning_rate: float
     target_quantile: float
     clip_norm_min: float
@@ -82,14 +82,18 @@ class AdaptiveClipState(ClipState):
             raise ValueError(
                 f"clipping_rate must be in [0, 1], got {self.clipping_rate}"
             )
-        if self.quantile_noise_multiplier <= 0:
+        if self.fraction_noise_std <= 0:
             raise ValueError(
-                "quantile_noise_multiplier must be > 0, "
-                f"got {self.quantile_noise_multiplier}"
+                "fraction_noise_std must be > 0, "
+                f"got {self.fraction_noise_std}"
             )
 
     def sensitivity(self) -> float:
-        """Compute L2 sensitivity for differential privacy noise calibration.
+        """L2 sensitivity of the gradients produced by the last ``grad_fn`` call.
+
+        Returns ``base_clip_norm`` — the clipping threshold that was actually
+        used to clip the gradients, **not** the updated ``clip_norm`` (which
+        is the threshold for the *next* step).
 
         For replace-one neighboring, double this value when calibrating noise.
 
@@ -102,7 +106,7 @@ class AdaptiveClipState(ClipState):
             >>> noise_fn, ns = gaussian_noise(stddev=noise_multiplier * sens)
             >>> noisy_grad, ns = noise_fn(grad, ns)
         """
-        return self.clip_norm
+        return self.base_clip_norm
 
 
 def _compute_clipping_stats(
@@ -120,12 +124,12 @@ def _sample_noisy_clipping_rate(
     *,
     key: RngKey,
     step: int,
-    quantile_noise_multiplier: float,
+    fraction_noise_std: float,
 ) -> float:
     """Add DP Gaussian noise to clipping rate using step-folded RNG key."""
     step_key = fold_in(key, step)
     generator = generator_from_key(step_key)
-    noise = torch.randn(1, generator=generator).item() * quantile_noise_multiplier
+    noise = torch.randn(1, generator=generator).item() * fraction_noise_std
     return clipping_rate + noise
 
 
@@ -167,7 +171,7 @@ def adaptive_clipped_grad(
     learning_rate: float = 0.2,
     clip_norm_min: float = 0.01,
     clip_norm_max: float = 100.0,
-    quantile_noise_multiplier: float = _DEFAULT_QUANTILE_NOISE_MULTIPLIER,
+    fraction_noise_std: float = _DEFAULT_FRACTION_NOISE_STD,
     key: RngKey,
     return_aux: bool = False,
     **clipped_grad_kwargs: Any,
@@ -200,7 +204,7 @@ def adaptive_clipped_grad(
             (as used in Andrew et al. 2021). Controls adaptation speed.
         clip_norm_min: Minimum allowed clipping threshold. Default: 0.01.
         clip_norm_max: Maximum allowed clipping threshold. Default: 100.0.
-        quantile_noise_multiplier: Noise scale for clipped-fraction updates.
+        fraction_noise_std: Noise scale for clipped-fraction updates.
             This is the standard deviation of Gaussian noise added to clipping
             rate (fraction in [0, 1]). Default 0.05 follows Andrew et al.
             recommendation (equivalent to sigma_b = m/20 on clipped counts).
@@ -324,10 +328,10 @@ def adaptive_clipped_grad(
         raise ValueError(
             f"clip_norm_max ({clip_norm_max}) must be > clip_norm_min ({clip_norm_min})"
         )
-    if quantile_noise_multiplier <= 0:
+    if fraction_noise_std <= 0:
         raise ValueError(
-            "quantile_noise_multiplier must be positive, "
-            f"got {quantile_noise_multiplier}"
+            "fraction_noise_std must be positive, "
+            f"got {fraction_noise_std}"
         )
 
     # Store config in closure (immutable)
@@ -336,7 +340,7 @@ def adaptive_clipped_grad(
         "learning_rate": learning_rate,
         "clip_norm_min": clip_norm_min,
         "clip_norm_max": clip_norm_max,
-        "quantile_noise_multiplier": quantile_noise_multiplier,
+        "fraction_noise_std": fraction_noise_std,
     }
 
     def grad_fn(*args, state: AdaptiveClipState, **kwargs):
@@ -394,7 +398,7 @@ def adaptive_clipped_grad(
                 clipping_rate,
                 key=state.key,
                 step=state.step,
-                quantile_noise_multiplier=state.quantile_noise_multiplier,
+                fraction_noise_std=state.fraction_noise_std,
             )
 
             new_clip_norm = _adaptive_clip_norm_update(
@@ -416,7 +420,7 @@ def adaptive_clipped_grad(
             clipping_rate=clipping_rate,
             key=state.key,
             step=state.step + 1,
-            quantile_noise_multiplier=state.quantile_noise_multiplier,
+            fraction_noise_std=state.fraction_noise_std,
             learning_rate=state.learning_rate,
             target_quantile=state.target_quantile,
             clip_norm_min=state.clip_norm_min,
@@ -461,7 +465,7 @@ def adaptive_clipped_grad(
         clipping_rate=0.0,
         key=key,
         step=0,
-        quantile_noise_multiplier=quantile_noise_multiplier,
+        fraction_noise_std=fraction_noise_std,
         learning_rate=learning_rate,
         target_quantile=target_quantile,
         clip_norm_min=clip_norm_min,

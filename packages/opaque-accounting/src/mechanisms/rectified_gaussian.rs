@@ -27,7 +27,7 @@ use crate::error::{PldError, Result};
 use crate::pld::PrivacyLossDistribution;
 use statrs::distribution::{ContinuousCDF, Normal};
 
-use super::{MAX_NOISE_MULTIPLIER, MIN_NOISE_MULTIPLIER};
+use super::MIN_NOISE_MULTIPLIER;
 
 /// Minimum supported radius (sigma units).
 const MIN_RADIUS: f64 = 0.1;
@@ -45,7 +45,7 @@ const MAX_RADIUS: f64 = 100.0;
 ///
 /// # Arguments
 ///
-/// * `noise_multiplier` — σ/Δ ratio, must be in \[0.1, 1.2\]
+/// * `noise_multiplier` — σ/Δ ratio, must be >= 0.1
 /// * `radius` — support half-width in sigma units, must be in \[0.1, 100\]
 /// * `config` — discretization configuration for PLD grid
 ///
@@ -57,10 +57,10 @@ pub fn rectified_gaussian_pld(
     radius: f64,
     config: &DiscretizationConfig,
 ) -> Result<PrivacyLossDistribution> {
-    if !(MIN_NOISE_MULTIPLIER..=MAX_NOISE_MULTIPLIER).contains(&noise_multiplier) {
+    if noise_multiplier < MIN_NOISE_MULTIPLIER {
         return Err(PldError::InvalidParameter(format!(
-            "noise_multiplier must be in [{}, {}], got {}",
-            MIN_NOISE_MULTIPLIER, MAX_NOISE_MULTIPLIER, noise_multiplier
+            "noise_multiplier must be >= {}, got {}",
+            MIN_NOISE_MULTIPLIER, noise_multiplier
         )));
     }
     if !(MIN_RADIUS..=MAX_RADIUS).contains(&radius) {
@@ -236,8 +236,8 @@ mod tests {
     }
 
     #[test]
-    fn test_rectified_rejects_above_max_nm() {
-        assert!(rectified_gaussian_pld(1.21, 3.0, &default_config()).is_err());
+    fn test_rectified_accepts_high_nm() {
+        assert!(rectified_gaussian_pld(5.0, 3.0, &default_config()).is_ok());
     }
 
     #[test]
@@ -254,7 +254,7 @@ mod tests {
     fn test_rectified_boundary_params() {
         let cfg = default_config();
         assert!(rectified_gaussian_pld(MIN_NOISE_MULTIPLIER, MIN_RADIUS, &cfg).is_ok());
-        assert!(rectified_gaussian_pld(MAX_NOISE_MULTIPLIER, MAX_RADIUS, &cfg).is_ok());
+        assert!(rectified_gaussian_pld(1.2, MAX_RADIUS, &cfg).is_ok());
     }
 
     /// Rectified Gaussian ε ≤ standard Gaussian ε (DPI guarantee).

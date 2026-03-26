@@ -146,3 +146,29 @@ class TestRectifiedGaussianNoise:
 
         # With radius=100σ, virtually no samples are clamped
         assert torch.allclose(noisy_rect, noisy_gauss)
+
+    def test_stddev_override(self):
+        """Per-call stddev override should change noise scale and bounds."""
+        noise_fn, state = rectified_gaussian_noise(
+            stddev=1.0, radius=5.0, key=key(0)
+        )
+        grad = torch.zeros(10000)
+
+        # Override with smaller stddev — bounds should be ±0.5*5 = ±2.5
+        noisy, state = noise_fn(grad, state, stddev=0.5)
+        assert noisy.min().item() >= -2.5 - 1e-6
+        assert noisy.max().item() <= 2.5 + 1e-6
+
+    def test_stddev_override_does_not_affect_default(self):
+        """Per-call override should not change the default for next call."""
+        noise_fn, state = rectified_gaussian_noise(
+            stddev=1.0, radius=5.0, key=key(42)
+        )
+        grad = torch.zeros(10000)
+
+        # Override with small stddev
+        _, state = noise_fn(grad, state, stddev=0.1)
+
+        # Default should still be 1.0 — bounds ±5.0
+        noisy, state = noise_fn(grad, state)
+        assert noisy.var().item() > 0.1  # should have variance ~1.0, not ~0.01

@@ -9,6 +9,10 @@ The API returns ``(noise_fn, state)`` where state is always immutable:
     >>> noise_fn, state = gaussian_noise(stddev=1.0, key=key(42))
     >>> noisy_grads, state = noise_fn(grads, state)
 
+The ``stddev`` can be overridden per call for adaptive clipping:
+
+    >>> noisy_grads, state = noise_fn(grads, state, stddev=new_stddev)
+
 The noise function is **purely local** — it uses exactly the key you provide.
 For synchronized noise in distributed training, pass the same key on every rank.
 For independent noise, derive a per-rank key with ``fold_in(key, rank)``.
@@ -48,13 +52,17 @@ def gaussian_noise(
     *,
     key: RngKey,
 ) -> tuple[
-    Callable[[Any, GaussianNoiseState], tuple[Any, GaussianNoiseState]],
+    Callable[..., tuple[Any, GaussianNoiseState]],
     GaussianNoiseState,
 ]:
     """Create a Gaussian noise function with immutable state.
 
     Returns ``(noise_fn, state)`` where ``noise_fn`` adds calibrated Gaussian
     noise N(0, stddev²) to gradients and returns updated state.
+
+    The ``stddev`` provided here is the default. It can be overridden on each
+    call via ``noise_fn(grads, state, stddev=new_stddev)`` — useful when the
+    noise scale changes between steps (e.g., with adaptive clipping).
 
     The noise function uses exactly the ``key`` you provide — no auto-detection
     of distributed state. For synchronized noise in DDP, pass the same key on
@@ -74,7 +82,7 @@ def gaussian_noise(
     Returns:
         A tuple ``(noise_fn, state)`` where:
 
-        - ``noise_fn(grads, state) -> (noisy_grads, new_state)``
+        - ``noise_fn(grads, state, *, stddev=None) -> (noisy_grads, new_state)``
         - ``state`` is a :class:`GaussianNoiseState`
 
     Example:
@@ -86,9 +94,9 @@ def gaussian_noise(
         >>> grads = torch.zeros(10)
         >>> noisy_grads, state = noise_fn(grads, state)
 
-    Example (distributed — synchronized noise on all ranks):
-        >>> # All ranks pass the same key → identical noise → models stay in sync
-        >>> noise_fn, state = gaussian_noise(stddev=1.1, key=key(42))
+    Example (per-call override for adaptive clipping):
+        >>> noise_fn, state = gaussian_noise(stddev=1.0, key=key(42))
+        >>> noisy, state = noise_fn(grads, state, stddev=0.8)  # override this step
 
     Example (distributed — independent noise per rank):
         >>> from opaque.random import key, fold_in
@@ -106,30 +114,30 @@ def gaussian_noise(
         rng_key=key,
     )
 
-    if stddev == 0:
+    default_stddev = stddev
 
-        def zero_noise_fn(grads, st):
-            return grads, st
-
-        return zero_noise_fn, state
-
-    def noise_fn(grads, st):
+    def noise_fn(grads, st, *, stddev=None):
         """Add Gaussian noise to gradients."""
+        effective_stddev = stddev if stddev is not None else default_stddev
+        if effective_stddev == 0:
+            return grads, GaussianNoiseState(
+                step_counter=st.step_counter + 1,
+                rng_key=st.rng_key,
+            )
+
         step_key = rng_fold_in(st.rng_key, st.step_counter)
         g = generator_from_key(step_key)
 
         def add_noise_to_tensor(tensor: torch.Tensor) -> torch.Tensor:
-            # torch.Generator is CPU-only; generate on CPU and move if needed
             noise = torch.randn(
                 tensor.shape,
                 dtype=tensor.dtype,
                 generator=g,
             ).to(device=tensor.device)
-            return tensor + noise * stddev
+            return tensor + noise * effective_stddev
 
         noisy = tree_map(add_noise_to_tensor, grads)
 
-        # Return updated state with incremented step counter
         return noisy, GaussianNoiseState(
             step_counter=st.step_counter + 1,
             rng_key=st.rng_key,

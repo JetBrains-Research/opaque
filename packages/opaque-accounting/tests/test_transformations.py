@@ -53,7 +53,7 @@ class TestEffectiveNoiseMultiplier:
         sigma_b = batch_size * multiplier  # = 10.0
 
         ac = acc.adaclip(
-            acc.gaussian(z), quantile_noise_multiplier=multiplier, batch_size=batch_size
+            acc.gaussian(z), fraction_noise_std=multiplier, batch_size=batch_size
         )
         expected = 1.0 / math.sqrt(1.0 / z**2 + 1.0 / (4.0 * sigma_b**2))
         assert abs(ac.effective_noise_multiplier - expected) < 1e-10

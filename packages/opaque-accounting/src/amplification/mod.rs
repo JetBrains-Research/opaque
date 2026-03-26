@@ -21,17 +21,17 @@ pub use poisson_truncated_gaussian::poisson_truncated_gaussian_pld;
 pub use truncated_poisson::truncated_poisson_gaussian_pld;
 
 use crate::error::{PldError, Result};
-use crate::mechanisms::{MAX_NOISE_MULTIPLIER, MIN_NOISE_MULTIPLIER};
+use crate::mechanisms::MIN_NOISE_MULTIPLIER;
 
 // ===========================================================================
 // Shared validation helpers (visible to child modules via `super::`)
 // ===========================================================================
 
 fn validate_noise_multiplier(nm: f64) -> Result<()> {
-    if !(MIN_NOISE_MULTIPLIER..=MAX_NOISE_MULTIPLIER).contains(&nm) {
+    if nm < MIN_NOISE_MULTIPLIER {
         return Err(PldError::InvalidParameter(format!(
-            "noise_multiplier must be in [{}, {}], got {}",
-            MIN_NOISE_MULTIPLIER, MAX_NOISE_MULTIPLIER, nm
+            "noise_multiplier must be >= {}, got {}",
+            MIN_NOISE_MULTIPLIER, nm
         )));
     }
     Ok(())

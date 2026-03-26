@@ -82,7 +82,7 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
         global_rate,
         key=synced.key,
         step=step_for_noise,
-        quantile_noise_multiplier=synced.quantile_noise_multiplier,
+        fraction_noise_std=synced.fraction_noise_std,
     )
 
     new_clip_norm = _adaptive_clip_norm_update(

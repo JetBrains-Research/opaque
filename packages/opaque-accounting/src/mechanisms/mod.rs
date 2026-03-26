@@ -25,12 +25,6 @@ mod truncated_gaussian;
 /// (grid explosion, unreliable epsilon bounds).
 pub(crate) const MIN_NOISE_MULTIPLIER: f64 = 0.1;
 
-/// Maximum supported noise multiplier.
-///
-/// Values above this threshold cause numerical instability
-/// (x-to-ε compression artifacts, unreliable beta/risk metrics).
-pub(crate) const MAX_NOISE_MULTIPLIER: f64 = 1.2;
-
 // ---------------------------------------------------------------------------
 // Re-exports
 // ---------------------------------------------------------------------------

@@ -10,16 +10,27 @@ where m is the batch size and σ_b = m/20 is the paper's default.
 Dividing through, noise on the *fraction* is σ_b / m = 1/20 = 0.05,
 independent of batch size.
 
-We store the fraction-level multiplier ``quantile_noise_multiplier``
+We store the fraction-level std ``fraction_noise_std``
 (default 0.05, matching Andrew et al.).  The conversion to the absolute
 ``σ_b`` that ``adaclip_sensitivity()`` needs requires a batch size:
 
-    σ_b = batch_size × quantile_noise_multiplier
+    σ_b = batch_size × fraction_noise_std
 
-The ``AdaClip`` process exposes :attr:`effective_noise_multiplier` which
-encapsulates the combined sensitivity formula.  Poisson amplification
-wrappers use that property directly — they do not need to understand
-AdaClip internals.
+PLD composition
+~~~~~~~~~~~~~~~
+The adaptive clipping step releases two independent outputs:
+
+1. Clipped-and-noised gradients (via the ``inner`` mechanism).
+2. Noised fraction of clipped examples (Gaussian on the centered bit).
+
+The centered bit b_i - 1/2 has L2 sensitivity 1/2 under add/remove
+neighbouring.  With noise std σ_b on the count sum, the bit
+mechanism's noise multiplier is σ_b / (1/2) = 2 σ_b.
+
+For a Gaussian inner mechanism, the joint PLD reduces to the
+closed-form z_eff from Theorem 1 (tight).  For rectified / truncated
+Gaussian the two PLDs are composed independently (valid but
+conservative).
 
 Batch size in training vs. calibration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -44,30 +55,34 @@ from .. import opaque_accounting as _native
 
 from opaque_accounting.base import DpProcess, Pld
 from opaque_accounting.mechanisms.gaussian import Gaussian
+from opaque_accounting.mechanisms.rectified_gaussian import RectifiedGaussian
+from opaque_accounting.mechanisms.truncated_gaussian import TruncatedGaussian
+
+#: Mechanism types accepted as AdaClip inner.
+_Inner = Gaussian | RectifiedGaussian | TruncatedGaussian
 
 
 @dataclass(frozen=True, slots=True)
 class AdaClip(DpProcess):
     """Adaptive clipping transformation (Andrew et al. 2021).
 
-    Stores the noise multiplier on the *fraction* (``quantile_noise_multiplier``)
+    Stores the noise std on the *fraction* (``fraction_noise_std``)
     and the ``batch_size`` needed to resolve the absolute σ_b for privacy
-    accounting.  The :attr:`effective_noise_multiplier` property computes the
-    adjusted noise multiplier that accounts for the extra privacy cost of
-    the quantile estimator.
+    accounting.
 
-    When wrapped in a Poisson amplification layer, only the
-    ``effective_noise_multiplier`` matters — the wrapper does not need to
-    understand AdaClip internals.
+    For a Gaussian ``inner``, :attr:`effective_noise_multiplier` gives the
+    tight z_eff from Theorem 1.  For rectified / truncated Gaussian the
+    ``pld()`` method composes the inner mechanism's PLD with the bit
+    mechanism's PLD (Gaussian, noise multiplier = 2 σ_b).
     """
 
-    inner: Gaussian
-    quantile_noise_multiplier: float
+    inner: _Inner
+    fraction_noise_std: float
     batch_size: float
 
     @property
     def effective_noise_multiplier(self) -> float:
-        """Noise multiplier adjusted for the quantile estimator’s privacy cost.
+        """Noise multiplier adjusted for the quantile estimator's privacy cost.
 
         This is the z_eff from Andrew et al. 2021 Theorem 1:
 
@@ -76,12 +91,13 @@ class AdaClip(DpProcess):
             z_{\\text{eff}} = \\frac{1}{\\sqrt{1/z^2 + 1/(4\\,\\sigma_b^2)}}
 
         where *z* is the base noise multiplier and
-        *σ_b = batch_size × quantile_noise_multiplier*.
+        *σ_b = batch_size × fraction_noise_std*.
 
-        Callers (e.g. Poisson amplification wrappers) should use this value
-        instead of the base ``inner.noise_multiplier``.
+        Only exact when ``inner`` is Gaussian.  Callers (e.g. Poisson
+        amplification wrappers) should use this value instead of the base
+        ``inner.noise_multiplier``.
         """
-        sigma_b = self.batch_size * self.quantile_noise_multiplier
+        sigma_b = self.batch_size * self.fraction_noise_std
         s = _native.adaclip_sensitivity(self.inner.noise_multiplier, sigma_b)
         return 1.0 / s
 
@@ -103,21 +119,33 @@ class AdaClip(DpProcess):
             max_grid_size=max_grid_size,
         )
 
+        native_cfg = config.to_native()
+
         match self.inner:
             case Gaussian():
-                z_eff = self.effective_noise_multiplier
-                return _native.gaussian_pld(z_eff, config.to_native())
-            case _:
-                raise TypeError(
-                    "AdaClip requires a Gaussian inner mechanism, got "
-                    f"{type(self.inner).__name__}."
+                # Tight: z_eff folds both into one Gaussian.
+                return _native.gaussian_pld(
+                    self.effective_noise_multiplier, native_cfg
                 )
+            case _:
+                # Non-Gaussian: compose inner PLD with bit PLD.
+                inner_pld = self.inner.pld(
+                    discretization=discretization,
+                    log_x_mass_truncation_bound=log_x_mass_truncation_bound,
+                    pessimistic_estimate=pessimistic_estimate,
+                    max_grid_size=max_grid_size,
+                )
+                sigma_b = self.batch_size * self.fraction_noise_std
+                bit_pld = _native.gaussian_pld(
+                    2.0 * sigma_b, native_cfg
+                )
+                return inner_pld.compose(bit_pld)
 
 
 def adaclip(
-    inner: Gaussian,
+    inner: _Inner,
     *,
-    quantile_noise_multiplier: float = 0.05,
+    fraction_noise_std: float = 0.05,
     batch_size: float,
 ) -> AdaClip:
     """Adaptive clipping mechanism (Andrew et al. 2021).
@@ -126,18 +154,18 @@ def adaclip(
     fraction of clipped gradients.  The fraction estimate is made private by
     adding Gaussian noise, which costs a small additional privacy budget.
 
-    The total privacy cost uses the combined sensitivity formula (Theorem 1):
+    For a Gaussian ``inner``, the total privacy cost uses the combined
+    sensitivity formula (Theorem 1):
 
     .. math::
 
         z_{\\text{eff}} = \\frac{1}{\\sqrt{1/z^2 + 1/(4\\,\\sigma_b^2)}}
 
-    where *z* is the base noise multiplier and *σ_b = batch_size × multiplier*.
+    where *z* is the base noise multiplier and
+    *σ_b = batch_size × fraction_noise_std*.
 
-    The resulting ``AdaClip`` process exposes
-    :attr:`~AdaClip.effective_noise_multiplier` which encapsulates this
-    formula.  Poisson amplification wrappers use that property directly;
-    they do **not** need to know about AdaClip internals.
+    For rectified / truncated Gaussian ``inner``, the inner PLD and the
+    bit PLD are composed independently (valid but conservative).
 
     Calibration guidance
     ~~~~~~~~~~~~~~~~~~~~
@@ -155,12 +183,13 @@ def adaclip(
     the budget is exceeded.
 
     Args:
-        inner: The base Gaussian mechanism (from :func:`gaussian`).
-        quantile_noise_multiplier: Noise std on the clipping *fraction*
+        inner: The base mechanism -- gaussian(), rectified_gaussian(),
+            or truncated_gaussian().
+        fraction_noise_std: Noise std on the clipping *fraction*
             (value in [0, 1]).  Andrew et al. recommend 1/20 = 0.05,
             corresponding to σ_b = m/20 on the clipped-count sum.
         batch_size: Number of examples per training step.  Used to convert
-            the fraction-level multiplier to the absolute σ_b needed by
+            the fraction-level std to the absolute σ_b needed by
             ``adaclip_sensitivity()``.  In the training loop pass the
             actual batch size from ``clip_state.batch_size``; during
             calibration use the expected or pessimistic batch size.
@@ -186,20 +215,21 @@ def adaclip(
             sample_rate=0.01,
         )
     """
-    if not isinstance(inner, Gaussian):
+    if not isinstance(inner, (Gaussian, RectifiedGaussian, TruncatedGaussian)):
         raise TypeError(
-            f"adaclip() requires a Gaussian inner mechanism, got {type(inner).__name__}."
+            f"adaclip() requires a Gaussian, RectifiedGaussian, or "
+            f"TruncatedGaussian inner mechanism, got {type(inner).__name__}."
         )
-    if quantile_noise_multiplier <= 0:
+    if fraction_noise_std <= 0:
         raise ValueError(
-            "quantile_noise_multiplier must be positive, "
-            f"got {quantile_noise_multiplier}"
+            "fraction_noise_std must be positive, "
+            f"got {fraction_noise_std}"
         )
     if batch_size <= 0:
         raise ValueError(f"batch_size must be positive, got {batch_size}")
 
     return AdaClip(
         inner=inner,
-        quantile_noise_multiplier=quantile_noise_multiplier,
+        fraction_noise_std=fraction_noise_std,
         batch_size=batch_size,
     )

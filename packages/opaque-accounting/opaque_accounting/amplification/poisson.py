@@ -42,24 +42,63 @@ class Poisson(DpProcess):
             max_grid_size=max_grid_size,
         )
 
+        native_cfg = config.to_native()
+
         match self.inner:
             case Gaussian(noise_multiplier=nm):
                 return _native.poisson_gaussian_pld(
-                    nm, self.sample_rate, config.to_native()
+                    nm, self.sample_rate, native_cfg
                 )
             case RectifiedGaussian(noise_multiplier=nm, radius=r):
                 return _native.poisson_rectified_gaussian_pld(
-                    nm, r, self.sample_rate, config.to_native()
+                    nm, r, self.sample_rate, native_cfg
                 )
             case TruncatedGaussian(noise_multiplier=nm, radius=r):
                 return _native.poisson_truncated_gaussian_pld(
-                    nm, r, self.sample_rate, config.to_native()
+                    nm, r, self.sample_rate, native_cfg
                 )
-            case AdaClip():
-                z_eff = self.inner.effective_noise_multiplier
+            case AdaClip(inner=Gaussian()) as ac:
+                # Tight: Theorem 1 z_eff folds both into one
+                # Gaussian before amplification.
                 return _native.poisson_gaussian_pld(
-                    z_eff, self.sample_rate, config.to_native()
+                    ac.effective_noise_multiplier,
+                    self.sample_rate,
+                    native_cfg,
                 )
+            case AdaClip() as ac:
+                # Non-Gaussian inner: compose separately
+                # amplified PLDs (valid but conservative).
+                match ac.inner:
+                    case RectifiedGaussian(
+                        noise_multiplier=nm, radius=r
+                    ):
+                        inner_pld = (
+                            _native.poisson_rectified_gaussian_pld(
+                                nm, r, self.sample_rate,
+                                native_cfg,
+                            )
+                        )
+                    case TruncatedGaussian(
+                        noise_multiplier=nm, radius=r
+                    ):
+                        inner_pld = (
+                            _native.poisson_truncated_gaussian_pld(
+                                nm, r, self.sample_rate,
+                                native_cfg,
+                            )
+                        )
+                    case _:
+                        raise TypeError(
+                            f"Unsupported AdaClip inner: "
+                            f"{type(ac.inner).__name__}"
+                        )
+                sigma_b = ac.batch_size * ac.fraction_noise_std
+                bit_pld = _native.poisson_gaussian_pld(
+                    2.0 * sigma_b,
+                    self.sample_rate,
+                    native_cfg,
+                )
+                return inner_pld.compose(bit_pld)
             case _:
                 raise TypeError(
                     "Poisson requires a Gaussian, RectifiedGaussian, "

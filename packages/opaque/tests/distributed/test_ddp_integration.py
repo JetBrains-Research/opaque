@@ -242,7 +242,7 @@ def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> N
             clipping_rate=0.5 + 0.1 * rank,
             key=rng_key(42),
             step=100,
-            quantile_noise_multiplier=0.05,
+            fraction_noise_std=0.05,
             learning_rate=0.2,
             target_quantile=0.5,
             clip_norm_min=0.01,

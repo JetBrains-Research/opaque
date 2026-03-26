@@ -11,6 +11,10 @@ The API returns ``(noise_fn, state)`` where state is always immutable:
     >>> noise_fn, state = rectified_gaussian_noise(stddev=1.0, radius=5.0, key=key(42))
     >>> noisy_grads, state = noise_fn(grads, state)
 
+The ``stddev`` can be overridden per call for adaptive clipping:
+
+    >>> noisy_grads, state = noise_fn(grads, state, stddev=new_stddev)
+
 The noise function is **purely local** — it uses exactly the key you provide.
 For synchronized noise in distributed training, pass the same key on every rank.
 For independent noise, derive a per-rank key with ``fold_in(key, rank)``.
@@ -33,7 +37,7 @@ def rectified_gaussian_noise(
     *,
     key: RngKey,
 ) -> tuple[
-    Callable[[Any, GaussianNoiseState], tuple[Any, GaussianNoiseState]],
+    Callable[..., tuple[Any, GaussianNoiseState]],
     GaussianNoiseState,
 ]:
     """Create a rectified Gaussian noise function with immutable state.
@@ -45,6 +49,12 @@ def rectified_gaussian_noise(
     Gaussian (no rejection sampling or inverse-CDF), just a hard clamp.
     Use :func:`~opaque.accounting.mechanisms.rectified_gaussian` for matching
     privacy accounting.
+
+    The ``stddev`` provided here is the default. It can be overridden on each
+    call via ``noise_fn(grads, state, stddev=new_stddev)`` — useful when the
+    noise scale changes between steps (e.g., with adaptive clipping). The
+    ``radius`` (in σ-units) is fixed at creation and the clamping bounds
+    adjust automatically: [−radius·stddev, radius·stddev].
 
     The noise function uses exactly the ``key`` you provide — no auto-detection
     of distributed state. For synchronized noise in DDP, pass the same key on
@@ -67,7 +77,7 @@ def rectified_gaussian_noise(
     Returns:
         A tuple ``(noise_fn, state)`` where:
 
-        - ``noise_fn(grads, state) -> (noisy_grads, new_state)``
+        - ``noise_fn(grads, state, *, stddev=None) -> (noisy_grads, new_state)``
         - ``state`` is a :class:`~opaque.noise.gaussian_noise.GaussianNoiseState`
 
     Raises:
@@ -85,6 +95,10 @@ def rectified_gaussian_noise(
         >>> noisy, state = noise_fn(grads, state)
         >>> bound = 1.0 * 5.0
         >>> assert noisy.min() >= -bound and noisy.max() <= bound
+
+    Example (per-call override for adaptive clipping):
+        >>> noise_fn, state = rectified_gaussian_noise(stddev=1.0, radius=5.0, key=key(42))
+        >>> noisy, state = noise_fn(grads, state, stddev=0.8)  # bounds become ±4.0
     """
     if stddev < 0:
         raise ValueError(f"stddev must be non-negative, got {stddev}")
@@ -100,29 +114,29 @@ def rectified_gaussian_noise(
         rng_key=key,
     )
 
-    bound = stddev * radius
+    default_stddev = stddev
 
-    if stddev == 0:
-
-        def zero_noise_fn(grads, st):
-            return grads, st
-
-        return zero_noise_fn, state
-
-    def noise_fn(grads, st):
+    def noise_fn(grads, st, *, stddev=None):
         """Add rectified Gaussian noise to gradients."""
+        effective_stddev = stddev if stddev is not None else default_stddev
+        if effective_stddev == 0:
+            return grads, GaussianNoiseState(
+                step_counter=st.step_counter + 1,
+                rng_key=st.rng_key,
+            )
+
+        bound = effective_stddev * radius
+
         step_key = rng_fold_in(st.rng_key, st.step_counter)
         g = generator_from_key(step_key)
 
         def add_noise_to_tensor(tensor: torch.Tensor) -> torch.Tensor:
-            # torch.Generator is CPU-only; generate on CPU and move if needed
             noise = torch.randn(
                 tensor.shape,
                 dtype=tensor.dtype,
                 generator=g,
             )
-            # Rectification: clamp noise to [-bound, bound]
-            noise = torch.clamp(noise * stddev, min=-bound, max=bound)
+            noise = torch.clamp(noise * effective_stddev, min=-bound, max=bound)
             return tensor + noise.to(device=tensor.device)
 
         noisy = tree_map(add_noise_to_tensor, grads)

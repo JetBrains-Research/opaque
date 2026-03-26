@@ -65,7 +65,7 @@ def test_adaclip_state_dict_structure():
     proc = acc.adaclip(acc.gaussian(0.8), batch_size=1000)
     state = cast(dict[str, object], proc.state_dict())
     assert state["type"] == "AdaClip"
-    assert state["quantile_noise_multiplier"] == 0.05
+    assert state["fraction_noise_std"] == 0.05
     assert state["batch_size"] == 1000
     inner = cast(dict[str, object], state["inner"])
     assert inner["type"] == "Gaussian"

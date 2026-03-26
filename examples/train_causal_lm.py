@@ -42,6 +42,7 @@ USAGE:
 
 import argparse
 import contextlib
+import functools
 import importlib.util
 import os
 import sys
@@ -66,7 +67,7 @@ from opaque.accounting import calibration as cal, Accountant
 from opaque.clipping import adaptive_clipped_grad, clipped_grad
 from opaque.compat.transformers import is_kernel_patched
 from opaque.distributed import sum_gradients_, sync
-from opaque.noise import gaussian_noise
+from opaque.noise import gaussian_noise, rectified_gaussian_noise, truncated_gaussian_noise
 from opaque.profiling import StepTimer, TrainingProfiler, print_memory, reset_peak_memory
 from opaque.random import key, fold_in
 from opaque.sampling import PoissonSampler
@@ -418,6 +419,20 @@ def parse_args():
         type=int,
         default=None,
         help="Microbatch size passed to clipped_grad/adaptive_clipped_grad (None=process full batch with vmap, faster but more memory)",
+    )
+    dp_group.add_argument(
+        "--noise_mechanism",
+        type=str,
+        choices=["gaussian", "rectified_gaussian", "truncated_gaussian"],
+        default="gaussian",
+        help="Noise mechanism: gaussian (standard), rectified_gaussian (clamped, tighter accounting), "
+             "or truncated_gaussian (renormalized, tightest accounting)",
+    )
+    dp_group.add_argument(
+        "--noise_radius",
+        type=float,
+        default=5.0,
+        help="Support half-width in sigma units for rectified/truncated Gaussian (ignored for standard gaussian)",
     )
 
     # Model precision
@@ -952,6 +967,9 @@ def main():
     print(f"  Optimizer: {args.optimizer}")
     print(f"  Learning rate: {args.learning_rate}")
     print(f"  Clip norm: {args.clip_norm}")
+    print(f"  Noise mechanism: {args.noise_mechanism}")
+    if args.noise_mechanism != "gaussian":
+        print(f"  Noise radius: {args.noise_radius}σ")
     print(f"  Microbatch size: {args.microbatch_size}")
     print(f"  Adaptive clipping: {args.adaptive_clipping}")
     print(f"  Eval steps: {args.eval_steps}")
@@ -1001,6 +1019,34 @@ def main():
     if use_wandb:
         wandb.config.update({"target_delta": args.target_delta}, allow_val_change=True)
 
+    # Noise injection — bind mechanism-specific parameters once.
+    if args.noise_mechanism == "rectified_gaussian":
+        mechanism = functools.partial(acc.rectified_gaussian, radius=args.noise_radius)
+        make_noise = functools.partial(rectified_gaussian_noise, radius=args.noise_radius)
+    elif args.noise_mechanism == "truncated_gaussian":
+        mechanism = functools.partial(acc.truncated_gaussian, radius=args.noise_radius)
+        make_noise = functools.partial(truncated_gaussian_noise, radius=args.noise_radius)
+    else:
+        mechanism = acc.gaussian
+        make_noise = gaussian_noise
+
+    # Adaptive clipping: adaclip wraps the mechanism to account for the privacy
+    # cost of the noisy quantile query.  Expected batch_size for calibration;
+    # training loop rebuilds with real batch_size per step.
+    if args.adaptive_clipping:
+        adaclip_mechanism = lambda nm, bs=args.batch_size: acc.adaclip(
+            mechanism(nm), batch_size=bs,
+        )
+
+    # Bind amplification type once — poisson vs parallel_poisson.
+    if use_parallel_poisson:
+        amplify = functools.partial(
+            acc.parallel_poisson, sample_rate=sample_rate, num_workers=world_size,
+        )
+    else:
+        amplify = functools.partial(acc.poisson, sample_rate=sample_rate)
+
+    # Calibrate noise multiplier from target privacy budget.
     if args.noise_multiplier is not None:
         noise_multiplier = args.noise_multiplier
         print(f"\nUsing fixed noise multiplier: {noise_multiplier:.4f} (skipping calibration)")
@@ -1008,6 +1054,9 @@ def main():
         print("\nCalibrating privacy parameters...")
         if use_parallel_poisson:
             print(f"  Accounting: parallel_poisson (world_size={world_size})")
+        print(f"  Noise mechanism: {args.noise_mechanism}")
+        if args.noise_mechanism != "gaussian":
+            print(f"  Noise radius: {args.noise_radius}σ")
         print(f"  δ = {args.target_delta:.2e} (n={global_train_size})")
         print(f"  Total steps: {total_steps}")
         print(f"  Sample rate: {sample_rate:.6f}")
@@ -1016,17 +1065,11 @@ def main():
 
         start_time = time.time()
         budget = cal.epsilon_budget(args.target_epsilon, delta=args.target_delta)
-        if use_parallel_poisson:
-            process_fn = lambda nm: acc.parallel_poisson(
-                acc.gaussian(nm), sample_rate=sample_rate, num_workers=world_size,
-            ) * total_steps
-        else:
-            process_fn = lambda nm: acc.poisson(
-                acc.gaussian(nm), sample_rate=sample_rate,
-            ) * total_steps
         calibration = cal.calibrate(
             budget,
-            process_fn,
+            (lambda nm: amplify(adaclip_mechanism(nm)) * total_steps)
+            if args.adaptive_clipping
+            else (lambda nm: amplify(mechanism(nm)) * total_steps),
             param_min=args.calibration_min,
             param_max=args.calibration_max,
             tolerance=args.calibration_tolerance,
@@ -1044,18 +1087,12 @@ def main():
             f"(iterations={calibration.iterations}, converged={calibration.converged})"
         )
 
-    # Accounting (all pld() calls automatically cached with maxsize=8)
-    # Using acc.cached() here increases cache to maxsize=16 and creates merge barrier
     accounting = Accountant()
-    if use_parallel_poisson:
-        step_process = acc.cached(acc.parallel_poisson(
-            acc.gaussian(noise_multiplier), sample_rate=sample_rate, num_workers=world_size,
-        ))
-    else:
-        step_process = acc.cached(acc.poisson(acc.gaussian(noise_multiplier), sample_rate))
 
-    # Initialize noise function
-    noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_state.sensitivity(), key=key(args.seed))
+    # Noise function — created once; per-call stddev override tracks adaptive clip_norm.
+    noise_fn, noise_state = make_noise(
+        stddev=noise_multiplier * args.clip_norm, key=key(args.seed),
+    )
 
     # Training loop
     print("\n" + "=" * 80)
@@ -1097,86 +1134,90 @@ def main():
         for step_idx, batch in enumerate(epoch_loader):
             (input_ids,) = batch
 
-            # Accounting update (must happen even for empty batches)
-            accounting |= step_process
-
-            # Skip if no examples sampled (rare but possible with Poisson)
+            # Empty batch (rare but possible with Poisson): account with
+            # expected batch_size (no real data available) and skip.
             if len(input_ids) == 0:
+                if args.adaptive_clipping:
+                    accounting |= amplify(adaclip_mechanism(noise_multiplier))
+                else:
+                    accounting |= amplify(mechanism(noise_multiplier))
                 continue
 
-            # Time the training step using profiler
-            step_timer = StepTimer(device, batch_size=len(input_ids))
+            # === Execution ===
+            batch_size = len(input_ids)
+            step_timer = StepTimer(device, batch_size=batch_size)
             with step_timer:
-                # Compute clipped gradients (with state passing)
                 with offload_ctx:
                     (grads_tuple, aux), clip_state = grad_fn(
                         trainable_params, input_ids, state=clip_state
                     )
-                current_clip_norm = clip_state.clip_norm
-
                 if is_ddp:
                     clip_state, aux = sync(clip_state, aux)
-                    current_clip_norm = clip_state.clip_norm
                     sum_gradients_(grads_tuple)
 
-                # Add Gaussian noise
-                stddev = noise_multiplier * clip_state.sensitivity()
-                noisy_grads, noise_state = noise_fn(grads_tuple, noise_state)
+                noise_stddev = noise_multiplier * clip_state.sensitivity()
+                noisy_grads, noise_state = noise_fn(
+                    grads_tuple, noise_state, stddev=noise_stddev,
+                )
                 if is_ddp:
                     noise_state = sync(noise_state)
 
-                # Optimizer step (no adapter wrapper - optimizer used directly)
                 updates, opt_state = base_opt.update(
                     noisy_grads, opt_state, params=trainable_params
                 )
-
-                # Apply updates
                 trainable_params = torchopt.apply_updates(trainable_params, updates)
+
+            # === Accounting (after execution, with real batch_size) ===
+            if args.adaptive_clipping:
+                accounting |= amplify(adaclip_mechanism(
+                    noise_multiplier, clip_state.batch_size,
+                ))
+            else:
+                accounting |= amplify(mechanism(noise_multiplier))
 
             profiler = profiler.add_step(step_timer)
 
-            # Extract metrics from aux
+            # === Step metrics ===
             avg_loss = aux.loss_values.mean().item()
-            mean_grad_norm = aux.grad_norms.mean().item()
-            clipped_grad_norm_mean = aux.clipped_grad_norms.mean().item()
+            clip_norm = clip_state.clip_norm
             clip_rate = aux.clipping_rate
+            mean_grad_norm = aux.grad_norms.mean().item()
+            num_clipped = int(clip_rate * batch_size)
 
             losses.append(avg_loss)
-            clip_norms_history.append(current_clip_norm)
+            clip_norms_history.append(clip_norm)
             clip_rates_history.append(clip_rate)
 
             global_step += 1
 
-            # Log training metrics every log_steps
+            # === Logging (every log_steps) ===
             if global_step % args.log_steps == 0:
-                num_clipped = int(clip_rate * len(aux.grad_norms))
                 log_profiler = sync(profiler) if is_ddp else profiler
-                profiler = log_profiler  # flush pending steps so next sync covers only new records
-                perf_metrics = profiler.current_metrics()
+                profiler = log_profiler
+                perf = profiler.current_metrics()
 
-                # W&B logging
                 if use_wandb:
                     wandb.log({
                         "train/loss": avg_loss,
-                        "train/clip_norm": current_clip_norm,
+                        "train/clip_norm": clip_norm,
                         "train/clip_rate": clip_rate,
                         "train/grad_norm_mean": mean_grad_norm,
-                        "train/clipped_grad_norm_mean": clipped_grad_norm_mean,
-                        "train/noise_std": stddev,
-                        "perf/step_time_sec": perf_metrics["step_time_sec"],
-                        "perf/throughput_samples_per_sec": perf_metrics["throughput_samples_sec"],
-                        "perf/allocated_gb": perf_metrics["memory_allocated_gb"],
-                        "perf/reserved_gb": perf_metrics["memory_reserved_gb"],
-                        "perf/peak_gb": perf_metrics["memory_peak_gb"],
+                        "train/clipped_grad_norm_mean": aux.clipped_grad_norms.mean().item(),
+                        "train/noise_std": noise_stddev,
+                        "perf/step_time_sec": perf["step_time_sec"],
+                        "perf/throughput_samples_per_sec": perf["throughput_samples_sec"],
+                        "perf/allocated_gb": perf["memory_allocated_gb"],
+                        "perf/reserved_gb": perf["memory_reserved_gb"],
+                        "perf/peak_gb": perf["memory_peak_gb"],
                     }, step=global_step)
 
-                # Console logging
                 print(
                     f"Step {global_step:4d} [E{epoch + 1} S{step_idx + 1:3d}/{expected_steps_per_epoch:3d}] | "
                     f"Loss: {avg_loss:.4f} | "
-                    f"Clip: norm={current_clip_norm:.3f}, rate={clip_rate:.1%} ({num_clipped}/{len(aux.grad_norms)}) | "
-                    f"GradNorm: μ={mean_grad_norm:.3f}, σ={stddev:.4f} | "
-                    f"Time: {perf_metrics['step_time_sec']:.2f}s | Mem: {perf_metrics['memory_peak_gb']:.1f}GB"
+                    f"Clip: norm={clip_norm:.3f}, rate={clip_rate:.1%} ({num_clipped}/{batch_size}) | "
+                    f"GradNorm: μ={mean_grad_norm:.3f} | "
+                    f"Noise: σ={noise_stddev:.4f} | "
+                    f"Time: {perf['step_time_sec']:.2f}s | Mem: {perf['memory_peak_gb']:.1f}GB"
                 )
 
             # Expensive operations (eval + privacy + audit) every eval_steps
