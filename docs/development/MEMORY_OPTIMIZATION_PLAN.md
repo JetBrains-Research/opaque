@@ -314,7 +314,7 @@ uv run pytest packages/opaque/tests/kernels/test_linear_cross_entropy.py -v
 
 # Training validation (10-step Mellum-4b)
 PYTHONUNBUFFERED=1 uv run python examples/train_causal_lm.py \
-  --preset mellum-kstack --max_steps 10 --wandb
+  --preset mellum-kstack --max-steps 10 --wandb
 ```
 
 ### Disable/Skip Patches

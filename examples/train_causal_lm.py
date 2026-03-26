@@ -23,21 +23,21 @@ USAGE:
 
   # Or customize individual parameters:
   python examples/train_causal_lm.py \\
-    --model_name "JetBrains/Mellum-4b-base" \\
+    --model-name "JetBrains/Mellum-4b-base" \\
     --dataset "JetBrains/KStack" \\
-    --dataset_text_field "content" \\
-    --num_train_samples 50000 \\
-    --num_eval_samples 1000 \\
-    --num_epochs 3 \\
-    --batch_size 32 \\
-    --eval_steps 50 \\
-    --target_epsilon 10.0 \\
-    --learning_rate 5e-5 \\
-    --lora_r 16 --lora_alpha 32 \\
-    --max_seq_len 1024 \\
-    --lora_modules q_proj k_proj v_proj o_proj \\
-    --audit --audit_canaries 1000 \\
-    --no_wandb
+    --dataset-text-field "content" \\
+    --num-train-samples 50000 \\
+    --num-eval-samples 1000 \\
+    --num-epochs 3 \\
+    --batch-size 32 \\
+    --eval-steps 50 \\
+    --target-epsilon 10.0 \\
+    --learning-rate 5e-5 \\
+    --lora-r 16 --lora-alpha 32 \\
+    --max-seq-len 1024 \\
+    --lora-modules q_proj k_proj v_proj o_proj \\
+    --audit --audit-canaries 1000 \\
+    --no-wandb
 """
 
 import argparse
@@ -253,7 +253,7 @@ def parse_args():
 
     model_group = parser.add_argument_group("model", "Model and tokenizer settings")
     model_group.add_argument(
-        "--model_name",
+        "--model-name",
         type=str,
         default="gpt2",
         help="HuggingFace model name or local path",
@@ -266,7 +266,7 @@ def parse_args():
         help="Attention implementation (default: sdpa, which is faster and uses less memory)",
     )
     model_group.add_argument(
-        "--sdpa_backend",
+        "--sdpa-backend",
         type=str,
         choices=["flash", "efficient", "cudnn", "math"],
         default=None,
@@ -278,58 +278,58 @@ def parse_args():
         "--dataset", type=str, default="ag_news", help="HuggingFace dataset name"
     )
     data_group.add_argument(
-        "--dataset_subset",
-        "--dataset_name",
+        "--dataset-subset",
+        "--dataset-name",
         dest="dataset_subset",
         type=str,
         default=None,
         help="Optional dataset subset (HF load_dataset 'name' argument), e.g. 'stage1-auto-format'.",
     )
     data_group.add_argument(
-        "--dataset_split", type=str, default="train", help="Dataset split for training"
+        "--dataset-split", type=str, default="train", help="Dataset split for training"
     )
     data_group.add_argument(
-        "--dataset_text_field",
+        "--dataset-text-field",
         type=str,
         default="text",
         help="Field containing text",
     )
     data_group.add_argument(
-        "--num_train_samples",
+        "--num-train-samples",
         type=int,
         default=5000,
         help="Number of training examples (default: 5000 for smoke test)",
     )
     data_group.add_argument(
-        "--num_eval_samples",
-        "--num_eval_samples_alt",
+        "--num-eval-samples",
+        "--num-eval-samples-alt",
         dest="num_eval_samples",
         type=int,
         default=100,
         help="Number of samples for periodic eval-loss reporting (batched)",
     )
     data_group.add_argument(
-        "--max_seq_len", type=int, default=512, help="Maximum sequence length"
+        "--max-seq-len", type=int, default=512, help="Maximum sequence length"
     )
 
     train_group = parser.add_argument_group("training", "Training loop settings")
     train_group.add_argument(
-        "--batch_size",
+        "--batch-size",
         type=int,
         default=16,
         help="Expected batch size for Poisson sampling (determines sample_rate)"
     )
     train_group.add_argument(
-        "--eval_batch_size",
+        "--eval-batch-size",
         type=int,
         default=None,
         help="Batch size for evaluation (default: same as batch_size, can be larger since no privacy needed)"
     )
     train_group.add_argument(
-        "--num_epochs", type=int, default=3, help="Number of epochs"
+        "--num-epochs", type=int, default=3, help="Number of epochs"
     )
     train_group.add_argument(
-        "--learning_rate", type=float, default=1.0e-5, help="Learning rate"
+        "--learning-rate", type=float, default=1.0e-5, help="Learning rate"
     )
     train_group.add_argument(
         "--optimizer",
@@ -339,42 +339,42 @@ def parse_args():
         help="Optimizer",
     )
     train_group.add_argument(
-        "--log_steps",
+        "--log-steps",
         type=int,
         default=1,
         help="Log training metrics every N steps",
     )
     train_group.add_argument(
-        "--eval_steps",
+        "--eval-steps",
         type=int,
         default=10,
         help="Log eval loss and privacy every N steps",
     )
     train_group.add_argument(
-        "--max_steps",
+        "--max-steps",
         type=int,
         default=None,
         help="Maximum training steps (overrides num_epochs if set)",
     )
     train_group.add_argument("--seed", type=int, default=42, help="Random seed")
     train_group.add_argument(
-        "--gradient_checkpointing",
+        "--gradient-checkpointing",
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Enable gradient checkpointing for memory savings (trades compute for memory)",
     )
     train_group.add_argument(
-        "--cpu_offload",
+        "--cpu-offload",
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Offload saved tensors to CPU via save_on_cpu (works with or without checkpointing)",
     )
 
     lora_group = parser.add_argument_group("lora", "LoRA adapter settings")
-    lora_group.add_argument("--lora_r", type=int, default=4, help="LoRA rank")
-    lora_group.add_argument("--lora_alpha", type=int, default=8, help="LoRA alpha")
+    lora_group.add_argument("--lora-r", type=int, default=4, help="LoRA rank")
+    lora_group.add_argument("--lora-alpha", type=int, default=8, help="LoRA alpha")
     lora_group.add_argument(
-        "--lora_modules",
+        "--lora-modules",
         type=str,
         nargs="+",
         default=["c_attn", "c_proj"],
@@ -387,41 +387,41 @@ def parse_args():
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Shard dataset across DDP ranks (default). "
-        "Use --no_shard to replicate full dataset on each rank "
+        "Use --no-shard to replicate full dataset on each rank "
         "(uses parallel_poisson accounting).",
     )
     dp_group.add_argument(
-        "--clip_norm",
+        "--clip-norm",
         type=float,
         default=1.0,
         help="Clip norm (fixed mode) or starting clip norm (adaptive mode)",
     )
     dp_group.add_argument(
-        "--adaptive_clipping",
+        "--adaptive-clipping",
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Use adaptive clipping (default: True)",
     )
     dp_group.add_argument(
-        "--target_clip_rate",
+        "--target-clip-rate",
         type=float,
         default=0.5,
         help="Target clipping rate for adaptive clipping",
     )
     dp_group.add_argument(
-        "--clip_norm_max",
+        "--clip-norm-max",
         type=float,
         default=10.0,
         help="Maximum clip norm in adaptive mode",
     )
     dp_group.add_argument(
-        "--microbatch_size",
+        "--microbatch-size",
         type=int,
         default=None,
         help="Microbatch size passed to clipped_grad/adaptive_clipped_grad (None=process full batch with vmap, faster but more memory)",
     )
     dp_group.add_argument(
-        "--noise_mechanism",
+        "--noise-mechanism",
         type=str,
         choices=["gaussian", "rectified_gaussian", "truncated_gaussian"],
         default="gaussian",
@@ -429,7 +429,7 @@ def parse_args():
              "or truncated_gaussian (renormalized, tightest accounting)",
     )
     dp_group.add_argument(
-        "--noise_radius",
+        "--noise-radius",
         type=float,
         default=5.0,
         help="Support half-width in sigma units for rectified/truncated Gaussian (ignored for standard gaussian)",
@@ -449,37 +449,37 @@ def parse_args():
         "privacy", "Privacy accounting and noise calibration"
     )
     privacy_group.add_argument(
-        "--target_epsilon",
+        "--target-epsilon",
         type=float,
         default=3.0,
         help="Target epsilon used to calibrate noise_multiplier",
     )
     privacy_group.add_argument(
-        "--target_delta",
+        "--target-delta",
         type=float,
         default=None,
         help="Target delta for DP accounting. Default: 1/n² where n = training set size.",
     )
     privacy_group.add_argument(
-        "--noise_multiplier",
+        "--noise-multiplier",
         type=float,
         default=None,
         help="Use a fixed noise multiplier instead of calibrating from target_epsilon",
     )
     privacy_group.add_argument(
-        "--calibration_min",
+        "--calibration-min",
         type=float,
         default=0.11,
         help="Lower bound for noise calibration search",
     )
     privacy_group.add_argument(
-        "--calibration_max",
+        "--calibration-max",
         type=float,
         default=1.19,
         help="Upper bound for noise calibration search",
     )
     privacy_group.add_argument(
-        "--calibration_tolerance",
+        "--calibration-tolerance",
         type=float,
         default=1e-3,
         help="Tolerance for noise calibration",
@@ -493,13 +493,13 @@ def parse_args():
         help="Enable empirical auditing (disabled by default)",
     )
     audit_group.add_argument(
-        "--audit_canaries",
+        "--audit-canaries",
         type=int,
         default=1000,
         help="Number of canaries for one-run auditing",
     )
     audit_group.add_argument(
-        "--audit_batch_size",
+        "--audit-batch-size",
         type=int,
         default=None,
         help="Batch size for auditing scoring (default: same as microbatch_size; forward-only so less memory than training)",
@@ -507,24 +507,24 @@ def parse_args():
 
     tracking_group = parser.add_argument_group("tracking", "Experiment tracking (W&B)")
     tracking_group.add_argument(
-        "--no_wandb",
+        "--no-wandb",
         action="store_true",
         help="Disable experiment tracking (wandb is enabled by default, offline if no credentials)",
     )
     tracking_group.add_argument(
-        "--wandb_project",
+        "--wandb-project",
         type=str,
         default=os.environ.get("WANDB_PROJECT", "opaque"),
         help="W&B project name (default: WANDB_PROJECT env var or 'opaque')",
     )
     tracking_group.add_argument(
-        "--wandb_run_name",
+        "--wandb-run-name",
         type=str,
         default=os.environ.get("WANDB_NAME") or os.environ.get("RUN_NAME"),
         help="Run name (default: WANDB_NAME, then RUN_NAME env var, or auto-generated from model and hyperparameters)",
     )
     tracking_group.add_argument(
-        "--wandb_entity",
+        "--wandb-entity",
         type=str,
         default=os.environ.get("WANDB_ENTITY"),
         help="W&B entity/team (default: WANDB_ENTITY env var)",
@@ -571,7 +571,7 @@ def parse_args():
     elif args.preset == "mellum-kstack":
         # Golden configuration for Mellum-4b + KStack training on H200
         # Memory: Model=7.5 GiB. Throughput saturates at mb=16 (~20 samples/s, 58 GB peak).
-        # mb=32 gives same speed but 108 GB. With --gradient_checkpointing, mb=32+ fits easily.
+        # mb=32 gives same speed but 108 GB. With --gradient-checkpointing, mb=32+ fits easily.
         _set("model_name", "JetBrains/Mellum-4b-base")
         _set("dataset", "JetBrains/KStack")
         _set("dataset_text_field", "content")
