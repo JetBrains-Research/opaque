@@ -112,13 +112,11 @@ $$\varepsilon_{\text{Poisson-truncated}} \leq \varepsilon_{\text{Poisson-rectifi
 from opaque import truncated_gaussian_noise
 from opaque.random import key
 
-# bounds = (-radius * stddev, radius * stddev) in absolute units
 stddev = noise_multiplier * clip_state.sensitivity()
-bound = 5.0 * stddev  # radius=5.0 in sigma units
 
 noise_fn, noise_state = truncated_gaussian_noise(
     stddev=stddev,
-    bounds=(-bound, bound),
+    radius=5.0,
     key=key(42),
 )
 
@@ -127,10 +125,6 @@ for batch in dataloader:
     noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = params - lr * noisy_grads
 ```
-
-!!! note "Bounds vs radius"
-    The noise function takes absolute `bounds=(-B, B)` while the accounting
-    takes `radius` in sigma units. To match: set `B = radius * stddev`.
 
 ### Privacy accounting
 
@@ -191,8 +185,8 @@ and better utility.
   where you would prefer rectified over truncated for the same radius.
   The only reason to use rectified is if your noise implementation uses
   simple clamping and you want matching accounting.
-- The `bounds` parameter in the noise function uses absolute units. Convert
-  from sigma units: `bounds = (-radius * stddev, radius * stddev)`.
+- Both the noise function (`radius`) and the accounting API (`radius`)
+  use the same sigma-units convention.
 
 ## References
 

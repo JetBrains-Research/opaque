@@ -112,7 +112,7 @@ step = acc.parallel_poisson(
 )
 ```
 
-### `acc.rectified_gaussian(noise_multiplier, bound_multiplier)`
+### `acc.rectified_gaussian(noise_multiplier, radius)`
 
 Bounded Gaussian mechanism — rectified variant. Clamps standard Gaussian
 noise to `[-R*sigma, R*sigma]`; the excess tail mass becomes point masses
@@ -123,12 +123,12 @@ Use this when adding noise via `rectified_gaussian_noise()`.
 Composable with `poisson()` for subsampled accounting.
 
 ```python
-step = acc.poisson(acc.rectified_gaussian(1.1, bound_multiplier=5.0), sample_rate=0.01)
+step = acc.poisson(acc.rectified_gaussian(1.1, radius=5.0), sample_rate=0.01)
 training = step * 1000
 eps = training.epsilon_at(delta=1e-5)  # tighter than acc.gaussian(1.1)
 ```
 
-### `acc.truncated_gaussian(noise_multiplier, bound_multiplier)`
+### `acc.truncated_gaussian(noise_multiplier, radius)`
 
 Bounded Gaussian mechanism — truncated variant. The density is renormalized
 over `[-R*sigma, R*sigma]` (no point masses at boundaries). Always at least
@@ -138,7 +138,7 @@ Use this when adding noise via `truncated_gaussian_noise()`.
 Composable with `poisson()` for subsampled accounting.
 
 ```python
-step = acc.poisson(acc.truncated_gaussian(1.1, bound_multiplier=5.0), sample_rate=0.01)
+step = acc.poisson(acc.truncated_gaussian(1.1, radius=5.0), sample_rate=0.01)
 training = step * 1000
 eps = training.epsilon_at(delta=1e-5)  # tightest of the three
 ```

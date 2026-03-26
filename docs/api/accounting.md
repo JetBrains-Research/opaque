@@ -137,7 +137,7 @@ Truncated Poisson sampling with capped batch size. Gives tighter privacy bounds
 than standard Poisson subsampling. Use this for production DP-SGD with a fixed
 batch size limit.
 
-- `inner` (Gaussian): Base Gaussian mechanism (from `gaussian()`)
+- `inner` (Gaussian | AdaClip): Base mechanism (from `gaussian()` or `adaclip()`)
 - `sample_rate` (float): Expected sampling rate
 - `batch_size_cap` (int): Maximum batch size
 - `dataset_size` (int): Total dataset size
@@ -164,14 +164,14 @@ step = acc.parallel_poisson(
 )
 ```
 
-### `rectified_gaussian(noise_multiplier, bound_multiplier) -> DpProcess`
+### `rectified_gaussian(noise_multiplier, radius) -> DpProcess`
 
 Bounded Gaussian mechanism — rectified variant. Clamps standard Gaussian
 noise to `[-R*sigma, R*sigma]`; the excess tail mass becomes point masses at
 the boundaries. Tighter than the standard Gaussian.
 
 - `noise_multiplier` (float): Ratio of noise std to sensitivity.
-- `bound_multiplier` (float): Bound radius in units of sigma (R ≥ 1).
+- `radius` (float): Bound radius in units of sigma (R ≥ 1).
 
 Composable with `poisson()` for subsampled accounting.
 
@@ -179,14 +179,14 @@ Composable with `poisson()` for subsampled accounting.
 step = acc.poisson(acc.rectified_gaussian(1.1, 5.0), sample_rate=0.01)
 ```
 
-### `truncated_gaussian(noise_multiplier, bound_multiplier) -> DpProcess`
+### `truncated_gaussian(noise_multiplier, radius) -> DpProcess`
 
 Bounded Gaussian mechanism — truncated variant. The density is renormalized
 over `[-R*sigma, R*sigma]` (no point masses at boundaries). Always at least as
 tight as the rectified variant.
 
 - `noise_multiplier` (float): Ratio of noise std to sensitivity.
-- `bound_multiplier` (float): Bound radius in units of sigma (R ≥ 1).
+- `radius` (float): Bound radius in units of sigma (R ≥ 1).
 
 Composable with `poisson()` for subsampled accounting.
 
@@ -197,8 +197,8 @@ noisy quantile estimation using the combined sensitivity formula. Returns an
 `AdaClip` process with the effective noise multiplier, composable with
 `poisson()` or `truncated_poisson()`.
 
-- `inner` (Gaussian): Base Gaussian mechanism (from `gaussian()`)
-- `fraction_noise_std` (float): Noise multiplier for the quantile fraction query. Default: 0.05.
+- `inner` (Gaussian | RectifiedGaussian | TruncatedGaussian): Base mechanism (from `gaussian()`, `rectified_gaussian()`, or `truncated_gaussian()`)
+- `fraction_noise_std` (float): Noise std on the clipping fraction. Default: 0.05.
 - `batch_size` (float): Expected batch size, used to compute the absolute noise std for the quantile query.
 
 ```python
