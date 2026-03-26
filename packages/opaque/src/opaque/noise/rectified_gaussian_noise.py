@@ -33,7 +33,7 @@ from opaque.utils.pytree import tree_map
 
 def rectified_gaussian_noise(
     stddev: float,
-    radius: float,
+    radius: float = 3.0,
     *,
     key: RngKey,
 ) -> tuple[

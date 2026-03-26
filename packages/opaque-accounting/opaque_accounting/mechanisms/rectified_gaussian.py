@@ -46,7 +46,7 @@ class RectifiedGaussian(DpProcess):
         )
 
 
-def rectified_gaussian(noise_multiplier: float, radius: float) -> RectifiedGaussian:
+def rectified_gaussian(noise_multiplier: float, radius: float = 3.0) -> RectifiedGaussian:
     """Rectified (clamped) Gaussian mechanism.
 
     Samples noise from N(0, σ²) and clamps to [−R·σ, R·σ].  Point masses

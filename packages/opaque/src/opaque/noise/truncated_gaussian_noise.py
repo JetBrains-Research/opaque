@@ -100,7 +100,7 @@ def _truncated_normal_around(
 
 def truncated_gaussian_noise(
     stddev: float,
-    radius: float,
+    radius: float = 3.0,
     *,
     key: RngKey,
 ) -> tuple[

@@ -431,7 +431,7 @@ def parse_args():
     dp_group.add_argument(
         "--noise-radius",
         type=float,
-        default=5.0,
+        default=3.0,
         help="Support half-width in sigma units for rectified/truncated Gaussian (ignored for standard gaussian)",
     )
 
