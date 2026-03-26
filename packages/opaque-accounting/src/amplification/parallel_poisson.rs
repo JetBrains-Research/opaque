@@ -352,7 +352,6 @@ pub fn cgf_parallel_poisson_gaussian_pld(
     microbatches: usize,
 ) -> Result<PrivacyLossDistribution> {
     use std::sync::Arc;
-    use crate::pld::cgf::MogGaussianCgf;
 
     validate_noise_multiplier(noise_multiplier)?;
     validate_rate(rate)?;
@@ -360,7 +359,17 @@ pub fn cgf_parallel_poisson_gaussian_pld(
         return Err(PldError::InvalidParameter("microbatches must be > 0".into()));
     }
 
-    // m=1 is standard Poisson subsampling — use MoG with Binom(1,q)
+    if microbatches == 1 {
+        // m=1 is standard Poisson subsampling — use the dedicated CGF
+        // which has better numerical properties for the single-worker case.
+        use crate::pld::cgf::SubsampledGaussianCgf;
+        return Ok(PrivacyLossDistribution::new_cgf(Arc::new(
+            SubsampledGaussianCgf::new(noise_multiplier, rate),
+        )));
+    }
+
+    // m>1: exact MoG CGF with Binomial(m, q) sensitivity distribution
+    use crate::pld::cgf::MogGaussianCgf;
     let mog = MogGaussianCgf::from_binomial(noise_multiplier, microbatches, rate);
     Ok(PrivacyLossDistribution::new_cgf(Arc::new(mog)))
 }

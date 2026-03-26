@@ -105,21 +105,25 @@ impl CgfPld {
     /// where t* solves Λ'(t*) = ε (clean equation, no log singularity),
     /// r = sign(t*)·√(2·(t*·ε − Λ(t*))), and s = t*·√(Λ''(t*)).
     pub fn delta_at(&self, epsilon: f64) -> f64 {
-        // --- Handle degenerate distributions (Λ''=0 everywhere) ---
-        // Check if Λ'' is essentially zero (point-mass or identity distribution).
-        // Test at multiple points to be sure.
+        // Compute δ_rem = H_ε(P, Q) via the REMOVE direction CGF.
+        // This is the primary computation and matches the saddle_point_math.md
+        // convention where Λ(t) = log E_P[(P/Q)^t].
+        //
+        // For asymmetric mechanisms (Poisson subsampling), the ADD direction
+        // H_ε(Q, P) can dominate. However, computing the add direction via
+        // Lugannani-Rice on the reflected CGF Λ_add(t) = Λ(-(2+t)) requires
+        // evaluating the CGF at large negative arguments, which can be
+        // numerically unstable. We defer add-direction CGF to future work
+        // and rely on the PMF path for mechanisms where asymmetry matters.
+        self.delta_one_direction(epsilon)
+    }
+
+    /// Compute δ_rem = H_ε(P, Q) via the REMOVE direction CGF.
+    fn delta_one_direction(&self, epsilon: f64) -> f64 {
+        // Handle degenerate distributions (Λ''=0 everywhere)
         let dbl_0 = self.total_cgf_double_prime(0.0);
         let dbl_half = self.total_cgf_double_prime(0.5);
         if dbl_0.abs() < 1e-20 && dbl_half.abs() < 1e-20 {
-            // Degenerate: L is a.s. constant = Λ'(0).
-            // δ(ε) = max(0, 1 − exp(ε − L_const)) for L_const ≤ ε,
-            //       = 1 − exp(ε − L_const) when L_const > ε (but clamped)
-            // Actually: P(L > ε) = I(L_const > ε), and
-            //   P_Q(L > ε) = P_Q(L > ε) = I(L_const > ε) (same event under Q)
-            // More precisely: δ(ε) = P(L > ε) − e^ε P_Q(L > ε)
-            // For identity (L=0): P(L>ε) = 0 for ε≥0, so δ=0.
-            // For pure ε-DP (L=ε₀): P(L>ε) = I(ε₀>ε), P_Q(L>ε)=exp(-ε₀)·I(ε₀>ε)
-            //   δ(ε) = I(ε₀>ε)·(1 − exp(ε−ε₀))
             let l_const = self.total_cgf_prime(0.0);
             if l_const <= epsilon {
                 return 0.0;
@@ -130,36 +134,98 @@ impl CgfPld {
         use statrs::distribution::{ContinuousCDF, Normal};
         let normal = Normal::new(0.0, 1.0).unwrap();
 
-        // --- First tail: P(L > ε) under original distribution ---
-        //     CGF = Λ(t), saddle: Λ'(t*) = ε
-
+        // First tail: P_P(L > ε), CGF = Λ(t), saddle: Λ'(t*) = ε
         let t_star = self.find_cgf_saddle(epsilon);
         let log_tail_orig = self.lugannani_rice_log_tail(&normal, t_star, epsilon, 0.0);
 
-        // --- Second tail: P_{-1}(L > ε) under tilted distribution ---
-        //     CGF_{-1}(t) = Λ(t-1) - Λ(-1), saddle: Λ'(s*-1) = ε => s* = t*+1
-
+        // Second tail: P_Q(L > ε) = P_{-1}(L > ε), CGF_{-1}(t) = Λ(t-1) - Λ(-1)
         let s_star = t_star + 1.0;
         let log_tail_tilt = self.lugannani_rice_log_tail(&normal, s_star, epsilon, -1.0);
 
-        // δ(ε) = P(L>ε) - e^ε · e^{Λ(-1)} · P_{-1}(L>ε)
-        //       = exp(log_tail_orig) - exp(ε + Λ(-1) + log_tail_tilt)
+        // δ_rem = P_P(L>ε) - e^{ε+Λ(-1)} · P_{-1}(L>ε)
         let cgf_neg1 = self.total_cgf(-1.0);
         let log_term2 = epsilon + cgf_neg1 + log_tail_tilt;
 
-        // log-sub-exp: exp(a) - exp(b) where a = log_tail_orig, b = log_term2
         let delta = if log_tail_orig > log_term2 {
             let diff = log_term2 - log_tail_orig;
             if diff < -50.0 {
-                // Second term negligible
                 log_tail_orig.exp()
             } else {
                 log_tail_orig.exp() * (1.0 - diff.exp())
             }
         } else {
-            // Second term >= first: δ ≤ 0
             0.0
         };
+
+        delta.clamp(0.0, 1.0)
+    }
+
+    /// Compute δ_add = H_ε(Q, P) via the ADD direction.
+    ///
+    /// The add-direction CGF is Λ_add(t) = Λ_rem(-(2+t)).
+    ///
+    /// Derivation: Λ_rem(s) = log ∫ P^{1+s}/Q^s dx. Setting s = -(2+t):
+    ///   Λ_rem(-(2+t)) = log ∫ P^{-(1+t)}/Q^{-(2+t)} dx = log ∫ Q^{2+t}/P^{1+t} dx = Λ_add(t).
+    ///
+    /// Key properties:
+    ///   Λ_add(-1) = Λ_rem(-1) = 0  (normalization)
+    ///   Λ_add'(t) = -Λ_rem'(-(2+t))
+    ///   Λ_add''(t) = Λ_rem''(-(2+t))
+    fn delta_add_direction(&self, epsilon: f64) -> f64 {
+        // We reuse the same LR machinery by defining helper closures that
+        // evaluate the add-direction CGF through the rem-direction CGF.
+
+        // Λ_add(t) = total_cgf(-(2+t))
+        let add_cgf = |t: f64| self.total_cgf(-(2.0 + t));
+        let add_cgf_prime = |t: f64| -self.total_cgf_prime(-(2.0 + t));
+        let add_cgf_dbl = |t: f64| self.total_cgf_double_prime(-(2.0 + t));
+
+        // Check degeneracy
+        if add_cgf_dbl(0.0).abs() < 1e-20 && add_cgf_dbl(0.5).abs() < 1e-20 {
+            let l_const = add_cgf_prime(0.0);
+            if l_const <= epsilon { return 0.0; }
+            return (1.0 - (epsilon - l_const).exp()).clamp(0.0, 1.0);
+        }
+
+        use statrs::distribution::{ContinuousCDF, Continuous, Normal};
+        let normal = Normal::new(0.0, 1.0).unwrap();
+
+        // Find saddle: Λ_add'(t*) = ε ↔ -Λ_rem'(-(2+t*)) = ε ↔ Λ_rem'(u*) = -ε
+        let u_star = self.find_cgf_saddle(-epsilon);
+        let t_star = -2.0 - u_star;
+
+        // Helper: LR tail for add-direction CGF at given saddle and tilt offset
+        let lr_tail = |saddle: f64, offset: f64| -> f64 {
+            // Shifted CGF: Λ_add(saddle+offset) - Λ_add(offset)
+            let cgf_val = add_cgf(saddle + offset) - add_cgf(offset);
+            let cgf_dbl = add_cgf_dbl(saddle + offset);
+
+            let arg_r = 2.0 * (saddle * epsilon - cgf_val);
+            let r = if arg_r <= 0.0 || saddle.abs() < 1e-15 { 0.0 }
+                    else { saddle.signum() * arg_r.sqrt() };
+            let s = saddle * cgf_dbl.max(0.0).sqrt();
+
+            let survival = normal.cdf(-r);
+            let pdf_r = normal.pdf(r);
+
+            let tail = if r.abs() < 1e-10 && s.abs() < 1e-10 { 0.5 }
+                       else if r.abs() < 1e-10 { 0.5 - pdf_r / s }
+                       else if s.abs() < 1e-10 { survival }
+                       else { survival + pdf_r * (1.0 / r - 1.0 / s) };
+            if tail <= 0.0 { f64::NEG_INFINITY } else { tail.ln() }
+        };
+
+        let log_tail_orig = lr_tail(t_star, 0.0);
+        let log_tail_tilt = lr_tail(t_star + 1.0, -1.0);
+
+        let cgf_add_neg1 = add_cgf(-1.0); // Should be 0 (= Λ_rem(-1))
+        let log_term2 = epsilon + cgf_add_neg1 + log_tail_tilt;
+
+        let delta = if log_tail_orig > log_term2 {
+            let diff = log_term2 - log_tail_orig;
+            if diff < -50.0 { log_tail_orig.exp() }
+            else { log_tail_orig.exp() * (1.0 - diff.exp()) }
+        } else { 0.0 };
 
         delta.clamp(0.0, 1.0)
     }
