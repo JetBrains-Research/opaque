@@ -14,15 +14,40 @@ use std::fmt::Debug;
 ///
 /// Implementations are created by mechanism-specific constructor functions
 /// and stored opaquely inside [`super::CgfPld`] via `Arc<dyn Cgf>`.
+///
+/// The remove-direction CGF is: Λ_rem(t) = log E_Q[(P/Q)^{1+t}].
+/// The add-direction CGF is:    Λ_add(t) = log E_Q[(Q/P)^{1+t}].
+///
+/// Both satisfy Λ(-1) = 0 (normalization).
 pub trait Cgf: Debug + Send + Sync {
-    /// Evaluate Λ(t).
+    /// Evaluate Λ_rem(t) = log E_Q[(P/Q)^{1+t}].
     fn eval(&self, t: f64) -> f64;
 
-    /// Evaluate Λ'(t) (first derivative).
+    /// Evaluate Λ_rem'(t).
     fn eval_prime(&self, t: f64) -> f64;
 
-    /// Evaluate Λ''(t) (second derivative).
+    /// Evaluate Λ_rem''(t).
     fn eval_double_prime(&self, t: f64) -> f64;
+
+    /// Evaluate Λ_add(t) = log E_Q[(Q/P)^{1+t}].
+    ///
+    /// Default: uses the identity Λ_add(t) = Λ_rem(-(1+t)).
+    /// Override for numerically stable direct computation when P is a mixture.
+    fn eval_add(&self, t: f64) -> f64 {
+        self.eval(-(1.0 + t))
+    }
+
+    /// Evaluate Λ_add'(t).
+    fn eval_add_prime(&self, t: f64) -> f64 {
+        let h = 1e-7;
+        (self.eval_add(t + h) - self.eval_add(t - h)) / (2.0 * h)
+    }
+
+    /// Evaluate Λ_add''(t).
+    fn eval_add_double_prime(&self, t: f64) -> f64 {
+        let h = 1e-7;
+        (self.eval_add(t + h) - 2.0 * self.eval_add(t) + self.eval_add(t - h)) / (h * h)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -168,6 +193,34 @@ impl SubsampledGaussianCgf {
     }
 }
 
+impl SubsampledGaussianCgf {
+    /// Direct add-direction CGF: Λ_add(t) = log E_Q[(Q/P)^{1+t}].
+    ///
+    /// Q/P = 1/(q·exp(√2z/σ − 1/(2σ²)) + (1−q)) is bounded in (0, 1/(1−q)],
+    /// making this numerically stable even for small q and large t.
+    fn eval_add_raw(&self, t: f64) -> f64 {
+        let q = self.rate;
+        let one_minus_q = 1.0 - q;
+        let exponent = 1.0 + t;
+
+        let mut log_terms: Vec<f64> = Vec::with_capacity(self.gh_nodes.len());
+
+        for (&z, &w) in self.gh_nodes.iter().zip(self.gh_weights.iter()) {
+            if w <= 0.0 { continue; }
+            let log_p1_over_q = self.sqrt2_over_sigma * z - self.inv_2sigma_sq;
+            let log_p_over_q = (q * log_p1_over_q.exp() + one_minus_q).ln();
+            // (Q/P)^{1+t} = exp(-(1+t) · log(P/Q))
+            log_terms.push(w.ln() - exponent * log_p_over_q);
+        }
+
+        if log_terms.is_empty() { return 0.0; }
+
+        let max_log = log_terms.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let sum_exp: f64 = log_terms.iter().map(|&lt| (lt - max_log).exp()).sum();
+        max_log + sum_exp.ln() - 0.5 * std::f64::consts::PI.ln()
+    }
+}
+
 impl Cgf for SubsampledGaussianCgf {
     fn eval(&self, t: f64) -> f64 {
         self.eval_raw(t)
@@ -182,6 +235,11 @@ impl Cgf for SubsampledGaussianCgf {
         let h = FD_STEP;
         (self.eval_raw(t + h) - 2.0 * self.eval_raw(t) + self.eval_raw(t - h)) / (h * h)
     }
+
+    // Note: eval_add uses the default (reflected) implementation.
+    // The direct eval_add_raw is available but the add direction LR
+    // is not accurate enough for SubsampledGaussian at low composition.
+    // For m=1 Poisson, use the PMF path for reliable results.
 }
 
 // ---------------------------------------------------------------------------
@@ -675,6 +733,42 @@ impl MogGaussianCgf {
     }
 }
 
+impl MogGaussianCgf {
+    /// Direct add-direction CGF: Λ_add(t) = log E_Q[(Q/P)^{1+t}].
+    ///
+    /// Q/P = 1/(Σ_k p_k exp(k√2z/σ − k²/(2σ²))) is bounded, making
+    /// this numerically stable even for small component weights.
+    fn eval_add_raw(&self, t: f64) -> f64 {
+        let n_comp = self.log_weights.len();
+        let exponent = 1.0 + t;
+
+        let mut log_integrand: Vec<f64> = Vec::with_capacity(self.gh_nodes.len());
+
+        for (&z, &w) in self.gh_nodes.iter().zip(self.gh_weights.iter()) {
+            if w <= 0.0 { continue; }
+
+            // log(P/Q) at this node via log-sum-exp
+            let mut log_terms: Vec<f64> = Vec::with_capacity(n_comp);
+            for j in 0..n_comp {
+                log_terms.push(self.log_weights[j] + self.ratio_const[j] + self.ratio_linear[j] * z);
+            }
+            let max_lt = log_terms.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            if max_lt == f64::NEG_INFINITY { continue; }
+            let sum_exp: f64 = log_terms.iter().map(|&lt| (lt - max_lt).exp()).sum();
+            let log_p_over_q = max_lt + sum_exp.ln();
+
+            // (Q/P)^{1+t} = exp(-(1+t) · log(P/Q))
+            log_integrand.push(w.ln() - exponent * log_p_over_q);
+        }
+
+        if log_integrand.is_empty() { return 0.0; }
+
+        let max_log = log_integrand.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let sum: f64 = log_integrand.iter().map(|&lt| (lt - max_log).exp()).sum();
+        max_log + sum.ln() - 0.5 * std::f64::consts::PI.ln()
+    }
+}
+
 impl Cgf for MogGaussianCgf {
     fn eval(&self, t: f64) -> f64 { self.eval_raw(t) }
     fn eval_prime(&self, t: f64) -> f64 {
@@ -684,6 +778,17 @@ impl Cgf for MogGaussianCgf {
     fn eval_double_prime(&self, t: f64) -> f64 {
         let h = FD_STEP;
         (self.eval_raw(t + h) - 2.0 * self.eval_raw(t) + self.eval_raw(t - h)) / (h * h)
+    }
+    fn eval_add(&self, t: f64) -> f64 {
+        self.eval_add_raw(t)
+    }
+    fn eval_add_prime(&self, t: f64) -> f64 {
+        let h = FD_STEP;
+        (self.eval_add_raw(t + h) - self.eval_add_raw(t - h)) / (2.0 * h)
+    }
+    fn eval_add_double_prime(&self, t: f64) -> f64 {
+        let h = FD_STEP;
+        (self.eval_add_raw(t + h) - 2.0 * self.eval_add_raw(t) + self.eval_add_raw(t - h)) / (h * h)
     }
 }
 
