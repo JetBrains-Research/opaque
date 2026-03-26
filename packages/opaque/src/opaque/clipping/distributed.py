@@ -126,6 +126,27 @@ def sync_clipped_fun_aux(aux: ClippedFunAux) -> ClippedFunAux:
     return ClippedFunAux(**{**gathered, **scalar_fields})
 
 
+def _sync_clipping_rate(
+    clipping_rate: float | None,
+    grad_norms: torch.Tensor | None,
+) -> float | None:
+    """Compute global clipping rate as weighted average across ranks."""
+    if clipping_rate is None:
+        return None
+
+    local_n = 0.0
+    if isinstance(grad_norms, torch.Tensor):
+        local_n = float(grad_norms.numel())
+
+    local_rate = float(clipping_rate)
+    if local_n > 0:
+        global_weighted_sum = reduce_scalar(local_rate * local_n, op="sum")
+        global_total = reduce_scalar(local_n, op="sum")
+        return global_weighted_sum / max(1.0, global_total)
+    else:
+        return reduce_scalar(local_rate, op="mean")
+
+
 def sync_clipped_grad_aux(aux: ClippedGradAux) -> ClippedGradAux:
     """Synchronize ``ClippedGradAux`` and validate shared clipping norm."""
     if not is_distributed():
@@ -141,12 +162,14 @@ def sync_clipped_grad_aux(aux: ClippedGradAux) -> ClippedGradAux:
     )
 
     assert_scalar_equal(aux.clipping_norm, name="clipping_norm")
+
     return ClippedGradAux(
         loss_values=synced_fun_aux.loss_values,
         grad_norms=synced_fun_aux.grad_norms,
         clipped_grad_norms=synced_fun_aux.clipped_grad_norms,
         loss_aux=synced_fun_aux.loss_aux,
         clipping_norm=aux.clipping_norm,
+        clipping_rate=_sync_clipping_rate(aux.clipping_rate, aux.grad_norms),
     )
 
 
@@ -166,28 +189,12 @@ def sync_adaptive_clipped_grad_aux(
         )
     )
 
-    clipping_rate = aux.clipping_rate
-    if clipping_rate is None:
-        global_clipping_rate = None
-    else:
-        local_n = 0.0
-        if isinstance(aux.grad_norms, torch.Tensor):
-            local_n = float(aux.grad_norms.numel())
-
-        local_rate = float(clipping_rate)
-        if local_n > 0:
-            global_weighted_sum = reduce_scalar(local_rate * local_n, op="sum")
-            global_total = reduce_scalar(local_n, op="sum")
-            global_clipping_rate = global_weighted_sum / max(1.0, global_total)
-        else:
-            global_clipping_rate = reduce_scalar(local_rate, op="mean")
-
     return AdaptiveClippedGradAux(
         loss_values=synced_fun_aux.loss_values,
         grad_norms=synced_fun_aux.grad_norms,
         clipped_grad_norms=synced_fun_aux.clipped_grad_norms,
         loss_aux=synced_fun_aux.loss_aux,
-        clipping_rate=global_clipping_rate,
+        clipping_rate=_sync_clipping_rate(aux.clipping_rate, aux.grad_norms),
     )
 
 

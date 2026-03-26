@@ -20,6 +20,7 @@ class ClippedGradAux(NamedTuple):
         clipped_grad_norms: Per-example gradient L2 norms after clipping (if return_aux=True).
         loss_aux: Per-example auxiliary outputs from loss function (if has_aux=True).
         clipping_norm: The L2 clipping norm used for this computation.
+        clipping_rate: Fraction of per-example gradients that were clipped.
     """
 
     loss_values: Any | None
@@ -27,6 +28,7 @@ class ClippedGradAux(NamedTuple):
     clipped_grad_norms: Any | None
     loss_aux: Any | None
     clipping_norm: float
+    clipping_rate: float | None
 
 
 def _validate_static_args(argnums, batch_argnums, normalize_by):
@@ -201,6 +203,7 @@ def clipped_grad(
                         clipped_grad_norms=aux.clipped_grad_norms,
                         loss_aux=None,
                         clipping_norm=l2_clip_norm,
+                        clipping_rate=(aux.grad_norms > l2_clip_norm).float().mean().item() if aux.grad_norms is not None else None,
                     )
                     return (clipped_grads, grad_aux), returned_state
                 return result, returned_state
@@ -221,6 +224,7 @@ def clipped_grad(
                 clipped_grad_norms=aux.clipped_grad_norms,
                 loss_aux=aux.loss_aux,
                 clipping_norm=l2_clip_norm,
+                clipping_rate=(aux.grad_norms > l2_clip_norm).float().mean().item() if aux.grad_norms is not None else None,
             )
             return (clipped_grads, grad_aux), returned_state
 

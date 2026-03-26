@@ -1195,7 +1195,6 @@ def main():
             clip_norm = clip_state.clip_norm
             clip_rate = aux.clipping_rate
             mean_grad_norm = aux.grad_norms.mean().item()
-            num_clipped = int(clip_rate * batch_size)
 
             losses.append(avg_loss)
             clip_norms_history.append(clip_norm)
@@ -1227,7 +1226,7 @@ def main():
                 print(
                     f"Step {global_step:4d} [E{epoch + 1} S{step_idx + 1:3d}/{expected_steps_per_epoch:3d}] | "
                     f"Loss: {avg_loss:.4f} | "
-                    f"Clip: norm={clip_norm:.3f}, rate={clip_rate:.1%} ({num_clipped}/{batch_size}) | "
+                    f"Clip: norm={clip_norm:.3f}, rate={clip_rate:.1%} | "
                     f"GradNorm: μ={mean_grad_norm:.3f} | "
                     f"Noise: σ={noise_stddev:.4f} | "
                     f"Time: {perf['step_time_sec']:.2f}s | Mem: {perf['memory_peak_gb']:.1f}GB"
