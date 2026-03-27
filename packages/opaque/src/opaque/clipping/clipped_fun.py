@@ -385,12 +385,13 @@ def clipped_fun(
 
         return result, aux
 
-    # Calculate L2 sensitivity bound
-    l2_norm_bound = l2_clip_norm / normalize_by
+    # Create fixed clip state with raw clip norm and normalize_by
+    clip_norm = l2_clip_norm
 
     # Create fixed clip state
     clip_state = FixedClipState(
-        clip_norm=l2_norm_bound,
+        clip_norm=clip_norm,
+        normalize_by=normalize_by,
     )
 
     # Wrap function to accept and return state

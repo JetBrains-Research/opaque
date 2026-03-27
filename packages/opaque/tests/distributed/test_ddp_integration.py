@@ -239,6 +239,7 @@ def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> N
     try:
         state = AdaptiveClipState(
             clip_norm=float(rank + 1),
+            normalize_by=1.0,
             next_clip_norm=float(rank + 1),
             clipping_rate=0.5 + 0.1 * rank,
             key=rng_key(42),

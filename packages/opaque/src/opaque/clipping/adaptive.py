@@ -50,6 +50,8 @@ class AdaptiveClipState(ClipState):
     as part of the output, enabling pure functional composition.
 
     Attributes:
+        clip_norm: Raw clipping threshold used at the current step.
+        normalize_by: Divisor applied to the clipped sum (1.0 = no averaging).
         next_clip_norm: Clipping threshold for the *next* step C_{t+1}.
         clipping_rate: Fraction of gradients clipped in last call (for monitoring).
         key: RNG key for quantile noise (None if no noise).
@@ -61,6 +63,7 @@ class AdaptiveClipState(ClipState):
     """
 
     clip_norm: float
+    normalize_by: float
     next_clip_norm: float
     clipping_rate: float
     key: RngKey
@@ -78,6 +81,8 @@ class AdaptiveClipState(ClipState):
         """Validate state values."""
         if self.next_clip_norm <= 0:
             raise ValueError(f"next_clip_norm must be positive, got {self.next_clip_norm}")
+        if self.normalize_by <= 0:
+            raise ValueError(f"normalize_by must be positive, got {self.normalize_by}")
         if not 0 <= self.clipping_rate <= 1:
             raise ValueError(
                 f"clipping_rate must be in [0, 1], got {self.clipping_rate}"
@@ -275,7 +280,7 @@ def adaptive_clipped_grad(
         ...
         ...     # Add noise and update
         ...     noise_fn, noise_state = gaussian_noise(
-        ...         stddev=clip_state.clip_norm * 1.1, key=key(2))
+        ...         stddev=clip_state.sensitivity * 1.1, key=key(2))
         ...     noisy_grad, noise_state = noise_fn(grad, noise_state)
         ...     # ... optimizer step
 
@@ -315,6 +320,7 @@ def adaptive_clipped_grad(
         )
 
     # Store config in closure (immutable)
+    normalize_by = clipped_grad_kwargs.get("normalize_by", 1.0)
     config = {
         "target_quantile": target_quantile,
         "learning_rate": learning_rate,
@@ -397,6 +403,7 @@ def adaptive_clipped_grad(
         # Create new state (IMMUTABLE) with incremented step
         new_state = AdaptiveClipState(
             clip_norm=state.next_clip_norm,
+            normalize_by=normalize_by,
             next_clip_norm=new_clip_norm,
             clipping_rate=clipping_rate,
             key=state.key,
@@ -442,6 +449,7 @@ def adaptive_clipped_grad(
     # Create initial state
     initial_state = AdaptiveClipState(
         clip_norm=initial_clip_norm,
+        normalize_by=normalize_by,
         next_clip_norm=initial_clip_norm,
         clipping_rate=0.0,
         key=key,

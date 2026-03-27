@@ -24,6 +24,7 @@ grad_fn, clip_state = clipped_grad(
     argnums=0,             # differentiate w.r.t. first argument (params)
     batch_argnums=(1, 2),  # second and third arguments are batched
     l2_clip_norm=1.0,
+    normalize_by=batch_size,
 )
 
 grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
@@ -51,7 +52,7 @@ used to calibrate noise.
 | `l2_clip_norm` | `float` | required | Maximum L2 norm for per-example gradients. |
 | `batch_argnums` | `int \| tuple[int, ...]` | `1` | Which arguments have a batch dimension. |
 | `microbatch_size` | `int \| None` | `None` | Process batch in chunks to reduce memory. |
-| `normalize_by` | `float` | `1.0` | Divide the clipped output and sensitivity by this value. Useful for averaging (set to batch size). |
+| `normalize_by` | `float` | `1.0` | Divide the clipped sum and sensitivity by this constant. Set to expected batch size to get averaged gradients with sensitivity = `clip_norm / batch_size`. |
 | `pre_clipping_transform` | `Callable` | identity | Transform applied to each per-example gradient before clipping. |
 | `dtype` | `torch.dtype \| None` | `None` | Accumulation dtype (e.g., float32 for float16 inputs). |
 | `return_aux` | `bool` | `False` | Return per-example diagnostics. |
@@ -80,8 +81,8 @@ The sensitivity is the maximum change in the clipped gradient sum when one
 example is added, removed, or replaced. Noise is calibrated to this value.
 
 ```python
-sensitivity = clip_state.clip_norm
-# With l2_clip_norm=1.0: sensitivity = 1.0
+sensitivity = clip_state.sensitivity
+# With l2_clip_norm=1.0, normalize_by=32: sensitivity = 1.0 / 32
 
 noise_fn, noise_state = gaussian_noise(
     stddev=noise_multiplier * sensitivity, key=key(42),

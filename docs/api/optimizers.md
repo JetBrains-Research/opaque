@@ -57,8 +57,11 @@ from opaque.noise import gaussian_noise
 from opaque.random import key
 
 # Gradient pipeline
-grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=1)
-noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * 1.0, key=key(42))
+grad_fn, clip_state = clipped_grad(
+    loss_fn, l2_clip_norm=1.0, batch_argnums=1,
+    normalize_by=batch_size,
+)
+noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_state.sensitivity, key=key(42))
 
 # Optimizer
 optimizer = torchopt.adam(lr=1e-3)

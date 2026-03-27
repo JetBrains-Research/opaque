@@ -122,7 +122,9 @@ def clipped_grad(
             provided for the auxiliary data.
         l2_clip_norm: The maximum L2 norm for each per-example gradient. Gradients
             with a norm larger than this value will be scaled down.
-        normalize_by: Divide the clipped output by this value before returning.
+        normalize_by: Divide the clipped sum by this constant before returning.
+            Set to expected batch size to produce averaged gradients with
+            sensitivity = clip_norm / normalize_by.
         batch_argnums: Specifies which argument(s) of `loss_fn` contain the batch
             dimension (usually the data and labels). Can be an integer or a sequence
             of integers. All arguments specified here must have the same size along

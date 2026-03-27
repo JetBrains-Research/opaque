@@ -38,9 +38,10 @@ key_sampling, key_noise = split(key(42), num=2)
 
 grad_fn, clip_state = clipped_grad(
     loss_fn, l2_clip_norm=1.0, argnums=0, batch_argnums=1,
+    normalize_by=batch_size,
 )
 noise_fn, noise_state = gaussian_noise(
-    stddev=noise_multiplier * clip_state.clip_norm, key=key_noise,
+    stddev=noise_multiplier * clip_state.sensitivity, key=key_noise,
 )
 
 optimizer = torchopt.adam(lr=1e-3)

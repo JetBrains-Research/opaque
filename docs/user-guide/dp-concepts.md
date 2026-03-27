@@ -367,9 +367,10 @@ The privacy guarantee depends on what "differ in one record" means:
 | Add or remove | $D' = D \pm$ one record | $C$ |
 | Replace one | $D' = D$ with one record swapped | $2C$ |
 
-Opaque uses the **add-or-remove** convention: `clip_state.clip_norm` returns
-the clip norm $C$. If your analysis uses replace-one semantics, double it
-when calibrating noise ($\sigma = \text{noise\_multiplier} \times 2C$).
+Opaque uses the **add-or-remove** convention: `clip_state.sensitivity` returns
+$C / \text{normalize\_by}$. When `normalize_by` is set to the expected batch size $B$,
+sensitivity is $C/B$. If your analysis uses replace-one
+semantics, double it when calibrating noise ($\sigma = \text{noise\_multiplier} \times 2 \times \text{sensitivity}$).
 
 ## References
 

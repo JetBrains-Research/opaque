@@ -55,12 +55,16 @@ fmodel, params = make_functional(model)
 def loss_fn(params, x, y):
     return ((fmodel(params, x) - y) ** 2).sum()
 
+# Expected global batch size
+batch_size = 256
+
 # DP components
 grad_fn, clip_state = clipped_grad(
     loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2),
+    normalize_by=batch_size,
 )
 noise_fn, noise_state = gaussian_noise(
-    stddev=1.1 * clip_state.clip_norm, key=key(42),
+    stddev=1.1 * clip_state.sensitivity, key=key(42),
 )
 
 # Poisson sampler (shard dataset)
@@ -161,6 +165,7 @@ grad_fn, clip_state = adaptive_clipped_grad(
     loss_fn,
     batch_argnums=(1, 2),
     initial_clip_norm=1.0,
+    normalize_by=batch_size,
     key=key(7),
 )
 
@@ -182,7 +187,7 @@ noise_state = sync(noise_state)
 `sync()` auto-dispatches based on the type of the state object. For
 `AdaptiveClipState`, it aggregates `num_clipped` and `total` across ranks
 (sum), recomputes the global clipping rate, and updates `clip_norm`. After
-the call, `clip_state.clip_norm` is identical on every device.
+the call, `clip_state.sensitivity` is identical on every device.
 
 For fixed clipping (`clipped_grad`), the state is deterministic and does
 not need synchronization. You can optionally validate with

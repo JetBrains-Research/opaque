@@ -186,9 +186,10 @@ def loss_fn(trainable_params, input_ids, labels):
 # DP components
 grad_fn, clip_state = clipped_grad(
     loss_fn, argnums=0, batch_argnums=(1, 2), l2_clip_norm=1.0,
+    normalize_by=batch_size,
 )
 noise_fn, noise_state = gaussian_noise(
-    stddev=noise_multiplier * clip_state.clip_norm, key=key(42),
+    stddev=noise_multiplier * clip_state.sensitivity, key=key(42),
 )
 
 # Training loop

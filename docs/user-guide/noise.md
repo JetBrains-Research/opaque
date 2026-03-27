@@ -21,7 +21,7 @@ from opaque import gaussian_noise
 from opaque.random import key
 
 noise_fn, noise_state = gaussian_noise(
-    stddev=noise_multiplier * clip_state.clip_norm,
+    stddev=noise_multiplier * clip_state.sensitivity,
     key=key(42),
 )
 
@@ -32,7 +32,7 @@ noisy_grads, noise_state = noise_fn(grads, noise_state)
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `stddev` | `float` | Standard deviation of Gaussian noise. Typically `noise_multiplier * clip_norm`. |
+| `stddev` | `float` | Standard deviation of Gaussian noise. Typically `noise_multiplier * sensitivity`. |
 | `key` | `RngKey` | Explicit RNG key for deterministic noise. Create with `key(seed)`. |
 
 ### Calibrating stddev
@@ -41,7 +41,7 @@ The noise standard deviation is `noise_multiplier * sensitivity`, where:
 
 - `noise_multiplier` is determined by the target privacy budget (use
   `acc.calibrate()` to find it)
-- `sensitivity` comes from `clip_state.clip_norm`
+- `sensitivity` comes from `clip_state.sensitivity`
 
 ```python
 import opaque.accounting as acc
@@ -53,7 +53,7 @@ result = acc.calibrate(
 )
 
 noise_fn, noise_state = gaussian_noise(
-    stddev=result.param * clip_state.clip_norm, key=key(42),
+    stddev=result.param * clip_state.sensitivity, key=key(42),
 )
 ```
 
@@ -182,7 +182,7 @@ from opaque.random import key
 noise_fn, noise_state = band_mf_noise(
     grad_template=params,   # any pytree with correct shapes/dtypes
     n_steps=1000,
-    stddev=noise_multiplier * clip_state.clip_norm,
+    stddev=noise_multiplier * clip_state.sensitivity,
     key=key(42),
 )
 
@@ -213,7 +213,7 @@ from opaque.random import key
 noise_fn, noise_state = blt_mf_noise(
     grad_template=params,
     n_steps=10000,
-    stddev=noise_multiplier * clip_state.clip_norm,
+    stddev=noise_multiplier * clip_state.sensitivity,
     key=key(42),
     max_buffers=10,
 )
@@ -231,7 +231,7 @@ from opaque.random import key
 noise_fn, noise_state = dense_mf_noise(
     grad_template=params,
     n_steps=50,
-    stddev=noise_multiplier * clip_state.clip_norm,
+    stddev=noise_multiplier * clip_state.sensitivity,
     key=key(42),
 )
 ```
@@ -248,7 +248,7 @@ from opaque.random import key
 noise_fn, noise_state = custom_mf_noise(
     grad_template=params,
     noising=my_custom_matrix,
-    stddev=noise_multiplier * clip_state.clip_norm,
+    stddev=noise_multiplier * clip_state.sensitivity,
     key=key(42),
 )
 ```
@@ -265,7 +265,7 @@ from opaque.random import key
 
 noise_fn, noise_state = identity_mf_noise(
     grad_template=params,
-    stddev=noise_multiplier * clip_state.clip_norm,
+    stddev=noise_multiplier * clip_state.sensitivity,
     key=key(42),
 )
 ```

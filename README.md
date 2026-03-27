@@ -59,11 +59,15 @@ result = acc.calibrate(
     lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000,
     param_min=0.1, param_max=10.0,
 )
+batch_size = 64  # expected batch size for Poisson sampling
 
 # DP-SGD components
-grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2))
+grad_fn, clip_state = clipped_grad(
+    loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2),
+    normalize_by=batch_size,
+)
 noise_fn, noise_state = gaussian_noise(
-    stddev=result.param * clip_state.clip_norm, key=key(42),
+    stddev=result.param * clip_state.sensitivity, key=key(42),
 )
 
 # Training loop

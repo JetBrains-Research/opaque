@@ -995,6 +995,7 @@ def main():
             microbatch_size=args.microbatch_size,
             return_aux=True,
             key=key(args.seed),
+            normalize_by=args.batch_size,
         )
     else:
         grad_fn, clip_state = clipped_grad(
@@ -1002,6 +1003,7 @@ def main():
             argnums=0,
             batch_argnums=(1,),
             l2_clip_norm=args.clip_norm,
+            normalize_by=args.batch_size,
             microbatch_size=args.microbatch_size,
             return_aux=True,
         )
@@ -1088,7 +1090,7 @@ def main():
 
     # Noise function — created once; per-call stddev override tracks adaptive clip_norm.
     noise_fn, noise_state = make_noise(
-        stddev=noise_multiplier * args.clip_norm, key=key(args.seed),
+        stddev=noise_multiplier * clip_state.sensitivity, key=key(args.seed),
     )
 
     # Training loop
@@ -1109,7 +1111,7 @@ def main():
     # Step-0 eval: log baseline metrics before any training
     initial_eval_loss = eval_loss(trainable_params)
     initial_epsilon = accounting.epsilon_at(args.target_delta)
-    initial_noise_std = noise_multiplier * args.clip_norm
+    initial_noise_std = noise_multiplier * clip_state.sensitivity
     print(f"  → Step 0 eval: loss={initial_eval_loss:.4f}, ε={initial_epsilon:.3f}")
     if use_wandb:
         wandb.log({
@@ -1165,7 +1167,7 @@ def main():
                     clip_state, aux = sync(clip_state, aux)
                     sum_gradients_(grads_tuple)
 
-                noise_stddev = noise_multiplier * clip_state.clip_norm
+                noise_stddev = noise_multiplier * clip_state.sensitivity
                 noisy_grads, noise_state = noise_fn(
                     grads_tuple, noise_state, stddev=noise_stddev,
                 )

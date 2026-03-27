@@ -893,9 +893,9 @@ class TestEndToEndDPTraining:
             l2_clip_norm=clip_norm,
         )
 
-        # Verify sensitivity matches clip_norm
-        sensitivity = clip_state.clip_norm
-        assert sensitivity == clip_norm
+        # Verify sensitivity matches clip_norm (normalize_by defaults to 1.0)
+        assert clip_state.clip_norm == clip_norm
+        assert clip_state.sensitivity == clip_norm
 
         # Compute gradients to ensure state works
         grads, _ = grad_fn(

@@ -403,7 +403,7 @@ class TestAdaptiveClippedGrad:
 
         # Add noise scaled to current clip norm
         noise_fn, noise_state = gaussian_noise(
-            stddev=1.1 * clip_state.clip_norm,
+            stddev=1.1 * clip_state.sensitivity,
             key=key(0),
         )
         noisy_grads, noise_state = noise_fn(grads, noise_state)
