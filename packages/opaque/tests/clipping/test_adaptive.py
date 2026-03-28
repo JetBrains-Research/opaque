@@ -1,4 +1,4 @@
-"""Tests for adaptive gradient clipping (Andrew et al. 2021)."""
+"""Tests for adaptive gradient clipping."""
 
 import math
 
@@ -562,8 +562,6 @@ class TestEdgeCases:
         assert torch.allclose(grads, torch.zeros_like(grads))
 
     def test_batch_size_tracked_in_state(self):
-        """Test that batch_size is set from actual number of examples."""
-
         def loss_fn(params, x, y):
             pred = x @ params
             return ((pred - y) ** 2).mean()
@@ -574,23 +572,46 @@ class TestEdgeCases:
             key=key(0),
             batch_argnums=(1, 2),
         )
-
-        # Initial state has batch_size 0
         assert clip_state.batch_size == 0
 
         params = torch.randn(10, requires_grad=False)
 
-        # Batch of 8
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
         _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
         assert clip_state.batch_size == 8
 
-        # Batch of 16
         batch_x = torch.randn(16, 10)
         batch_y = torch.randn(16)
         _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
         assert clip_state.batch_size == 16
+
+    def test_normalize_by_used_as_fraction_denominator(self):
+        """normalize_by > 1 is used as the clipping fraction denominator."""
+
+        def loss_fn(params, x, y):
+            pred = x @ params
+            return ((pred - y) ** 2).mean()
+
+        expected_bs = 20
+        grad_fn, clip_state = adaptive_clipped_grad(
+            loss_fn,
+            initial_clip_norm=0.001,  # Very small → everything clips
+            key=key(0),
+            batch_argnums=(1, 2),
+            fraction_noise_std=1e-10,  # Near-zero for deterministic testing
+            normalize_by=expected_bs,
+        )
+
+        params = torch.randn(10, requires_grad=False)
+        # Actual batch of 8 but fraction denominator is 20 (from normalize_by)
+        batch_x = torch.randn(8, 10)
+        batch_y = torch.randn(8)
+        _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+
+        assert clip_state.batch_size == 8
+        # All 8 examples clipped → rate = 8/20 = 0.4 (not 8/8 = 1.0)
+        assert clip_state.clipping_rate == pytest.approx(8.0 / expected_bs, abs=1e-6)
 
     def test_large_batch(self):
         """Test with large batch size."""

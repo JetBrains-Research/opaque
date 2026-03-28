@@ -377,9 +377,8 @@ class TestAccountantCached:
         """cached() works with heterogeneous (varying) steps."""
         delta = 1e-5
 
-        # Simulate adaptive clipping: different batch_size each step
         steps = [
-            acc.poisson(acc.adaclip(acc.gaussian(1.1), batch_size=bs), 0.01)
+            acc.poisson(acc.adaclip(acc.gaussian(1.1), expected_batch_size=bs), 0.01)
             for bs in [120, 130, 125, 128, 135, 122, 131, 127, 129, 126]
         ]
 

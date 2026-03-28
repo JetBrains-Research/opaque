@@ -202,9 +202,8 @@ See [Memory Optimizations](memory-optimizations.md) for details.
 
 ## Adaptive clipping
 
-`adaptive_clipped_grad` automatically adjusts the clip norm during training
-using the geometric adaptation rule from
-[Andrew et al. 2021](https://arxiv.org/abs/1905.03871). Instead of manually
+`adaptive_clipped_grad` automatically adjusts the clip norm during training.
+Instead of manually
 tuning the clip norm, you specify a target fraction of gradients that should
 be clipped (the *target quantile*).
 
@@ -217,6 +216,7 @@ grad_fn, clip_state = adaptive_clipped_grad(
     batch_argnums=1,
     initial_clip_norm=1.0,
     target_quantile=0.5,   # aim for 50% of gradients clipped
+    normalize_by=batch_size,
     key=key(7),            # required for quantile noise
 )
 
@@ -262,10 +262,11 @@ rate query). Account for it using `acc.adaclip()`:
 ```python
 import opaque.accounting as acc
 
+expected_batch_size = sample_rate * dataset_size
 step = acc.poisson(
     acc.adaclip(acc.gaussian(noise_multiplier),
                 fraction_noise_std=0.05,
-                batch_size=batch_size),
+                expected_batch_size=expected_batch_size),
     sample_rate,
 )
 training = step * num_steps

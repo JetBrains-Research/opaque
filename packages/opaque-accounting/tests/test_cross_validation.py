@@ -373,11 +373,9 @@ class TestAdaClipCrossValidation:
         ],
     )
     def test_adaclip_effective_noise(self, sigma, batch_size):
-        """adaclip(gaussian(σ), batch_size) → z_eff = 1/adaclip_sensitivity."""
         import opaque_accounting as _native
 
-        proc = acc.adaclip(acc.gaussian(sigma), batch_size=batch_size)
-        # σ_b = batch_size × 0.05 (default multiplier)
+        proc = acc.adaclip(acc.gaussian(sigma), expected_batch_size=batch_size)
         sigma_b = batch_size * 0.05
         s = _native.adaclip_sensitivity(sigma, sigma_b)
         z_eff = 1.0 / s
@@ -393,15 +391,13 @@ class TestAdaClipCrossValidation:
 
     @pytest.mark.parametrize("batch_size", [200, 1000, 2000])
     def test_adaclip_increases_privacy_cost(self, batch_size):
-        """AdaClip reduces effective noise → higher epsilon (more privacy cost)."""
         g = acc.gaussian(1.0)
-        a = acc.adaclip(g, batch_size=batch_size)
-        # z_eff < sigma so epsilon should be larger
+        a = acc.adaclip(g, expected_batch_size=batch_size)
         assert a.epsilon_at(1e-5) > g.epsilon_at(1e-5)
 
     def test_adaclip_composed_with_poisson(self):
         """AdaClip result composes with poisson() normally."""
-        step = acc.poisson(acc.adaclip(acc.gaussian(1.1), batch_size=1000), 0.01) * 1000
+        step = acc.poisson(acc.adaclip(acc.gaussian(1.1), expected_batch_size=1000), 0.01) * 1000
         eps = step.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 

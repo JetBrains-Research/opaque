@@ -239,7 +239,7 @@ def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> N
     try:
         state = AdaptiveClipState(
             clip_norm=float(rank + 1),
-            normalize_by=1.0,
+            normalize_by=100.0,
             next_clip_norm=float(rank + 1),
             clipping_rate=0.5 + 0.1 * rank,
             key=rng_key(42),
@@ -254,14 +254,12 @@ def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> N
             batch_size=8 * (rank + 1),
         )
         synced = sync(state)
-        # num_clipped and total are summed, then global rate recomputed
         expected_total_clipped = sum(3.0 * (r + 1) for r in range(world_size))
-        expected_total = sum(10.0 * (r + 1) for r in range(world_size))
-        expected_rate = expected_total_clipped / expected_total
+        expected_rate = expected_total_clipped / 100.0
         assert abs(synced.clipping_rate - expected_rate) < 1e-5
-        # batch_size is summed
-        expected_batch_size = sum(8 * (r + 1) for r in range(world_size))
-        assert synced.batch_size == expected_batch_size
+        expected_bs = sum(8 * (r + 1) for r in range(world_size))
+        assert synced.batch_size == expected_bs
+        assert synced.normalize_by == 100.0
     finally:
         _cleanup_ddp()
 

@@ -57,25 +57,31 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
     """Recompute adaptive clipping state from globally aggregated local counts.
 
     This function treats local adaptive updates as provisional and recomputes
-    the effective global update from summed clipped counts.  It also sums
-    ``batch_size`` across ranks so that the accounting layer receives the
-    true global batch size.
+    the effective global update from summed clipped counts.  ``batch_size``
+    (actual) is summed across ranks for monitoring; ``normalize_by``
+    (data-independent constant) is validated to be equal and used as the
+    fraction denominator.
     """
     if not is_distributed():
         return state
 
-    # Use sync_object to sum the local counts and batch_size across ranks
+    # Use sync_object to sum the local counts and batch_size across ranks.
+    # normalize_by is a data-independent constant — assert equality.
     synced = sync_object(
         state,
         field_ops={
             "num_clipped": "sum",
             "total": "sum",
             "batch_size": "sum",
+            "normalize_by": "assert_equal",
         },
     )
 
-    # Recompute global clipping rate and clip_norm from aggregated counts
-    global_rate = synced.num_clipped / max(1.0, synced.total)
+    # Recompute global clipping rate from aggregated counts.
+    # Use normalize_by as denominator (data-independent under Poisson),
+    # fall back to actual total for fixed-size batches (normalize_by == 1).
+    denominator = synced.normalize_by if synced.normalize_by > 1.0 else synced.total
+    global_rate = synced.num_clipped / max(1.0, denominator)
 
     step_for_noise = max(0, synced.step - 1)
     noisy_global_rate = _sample_noisy_clipping_rate(

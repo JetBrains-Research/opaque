@@ -175,19 +175,18 @@ the standard Gaussian.
 
 Composable with `poisson()` for subsampled accounting.
 
-### `adaclip(inner, *, fraction_noise_std, batch_size) -> DpProcess`
+### `adaclip(inner, *, fraction_noise_std, expected_batch_size) -> DpProcess`
 
-Adaptive clipping (Andrew et al. 2021). Accounts for the extra privacy cost of
-noisy quantile estimation using the combined sensitivity formula. Returns an
-`AdaClip` process with the effective noise multiplier, composable with
+Accounts for the extra privacy cost of adaptive clipping's noisy
+fraction query. Returns an `AdaClip` process composable with
 `poisson()` or `truncated_poisson()`.
 
 - `inner` (Gaussian | TruncatedGaussian): Base mechanism (from `gaussian()` or `truncated_gaussian()`)
 - `fraction_noise_std` (float): Noise std on the clipping fraction. Default: 0.05.
-- `batch_size` (float): Expected batch size, used to compute the absolute noise std for the quantile query.
+- `expected_batch_size` (float): Expected batch size (``sample_rate × dataset_size``), used to compute the absolute noise std for the quantile query.
 
 ```python
-step = acc.poisson(acc.adaclip(acc.gaussian(0.5), fraction_noise_std=0.05, batch_size=256), 0.01)
+step = acc.poisson(acc.adaclip(acc.gaussian(0.5), fraction_noise_std=0.05, expected_batch_size=256), 0.01)
 ```
 
 ### `eps_delta(epsilon, delta=0.0) -> DpProcess`

@@ -1029,12 +1029,9 @@ def main():
         mechanism = acc.gaussian
         make_noise = gaussian_noise
 
-    # Adaptive clipping: adaclip wraps the mechanism to account for the privacy
-    # cost of the noisy quantile query.  Expected batch_size for calibration;
-    # training loop rebuilds with real batch_size per step.
     if args.adaptive_clipping:
-        adaclip_mechanism = lambda nm, bs=args.batch_size: acc.adaclip(
-            mechanism(nm), batch_size=bs,
+        adaclip_mechanism = lambda nm, ebs=args.batch_size: acc.adaclip(
+            mechanism(nm), expected_batch_size=ebs,
         )
 
     # Bind amplification type once — poisson vs parallel_poisson.
@@ -1146,13 +1143,14 @@ def main():
         for step_idx, batch in enumerate(epoch_loader):
             (input_ids,) = batch
 
-            # Empty batch (rare but possible with Poisson): account with
-            # expected batch_size (no real data available) and skip.
+            # === Accounting (data-independent, before execution) ===
+            if args.adaptive_clipping:
+                accounting |= amplify(adaclip_mechanism(noise_multiplier))
+            else:
+                accounting |= amplify(mechanism(noise_multiplier))
+
+            # Empty batch (rare but possible with Poisson): skip execution.
             if len(input_ids) == 0:
-                if args.adaptive_clipping:
-                    accounting |= amplify(adaclip_mechanism(noise_multiplier))
-                else:
-                    accounting |= amplify(mechanism(noise_multiplier))
                 continue
 
             # === Execution ===
@@ -1178,14 +1176,6 @@ def main():
                     noisy_grads, opt_state, params=trainable_params
                 )
                 trainable_params = torchopt.apply_updates(trainable_params, updates)
-
-            # === Accounting (after execution, with real batch_size) ===
-            if args.adaptive_clipping:
-                accounting |= amplify(adaclip_mechanism(
-                    noise_multiplier, clip_state.batch_size,
-                ))
-            else:
-                accounting |= amplify(mechanism(noise_multiplier))
 
             profiler = profiler.add_step(step_timer)
 

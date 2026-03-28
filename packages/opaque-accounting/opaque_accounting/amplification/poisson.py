@@ -78,7 +78,7 @@ class Poisson(DpProcess):
                             f"Unsupported AdaClip inner: "
                             f"{type(ac.inner).__name__}"
                         )
-                sigma_b = ac.batch_size * ac.fraction_noise_std
+                sigma_b = ac.expected_batch_size * ac.fraction_noise_std
                 bit_pld = _native.poisson_gaussian_pld(
                     2.0 * sigma_b,
                     self.sample_rate,
