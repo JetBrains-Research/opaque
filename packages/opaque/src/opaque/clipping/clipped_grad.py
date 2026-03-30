@@ -2,25 +2,40 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 import torch
 from torch.func import grad_and_value
 
 from opaque.clipping._helpers import normalize_fun_to_return_aux, normalize_to_tuple
-from opaque.clipping.clipped_fun import ClippedFunAux, clipped_fun
+from opaque.clipping.clipped_fun import clipped_fun
 from opaque.clipping.types import FixedClipState
 
 
 @dataclass(frozen=True)
-class ClippedGradAux(ClippedFunAux):
+class ClippedGradAux:
     """Diagnostic outputs from clipped_grad.
 
     All fields are diagnostic — they reflect pre-noise, pre-aggregation
     values and must not be fed back into private computation.  Use
     ``ClipState.sensitivity`` for noise calibration.
 
-    Inherits all fields from :class:`ClippedFunAux`.
+    Fields:
+        loss_values: Per-example loss values before clipping.
+        grad_norms: Per-example gradient L2 norms before clipping.
+        clipped_grad_norms: Per-example gradient L2 norms after clipping.
+        loss_aux: Per-example auxiliary payload returned by the loss function.
+        clipping_rate: Fraction of per-example gradients whose norm exceeded
+            the clipping threshold.
+        batch_size: Number of examples in the batch.
     """
+
+    loss_values: Any | None = None
+    grad_norms: Any | None = None
+    clipped_grad_norms: Any | None = None
+    loss_aux: Any | None = None
+    clipping_rate: float | None = None
+    batch_size: int = 0
 
 
 def _validate_static_args(argnums, batch_argnums, normalize_by):
@@ -165,9 +180,9 @@ def clipped_grad(
             # PyTorch vmap cannot handle namedtuples with None values when out_dims != None
             aux_dict = {}
             if return_aux:
-                aux_dict["loss_values"] = value_and_aux[0]
+                aux_dict["values"] = value_and_aux[0]
             if return_aux and has_aux:
-                aux_dict["loss_aux"] = value_and_aux[1]
+                aux_dict["value_aux"] = value_and_aux[1]
             return result, aux_dict
         return result
 
@@ -193,8 +208,8 @@ def clipped_grad(
                     clipped_grads, aux = result
                     grad_aux = ClippedGradAux(
                         loss_values=None,
-                        grad_norms=aux.grad_norms,
-                        clipped_grad_norms=aux.clipped_grad_norms,
+                        grad_norms=aux.norms,
+                        clipped_grad_norms=aux.clipped_norms,
                         loss_aux=None,
                         clipping_rate=aux.clipping_rate,
                         batch_size=aux.batch_size,
@@ -213,10 +228,10 @@ def clipped_grad(
                 *args, state=state, **kwargs
             )
             grad_aux = ClippedGradAux(
-                loss_values=aux.loss_values,
-                grad_norms=aux.grad_norms,
-                clipped_grad_norms=aux.clipped_grad_norms,
-                loss_aux=aux.loss_aux,
+                loss_values=aux.values,
+                grad_norms=aux.norms,
+                clipped_grad_norms=aux.clipped_norms,
+                loss_aux=aux.value_aux,
                 clipping_rate=aux.clipping_rate,
                 batch_size=aux.batch_size,
             )

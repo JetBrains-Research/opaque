@@ -6,8 +6,7 @@ from typing import Any, cast
 
 import torch
 
-from opaque.clipping.clipped_fun import ClippedFunAux
-from opaque.clipping.clipped_grad import clipped_grad
+from opaque.clipping.clipped_grad import ClippedGradAux, clipped_grad
 from opaque.clipping.types import ClipState
 from opaque.random import RngKey, fold_in, generator_from_key
 
@@ -15,14 +14,14 @@ _DEFAULT_FRACTION_NOISE_STD = 0.05
 
 
 @dataclass(frozen=True)
-class AdaptiveClippedGradAux(ClippedFunAux):
+class AdaptiveClippedGradAux(ClippedGradAux):
     """Diagnostic outputs from adaptive_clipped_grad.
 
     All fields are diagnostic — they reflect pre-noise, pre-aggregation
     values and must not be fed back into private computation.  Use
     ``ClipState.sensitivity`` for noise calibration.
 
-    Inherits all fields from :class:`ClippedFunAux`.
+    Inherits all fields from :class:`ClippedGradAux`.
     """
 
 

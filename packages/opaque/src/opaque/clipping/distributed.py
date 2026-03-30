@@ -58,7 +58,7 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
 
     Sums ``_num_clipped`` and ``_batch_size`` across ranks, recomputes the
     global clipping rate, applies quantile noise, and updates
-    ``next_clip_norm``.  ``normalize_by`` (data-independent constant)
+    ``next_clipping_norm``.  ``normalize_by`` (data-independent constant)
     is validated to be equal across ranks and used as the fraction
     denominator when > 1.
     """
@@ -104,7 +104,7 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
     )
 
 
-def _split_aux_fields(aux: ClippedFunAux) -> tuple[dict[str, object], dict[str, object]]:
+def _split_aux_fields(aux) -> tuple[dict[str, object], dict[str, object]]:
     """Split dataclass fields into tensor-like and scalar/None groups."""
     tensor_fields: dict[str, object] = {}
     scalar_fields: dict[str, object] = {}
@@ -129,7 +129,7 @@ def sync_clipped_fun_aux(aux: ClippedFunAux) -> ClippedFunAux:
 
     # Override scalar fields that need distributed sync
     scalar_fields["clipping_rate"] = _sync_clipping_rate(
-        aux.clipping_rate, aux.grad_norms
+        aux.clipping_rate, aux.norms
     )
     scalar_fields["batch_size"] = _sync_batch_size(aux.batch_size)
 
@@ -138,15 +138,15 @@ def sync_clipped_fun_aux(aux: ClippedFunAux) -> ClippedFunAux:
 
 def _sync_clipping_rate(
     clipping_rate: float | None,
-    grad_norms: torch.Tensor | None,
+    norms: torch.Tensor | None,
 ) -> float | None:
     """Compute global clipping rate as weighted average across ranks."""
     if clipping_rate is None:
         return None
 
     local_n = 0.0
-    if isinstance(grad_norms, torch.Tensor):
-        local_n = float(grad_norms.numel())
+    if isinstance(norms, torch.Tensor):
+        local_n = float(norms.numel())
 
     local_rate = float(clipping_rate)
     if local_n > 0:
@@ -166,7 +166,16 @@ def sync_clipped_grad_aux(aux: ClippedGradAux) -> ClippedGradAux:
     """Synchronize ``ClippedGradAux`` across distributed ranks."""
     if not is_distributed():
         return aux
-    return sync_clipped_fun_aux(aux)
+
+    tensor_fields, scalar_fields = _split_aux_fields(aux)
+    gathered = gather_pytree(tensor_fields) if tensor_fields else {}
+
+    scalar_fields["clipping_rate"] = _sync_clipping_rate(
+        aux.clipping_rate, aux.grad_norms
+    )
+    scalar_fields["batch_size"] = _sync_batch_size(aux.batch_size)
+
+    return type(aux)(**{**gathered, **scalar_fields})
 
 
 def sync_adaptive_clipped_grad_aux(
@@ -175,7 +184,7 @@ def sync_adaptive_clipped_grad_aux(
     """Synchronize ``AdaptiveClippedGradAux`` across distributed ranks."""
     if not is_distributed():
         return aux
-    return sync_clipped_fun_aux(aux)
+    return sync_clipped_grad_aux(aux)
 
 
 def sync_aux(

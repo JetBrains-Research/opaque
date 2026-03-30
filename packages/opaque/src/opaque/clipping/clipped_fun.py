@@ -22,20 +22,20 @@ class ClippedFunAux:
     ``ClipState.sensitivity`` for noise calibration.
 
     Fields:
-        loss_values: Per-example function values before clipping.
-        grad_norms: Per-example L2 norms before clipping.
-        clipped_grad_norms: Per-example L2 norms after clipping.
-        loss_aux: Per-example auxiliary payload returned by the wrapped function.
+        values: Per-example function values before clipping.
+        norms: Per-example L2 norms before clipping.
+        clipped_norms: Per-example L2 norms after clipping.
+        value_aux: Per-example auxiliary payload returned by the wrapped function.
         clipping_rate: Fraction of per-example outputs whose norm exceeded the
             clipping threshold.  When ``normalize_by > 1`` the denominator is
             ``normalize_by`` (data-independent) rather than the actual batch size.
         batch_size: Number of examples in the batch.
     """
 
-    loss_values: Any | None = None
-    grad_norms: Any | None = None
-    clipped_grad_norms: Any | None = None
-    loss_aux: Any | None = None
+    values: Any | None = None
+    norms: Any | None = None
+    clipped_norms: Any | None = None
+    value_aux: Any | None = None
     clipping_rate: float | None = None
     batch_size: int = 0
 
@@ -308,41 +308,41 @@ def clipped_fun(
                 # IMPORTANT: Detach all tensors to prevent memory leaks from retaining
                 # computational graphs. These are monitoring values, not used for gradients.
                 aux_dict = {
-                    "grad_norms": norm.norm.detach(),
-                    "clipped_grad_norms": global_norm(clipped_value).detach(),
+                    "norms": norm.norm.detach(),
+                    "clipped_norms": global_norm(clipped_value).detach(),
                 }
 
                 # Extract nested values and aux from wrapped functions (e.g., grad_fn)
-                # aux may be a dict like {"loss_values": loss, "loss_aux": user_aux} or just user_aux
+                # aux may be a dict like {"values": val, "value_aux": user_aux} or just user_aux
                 if isinstance(aux, dict):
-                    # Preserve "loss_values" from nested dict if present (e.g., loss from grad_and_value)
-                    if "loss_values" in aux:
-                        loss_val = aux["loss_values"]
-                        aux_dict["loss_values"] = (
-                            loss_val.detach()
-                            if isinstance(loss_val, torch.Tensor)
-                            else loss_val
+                    # Preserve "values" from nested dict if present (e.g., loss from grad_and_value)
+                    if "values" in aux:
+                        val = aux["values"]
+                        aux_dict["values"] = (
+                            val.detach()
+                            if isinstance(val, torch.Tensor)
+                            else val
                         )
                     else:
-                        # No nested "loss_values", use function output
-                        aux_dict["loss_values"] = (
+                        # No nested "values", use function output
+                        aux_dict["values"] = (
                             value.detach() if isinstance(value, torch.Tensor) else value
                         )
 
                     # Extract user aux from nested dict if present
                     if has_aux:
-                        if "loss_aux" in aux:
-                            aux_dict["loss_aux"] = aux["loss_aux"]
+                        if "value_aux" in aux:
+                            aux_dict["value_aux"] = aux["value_aux"]
                         else:
                             # aux is already the user aux (not nested)
-                            aux_dict["loss_aux"] = aux
+                            aux_dict["value_aux"] = aux
                 else:
                     # aux is not a dict (direct user aux or None)
-                    aux_dict["loss_values"] = (
+                    aux_dict["values"] = (
                         value.detach() if isinstance(value, torch.Tensor) else value
                     )
                     if has_aux:
-                        aux_dict["loss_aux"] = aux
+                        aux_dict["value_aux"] = aux
 
                 return clipped_value, aux_dict
             return clipped_value
@@ -388,20 +388,20 @@ def clipped_fun(
             return result
 
         aux_dict = aux if isinstance(aux, dict) else {}
-        grad_norms = aux_dict.get("grad_norms")
-        batch_size = grad_norms.numel() if isinstance(grad_norms, torch.Tensor) else 0
-        if isinstance(grad_norms, torch.Tensor) and batch_size > 0:
-            num_clipped = float((grad_norms > clipping_norm).sum().item())
+        norms = aux_dict.get("norms")
+        batch_size = norms.numel() if isinstance(norms, torch.Tensor) else 0
+        if isinstance(norms, torch.Tensor) and batch_size > 0:
+            num_clipped = float((norms > clipping_norm).sum().item())
             denominator = normalize_by if normalize_by > 1.0 else float(batch_size)
             rate = num_clipped / max(1.0, denominator)
         else:
             rate = None
 
         aux = ClippedFunAux(
-            loss_values=aux_dict.get("loss_values"),
-            grad_norms=grad_norms,
-            clipped_grad_norms=aux_dict.get("clipped_grad_norms"),
-            loss_aux=aux_dict.get("loss_aux"),
+            values=aux_dict.get("values"),
+            norms=norms,
+            clipped_norms=aux_dict.get("clipped_norms"),
+            value_aux=aux_dict.get("value_aux"),
             clipping_rate=rate,
             batch_size=batch_size,
         )

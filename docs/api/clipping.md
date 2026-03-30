@@ -22,8 +22,8 @@ differential privacy.
 
 ### Auxiliary Output Types
 
-- **`ClippedGradAux`** — Per-example `loss_values`, `grad_norms`, `clipped_grad_norms` (from `clipped_grad`).
-- **`ClippedFunAux`** — Per-example `loss_values`, `grad_norms`, `clipped_grad_norms`, `loss_aux` (from `clipped_fun`).
+- **`ClippedGradAux`** — Per-example `loss_values`, `grad_norms`, `clipped_grad_norms`, `loss_aux` (from `clipped_grad`).
+- **`ClippedFunAux`** — Per-example `values`, `norms`, `clipped_norms`, `value_aux` (from `clipped_fun`).
 - **`AdaptiveClippedGradAux`** — Extends `ClippedGradAux` with `clipping_rate` (from `adaptive_clipped_grad`).
 
 ### Distributed Sync Helpers
