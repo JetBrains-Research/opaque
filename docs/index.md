@@ -15,7 +15,7 @@ to a maximum L2 norm, and sums the result.
 from opaque import clipped_grad
 
 grad_fn, clip_state = clipped_grad(
-    loss_fn, l2_clip_norm=1.0, argnums=0, batch_argnums=1,
+    loss_fn, clipping_norm=1.0, argnums=0, batch_argnums=1,
     normalize_by=batch_size,
 )
 grads, clip_state = grad_fn(params, batch, state=clip_state)

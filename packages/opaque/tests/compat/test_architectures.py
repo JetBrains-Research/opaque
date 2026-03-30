@@ -54,7 +54,7 @@ class TestMultiArchitectureCompatibility:
             return outputs.loss
 
         grad_fn, clip_state = clipped_grad(
-            per_example_loss, argnums=0, batch_argnums=(2, 3, 4), l2_clip_norm=1.0
+            per_example_loss, argnums=0, batch_argnums=(2, 3, 4), clipping_norm=1.0
         )
         grads, _ = grad_fn(
             trainable, frozen, input_ids, attention_mask, labels, state=clip_state
@@ -99,7 +99,7 @@ class TestMultiArchitectureCompatibility:
             return outputs.loss
 
         grad_fn, clip_state = clipped_grad(
-            per_example_loss, argnums=0, batch_argnums=(2, 3, 4), l2_clip_norm=1.0
+            per_example_loss, argnums=0, batch_argnums=(2, 3, 4), clipping_norm=1.0
         )
         grads, _ = grad_fn(
             trainable, frozen, input_ids, attention_mask, labels, state=clip_state

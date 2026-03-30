@@ -1,34 +1,26 @@
 """Per-example gradient clipping for differential privacy."""
 
 from collections.abc import Callable
-from typing import Any, NamedTuple
+from dataclasses import dataclass
 
 import torch
 from torch.func import grad_and_value
 
 from opaque.clipping._helpers import normalize_fun_to_return_aux, normalize_to_tuple
-from opaque.clipping.clipped_fun import clipped_fun
+from opaque.clipping.clipped_fun import ClippedFunAux, clipped_fun
 from opaque.clipping.types import FixedClipState
 
 
-class ClippedGradAux(NamedTuple):
-    """Loss-aware auxiliary outputs from clipped_grad.
+@dataclass(frozen=True)
+class ClippedGradAux(ClippedFunAux):
+    """Diagnostic outputs from clipped_grad.
 
-    Attributes:
-        loss_values: Per-example loss values (if return_aux=True).
-        grad_norms: Per-example gradient L2 norms before clipping (if return_aux=True).
-        clipped_grad_norms: Per-example gradient L2 norms after clipping (if return_aux=True).
-        loss_aux: Per-example auxiliary outputs from loss function (if has_aux=True).
-        clipping_norm: The L2 clipping norm used for this computation.
-        clipping_rate: Fraction of per-example gradients that were clipped.
+    All fields are diagnostic — they reflect pre-noise, pre-aggregation
+    values and must not be fed back into private computation.  Use
+    ``ClipState.sensitivity`` for noise calibration.
+
+    Inherits all fields from :class:`ClippedFunAux`.
     """
-
-    loss_values: Any | None
-    grad_norms: Any | None
-    clipped_grad_norms: Any | None
-    loss_aux: Any | None
-    clipping_norm: float
-    clipping_rate: float | None
 
 
 def _validate_static_args(argnums, batch_argnums, normalize_by):
@@ -56,7 +48,7 @@ def clipped_grad(
     argnums: int | tuple[int, ...] = 0,
     has_aux: bool = False,
     *,
-    l2_clip_norm: float,
+    clipping_norm: float,
     normalize_by: float = 1.0,
     batch_argnums: int | tuple[int, ...] = 1,
     return_aux: bool = False,
@@ -72,7 +64,7 @@ def clipped_grad(
     basis before summation. It computes the gradient of `loss_fn` with respect to
     `argnums`, calculates the L2 norm of the gradient for each example slice
     along the first axis of the `batch_argnums` args, clips each per-example
-    gradient to have a norm of at most `l2_clip_norm`, and finally sums these
+    gradient to have a norm of at most `clipping_norm`, and finally sums these
     clipped gradients.
 
     Non-grad outputs of the returned function (aux) may optionally be returned
@@ -83,14 +75,14 @@ def clipped_grad(
         >>> import torch
         >>> from opaque.clipping import clipped_grad
         >>> f = lambda param, data: 0.5 * ((data - param) ** 2).mean()
-        >>> g, clip_state = clipped_grad(f, l2_clip_norm=float('inf'))
+        >>> g, clip_state = clipped_grad(f, clipping_norm=float('inf'))
         >>> result, clip_state = g(torch.tensor(3.0), torch.tensor([0.0, 7.0, -2.0]), state=clip_state)
         >>> result
         tensor(1.3333)
 
     Example Usage (with Auxiliary Output):
         >>> g, clip_state = clipped_grad(
-        ...     f, l2_clip_norm=float('inf'), return_aux=True
+        ...     f, clipping_norm=float('inf'), return_aux=True
         ... )
         >>> (_, aux), clip_state = g(torch.tensor(3.0), torch.tensor([0.0, 7.0, -2.0]), state=clip_state)
         >>> aux.loss_values
@@ -102,8 +94,8 @@ def clipped_grad(
         For the gradient output:
           The L2 sensitivity of the returned function with respect to the batch
           arguments (specified by `batch_argnums`) under add/remove or zero-out
-          differential privacy definitions is guaranteed to be `l2_clip_norm`.
-          Under replace-one DP, the sensitivity is doubled (2 * `l2_clip_norm`).
+          differential privacy definitions is guaranteed to be `clipping_norm`.
+          Under replace-one DP, the sensitivity is doubled (2 * `clipping_norm`).
         All auxiliary outputs (loss_values, grad_norms) are per-example. This
           function guarantees that per-example outputs only depend on the data for the
           same example. This allows maximum flexibility for the caller to aggregate
@@ -120,18 +112,18 @@ def clipped_grad(
             The auxiliary data `loss_aux` will be returned by the transformed function.
             Exercise caution when using this as no DP sensitivity guarantees are
             provided for the auxiliary data.
-        l2_clip_norm: The maximum L2 norm for each per-example gradient. Gradients
+        clipping_norm: The maximum L2 norm for each per-example gradient. Gradients
             with a norm larger than this value will be scaled down.
         normalize_by: Divide the clipped sum by this constant before returning.
             Set to expected batch size to produce averaged gradients with
-            sensitivity = clip_norm / normalize_by.
+            sensitivity = clipping_norm / normalize_by.
         batch_argnums: Specifies which argument(s) of `loss_fn` contain the batch
             dimension (usually the data and labels). Can be an integer or a sequence
             of integers. All arguments specified here must have the same size along
             their first dimension (the batch dimension). The default value of 1 assumes
             the signature of loss_fn is `loss_fn(params, batch)`.
         return_aux: If True, the transformed function will also return a per-example
-            aux NamedTuple containing loss values, gradient norms, and loss aux.
+            aux dataclass containing loss values, gradient norms, and loss aux.
         pre_clipping_transform: An optional function to apply to the per-example
             gradients before clipping. The function should consume the gradient pytree
             for a single example and return a new pytree (possibly with different
@@ -153,7 +145,7 @@ def clipped_grad(
           If auxiliary outputs are requested, returns: (clipped_grads, grad_aux), new_state
         - clip_state: Initial FixedClipState containing sensitivity information
 
-        The grad_aux output (when requested) is a ClippedGradAux named tuple with fields:
+        The grad_aux output (when requested) is a ClippedGradAux dataclass with fields:
             - loss_values: Per-example function values (if return_aux=True)
             - grad_norms: Per-example gradient norms (if return_aux=True)
             - loss_aux: Per-example auxiliary data (if has_aux=True)
@@ -183,7 +175,7 @@ def clipped_grad(
         grad_fn,
         has_aux=return_aux or _force_grad_norms,
         batch_argnums=batch_argnums,
-        l2_clip_norm=l2_clip_norm,
+        clipping_norm=clipping_norm,
         normalize_by=normalize_by,
         return_aux=return_aux or _force_grad_norms,
         microbatch_size=microbatch_size,
@@ -191,7 +183,7 @@ def clipped_grad(
     )
 
     # clipped_grad_fn is now a callable, clip_state is a FixedClipState
-    # Wrap the result to convert dict to ClippedGradAux
+    # Wrap the result to convert ClippedFunAux to ClippedGradAux
     if not return_aux:
         # No aux, return wrapped directly with state-passing signature
         def grad_fn_wrapper(*args, state, **kwargs):
@@ -204,8 +196,8 @@ def clipped_grad(
                         grad_norms=aux.grad_norms,
                         clipped_grad_norms=aux.clipped_grad_norms,
                         loss_aux=None,
-                        clipping_norm=l2_clip_norm,
-                        clipping_rate=(aux.grad_norms > l2_clip_norm).float().mean().item() if aux.grad_norms is not None else None,
+                        clipping_rate=aux.clipping_rate,
+                        batch_size=aux.batch_size,
                     )
                     return (clipped_grads, grad_aux), returned_state
                 return result, returned_state
@@ -215,7 +207,7 @@ def clipped_grad(
 
         return grad_fn_wrapper, clip_state
     else:
-        # Need to convert aux_dict to ClippedGradAux
+        # Need to convert ClippedFunAux to ClippedGradAux
         def grad_fn_wrapper(*args, state, **kwargs):
             (clipped_grads, aux), returned_state = clipped_grad_fn(
                 *args, state=state, **kwargs
@@ -225,8 +217,8 @@ def clipped_grad(
                 grad_norms=aux.grad_norms,
                 clipped_grad_norms=aux.clipped_grad_norms,
                 loss_aux=aux.loss_aux,
-                clipping_norm=l2_clip_norm,
-                clipping_rate=(aux.grad_norms > l2_clip_norm).float().mean().item() if aux.grad_norms is not None else None,
+                clipping_rate=aux.clipping_rate,
+                batch_size=aux.batch_size,
             )
             return (clipped_grads, grad_aux), returned_state
 

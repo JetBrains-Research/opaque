@@ -60,7 +60,7 @@ batch_size = 256
 
 # DP components
 grad_fn, clip_state = clipped_grad(
-    loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2),
+    loss_fn, clipping_norm=1.0, batch_argnums=(1, 2),
     normalize_by=batch_size,
 )
 noise_fn, noise_state = gaussian_noise(
@@ -164,7 +164,7 @@ from opaque.random import key
 grad_fn, clip_state = adaptive_clipped_grad(
     loss_fn,
     batch_argnums=(1, 2),
-    initial_clip_norm=1.0,
+    initial_clipping_norm=1.0,
     normalize_by=batch_size,
     key=key(7),
 )
@@ -186,12 +186,12 @@ noise_state = sync(noise_state)
 
 `sync()` auto-dispatches based on the type of the state object. For
 `AdaptiveClipState`, it aggregates `num_clipped` and `total` across ranks
-(sum), recomputes the global clipping rate, and updates `clip_norm`. After
+(sum), recomputes the global clipping rate, and updates `clipping_norm`. After
 the call, `clip_state.sensitivity` is identical on every device.
 
 For fixed clipping (`clipped_grad`), the state is deterministic and does
 not need synchronization. You can optionally validate with
-`sync(clip_state)`, which asserts that `clip_norm` matches across
+`sync(clip_state)`, which asserts that `clipping_norm` matches across
 ranks and raises `RuntimeError` if it does not.
 
 ## Poisson sampling
@@ -281,8 +281,8 @@ following types are registered:
 
 | Type | Behavior |
 |------|----------|
-| `FixedClipState` | Assert `clip_norm` matches across ranks |
-| `AdaptiveClipState` | Aggregate counts, recompute global clipping rate, update `clip_norm` |
+| `FixedClipState` | Assert `clipping_norm` matches across ranks |
+| `AdaptiveClipState` | Aggregate counts, recompute global clipping rate, update `clipping_norm` |
 | `ClippedFunAux`, `ClippedGradAux`, `AdaptiveClippedGradAux` | Gather aux tensors across ranks |
 | `GaussianNoiseState` | Assert seed and step counter match across ranks |
 | `MFNoiseState` | Assert seed and step counter match for MF noise |

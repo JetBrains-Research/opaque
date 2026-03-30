@@ -23,7 +23,7 @@ grad_fn, clip_state = clipped_grad(
     loss_fn,
     argnums=0,             # differentiate w.r.t. first argument (params)
     batch_argnums=(1, 2),  # second and third arguments are batched
-    l2_clip_norm=1.0,
+    clipping_norm=1.0,
     normalize_by=batch_size,
 )
 
@@ -36,7 +36,7 @@ grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
    to the argument at position `argnums`.
 2. `torch.func.vmap` vectorizes this over the batch dimension of the arguments
    at positions `batch_argnums`, producing one gradient per example.
-3. Each per-example gradient is clipped to L2 norm at most `l2_clip_norm`.
+3. Each per-example gradient is clipped to L2 norm at most `clipping_norm`.
 4. The clipped gradients are summed across the batch.
 
 The returned `clip_state` is a `FixedClipState` containing the clip norm
@@ -49,10 +49,10 @@ used to calibrate noise.
 | `loss_fn` | `Callable` | required | Per-example loss function. Must return a scalar (or `(scalar, aux)` if `has_aux=True`). |
 | `argnums` | `int \| tuple[int, ...]` | `0` | Which arguments to differentiate. |
 | `has_aux` | `bool` | `False` | If True, `loss_fn` returns `(loss, aux)`. The aux data is returned per-example. |
-| `l2_clip_norm` | `float` | required | Maximum L2 norm for per-example gradients. |
+| `clipping_norm` | `float` | required | Maximum L2 norm for per-example gradients. |
 | `batch_argnums` | `int \| tuple[int, ...]` | `1` | Which arguments have a batch dimension. |
 | `microbatch_size` | `int \| None` | `None` | Process batch in chunks to reduce memory. |
-| `normalize_by` | `float` | `1.0` | Divide the clipped sum and sensitivity by this constant. Set to expected batch size to get averaged gradients with sensitivity = `clip_norm / batch_size`. |
+| `normalize_by` | `float` | `1.0` | Divide the clipped sum and sensitivity by this constant. Set to expected batch size to get averaged gradients with sensitivity = `clipping_norm / batch_size`. |
 | `pre_clipping_transform` | `Callable` | identity | Transform applied to each per-example gradient before clipping. |
 | `dtype` | `torch.dtype \| None` | `None` | Accumulation dtype (e.g., float32 for float16 inputs). |
 | `return_aux` | `bool` | `False` | Return per-example diagnostics. |
@@ -63,7 +63,7 @@ used to calibrate noise.
 through each call:
 
 ```python
-grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=1)
+grad_fn, clip_state = clipped_grad(loss_fn, clipping_norm=1.0, batch_argnums=1)
 
 for batch in dataloader:
     grads, clip_state = grad_fn(params, batch, state=clip_state)
@@ -82,7 +82,7 @@ example is added, removed, or replaced. Noise is calibrated to this value.
 
 ```python
 sensitivity = clip_state.sensitivity
-# With l2_clip_norm=1.0, normalize_by=32: sensitivity = 1.0 / 32
+# With clipping_norm=1.0, normalize_by=32: sensitivity = 1.0 / 32
 
 noise_fn, noise_state = gaussian_noise(
     stddev=noise_multiplier * sensitivity, key=key(42),
@@ -95,7 +95,7 @@ Set `return_aux=True` to get per-example gradient norms and loss values:
 
 ```python
 grad_fn, clip_state = clipped_grad(
-    loss_fn, l2_clip_norm=1.0, batch_argnums=1, return_aux=True,
+    loss_fn, clipping_norm=1.0, batch_argnums=1, return_aux=True,
 )
 
 (grads, aux), clip_state = grad_fn(params, batch, state=clip_state)
@@ -103,11 +103,11 @@ grad_fn, clip_state = clipped_grad(
 # aux.clipped_grad_norms: per-example L2 norms after clipping
 # aux.loss_values: per-example loss values
 # aux.clipping_norm: the L2 clip norm used
+# aux.batch_size: number of examples in the batch
 ```
 
-`adaptive_clipped_grad` returns `AdaptiveClippedGradAux` instead, which has
-a `clipping_rate` field (fraction of gradients clipped) instead of
-`clipping_norm`.
+`adaptive_clipped_grad` returns `AdaptiveClippedGradAux` instead, which adds
+a `clipping_rate` field (fraction of gradients clipped).
 
 ## `clipped_fun` -- general-purpose clipping
 
@@ -123,7 +123,7 @@ def per_example_fn(params, example):
 clipped_fn, clip_state = clipped_fun(
     per_example_fn,
     batch_argnums=1,
-    l2_clip_norm=1.0,
+    clipping_norm=1.0,
 )
 
 summed_result, clip_state = clipped_fn(params, batch, state=clip_state)
@@ -141,7 +141,7 @@ not handle batching or summation.
 from opaque import clip_pytree
 
 grads = {"weight": torch.tensor([3.0, 4.0]), "bias": torch.tensor([1.0])}
-clipped_grads, aux = clip_pytree(grads, clip_norm=1.0)
+clipped_grads, aux = clip_pytree(grads, clipping_norm=1.0)
 # aux.norm = 5.099 (original L2 norm)
 # clipped_grads: scaled so global L2 norm <= 1.0
 ```
@@ -162,7 +162,7 @@ the full batch.
 ```python
 grad_fn, clip_state = clipped_grad(
     loss_fn,
-    l2_clip_norm=1.0,
+    clipping_norm=1.0,
     batch_argnums=1,
     microbatch_size=16,  # process 16 examples at a time
 )
@@ -184,7 +184,7 @@ profiler = TrainingProfiler(device)
 for candidate_mb in [64, 32, 16, 8, 4, 2, 1]:
     grad_fn, state = clipped_grad(
         loss_fn,
-        l2_clip_norm=1.0,
+        clipping_norm=1.0,
         batch_argnums=(1, 2),
         microbatch_size=candidate_mb,
     )
@@ -214,14 +214,14 @@ from opaque.random import key
 grad_fn, clip_state = adaptive_clipped_grad(
     loss_fn,
     batch_argnums=1,
-    initial_clip_norm=1.0,
+    initial_clipping_norm=1.0,
     target_quantile=0.5,   # aim for 50% of gradients clipped
     normalize_by=batch_size,
     key=key(7),            # required for quantile noise
 )
 
 grads, clip_state = grad_fn(params, batch, state=clip_state)
-# clip_state.clip_norm has been updated
+# clip_state.clipping_norm has been updated
 ```
 
 ### How adaptive clipping works
@@ -243,15 +243,13 @@ where eta is the `learning_rate` parameter (default 0.2).
 ### State changes
 
 Unlike `clipped_grad`, the state from `adaptive_clipped_grad` **does change**
-on each call. The returned `AdaptiveClipState` contains the updated clip norm,
-step counter, and clipping statistics. Always use the returned state for the
-next call.
+on each call. The returned `AdaptiveClipState` contains the updated clip norm
+and step counter. Always use the returned state for the next call.
 
 ```python
 for batch in dataloader:
     grads, clip_state = grad_fn(params, batch, state=clip_state)
-    # clip_state.clip_norm may have changed
-    # clip_state.clipping_rate shows fraction clipped this step
+    # clip_state.clipping_norm updates each step
 ```
 
 ### Privacy accounting for adaptive clipping
@@ -287,8 +285,8 @@ grads = dist_utils.sum_gradients(grads)
 ```
 
 `sync()` dispatches to `sync_adaptive_clip_state` internally, which aggregates
-`num_clipped` and `total` across ranks, recomputes the global clipping rate,
-and updates `clip_norm` to be identical on every device.
+counts across ranks, recomputes the global clipping rate,
+and updates `next_clipping_norm` to be identical on every device.
 
 ## Loss function requirements
 
@@ -319,7 +317,7 @@ def loss_fn(params, x, y):
     return (pred - y) ** 2
 
 grad_fn, clip_state = clipped_grad(loss_fn, argnums=0, batch_argnums=(1, 2),
-                                   l2_clip_norm=1.0)
+                                   clipping_norm=1.0)
 ```
 
 ### Separating trainable and frozen parameters
@@ -336,7 +334,7 @@ def loss_fn(trainable_params, input_ids, labels):
     return out.loss
 
 grad_fn, clip_state = clipped_grad(loss_fn, argnums=0, batch_argnums=(1, 2),
-                                   l2_clip_norm=1.0)
+                                   clipping_norm=1.0)
 ```
 
 Only the trainable parameters receive per-example gradients. Frozen parameters

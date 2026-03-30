@@ -243,7 +243,7 @@ from opaque import clipped_grad
 
 grad_fn, clip_state = clipped_grad(
     loss_fn,
-    l2_clip_norm=1.0,
+    clipping_norm=1.0,
     batch_argnums=1,
     microbatch_size=16,  # process 16 examples at a time
 )
@@ -267,7 +267,7 @@ profiler = TrainingProfiler(device)
 for optimal in [64, 32, 16, 8, 4, 2, 1]:
     grad_fn, clip_state = clipped_grad(
         loss_fn,
-        l2_clip_norm=1.0,
+        clipping_norm=1.0,
         batch_argnums=(1, 2),
         microbatch_size=optimal,
     )
@@ -282,7 +282,7 @@ for optimal in [64, 32, 16, 8, 4, 2, 1]:
 
 grad_fn, clip_state = clipped_grad(
     loss_fn,
-    l2_clip_norm=1.0,
+    clipping_norm=1.0,
     batch_argnums=(1, 2),
     microbatch_size=optimal,
 )
@@ -302,7 +302,7 @@ sum is identical whether the batch is processed in one shot or in chunks:
 grads, state = grad_fn(params, batch_256, state=state)
 
 # Microbatched: vmap over 16 at a time, clip each, sum partials
-grad_fn_mb, state_mb = clipped_grad(loss_fn, l2_clip_norm=1.0,
+grad_fn_mb, state_mb = clipped_grad(loss_fn, clipping_norm=1.0,
                                      batch_argnums=1, microbatch_size=16)
 grads_mb, state_mb = grad_fn_mb(params, batch_256, state=state_mb)
 # grads == grads_mb

@@ -1,7 +1,8 @@
 """Per-example clipping and summing for arbitrary functions."""
 
 from collections.abc import Callable
-from typing import Any, NamedTuple
+from dataclasses import dataclass
+from typing import Any
 
 import torch
 from torch.func import vmap as _vmap
@@ -12,20 +13,31 @@ from opaque.clipping.types import FixedClipState
 from opaque.utils.pytree import global_norm, tree_map
 
 
-class ClippedFunAux(NamedTuple):
-    """Function-level auxiliary outputs from clipped_fun.
+@dataclass(frozen=True)
+class ClippedFunAux:
+    """Diagnostic outputs from clipped_fun.
+
+    All fields are diagnostic — they reflect pre-noise, pre-aggregation
+    values and must not be fed back into private computation.  Use
+    ``ClipState.sensitivity`` for noise calibration.
 
     Fields:
         loss_values: Per-example function values before clipping.
         grad_norms: Per-example L2 norms before clipping.
         clipped_grad_norms: Per-example L2 norms after clipping.
         loss_aux: Per-example auxiliary payload returned by the wrapped function.
+        clipping_rate: Fraction of per-example outputs whose norm exceeded the
+            clipping threshold.  When ``normalize_by > 1`` the denominator is
+            ``normalize_by`` (data-independent) rather than the actual batch size.
+        batch_size: Number of examples in the batch.
     """
 
-    loss_values: Any | None
-    grad_norms: Any | None
-    clipped_grad_norms: Any | None
-    loss_aux: Any | None
+    loss_values: Any | None = None
+    grad_norms: Any | None = None
+    clipped_grad_norms: Any | None = None
+    loss_aux: Any | None = None
+    clipping_rate: float | None = None
+    batch_size: int = 0
 
 
 def _resolve_accumulation_dtype(
@@ -208,7 +220,7 @@ def clipped_fun(
     has_aux: bool = False,
     *,
     batch_argnums: int | tuple[int, ...] = 0,
-    l2_clip_norm: float = 1.0,
+    clipping_norm: float = 1.0,
     normalize_by: float = 1.0,
     return_aux: bool = False,
     microbatch_size: int | None = None,
@@ -221,7 +233,7 @@ def clipped_fun(
 
     Example Usage:
         >>> data = torch.tensor([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
-        >>> clipped_mean, clip_state = clipped_fun(torch.mean, l2_clip_norm=1.0)
+        >>> clipped_mean, clip_state = clipped_fun(torch.mean, clipping_norm=1.0)
         >>> result, clip_state = clipped_mean(data, state=clip_state)
         >>> result
         tensor(5.)
@@ -230,8 +242,8 @@ def clipped_fun(
         For the first function output:
           The L2 sensitivity of the returned function with respect to the batch
           arguments (specified by `batch_argnums`) under add/remove or zero-out
-          differential privacy definitions is guaranteed to be `l2_clip_norm`.
-          Under replace-one DP, the sensitivity is doubled (2 * `l2_clip_norm`).
+          differential privacy definitions is guaranteed to be `clipping_norm`.
+          Under replace-one DP, the sensitivity is doubled (2 * `clipping_norm`).
         Extra auxiliary outputs (aux, norms) are per-example. This function
           guarantees that per-example outputs only depend on the data for the same
           example. This allows maximum flexibility for the caller to aggregate
@@ -247,10 +259,10 @@ def clipped_fun(
         batch_argnums: Specifies which argument(s) of `fun` contain the batch
             dimension. All arguments specified here must have the same size along the
             0th axis.
-        l2_clip_norm: The maximum L2 norm allowed.
+        clipping_norm: The maximum L2 norm allowed.
         normalize_by: Divide the clipped output by this value before returning.
         return_aux: If True, the returned Callable will return a per-example aux
-            NamedTuple containing the original per-example values, per-example norms
+            dataclass containing the original per-example values, per-example norms
             before clipping, and any auxiliary data returned by `fun`.
         microbatch_size: If set, the batch is split up into microbatches of this
             size for memory-efficient processing. Processes each microbatch separately
@@ -289,7 +301,7 @@ def clipped_fun(
             value, aux = fun_with_aux(*args_single, **kwargs)
             clipped_value, norm = clip_pytree(
                 value,
-                clip_norm=l2_clip_norm,
+                clipping_norm=clipping_norm,
             )
             if return_aux:
                 # Build aux dict with clipping metadata
@@ -376,21 +388,29 @@ def clipped_fun(
             return result
 
         aux_dict = aux if isinstance(aux, dict) else {}
+        grad_norms = aux_dict.get("grad_norms")
+        batch_size = grad_norms.numel() if isinstance(grad_norms, torch.Tensor) else 0
+        if isinstance(grad_norms, torch.Tensor) and batch_size > 0:
+            num_clipped = float((grad_norms > clipping_norm).sum().item())
+            denominator = normalize_by if normalize_by > 1.0 else float(batch_size)
+            rate = num_clipped / max(1.0, denominator)
+        else:
+            rate = None
+
         aux = ClippedFunAux(
             loss_values=aux_dict.get("loss_values"),
-            grad_norms=aux_dict.get("grad_norms"),
+            grad_norms=grad_norms,
             clipped_grad_norms=aux_dict.get("clipped_grad_norms"),
             loss_aux=aux_dict.get("loss_aux"),
+            clipping_rate=rate,
+            batch_size=batch_size,
         )
 
         return result, aux
 
-    # Create fixed clip state with raw clip norm and normalize_by
-    clip_norm = l2_clip_norm
-
     # Create fixed clip state
     clip_state = FixedClipState(
-        clip_norm=clip_norm,
+        clipping_norm=clipping_norm,
         normalize_by=normalize_by,
     )
 

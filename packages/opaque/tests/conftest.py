@@ -401,7 +401,7 @@ def run_dp_training_step(
     accum_steps,
     training_steps=3,
     learning_rate=1e-3,
-    l2_clip_norm=1.0,
+    clipping_norm=1.0,
 ):
     """Run DP-SGD training with clipped gradients and gradient accumulation.
 
@@ -415,7 +415,7 @@ def run_dp_training_step(
         accum_steps: Gradient accumulation steps
         training_steps: Number of training steps
         learning_rate: Learning rate
-        l2_clip_norm: L2 clipping norm
+        clipping_norm: L2 clipping norm
 
     Returns:
         tuple: (final_accumulated_grads, final_clip_state)
@@ -460,7 +460,7 @@ def run_dp_training_step(
         per_example_loss,
         argnums=0,
         batch_argnums=(2, 3, 4),
-        l2_clip_norm=l2_clip_norm,
+        clipping_norm=clipping_norm,
     )
 
     state = clip_state

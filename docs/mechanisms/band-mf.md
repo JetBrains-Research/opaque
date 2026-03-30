@@ -197,7 +197,7 @@ result = acc.calibrate(
 # Setup
 key_samp, key_noise = split(key(42), num=2)
 grad_fn, clip_state = clipped_grad(
-    loss_fn, l2_clip_norm=1.0, batch_argnums=1,
+    loss_fn, clipping_norm=1.0, batch_argnums=1,
     normalize_by=batch_size,
 )
 noise_fn, noise_state = band_mf_noise(

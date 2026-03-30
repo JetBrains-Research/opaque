@@ -38,7 +38,7 @@ cost of 16x more sequential computation.
 ```python
 grad_fn, clip_state = clipped_grad(
     loss_fn,
-    l2_clip_norm=1.0,
+    clipping_norm=1.0,
     batch_argnums=(1, 2),
     microbatch_size=16,  # process 16 examples at a time
 )
@@ -68,7 +68,7 @@ from opaque.profiling import StepTimer, TrainingProfiler, reset_peak_memory
 def try_microbatch(candidate_mb: int) -> float:
     grad_fn, clip_state = clipped_grad(
         loss_fn,
-        l2_clip_norm=1.0,
+        clipping_norm=1.0,
         batch_argnums=(1, 2),
         microbatch_size=candidate_mb,
     )

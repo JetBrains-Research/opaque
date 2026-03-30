@@ -16,17 +16,17 @@ Fields:
 
 def clip_pytree(
     pytree: dict[str, torch.Tensor],
-    clip_norm: float,
+    clipping_norm: float,
     return_zero: bool = False,
 ) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
     """Clip a PyTree of tensors to a maximum L2 norm.
 
     NaN and Inf values in the input are replaced with zeros before clipping.
-    This is vmap-compatible and DP-safe (the clipped output has norm <= clip_norm).
+    This is vmap-compatible and DP-safe (the clipped output has norm <= clipping_norm).
 
     Args:
         pytree: Dictionary of tensors to clip
-        clip_norm: Maximum L2 norm (non-negative, or inf for no clipping)
+        clipping_norm: Maximum L2 norm (non-negative, or inf for no clipping)
         return_zero: If True, the output PyTree is guaranteed to be zero no matter
             what the inputs are. Does not influence the formal guarantees but useful
             for privacy amplification via padding (see https://arxiv.org/pdf/2411.04205).
@@ -36,8 +36,8 @@ def clip_pytree(
             - norm: The L2 norm of the original (unclipped) pytree
 
     Edge cases:
-        - clip_norm=0: Returns zeros
-        - clip_norm=inf: No clipping (passthrough)
+        - clipping_norm=0: Returns zeros
+        - clipping_norm=inf: No clipping (passthrough)
         - pytree_norm=0: Returns unchanged
         - NaN/Inf values: Replaced with zeros before clipping
         - return_zero=True: Returns zeros regardless of other parameters
@@ -58,13 +58,13 @@ def clip_pytree(
     orig_norm = global_norm(pytree)
 
     # Compute scale factor
-    clip_norm_tensor = torch.tensor(
-        clip_norm, dtype=orig_norm.dtype, device=orig_norm.device
+    clipping_norm_tensor = torch.tensor(
+        clipping_norm, dtype=orig_norm.dtype, device=orig_norm.device
     )
-    clip_norm_tensor = torch.clamp(clip_norm_tensor, min=0.0)
+    clipping_norm_tensor = torch.clamp(clipping_norm_tensor, min=0.0)
 
-    # Basic clipping: scale = min(1, clip_norm / orig_norm)
-    scale = torch.minimum(torch.tensor(1.0), clip_norm_tensor / orig_norm)
+    # Basic clipping: scale = min(1, clipping_norm / orig_norm)
+    scale = torch.minimum(torch.tensor(1.0), clipping_norm_tensor / orig_norm)
 
     # Handle norm=0 or NaN: set scale to 0
     scale = torch.where(torch.isfinite(scale), scale, torch.tensor(0.0))

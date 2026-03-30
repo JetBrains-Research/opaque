@@ -53,7 +53,7 @@ class TestRealModelsSingleGPU:
             accum_steps=config["accum_steps"],
             training_steps=3,
             learning_rate=1e-3,
-            l2_clip_norm=1.0,
+            clipping_norm=1.0,
         )
 
         # Verify training produced gradients

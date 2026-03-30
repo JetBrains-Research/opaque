@@ -162,7 +162,7 @@ def _run_ddp_scaling_test(
             grad_loss_fn,
             argnums=0,
             batch_argnums=(2, 3, 4),
-            l2_clip_norm=L2_CLIP_NORM,
+            clipping_norm=L2_CLIP_NORM,
         )
 
         state = clip_state
@@ -282,7 +282,7 @@ def _run_ddp_quick_sanity(rank, world_size, port):
             per_example_loss,
             argnums=0,
             batch_argnums=(2, 3, 4),
-            l2_clip_norm=1.0,
+            clipping_norm=1.0,
         )
 
         state = clip_state

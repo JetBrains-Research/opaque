@@ -58,7 +58,7 @@ from opaque.random import key
 
 # Gradient pipeline
 grad_fn, clip_state = clipped_grad(
-    loss_fn, l2_clip_norm=1.0, batch_argnums=1,
+    loss_fn, clipping_norm=1.0, batch_argnums=1,
     normalize_by=batch_size,
 )
 noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_state.sensitivity, key=key(42))

@@ -304,7 +304,7 @@ The sensitivity computation must account for this:
 noise_fn, state = blt_mf_noise(
     grad_template,
     n_steps=5000,
-    stddev=noise_multiplier * clip_norm,
+    stddev=noise_multiplier * clipping_norm,
     min_sep=100,            # minimum steps between participations
     max_participations=5,   # 5 epochs
     key=key(42),

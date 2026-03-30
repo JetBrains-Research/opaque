@@ -51,7 +51,7 @@ class TestQuantileNoise:
         # Create two identical setups
         grad_fn1, state1 = adaptive_clipped_grad(
             loss_fn,
-            initial_clip_norm=1.0,
+            initial_clipping_norm=1.0,
             fraction_noise_std=0.1,
             key=key(42),
             batch_argnums=(1, 2),
@@ -59,7 +59,7 @@ class TestQuantileNoise:
 
         grad_fn2, state2 = adaptive_clipped_grad(
             loss_fn,
-            initial_clip_norm=1.0,
+            initial_clipping_norm=1.0,
             fraction_noise_std=0.1,
             key=key(42),
             batch_argnums=(1, 2),
@@ -76,7 +76,7 @@ class TestQuantileNoise:
             _, state2 = grad_fn2(params, batch_x, batch_y, state=state2)
 
             # Clip norms should be identical (same noise sequence)
-            assert state1.next_clip_norm == state2.next_clip_norm
+            assert state1.next_clipping_norm == state2.next_clipping_norm
             assert state1.step == state2.step
 
     def test_quantile_noise_different_keys_produce_different_paths(self):
@@ -95,7 +95,7 @@ class TestQuantileNoise:
         # Create two setups with different keys
         grad_fn1, state1 = adaptive_clipped_grad(
             loss_fn,
-            initial_clip_norm=1.0,
+            initial_clipping_norm=1.0,
             fraction_noise_std=1.0,  # Very large noise to increase chance of divergence
             key=key(42),
             batch_argnums=(1, 2),
@@ -103,14 +103,14 @@ class TestQuantileNoise:
 
         grad_fn2, state2 = adaptive_clipped_grad(
             loss_fn,
-            initial_clip_norm=1.0,
+            initial_clipping_norm=1.0,
             fraction_noise_std=1.0,
             key=key(99),  # Different key
             batch_argnums=(1, 2),
         )
 
         # Verify initial states have different keys
-        assert state1.key != state2.key
+        assert state1._key != state2._key
 
         # Same data
         params = torch.randn(10, requires_grad=False)
@@ -123,7 +123,7 @@ class TestQuantileNoise:
             _, state2 = grad_fn2(params, batch_x, batch_y, state=state2)
 
         # Keys should still be different after training
-        assert state1.key != state2.key
+        assert state1._key != state2._key
 
         # With very large noise (1.0), divergence is likely but not guaranteed
         # The important thing is that keys are preserved and affect adaptation
@@ -138,7 +138,7 @@ class TestQuantileNoise:
         # Without noise
         grad_fn_no_noise, state_no_noise = adaptive_clipped_grad(
             loss_fn,
-            initial_clip_norm=1.0,
+            initial_clipping_norm=1.0,
             key=key(0),
             batch_argnums=(1, 2),
         )
@@ -146,7 +146,7 @@ class TestQuantileNoise:
         # With substantial noise (to ensure divergence)
         grad_fn_noise, state_noise = adaptive_clipped_grad(
             loss_fn,
-            initial_clip_norm=1.0,
+            initial_clipping_norm=1.0,
             fraction_noise_std=0.5,  # Increased noise for clear divergence
             key=key(42),
             batch_argnums=(1, 2),
@@ -166,7 +166,7 @@ class TestQuantileNoise:
 
         # Adaptation paths should diverge with high noise
         # With fraction_noise_std=0.5, this should reliably cause different decisions
-        assert state_no_noise.next_clip_norm != state_noise.next_clip_norm
+        assert state_no_noise.next_clipping_norm != state_noise.next_clipping_norm
 
     def test_state_preserves_key_and_step(self):
         """Test that state correctly preserves key and step counter."""
@@ -177,14 +177,14 @@ class TestQuantileNoise:
 
         grad_fn, state = adaptive_clipped_grad(
             loss_fn,
-            initial_clip_norm=1.0,
+            initial_clipping_norm=1.0,
             fraction_noise_std=0.1,
             key=key(42),
             batch_argnums=(1, 2),
         )
 
         # Initial state
-        assert state.key == key(42)
+        assert state._key == key(42)
         assert state.step == 0
 
         # Run a few steps
@@ -194,7 +194,7 @@ class TestQuantileNoise:
 
         for i in range(1, 6):
             _, state = grad_fn(params, batch_x, batch_y, state=state)
-            assert state.key == key(42)  # Key unchanged
+            assert state._key == key(42)  # Key unchanged
             assert state.step == i  # Step incremented
 
     def test_quantile_noise_with_aux_output(self):
@@ -206,7 +206,7 @@ class TestQuantileNoise:
 
         grad_fn, state = adaptive_clipped_grad(
             loss_fn,
-            initial_clip_norm=1.0,
+            initial_clipping_norm=1.0,
             fraction_noise_std=0.1,
             key=key(42),
             return_aux=True,
@@ -226,10 +226,10 @@ class TestQuantileNoise:
 
 
 class TestQuantileNoiseClipNorm:
-    """Tests for clip_norm with quantile noise."""
+    """Tests for clipping_norm with quantile noise."""
 
     def test_clip_norm_unchanged_by_quantile_noise(self):
-        """Test that quantile noise doesn't affect initial clip_norm."""
+        """Test that quantile noise doesn't affect initial clipping_norm."""
 
         def loss_fn(params, x, y):
             pred = x @ params
@@ -238,7 +238,7 @@ class TestQuantileNoiseClipNorm:
         # Without noise
         _, state_no_noise = adaptive_clipped_grad(
             loss_fn,
-            initial_clip_norm=1.0,
+            initial_clipping_norm=1.0,
             key=key(0),
             batch_argnums=(1, 2),
         )
@@ -246,18 +246,18 @@ class TestQuantileNoiseClipNorm:
         # With noise
         _, state_noise = adaptive_clipped_grad(
             loss_fn,
-            initial_clip_norm=1.0,
+            initial_clipping_norm=1.0,
             fraction_noise_std=0.1,
             key=key(42),
             batch_argnums=(1, 2),
         )
 
-        # clip_norm should be identical (same initial_clip_norm)
-        assert state_no_noise.clip_norm == state_noise.clip_norm
-        assert state_no_noise.clip_norm == 1.0
+        # clipping_norm should be identical (same initial_clipping_norm)
+        assert state_no_noise.clipping_norm == state_noise.clipping_norm
+        assert state_no_noise.clipping_norm == 1.0
 
     def test_clip_norm_matches_initial(self):
-        """Test clip_norm equals initial_clip_norm before any steps."""
+        """Test clipping_norm equals initial_clipping_norm before any steps."""
 
         def loss_fn(params, x, y):
             pred = x @ params
@@ -265,10 +265,10 @@ class TestQuantileNoiseClipNorm:
 
         _, state = adaptive_clipped_grad(
             loss_fn,
-            initial_clip_norm=5.0,
+            initial_clipping_norm=5.0,
             fraction_noise_std=0.1,
             key=key(42),
             batch_argnums=(1, 2),
         )
 
-        assert state.clip_norm == 5.0
+        assert state.clipping_norm == 5.0

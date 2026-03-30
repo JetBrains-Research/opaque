@@ -28,7 +28,7 @@ class TestSaveOnCpuWithClippedGrad:
             return (x @ w).relu().sum()
 
         grad_fn, state = clipped_grad(
-            loss_fn, argnums=0, batch_argnums=(1,), l2_clip_norm=1.0
+            loss_fn, argnums=0, batch_argnums=(1,), clipping_norm=1.0
         )
 
         x = torch.randn(4, 32, device="cuda")
@@ -57,7 +57,7 @@ class TestSaveOnCpuWithClippedGrad:
             return h.sum()
 
         grad_fn, state = clipped_grad(
-            loss_fn, argnums=(0, 1), batch_argnums=(2,), l2_clip_norm=1.0
+            loss_fn, argnums=(0, 1), batch_argnums=(2,), clipping_norm=1.0
         )
 
         x = torch.randn(4, 32, device="cuda")
@@ -79,7 +79,7 @@ class TestSaveOnCpuWithClippedGrad:
             return (x @ w).relu().sum()
 
         grad_fn, state = clipped_grad(
-            loss_fn, argnums=0, batch_argnums=(1,), l2_clip_norm=1.0
+            loss_fn, argnums=0, batch_argnums=(1,), clipping_norm=1.0
         )
 
         x = torch.randn(4, 32, device="cuda")
@@ -115,7 +115,7 @@ class TestSaveOnCpuWithClippedGrad:
             loss_fn,
             argnums=0,
             batch_argnums=(1,),
-            l2_clip_norm=1.0,
+            clipping_norm=1.0,
             microbatch_size=None,
         )
         x = torch.randn(8, 4096, d, device="cuda")

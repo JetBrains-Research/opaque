@@ -391,10 +391,10 @@ def parse_args():
         "(uses parallel_poisson accounting).",
     )
     dp_group.add_argument(
-        "--clip-norm",
+        "--clipping-norm",
         type=float,
         default=1.0,
-        help="Clip norm (fixed mode) or starting clip norm (adaptive mode)",
+        help="Clipping norm (fixed mode) or starting clipping norm (adaptive mode)",
     )
     dp_group.add_argument(
         "--adaptive-clipping",
@@ -409,10 +409,10 @@ def parse_args():
         help="Target clipping rate for adaptive clipping",
     )
     dp_group.add_argument(
-        "--clip-norm-max",
+        "--clipping-norm-max",
         type=float,
         default=10.0,
-        help="Maximum clip norm in adaptive mode",
+        help="Maximum clipping norm in adaptive mode",
     )
     dp_group.add_argument(
         "--microbatch-size",
@@ -966,7 +966,7 @@ def main():
     print("\nSetting up DP-SGD training...")
     print(f"  Optimizer: {args.optimizer}")
     print(f"  Learning rate: {args.learning_rate}")
-    print(f"  Clip norm: {args.clip_norm}")
+    print(f"  Clip norm: {args.clipping_norm}")
     print(f"  Noise mechanism: {args.noise_mechanism}")
     if args.noise_mechanism != "gaussian":
         print(f"  Noise radius: {args.noise_radius}σ")
@@ -989,9 +989,9 @@ def main():
             per_example_loss_fn,
             argnums=0,
             batch_argnums=(1,),
-            initial_clip_norm=args.clip_norm,
+            initial_clipping_norm=args.clipping_norm,
             target_quantile=1.0 - args.target_clip_rate,
-            clip_norm_max=args.clip_norm_max,
+            clipping_norm_max=args.clipping_norm_max,
             microbatch_size=args.microbatch_size,
             return_aux=True,
             key=key(args.seed),
@@ -1002,7 +1002,7 @@ def main():
             per_example_loss_fn,
             argnums=0,
             batch_argnums=(1,),
-            l2_clip_norm=args.clip_norm,
+            clipping_norm=args.clipping_norm,
             normalize_by=args.batch_size,
             microbatch_size=args.microbatch_size,
             return_aux=True,
@@ -1085,7 +1085,7 @@ def main():
 
     accounting = Accountant()
 
-    # Noise function — created once; per-call stddev override tracks adaptive clip_norm.
+    # Noise function — created once; per-call stddev override tracks adaptive clipping_norm.
     noise_fn, noise_state = make_noise(
         stddev=noise_multiplier * clip_state.sensitivity, key=key(args.seed),
     )
@@ -1115,7 +1115,7 @@ def main():
             "eval/loss": initial_eval_loss,
             "privacy/epsilon": initial_epsilon,
             "train/noise_std": initial_noise_std,
-            "train/clip_norm": args.clip_norm,
+            "train/clipping_norm": args.clipping_norm,
         }, step=0)
 
     for epoch in range(args.num_epochs):
@@ -1181,12 +1181,12 @@ def main():
 
             # === Step metrics ===
             avg_loss = aux.loss_values.mean().item()
-            clip_norm = clip_state.clip_norm
+            clipping_norm = clip_state.clipping_norm
             clip_rate = aux.clipping_rate
             mean_grad_norm = aux.grad_norms.mean().item()
 
             losses.append(avg_loss)
-            clip_norms_history.append(clip_norm)
+            clip_norms_history.append(clipping_norm)
             clip_rates_history.append(clip_rate)
 
             global_step += 1
@@ -1200,7 +1200,7 @@ def main():
                 if use_wandb:
                     wandb.log({
                         "train/loss": avg_loss,
-                        "train/clip_norm": clip_norm,
+                        "train/clipping_norm": clipping_norm,
                         "train/clip_rate": clip_rate,
                         "train/grad_norm_mean": mean_grad_norm,
                         "train/clipped_grad_norm_mean": aux.clipped_grad_norms.mean().item(),
@@ -1215,7 +1215,7 @@ def main():
                 print(
                     f"Step {global_step:4d} [E{epoch + 1} S{step_idx + 1:3d}/{expected_steps_per_epoch:3d}] | "
                     f"Loss: {avg_loss:.4f} | "
-                    f"Clip: norm={clip_norm:.3f}, rate={clip_rate:.1%} | "
+                    f"Clip: norm={clipping_norm:.3f}, rate={clip_rate:.1%} | "
                     f"GradNorm: μ={mean_grad_norm:.3f} | "
                     f"Noise: σ={noise_stddev:.4f} | "
                     f"Time: {perf['step_time_sec']:.2f}s | Mem: {perf['memory_peak_gb']:.1f}GB"
@@ -1269,14 +1269,14 @@ def main():
 
     if args.adaptive_clipping:
         print("\nAdaptive clipping:")
-        print(f"  Initial clip norm: {args.clip_norm:.3f}")
-        print(f"  Final clip norm: {clip_state.clip_norm:.3f}")
+        print(f"  Initial clip norm: {args.clipping_norm:.3f}")
+        print(f"  Final clip norm: {clip_state.clipping_norm:.3f}")
         print(
             f"  Clip norm range: [{min(clip_norms_history):.3f}, {max(clip_norms_history):.3f}]"
         )
     else:
         print("\nFixed clipping:")
-        print(f"  Clip norm: {args.clip_norm:.3f}")
+        print(f"  Clip norm: {args.clipping_norm:.3f}")
         print(
             f"  Average clip rate: {sum(clip_rates_history) / len(clip_rates_history):.2%}"
         )

@@ -196,7 +196,7 @@ class TestCheckpointWithClippedGrad:
             return fmodel(all_params, ids, labels=lbls).loss
 
         grad_fn, clip_state = clipped_grad(
-            loss_fn, argnums=0, batch_argnums=(2, 3), l2_clip_norm=1.0
+            loss_fn, argnums=0, batch_argnums=(2, 3), clipping_norm=1.0
         )
         grads, _ = grad_fn(trainable, frozen, input_ids, labels, state=clip_state)
 
@@ -241,7 +241,7 @@ class TestCheckpointWithClippedGrad:
             return fmodel_a({**fp, **tp}, ids, labels=lbls).loss
 
         grad_fn_a, state_a = clipped_grad(
-            loss_a, argnums=0, batch_argnums=(2, 3), l2_clip_norm=float("inf")
+            loss_a, argnums=0, batch_argnums=(2, 3), clipping_norm=float("inf")
         )
         grads_a, _ = grad_fn_a(train_a, frozen_a, input_ids, labels, state=state_a)
 
@@ -259,7 +259,7 @@ class TestCheckpointWithClippedGrad:
             return fmodel_b({**fp, **tp}, ids, labels=lbls).loss
 
         grad_fn_b, state_b = clipped_grad(
-            loss_b, argnums=0, batch_argnums=(2, 3), l2_clip_norm=float("inf")
+            loss_b, argnums=0, batch_argnums=(2, 3), clipping_norm=float("inf")
         )
         grads_b, _ = grad_fn_b(train_b, frozen_b, input_ids, labels, state=state_b)
 

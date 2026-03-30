@@ -19,7 +19,7 @@ def test_clipped_grad_validate_args_overlap():
     with pytest.raises(ValueError, match="overlap"):
         clipped_grad(
             loss,
-            l2_clip_norm=1.0,
+            clipping_norm=1.0,
             argnums=0,
             batch_argnums=0,
         )
@@ -34,7 +34,7 @@ def test_clipped_grad_validate_args_empty_batch():
     with pytest.raises(ValueError, match="Batch argnums must not be empty"):
         clipped_grad(
             loss,
-            l2_clip_norm=1.0,
+            clipping_norm=1.0,
             argnums=0,
             batch_argnums=(),
         )
@@ -50,7 +50,7 @@ def test_clipped_grad_basic():
         loss,
         argnums=0,
         batch_argnums=1,
-        l2_clip_norm=10.0,  # High clip norm so no clipping occurs
+        clipping_norm=10.0,  # High clip norm so no clipping occurs
     )
 
     param = torch.tensor(3.0, requires_grad=True)
@@ -75,7 +75,7 @@ def test_clipped_grad_with_pytree_params():
         loss,
         argnums=0,
         batch_argnums=1,
-        l2_clip_norm=10.0,
+        clipping_norm=10.0,
     )
 
     params = {
@@ -103,7 +103,7 @@ def test_clipped_grad_return_grad_norms():
         loss,
         argnums=0,
         batch_argnums=1,
-        l2_clip_norm=10.0,
+        clipping_norm=10.0,
         return_aux=True,
     )
 
@@ -132,7 +132,7 @@ def test_clipped_grad_return_values():
         loss,
         argnums=0,
         batch_argnums=1,
-        l2_clip_norm=10.0,
+        clipping_norm=10.0,
         return_aux=True,
     )
 
@@ -163,7 +163,7 @@ def test_clipped_grad_has_aux():
         argnums=0,
         has_aux=True,
         batch_argnums=1,
-        l2_clip_norm=10.0,
+        clipping_norm=10.0,
         return_aux=True,
     )
 
@@ -193,7 +193,7 @@ def test_clipped_grad_with_normalize_by():
         loss,
         argnums=0,
         batch_argnums=1,
-        l2_clip_norm=10.0,
+        clipping_norm=10.0,
         normalize_by=batch_size,
     )
 
@@ -215,12 +215,12 @@ def test_clipped_grad_actual_clipping():
         return ((data - param) ** 2).mean()
 
     # Small clip norm to force clipping
-    clip_norm = 1.0
+    clipping_norm = 1.0
     grad_fn, clip_state = clipped_grad(
         loss,
         argnums=0,
         batch_argnums=1,
-        l2_clip_norm=clip_norm,
+        clipping_norm=clipping_norm,
         return_aux=True,
     )
 
@@ -230,7 +230,7 @@ def test_clipped_grad_actual_clipping():
     (grad, grad_aux), _ = grad_fn(param, data, state=clip_state)
 
     # Check that some gradients were clipped
-    assert (grad_aux.grad_norms > clip_norm).any(), (
+    assert (grad_aux.grad_norms > clipping_norm).any(), (
         "Expected some gradients to be clipped"
     )
     assert grad_aux.grad_norms.shape == (3,), "Should have 3 per-example norms"
@@ -246,7 +246,7 @@ def test_clipped_grad_preserves_direction():
         loss,
         argnums=0,
         batch_argnums=1,
-        l2_clip_norm=1.0,  # Small clip norm
+        clipping_norm=1.0,  # Small clip norm
         return_aux=True,
     )
 
@@ -285,7 +285,7 @@ def test_clipped_grad_no_clipping_below_threshold():
         loss,
         argnums=0,
         batch_argnums=1,
-        l2_clip_norm=large_clip_norm,
+        clipping_norm=large_clip_norm,
         return_aux=True,
     )
 
@@ -312,7 +312,7 @@ def test_clipped_grad_zero_gradients():
         loss,
         argnums=0,
         batch_argnums=1,
-        l2_clip_norm=1.0,
+        clipping_norm=1.0,
         return_aux=True,
     )
 
@@ -345,7 +345,7 @@ def test_clipped_grad_with_batch_dim():
 
     # Without with_batch_dim: loss receives scalar per-example
     grad_fn, clip_state = clipped_grad(
-        loss_no_batch, argnums=0, batch_argnums=1, l2_clip_norm=10.0
+        loss_no_batch, argnums=0, batch_argnums=1, clipping_norm=10.0
     )
     grad_no_batch, _ = grad_fn(param, data, state=clip_state)
 
@@ -354,7 +354,7 @@ def test_clipped_grad_with_batch_dim():
         with_batch_dim(loss_with_batch, batch_argnums=1),
         argnums=0,
         batch_argnums=1,
-        l2_clip_norm=10.0,
+        clipping_norm=10.0,
     )
     grad_with_batch, _ = grad_fn2(param, data, state=clip_state2)
 
@@ -376,13 +376,13 @@ def test_clipped_grad_microbatching_identical_results():
 
     # Without microbatching
     grad_fn_no_mb, clip_state_no_mb = clipped_grad(
-        loss_fn, argnums=0, batch_argnums=(1, 2), l2_clip_norm=1.0, microbatch_size=None
+        loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0, microbatch_size=None
     )
     grads_no_mb, _ = grad_fn_no_mb(params, x, y, state=clip_state_no_mb)
 
     # With microbatching
     grad_fn_mb, clip_state_mb = clipped_grad(
-        loss_fn, argnums=0, batch_argnums=(1, 2), l2_clip_norm=1.0, microbatch_size=8
+        loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0, microbatch_size=8
     )
     grads_mb, _ = grad_fn_mb(params, x, y, state=clip_state_mb)
 
@@ -410,7 +410,7 @@ def test_clipped_grad_microbatching_with_aux():
         loss_fn_with_aux,
         argnums=0,
         batch_argnums=(1, 2),
-        l2_clip_norm=1.0,
+        clipping_norm=1.0,
         has_aux=True,
         return_aux=True,  # Need to explicitly request aux outputs
         microbatch_size=None,
@@ -424,7 +424,7 @@ def test_clipped_grad_microbatching_with_aux():
         loss_fn_with_aux,
         argnums=0,
         batch_argnums=(1, 2),
-        l2_clip_norm=1.0,
+        clipping_norm=1.0,
         has_aux=True,
         return_aux=True,  # Need to explicitly request aux outputs
         microbatch_size=8,
@@ -469,7 +469,7 @@ def test_clipped_grad_microbatching_with_return_values_and_norms():
         loss_fn,
         argnums=0,
         batch_argnums=(1, 2),
-        l2_clip_norm=1.0,
+        clipping_norm=1.0,
         return_aux=True,
         microbatch_size=None,
     )
@@ -482,7 +482,7 @@ def test_clipped_grad_microbatching_with_return_values_and_norms():
         loss_fn,
         argnums=0,
         batch_argnums=(1, 2),
-        l2_clip_norm=1.0,
+        clipping_norm=1.0,
         return_aux=True,
         microbatch_size=12,
     )
@@ -527,13 +527,13 @@ def test_clipped_grad_microbatching_with_pytree_params():
 
     # Without microbatching
     grad_fn_no_mb, clip_state_no_mb = clipped_grad(
-        loss_fn, argnums=0, batch_argnums=(1, 2), l2_clip_norm=1.0, microbatch_size=None
+        loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0, microbatch_size=None
     )
     grads_no_mb, _ = grad_fn_no_mb(params, x, y, state=clip_state_no_mb)
 
     # With microbatching
     grad_fn_mb, clip_state_mb = clipped_grad(
-        loss_fn, argnums=0, batch_argnums=(1, 2), l2_clip_norm=1.0, microbatch_size=10
+        loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0, microbatch_size=10
     )
     grads_mb, _ = grad_fn_mb(params, x, y, state=clip_state_mb)
 

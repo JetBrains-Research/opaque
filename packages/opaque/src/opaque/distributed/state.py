@@ -270,7 +270,7 @@ def sync_object(
     """Synchronize scalar fields in a dataclass state object across processes.
 
     This is particularly useful for adaptive clipping state where we need to
-    keep clip_norm consistent across all devices.
+    keep clipping_norm consistent across all devices.
 
     Args:
         state: Dataclass instance with scalar fields to synchronize.
@@ -297,20 +297,18 @@ def sync_object(
         >>> import opaque.distributed.state as dist_state
         >>>
         >>> @dataclass
-        >>> class AdaptiveClipState:
-        ...     next_clip_norm: float
+        >>> class TrainingState:
+        ...     next_clipping_norm: float
         ...     step: int
-        ...     clipping_rate: float
+        ...     num_clipped: float
         >>>
-        >>> # Each device has different state after local update
-        >>> state = AdaptiveClipState(next_clip_norm=1.0, step=100, clipping_rate=0.8)
+        >>> state = TrainingState(next_clipping_norm=1.0, step=100, num_clipped=5.0)
         >>>
-        >>> # Synchronize next_clip_norm and clipping_rate (but not step)
+        >>> # Synchronize num_clipped (sum) and next_clipping_norm (mean), but not step
         >>> state = dist_state.sync_object(
         ...     state,
-        ...     field_ops={"next_clip_norm": "mean", "clipping_rate": "mean"}
+        ...     field_ops={"next_clipping_norm": "mean", "num_clipped": "sum"}
         ... )
-        >>> # state.next_clip_norm and state.clipping_rate now averaged across devices
         >>> # state.step unchanged (not synchronized)
 
     Notes:

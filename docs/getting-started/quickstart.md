@@ -52,7 +52,7 @@ grad_fn, clip_state = clipped_grad(
     loss_fn,
     argnums=0,
     batch_argnums=1,
-    l2_clip_norm=1.0,
+    clipping_norm=1.0,
     normalize_by=batch_size,
 )
 noise_fn, noise_state = gaussian_noise(
