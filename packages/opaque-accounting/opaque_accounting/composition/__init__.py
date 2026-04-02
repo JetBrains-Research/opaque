@@ -11,7 +11,7 @@ Most users should prefer the operator syntax: ``step * 1000`` or ``a | b``.
 from __future__ import annotations
 
 from opaque_accounting.base import DpProcess
-from opaque_accounting.composition.cached import CachedProcess
+from opaque_accounting.composition.cached import CachedProcess, cached
 from opaque_accounting.composition.composed import Composed
 from opaque_accounting.composition.repeated import Repeated
 
@@ -58,35 +58,6 @@ def compose(left: DpProcess, right: DpProcess) -> DpProcess:
         eps = total.epsilon_at(1e-5)
     """
     return left | right
-
-
-def cached(process: DpProcess) -> CachedProcess:
-    """Wrap a process so that its PLD is computed once and cached.
-
-    Returns a :class:`CachedProcess` that computes the PLD lazily on
-    the first :meth:`pld` call and caches the result for all subsequent calls.
-
-    ``CachedProcess`` also acts as an **opaque merge barrier**: the
-    composition optimizer will not look through a cached node, so
-    the cached PLD is reused as-is during further composition. Cached
-    wrappers can still merge via structural equality of their inner
-    processes.
-
-    Example::
-
-        training = acc.cached(acc.poisson(acc.gaussian(1.1), 0.01) * 1000)
-        eps = training.epsilon_at(1e-5)   # PLD computed here, cached
-        adv = training.advantage()         # reuses cached PLD (free)
-
-    Args:
-        process: The process to cache.
-
-    Returns:
-        A :class:`CachedProcess` wrapping *process*.
-    """
-    if isinstance(process, CachedProcess):
-        return process
-    return CachedProcess(process)
 
 
 __all__ = [

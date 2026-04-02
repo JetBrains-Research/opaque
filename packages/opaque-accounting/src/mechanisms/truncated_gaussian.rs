@@ -1,13 +1,13 @@
 //! Truncated (renormalized) Gaussian mechanism PLD constructor.
 //!
 //! The truncated Gaussian mechanism samples noise from `N(0, σ²) | [−Rσ, Rσ]`,
-//! the standard Gaussian **renormalized** to the interval [−Rσ, Rσ]. Unlike
-//! the rectified (clamped) variant, this produces a smooth density with no
-//! point masses at the boundaries.
+//! the standard Gaussian **renormalized** to the interval [−Rσ, Rσ].
 //!
-//! The truncated Gaussian provides **strictly tighter** privacy than the
-//! rectified Gaussian (which in turn is tighter than the standard Gaussian),
-//! because the renormalized density concentrates more mass in the interior.
+//! The mechanism outputs values in a fixed domain [−Rσ, Rσ]. The worst-case
+//! privacy loss depends on where the distribution centers (determined by the
+//! query output) fall within this domain. In DP-SGD, inputs are L2-clipped
+//! to norm Δ, so per-coordinate values satisfy |x| ≤ Δ. The PLD constructor
+//! optimizes over centers in [−Δ, Δ] to provide a sound upper bound on δ(ε).
 //!
 //! # Parameters
 //!
@@ -43,13 +43,23 @@ use crate::error::{PldError, Result};
 use crate::pld::PrivacyLossDistribution;
 use statrs::distribution::{ContinuousCDF, Normal};
 
-use super::{MAX_NOISE_MULTIPLIER, MIN_NOISE_MULTIPLIER};
+use super::MIN_NOISE_MULTIPLIER;
 
 /// Minimum supported radius (sigma units).
 const MIN_RADIUS: f64 = 0.1;
 
 /// Maximum supported radius (sigma units).
 const MAX_RADIUS: f64 = 100.0;
+
+/// Number of grid points for worst-case center search.
+///
+/// The truncated Gaussian mechanism outputs values in a fixed domain
+/// [−Rσ, Rσ]. For adjacent inputs differing by Δ, the output distributions
+/// are truncated normals centered at μ₀ and μ₁ = μ₀ + Δ within this domain.
+///
+/// In DP-SGD, inputs are L2-clipped to norm Δ, so per-coordinate values
+/// satisfy |x| ≤ Δ. We search μ₀ over [−Δ, Δ] to find the worst case.
+const CENTER_SEARCH_POINTS: usize = 200;
 
 /// Compute the PLD for a truncated (renormalized) Gaussian mechanism.
 ///
@@ -61,7 +71,7 @@ const MAX_RADIUS: f64 = 100.0;
 ///
 /// # Arguments
 ///
-/// * `noise_multiplier` — σ/Δ ratio, must be in \[0.1, 1.2\]
+/// * `noise_multiplier` — σ/Δ ratio, must be >= 0.1
 /// * `radius` — support half-width in sigma units, must be in \[0.1, 100\]
 /// * `config` — discretization configuration for PLD grid
 ///
@@ -73,10 +83,10 @@ pub fn truncated_gaussian_pld(
     radius: f64,
     config: &DiscretizationConfig,
 ) -> Result<PrivacyLossDistribution> {
-    if !(MIN_NOISE_MULTIPLIER..=MAX_NOISE_MULTIPLIER).contains(&noise_multiplier) {
+    if noise_multiplier < MIN_NOISE_MULTIPLIER {
         return Err(PldError::InvalidParameter(format!(
-            "noise_multiplier must be in [{}, {}], got {}",
-            MIN_NOISE_MULTIPLIER, MAX_NOISE_MULTIPLIER, noise_multiplier
+            "noise_multiplier must be >= {}, got {}",
+            MIN_NOISE_MULTIPLIER, noise_multiplier
         )));
     }
     if !(MIN_RADIUS..=MAX_RADIUS).contains(&radius) {
@@ -97,25 +107,52 @@ pub fn truncated_gaussian_pld(
     .map(|pld| pld.with_tail_budgets(tail_budget, tail_budget))
 }
 
-/// Hockey-stick divergence δ(ε) for the truncated Gaussian mechanism.
+/// Hockey-stick divergence δ(ε) for the truncated Gaussian mechanism,
+/// maximized over worst-case distribution centers.
 ///
-/// Computes `δ(ε) = ∫ max(0, f(x;0) − e^ε · f(x;Δ)) dx` over [−Rσ, Rσ].
-///
-/// The privacy loss `ℓ(x) = log(f(x;0)/f(x;Δ))` is linear in x:
-///   `ℓ(x) = −Δ·x/σ² + Δ²/(2σ²) + log(Z₁/Z₀)`
-///
-/// where Z₀ = Z(0) and Z₁ = Z(Δ). The crossover point (ℓ(x) = ε) is:
-///   `x_cross = σ²/Δ · (Δ²/(2σ²) + log(Z₁/Z₀) − ε)`
-///
-/// For x < x_cross, f(x;0) > e^ε · f(x;Δ), contributing to δ.
+/// The mechanism outputs values in the fixed domain [−Rσ, Rσ]. For adjacent
+/// inputs differing by Δ, the output distributions are truncated normals
+/// centered at μ₀ and μ₁ = μ₀ + Δ. We search μ₀ over [−Δ, Δ] because
+/// inputs are L2-clipped: per-coordinate values satisfy |x| ≤ Δ.
 fn truncated_gaussian_delta_at(sigma: f64, sensitivity: f64, radius: f64, epsilon: f64) -> f64 {
+    // After L2 clipping to norm Δ, per-coordinate inputs are in [−Δ, Δ].
+    let search_lo = -sensitivity;
+    let search_hi = sensitivity;
+    let step = (search_hi - search_lo) / (CENTER_SEARCH_POINTS as f64);
+
+    let mut max_delta = 0.0_f64;
+    for i in 0..=CENTER_SEARCH_POINTS {
+        let mu0 = search_lo + step * (i as f64);
+        let d = truncated_gaussian_delta_at_center(sigma, sensitivity, radius, epsilon, mu0);
+        max_delta = max_delta.max(d);
+    }
+    max_delta
+}
+
+/// Hockey-stick divergence δ(ε) for a specific center μ₀.
+///
+/// Computes `δ(ε) = ∫ max(0, f(x;μ₀) − e^ε · f(x;μ₁)) dx` over [−Rσ, Rσ],
+/// where μ₁ = μ₀ + Δ.
+///
+/// The privacy loss `ℓ(x) = log(f(x;μ₀)/f(x;μ₁))` is linear in x:
+///   `ℓ(x) = Δ·(μ₀ + Δ/2 − x)/σ² + log(Z₁/Z₀)`
+///
+/// where Z₀ = Z(μ₀) and Z₁ = Z(μ₁).
+fn truncated_gaussian_delta_at_center(
+    sigma: f64,
+    sensitivity: f64,
+    radius: f64,
+    epsilon: f64,
+    mu0: f64,
+) -> f64 {
     let n01 = Normal::new(0.0, 1.0).unwrap();
     let sigma_sq = sigma * sigma;
-    let r_abs = radius * sigma; // absolute radius
+    let r_abs = radius * sigma;
+    let mu1 = mu0 + sensitivity;
 
     // Normalization constants Z(μ) = Φ((Rσ−μ)/σ) − Φ((−Rσ−μ)/σ)
-    let z0 = n01.cdf(radius) - n01.cdf(-radius); // Z(0)
-    let z1 = n01.cdf(radius - sensitivity / sigma) - n01.cdf(-radius - sensitivity / sigma); // Z(Δ)
+    let z0 = n01.cdf((r_abs - mu0) / sigma) - n01.cdf((-r_abs - mu0) / sigma);
+    let z1 = n01.cdf((r_abs - mu1) / sigma) - n01.cdf((-r_abs - mu1) / sigma);
 
     if z0 <= 0.0 || z1 <= 0.0 {
         return 0.0;
@@ -123,13 +160,11 @@ fn truncated_gaussian_delta_at(sigma: f64, sensitivity: f64, radius: f64, epsilo
 
     let log_z_ratio = (z1 / z0).ln(); // log(Z₁/Z₀)
 
-    // Privacy loss: ℓ(x) = −Δ·x/σ² + Δ²/(2σ²) + log(Z₁/Z₀)
-    // Crossover: ℓ(x_cross) = ε
-    //   x_cross = σ²/Δ · (Δ²/(2σ²) + log(Z₁/Z₀) − ε)
-    //           = Δ/2 + σ²/Δ · (log(Z₁/Z₀) − ε)
-    let x_cross = sensitivity / 2.0 + sigma_sq / sensitivity * (log_z_ratio - epsilon);
+    // Crossover: ℓ(x_cross) = ε → x_cross = μ₀ + Δ/2 + σ²/Δ · (log(Z₁/Z₀) − ε)
+    let x_cross =
+        mu0 + sensitivity / 2.0 + sigma_sq / sensitivity * (log_z_ratio - epsilon);
 
-    // Integration domain where f(x;0) > e^ε · f(x;Δ): [−Rσ, x_cross] ∩ [−Rσ, Rσ]
+    // Integration domain where f(x;μ₀) > e^ε · f(x;μ₁): [−Rσ, x_cross] ∩ [−Rσ, Rσ]
     let int_lower = -r_abs;
     let int_upper = x_cross.min(r_abs);
 
@@ -137,24 +172,22 @@ fn truncated_gaussian_delta_at(sigma: f64, sensitivity: f64, radius: f64, epsilo
         return 0.0;
     }
 
-    // δ = ∫_{int_lower}^{int_upper} f(x;0) dx − e^ε · ∫_{int_lower}^{int_upper} f(x;Δ) dx
-    //
+    // δ = ∫_{lo}^{hi} f(x;μ₀) dx − e^ε · ∫_{lo}^{hi} f(x;μ₁) dx
     // ∫_{a}^{b} f(x;μ) dx = [Φ((b−μ)/σ) − Φ((a−μ)/σ)] / Z(μ)
-
-    let mass_p0 = (n01.cdf(int_upper / sigma) - n01.cdf(int_lower / sigma)) / z0;
-    let mass_p1 = (n01.cdf((int_upper - sensitivity) / sigma)
-        - n01.cdf((int_lower - sensitivity) / sigma))
-        / z1;
+    let mass_p0 =
+        (n01.cdf((int_upper - mu0) / sigma) - n01.cdf((int_lower - mu0) / sigma)) / z0;
+    let mass_p1 =
+        (n01.cdf((int_upper - mu1) / sigma) - n01.cdf((int_lower - mu1) / sigma)) / z1;
 
     (mass_p0 - epsilon.exp() * mass_p1).max(0.0)
 }
 
 /// Epsilon bounds for the truncated Gaussian mechanism.
 ///
-/// The privacy loss ℓ(x) = −Δx/σ² + Δ²/(2σ²) + log(Z₁/Z₀) is linear in x
-/// and monotonically decreasing. So:
-///   ε_max = ℓ(−Rσ) = Δ·(Δ/2 + Rσ)/σ² + log(Z₁/Z₀)
-///   ε_min = ℓ(Rσ)  = Δ·(Δ/2 − Rσ)/σ² + log(Z₁/Z₀)
+/// Searches over all possible centers μ₀ to find the widest epsilon range.
+/// The privacy loss at domain boundaries for center μ₀ is:
+///   ε_max = ℓ(−Rσ) = Δ·(μ₀ + Δ/2 + Rσ)/σ² + log(Z₁/Z₀)
+///   ε_min = ℓ(Rσ)  = Δ·(μ₀ + Δ/2 − Rσ)/σ² + log(Z₁/Z₀)
 fn truncated_gaussian_epsilon_bounds(
     sigma: f64,
     sensitivity: f64,
@@ -165,29 +198,45 @@ fn truncated_gaussian_epsilon_bounds(
     let sigma_sq = sigma * sigma;
     let r_abs = radius * sigma;
 
-    // Normalization constants
-    let z0 = n01.cdf(radius) - n01.cdf(-radius);
-    let z1 = n01.cdf(radius - sensitivity / sigma) - n01.cdf(-radius - sensitivity / sigma);
+    // Search over centers in [−Δ, Δ] (L2-clipped input domain).
+    let search_lo = -sensitivity;
+    let search_hi = sensitivity;
+    let step = (search_hi - search_lo) / (CENTER_SEARCH_POINTS as f64);
 
-    let log_z_ratio = if z0 > 0.0 && z1 > 0.0 {
-        (z1 / z0).ln()
-    } else {
-        0.0
-    };
+    let mut eps_lo = f64::INFINITY;
+    let mut eps_hi = f64::NEG_INFINITY;
 
-    // ε at domain boundaries
-    let eps_at_neg_r = sensitivity * (sensitivity / 2.0 + r_abs) / sigma_sq + log_z_ratio;
-    let eps_at_pos_r = sensitivity * (sensitivity / 2.0 - r_abs) / sigma_sq + log_z_ratio;
+    for i in 0..=CENTER_SEARCH_POINTS {
+        let mu0 = search_lo + step * (i as f64);
+        let mu1 = mu0 + sensitivity;
 
-    // Apply tail mass truncation to get reasonable bounds
+        let z0 = n01.cdf((r_abs - mu0) / sigma) - n01.cdf((-r_abs - mu0) / sigma);
+        let z1 = n01.cdf((r_abs - mu1) / sigma) - n01.cdf((-r_abs - mu1) / sigma);
+
+        if z0 <= 0.0 || z1 <= 0.0 {
+            continue;
+        }
+
+        let log_z_ratio = (z1 / z0).ln();
+
+        let eps_at_neg_r =
+            sensitivity * (mu0 + sensitivity / 2.0 + r_abs) / sigma_sq + log_z_ratio;
+        let eps_at_pos_r =
+            sensitivity * (mu0 + sensitivity / 2.0 - r_abs) / sigma_sq + log_z_ratio;
+
+        eps_hi = eps_hi.max(eps_at_neg_r);
+        eps_lo = eps_lo.min(eps_at_pos_r);
+    }
+
+    // Safety cap: Gaussian tail-mass truncation bounds
     let log_mass = config.log_mass_truncation_bound;
     let half_mass = 0.5 * log_mass.exp();
     let z = n01.inverse_cdf(half_mass);
     let gauss_eps_upper = sensitivity * (0.5 * sensitivity - sigma * z) / sigma_sq;
 
     EpsilonBounds {
-        epsilon_lower: eps_at_pos_r.max(-gauss_eps_upper),
-        epsilon_upper: eps_at_neg_r.min(gauss_eps_upper),
+        epsilon_lower: eps_lo.max(-gauss_eps_upper),
+        epsilon_upper: eps_hi.min(gauss_eps_upper),
     }
 }
 
@@ -200,9 +249,13 @@ mod tests {
     }
 
     #[test]
-    fn test_truncated_rejects_bad_nm() {
+    fn test_truncated_rejects_below_min_nm() {
         assert!(truncated_gaussian_pld(0.09, 3.0, &default_config()).is_err());
-        assert!(truncated_gaussian_pld(1.21, 3.0, &default_config()).is_err());
+    }
+
+    #[test]
+    fn test_truncated_accepts_high_nm() {
+        assert!(truncated_gaussian_pld(5.0, 3.0, &default_config()).is_ok());
     }
 
     #[test]
@@ -218,31 +271,8 @@ mod tests {
         assert!(truncated_gaussian_pld(1.2, 100.0, &cfg).is_ok());
     }
 
-    /// Truncated Gaussian ε ≤ rectified Gaussian ε (tighter privacy).
-    #[test]
-    fn test_truncated_tighter_than_rectified() {
-        let cfg = default_config();
-        for &nm in &[0.25, 0.5, 0.8, 1.0] {
-            for &r in &[1.0, 3.0, 5.0] {
-                let eps_rect = crate::mechanisms::rectified_gaussian_pld(nm, r, &cfg)
-                    .unwrap()
-                    .epsilon_at(1e-5);
-                let eps_trunc = truncated_gaussian_pld(nm, r, &cfg)
-                    .unwrap()
-                    .epsilon_at(1e-5);
-                assert!(
-                    eps_trunc <= eps_rect + 1e-4,
-                    "Truncated(σ={}, R={}) ε={:.6} should be ≤ Rectified ε={:.6}",
-                    nm,
-                    r,
-                    eps_trunc,
-                    eps_rect
-                );
-            }
-        }
-    }
-
-    /// Truncated Gaussian ε ≤ standard Gaussian ε (DPI chain).
+    /// Truncated Gaussian ε ≤ standard Gaussian ε (bounded support concentrates
+    /// mass in the interior, reducing privacy loss).
     #[test]
     fn test_truncated_tighter_than_gaussian() {
         let cfg = default_config();
@@ -293,6 +323,8 @@ mod tests {
     }
 
     /// At very large radius, truncated ≈ standard Gaussian.
+    /// With centers restricted to [−Δ, Δ] (clipped input domain), the
+    /// normalization constants are ≈1 at R=50, so the gap is negligible.
     #[test]
     fn test_truncated_converges_to_gaussian() {
         let cfg = default_config();
@@ -330,34 +362,6 @@ mod tests {
                 w[0],
                 w[1]
             );
-        }
-    }
-
-    /// Full ordering: truncated ≤ rectified ≤ Gaussian.
-    #[test]
-    fn test_full_epsilon_ordering() {
-        let cfg = default_config();
-        for &nm in &[0.3, 0.5, 0.8] {
-            let eps_gauss = crate::mechanisms::gaussian_pld(nm, &cfg)
-                .unwrap()
-                .epsilon_at(1e-5);
-            for &r in &[2.0, 3.0, 5.0] {
-                let eps_rect = crate::mechanisms::rectified_gaussian_pld(nm, r, &cfg)
-                    .unwrap()
-                    .epsilon_at(1e-5);
-                let eps_trunc = truncated_gaussian_pld(nm, r, &cfg)
-                    .unwrap()
-                    .epsilon_at(1e-5);
-                assert!(
-                    eps_trunc <= eps_rect + 1e-4 && eps_rect <= eps_gauss + 1e-4,
-                    "Ordering violated at σ={}, R={}: trunc={:.6} ≤ rect={:.6} ≤ gauss={:.6}",
-                    nm,
-                    r,
-                    eps_trunc,
-                    eps_rect,
-                    eps_gauss
-                );
-            }
         }
     }
 }

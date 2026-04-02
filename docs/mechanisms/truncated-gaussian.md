@@ -1,11 +1,10 @@
 # Truncated Gaussian Mechanism
 
 The truncated Gaussian mechanism samples noise from a Gaussian
-**renormalized** over a bounded interval $[-R\sigma, R\sigma]$. Unlike
-the [rectified variant](rectified-gaussian.md) which clamps, truncation
-resamples: the density is smoothly rescaled so that no probability mass
-sits at the boundaries. This gives the **tightest privacy bounds** among
-all three Gaussian variants.
+**renormalized** over a bounded interval $[-R\\sigma, R\\sigma]$. The
+density is smoothly rescaled so that no probability mass sits at the
+boundaries. This gives **tighter privacy bounds** than the standard
+Gaussian at the same noise level.
 
 ## Idea
 
@@ -112,13 +111,11 @@ $$\varepsilon_{\text{Poisson-truncated}} \leq \varepsilon_{\text{Poisson-rectifi
 from opaque import truncated_gaussian_noise
 from opaque.random import key
 
-# bounds = (-radius * stddev, radius * stddev) in absolute units
-stddev = noise_multiplier * clip_state.sensitivity()
-bound = 5.0 * stddev  # radius=5.0 in sigma units
+stddev = noise_multiplier * clip_state.sensitivity
 
 noise_fn, noise_state = truncated_gaussian_noise(
     stddev=stddev,
-    bounds=(-bound, bound),
+    radius=5.0,
     key=key(42),
 )
 
@@ -127,10 +124,6 @@ for batch in dataloader:
     noisy_grads, noise_state = noise_fn(grads, noise_state)
     params = params - lr * noisy_grads
 ```
-
-!!! note "Bounds vs radius"
-    The noise function takes absolute `bounds=(-B, B)` while the accounting
-    takes `radius` in sigma units. To match: set `B = radius * stddev`.
 
 ### Privacy accounting
 
@@ -145,10 +138,9 @@ step = acc.poisson(
 training = step * 1000
 eps = training.epsilon_at(delta=1e-5)
 
-# Compare all three variants at the same noise level
+# Compare truncated vs standard
 for name, mech in [
     ("Gaussian",  acc.gaussian(1.0)),
-    ("Rectified", acc.rectified_gaussian(1.0, radius=5.0)),
     ("Truncated", acc.truncated_gaussian(1.0, radius=5.0)),
 ]:
     proc = acc.poisson(mech, sample_rate=0.01) * 1000
@@ -191,8 +183,8 @@ and better utility.
   where you would prefer rectified over truncated for the same radius.
   The only reason to use rectified is if your noise implementation uses
   simple clamping and you want matching accounting.
-- The `bounds` parameter in the noise function uses absolute units. Convert
-  from sigma units: `bounds = (-radius * stddev, radius * stddev)`.
+- Both the noise function (`radius`) and the accounting API (`radius`)
+  use the same sigma-units convention.
 
 ## References
 

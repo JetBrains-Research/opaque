@@ -30,13 +30,13 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 - **[Noise](noise.md)**: Noise injection for DP
   - `gaussian_noise()` - Standard Gaussian noise
-  - `truncated_gaussian_noise()`, `rectified_gaussian_noise()` - Bounded Gaussian noise (two variants)
+  - `truncated_gaussian_noise()` - Bounded Gaussian noise
   - `band_mf_noise()`, `blt_mf_noise()`, `dense_mf_noise()` - Correlated noise (DP-FTRL)
   - `identity_mf_noise()`, `custom_mf_noise()` - MF API utilities
 
 - **[Accounting](accounting.md)**: Privacy budget tracking
   - `gaussian()`, `poisson()`, `truncated_poisson()`, `parallel_poisson()` - Standard mechanisms
-  - `rectified_gaussian()`, `truncated_gaussian()` - Bounded Gaussian mechanisms
+  - `truncated_gaussian()` - Bounded Gaussian mechanism
   - `band_mf()`, `blt_mf()`, `dense_mf()`, `cyclic_poisson()` - Matrix factorization mechanisms
   - `DpProcess` operators: `*` (repeat), `|` (compose)
   - `.epsilon_at()`, `.delta_at()`, `.advantage()`, `.beta_at()`, `.risk_at()` - Privacy metrics
@@ -78,9 +78,12 @@ result = acc.calibrate(
 )
 
 # Set up DP components
-grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=1)
+grad_fn, clip_state = clipped_grad(
+    loss_fn, clipping_norm=1.0, batch_argnums=1,
+    normalize_by=batch_size,
+)
 noise_fn, noise_state = gaussian_noise(
-    stddev=result.param * clip_state.sensitivity(), key=key(42),
+    stddev=result.param * clip_state.sensitivity, key=key(42),
 )
 
 # Training loop
@@ -108,7 +111,6 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 |--------------------------------|----------------------------------------------|---------------------------------|
 | `gaussian_noise()`                   | Standard Gaussian noise (unbounded)          | [Guide](../user-guide/noise.md) |
 | `truncated_gaussian_noise()`           | Bounded Gaussian — renormalized density       | [Guide](../user-guide/noise.md#bounded-gaussian-noise) |
-| `rectified_gaussian_noise()`           | Bounded Gaussian — clamped                    | [Guide](../user-guide/noise.md#bounded-gaussian-noise) |
 | `band_mf_noise()`                   | BandMF correlated noise (DP-FTRL)           | [Guide](../user-guide/noise.md) |
 | `blt_mf_noise()`                    | BLT correlated noise (DP-FTRL)              | [Guide](../user-guide/noise.md) |
 | `dense_mf_noise()`                  | Dense optimal correlated noise               | [Guide](../user-guide/noise.md) |
@@ -120,7 +122,6 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | Function                  | Purpose                           | User Guide                                                              |
 |---------------------------|-----------------------------------|-------------------------------------------------------------------------|
 | `gaussian()`              | Gaussian mechanism                | [Guide](../user-guide/accounting.md#mechanisms)                         |
-| `rectified_gaussian()`    | Bounded Gaussian — rectified      | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `truncated_gaussian()`    | Bounded Gaussian — truncated      | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `poisson()`               | Poisson-subsampled mechanism      | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `truncated_poisson()`     | Truncated Poisson subsampling     | [Guide](../user-guide/accounting.md#mechanisms)                         |

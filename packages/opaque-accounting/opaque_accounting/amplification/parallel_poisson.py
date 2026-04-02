@@ -44,6 +44,8 @@ class ParallelPoisson(DpProcess):
             max_grid_size=max_grid_size,
         )
 
+        native_cfg = config.to_native()
+
         match self.inner:
             case Poisson(
                 inner=Gaussian(noise_multiplier=nm),
@@ -53,18 +55,18 @@ class ParallelPoisson(DpProcess):
                     nm,
                     rate,
                     self.num_workers,
-                    config.to_native(),
+                    native_cfg,
                 )
             case Poisson(
-                inner=AdaClip() as ac,
+                inner=AdaClip(inner=Gaussian()) as ac,
                 sample_rate=rate,
             ):
-                z_eff = ac.effective_noise_multiplier
+                # Tight: z_eff combines both into one Gaussian.
                 return _native.parallel_poisson_gaussian_pld(
-                    z_eff,
+                    ac.effective_noise_multiplier,
                     rate,
                     self.num_workers,
-                    config.to_native(),
+                    native_cfg,
                 )
             case _:
                 raise TypeError(

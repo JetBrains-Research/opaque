@@ -7,17 +7,21 @@ Bounded Gaussian Mechanism from:
     Privacy," Journal of Privacy and Confidentiality, 14(1), 2024.
     https://arxiv.org/abs/2211.17230
 
-The mechanism uses a truncated normal distribution restricted to a given domain
-[lower, upper], ensuring all privatized outputs are valid. Unlike the standard
-Gaussian mechanism which has unbounded support (and may produce invalid values
-that require post-hoc projection), this mechanism confines noise to a bounded
-region from the start.
+The mechanism uses a truncated normal distribution restricted to the symmetric
+domain [−radius·stddev, radius·stddev], ensuring all privatized outputs stay
+bounded.  Unlike the standard Gaussian mechanism which has unbounded support
+(and may produce invalid values that require post-hoc projection), this
+mechanism confines noise to a bounded region from the start.
 
 The API returns ``(noise_fn, state)`` where state is always immutable:
 
     >>> from opaque.random import key
-    >>> noise_fn, state = truncated_gaussian_noise(stddev=1.0, bounds=(-3.0, 3.0), key=key(42))
+    >>> noise_fn, state = truncated_gaussian_noise(stddev=1.0, radius=5.0, key=key(42))
     >>> noisy_grads, state = noise_fn(grads, state)
+
+The ``stddev`` can be overridden per call for adaptive clipping:
+
+    >>> noisy_grads, state = noise_fn(grads, state, stddev=new_stddev)
 
 References:
     Bo Chen and Matthew Hale, "The Bounded Gaussian Mechanism for
@@ -96,19 +100,25 @@ def _truncated_normal_around(
 
 def truncated_gaussian_noise(
     stddev: float,
-    bounds: tuple[float, float],
+    radius: float = 3.0,
     *,
     key: RngKey,
 ) -> tuple[
-    Callable[[Any, GaussianNoiseState], tuple[Any, GaussianNoiseState]],
+    Callable[..., tuple[Any, GaussianNoiseState]],
     GaussianNoiseState,
 ]:
     """Create a truncated Gaussian noise function with immutable state.
 
     Returns ``(noise_fn, state)`` where ``noise_fn`` adds noise from a
     truncated normal distribution centred at each input value, with support
-    restricted to [lower, upper]. This implements the Bounded Gaussian
-    Mechanism (Chen & Hale, 2024).
+    restricted to [−radius·stddev, radius·stddev]. This implements the
+    Bounded Gaussian Mechanism (Chen & Hale, 2024).
+
+    The ``stddev`` provided here is the default. It can be overridden on each
+    call via ``noise_fn(grads, state, stddev=new_stddev)`` — useful when the
+    noise scale changes between steps (e.g., with adaptive clipping). The
+    ``radius`` (in σ-units) is fixed at creation and the truncation bounds
+    adjust automatically: [−radius·stddev, radius·stddev].
 
     The noise function uses exactly the ``key`` you provide — no auto-detection
     of distributed state. For synchronized noise in DDP, pass the same key on
@@ -116,9 +126,10 @@ def truncated_gaussian_noise(
 
     Args:
         stddev: Standard deviation of the underlying Gaussian noise
-            (usually ``noise_multiplier * clip_norm``).
-        bounds: ``(lower, upper)`` bounds for the noisy output domain.
-            Must satisfy ``lower < upper``.
+            (usually ``noise_multiplier * clip_state.sensitivity``).
+        radius: Truncation radius in units of standard deviations.
+            Noise is truncated to [−radius·stddev, radius·stddev].
+            Must be positive. Typical values: 3–10.
         key: Explicit RNG key for deterministic, functional randomness.
             Same key on all ranks → same noise (synchronized).
             ``fold_in(key, rank)`` → independent noise per rank.
@@ -126,11 +137,11 @@ def truncated_gaussian_noise(
     Returns:
         A tuple ``(noise_fn, state)`` where:
 
-        - ``noise_fn(grads, state) -> (noisy_grads, new_state)``
+        - ``noise_fn(grads, state, *, stddev=None) -> (noisy_grads, new_state)``
         - ``state`` is a :class:`~opaque.noise.gaussian_noise.GaussianNoiseState`
 
     Raises:
-        ValueError: If ``stddev`` is negative, or bounds are invalid.
+        ValueError: If ``stddev`` is negative, or ``radius`` is not positive.
 
     Example:
         >>> import torch
@@ -138,11 +149,15 @@ def truncated_gaussian_noise(
         >>> from opaque.random import key
         >>>
         >>> noise_fn, state = truncated_gaussian_noise(
-        ...     stddev=1.0, bounds=(-3.0, 3.0), key=key(42),
+        ...     stddev=1.0, radius=3.0, key=key(42),
         ... )
         >>> grads = torch.zeros(100)
         >>> noisy, state = noise_fn(grads, state)
         >>> assert noisy.min() >= -3.0 and noisy.max() <= 3.0
+
+    Example (per-call override for adaptive clipping):
+        >>> noise_fn, state = truncated_gaussian_noise(stddev=1.0, radius=5.0, key=key(42))
+        >>> noisy, state = noise_fn(grads, state, stddev=0.8)  # bounds become ±4.0
 
     References:
         Bo Chen and Matthew Hale, "The Bounded Gaussian Mechanism for
@@ -152,45 +167,49 @@ def truncated_gaussian_noise(
     if stddev < 0:
         raise ValueError(f"stddev must be non-negative, got {stddev}")
 
-    lower, upper = bounds
-    if lower >= upper:
-        raise ValueError(f"bounds must satisfy lower < upper, got ({lower}, {upper})")
+    if radius <= 0:
+        raise ValueError(f"radius must be positive, got {radius}")
 
     if not isinstance(key, RngKey):
         raise TypeError(f"key must be RngKey, got {type(key)}")
 
     state = GaussianNoiseState(
-        step_counter=0,
-        rng_key=key,
+        _step_counter=0,
+        _rng_key=key,
     )
 
-    if stddev == 0:
+    default_stddev = stddev
 
-        def zero_noise_fn(grads, st):
-            return tree_map(lambda t: torch.clamp(t, min=lower, max=upper), grads), st
-
-        return zero_noise_fn, state
-
-    def noise_fn(grads, st):
+    def noise_fn(grads, st, *, stddev=None):
         """Add truncated Gaussian noise to gradients."""
-        step_key = rng_fold_in(st.rng_key, st.step_counter)
+        effective_stddev = stddev if stddev is not None else default_stddev
+        bound = effective_stddev * radius
+
+        if effective_stddev == 0:
+            return tree_map(
+                lambda t: torch.clamp(t, min=-bound, max=bound), grads
+            ), GaussianNoiseState(
+                _step_counter=st._step_counter + 1,
+                _rng_key=st._rng_key,
+            )
+
+        step_key = rng_fold_in(st._rng_key, st._step_counter)
         g = generator_from_key(step_key)
 
         def add_bounded_noise(tensor: torch.Tensor) -> torch.Tensor:
             return _truncated_normal_around(
                 tensor,
-                stddev=stddev,
-                lower=lower,
-                upper=upper,
+                stddev=effective_stddev,
+                lower=-bound,
+                upper=bound,
                 generator=g,
             )
 
         noisy = tree_map(add_bounded_noise, grads)
 
-        # Return updated state with incremented step counter
         return noisy, GaussianNoiseState(
-            step_counter=st.step_counter + 1,
-            rng_key=st.rng_key,
+            _step_counter=st._step_counter + 1,
+            _rng_key=st._rng_key,
         )
 
     return noise_fn, state

@@ -22,16 +22,16 @@ differential privacy.
 
 ### Auxiliary Output Types
 
-- **`ClippedGradAux`** — Per-example `loss_values`, `grad_norms`, `clipped_grad_norms` (from `clipped_grad`).
-- **`ClippedFunAux`** — Per-example `loss_values`, `grad_norms`, `clipped_grad_norms`, `loss_aux` (from `clipped_fun`).
-- **`AdaptiveClippedGradAux`** — Extends `ClippedGradAux` with `clipping_rate` (from `adaptive_clipped_grad`).
+- **`ClippedGradAux`** — Per-example `loss_values`, `grad_norms`, `clipped_grad_norms`, `loss_aux`, plus aggregate `clipping_rate` and `batch_size` (from `clipped_grad`).
+- **`ClippedFunAux`** — Per-example `values`, `norms`, `clipped_norms`, `value_aux`, plus aggregate `clipping_rate` and `batch_size` (from `clipped_fun`).
+- **`AdaptiveClippedGradAux`** — Inherits all fields from `ClippedGradAux` (from `adaptive_clipped_grad`).
 
 ### Distributed Sync Helpers
 
 Use `sync()` from `opaque.distributed` to synchronize any clipping state or aux
 object. It auto-dispatches to the right function based on type:
 
-- **`sync(FixedClipState)`** → asserts `l2_norm_bound` matches across ranks.
+- **`sync(FixedClipState)`** → asserts `clipping_norm` matches across ranks.
 - **`sync(AdaptiveClipState)`** → aggregates counts and recomputes global adaptive clip norm.
 - **`sync(ClippedFunAux | ClippedGradAux | AdaptiveClippedGradAux)`** → gathers aux across ranks.
 

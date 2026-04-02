@@ -139,10 +139,10 @@ uvx ruff format packages/
 cargo test --workspace
 
 # Training (Mellum-4b with DP-SGD LoRA)
-uv run python examples/train_causal_lm.py --preset mellum-kstack --max_steps 100
+uv run python examples/train_causal_lm.py --preset mellum-kstack --max-steps 100
 
 # Training without kernel patches (baseline)
-OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all uv run python examples/train_causal_lm.py --preset mellum-kstack --max_steps 100
+OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all uv run python examples/train_causal_lm.py --preset mellum-kstack --max-steps 100
 ```
 
 ---

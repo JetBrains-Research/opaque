@@ -129,6 +129,28 @@ class TestGaussian:
         assert len(noisy) == 2
         assert not torch.allclose(noisy[0], grads[0])
 
+    def test_stddev_override(self):
+        """Per-call stddev override should change noise scale."""
+        noise_fn, state = gaussian_noise(stddev=1.0, key=key(0))
+        grad = torch.zeros(10000)
+
+        # Override with smaller stddev
+        noisy, state = noise_fn(grad, state, stddev=0.5)
+        measured_stddev = noisy.std().item()
+        assert abs(measured_stddev - 0.5) < 0.05
+
+    def test_stddev_override_does_not_affect_default(self):
+        """Per-call override should not change the default for next call."""
+        noise_fn, state = gaussian_noise(stddev=1.0, key=key(42))
+        grad = torch.zeros(10000)
+
+        # Override with small stddev
+        _, state = noise_fn(grad, state, stddev=0.1)
+
+        # Default should still be 1.0
+        noisy, state = noise_fn(grad, state)
+        assert noisy.var().item() > 0.5  # should have variance ~1.0, not ~0.01
+
 
 class TestGaussianKey:
     """Tests for required key parameter."""

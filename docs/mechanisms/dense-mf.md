@@ -99,7 +99,7 @@ from opaque.random import key
 noise_fn, noise_state = dense_mf_noise(
     grad_template=params,
     n_steps=50,
-    stddev=noise_multiplier * clip_state.sensitivity(),
+    stddev=noise_multiplier * clip_state.sensitivity,
     key=key(42),
     epochs=2,
 )

@@ -46,7 +46,9 @@ class TruncatedGaussian(DpProcess):
         )
 
 
-def truncated_gaussian(noise_multiplier: float, radius: float) -> TruncatedGaussian:
+def truncated_gaussian(
+    noise_multiplier: float, radius: float = 3.0
+) -> TruncatedGaussian:
     """Truncated (renormalized) Gaussian mechanism.
 
     Noise is sampled from a Gaussian restricted to [−R·σ, R·σ] with properly

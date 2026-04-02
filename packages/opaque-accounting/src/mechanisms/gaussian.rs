@@ -4,7 +4,7 @@ use crate::discretization::{discretize_symmetric_mechanism, DiscretizationConfig
 use crate::error::{PldError, Result};
 use crate::pld::PrivacyLossDistribution;
 
-use super::{MAX_NOISE_MULTIPLIER, MIN_NOISE_MULTIPLIER};
+use super::MIN_NOISE_MULTIPLIER;
 
 /// Compute the PLD for a Gaussian mechanism.
 ///
@@ -13,20 +13,20 @@ use super::{MAX_NOISE_MULTIPLIER, MIN_NOISE_MULTIPLIER};
 ///
 /// # Arguments
 ///
-/// * `noise_multiplier` — σ/Δ ratio, must be in \[0.1, 1.2\]
+/// * `noise_multiplier` — σ/Δ ratio, must be >= 0.1
 /// * `config` — discretization configuration for PLD grid
 ///
 /// # Errors
 ///
-/// Returns `InvalidParameter` if `noise_multiplier` is outside \[0.1, 1.2\].
+/// Returns `InvalidParameter` if `noise_multiplier` < 0.1.
 pub fn gaussian_pld(
     noise_multiplier: f64,
     config: &DiscretizationConfig,
 ) -> Result<PrivacyLossDistribution> {
-    if !(MIN_NOISE_MULTIPLIER..=MAX_NOISE_MULTIPLIER).contains(&noise_multiplier) {
+    if noise_multiplier < MIN_NOISE_MULTIPLIER {
         return Err(PldError::InvalidParameter(format!(
-            "noise_multiplier must be in [{}, {}], got {}",
-            MIN_NOISE_MULTIPLIER, MAX_NOISE_MULTIPLIER, noise_multiplier
+            "noise_multiplier must be >= {}, got {}",
+            MIN_NOISE_MULTIPLIER, noise_multiplier
         )));
     }
 
@@ -73,8 +73,8 @@ mod tests {
     }
 
     #[test]
-    fn test_gaussian_rejects_above_max() {
-        assert!(gaussian_pld(1.21, &default_config()).is_err());
+    fn test_gaussian_accepts_high_nm() {
+        assert!(gaussian_pld(100.0, &default_config()).is_ok());
     }
 
     #[test]
@@ -83,8 +83,13 @@ mod tests {
     }
 
     #[test]
-    fn test_gaussian_boundary_max() {
-        assert!(gaussian_pld(MAX_NOISE_MULTIPLIER, &default_config()).is_ok());
+    fn test_gaussian_high_nm_adaclip_bit() {
+        // AdaClip bit mechanism: nm = 2 * batch_size * fraction_noise_std
+        // e.g. 2 * 100 * 0.05 = 10.0
+        let pld = gaussian_pld(10.0, &default_config()).unwrap();
+        // Very private — epsilon should be near zero.
+        let eps = pld.epsilon_at(1e-10);
+        assert!(eps < 0.01, "eps = {}, expected ~0", eps);
     }
 
     /// At σ=0.5 the analytical δ(ε=0) ≈ Φ(1) − Φ(−1) ≈ 0.6827.

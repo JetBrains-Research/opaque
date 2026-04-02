@@ -167,7 +167,7 @@ from opaque import adaptive_clipped_grad
 from opaque.random import key
 
 grad_fn, clip_state = adaptive_clipped_grad(
-    loss_fn, initial_clip_norm=1.0, key=key(7),
+    loss_fn, initial_clipping_norm=1.0, key=key(7),
 )
 ```
 
@@ -193,7 +193,7 @@ from opaque.random import key, split
 
 k_noise, k_sample = split(key(42))
 
-grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2))
+grad_fn, clip_state = clipped_grad(loss_fn, clipping_norm=1.0, batch_argnums=(1, 2))
 noise_fn, noise_state = gaussian_noise(stddev=1.1, key=k_noise)
 
 for batch_x, batch_y in dataloader:

@@ -163,7 +163,7 @@ class TestGPT2LoRADPTraining:
             per_example_loss,
             argnums=0,  # Differentiate w.r.t. trainable params
             batch_argnums=(2, 3, 4),  # input_ids, mask, labels are batched
-            l2_clip_norm=1.0,
+            clipping_norm=1.0,
         )
 
         # Compute gradients
@@ -214,7 +214,7 @@ class TestGPT2LoRADPTraining:
             per_example_loss,
             argnums=0,
             batch_argnums=(2, 3, 4),
-            l2_clip_norm=1.0,
+            clipping_norm=1.0,
             return_aux=True,
         )
 
@@ -255,12 +255,12 @@ class TestGPT2LoRADPTraining:
             )
             return outputs.loss
 
-        clip_norm = 1.0
+        clipping_norm = 1.0
         grad_fn, clip_state = clipped_grad(
             per_example_loss,
             argnums=0,
             batch_argnums=(2, 3, 4),
-            l2_clip_norm=clip_norm,
+            clipping_norm=clipping_norm,
             return_aux=True,
         )
 
@@ -301,12 +301,12 @@ class TestGPT2LoRADPTraining:
             )
             return outputs.loss
 
-        clip_norm = 1.0
+        clipping_norm = 1.0
         grad_fn, clip_state = clipped_grad(
             per_example_loss,
             argnums=0,
             batch_argnums=(2, 3, 4),
-            l2_clip_norm=clip_norm,
+            clipping_norm=clipping_norm,
         )
 
         grads, _ = grad_fn(
@@ -316,7 +316,7 @@ class TestGPT2LoRADPTraining:
         # Add noise
         noise_multiplier = 1.0
         noise_fn, noise_state = gaussian_noise(
-            stddev=noise_multiplier * clip_norm,
+            stddev=noise_multiplier * clipping_norm,
             key=key(0),
         )
         noisy_grads, noise_state = noise_fn(grads, noise_state)
@@ -355,14 +355,14 @@ class TestGPT2LoRADPTraining:
             )
             return outputs.loss
 
-        clip_norm = 1.0
+        clipping_norm = 1.0
 
         # Without microbatching
         grad_fn_no_mb, clip_state_no_mb = clipped_grad(
             per_example_loss,
             argnums=0,
             batch_argnums=(2, 3, 4),
-            l2_clip_norm=clip_norm,
+            clipping_norm=clipping_norm,
             microbatch_size=None,
         )
         grads_no_mb, _ = grad_fn_no_mb(
@@ -374,7 +374,7 @@ class TestGPT2LoRADPTraining:
             per_example_loss,
             argnums=0,
             batch_argnums=(2, 3, 4),
-            l2_clip_norm=clip_norm,
+            clipping_norm=clipping_norm,
             microbatch_size=2,
         )
         grads_mb, _ = grad_fn_mb(
@@ -417,7 +417,7 @@ class TestGPT2LoRADPTraining:
             return outputs.loss
 
         # DP parameters
-        clip_norm = 1.0
+        clipping_norm = 1.0
         noise_multiplier = 0.5
         learning_rate = 1e-4
 
@@ -426,7 +426,7 @@ class TestGPT2LoRADPTraining:
             per_example_loss,
             argnums=0,
             batch_argnums=(2, 3, 4),
-            l2_clip_norm=clip_norm,
+            clipping_norm=clipping_norm,
         )
         grads, _ = grad_fn(
             trainable, frozen, input_ids, attention_mask, labels, state=clip_state
@@ -434,7 +434,7 @@ class TestGPT2LoRADPTraining:
 
         # 2. Add noise
         noise_fn, noise_state = gaussian_noise(
-            stddev=noise_multiplier * clip_norm,
+            stddev=noise_multiplier * clipping_norm,
             key=key(0),
         )
         noisy_grads, noise_state = noise_fn(grads, noise_state)
@@ -602,7 +602,7 @@ class TestMellumLoRADPTraining:
         assert len(trainable_params) > 0, "No trainable parameters found"
 
         # Manual per-sample gradient computation with clipping
-        clip_norm = 1.0
+        clipping_norm = 1.0
         accumulated_grads = {
             n: torch.zeros_like(p) for n, p in trainable_params.items()
         }
@@ -630,7 +630,7 @@ class TestMellumLoRADPTraining:
                     grad_norm_sq += p.grad.pow(2).sum().item()
 
             total_norm = grad_norm_sq**0.5
-            clip_coef = min(1.0, clip_norm / (total_norm + 1e-6))
+            clip_coef = min(1.0, clipping_norm / (total_norm + 1e-6))
 
             # Accumulate clipped gradients
             for n, g in sample_grads.items():
@@ -696,7 +696,7 @@ class TestMellumLoRADPTraining:
             per_example_loss,
             argnums=0,
             batch_argnums=(2, 3, 4),
-            l2_clip_norm=1.0,
+            clipping_norm=1.0,
             microbatch_size=1,  # Process one at a time for large model
         )
 
@@ -760,7 +760,7 @@ class TestMellumLoRADPTraining:
             per_example_loss,
             argnums=0,
             batch_argnums=(2, 3, 4),
-            l2_clip_norm=1.0,
+            clipping_norm=1.0,
             microbatch_size=1,
         )
 
@@ -815,7 +815,7 @@ class TestEndToEndDPTraining:
             )
             return outputs.loss
 
-        clip_norm = 1.0
+        clipping_norm = 1.0
         noise_multiplier = 0.5
         learning_rate = 1e-4
         num_steps = 3
@@ -829,7 +829,7 @@ class TestEndToEndDPTraining:
                 per_example_loss,
                 argnums=0,
                 batch_argnums=(2, 3, 4),
-                l2_clip_norm=clip_norm,
+                clipping_norm=clipping_norm,
                 return_aux=True,
             )
 
@@ -842,7 +842,7 @@ class TestEndToEndDPTraining:
 
             # Add noise
             noise_fn, noise_state = gaussian_noise(
-                stddev=noise_multiplier * clip_norm,
+                stddev=noise_multiplier * clipping_norm,
                 key=key(_step),
             )
             noisy_grads, noise_state = noise_fn(grads, noise_state)
@@ -857,8 +857,8 @@ class TestEndToEndDPTraining:
         assert len(losses) == num_steps
         assert all(loss > 0 for loss in losses)
 
-    def test_sensitivity_from_clip_state(self, gpt2_with_lora, sample_batch):
-        """Test that clip_state provides correct sensitivity for noise calibration."""
+    def test_clip_norm_from_clip_state(self, gpt2_with_lora, sample_batch):
+        """Test that clip_state provides correct clipping_norm for noise calibration."""
         model, _ = gpt2_with_lora
         input_ids, attention_mask = sample_batch
         labels = input_ids.clone()
@@ -885,17 +885,17 @@ class TestEndToEndDPTraining:
             )
             return outputs.loss
 
-        clip_norm = 1.5
+        clipping_norm = 1.5
         grad_fn, clip_state = clipped_grad(
             per_example_loss,
             argnums=0,
             batch_argnums=(2, 3, 4),
-            l2_clip_norm=clip_norm,
+            clipping_norm=clipping_norm,
         )
 
-        # Verify sensitivity matches clip_norm
-        sensitivity = clip_state.sensitivity()
-        assert sensitivity == clip_norm
+        # Verify sensitivity matches clipping_norm (normalize_by defaults to 1.0)
+        assert clip_state.clipping_norm == clipping_norm
+        assert clip_state.sensitivity == clipping_norm
 
         # Compute gradients to ensure state works
         grads, _ = grad_fn(
@@ -1076,7 +1076,7 @@ class TestMultiArchitectureModels:
             per_example_loss,
             argnums=0,
             batch_argnums=(2, 3, 4),
-            l2_clip_norm=1.0,
+            clipping_norm=1.0,
         )
 
         try:

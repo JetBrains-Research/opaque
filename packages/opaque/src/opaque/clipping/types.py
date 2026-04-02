@@ -1,50 +1,58 @@
 """Type definitions for clipping operations."""
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import dataclass
 
 
 class ClipState(ABC):
-    """Base class for clipping state with L2 sensitivity computation.
-
-    This abstract base class defines the interface for clipping state objects
-    that provide L2 sensitivity information for differential privacy noise calibration.
+    """Base class for clipping state with clipping norm and sensitivity.
 
     All clipping operations (fixed and adaptive) return a state object that
-    implements this interface, providing a unified API for computing sensitivity.
+    inherits from this class, providing a unified ``clipping_norm`` attribute
+    (the raw clipping threshold), ``normalize_by`` divisor, and a
+    ``sensitivity`` property (the L2 sensitivity of the query).
 
     Example:
         >>> from opaque import clipped_grad
         >>> loss_fn = lambda params, x, y: ((x @ params - y) ** 2).mean()
         >>>
         >>> # Fixed clipping returns (callable, ClipState)
-        >>> grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2))
+        >>> grad_fn, clip_state = clipped_grad(loss_fn, clipping_norm=1.0, batch_argnums=(1, 2))
         >>> grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
         >>>
-        >>> # Compute sensitivity for noise calibration
-        >>> sensitivity = clip_state.sensitivity()  # 1.0
+        >>> # Use sensitivity for noise calibration
         >>> from opaque import gaussian_noise
-        >>> noise_fn, noise_state = gaussian_noise(stddev=1.1 * sensitivity)
+        >>> noise_fn, noise_state = gaussian_noise(stddev=1.1 * clip_state.sensitivity)
         >>> noisy_grads, noise_state = noise_fn(grads, noise_state)
     """
 
-    @abstractmethod
+    clipping_norm: float
+    """The raw per-example clipping norm used at the current step.
+
+    For fixed clipping this is the constant L2 norm bound.
+    For adaptive clipping this is the threshold that was actually applied
+    to clip the gradients, **not** the updated threshold for the next step.
+    """
+
+    normalize_by: float
+    """Divisor applied to the clipped gradient sum.
+
+    When ``normalize_by > 1`` the clipped sum is divided by this value,
+    reducing the L2 sensitivity accordingly.  Defaults to ``1.0``
+    (no averaging).
+    """
+
+    @property
     def sensitivity(self) -> float:
-        """Compute L2 sensitivity for differential privacy noise calibration.
+        """L2 sensitivity of the clipped query.
 
-        The L2 sensitivity is the maximum change in L2 norm of the function output
-        when one record is added or removed from the dataset.
+        Equal to ``clipping_norm / normalize_by`` — the maximum L2 change
+        in the output when one record is added or removed.
 
-        This is the critical value for calibrating DP noise:
-            noise_stddev = noise_multiplier * sensitivity
-
-        For replace-one neighboring, double this value when calibrating noise.
-
-        Returns:
-            The L2 sensitivity (float). This is what you multiply by noise_multiplier
-            to get the required noise standard deviation.
+        This is the value you multiply by ``noise_multiplier`` to get
+        the required noise standard deviation.
         """
-        pass
+        return self.clipping_norm / self.normalize_by
 
 
 @dataclass(frozen=True)
@@ -52,40 +60,37 @@ class FixedClipState(ClipState):
     """Clipping state for fixed (non-adaptive) gradient clipping.
 
     This state is returned by `clipped_grad` and `clipped_fun` for fixed clipping,
-    where the clip norm and sensitivity remain constant throughout training.
+    where the clipping norm remains constant throughout training.
 
     Attributes:
-        l2_norm_bound: The L2 norm bound after clipping
+        clipping_norm: The L2 norm bound after clipping.
+        normalize_by: Divisor applied to the clipped sum (1.0 = no averaging).
 
     Example:
         >>> from opaque import clipped_grad
         >>> loss_fn = lambda params, x, y: ((x @ params - y) ** 2).mean()
-        >>> grad_fn, clip_state = clipped_grad(loss_fn, l2_clip_norm=1.5, batch_argnums=(1, 2))
+        >>> grad_fn, clip_state = clipped_grad(loss_fn, clipping_norm=1.5, batch_argnums=(1, 2))
         >>>
         >>> # State is fixed throughout training
-        >>> assert clip_state.l2_norm_bound == 1.5
-        >>> assert clip_state.sensitivity() == 1.5
+        >>> assert clip_state.clipping_norm == 1.5
+        >>> assert clip_state.sensitivity == 1.5  # normalize_by defaults to 1.0
         >>>
         >>> # After gradient computation, state is unchanged
         >>> grads, new_state = grad_fn(params, batch_x, batch_y, state=clip_state)
-        >>> assert new_state.l2_norm_bound == 1.5  # Still the same
+        >>> assert new_state.clipping_norm == 1.5  # Still the same
     """
 
-    l2_norm_bound: float
+    clipping_norm: float
+    normalize_by: float = 1.0
 
     def __post_init__(self):
         """Validate state parameters."""
-        if self.l2_norm_bound <= 0:
+        if self.clipping_norm <= 0:
             raise ValueError(
-                f"l2_norm_bound must be positive, got {self.l2_norm_bound}"
+                f"clipping_norm must be positive, got {self.clipping_norm}"
             )
-
-    def sensitivity(self) -> float:
-        """Compute L2 sensitivity for DP noise calibration.
-
-        For fixed clipping, sensitivity is always the l2_norm_bound.
-        """
-        return self.l2_norm_bound
+        if self.normalize_by <= 0:
+            raise ValueError(f"normalize_by must be positive, got {self.normalize_by}")
 
 
 __all__ = [

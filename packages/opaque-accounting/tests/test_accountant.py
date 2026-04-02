@@ -293,3 +293,124 @@ class TestAccountantTrainingLoop:
 
         eps = acct.epsilon_at(1e-5)
         assert eps > 0.5
+
+
+# ============================================================================
+# Incremental caching via acc.cached(accountant)
+# ============================================================================
+
+
+class TestAccountantCached:
+    """Test acc.cached() on Accountant for incremental PLD reuse."""
+
+    def test_cached_matches_no_cache(self):
+        """cached(acct) must produce identical epsilon as without caching."""
+        step = acc.poisson(acc.gaussian(1.1), 0.01)
+        delta = 1e-5
+
+        # Without caching
+        plain = Accountant()
+        for _ in range(20):
+            plain = plain | step
+        eps_plain = plain.epsilon_at(delta)
+
+        # With cached() at step 10
+        acct = Accountant()
+        for i in range(20):
+            acct = acct | step
+            if i == 9:
+                acct = acc.cached(acct)
+                _ = acct.epsilon_at(delta)  # populate PLD cache
+        eps_cached = acct.epsilon_at(delta)
+
+        assert abs(eps_plain - eps_cached) < 1e-10
+
+    def test_cached_returns_accountant(self):
+        """cached() on Accountant returns an Accountant."""
+        acct = Accountant()
+        acct = acct | acc.gaussian(1.0)
+        result = acc.cached(acct)
+        assert isinstance(result, Accountant)
+
+    def test_cached_preserves_budget(self):
+        """Budget is preserved through cached()."""
+        budget = epsilon_budget(5.0, delta=1e-5)
+        acct = Accountant(budget=budget)
+        acct = acct | acc.gaussian(1.0)
+        acct = acc.cached(acct)
+        assert acct._budget is budget
+
+    def test_cached_does_not_mutate(self):
+        """cached() does not mutate the original Accountant."""
+        acct = Accountant()
+        acct = acct | (acc.gaussian(1.0) * 5)
+        eps_before = acct.epsilon_at(1e-5)
+
+        _ = acc.cached(acct)
+
+        eps_after = acct.epsilon_at(1e-5)
+        assert eps_before == eps_after
+
+    def test_multiple_cached_calls(self):
+        """Multiple cached() calls produce correct results."""
+        step = acc.poisson(acc.gaussian(1.1), 0.01)
+        delta = 1e-5
+
+        # Without caching
+        plain = Accountant()
+        for _ in range(30):
+            plain = plain | step
+        eps_plain = plain.epsilon_at(delta)
+
+        # With cached() every 10 steps
+        acct = Accountant()
+        for i in range(30):
+            acct = acct | step
+            if (i + 1) % 10 == 0:
+                acct = acc.cached(acct)
+                _ = acct.epsilon_at(delta)
+        eps_cached = acct.epsilon_at(delta)
+
+        assert abs(eps_plain - eps_cached) < 1e-10
+
+    def test_cached_heterogeneous_steps(self):
+        """cached() works with heterogeneous (varying) steps."""
+        delta = 1e-5
+
+        steps = [
+            acc.poisson(acc.adaclip(acc.gaussian(1.1), expected_batch_size=bs), 0.01)
+            for bs in [120, 130, 125, 128, 135, 122, 131, 127, 129, 126]
+        ]
+
+        # Without caching
+        plain = Accountant()
+        for s in steps:
+            plain = plain | s
+        eps_plain = plain.epsilon_at(delta)
+
+        # With cached() at step 5
+        acct = Accountant()
+        for i, s in enumerate(steps):
+            acct = acct | s
+            if i == 4:
+                acct = acc.cached(acct)
+                _ = acct.epsilon_at(delta)
+        eps_cached = acct.epsilon_at(delta)
+
+        assert abs(eps_plain - eps_cached) < 1e-10
+
+    def test_cached_on_identity(self):
+        """Caching empty accountant works."""
+        acct = Accountant()
+        acct = acc.cached(acct)
+        eps = acct.epsilon_at(1e-5)
+        assert eps < 1e-10
+
+    def test_cached_idempotent(self):
+        """Double-caching an accountant is idempotent."""
+        acct = Accountant()
+        acct = acct | (acc.gaussian(1.0) * 5)
+        acct1 = acc.cached(acct)
+        acct2 = acc.cached(acct1)
+        # Inner process should be the same CachedProcess (not double-wrapped)
+        assert acct1._process is acct2._process

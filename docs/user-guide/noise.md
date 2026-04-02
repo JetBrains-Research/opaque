@@ -21,7 +21,7 @@ from opaque import gaussian_noise
 from opaque.random import key
 
 noise_fn, noise_state = gaussian_noise(
-    stddev=noise_multiplier * clip_state.sensitivity(),
+    stddev=noise_multiplier * clip_state.sensitivity,
     key=key(42),
 )
 
@@ -32,7 +32,7 @@ noisy_grads, noise_state = noise_fn(grads, noise_state)
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `stddev` | `float` | Standard deviation of Gaussian noise. Typically `noise_multiplier * clip_norm`. |
+| `stddev` | `float` | Standard deviation of Gaussian noise. Typically `noise_multiplier * sensitivity`. |
 | `key` | `RngKey` | Explicit RNG key for deterministic noise. Create with `key(seed)`. |
 
 ### Calibrating stddev
@@ -41,7 +41,7 @@ The noise standard deviation is `noise_multiplier * sensitivity`, where:
 
 - `noise_multiplier` is determined by the target privacy budget (use
   `acc.calibrate()` to find it)
-- `sensitivity` comes from `clip_state.sensitivity()`
+- `sensitivity` comes from `clip_state.sensitivity`
 
 ```python
 import opaque.accounting as acc
@@ -53,7 +53,7 @@ result = acc.calibrate(
 )
 
 noise_fn, noise_state = gaussian_noise(
-    stddev=result.param * clip_state.sensitivity(), key=key(42),
+    stddev=result.param * clip_state.sensitivity, key=key(42),
 )
 ```
 
@@ -105,7 +105,7 @@ from opaque.random import key
 
 noise_fn, noise_state = truncated_gaussian_noise(
     stddev=1.0,
-    bounds=(-2.0, 2.0),
+    radius=2.0,
     key=key(42),
 )
 noisy_grads, noise_state = noise_fn(grads, noise_state)
@@ -114,38 +114,14 @@ noisy_grads, noise_state = noise_fn(grads, noise_state)
 The truncation uses an inverse-CDF method: for each gradient element, noise is
 sampled from a Gaussian centered on that element and truncated to the bounds.
 
-Pair with `acc.truncated_gaussian(noise_multiplier, bound_multiplier)` for
-accounting.
-
-### Rectified (clamped)
-
-`rectified_gaussian_noise` draws from a standard Gaussian and clamps the result
-to `[-radius, radius]`. The excess tail mass becomes point masses at the
-boundaries.
-
-```python
-from opaque import rectified_gaussian_noise
-from opaque.random import key
-
-noise_fn, noise_state = rectified_gaussian_noise(
-    stddev=1.0,
-    radius=5.0,
-    key=key(42),
-)
-noisy_grads, noise_state = noise_fn(grads, noise_state)
-```
-
-The `radius` is specified in absolute units (not multiples of `stddev`). To
-match accounting, set `radius = bound_multiplier * stddev`.
-
-Pair with `acc.rectified_gaussian(noise_multiplier, bound_multiplier)` for
+Pair with `acc.truncated_gaussian(noise_multiplier, radius)` for
 accounting.
 
 ### Which variant to use
 
-Both give tighter ε than `acc.gaussian()`. Truncated is always at least as
-tight as rectified because its density is smoother (no point masses). For most
-workloads, prefer truncated.
+The truncated Gaussian gives tighter ε than `acc.gaussian()` because its
+bounded density limits worst-case hockey-stick divergence. For most
+workloads, prefer truncated when bounded noise is desired.
 
 ## Matrix-factorization noise (DP-FTRL)
 
@@ -206,7 +182,7 @@ from opaque.random import key
 noise_fn, noise_state = band_mf_noise(
     grad_template=params,   # any pytree with correct shapes/dtypes
     n_steps=1000,
-    stddev=noise_multiplier * clip_state.sensitivity(),
+    stddev=noise_multiplier * clip_state.sensitivity,
     key=key(42),
 )
 
@@ -237,7 +213,7 @@ from opaque.random import key
 noise_fn, noise_state = blt_mf_noise(
     grad_template=params,
     n_steps=10000,
-    stddev=noise_multiplier * clip_state.sensitivity(),
+    stddev=noise_multiplier * clip_state.sensitivity,
     key=key(42),
     max_buffers=10,
 )
@@ -255,7 +231,7 @@ from opaque.random import key
 noise_fn, noise_state = dense_mf_noise(
     grad_template=params,
     n_steps=50,
-    stddev=noise_multiplier * clip_state.sensitivity(),
+    stddev=noise_multiplier * clip_state.sensitivity,
     key=key(42),
 )
 ```
@@ -272,7 +248,7 @@ from opaque.random import key
 noise_fn, noise_state = custom_mf_noise(
     grad_template=params,
     noising=my_custom_matrix,
-    stddev=noise_multiplier * clip_state.sensitivity(),
+    stddev=noise_multiplier * clip_state.sensitivity,
     key=key(42),
 )
 ```
@@ -289,7 +265,7 @@ from opaque.random import key
 
 noise_fn, noise_state = identity_mf_noise(
     grad_template=params,
-    stddev=noise_multiplier * clip_state.sensitivity(),
+    stddev=noise_multiplier * clip_state.sensitivity,
     key=key(42),
 )
 ```
@@ -328,7 +304,7 @@ The sensitivity computation must account for this:
 noise_fn, state = blt_mf_noise(
     grad_template,
     n_steps=5000,
-    stddev=noise_multiplier * clip_norm,
+    stddev=noise_multiplier * clipping_norm,
     min_sep=100,            # minimum steps between participations
     max_participations=5,   # 5 epochs
     key=key(42),

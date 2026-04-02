@@ -25,7 +25,7 @@ def test_mps_tiny_clipped_grad_smoke():
 
     grad_fn, clip_state = clipped_grad(
         loss_fn,
-        l2_clip_norm=1.0,
+        clipping_norm=1.0,
         batch_argnums=(1, 2),
     )
 

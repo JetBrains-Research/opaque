@@ -92,37 +92,6 @@ pub fn py_parallel_poisson_gaussian_pld(
     Ok(PyPld::new(pld))
 }
 
-/// Compute the PLD for a Poisson-subsampled rectified Gaussian mechanism.
-///
-/// The rectified (clamped) Gaussian clips noise to [−R·σ, R·σ], giving
-/// tighter privacy bounds than the standard unbounded Gaussian.
-///
-/// Args:
-///     noise_multiplier (float): σ/Δ ratio, in [0.1, 1.2].
-///     radius (float): Support half-width in sigma units, in [0.1, 100].
-///     rate (float): Poisson sampling probability, in (0, 1].
-///     config (DiscretizationConfig): Discretization configuration.
-///
-/// Returns:
-///     Pld: The amplified privacy loss distribution.
-#[pyfunction]
-#[pyo3(name = "poisson_rectified_gaussian_pld", signature = (noise_multiplier, radius, rate, config))]
-pub fn py_poisson_rectified_gaussian_pld(
-    noise_multiplier: f64,
-    radius: f64,
-    rate: f64,
-    config: &PyDiscretizationConfig,
-) -> PyResult<PyPld> {
-    let pld = crate::amplification::poisson_rectified_gaussian_pld(
-        noise_multiplier,
-        radius,
-        rate,
-        &config.inner,
-    )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
-    Ok(PyPld::new(pld))
-}
-
 /// Compute the PLD for a Poisson-subsampled truncated Gaussian mechanism.
 ///
 /// The truncated (renormalized) Gaussian restricts noise to [−R·σ, R·σ]

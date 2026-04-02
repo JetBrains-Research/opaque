@@ -62,11 +62,11 @@ def test_parallel_poisson_state_dict_structure():
 
 
 def test_adaclip_state_dict_structure():
-    proc = acc.adaclip(acc.gaussian(0.8), batch_size=1000)
+    proc = acc.adaclip(acc.gaussian(0.8), expected_batch_size=1000)
     state = cast(dict[str, object], proc.state_dict())
     assert state["type"] == "AdaClip"
-    assert state["quantile_noise_multiplier"] == 0.05
-    assert state["batch_size"] == 1000
+    assert state["fraction_noise_std"] == 0.05
+    assert state["expected_batch_size"] == 1000
     inner = cast(dict[str, object], state["inner"])
     assert inner["type"] == "Gaussian"
 
@@ -120,7 +120,7 @@ def test_band_mf_amplified_round_trip():
 
 def test_accountant_state_dict_roundtrip():
     acct = Accountant()
-    step = acc.poisson(acc.adaclip(acc.gaussian(0.8), batch_size=1000), 0.01)
+    step = acc.poisson(acc.adaclip(acc.gaussian(0.8), expected_batch_size=1000), 0.01)
     acct = acct | step
     state = acct.state_dict()
     restored = Accountant.from_state_dict(state)

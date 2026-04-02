@@ -128,7 +128,7 @@ def sum_gradients_(gradients: Any) -> None:
         >>> # Each device computes clipped gradients on local batch
         >>> # (Poisson sampling: different batch sizes!)
         >>> loss_fn = lambda params, x, y: ((x @ params - y) ** 2).mean()
-        >>> grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2))
+        >>> grad_fn = clipped_grad(loss_fn, clipping_norm=1.0, batch_argnums=(1, 2))
         >>>
         >>> # Rank 0: 32 examples, Rank 1: 28 examples
         >>> grads = grad_fn(params, batch_x, batch_y)  # Sum of B clipped grads
@@ -136,7 +136,7 @@ def sum_gradients_(gradients: Any) -> None:
         >>> # Sum across devices: total 60 examples
         >>> sum_gradients_(grads)
         >>>
-        >>> # Add noise scaled to clip_norm (NOT dependent on batch size!)
+        >>> # Add noise scaled to clipping_norm (NOT dependent on batch size!)
         >>> noisy_grads = gaussian_noise(grads, sigma=1.1)
 
     Notes:

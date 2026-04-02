@@ -63,7 +63,7 @@ class TestAttentionWithMicrobatching:
             per_example_loss,
             argnums=0,
             batch_argnums=(2, 3, 4),
-            l2_clip_norm=1.0,
+            clipping_norm=1.0,
             microbatch_size=microbatch_size,
         )
         grads, state = grad_fn(

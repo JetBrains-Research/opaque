@@ -238,29 +238,23 @@ def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> N
     _setup_ddp(rank, world_size, port)
     try:
         state = AdaptiveClipState(
-            clip_norm=float(rank + 1),
-            clipping_rate=0.5 + 0.1 * rank,
-            key=rng_key(42),
+            clipping_norm=float(rank + 1),
+            normalize_by=100.0,
+            next_clipping_norm=float(rank + 1),
             step=100,
-            quantile_noise_multiplier=0.05,
-            learning_rate=0.2,
-            target_quantile=0.5,
-            clip_norm_min=0.01,
-            clip_norm_max=100.0,
-            base_clip_norm=float(rank + 1),
-            num_clipped=float(3 * (rank + 1)),
-            total=float(10 * (rank + 1)),
-            batch_size=8 * (rank + 1),
+            _rng_key=rng_key(42),
+            _fraction_noise_std=0.05,
+            _learning_rate=0.2,
+            _target_quantile=0.5,
+            _clipping_norm_min=0.01,
+            _clipping_norm_max=100.0,
+            _num_clipped=float(3 * (rank + 1)),
+            _batch_size=8 * (rank + 1),
         )
         synced = sync(state)
-        # num_clipped and total are summed, then global rate recomputed
-        expected_total_clipped = sum(3.0 * (r + 1) for r in range(world_size))
-        expected_total = sum(10.0 * (r + 1) for r in range(world_size))
-        expected_rate = expected_total_clipped / expected_total
-        assert abs(synced.clipping_rate - expected_rate) < 1e-5
-        # batch_size is summed
-        expected_batch_size = sum(8 * (r + 1) for r in range(world_size))
-        assert synced.batch_size == expected_batch_size
+        expected_bs = sum(8 * (r + 1) for r in range(world_size))
+        assert synced._batch_size == expected_bs
+        assert synced.normalize_by == 100.0
     finally:
         _cleanup_ddp()
 
@@ -299,12 +293,12 @@ def _worker_sync_noise_states(rank: int, world_size: int, port: int) -> None:
         gaussian_fn, gaussian_state = gaussian_noise(stddev=1.0, key=key(42))
         _noisy_gauss, gaussian_state = gaussian_fn(grads, gaussian_state)
         synced_gaussian_state = sync(gaussian_state)
-        assert synced_gaussian_state.step_counter == 1
+        assert synced_gaussian_state._step_counter == 1
 
         mf_fn, mf_state = identity_mf_noise(grads, stddev=1.0, key=key(42))
         _noisy_mf, mf_state = mf_fn(grads, mf_state)
         synced_mf_state = sync(mf_state)
-        assert synced_mf_state.step_counter == 1
+        assert synced_mf_state._step_counter == 1
     finally:
         _cleanup_ddp()
 
@@ -368,7 +362,7 @@ def _worker_dp_training_step(rank: int, world_size: int, port: int) -> None:
             return ((pred - y) ** 2).mean()
 
         grad_fn, clip_state = clipped_grad(
-            loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2)
+            loss_fn, clipping_norm=1.0, batch_argnums=(1, 2)
         )
         noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(0))
 
@@ -406,7 +400,7 @@ def _worker_adaptive_clipping(rank: int, world_size: int, port: int) -> None:
         grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             batch_argnums=(1, 2),
-            initial_clip_norm=0.1,
+            initial_clipping_norm=0.1,
             key=key(0),
         )
 
@@ -419,9 +413,8 @@ def _worker_adaptive_clipping(rank: int, world_size: int, port: int) -> None:
 
         new_state = sync(new_state)
 
-        assert new_state.clip_norm > 0
+        assert new_state.clipping_norm > 0
         assert new_state.step == 1
-        assert 0 <= new_state.clipping_rate <= 1
         assert grads is not None
     finally:
         _cleanup_ddp()
@@ -443,7 +436,7 @@ def _worker_adaptive_clipping_uneven_batches(
         grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             batch_argnums=(1, 2),
-            initial_clip_norm=0.1,
+            initial_clipping_norm=0.1,
             key=key(0),
         )
 
@@ -456,9 +449,8 @@ def _worker_adaptive_clipping_uneven_batches(
 
         synced = sync(new_state)
 
-        assert synced.batch_size == 11
-        assert synced.total == 11.0
-        assert 0.0 <= synced.clipping_rate <= 1.0
+        assert synced._batch_size == 11
+        assert synced.next_clipping_norm > 0
     finally:
         _cleanup_ddp()
 
@@ -477,7 +469,7 @@ def _worker_sync_aux_adaptive_clipping(rank: int, world_size: int, port: int) ->
         grad_fn, clip_state = adaptive_clipped_grad(
             loss_fn,
             batch_argnums=(1, 2),
-            initial_clip_norm=0.1,
+            initial_clipping_norm=0.1,
             key=key(0),
             return_aux=True,
         )
@@ -494,7 +486,7 @@ def _worker_sync_aux_adaptive_clipping(rank: int, world_size: int, port: int) ->
         assert synced_aux.grad_norms.shape[0] == expected_n
         assert synced_aux.clipped_grad_norms.shape[0] == expected_n
 
-        local_clipped = float((aux.grad_norms > new_state.clip_norm).sum().item())
+        local_clipped = float((aux.grad_norms > new_state.clipping_norm).sum().item())
         local_total = float(aux.grad_norms.numel())
         global_clipped = reduce_scalar(local_clipped, op="sum", device=device)
         global_total = reduce_scalar(local_total, op="sum", device=device)
@@ -518,7 +510,7 @@ def _worker_checkpointed_dp_training_step(
             return ((pred - y) ** 2).mean()
 
         grad_fn, clip_state = clipped_grad(
-            loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2)
+            loss_fn, clipping_norm=1.0, batch_argnums=(1, 2)
         )
 
         x = torch.randn(8, 10, device=device)

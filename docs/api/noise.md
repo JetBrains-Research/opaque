@@ -14,8 +14,6 @@ Opaque provides several noise mechanisms:
 - **`gaussian_noise()`** — Standard (unbounded) Gaussian noise. The default for most DP-SGD workflows.
 - **`truncated_gaussian_noise()`** — Bounded Gaussian noise (renormalized density). The tail mass
   is redistributed over the bounded interval — no point masses at the boundaries.
-- **`rectified_gaussian_noise()`** — Bounded Gaussian noise (clamped). Standard Gaussian clamped
-  to `[-radius, radius]`. The excess tail mass becomes point masses at the boundaries.
 
 ### Correlated Noise (DP-FTRL / Matrix Factorization)
 
@@ -29,8 +27,9 @@ All noise functions return `(noise_fn, state)` where `noise_fn(grads, state) -> 
 
 ### State Classes
 
+- **`NoiseState`** — Abstract base class for all noise state types. Defines `_step_counter` and `_rng_key`.
 - **`GaussianNoiseState`** — State for `gaussian_noise()`. Holds step counter and RNG key.
-- **`MFNoiseState`** — State for all MF noise functions. Holds noise buffers, step counter, and correlation state.
+- **`MFNoiseState`** — State for all MF noise functions. Holds internal correlation state, step counter, and RNG key.
 
 ### Distributed Sync Helpers
 
@@ -52,10 +51,6 @@ across ranks. It auto-dispatches based on type:
 
 ::: opaque.noise.truncated_gaussian_noise
 
-## Bounded Gaussian — Rectified (clamped)
-
-::: opaque.noise.rectified_gaussian_noise
-
 ## Matrix Factorization Noise
 
 ::: opaque.noise.band_mf_noise
@@ -69,6 +64,11 @@ across ranks. It auto-dispatches based on type:
 ::: opaque.noise.custom_mf_noise
 
 ## State Classes
+
+::: opaque.noise.types.NoiseState
+    options:
+      show_source: true
+      heading_level: 3
 
 ::: opaque.noise.gaussian_noise.GaussianNoiseState
     options:

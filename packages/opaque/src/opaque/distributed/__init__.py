@@ -23,7 +23,7 @@ Example - Standard DP-SGD with Poisson Sampling:
     >>> dist.init_process_group(backend='nccl')
     >>>
     >>> # Each device: compute clipped gradients on local batch (Poisson sampling)
-    >>> grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2))
+    >>> grad_fn = clipped_grad(loss_fn, clipping_norm=1.0, batch_argnums=(1, 2))
     >>> grads = grad_fn(params, batch_x, batch_y)  # Sum of B_local clipped grads
     >>>
     >>> # Sum across devices: total gradients from all examples
@@ -40,11 +40,11 @@ Example - Adaptive Clipping (Automatic Distributed Detection):
     >>> grad_fn, clip_state = adaptive_clipped_grad(
     ...     loss_fn,
     ...     batch_argnums=(1, 2),
-    ...     initial_clip_norm=1.0,
+    ...     initial_clipping_norm=1.0,
     ... )
     >>>
     >>> # In distributed mode, gathers ALL per-example norms from ALL devices
-    >>> # to compute global quantile (clip_norm identical everywhere)
+    >>> # to compute global quantile (clipping_norm identical everywhere)
     >>> grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 """
 

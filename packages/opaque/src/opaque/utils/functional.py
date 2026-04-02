@@ -162,7 +162,7 @@ def make_functional(
         ...     return ((pred - y) ** 2).mean()
         >>>
         >>> grad_fn, clip_state = clipped_grad(
-        ...     loss_fn, argnums=0, batch_argnums=(1, 2), l2_clip_norm=1.0
+        ...     loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0
         ... )
         >>> noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(42))
         >>> optimizer = torch.optim.SGD([p for p in model.parameters() if p.requires_grad], lr=1e-3)

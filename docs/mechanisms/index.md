@@ -13,15 +13,14 @@ Simple and broadly applicable.
 | Mechanism | Noise distribution | Support | Privacy ordering |
 |-----------|--------------------|---------|-----------------|
 | [Gaussian](gaussian.md) | $\mathcal{N}(0, \sigma^2)$ | $(-\infty, +\infty)$ | Baseline |
-| [Rectified Gaussian](rectified-gaussian.md) | $\mathcal{N}(0, \sigma^2)$ clamped | $[-R\sigma, R\sigma]$ | $\leq$ Gaussian |
-| [Truncated Gaussian](truncated-gaussian.md) | $\mathcal{N}(0, \sigma^2)$ renormalized | $[-R\sigma, R\sigma]$ | $\leq$ Rectified $\leq$ Gaussian |
+| [Truncated Gaussian](truncated-gaussian.md) | $\mathcal{N}(0, \sigma^2)$ renormalized | $[-R\sigma, R\sigma]$ | $\leq$ Gaussian |
 
 **Privacy ordering** means: for the same noise multiplier $\sigma$ and radius $R$,
 
-$$\varepsilon_{\text{truncated}} \leq \varepsilon_{\text{rectified}} \leq \varepsilon_{\text{Gaussian}}$$
+$$\varepsilon_{\text{truncated}} \leq \varepsilon_{\text{Gaussian}}$$
 
 at every $\delta$. Truncated gives the tightest accounting; Gaussian the loosest.
-All three converge as $R \to \infty$.
+They converge as $R \to \infty$.
 
 ## Correlated noise (DP-FTRL)
 
@@ -65,7 +64,6 @@ support all amplification types:
 | Mechanism | `poisson()` | `truncated_poisson()` | `cyclic_poisson()` |
 |-----------|:-----------:|:---------------------:|:-------------------:|
 | Gaussian | Yes | Yes | — |
-| Rectified Gaussian | Yes | — | — |
 | Truncated Gaussian | Yes | — | — |
 | BandMF | — | — | Yes |
 | BLT | *internal* | — | — |
@@ -88,7 +86,6 @@ import opaque.accounting as acc
 
 # --- Independent noise ---
 gauss     = acc.poisson(acc.gaussian(1.0), sample_rate=0.01) * 1000
-rect      = acc.poisson(acc.rectified_gaussian(1.0, 5.0), sample_rate=0.01) * 1000
 trunc     = acc.poisson(acc.truncated_gaussian(1.0, 5.0), sample_rate=0.01) * 1000
 
 # --- Correlated noise ---

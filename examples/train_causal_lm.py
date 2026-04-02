@@ -23,25 +23,26 @@ USAGE:
 
   # Or customize individual parameters:
   python examples/train_causal_lm.py \\
-    --model_name "JetBrains/Mellum-4b-base" \\
+    --model-name "JetBrains/Mellum-4b-base" \\
     --dataset "JetBrains/KStack" \\
-    --dataset_text_field "content" \\
-    --num_train_samples 50000 \\
-    --num_eval_samples 1000 \\
-    --num_epochs 3 \\
-    --batch_size 32 \\
-    --eval_steps 50 \\
-    --target_epsilon 10.0 \\
-    --learning_rate 5e-5 \\
-    --lora_r 16 --lora_alpha 32 \\
-    --max_seq_len 1024 \\
-    --lora_modules q_proj k_proj v_proj o_proj \\
-    --audit --audit_canaries 1000 \\
-    --no_wandb
+    --dataset-text-field "content" \\
+    --num-train-samples 50000 \\
+    --num-eval-samples 1000 \\
+    --num-epochs 3 \\
+    --batch-size 32 \\
+    --eval-steps 50 \\
+    --target-epsilon 10.0 \\
+    --learning-rate 5e-5 \\
+    --lora-r 16 --lora-alpha 32 \\
+    --max-seq-len 1024 \\
+    --lora-modules q_proj k_proj v_proj o_proj \\
+    --audit --audit-canaries 1000 \\
+    --no-wandb
 """
 
 import argparse
 import contextlib
+import functools
 import importlib.util
 import os
 import sys
@@ -66,7 +67,7 @@ from opaque.accounting import calibration as cal, Accountant
 from opaque.clipping import adaptive_clipped_grad, clipped_grad
 from opaque.compat.transformers import is_kernel_patched
 from opaque.distributed import sum_gradients_, sync
-from opaque.noise import gaussian_noise
+from opaque.noise import gaussian_noise, truncated_gaussian_noise
 from opaque.profiling import StepTimer, TrainingProfiler, print_memory, reset_peak_memory
 from opaque.random import key, fold_in
 from opaque.sampling import PoissonSampler
@@ -252,7 +253,7 @@ def parse_args():
 
     model_group = parser.add_argument_group("model", "Model and tokenizer settings")
     model_group.add_argument(
-        "--model_name",
+        "--model-name",
         type=str,
         default="gpt2",
         help="HuggingFace model name or local path",
@@ -265,7 +266,7 @@ def parse_args():
         help="Attention implementation (default: sdpa, which is faster and uses less memory)",
     )
     model_group.add_argument(
-        "--sdpa_backend",
+        "--sdpa-backend",
         type=str,
         choices=["flash", "efficient", "cudnn", "math"],
         default=None,
@@ -277,58 +278,58 @@ def parse_args():
         "--dataset", type=str, default="ag_news", help="HuggingFace dataset name"
     )
     data_group.add_argument(
-        "--dataset_subset",
-        "--dataset_name",
+        "--dataset-subset",
+        "--dataset-name",
         dest="dataset_subset",
         type=str,
         default=None,
         help="Optional dataset subset (HF load_dataset 'name' argument), e.g. 'stage1-auto-format'.",
     )
     data_group.add_argument(
-        "--dataset_split", type=str, default="train", help="Dataset split for training"
+        "--dataset-split", type=str, default="train", help="Dataset split for training"
     )
     data_group.add_argument(
-        "--dataset_text_field",
+        "--dataset-text-field",
         type=str,
         default="text",
         help="Field containing text",
     )
     data_group.add_argument(
-        "--num_train_samples",
+        "--num-train-samples",
         type=int,
         default=5000,
         help="Number of training examples (default: 5000 for smoke test)",
     )
     data_group.add_argument(
-        "--num_eval_samples",
-        "--num_eval_samples_alt",
+        "--num-eval-samples",
+        "--num-eval-samples-alt",
         dest="num_eval_samples",
         type=int,
         default=100,
         help="Number of samples for periodic eval-loss reporting (batched)",
     )
     data_group.add_argument(
-        "--max_seq_len", type=int, default=512, help="Maximum sequence length"
+        "--max-seq-len", type=int, default=512, help="Maximum sequence length"
     )
 
     train_group = parser.add_argument_group("training", "Training loop settings")
     train_group.add_argument(
-        "--batch_size",
+        "--batch-size",
         type=int,
         default=16,
         help="Expected batch size for Poisson sampling (determines sample_rate)"
     )
     train_group.add_argument(
-        "--eval_batch_size",
+        "--eval-batch-size",
         type=int,
         default=None,
         help="Batch size for evaluation (default: same as batch_size, can be larger since no privacy needed)"
     )
     train_group.add_argument(
-        "--num_epochs", type=int, default=3, help="Number of epochs"
+        "--num-epochs", type=int, default=3, help="Number of epochs"
     )
     train_group.add_argument(
-        "--learning_rate", type=float, default=1.0e-5, help="Learning rate"
+        "--learning-rate", type=float, default=1.0e-5, help="Learning rate"
     )
     train_group.add_argument(
         "--optimizer",
@@ -338,42 +339,42 @@ def parse_args():
         help="Optimizer",
     )
     train_group.add_argument(
-        "--log_steps",
+        "--log-steps",
         type=int,
         default=1,
         help="Log training metrics every N steps",
     )
     train_group.add_argument(
-        "--eval_steps",
+        "--eval-steps",
         type=int,
         default=10,
         help="Log eval loss and privacy every N steps",
     )
     train_group.add_argument(
-        "--max_steps",
+        "--max-steps",
         type=int,
         default=None,
         help="Maximum training steps (overrides num_epochs if set)",
     )
     train_group.add_argument("--seed", type=int, default=42, help="Random seed")
     train_group.add_argument(
-        "--gradient_checkpointing",
+        "--gradient-checkpointing",
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Enable gradient checkpointing for memory savings (trades compute for memory)",
     )
     train_group.add_argument(
-        "--cpu_offload",
+        "--cpu-offload",
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Offload saved tensors to CPU via save_on_cpu (works with or without checkpointing)",
     )
 
     lora_group = parser.add_argument_group("lora", "LoRA adapter settings")
-    lora_group.add_argument("--lora_r", type=int, default=4, help="LoRA rank")
-    lora_group.add_argument("--lora_alpha", type=int, default=8, help="LoRA alpha")
+    lora_group.add_argument("--lora-r", type=int, default=4, help="LoRA rank")
+    lora_group.add_argument("--lora-alpha", type=int, default=8, help="LoRA alpha")
     lora_group.add_argument(
-        "--lora_modules",
+        "--lora-modules",
         type=str,
         nargs="+",
         default=["c_attn", "c_proj"],
@@ -386,38 +387,52 @@ def parse_args():
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Shard dataset across DDP ranks (default). "
-        "Use --no_shard to replicate full dataset on each rank "
+        "Use --no-shard to replicate full dataset on each rank "
         "(uses parallel_poisson accounting).",
     )
     dp_group.add_argument(
-        "--clip_norm",
+        "--clipping-norm",
         type=float,
         default=1.0,
-        help="Clip norm (fixed mode) or starting clip norm (adaptive mode)",
+        help="Clipping norm (fixed mode) or starting clipping norm (adaptive mode)",
     )
     dp_group.add_argument(
-        "--adaptive_clipping",
+        "--adaptive-clipping",
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Use adaptive clipping (default: True)",
     )
     dp_group.add_argument(
-        "--target_clip_rate",
+        "--target-clipping-rate",
         type=float,
         default=0.5,
         help="Target clipping rate for adaptive clipping",
     )
     dp_group.add_argument(
-        "--clip_norm_max",
+        "--clipping-norm-max",
         type=float,
         default=10.0,
-        help="Maximum clip norm in adaptive mode",
+        help="Maximum clipping norm in adaptive mode",
     )
     dp_group.add_argument(
-        "--microbatch_size",
+        "--microbatch-size",
         type=int,
         default=None,
         help="Microbatch size passed to clipped_grad/adaptive_clipped_grad (None=process full batch with vmap, faster but more memory)",
+    )
+    dp_group.add_argument(
+        "--noise-mechanism",
+        type=str,
+        choices=["gaussian", "truncated_gaussian"],
+        default="gaussian",
+        help="Noise mechanism: gaussian (standard) "
+             "or truncated_gaussian (renormalized, tighter accounting)",
+    )
+    dp_group.add_argument(
+        "--noise-radius",
+        type=float,
+        default=3.0,
+        help="Support half-width in sigma units for rectified/truncated Gaussian (ignored for standard gaussian)",
     )
 
     # Model precision
@@ -434,37 +449,37 @@ def parse_args():
         "privacy", "Privacy accounting and noise calibration"
     )
     privacy_group.add_argument(
-        "--target_epsilon",
+        "--target-epsilon",
         type=float,
         default=3.0,
         help="Target epsilon used to calibrate noise_multiplier",
     )
     privacy_group.add_argument(
-        "--target_delta",
+        "--target-delta",
         type=float,
         default=None,
         help="Target delta for DP accounting. Default: 1/n² where n = training set size.",
     )
     privacy_group.add_argument(
-        "--noise_multiplier",
+        "--noise-multiplier",
         type=float,
         default=None,
         help="Use a fixed noise multiplier instead of calibrating from target_epsilon",
     )
     privacy_group.add_argument(
-        "--calibration_min",
+        "--calibration-min",
         type=float,
         default=0.11,
         help="Lower bound for noise calibration search",
     )
     privacy_group.add_argument(
-        "--calibration_max",
+        "--calibration-max",
         type=float,
         default=1.19,
         help="Upper bound for noise calibration search",
     )
     privacy_group.add_argument(
-        "--calibration_tolerance",
+        "--calibration-tolerance",
         type=float,
         default=1e-3,
         help="Tolerance for noise calibration",
@@ -478,13 +493,13 @@ def parse_args():
         help="Enable empirical auditing (disabled by default)",
     )
     audit_group.add_argument(
-        "--audit_canaries",
+        "--audit-canaries",
         type=int,
         default=1000,
         help="Number of canaries for one-run auditing",
     )
     audit_group.add_argument(
-        "--audit_batch_size",
+        "--audit-batch-size",
         type=int,
         default=None,
         help="Batch size for auditing scoring (default: same as microbatch_size; forward-only so less memory than training)",
@@ -492,24 +507,24 @@ def parse_args():
 
     tracking_group = parser.add_argument_group("tracking", "Experiment tracking (W&B)")
     tracking_group.add_argument(
-        "--no_wandb",
+        "--no-wandb",
         action="store_true",
         help="Disable experiment tracking (wandb is enabled by default, offline if no credentials)",
     )
     tracking_group.add_argument(
-        "--wandb_project",
+        "--wandb-project",
         type=str,
         default=os.environ.get("WANDB_PROJECT", "opaque"),
         help="W&B project name (default: WANDB_PROJECT env var or 'opaque')",
     )
     tracking_group.add_argument(
-        "--wandb_run_name",
+        "--wandb-run-name",
         type=str,
         default=os.environ.get("WANDB_NAME") or os.environ.get("RUN_NAME"),
         help="Run name (default: WANDB_NAME, then RUN_NAME env var, or auto-generated from model and hyperparameters)",
     )
     tracking_group.add_argument(
-        "--wandb_entity",
+        "--wandb-entity",
         type=str,
         default=os.environ.get("WANDB_ENTITY"),
         help="W&B entity/team (default: WANDB_ENTITY env var)",
@@ -556,7 +571,7 @@ def parse_args():
     elif args.preset == "mellum-kstack":
         # Golden configuration for Mellum-4b + KStack training on H200
         # Memory: Model=7.5 GiB. Throughput saturates at mb=16 (~20 samples/s, 58 GB peak).
-        # mb=32 gives same speed but 108 GB. With --gradient_checkpointing, mb=32+ fits easily.
+        # mb=32 gives same speed but 108 GB. With --gradient-checkpointing, mb=32+ fits easily.
         _set("model_name", "JetBrains/Mellum-4b-base")
         _set("dataset", "JetBrains/KStack")
         _set("dataset_text_field", "content")
@@ -951,7 +966,10 @@ def main():
     print("\nSetting up DP-SGD training...")
     print(f"  Optimizer: {args.optimizer}")
     print(f"  Learning rate: {args.learning_rate}")
-    print(f"  Clip norm: {args.clip_norm}")
+    print(f"  Clip norm: {args.clipping_norm}")
+    print(f"  Noise mechanism: {args.noise_mechanism}")
+    if args.noise_mechanism != "gaussian":
+        print(f"  Noise radius: {args.noise_radius}σ")
     print(f"  Microbatch size: {args.microbatch_size}")
     print(f"  Adaptive clipping: {args.adaptive_clipping}")
     print(f"  Eval steps: {args.eval_steps}")
@@ -971,19 +989,21 @@ def main():
             per_example_loss_fn,
             argnums=0,
             batch_argnums=(1,),
-            initial_clip_norm=args.clip_norm,
-            target_quantile=1.0 - args.target_clip_rate,
-            clip_norm_max=args.clip_norm_max,
+            initial_clipping_norm=args.clipping_norm,
+            target_quantile=1.0 - args.target_clipping_rate,
+            clipping_norm_max=args.clipping_norm_max,
             microbatch_size=args.microbatch_size,
             return_aux=True,
             key=key(args.seed),
+            normalize_by=args.batch_size,
         )
     else:
         grad_fn, clip_state = clipped_grad(
             per_example_loss_fn,
             argnums=0,
             batch_argnums=(1,),
-            l2_clip_norm=args.clip_norm,
+            clipping_norm=args.clipping_norm,
+            normalize_by=args.batch_size,
             microbatch_size=args.microbatch_size,
             return_aux=True,
         )
@@ -1001,6 +1021,28 @@ def main():
     if use_wandb:
         wandb.config.update({"target_delta": args.target_delta}, allow_val_change=True)
 
+    # Noise injection — bind mechanism-specific parameters once.
+    if args.noise_mechanism == "truncated_gaussian":
+        mechanism = functools.partial(acc.truncated_gaussian, radius=args.noise_radius)
+        make_noise = functools.partial(truncated_gaussian_noise, radius=args.noise_radius)
+    else:
+        mechanism = acc.gaussian
+        make_noise = gaussian_noise
+
+    if args.adaptive_clipping:
+        adaclip_mechanism = lambda nm, ebs=args.batch_size: acc.adaclip(
+            mechanism(nm), expected_batch_size=ebs,
+        )
+
+    # Bind amplification type once — poisson vs parallel_poisson.
+    if use_parallel_poisson:
+        amplify = functools.partial(
+            acc.parallel_poisson, sample_rate=sample_rate, num_workers=world_size,
+        )
+    else:
+        amplify = functools.partial(acc.poisson, sample_rate=sample_rate)
+
+    # Calibrate noise multiplier from target privacy budget.
     if args.noise_multiplier is not None:
         noise_multiplier = args.noise_multiplier
         print(f"\nUsing fixed noise multiplier: {noise_multiplier:.4f} (skipping calibration)")
@@ -1008,6 +1050,9 @@ def main():
         print("\nCalibrating privacy parameters...")
         if use_parallel_poisson:
             print(f"  Accounting: parallel_poisson (world_size={world_size})")
+        print(f"  Noise mechanism: {args.noise_mechanism}")
+        if args.noise_mechanism != "gaussian":
+            print(f"  Noise radius: {args.noise_radius}σ")
         print(f"  δ = {args.target_delta:.2e} (n={global_train_size})")
         print(f"  Total steps: {total_steps}")
         print(f"  Sample rate: {sample_rate:.6f}")
@@ -1016,17 +1061,11 @@ def main():
 
         start_time = time.time()
         budget = cal.epsilon_budget(args.target_epsilon, delta=args.target_delta)
-        if use_parallel_poisson:
-            process_fn = lambda nm: acc.parallel_poisson(
-                acc.gaussian(nm), sample_rate=sample_rate, num_workers=world_size,
-            ) * total_steps
-        else:
-            process_fn = lambda nm: acc.poisson(
-                acc.gaussian(nm), sample_rate=sample_rate,
-            ) * total_steps
         calibration = cal.calibrate(
             budget,
-            process_fn,
+            (lambda nm: amplify(adaclip_mechanism(nm)) * total_steps)
+            if args.adaptive_clipping
+            else (lambda nm: amplify(mechanism(nm)) * total_steps),
             param_min=args.calibration_min,
             param_max=args.calibration_max,
             tolerance=args.calibration_tolerance,
@@ -1044,18 +1083,12 @@ def main():
             f"(iterations={calibration.iterations}, converged={calibration.converged})"
         )
 
-    # Accounting (all pld() calls automatically cached with maxsize=8)
-    # Using acc.cached() here increases cache to maxsize=16 and creates merge barrier
     accounting = Accountant()
-    if use_parallel_poisson:
-        step_process = acc.cached(acc.parallel_poisson(
-            acc.gaussian(noise_multiplier), sample_rate=sample_rate, num_workers=world_size,
-        ))
-    else:
-        step_process = acc.cached(acc.poisson(acc.gaussian(noise_multiplier), sample_rate))
 
-    # Initialize noise function
-    noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_state.sensitivity(), key=key(args.seed))
+    # Noise function — created once; per-call stddev override tracks adaptive clipping_norm.
+    noise_fn, noise_state = make_noise(
+        stddev=noise_multiplier * clip_state.sensitivity, key=key(args.seed),
+    )
 
     # Training loop
     print("\n" + "=" * 80)
@@ -1071,6 +1104,19 @@ def main():
     reset_peak_memory(device)
     profiler, _ = profiler.mark("training_start")
     print_memory(device, "Before training")
+
+    # Step-0 eval: log baseline metrics before any training
+    initial_eval_loss = eval_loss(trainable_params)
+    initial_epsilon = accounting.epsilon_at(args.target_delta)
+    initial_noise_std = noise_multiplier * clip_state.sensitivity
+    print(f"  → Step 0 eval: loss={initial_eval_loss:.4f}, ε={initial_epsilon:.3f}")
+    if use_wandb:
+        wandb.log({
+            "eval/loss": initial_eval_loss,
+            "privacy/epsilon": initial_epsilon,
+            "train/noise_std": initial_noise_std,
+            "train/clipping_norm": args.clipping_norm,
+        }, step=0)
 
     for epoch in range(args.num_epochs):
         print(f"\nEpoch {epoch + 1}/{args.num_epochs}")
@@ -1097,91 +1143,89 @@ def main():
         for step_idx, batch in enumerate(epoch_loader):
             (input_ids,) = batch
 
-            # Accounting update (must happen even for empty batches)
-            accounting |= step_process
+            # === Accounting (data-independent, before execution) ===
+            if args.adaptive_clipping:
+                accounting |= amplify(adaclip_mechanism(noise_multiplier))
+            else:
+                accounting |= amplify(mechanism(noise_multiplier))
 
-            # Skip if no examples sampled (rare but possible with Poisson)
+            # Empty batch (rare but possible with Poisson): skip execution.
             if len(input_ids) == 0:
                 continue
 
-            # Time the training step using profiler
-            step_timer = StepTimer(device, batch_size=len(input_ids))
+            # === Execution ===
+            batch_size = len(input_ids)
+            step_timer = StepTimer(device, batch_size=batch_size)
             with step_timer:
-                # Compute clipped gradients (with state passing)
                 with offload_ctx:
                     (grads_tuple, aux), clip_state = grad_fn(
                         trainable_params, input_ids, state=clip_state
                     )
-                current_clip_norm = clip_state.clip_norm
-
                 if is_ddp:
                     clip_state, aux = sync(clip_state, aux)
-                    current_clip_norm = clip_state.clip_norm
                     sum_gradients_(grads_tuple)
 
-                # Add Gaussian noise
-                stddev = noise_multiplier * clip_state.sensitivity()
-                noisy_grads, noise_state = noise_fn(grads_tuple, noise_state)
+                noise_stddev = noise_multiplier * clip_state.sensitivity
+                noisy_grads, noise_state = noise_fn(
+                    grads_tuple, noise_state, stddev=noise_stddev,
+                )
                 if is_ddp:
                     noise_state = sync(noise_state)
 
-                # Optimizer step (no adapter wrapper - optimizer used directly)
                 updates, opt_state = base_opt.update(
                     noisy_grads, opt_state, params=trainable_params
                 )
-
-                # Apply updates
                 trainable_params = torchopt.apply_updates(trainable_params, updates)
 
             profiler = profiler.add_step(step_timer)
 
-            # Extract metrics from aux
+            # === Step metrics ===
             avg_loss = aux.loss_values.mean().item()
-            mean_grad_norm = aux.grad_norms.mean().item()
-            clipped_grad_norm_mean = aux.clipped_grad_norms.mean().item()
+            clipping_norm = clip_state.clipping_norm
             clip_rate = aux.clipping_rate
+            mean_grad_norm = aux.grad_norms.mean().item()
 
             losses.append(avg_loss)
-            clip_norms_history.append(current_clip_norm)
+            clip_norms_history.append(clipping_norm)
             clip_rates_history.append(clip_rate)
 
             global_step += 1
 
-            # Log training metrics every log_steps
+            # === Logging (every log_steps) ===
             if global_step % args.log_steps == 0:
-                num_clipped = int(clip_rate * len(aux.grad_norms))
                 log_profiler = sync(profiler) if is_ddp else profiler
-                profiler = log_profiler  # flush pending steps so next sync covers only new records
-                perf_metrics = profiler.current_metrics()
+                profiler = log_profiler
+                perf = profiler.current_metrics()
 
-                # W&B logging
                 if use_wandb:
                     wandb.log({
                         "train/loss": avg_loss,
-                        "train/clip_norm": current_clip_norm,
+                        "train/clipping_norm": clipping_norm,
                         "train/clip_rate": clip_rate,
                         "train/grad_norm_mean": mean_grad_norm,
-                        "train/clipped_grad_norm_mean": clipped_grad_norm_mean,
-                        "train/noise_std": stddev,
-                        "perf/step_time_sec": perf_metrics["step_time_sec"],
-                        "perf/throughput_samples_per_sec": perf_metrics["throughput_samples_sec"],
-                        "perf/allocated_gb": perf_metrics["memory_allocated_gb"],
-                        "perf/reserved_gb": perf_metrics["memory_reserved_gb"],
-                        "perf/peak_gb": perf_metrics["memory_peak_gb"],
+                        "train/clipped_grad_norm_mean": aux.clipped_grad_norms.mean().item(),
+                        "train/noise_std": noise_stddev,
+                        "perf/step_time_sec": perf["step_time_sec"],
+                        "perf/throughput_samples_per_sec": perf["throughput_samples_sec"],
+                        "perf/allocated_gb": perf["memory_allocated_gb"],
+                        "perf/reserved_gb": perf["memory_reserved_gb"],
+                        "perf/peak_gb": perf["memory_peak_gb"],
                     }, step=global_step)
 
-                # Console logging
                 print(
                     f"Step {global_step:4d} [E{epoch + 1} S{step_idx + 1:3d}/{expected_steps_per_epoch:3d}] | "
                     f"Loss: {avg_loss:.4f} | "
-                    f"Clip: norm={current_clip_norm:.3f}, rate={clip_rate:.1%} ({num_clipped}/{len(aux.grad_norms)}) | "
-                    f"GradNorm: μ={mean_grad_norm:.3f}, σ={stddev:.4f} | "
-                    f"Time: {perf_metrics['step_time_sec']:.2f}s | Mem: {perf_metrics['memory_peak_gb']:.1f}GB"
+                    f"Clip: norm={clipping_norm:.3f}, rate={clip_rate:.1%} | "
+                    f"GradNorm: μ={mean_grad_norm:.3f} | "
+                    f"Noise: σ={noise_stddev:.4f} | "
+                    f"Time: {perf['step_time_sec']:.2f}s | Mem: {perf['memory_peak_gb']:.1f}GB"
                 )
 
             # Expensive operations (eval + privacy + audit) every eval_steps
             if global_step % args.eval_steps == 0:
                 current_eval_loss = eval_loss(trainable_params)
+                # Cache PLD before eval so it serves as opaque boundary
+                accounting = acc.cached(accounting)
                 epsilon = accounting.epsilon_at(args.target_delta)
 
                 metrics = {
@@ -1225,14 +1269,14 @@ def main():
 
     if args.adaptive_clipping:
         print("\nAdaptive clipping:")
-        print(f"  Initial clip norm: {args.clip_norm:.3f}")
-        print(f"  Final clip norm: {clip_state.clip_norm:.3f}")
+        print(f"  Initial clip norm: {args.clipping_norm:.3f}")
+        print(f"  Final clip norm: {clip_state.clipping_norm:.3f}")
         print(
             f"  Clip norm range: [{min(clip_norms_history):.3f}, {max(clip_norms_history):.3f}]"
         )
     else:
         print("\nFixed clipping:")
-        print(f"  Clip norm: {args.clip_norm:.3f}")
+        print(f"  Clip norm: {args.clipping_norm:.3f}")
         print(
             f"  Average clip rate: {sum(clip_rates_history) / len(clip_rates_history):.2%}"
         )

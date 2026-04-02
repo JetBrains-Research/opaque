@@ -326,13 +326,12 @@ impact on model quality.
 
 ### Independent noise (DP-SGD)
 
-Standard DP-SGD adds independent noise at each training step. Three Gaussian
-variants are available, ordered from weakest to strongest privacy guarantee at
-the same noise level:
+Standard DP-SGD adds independent noise at each training step. Two Gaussian
+variants are available:
 
-$$\text{Truncated} \leq \text{Rectified} \leq \text{Gaussian}$$
+$$\\text{Truncated} \\leq \\text{Gaussian}$$
 
-Truncated and rectified Gaussian mechanisms add bounded noise (clamped to
+The truncated Gaussian mechanism adds bounded noise (clamped to
 $[-R\sigma, R\sigma]$), which gives tighter privacy accounting than
 unbounded Gaussian noise. The privacy improvement is free — the noise
 magnitude is identical. See [Mechanisms](../mechanisms/index.md) for the
@@ -368,9 +367,10 @@ The privacy guarantee depends on what "differ in one record" means:
 | Add or remove | $D' = D \pm$ one record | $C$ |
 | Replace one | $D' = D$ with one record swapped | $2C$ |
 
-Opaque uses the **add-or-remove** convention: `sensitivity()` returns the
-clip norm $C$. If your analysis uses replace-one semantics, double the
-sensitivity when calibrating noise ($\sigma = \text{noise\_multiplier} \times 2C$).
+Opaque uses the **add-or-remove** convention: `clip_state.sensitivity` returns
+$C / \text{normalize\_by}$. When `normalize_by` is set to the expected batch size $B$,
+sensitivity is $C/B$. If your analysis uses replace-one
+semantics, double it when calibrating noise ($\sigma = \text{noise\_multiplier} \times 2 \times \text{sensitivity}$).
 
 ## References
 

@@ -15,7 +15,8 @@ to a maximum L2 norm, and sums the result.
 from opaque import clipped_grad
 
 grad_fn, clip_state = clipped_grad(
-    loss_fn, l2_clip_norm=1.0, argnums=0, batch_argnums=1,
+    loss_fn, clipping_norm=1.0, argnums=0, batch_argnums=1,
+    normalize_by=batch_size,
 )
 grads, clip_state = grad_fn(params, batch, state=clip_state)
 ```
@@ -30,13 +31,13 @@ from opaque import gaussian_noise
 from opaque.random import key
 
 noise_fn, noise_state = gaussian_noise(
-    stddev=noise_multiplier * clip_state.sensitivity(), key=key(42),
+    stddev=noise_multiplier * clip_state.sensitivity, key=key(42),
 )
 noisy_grads, noise_state = noise_fn(grads, noise_state)
 ```
 
 Three noise families are available: **standard Gaussian** (`gaussian_noise`),
-**bounded Gaussian** (`truncated_gaussian_noise`, `rectified_gaussian_noise`) for
+**bounded Gaussian** (`truncated_gaussian_noise`) for
 tighter accounting at the same noise level, and **matrix factorization**
 (`band_mf_noise`, `blt_mf_noise`, `dense_mf_noise`) for correlated noise that
 reduces effective noise on cumulative updates (DP-FTRL). See the

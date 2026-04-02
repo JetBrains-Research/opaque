@@ -124,7 +124,7 @@ sensitivity-1 queries. Base mechanism for DP-SGD.
 Poisson-subsampled mechanism (standard DP-SGD step). `sample_rate` is
 `batch_size / dataset_size`.
 
-- `inner` (Gaussian | RectifiedGaussian | TruncatedGaussian | AdaClip): Base mechanism
+- `inner` (Gaussian | TruncatedGaussian | AdaClip): Base mechanism
 - `sample_rate` (float): Probability of including each example, in (0, 1]
 
 ```python
@@ -137,7 +137,7 @@ Truncated Poisson sampling with capped batch size. Gives tighter privacy bounds
 than standard Poisson subsampling. Use this for production DP-SGD with a fixed
 batch size limit.
 
-- `inner` (Gaussian): Base Gaussian mechanism (from `gaussian()`)
+- `inner` (Gaussian | AdaClip): Base mechanism (from `gaussian()` or `adaclip()`)
 - `sample_rate` (float): Expected sampling rate
 - `batch_size_cap` (int): Maximum batch size
 - `dataset_size` (int): Total dataset size
@@ -164,45 +164,29 @@ step = acc.parallel_poisson(
 )
 ```
 
-### `rectified_gaussian(noise_multiplier, bound_multiplier) -> DpProcess`
-
-Bounded Gaussian mechanism — rectified variant. Clamps standard Gaussian
-noise to `[-R*sigma, R*sigma]`; the excess tail mass becomes point masses at
-the boundaries. Tighter than the standard Gaussian.
-
-- `noise_multiplier` (float): Ratio of noise std to sensitivity.
-- `bound_multiplier` (float): Bound radius in units of sigma (R ≥ 1).
-
-Composable with `poisson()` for subsampled accounting.
-
-```python
-step = acc.poisson(acc.rectified_gaussian(1.1, 5.0), sample_rate=0.01)
-```
-
-### `truncated_gaussian(noise_multiplier, bound_multiplier) -> DpProcess`
+### `truncated_gaussian(noise_multiplier, radius) -> DpProcess`
 
 Bounded Gaussian mechanism — truncated variant. The density is renormalized
-over `[-R*sigma, R*sigma]` (no point masses at boundaries). Always at least as
-tight as the rectified variant.
+over `[-R*sigma, R*sigma]` (no point masses at boundaries). Tighter than
+the standard Gaussian.
 
 - `noise_multiplier` (float): Ratio of noise std to sensitivity.
-- `bound_multiplier` (float): Bound radius in units of sigma (R ≥ 1).
+- `radius` (float): Bound radius in units of sigma (R ≥ 1).
 
 Composable with `poisson()` for subsampled accounting.
 
-### `adaclip(inner, *, quantile_noise_multiplier, batch_size) -> DpProcess`
+### `adaclip(inner, *, fraction_noise_std, expected_batch_size) -> DpProcess`
 
-Adaptive clipping (Andrew et al. 2021). Accounts for the extra privacy cost of
-noisy quantile estimation using the combined sensitivity formula. Returns an
-`AdaClip` process with the effective noise multiplier, composable with
+Accounts for the extra privacy cost of adaptive clipping's noisy
+fraction query. Returns an `AdaClip` process composable with
 `poisson()` or `truncated_poisson()`.
 
-- `inner` (Gaussian): Base Gaussian mechanism (from `gaussian()`)
-- `quantile_noise_multiplier` (float): Noise multiplier for the quantile fraction query. Default: 0.05.
-- `batch_size` (float): Expected batch size, used to compute the absolute noise std for the quantile query.
+- `inner` (Gaussian | TruncatedGaussian): Base mechanism (from `gaussian()` or `truncated_gaussian()`)
+- `fraction_noise_std` (float): Noise std on the clipping fraction. Default: 0.05.
+- `expected_batch_size` (float): Expected batch size (``sample_rate × dataset_size``), used to compute the absolute noise std for the quantile query.
 
 ```python
-step = acc.poisson(acc.adaclip(acc.gaussian(0.5), quantile_noise_multiplier=0.05, batch_size=256), 0.01)
+step = acc.poisson(acc.adaclip(acc.gaussian(0.5), fraction_noise_std=0.05, expected_batch_size=256), 0.01)
 ```
 
 ### `eps_delta(epsilon, delta=0.0) -> DpProcess`
