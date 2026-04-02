@@ -63,7 +63,7 @@ batch_size = 64  # expected batch size for Poisson sampling
 
 # DP-SGD components
 grad_fn, clip_state = clipped_grad(
-    loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2),
+    loss_fn, clipping_norm=1.0, batch_argnums=(1, 2),
     normalize_by=batch_size,
 )
 noise_fn, noise_state = gaussian_noise(

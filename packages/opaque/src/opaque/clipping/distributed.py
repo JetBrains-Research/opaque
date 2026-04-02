@@ -139,7 +139,19 @@ def _sync_clipping_rate(
     clipping_rate: float | None,
     norms: torch.Tensor | None,
 ) -> float | None:
-    """Compute global clipping rate as weighted average across ranks."""
+    """Compute global clipping rate as weighted average across ranks.
+
+    When ``normalize_by == 1`` (default), each rank computes
+    ``rate = num_clipped / batch_size`` and the weighted average
+    ``sum(rate_i * n_i) / sum(n_i)`` yields the exact global rate.
+
+    When ``normalize_by > 1``, the per-rank rate uses a fixed denominator
+    and this weighted average is only approximate (the error is proportional
+    to the variance of local batch sizes across ranks, which is negligible
+    under Poisson sampling). The privacy-critical adaptive clipping rate is
+    synced separately in ``sync_adaptive_clip_state`` using exact numerator
+    summation; this helper only affects the *diagnostic* ``aux.clipping_rate``.
+    """
     if clipping_rate is None:
         return None
 

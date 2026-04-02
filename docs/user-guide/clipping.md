@@ -102,7 +102,7 @@ grad_fn, clip_state = clipped_grad(
 # aux.grad_norms: per-example L2 norms before clipping
 # aux.clipped_grad_norms: per-example L2 norms after clipping
 # aux.loss_values: per-example loss values
-# aux.clipping_norm: the L2 clip norm used
+# aux.clipping_rate: fraction of per-example gradients that were clipped
 # aux.batch_size: number of examples in the batch
 ```
 
