@@ -216,8 +216,6 @@ def clipped_grad(
                     )
                     return (clipped_grads, grad_aux), returned_state
                 return result, returned_state
-            if isinstance(result, tuple):
-                result = result[0]
             return result, returned_state
 
         return grad_fn_wrapper, clip_state
