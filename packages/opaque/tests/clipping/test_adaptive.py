@@ -450,7 +450,11 @@ class TestAdaptiveClippedGrad:
             torch.testing.assert_close(grads_mb, grads_no_mb, rtol=1e-5, atol=1e-6)
 
             # State updates should be identical
-            assert math.isclose(state_mb.next_clipping_norm, state_no_mb.next_clipping_norm, rel_tol=1e-5)
+            assert math.isclose(
+                state_mb.next_clipping_norm,
+                state_no_mb.next_clipping_norm,
+                rel_tol=1e-5,
+            )
 
 
 class TestInputValidation:
@@ -501,7 +505,9 @@ class TestInputValidation:
         def loss_fn(params):
             return params.sum()
 
-        with pytest.raises(ValueError, match="clipping_norm_max.*must be.*clipping_norm_min"):
+        with pytest.raises(
+            ValueError, match="clipping_norm_max.*must be.*clipping_norm_min"
+        ):
             adaptive_clipped_grad(
                 loss_fn, clipping_norm_min=10.0, clipping_norm_max=5.0, key=key(0)
             )

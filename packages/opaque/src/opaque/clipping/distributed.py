@@ -76,7 +76,8 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
 
     # Recompute global clipping rate from aggregated counts.
     denominator = (
-        synced.normalize_by if synced.normalize_by > 1.0
+        synced.normalize_by
+        if synced.normalize_by > 1.0
         else max(1.0, synced._batch_size)
     )
     global_rate = synced._num_clipped / max(1.0, denominator)
@@ -128,9 +129,7 @@ def sync_clipped_fun_aux(aux: ClippedFunAux) -> ClippedFunAux:
     gathered = gather_pytree(tensor_fields) if tensor_fields else {}
 
     # Override scalar fields that need distributed sync
-    scalar_fields["clipping_rate"] = _sync_clipping_rate(
-        aux.clipping_rate, aux.norms
-    )
+    scalar_fields["clipping_rate"] = _sync_clipping_rate(aux.clipping_rate, aux.norms)
     scalar_fields["batch_size"] = _sync_batch_size(aux.batch_size)
 
     return type(aux)(**{**gathered, **scalar_fields})

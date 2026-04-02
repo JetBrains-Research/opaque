@@ -376,7 +376,11 @@ def test_clipped_grad_microbatching_identical_results():
 
     # Without microbatching
     grad_fn_no_mb, clip_state_no_mb = clipped_grad(
-        loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0, microbatch_size=None
+        loss_fn,
+        argnums=0,
+        batch_argnums=(1, 2),
+        clipping_norm=1.0,
+        microbatch_size=None,
     )
     grads_no_mb, _ = grad_fn_no_mb(params, x, y, state=clip_state_no_mb)
 
@@ -527,7 +531,11 @@ def test_clipped_grad_microbatching_with_pytree_params():
 
     # Without microbatching
     grad_fn_no_mb, clip_state_no_mb = clipped_grad(
-        loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0, microbatch_size=None
+        loss_fn,
+        argnums=0,
+        batch_argnums=(1, 2),
+        clipping_norm=1.0,
+        microbatch_size=None,
     )
     grads_no_mb, _ = grad_fn_no_mb(params, x, y, state=clip_state_no_mb)
 

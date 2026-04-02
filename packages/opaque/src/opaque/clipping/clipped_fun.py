@@ -319,9 +319,7 @@ def clipped_fun(
                     if "values" in aux:
                         val = aux["values"]
                         aux_dict["values"] = (
-                            val.detach()
-                            if isinstance(val, torch.Tensor)
-                            else val
+                            val.detach() if isinstance(val, torch.Tensor) else val
                         )
                     else:
                         # No nested "values", use function output

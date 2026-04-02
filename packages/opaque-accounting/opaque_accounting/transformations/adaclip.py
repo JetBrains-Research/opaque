@@ -66,9 +66,7 @@ class AdaClip(DpProcess):
         match self.inner:
             case Gaussian():
                 # Tight: z_eff folds both into one Gaussian.
-                return _native.gaussian_pld(
-                    self.effective_noise_multiplier, native_cfg
-                )
+                return _native.gaussian_pld(self.effective_noise_multiplier, native_cfg)
             case _:
                 # Non-Gaussian: compose inner PLD with bit PLD.
                 inner_pld = self.inner.pld(
@@ -78,9 +76,7 @@ class AdaClip(DpProcess):
                     max_grid_size=max_grid_size,
                 )
                 sigma_b = self.expected_batch_size * self.fraction_noise_std
-                bit_pld = _native.gaussian_pld(
-                    2.0 * sigma_b, native_cfg
-                )
+                bit_pld = _native.gaussian_pld(2.0 * sigma_b, native_cfg)
                 return inner_pld.compose(bit_pld)
 
 
@@ -130,8 +126,7 @@ def adaclip(
         )
     if fraction_noise_std <= 0:
         raise ValueError(
-            "fraction_noise_std must be positive, "
-            f"got {fraction_noise_std}"
+            f"fraction_noise_std must be positive, got {fraction_noise_std}"
         )
     if expected_batch_size <= 0:
         raise ValueError(

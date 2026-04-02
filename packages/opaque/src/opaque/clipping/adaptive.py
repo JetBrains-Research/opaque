@@ -76,13 +76,14 @@ class AdaptiveClipState(ClipState):
     def __post_init__(self):
         """Validate state values."""
         if self.next_clipping_norm <= 0:
-            raise ValueError(f"next_clipping_norm must be positive, got {self.next_clipping_norm}")
+            raise ValueError(
+                f"next_clipping_norm must be positive, got {self.next_clipping_norm}"
+            )
         if self.normalize_by <= 0:
             raise ValueError(f"normalize_by must be positive, got {self.normalize_by}")
         if self._fraction_noise_std <= 0:
             raise ValueError(
-                "fraction_noise_std must be > 0, "
-                f"got {self._fraction_noise_std}"
+                f"fraction_noise_std must be > 0, got {self._fraction_noise_std}"
             )
 
 
@@ -249,7 +250,9 @@ def adaptive_clipped_grad(
     """
     # Validate parameters
     if initial_clipping_norm <= 0:
-        raise ValueError(f"initial_clipping_norm must be positive, got {initial_clipping_norm}")
+        raise ValueError(
+            f"initial_clipping_norm must be positive, got {initial_clipping_norm}"
+        )
     if not 0 < target_quantile < 1:
         raise ValueError(f"target_quantile must be in (0, 1), got {target_quantile}")
     if learning_rate <= 0:
@@ -262,8 +265,7 @@ def adaptive_clipped_grad(
         )
     if fraction_noise_std <= 0:
         raise ValueError(
-            "fraction_noise_std must be positive, "
-            f"got {fraction_noise_std}"
+            f"fraction_noise_std must be positive, got {fraction_noise_std}"
         )
 
     # Store config in closure (immutable)

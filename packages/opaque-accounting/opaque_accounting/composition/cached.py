@@ -54,6 +54,7 @@ def cached(process: Accountant) -> Accountant: ...
 @overload
 def cached(process: DpProcess) -> CachedProcess: ...
 
+
 def cached(process: DpProcess | Accountant) -> CachedProcess | Accountant:
     """Wrap a process so that its PLD is computed once and cached.
 

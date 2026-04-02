@@ -102,7 +102,11 @@ def _truncated_gaussian_delta_worst_case(
     for i in range(n_centers + 1):
         mu0 = lo + (hi - lo) * i / n_centers
         d = _truncated_gaussian_delta_quadrature(
-            sigma, radius, epsilon, sensitivity=sensitivity, mu0=mu0,
+            sigma,
+            radius,
+            epsilon,
+            sensitivity=sensitivity,
+            mu0=mu0,
         )
         worst = max(worst, d)
     return worst

@@ -90,9 +90,7 @@ class FixedClipState(ClipState):
                 f"clipping_norm must be positive, got {self.clipping_norm}"
             )
         if self.normalize_by <= 0:
-            raise ValueError(
-                f"normalize_by must be positive, got {self.normalize_by}"
-            )
+            raise ValueError(f"normalize_by must be positive, got {self.normalize_by}")
 
 
 __all__ = [

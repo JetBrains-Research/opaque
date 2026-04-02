@@ -397,7 +397,10 @@ class TestAdaClipCrossValidation:
 
     def test_adaclip_composed_with_poisson(self):
         """AdaClip result composes with poisson() normally."""
-        step = acc.poisson(acc.adaclip(acc.gaussian(1.1), expected_batch_size=1000), 0.01) * 1000
+        step = (
+            acc.poisson(acc.adaclip(acc.gaussian(1.1), expected_batch_size=1000), 0.01)
+            * 1000
+        )
         eps = step.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 

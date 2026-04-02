@@ -45,9 +45,7 @@ class Poisson(DpProcess):
 
         match self.inner:
             case Gaussian(noise_multiplier=nm):
-                return _native.poisson_gaussian_pld(
-                    nm, self.sample_rate, native_cfg
-                )
+                return _native.poisson_gaussian_pld(nm, self.sample_rate, native_cfg)
             case TruncatedGaussian(noise_multiplier=nm, radius=r):
                 return _native.poisson_truncated_gaussian_pld(
                     nm, r, self.sample_rate, native_cfg
@@ -64,19 +62,16 @@ class Poisson(DpProcess):
                 # Non-Gaussian inner: compose separately
                 # amplified PLDs (valid but conservative).
                 match ac.inner:
-                    case TruncatedGaussian(
-                        noise_multiplier=nm, radius=r
-                    ):
-                        inner_pld = (
-                            _native.poisson_truncated_gaussian_pld(
-                                nm, r, self.sample_rate,
-                                native_cfg,
-                            )
+                    case TruncatedGaussian(noise_multiplier=nm, radius=r):
+                        inner_pld = _native.poisson_truncated_gaussian_pld(
+                            nm,
+                            r,
+                            self.sample_rate,
+                            native_cfg,
                         )
                     case _:
                         raise TypeError(
-                            f"Unsupported AdaClip inner: "
-                            f"{type(ac.inner).__name__}"
+                            f"Unsupported AdaClip inner: {type(ac.inner).__name__}"
                         )
                 sigma_b = ac.expected_batch_size * ac.fraction_noise_std
                 bit_pld = _native.poisson_gaussian_pld(
