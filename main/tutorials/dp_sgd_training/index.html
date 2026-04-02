@@ -974,29 +974,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/rectified-gaussian/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Rectified Gaussian
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../mechanisms/truncated-gaussian/" class="md-nav__link">
         
   
@@ -1387,7 +1364,7 @@
   
   
   <span class="md-ellipsis">
-    Validate Privacy Guarantees with Auditing
+    Privacy Auditing
     
   </span>
   
@@ -2651,34 +2628,38 @@ and sums the result.</p>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">l2_clip_norm</span> <span class="o">=</span> <span class="mf">1.0</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">clipping_norm</span> <span class="o">=</span> <span class="mf">1.0</span>
 
 <span class="n">dp_grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
     <span class="n">loss_fn</span><span class="p">,</span>
     <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>  <span class="c1"># differentiate w.r.t. params</span>
     <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>  <span class="c1"># x and y are batched</span>
-    <span class="n">l2_clip_norm</span><span class="o">=</span><span class="n">l2_clip_norm</span><span class="p">,</span>
+    <span class="n">clipping_norm</span><span class="o">=</span><span class="n">clipping_norm</span><span class="p">,</span>
+    <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="n">stddev</span> <span class="o">=</span> <span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">l2_clip_norm</span>
+<span class="n">stddev</span> <span class="o">=</span> <span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span>
 <span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">stddev</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
 
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Clip norm: </span><span class="si">{</span><span class="n">l2_clip_norm</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Clip norm: </span><span class="si">{</span><span class="n">clipping_norm</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Sensitivity: </span><span class="si">{</span><span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Noise stddev: </span><span class="si">{</span><span class="n">stddev</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-6">l2_clip_norm = 1.0
+<div class="clipboard-copy-txt" id="cell-6">clipping_norm = 1.0
 
 dp_grad_fn, clip_state = clipped_grad(
     loss_fn,
     argnums=0,  # differentiate w.r.t. params
     batch_argnums=(1, 2),  # x and y are batched
-    l2_clip_norm=l2_clip_norm,
+    clipping_norm=clipping_norm,
+    normalize_by=batch_size,
 )
 
-stddev = noise_multiplier * l2_clip_norm
+stddev = noise_multiplier * clip_state.sensitivity
 noise_fn, noise_state = gaussian_noise(stddev, key=key(42))
 
-print(f"Clip norm: {l2_clip_norm}")
+print(f"Clip norm: {clipping_norm}")
+print(f"Sensitivity: {clip_state.sensitivity:.4f}")
 print(f"Noise stddev: {stddev:.4f}")</div>
 </div>
 </div>

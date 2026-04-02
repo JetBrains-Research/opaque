@@ -979,29 +979,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../rectified-gaussian/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Rectified Gaussian
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../truncated-gaussian/" class="md-nav__link">
         
   
@@ -1444,7 +1421,7 @@
   
   
   <span class="md-ellipsis">
-    Validate Privacy Guarantees with Auditing
+    Privacy Auditing
     
   </span>
   
@@ -2115,7 +2092,7 @@ sensitivity computation. If you need subsampling amplification, use
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">dense_mf_noise</span><span class="p">(</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">grad_template</span><span class="o">=</span><span class="n">params</span><span class="p">,</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">(),</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">epochs</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="p">)</span>

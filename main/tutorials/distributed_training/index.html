@@ -974,29 +974,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/rectified-gaussian/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Rectified Gaussian
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../mechanisms/truncated-gaussian/" class="md-nav__link">
         
   
@@ -1264,7 +1241,7 @@
   
   
   <span class="md-ellipsis">
-    Validate Privacy Guarantees with Auditing
+    Privacy Auditing
     
   </span>
   
@@ -2532,12 +2509,13 @@ identical noise.</p>
     <span class="n">loss_fn</span><span class="p">,</span>
     <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
     <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
-    <span class="n">l2_clip_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+    <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+    <span class="n">normalize_by</span><span class="o">=</span><span class="n">BATCH_SIZE</span><span class="p">,</span>
 <span class="p">)</span>
 
 <span class="c1"># Noise function — same key on all ranks =&gt; identical noise</span>
 <span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
-    <span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">(),</span>
+    <span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
     <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
 <span class="p">)</span>
 
@@ -2583,12 +2561,13 @@ grad_fn, clip_state = clipped_grad(
     loss_fn,
     argnums=0,
     batch_argnums=(1, 2),
-    l2_clip_norm=1.0,
+    clipping_norm=1.0,
+    normalize_by=BATCH_SIZE,
 )
 
 # Noise function — same key on all ranks =&gt; identical noise
 noise_fn, noise_state = gaussian_noise(
-    stddev=noise_multiplier * clip_state.sensitivity(),
+    stddev=noise_multiplier * clip_state.sensitivity,
     key=key(42),
 )
 

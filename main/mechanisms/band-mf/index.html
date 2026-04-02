@@ -979,29 +979,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../rectified-gaussian/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Rectified Gaussian
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../truncated-gaussian/" class="md-nav__link">
         
   
@@ -1459,7 +1436,7 @@
   
   
   <span class="md-ellipsis">
-    Validate Privacy Guarantees with Auditing
+    Privacy Auditing
     
   </span>
   
@@ -2166,7 +2143,7 @@ subsampling is not applicable.</p>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">band_mf_noise</span><span class="p">(</span>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">grad_template</span><span class="o">=</span><span class="n">params</span><span class="p">,</span>    <span class="c1"># pytree with correct shapes/dtypes</span>
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">(),</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
 <a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
 <a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
 <a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="p">)</span>
@@ -2228,22 +2205,25 @@ sampling pattern that the noise strategy exploits:</p>
 <a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a>
 <a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a><span class="c1"># Setup</span>
 <a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="n">key_samp</span><span class="p">,</span> <span class="n">key_noise</span> <span class="o">=</span> <span class="n">split</span><span class="p">(</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span> <span class="n">num</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
-<a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span><span class="n">loss_fn</span><span class="p">,</span> <span class="n">l2_clip_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-<a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">band_mf_noise</span><span class="p">(</span>
-<a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a>    <span class="n">params</span><span class="p">,</span> <span class="n">n_steps</span><span class="p">,</span> <span class="n">stddev</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">param</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">(),</span>
-<a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key_noise</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="n">bands</span><span class="p">,</span>
-<a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a><span class="p">)</span>
-<a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">CyclicPoissonSampler</span><span class="p">(</span>
-<a id="__codelineno-4-27" name="__codelineno-4-27" href="#__codelineno-4-27"></a>    <span class="n">dataset</span><span class="p">,</span> <span class="n">sampling_prob</span><span class="o">=</span><span class="n">sample_rate</span><span class="p">,</span> <span class="n">cycle_length</span><span class="o">=</span><span class="n">bands</span><span class="p">,</span>
-<a id="__codelineno-4-28" name="__codelineno-4-28" href="#__codelineno-4-28"></a>    <span class="n">iterations</span><span class="o">=</span><span class="n">n_steps</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key_samp</span><span class="p">,</span>
-<a id="__codelineno-4-29" name="__codelineno-4-29" href="#__codelineno-4-29"></a><span class="p">)</span>
-<a id="__codelineno-4-30" name="__codelineno-4-30" href="#__codelineno-4-30"></a><span class="n">loader</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">batch_sampler</span><span class="o">=</span><span class="n">sampler</span><span class="p">)</span>
-<a id="__codelineno-4-31" name="__codelineno-4-31" href="#__codelineno-4-31"></a>
-<a id="__codelineno-4-32" name="__codelineno-4-32" href="#__codelineno-4-32"></a><span class="c1"># Train</span>
-<a id="__codelineno-4-33" name="__codelineno-4-33" href="#__codelineno-4-33"></a><span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">loader</span><span class="p">:</span>
-<a id="__codelineno-4-34" name="__codelineno-4-34" href="#__codelineno-4-34"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
-<a id="__codelineno-4-35" name="__codelineno-4-35" href="#__codelineno-4-35"></a>    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
-<a id="__codelineno-4-36" name="__codelineno-4-36" href="#__codelineno-4-36"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">params</span> <span class="o">-</span> <span class="n">lr</span> <span class="o">*</span> <span class="n">noisy_grads</span>
+<a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a>    <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+<a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a><span class="p">)</span>
+<a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">band_mf_noise</span><span class="p">(</span>
+<a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a>    <span class="n">params</span><span class="p">,</span> <span class="n">n_steps</span><span class="p">,</span> <span class="n">stddev</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">param</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
+<a id="__codelineno-4-27" name="__codelineno-4-27" href="#__codelineno-4-27"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key_noise</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="n">bands</span><span class="p">,</span>
+<a id="__codelineno-4-28" name="__codelineno-4-28" href="#__codelineno-4-28"></a><span class="p">)</span>
+<a id="__codelineno-4-29" name="__codelineno-4-29" href="#__codelineno-4-29"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">CyclicPoissonSampler</span><span class="p">(</span>
+<a id="__codelineno-4-30" name="__codelineno-4-30" href="#__codelineno-4-30"></a>    <span class="n">dataset</span><span class="p">,</span> <span class="n">sampling_prob</span><span class="o">=</span><span class="n">sample_rate</span><span class="p">,</span> <span class="n">cycle_length</span><span class="o">=</span><span class="n">bands</span><span class="p">,</span>
+<a id="__codelineno-4-31" name="__codelineno-4-31" href="#__codelineno-4-31"></a>    <span class="n">iterations</span><span class="o">=</span><span class="n">n_steps</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key_samp</span><span class="p">,</span>
+<a id="__codelineno-4-32" name="__codelineno-4-32" href="#__codelineno-4-32"></a><span class="p">)</span>
+<a id="__codelineno-4-33" name="__codelineno-4-33" href="#__codelineno-4-33"></a><span class="n">loader</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">batch_sampler</span><span class="o">=</span><span class="n">sampler</span><span class="p">)</span>
+<a id="__codelineno-4-34" name="__codelineno-4-34" href="#__codelineno-4-34"></a>
+<a id="__codelineno-4-35" name="__codelineno-4-35" href="#__codelineno-4-35"></a><span class="c1"># Train</span>
+<a id="__codelineno-4-36" name="__codelineno-4-36" href="#__codelineno-4-36"></a><span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">loader</span><span class="p">:</span>
+<a id="__codelineno-4-37" name="__codelineno-4-37" href="#__codelineno-4-37"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
+<a id="__codelineno-4-38" name="__codelineno-4-38" href="#__codelineno-4-38"></a>    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
+<a id="__codelineno-4-39" name="__codelineno-4-39" href="#__codelineno-4-39"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">params</span> <span class="o">-</span> <span class="n">lr</span> <span class="o">*</span> <span class="n">noisy_grads</span>
 </code></pre></div>
 <h2 id="parameter-guide">Parameter guide<a class="headerlink" href="#parameter-guide" title="Permanent link">&para;</a></h2>
 <table>

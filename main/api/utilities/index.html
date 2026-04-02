@@ -974,29 +974,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/rectified-gaussian/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Rectified Gaussian
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../mechanisms/truncated-gaussian/" class="md-nav__link">
         
   
@@ -1259,7 +1236,7 @@
   
   
   <span class="md-ellipsis">
-    Validate Privacy Guarantees with Auditing
+    Privacy Auditing
     
   </span>
   
@@ -2532,7 +2509,7 @@ model[1].weight.requires_grad = True   # Trainable</p>
 ...     pred = fmodel(all_params, x)
 ...     return ((pred - y) ** 2).mean()</p>
 <p>grad_fn, clip_state = clipped_grad(
-...     loss_fn, argnums=0, batch_argnums=(1, 2), l2_clip_norm=1.0
+...     loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0
 ... )
 noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(42))
 optimizer = torch.optim.SGD([p for p in model.parameters() if p.requires_grad], lr=1e-3)</p>
@@ -2841,7 +2818,7 @@ entirely to <code>torch.func.functional_call</code>.</p>
 <a id="__codelineno-0-162" name="__codelineno-0-162"></a><span class="sd">        ...     return ((pred - y) ** 2).mean()</span>
 <a id="__codelineno-0-163" name="__codelineno-0-163"></a><span class="sd">        &gt;&gt;&gt;</span>
 <a id="__codelineno-0-164" name="__codelineno-0-164"></a><span class="sd">        &gt;&gt;&gt; grad_fn, clip_state = clipped_grad(</span>
-<a id="__codelineno-0-165" name="__codelineno-0-165"></a><span class="sd">        ...     loss_fn, argnums=0, batch_argnums=(1, 2), l2_clip_norm=1.0</span>
+<a id="__codelineno-0-165" name="__codelineno-0-165"></a><span class="sd">        ...     loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0</span>
 <a id="__codelineno-0-166" name="__codelineno-0-166"></a><span class="sd">        ... )</span>
 <a id="__codelineno-0-167" name="__codelineno-0-167"></a><span class="sd">        &gt;&gt;&gt; noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(42))</span>
 <a id="__codelineno-0-168" name="__codelineno-0-168"></a><span class="sd">        &gt;&gt;&gt; optimizer = torch.optim.SGD([p for p in model.parameters() if p.requires_grad], lr=1e-3)</span>

@@ -974,29 +974,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/rectified-gaussian/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Rectified Gaussian
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../mechanisms/truncated-gaussian/" class="md-nav__link">
         
   
@@ -1378,7 +1355,7 @@
   
   
   <span class="md-ellipsis">
-    Validate Privacy Guarantees with Auditing
+    Privacy Auditing
     
   </span>
   
@@ -2732,17 +2709,18 @@ def per_example_loss(trainable, frozen, ids, mask, labels):
     <span class="n">per_example_loss</span><span class="p">,</span>
     <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
     <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
-    <span class="n">initial_clip_norm</span><span class="o">=</span><span class="n">CLIP_NORM</span><span class="p">,</span>
+    <span class="n">initial_clipping_norm</span><span class="o">=</span><span class="n">CLIP_NORM</span><span class="p">,</span>
     <span class="n">target_quantile</span><span class="o">=</span><span class="mf">0.80</span><span class="p">,</span>
     <span class="n">microbatch_size</span><span class="o">=</span><span class="n">MICROBATCH_SIZE</span><span class="p">,</span>
     <span class="n">return_aux</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-    <span class="n">clip_norm_min</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
-    <span class="n">clip_norm_max</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span>
+    <span class="n">clipping_norm_min</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
+    <span class="n">clipping_norm_max</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span>
     <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
+    <span class="n">normalize_by</span><span class="o">=</span><span class="n">BATCH_SIZE</span><span class="p">,</span>
 <span class="p">)</span>
 
 <span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
-    <span class="n">stddev</span><span class="o">=</span><span class="n">NOISE_MULTIPLIER</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">clip_norm</span><span class="p">,</span>
+    <span class="n">stddev</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
     <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
 <span class="p">)</span>
 
@@ -2776,17 +2754,18 @@ grad_fn, clip_state = adaptive_clipped_grad(
     per_example_loss,
     argnums=0,
     batch_argnums=(2, 3, 4),
-    initial_clip_norm=CLIP_NORM,
+    initial_clipping_norm=CLIP_NORM,
     target_quantile=0.80,
     microbatch_size=MICROBATCH_SIZE,
     return_aux=True,
-    clip_norm_min=0.01,
-    clip_norm_max=10.0,
+    clipping_norm_min=0.01,
+    clipping_norm_max=10.0,
     key=key(0),
+    normalize_by=BATCH_SIZE,
 )
 
 noise_fn, noise_state = gaussian_noise(
-    stddev=NOISE_MULTIPLIER * clip_state.clip_norm,
+    stddev=0,
     key=key(42),
 )
 
@@ -2858,9 +2837,8 @@ print(f"Expected final epsilon: {expected_eps:.2f}")</div>
     <span class="p">)</span>
 
     <span class="c1"># 2. Add noise scaled to current sensitivity</span>
-    <span class="n">stddev</span> <span class="o">=</span> <span class="n">NOISE_MULTIPLIER</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">()</span>
-    <span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">stddev</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">noise_state</span><span class="o">.</span><span class="n">rng_key</span><span class="p">)</span>
-    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
+    <span class="n">stddev</span> <span class="o">=</span> <span class="n">NOISE_MULTIPLIER</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span>
+    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">,</span> <span class="n">stddev</span><span class="o">=</span><span class="n">stddev</span><span class="p">)</span>
 
     <span class="c1"># 3. Optimizer step</span>
     <span class="n">updates</span><span class="p">,</span> <span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
@@ -2882,13 +2860,13 @@ print(f"Expected final epsilon: {expected_eps:.2f}")</div>
     <span class="n">avg_loss</span> <span class="o">=</span> <span class="n">aux</span><span class="o">.</span><span class="n">loss_values</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
     <span class="n">losses</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">avg_loss</span><span class="p">)</span>
     <span class="n">epsilons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">epsilon</span><span class="p">)</span>
-    <span class="n">clip_norms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">clip_state</span><span class="o">.</span><span class="n">clip_norm</span><span class="p">)</span>
+    <span class="n">clip_norms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">clip_state</span><span class="o">.</span><span class="n">clipping_norm</span><span class="p">)</span>
 
     <span class="k">if</span> <span class="p">(</span><span class="n">step</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="n">LOG_INTERVAL</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">step</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
         <span class="nb">print</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">"Step </span><span class="si">{</span><span class="n">step</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="si">:</span><span class="s2">4d</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">NUM_STEPS</span><span class="si">}</span><span class="s2">  "</span>
             <span class="sa">f</span><span class="s2">"loss=</span><span class="si">{</span><span class="n">avg_loss</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  "</span>
-            <span class="sa">f</span><span class="s2">"clip=</span><span class="si">{</span><span class="n">clip_state</span><span class="o">.</span><span class="n">clip_norm</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  "</span>
+            <span class="sa">f</span><span class="s2">"clip=</span><span class="si">{</span><span class="n">clip_state</span><span class="o">.</span><span class="n">clipping_norm</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  "</span>
             <span class="sa">f</span><span class="s2">"epsilon=</span><span class="si">{</span><span class="n">epsilon</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">"</span>
         <span class="p">)</span>
 
@@ -2913,9 +2891,8 @@ for step, (batch_ids, batch_mask, batch_labels) in enumerate(train_loader):
     )
 
     # 2. Add noise scaled to current sensitivity
-    stddev = NOISE_MULTIPLIER * clip_state.sensitivity()
-    noise_fn, noise_state = gaussian_noise(stddev, key=noise_state.rng_key)
-    noisy_grads, noise_state = noise_fn(grads, noise_state)
+    stddev = NOISE_MULTIPLIER * clip_state.sensitivity
+    noisy_grads, noise_state = noise_fn(grads, noise_state, stddev=stddev)
 
     # 3. Optimizer step
     updates, opt_state = optimizer.update(
@@ -2937,13 +2914,13 @@ for step, (batch_ids, batch_mask, batch_labels) in enumerate(train_loader):
     avg_loss = aux.loss_values.mean().item()
     losses.append(avg_loss)
     epsilons.append(epsilon)
-    clip_norms.append(clip_state.clip_norm)
+    clip_norms.append(clip_state.clipping_norm)
 
     if (step + 1) % LOG_INTERVAL == 0 or step == 0:
         print(
             f"Step {step + 1:4d}/{NUM_STEPS}  "
             f"loss={avg_loss:.3f}  "
-            f"clip={clip_state.clip_norm:.3f}  "
+            f"clip={clip_state.clipping_norm:.3f}  "
             f"epsilon={epsilon:.2f}"
         )
 

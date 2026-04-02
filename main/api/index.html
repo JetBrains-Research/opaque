@@ -974,29 +974,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/rectified-gaussian/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Rectified Gaussian
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../mechanisms/truncated-gaussian/" class="md-nav__link">
         
   
@@ -1259,7 +1236,7 @@
   
   
   <span class="md-ellipsis">
-    Validate Privacy Guarantees with Auditing
+    Privacy Auditing
     
   </span>
   
@@ -2157,7 +2134,7 @@ classes.</p>
 <p><strong><a href="noise/">Noise</a></strong>: Noise injection for DP</p>
 </li>
 <li><code>gaussian_noise()</code> - Standard Gaussian noise</li>
-<li><code>truncated_gaussian_noise()</code>, <code>rectified_gaussian_noise()</code> - Bounded Gaussian noise (two variants)</li>
+<li><code>truncated_gaussian_noise()</code> - Bounded Gaussian noise</li>
 <li><code>band_mf_noise()</code>, <code>blt_mf_noise()</code>, <code>dense_mf_noise()</code> - Correlated noise (DP-FTRL)</li>
 <li>
 <p><code>identity_mf_noise()</code>, <code>custom_mf_noise()</code> - MF API utilities</p>
@@ -2166,7 +2143,7 @@ classes.</p>
 <p><strong><a href="accounting/">Accounting</a></strong>: Privacy budget tracking</p>
 </li>
 <li><code>gaussian()</code>, <code>poisson()</code>, <code>truncated_poisson()</code>, <code>parallel_poisson()</code> - Standard mechanisms</li>
-<li><code>rectified_gaussian()</code>, <code>truncated_gaussian()</code> - Bounded Gaussian mechanisms</li>
+<li><code>truncated_gaussian()</code> - Bounded Gaussian mechanism</li>
 <li><code>band_mf()</code>, <code>blt_mf()</code>, <code>dense_mf()</code>, <code>cyclic_poisson()</code> - Matrix factorization mechanisms</li>
 <li><code>DpProcess</code> operators: <code>*</code> (repeat), <code>|</code> (compose)</li>
 <li><code>.epsilon_at()</code>, <code>.delta_at()</code>, <code>.advantage()</code>, <code>.beta_at()</code>, <code>.risk_at()</code> - Privacy metrics</li>
@@ -2211,16 +2188,19 @@ classes.</p>
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="p">)</span>
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="c1"># Set up DP components</span>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span><span class="n">loss_fn</span><span class="p">,</span> <span class="n">l2_clip_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="n">stddev</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">param</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">(),</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
 <a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="p">)</span>
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="c1"># Training loop</span>
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">dataloader</span><span class="p">:</span>
-<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
-<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
-<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">update</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">noisy_grads</span><span class="p">)</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    <span class="n">stddev</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">param</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="p">)</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="c1"># Training loop</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">dataloader</span><span class="p">:</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">update</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">noisy_grads</span><span class="p">)</span>
 </code></pre></div>
 <p>See <a href="../getting-started/quickstart/">Quick Start</a> for a complete working example.</p>
 <h2 id="function-index">Function Index<a class="headerlink" href="#function-index" title="Permanent link">&para;</a></h2>
@@ -2272,11 +2252,6 @@ classes.</p>
 <td><a href="../user-guide/noise/#bounded-gaussian-noise">Guide</a></td>
 </tr>
 <tr>
-<td><code>rectified_gaussian_noise()</code></td>
-<td>Bounded Gaussian — clamped</td>
-<td><a href="../user-guide/noise/#bounded-gaussian-noise">Guide</a></td>
-</tr>
-<tr>
 <td><code>band_mf_noise()</code></td>
 <td>BandMF correlated noise (DP-FTRL)</td>
 <td><a href="../user-guide/noise/">Guide</a></td>
@@ -2316,11 +2291,6 @@ classes.</p>
 <tr>
 <td><code>gaussian()</code></td>
 <td>Gaussian mechanism</td>
-<td><a href="../user-guide/accounting/#mechanisms">Guide</a></td>
-</tr>
-<tr>
-<td><code>rectified_gaussian()</code></td>
-<td>Bounded Gaussian — rectified</td>
 <td><a href="../user-guide/accounting/#mechanisms">Guide</a></td>
 </tr>
 <tr>

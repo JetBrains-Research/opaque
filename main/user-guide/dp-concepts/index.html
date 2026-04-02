@@ -1318,29 +1318,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/rectified-gaussian/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Rectified Gaussian
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../mechanisms/truncated-gaussian/" class="md-nav__link">
         
   
@@ -1603,7 +1580,7 @@
   
   
   <span class="md-ellipsis">
-    Validate Privacy Guarantees with Auditing
+    Privacy Auditing
     
   </span>
   
@@ -2632,11 +2609,10 @@ often an optimal number of steps that balances convergence with noise level.</p>
 <p>The choice of noise mechanism affects both the privacy guarantee and the noise
 impact on model quality.</p>
 <h3 id="independent-noise-dp-sgd">Independent noise (DP-SGD)<a class="headerlink" href="#independent-noise-dp-sgd" title="Permanent link">&para;</a></h3>
-<p>Standard DP-SGD adds independent noise at each training step. Three Gaussian
-variants are available, ordered from weakest to strongest privacy guarantee at
-the same noise level:</p>
-<div class="arithmatex">\[\text{Truncated} \leq \text{Rectified} \leq \text{Gaussian}\]</div>
-<p>Truncated and rectified Gaussian mechanisms add bounded noise (clamped to
+<p>Standard DP-SGD adds independent noise at each training step. Two Gaussian
+variants are available:</p>
+<div class="arithmatex">\[\\text{Truncated} \\leq \\text{Gaussian}\]</div>
+<p>The truncated Gaussian mechanism adds bounded noise (clamped to
 <span class="arithmatex">\([-R\sigma, R\sigma]\)</span>), which gives tighter privacy accounting than
 unbounded Gaussian noise. The privacy improvement is free — the noise
 magnitude is identical. See <a href="../../mechanisms/">Mechanisms</a> for the
@@ -2701,9 +2677,10 @@ and have different amplification properties. See the
 </tr>
 </tbody>
 </table>
-<p>Opaque uses the <strong>add-or-remove</strong> convention: <code>sensitivity()</code> returns the
-clip norm <span class="arithmatex">\(C\)</span>. If your analysis uses replace-one semantics, double the
-sensitivity when calibrating noise (<span class="arithmatex">\(\sigma = \text{noise\_multiplier} \times 2C\)</span>).</p>
+<p>Opaque uses the <strong>add-or-remove</strong> convention: <code>clip_state.sensitivity</code> returns
+<span class="arithmatex">\(C / \text{normalize\_by}\)</span>. When <code>normalize_by</code> is set to the expected batch size <span class="arithmatex">\(B\)</span>,
+sensitivity is <span class="arithmatex">\(C/B\)</span>. If your analysis uses replace-one
+semantics, double it when calibrating noise (<span class="arithmatex">\(\sigma = \text{noise\_multiplier} \times 2 \times \text{sensitivity}\)</span>).</p>
 <h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="https://arxiv.org/abs/1607.00133">Abadi et al. 2016 - Deep Learning with Differential Privacy</a></li>

@@ -26,7 +26,7 @@
     
     
       
-        <title>Validate Privacy Guarantees with Auditing - Opaque</title>
+        <title>Privacy Auditing - Opaque</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#validate-privacy-guarantees-with-auditing" class="md-skip">
+        <a href="#privacy-auditing" class="md-skip">
           Skip to content
         </a>
       
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Validate Privacy Guarantees with Auditing
+              Privacy Auditing
             
           </span>
         </div>
@@ -974,29 +974,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/rectified-gaussian/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Rectified Gaussian
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../mechanisms/truncated-gaussian/" class="md-nav__link">
         
   
@@ -1273,7 +1250,7 @@
   
   
   <span class="md-ellipsis">
-    Validate Privacy Guarantees with Auditing
+    Privacy Auditing
     
   </span>
   
@@ -1286,7 +1263,7 @@
   
   
   <span class="md-ellipsis">
-    Validate Privacy Guarantees with Auditing
+    Privacy Auditing
     
   </span>
   
@@ -1309,18 +1286,54 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#simulated-attack-scores" class="md-nav__link">
+  <a href="#dataset-and-model" class="md-nav__link">
     <span class="md-ellipsis">
-      Simulated attack scores
+      Dataset and model
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#epsilon-estimation" class="md-nav__link">
+  <a href="#step-1-partition-canaries" class="md-nav__link">
     <span class="md-ellipsis">
-      Epsilon estimation
+      Step 1 — Partition canaries
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-set-up-dp-sgd-and-compute-reference-scores" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 2 — Set up DP-SGD and compute reference scores
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-train" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 3 — Train
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-score-canaries-and-estimate-epsilon" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 4 — Score canaries and estimate epsilon
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#results" class="md-nav__link">
+    <span class="md-ellipsis">
+      Results
     </span>
   </a>
   
@@ -1336,36 +1349,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#summary-report" class="md-nav__link">
+  <a href="#score-distributions" class="md-nav__link">
     <span class="md-ellipsis">
-      Summary report
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#auc-confidence-intervals" class="md-nav__link">
-    <span class="md-ellipsis">
-      AUC confidence intervals
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#complete-audit-workflow" class="md-nav__link">
-    <span class="md-ellipsis">
-      Complete audit workflow
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#epsilon-estimation-vs-sample-size" class="md-nav__link">
-    <span class="md-ellipsis">
-      Epsilon estimation vs sample size
+      Score distributions
     </span>
   </a>
   
@@ -1799,18 +1785,54 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#simulated-attack-scores" class="md-nav__link">
+  <a href="#dataset-and-model" class="md-nav__link">
     <span class="md-ellipsis">
-      Simulated attack scores
+      Dataset and model
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#epsilon-estimation" class="md-nav__link">
+  <a href="#step-1-partition-canaries" class="md-nav__link">
     <span class="md-ellipsis">
-      Epsilon estimation
+      Step 1 — Partition canaries
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-set-up-dp-sgd-and-compute-reference-scores" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 2 — Set up DP-SGD and compute reference scores
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-train" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 3 — Train
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-score-canaries-and-estimate-epsilon" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 4 — Score canaries and estimate epsilon
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#results" class="md-nav__link">
+    <span class="md-ellipsis">
+      Results
     </span>
   </a>
   
@@ -1826,36 +1848,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#summary-report" class="md-nav__link">
+  <a href="#score-distributions" class="md-nav__link">
     <span class="md-ellipsis">
-      Summary report
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#auc-confidence-intervals" class="md-nav__link">
-    <span class="md-ellipsis">
-      AUC confidence intervals
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#complete-audit-workflow" class="md-nav__link">
-    <span class="md-ellipsis">
-      Complete audit workflow
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#epsilon-estimation-vs-sample-size" class="md-nav__link">
-    <span class="md-ellipsis">
-      Epsilon estimation vs sample size
+      Score distributions
     </span>
   </a>
   
@@ -2331,17 +2326,19 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h1 id="validate-privacy-guarantees-with-auditing">Validate Privacy Guarantees with Auditing<a class="anchor-link" href="#validate-privacy-guarantees-with-auditing">¶</a></h1><p>Privacy accounting gives <em>theoretical</em> upper bounds on privacy loss.
-Privacy auditing gives <em>empirical</em> lower bounds by running membership
-inference attacks against the trained model. If the audited epsilon
-exceeds the theoretical bound, there is likely a bug in the
-implementation.</p>
-<p>This notebook walks through the auditing workflow: constructing a
-<code>OneRunEstimate</code> from attack scores, estimating epsilon, computing
-attack metrics, and building confidence intervals for AUC.</p>
-<p><strong>Prerequisites:</strong> Familiarity with (epsilon, delta)-DP.</p>
-<p><strong>Components exercised:</strong> <code>CoinFlip</code>, <code>one_run</code>, <code>OneRunEstimate</code>,
-<code>epsilon_at</code>, <code>auc</code>, <code>beta_at</code>.</p>
+<h1 id="privacy-auditing">Privacy Auditing<a class="anchor-link" href="#privacy-auditing">¶</a></h1><p>Privacy accounting gives <em>theoretical</em> upper bounds on privacy loss.
+Privacy auditing gives <em>empirical</em> lower bounds by running a
+membership inference attack. If the audited epsilon exceeds the
+theoretical bound, there is likely a bug.</p>
+<p>This notebook runs the full auditing workflow end-to-end:
+partition canaries, train with DP-SGD, score, and estimate epsilon.</p>
+<p>We use <strong>random labels</strong> — a standard stress-test that forces the
+model to memorize training data, producing a strong membership
+inference signal.</p>
+<p><strong>Prerequisites:</strong> Familiarity with DP-SGD (see the
+<a href="dp_sgd_training.ipynb">DP-SGD training tutorial</a>).</p>
+<p><strong>Components:</strong> <code>coin_flip</code>, <code>loss_scores</code>, <code>one_run</code>,
+<code>OneRunEstimate</code>.</p>
 </div>
 </div>
 </div>
@@ -2365,56 +2362,30 @@ attack metrics, and building confidence intervals for AUC.</p>
 </clipboard-copy>
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.utils.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">DataLoader</span><span class="p">,</span> <span class="n">TensorDataset</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.auditing</span><span class="w"> </span><span class="kn">import</span> <span class="n">CoinFlip</span><span class="p">,</span> <span class="n">one_run</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">opaque.auditing</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">auditing</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">opaque</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span><span class="p">,</span> <span class="n">gaussian_noise</span><span class="p">,</span> <span class="n">make_functional</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 
-<span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">make_estimate</span><span class="p">(</span><span class="n">in_scores</span><span class="p">,</span> <span class="n">out_scores</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""Build a OneRunEstimate from raw in/out score arrays."""</span>
-    <span class="n">in_scores</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">in_scores</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
-    <span class="n">out_scores</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">out_scores</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
-    <span class="n">n_in</span><span class="p">,</span> <span class="n">n_out</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">in_scores</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">out_scores</span><span class="p">)</span>
-    <span class="n">canary_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">n_in</span> <span class="o">+</span> <span class="n">n_out</span><span class="p">)</span>
-    <span class="n">cf</span> <span class="o">=</span> <span class="n">CoinFlip</span><span class="p">(</span><span class="n">canary_indices</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
-    <span class="c1"># Override with a deterministic split for pedagogical use</span>
-    <span class="n">mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="kc">True</span><span class="p">]</span> <span class="o">*</span> <span class="n">n_in</span> <span class="o">+</span> <span class="p">[</span><span class="kc">False</span><span class="p">]</span> <span class="o">*</span> <span class="n">n_out</span><span class="p">)</span>
-    <span class="n">scores</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">n_in</span> <span class="o">+</span> <span class="n">n_out</span><span class="p">)</span>
-    <span class="n">scores</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span> <span class="o">=</span> <span class="n">in_scores</span>
-    <span class="n">scores</span><span class="p">[</span><span class="o">~</span><span class="n">mask</span><span class="p">]</span> <span class="o">=</span> <span class="n">out_scores</span>
-    <span class="n">cf</span><span class="o">.</span><span class="n">_in_mask</span> <span class="o">=</span> <span class="n">mask</span>
-    <span class="n">cf</span><span class="o">.</span><span class="n">in_indices</span> <span class="o">=</span> <span class="n">canary_indices</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span>
-    <span class="n">cf</span><span class="o">.</span><span class="n">out_indices</span> <span class="o">=</span> <span class="n">canary_indices</span><span class="p">[</span><span class="o">~</span><span class="n">mask</span><span class="p">]</span>
-    <span class="k">return</span> <span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">)</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-1">import matplotlib.pyplot as plt
-import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, TensorDataset
 
-from opaque.auditing import CoinFlip, one_run
+import opaque.accounting as acc
+import opaque.auditing as auditing
+from opaque import clipped_grad, gaussian_noise, make_functional
 from opaque.random import key
 
-np.random.seed(42)
-
-
-def make_estimate(in_scores, out_scores):
-    """Build a OneRunEstimate from raw in/out score arrays."""
-    in_scores = np.asarray(in_scores, dtype=float)
-    out_scores = np.asarray(out_scores, dtype=float)
-    n_in, n_out = len(in_scores), len(out_scores)
-    canary_indices = np.arange(n_in + n_out)
-    cf = CoinFlip(canary_indices, key=key(0))
-    # Override with a deterministic split for pedagogical use
-    mask = np.array([True] * n_in + [False] * n_out)
-    scores = np.empty(n_in + n_out)
-    scores[mask] = in_scores
-    scores[~mask] = out_scores
-    cf._in_mask = mask
-    cf.in_indices = canary_indices[mask]
-    cf.out_indices = canary_indices[~mask]
-    return one_run(scores, coin_flip=cf)</div>
+torch.manual_seed(42)</div>
 </div>
 </div>
 </div>
@@ -2427,9 +2398,9 @@ def make_estimate(in_scores, out_scores):
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="simulated-attack-scores">Simulated attack scores<a class="anchor-link" href="#simulated-attack-scores">¶</a></h2><p>In practice these come from a membership inference attack. Here we
-simulate three scenarios with increasing separation between in-members
-and out-members.</p>
+<h2 id="dataset-and-model">Dataset and model<a class="anchor-link" href="#dataset-and-model">¶</a></h2><p>Random labels cannot be learned by generalisation — the model
+must memorise. A small MLP has enough capacity to overfit,
+producing a clear gap between in-member and out-member losses.</p>
 </div>
 </div>
 </div>
@@ -2452,59 +2423,39 @@ and out-members.</p>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">n</span> <span class="o">=</span> <span class="mi">500</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">n_samples</span><span class="p">,</span> <span class="n">n_features</span> <span class="o">=</span> <span class="mi">500</span><span class="p">,</span> <span class="mi">10</span>
+<span class="n">X</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">n_samples</span><span class="p">,</span> <span class="n">n_features</span><span class="p">)</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="p">(</span><span class="n">n_samples</span><span class="p">,))</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>  <span class="c1"># random labels</span>
+<span class="n">dataset</span> <span class="o">=</span> <span class="n">TensorDataset</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
 
-<span class="n">scenarios</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">"good_dp"</span><span class="p">:</span> <span class="p">(</span>
-        <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="mf">0.55</span><span class="p">,</span> <span class="mf">0.30</span><span class="p">,</span> <span class="n">n</span><span class="p">),</span>
-        <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="mf">0.45</span><span class="p">,</span> <span class="mf">0.30</span><span class="p">,</span> <span class="n">n</span><span class="p">),</span>
-    <span class="p">),</span>
-    <span class="s2">"weak_dp"</span><span class="p">:</span> <span class="p">(</span>
-        <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="mf">0.70</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="n">n</span><span class="p">),</span>
-        <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="mf">0.30</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="n">n</span><span class="p">),</span>
-    <span class="p">),</span>
-    <span class="s2">"no_dp"</span><span class="p">:</span> <span class="p">(</span>
-        <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="mf">0.90</span><span class="p">,</span> <span class="mf">0.10</span><span class="p">,</span> <span class="n">n</span><span class="p">),</span>
-        <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="mf">0.10</span><span class="p">,</span> <span class="mf">0.10</span><span class="p">,</span> <span class="n">n</span><span class="p">),</span>
-    <span class="p">),</span>
-<span class="p">}</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
+    <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_features</span><span class="p">,</span> <span class="mi">64</span><span class="p">),</span>
+    <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+    <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+<span class="p">)</span>
+<span class="n">fmodel</span><span class="p">,</span> <span class="n">params</span> <span class="o">=</span> <span class="n">make_functional</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 
-<span class="n">fig</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">14</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span>
-<span class="k">for</span> <span class="n">ax</span><span class="p">,</span> <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="p">(</span><span class="n">in_s</span><span class="p">,</span> <span class="n">out_s</span><span class="p">))</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">axes</span><span class="p">,</span> <span class="n">scenarios</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
-    <span class="n">ax</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">in_s</span><span class="p">,</span> <span class="n">bins</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.6</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">"In"</span><span class="p">,</span> <span class="n">density</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-    <span class="n">ax</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">out_s</span><span class="p">,</span> <span class="n">bins</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.6</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">"Out"</span><span class="p">,</span> <span class="n">density</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-    <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
-    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">"Score"</span><span class="p">)</span>
-    <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">loss_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+    <span class="n">logit</span> <span class="o">=</span> <span class="n">fmodel</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">F</span><span class="o">.</span><span class="n">binary_cross_entropy_with_logits</span><span class="p">(</span><span class="n">logit</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-2">n = 500
+<div class="clipboard-copy-txt" id="cell-2">n_samples, n_features = 500, 10
+X = torch.randn(n_samples, n_features)
+y = torch.randint(0, 2, (n_samples,)).float()  # random labels
+dataset = TensorDataset(X, y)
 
-scenarios = {
-    "good_dp": (
-        np.random.normal(0.55, 0.30, n),
-        np.random.normal(0.45, 0.30, n),
-    ),
-    "weak_dp": (
-        np.random.normal(0.70, 0.25, n),
-        np.random.normal(0.30, 0.25, n),
-    ),
-    "no_dp": (
-        np.random.normal(0.90, 0.10, n),
-        np.random.normal(0.10, 0.10, n),
-    ),
-}
+model = nn.Sequential(
+    nn.Linear(n_features, 64),
+    nn.ReLU(),
+    nn.Linear(64, 1),
+)
+fmodel, params = make_functional(model)
 
-fig, axes = plt.subplots(1, 3, figsize=(14, 4))
-for ax, (name, (in_s, out_s)) in zip(axes, scenarios.items()):
-    ax.hist(in_s, bins=30, alpha=0.6, label="In", density=True)
-    ax.hist(out_s, bins=30, alpha=0.6, label="Out", density=True)
-    ax.set_title(name)
-    ax.set_xlabel("Score")
-    ax.legend()
-plt.tight_layout()
-plt.show()</div>
+
+def loss_fn(params, x, y):
+    logit = fmodel(params, x.unsqueeze(0)).squeeze()
+    return F.binary_cross_entropy_with_logits(logit, y)</div>
 </div>
 </div>
 </div>
@@ -2517,9 +2468,9 @@ plt.show()</div>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="epsilon-estimation">Epsilon estimation<a class="anchor-link" href="#epsilon-estimation">¶</a></h2><p><code>OneRunEstimate.epsilon_at</code> converts the empirical TPR/FPR tradeoff into
-a lower bound on epsilon using the one-run likelihood-ratio test
-(Steinke et al., 2023).</p>
+<h2 id="step-1-partition-canaries">Step 1 — Partition canaries<a class="anchor-link" href="#step-1-partition-canaries">¶</a></h2><p><code>coin_flip()</code> randomly selects canary examples and flips a fair
+coin for each: <em>in</em> (included in training) or <em>out</em> (held out).
+Non-canary examples are always included.</p>
 </div>
 </div>
 </div>
@@ -2542,19 +2493,21 @@ a lower bound on epsilon using the one-run likelihood-ratio test
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">delta</span> <span class="o">=</span> <span class="mf">1e-5</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">num_canaries</span> <span class="o">=</span> <span class="n">n_samples</span>  <span class="c1"># audit every example</span>
+<span class="n">cf</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">coin_flip</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">num_canaries</span><span class="o">=</span><span class="n">num_canaries</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+<span class="n">train_data</span> <span class="o">=</span> <span class="n">cf</span><span class="o">.</span><span class="n">train_subset</span><span class="p">(</span><span class="n">dataset</span><span class="p">)</span>
 
-<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="p">(</span><span class="n">in_s</span><span class="p">,</span> <span class="n">out_s</span><span class="p">)</span> <span class="ow">in</span> <span class="n">scenarios</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-    <span class="n">r</span> <span class="o">=</span> <span class="n">make_estimate</span><span class="p">(</span><span class="n">in_s</span><span class="p">,</span> <span class="n">out_s</span><span class="p">)</span>
-    <span class="n">eps</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="n">delta</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">8s</span><span class="si">}</span><span class="s2">  epsilon: </span><span class="si">{</span><span class="n">eps</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Dataset:      </span><span class="si">{</span><span class="n">n_samples</span><span class="si">}</span><span class="s2"> examples"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Canaries:     </span><span class="si">{</span><span class="n">num_canaries</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">cf</span><span class="o">.</span><span class="n">in_indices</span><span class="p">)</span><span class="si">}</span><span class="s2"> in, </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">cf</span><span class="o">.</span><span class="n">out_indices</span><span class="p">)</span><span class="si">}</span><span class="s2"> out)"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Training set: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">train_data</span><span class="p">)</span><span class="si">}</span><span class="s2"> examples"</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-3">delta = 1e-5
+<div class="clipboard-copy-txt" id="cell-3">num_canaries = n_samples  # audit every example
+cf = auditing.coin_flip(dataset, num_canaries=num_canaries, key=key(42))
+train_data = cf.train_subset(dataset)
 
-for name, (in_s, out_s) in scenarios.items():
-    r = make_estimate(in_s, out_s)
-    eps = r.epsilon_at(delta=delta)
-    print(f"{name:8s}  epsilon: {eps:.2f}")</div>
+print(f"Dataset:      {n_samples} examples")
+print(f"Canaries:     {num_canaries} ({len(cf.in_indices)} in, {len(cf.out_indices)} out)")
+print(f"Training set: {len(train_data)} examples")</div>
 </div>
 </div>
 </div>
@@ -2567,7 +2520,9 @@ for name, (in_s, out_s) in scenarios.items():
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="attack-metrics">Attack metrics<a class="anchor-link" href="#attack-metrics">¶</a></h2>
+<h2 id="step-2-set-up-dp-sgd-and-compute-reference-scores">Step 2 — Set up DP-SGD and compute reference scores<a class="anchor-link" href="#step-2-set-up-dp-sgd-and-compute-reference-scores">¶</a></h2><p>Before training we record each canary’s loss on the
+untrained model. The final membership scores will be the
+loss <em>reduction</em> from training (Steinke et al., Algorithm 3).</p>
 </div>
 </div>
 </div>
@@ -2590,21 +2545,55 @@ for name, (in_s, out_s) in scenarios.items():
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="p">(</span><span class="n">in_s</span><span class="p">,</span> <span class="n">out_s</span><span class="p">)</span> <span class="ow">in</span> <span class="n">scenarios</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-    <span class="n">r</span> <span class="o">=</span> <span class="n">make_estimate</span><span class="p">(</span><span class="n">in_s</span><span class="p">,</span> <span class="n">out_s</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span>
-        <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">8s</span><span class="si">}</span><span class="s2">  "</span>
-        <span class="sa">f</span><span class="s2">"AUC=</span><span class="si">{</span><span class="n">r</span><span class="o">.</span><span class="n">auc</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  "</span>
-        <span class="sa">f</span><span class="s2">"β@α=0.01=</span><span class="si">{</span><span class="n">r</span><span class="o">.</span><span class="n">beta_at</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">"</span>
-    <span class="p">)</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">batch_size</span> <span class="o">=</span> <span class="mi">64</span>
+<span class="n">clipping_norm</span> <span class="o">=</span> <span class="mf">1.0</span>
+<span class="n">noise_multiplier</span> <span class="o">=</span> <span class="mf">0.5</span>
+<span class="n">n_epochs</span> <span class="o">=</span> <span class="mi">200</span>
+<span class="n">lr</span> <span class="o">=</span> <span class="mf">0.5</span>
+
+<span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
+    <span class="n">loss_fn</span><span class="p">,</span>
+    <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+    <span class="n">clipping_norm</span><span class="o">=</span><span class="n">clipping_norm</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
+    <span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clipping_norm</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
+<span class="p">)</span>
+
+<span class="c1"># Score canaries on the untrained model</span>
+<span class="n">canary_loader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span>
+    <span class="n">cf</span><span class="o">.</span><span class="n">canary_subset</span><span class="p">(</span><span class="n">dataset</span><span class="p">),</span> <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">ref_scores</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">loss_scores</span><span class="p">(</span>
+    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">params</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">dataloader</span><span class="o">=</span><span class="n">canary_loader</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Reference scores: mean=</span><span class="si">{</span><span class="n">ref_scores</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, std=</span><span class="si">{</span><span class="n">ref_scores</span><span class="o">.</span><span class="n">std</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-4">for name, (in_s, out_s) in scenarios.items():
-    r = make_estimate(in_s, out_s)
-    print(
-        f"{name:8s}  "
-        f"AUC={r.auc():.3f}  "
-        f"β@α=0.01={r.beta_at(alpha=0.01):.3f}"
-    )</div>
+<div class="clipboard-copy-txt" id="cell-4">batch_size = 64
+clipping_norm = 1.0
+noise_multiplier = 0.5
+n_epochs = 200
+lr = 0.5
+
+grad_fn, clip_state = clipped_grad(
+    loss_fn,
+    argnums=0,
+    batch_argnums=(1, 2),
+    clipping_norm=clipping_norm,
+)
+noise_fn, noise_state = gaussian_noise(
+    stddev=noise_multiplier * clipping_norm, key=key(0),
+)
+
+# Score canaries on the untrained model
+canary_loader = DataLoader(
+    cf.canary_subset(dataset), batch_size=batch_size, shuffle=False,
+)
+ref_scores = auditing.loss_scores(
+    loss_fn, params, batch_argnums=(1, 2), dataloader=canary_loader,
+)
+print(f"Reference scores: mean={ref_scores.mean():.4f}, std={ref_scores.std():.4f}")</div>
 </div>
 </div>
 </div>
@@ -2617,7 +2606,7 @@ for name, (in_s, out_s) in scenarios.items():
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="summary-report">Summary report<a class="anchor-link" href="#summary-report">¶</a></h2>
+<h2 id="step-3-train">Step 3 — Train<a class="anchor-link" href="#step-3-train">¶</a></h2>
 </div>
 </div>
 </div>
@@ -2640,11 +2629,35 @@ for name, (in_s, out_s) in scenarios.items():
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">r</span> <span class="o">=</span> <span class="n">make_estimate</span><span class="p">(</span><span class="o">*</span><span class="n">scenarios</span><span class="p">[</span><span class="s2">"weak_dp"</span><span class="p">])</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">summary</span><span class="p">(</span><span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">))</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">train_loader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span><span class="n">train_data</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">epoch</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_epochs</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">xb</span><span class="p">,</span> <span class="n">yb</span> <span class="ow">in</span> <span class="n">train_loader</span><span class="p">:</span>
+        <span class="n">bs</span> <span class="o">=</span> <span class="n">xb</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">xb</span><span class="p">,</span> <span class="n">yb</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
+        <span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
+        <span class="n">params</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">p</span> <span class="o">-</span> <span class="p">(</span><span class="n">lr</span> <span class="o">/</span> <span class="n">bs</span><span class="p">)</span> <span class="o">*</span> <span class="n">g</span> <span class="k">for</span> <span class="n">p</span><span class="p">,</span> <span class="n">g</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">grads</span><span class="p">))</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">epoch</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="mi">50</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+            <span class="n">logits</span> <span class="o">=</span> <span class="n">fmodel</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">X</span><span class="p">[:</span><span class="mi">200</span><span class="p">])</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span>
+            <span class="n">accuracy</span> <span class="o">=</span> <span class="p">(</span><span class="n">logits</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">eq</span><span class="p">(</span><span class="n">y</span><span class="p">[:</span><span class="mi">200</span><span class="p">])</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Epoch </span><span class="si">{</span><span class="n">epoch</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="si">:</span><span class="s2">3d</span><span class="si">}</span><span class="s2">  accuracy=</span><span class="si">{</span><span class="n">accuracy</span><span class="si">:</span><span class="s2">.1%</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-5">r = make_estimate(*scenarios["weak_dp"])
-print(r.summary(significance=0.05, delta=1e-5))</div>
+<div class="clipboard-copy-txt" id="cell-5">train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+
+for epoch in range(n_epochs):
+    for xb, yb in train_loader:
+        bs = xb.shape[0]
+        grads, clip_state = grad_fn(params, xb, yb, state=clip_state)
+        grads, noise_state = noise_fn(grads, noise_state)
+        params = tuple(p - (lr / bs) * g for p, g in zip(params, grads))
+
+    if (epoch + 1) % 50 == 0:
+        with torch.no_grad():
+            logits = fmodel(params, X[:200]).squeeze()
+            accuracy = (logits &gt; 0).float().eq(y[:200]).float().mean()
+        print(f"Epoch {epoch + 1:3d}  accuracy={accuracy:.1%}")</div>
 </div>
 </div>
 </div>
@@ -2657,9 +2670,11 @@ print(r.summary(significance=0.05, delta=1e-5))</div>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="auc-confidence-intervals">AUC confidence intervals<a class="anchor-link" href="#auc-confidence-intervals">¶</a></h2><p><code>OneRunEstimate.auc</code> supports confidence intervals directly.
-Pass <code>confidence=</code> and <code>key=</code> to get a <code>(lower, upper)</code> tuple instead
-of a point estimate.</p>
+<h2 id="step-4-score-canaries-and-estimate-epsilon">Step 4 — Score canaries and estimate epsilon<a class="anchor-link" href="#step-4-score-canaries-and-estimate-epsilon">¶</a></h2><p><code>loss_scores()</code> computes per-canary membership scores (negated loss)
+using <code>vmap</code>. Passing <code>reference_scores</code> subtracts the untrained
+baseline so the score measures <em>loss reduction</em> from training.</p>
+<p><code>one_run()</code> then performs the likelihood-ratio test from
+Steinke et al. (2023) to estimate epsilon.</p>
 </div>
 </div>
 </div>
@@ -2682,27 +2697,23 @@ of a point estimate.</p>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">r</span> <span class="o">=</span> <span class="n">make_estimate</span><span class="p">(</span><span class="o">*</span><span class="n">scenarios</span><span class="p">[</span><span class="s2">"weak_dp"</span><span class="p">])</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">scores</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">loss_scores</span><span class="p">(</span>
+    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">params</span><span class="p">,</span>
+    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+    <span class="n">dataloader</span><span class="o">=</span><span class="n">canary_loader</span><span class="p">,</span>
+    <span class="n">reference_scores</span><span class="o">=</span><span class="n">ref_scores</span><span class="p">,</span>
+<span class="p">)</span>
 
-<span class="c1"># Point estimate</span>
-<span class="n">auc_point</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">auc</span><span class="p">()</span>
-
-<span class="c1"># 95% confidence interval</span>
-<span class="n">auc_ci</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">auc</span><span class="p">(</span><span class="n">confidence</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"AUC:     </span><span class="si">{</span><span class="n">auc_point</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  95% CI [</span><span class="si">{</span><span class="n">auc_ci</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">auc_ci</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">]"</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Epsilon: </span><span class="si">{</span><span class="n">r</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="n">estimate</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-6">r = make_estimate(*scenarios["weak_dp"])
+<div class="clipboard-copy-txt" id="cell-6">scores = auditing.loss_scores(
+    loss_fn, params,
+    batch_argnums=(1, 2),
+    dataloader=canary_loader,
+    reference_scores=ref_scores,
+)
 
-# Point estimate
-auc_point = r.auc()
-
-# 95% confidence interval
-auc_ci = r.auc(confidence=0.95, num_samples=1000, key=key(42))
-
-print(f"AUC:     {auc_point:.3f}  95% CI [{auc_ci[0]:.3f}, {auc_ci[1]:.3f}]")
-print(f"Epsilon: {r.epsilon_at(delta=1e-5):.2f}")</div>
+estimate = auditing.one_run(scores, coin_flip=cf)</div>
 </div>
 </div>
 </div>
@@ -2715,7 +2726,8 @@ print(f"Epsilon: {r.epsilon_at(delta=1e-5):.2f}")</div>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="complete-audit-workflow">Complete audit workflow<a class="anchor-link" href="#complete-audit-workflow">¶</a></h2>
+<h2 id="results">Results<a class="anchor-link" href="#results">¶</a></h2><p>Compare the empirical epsilon from the audit against the
+theoretical bound from privacy accounting.</p>
 </div>
 </div>
 </div>
@@ -2738,49 +2750,37 @@ print(f"Epsilon: {r.epsilon_at(delta=1e-5):.2f}")</div>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">audit</span><span class="p">(</span><span class="n">in_scores</span><span class="p">,</span> <span class="n">out_scores</span><span class="p">,</span> <span class="n">theoretical_epsilon</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""Run a privacy audit and compare to the theoretical bound."""</span>
-    <span class="n">result</span> <span class="o">=</span> <span class="n">make_estimate</span><span class="p">(</span><span class="n">in_scores</span><span class="p">,</span> <span class="n">out_scores</span><span class="p">)</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="c1"># Theoretical bound from privacy accounting</span>
+<span class="n">sample_rate</span> <span class="o">=</span> <span class="n">batch_size</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">train_data</span><span class="p">)</span>
+<span class="n">total_steps</span> <span class="o">=</span> <span class="n">n_epochs</span> <span class="o">*</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">train_data</span><span class="p">)</span> <span class="o">//</span> <span class="n">batch_size</span><span class="p">)</span>
+<span class="n">process</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">),</span> <span class="n">sample_rate</span><span class="p">)</span> <span class="o">*</span> <span class="n">total_steps</span>
+<span class="n">theoretical_eps</span> <span class="o">=</span> <span class="n">process</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
 
-    <span class="n">eps</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="n">delta</span><span class="p">,</span> <span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">)</span>
-    <span class="n">auc_ci</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">auc</span><span class="p">(</span><span class="n">confidence</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+<span class="n">delta</span> <span class="o">=</span> <span class="mf">1e-5</span>
+<span class="n">audited_eps</span> <span class="o">=</span> <span class="n">estimate</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="n">delta</span><span class="p">)</span>
 
-    <span class="c1"># Use summary() with theoretical_epsilon for side-by-side comparison</span>
-    <span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">summary</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="n">delta</span><span class="p">,</span> <span class="n">theoretical_epsilon</span><span class="o">=</span><span class="n">theoretical_epsilon</span><span class="p">))</span>
-    <span class="nb">print</span><span class="p">()</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"AUC 95% CI: [</span><span class="si">{</span><span class="n">auc_ci</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">auc_ci</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">]"</span><span class="p">)</span>
-
-    <span class="k">if</span> <span class="n">eps</span> <span class="o">&gt;</span> <span class="n">theoretical_epsilon</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">"WARNING: audited epsilon exceeds theoretical bound."</span><span class="p">)</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">"OK: audited epsilon is within the theoretical bound."</span><span class="p">)</span>
-
-
-<span class="n">audit</span><span class="p">(</span><span class="o">*</span><span class="n">scenarios</span><span class="p">[</span><span class="s2">"weak_dp"</span><span class="p">],</span> <span class="n">theoretical_epsilon</span><span class="o">=</span><span class="mf">8.0</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">()</span>
-<span class="n">audit</span><span class="p">(</span><span class="o">*</span><span class="n">scenarios</span><span class="p">[</span><span class="s2">"good_dp"</span><span class="p">],</span> <span class="n">theoretical_epsilon</span><span class="o">=</span><span class="mf">3.0</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Audited epsilon:      </span><span class="si">{</span><span class="n">audited_eps</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Theoretical epsilon:  </span><span class="si">{</span><span class="n">theoretical_eps</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="k">if</span> <span class="n">audited_eps</span> <span class="o">&lt;=</span> <span class="n">theoretical_eps</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"OK: audited epsilon is within the theoretical bound."</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"WARNING: audited epsilon exceeds theoretical bound."</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-7">def audit(in_scores, out_scores, theoretical_epsilon, delta=1e-5):
-    """Run a privacy audit and compare to the theoretical bound."""
-    result = make_estimate(in_scores, out_scores)
+<div class="clipboard-copy-txt" id="cell-7"># Theoretical bound from privacy accounting
+sample_rate = batch_size / len(train_data)
+total_steps = n_epochs * (len(train_data) // batch_size)
+process = acc.poisson(acc.gaussian(noise_multiplier), sample_rate) * total_steps
+theoretical_eps = process.epsilon_at(1e-5)
 
-    eps = result.epsilon_at(delta=delta, significance=0.05)
-    auc_ci = result.auc(confidence=0.95, key=key(42))
+delta = 1e-5
+audited_eps = estimate.epsilon_at(delta=delta)
 
-    # Use summary() with theoretical_epsilon for side-by-side comparison
-    print(result.summary(delta=delta, theoretical_epsilon=theoretical_epsilon))
-    print()
-    print(f"AUC 95% CI: [{auc_ci[0]:.3f}, {auc_ci[1]:.3f}]")
-
-    if eps &gt; theoretical_epsilon:
-        print("WARNING: audited epsilon exceeds theoretical bound.")
-    else:
-        print("OK: audited epsilon is within the theoretical bound.")
-
-
-audit(*scenarios["weak_dp"], theoretical_epsilon=8.0)
-print()
-audit(*scenarios["good_dp"], theoretical_epsilon=3.0)</div>
+print(f"Audited epsilon:      {audited_eps:.2f}")
+print(f"Theoretical epsilon:  {theoretical_eps:.2f}")
+if audited_eps &lt;= theoretical_eps:
+    print("OK: audited epsilon is within the theoretical bound.")
+else:
+    print("WARNING: audited epsilon exceeds theoretical bound.")</div>
 </div>
 </div>
 </div>
@@ -2793,7 +2793,28 @@ audit(*scenarios["good_dp"], theoretical_epsilon=3.0)</div>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="epsilon-estimation-vs-sample-size">Epsilon estimation vs sample size<a class="anchor-link" href="#epsilon-estimation-vs-sample-size">¶</a></h2><p>Larger audit sets produce tighter estimates.</p>
+<p>The audited epsilon should be <em>below</em> the theoretical bound.</p>
+<p><strong>Why is the gap so large?</strong> Privacy auditing is a <em>black-box</em>
+method: it can only detect leakage that its specific membership
+inference attack (here, loss thresholding) can exploit. The
+theoretical bound, by contrast, holds against <em>all</em> possible
+adversaries, including ones far more powerful than any single
+MIA. The audited epsilon is therefore a <em>lower bound</em> on the
+true privacy leakage — it tells you "at least this much leaks,"
+but the actual leakage could be anywhere between the audited and
+theoretical values. A stronger attack would narrow the gap.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
+</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<h2 id="attack-metrics">Attack metrics<a class="anchor-link" href="#attack-metrics">¶</a></h2><p>AUC measures how well an adversary can distinguish in-members
+from out-members. Values near 0.5 mean the model leaks little.</p>
 </div>
 </div>
 </div>
@@ -2816,43 +2837,70 @@ audit(*scenarios["good_dp"], theoretical_epsilon=3.0)</div>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">in_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="mf">0.7</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mi">2000</span><span class="p">)</span>
-<span class="n">out_full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="mf">0.3</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mi">2000</span><span class="p">)</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"AUC:        </span><span class="si">{</span><span class="n">estimate</span><span class="o">.</span><span class="n">auc</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"β@α=0.01: </span><span class="si">{</span><span class="n">estimate</span><span class="o">.</span><span class="n">beta_at</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
-<span class="n">sizes</span> <span class="o">=</span> <span class="p">[</span><span class="mi">50</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="mi">500</span><span class="p">,</span> <span class="mi">1000</span><span class="p">]</span>
-<span class="n">eps_vals</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="n">ci</span> <span class="o">=</span> <span class="n">estimate</span><span class="o">.</span><span class="n">auc</span><span class="p">(</span><span class="n">confidence</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"AUC 95% CI: [</span><span class="si">{</span><span class="n">ci</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">ci</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">]"</span><span class="p">)</span>
+</pre></div>
+<div class="clipboard-copy-txt" id="cell-8">print(f"AUC:        {estimate.auc():.3f}")
+print(f"β@α=0.01: {estimate.beta_at(alpha=0.01):.3f}")
 
-<span class="k">for</span> <span class="n">sz</span> <span class="ow">in</span> <span class="n">sizes</span><span class="p">:</span>
-    <span class="n">r</span> <span class="o">=</span> <span class="n">make_estimate</span><span class="p">(</span><span class="n">in_full</span><span class="p">[:</span><span class="n">sz</span><span class="p">],</span> <span class="n">out_full</span><span class="p">[:</span><span class="n">sz</span><span class="p">])</span>
-    <span class="n">eps_vals</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">significance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">))</span>
-
-<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">5</span><span class="p">))</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">sizes</span><span class="p">,</span> <span class="n">eps_vals</span><span class="p">,</span> <span class="s2">"o-"</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">"One-run"</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">"Canaries per group"</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s2">"Estimated epsilon"</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">"Epsilon estimation vs sample size"</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">)</span>
+ci = estimate.auc(confidence=0.95, num_samples=1000, key=key(42))
+print(f"AUC 95% CI: [{ci[0]:.3f}, {ci[1]:.3f}]")</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
+</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<h2 id="score-distributions">Score distributions<a class="anchor-link" href="#score-distributions">¶</a></h2><p>Visualise how in-member and out-member scores overlap.
+More overlap means better privacy.</p>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs">
+<div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="CodeMirror cm-s-jupyter">
+<div class="zeroclipboard-container">
+<clipboard-copy ,="" aria-label="Copy to Clipboard" for="cell-9">
+<div>
+<span class="notice" hidden="">Copied!</span>
+<svg aria-hidden="true" class="clipboard-copy-icon" data-view-component="true" height="20" version="1.1" viewbox="0 0 16 16" width="20">
+<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill="currentColor" fill-rule="evenodd"></path>
+<path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill="currentColor" fill-rule="evenodd"></path>
+</svg>
+</div>
+</clipboard-copy>
+</div>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">estimate</span><span class="o">.</span><span class="n">in_scores</span><span class="p">,</span> <span class="n">bins</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.6</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">"In"</span><span class="p">,</span> <span class="n">density</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">estimate</span><span class="o">.</span><span class="n">out_scores</span><span class="p">,</span> <span class="n">bins</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.6</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">"Out"</span><span class="p">,</span> <span class="n">density</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">"Score"</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s2">"Density"</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s2">"Canary score distributions"</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-8">in_full = np.random.normal(0.7, 0.25, 2000)
-out_full = np.random.normal(0.3, 0.25, 2000)
-
-sizes = [50, 100, 200, 500, 1000]
-eps_vals = []
-
-for sz in sizes:
-    r = make_estimate(in_full[:sz], out_full[:sz])
-    eps_vals.append(r.epsilon_at(significance=0.05))
-
-plt.figure(figsize=(8, 5))
-plt.plot(sizes, eps_vals, "o-", label="One-run")
-plt.xlabel("Canaries per group")
-plt.ylabel("Estimated epsilon")
-plt.title("Epsilon estimation vs sample size")
-plt.legend()
-plt.grid(alpha=0.3)
+<div class="clipboard-copy-txt" id="cell-9">fig, ax = plt.subplots(figsize=(8, 4))
+ax.hist(estimate.in_scores, bins=30, alpha=0.6, label="In", density=True)
+ax.hist(estimate.out_scores, bins=30, alpha=0.6, label="Out", density=True)
+ax.set_xlabel("Score")
+ax.set_ylabel("Density")
+ax.set_title("Canary score distributions")
+ax.legend()
 plt.tight_layout()
 plt.show()</div>
 </div>
@@ -2867,19 +2915,14 @@ plt.show()</div>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="summary">Summary<a class="anchor-link" href="#summary">¶</a></h2><ol>
-<li>Build a <code>OneRunEstimate</code> from attack scores using <code>one_run()</code>.</li>
-<li>Estimate epsilon with <code>epsilon_at(delta=, significance=)</code>.</li>
-<li>Inspect <code>auc</code> and <code>beta_at</code> for attack strength.</li>
-<li>Quantify AUC uncertainty with <code>auc(confidence=0.95, key=...)</code>.</li>
-<li>Compare audited epsilon to the theoretical bound using
-<code>summary(theoretical_epsilon=...)</code>.</li>
+<h2 id="summary">Summary<a class="anchor-link" href="#summary">¶</a></h2><p>The auditing workflow is three steps after preparing the data:</p>
+<ol>
+<li><strong>Partition</strong> — <code>auditing.coin_flip(dataset, num_canaries=..., key=...)</code></li>
+<li><strong>Train</strong> — on <code>cf.train_subset(dataset)</code> with normal DP-SGD</li>
+<li><strong>Score &amp; estimate</strong> — <code>auditing.loss_scores(...)</code> then
+<code>auditing.one_run(scores, coin_flip=cf)</code></li>
 </ol>
-<p>For training integration, see the
-<a href="../user-guide/auditing.md">Privacy Auditing guide</a> which shows
-how to use <code>auditing.coin_flip()</code>, <code>auditing.loss_scores()</code>,
-and <code>auditing.one_run()</code> with the <code>batch_argnums</code> / <code>batch_unpack</code>
-pattern for HuggingFace models.</p>
+<p>See <code>examples/train_causal_lm.py --audit</code> for a complete LLM example.</p>
 </div>
 </div>
 </div>

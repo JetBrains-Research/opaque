@@ -974,29 +974,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/rectified-gaussian/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Rectified Gaussian
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../mechanisms/truncated-gaussian/" class="md-nav__link">
         
   
@@ -1360,7 +1337,7 @@
   
   
   <span class="md-ellipsis">
-    Validate Privacy Guarantees with Auditing
+    Privacy Auditing
     
   </span>
   
@@ -2711,7 +2688,7 @@ size.</p>
     <span class="n">loss_fn</span><span class="p">,</span>
     <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
     <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
-    <span class="n">l2_clip_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+    <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">stddev</span><span class="o">=</span><span class="mf">1.1</span> <span class="o">*</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
 
@@ -2750,7 +2727,7 @@ grad_fn, clip_state = clipped_grad(
     loss_fn,
     argnums=0,
     batch_argnums=1,
-    l2_clip_norm=1.0,
+    clipping_norm=1.0,
 )
 noise_fn, noise_state = gaussian_noise(stddev=1.1 * 1.0, key=key(42))
 
@@ -2818,7 +2795,7 @@ result is numerically identical.</p>
     <span class="n">loss_fn</span><span class="p">,</span>
     <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
     <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
-    <span class="n">l2_clip_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+    <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
     <span class="n">microbatch_size</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="n">grads_full</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">grad_fn_full</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state_full</span><span class="p">)</span>
@@ -2828,7 +2805,7 @@ result is numerically identical.</p>
     <span class="n">loss_fn</span><span class="p">,</span>
     <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
     <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
-    <span class="n">l2_clip_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+    <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
     <span class="n">microbatch_size</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="n">grads_mb</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">grad_fn_mb</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state_mb</span><span class="p">)</span>
@@ -2843,7 +2820,7 @@ grad_fn_full, clip_state_full = clipped_grad(
     loss_fn,
     argnums=0,
     batch_argnums=1,
-    l2_clip_norm=1.0,
+    clipping_norm=1.0,
     microbatch_size=None,
 )
 grads_full, _ = grad_fn_full(params, batch, state=clip_state_full)
@@ -2853,7 +2830,7 @@ grad_fn_mb, clip_state_mb = clipped_grad(
     loss_fn,
     argnums=0,
     batch_argnums=1,
-    l2_clip_norm=1.0,
+    clipping_norm=1.0,
     microbatch_size=32,
 )
 grads_mb, _ = grad_fn_mb(params, batch, state=clip_state_mb)

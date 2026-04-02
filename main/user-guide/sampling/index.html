@@ -1156,29 +1156,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/rectified-gaussian/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Rectified Gaussian
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../mechanisms/truncated-gaussian/" class="md-nav__link">
         
   
@@ -1441,7 +1418,7 @@
   
   
   <span class="md-ellipsis">
-    Validate Privacy Guarantees with Auditing
+    Privacy Auditing
     
   </span>
   
@@ -2318,7 +2295,7 @@ the full batch.</p>
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
 <a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
 <a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="n">loss_fn</span><span class="p">,</span>
-<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>    <span class="n">l2_clip_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>    <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
 <a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
 <a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>    <span class="n">microbatch_size</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span>  <span class="c1"># process 16 examples at a time</span>
 <a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="p">)</span>
@@ -2337,7 +2314,7 @@ the largest stable value for your device:</p>
 <a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="k">for</span> <span class="n">optimal</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">64</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">]:</span>
 <a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>    <span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
 <a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>        <span class="n">loss_fn</span><span class="p">,</span>
-<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>        <span class="n">l2_clip_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>        <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
 <a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>        <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
 <a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>        <span class="n">microbatch_size</span><span class="o">=</span><span class="n">optimal</span><span class="p">,</span>
 <a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>    <span class="p">)</span>
@@ -2352,7 +2329,7 @@ the largest stable value for your device:</p>
 <a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a>
 <a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
 <a id="__codelineno-10-21" name="__codelineno-10-21" href="#__codelineno-10-21"></a>    <span class="n">loss_fn</span><span class="p">,</span>
-<a id="__codelineno-10-22" name="__codelineno-10-22" href="#__codelineno-10-22"></a>    <span class="n">l2_clip_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-10-22" name="__codelineno-10-22" href="#__codelineno-10-22"></a>    <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
 <a id="__codelineno-10-23" name="__codelineno-10-23" href="#__codelineno-10-23"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
 <a id="__codelineno-10-24" name="__codelineno-10-24" href="#__codelineno-10-24"></a>    <span class="n">microbatch_size</span><span class="o">=</span><span class="n">optimal</span><span class="p">,</span>
 <a id="__codelineno-10-25" name="__codelineno-10-25" href="#__codelineno-10-25"></a><span class="p">)</span>
@@ -2367,7 +2344,7 @@ sum is identical whether the batch is processed in one shot or in chunks:</p>
 <a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="n">grads</span><span class="p">,</span> <span class="n">state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch_256</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">state</span><span class="p">)</span>
 <a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>
 <a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="c1"># Microbatched: vmap over 16 at a time, clip each, sum partials</span>
-<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="n">grad_fn_mb</span><span class="p">,</span> <span class="n">state_mb</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span><span class="n">loss_fn</span><span class="p">,</span> <span class="n">l2_clip_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="n">grad_fn_mb</span><span class="p">,</span> <span class="n">state_mb</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span><span class="n">loss_fn</span><span class="p">,</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
 <a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>                                     <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">microbatch_size</span><span class="o">=</span><span class="mi">16</span><span class="p">)</span>
 <a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="n">grads_mb</span><span class="p">,</span> <span class="n">state_mb</span> <span class="o">=</span> <span class="n">grad_fn_mb</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch_256</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">state_mb</span><span class="p">)</span>
 <a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="c1"># grads == grads_mb</span>

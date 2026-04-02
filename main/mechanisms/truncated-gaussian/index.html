@@ -15,7 +15,7 @@
         <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/mechanisms/truncated-gaussian/">
       
       
-        <link rel="prev" href="../rectified-gaussian/">
+        <link rel="prev" href="../gaussian/">
       
       
         <link rel="next" href="../band-mf/">
@@ -976,29 +976,6 @@
                 
   
   
-  
-  
-    <li class="md-nav__item">
-      <a href="../rectified-gaussian/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Rectified Gaussian
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
     
   
   
@@ -1459,7 +1436,7 @@
   
   
   <span class="md-ellipsis">
-    Validate Privacy Guarantees with Auditing
+    Privacy Auditing
     
   </span>
   
@@ -2053,11 +2030,10 @@
 
 <h1 id="truncated-gaussian-mechanism">Truncated Gaussian Mechanism<a class="headerlink" href="#truncated-gaussian-mechanism" title="Permanent link">&para;</a></h1>
 <p>The truncated Gaussian mechanism samples noise from a Gaussian
-<strong>renormalized</strong> over a bounded interval <span class="arithmatex">\([-R\sigma, R\sigma]\)</span>. Unlike
-the <a href="../rectified-gaussian/">rectified variant</a> which clamps, truncation
-resamples: the density is smoothly rescaled so that no probability mass
-sits at the boundaries. This gives the <strong>tightest privacy bounds</strong> among
-all three Gaussian variants.</p>
+<strong>renormalized</strong> over a bounded interval <span class="arithmatex">\([-R\\sigma, R\\sigma]\)</span>. The
+density is smoothly rescaled so that no probability mass sits at the
+boundaries. This gives <strong>tighter privacy bounds</strong> than the standard
+Gaussian at the same noise level.</p>
 <h2 id="idea">Idea<a class="headerlink" href="#idea" title="Permanent link">&para;</a></h2>
 <p>The key insight is that a renormalized density has no point masses and no
 discontinuities. The privacy loss function is linear in <span class="arithmatex">\(x\)</span> (just like
@@ -2150,26 +2126,19 @@ the normalization constants correctly.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque</span><span class="w"> </span><span class="kn">import</span> <span class="n">truncated_gaussian_noise</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># bounds = (-radius * stddev, radius * stddev) in absolute units</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">stddev</span> <span class="o">=</span> <span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">()</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="n">bound</span> <span class="o">=</span> <span class="mf">5.0</span> <span class="o">*</span> <span class="n">stddev</span>  <span class="c1"># radius=5.0 in sigma units</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">truncated_gaussian_noise</span><span class="p">(</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="n">stddev</span><span class="o">=</span><span class="n">stddev</span><span class="p">,</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    <span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="n">bound</span><span class="p">,</span> <span class="n">bound</span><span class="p">),</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="p">)</span>
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">dataloader</span><span class="p">:</span>
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
-<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
-<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">params</span> <span class="o">-</span> <span class="n">lr</span> <span class="o">*</span> <span class="n">noisy_grads</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">stddev</span> <span class="o">=</span> <span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">truncated_gaussian_noise</span><span class="p">(</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">stddev</span><span class="o">=</span><span class="n">stddev</span><span class="p">,</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="n">radius</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="p">)</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">dataloader</span><span class="p">:</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">params</span> <span class="o">-</span> <span class="n">lr</span> <span class="o">*</span> <span class="n">noisy_grads</span>
 </code></pre></div>
-<div class="admonition note">
-<p class="admonition-title">Bounds vs radius</p>
-<p>The noise function takes absolute <code>bounds=(-B, B)</code> while the accounting
-takes <code>radius</code> in sigma units. To match: set <code>B = radius * stddev</code>.</p>
-</div>
 <h3 id="privacy-accounting">Privacy accounting<a class="headerlink" href="#privacy-accounting" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
@@ -2181,14 +2150,13 @@ takes <code>radius</code> in sigma units. To match: set <code>B = radius * stdde
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="n">training</span> <span class="o">=</span> <span class="n">step</span> <span class="o">*</span> <span class="mi">1000</span>
 <a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 <a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="c1"># Compare all three variants at the same noise level</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="c1"># Compare truncated vs standard</span>
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">mech</span> <span class="ow">in</span> <span class="p">[</span>
 <a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>    <span class="p">(</span><span class="s2">&quot;Gaussian&quot;</span><span class="p">,</span>  <span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)),</span>
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>    <span class="p">(</span><span class="s2">&quot;Rectified&quot;</span><span class="p">,</span> <span class="n">acc</span><span class="o">.</span><span class="n">rectified_gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="mf">5.0</span><span class="p">)),</span>
-<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>    <span class="p">(</span><span class="s2">&quot;Truncated&quot;</span><span class="p">,</span> <span class="n">acc</span><span class="o">.</span><span class="n">truncated_gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="mf">5.0</span><span class="p">)),</span>
-<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="p">]:</span>
-<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>    <span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">mech</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span>
-<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">10s</span><span class="si">}</span><span class="s2">  ε = </span><span class="si">{</span><span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>    <span class="p">(</span><span class="s2">&quot;Truncated&quot;</span><span class="p">,</span> <span class="n">acc</span><span class="o">.</span><span class="n">truncated_gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="mf">5.0</span><span class="p">)),</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="p">]:</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>    <span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">mech</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">10s</span><span class="si">}</span><span class="s2">  ε = </span><span class="si">{</span><span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="calibration">Calibration<a class="headerlink" href="#calibration" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
@@ -2237,8 +2205,8 @@ and better utility.</p>
   where you would prefer rectified over truncated for the same radius.
   The only reason to use rectified is if your noise implementation uses
   simple clamping and you want matching accounting.</li>
-<li>The <code>bounds</code> parameter in the noise function uses absolute units. Convert
-  from sigma units: <code>bounds = (-radius * stddev, radius * stddev)</code>.</li>
+<li>Both the noise function (<code>radius</code>) and the accounting API (<code>radius</code>)
+  use the same sigma-units convention.</li>
 </ul>
 <h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
 <ul>

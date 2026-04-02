@@ -974,29 +974,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/rectified-gaussian/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Rectified Gaussian
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../mechanisms/truncated-gaussian/" class="md-nav__link">
         
   
@@ -1259,7 +1236,7 @@
   
   
   <span class="md-ellipsis">
-    Validate Privacy Guarantees with Auditing
+    Privacy Auditing
     
   </span>
   
@@ -1553,27 +1530,18 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#rectified_gaussiannoise_multiplier-bound_multiplier-dpprocess" class="md-nav__link">
+  <a href="#truncated_gaussiannoise_multiplier-radius-dpprocess" class="md-nav__link">
     <span class="md-ellipsis">
-      rectified_gaussian(noise_multiplier, bound_multiplier) -&gt; DpProcess
+      truncated_gaussian(noise_multiplier, radius) -&gt; DpProcess
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#truncated_gaussiannoise_multiplier-bound_multiplier-dpprocess" class="md-nav__link">
+  <a href="#adaclipinner-fraction_noise_std-expected_batch_size-dpprocess" class="md-nav__link">
     <span class="md-ellipsis">
-      truncated_gaussian(noise_multiplier, bound_multiplier) -&gt; DpProcess
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#adaclipinner-quantile_noise_multiplier-batch_size-dpprocess" class="md-nav__link">
-    <span class="md-ellipsis">
-      adaclip(inner, *, quantile_noise_multiplier, batch_size) -&gt; DpProcess
+      adaclip(inner, *, fraction_noise_std, expected_batch_size) -&gt; DpProcess
     </span>
   </a>
   
@@ -2112,27 +2080,18 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#rectified_gaussiannoise_multiplier-bound_multiplier-dpprocess" class="md-nav__link">
+  <a href="#truncated_gaussiannoise_multiplier-radius-dpprocess" class="md-nav__link">
     <span class="md-ellipsis">
-      rectified_gaussian(noise_multiplier, bound_multiplier) -&gt; DpProcess
+      truncated_gaussian(noise_multiplier, radius) -&gt; DpProcess
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#truncated_gaussiannoise_multiplier-bound_multiplier-dpprocess" class="md-nav__link">
+  <a href="#adaclipinner-fraction_noise_std-expected_batch_size-dpprocess" class="md-nav__link">
     <span class="md-ellipsis">
-      truncated_gaussian(noise_multiplier, bound_multiplier) -&gt; DpProcess
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#adaclipinner-quantile_noise_multiplier-batch_size-dpprocess" class="md-nav__link">
-    <span class="md-ellipsis">
-      adaclip(inner, *, quantile_noise_multiplier, batch_size) -&gt; DpProcess
+      adaclip(inner, *, fraction_noise_std, expected_batch_size) -&gt; DpProcess
     </span>
   </a>
   
@@ -2520,7 +2479,7 @@ sensitivity-1 queries. Base mechanism for DP-SGD.</p>
 <p>Poisson-subsampled mechanism (standard DP-SGD step). <code>sample_rate</code> is
 <code>batch_size / dataset_size</code>.</p>
 <ul>
-<li><code>inner</code> (Gaussian | RectifiedGaussian | TruncatedGaussian | AdaClip): Base mechanism</li>
+<li><code>inner</code> (Gaussian | TruncatedGaussian | AdaClip): Base mechanism</li>
 <li><code>sample_rate</code> (float): Probability of including each example, in (0, 1]</li>
 </ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mi">256</span> <span class="o">/</span> <span class="mi">50_000</span><span class="p">)</span>
@@ -2530,7 +2489,7 @@ sensitivity-1 queries. Base mechanism for DP-SGD.</p>
 than standard Poisson subsampling. Use this for production DP-SGD with a fixed
 batch size limit.</p>
 <ul>
-<li><code>inner</code> (Gaussian): Base Gaussian mechanism (from <code>gaussian()</code>)</li>
+<li><code>inner</code> (Gaussian | AdaClip): Base mechanism (from <code>gaussian()</code> or <code>adaclip()</code>)</li>
 <li><code>sample_rate</code> (float): Expected sampling rate</li>
 <li><code>batch_size_cap</code> (int): Maximum batch size</li>
 <li><code>dataset_size</code> (int): Total dataset size</li>
@@ -2552,37 +2511,25 @@ Like <code>poisson()</code> and <code>truncated_poisson()</code>, this is a full
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="p">)</span>
 </code></pre></div>
-<h3 id="rectified_gaussiannoise_multiplier-bound_multiplier-dpprocess"><code>rectified_gaussian(noise_multiplier, bound_multiplier) -&gt; DpProcess</code><a class="headerlink" href="#rectified_gaussiannoise_multiplier-bound_multiplier-dpprocess" title="Permanent link">&para;</a></h3>
-<p>Bounded Gaussian mechanism — rectified variant. Clamps standard Gaussian
-noise to <code>[-R*sigma, R*sigma]</code>; the excess tail mass becomes point masses at
-the boundaries. Tighter than the standard Gaussian.</p>
-<ul>
-<li><code>noise_multiplier</code> (float): Ratio of noise std to sensitivity.</li>
-<li><code>bound_multiplier</code> (float): Bound radius in units of sigma (R ≥ 1).</li>
-</ul>
-<p>Composable with <code>poisson()</code> for subsampled accounting.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">rectified_gaussian</span><span class="p">(</span><span class="mf">1.1</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
-</code></pre></div>
-<h3 id="truncated_gaussiannoise_multiplier-bound_multiplier-dpprocess"><code>truncated_gaussian(noise_multiplier, bound_multiplier) -&gt; DpProcess</code><a class="headerlink" href="#truncated_gaussiannoise_multiplier-bound_multiplier-dpprocess" title="Permanent link">&para;</a></h3>
+<h3 id="truncated_gaussiannoise_multiplier-radius-dpprocess"><code>truncated_gaussian(noise_multiplier, radius) -&gt; DpProcess</code><a class="headerlink" href="#truncated_gaussiannoise_multiplier-radius-dpprocess" title="Permanent link">&para;</a></h3>
 <p>Bounded Gaussian mechanism — truncated variant. The density is renormalized
-over <code>[-R*sigma, R*sigma]</code> (no point masses at boundaries). Always at least as
-tight as the rectified variant.</p>
+over <code>[-R*sigma, R*sigma]</code> (no point masses at boundaries). Tighter than
+the standard Gaussian.</p>
 <ul>
 <li><code>noise_multiplier</code> (float): Ratio of noise std to sensitivity.</li>
-<li><code>bound_multiplier</code> (float): Bound radius in units of sigma (R ≥ 1).</li>
+<li><code>radius</code> (float): Bound radius in units of sigma (R ≥ 1).</li>
 </ul>
 <p>Composable with <code>poisson()</code> for subsampled accounting.</p>
-<h3 id="adaclipinner-quantile_noise_multiplier-batch_size-dpprocess"><code>adaclip(inner, *, quantile_noise_multiplier, batch_size) -&gt; DpProcess</code><a class="headerlink" href="#adaclipinner-quantile_noise_multiplier-batch_size-dpprocess" title="Permanent link">&para;</a></h3>
-<p>Adaptive clipping (Andrew et al. 2021). Accounts for the extra privacy cost of
-noisy quantile estimation using the combined sensitivity formula. Returns an
-<code>AdaClip</code> process with the effective noise multiplier, composable with
+<h3 id="adaclipinner-fraction_noise_std-expected_batch_size-dpprocess"><code>adaclip(inner, *, fraction_noise_std, expected_batch_size) -&gt; DpProcess</code><a class="headerlink" href="#adaclipinner-fraction_noise_std-expected_batch_size-dpprocess" title="Permanent link">&para;</a></h3>
+<p>Accounts for the extra privacy cost of adaptive clipping's noisy
+fraction query. Returns an <code>AdaClip</code> process composable with
 <code>poisson()</code> or <code>truncated_poisson()</code>.</p>
 <ul>
-<li><code>inner</code> (Gaussian): Base Gaussian mechanism (from <code>gaussian()</code>)</li>
-<li><code>quantile_noise_multiplier</code> (float): Noise multiplier for the quantile fraction query. Default: 0.05.</li>
-<li><code>batch_size</code> (float): Expected batch size, used to compute the absolute noise std for the quantile query.</li>
+<li><code>inner</code> (Gaussian | TruncatedGaussian): Base mechanism (from <code>gaussian()</code> or <code>truncated_gaussian()</code>)</li>
+<li><code>fraction_noise_std</code> (float): Noise std on the clipping fraction. Default: 0.05.</li>
+<li><code>expected_batch_size</code> (float): Expected batch size (<code>sample_rate × dataset_size</code>), used to compute the absolute noise std for the quantile query.</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">adaclip</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="n">quantile_noise_multiplier</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">256</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">adaclip</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="n">fraction_noise_std</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">expected_batch_size</span><span class="o">=</span><span class="mi">256</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="eps_deltaepsilon-delta00-dpprocess"><code>eps_delta(epsilon, delta=0.0) -&gt; DpProcess</code><a class="headerlink" href="#eps_deltaepsilon-delta00-dpprocess" title="Permanent link">&para;</a></h3>
 <p>Fixed (epsilon, delta)-DP guarantee. Useful for composing an external mechanism
@@ -2591,8 +2538,8 @@ with known privacy parameters into tracked processes.</p>
 <li><code>epsilon</code> (float): Privacy parameter (&gt;= 0)</li>
 <li><code>delta</code> (float): Failure probability (default 0.0)</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">external</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">eps_delta</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="mf">1e-5</span><span class="p">)</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="n">total</span> <span class="o">=</span> <span class="n">external</span> <span class="o">|</span> <span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">external</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">eps_delta</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">total</span> <span class="o">=</span> <span class="n">external</span> <span class="o">|</span> <span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="identity-dpprocess"><code>identity() -&gt; DpProcess</code><a class="headerlink" href="#identity-dpprocess" title="Permanent link">&para;</a></h3>
 <p>Identity mechanism (zero privacy loss). Acts as the identity element in
@@ -2609,8 +2556,8 @@ is computed from the optimized encoder matrix.</p>
 <li><code>n_steps</code> (int): Number of training iterations.</li>
 <li><code>bands</code> (int): Number of bands in the Toeplitz matrix (1 to <code>n_steps</code>).</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="blt_mfnoise_multiplier-n_steps-min_sep1-max_participations1-errormax-max_buffers10-dpprocess"><code>blt_mf(noise_multiplier, n_steps, *, min_sep=1, max_participations=1, error="max", max_buffers=10) -&gt; DpProcess</code><a class="headerlink" href="#blt_mfnoise_multiplier-n_steps-min_sep1-max_participations1-errormax-max_buffers10-dpprocess" title="Permanent link">&para;</a></h3>
 <p>BLT (Buffered Linear Toeplitz) mechanism. Supports multi-epoch participation
@@ -2623,8 +2570,8 @@ patterns via <code>min_sep</code> and <code>max_participations</code>.</p>
 <li><code>error</code> (str): Error metric to optimize: <code>"max"</code> or <code>"mean"</code>.</li>
 <li><code>max_buffers</code> (int): Maximum number of BLT buffers (default 10).</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">blt_mf</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mi">5000</span><span class="p">,</span> <span class="n">min_sep</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">max_participations</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">blt_mf</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mi">5000</span><span class="p">,</span> <span class="n">min_sep</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">max_participations</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="dense_mfnoise_multiplier-n_steps-epochs1-bandsnone-equal_normfalse-dpprocess"><code>dense_mf(noise_multiplier, n_steps, *, epochs=1, bands=None, equal_norm=False) -&gt; DpProcess</code><a class="headerlink" href="#dense_mfnoise_multiplier-n_steps-epochs1-bandsnone-equal_normfalse-dpprocess" title="Permanent link">&para;</a></h3>
 <p>Dense MF with optimal strategy matrix. Materializes the full n x n matrix.</p>
@@ -2635,8 +2582,8 @@ patterns via <code>min_sep</code> and <code>max_participations</code>.</p>
 <li><code>bands</code> (int | None): Optional banded constraint.</li>
 <li><code>equal_norm</code> (bool): If True, optimize with equal column norm constraint.</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">dense_mf</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">epochs</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">dense_mf</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">epochs</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="cyclic_poissoninner-sample_rate-dpprocess"><code>cyclic_poisson(inner, sample_rate) -&gt; DpProcess</code><a class="headerlink" href="#cyclic_poissoninner-sample_rate-dpprocess" title="Permanent link">&para;</a></h3>
 <p>Cyclic Poisson amplification for BandMF. Decomposes the training run into
@@ -2646,10 +2593,10 @@ Poisson-subsampled Gaussian. Only accepts <code>BandMf</code> inner processes.</
 <li><code>inner</code> (BandMf): A BandMf process (from <code>band_mf()</code>).</li>
 <li><code>sample_rate</code> (float): Poisson sampling probability per group.</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">cyclic_poisson</span><span class="p">(</span>
-<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mi">1000</span><span class="p">,</span> <span class="mi">10</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
-<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="p">)</span>
-<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">cyclic_poisson</span><span class="p">(</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mi">1000</span><span class="p">,</span> <span class="mi">10</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="p">)</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
 <hr />
 <h2 id="composition-functions">Composition Functions<a class="headerlink" href="#composition-functions" title="Permanent link">&para;</a></h2>
@@ -2666,20 +2613,20 @@ barrier: the composition optimizer will not look through a cached node.</p>
 <code>@lru_cache</code>. Use <code>cached()</code> when you need:
 - A larger cache (16 entries instead of 8)
 - An explicit merge barrier to prevent composition optimizations</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># All queries automatically cached (maxsize=8)</span>
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span>
-<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">step</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>   <span class="c1"># Cached automatically</span>
-<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="n">adv</span> <span class="o">=</span> <span class="n">step</span><span class="o">.</span><span class="n">advantage</span><span class="p">()</span>         <span class="c1"># Cache hit</span>
-<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>
-<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="c1"># Use cached() for merge barrier or larger cache</span>
-<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="n">training</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">cached</span><span class="p">(</span><span class="n">step</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">)</span>
-<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>   <span class="c1"># Cached with maxsize=16</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># All queries automatically cached (maxsize=8)</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">step</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>   <span class="c1"># Cached automatically</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="n">adv</span> <span class="o">=</span> <span class="n">step</span><span class="o">.</span><span class="n">advantage</span><span class="p">()</span>         <span class="c1"># Cache hit</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="c1"># Use cached() for merge barrier or larger cache</span>
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="n">training</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">cached</span><span class="p">(</span><span class="n">step</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">)</span>
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>   <span class="c1"># Cached with maxsize=16</span>
 </code></pre></div>
 <hr />
 <h2 id="serialization">Serialization<a class="headerlink" href="#serialization" title="Permanent link">&para;</a></h2>
 <p>All processes implement <code>state_dict()</code> for JSON-friendly serialization.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span>
-<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="n">state</span> <span class="o">=</span> <span class="n">step</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="n">state</span> <span class="o">=</span> <span class="n">step</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span>
 </code></pre></div>
 <hr />
 <h2 id="accountant">Accountant<a class="headerlink" href="#accountant" title="Permanent link">&para;</a></h2>
@@ -2688,49 +2635,49 @@ It provides a functional API: composing a new process returns a fresh
 <code>Accountant</code> (the original is not modified).</p>
 <p>Merge optimization is automatic. Composing the same <code>step</code> repeatedly in a loop
 produces a single <code>Repeated</code> node internally.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting.accountant</span><span class="w"> </span><span class="kn">import</span> <span class="n">Accountant</span>
-<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>
-<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="n">acct</span> <span class="o">=</span> <span class="n">Accountant</span><span class="p">()</span>
-<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span>
-<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>
-<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_steps</span><span class="p">):</span>
-<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a>    <span class="n">acct</span> <span class="o">=</span> <span class="n">acct</span> <span class="o">|</span> <span class="n">step</span>
-<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a>
-<a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a>    <span class="k">if</span> <span class="n">i</span> <span class="o">%</span> <span class="mi">100</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-<a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a>        <span class="n">eps</span> <span class="o">=</span> <span class="n">acct</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
-<a id="__codelineno-16-11" name="__codelineno-16-11" href="#__codelineno-16-11"></a>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">: eps=</span><span class="si">{</span><span class="n">eps</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting.accountant</span><span class="w"> </span><span class="kn">import</span> <span class="n">Accountant</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="n">acct</span> <span class="o">=</span> <span class="n">Accountant</span><span class="p">()</span>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_steps</span><span class="p">):</span>
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a>    <span class="n">acct</span> <span class="o">=</span> <span class="n">acct</span> <span class="o">|</span> <span class="n">step</span>
+<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>
+<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a>    <span class="k">if</span> <span class="n">i</span> <span class="o">%</span> <span class="mi">100</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a>        <span class="n">eps</span> <span class="o">=</span> <span class="n">acct</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">: eps=</span><span class="si">{</span><span class="n">eps</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="budget-tracking">Budget tracking<a class="headerlink" href="#budget-tracking" title="Permanent link">&para;</a></h3>
 <p>Pass an optional <code>Budget</code> from the calibration module to enable budget checking:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="kn">import</span> <span class="n">calibration</span> <span class="k">as</span> <span class="n">cal</span>
-<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting.accountant</span><span class="w"> </span><span class="kn">import</span> <span class="n">Accountant</span>
-<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>
-<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="n">budget</span> <span class="o">=</span> <span class="n">cal</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
-<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="n">acct</span> <span class="o">=</span> <span class="n">Accountant</span><span class="p">(</span><span class="n">budget</span><span class="o">=</span><span class="n">budget</span><span class="p">)</span>
-<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span>
-<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a>
-<a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a><span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_steps</span><span class="p">):</span>
-<a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a>    <span class="n">acct</span> <span class="o">=</span> <span class="n">acct</span> <span class="o">|</span> <span class="n">step</span>
-<a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a>    <span class="k">if</span> <span class="n">acct</span><span class="o">.</span><span class="n">budget_exceeded</span><span class="p">:</span>
-<a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a>        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Privacy budget exhausted.&quot;</span><span class="p">)</span>
-<a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a>        <span class="k">break</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="kn">import</span> <span class="n">calibration</span> <span class="k">as</span> <span class="n">cal</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting.accountant</span><span class="w"> </span><span class="kn">import</span> <span class="n">Accountant</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="n">budget</span> <span class="o">=</span> <span class="n">cal</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="n">acct</span> <span class="o">=</span> <span class="n">Accountant</span><span class="p">(</span><span class="n">budget</span><span class="o">=</span><span class="n">budget</span><span class="p">)</span>
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span>
+<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a>
+<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_steps</span><span class="p">):</span>
+<a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a>    <span class="n">acct</span> <span class="o">=</span> <span class="n">acct</span> <span class="o">|</span> <span class="n">step</span>
+<a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a>    <span class="k">if</span> <span class="n">acct</span><span class="o">.</span><span class="n">budget_exceeded</span><span class="p">:</span>
+<a id="__codelineno-16-11" name="__codelineno-16-11" href="#__codelineno-16-11"></a>        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Privacy budget exhausted.&quot;</span><span class="p">)</span>
+<a id="__codelineno-16-12" name="__codelineno-16-12" href="#__codelineno-16-12"></a>        <span class="k">break</span>
 </code></pre></div>
 <p><strong>Methods:</strong> <code>epsilon_at(delta)</code>, <code>delta_at(epsilon)</code>, <code>advantage()</code>,
 <code>beta_at(alpha)</code>, <code>risk_at(prior)</code>, <code>budget_exceeded</code> (property).</p>
 <h3 id="serialization_1">Serialization<a class="headerlink" href="#serialization_1" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="n">state</span> <span class="o">=</span> <span class="n">acct</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span>
-<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="c1"># Save state to disk (JSON-serializable dict)...</span>
-<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>
-<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="n">acct</span> <span class="o">=</span> <span class="n">Accountant</span><span class="o">.</span><span class="n">from_state_dict</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
-<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="c1"># Or equivalently (torch-style alias):</span>
-<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="n">acct</span> <span class="o">=</span> <span class="n">Accountant</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="n">state</span> <span class="o">=</span> <span class="n">acct</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="c1"># Save state to disk (JSON-serializable dict)...</span>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="n">acct</span> <span class="o">=</span> <span class="n">Accountant</span><span class="o">.</span><span class="n">from_state_dict</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="c1"># Or equivalently (torch-style alias):</span>
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="n">acct</span> <span class="o">=</span> <span class="n">Accountant</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
 </code></pre></div>
 <p><code>from_state_dict</code> restores the accumulated process tree but not the budget.
 Reattach a budget after loading if needed.</p>
 <hr />
 <h2 id="calibration">Calibration<a class="headerlink" href="#calibration" title="Permanent link">&para;</a></h2>
 <p>Submodule: <code>opaque.accounting.calibration</code></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="kn">import</span> <span class="n">calibration</span> <span class="k">as</span> <span class="n">cal</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="kn">import</span> <span class="n">calibration</span> <span class="k">as</span> <span class="n">cal</span>
 </code></pre></div>
 <p>Binary search for finding parameter values that achieve a target privacy budget.</p>
 <h3 id="calibratebudget-process-param_min-param_max-tolerance1e-6-max_iterations100-calibrateresult"><code>calibrate(budget, process, param_min, param_max, tolerance=1e-6, max_iterations=100) -&gt; CalibrateResult</code><a class="headerlink" href="#calibratebudget-process-param_min-param_max-tolerance1e-6-max_iterations100-calibrateresult" title="Permanent link">&para;</a></h3>
@@ -2781,38 +2728,38 @@ Reattach a budget after loading if needed.</p>
 The default parameter range is tuned for noise_multiplier search, but
 <code>calibrate()</code> is general: it can calibrate any float parameter in a process
 against any budget.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
-<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="kn">import</span> <span class="n">calibration</span> <span class="k">as</span> <span class="n">cal</span>
-<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>
-<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="n">budget</span> <span class="o">=</span> <span class="n">cal</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
-<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a><span class="n">result</span> <span class="o">=</span> <span class="n">cal</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
-<a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a>    <span class="n">budget</span><span class="p">,</span>
-<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">,</span>
-<a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a>    <span class="n">param_min</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
-<a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a>    <span class="n">param_max</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span>
-<a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a><span class="p">)</span>
-<a id="__codelineno-20-11" name="__codelineno-20-11" href="#__codelineno-20-11"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;noise_multiplier = </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">param</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, epsilon = </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">achieved</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="kn">import</span> <span class="n">calibration</span> <span class="k">as</span> <span class="n">cal</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="n">budget</span> <span class="o">=</span> <span class="n">cal</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a><span class="n">result</span> <span class="o">=</span> <span class="n">cal</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>    <span class="n">budget</span><span class="p">,</span>
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">,</span>
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a>    <span class="n">param_min</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
+<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a>    <span class="n">param_max</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span>
+<a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a><span class="p">)</span>
+<a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;noise_multiplier = </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">param</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, epsilon = </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">achieved</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p>Calibrating a different parameter (e.g., sample rate):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">cal</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
-<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>    <span class="n">cal</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span>
-<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>    <span class="k">lambda</span> <span class="n">q</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="n">q</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">,</span>
-<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a>    <span class="n">param_min</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">,</span>
-<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>    <span class="n">param_max</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
-<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">cal</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>    <span class="n">cal</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span>
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>    <span class="k">lambda</span> <span class="n">q</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="n">q</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">,</span>
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a>    <span class="n">param_min</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">,</span>
+<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>    <span class="n">param_max</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
+<a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a><span class="p">)</span>
 </code></pre></div>
 <p>Multi-phase training:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">cal</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
-<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>    <span class="n">cal</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span>
-<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="p">(</span>
-<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a>        <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">500</span>
-<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a>        <span class="o">|</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span> <span class="o">*</span> <span class="mf">0.8</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">500</span>
-<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a>        <span class="o">|</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span> <span class="o">*</span> <span class="mf">0.5</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">500</span>
-<a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a>    <span class="p">),</span>
-<a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a>    <span class="n">param_min</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>
-<a id="__codelineno-22-9" name="__codelineno-22-9" href="#__codelineno-22-9"></a>    <span class="n">param_max</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span>
-<a id="__codelineno-22-10" name="__codelineno-22-10" href="#__codelineno-22-10"></a>    <span class="n">tolerance</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
-<a id="__codelineno-22-11" name="__codelineno-22-11" href="#__codelineno-22-11"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">cal</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>    <span class="n">cal</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span>
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="p">(</span>
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a>        <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">500</span>
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>        <span class="o">|</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span> <span class="o">*</span> <span class="mf">0.8</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">500</span>
+<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a>        <span class="o">|</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span> <span class="o">*</span> <span class="mf">0.5</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">500</span>
+<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a>    <span class="p">),</span>
+<a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a>    <span class="n">param_min</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>
+<a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a>    <span class="n">param_max</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span>
+<a id="__codelineno-21-10" name="__codelineno-21-10" href="#__codelineno-21-10"></a>    <span class="n">tolerance</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
+<a id="__codelineno-21-11" name="__codelineno-21-11" href="#__codelineno-21-11"></a><span class="p">)</span>
 </code></pre></div>
 <h3 id="calibrateresult"><code>CalibrateResult</code><a class="headerlink" href="#calibrateresult" title="Permanent link">&para;</a></h3>
 <p>Returned by <code>calibrate()</code>.</p>
@@ -2894,33 +2841,33 @@ optimize and what value to achieve.</p>
 <p>"Decreasing with noise" indicates whether the metric decreases as the
 calibrated parameter (typically noise_multiplier) increases. The binary search
 adapts direction automatically based on the budget's <code>decreasing</code> property.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="c1"># (epsilon, delta)-DP</span>
-<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a><span class="n">result</span> <span class="o">=</span> <span class="n">cal</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
-<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>    <span class="n">cal</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span>
-<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">,</span>
-<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a>    <span class="mf">0.1</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">,</span>
-<a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a><span class="p">)</span>
-<a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a>
-<a id="__codelineno-23-8" name="__codelineno-23-8" href="#__codelineno-23-8"></a><span class="c1"># f-DP advantage</span>
-<a id="__codelineno-23-9" name="__codelineno-23-9" href="#__codelineno-23-9"></a><span class="n">result</span> <span class="o">=</span> <span class="n">cal</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
-<a id="__codelineno-23-10" name="__codelineno-23-10" href="#__codelineno-23-10"></a>    <span class="n">cal</span><span class="o">.</span><span class="n">advantage_budget</span><span class="p">(</span><span class="mf">0.1</span><span class="p">),</span>
-<a id="__codelineno-23-11" name="__codelineno-23-11" href="#__codelineno-23-11"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">,</span>
-<a id="__codelineno-23-12" name="__codelineno-23-12" href="#__codelineno-23-12"></a>    <span class="mf">0.2</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">,</span>
-<a id="__codelineno-23-13" name="__codelineno-23-13" href="#__codelineno-23-13"></a><span class="p">)</span>
-<a id="__codelineno-23-14" name="__codelineno-23-14" href="#__codelineno-23-14"></a>
-<a id="__codelineno-23-15" name="__codelineno-23-15" href="#__codelineno-23-15"></a><span class="c1"># (alpha, beta) error rates</span>
-<a id="__codelineno-23-16" name="__codelineno-23-16" href="#__codelineno-23-16"></a><span class="n">result</span> <span class="o">=</span> <span class="n">cal</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
-<a id="__codelineno-23-17" name="__codelineno-23-17" href="#__codelineno-23-17"></a>    <span class="n">cal</span><span class="o">.</span><span class="n">beta_budget</span><span class="p">(</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">),</span>
-<a id="__codelineno-23-18" name="__codelineno-23-18" href="#__codelineno-23-18"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">,</span>
-<a id="__codelineno-23-19" name="__codelineno-23-19" href="#__codelineno-23-19"></a>    <span class="mf">0.2</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">,</span>
-<a id="__codelineno-23-20" name="__codelineno-23-20" href="#__codelineno-23-20"></a><span class="p">)</span>
-<a id="__codelineno-23-21" name="__codelineno-23-21" href="#__codelineno-23-21"></a>
-<a id="__codelineno-23-22" name="__codelineno-23-22" href="#__codelineno-23-22"></a><span class="c1"># Bayes risk</span>
-<a id="__codelineno-23-23" name="__codelineno-23-23" href="#__codelineno-23-23"></a><span class="n">result</span> <span class="o">=</span> <span class="n">cal</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
-<a id="__codelineno-23-24" name="__codelineno-23-24" href="#__codelineno-23-24"></a>    <span class="n">cal</span><span class="o">.</span><span class="n">risk_budget</span><span class="p">(</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">prior</span><span class="o">=</span><span class="mf">0.5</span><span class="p">),</span>
-<a id="__codelineno-23-25" name="__codelineno-23-25" href="#__codelineno-23-25"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">,</span>
-<a id="__codelineno-23-26" name="__codelineno-23-26" href="#__codelineno-23-26"></a>    <span class="mf">0.2</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">,</span>
-<a id="__codelineno-23-27" name="__codelineno-23-27" href="#__codelineno-23-27"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="c1"># (epsilon, delta)-DP</span>
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="n">result</span> <span class="o">=</span> <span class="n">cal</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>    <span class="n">cal</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span>
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">,</span>
+<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a>    <span class="mf">0.1</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">,</span>
+<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a><span class="p">)</span>
+<a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a>
+<a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a><span class="c1"># f-DP advantage</span>
+<a id="__codelineno-22-9" name="__codelineno-22-9" href="#__codelineno-22-9"></a><span class="n">result</span> <span class="o">=</span> <span class="n">cal</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
+<a id="__codelineno-22-10" name="__codelineno-22-10" href="#__codelineno-22-10"></a>    <span class="n">cal</span><span class="o">.</span><span class="n">advantage_budget</span><span class="p">(</span><span class="mf">0.1</span><span class="p">),</span>
+<a id="__codelineno-22-11" name="__codelineno-22-11" href="#__codelineno-22-11"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">,</span>
+<a id="__codelineno-22-12" name="__codelineno-22-12" href="#__codelineno-22-12"></a>    <span class="mf">0.2</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">,</span>
+<a id="__codelineno-22-13" name="__codelineno-22-13" href="#__codelineno-22-13"></a><span class="p">)</span>
+<a id="__codelineno-22-14" name="__codelineno-22-14" href="#__codelineno-22-14"></a>
+<a id="__codelineno-22-15" name="__codelineno-22-15" href="#__codelineno-22-15"></a><span class="c1"># (alpha, beta) error rates</span>
+<a id="__codelineno-22-16" name="__codelineno-22-16" href="#__codelineno-22-16"></a><span class="n">result</span> <span class="o">=</span> <span class="n">cal</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
+<a id="__codelineno-22-17" name="__codelineno-22-17" href="#__codelineno-22-17"></a>    <span class="n">cal</span><span class="o">.</span><span class="n">beta_budget</span><span class="p">(</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">),</span>
+<a id="__codelineno-22-18" name="__codelineno-22-18" href="#__codelineno-22-18"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">,</span>
+<a id="__codelineno-22-19" name="__codelineno-22-19" href="#__codelineno-22-19"></a>    <span class="mf">0.2</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">,</span>
+<a id="__codelineno-22-20" name="__codelineno-22-20" href="#__codelineno-22-20"></a><span class="p">)</span>
+<a id="__codelineno-22-21" name="__codelineno-22-21" href="#__codelineno-22-21"></a>
+<a id="__codelineno-22-22" name="__codelineno-22-22" href="#__codelineno-22-22"></a><span class="c1"># Bayes risk</span>
+<a id="__codelineno-22-23" name="__codelineno-22-23" href="#__codelineno-22-23"></a><span class="n">result</span> <span class="o">=</span> <span class="n">cal</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
+<a id="__codelineno-22-24" name="__codelineno-22-24" href="#__codelineno-22-24"></a>    <span class="n">cal</span><span class="o">.</span><span class="n">risk_budget</span><span class="p">(</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">prior</span><span class="o">=</span><span class="mf">0.5</span><span class="p">),</span>
+<a id="__codelineno-22-25" name="__codelineno-22-25" href="#__codelineno-22-25"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">,</span>
+<a id="__codelineno-22-26" name="__codelineno-22-26" href="#__codelineno-22-26"></a>    <span class="mf">0.2</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">,</span>
+<a id="__codelineno-22-27" name="__codelineno-22-27" href="#__codelineno-22-27"></a><span class="p">)</span>
 </code></pre></div>
 
 

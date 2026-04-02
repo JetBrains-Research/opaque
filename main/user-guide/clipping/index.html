@@ -1225,29 +1225,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/rectified-gaussian/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Rectified Gaussian
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../mechanisms/truncated-gaussian/" class="md-nav__link">
         
   
@@ -1510,7 +1487,7 @@
   
   
   <span class="md-ellipsis">
-    Validate Privacy Guarantees with Auditing
+    Privacy Auditing
     
   </span>
   
@@ -2172,10 +2149,11 @@ primary API for DP-SGD training.</p>
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">loss_fn</span><span class="p">,</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>             <span class="c1"># differentiate w.r.t. first argument (params)</span>
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>  <span class="c1"># second and third arguments are batched</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">l2_clip_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="p">)</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch_x</span><span class="p">,</span> <span class="n">batch_y</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="p">)</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch_x</span><span class="p">,</span> <span class="n">batch_y</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="how-it-works">How it works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h3>
 <ol>
@@ -2183,11 +2161,11 @@ primary API for DP-SGD training.</p>
    to the argument at position <code>argnums</code>.</li>
 <li><code>torch.func.vmap</code> vectorizes this over the batch dimension of the arguments
    at positions <code>batch_argnums</code>, producing one gradient per example.</li>
-<li>Each per-example gradient is clipped to L2 norm at most <code>l2_clip_norm</code>.</li>
+<li>Each per-example gradient is clipped to L2 norm at most <code>clipping_norm</code>.</li>
 <li>The clipped gradients are summed across the batch.</li>
 </ol>
-<p>The returned <code>clip_state</code> is a <code>FixedClipState</code> containing the clip norm and
-a <code>sensitivity()</code> method used to calibrate noise.</p>
+<p>The returned <code>clip_state</code> is a <code>FixedClipState</code> containing the clip norm
+used to calibrate noise.</p>
 <h3 id="parameters">Parameters<a class="headerlink" href="#parameters" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -2218,7 +2196,7 @@ a <code>sensitivity()</code> method used to calibrate noise.</p>
 <td>If True, <code>loss_fn</code> returns <code>(loss, aux)</code>. The aux data is returned per-example.</td>
 </tr>
 <tr>
-<td><code>l2_clip_norm</code></td>
+<td><code>clipping_norm</code></td>
 <td><code>float</code></td>
 <td>required</td>
 <td>Maximum L2 norm for per-example gradients.</td>
@@ -2239,7 +2217,7 @@ a <code>sensitivity()</code> method used to calibrate noise.</p>
 <td><code>normalize_by</code></td>
 <td><code>float</code></td>
 <td><code>1.0</code></td>
-<td>Divide the clipped output and sensitivity by this value. Useful for averaging (set to batch size).</td>
+<td>Divide the clipped sum and sensitivity by this constant. Set to expected batch size to get averaged gradients with sensitivity = <code>clipping_norm / batch_size</code>.</td>
 </tr>
 <tr>
 <td><code>pre_clipping_transform</code></td>
@@ -2264,7 +2242,7 @@ a <code>sensitivity()</code> method used to calibrate noise.</p>
 <h3 id="state-flow">State flow<a class="headerlink" href="#state-flow" title="Permanent link">&para;</a></h3>
 <p><code>clipped_grad</code> returns <code>(grad_fn, clip_state)</code>. The state must be threaded
 through each call:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span><span class="n">loss_fn</span><span class="p">,</span> <span class="n">l2_clip_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span><span class="n">loss_fn</span><span class="p">,</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">dataloader</span><span class="p">:</span>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
@@ -2277,8 +2255,8 @@ change.</p>
 <h3 id="sensitivity">Sensitivity<a class="headerlink" href="#sensitivity" title="Permanent link">&para;</a></h3>
 <p>The sensitivity is the maximum change in the clipped gradient sum when one
 example is added, removed, or replaced. Noise is calibrated to this value.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">sensitivity</span> <span class="o">=</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">()</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># With l2_clip_norm=1.0: sensitivity = 1.0</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">sensitivity</span> <span class="o">=</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># With clipping_norm=1.0, normalize_by=32: sensitivity = 1.0 / 32</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">sensitivity</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
@@ -2287,18 +2265,18 @@ example is added, removed, or replaced. Noise is calibrated to this value.</p>
 <h3 id="diagnostics">Diagnostics<a class="headerlink" href="#diagnostics" title="Permanent link">&para;</a></h3>
 <p>Set <code>return_aux=True</code> to get per-example gradient norms and loss values:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">l2_clip_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">return_aux</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">return_aux</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="p">)</span>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">aux</span><span class="p">),</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="c1"># aux.grad_norms: per-example L2 norms before clipping</span>
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1"># aux.clipped_grad_norms: per-example L2 norms after clipping</span>
 <a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="c1"># aux.loss_values: per-example loss values</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="c1"># aux.clipping_norm: the L2 clip norm used</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="c1"># aux.clipping_rate: fraction of per-example gradients that were clipped</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="c1"># aux.batch_size: number of examples in the batch</span>
 </code></pre></div>
-<p><code>adaptive_clipped_grad</code> returns <code>AdaptiveClippedGradAux</code> instead, which has
-a <code>clipping_rate</code> field (fraction of gradients clipped) instead of
-<code>clipping_norm</code>.</p>
+<p><code>adaptive_clipped_grad</code> returns <code>AdaptiveClippedGradAux</code> instead, which adds
+a <code>clipping_rate</code> field (fraction of gradients clipped).</p>
 <h2 id="clipped_fun-general-purpose-clipping"><code>clipped_fun</code> -- general-purpose clipping<a class="headerlink" href="#clipped_fun-general-purpose-clipping" title="Permanent link">&para;</a></h2>
 <p><code>clipped_fun</code> clips and sums the outputs of any function, not just gradients.
 <code>clipped_grad</code> is built on top of <code>clipped_fun</code>.</p>
@@ -2310,7 +2288,7 @@ a <code>clipping_rate</code> field (fraction of gradients clipped) instead of
 <a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="n">clipped_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_fun</span><span class="p">(</span>
 <a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="n">per_example_fn</span><span class="p">,</span>
 <a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="n">l2_clip_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
 <a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="p">)</span>
 <a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>
 <a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="n">summed_result</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
@@ -2323,7 +2301,7 @@ not handle batching or summation.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque</span><span class="w"> </span><span class="kn">import</span> <span class="n">clip_pytree</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">grads</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;weight&quot;</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">3.0</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">]),</span> <span class="s2">&quot;bias&quot;</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">])}</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">clipped_grads</span><span class="p">,</span> <span class="n">aux</span> <span class="o">=</span> <span class="n">clip_pytree</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">clip_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">clipped_grads</span><span class="p">,</span> <span class="n">aux</span> <span class="o">=</span> <span class="n">clip_pytree</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
 <a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="c1"># aux.norm = 5.099 (original L2 norm)</span>
 <a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="c1"># clipped_grads: scaled so global L2 norm &lt;= 1.0</span>
 </code></pre></div>
@@ -2338,7 +2316,7 @@ gradients incrementally. The result is mathematically identical to processing
 the full batch.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="n">loss_fn</span><span class="p">,</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="n">l2_clip_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
 <a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
 <a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">microbatch_size</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span>  <span class="c1"># process 16 examples at a time</span>
 <a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="p">)</span>
@@ -2355,7 +2333,7 @@ select the largest stable microbatch that does not OOM:</p>
 <a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="k">for</span> <span class="n">candidate_mb</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">64</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">]:</span>
 <a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="n">grad_fn</span><span class="p">,</span> <span class="n">state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
 <a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>        <span class="n">loss_fn</span><span class="p">,</span>
-<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>        <span class="n">l2_clip_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>        <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
 <a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>        <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
 <a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>        <span class="n">microbatch_size</span><span class="o">=</span><span class="n">candidate_mb</span><span class="p">,</span>
 <a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>    <span class="p">)</span>
@@ -2370,9 +2348,8 @@ select the largest stable microbatch that does not OOM:</p>
 </code></pre></div>
 <p>See <a href="../memory-optimizations/">Memory Optimizations</a> for details.</p>
 <h2 id="adaptive-clipping">Adaptive clipping<a class="headerlink" href="#adaptive-clipping" title="Permanent link">&para;</a></h2>
-<p><code>adaptive_clipped_grad</code> automatically adjusts the clip norm during training
-using the geometric adaptation rule from
-<a href="https://arxiv.org/abs/1905.03871">Andrew et al. 2021</a>. Instead of manually
+<p><code>adaptive_clipped_grad</code> automatically adjusts the clip norm during training.
+Instead of manually
 tuning the clip norm, you specify a target fraction of gradients that should
 be clipped (the <em>target quantile</em>).</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque</span><span class="w"> </span><span class="kn">import</span> <span class="n">adaptive_clipped_grad</span>
@@ -2381,13 +2358,14 @@ be clipped (the <em>target quantile</em>).</p>
 <a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">adaptive_clipped_grad</span><span class="p">(</span>
 <a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    <span class="n">loss_fn</span><span class="p">,</span>
 <a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
-<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>    <span class="n">initial_clip_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>    <span class="n">initial_clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
 <a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>    <span class="n">target_quantile</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>   <span class="c1"># aim for 50% of gradients clipped</span>
-<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">7</span><span class="p">),</span>            <span class="c1"># required for quantile noise</span>
-<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="p">)</span>
-<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>
-<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
-<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="c1"># clip_state.clip_norm has been updated</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>    <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">7</span><span class="p">),</span>            <span class="c1"># required for quantile noise</span>
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="p">)</span>
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>
+<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
+<a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="c1"># clip_state.clipping_norm has been updated</span>
 </code></pre></div>
 <h3 id="how-adaptive-clipping-works">How adaptive clipping works<a class="headerlink" href="#how-adaptive-clipping-works" title="Permanent link">&para;</a></h3>
 <p>After each step:</p>
@@ -2405,27 +2383,26 @@ be clipped (the <em>target quantile</em>).</p>
 <p>where eta is the <code>learning_rate</code> parameter (default 0.2).</p>
 <h3 id="state-changes">State changes<a class="headerlink" href="#state-changes" title="Permanent link">&para;</a></h3>
 <p>Unlike <code>clipped_grad</code>, the state from <code>adaptive_clipped_grad</code> <strong>does change</strong>
-on each call. The returned <code>AdaptiveClipState</code> contains the updated clip norm,
-step counter, and clipping statistics. Always use the returned state for the
-next call.</p>
+on each call. The returned <code>AdaptiveClipState</code> contains the updated clip norm
+and step counter. Always use the returned state for the next call.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">dataloader</span><span class="p">:</span>
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="c1"># clip_state.clip_norm may have changed</span>
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="c1"># clip_state.clipping_rate shows fraction clipped this step</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="c1"># clip_state.clipping_norm updates each step</span>
 </code></pre></div>
 <h3 id="privacy-accounting-for-adaptive-clipping">Privacy accounting for adaptive clipping<a class="headerlink" href="#privacy-accounting-for-adaptive-clipping" title="Permanent link">&para;</a></h3>
 <p>Adaptive clipping introduces an additional privacy cost (the noisy clipping
 rate query). Account for it using <code>acc.adaclip()</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
 <a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">adaclip</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">),</span>
-<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>                <span class="n">quantile_noise_multiplier</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span>
-<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>                <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">),</span>
-<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>    <span class="n">sample_rate</span><span class="p">,</span>
-<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="p">)</span>
-<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="n">training</span> <span class="o">=</span> <span class="n">step</span> <span class="o">*</span> <span class="n">num_steps</span>
-<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="n">expected_batch_size</span> <span class="o">=</span> <span class="n">sample_rate</span> <span class="o">*</span> <span class="n">dataset_size</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">adaclip</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">),</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>                <span class="n">fraction_noise_std</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>                <span class="n">expected_batch_size</span><span class="o">=</span><span class="n">expected_batch_size</span><span class="p">),</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>    <span class="n">sample_rate</span><span class="p">,</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="p">)</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="n">training</span> <span class="o">=</span> <span class="n">step</span> <span class="o">*</span> <span class="n">num_steps</span>
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="distributed-adaptive-clipping">Distributed adaptive clipping<a class="headerlink" href="#distributed-adaptive-clipping" title="Permanent link">&para;</a></h3>
 <p>In distributed training, the clip norm must be consistent across devices.
@@ -2437,8 +2414,8 @@ After each step, synchronize the state:</p>
 <a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="n">grads</span> <span class="o">=</span> <span class="n">dist_utils</span><span class="o">.</span><span class="n">sum_gradients</span><span class="p">(</span><span class="n">grads</span><span class="p">)</span>
 </code></pre></div>
 <p><code>sync()</code> dispatches to <code>sync_adaptive_clip_state</code> internally, which aggregates
-<code>num_clipped</code> and <code>total</code> across ranks, recomputes the global clipping rate,
-and updates <code>clip_norm</code> to be identical on every device.</p>
+counts across ranks, recomputes the global clipping rate,
+and updates <code>next_clipping_norm</code> to be identical on every device.</p>
 <h2 id="loss-function-requirements">Loss function requirements<a class="headerlink" href="#loss-function-requirements" title="Permanent link">&para;</a></h2>
 <p>The loss function passed to <code>clipped_grad</code> must:</p>
 <ol>
@@ -2463,7 +2440,7 @@ convert to functional form:</p>
 <a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>    <span class="k">return</span> <span class="p">(</span><span class="n">pred</span> <span class="o">-</span> <span class="n">y</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
 <a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>
 <a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span><span class="n">loss_fn</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
-<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>                                   <span class="n">l2_clip_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
+<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>                                   <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="separating-trainable-and-frozen-parameters">Separating trainable and frozen parameters<a class="headerlink" href="#separating-trainable-and-frozen-parameters" title="Permanent link">&para;</a></h3>
 <p>For parameter-efficient methods (LoRA, adapters), separate trainable from
@@ -2476,7 +2453,7 @@ frozen parameters:</p>
 <a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>    <span class="k">return</span> <span class="n">out</span><span class="o">.</span><span class="n">loss</span>
 <a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a>
 <a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span><span class="n">loss_fn</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
-<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>                                   <span class="n">l2_clip_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
+<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>                                   <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
 </code></pre></div>
 <p>Only the trainable parameters receive per-example gradients. Frozen parameters
 are treated as constants by <code>vmap</code>.</p>

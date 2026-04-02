@@ -974,29 +974,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/rectified-gaussian/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Rectified Gaussian
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../mechanisms/truncated-gaussian/" class="md-nav__link">
         
   
@@ -1259,7 +1236,7 @@
   
   
   <span class="md-ellipsis">
-    Validate Privacy Guarantees with Auditing
+    Privacy Auditing
     
   </span>
   
@@ -1785,9 +1762,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#opaque.distributed.sum_gradients_--add-noise-scaled-to-clip_norm-not-dependent-on-batch-size" class="md-nav__link">
+  <a href="#opaque.distributed.sum_gradients_--add-noise-scaled-to-clipping_norm-not-dependent-on-batch-size" class="md-nav__link">
     <span class="md-ellipsis">
-      Add noise scaled to clip_norm (NOT dependent on batch size!)
+      Add noise scaled to clipping_norm (NOT dependent on batch size!)
     </span>
   </a>
   
@@ -1944,27 +1921,9 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#opaque.distributed.sync_object--each-device-has-different-state-after-local-update" class="md-nav__link">
+  <a href="#opaque.distributed.sync_object--synchronize-num_clipped-sum-and-next_clipping_norm-mean-but-not-step" class="md-nav__link">
     <span class="md-ellipsis">
-      Each device has different state after local update
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#opaque.distributed.sync_object--synchronize-clip_norm-and-clipping_rate-but-not-step" class="md-nav__link">
-    <span class="md-ellipsis">
-      Synchronize clip_norm and clipping_rate (but not step)
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#opaque.distributed.sync_object--stateclip_norm-and-stateclipping_rate-now-averaged-across-devices" class="md-nav__link">
-    <span class="md-ellipsis">
-      state.clip_norm and state.clipping_rate now averaged across devices
+      Synchronize num_clipped (sum) and next_clipping_norm (mean), but not step
     </span>
   </a>
   
@@ -2518,9 +2477,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#opaque.distributed.sum_gradients_--add-noise-scaled-to-clip_norm-not-dependent-on-batch-size" class="md-nav__link">
+  <a href="#opaque.distributed.sum_gradients_--add-noise-scaled-to-clipping_norm-not-dependent-on-batch-size" class="md-nav__link">
     <span class="md-ellipsis">
-      Add noise scaled to clip_norm (NOT dependent on batch size!)
+      Add noise scaled to clipping_norm (NOT dependent on batch size!)
     </span>
   </a>
   
@@ -2677,27 +2636,9 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#opaque.distributed.sync_object--each-device-has-different-state-after-local-update" class="md-nav__link">
+  <a href="#opaque.distributed.sync_object--synchronize-num_clipped-sum-and-next_clipping_norm-mean-but-not-step" class="md-nav__link">
     <span class="md-ellipsis">
-      Each device has different state after local update
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#opaque.distributed.sync_object--synchronize-clip_norm-and-clipping_rate-but-not-step" class="md-nav__link">
-    <span class="md-ellipsis">
-      Synchronize clip_norm and clipping_rate (but not step)
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#opaque.distributed.sync_object--stateclip_norm-and-stateclipping_rate-now-averaged-across-devices" class="md-nav__link">
-    <span class="md-ellipsis">
-      state.clip_norm and state.clipping_rate now averaged across devices
+      Synchronize num_clipped (sum) and next_clipping_norm (mean), but not step
     </span>
   </a>
   
@@ -3788,12 +3729,12 @@ from opaque.noise import gaussian_noise</p>
 <h4 id="opaque.distributed.sum_gradients_--each-device-computes-clipped-gradients-on-local-batch">Each device computes clipped gradients on local batch<a class="headerlink" href="#opaque.distributed.sum_gradients_--each-device-computes-clipped-gradients-on-local-batch" title="Permanent link">&para;</a></h4>
 <h4 id="opaque.distributed.sum_gradients_--poisson-sampling-different-batch-sizes">(Poisson sampling: different batch sizes!)<a class="headerlink" href="#opaque.distributed.sum_gradients_--poisson-sampling-different-batch-sizes" title="Permanent link">&para;</a></h4>
 <p>loss_fn = lambda params, x, y: ((x @ params - y) ** 2).mean()
-grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2))</p>
+grad_fn = clipped_grad(loss_fn, clipping_norm=1.0, batch_argnums=(1, 2))</p>
 <h4 id="opaque.distributed.sum_gradients_--rank-0-32-examples-rank-1-28-examples">Rank 0: 32 examples, Rank 1: 28 examples<a class="headerlink" href="#opaque.distributed.sum_gradients_--rank-0-32-examples-rank-1-28-examples" title="Permanent link">&para;</a></h4>
 <p>grads = grad_fn(params, batch_x, batch_y)  # Sum of B clipped grads</p>
 <h4 id="opaque.distributed.sum_gradients_--sum-across-devices-total-60-examples">Sum across devices: total 60 examples<a class="headerlink" href="#opaque.distributed.sum_gradients_--sum-across-devices-total-60-examples" title="Permanent link">&para;</a></h4>
 <p>sum_gradients_(grads)</p>
-<h4 id="opaque.distributed.sum_gradients_--add-noise-scaled-to-clip_norm-not-dependent-on-batch-size">Add noise scaled to clip_norm (NOT dependent on batch size!)<a class="headerlink" href="#opaque.distributed.sum_gradients_--add-noise-scaled-to-clip_norm-not-dependent-on-batch-size" title="Permanent link">&para;</a></h4>
+<h4 id="opaque.distributed.sum_gradients_--add-noise-scaled-to-clipping_norm-not-dependent-on-batch-size">Add noise scaled to clipping_norm (NOT dependent on batch size!)<a class="headerlink" href="#opaque.distributed.sum_gradients_--add-noise-scaled-to-clipping_norm-not-dependent-on-batch-size" title="Permanent link">&para;</a></h4>
 <p>noisy_grads = gaussian_noise(grads, sigma=1.1)</p>
 </blockquote>
 </blockquote>
@@ -3873,7 +3814,7 @@ grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2))</p>
 <a id="__codelineno-0-128" name="__codelineno-0-128"></a><span class="sd">        &gt;&gt;&gt; # Each device computes clipped gradients on local batch</span>
 <a id="__codelineno-0-129" name="__codelineno-0-129"></a><span class="sd">        &gt;&gt;&gt; # (Poisson sampling: different batch sizes!)</span>
 <a id="__codelineno-0-130" name="__codelineno-0-130"></a><span class="sd">        &gt;&gt;&gt; loss_fn = lambda params, x, y: ((x @ params - y) ** 2).mean()</span>
-<a id="__codelineno-0-131" name="__codelineno-0-131"></a><span class="sd">        &gt;&gt;&gt; grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2))</span>
+<a id="__codelineno-0-131" name="__codelineno-0-131"></a><span class="sd">        &gt;&gt;&gt; grad_fn = clipped_grad(loss_fn, clipping_norm=1.0, batch_argnums=(1, 2))</span>
 <a id="__codelineno-0-132" name="__codelineno-0-132"></a><span class="sd">        &gt;&gt;&gt;</span>
 <a id="__codelineno-0-133" name="__codelineno-0-133"></a><span class="sd">        &gt;&gt;&gt; # Rank 0: 32 examples, Rank 1: 28 examples</span>
 <a id="__codelineno-0-134" name="__codelineno-0-134"></a><span class="sd">        &gt;&gt;&gt; grads = grad_fn(params, batch_x, batch_y)  # Sum of B clipped grads</span>
@@ -3881,7 +3822,7 @@ grad_fn = clipped_grad(loss_fn, l2_clip_norm=1.0, batch_argnums=(1, 2))</p>
 <a id="__codelineno-0-136" name="__codelineno-0-136"></a><span class="sd">        &gt;&gt;&gt; # Sum across devices: total 60 examples</span>
 <a id="__codelineno-0-137" name="__codelineno-0-137"></a><span class="sd">        &gt;&gt;&gt; sum_gradients_(grads)</span>
 <a id="__codelineno-0-138" name="__codelineno-0-138"></a><span class="sd">        &gt;&gt;&gt;</span>
-<a id="__codelineno-0-139" name="__codelineno-0-139"></a><span class="sd">        &gt;&gt;&gt; # Add noise scaled to clip_norm (NOT dependent on batch size!)</span>
+<a id="__codelineno-0-139" name="__codelineno-0-139"></a><span class="sd">        &gt;&gt;&gt; # Add noise scaled to clipping_norm (NOT dependent on batch size!)</span>
 <a id="__codelineno-0-140" name="__codelineno-0-140"></a><span class="sd">        &gt;&gt;&gt; noisy_grads = gaussian_noise(grads, sigma=1.1)</span>
 <a id="__codelineno-0-141" name="__codelineno-0-141"></a>
 <a id="__codelineno-0-142" name="__codelineno-0-142"></a><span class="sd">    Notes:</span>
@@ -4775,7 +4716,7 @@ in the same order.</li>
 
         <p>Synchronize scalar fields in a dataclass state object across processes.</p>
 <p>This is particularly useful for adaptive clipping state where we need to
-keep clip_norm consistent across all devices.</p>
+keep clipping_norm consistent across all devices.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -4898,18 +4839,16 @@ keep clip_norm consistent across all devices.</p>
 <p>from dataclasses import dataclass
 import opaque.distributed.state as dist_state</p>
 <p>@dataclass
-class AdaptiveClipState:
-...     clip_norm: float
+class TrainingState:
+...     next_clipping_norm: float
 ...     step: int
-...     clipping_rate: float</p>
-<h4 id="opaque.distributed.sync_object--each-device-has-different-state-after-local-update">Each device has different state after local update<a class="headerlink" href="#opaque.distributed.sync_object--each-device-has-different-state-after-local-update" title="Permanent link">&para;</a></h4>
-<p>state = AdaptiveClipState(clip_norm=1.0, step=100, clipping_rate=0.8)</p>
-<h4 id="opaque.distributed.sync_object--synchronize-clip_norm-and-clipping_rate-but-not-step">Synchronize clip_norm and clipping_rate (but not step)<a class="headerlink" href="#opaque.distributed.sync_object--synchronize-clip_norm-and-clipping_rate-but-not-step" title="Permanent link">&para;</a></h4>
+...     num_clipped: float</p>
+<p>state = TrainingState(next_clipping_norm=1.0, step=100, num_clipped=5.0)</p>
+<h4 id="opaque.distributed.sync_object--synchronize-num_clipped-sum-and-next_clipping_norm-mean-but-not-step">Synchronize num_clipped (sum) and next_clipping_norm (mean), but not step<a class="headerlink" href="#opaque.distributed.sync_object--synchronize-num_clipped-sum-and-next_clipping_norm-mean-but-not-step" title="Permanent link">&para;</a></h4>
 <p>state = dist_state.sync_object(
 ...     state,
-...     field_ops={"clip_norm": "mean", "clipping_rate": "mean"}
+...     field_ops={"next_clipping_norm": "mean", "num_clipped": "sum"}
 ... )</p>
-<h4 id="opaque.distributed.sync_object--stateclip_norm-and-stateclipping_rate-now-averaged-across-devices">state.clip_norm and state.clipping_rate now averaged across devices<a class="headerlink" href="#opaque.distributed.sync_object--stateclip_norm-and-stateclipping_rate-now-averaged-across-devices" title="Permanent link">&para;</a></h4>
 <h4 id="opaque.distributed.sync_object--statestep-unchanged-not-synchronized">state.step unchanged (not synchronized)<a class="headerlink" href="#opaque.distributed.sync_object--statestep-unchanged-not-synchronized" title="Permanent link">&para;</a></h4>
 </blockquote>
 </blockquote>
@@ -5042,9 +4981,7 @@ class AdaptiveClipState:
 <span class="normal"><a href="#__codelineno-0-376">376</a></span>
 <span class="normal"><a href="#__codelineno-0-377">377</a></span>
 <span class="normal"><a href="#__codelineno-0-378">378</a></span>
-<span class="normal"><a href="#__codelineno-0-379">379</a></span>
-<span class="normal"><a href="#__codelineno-0-380">380</a></span>
-<span class="normal"><a href="#__codelineno-0-381">381</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-265" name="__codelineno-0-265"></a><span class="k">def</span><span class="w"> </span><span class="nf">sync_object</span><span class="p">(</span>
+<span class="normal"><a href="#__codelineno-0-379">379</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-265" name="__codelineno-0-265"></a><span class="k">def</span><span class="w"> </span><span class="nf">sync_object</span><span class="p">(</span>
 <a id="__codelineno-0-266" name="__codelineno-0-266"></a>    <span class="n">state</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
 <a id="__codelineno-0-267" name="__codelineno-0-267"></a>    <span class="n">field_ops</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <a id="__codelineno-0-268" name="__codelineno-0-268"></a>    <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -5052,7 +4989,7 @@ class AdaptiveClipState:
 <a id="__codelineno-0-270" name="__codelineno-0-270"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Synchronize scalar fields in a dataclass state object across processes.</span>
 <a id="__codelineno-0-271" name="__codelineno-0-271"></a>
 <a id="__codelineno-0-272" name="__codelineno-0-272"></a><span class="sd">    This is particularly useful for adaptive clipping state where we need to</span>
-<a id="__codelineno-0-273" name="__codelineno-0-273"></a><span class="sd">    keep clip_norm consistent across all devices.</span>
+<a id="__codelineno-0-273" name="__codelineno-0-273"></a><span class="sd">    keep clipping_norm consistent across all devices.</span>
 <a id="__codelineno-0-274" name="__codelineno-0-274"></a>
 <a id="__codelineno-0-275" name="__codelineno-0-275"></a><span class="sd">    Args:</span>
 <a id="__codelineno-0-276" name="__codelineno-0-276"></a><span class="sd">        state: Dataclass instance with scalar fields to synchronize.</span>
@@ -5079,88 +5016,86 @@ class AdaptiveClipState:
 <a id="__codelineno-0-297" name="__codelineno-0-297"></a><span class="sd">        &gt;&gt;&gt; import opaque.distributed.state as dist_state</span>
 <a id="__codelineno-0-298" name="__codelineno-0-298"></a><span class="sd">        &gt;&gt;&gt;</span>
 <a id="__codelineno-0-299" name="__codelineno-0-299"></a><span class="sd">        &gt;&gt;&gt; @dataclass</span>
-<a id="__codelineno-0-300" name="__codelineno-0-300"></a><span class="sd">        &gt;&gt;&gt; class AdaptiveClipState:</span>
-<a id="__codelineno-0-301" name="__codelineno-0-301"></a><span class="sd">        ...     clip_norm: float</span>
+<a id="__codelineno-0-300" name="__codelineno-0-300"></a><span class="sd">        &gt;&gt;&gt; class TrainingState:</span>
+<a id="__codelineno-0-301" name="__codelineno-0-301"></a><span class="sd">        ...     next_clipping_norm: float</span>
 <a id="__codelineno-0-302" name="__codelineno-0-302"></a><span class="sd">        ...     step: int</span>
-<a id="__codelineno-0-303" name="__codelineno-0-303"></a><span class="sd">        ...     clipping_rate: float</span>
+<a id="__codelineno-0-303" name="__codelineno-0-303"></a><span class="sd">        ...     num_clipped: float</span>
 <a id="__codelineno-0-304" name="__codelineno-0-304"></a><span class="sd">        &gt;&gt;&gt;</span>
-<a id="__codelineno-0-305" name="__codelineno-0-305"></a><span class="sd">        &gt;&gt;&gt; # Each device has different state after local update</span>
-<a id="__codelineno-0-306" name="__codelineno-0-306"></a><span class="sd">        &gt;&gt;&gt; state = AdaptiveClipState(clip_norm=1.0, step=100, clipping_rate=0.8)</span>
-<a id="__codelineno-0-307" name="__codelineno-0-307"></a><span class="sd">        &gt;&gt;&gt;</span>
-<a id="__codelineno-0-308" name="__codelineno-0-308"></a><span class="sd">        &gt;&gt;&gt; # Synchronize clip_norm and clipping_rate (but not step)</span>
-<a id="__codelineno-0-309" name="__codelineno-0-309"></a><span class="sd">        &gt;&gt;&gt; state = dist_state.sync_object(</span>
-<a id="__codelineno-0-310" name="__codelineno-0-310"></a><span class="sd">        ...     state,</span>
-<a id="__codelineno-0-311" name="__codelineno-0-311"></a><span class="sd">        ...     field_ops={&quot;clip_norm&quot;: &quot;mean&quot;, &quot;clipping_rate&quot;: &quot;mean&quot;}</span>
-<a id="__codelineno-0-312" name="__codelineno-0-312"></a><span class="sd">        ... )</span>
-<a id="__codelineno-0-313" name="__codelineno-0-313"></a><span class="sd">        &gt;&gt;&gt; # state.clip_norm and state.clipping_rate now averaged across devices</span>
-<a id="__codelineno-0-314" name="__codelineno-0-314"></a><span class="sd">        &gt;&gt;&gt; # state.step unchanged (not synchronized)</span>
-<a id="__codelineno-0-315" name="__codelineno-0-315"></a>
-<a id="__codelineno-0-316" name="__codelineno-0-316"></a><span class="sd">    Notes:</span>
-<a id="__codelineno-0-317" name="__codelineno-0-317"></a><span class="sd">        - Returns a NEW state object (immutable update)</span>
-<a id="__codelineno-0-318" name="__codelineno-0-318"></a><span class="sd">        - If distributed is not initialized, returns input unchanged</span>
-<a id="__codelineno-0-319" name="__codelineno-0-319"></a><span class="sd">        - Only synchronizes numeric (float/int) fields</span>
-<a id="__codelineno-0-320" name="__codelineno-0-320"></a><span class="sd">        - Step counters typically should NOT be synchronized unless explicitly requested</span>
-<a id="__codelineno-0-321" name="__codelineno-0-321"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-322" name="__codelineno-0-322"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">is_distributed</span><span class="p">():</span>
-<a id="__codelineno-0-323" name="__codelineno-0-323"></a>        <span class="k">return</span> <span class="n">state</span>
-<a id="__codelineno-0-324" name="__codelineno-0-324"></a>
-<a id="__codelineno-0-325" name="__codelineno-0-325"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">is_dataclass</span><span class="p">(</span><span class="n">state</span><span class="p">):</span>
-<a id="__codelineno-0-326" name="__codelineno-0-326"></a>        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;state must be a dataclass, got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">state</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-305" name="__codelineno-0-305"></a><span class="sd">        &gt;&gt;&gt; state = TrainingState(next_clipping_norm=1.0, step=100, num_clipped=5.0)</span>
+<a id="__codelineno-0-306" name="__codelineno-0-306"></a><span class="sd">        &gt;&gt;&gt;</span>
+<a id="__codelineno-0-307" name="__codelineno-0-307"></a><span class="sd">        &gt;&gt;&gt; # Synchronize num_clipped (sum) and next_clipping_norm (mean), but not step</span>
+<a id="__codelineno-0-308" name="__codelineno-0-308"></a><span class="sd">        &gt;&gt;&gt; state = dist_state.sync_object(</span>
+<a id="__codelineno-0-309" name="__codelineno-0-309"></a><span class="sd">        ...     state,</span>
+<a id="__codelineno-0-310" name="__codelineno-0-310"></a><span class="sd">        ...     field_ops={&quot;next_clipping_norm&quot;: &quot;mean&quot;, &quot;num_clipped&quot;: &quot;sum&quot;}</span>
+<a id="__codelineno-0-311" name="__codelineno-0-311"></a><span class="sd">        ... )</span>
+<a id="__codelineno-0-312" name="__codelineno-0-312"></a><span class="sd">        &gt;&gt;&gt; # state.step unchanged (not synchronized)</span>
+<a id="__codelineno-0-313" name="__codelineno-0-313"></a>
+<a id="__codelineno-0-314" name="__codelineno-0-314"></a><span class="sd">    Notes:</span>
+<a id="__codelineno-0-315" name="__codelineno-0-315"></a><span class="sd">        - Returns a NEW state object (immutable update)</span>
+<a id="__codelineno-0-316" name="__codelineno-0-316"></a><span class="sd">        - If distributed is not initialized, returns input unchanged</span>
+<a id="__codelineno-0-317" name="__codelineno-0-317"></a><span class="sd">        - Only synchronizes numeric (float/int) fields</span>
+<a id="__codelineno-0-318" name="__codelineno-0-318"></a><span class="sd">        - Step counters typically should NOT be synchronized unless explicitly requested</span>
+<a id="__codelineno-0-319" name="__codelineno-0-319"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-320" name="__codelineno-0-320"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">is_distributed</span><span class="p">():</span>
+<a id="__codelineno-0-321" name="__codelineno-0-321"></a>        <span class="k">return</span> <span class="n">state</span>
+<a id="__codelineno-0-322" name="__codelineno-0-322"></a>
+<a id="__codelineno-0-323" name="__codelineno-0-323"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">is_dataclass</span><span class="p">(</span><span class="n">state</span><span class="p">):</span>
+<a id="__codelineno-0-324" name="__codelineno-0-324"></a>        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;state must be a dataclass, got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">state</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-325" name="__codelineno-0-325"></a>
+<a id="__codelineno-0-326" name="__codelineno-0-326"></a>    <span class="n">state_fields</span> <span class="o">=</span> <span class="p">{</span><span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">(</span><span class="n">state</span><span class="p">)}</span>
 <a id="__codelineno-0-327" name="__codelineno-0-327"></a>
-<a id="__codelineno-0-328" name="__codelineno-0-328"></a>    <span class="n">state_fields</span> <span class="o">=</span> <span class="p">{</span><span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">(</span><span class="n">state</span><span class="p">)}</span>
-<a id="__codelineno-0-329" name="__codelineno-0-329"></a>
-<a id="__codelineno-0-330" name="__codelineno-0-330"></a>    <span class="k">if</span> <span class="n">field_ops</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-331" name="__codelineno-0-331"></a>        <span class="c1"># Default: sync all numeric (float/int) fields with mean, excluding bools</span>
-<a id="__codelineno-0-332" name="__codelineno-0-332"></a>        <span class="n">field_ops</span> <span class="o">=</span> <span class="p">{}</span>
-<a id="__codelineno-0-333" name="__codelineno-0-333"></a>        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">(</span><span class="n">state</span><span class="p">):</span>
-<a id="__codelineno-0-334" name="__codelineno-0-334"></a>            <span class="n">val</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
-<a id="__codelineno-0-335" name="__codelineno-0-335"></a>            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="nb">int</span><span class="p">))</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
-<a id="__codelineno-0-336" name="__codelineno-0-336"></a>                <span class="n">field_ops</span><span class="p">[</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;mean&quot;</span>
-<a id="__codelineno-0-337" name="__codelineno-0-337"></a>    <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-338" name="__codelineno-0-338"></a>        <span class="n">invalid_fields</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">field_ops</span><span class="p">)</span> <span class="o">-</span> <span class="n">state_fields</span>
-<a id="__codelineno-0-339" name="__codelineno-0-339"></a>        <span class="k">if</span> <span class="n">invalid_fields</span><span class="p">:</span>
-<a id="__codelineno-0-340" name="__codelineno-0-340"></a>            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-<a id="__codelineno-0-341" name="__codelineno-0-341"></a>                <span class="sa">f</span><span class="s2">&quot;field_ops contains non-existent fields: </span><span class="si">{</span><span class="n">invalid_fields</span><span class="si">}</span><span class="s2">. &quot;</span>
-<a id="__codelineno-0-342" name="__codelineno-0-342"></a>                <span class="sa">f</span><span class="s2">&quot;Available fields: </span><span class="si">{</span><span class="n">state_fields</span><span class="si">}</span><span class="s2">&quot;</span>
-<a id="__codelineno-0-343" name="__codelineno-0-343"></a>            <span class="p">)</span>
-<a id="__codelineno-0-344" name="__codelineno-0-344"></a>
-<a id="__codelineno-0-345" name="__codelineno-0-345"></a>    <span class="c1"># Synchronize each field</span>
-<a id="__codelineno-0-346" name="__codelineno-0-346"></a>    <span class="n">updates</span> <span class="o">=</span> <span class="p">{}</span>
-<a id="__codelineno-0-347" name="__codelineno-0-347"></a>    <span class="k">for</span> <span class="n">field_name</span><span class="p">,</span> <span class="n">field_op</span> <span class="ow">in</span> <span class="n">field_ops</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-<a id="__codelineno-0-348" name="__codelineno-0-348"></a>        <span class="n">value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">field_name</span><span class="p">)</span>
-<a id="__codelineno-0-349" name="__codelineno-0-349"></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="nb">int</span><span class="p">)):</span>
-<a id="__codelineno-0-350" name="__codelineno-0-350"></a>            <span class="k">if</span> <span class="n">field_op</span> <span class="o">==</span> <span class="s2">&quot;assert_equal&quot;</span><span class="p">:</span>
-<a id="__codelineno-0-351" name="__codelineno-0-351"></a>                <span class="n">assert_scalar_equal</span><span class="p">(</span>
-<a id="__codelineno-0-352" name="__codelineno-0-352"></a>                    <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">),</span> <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">state</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">.</span><span class="si">{</span><span class="n">field_name</span><span class="si">}</span><span class="s2">&quot;</span>
-<a id="__codelineno-0-353" name="__codelineno-0-353"></a>                <span class="p">)</span>
-<a id="__codelineno-0-354" name="__codelineno-0-354"></a>                <span class="k">continue</span>
-<a id="__codelineno-0-355" name="__codelineno-0-355"></a>            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">field_op</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
-<a id="__codelineno-0-356" name="__codelineno-0-356"></a>                <span class="n">synced_value</span> <span class="o">=</span> <span class="n">reduce_scalar</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">field_op</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
-<a id="__codelineno-0-357" name="__codelineno-0-357"></a>            <span class="k">elif</span> <span class="nb">callable</span><span class="p">(</span><span class="n">field_op</span><span class="p">):</span>
-<a id="__codelineno-0-358" name="__codelineno-0-358"></a>                <span class="n">numeric_value</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
-<a id="__codelineno-0-359" name="__codelineno-0-359"></a>                <span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-0-360" name="__codelineno-0-360"></a>                    <span class="n">synced_value</span> <span class="o">=</span> <span class="n">field_op</span><span class="p">(</span><span class="n">numeric_value</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span>
-<a id="__codelineno-0-361" name="__codelineno-0-361"></a>                <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
-<a id="__codelineno-0-362" name="__codelineno-0-362"></a>                    <span class="n">synced_value</span> <span class="o">=</span> <span class="n">field_op</span><span class="p">(</span><span class="n">numeric_value</span><span class="p">)</span>
-<a id="__codelineno-0-363" name="__codelineno-0-363"></a>            <span class="k">else</span><span class="p">:</span>
-<a id="__codelineno-0-364" name="__codelineno-0-364"></a>                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
-<a id="__codelineno-0-365" name="__codelineno-0-365"></a>                    <span class="sa">f</span><span class="s2">&quot;field_ops[</span><span class="si">{</span><span class="n">field_name</span><span class="si">}</span><span class="s2">] must be str or callable, &quot;</span>
-<a id="__codelineno-0-366" name="__codelineno-0-366"></a>                    <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">field_op</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
-<a id="__codelineno-0-367" name="__codelineno-0-367"></a>                <span class="p">)</span>
-<a id="__codelineno-0-368" name="__codelineno-0-368"></a>
-<a id="__codelineno-0-369" name="__codelineno-0-369"></a>            <span class="c1"># Preserve type (int stays int, float stays float)</span>
-<a id="__codelineno-0-370" name="__codelineno-0-370"></a>            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
-<a id="__codelineno-0-371" name="__codelineno-0-371"></a>                <span class="n">synced_value</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">synced_value</span><span class="p">)</span>
-<a id="__codelineno-0-372" name="__codelineno-0-372"></a>            <span class="n">updates</span><span class="p">[</span><span class="n">field_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">synced_value</span>
-<a id="__codelineno-0-373" name="__codelineno-0-373"></a>
-<a id="__codelineno-0-374" name="__codelineno-0-374"></a>    <span class="c1"># Create new state with updated fields (immutable)</span>
-<a id="__codelineno-0-375" name="__codelineno-0-375"></a>    <span class="k">if</span> <span class="n">updates</span><span class="p">:</span>
-<a id="__codelineno-0-376" name="__codelineno-0-376"></a>        <span class="c1"># Use dataclass replace pattern</span>
-<a id="__codelineno-0-377" name="__codelineno-0-377"></a>        <span class="n">state</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="n">state</span><span class="p">)(</span>
-<a id="__codelineno-0-378" name="__codelineno-0-378"></a>            <span class="o">**</span><span class="p">{</span><span class="o">**</span><span class="p">{</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">(</span><span class="n">state</span><span class="p">)},</span> <span class="o">**</span><span class="n">updates</span><span class="p">}</span>
-<a id="__codelineno-0-379" name="__codelineno-0-379"></a>        <span class="p">)</span>
-<a id="__codelineno-0-380" name="__codelineno-0-380"></a>
-<a id="__codelineno-0-381" name="__codelineno-0-381"></a>    <span class="k">return</span> <span class="n">state</span>
+<a id="__codelineno-0-328" name="__codelineno-0-328"></a>    <span class="k">if</span> <span class="n">field_ops</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-329" name="__codelineno-0-329"></a>        <span class="c1"># Default: sync all numeric (float/int) fields with mean, excluding bools</span>
+<a id="__codelineno-0-330" name="__codelineno-0-330"></a>        <span class="n">field_ops</span> <span class="o">=</span> <span class="p">{}</span>
+<a id="__codelineno-0-331" name="__codelineno-0-331"></a>        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">(</span><span class="n">state</span><span class="p">):</span>
+<a id="__codelineno-0-332" name="__codelineno-0-332"></a>            <span class="n">val</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+<a id="__codelineno-0-333" name="__codelineno-0-333"></a>            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="nb">int</span><span class="p">))</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+<a id="__codelineno-0-334" name="__codelineno-0-334"></a>                <span class="n">field_ops</span><span class="p">[</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;mean&quot;</span>
+<a id="__codelineno-0-335" name="__codelineno-0-335"></a>    <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-336" name="__codelineno-0-336"></a>        <span class="n">invalid_fields</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">field_ops</span><span class="p">)</span> <span class="o">-</span> <span class="n">state_fields</span>
+<a id="__codelineno-0-337" name="__codelineno-0-337"></a>        <span class="k">if</span> <span class="n">invalid_fields</span><span class="p">:</span>
+<a id="__codelineno-0-338" name="__codelineno-0-338"></a>            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+<a id="__codelineno-0-339" name="__codelineno-0-339"></a>                <span class="sa">f</span><span class="s2">&quot;field_ops contains non-existent fields: </span><span class="si">{</span><span class="n">invalid_fields</span><span class="si">}</span><span class="s2">. &quot;</span>
+<a id="__codelineno-0-340" name="__codelineno-0-340"></a>                <span class="sa">f</span><span class="s2">&quot;Available fields: </span><span class="si">{</span><span class="n">state_fields</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-0-341" name="__codelineno-0-341"></a>            <span class="p">)</span>
+<a id="__codelineno-0-342" name="__codelineno-0-342"></a>
+<a id="__codelineno-0-343" name="__codelineno-0-343"></a>    <span class="c1"># Synchronize each field</span>
+<a id="__codelineno-0-344" name="__codelineno-0-344"></a>    <span class="n">updates</span> <span class="o">=</span> <span class="p">{}</span>
+<a id="__codelineno-0-345" name="__codelineno-0-345"></a>    <span class="k">for</span> <span class="n">field_name</span><span class="p">,</span> <span class="n">field_op</span> <span class="ow">in</span> <span class="n">field_ops</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+<a id="__codelineno-0-346" name="__codelineno-0-346"></a>        <span class="n">value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">field_name</span><span class="p">)</span>
+<a id="__codelineno-0-347" name="__codelineno-0-347"></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="nb">int</span><span class="p">)):</span>
+<a id="__codelineno-0-348" name="__codelineno-0-348"></a>            <span class="k">if</span> <span class="n">field_op</span> <span class="o">==</span> <span class="s2">&quot;assert_equal&quot;</span><span class="p">:</span>
+<a id="__codelineno-0-349" name="__codelineno-0-349"></a>                <span class="n">assert_scalar_equal</span><span class="p">(</span>
+<a id="__codelineno-0-350" name="__codelineno-0-350"></a>                    <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">),</span> <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">state</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">.</span><span class="si">{</span><span class="n">field_name</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-0-351" name="__codelineno-0-351"></a>                <span class="p">)</span>
+<a id="__codelineno-0-352" name="__codelineno-0-352"></a>                <span class="k">continue</span>
+<a id="__codelineno-0-353" name="__codelineno-0-353"></a>            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">field_op</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+<a id="__codelineno-0-354" name="__codelineno-0-354"></a>                <span class="n">synced_value</span> <span class="o">=</span> <span class="n">reduce_scalar</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">field_op</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+<a id="__codelineno-0-355" name="__codelineno-0-355"></a>            <span class="k">elif</span> <span class="nb">callable</span><span class="p">(</span><span class="n">field_op</span><span class="p">):</span>
+<a id="__codelineno-0-356" name="__codelineno-0-356"></a>                <span class="n">numeric_value</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+<a id="__codelineno-0-357" name="__codelineno-0-357"></a>                <span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-0-358" name="__codelineno-0-358"></a>                    <span class="n">synced_value</span> <span class="o">=</span> <span class="n">field_op</span><span class="p">(</span><span class="n">numeric_value</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span>
+<a id="__codelineno-0-359" name="__codelineno-0-359"></a>                <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
+<a id="__codelineno-0-360" name="__codelineno-0-360"></a>                    <span class="n">synced_value</span> <span class="o">=</span> <span class="n">field_op</span><span class="p">(</span><span class="n">numeric_value</span><span class="p">)</span>
+<a id="__codelineno-0-361" name="__codelineno-0-361"></a>            <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-362" name="__codelineno-0-362"></a>                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+<a id="__codelineno-0-363" name="__codelineno-0-363"></a>                    <span class="sa">f</span><span class="s2">&quot;field_ops[</span><span class="si">{</span><span class="n">field_name</span><span class="si">}</span><span class="s2">] must be str or callable, &quot;</span>
+<a id="__codelineno-0-364" name="__codelineno-0-364"></a>                    <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">field_op</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-0-365" name="__codelineno-0-365"></a>                <span class="p">)</span>
+<a id="__codelineno-0-366" name="__codelineno-0-366"></a>
+<a id="__codelineno-0-367" name="__codelineno-0-367"></a>            <span class="c1"># Preserve type (int stays int, float stays float)</span>
+<a id="__codelineno-0-368" name="__codelineno-0-368"></a>            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+<a id="__codelineno-0-369" name="__codelineno-0-369"></a>                <span class="n">synced_value</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">synced_value</span><span class="p">)</span>
+<a id="__codelineno-0-370" name="__codelineno-0-370"></a>            <span class="n">updates</span><span class="p">[</span><span class="n">field_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">synced_value</span>
+<a id="__codelineno-0-371" name="__codelineno-0-371"></a>
+<a id="__codelineno-0-372" name="__codelineno-0-372"></a>    <span class="c1"># Create new state with updated fields (immutable)</span>
+<a id="__codelineno-0-373" name="__codelineno-0-373"></a>    <span class="k">if</span> <span class="n">updates</span><span class="p">:</span>
+<a id="__codelineno-0-374" name="__codelineno-0-374"></a>        <span class="c1"># Use dataclass replace pattern</span>
+<a id="__codelineno-0-375" name="__codelineno-0-375"></a>        <span class="n">state</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="n">state</span><span class="p">)(</span>
+<a id="__codelineno-0-376" name="__codelineno-0-376"></a>            <span class="o">**</span><span class="p">{</span><span class="o">**</span><span class="p">{</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">(</span><span class="n">state</span><span class="p">)},</span> <span class="o">**</span><span class="n">updates</span><span class="p">}</span>
+<a id="__codelineno-0-377" name="__codelineno-0-377"></a>        <span class="p">)</span>
+<a id="__codelineno-0-378" name="__codelineno-0-378"></a>
+<a id="__codelineno-0-379" name="__codelineno-0-379"></a>    <span class="k">return</span> <span class="n">state</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
