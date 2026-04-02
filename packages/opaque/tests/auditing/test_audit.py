@@ -5,7 +5,23 @@ import pytest
 
 import opaque.auditing as auditing
 from opaque.auditing import CoinFlip, OneRunEstimate, one_run
-from opaque.random import key
+from opaque.random import RngKey, key
+
+
+def _flip(canary_indices: np.ndarray, *, key: RngKey) -> CoinFlip:
+    """Test helper: coin-flip partition from raw indices + RNG key."""
+    canary_indices = np.asarray(canary_indices)
+    if canary_indices.ndim != 1 or canary_indices.size == 0:
+        raise ValueError("canary_indices must be a non-empty 1-D array")
+    rng = np.random.default_rng(key.seed)
+    in_mask = rng.random(len(canary_indices)) < 0.5
+    return CoinFlip(
+        num_canaries=len(canary_indices),
+        canary_indices=canary_indices,
+        _in_mask=in_mask,
+        in_indices=canary_indices[in_mask],
+        out_indices=canary_indices[~in_mask],
+    )
 
 
 def _make_estimate(in_scores, out_scores):
@@ -13,15 +29,17 @@ def _make_estimate(in_scores, out_scores):
     n_in = len(in_scores)
     n_out = len(out_scores)
     canary_indices = np.arange(n_in + n_out)
-    cf = CoinFlip(canary_indices, key=key(0))
-    # Override the random coin flip with a deterministic split
-    scores = np.empty(n_in + n_out)
     mask = np.array([True] * n_in + [False] * n_out)
+    cf = CoinFlip(
+        num_canaries=n_in + n_out,
+        canary_indices=canary_indices,
+        _in_mask=mask,
+        in_indices=canary_indices[mask],
+        out_indices=canary_indices[~mask],
+    )
+    scores = np.empty(n_in + n_out)
     scores[mask] = in_scores
     scores[~mask] = out_scores
-    cf._in_mask = mask
-    cf.in_indices = canary_indices[mask]
-    cf.out_indices = canary_indices[~mask]
     return one_run(scores, coin_flip=cf)
 
 
@@ -40,22 +58,28 @@ class TestConstruction:
     def test_empty_in_scores(self):
         """Test that empty in_scores raises ValueError."""
         canary_indices = np.arange(3)
-        cf = CoinFlip(canary_indices, key=key(0))
-        # Force all out
-        cf._in_mask = np.array([False, False, False])
-        cf.in_indices = canary_indices[cf._in_mask]
-        cf.out_indices = canary_indices[~cf._in_mask]
+        mask = np.array([False, False, False])
+        cf = CoinFlip(
+            num_canaries=3,
+            canary_indices=canary_indices,
+            _in_mask=mask,
+            in_indices=canary_indices[mask],
+            out_indices=canary_indices[~mask],
+        )
         with pytest.raises(ValueError, match="non-empty"):
             one_run(np.array([1.0, 2.0, 3.0]), coin_flip=cf)
 
     def test_empty_out_scores(self):
         """Test that empty out_scores raises ValueError."""
         canary_indices = np.arange(3)
-        cf = CoinFlip(canary_indices, key=key(0))
-        # Force all in
-        cf._in_mask = np.array([True, True, True])
-        cf.in_indices = canary_indices[cf._in_mask]
-        cf.out_indices = canary_indices[~cf._in_mask]
+        mask = np.array([True, True, True])
+        cf = CoinFlip(
+            num_canaries=3,
+            canary_indices=canary_indices,
+            _in_mask=mask,
+            in_indices=canary_indices[mask],
+            out_indices=canary_indices[~mask],
+        )
         with pytest.raises(ValueError, match="non-empty"):
             one_run(np.array([1.0, 2.0, 3.0]), coin_flip=cf)
 
@@ -199,7 +223,7 @@ class TestCoinFlip:
 
     def test_basic_construction(self):
         canary_idx = np.arange(100)
-        cf = CoinFlip(canary_idx, key=key(42))
+        cf = _flip(canary_idx, key=key(42))
         assert cf.num_canaries == 100
         assert len(cf.in_indices) + len(cf.out_indices) == 100
         assert len(cf.in_indices) > 0
@@ -207,20 +231,20 @@ class TestCoinFlip:
 
     def test_coin_flip_reproducibility(self):
         canary_idx = np.arange(200)
-        cf1 = CoinFlip(canary_idx, key=key(42))
-        cf2 = CoinFlip(canary_idx, key=key(42))
+        cf1 = _flip(canary_idx, key=key(42))
+        cf2 = _flip(canary_idx, key=key(42))
         np.testing.assert_array_equal(cf1.in_indices, cf2.in_indices)
         np.testing.assert_array_equal(cf1.out_indices, cf2.out_indices)
 
     def test_different_seeds_give_different_splits(self):
         canary_idx = np.arange(200)
-        cf1 = CoinFlip(canary_idx, key=key(42))
-        cf2 = CoinFlip(canary_idx, key=key(99))
+        cf1 = _flip(canary_idx, key=key(42))
+        cf2 = _flip(canary_idx, key=key(99))
         assert not np.array_equal(cf1.in_indices, cf2.in_indices)
 
     def test_indices_are_subset_of_canaries(self):
         canary_idx = np.array([10, 20, 30, 40, 50])
-        cf = CoinFlip(canary_idx, key=key(42))
+        cf = _flip(canary_idx, key=key(42))
         for idx in cf.in_indices:
             assert idx in canary_idx
         for idx in cf.out_indices:
@@ -228,14 +252,14 @@ class TestCoinFlip:
 
     def test_no_overlap(self):
         canary_idx = np.arange(100)
-        cf = CoinFlip(canary_idx, key=key(42))
+        cf = _flip(canary_idx, key=key(42))
         in_set = set(cf.in_indices.tolist())
         out_set = set(cf.out_indices.tolist())
         assert len(in_set & out_set) == 0
 
     def test_train_indices(self):
         canary_idx = np.array([5, 15, 25])
-        cf = CoinFlip(canary_idx, key=key(42))
+        cf = _flip(canary_idx, key=key(42))
         train_idx = cf.train_indices(dataset_size=30)
         assert isinstance(train_idx, list)
         train_set = set(train_idx)
@@ -249,7 +273,7 @@ class TestCoinFlip:
 
     def test_split_scores(self):
         canary_idx = np.arange(100)
-        cf = CoinFlip(canary_idx, key=key(42))
+        cf = _flip(canary_idx, key=key(42))
         scores = np.zeros(100)
         scores[cf._in_mask] = 10.0
         scores[~cf._in_mask] = 0.0
@@ -261,16 +285,16 @@ class TestCoinFlip:
 
     def test_split_scores_wrong_length_raises(self):
         canary_idx = np.arange(100)
-        cf = CoinFlip(canary_idx, key=key(42))
+        cf = _flip(canary_idx, key=key(42))
         with pytest.raises(ValueError, match="Expected 100 scores"):
             cf.split_scores(np.zeros(50))
 
     def test_empty_canaries_raises(self):
         with pytest.raises(ValueError, match="non-empty"):
-            CoinFlip(np.array([]), key=key(42))
+            _flip(np.array([]), key=key(42))
 
     def test_repr(self):
-        cf = CoinFlip(np.arange(100), key=key(42))
+        cf = _flip(np.arange(100), key=key(42))
         r = repr(cf)
         assert "CoinFlip" in r
         assert "num_canaries=100" in r
@@ -283,7 +307,7 @@ class TestOneRunFunction:
 
     def test_one_run_produces_estimate(self):
         canary_idx = np.arange(100)
-        cf = CoinFlip(canary_idx, key=key(42))
+        cf = _flip(canary_idx, key=key(42))
         scores = np.zeros(100)
         scores[cf._in_mask] = 10.0
         scores[~cf._in_mask] = 0.0
@@ -298,7 +322,7 @@ class TestOneRunFunction:
     def test_end_to_end_one_run(self):
         rng = np.random.default_rng(42)
         canary_idx = rng.choice(10000, size=500, replace=False)
-        cf = CoinFlip(canary_idx, key=key(42))
+        cf = _flip(canary_idx, key=key(42))
 
         scores = np.empty(500)
         scores[cf._in_mask] = rng.normal(loc=0.7, scale=0.3, size=cf._in_mask.sum())

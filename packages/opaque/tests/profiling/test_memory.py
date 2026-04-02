@@ -137,14 +137,14 @@ class TestTrainingProfiler:
     @pytest.mark.parametrize("device", DEVICES)
     def test_initialization(self, device):
         """Should initialize with device."""
-        profiler = TrainingProfiler(device)
+        profiler = TrainingProfiler(torch.device(device))
         assert profiler.device == torch.device(device)
         assert profiler.num_steps == 0
 
     @pytest.mark.parametrize("device", DEVICES)
     def test_mark_creates_checkpoint(self, device):
         """Should create checkpoint with mark()."""
-        profiler = TrainingProfiler(device)
+        profiler = TrainingProfiler(torch.device(device))
         profiler, stats = profiler.mark("test_point")
         assert len(profiler.checkpoints) == 1
         assert profiler.checkpoints[0].name == "test_point"
@@ -153,7 +153,7 @@ class TestTrainingProfiler:
     @pytest.mark.parametrize("device", DEVICES)
     def test_add_step(self, device):
         """Should record completed step metrics."""
-        profiler = TrainingProfiler(device)
+        profiler = TrainingProfiler(torch.device(device))
         timer = StepTimer(device, batch_size=32)
         with timer:
             x = torch.randn(100, 100)
@@ -166,7 +166,7 @@ class TestTrainingProfiler:
     def test_avg_step_time_stable(self):
         """Should exclude first step for stable average."""
         profiler = TrainingProfiler(
-            "cpu",
+            torch.device("cpu"),
             step_metrics=(
                 StepMetrics(step_time=10.0, batch_size=1, throughput=0.1),
                 StepMetrics(step_time=2.0, batch_size=1, throughput=0.5),
@@ -179,7 +179,7 @@ class TestTrainingProfiler:
     @pytest.mark.parametrize("device", DEVICES)
     def test_current_metrics(self, device):
         """Should return current metrics dict."""
-        profiler = TrainingProfiler(device)
+        profiler = TrainingProfiler(torch.device(device))
         timer = StepTimer(device, batch_size=32)
         with timer:
             pass
@@ -193,7 +193,7 @@ class TestTrainingProfiler:
 
     def test_software_peak_tracking_from_checkpoints(self, monkeypatch):
         """Profiler should keep high-water peak from checkpoints."""
-        profiler = TrainingProfiler("cpu")
+        profiler = TrainingProfiler(torch.device("cpu"))
 
         peaks = iter([0.10, 0.35, 0.20])
 
@@ -210,7 +210,7 @@ class TestTrainingProfiler:
     @pytest.mark.parametrize("device", DEVICES)
     def test_final_summary(self, device):
         """Should generate comprehensive summary."""
-        profiler = TrainingProfiler(device)
+        profiler = TrainingProfiler(torch.device(device))
         profiler, _ = profiler.mark("start")
         for _ in range(3):
             timer = StepTimer(device, batch_size=16)

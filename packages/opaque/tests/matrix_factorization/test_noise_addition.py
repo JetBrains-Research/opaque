@@ -27,11 +27,11 @@ class TestDenseMatrixFactorizationNoise:
         noising = torch.eye(3, dtype=torch.float64) * 2.0
         grad = torch.zeros(5, dtype=torch.float64)
         noise_fn, state = custom_mf_noise(grad, noising, stddev=1.0, key=key(42))
-        assert state.inner_state.item() == 0
+        assert state._inner_state.item() == 0
         _, state = noise_fn(grad, state)
-        assert state.inner_state.item() == 1
+        assert state._inner_state.item() == 1
         _, state = noise_fn(grad, state)
-        assert state.inner_state.item() == 2
+        assert state._inner_state.item() == 2
 
     def test_invalid_ndim(self):
         grad = torch.zeros(10)

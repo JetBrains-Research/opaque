@@ -174,8 +174,8 @@ def truncated_gaussian_noise(
         raise TypeError(f"key must be RngKey, got {type(key)}")
 
     state = GaussianNoiseState(
-        step_counter=0,
-        rng_key=key,
+        _step_counter=0,
+        _rng_key=key,
     )
 
     default_stddev = stddev
@@ -189,11 +189,11 @@ def truncated_gaussian_noise(
             return tree_map(
                 lambda t: torch.clamp(t, min=-bound, max=bound), grads
             ), GaussianNoiseState(
-                step_counter=st.step_counter + 1,
-                rng_key=st.rng_key,
+                _step_counter=st._step_counter + 1,
+                _rng_key=st._rng_key,
             )
 
-        step_key = rng_fold_in(st.rng_key, st.step_counter)
+        step_key = rng_fold_in(st._rng_key, st._step_counter)
         g = generator_from_key(step_key)
 
         def add_bounded_noise(tensor: torch.Tensor) -> torch.Tensor:
@@ -208,8 +208,8 @@ def truncated_gaussian_noise(
         noisy = tree_map(add_bounded_noise, grads)
 
         return noisy, GaussianNoiseState(
-            step_counter=st.step_counter + 1,
-            rng_key=st.rng_key,
+            _step_counter=st._step_counter + 1,
+            _rng_key=st._rng_key,
         )
 
     return noise_fn, state

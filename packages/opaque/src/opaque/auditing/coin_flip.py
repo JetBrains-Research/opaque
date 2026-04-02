@@ -11,6 +11,7 @@ Reference:
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 
 import numpy as np
@@ -21,12 +22,15 @@ from opaque.random import RngKey, fold_in
 __all__ = ["CoinFlip", "coin_flip"]
 
 
+@dataclasses.dataclass(frozen=True)
 class CoinFlip:
     """Coin-flip partitioning for canary-based privacy auditing.
 
     Each canary is independently included or excluded from training
     with probability 0.5 (a fair coin flip). This class only handles
     the partition — it does not know about scoring or epsilon estimation.
+
+    Use the :func:`coin_flip` factory to create instances from a dataset.
 
     Attributes:
         num_canaries: Total number of canary examples.
@@ -35,24 +39,11 @@ class CoinFlip:
         out_indices: Canary indices excluded from training (coin = tails).
     """
 
-    def __init__(
-        self,
-        canary_indices: np.ndarray,
-        *,
-        key: RngKey,
-    ) -> None:
-        canary_indices = np.asarray(canary_indices)
-        if canary_indices.ndim != 1 or canary_indices.size == 0:
-            raise ValueError("canary_indices must be a non-empty 1-D array")
-
-        rng = np.random.default_rng(key.seed)
-        in_mask = rng.random(len(canary_indices)) < 0.5
-
-        self.num_canaries = len(canary_indices)
-        self.canary_indices = canary_indices
-        self._in_mask = in_mask
-        self.in_indices = canary_indices[in_mask]
-        self.out_indices = canary_indices[~in_mask]
+    num_canaries: int
+    canary_indices: np.ndarray
+    _in_mask: np.ndarray
+    in_indices: np.ndarray
+    out_indices: np.ndarray
 
     def __repr__(self) -> str:
         return (
@@ -150,5 +141,13 @@ def coin_flip(
 
     rng = np.random.default_rng(key.seed)
     canary_indices = rng.choice(dataset_size, size=num_canaries, replace=False)
-    coin_key = fold_in(key, 1)
-    return CoinFlip(canary_indices, key=coin_key)
+    coin_rng = np.random.default_rng(fold_in(key, 1).seed)
+    in_mask = coin_rng.random(num_canaries) < 0.5
+
+    return CoinFlip(
+        num_canaries=num_canaries,
+        canary_indices=canary_indices,
+        _in_mask=in_mask,
+        in_indices=canary_indices[in_mask],
+        out_indices=canary_indices[~in_mask],
+    )

@@ -13,14 +13,17 @@ def _make_estimate(in_scores, out_scores):
     n_in = len(in_scores)
     n_out = len(out_scores)
     canary_indices = np.arange(n_in + n_out)
-    cf = CoinFlip(canary_indices, key=key(0))
-    scores = np.empty(n_in + n_out)
     mask = np.array([True] * n_in + [False] * n_out)
+    cf = CoinFlip(
+        num_canaries=n_in + n_out,
+        canary_indices=canary_indices,
+        _in_mask=mask,
+        in_indices=canary_indices[mask],
+        out_indices=canary_indices[~mask],
+    )
+    scores = np.empty(n_in + n_out)
     scores[mask] = in_scores
     scores[~mask] = out_scores
-    cf._in_mask = mask
-    cf.in_indices = canary_indices[mask]
-    cf.out_indices = canary_indices[~mask]
     return one_run(scores, coin_flip=cf)
 
 

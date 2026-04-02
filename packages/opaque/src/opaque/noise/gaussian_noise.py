@@ -24,6 +24,7 @@ from typing import Any
 
 import torch
 
+from opaque.noise.types import NoiseState
 from opaque.random import RngKey, generator_from_key
 from opaque.random import (
     fold_in as rng_fold_in,
@@ -32,19 +33,19 @@ from opaque.utils.pytree import tree_map
 
 
 @dataclasses.dataclass(frozen=True)
-class GaussianNoiseState:
+class GaussianNoiseState(NoiseState):
     """Immutable state for Gaussian noise generation.
 
     Holds an immutable RNG key for deterministic per-step derivation.
-    Noise for step ``t`` is generated from ``fold_in(rng_key, t)``.
+    Noise for step ``t`` is generated from ``fold_in(_rng_key, t)``.
 
     Attributes:
-        step_counter: Number of noise_fn calls made.
-        rng_key: Immutable RNG key for deterministic derivation.
+        _step_counter: Number of noise_fn calls made.
+        _rng_key: Immutable RNG key for deterministic derivation.
     """
 
-    step_counter: int
-    rng_key: RngKey
+    _step_counter: int
+    _rng_key: RngKey
 
 
 def gaussian_noise(
@@ -110,8 +111,8 @@ def gaussian_noise(
         raise TypeError(f"key must be RngKey, got {type(key)}")
 
     state = GaussianNoiseState(
-        step_counter=0,
-        rng_key=key,
+        _step_counter=0,
+        _rng_key=key,
     )
 
     default_stddev = stddev
@@ -121,11 +122,11 @@ def gaussian_noise(
         effective_stddev = stddev if stddev is not None else default_stddev
         if effective_stddev == 0:
             return grads, GaussianNoiseState(
-                step_counter=st.step_counter + 1,
-                rng_key=st.rng_key,
+                _step_counter=st._step_counter + 1,
+                _rng_key=st._rng_key,
             )
 
-        step_key = rng_fold_in(st.rng_key, st.step_counter)
+        step_key = rng_fold_in(st._rng_key, st._step_counter)
         g = generator_from_key(step_key)
 
         def add_noise_to_tensor(tensor: torch.Tensor) -> torch.Tensor:
@@ -139,8 +140,8 @@ def gaussian_noise(
         noisy = tree_map(add_noise_to_tensor, grads)
 
         return noisy, GaussianNoiseState(
-            step_counter=st.step_counter + 1,
-            rng_key=st.rng_key,
+            _step_counter=st._step_counter + 1,
+            _rng_key=st._rng_key,
         )
 
     return noise_fn, state

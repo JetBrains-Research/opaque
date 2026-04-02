@@ -45,7 +45,7 @@ from dataclasses import dataclass, field, replace
 import torch
 
 
-@dataclass
+@dataclass(frozen=True)
 class MemoryStats:
     """GPU memory statistics at a point in time.
 
@@ -331,7 +331,7 @@ class TrainingProfiler:
     - current_metrics()/final_summary() read from explicit profiler state
 
     Example:
-        >>> profiler = TrainingProfiler("cuda")
+        >>> profiler = TrainingProfiler(torch.device("cuda"))
         >>> profiler, _ = profiler.mark("model_loaded")
         >>>
         >>> for step, batch in enumerate(dataloader):
@@ -350,17 +350,13 @@ class TrainingProfiler:
         >>> print(profiler.final_summary())
     """
 
-    device: torch.device | str
+    device: torch.device
     checkpoints: tuple[Checkpoint, ...] = field(default_factory=tuple)
     step_metrics: tuple[StepMetrics, ...] = field(default_factory=tuple)
     _synced_checkpoints: int = 0
     _synced_steps: int = 0
     _observed_peak_gb: float = 0.0
     _start_time: float = field(default_factory=time.perf_counter)
-
-    def __post_init__(self):
-        if isinstance(self.device, str):
-            object.__setattr__(self, "device", torch.device(self.device))
 
     @property
     def is_fully_synced(self) -> bool:

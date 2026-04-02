@@ -27,8 +27,9 @@ All noise functions return `(noise_fn, state)` where `noise_fn(grads, state) -> 
 
 ### State Classes
 
+- **`NoiseState`** — Abstract base class for all noise state types. Defines `_step_counter` and `_rng_key`.
 - **`GaussianNoiseState`** — State for `gaussian_noise()`. Holds step counter and RNG key.
-- **`MFNoiseState`** — State for all MF noise functions. Holds noise buffers, step counter, and correlation state.
+- **`MFNoiseState`** — State for all MF noise functions. Holds internal correlation state, step counter, and RNG key.
 
 ### Distributed Sync Helpers
 
@@ -63,6 +64,11 @@ across ranks. It auto-dispatches based on type:
 ::: opaque.noise.custom_mf_noise
 
 ## State Classes
+
+::: opaque.noise.types.NoiseState
+    options:
+      show_source: true
+      heading_level: 3
 
 ::: opaque.noise.gaussian_noise.GaussianNoiseState
     options:

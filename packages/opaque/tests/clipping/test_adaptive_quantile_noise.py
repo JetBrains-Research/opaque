@@ -110,7 +110,7 @@ class TestQuantileNoise:
         )
 
         # Verify initial states have different keys
-        assert state1._key != state2._key
+        assert state1._rng_key != state2._rng_key
 
         # Same data
         params = torch.randn(10, requires_grad=False)
@@ -123,7 +123,7 @@ class TestQuantileNoise:
             _, state2 = grad_fn2(params, batch_x, batch_y, state=state2)
 
         # Keys should still be different after training
-        assert state1._key != state2._key
+        assert state1._rng_key != state2._rng_key
 
         # With very large noise (1.0), divergence is likely but not guaranteed
         # The important thing is that keys are preserved and affect adaptation
@@ -184,7 +184,7 @@ class TestQuantileNoise:
         )
 
         # Initial state
-        assert state._key == key(42)
+        assert state._rng_key == key(42)
         assert state.step == 0
 
         # Run a few steps
@@ -194,7 +194,7 @@ class TestQuantileNoise:
 
         for i in range(1, 6):
             _, state = grad_fn(params, batch_x, batch_y, state=state)
-            assert state._key == key(42)  # Key unchanged
+            assert state._rng_key == key(42)  # Key unchanged
             assert state.step == i  # Step incremented
 
     def test_quantile_noise_with_aux_output(self):

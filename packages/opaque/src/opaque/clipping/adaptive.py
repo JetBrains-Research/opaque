@@ -47,7 +47,7 @@ class AdaptiveClipState(ClipState):
 
     Internal attributes (carry config/counts for distributed sync —
     do not read directly):
-        _key, _fraction_noise_std, _learning_rate, _target_quantile,
+        _rng_key, _fraction_noise_std, _learning_rate, _target_quantile,
         _clipping_norm_min, _clipping_norm_max: Config constants replicated so
         that ``sync_adaptive_clip_state`` can recompute ``next_clipping_norm``
         from globally aggregated counts.
@@ -62,7 +62,7 @@ class AdaptiveClipState(ClipState):
     step: int
 
     # -- internal (config carried for distributed sync) --
-    _key: RngKey
+    _rng_key: RngKey
     _fraction_noise_std: float
     _learning_rate: float
     _target_quantile: float
@@ -327,7 +327,7 @@ def adaptive_clipped_grad(
 
             noisy_clipping_rate = _sample_noisy_clipping_rate(
                 clipping_rate,
-                key=state._key,
+                key=state._rng_key,
                 step=state.step,
                 fraction_noise_std=config["fraction_noise_std"],
             )
@@ -348,7 +348,7 @@ def adaptive_clipped_grad(
             normalize_by=normalize_by,
             next_clipping_norm=new_clipping_norm,
             step=state.step + 1,
-            _key=state._key,
+            _rng_key=state._rng_key,
             _fraction_noise_std=config["fraction_noise_std"],
             _learning_rate=config["learning_rate"],
             _target_quantile=config["target_quantile"],
@@ -379,7 +379,7 @@ def adaptive_clipped_grad(
         normalize_by=normalize_by,
         next_clipping_norm=initial_clipping_norm,
         step=0,
-        _key=key,
+        _rng_key=key,
         _fraction_noise_std=fraction_noise_std,
         _learning_rate=learning_rate,
         _target_quantile=target_quantile,

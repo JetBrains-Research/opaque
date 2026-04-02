@@ -242,7 +242,7 @@ def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> N
             normalize_by=100.0,
             next_clipping_norm=float(rank + 1),
             step=100,
-            _key=rng_key(42),
+            _rng_key=rng_key(42),
             _fraction_noise_std=0.05,
             _learning_rate=0.2,
             _target_quantile=0.5,
@@ -293,12 +293,12 @@ def _worker_sync_noise_states(rank: int, world_size: int, port: int) -> None:
         gaussian_fn, gaussian_state = gaussian_noise(stddev=1.0, key=key(42))
         _noisy_gauss, gaussian_state = gaussian_fn(grads, gaussian_state)
         synced_gaussian_state = sync(gaussian_state)
-        assert synced_gaussian_state.step_counter == 1
+        assert synced_gaussian_state._step_counter == 1
 
         mf_fn, mf_state = identity_mf_noise(grads, stddev=1.0, key=key(42))
         _noisy_mf, mf_state = mf_fn(grads, mf_state)
         synced_mf_state = sync(mf_state)
-        assert synced_mf_state.step_counter == 1
+        assert synced_mf_state._step_counter == 1
     finally:
         _cleanup_ddp()
 

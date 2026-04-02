@@ -84,7 +84,7 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
     step_for_noise = max(0, synced.step - 1)
     noisy_global_rate = _sample_noisy_clipping_rate(
         global_rate,
-        key=synced._key,
+        key=synced._rng_key,
         step=step_for_noise,
         fraction_noise_std=synced._fraction_noise_std,
     )
