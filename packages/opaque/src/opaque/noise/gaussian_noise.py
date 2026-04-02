@@ -75,7 +75,7 @@ def gaussian_noise(
 
     Args:
         stddev: Standard deviation of Gaussian noise
-            (usually ``noise_multiplier * clipping_norm``).
+            (usually ``noise_multiplier * clip_state.sensitivity``).
         key: Explicit RNG key for deterministic, functional randomness.
             Same key on all ranks → same noise (synchronized).
             ``fold_in(key, rank)`` → independent noise per rank.

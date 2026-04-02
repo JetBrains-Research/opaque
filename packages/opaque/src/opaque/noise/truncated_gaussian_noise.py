@@ -126,7 +126,7 @@ def truncated_gaussian_noise(
 
     Args:
         stddev: Standard deviation of the underlying Gaussian noise
-            (usually ``noise_multiplier * clipping_norm``).
+            (usually ``noise_multiplier * clip_state.sensitivity``).
         radius: Truncation radius in units of standard deviations.
             Noise is truncated to [−radius·stddev, radius·stddev].
             Must be positive. Typical values: 3–10.

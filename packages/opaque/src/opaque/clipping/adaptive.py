@@ -36,10 +36,7 @@ class AdaptiveClipState(ClipState):
         clipping_norm: Raw clipping threshold used at the current step.
         normalize_by: Divisor applied to the clipped gradient sum
             (1.0 = no averaging).  Controls gradient sensitivity:
-            ``sensitivity = clipping_norm / normalize_by``.  Also used as
-            the denominator when computing the clipping fraction
-            (when > 1); pass the same value to
-            ``acc.adaclip(expected_batch_size=...)``.
+            ``sensitivity = clipping_norm / normalize_by``.
         sensitivity: ``clipping_norm / normalize_by`` (property from
             :class:`ClipState`).
         next_clipping_norm: Clipping threshold for the *next* step C_{t+1}.
@@ -155,10 +152,7 @@ def adaptive_clipped_grad(
         return_aux: If True, return per-example aux with loss values,
             gradient norms, and clipping rate.
         **clipped_grad_kwargs: Passed to ``clipped_grad()``
-            (``batch_argnums``, ``normalize_by``, etc).  When
-            ``normalize_by > 1`` it is also used as the fraction
-            denominator.  Pass the same value to
-            ``acc.adaclip(expected_batch_size=...)``.
+            (``batch_argnums``, ``normalize_by``, etc).
 
     Returns:
         A tuple of (clipped_grad_fn, initial_state) where:

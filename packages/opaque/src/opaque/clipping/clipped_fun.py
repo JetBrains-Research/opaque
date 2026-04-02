@@ -27,8 +27,7 @@ class ClippedFunAux:
         clipped_norms: Per-example L2 norms after clipping.
         value_aux: Per-example auxiliary payload returned by the wrapped function.
         clipping_rate: Fraction of per-example outputs whose norm exceeded the
-            clipping threshold.  When ``normalize_by > 1`` the denominator is
-            ``normalize_by`` (data-independent) rather than the actual batch size.
+            clipping threshold.  Equal to ``num_clipped / batch_size``.
         batch_size: Number of examples in the batch.
     """
 
@@ -390,8 +389,7 @@ def clipped_fun(
         batch_size = norms.numel() if isinstance(norms, torch.Tensor) else 0
         if isinstance(norms, torch.Tensor) and batch_size > 0:
             num_clipped = float((norms > clipping_norm).sum().item())
-            denominator = normalize_by if normalize_by > 1.0 else float(batch_size)
-            rate = num_clipped / max(1.0, denominator)
+            rate = num_clipped / max(1.0, float(batch_size))
         else:
             rate = None
 

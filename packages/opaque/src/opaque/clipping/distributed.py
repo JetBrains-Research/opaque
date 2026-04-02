@@ -58,9 +58,7 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
 
     Sums ``_num_clipped`` and ``_batch_size`` across ranks, recomputes the
     global clipping rate, applies quantile noise, and updates
-    ``next_clipping_norm``.  ``normalize_by`` (data-independent constant)
-    is validated to be equal across ranks and used as the fraction
-    denominator when > 1.
+    ``next_clipping_norm``.
     """
     if not is_distributed():
         return state
@@ -75,12 +73,7 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
     )
 
     # Recompute global clipping rate from aggregated counts.
-    denominator = (
-        synced.normalize_by
-        if synced.normalize_by > 1.0
-        else max(1.0, synced._batch_size)
-    )
-    global_rate = synced._num_clipped / max(1.0, denominator)
+    global_rate = synced._num_clipped / max(1.0, synced._batch_size)
 
     step_for_noise = max(0, synced.step - 1)
     noisy_global_rate = _sample_noisy_clipping_rate(
@@ -141,16 +134,8 @@ def _sync_clipping_rate(
 ) -> float | None:
     """Compute global clipping rate as weighted average across ranks.
 
-    When ``normalize_by == 1`` (default), each rank computes
-    ``rate = num_clipped / batch_size`` and the weighted average
-    ``sum(rate_i * n_i) / sum(n_i)`` yields the exact global rate.
-
-    When ``normalize_by > 1``, the per-rank rate uses a fixed denominator
-    and this weighted average is only approximate (the error is proportional
-    to the variance of local batch sizes across ranks, which is negligible
-    under Poisson sampling). The privacy-critical adaptive clipping rate is
-    synced separately in ``sync_adaptive_clip_state`` using exact numerator
-    summation; this helper only affects the *diagnostic* ``aux.clipping_rate``.
+    Each rank computes ``rate = num_clipped / batch_size``.  The weighted
+    average ``sum(rate_i * n_i) / sum(n_i)`` yields the exact global rate.
     """
     if clipping_rate is None:
         return None

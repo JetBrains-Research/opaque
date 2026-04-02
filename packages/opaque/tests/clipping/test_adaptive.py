@@ -585,8 +585,8 @@ class TestEdgeCases:
         _, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
         assert clip_state._batch_size == 16
 
-    def test_normalize_by_used_as_fraction_denominator(self):
-        """normalize_by > 1 is used as the clipping fraction denominator."""
+    def test_normalize_by_does_not_affect_clipping_rate(self):
+        """normalize_by is post-processing on gradients, not clipping rate."""
 
         def loss_fn(params, x, y):
             pred = x @ params
@@ -604,14 +604,13 @@ class TestEdgeCases:
         )
 
         params = torch.randn(10, requires_grad=False)
-        # Actual batch of 8 but fraction denominator is 20 (from normalize_by)
         batch_x = torch.randn(8, 10)
         batch_y = torch.randn(8)
         (_, aux), clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
 
         assert clip_state._batch_size == 8
-        # All 8 examples clipped → rate = 8/20 = 0.4 (not 8/8 = 1.0)
-        assert aux.clipping_rate == pytest.approx(8.0 / expected_bs, abs=1e-6)
+        # All 8 examples clipped → rate = 8/8 = 1.0 (normalize_by is irrelevant)
+        assert aux.clipping_rate == pytest.approx(1.0, abs=1e-6)
 
     def test_large_batch(self):
         """Test with large batch size."""
