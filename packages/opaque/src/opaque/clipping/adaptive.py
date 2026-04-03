@@ -6,7 +6,11 @@ from typing import Any, cast
 
 import torch
 
-from opaque.clipping._helpers import batch_size_from_args, normalize_to_tuple, zero_grads_like
+from opaque.clipping._helpers import (
+    batch_size_from_args,
+    normalize_to_tuple,
+    zero_grads_like,
+)
 from opaque.clipping.clipped_grad import ClippedGradAux, clipped_grad
 from opaque.clipping.types import ClipState
 from opaque.random import RngKey, fold_in, generator_from_key

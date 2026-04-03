@@ -22,6 +22,7 @@ from opaque.random import key
 # Shared fixtures
 # ---------------------------------------------------------------------------
 
+
 def _simple_loss_fn(params, x, y):
     pred = x @ params
     return ((pred - y) ** 2).mean()
@@ -45,6 +46,7 @@ def normal_batch():
 # ---------------------------------------------------------------------------
 # _compute_clipping_stats
 # ---------------------------------------------------------------------------
+
 
 class TestComputeClippingStats:
     def test_empty_tensor_returns_zeros(self):
@@ -73,10 +75,14 @@ class TestComputeClippingStats:
 # clipped_grad with empty batch
 # ---------------------------------------------------------------------------
 
+
 class TestClippedGradEmptyBatch:
     def test_returns_zero_grads(self, params, empty_batch):
         grad_fn, clip_state = clipped_grad(
-            _simple_loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0,
+            _simple_loss_fn,
+            argnums=0,
+            batch_argnums=(1, 2),
+            clipping_norm=1.0,
         )
         grads, new_state = grad_fn(params, *empty_batch, state=clip_state)
         assert grads.shape == params.shape
@@ -84,8 +90,11 @@ class TestClippedGradEmptyBatch:
 
     def test_returns_empty_aux_tensors(self, params, empty_batch):
         grad_fn, clip_state = clipped_grad(
-            _simple_loss_fn, argnums=0, batch_argnums=(1, 2),
-            clipping_norm=1.0, return_aux=True,
+            _simple_loss_fn,
+            argnums=0,
+            batch_argnums=(1, 2),
+            clipping_norm=1.0,
+            return_aux=True,
         )
         (grads, aux), _ = grad_fn(params, *empty_batch, state=clip_state)
         assert grads.shape == params.shape
@@ -99,7 +108,10 @@ class TestClippedGradEmptyBatch:
 
     def test_state_unchanged(self, params, empty_batch):
         grad_fn, clip_state = clipped_grad(
-            _simple_loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0,
+            _simple_loss_fn,
+            argnums=0,
+            batch_argnums=(1, 2),
+            clipping_norm=1.0,
         )
         _, new_state = grad_fn(params, *empty_batch, state=clip_state)
         assert new_state is clip_state
@@ -111,7 +123,10 @@ class TestClippedGradEmptyBatch:
 
         params = {"w": torch.randn(10), "b": torch.randn(1)}
         grad_fn, clip_state = clipped_grad(
-            loss_fn, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0,
+            loss_fn,
+            argnums=0,
+            batch_argnums=(1, 2),
+            clipping_norm=1.0,
         )
         grads, _ = grad_fn(params, *empty_batch, state=clip_state)
         assert isinstance(grads, dict)
@@ -121,8 +136,12 @@ class TestClippedGradEmptyBatch:
     def test_microbatch_empty_batch(self, params, empty_batch):
         """Microbatch path also handles empty batches."""
         grad_fn, clip_state = clipped_grad(
-            _simple_loss_fn, argnums=0, batch_argnums=(1, 2),
-            clipping_norm=1.0, microbatch_size=4, return_aux=True,
+            _simple_loss_fn,
+            argnums=0,
+            batch_argnums=(1, 2),
+            clipping_norm=1.0,
+            microbatch_size=4,
+            return_aux=True,
         )
         (grads, aux), _ = grad_fn(params, *empty_batch, state=clip_state)
         assert grads.shape == params.shape
@@ -134,10 +153,13 @@ class TestClippedGradEmptyBatch:
 # adaptive_clipped_grad with empty batch
 # ---------------------------------------------------------------------------
 
+
 class TestAdaptiveClippedGradEmptyBatch:
     def test_zero_grads_and_preserved_clipping_norm(self, params, empty_batch):
         grad_fn, clip_state = adaptive_clipped_grad(
-            _simple_loss_fn, initial_clipping_norm=1.0, key=key(0),
+            _simple_loss_fn,
+            initial_clipping_norm=1.0,
+            key=key(0),
             batch_argnums=(1, 2),
         )
         initial_cn = clip_state.clipping_norm
@@ -151,7 +173,9 @@ class TestAdaptiveClippedGradEmptyBatch:
 
     def test_step_still_increments(self, params, empty_batch):
         grad_fn, clip_state = adaptive_clipped_grad(
-            _simple_loss_fn, initial_clipping_norm=1.0, key=key(0),
+            _simple_loss_fn,
+            initial_clipping_norm=1.0,
+            key=key(0),
             batch_argnums=(1, 2),
         )
         assert clip_state.step == 0
@@ -161,7 +185,9 @@ class TestAdaptiveClippedGradEmptyBatch:
     def test_empty_then_normal_batch(self, params, empty_batch, normal_batch):
         """After an empty batch, a normal batch still adapts correctly."""
         grad_fn, clip_state = adaptive_clipped_grad(
-            _simple_loss_fn, initial_clipping_norm=1.0, key=key(0),
+            _simple_loss_fn,
+            initial_clipping_norm=1.0,
+            key=key(0),
             batch_argnums=(1, 2),
         )
         initial_cn = clip_state.clipping_norm
@@ -177,8 +203,11 @@ class TestAdaptiveClippedGradEmptyBatch:
 
     def test_return_aux_empty_batch(self, params, empty_batch):
         grad_fn, clip_state = adaptive_clipped_grad(
-            _simple_loss_fn, initial_clipping_norm=1.0, key=key(0),
-            batch_argnums=(1, 2), return_aux=True,
+            _simple_loss_fn,
+            initial_clipping_norm=1.0,
+            key=key(0),
+            batch_argnums=(1, 2),
+            return_aux=True,
         )
         (grads, aux), new_state = grad_fn(params, *empty_batch, state=clip_state)
 
@@ -192,7 +221,9 @@ class TestAdaptiveClippedGradEmptyBatch:
     def test_consecutive_empty_batches(self, params, empty_batch):
         """Multiple empty batches don't drift clipping_norm."""
         grad_fn, clip_state = adaptive_clipped_grad(
-            _simple_loss_fn, initial_clipping_norm=1.0, key=key(0),
+            _simple_loss_fn,
+            initial_clipping_norm=1.0,
+            key=key(0),
             batch_argnums=(1, 2),
         )
         initial_cn = clip_state.clipping_norm
@@ -208,6 +239,7 @@ class TestAdaptiveClippedGradEmptyBatch:
 # ---------------------------------------------------------------------------
 # sync_adaptive_clip_state with all-empty ranks (unit test, no real DDP)
 # ---------------------------------------------------------------------------
+
 
 class TestSyncAdaptiveClipStateAllEmpty:
     """Unit-test the all-empty-ranks guard without spawning processes."""
@@ -238,6 +270,7 @@ class TestSyncAdaptiveClipStateAllEmpty:
 # ---------------------------------------------------------------------------
 # sync_adaptive_clipped_grad_aux (non-distributed passthrough)
 # ---------------------------------------------------------------------------
+
 
 class TestSyncAdaptiveClippedGradAux:
     def test_empty_grad_norms_passthrough(self):

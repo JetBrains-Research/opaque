@@ -37,9 +37,7 @@ def normalize_fun_to_return_aux(fun: Callable, has_aux: bool) -> Callable:
         return lambda *args, **kwargs: (fun(*args, **kwargs), ())
 
 
-def batch_size_from_args(
-    args: tuple, batch_argnums: tuple[int, ...]
-) -> int:
+def batch_size_from_args(args: tuple, batch_argnums: tuple[int, ...]) -> int:
     """Determine batch size from the first batch argument.
 
     Handles both plain tensors and PyTree (dict/list/tuple) batch args.

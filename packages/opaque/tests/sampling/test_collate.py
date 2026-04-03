@@ -45,7 +45,9 @@ class TestDataCollatorPatch:
     """Tests for the DataCollatorForLanguageModeling compat patch."""
 
     def test_empty_examples_returns_empty_tensors(self):
-        transformers = __import__("transformers", fromlist=["DataCollatorForLanguageModeling"])
+        transformers = __import__(
+            "transformers", fromlist=["DataCollatorForLanguageModeling"]
+        )
         DataCollatorForLanguageModeling = transformers.DataCollatorForLanguageModeling
         AutoTokenizer = transformers.AutoTokenizer
 
@@ -64,7 +66,9 @@ class TestDataCollatorPatch:
         assert result["labels"].dtype == torch.long
 
     def test_nonempty_examples_unchanged(self):
-        transformers = __import__("transformers", fromlist=["DataCollatorForLanguageModeling"])
+        transformers = __import__(
+            "transformers", fromlist=["DataCollatorForLanguageModeling"]
+        )
         DataCollatorForLanguageModeling = transformers.DataCollatorForLanguageModeling
         AutoTokenizer = transformers.AutoTokenizer
 
