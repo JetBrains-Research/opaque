@@ -15,10 +15,11 @@ from .. import opaque_accounting as _native
 
 from opaque_accounting.base import DpProcess, Pld
 from opaque_accounting.mechanisms.gaussian import Gaussian
+from opaque_accounting.mechanisms.nonprivate import NonPrivate
 from opaque_accounting.mechanisms.truncated_gaussian import TruncatedGaussian
 
 #: Mechanism types accepted as AdaClip inner.
-_Inner = Gaussian | TruncatedGaussian
+_Inner = Gaussian | TruncatedGaussian | NonPrivate
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +65,8 @@ class AdaClip(DpProcess):
         native_cfg = config.to_native()
 
         match self.inner:
+            case NonPrivate():
+                return _native.eps_delta_pld(0.0, 1.0, native_cfg)
             case Gaussian():
                 # Tight: z_eff folds both into one Gaussian.
                 return _native.gaussian_pld(self.effective_noise_multiplier, native_cfg)
@@ -119,10 +122,11 @@ def adaclip(
         )
         accountant = accountant | step
     """
-    if not isinstance(inner, (Gaussian, TruncatedGaussian)):
+    if not isinstance(inner, (Gaussian, TruncatedGaussian, NonPrivate)):
         raise TypeError(
-            f"adaclip() requires a Gaussian or "
-            f"TruncatedGaussian inner mechanism, got {type(inner).__name__}."
+            f"adaclip() requires a Gaussian, "
+            f"TruncatedGaussian, or NonPrivate inner mechanism, "
+            f"got {type(inner).__name__}."
         )
     if fraction_noise_std <= 0:
         raise ValueError(
