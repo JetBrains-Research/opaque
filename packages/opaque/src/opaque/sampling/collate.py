@@ -41,7 +41,7 @@ def _empty_like(template: T) -> T:
     return template
 
 
-def poisson_collate(collate_fn: Callable[..., T]) -> Callable[..., T | None]:
+def poisson_collate(collate_fn: Callable[..., T]) -> Callable[..., T]:
     """Wrap a collate function to handle empty batches from Poisson sampling.
 
     ``PoissonSampler`` can yield empty index lists, producing batches with
@@ -62,15 +62,19 @@ def poisson_collate(collate_fn: Callable[..., T]) -> Callable[..., T | None]:
                 continue
             ...
 
-    If the very first batch is empty (before any structure has been
-    learned), ``None`` is returned as a fallback.
+    .. note::
+
+        If the very first batch is empty (before any structure has been
+        learned), the call falls through to *collate_fn* which will
+        typically crash — this is the correct signal that the sample rate
+        is misconfigured.
 
     Args:
         collate_fn: Original collate function.
 
     Returns:
         Wrapped function that returns empty-batch-dim outputs for empty
-        example lists, or ``None`` if no template has been learned yet.
+        example lists.
     """
     template: list[T | None] = [None]  # mutable cell for closure
 
@@ -78,7 +82,7 @@ def poisson_collate(collate_fn: Callable[..., T]) -> Callable[..., T | None]:
     def wrapper(examples):
         if not examples:
             if template[0] is None:
-                return None
+                return collate_fn(examples)
             return _empty_like(template[0])
 
         result = collate_fn(examples)

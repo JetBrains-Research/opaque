@@ -70,7 +70,7 @@ from opaque.distributed import sum_gradients_, sync
 from opaque.noise import gaussian_noise, truncated_gaussian_noise
 from opaque.profiling import StepTimer, TrainingProfiler, print_memory, reset_peak_memory
 from opaque.random import key, fold_in
-from opaque.sampling import PoissonSampler, poisson_collate
+from opaque.sampling import PoissonSampler
 from opaque.sampling.distributed import local_shard
 from opaque.utils import make_functional
 import wandb
@@ -820,9 +820,6 @@ def main():
 
     # Collate: data_collator handles padding, then extract tensors + move to device.
     # Used by all DataLoaders that feed into per_example_loss_fn.
-    # poisson_collate learns the output structure from the first non-empty
-    # batch and returns a zero-batch-dim replica for empty Poisson samples.
-    @poisson_collate
     def collate(examples):
         batch = data_collator(examples)
         return (batch["input_ids"].to(device),)
@@ -1146,9 +1143,6 @@ def main():
 
         # Iterate through Poisson-sampled batches
         for step_idx, batch in enumerate(epoch_loader):
-            if batch is None:          # first-ever batch empty (no template yet)
-                global_step += 1
-                continue
             (input_ids,) = batch
 
             # === Accounting (data-independent, before execution) ===

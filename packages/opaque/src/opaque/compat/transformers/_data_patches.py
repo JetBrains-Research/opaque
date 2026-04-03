@@ -4,19 +4,20 @@
 
 Poisson sampling (used for privacy amplification in DP-SGD) can yield empty
 batches.  HuggingFace data collators crash on empty input lists because they
-index ``examples[0]`` unconditionally.  These patches add empty-input guards
-that learn the output structure from the first non-empty call.
+index ``examples[0]`` unconditionally.  These patches wrap the collator with
+:func:`poisson_collate` which learns the output structure from the first
+non-empty call.
 
 Controlled by:
     OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES: "all" or "collator"
 """
 
-import copy
+import functools
 
 from opaque._env import parse_skip_env
-from opaque.sampling.collate import _empty_like
+from opaque.sampling.collate import poisson_collate
 
-_TEMPLATE_ATTR = "_opaque_collate_template"
+_WRAPPER_ATTR = "_opaque_collate"
 
 
 def apply_data_patches() -> None:
@@ -41,24 +42,10 @@ def apply_data_patches() -> None:
     _original_torch_call = DataCollatorForLanguageModeling.torch_call
 
     def _patched_torch_call(self, examples):
-        if not examples:
-            template = getattr(self, _TEMPLATE_ATTR, None)
-            if template is not None:
-                return _empty_like(template)
-            # No template yet — fall back to hardcoded empty dict so
-            # callers that depend on dict keys still get something usable.
-            import torch
-
-            return {
-                "input_ids": torch.empty(0, 0, dtype=torch.long),
-                "labels": torch.empty(0, 0, dtype=torch.long),
-            }
-
-        result = _original_torch_call(self, examples)
-
-        if not hasattr(self, _TEMPLATE_ATTR):
-            setattr(self, _TEMPLATE_ATTR, copy.deepcopy(result))
-
-        return result
+        wrapper = getattr(self, _WRAPPER_ATTR, None)
+        if wrapper is None:
+            wrapper = poisson_collate(functools.partial(_original_torch_call, self))
+            setattr(self, _WRAPPER_ATTR, wrapper)
+        return wrapper(examples)
 
     DataCollatorForLanguageModeling.torch_call = _patched_torch_call

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for poisson_collate wrapper and DataCollator compat patch."""
 
+import pytest
 import torch
 
 from opaque.sampling.collate import _empty_like, poisson_collate
@@ -70,10 +71,11 @@ class TestPoissonCollate:
         result = wrapped(tensors)
         assert torch.equal(result, torch.stack(tensors))
 
-    def test_empty_before_nonempty_returns_none(self):
-        """Before any template is learned, empty batch returns None."""
-        wrapped = poisson_collate(lambda ex: torch.stack(ex))
-        assert wrapped([]) is None
+    def test_empty_before_nonempty_falls_through(self):
+        """Before any template is learned, empty batch falls through to collate_fn."""
+        wrapped = poisson_collate(lambda ex: (_ for _ in ()).throw(IndexError))
+        with pytest.raises(IndexError):
+            wrapped([])
 
     def test_empty_after_nonempty_returns_structure(self):
         """After learning structure, empty batch returns zero-batch-dim output."""
@@ -149,24 +151,6 @@ class TestPoissonCollate:
 
 class TestDataCollatorPatch:
     """Tests for the DataCollatorForLanguageModeling compat patch."""
-
-    def test_empty_before_nonempty_returns_fallback(self):
-        """Before template learned, empty returns hardcoded fallback."""
-        transformers = __import__(
-            "transformers", fromlist=["DataCollatorForLanguageModeling"]
-        )
-        DataCollatorForLanguageModeling = transformers.DataCollatorForLanguageModeling
-        AutoTokenizer = transformers.AutoTokenizer
-
-        tokenizer = AutoTokenizer.from_pretrained("gpt2")
-        tokenizer.pad_token = tokenizer.eos_token
-        collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
-
-        result = collator([])
-        assert "input_ids" in result
-        assert "labels" in result
-        assert result["input_ids"].shape[0] == 0
-        assert result["input_ids"].dtype == torch.long
 
     def test_empty_after_nonempty_returns_learned_structure(self):
         transformers = __import__(
