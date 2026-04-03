@@ -1065,9 +1065,8 @@ def main():
         print("  (This may take 1-3 minutes...)")
 
         start_time = time.time()
-        budget = cal.epsilon_budget(args.target_epsilon, delta=args.target_delta)
         calibration = cal.calibrate(
-            budget,
+            cal.epsilon_budget(args.target_epsilon, delta=args.target_delta),
             lambda nm: mechanism(nm) * total_steps,
             param_min=args.calibration_min,
             param_max=args.calibration_max,
