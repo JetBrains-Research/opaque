@@ -1107,7 +1107,7 @@ def main():
 
     # Step-0 eval: log baseline metrics before any training
     initial_eval_loss = eval_loss(trainable_params)
-    initial_epsilon = accounting.epsilon_at(args.target_delta)
+    initial_epsilon = accounting.epsilon_at(args.target_delta) if noise_multiplier > 0 else float('inf')
     initial_noise_std = noise_multiplier * clip_state.sensitivity
     print(f"  → Step 0 eval: loss={initial_eval_loss:.4f}, ε={initial_epsilon:.3f}")
     if use_wandb:
@@ -1144,19 +1144,18 @@ def main():
             (input_ids,) = batch
 
             # === Accounting (data-independent, before execution) ===
-            if args.adaptive_clipping:
-                accounting |= amplify(adaclip_mechanism(noise_multiplier))
-            else:
-                accounting |= amplify(mechanism(noise_multiplier))
+            if noise_multiplier > 0:
+                if args.adaptive_clipping:
+                    accounting |= amplify(adaclip_mechanism(noise_multiplier))
+                else:
+                    accounting |= amplify(mechanism(noise_multiplier))
 
-            # Empty batch (rare but possible with Poisson): skip execution.
-            if len(input_ids) == 0:
-                continue
+            batch_size = len(input_ids)
 
             # === Execution ===
-            batch_size = len(input_ids)
             step_timer = StepTimer(device, batch_size=batch_size)
             with step_timer:
+                # Compute clipped gradients (handles empty batches via library)
                 with offload_ctx:
                     (grads_tuple, aux), clip_state = grad_fn(
                         trainable_params, input_ids, state=clip_state
@@ -1178,6 +1177,11 @@ def main():
                 trainable_params = torchopt.apply_updates(trainable_params, updates)
 
             profiler = profiler.add_step(step_timer)
+
+            # Empty batch (rare but possible with Poisson): skip metrics.
+            if batch_size == 0:
+                global_step += 1
+                continue
 
             # === Step metrics ===
             avg_loss = aux.loss_values.mean().item()
@@ -1225,8 +1229,11 @@ def main():
             if global_step % args.eval_steps == 0:
                 current_eval_loss = eval_loss(trainable_params)
                 # Cache PLD before eval so it serves as opaque boundary
-                accounting = acc.cached(accounting)
-                epsilon = accounting.epsilon_at(args.target_delta)
+                if noise_multiplier > 0:
+                    accounting = acc.cached(accounting)
+                    epsilon = accounting.epsilon_at(args.target_delta)
+                else:
+                    epsilon = float('inf')
 
                 metrics = {
                     "eval/loss": current_eval_loss,
@@ -1281,7 +1288,10 @@ def main():
             f"  Average clip rate: {sum(clip_rates_history) / len(clip_rates_history):.2%}"
         )
 
-    final_epsilon = accounting.epsilon_at(args.target_delta)
+    if noise_multiplier > 0:
+        final_epsilon = accounting.epsilon_at(args.target_delta)
+    else:
+        final_epsilon = float('inf')
     print("\nPrivacy:")
     if use_parallel_poisson:
         print(f"  Accounting: parallel_poisson (world_size={world_size})")

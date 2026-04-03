@@ -11,6 +11,7 @@ via ``fold_in(key, rank)``.
 
 from opaque.sampling import distributed
 from opaque.sampling._utils import PartitionType
+from opaque.sampling.collate import poisson_collate
 from opaque.sampling.cyclic_poisson import CyclicPoissonSampler
 from opaque.sampling.poisson import PoissonSampler
 from opaque.sampling.truncated_poisson import TruncatedPoissonSampler
@@ -21,4 +22,5 @@ __all__ = [
     "CyclicPoissonSampler",
     "PartitionType",
     "distributed",
+    "poisson_collate",
 ]

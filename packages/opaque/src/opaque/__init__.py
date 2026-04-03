@@ -47,6 +47,7 @@ from opaque.sampling import (
     CyclicPoissonSampler,
     PoissonSampler,
     TruncatedPoissonSampler,
+    poisson_collate,
 )
 from opaque._env import parse_skip_env
 from opaque.utils import make_functional, with_batch_dim
@@ -81,6 +82,7 @@ __all__ = [
     "PoissonSampler",
     "TruncatedPoissonSampler",
     "CyclicPoissonSampler",
+    "poisson_collate",
     # Noise
     "gaussian_noise",
     "truncated_gaussian_noise",

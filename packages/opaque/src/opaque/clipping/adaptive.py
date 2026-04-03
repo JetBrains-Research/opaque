@@ -6,6 +6,7 @@ from typing import Any, cast
 
 import torch
 
+from opaque.clipping._helpers import batch_size_from_args, normalize_to_tuple, zero_grads_like
 from opaque.clipping.clipped_grad import ClippedGradAux, clipped_grad
 from opaque.clipping.types import ClipState
 from opaque.random import RngKey, fold_in, generator_from_key
@@ -82,6 +83,18 @@ class AdaptiveClipState(ClipState):
             raise ValueError(
                 f"fraction_noise_std must be > 0, got {self._fraction_noise_std}"
             )
+
+
+def _compute_clipping_stats(
+    grad_norms: torch.Tensor, clipping_norm: float
+) -> tuple[float, float, float]:
+    """Compute local clipping statistics from per-example gradient norms."""
+    total = float(grad_norms.numel())
+    if total == 0:
+        return 0.0, 0.0, 0.0
+    num_clipped = float((grad_norms > clipping_norm).sum().item())
+    clipping_rate = num_clipped / total
+    return num_clipped, total, clipping_rate
 
 
 def _sample_noisy_clipping_rate(
@@ -262,6 +275,11 @@ def adaptive_clipped_grad(
             f"fraction_noise_std must be positive, got {fraction_noise_std}"
         )
 
+    # Normalize argnums/batch_argnums for empty-batch detection
+    argnums_tuple = normalize_to_tuple(argnums)
+    batch_argnums_raw = clipped_grad_kwargs.get("batch_argnums", 1)
+    batch_argnums_tuple = normalize_to_tuple(batch_argnums_raw)
+
     # Store config in closure (immutable)
     normalize_by = clipped_grad_kwargs.get("normalize_by", 1.0)
 
@@ -272,6 +290,23 @@ def adaptive_clipped_grad(
         "clipping_norm_max": clipping_norm_max,
         "fraction_noise_std": fraction_noise_std,
     }
+
+    def _empty_batch_state(state: AdaptiveClipState) -> AdaptiveClipState:
+        """Build new state for an empty batch: clip_norm preserved, step bumped."""
+        return AdaptiveClipState(
+            clipping_norm=state.next_clipping_norm,
+            normalize_by=normalize_by,
+            next_clipping_norm=state.next_clipping_norm,
+            step=state.step + 1,
+            _rng_key=state._rng_key,
+            _fraction_noise_std=config["fraction_noise_std"],
+            _learning_rate=config["learning_rate"],
+            _target_quantile=config["target_quantile"],
+            _clipping_norm_min=config["clipping_norm_min"],
+            _clipping_norm_max=config["clipping_norm_max"],
+            _num_clipped=0.0,
+            _batch_size=0.0,
+        )
 
     def grad_fn(*args, state: AdaptiveClipState, **kwargs):
         """Compute clipped gradients with adaptive threshold.
@@ -287,6 +322,22 @@ def adaptive_clipped_grad(
             Else:
                 (grad, new_state)
         """
+        # Empty batch: zero grads, no adaptation, step still incremented
+        if batch_size_from_args(args, batch_argnums_tuple) == 0:
+            grads = zero_grads_like(args, argnums_tuple)
+            new_state = _empty_batch_state(state)
+            if return_aux:
+                empty = torch.empty(0)
+                adaptive_aux = AdaptiveClippedGradAux(
+                    loss_values=empty,
+                    grad_norms=empty,
+                    clipped_grad_norms=empty,
+                    loss_aux=None,
+                    clipping_rate=0.0,
+                )
+                return (grads, adaptive_aux), new_state
+            return grads, new_state
+
         # Compute gradients with current threshold
         # Force grad_norms computation to update the threshold
         user_wants_return_aux = return_aux
