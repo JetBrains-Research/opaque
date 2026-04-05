@@ -1,7 +1,6 @@
 """Tests for NonPrivate mechanism — infinite privacy loss, composition annihilator."""
 
 import math
-from dataclasses import FrozenInstanceError
 
 import pytest
 
@@ -99,9 +98,7 @@ class TestNonPrivateParallelPoisson:
     """NonPrivate threads through ParallelPoisson."""
 
     def test_parallel_poisson_accepts_nonprivate(self):
-        step = acc.parallel_poisson(
-            acc.nonprivate(), sample_rate=0.01, num_workers=4
-        )
+        step = acc.parallel_poisson(acc.nonprivate(), sample_rate=0.01, num_workers=4)
         eps = step.epsilon_at(1e-5)
         assert eps == math.inf
 
