@@ -49,7 +49,11 @@ class ParallelPoisson(DpProcess):
         native_cfg = config.to_native()
 
         match self.inner:
-            case Poisson(inner=NonPrivate() | Gaussian(noise_multiplier=0) | TruncatedGaussian(noise_multiplier=0)):
+            case Poisson(
+                inner=NonPrivate()
+                | Gaussian(noise_multiplier=0)
+                | TruncatedGaussian(noise_multiplier=0)
+            ):
                 return _native.non_private_pld(native_cfg)
             case Poisson(
                 inner=Gaussian(noise_multiplier=nm),
@@ -62,7 +66,11 @@ class ParallelPoisson(DpProcess):
                     native_cfg,
                 )
             case Poisson(
-                inner=AdaClip(inner=NonPrivate() | Gaussian(noise_multiplier=0) | TruncatedGaussian(noise_multiplier=0)),
+                inner=AdaClip(
+                    inner=NonPrivate()
+                    | Gaussian(noise_multiplier=0)
+                    | TruncatedGaussian(noise_multiplier=0)
+                ),
             ):
                 return _native.non_private_pld(native_cfg)
             case Poisson(

@@ -59,7 +59,10 @@ class TestNonPrivateConstructor:
     def test_truncated_poisson_gaussian_zero(self):
         """truncated_poisson(gaussian(0)) should produce non-private PLD."""
         step = acc.truncated_poisson(
-            acc.gaussian(0), sample_rate=0.01, batch_size_cap=128, dataset_size=10_000,
+            acc.gaussian(0),
+            sample_rate=0.01,
+            batch_size_cap=128,
+            dataset_size=10_000,
         )
         assert step.epsilon_at(1e-5) == math.inf
 

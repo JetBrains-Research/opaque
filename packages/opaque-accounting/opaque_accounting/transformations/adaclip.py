@@ -70,7 +70,11 @@ class AdaClip(DpProcess):
         native_cfg = config.to_native()
 
         match self.inner:
-            case NonPrivate() | Gaussian(noise_multiplier=0) | TruncatedGaussian(noise_multiplier=0):
+            case (
+                NonPrivate()
+                | Gaussian(noise_multiplier=0)
+                | TruncatedGaussian(noise_multiplier=0)
+            ):
                 return _native.non_private_pld(native_cfg)
             case Gaussian():
                 # Tight: z_eff folds both into one Gaussian.
