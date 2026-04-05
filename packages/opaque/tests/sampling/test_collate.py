@@ -153,9 +153,7 @@ class TestDataCollatorPatch:
     """Tests for the DataCollatorForLanguageModeling compat patch."""
 
     def test_empty_after_nonempty_returns_learned_structure(self):
-        transformers = __import__(
-            "transformers", fromlist=["DataCollatorForLanguageModeling"]
-        )
+        transformers = pytest.importorskip("transformers")
         DataCollatorForLanguageModeling = transformers.DataCollatorForLanguageModeling
         AutoTokenizer = transformers.AutoTokenizer
 
@@ -177,9 +175,7 @@ class TestDataCollatorPatch:
         assert result["input_ids"].shape[1:] == nonempty_result["input_ids"].shape[1:]
 
     def test_nonempty_examples_unchanged(self):
-        transformers = __import__(
-            "transformers", fromlist=["DataCollatorForLanguageModeling"]
-        )
+        transformers = pytest.importorskip("transformers")
         DataCollatorForLanguageModeling = transformers.DataCollatorForLanguageModeling
         AutoTokenizer = transformers.AutoTokenizer
 
