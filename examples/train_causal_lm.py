@@ -418,7 +418,7 @@ def parse_args():
         "--microbatch-size",
         type=int,
         default=None,
-        help="Microbatch size passed to clipped_grad/adaptive_clipped_grad (None=process full batch with vmap, faster but more memory)",
+        help="Microbatch size passed to clipped_grad/adaptive_clipped_grad (None=process full batch with vmap, faster but more memory; use 0 on CLI to mean None)",
     )
     dp_group.add_argument(
         "--sampler",
@@ -490,7 +490,7 @@ def parse_args():
     privacy_group.add_argument(
         "--calibration-max",
         type=float,
-        default=1.19,
+        default=3.5,
         help="Upper bound for noise calibration search",
     )
     privacy_group.add_argument(
@@ -615,6 +615,11 @@ def parse_args():
     elif args.preset == "custom":
         # Keep all user-provided/default CLI arguments unchanged.
         pass
+
+    # --microbatch-size 0 means "no microbatching" (full-batch vmap).
+    # Needed because argparse type=int can't accept None on CLI to override presets.
+    if args.microbatch_size == 0:
+        args.microbatch_size = None
 
     return args
 
@@ -1236,6 +1241,7 @@ def main():
                 if use_wandb:
                     wandb.log({
                         "train/loss": avg_loss,
+                        "train/batch_size": batch_size,
                         "train/clipping_norm": clipping_norm,
                         "train/clip_rate": clip_rate,
                         "train/grad_norm_mean": mean_grad_norm,
@@ -1250,6 +1256,7 @@ def main():
 
                 print(
                     f"Step {global_step:4d} [E{epoch + 1} S{step_idx + 1:3d}/{expected_steps_per_epoch:3d}] | "
+                    f"BS: {batch_size} | "
                     f"Loss: {avg_loss:.4f} | "
                     f"Clip: norm={clipping_norm:.3f}, rate={clip_rate:.1%} | "
                     f"GradNorm: μ={mean_grad_norm:.3f} | "

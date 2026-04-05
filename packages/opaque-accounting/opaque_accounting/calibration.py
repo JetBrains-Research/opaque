@@ -154,7 +154,7 @@ def calibrate(
             budget,
             lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=0.01) * 1000,
             param_min=0.7,
-            param_max=1.2,
+            param_max=3.5,
         )
 
         print(f"Use noise_multiplier = {result.param:.4f}")
