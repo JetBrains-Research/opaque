@@ -10,6 +10,8 @@ from .. import opaque_accounting as _native
 from opaque_accounting.amplification.poisson import Poisson
 from opaque_accounting.base import DpProcess, Pld
 from opaque_accounting.mechanisms.gaussian import Gaussian
+from opaque_accounting.mechanisms.nonprivate import NonPrivate
+from opaque_accounting.mechanisms.truncated_gaussian import TruncatedGaussian
 from opaque_accounting.transformations.adaclip import AdaClip
 
 
@@ -48,6 +50,12 @@ class ParallelPoisson(DpProcess):
 
         match self.inner:
             case Poisson(
+                inner=NonPrivate()
+                | Gaussian(noise_multiplier=0)
+                | TruncatedGaussian(noise_multiplier=0)
+            ):
+                return _native.non_private_pld(native_cfg)
+            case Poisson(
                 inner=Gaussian(noise_multiplier=nm),
                 sample_rate=rate,
             ):
@@ -57,6 +65,14 @@ class ParallelPoisson(DpProcess):
                     self.num_workers,
                     native_cfg,
                 )
+            case Poisson(
+                inner=AdaClip(
+                    inner=NonPrivate()
+                    | Gaussian(noise_multiplier=0)
+                    | TruncatedGaussian(noise_multiplier=0)
+                ),
+            ):
+                return _native.non_private_pld(native_cfg)
             case Poisson(
                 inner=AdaClip(inner=Gaussian()) as ac,
                 sample_rate=rate,
@@ -120,10 +136,10 @@ def parallel_poisson(
         training = step * 500
         eps = training.epsilon_at(1e-5)
     """
-    if not isinstance(inner, (Gaussian, AdaClip)):
+    if not isinstance(inner, (Gaussian, AdaClip, NonPrivate)):
         raise TypeError(
-            f"parallel_poisson() requires a Gaussian or AdaClip inner mechanism, "
-            f"got {type(inner).__name__}. "
+            f"parallel_poisson() requires a Gaussian, AdaClip, or NonPrivate "
+            f"inner mechanism, got {type(inner).__name__}. "
             "Use: acc.parallel_poisson(acc.gaussian(nm), sample_rate=q, num_workers=k)"
         )
     poisson_inner = Poisson(inner=inner, sample_rate=sample_rate)

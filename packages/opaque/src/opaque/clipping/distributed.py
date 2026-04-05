@@ -72,6 +72,10 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
         },
     )
 
+    # No data on any rank — preserve clipping_norm, skip adaptation entirely
+    if synced._batch_size == 0:
+        return synced
+
     # Recompute global clipping rate from aggregated counts.
     global_rate = synced._num_clipped / max(1.0, synced._batch_size)
 

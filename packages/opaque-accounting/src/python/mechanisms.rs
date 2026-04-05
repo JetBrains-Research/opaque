@@ -8,7 +8,7 @@ use super::pld::PyPld;
 /// Compute the PLD for a Gaussian mechanism.
 ///
 /// Args:
-///     noise_multiplier (float): σ/Δ ratio, in [0.1, 1.2].
+///     noise_multiplier (float): σ/Δ ratio, must be > 0.
 ///     config (DiscretizationConfig): Discretization configuration.
 ///
 /// Returns:
@@ -57,6 +57,21 @@ pub fn py_identity_pld(config: &PyDiscretizationConfig) -> PyResult<PyPld> {
     Ok(PyPld::new(pld))
 }
 
+/// Compute the PLD for a non-private mechanism (ε = ∞, δ = 1).
+///
+/// Args:
+///     config (DiscretizationConfig): Discretization configuration.
+///
+/// Returns:
+///     Pld: A PLD with all mass at +∞ (composition annihilator).
+#[pyfunction]
+#[pyo3(name = "non_private_pld", signature = (config))]
+pub fn py_non_private_pld(config: &PyDiscretizationConfig) -> PyResult<PyPld> {
+    let pld = crate::mechanisms::non_private_pld(&config.inner)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}
+
 /// Compute the PLD for a truncated (renormalized) Gaussian mechanism.
 ///
 /// The truncated Gaussian samples from N(0, σ²) restricted to [−R·σ, R·σ],
@@ -64,7 +79,7 @@ pub fn py_identity_pld(config: &PyDiscretizationConfig) -> PyResult<PyPld> {
 /// rectified and standard Gaussian.
 ///
 /// Args:
-///     noise_multiplier (float): σ/Δ ratio, in [0.1, 1.2].
+///     noise_multiplier (float): σ/Δ ratio, must be > 0.
 ///     radius (float): Support half-width in sigma units, in [0.1, 100].
 ///     config (DiscretizationConfig): Discretization configuration.
 ///

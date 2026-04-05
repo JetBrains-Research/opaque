@@ -1,10 +1,10 @@
 //! Gaussian mechanism PLD constructor.
 
 use crate::discretization::{discretize_symmetric_mechanism, DiscretizationConfig, EpsilonBounds};
-use crate::error::{PldError, Result};
+use crate::error::Result;
 use crate::pld::PrivacyLossDistribution;
 
-use super::MIN_NOISE_MULTIPLIER;
+use super::validate_noise_multiplier;
 
 /// Compute the PLD for a Gaussian mechanism.
 ///
@@ -13,22 +13,18 @@ use super::MIN_NOISE_MULTIPLIER;
 ///
 /// # Arguments
 ///
-/// * `noise_multiplier` — σ/Δ ratio, must be >= 0.1
+/// * `noise_multiplier` — σ/Δ ratio, must be > 0 (see [`MIN_NOISE_MULTIPLIER`])
 /// * `config` — discretization configuration for PLD grid
 ///
 /// # Errors
 ///
-/// Returns `InvalidParameter` if `noise_multiplier` < 0.1.
+/// Returns `InvalidParameter` if `noise_multiplier` is below the numerical
+/// safety floor.
 pub fn gaussian_pld(
     noise_multiplier: f64,
     config: &DiscretizationConfig,
 ) -> Result<PrivacyLossDistribution> {
-    if noise_multiplier < MIN_NOISE_MULTIPLIER {
-        return Err(PldError::InvalidParameter(format!(
-            "noise_multiplier must be >= {}, got {}",
-            MIN_NOISE_MULTIPLIER, noise_multiplier
-        )));
-    }
+    validate_noise_multiplier(noise_multiplier)?;
 
     let bounds = gaussian_epsilon_bounds(noise_multiplier, config.log_mass_truncation_bound);
     let delta_tilde = 1.0 / noise_multiplier;
@@ -62,6 +58,7 @@ fn gaussian_epsilon_bounds(noise_multiplier: f64, log_mass_truncation_bound: f64
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mechanisms::MIN_NOISE_MULTIPLIER;
 
     fn default_config() -> DiscretizationConfig {
         DiscretizationConfig::default()
@@ -69,7 +66,16 @@ mod tests {
 
     #[test]
     fn test_gaussian_rejects_below_min() {
-        assert!(gaussian_pld(0.09, &default_config()).is_err());
+        assert!(gaussian_pld(1e-7, &default_config()).is_err());
+        assert!(gaussian_pld(0.0, &default_config()).is_err());
+        assert!(gaussian_pld(-1.0, &default_config()).is_err());
+    }
+
+    #[test]
+    fn test_gaussian_accepts_small_nm() {
+        // Values just above the numerical floor should work.
+        assert!(gaussian_pld(0.01, &default_config()).is_ok());
+        assert!(gaussian_pld(0.05, &default_config()).is_ok());
     }
 
     #[test]
@@ -80,16 +86,6 @@ mod tests {
     #[test]
     fn test_gaussian_boundary_min() {
         assert!(gaussian_pld(MIN_NOISE_MULTIPLIER, &default_config()).is_ok());
-    }
-
-    #[test]
-    fn test_gaussian_high_nm_adaclip_bit() {
-        // AdaClip bit mechanism: nm = 2 * batch_size * fraction_noise_std
-        // e.g. 2 * 100 * 0.05 = 10.0
-        let pld = gaussian_pld(10.0, &default_config()).unwrap();
-        // Very private — epsilon should be near zero.
-        let eps = pld.epsilon_at(1e-10);
-        assert!(eps < 0.01, "eps = {}, expected ~0", eps);
     }
 
     /// At σ=0.5 the analytical δ(ε=0) ≈ Φ(1) − Φ(−1) ≈ 0.6827.

@@ -70,7 +70,7 @@ from opaque.distributed import sum_gradients_, sync
 from opaque.noise import gaussian_noise, truncated_gaussian_noise
 from opaque.profiling import StepTimer, TrainingProfiler, print_memory, reset_peak_memory
 from opaque.random import key, fold_in
-from opaque.sampling import PoissonSampler
+from opaque.sampling import PoissonSampler, TruncatedPoissonSampler
 from opaque.sampling.distributed import local_shard
 from opaque.utils import make_functional
 import wandb
@@ -418,7 +418,22 @@ def parse_args():
         "--microbatch-size",
         type=int,
         default=None,
-        help="Microbatch size passed to clipped_grad/adaptive_clipped_grad (None=process full batch with vmap, faster but more memory)",
+        help="Microbatch size passed to clipped_grad/adaptive_clipped_grad (None=process full batch with vmap, faster but more memory; use 0 on CLI to mean None)",
+    )
+    dp_group.add_argument(
+        "--sampler",
+        type=str,
+        choices=["poisson", "truncated_poisson"],
+        default="poisson",
+        help="Sampling strategy: poisson (standard, variable batch size) "
+             "or truncated_poisson (batch capped at --max-batch-size for bounded memory)",
+    )
+    dp_group.add_argument(
+        "--max-batch-size",
+        type=int,
+        default=None,
+        help="Max batch size for truncated_poisson sampler (default: same as --batch-size). "
+             "Ignored for standard poisson.",
     )
     dp_group.add_argument(
         "--noise-mechanism",
@@ -475,7 +490,7 @@ def parse_args():
     privacy_group.add_argument(
         "--calibration-max",
         type=float,
-        default=1.19,
+        default=3.5,
         help="Upper bound for noise calibration search",
     )
     privacy_group.add_argument(
@@ -600,6 +615,11 @@ def parse_args():
     elif args.preset == "custom":
         # Keep all user-provided/default CLI arguments unchanged.
         pass
+
+    # --microbatch-size 0 means "no microbatching" (full-batch vmap).
+    # Needed because argparse type=int can't accept None on CLI to override presets.
+    if args.microbatch_size == 0:
+        args.microbatch_size = None
 
     return args
 
@@ -862,6 +882,8 @@ def main():
     # Poisson: each example independently sampled with probability sample_rate each step.
     # In parallel Poisson mode each rank samples independently from the full dataset,
     # so we divide by world_size to keep the global expected batch size = args.batch_size.
+    use_truncated_poisson = args.sampler == "truncated_poisson"
+    max_batch_size = args.max_batch_size or args.batch_size
     sample_rate = args.batch_size / global_train_size
     if use_parallel_poisson:
         sample_rate /= world_size
@@ -871,6 +893,9 @@ def main():
     print("\nPoisson sampling setup:")
     if use_parallel_poisson:
         print(f"  Mode: parallel_poisson (no shard, world_size={world_size})")
+    print(f"  Sampler: {args.sampler}")
+    if use_truncated_poisson:
+        print(f"  Max batch size (cap): {max_batch_size}")
     print(f"  Sample rate (per rank): {sample_rate:.6f}")
     print(f"  Expected global batch size: {args.batch_size}")
     print(f"  Expected steps per epoch: ~{expected_steps_per_epoch}")
@@ -1022,7 +1047,11 @@ def main():
         wandb.config.update({"target_delta": args.target_delta}, allow_val_change=True)
 
     # Noise injection — bind mechanism-specific parameters once.
-    if args.noise_mechanism == "truncated_gaussian":
+    # Chain: base mechanism → adaclip (optional) → amplification.
+    if args.noise_multiplier == 0:
+        mechanism = lambda nm: acc.nonprivate()
+        make_noise = gaussian_noise
+    elif args.noise_mechanism == "truncated_gaussian":
         mechanism = functools.partial(acc.truncated_gaussian, radius=args.noise_radius)
         make_noise = functools.partial(truncated_gaussian_noise, radius=args.noise_radius)
     else:
@@ -1030,17 +1059,23 @@ def main():
         make_noise = gaussian_noise
 
     if args.adaptive_clipping:
-        adaclip_mechanism = lambda nm, ebs=args.batch_size: acc.adaclip(
-            mechanism(nm), expected_batch_size=ebs,
+        _base_mechanism = mechanism
+        mechanism = lambda nm, ebs=args.batch_size: acc.adaclip(
+            _base_mechanism(nm), expected_batch_size=ebs,
         )
 
-    # Bind amplification type once — poisson vs parallel_poisson.
-    if use_parallel_poisson:
-        amplify = functools.partial(
-            acc.parallel_poisson, sample_rate=sample_rate, num_workers=world_size,
+    _unamplified = mechanism
+    if use_truncated_poisson:
+        mechanism = lambda nm: acc.truncated_poisson(
+            _unamplified(nm), sample_rate=sample_rate,
+            batch_size_cap=max_batch_size, dataset_size=global_train_size,
+        )
+    elif use_parallel_poisson:
+        mechanism = lambda nm: acc.parallel_poisson(
+            _unamplified(nm), sample_rate=sample_rate, num_workers=world_size,
         )
     else:
-        amplify = functools.partial(acc.poisson, sample_rate=sample_rate)
+        mechanism = lambda nm: acc.poisson(_unamplified(nm), sample_rate=sample_rate)
 
     # Calibrate noise multiplier from target privacy budget.
     if args.noise_multiplier is not None:
@@ -1060,12 +1095,9 @@ def main():
         print("  (This may take 1-3 minutes...)")
 
         start_time = time.time()
-        budget = cal.epsilon_budget(args.target_epsilon, delta=args.target_delta)
         calibration = cal.calibrate(
-            budget,
-            (lambda nm: amplify(adaclip_mechanism(nm)) * total_steps)
-            if args.adaptive_clipping
-            else (lambda nm: amplify(mechanism(nm)) * total_steps),
+            cal.epsilon_budget(args.target_epsilon, delta=args.target_delta),
+            lambda nm: mechanism(nm) * total_steps,
             param_min=args.calibration_min,
             param_max=args.calibration_max,
             tolerance=args.calibration_tolerance,
@@ -1121,15 +1153,24 @@ def main():
     for epoch in range(args.num_epochs):
         print(f"\nEpoch {epoch + 1}/{args.num_epochs}")
         print("-" * 80)
-        print("Creating Poisson sampler...")
+        print(f"Creating {args.sampler} sampler...")
 
-        # Create Poisson sampler for this epoch
-        epoch_sampler = PoissonSampler(
-            train_dataset,
-            sample_rate=sample_rate,
-            num_iterations=expected_steps_per_epoch,
-            key=fold_in(key(args.seed), rank, epoch),
-        )
+        # Create sampler for this epoch
+        if use_truncated_poisson:
+            epoch_sampler = TruncatedPoissonSampler(
+                train_dataset,
+                sample_rate=sample_rate,
+                max_batch_size=max_batch_size,
+                num_iterations=expected_steps_per_epoch,
+                key=fold_in(key(args.seed), rank, epoch),
+            )
+        else:
+            epoch_sampler = PoissonSampler(
+                train_dataset,
+                sample_rate=sample_rate,
+                num_iterations=expected_steps_per_epoch,
+                key=fold_in(key(args.seed), rank, epoch),
+            )
         print("Creating DataLoader...")
 
         # DataLoader with batch_sampler
@@ -1144,19 +1185,14 @@ def main():
             (input_ids,) = batch
 
             # === Accounting (data-independent, before execution) ===
-            if args.adaptive_clipping:
-                accounting |= amplify(adaclip_mechanism(noise_multiplier))
-            else:
-                accounting |= amplify(mechanism(noise_multiplier))
+            accounting |= mechanism(noise_multiplier)
 
-            # Empty batch (rare but possible with Poisson): skip execution.
-            if len(input_ids) == 0:
-                continue
+            batch_size = len(input_ids)
 
             # === Execution ===
-            batch_size = len(input_ids)
             step_timer = StepTimer(device, batch_size=batch_size)
             with step_timer:
+                # Compute clipped gradients (handles empty batches via library)
                 with offload_ctx:
                     (grads_tuple, aux), clip_state = grad_fn(
                         trainable_params, input_ids, state=clip_state
@@ -1179,6 +1215,11 @@ def main():
 
             profiler = profiler.add_step(step_timer)
 
+            # Empty batch (rare but possible with Poisson): skip metrics.
+            if batch_size == 0:
+                global_step += 1
+                continue
+
             # === Step metrics ===
             avg_loss = aux.loss_values.mean().item()
             clipping_norm = clip_state.clipping_norm
@@ -1200,6 +1241,7 @@ def main():
                 if use_wandb:
                     wandb.log({
                         "train/loss": avg_loss,
+                        "train/batch_size": batch_size,
                         "train/clipping_norm": clipping_norm,
                         "train/clip_rate": clip_rate,
                         "train/grad_norm_mean": mean_grad_norm,
@@ -1214,6 +1256,7 @@ def main():
 
                 print(
                     f"Step {global_step:4d} [E{epoch + 1} S{step_idx + 1:3d}/{expected_steps_per_epoch:3d}] | "
+                    f"BS: {batch_size} | "
                     f"Loss: {avg_loss:.4f} | "
                     f"Clip: norm={clipping_norm:.3f}, rate={clip_rate:.1%} | "
                     f"GradNorm: μ={mean_grad_norm:.3f} | "
@@ -1283,7 +1326,9 @@ def main():
 
     final_epsilon = accounting.epsilon_at(args.target_delta)
     print("\nPrivacy:")
-    if use_parallel_poisson:
+    if use_truncated_poisson:
+        print(f"  Accounting: truncated_poisson (cap={max_batch_size}, n={global_train_size})")
+    elif use_parallel_poisson:
         print(f"  Accounting: parallel_poisson (world_size={world_size})")
     print(f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e} (n={global_train_size})")
     print(f"  Noise multiplier: {noise_multiplier:.4f}")

@@ -8,7 +8,7 @@ use super::pld::PyPld;
 /// Compute the PLD for a Poisson-subsampled Gaussian mechanism.
 ///
 /// Args:
-///     noise_multiplier (float): σ/Δ ratio, in [0.1, 1.2].
+///     noise_multiplier (float): σ/Δ ratio, must be > 0.
 ///     rate (float): Poisson sampling probability, in (0, 1].
 ///     config (DiscretizationConfig): Discretization configuration.
 ///
@@ -33,7 +33,7 @@ pub fn py_poisson_gaussian_pld(
 /// predictable memory usage.
 ///
 /// Args:
-///     noise_multiplier (float): σ/Δ ratio, in [0.1, 1.2].
+///     noise_multiplier (float): σ/Δ ratio, must be > 0.
 ///     rate (float): Poisson sampling probability, in (0, 1].
 ///     batch_size_max (int): Maximum batch size.
 ///     dataset_size (int): Total dataset size.
@@ -67,7 +67,7 @@ pub fn py_truncated_poisson_gaussian_pld(
 /// Use cases: gradient accumulation (m microbatches) or parallel workers (K workers).
 ///
 /// Args:
-///     noise_multiplier (float): σ/Δ ratio, in [0.1, 1.2].
+///     noise_multiplier (float): σ/Δ ratio, must be > 0.
 ///     rate (float): Poisson sampling probability, in (0, 1].
 ///     microbatches (int): Number of independent samples, > 0.
 ///     config (DiscretizationConfig): Discretization configuration.
@@ -98,7 +98,7 @@ pub fn py_parallel_poisson_gaussian_pld(
 /// with a properly renormalized density, giving even tighter privacy bounds.
 ///
 /// Args:
-///     noise_multiplier (float): σ/Δ ratio, in [0.1, 1.2].
+///     noise_multiplier (float): σ/Δ ratio, must be > 0.
 ///     radius (float): Support half-width in sigma units, in [0.1, 100].
 ///     rate (float): Poisson sampling probability, in (0, 1].
 ///     config (DiscretizationConfig): Discretization configuration.

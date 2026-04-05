@@ -17,7 +17,7 @@ use super::{validate_noise_multiplier, validate_rate};
 ///
 /// # Arguments
 ///
-/// * `noise_multiplier` — σ/Δ, must be in \[0.1, 1.2\]
+/// * `noise_multiplier` — σ/Δ, must be > 0
 /// * `rate` — Poisson sampling probability q ∈ (0, 1)
 /// * `config` — discretization configuration
 ///
@@ -321,8 +321,8 @@ mod tests {
     #[test]
     fn test_poisson_rejects_bad_noise_multiplier() {
         let cfg = default_config();
-        assert!(poisson_gaussian_pld(0.05, 0.01, &cfg).is_err());
-        assert!(poisson_gaussian_pld(1.5, 0.01, &cfg).is_err());
+        assert!(poisson_gaussian_pld(1e-7, 0.01, &cfg).is_err());
+        assert!(poisson_gaussian_pld(-1.0, 0.01, &cfg).is_err());
     }
 
     #[test]

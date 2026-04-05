@@ -54,4 +54,25 @@ mod tests {
         let pld = identity_pld(&default_config()).unwrap();
         assert_eq!(pld.advantage(), 0.0);
     }
+
+    #[test]
+    fn test_identity_composed_with_gaussian() {
+        let config = default_config();
+        let id = identity_pld(&config).unwrap();
+        let g = crate::mechanisms::gaussian_pld(1.0, &config).unwrap();
+
+        // Identity is the neutral element: composing with Gaussian gives the same result.
+        let composed = id.self_compose(1).compose(&g.self_compose(1)).unwrap();
+        for &delta in &[1e-10, 1e-5, 0.1] {
+            let eps_g = g.epsilon_at(delta);
+            let eps_c = composed.epsilon_at(delta);
+            assert!(
+                (eps_c - eps_g).abs() < 1e-6,
+                "delta={}: gaussian eps={}, composed eps={}",
+                delta,
+                eps_g,
+                eps_c,
+            );
+        }
+    }
 }

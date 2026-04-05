@@ -9,10 +9,11 @@ from .. import opaque_accounting as _native
 
 from opaque_accounting.base import DpProcess, Pld
 from opaque_accounting.mechanisms.gaussian import Gaussian
+from opaque_accounting.mechanisms.nonprivate import NonPrivate
 from opaque_accounting.transformations.adaclip import AdaClip
 
 #: Mechanism types accepted by :func:`truncated_poisson`.
-_Inner = Gaussian | AdaClip
+_Inner = Gaussian | AdaClip | NonPrivate
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +46,8 @@ class TruncatedPoisson(DpProcess):
         native_cfg = config.to_native()
 
         match self.inner:
+            case NonPrivate() | Gaussian(noise_multiplier=0):
+                return _native.non_private_pld(native_cfg)
             case Gaussian(noise_multiplier=nm):
                 return _native.truncated_poisson_gaussian_pld(
                     nm,
@@ -53,6 +56,8 @@ class TruncatedPoisson(DpProcess):
                     self.dataset_size,
                     native_cfg,
                 )
+            case AdaClip(inner=NonPrivate() | Gaussian(noise_multiplier=0)):
+                return _native.non_private_pld(native_cfg)
             case AdaClip(inner=Gaussian()) as ac:
                 # Tight: z_eff combines both into one Gaussian.
                 return _native.truncated_poisson_gaussian_pld(
@@ -103,10 +108,10 @@ def truncated_poisson(
         training = step * 1000
         eps = training.epsilon_at(1e-5)
     """
-    if not isinstance(inner, (Gaussian, AdaClip)):
+    if not isinstance(inner, (Gaussian, AdaClip, NonPrivate)):
         raise TypeError(
-            f"truncated_poisson() requires a Gaussian or AdaClip inner mechanism, "
-            f"got {type(inner).__name__}."
+            f"truncated_poisson() requires a Gaussian, AdaClip, or NonPrivate "
+            f"inner mechanism, got {type(inner).__name__}."
         )
     return TruncatedPoisson(
         inner=inner,

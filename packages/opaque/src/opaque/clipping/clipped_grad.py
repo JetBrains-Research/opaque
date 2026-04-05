@@ -7,7 +7,12 @@ from typing import Any
 import torch
 from torch.func import grad_and_value
 
-from opaque.clipping._helpers import normalize_fun_to_return_aux, normalize_to_tuple
+from opaque.clipping._helpers import (
+    batch_size_from_args,
+    normalize_fun_to_return_aux,
+    normalize_to_tuple,
+    zero_grads_like,
+)
 from opaque.clipping.clipped_fun import clipped_fun
 from opaque.clipping.types import FixedClipState
 
@@ -166,7 +171,25 @@ def clipped_grad(
             - loss_aux: Per-example auxiliary data (if has_aux=True)
     """
     _validate_static_args(argnums, batch_argnums, normalize_by)
+    argnums_tuple = normalize_to_tuple(argnums)
+    batch_argnums_tuple = normalize_to_tuple(batch_argnums)
     loss_fn = normalize_fun_to_return_aux(loss_fn, has_aux)
+
+    def _empty_batch_response(args, state):
+        """Short-circuit for empty batches: zero grads + empty aux, no vmap."""
+        grads = zero_grads_like(args, argnums_tuple)
+        if return_aux or _force_grad_norms:
+            empty = torch.empty(0)
+            grad_aux = ClippedGradAux(
+                loss_values=empty if return_aux else None,
+                grad_norms=empty,
+                clipped_grad_norms=empty,
+                loss_aux=None,
+                clipping_rate=0.0,
+                batch_size=0,
+            )
+            return (grads, grad_aux), state
+        return grads, state
 
     # Use PyTorch's grad_and_value (returns (grad, value) or (grad, (value, aux)))
     grad_and_value_fn = grad_and_value(loss_fn, argnums=argnums, has_aux=True)
@@ -202,6 +225,9 @@ def clipped_grad(
     if not return_aux:
         # No aux, return wrapped directly with state-passing signature
         def grad_fn_wrapper(*args, state, **kwargs):
+            if batch_size_from_args(args, batch_argnums_tuple) == 0:
+                return _empty_batch_response(args, state)
+
             (result, returned_state) = clipped_grad_fn(*args, state=state, **kwargs)
             if _force_grad_norms:
                 if isinstance(result, tuple):
@@ -222,6 +248,9 @@ def clipped_grad(
     else:
         # Need to convert ClippedFunAux to ClippedGradAux
         def grad_fn_wrapper(*args, state, **kwargs):
+            if batch_size_from_args(args, batch_argnums_tuple) == 0:
+                return _empty_batch_response(args, state)
+
             (clipped_grads, aux), returned_state = clipped_grad_fn(
                 *args, state=state, **kwargs
             )

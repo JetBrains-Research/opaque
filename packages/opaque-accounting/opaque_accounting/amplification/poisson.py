@@ -9,11 +9,12 @@ from .. import opaque_accounting as _native
 
 from opaque_accounting.base import DpProcess, Pld
 from opaque_accounting.mechanisms.gaussian import Gaussian
+from opaque_accounting.mechanisms.nonprivate import NonPrivate
 from opaque_accounting.mechanisms.truncated_gaussian import TruncatedGaussian
 from opaque_accounting.transformations.adaclip import AdaClip
 
 #: Mechanism types accepted by :func:`poisson`.
-_Inner = Gaussian | TruncatedGaussian | AdaClip
+_Inner = Gaussian | TruncatedGaussian | AdaClip | NonPrivate
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +45,12 @@ class Poisson(DpProcess):
         native_cfg = config.to_native()
 
         match self.inner:
+            case (
+                NonPrivate()
+                | Gaussian(noise_multiplier=0)
+                | TruncatedGaussian(noise_multiplier=0)
+            ):
+                return _native.non_private_pld(native_cfg)
             case Gaussian(noise_multiplier=nm):
                 return _native.poisson_gaussian_pld(nm, self.sample_rate, native_cfg)
             case TruncatedGaussian(noise_multiplier=nm, radius=r):
@@ -58,6 +65,12 @@ class Poisson(DpProcess):
                     self.sample_rate,
                     native_cfg,
                 )
+            case AdaClip(
+                inner=NonPrivate()
+                | Gaussian(noise_multiplier=0)
+                | TruncatedGaussian(noise_multiplier=0)
+            ):
+                return _native.non_private_pld(native_cfg)
             case AdaClip() as ac:
                 # Non-Gaussian inner: compose separately
                 # amplified PLDs (valid but conservative).
@@ -118,10 +131,10 @@ def poisson(
         training = step * 1000
         eps = training.epsilon_at(1e-5)
     """
-    if not isinstance(inner, (Gaussian, TruncatedGaussian, AdaClip)):
+    if not isinstance(inner, (Gaussian, TruncatedGaussian, AdaClip, NonPrivate)):
         raise TypeError(
             f"poisson() requires a Gaussian, TruncatedGaussian, "
-            f"or AdaClip inner mechanism, got {type(inner).__name__}. "
+            f"AdaClip, or NonPrivate inner mechanism, got {type(inner).__name__}. "
             "Examples: acc.poisson(acc.gaussian(nm), rate), "
             "acc.poisson(acc.truncated_gaussian(nm, radius), rate)"
         )

@@ -7,9 +7,10 @@ No user action required - just import opaque and use clipped_grad with any
 supported HuggingFace model.
 
 Control with environment variables:
-- OPAQUE_SKIP_TRANSFORMERS_PATCHES: "all" or "vmap,kernels,kv_cache,batchify"
+- OPAQUE_SKIP_TRANSFORMERS_PATCHES: "all" or "vmap,kernels,kv_cache,batchify,data"
 - OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES: "all" or "shared,standard,gemma2,phi3"
 - OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES: "all" or "swiglu,rope,ce,fused_ce,lora"
+- OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES: "all" or "collator"
 
 Supported models:
 - GPT-2 (works without patches)
@@ -35,6 +36,7 @@ Training features:
 """
 
 from opaque._env import parse_skip_env
+from opaque.compat.transformers._data_patches import apply_data_patches
 from opaque.compat.transformers._kernel_patches import (
     apply_kernel_patches,
     is_kernel_patched,
@@ -85,6 +87,9 @@ def apply_transformers_patches() -> None:
     if "vmap" not in skip and "batchify" not in skip:
         apply_batchify_patches()
 
+    if "data" not in skip:
+        apply_data_patches()
+
     _is_transformers_patched = True
 
 
@@ -95,6 +100,7 @@ def is_transformers_patched() -> bool:
 
 __all__ = [
     "apply_transformers_patches",
+    "apply_data_patches",
     "apply_kernel_patches",
     "apply_vmap_patches",
     "is_transformers_patched",

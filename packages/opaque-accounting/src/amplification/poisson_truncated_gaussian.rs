@@ -34,7 +34,7 @@ const CENTER_SEARCH_POINTS: usize = 200;
 ///
 /// # Arguments
 ///
-/// * `noise_multiplier` — σ/Δ ratio, must be in \[0.1, 1.2\]
+/// * `noise_multiplier` — σ/Δ ratio, must be > 0
 /// * `radius` — support half-width in sigma units, in \[0.1, 100\]
 /// * `rate` — Poisson sampling probability q ∈ (0, 1)
 /// * `config` — discretization configuration
@@ -316,7 +316,7 @@ mod tests {
     #[test]
     fn test_poisson_truncated_rejects_bad_params() {
         let cfg = default_config();
-        assert!(poisson_truncated_gaussian_pld(0.05, 3.0, 0.01, &cfg).is_err()); // bad nm
+        assert!(poisson_truncated_gaussian_pld(1e-7, 3.0, 0.01, &cfg).is_err()); // bad nm
         assert!(poisson_truncated_gaussian_pld(0.5, 0.05, 0.01, &cfg).is_err()); // bad radius
         assert!(poisson_truncated_gaussian_pld(0.5, 3.0, 0.0, &cfg).is_err()); // bad rate
         assert!(poisson_truncated_gaussian_pld(0.5, 3.0, 1.5, &cfg).is_err()); // bad rate
