@@ -236,6 +236,22 @@ def identity_pld(
     """
     ...
 
+def non_private_pld(
+    config: DiscretizationConfig,
+) -> Pld:
+    """Compute the PLD for a non-private mechanism (ε = ∞, δ = 1).
+
+    All mass sits at +∞, representing a mechanism that provides no privacy
+    guarantee.  This is the annihilator for composition.
+
+    Args:
+        config: PLD discretization configuration.
+
+    Returns:
+        A PLD with all mass at +∞.
+    """
+    ...
+
 def truncated_gaussian_pld(
     noise_multiplier: float,
     radius: float,

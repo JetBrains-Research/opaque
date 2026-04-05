@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import warnings
 from dataclasses import dataclass
 
 from .. import opaque_accounting as _native
@@ -37,6 +38,8 @@ class Gaussian(DpProcess):
             pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         )
+        if self.noise_multiplier == 0:
+            return _native.non_private_pld(config.to_native())
         return _native.gaussian_pld(self.noise_multiplier, config.to_native())
 
 
@@ -48,7 +51,8 @@ def gaussian(noise_multiplier: float) -> Gaussian:
 
     Args:
         noise_multiplier: Noise standard deviation divided by sensitivity (σ/Δ).
-            Larger values = more privacy, less utility.
+            Larger values = more privacy, less utility.  ``0`` is accepted
+            (non-private: ε=∞).
 
     Returns:
         A :class:`Gaussian` process.
@@ -66,4 +70,11 @@ def gaussian(noise_multiplier: float) -> Gaussian:
         # Query-time discretization override
         eps = proc.epsilon_at(1e-5, discretization=1e-3)
     """
+    if 0 < noise_multiplier < 0.1:
+        warnings.warn(
+            f"noise_multiplier={noise_multiplier} is very small: epsilon bounds "
+            f"may explode and discretization grids may grow unboundedly, "
+            f"leading to slow or inaccurate PLD computation.",
+            stacklevel=2,
+        )
     return Gaussian(noise_multiplier)

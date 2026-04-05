@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import warnings
 from dataclasses import dataclass
 
 from .. import opaque_accounting as _native
@@ -41,6 +42,8 @@ class TruncatedGaussian(DpProcess):
             pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         )
+        if self.noise_multiplier == 0:
+            return _native.non_private_pld(config.to_native())
         return _native.truncated_gaussian_pld(
             self.noise_multiplier, self.radius, config.to_native()
         )
@@ -57,6 +60,7 @@ def truncated_gaussian(
 
     Args:
         noise_multiplier: Noise standard deviation divided by sensitivity (σ/Δ).
+            ``0`` is accepted (non-private: ε=∞).
         radius: Support half-width in sigma units (R).  The noise domain is
             [−R·σ, R·σ].  Typical values: 3–10 for meaningful bounding.
 
@@ -73,4 +77,11 @@ def truncated_gaussian(
         training = step * 1000
         eps = training.epsilon_at(1e-5)
     """
+    if 0 < noise_multiplier < 0.1:
+        warnings.warn(
+            f"noise_multiplier={noise_multiplier} is very small: epsilon bounds "
+            f"may explode and discretization grids may grow unboundedly, "
+            f"leading to slow or inaccurate PLD computation.",
+            stacklevel=2,
+        )
     return TruncatedGaussian(noise_multiplier, radius)

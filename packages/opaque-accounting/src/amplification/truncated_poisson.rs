@@ -23,7 +23,7 @@ use super::{validate_noise_multiplier, validate_rate};
 ///
 /// # Arguments
 ///
-/// * `noise_multiplier` — σ/Δ, must be in \[0.1, 1.2\]
+/// * `noise_multiplier` — σ/Δ, must be > 0
 /// * `rate` — Poisson sampling probability q ∈ (0, 1)
 /// * `batch_size_max` — maximum batch size B_max > 0
 /// * `dataset_size` — total dataset size n > 0

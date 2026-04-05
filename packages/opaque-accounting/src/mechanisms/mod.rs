@@ -7,21 +7,34 @@
 //! - [`truncated_gaussian`]: Truncated (renormalized) Gaussian mechanism
 //! - [`eps_delta`]: Fixed (ε, δ)-DP mechanism
 //! - [`identity`]: Identity (zero privacy loss) mechanism
+//! - [`non_private`]: Non-private mechanism (infinite privacy loss)
 
 mod eps_delta;
 mod gaussian;
 mod identity;
+mod non_private;
 mod truncated_gaussian;
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-/// Minimum supported noise multiplier.
+/// Hard floor for noise multiplier — prevents degenerate grids.
 ///
-/// Values below this threshold cause numerical instability in discretization
-/// (grid explosion, unreliable epsilon bounds).
-pub(crate) const MIN_NOISE_MULTIPLIER: f64 = 0.1;
+/// Extremely small but positive noise multipliers cause epsilon bounds to
+/// explode and discretization grids to grow unboundedly. This floor is a
+/// numerical safety net; the Python layer warns at a higher threshold.
+pub(crate) const MIN_NOISE_MULTIPLIER: f64 = 1e-6;
+
+pub(crate) fn validate_noise_multiplier(nm: f64) -> crate::error::Result<()> {
+    if nm < MIN_NOISE_MULTIPLIER {
+        return Err(crate::error::PldError::InvalidParameter(format!(
+            "noise_multiplier must be >= {}, got {}",
+            MIN_NOISE_MULTIPLIER, nm
+        )));
+    }
+    Ok(())
+}
 
 // ---------------------------------------------------------------------------
 // Re-exports
@@ -30,4 +43,5 @@ pub(crate) const MIN_NOISE_MULTIPLIER: f64 = 0.1;
 pub use eps_delta::eps_delta_pld;
 pub use gaussian::gaussian_pld;
 pub use identity::identity_pld;
+pub use non_private::non_private_pld;
 pub use truncated_gaussian::truncated_gaussian_pld;

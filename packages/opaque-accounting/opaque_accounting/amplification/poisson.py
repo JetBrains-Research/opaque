@@ -45,8 +45,8 @@ class Poisson(DpProcess):
         native_cfg = config.to_native()
 
         match self.inner:
-            case NonPrivate():
-                return _native.eps_delta_pld(0.0, 1.0, native_cfg)
+            case NonPrivate() | Gaussian(noise_multiplier=0) | TruncatedGaussian(noise_multiplier=0):
+                return _native.non_private_pld(native_cfg)
             case Gaussian(noise_multiplier=nm):
                 return _native.poisson_gaussian_pld(nm, self.sample_rate, native_cfg)
             case TruncatedGaussian(noise_multiplier=nm, radius=r):
@@ -61,8 +61,8 @@ class Poisson(DpProcess):
                     self.sample_rate,
                     native_cfg,
                 )
-            case AdaClip(inner=NonPrivate()):
-                return _native.eps_delta_pld(0.0, 1.0, native_cfg)
+            case AdaClip(inner=NonPrivate() | Gaussian(noise_multiplier=0) | TruncatedGaussian(noise_multiplier=0)):
+                return _native.non_private_pld(native_cfg)
             case AdaClip() as ac:
                 # Non-Gaussian inner: compose separately
                 # amplified PLDs (valid but conservative).

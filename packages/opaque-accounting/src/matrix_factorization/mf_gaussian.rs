@@ -123,7 +123,7 @@ pub fn mf_gaussian_pld(
 }
 
 /// X-space truncation → epsilon bounds for a Gaussian mechanism with
-/// arbitrary effective noise multiplier (not restricted to [0.1, 1.2]).
+/// arbitrary effective noise multiplier.
 fn mf_gaussian_epsilon_bounds(
     effective_noise_multiplier: f64,
     log_mass_truncation_bound: f64,

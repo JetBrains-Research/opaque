@@ -46,8 +46,8 @@ class TruncatedPoisson(DpProcess):
         native_cfg = config.to_native()
 
         match self.inner:
-            case NonPrivate():
-                return _native.eps_delta_pld(0.0, 1.0, native_cfg)
+            case NonPrivate() | Gaussian(noise_multiplier=0):
+                return _native.non_private_pld(native_cfg)
             case Gaussian(noise_multiplier=nm):
                 return _native.truncated_poisson_gaussian_pld(
                     nm,
@@ -56,6 +56,8 @@ class TruncatedPoisson(DpProcess):
                     self.dataset_size,
                     native_cfg,
                 )
+            case AdaClip(inner=NonPrivate() | Gaussian(noise_multiplier=0)):
+                return _native.non_private_pld(native_cfg)
             case AdaClip(inner=Gaussian()) as ac:
                 # Tight: z_eff combines both into one Gaussian.
                 return _native.truncated_poisson_gaussian_pld(

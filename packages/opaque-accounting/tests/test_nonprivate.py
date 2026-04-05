@@ -7,6 +7,7 @@ import pytest
 import opaque_accounting as acc
 from opaque_accounting.base import DpProcess
 from opaque_accounting.mechanisms import Identity, NonPrivate
+from opaque_accounting.mechanisms.gaussian import Gaussian
 
 # ── NonPrivate dataclass tests ──────────────────────────────────────
 
@@ -33,6 +34,40 @@ class TestNonPrivateConstructor:
     def test_returns_nonprivate(self):
         n = acc.nonprivate()
         assert isinstance(n, NonPrivate)
+
+    def test_gaussian_zero_returns_gaussian(self):
+        """gaussian(0) should return Gaussian with non-private PLD."""
+        g = acc.gaussian(0)
+        assert isinstance(g, Gaussian)
+        assert g.noise_multiplier == 0
+        assert g.epsilon_at(1e-5) == math.inf
+
+    def test_truncated_gaussian_zero_returns_truncated_gaussian(self):
+        """truncated_gaussian(0) should return TruncatedGaussian with non-private PLD."""
+        from opaque_accounting.mechanisms.truncated_gaussian import TruncatedGaussian
+
+        tg = acc.truncated_gaussian(0)
+        assert isinstance(tg, TruncatedGaussian)
+        assert tg.noise_multiplier == 0
+        assert tg.epsilon_at(1e-5) == math.inf
+
+    def test_poisson_gaussian_zero(self):
+        """poisson(gaussian(0)) should produce non-private PLD."""
+        step = acc.poisson(acc.gaussian(0), sample_rate=0.01)
+        assert step.epsilon_at(1e-5) == math.inf
+
+    def test_truncated_poisson_gaussian_zero(self):
+        """truncated_poisson(gaussian(0)) should produce non-private PLD."""
+        step = acc.truncated_poisson(
+            acc.gaussian(0), sample_rate=0.01, batch_size_cap=128, dataset_size=10_000,
+        )
+        assert step.epsilon_at(1e-5) == math.inf
+
+    def test_adaclip_gaussian_zero(self):
+        """adaclip(gaussian(0)) should produce non-private PLD."""
+        step = acc.adaclip(acc.gaussian(0), expected_batch_size=100)
+        assert step.epsilon_at(1e-5) == math.inf
+        assert step.effective_noise_multiplier == 0.0
 
 
 # ── PLD metrics ─────────────────────────────────────────────────────
@@ -93,12 +128,33 @@ class TestNonPrivateTruncatedPoisson:
         eps = step.epsilon_at(1e-5)
         assert eps == math.inf
 
+    def test_truncated_poisson_adaclip_nonprivate(self):
+        """Full chain: truncated_poisson(adaclip(nonprivate()))."""
+        step = acc.truncated_poisson(
+            acc.adaclip(acc.nonprivate(), expected_batch_size=100),
+            sample_rate=0.01,
+            batch_size_cap=128,
+            dataset_size=10_000,
+        )
+        eps = step.epsilon_at(1e-5)
+        assert eps == math.inf
+
 
 class TestNonPrivateParallelPoisson:
     """NonPrivate threads through ParallelPoisson."""
 
     def test_parallel_poisson_accepts_nonprivate(self):
         step = acc.parallel_poisson(acc.nonprivate(), sample_rate=0.01, num_workers=4)
+        eps = step.epsilon_at(1e-5)
+        assert eps == math.inf
+
+    def test_parallel_poisson_adaclip_nonprivate(self):
+        """Full chain: parallel_poisson(adaclip(nonprivate()))."""
+        step = acc.parallel_poisson(
+            acc.adaclip(acc.nonprivate(), expected_batch_size=100),
+            sample_rate=0.01,
+            num_workers=4,
+        )
         eps = step.epsilon_at(1e-5)
         assert eps == math.inf
 
@@ -119,6 +175,11 @@ class TestNonPrivateAdaClip:
         )
         eps = step.epsilon_at(1e-5)
         assert eps == math.inf
+
+    def test_effective_noise_multiplier_returns_zero(self):
+        """AdaClip(NonPrivate()).effective_noise_multiplier should return 0.0."""
+        ac = acc.adaclip(acc.nonprivate(), expected_batch_size=100)
+        assert ac.effective_noise_multiplier == 0.0
 
 
 # ── Composition ─────────────────────────────────────────────────────

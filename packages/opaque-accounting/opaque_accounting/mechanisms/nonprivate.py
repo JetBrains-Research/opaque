@@ -44,7 +44,7 @@ class NonPrivate(DpProcess):
             pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         )
-        return _native.eps_delta_pld(0.0, 1.0, config.to_native())
+        return _native.non_private_pld(config.to_native())
 
 
 def nonprivate() -> DpProcess:

@@ -39,7 +39,12 @@ class AdaClip(DpProcess):
         """Noise multiplier adjusted for the quantile estimator's privacy cost.
 
         Exact for Gaussian ``inner``; conservative for truncated Gaussian.
+        Returns ``0.0`` for :class:`NonPrivate` inner (no noise).
         """
+        if isinstance(self.inner, NonPrivate):
+            return 0.0
+        if self.inner.noise_multiplier == 0:
+            return 0.0
         sigma_b = self.expected_batch_size * self.fraction_noise_std
         s = _native.adaclip_sensitivity(self.inner.noise_multiplier, sigma_b)
         return 1.0 / s
@@ -65,8 +70,8 @@ class AdaClip(DpProcess):
         native_cfg = config.to_native()
 
         match self.inner:
-            case NonPrivate():
-                return _native.eps_delta_pld(0.0, 1.0, native_cfg)
+            case NonPrivate() | Gaussian(noise_multiplier=0) | TruncatedGaussian(noise_multiplier=0):
+                return _native.non_private_pld(native_cfg)
             case Gaussian():
                 # Tight: z_eff folds both into one Gaussian.
                 return _native.gaussian_pld(self.effective_noise_multiplier, native_cfg)

@@ -11,6 +11,7 @@ from opaque_accounting.amplification.poisson import Poisson
 from opaque_accounting.base import DpProcess, Pld
 from opaque_accounting.mechanisms.gaussian import Gaussian
 from opaque_accounting.mechanisms.nonprivate import NonPrivate
+from opaque_accounting.mechanisms.truncated_gaussian import TruncatedGaussian
 from opaque_accounting.transformations.adaclip import AdaClip
 
 
@@ -48,8 +49,8 @@ class ParallelPoisson(DpProcess):
         native_cfg = config.to_native()
 
         match self.inner:
-            case Poisson(inner=NonPrivate()):
-                return _native.eps_delta_pld(0.0, 1.0, native_cfg)
+            case Poisson(inner=NonPrivate() | Gaussian(noise_multiplier=0) | TruncatedGaussian(noise_multiplier=0)):
+                return _native.non_private_pld(native_cfg)
             case Poisson(
                 inner=Gaussian(noise_multiplier=nm),
                 sample_rate=rate,
@@ -60,6 +61,10 @@ class ParallelPoisson(DpProcess):
                     self.num_workers,
                     native_cfg,
                 )
+            case Poisson(
+                inner=AdaClip(inner=NonPrivate() | Gaussian(noise_multiplier=0) | TruncatedGaussian(noise_multiplier=0)),
+            ):
+                return _native.non_private_pld(native_cfg)
             case Poisson(
                 inner=AdaClip(inner=Gaussian()) as ac,
                 sample_rate=rate,
