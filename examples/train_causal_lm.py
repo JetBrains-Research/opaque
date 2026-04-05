@@ -1022,7 +1022,11 @@ def main():
         wandb.config.update({"target_delta": args.target_delta}, allow_val_change=True)
 
     # Noise injection — bind mechanism-specific parameters once.
-    if args.noise_mechanism == "truncated_gaussian":
+    # Chain: base mechanism → adaclip (optional) → amplification.
+    if args.noise_multiplier == 0:
+        mechanism = lambda nm: acc.nonprivate()
+        make_noise = gaussian_noise
+    elif args.noise_mechanism == "truncated_gaussian":
         mechanism = functools.partial(acc.truncated_gaussian, radius=args.noise_radius)
         make_noise = functools.partial(truncated_gaussian_noise, radius=args.noise_radius)
     else:
@@ -1030,17 +1034,18 @@ def main():
         make_noise = gaussian_noise
 
     if args.adaptive_clipping:
-        adaclip_mechanism = lambda nm, ebs=args.batch_size: acc.adaclip(
-            mechanism(nm), expected_batch_size=ebs,
+        _base_mechanism = mechanism
+        mechanism = lambda nm, ebs=args.batch_size: acc.adaclip(
+            _base_mechanism(nm), expected_batch_size=ebs,
         )
 
-    # Bind amplification type once — poisson vs parallel_poisson.
+    _unamplified = mechanism
     if use_parallel_poisson:
-        amplify = functools.partial(
-            acc.parallel_poisson, sample_rate=sample_rate, num_workers=world_size,
+        mechanism = lambda nm: acc.parallel_poisson(
+            _unamplified(nm), sample_rate=sample_rate, num_workers=world_size,
         )
     else:
-        amplify = functools.partial(acc.poisson, sample_rate=sample_rate)
+        mechanism = lambda nm: acc.poisson(_unamplified(nm), sample_rate=sample_rate)
 
     # Calibrate noise multiplier from target privacy budget.
     if args.noise_multiplier is not None:
@@ -1060,12 +1065,9 @@ def main():
         print("  (This may take 1-3 minutes...)")
 
         start_time = time.time()
-        budget = cal.epsilon_budget(args.target_epsilon, delta=args.target_delta)
         calibration = cal.calibrate(
-            budget,
-            (lambda nm: amplify(adaclip_mechanism(nm)) * total_steps)
-            if args.adaptive_clipping
-            else (lambda nm: amplify(mechanism(nm)) * total_steps),
+            cal.epsilon_budget(args.target_epsilon, delta=args.target_delta),
+            lambda nm: mechanism(nm) * total_steps,
             param_min=args.calibration_min,
             param_max=args.calibration_max,
             tolerance=args.calibration_tolerance,
@@ -1107,7 +1109,7 @@ def main():
 
     # Step-0 eval: log baseline metrics before any training
     initial_eval_loss = eval_loss(trainable_params)
-    initial_epsilon = accounting.epsilon_at(args.target_delta) if noise_multiplier > 0 else float('inf')
+    initial_epsilon = accounting.epsilon_at(args.target_delta)
     initial_noise_std = noise_multiplier * clip_state.sensitivity
     print(f"  → Step 0 eval: loss={initial_eval_loss:.4f}, ε={initial_epsilon:.3f}")
     if use_wandb:
@@ -1144,11 +1146,7 @@ def main():
             (input_ids,) = batch
 
             # === Accounting (data-independent, before execution) ===
-            if noise_multiplier > 0:
-                if args.adaptive_clipping:
-                    accounting |= amplify(adaclip_mechanism(noise_multiplier))
-                else:
-                    accounting |= amplify(mechanism(noise_multiplier))
+            accounting |= mechanism(noise_multiplier)
 
             batch_size = len(input_ids)
 
@@ -1229,11 +1227,8 @@ def main():
             if global_step % args.eval_steps == 0:
                 current_eval_loss = eval_loss(trainable_params)
                 # Cache PLD before eval so it serves as opaque boundary
-                if noise_multiplier > 0:
-                    accounting = acc.cached(accounting)
-                    epsilon = accounting.epsilon_at(args.target_delta)
-                else:
-                    epsilon = float('inf')
+                accounting = acc.cached(accounting)
+                epsilon = accounting.epsilon_at(args.target_delta)
 
                 metrics = {
                     "eval/loss": current_eval_loss,
@@ -1288,10 +1283,7 @@ def main():
             f"  Average clip rate: {sum(clip_rates_history) / len(clip_rates_history):.2%}"
         )
 
-    if noise_multiplier > 0:
-        final_epsilon = accounting.epsilon_at(args.target_delta)
-    else:
-        final_epsilon = float('inf')
+    final_epsilon = accounting.epsilon_at(args.target_delta)
     print("\nPrivacy:")
     if use_parallel_poisson:
         print(f"  Accounting: parallel_poisson (world_size={world_size})")

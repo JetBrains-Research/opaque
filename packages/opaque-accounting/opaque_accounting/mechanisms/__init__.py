@@ -36,6 +36,10 @@ from opaque_accounting.mechanisms.identity import (
     Identity,
     identity,
 )
+from opaque_accounting.mechanisms.nonprivate import (
+    NonPrivate,
+    nonprivate,
+)
 from opaque_accounting.mechanisms.truncated_gaussian import (
     TruncatedGaussian,
     truncated_gaussian,
@@ -46,6 +50,7 @@ __all__ = [
     "Gaussian",
     "EpsDelta",
     "Identity",
+    "NonPrivate",
     "BandMf",
     "BltMf",
     "DenseMf",
@@ -54,6 +59,7 @@ __all__ = [
     "gaussian",
     "eps_delta",
     "identity",
+    "nonprivate",
     "band_mf",
     "blt_mf",
     "dense_mf",
