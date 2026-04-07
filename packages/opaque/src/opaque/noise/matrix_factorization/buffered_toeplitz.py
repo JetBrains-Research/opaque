@@ -24,6 +24,7 @@ import numpy as np
 import torch
 
 from . import sensitivity, streaming_matrix, toeplitz
+from .noise import _internal_compute_dtype
 
 logger = logging.getLogger(__name__)
 
@@ -61,18 +62,22 @@ class _StreamingMatrixBuilder:
 
     def _init(self, abstract_value: torch.Tensor) -> torch.Tensor:
         num_buffers = self.buf_decay.shape[0]
-        dtype = torch.float64
+        dtype = _internal_compute_dtype(abstract_value.dtype)
         zero = torch.zeros_like(abstract_value, dtype=dtype)
         return zero.unsqueeze(0).expand(num_buffers, *zero.shape).clone()
 
     def _read(self, state: torch.Tensor) -> torch.Tensor:
-        output_scale = torch.tensor(self.output_scale, dtype=torch.float64)
+        output_scale = torch.tensor(
+            self.output_scale, dtype=state.dtype, device=state.device,
+        )
         return torch.tensordot(output_scale, state, dims=([0], [0]))
 
     def _update(
         self, state: torch.Tensor, next_rhs_value: torch.Tensor
     ) -> torch.Tensor:
-        buf_decay = torch.tensor(self.buf_decay, dtype=torch.float64)
+        buf_decay = torch.tensor(
+            self.buf_decay, dtype=state.dtype, device=state.device,
+        )
         bufs = torch.diag(buf_decay) @ state.reshape(len(buf_decay), -1)
         bufs = bufs.reshape(state.shape) + next_rhs_value
         return bufs

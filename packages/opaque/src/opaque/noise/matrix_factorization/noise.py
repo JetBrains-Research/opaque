@@ -46,6 +46,13 @@ class MFNoiseState(NoiseState):
     _rng_key: RngKey
 
 
+def _internal_compute_dtype(dtype: torch.dtype) -> torch.dtype:
+    """Use at least float32 for internal MF noise computations."""
+    if dtype in (torch.float16, torch.bfloat16):
+        return torch.float32
+    return dtype
+
+
 def _iid_normal_noise(
     target_tree: Any,
     stddev: float,
@@ -66,14 +73,14 @@ def _iid_normal_noise(
                 shape, dtype=noise_dtype, device=device, generator=generator
             )
         except RuntimeError as exc:
-            if "Expected a 'cuda' device type for generator" in str(exc):
+            if "device type for generator" in str(exc):
                 return torch.randn(shape, dtype=noise_dtype, generator=generator).to(
                     device=device
                 )
             raise
 
     def make_noise(t):
-        noise_dtype = dtype or t.dtype
+        noise_dtype = _internal_compute_dtype(dtype or t.dtype)
         noise = _randn_on_device(
             t.shape,
             noise_dtype=noise_dtype,
@@ -111,7 +118,7 @@ def _gaussian_linear_combination(
         try:
             noise = torch.randn(shape, dtype=dtype, device=device, generator=generator)
         except RuntimeError as exc:
-            if "Expected a 'cuda' device type for generator" in str(exc):
+            if "device type for generator" in str(exc):
                 noise = torch.randn(shape, dtype=dtype, generator=generator).to(
                     device=device
                 )
@@ -190,10 +197,11 @@ def _dense_mf_noise(
         matrix_row = noising[index] * stddev
 
         def add_noise(grad_tensor):
+            compute_dtype = _internal_compute_dtype(dtype or grad_tensor.dtype)
             noise = _gaussian_linear_combination(
                 matrix_row,
                 grad_tensor.shape,
-                dtype or grad_tensor.dtype,
+                compute_dtype,
                 grad_tensor.device,
                 generator=g,
             )

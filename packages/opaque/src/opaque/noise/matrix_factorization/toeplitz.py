@@ -75,15 +75,19 @@ def inverse_as_streaming_matrix(
     bands = coef.shape[0]
 
     def init(abstract_yi):
-        dtype = torch.promote_types(abstract_yi.dtype, coef.dtype)
+        dtype = abstract_yi.dtype
+        if dtype in (torch.float16, torch.bfloat16):
+            dtype = torch.float32
         zero = torch.zeros_like(abstract_yi, dtype=dtype)
         return zero.unsqueeze(0).expand(bands - 1, *zero.shape).clone()
 
     def _next(yi, state):
         if bands == 1:
-            return yi / coef[0], state
-        inner = torch.tensordot(coef[1:], state, dims=1)
-        xi = (yi - inner) / coef[0]
+            coef0 = coef[0].to(device=state.device, dtype=state.dtype)
+            return yi.to(state.dtype) / coef0, state
+        coef_local = coef.to(device=state.device, dtype=state.dtype)
+        inner = torch.tensordot(coef_local[1:], state, dims=1)
+        xi = (yi.to(state.dtype) - inner) / coef_local[0]
         new_state = torch.roll(state, 1, dims=0)
         new_state[0] = xi
         return xi, new_state
