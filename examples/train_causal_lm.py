@@ -1096,6 +1096,7 @@ def main():
 
     # Noise injection — bind mechanism-specific parameters once.
     # Chain: base mechanism → adaclip (optional) → amplification.
+    _num_groups = len(clip_norm.values) if isinstance(clip_norm, PerGroup) else 1
     if args.noise_multiplier == 0:
         mechanism = lambda nm: acc.nonprivate()
         make_noise = gaussian_noise
@@ -1103,12 +1104,17 @@ def main():
         mechanism = functools.partial(acc.truncated_gaussian, radius=args.noise_radius)
         make_noise = functools.partial(truncated_gaussian_noise, radius=args.noise_radius)
     else:
-        mechanism = acc.gaussian
+        # Per-group noise with K>1 groups requires accounting for the K-fold
+        # composition of independent Gaussian mechanisms.  In PLD space this
+        # is equivalent to a single Gaussian(nm / sqrt(K)).
+        if _num_groups > 1:
+            mechanism = lambda nm, k=_num_groups: acc.per_group_gaussian(nm, num_groups=k)
+        else:
+            mechanism = acc.gaussian
         make_noise = gaussian_noise
 
     if args.adaptive_clipping:
         _base_mechanism = mechanism
-        _num_groups = len(clip_norm.values) if isinstance(clip_norm, PerGroup) else 1
         mechanism = lambda nm, ebs=args.batch_size, ng=_num_groups: acc.adaclip(
             _base_mechanism(nm), expected_batch_size=ebs, num_groups=ng
         )

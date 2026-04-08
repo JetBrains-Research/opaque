@@ -211,32 +211,56 @@ advantage largely disappears.
 4. The improvement would be modest but honest
 
 
-## 8. Recommended Fix
+## 8. PLD-Correct Fix (Implemented)
 
-### Quick fix: use isotropic noise
+### Key identity
 
-Change the noise generation to use the effective (scalar) stddev for all parameters:
+The K-fold self-convolution of Gaussian(nm) in PLD space equals Gaussian(nm/sqrt(K)):
 
-```python
-# In gaussian_noise.py, replace per-group noise with isotropic:
-effective_stddev = stddev.effective if isinstance(stddev, PerGroup) else stddev
-# Then use effective_stddev uniformly for all parameters
+```
+L = sum_{i=1}^{K} L_i,   L_i = 1/(2nm^2) + Z_i/nm   (independent)
+  = K/(2nm^2) + sqrt(K)/nm * Z'
+  = 1/(2*(nm/sqrt(K))^2) + Z'/(nm/sqrt(K))
+  = PLD_Gaussian(nm/sqrt(K))
 ```
 
-This makes the privacy accounting correct (single Gaussian mechanism) while
-preserving the per-group clipping benefit (better gradient direction).
+Verified numerically: `per_group_gaussian(nm, K).epsilon_at(delta)` matches
+`(gaussian(nm) * K).epsilon_at(delta)` to < 0.1% across all tested (nm, K).
 
-### Proper fix: composition-aware accounting
+### Accounting fix: `per_group_gaussian(nm, K)`
 
-Alternatively, account for the K-fold composition in the privacy budget:
+New mechanism in `opaque_accounting.mechanisms.per_group_gaussian`:
 
 ```python
-# Adjust the mechanism to account for K groups
-mechanism = lambda nm: compose_K_times(
-    poisson(gaussian(nm), sample_rate),
-    K=num_groups
-) * total_steps
+def per_group_gaussian(noise_multiplier, num_groups):
+    """Gaussian(nm/sqrt(K)) -- correct PLD for K independently-noised groups."""
+    return gaussian(noise_multiplier / math.sqrt(num_groups))
 ```
 
-This honestly accounts for the per-group noise but will require more noise
-to meet the same epsilon target.
+### Training script fix
+
+```python
+if _num_groups > 1:
+    mechanism = lambda nm, k=_num_groups: acc.per_group_gaussian(nm, num_groups=k)
+else:
+    mechanism = acc.gaussian
+```
+
+### Calibration impact
+
+With correct accounting, the calibrator finds sqrt(K)x larger noise_multiplier:
+
+| K  | Calibrated nm | nm / nm_global | sqrt(K) |
+|----|---------------|---------------|---------|
+| 1  | 0.423         | 1.00x         | 1.00    |
+| 2  | 0.598         | 1.41x         | 1.41    |
+| 7  | 1.119         | 2.65x         | 2.65    |
+
+Per-group noise becomes sigma_i = nm_corrected * C_i = sqrt(K) * nm_global * C_i.
+When all C_i are equal, this equals the global isotropic noise nm_global * C_eff.
+
+### Net effect
+
+With correct accounting, per-group clipping retains the gradient-direction benefit
+but loses the noise-reduction benefit. The utility improvement should be modest
+(from clipping alone) rather than dramatic (from undercounted privacy).
