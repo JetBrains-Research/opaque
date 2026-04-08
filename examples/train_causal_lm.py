@@ -1302,16 +1302,16 @@ def main():
                         "perf/reserved_gb": perf["memory_reserved_gb"],
                         "perf/peak_gb": perf["memory_peak_gb"],
                     }
-                    # Per-group metrics: clipping norm, clip rate, grad norm, noise std
+                    # Per-group metrics under group/ section
                     if isinstance(step_clip_norm, PerGroup) and aux.group_norms is not None:
                         for gname in step_clip_norm.values:
                             gn_bound = step_clip_norm.values[gname]
-                            wb_metrics[f"group/{gname}/clipping_norm"] = gn_bound
+                            wb_metrics[f"group/clipping_norm/{gname}"] = gn_bound
                             gnorms = aux.group_norms[gname]
-                            wb_metrics[f"group/{gname}/grad_norm_mean"] = gnorms.mean().item()
+                            wb_metrics[f"group/grad_norm/{gname}"] = gnorms.mean().item()
                             gn_clipped = float((gnorms > gn_bound).sum().item())
-                            wb_metrics[f"group/{gname}/clip_rate"] = gn_clipped / max(1.0, float(batch_size))
-                            wb_metrics[f"group/{gname}/noise_std"] = noise_stddev.values[gname]
+                            wb_metrics[f"group/clip_rate/{gname}"] = gn_clipped / max(1.0, float(batch_size))
+                            wb_metrics[f"group/noise_std/{gname}"] = noise_stddev.values[gname]
                     wandb.log(wb_metrics, step=global_step)
 
                 print(
