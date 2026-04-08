@@ -264,3 +264,129 @@ When all C_i are equal, this equals the global isotropic noise nm_global * C_eff
 With correct accounting, per-group clipping retains the gradient-direction benefit
 but loses the noise-reduction benefit. The utility improvement should be modest
 (from clipping alone) rather than dramatic (from undercounted privacy).
+
+
+## 9. Optimal Noise Allocation (Mahalanobis Framework)
+
+### The freedom within the privacy constraint
+
+The Mahalanobis privacy constraint for per-group noise is:
+
+```
+Σ_i  C_i² / σ_i²  ≤  1/z²      (single inequality, K free variables)
+```
+
+Any allocation {σ_i} satisfying this gives **identical privacy** — Gaussian(z),
+no composition. The proportional allocation (σ_i ∝ C_i) is ONE valid choice.
+Isotropic (σ_i = z·C_eff) is another. The optimal depends on the objective.
+
+### Three valid allocations (same epsilon, different utility)
+
+| Strategy | σ_i | Optimizes | Total MSE |
+|----------|-----|-----------|-----------|
+| Isotropic | z·C_eff | Simplicity | 0.874 z² |
+| Equal-SNR (proportional) | z·√K·C_i | Max worst-group SNR | 0.874 z² |
+| **MSE-optimal** | **α·√C_i** | **Min total noise** | **0.730 z²** |
+
+The MSE-optimal allocation (σ ∝ √C_i) is 16% better than isotropic in total
+noise and gives 2.4× less noise to small-gradient groups, with zero composition
+penalty.  Isotropic and proportional-corrected have identical total MSE — they
+just distribute it differently.
+
+### Derivation
+
+Minimize total noise MSE = Σ d_i·σ_i² subject to Σ C_i²/σ_i² = 1/z².
+
+By Lagrange: σ_i ∝ C_i^{1/2} · d_i^{-1/4}
+
+For equal group dimensions (LoRA): σ_i ∝ √C_i.
+
+
+## 10. Relationship to Tan et al. (2025)
+
+### Paper details
+
+Tan et al., "Rethinking Layer-wise Gaussian Noise Injection: Bridging
+Implicit Objectives and Privacy Budget Allocation", arXiv:2509.04232.
+Submitted September 2025, **withdrawn** October 2025.
+
+Withdrawal note: "Errors were found in the experimental data preprocessing,
+which affected the reported results and conclusions."
+
+### Their framework (correct)
+
+Tan et al. derive the **same** Mahalanobis constraint (their Equation 3):
+
+```
+Σ s_i² / σ_i²  ≤  1/σ*²
+```
+
+justified via additivity of Rényi divergence (their Lemma 3.4).  They
+correctly include the √K factor in their sensitivity-proportional
+allocation (their Equation 6: σ_j² = K·s_j²·σ*²).  **Their theoretical
+framework is sound.**
+
+### Their five allocation strategies
+
+They catalog five strategies as solutions to constrained optimization:
+
+1. **Uniform**: σ_j² = (Σs_i²)·σ*².  Implicit objective: minimize variance of noise.
+2. **Sensitivity-proportional**: σ_j = √K·s_j·σ*.  Equal budget per group (p_j = 1/K).
+3. **Dimension-adjusted**: p_j = d_j/Σd_i.  Budget proportional to layer size.
+4. **Minimal total noise**: σ_j ∝ s_j^{1/2}·d_j^{-1/4}.  Our MSE-optimal.
+5. **SNR-Consistent** (proposed): σ_j ∝ s_j·d_j^{-1/4}.  Minimizes Σ 1/SNR_i.
+
+### Key insight: with equal dimensions, SNR-consistent = proportional
+
+For LoRA fine-tuning where all groups have the same dimensionality (d_i = d/K),
+the dimension terms cancel and:
+
+- SNR-consistent collapses to proportional: σ_j = √K·s_j·σ*
+- MSE-optimal collapses to: σ_j ∝ √s_j
+- The strategies only diverge when d_i vary significantly (full fine-tuning)
+
+### What went wrong
+
+1. **MedClip is data-dependent**: Their heuristic sensitivity assignment
+   `s_i = S·median(||g_i||) / Σ median(||g_i||)` uses gradient norm statistics
+   computed from the data.  This leaks information and requires privacy
+   accounting not present in the paper.
+
+2. **CIFAR-10 results contradict the claim**: Their SNR-Consistent (58.19%)
+   LOSES to standard Gaussian (59.30%) on CIFAR-10, undermining the main
+   empirical contribution.
+
+3. **The paper was withdrawn for "data preprocessing errors"**, suggesting
+   the accuracy numbers were incorrect.
+
+### What was NOT wrong
+
+The theoretical framework (Equation 3, Lemma 3.4, the five allocation
+strategies and their implicit objectives) appears mathematically correct.
+The Mahalanobis constraint is a valid single-mechanism analysis.
+
+
+## 11. Practical Recommendations
+
+### For LoRA fine-tuning (equal group dimensions)
+
+The strategies that matter most are:
+1. **Per-group clipping + MSE-optimal noise** (σ ∝ √C_i): 16% less noise, honest privacy
+2. **Per-group clipping + isotropic noise**: simplest, correct privacy
+3. **Global clipping + adaptive optimizer (Adam)**: per-parameter LR scaling is free post-processing
+
+### For full fine-tuning (varying dimensions)
+
+Tan et al.'s dimension-aware allocations become relevant.  The MSE-optimal
+allocation σ_i ∝ C_i^{1/2}·d_i^{-1/4} accounts for both sensitivity and
+dimensionality.
+
+### The practical winner
+
+**Global clipping + isotropic noise + Adam optimizer** remains the safest
+and simplest approach.  Adam's per-parameter second-moment scaling provides
+implicit per-layer noise adaptation as free post-processing.
+
+The MSE-optimal allocation within the Mahalanobis constraint is a modest but
+provably correct improvement that could be published — especially now that
+the closest prior work (Tan et al.) has been withdrawn.
