@@ -14,6 +14,7 @@ from opaque.clipping._helpers import (
 from opaque.clipping.clipped_grad import ClippedGradAux, clipped_grad
 from opaque.clipping.types import ClipState
 from opaque.random import RngKey, fold_in, generator_from_key
+from opaque.utils.per_group import PerGroup
 
 _DEFAULT_FRACTION_NOISE_STD = 0.05
 
@@ -58,9 +59,9 @@ class AdaptiveClipState(ClipState):
     """
 
     # -- public --
-    clipping_norm: float
+    clipping_norm: float | PerGroup
     normalize_by: float
-    next_clipping_norm: float
+    next_clipping_norm: float | PerGroup
     step: int
 
     # -- internal (config carried for distributed sync) --
@@ -72,12 +73,20 @@ class AdaptiveClipState(ClipState):
     _clipping_norm_max: float
 
     # -- internal (per-step counts for distributed aggregation) --
-    _num_clipped: float
+    # Scalar for global clipping, dict[str, float] for per-group clipping.
+    _num_clipped: float | dict[str, float]
     _batch_size: float
 
     def __post_init__(self):
         """Validate state values."""
-        if self.next_clipping_norm <= 0:
+        if isinstance(self.next_clipping_norm, PerGroup):
+            for gname, val in self.next_clipping_norm.values.items():
+                if val <= 0:
+                    raise ValueError(
+                        f"next_clipping_norm must be positive for all groups, "
+                        f"got {val} for group '{gname}'"
+                    )
+        elif self.next_clipping_norm <= 0:
             raise ValueError(
                 f"next_clipping_norm must be positive, got {self.next_clipping_norm}"
             )
@@ -137,7 +146,7 @@ def adaptive_clipped_grad(
     argnums: int | tuple[int, ...] = 0,
     has_aux: bool = False,
     *,
-    initial_clipping_norm: float = 0.1,
+    initial_clipping_norm: float | PerGroup = 0.1,
     target_quantile: float = 0.5,
     learning_rate: float = 0.2,
     clipping_norm_min: float = 0.01,
@@ -158,7 +167,8 @@ def adaptive_clipped_grad(
             ``(scalar, loss_aux)``.
         argnums: Which argument(s) to differentiate w.r.t.
         has_aux: If True, ``loss_fn`` returns ``(value, loss_aux)``.
-        initial_clipping_norm: Initial clipping threshold C_0.
+        initial_clipping_norm: Initial clipping threshold C_0.  When
+            ``PerGroup``, each group adapts independently.
         target_quantile: Target fraction of clipped gradients.
         learning_rate: Step size for geometric adaptation.
         clipping_norm_min: Minimum allowed clipping threshold.
@@ -260,7 +270,14 @@ def adaptive_clipped_grad(
         Clipping", NeurIPS 2021.
     """
     # Validate parameters
-    if initial_clipping_norm <= 0:
+    if isinstance(initial_clipping_norm, PerGroup):
+        for gname, val in initial_clipping_norm.values.items():
+            if val <= 0:
+                raise ValueError(
+                    f"initial_clipping_norm must be positive for all groups, "
+                    f"got {val} for group '{gname}'"
+                )
+    elif initial_clipping_norm <= 0:
         raise ValueError(
             f"initial_clipping_norm must be positive, got {initial_clipping_norm}"
         )
@@ -295,6 +312,13 @@ def adaptive_clipped_grad(
         "fraction_noise_std": fraction_noise_std,
     }
 
+    is_per_group = isinstance(initial_clipping_norm, PerGroup)
+
+    def _empty_num_clipped():
+        if is_per_group:
+            return {gn: 0.0 for gn in initial_clipping_norm.values}
+        return 0.0
+
     def _empty_batch_state(state: AdaptiveClipState) -> AdaptiveClipState:
         """Build new state for an empty batch: clip_norm preserved, step bumped."""
         return AdaptiveClipState(
@@ -308,7 +332,7 @@ def adaptive_clipped_grad(
             _target_quantile=config["target_quantile"],
             _clipping_norm_min=config["clipping_norm_min"],
             _clipping_norm_max=config["clipping_norm_max"],
-            _num_clipped=0.0,
+            _num_clipped=_empty_num_clipped(),
             _batch_size=0.0,
         )
 
@@ -370,9 +394,50 @@ def adaptive_clipped_grad(
             grads = result
             grad_norms = None
 
-        num_clipped = 0.0
         batch_size = aux.batch_size if aux is not None else 0
-        if grad_norms is not None:
+
+        if is_per_group and grad_norms is not None:
+            # --- Per-group adaptive path ---
+            current_pg = state.next_clipping_norm
+            group_norms = aux.group_norms if aux is not None else None
+
+            if group_norms is not None and batch_size > 0:
+                per_group_num_clipped: dict[str, float] = {}
+                new_values: dict[str, float] = {}
+                for i, gname in enumerate(sorted(current_pg.values.keys())):
+                    threshold = current_pg.values[gname]
+                    gnorms = group_norms[gname]
+                    nc = float((gnorms > threshold).sum().item())
+                    per_group_num_clipped[gname] = nc
+                    rate = nc / max(1.0, float(batch_size))
+
+                    # Independent noise per group: fold in both step and group index
+                    group_key = fold_in(fold_in(state._rng_key, state.step), i)
+                    generator = generator_from_key(group_key)
+                    noise = (
+                        torch.randn(1, generator=generator).item()
+                        * config["fraction_noise_std"]
+                    )
+                    noisy_rate = rate + noise
+
+                    new_values[gname] = _adaptive_clipping_norm_update(
+                        base_clipping_norm=threshold,
+                        noisy_clipping_rate=noisy_rate,
+                        target_quantile=config["target_quantile"],
+                        learning_rate=config["learning_rate"],
+                        clipping_norm_min=config["clipping_norm_min"],
+                        clipping_norm_max=config["clipping_norm_max"],
+                    )
+
+                new_clipping_norm = PerGroup(
+                    groups=current_pg.groups, values=new_values
+                )
+                num_clipped = per_group_num_clipped
+            else:
+                new_clipping_norm = state.next_clipping_norm
+                num_clipped = _empty_num_clipped()
+        elif grad_norms is not None:
+            # --- Scalar adaptive path (original) ---
             num_clipped = float((grad_norms > state.next_clipping_norm).sum().item())
             clipping_rate = aux.clipping_rate
 
@@ -393,6 +458,7 @@ def adaptive_clipped_grad(
             )
         else:
             new_clipping_norm = state.next_clipping_norm
+            num_clipped = _empty_num_clipped()
 
         new_state = AdaptiveClipState(
             clipping_norm=state.next_clipping_norm,
@@ -419,6 +485,7 @@ def adaptive_clipped_grad(
                 loss_aux=aux.loss_aux if aux is not None else None,
                 clipping_rate=aux.clipping_rate if aux is not None else None,
                 batch_size=batch_size,
+                group_norms=aux.group_norms if aux is not None else None,
             )
             return (grads, adaptive_aux), new_state
 
@@ -436,7 +503,7 @@ def adaptive_clipped_grad(
         _target_quantile=target_quantile,
         _clipping_norm_min=clipping_norm_min,
         _clipping_norm_max=clipping_norm_max,
-        _num_clipped=0.0,
+        _num_clipped=_empty_num_clipped(),
         _batch_size=0,
     )
 

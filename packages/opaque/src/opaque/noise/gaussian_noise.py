@@ -18,6 +18,8 @@ For synchronized noise in distributed training, pass the same key on every rank.
 For independent noise, derive a per-rank key with ``fold_in(key, rank)``.
 """
 
+from __future__ import annotations
+
 import dataclasses
 from collections.abc import Callable
 from typing import Any
@@ -29,6 +31,7 @@ from opaque.random import RngKey, generator_from_key
 from opaque.random import (
     fold_in as rng_fold_in,
 )
+from opaque.utils.per_group import PerGroup
 from opaque.utils.pytree import tree_map
 
 
@@ -48,8 +51,22 @@ class GaussianNoiseState(NoiseState):
     _rng_key: RngKey
 
 
+def _validate_stddev(stddev: float | PerGroup) -> None:
+    """Validate that stddev is non-negative (scalar or per-group)."""
+    if isinstance(stddev, PerGroup):
+        for gname, val in stddev.values.items():
+            if val < 0:
+                raise ValueError(
+                    f"stddev must be non-negative for all groups, "
+                    f"got {val} for group '{gname}'"
+                )
+    else:
+        if stddev < 0:
+            raise ValueError(f"stddev must be non-negative, got {stddev}")
+
+
 def gaussian_noise(
-    stddev: float,
+    stddev: float | PerGroup,
     *,
     key: RngKey,
 ) -> tuple[
@@ -65,6 +82,9 @@ def gaussian_noise(
     call via ``noise_fn(grads, state, stddev=new_stddev)`` — useful when the
     noise scale changes between steps (e.g., with adaptive clipping).
 
+    When ``stddev`` is a :class:`~opaque.utils.per_group.PerGroup`, each
+    parameter receives noise scaled by its group's stddev value.
+
     The noise function uses exactly the ``key`` you provide — no auto-detection
     of distributed state. For synchronized noise in DDP, pass the same key on
     every rank. For independent noise, derive a per-rank key::
@@ -76,6 +96,7 @@ def gaussian_noise(
     Args:
         stddev: Standard deviation of Gaussian noise
             (usually ``noise_multiplier * clip_state.sensitivity``).
+            When ``PerGroup``, each parameter group gets its own noise scale.
         key: Explicit RNG key for deterministic, functional randomness.
             Same key on all ranks → same noise (synchronized).
             ``fold_in(key, rank)`` → independent noise per rank.
@@ -104,8 +125,7 @@ def gaussian_noise(
         >>> rank = torch.distributed.get_rank()
         >>> noise_fn, state = gaussian_noise(stddev=1.1, key=fold_in(key(42), rank))
     """
-    if stddev < 0:
-        raise ValueError(f"stddev must be non-negative, got {stddev}")
+    _validate_stddev(stddev)
 
     if not isinstance(key, RngKey):
         raise TypeError(f"key must be RngKey, got {type(key)}")
@@ -120,11 +140,35 @@ def gaussian_noise(
     def noise_fn(grads, st, *, stddev=None):
         """Add Gaussian noise to gradients."""
         effective_stddev = stddev if stddev is not None else default_stddev
+
+        next_state = GaussianNoiseState(
+            _step_counter=st._step_counter + 1,
+            _rng_key=st._rng_key,
+        )
+
+        # Per-group noise path
+        if isinstance(effective_stddev, PerGroup):
+            if all(v == 0 for v in effective_stddev.values.values()):
+                return grads, next_state
+
+            step_key = rng_fold_in(st._rng_key, st._step_counter)
+            g = generator_from_key(step_key)
+
+            noisy = {}
+            for param_key, tensor in grads.items():
+                noise = torch.randn(
+                    tensor.shape,
+                    dtype=tensor.dtype,
+                    generator=g,
+                ).to(device=tensor.device)
+                group_std = effective_stddev.for_key(param_key)
+                noisy[param_key] = tensor + noise * group_std
+
+            return noisy, next_state
+
+        # Global (scalar) noise path
         if effective_stddev == 0:
-            return grads, GaussianNoiseState(
-                _step_counter=st._step_counter + 1,
-                _rng_key=st._rng_key,
-            )
+            return grads, next_state
 
         step_key = rng_fold_in(st._rng_key, st._step_counter)
         g = generator_from_key(step_key)
@@ -139,10 +183,7 @@ def gaussian_noise(
 
         noisy = tree_map(add_noise_to_tensor, grads)
 
-        return noisy, GaussianNoiseState(
-            _step_counter=st._step_counter + 1,
-            _rng_key=st._rng_key,
-        )
+        return noisy, next_state
 
     return noise_fn, state
 

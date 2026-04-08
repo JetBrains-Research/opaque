@@ -28,11 +28,15 @@ class AdaClip(DpProcess):
 
     Wraps an ``inner`` mechanism and adds the privacy cost of the noisy
     clipping-fraction query.  ``σ_b = expected_batch_size × fraction_noise_std``.
+
+    When ``num_groups > 1``, accounts for ``K`` independent quantile queries
+    (one per parameter group in per-group adaptive clipping).
     """
 
     inner: _Inner
     fraction_noise_std: float
     expected_batch_size: float
+    num_groups: int = 1
 
     @property
     def effective_noise_multiplier(self) -> float:
@@ -40,13 +44,18 @@ class AdaClip(DpProcess):
 
         Exact for Gaussian ``inner``; conservative for truncated Gaussian.
         Returns ``0.0`` for :class:`NonPrivate` inner (no noise).
+
+        When ``num_groups > 1``, the effective noise multiplier is lower
+        (more privacy consumed) due to ``K`` independent quantile queries.
         """
         if isinstance(self.inner, NonPrivate):
             return 0.0
         if self.inner.noise_multiplier == 0:
             return 0.0
         sigma_b = self.expected_batch_size * self.fraction_noise_std
-        s = _native.adaclip_sensitivity(self.inner.noise_multiplier, sigma_b)
+        s = _native.adaclip_sensitivity(
+            self.inner.noise_multiplier, sigma_b, self.num_groups
+        )
         return 1.0 / s
 
     @functools.lru_cache(maxsize=8)
@@ -77,10 +86,10 @@ class AdaClip(DpProcess):
             ):
                 return _native.non_private_pld(native_cfg)
             case Gaussian():
-                # Tight: z_eff folds both into one Gaussian.
+                # Tight: z_eff folds K quantile queries into one Gaussian.
                 return _native.gaussian_pld(self.effective_noise_multiplier, native_cfg)
             case _:
-                # Non-Gaussian: compose inner PLD with bit PLD.
+                # Non-Gaussian: compose inner PLD with K bit PLDs.
                 inner_pld = self.inner.pld(
                     discretization=discretization,
                     log_x_mass_truncation_bound=log_x_mass_truncation_bound,
@@ -89,6 +98,8 @@ class AdaClip(DpProcess):
                 )
                 sigma_b = self.expected_batch_size * self.fraction_noise_std
                 bit_pld = _native.gaussian_pld(2.0 * sigma_b, native_cfg)
+                if self.num_groups > 1:
+                    bit_pld = bit_pld * self.num_groups
                 return inner_pld.compose(bit_pld)
 
 
@@ -97,6 +108,7 @@ def adaclip(
     *,
     fraction_noise_std: float = 0.05,
     expected_batch_size: float,
+    num_groups: int = 1,
 ) -> AdaClip:
     """Account for the privacy cost of adaptive clipping.
 
@@ -109,6 +121,8 @@ def adaclip(
             (default 0.05).
         expected_batch_size: Data-independent batch size
             (``sample_rate × dataset_size`` under Poisson sampling).
+        num_groups: Number of independent quantile queries (default 1).
+            Set to ``K`` for per-group adaptive clipping with ``K`` groups.
 
     Returns:
         An :class:`AdaClip` process with an
@@ -124,12 +138,11 @@ def adaclip(
             sample_rate=0.01,
         )
 
-        # --- Per-step accounting (same constant) ---
-        step = acc.adaclip(
-            acc.gaussian(noise_multiplier),
-            expected_batch_size=expected_bs,
+        # --- Per-group adaptive (K=3 groups) ---
+        step = acc.poisson(
+            acc.adaclip(acc.gaussian(1.1), expected_batch_size=expected_bs, num_groups=3),
+            sample_rate=0.01,
         )
-        accountant = accountant | step
     """
     if not isinstance(inner, (Gaussian, TruncatedGaussian, NonPrivate)):
         raise TypeError(
@@ -145,9 +158,12 @@ def adaclip(
         raise ValueError(
             f"expected_batch_size must be positive, got {expected_batch_size}"
         )
+    if num_groups < 1:
+        raise ValueError(f"num_groups must be >= 1, got {num_groups}")
 
     return AdaClip(
         inner=inner,
         fraction_noise_std=fraction_noise_std,
         expected_batch_size=expected_batch_size,
+        num_groups=num_groups,
     )

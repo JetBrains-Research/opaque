@@ -1,7 +1,11 @@
 """Type definitions for clipping operations."""
 
+from __future__ import annotations
+
 from abc import ABC
 from dataclasses import dataclass
+
+from opaque.utils.per_group import PerGroup
 
 
 class ClipState(ABC):
@@ -26,12 +30,13 @@ class ClipState(ABC):
         >>> noisy_grads, noise_state = noise_fn(grads, noise_state)
     """
 
-    clipping_norm: float
+    clipping_norm: float | PerGroup
     """The raw per-example clipping norm used at the current step.
 
     For fixed clipping this is the constant L2 norm bound.
     For adaptive clipping this is the threshold that was actually applied
     to clip the gradients, **not** the updated threshold for the next step.
+    When ``PerGroup``, each group has its own norm bound.
     """
 
     normalize_by: float
@@ -43,14 +48,15 @@ class ClipState(ABC):
     """
 
     @property
-    def sensitivity(self) -> float:
+    def sensitivity(self) -> float | PerGroup:
         """L2 sensitivity of the clipped query.
 
         Equal to ``clipping_norm / normalize_by`` — the maximum L2 change
         in the output when one record is added or removed.
 
         This is the value you multiply by ``noise_multiplier`` to get
-        the required noise standard deviation.
+        the required noise standard deviation.  When ``clipping_norm`` is
+        ``PerGroup``, returns a ``PerGroup`` with per-group sensitivities.
         """
         return self.clipping_norm / self.normalize_by
 
@@ -63,7 +69,8 @@ class FixedClipState(ClipState):
     where the clipping norm remains constant throughout training.
 
     Attributes:
-        clipping_norm: The L2 norm bound after clipping.
+        clipping_norm: The L2 norm bound after clipping.  When ``PerGroup``,
+            each parameter group has its own norm bound.
         normalize_by: Divisor applied to the clipped sum (1.0 = no averaging).
 
     Example:
@@ -80,15 +87,23 @@ class FixedClipState(ClipState):
         >>> assert new_state.clipping_norm == 1.5  # Still the same
     """
 
-    clipping_norm: float
+    clipping_norm: float | PerGroup
     normalize_by: float = 1.0
 
     def __post_init__(self):
         """Validate state parameters."""
-        if self.clipping_norm <= 0:
-            raise ValueError(
-                f"clipping_norm must be positive, got {self.clipping_norm}"
-            )
+        if isinstance(self.clipping_norm, PerGroup):
+            for gname, val in self.clipping_norm.values.items():
+                if val <= 0:
+                    raise ValueError(
+                        f"clipping_norm must be positive for all groups, "
+                        f"got {val} for group '{gname}'"
+                    )
+        else:
+            if self.clipping_norm <= 0:
+                raise ValueError(
+                    f"clipping_norm must be positive, got {self.clipping_norm}"
+                )
         if self.normalize_by <= 0:
             raise ValueError(f"normalize_by must be positive, got {self.normalize_by}")
 

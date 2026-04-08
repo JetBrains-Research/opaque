@@ -164,6 +164,13 @@ def truncated_gaussian_noise(
         Differential Privacy," J. Privacy and Confidentiality, 14(1), 2024.
         https://arxiv.org/abs/2211.17230
     """
+    from opaque.utils.per_group import PerGroup
+
+    if isinstance(stddev, PerGroup):
+        raise TypeError(
+            "truncated_gaussian_noise does not support PerGroup stddev. "
+            "Use gaussian_noise for per-group noise, or pass a scalar stddev."
+        )
     if stddev < 0:
         raise ValueError(f"stddev must be non-negative, got {stddev}")
 

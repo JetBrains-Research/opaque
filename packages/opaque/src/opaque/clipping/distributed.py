@@ -18,6 +18,8 @@ from opaque.distributed import (
     register_sync_type,
     sync_object,
 )
+from opaque.random import fold_in, generator_from_key
+from opaque.utils.per_group import PerGroup
 
 from .adaptive import (
     AdaptiveClippedGradAux,
@@ -59,10 +61,61 @@ def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
     Sums ``_num_clipped`` and ``_batch_size`` across ranks, recomputes the
     global clipping rate, applies quantile noise, and updates
     ``next_clipping_norm``.
+
+    When ``_num_clipped`` is a dict (per-group adaptive clipping), each
+    group's count is summed independently and the per-group thresholds
+    are recomputed.
     """
     if not is_distributed():
         return state
 
+    is_per_group = isinstance(state._num_clipped, dict)
+
+    if is_per_group:
+        # Per-group path: sync batch_size and each group's count separately.
+        global_batch_size = reduce_scalar(float(state._batch_size), op="sum")
+
+        global_num_clipped: dict[str, float] = {}
+        for gname, local_count in state._num_clipped.items():
+            global_num_clipped[gname] = reduce_scalar(local_count, op="sum")
+
+        # Also assert normalize_by is equal across ranks
+        reduce_scalar(float(state.normalize_by), op="mean")  # validation
+
+        if global_batch_size == 0:
+            return replace(state, _batch_size=global_batch_size)
+
+        # Recompute per-group thresholds from globally aggregated counts
+        current_pg = state.clipping_norm
+        step_for_noise = max(0, state.step - 1)
+        new_values: dict[str, float] = {}
+        for i, gname in enumerate(sorted(current_pg.values.keys())):
+            global_rate = global_num_clipped[gname] / max(1.0, global_batch_size)
+            group_key = fold_in(fold_in(state._rng_key, step_for_noise), i)
+            generator = generator_from_key(group_key)
+            noise = (
+                torch.randn(1, generator=generator).item() * state._fraction_noise_std
+            )
+            noisy_rate = global_rate + noise
+
+            new_values[gname] = _adaptive_clipping_norm_update(
+                base_clipping_norm=current_pg.values[gname],
+                noisy_clipping_rate=noisy_rate,
+                target_quantile=state._target_quantile,
+                learning_rate=state._learning_rate,
+                clipping_norm_min=state._clipping_norm_min,
+                clipping_norm_max=state._clipping_norm_max,
+            )
+
+        new_clipping_norm = PerGroup(groups=current_pg.groups, values=new_values)
+        return replace(
+            state,
+            next_clipping_norm=new_clipping_norm,
+            _num_clipped=global_num_clipped,
+            _batch_size=global_batch_size,
+        )
+
+    # --- Scalar path (original) ---
     synced = sync_object(
         state,
         field_ops={

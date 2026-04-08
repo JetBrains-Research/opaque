@@ -50,7 +50,8 @@ from opaque.sampling import (
     poisson_collate,
 )
 from opaque._env import parse_skip_env
-from opaque.utils import make_functional, with_batch_dim
+from opaque.utils import make_functional, per_group, with_batch_dim
+from opaque.utils.per_group import PerGroup
 
 # =============================================================================
 # Auto-patching for compatible libraries
@@ -100,4 +101,6 @@ __all__ = [
     # Utils
     "make_functional",
     "with_batch_dim",
+    "PerGroup",
+    "per_group",
 ]
