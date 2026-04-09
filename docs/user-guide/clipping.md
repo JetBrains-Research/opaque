@@ -369,10 +369,10 @@ grad_fn, clip_state = clipped_grad(
 
 Each trainable parameter key (from `make_functional`) is matched by substring
 against the patterns. Every parameter must match exactly one pattern. Use
-`other=<value>` as a catch-all for unmatched parameters:
+`fallback=<value>` as a catch-all for unmatched parameters:
 
 ```python
-pg = per_group(params, self_attn=1.0, other=0.5)
+pg = per_group(params, self_attn=1.0, fallback=0.5)
 ```
 
 ### How it works

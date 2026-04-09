@@ -474,7 +474,7 @@ def parse_args():
         metavar="PATTERN=NORM",
         help="Per-group clipping norms as PATTERN=NORM pairs (e.g., self_attn=1.0 mlp=2.0). "
         "Each trainable param must match exactly one pattern substring. "
-        "Use 'other=NORM' as catch-all for unmatched params. "
+        "Use 'fallback=NORM' as catch-all for unmatched params. "
         "Compatible with --adaptive-clipping (each group adapts independently).",
     )
 
@@ -652,14 +652,19 @@ def parse_args():
     # Parse --per-group-clipping PATTERN=NORM pairs
     if args.per_group_clipping:
         parsed = {}
+        fallback_value = None
         for item in args.per_group_clipping:
             if "=" not in item:
                 parser.error(
                     f"--per-group-clipping values must be PATTERN=NORM, got '{item}'"
                 )
             pattern, value = item.split("=", 1)
-            parsed[pattern] = float(value)
+            if pattern == "fallback":
+                fallback_value = float(value)
+            else:
+                parsed[pattern] = float(value)
         args.per_group_clipping = parsed
+        args.per_group_clipping_fallback = fallback_value
 
     return args
 
@@ -1029,7 +1034,11 @@ def main():
 
     # Build clipping norm (scalar or per-group)
     if args.per_group_clipping:
-        clip_norm = per_group(trainable_params, **args.per_group_clipping)
+        clip_norm = per_group(
+            trainable_params,
+            fallback=args.per_group_clipping_fallback,
+            **args.per_group_clipping,
+        )
         if is_main_process:
             print("\nPer-group clipping norms:")
             for gname, val in clip_norm.values.items():

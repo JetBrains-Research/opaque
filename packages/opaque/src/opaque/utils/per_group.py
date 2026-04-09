@@ -11,6 +11,7 @@ and substring patterns::
 
     from opaque import per_group
     pg = per_group(params, self_attn=1.0, mlp=2.0)
+    pg = per_group(params, q_proj=1.0, fallback=0.5)  # catch-all
 """
 
 from __future__ import annotations
@@ -75,7 +76,7 @@ class PerGroup:
         return self.values[self.groups[key]]
 
 
-def per_group(params, /, patterns=None, **kwargs) -> PerGroup:
+def per_group(params, /, patterns=None, *, fallback=None, **kwargs) -> PerGroup:
     """Construct PerGroup from parameter keys and substring patterns.
 
     Each pattern is a substring matched against parameter keys.  Params
@@ -89,15 +90,18 @@ def per_group(params, /, patterns=None, **kwargs) -> PerGroup:
         # equivalent to:
         per_group(params, patterns={"layers.0": 0.5, "layers.1": 1.0})
 
-    The special pattern ``"other"`` acts as a catch-all: any parameter that
-    does not match an explicit pattern is assigned to the ``"other"`` group.
-    Without ``"other"``, unmatched parameters raise ``ValueError``.
+    The ``fallback`` parameter assigns a value to any parameter that does
+    not match an explicit pattern.  Without ``fallback``, unmatched
+    parameters raise ``ValueError``.
 
     Args:
         params: Parameter dict (flat or nested).  Keys are matched against
             patterns.
         patterns: Optional dict of ``{pattern: value}`` pairs.  Merged with
             ``**kwargs``.
+        fallback: Optional value for parameters that don't match any
+            explicit pattern.  Unmatched params are assigned to a group
+            named ``"fallback"``.
         **kwargs: Pattern-value pairs where the kwarg name is the substring
             pattern and the value is the per-group value (e.g. clipping norm).
 
@@ -106,12 +110,12 @@ def per_group(params, /, patterns=None, **kwargs) -> PerGroup:
 
     Raises:
         ValueError: If no patterns are provided, if a parameter matches zero
-            patterns (and no ``"other"`` fallback is given), if a parameter
+            patterns (and no ``fallback`` is given), if a parameter
             matches multiple patterns, or if any value is not positive.
 
     Examples:
         >>> per_group(params, self_attn=1.0, mlp=2.0)
-        >>> per_group(params, self_attn=1.0, other=0.5)  # catch-all fallback
+        >>> per_group(params, self_attn=1.0, fallback=0.5)  # catch-all
         >>> per_group(params, q_proj=0.5, k_proj=0.5, v_proj=0.5, o_proj=0.8,
         ...           gate_proj=1.0, up_proj=1.0, down_proj=1.0)
         >>> per_group(params, **{f'layers.{i}': norms[i] for i in range(32)})
@@ -121,7 +125,7 @@ def per_group(params, /, patterns=None, **kwargs) -> PerGroup:
         all_patterns.update(patterns)
     all_patterns.update(kwargs)
 
-    if not all_patterns:
+    if not all_patterns and fallback is None:
         raise ValueError("At least one pattern must be provided.")
 
     for pat, val in all_patterns.items():
@@ -130,23 +134,25 @@ def per_group(params, /, patterns=None, **kwargs) -> PerGroup:
                 f"Per-group value must be positive, got {val} for pattern '{pat}'."
             )
 
-    has_other = "other" in all_patterns
-    # 'other' is a catch-all, not a substring pattern.
-    explicit_patterns = {k: v for k, v in all_patterns.items() if k != "other"}
+    if fallback is not None:
+        if fallback <= 0:
+            raise ValueError(
+                f"Fallback value must be positive, got {fallback}."
+            )
 
     param_keys = _extract_keys(params)
 
     groups: dict[str, str] = {}
     for param_key in param_keys:
-        matches = [pat for pat in explicit_patterns if pat in param_key]
+        matches = [pat for pat in all_patterns if pat in param_key]
         if len(matches) == 0:
-            if has_other:
-                groups[param_key] = "other"
+            if fallback is not None:
+                groups[param_key] = "fallback"
                 continue
             raise ValueError(
                 f"Parameter '{param_key}' did not match any pattern. "
                 f"Available patterns: {list(all_patterns.keys())}. "
-                f"Add 'other=<value>' to catch unmatched parameters."
+                f"Use fallback=<value> to catch unmatched parameters."
             )
         if len(matches) > 1:
             raise ValueError(
@@ -161,6 +167,8 @@ def per_group(params, /, patterns=None, **kwargs) -> PerGroup:
         for pat, val in all_patterns.items()
         if pat in used_groups
     }
+    if fallback is not None and "fallback" in used_groups:
+        values["fallback"] = float(fallback)
     return PerGroup(groups=groups, values=values)
 
 

@@ -151,47 +151,47 @@ class TestPerGroupHelper:
         assert len(pg.values) == 4
         assert pg.for_key("layers.2.weight") == 3.0
 
-    def test_other_catches_unmatched(self):
-        """'other' pattern catches params that don't match any explicit pattern."""
+    def test_fallback_catches_unmatched(self):
+        """fallback catches params that don't match any explicit pattern."""
         params = {
             "layers.0.self_attn.q_proj.weight": torch.zeros(1),
             "layers.0.mlp.gate_proj.weight": torch.zeros(1),
             "layers.0.norm.weight": torch.zeros(1),
         }
-        pg = per_group(params, self_attn=1.0, mlp=2.0, other=0.5)
+        pg = per_group(params, self_attn=1.0, mlp=2.0, fallback=0.5)
         assert pg.groups["layers.0.self_attn.q_proj.weight"] == "self_attn"
         assert pg.groups["layers.0.mlp.gate_proj.weight"] == "mlp"
-        assert pg.groups["layers.0.norm.weight"] == "other"
-        assert pg.values["other"] == 0.5
+        assert pg.groups["layers.0.norm.weight"] == "fallback"
+        assert pg.values["fallback"] == 0.5
 
-    def test_other_not_in_values_when_unused(self):
-        """If all params match explicit patterns, 'other' is excluded from values."""
+    def test_fallback_not_in_values_when_unused(self):
+        """If all params match explicit patterns, fallback is excluded from values."""
         params = {
             "attn.weight": torch.zeros(1),
             "mlp.weight": torch.zeros(1),
         }
-        pg = per_group(params, attn=1.0, mlp=2.0, other=0.5)
-        assert "other" not in pg.values
+        pg = per_group(params, attn=1.0, mlp=2.0, fallback=0.5)
+        assert "fallback" not in pg.values
         assert pg.effective == pytest.approx((1.0**2 + 2.0**2) ** 0.5)
 
-    def test_other_effective_includes_other(self):
-        """Effective norm should include the 'other' group."""
+    def test_fallback_effective_includes_fallback(self):
+        """Effective norm should include the fallback group."""
         params = {
             "attn.weight": torch.zeros(1),
             "unknown.weight": torch.zeros(1),
         }
-        pg = per_group(params, attn=3.0, other=4.0)
+        pg = per_group(params, attn=3.0, fallback=4.0)
         assert pg.effective == pytest.approx(5.0)  # sqrt(9 + 16)
 
-    def test_no_match_error_suggests_other(self):
-        """Error message suggests adding 'other' when param unmatched."""
+    def test_no_match_error_suggests_fallback(self):
+        """Error message suggests using fallback when param unmatched."""
         params = {"weight": torch.zeros(1)}
-        with pytest.raises(ValueError, match="other"):
+        with pytest.raises(ValueError, match="fallback"):
             per_group(params, attn=1.0)
 
-    def test_other_only(self):
-        """'other' as the sole group catches everything."""
+    def test_fallback_only(self):
+        """fallback as the sole group catches everything."""
         params = {"a": torch.zeros(1), "b": torch.zeros(1)}
-        pg = per_group(params, other=1.0)
-        assert pg.groups == {"a": "other", "b": "other"}
-        assert pg.values == {"other": 1.0}
+        pg = per_group(params, fallback=1.0)
+        assert pg.groups == {"a": "fallback", "b": "fallback"}
+        assert pg.values == {"fallback": 1.0}
