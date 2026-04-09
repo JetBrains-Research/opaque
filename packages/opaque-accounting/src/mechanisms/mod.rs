@@ -4,7 +4,6 @@
 //! and returns a `PrivacyLossDistribution`. No structs, no traits.
 //!
 //! - [`gaussian`]: Gaussian mechanism (base noise for DP-SGD)
-//! - [`truncated_gaussian`]: Truncated (renormalized) Gaussian mechanism
 //! - [`eps_delta`]: Fixed (ε, δ)-DP mechanism
 //! - [`identity`]: Identity (zero privacy loss) mechanism
 //! - [`non_private`]: Non-private mechanism (infinite privacy loss)
@@ -13,7 +12,6 @@ mod eps_delta;
 mod gaussian;
 mod identity;
 mod non_private;
-mod truncated_gaussian;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -44,4 +42,3 @@ pub use eps_delta::eps_delta_pld;
 pub use gaussian::gaussian_pld;
 pub use identity::identity_pld;
 pub use non_private::non_private_pld;
-pub use truncated_gaussian::truncated_gaussian_pld;
