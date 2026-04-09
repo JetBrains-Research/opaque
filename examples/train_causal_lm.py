@@ -86,9 +86,9 @@ def _effective(value):
     return value.effective if isinstance(value, PerGroup) else value
 
 
-def _noise_stddev(clip_state, noise_multiplier):
+def _noise_stddev(clip_state, noise_multiplier, *, per_group=True):
     """Noise stddev: MSE-optimal per-group when available, isotropic otherwise."""
-    if isinstance(clip_state.clipping_norm, PerGroup):
+    if per_group and isinstance(clip_state.clipping_norm, PerGroup):
         return per_group_noise_stddev(clip_state, noise_multiplier)
     return noise_multiplier * clip_state.sensitivity
 
@@ -457,8 +457,8 @@ def parse_args():
         type=str,
         choices=["gaussian", "truncated_gaussian"],
         default="gaussian",
-        help="Noise mechanism: gaussian (standard) "
-             "or truncated_gaussian (renormalized, tighter accounting)",
+        help="Noise mechanism: gaussian (standard, unbounded) "
+             "or truncated_gaussian (renormalized, bounded support)",
     )
     dp_group.add_argument(
         "--noise-radius",
@@ -1103,16 +1103,16 @@ def main():
 
     # Noise injection — bind mechanism-specific parameters once.
     # Chain: base mechanism → adaclip (optional) → amplification.
+    # Truncated Gaussian noise provides bounded support but converges to
+    # Gaussian for high-dimensional tasks, so we use acc.gaussian() for accounting.
     _num_groups = len(clip_norm.values) if isinstance(clip_norm, PerGroup) else 1
     if args.noise_multiplier == 0:
         mechanism = lambda nm: acc.nonprivate()
         make_noise = gaussian_noise
     elif args.noise_mechanism == "truncated_gaussian":
-        mechanism = functools.partial(acc.truncated_gaussian, radius=args.noise_radius)
+        mechanism = acc.gaussian
         make_noise = functools.partial(truncated_gaussian_noise, radius=args.noise_radius)
     else:
-        # Per-group and global clipping both use gaussian(nm).
-        # sensitivity is always scalar (‖C‖₂/n), so accounting is identical.
         mechanism = acc.gaussian
         make_noise = gaussian_noise
 
@@ -1144,7 +1144,7 @@ def main():
         if use_parallel_poisson:
             print(f"  Accounting: parallel_poisson (world_size={world_size})")
         print(f"  Noise mechanism: {args.noise_mechanism}")
-        if args.noise_mechanism != "gaussian":
+        if args.noise_mechanism == "truncated_gaussian":
             print(f"  Noise radius: {args.noise_radius}σ")
         print(f"  δ = {args.target_delta:.2e} (n={global_train_size})")
         print(f"  Total steps: {total_steps}")

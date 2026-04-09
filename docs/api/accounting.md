@@ -124,7 +124,7 @@ sensitivity-1 queries. Base mechanism for DP-SGD.
 Poisson-subsampled mechanism (standard DP-SGD step). `sample_rate` is
 `batch_size / dataset_size`.
 
-- `inner` (Gaussian | TruncatedGaussian | AdaClip): Base mechanism
+- `inner` (Gaussian | AdaClip): Base mechanism
 - `sample_rate` (float): Probability of including each example, in (0, 1]
 
 ```python
@@ -164,24 +164,13 @@ step = acc.parallel_poisson(
 )
 ```
 
-### `truncated_gaussian(noise_multiplier, radius) -> DpProcess`
-
-Bounded Gaussian mechanism — truncated variant. The density is renormalized
-over `[-R*sigma, R*sigma]` (no point masses at boundaries). Tighter than
-the standard Gaussian.
-
-- `noise_multiplier` (float): Ratio of noise std to sensitivity.
-- `radius` (float): Bound radius in units of sigma (R ≥ 1).
-
-Composable with `poisson()` for subsampled accounting.
-
 ### `adaclip(inner, *, fraction_noise_std, expected_batch_size) -> DpProcess`
 
 Accounts for the extra privacy cost of adaptive clipping's noisy
 fraction query. Returns an `AdaClip` process composable with
 `poisson()` or `truncated_poisson()`.
 
-- `inner` (Gaussian | TruncatedGaussian): Base mechanism (from `gaussian()` or `truncated_gaussian()`)
+- `inner` (Gaussian): Base mechanism (from `gaussian()`)
 - `fraction_noise_std` (float): Noise std on the clipping fraction. Default: 0.05.
 - `expected_batch_size` (float): Expected batch size (``sample_rate × dataset_size``), used to compute the absolute noise std for the quantile query.
 

@@ -16,10 +16,9 @@ from .. import opaque_accounting as _native
 from opaque_accounting.base import DpProcess, Pld
 from opaque_accounting.mechanisms.gaussian import Gaussian
 from opaque_accounting.mechanisms.nonprivate import NonPrivate
-from opaque_accounting.mechanisms.truncated_gaussian import TruncatedGaussian
 
 #: Mechanism types accepted as AdaClip inner.
-_Inner = Gaussian | TruncatedGaussian | NonPrivate
+_Inner = Gaussian | NonPrivate
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +81,6 @@ class AdaClip(DpProcess):
             case (
                 NonPrivate()
                 | Gaussian(noise_multiplier=0)
-                | TruncatedGaussian(noise_multiplier=0)
             ):
                 return _native.non_private_pld(native_cfg)
             case Gaussian():
@@ -116,7 +114,7 @@ def adaclip(
     clipping-fraction query.
 
     Args:
-        inner: Base mechanism — ``gaussian()`` or ``truncated_gaussian()``.
+        inner: Base mechanism — ``gaussian()``.
         fraction_noise_std: Noise std on the clipping fraction
             (default 0.05).
         expected_batch_size: Data-independent batch size
@@ -144,10 +142,9 @@ def adaclip(
             sample_rate=0.01,
         )
     """
-    if not isinstance(inner, (Gaussian, TruncatedGaussian, NonPrivate)):
+    if not isinstance(inner, (Gaussian, NonPrivate)):
         raise TypeError(
-            f"adaclip() requires a Gaussian, "
-            f"TruncatedGaussian, or NonPrivate inner mechanism, "
+            f"adaclip() requires a Gaussian or NonPrivate inner mechanism, "
             f"got {type(inner).__name__}."
         )
     if fraction_noise_std <= 0:

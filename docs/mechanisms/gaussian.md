@@ -163,6 +163,32 @@ print(f"σ/Δ = {noise_multiplier:.4f}, achieved ε = {result.achieved:.4f}")
 - If $\varepsilon > 10$ after calibration, the privacy guarantee is weak.
   Consider more noise, fewer steps, or a larger dataset.
 
+## Bounded noise variant
+
+Opaque also provides `truncated_gaussian_noise()`, which samples from a
+Gaussian truncated to $[-R\sigma, R\sigma]$ with renormalized density. This
+gives bounded support while adding negligibly more noise than the standard
+Gaussian for typical radius values ($R \geq 3$). For high-dimensional
+tasks like model training, the truncated Gaussian converges to the standard
+Gaussian, so use `acc.gaussian()` for accounting.
+
+```python
+from opaque import truncated_gaussian_noise
+from opaque.random import key
+import opaque.accounting as acc
+
+# Noise injection: bounded support
+noise_fn, noise_state = truncated_gaussian_noise(
+    stddev=noise_multiplier * sensitivity, radius=3.0, key=key(42),
+)
+noisy_grads, noise_state = noise_fn(grads, noise_state)
+
+# Accounting
+step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate=0.01)
+training = step * 1000
+eps = training.epsilon_at(delta=1e-5)
+```
+
 ## References
 
 - **Abadi et al. (2016)** — [Deep Learning with Differential Privacy](https://arxiv.org/abs/1607.00133).

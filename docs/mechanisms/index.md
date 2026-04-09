@@ -10,17 +10,12 @@ across two families.
 Each training step adds fresh, independent noise to the clipped gradient sum.
 Simple and broadly applicable.
 
-| Mechanism | Noise distribution | Support | Privacy ordering |
-|-----------|--------------------|---------|-----------------|
-| [Gaussian](gaussian.md) | $\mathcal{N}(0, \sigma^2)$ | $(-\infty, +\infty)$ | Baseline |
-| [Truncated Gaussian](truncated-gaussian.md) | $\mathcal{N}(0, \sigma^2)$ renormalized | $[-R\sigma, R\sigma]$ | $\leq$ Gaussian |
+| Mechanism | Noise distribution | Support |
+|-----------|--------------------|----------|
+| [Gaussian](gaussian.md) | $\mathcal{N}(0, \sigma^2)$ | $(-\infty, +\infty)$ |
 
-**Privacy ordering** means: for the same noise multiplier $\sigma$ and radius $R$,
-
-$$\varepsilon_{\text{truncated}} \leq \varepsilon_{\text{Gaussian}}$$
-
-at every $\delta$. Truncated gives the tightest accounting; Gaussian the loosest.
-They converge as $R \to \infty$.
+For bounded noise support, use `truncated_gaussian_noise()` for noise injection
+while accounting with `acc.gaussian()`. See [Gaussian — Bounded noise variant](gaussian.md#bounded-noise-variant).
 
 ## Correlated noise (DP-FTRL)
 
@@ -40,9 +35,9 @@ privacy budget — at the cost of knowing the total number of steps in advance.
 ```
 Need correlated noise across steps (DP-FTRL)?
 │
-├─ No ─── Want tighter bounds from bounded noise?
-│         ├─ Yes → Truncated Gaussian (tightest independent bounds)
-│         └─ No  → Gaussian (standard DP-SGD, simplest)
+├─ No ─── Gaussian (standard DP-SGD)
+│         Use truncated_gaussian_noise() for bounded support if desired;
+│         accounting always uses acc.gaussian().
 │
 └─ Yes ── How many training steps?
           ├─ n < 100  → Dense MF (optimal but O(n²) memory)
@@ -51,10 +46,8 @@ Need correlated noise across steps (DP-FTRL)?
 ```
 
 For most DP-SGD workloads, **Gaussian** is the right starting point.
-Switch to **Truncated Gaussian** if you want ~5-15% tighter $\varepsilon$
-for free (same noise level, better accounting). Use an MF mechanism only
-when you need the privacy-utility improvement of correlated noise and are
-willing to fix the training length in advance.
+Use an MF mechanism only when you need the privacy-utility improvement
+of correlated noise and are willing to fix the training length in advance.
 
 ## Amplification compatibility
 
@@ -64,15 +57,13 @@ support all amplification types:
 | Mechanism | `poisson()` | `truncated_poisson()` | `cyclic_poisson()` |
 |-----------|:-----------:|:---------------------:|:-------------------:|
 | Gaussian | Yes | Yes | — |
-| Truncated Gaussian | Yes | — | — |
 | BandMF | — | — | Yes |
 | BLT | *internal* | — | — |
 | Dense MF | *internal* | — | — |
 
 - **`poisson()`**: Standard Poisson subsampling. Each example included
-  independently with probability $q$. Works with all three Gaussian variants.
-- **`truncated_poisson()`**: Poisson with a batch-size cap. Currently only
-  supports standard Gaussian as the inner mechanism.
+  independently with probability $q$.
+- **`truncated_poisson()`**: Poisson with a batch-size cap.
 - **`cyclic_poisson()`**: Cyclic decomposition specific to BandMF. Decomposes
   $n$ steps into $\lceil n/b \rceil$ independent groups.
 - **internal**: BLT and Dense MF handle multi-participation patterns (epochs,
@@ -86,7 +77,6 @@ import opaque.accounting as acc
 
 # --- Independent noise ---
 gauss     = acc.poisson(acc.gaussian(1.0), sample_rate=0.01) * 1000
-trunc     = acc.poisson(acc.truncated_gaussian(1.0, 5.0), sample_rate=0.01) * 1000
 
 # --- Correlated noise ---
 # Note: cyclic_poisson's sample_rate is a per-group Poisson probability
@@ -95,8 +85,7 @@ band      = acc.cyclic_poisson(acc.band_mf(1.0, 1000, bands=10), sample_rate=0.0
 blt       = acc.blt_mf(1.0, 1000)
 dense     = acc.dense_mf(1.0, 50, epochs=2)
 
-for name, proc in [("Gaussian", gauss), ("Rectified", rect),
-                    ("Truncated", trunc), ("BandMF", band),
+for name, proc in [("Gaussian", gauss), ("BandMF", band),
                     ("BLT", blt), ("Dense", dense)]:
     print(f"{name:12s}  ε = {proc.epsilon_at(1e-5):.4f}")
 ```

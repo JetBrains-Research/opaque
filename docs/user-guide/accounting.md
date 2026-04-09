@@ -76,8 +76,7 @@ eps = g.epsilon_at(delta=1e-5)
 
 Standard Poisson-subsampled mechanism. Each example is included independently
 with probability `sample_rate`. This provides privacy amplification through
-subsampling. Accepts `gaussian()`,
-`truncated_gaussian()`, or `adaclip()` as the inner mechanism.
+subsampling. Accepts `gaussian()` or `adaclip()` as the inner mechanism.
 
 ```python
 step = acc.poisson(acc.gaussian(0.8), sample_rate=256 / 50_000)
@@ -111,25 +110,6 @@ step = acc.parallel_poisson(
     acc.gaussian(0.8), sample_rate=0.01, num_workers=4,
 )
 ```
-
-### `acc.truncated_gaussian(noise_multiplier, radius)`
-
-Bounded Gaussian mechanism — truncated variant. The density is renormalized
-over `[-R*sigma, R*sigma]` (no point masses at boundaries). Tighter than
-`acc.gaussian()` because the bounded support limits worst-case hockey-stick
-divergence.
-
-Use this when adding noise via `truncated_gaussian_noise()`.
-Composable with `poisson()` for subsampled accounting.
-
-```python
-step = acc.poisson(acc.truncated_gaussian(1.1, radius=5.0), sample_rate=0.01)
-training = step * 1000
-eps = training.epsilon_at(delta=1e-5)  # tighter than acc.gaussian(1.1)
-```
-
-The truncated variant gives tighter ε than `acc.gaussian()`. For most
-workloads, prefer truncated when bounded noise is desired.
 
 ### `acc.adaclip(inner, *, fraction_noise_std, expected_batch_size)`
 

@@ -1,6 +1,6 @@
-"""Cross-validation for truncated Gaussian mechanism.
+"""Cross-validation for the truncated Gaussian Rust PLD.
 
-These tests verify the Rust-backed PLD for the truncated Gaussian using
+These tests verify the Rust-backed ``truncated_gaussian_pld`` using
 two independent strategies:
 
 1. **Numerical quadrature** — pure-Python δ(ε) computed via
@@ -22,7 +22,7 @@ The ``pytest.importorskip`` calls below gate the entire module automatically.
 Run with::
 
     uv run --group cross-validation pytest \
-        tests/test_bounded_gaussian_cross_validation.py -v
+        tests/test_truncated_gaussian.py -v
 """
 
 from __future__ import annotations
@@ -37,7 +37,13 @@ dp_accounting = pytest.importorskip("dp_accounting")
 from dp_accounting.pld import privacy_loss_distribution as pld_lib  # noqa: E402
 from scipy import integrate, stats  # noqa: E402
 
-import opaque_accounting as acc  # noqa: E402
+import opaque_accounting as _native  # noqa: E402
+
+
+def _make_pld(sigma: float, radius: float) -> _native.Pld:
+    """Create a truncated Gaussian PLD with default discretization."""
+    config = _native.DiscretizationConfig()
+    return _native.truncated_gaussian_pld(sigma, radius, config)
 
 # ============================================================================
 # Pure-Python δ(ε) via numerical quadrature
@@ -123,16 +129,6 @@ def _ref_gaussian_epsilon(sigma: float, delta: float) -> float:
     return pld.get_epsilon_for_delta(delta)
 
 
-def _ref_poisson_gaussian_epsilon(
-    sigma: float, delta: float, *, sample_rate: float, steps: int
-) -> float:
-    """Reference ε from dp_accounting for Poisson-subsampled Gaussian."""
-    pld = pld_lib.from_gaussian_mechanism(sigma, sampling_prob=sample_rate)
-    if steps > 1:
-        pld = pld.self_compose(steps)
-    return pld.get_epsilon_for_delta(delta)
-
-
 # ============================================================================
 # 1. Truncated Gaussian — quadrature validation
 # ============================================================================
@@ -150,8 +146,8 @@ class TestTruncatedGaussianQuadrature:
     @pytest.mark.parametrize("delta", [1e-3, 1e-5])
     def test_epsilon_vs_quadrature(self, sigma, radius, delta):
         """ε from Rust PLD matches ε implied by Python quadrature δ(ε)."""
-        proc = acc.truncated_gaussian(sigma, radius)
-        eps_rust = proc.epsilon_at(delta)
+        pld = _make_pld(sigma, radius)
+        eps_rust = pld.epsilon_at(delta)
 
         delta_quad = _truncated_gaussian_delta_worst_case(sigma, radius, eps_rust)
 
@@ -164,11 +160,11 @@ class TestTruncatedGaussianQuadrature:
     @pytest.mark.parametrize("radius", RADII)
     def test_delta_at_vs_quadrature(self, sigma, radius):
         """δ(ε) from Rust PLD matches Python quadrature directly."""
-        proc = acc.truncated_gaussian(sigma, radius)
-        eps_max = proc.epsilon_at(1e-8)
-        eps_mid = proc.epsilon_at(1e-4)
+        pld = _make_pld(sigma, radius)
+        eps_max = pld.epsilon_at(1e-8)
+        eps_mid = pld.epsilon_at(1e-4)
         for eps in [eps_mid, eps_max * 0.5]:
-            delta_rust = proc.delta_at(eps)
+            delta_rust = pld.delta_at(eps)
             delta_quad = _truncated_gaussian_delta_worst_case(sigma, radius, eps)
             assert delta_rust == pytest.approx(delta_quad, rel=0.02), (
                 f"TruncatedGaussian(σ={sigma}, R={radius}): "
@@ -195,7 +191,7 @@ class TestTruncatedGaussianConvergence:
     @pytest.mark.parametrize("sigma", CONVERGENCE_SIGMAS)
     @pytest.mark.parametrize("delta", CONVERGENCE_DELTAS)
     def test_epsilon_convergence(self, sigma, delta):
-        eps_trunc = acc.truncated_gaussian(sigma, LARGE_RADIUS).epsilon_at(delta)
+        eps_trunc = _make_pld(sigma, LARGE_RADIUS).epsilon_at(delta)
         eps_ref = _ref_gaussian_epsilon(sigma, delta)
 
         assert eps_trunc == pytest.approx(eps_ref, abs=0.01), (
@@ -205,34 +201,7 @@ class TestTruncatedGaussianConvergence:
 
 
 # ============================================================================
-# 3. Poisson-subsampled convergence — large R vs dp_accounting
-# ============================================================================
-
-POISSON_SIGMAS = [0.8, 1.0]
-POISSON_RATES = [0.001, 0.01]
-POISSON_STEPS = [100, 500]
-
-
-class TestPoissonTruncatedConvergence:
-    """Poisson(TruncatedGaussian(σ, R=50), q) * N ≈ Poisson(Gaussian(σ), q) * N."""
-
-    @pytest.mark.parametrize("sigma", POISSON_SIGMAS)
-    @pytest.mark.parametrize("q", POISSON_RATES)
-    @pytest.mark.parametrize("steps", POISSON_STEPS)
-    def test_poisson_convergence(self, sigma, q, steps):
-        eps_trunc = (
-            acc.poisson(acc.truncated_gaussian(sigma, LARGE_RADIUS), q) * steps
-        ).epsilon_at(1e-5)
-        eps_ref = _ref_poisson_gaussian_epsilon(sigma, 1e-5, sample_rate=q, steps=steps)
-
-        assert eps_trunc == pytest.approx(eps_ref, abs=0.01), (
-            f"Poisson(TruncGauss(σ={sigma}, R=50), q={q}) * {steps}: "
-            f"ε={eps_trunc:.6f} vs ref {eps_ref:.6f}"
-        )
-
-
-# ============================================================================
-# 4. Sanity checks — invariants that any correct implementation must satisfy
+# 3. Sanity checks — invariants that any correct implementation must satisfy
 # ============================================================================
 
 
@@ -243,9 +212,9 @@ class TestTruncatedGaussianInvariants:
     @pytest.mark.parametrize("radius", [2.0, 3.0, 5.0])
     def test_advantage_equals_delta_at_zero(self, sigma, radius):
         """advantage() == delta_at(0)."""
-        proc = acc.truncated_gaussian(sigma, radius)
-        adv = proc.advantage()
-        d0 = proc.delta_at(0.0)
+        pld = _make_pld(sigma, radius)
+        adv = pld.advantage()
+        d0 = pld.delta_at(0.0)
         assert adv == pytest.approx(d0, abs=1e-8), (
             f"TruncatedGaussian(σ={sigma}, R={radius}): "
             f"advantage={adv} != delta_at(0)={d0}"
@@ -255,10 +224,10 @@ class TestTruncatedGaussianInvariants:
     @pytest.mark.parametrize("radius", [2.0, 3.0, 5.0])
     def test_epsilon_delta_roundtrip(self, sigma, radius):
         """ε = epsilon_at(δ) → delta_at(ε) ≈ δ."""
-        proc = acc.truncated_gaussian(sigma, radius)
+        pld = _make_pld(sigma, radius)
         delta = 1e-5
-        eps = proc.epsilon_at(delta)
-        delta_back = proc.delta_at(eps)
+        eps = pld.epsilon_at(delta)
+        delta_back = pld.delta_at(eps)
         assert delta_back == pytest.approx(delta, abs=1e-6), (
             f"TruncatedGaussian(σ={sigma}, R={radius}): "
             f"δ={delta} → ε={eps} → δ'={delta_back}"
@@ -268,7 +237,7 @@ class TestTruncatedGaussianInvariants:
     def test_radius_monotonicity(self, sigma):
         """Larger R → higher ε (closer to unbounded Gaussian)."""
         radii = [1.0, 2.0, 3.0, 5.0, 10.0]
-        epsilons = [acc.truncated_gaussian(sigma, r).epsilon_at(1e-5) for r in radii]
+        epsilons = [_make_pld(sigma, r).epsilon_at(1e-5) for r in radii]
         for i in range(len(epsilons) - 1):
             assert epsilons[i] <= epsilons[i + 1] + 1e-6, (
                 f"truncated_gaussian(σ={sigma}): "
@@ -280,7 +249,7 @@ class TestTruncatedGaussianInvariants:
     def test_noise_monotonicity(self, radius):
         """Higher σ → lower ε (more noise = more private)."""
         sigmas = [0.3, 0.5, 0.8, 1.0]
-        epsilons = [acc.truncated_gaussian(s, radius).epsilon_at(1e-5) for s in sigmas]
+        epsilons = [_make_pld(s, radius).epsilon_at(1e-5) for s in sigmas]
         for i in range(len(epsilons) - 1):
             assert epsilons[i] >= epsilons[i + 1] - 1e-6, (
                 f"truncated_gaussian(R={radius}): "

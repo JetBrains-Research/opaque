@@ -10,11 +10,10 @@ from .. import opaque_accounting as _native
 from opaque_accounting.base import DpProcess, Pld
 from opaque_accounting.mechanisms.gaussian import Gaussian
 from opaque_accounting.mechanisms.nonprivate import NonPrivate
-from opaque_accounting.mechanisms.truncated_gaussian import TruncatedGaussian
 from opaque_accounting.transformations.adaclip import AdaClip
 
 #: Mechanism types accepted by :func:`poisson`.
-_Inner = Gaussian | TruncatedGaussian | AdaClip | NonPrivate
+_Inner = Gaussian | AdaClip | NonPrivate
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,18 +44,10 @@ class Poisson(DpProcess):
         native_cfg = config.to_native()
 
         match self.inner:
-            case (
-                NonPrivate()
-                | Gaussian(noise_multiplier=0)
-                | TruncatedGaussian(noise_multiplier=0)
-            ):
+            case NonPrivate() | Gaussian(noise_multiplier=0):
                 return _native.non_private_pld(native_cfg)
             case Gaussian(noise_multiplier=nm):
                 return _native.poisson_gaussian_pld(nm, self.sample_rate, native_cfg)
-            case TruncatedGaussian(noise_multiplier=nm, radius=r):
-                return _native.poisson_truncated_gaussian_pld(
-                    nm, r, self.sample_rate, native_cfg
-                )
             case AdaClip(inner=Gaussian()) as ac:
                 # Tight: Theorem 1 z_eff folds both into one
                 # Gaussian before amplification.
@@ -66,38 +57,13 @@ class Poisson(DpProcess):
                     native_cfg,
                 )
             case AdaClip(
-                inner=NonPrivate()
-                | Gaussian(noise_multiplier=0)
-                | TruncatedGaussian(noise_multiplier=0)
+                inner=NonPrivate() | Gaussian(noise_multiplier=0)
             ):
                 return _native.non_private_pld(native_cfg)
-            case AdaClip() as ac:
-                # Non-Gaussian inner: compose separately
-                # amplified PLDs (valid but conservative).
-                match ac.inner:
-                    case TruncatedGaussian(noise_multiplier=nm, radius=r):
-                        inner_pld = _native.poisson_truncated_gaussian_pld(
-                            nm,
-                            r,
-                            self.sample_rate,
-                            native_cfg,
-                        )
-                    case _:
-                        raise TypeError(
-                            f"Unsupported AdaClip inner: {type(ac.inner).__name__}"
-                        )
-                sigma_b = ac.expected_batch_size * ac.fraction_noise_std
-                bit_pld = _native.poisson_gaussian_pld(
-                    2.0 * sigma_b,
-                    self.sample_rate,
-                    native_cfg,
-                )
-                return inner_pld.compose(bit_pld)
             case _:
                 raise TypeError(
-                    "Poisson requires a Gaussian, TruncatedGaussian, "
-                    "or AdaClip inner mechanism, got "
-                    f"{type(self.inner).__name__}."
+                    "Poisson requires a Gaussian or AdaClip inner "
+                    f"mechanism, got {type(self.inner).__name__}."
                 )
 
 
@@ -113,8 +79,7 @@ def poisson(
     This is the **standard DP-SGD mechanism** used in most deep learning privacy work.
 
     Args:
-        inner: The base mechanism — :func:`gaussian`,
-            :func:`truncated_gaussian`, or an :func:`adaclip` transform.
+        inner: The base mechanism — :func:`gaussian` or an :func:`adaclip` transform.
         sample_rate: Probability of including each example (batch_size / dataset_size).
 
     Returns:
@@ -122,20 +87,14 @@ def poisson(
 
     Example::
 
-        # Standard Gaussian
         step = acc.poisson(acc.gaussian(1.1), sample_rate=0.01)
-
-        # Tighter bounds with truncated Gaussian
-        step = acc.poisson(acc.truncated_gaussian(1.1, 5.0), sample_rate=0.01)
-
         training = step * 1000
         eps = training.epsilon_at(1e-5)
     """
-    if not isinstance(inner, (Gaussian, TruncatedGaussian, AdaClip, NonPrivate)):
+    if not isinstance(inner, (Gaussian, AdaClip, NonPrivate)):
         raise TypeError(
-            f"poisson() requires a Gaussian, TruncatedGaussian, "
-            f"AdaClip, or NonPrivate inner mechanism, got {type(inner).__name__}. "
-            "Examples: acc.poisson(acc.gaussian(nm), rate), "
-            "acc.poisson(acc.truncated_gaussian(nm, radius), rate)"
+            f"poisson() requires a Gaussian, AdaClip, or NonPrivate "
+            f"inner mechanism, got {type(inner).__name__}. "
+            "Example: acc.poisson(acc.gaussian(nm), rate)"
         )
     return Poisson(inner=inner, sample_rate=sample_rate)

@@ -472,13 +472,13 @@ class TestAdaptivePerGroupAccounting:
         assert eps > 0
         assert math.isfinite(eps)
 
-    def test_adaclip_truncated_gaussian_num_groups(self):
-        """Test that truncated Gaussian path handles num_groups > 1."""
-        from opaque_accounting import adaclip, poisson, truncated_gaussian
+    def test_adaclip_gaussian_num_groups(self):
+        """Test that Gaussian path handles num_groups > 1."""
+        from opaque_accounting import adaclip, gaussian, poisson
 
         step = poisson(
             adaclip(
-                truncated_gaussian(1.0, radius=3.0),
+                gaussian(1.0),
                 expected_batch_size=256,
                 num_groups=3,
             ),
@@ -494,13 +494,13 @@ class TestAdaptivePerGroupAccounting:
         # gradient mechanism) so the bit-query cost dominates, and small
         # ebs + fraction_noise_std so each bit query is expensive.
         step_1g = adaclip(
-            truncated_gaussian(5.0, radius=3.0),
+            gaussian(5.0),
             expected_batch_size=5,
             fraction_noise_std=0.05,
             num_groups=1,
         )
         step_100g = adaclip(
-            truncated_gaussian(5.0, radius=3.0),
+            gaussian(5.0),
             expected_batch_size=5,
             fraction_noise_std=0.05,
             num_groups=100,

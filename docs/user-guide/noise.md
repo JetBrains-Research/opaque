@@ -144,14 +144,15 @@ noisy_grads, noise_state = noise_fn(grads, noise_state)
 The truncation uses an inverse-CDF method: for each gradient element, noise is
 sampled from a Gaussian centered on that element and truncated to the bounds.
 
-Pair with `acc.truncated_gaussian(noise_multiplier, radius)` for
-accounting.
+For high-dimensional tasks like model training, the truncated Gaussian
+converges to the standard Gaussian, so use `acc.gaussian(noise_multiplier)`
+for accounting.
 
 ### Which variant to use
 
-The truncated Gaussian gives tighter ε than `acc.gaussian()` because its
-bounded density limits worst-case hockey-stick divergence. For most
-workloads, prefer truncated when bounded noise is desired.
+The truncated Gaussian provides bounded support, which can be useful when
+gradient bounds are important for downstream optimization. For privacy
+accounting, use `acc.gaussian()` regardless of the noise variant.
 
 ## Matrix-factorization noise (DP-FTRL)
 
