@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from abc import ABC
 from dataclasses import dataclass
 

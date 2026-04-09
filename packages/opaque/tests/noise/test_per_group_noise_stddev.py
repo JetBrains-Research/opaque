@@ -44,7 +44,7 @@ class TestPerGroupNoiseStddev:
                         for g, c in cs.clipping_norm.values.items()
                     )
                     assert mahal == pytest.approx(1.0 / nm**2, rel=1e-10), (
-                        f"Mahalanobis constraint violated: {mahal} != {1/nm**2} "
+                        f"Mahalanobis constraint violated: {mahal} != {1 / nm**2} "
                         f"for values={values}, nm={nm}, n={n}"
                     )
 

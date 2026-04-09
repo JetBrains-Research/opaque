@@ -167,7 +167,6 @@ class TestParallelPoissonConstructor:
             acc.parallel_poisson("bad", sample_rate=0.01, num_workers=4)  # type: ignore[arg-type]
 
 
-
 # ── Bounded Gaussian amplification tests ─────────────────────────────
 
 

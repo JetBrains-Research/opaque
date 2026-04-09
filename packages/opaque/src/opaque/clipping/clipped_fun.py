@@ -404,7 +404,9 @@ def clipped_fun(
         if isinstance(norms, torch.Tensor) and batch_size > 0:
             if isinstance(clipping_norm, PerGroup) and group_norms_dict is not None:
                 # Per-group: a sample is "clipped" if ANY group exceeds its bound
-                any_clipped = torch.zeros(batch_size, dtype=torch.bool, device=norms.device)
+                any_clipped = torch.zeros(
+                    batch_size, dtype=torch.bool, device=norms.device
+                )
                 for gname, gnorms in group_norms_dict.items():
                     any_clipped = any_clipped | (gnorms > clipping_norm.values[gname])
                 num_clipped = float(any_clipped.sum().item())

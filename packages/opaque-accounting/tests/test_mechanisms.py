@@ -147,5 +147,3 @@ class TestIdentityDataclass:
 
     def test_equality(self):
         assert Identity() == Identity()
-
-

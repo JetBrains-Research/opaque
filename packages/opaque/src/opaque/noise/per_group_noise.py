@@ -86,10 +86,7 @@ def per_group_noise_stddev(clip_state: ClipState, noise_multiplier: float) -> Pe
     sum_c = sum(cn.values.values())
     return PerGroup(
         cn.groups,
-        {
-            k: noise_multiplier * math.sqrt(c * sum_c) / n
-            for k, c in cn.values.items()
-        },
+        {k: noise_multiplier * math.sqrt(c * sum_c) / n for k, c in cn.values.items()},
     )
 
 

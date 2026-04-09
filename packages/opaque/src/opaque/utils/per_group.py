@@ -136,9 +136,7 @@ def per_group(params, /, patterns=None, *, fallback=None, **kwargs) -> PerGroup:
 
     if fallback is not None:
         if fallback <= 0:
-            raise ValueError(
-                f"Fallback value must be positive, got {fallback}."
-            )
+            raise ValueError(f"Fallback value must be positive, got {fallback}.")
 
     param_keys = _extract_keys(params)
 
@@ -163,9 +161,7 @@ def per_group(params, /, patterns=None, *, fallback=None, **kwargs) -> PerGroup:
 
     used_groups = set(groups.values())
     values = {
-        pat: float(val)
-        for pat, val in all_patterns.items()
-        if pat in used_groups
+        pat: float(val) for pat, val in all_patterns.items() if pat in used_groups
     }
     if fallback is not None and "fallback" in used_groups:
         values["fallback"] = float(fallback)

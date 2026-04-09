@@ -117,6 +117,7 @@ class TestFixedClipStatePerGroup:
         state = FixedClipState(clipping_norm=pg, normalize_by=2.0)
         sens = state.sensitivity
         import math
+
         assert isinstance(sens, float)
         assert sens == pytest.approx(math.sqrt(2.0**2 + 4.0**2) / 2.0)
 
@@ -182,6 +183,7 @@ class TestClippedGradPerGroup:
         assert isinstance(sens, float)
         # sensitivity = sqrt(2^2 + 4^2) / 10 = sqrt(20) / 10
         import math
+
         assert sens == pytest.approx(math.sqrt(20) / 10)
 
     def test_per_group_with_microbatch(self):
@@ -268,4 +270,5 @@ class TestClippedGradPerGroup:
         assert isinstance(stddev, float)
         # sensitivity = sqrt(1^2 + 2^2) / 1 = sqrt(5)
         import math
+
         assert stddev == pytest.approx(1.1 * math.sqrt(5))
