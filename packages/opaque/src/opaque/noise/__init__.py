@@ -8,6 +8,7 @@ from opaque.noise.dense_mf_noise import dense_mf_noise
 from opaque.noise.gaussian_noise import GaussianNoiseState, gaussian_noise
 from opaque.noise.identity_mf_noise import identity_mf_noise
 from opaque.noise.matrix_factorization import MFNoiseState
+from opaque.noise.per_group_noise import per_group_noise_stddev
 from opaque.noise.truncated_gaussian_noise import truncated_gaussian_noise
 from opaque.noise.types import NoiseState
 
@@ -22,5 +23,6 @@ __all__ = [
     "identity_mf_noise",
     "MFNoiseState",
     "NoiseState",
+    "per_group_noise_stddev",
     "distributed",
 ]

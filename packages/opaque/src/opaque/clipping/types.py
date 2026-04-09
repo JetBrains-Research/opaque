@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from abc import ABC
 from dataclasses import dataclass
 
@@ -48,16 +49,38 @@ class ClipState(ABC):
     """
 
     @property
-    def sensitivity(self) -> float | PerGroup:
-        """L2 sensitivity of the clipped query.
+    def sensitivity(self) -> float:
+        r"""L2 sensitivity of the clipped query (always a scalar).
 
-        Equal to ``clipping_norm / normalize_by`` — the maximum L2 change
+        For scalar ``clipping_norm`` this is simply ``clipping_norm / normalize_by``.
+
+        For per-group clipping with group norms :math:`C_1, \dots, C_K`,
+        the L2 sensitivity of the full parameter vector is the norm of the
+        per-group bounds:
+
+        .. math::
+
+            \Delta_2 = \frac{\lVert C \rVert_2}{n}
+                     = \frac{\sqrt{\sum_{i=1}^{K} C_i^2}}{n}
+
+        This is always a **scalar** — it represents the maximum L2 change
         in the output when one record is added or removed.
 
-        This is the value you multiply by ``noise_multiplier`` to get
-        the required noise standard deviation.  When ``clipping_norm`` is
-        ``PerGroup``, returns a ``PerGroup`` with per-group sensitivities.
+        Multiply by ``noise_multiplier`` to get the isotropic noise standard
+        deviation:
+
+        .. math::
+
+            \sigma = \text{nm} \cdot \Delta_2
+
+        Accounting is simply ``gaussian(nm)`` — no composition penalty,
+        regardless of the number of groups.
+
+        See :func:`~opaque.noise.per_group_noise_stddev` for an alternative
+        that allocates less total noise by varying σ across groups.
         """
+        if isinstance(self.clipping_norm, PerGroup):
+            return self.clipping_norm.effective / self.normalize_by
         return self.clipping_norm / self.normalize_by
 
 

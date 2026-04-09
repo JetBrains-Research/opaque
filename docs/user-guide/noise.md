@@ -83,6 +83,33 @@ When `stddev=0`, `gaussian_noise` returns a no-op function that passes
 gradients through unchanged. This is useful for toggling DP on and off
 without changing the training loop.
 
+### Per-group noise
+
+When using [per-group clipping](clipping.md#per-group-clipping), the default
+approach is isotropic noise — the same σ for every parameter:
+
+```python
+stddev = noise_multiplier * clip_state.sensitivity
+noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
+```
+
+`clip_state.sensitivity` returns a scalar $\lVert C \rVert_2 / n$ even with
+per-group clipping norms, so this works without changes.
+
+For an MSE-optimal allocation that varies σ across groups, use
+`per_group_noise_stddev`:
+
+```python
+from opaque.noise import per_group_noise_stddev
+
+stddev = per_group_noise_stddev(clip_state, noise_multiplier)
+noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
+```
+
+This returns a `PerGroup` of per-group standard deviations with
+$\sigma_i \propto \sqrt{C_i}$. Groups with smaller clipping norms get less
+noise. Privacy accounting is identical — just `gaussian(nm)`.
+
 ## Bounded Gaussian noise
 
 Standard Gaussian noise has unbounded support, which means privatized outputs

@@ -102,8 +102,8 @@ class TestAdaptivePerGroupBasic:
         assert grads["a"].shape == params["a"].shape
         assert grads["b"].shape == params["b"].shape
 
-    def test_per_group_sensitivity_is_per_group(self):
-        """Test that clip_state.sensitivity returns PerGroup."""
+    def test_per_group_sensitivity_is_scalar(self):
+        """Test that clip_state.sensitivity returns scalar L2 norm."""
         loss_fn = _make_per_group_loss_fn()
         params = {"a": torch.randn(10), "b": torch.randn(5)}
         pg = _make_per_group(params, a_norm=1.0, b_norm=2.0)
@@ -117,9 +117,10 @@ class TestAdaptivePerGroupBasic:
         )
 
         sensitivity = clip_state.sensitivity
-        assert isinstance(sensitivity, PerGroup)
-        assert abs(sensitivity.values["a"] - 0.1) < 1e-6
-        assert abs(sensitivity.values["b"] - 0.2) < 1e-6
+        assert isinstance(sensitivity, float)
+        # sqrt(1^2 + 2^2) / 10 = sqrt(5) / 10
+        import math
+        assert abs(sensitivity - math.sqrt(5) / 10) < 1e-6
 
 
 class TestAdaptivePerGroupConvergence:

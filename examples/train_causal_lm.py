@@ -86,29 +86,6 @@ def _effective(value):
     return value.effective if isinstance(value, PerGroup) else value
 
 
-def _compute_noise_stddev(noise_multiplier, sensitivity, allocation):
-    """Compute noise stddev from sensitivity using the chosen allocation strategy.
-
-    Args:
-        noise_multiplier: Scalar noise multiplier (nm).
-        sensitivity: Per-group sensitivity (PerGroup) or scalar.
-        allocation: One of "proportional", "optimal", "isotropic", "global".
-
-    Returns:
-        PerGroup or float noise standard deviation.
-    """
-    if not isinstance(sensitivity, PerGroup) or allocation == "global":
-        return noise_multiplier * sensitivity
-    if allocation == "optimal":
-        # MSE-optimal: σ_i = nm * √(S_i * Σ S_j).  Accounting = gaussian(nm).
-        return sensitivity.optimal_noise_stddev(noise_multiplier)
-    if allocation == "isotropic":
-        # Isotropic: same σ for all params.  Accounting = gaussian(nm).
-        return noise_multiplier * sensitivity.effective
-    # proportional: σ_i = nm * S_i.  Accounting = per_group_gaussian(nm, K).
-    return noise_multiplier * sensitivity
-
-
 def _select_device(local_rank: int | None = None) -> tuple[torch.device, str]:
     """Select best available device with user-facing label."""
     if torch.cuda.is_available():
@@ -492,17 +469,6 @@ def parse_args():
         "Each trainable param must match exactly one pattern substring. "
         "Use 'other=NORM' as catch-all for unmatched params. "
         "Compatible with --adaptive-clipping (each group adapts independently).",
-    )
-    dp_group.add_argument(
-        "--noise-allocation",
-        type=str,
-        default="proportional",
-        choices=["proportional", "optimal", "isotropic"],
-        help="Noise allocation strategy for per-group clipping. "
-        "'proportional': σ_i ∝ C_i (uniform SNR, needs √K accounting correction). "
-        "'optimal': σ_i ∝ √C_i (MSE-optimal, same accounting as global). "
-        "'isotropic': σ = C_eff for all (same noise everywhere). "
-        "Only affects per-group clipping; ignored for global clipping.",
     )
 
     # Model precision
@@ -1063,7 +1029,6 @@ def main():
                 count = sum(1 for g in clip_norm.groups.values() if g == gname)
                 print(f"  {gname}: {val:.3f} ({count} params)")
             print(f"  Effective (for accounting): {clip_norm.effective:.3f}")
-            print(f"  Noise allocation: {args.noise_allocation}")
     else:
         clip_norm = args.clipping_norm
 
@@ -1132,7 +1097,6 @@ def main():
     # Noise injection — bind mechanism-specific parameters once.
     # Chain: base mechanism → adaclip (optional) → amplification.
     _num_groups = len(clip_norm.values) if isinstance(clip_norm, PerGroup) else 1
-    _noise_allocation = args.noise_allocation if _num_groups > 1 else "global"
     if args.noise_multiplier == 0:
         mechanism = lambda nm: acc.nonprivate()
         make_noise = gaussian_noise
@@ -1140,13 +1104,9 @@ def main():
         mechanism = functools.partial(acc.truncated_gaussian, radius=args.noise_radius)
         make_noise = functools.partial(truncated_gaussian_noise, radius=args.noise_radius)
     else:
-        # Accounting depends on noise allocation strategy:
-        # - "proportional" (σ∝C_i): K-fold composition → per_group_gaussian(nm, K)
-        # - "optimal" (σ∝√C_i) / "isotropic": single mechanism → gaussian(nm)
-        if _noise_allocation == "proportional" and _num_groups > 1:
-            mechanism = lambda nm, k=_num_groups: acc.per_group_gaussian(nm, num_groups=k)
-        else:
-            mechanism = acc.gaussian
+        # Per-group and global clipping both use gaussian(nm).
+        # sensitivity is always scalar (‖C‖₂/n), so accounting is identical.
+        mechanism = acc.gaussian
         make_noise = gaussian_noise
 
     if args.adaptive_clipping:
@@ -1210,7 +1170,7 @@ def main():
 
     # Noise function — created once; per-call stddev override tracks adaptive clipping_norm.
     noise_fn, noise_state = make_noise(
-        stddev=_compute_noise_stddev(noise_multiplier, clip_state.sensitivity, _noise_allocation),
+        stddev=noise_multiplier * clip_state.sensitivity,
         key=key(args.seed),
     )
 
@@ -1232,7 +1192,7 @@ def main():
     # Step-0 eval: log baseline metrics before any training
     initial_eval_loss = eval_loss(trainable_params)
     initial_epsilon = accounting.epsilon_at(args.target_delta)
-    initial_noise_std = _compute_noise_stddev(noise_multiplier, clip_state.sensitivity, _noise_allocation)
+    initial_noise_std = noise_multiplier * clip_state.sensitivity
     print(f"  → Step 0 eval: loss={initial_eval_loss:.4f}, ε={initial_epsilon:.3f}")
     if use_wandb:
         wandb.log({
@@ -1293,7 +1253,7 @@ def main():
                     clip_state, aux = sync(clip_state, aux)
                     sum_gradients_(grads_tuple)
 
-                noise_stddev = _compute_noise_stddev(noise_multiplier, clip_state.sensitivity, _noise_allocation)
+                noise_stddev = noise_multiplier * clip_state.sensitivity
                 noisy_grads, noise_state = noise_fn(
                     grads_tuple, noise_state, stddev=noise_stddev,
                 )
@@ -1354,7 +1314,6 @@ def main():
                             wb_metrics[f"group/grad_norm/{gname}"] = gnorms.mean().item()
                             gn_clipped = float((gnorms > gn_bound).sum().item())
                             wb_metrics[f"group/clip_rate/{gname}"] = gn_clipped / max(1.0, float(batch_size))
-                            wb_metrics[f"group/noise_std/{gname}"] = noise_stddev.values[gname]
                     wandb.log(wb_metrics, step=global_step)
 
                 print(

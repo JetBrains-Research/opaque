@@ -43,6 +43,7 @@ from opaque.noise import (
     identity_mf_noise,
     truncated_gaussian_noise,
 )
+from opaque.noise.per_group_noise import per_group_noise_stddev
 from opaque.sampling import (
     CyclicPoissonSampler,
     PoissonSampler,
@@ -92,6 +93,7 @@ __all__ = [
     "custom_mf_noise",
     "dense_mf_noise",
     "identity_mf_noise",
+    "per_group_noise_stddev",
     # Accounting
     "accounting",
     # Auditing

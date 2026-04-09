@@ -74,54 +74,6 @@ class PerGroup:
         """Look up the per-group value for a parameter key."""
         return self.values[self.groups[key]]
 
-    def optimal_noise_stddev(self, noise_multiplier: float) -> PerGroup:
-        """MSE-optimal noise stddev under the Mahalanobis privacy constraint.
-
-        Given per-group sensitivities ``v_i`` (the values in this PerGroup)
-        and a scalar ``noise_multiplier`` (nm), returns per-group noise
-        standard deviations:
-
-        .. math::
-
-            \\sigma_i = \\text{nm} \\cdot \\sqrt{v_i \\cdot \\textstyle\\sum_j v_j}
-
-        This allocation:
-
-        - **Minimizes total noise MSE** (``∑ d_i σ_i²``) for equal group
-          dimensions, among all allocations satisfying the Mahalanobis
-          privacy constraint ``∑ v_i² / σ_i² ≤ 1/nm²``.
-        - Has **identical privacy** to isotropic noise — the accounting
-          noise multiplier is simply ``nm``, with no composition penalty.
-        - Gives **less noise to small-sensitivity groups** (``σ ∝ √v_i``)
-          compared to isotropic (``σ = const``) or proportional
-          (``σ ∝ v_i``).
-
-        The Lagrangian derivation gives ``σ_i ∝ v_i^{1/2} d_i^{-1/4}``
-        in the general case.  This method assumes equal group dimensions
-        (appropriate for LoRA, where all adapters share the same shape).
-
-        Args:
-            noise_multiplier: The noise multiplier ``nm`` — same value
-                used for privacy accounting via ``gaussian(nm)``.
-
-        Returns:
-            PerGroup with per-group noise stddevs satisfying the
-            Mahalanobis constraint with equality.
-
-        Example::
-
-            sensitivity = clip_state.sensitivity          # PerGroup
-            stddev = sensitivity.optimal_noise_stddev(nm)  # PerGroup
-            noisy, st = noise_fn(grads, st, stddev=stddev)
-            # Accounting: just gaussian(nm), same as isotropic.
-        """
-        sum_v = sum(self.values.values())
-        return PerGroup(
-            self.groups,
-            {k: noise_multiplier * math.sqrt(v * sum_v)
-             for k, v in self.values.items()},
-        )
-
 
 def per_group(params, /, patterns=None, **kwargs) -> PerGroup:
     """Construct PerGroup from parameter keys and substring patterns.

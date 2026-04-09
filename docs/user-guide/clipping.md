@@ -340,6 +340,119 @@ grad_fn, clip_state = clipped_grad(loss_fn, argnums=0, batch_argnums=(1, 2),
 Only the trainable parameters receive per-example gradients. Frozen parameters
 are treated as constants by `vmap`.
 
+## Per-group clipping
+
+Per-group clipping assigns different clipping norms to different parameter
+groups. Instead of a single global L2 norm bound, each group is clipped
+independently. This can better match the natural gradient scale of different
+layers or module types (e.g., attention vs. MLP).
+
+### Setup
+
+Use `per_group` to construct a `PerGroup` from parameter keys and substring
+patterns:
+
+```python
+from opaque import per_group, clipped_grad
+
+# Two groups: attention layers (norm 1.0) and MLP layers (norm 2.0)
+pg = per_group(params, self_attn=1.0, mlp=2.0)
+
+grad_fn, clip_state = clipped_grad(
+    loss_fn,
+    argnums=0,
+    batch_argnums=(1, 2),
+    clipping_norm=pg,
+    normalize_by=batch_size,
+)
+```
+
+Each trainable parameter key (from `make_functional`) is matched by substring
+against the patterns. Every parameter must match exactly one pattern. Use
+`other=<value>` as a catch-all for unmatched parameters:
+
+```python
+pg = per_group(params, self_attn=1.0, other=0.5)
+```
+
+### How it works
+
+With per-group clipping norms $C_1, \dots, C_K$:
+
+1. Per-example gradients are computed as usual via `vmap(grad(...))`.
+2. Each group's gradient slice is clipped to its own L2 norm bound.
+3. The clipped gradients are summed across the batch and divided by
+   `normalize_by`.
+
+### Sensitivity and noise
+
+The L2 sensitivity of the full clipped query is a **scalar**:
+
+$$\Delta_2 = \frac{\lVert C \rVert_2}{n} = \frac{\sqrt{\sum_i C_i^2}}{n}$$
+
+This is always available via `clip_state.sensitivity`:
+
+```python
+stddev = noise_multiplier * clip_state.sensitivity
+noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
+```
+
+Accounting is simply `gaussian(nm)` — no composition penalty, regardless of
+the number of groups. The isotropic noise (same σ everywhere) is sufficient
+for correct privacy.
+
+### Per-group noise allocation (optional)
+
+For an MSE-optimal allocation that puts less noise on small-norm groups, use
+`per_group_noise_stddev`:
+
+```python
+from opaque.noise import per_group_noise_stddev
+
+stddev = per_group_noise_stddev(clip_state, noise_multiplier)
+noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
+```
+
+This sets $\sigma_i \propto \sqrt{C_i}$ instead of a uniform σ. Privacy
+accounting remains `gaussian(nm)` — the allocation satisfies the same
+Mahalanobis constraint, just with better MSE.
+
+### Diagnostics
+
+With `return_aux=True`, the returned auxiliary data includes per-group norms:
+
+```python
+grad_fn, clip_state = clipped_grad(
+    loss_fn, clipping_norm=pg, batch_argnums=1, return_aux=True,
+)
+(grads, aux), clip_state = grad_fn(params, batch, state=clip_state)
+
+# aux.group_norms: dict mapping group name → per-example norms tensor
+for name, norms in aux.group_norms.items():
+    print(f"{name}: mean_norm={norms.mean():.3f}")
+```
+
+### Adaptive per-group clipping
+
+Per-group clipping works with `adaptive_clipped_grad`. Each group's threshold
+adapts independently based on its own clipping rate:
+
+```python
+from opaque import adaptive_clipped_grad
+from opaque.random import key
+
+pg = per_group(params, self_attn=1.0, mlp=2.0)
+
+grad_fn, clip_state = adaptive_clipped_grad(
+    loss_fn,
+    initial_clipping_norm=pg,
+    target_quantile=0.5,
+    batch_argnums=(1, 2),
+    normalize_by=batch_size,
+    key=key(7),
+)
+```
+
 ## API reference
 
 See [Clipping API Reference](../api/clipping.md) for complete function

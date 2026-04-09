@@ -108,21 +108,23 @@ class TestClipPytreePerGroup:
 class TestFixedClipStatePerGroup:
     """Tests for FixedClipState with PerGroup clipping_norm."""
 
-    def test_sensitivity_returns_per_group(self):
+    def test_sensitivity_is_scalar_for_per_group(self):
+        """Even with PerGroup clipping_norm, sensitivity is scalar ||C||_2 / n."""
         pg = PerGroup(
             groups={"a": "g1", "b": "g2"},
             values={"g1": 2.0, "g2": 4.0},
         )
         state = FixedClipState(clipping_norm=pg, normalize_by=2.0)
         sens = state.sensitivity
-        assert isinstance(sens, PerGroup)
-        assert sens.values["g1"] == pytest.approx(1.0)
-        assert sens.values["g2"] == pytest.approx(2.0)
+        import math
+        assert isinstance(sens, float)
+        assert sens == pytest.approx(math.sqrt(2.0**2 + 4.0**2) / 2.0)
 
-    def test_sensitivity_preserves_groups(self):
+    def test_sensitivity_scalar_single_group(self):
         pg = PerGroup(groups={"x": "attn"}, values={"attn": 3.0})
         state = FixedClipState(clipping_norm=pg, normalize_by=1.0)
-        assert state.sensitivity.groups == pg.groups
+        assert isinstance(state.sensitivity, float)
+        assert state.sensitivity == pytest.approx(3.0)
 
     def test_validation_rejects_non_positive_group(self):
         pg = PerGroup(groups={"a": "g1"}, values={"g1": -1.0})
@@ -159,8 +161,8 @@ class TestClippedGradPerGroup:
         assert isinstance(grads, dict)
         assert "w1" in grads and "w2" in grads
 
-    def test_sensitivity_is_per_group(self):
-        """clip_state.sensitivity should be PerGroup when clipping_norm is."""
+    def test_sensitivity_is_scalar(self):
+        """clip_state.sensitivity should be scalar (L2 norm) even with PerGroup clipping."""
 
         def loss(params, data):
             return (params["a"] * data).mean()
@@ -177,9 +179,10 @@ class TestClippedGradPerGroup:
         )
 
         sens = clip_state.sensitivity
-        assert isinstance(sens, PerGroup)
-        assert sens.values["a"] == pytest.approx(0.2)
-        assert sens.values["b"] == pytest.approx(0.4)
+        assert isinstance(sens, float)
+        # sensitivity = sqrt(2^2 + 4^2) / 10 = sqrt(20) / 10
+        import math
+        assert sens == pytest.approx(math.sqrt(20) / 10)
 
     def test_per_group_with_microbatch(self):
         """Per-group clipping should work with microbatching."""
@@ -250,7 +253,7 @@ class TestClippedGradPerGroup:
         torch.testing.assert_close(grads_g["w"], grads_pg["w"])
 
     def test_noise_multiplier_arithmetic(self):
-        """noise_multiplier * clip_state.sensitivity should return PerGroup."""
+        """noise_multiplier * clip_state.sensitivity should return scalar."""
 
         def loss(params, data):
             return (params["a"] * data).mean()
@@ -262,6 +265,7 @@ class TestClippedGradPerGroup:
 
         noise_multiplier = 1.1
         stddev = noise_multiplier * clip_state.sensitivity
-        assert isinstance(stddev, PerGroup)
-        assert stddev.values["a"] == pytest.approx(1.1)
-        assert stddev.values["b"] == pytest.approx(2.2)
+        assert isinstance(stddev, float)
+        # sensitivity = sqrt(1^2 + 2^2) / 1 = sqrt(5)
+        import math
+        assert stddev == pytest.approx(1.1 * math.sqrt(5))

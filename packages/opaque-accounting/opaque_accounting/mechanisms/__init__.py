@@ -40,9 +40,6 @@ from opaque_accounting.mechanisms.nonprivate import (
     NonPrivate,
     nonprivate,
 )
-from opaque_accounting.mechanisms.per_group_gaussian import (
-    per_group_gaussian,
-)
 from opaque_accounting.mechanisms.truncated_gaussian import (
     TruncatedGaussian,
     truncated_gaussian,
@@ -59,7 +56,6 @@ __all__ = [
     "DenseMf",
     "TruncatedGaussian",
     # Constructor functions
-    "per_group_gaussian",
     "gaussian",
     "eps_delta",
     "identity",

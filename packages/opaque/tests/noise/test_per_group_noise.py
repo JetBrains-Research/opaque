@@ -147,8 +147,8 @@ class TestGaussianNoisePerGroup:
 class TestEndToEndPerGroup:
     """Integration test: clipped_grad + gaussian_noise with PerGroup."""
 
-    def test_full_pipeline(self):
-        """Complete per-group DP-SGD pipeline: clipping → noise."""
+    def test_full_pipeline_isotropic(self):
+        """Per-group clipping with isotropic noise (scalar sensitivity)."""
         from opaque.clipping import clipped_grad
         from opaque.utils.per_group import per_group
 
@@ -172,12 +172,52 @@ class TestEndToEndPerGroup:
         )
 
         noise_multiplier = 1.1
+        # sensitivity is scalar for PerGroup: sqrt(1^2 + 2^2) / 10
         stddev = noise_multiplier * clip_state.sensitivity
-        assert isinstance(stddev, PerGroup)
+        assert isinstance(stddev, float)
 
         noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
 
         # Run one step
+        data = torch.randn(10)
+        grads, clip_state = grad_fn(params, data, state=clip_state)
+        noisy_grads, noise_state = noise_fn(grads, noise_state, stddev=stddev)
+
+        assert isinstance(noisy_grads, dict)
+        assert "attn_w" in noisy_grads
+        assert "mlp_w" in noisy_grads
+
+    def test_full_pipeline_per_group_noise(self):
+        """Per-group clipping with per-group noise via per_group_noise_stddev."""
+        from opaque.clipping import clipped_grad
+        from opaque.noise import per_group_noise_stddev
+        from opaque.utils.per_group import per_group
+
+        def loss(params, data):
+            pred = params["attn_w"] * data + params["mlp_w"] * data
+            return (pred**2).mean()
+
+        params = {
+            "attn_w": torch.tensor(1.0),
+            "mlp_w": torch.tensor(2.0),
+        }
+
+        pg = per_group(params, attn=1.0, mlp=2.0)
+
+        grad_fn, clip_state = clipped_grad(
+            loss,
+            argnums=0,
+            batch_argnums=1,
+            clipping_norm=pg,
+            normalize_by=10.0,
+        )
+
+        noise_multiplier = 1.1
+        stddev = per_group_noise_stddev(clip_state, noise_multiplier)
+        assert isinstance(stddev, PerGroup)
+
+        noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
+
         data = torch.randn(10)
         grads, clip_state = grad_fn(params, data, state=clip_state)
         noisy_grads, noise_state = noise_fn(grads, noise_state, stddev=stddev)
