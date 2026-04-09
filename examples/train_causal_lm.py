@@ -67,7 +67,7 @@ from opaque.accounting import calibration as cal, Accountant
 from opaque.clipping import adaptive_clipped_grad, clipped_grad
 from opaque.compat.transformers import is_kernel_patched
 from opaque.distributed import sum_gradients_, sync
-from opaque.noise import gaussian_noise, truncated_gaussian_noise
+from opaque.noise import gaussian_noise, per_group_noise_stddev, truncated_gaussian_noise
 from opaque.profiling import (
     StepTimer,
     TrainingProfiler,
@@ -84,6 +84,13 @@ import wandb
 def _effective(value):
     """Extract scalar from float or PerGroup for logging/printing."""
     return value.effective if isinstance(value, PerGroup) else value
+
+
+def _noise_stddev(clip_state, noise_multiplier):
+    """Noise stddev: MSE-optimal per-group when available, isotropic otherwise."""
+    if isinstance(clip_state.clipping_norm, PerGroup):
+        return per_group_noise_stddev(clip_state, noise_multiplier)
+    return noise_multiplier * clip_state.sensitivity
 
 
 def _select_device(local_rank: int | None = None) -> tuple[torch.device, str]:
@@ -1170,7 +1177,7 @@ def main():
 
     # Noise function — created once; per-call stddev override tracks adaptive clipping_norm.
     noise_fn, noise_state = make_noise(
-        stddev=noise_multiplier * clip_state.sensitivity,
+        stddev=_noise_stddev(clip_state, noise_multiplier),
         key=key(args.seed),
     )
 
@@ -1192,7 +1199,7 @@ def main():
     # Step-0 eval: log baseline metrics before any training
     initial_eval_loss = eval_loss(trainable_params)
     initial_epsilon = accounting.epsilon_at(args.target_delta)
-    initial_noise_std = noise_multiplier * clip_state.sensitivity
+    initial_noise_std = _noise_stddev(clip_state, noise_multiplier)
     print(f"  → Step 0 eval: loss={initial_eval_loss:.4f}, ε={initial_epsilon:.3f}")
     if use_wandb:
         wandb.log({
@@ -1253,7 +1260,7 @@ def main():
                     clip_state, aux = sync(clip_state, aux)
                     sum_gradients_(grads_tuple)
 
-                noise_stddev = noise_multiplier * clip_state.sensitivity
+                noise_stddev = _noise_stddev(clip_state, noise_multiplier)
                 noisy_grads, noise_state = noise_fn(
                     grads_tuple, noise_state, stddev=noise_stddev,
                 )

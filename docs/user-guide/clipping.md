@@ -401,7 +401,7 @@ Accounting is simply `gaussian(nm)` — no composition penalty, regardless of
 the number of groups. The isotropic noise (same σ everywhere) is sufficient
 for correct privacy.
 
-### Per-group noise allocation (optional)
+### Per-group noise allocation
 
 For an MSE-optimal allocation that puts less noise on small-norm groups, use
 `per_group_noise_stddev`:

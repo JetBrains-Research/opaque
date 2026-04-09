@@ -85,19 +85,9 @@ without changing the training loop.
 
 ### Per-group noise
 
-When using [per-group clipping](clipping.md#per-group-clipping), the default
-approach is isotropic noise — the same σ for every parameter:
-
-```python
-stddev = noise_multiplier * clip_state.sensitivity
-noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
-```
-
-`clip_state.sensitivity` returns a scalar $\lVert C \rVert_2 / n$ even with
-per-group clipping norms, so this works without changes.
-
-For an MSE-optimal allocation that varies σ across groups, use
-`per_group_noise_stddev`:
+When using [per-group clipping](clipping.md#per-group-clipping), the
+recommended approach is MSE-optimal allocation via `per_group_noise_stddev`,
+which varies σ across groups — putting less noise on smaller-norm groups:
 
 ```python
 from opaque.noise import per_group_noise_stddev
@@ -107,8 +97,21 @@ noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
 ```
 
 This returns a `PerGroup` of per-group standard deviations with
-$\sigma_i \propto \sqrt{C_i}$. Groups with smaller clipping norms get less
-noise. Privacy accounting is identical — just `gaussian(nm)`.
+$\sigma_i \propto \sqrt{C_i}$. Privacy accounting is identical to the
+isotropic case — just `gaussian(nm)`.
+
+The [training script](../../examples/train_causal_lm.py) uses this by default
+when per-group clipping is active.
+
+Alternatively, isotropic noise (same σ everywhere) also works:
+
+```python
+stddev = noise_multiplier * clip_state.sensitivity
+noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
+```
+
+`clip_state.sensitivity` returns a scalar $\lVert C \rVert_2 / n$ even with
+per-group clipping norms, so no code changes are needed.
 
 ## Bounded Gaussian noise
 
