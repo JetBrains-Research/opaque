@@ -42,6 +42,7 @@ def optimize(
     max_optimizer_steps: int = 250,
     grad: bool = False,
     callback: CallbackFnType = lambda _: None,
+    bounds: list[tuple[float | None, float | None]] | None = None,
 ) -> torch.Tensor:
     """Optimize a differentiable loss function using L-BFGS.
 
@@ -55,6 +56,8 @@ def optimize(
         max_optimizer_steps: Maximum number of L-BFGS iterations.
         grad: If True, loss_fn returns (loss, grad) tuple.
         callback: Optional callback called each iteration.
+        bounds: Optional per-parameter bounds for L-BFGS-B, as a list of
+            ``(lower, upper)`` tuples. Use ``None`` for unbounded.
 
     Returns:
         Optimized parameters tensor.
@@ -107,6 +110,7 @@ def optimize(
             params_np,
             method="L-BFGS-B",
             jac=True,
+            bounds=bounds,
             options={"maxiter": max_optimizer_steps, "ftol": 1e-15, "gtol": 1e-10},
         )
         optimal_params = torch.tensor(result.x, dtype=original_dtype)

@@ -212,13 +212,13 @@ def multiply(
     lhs_coef, n = _reconcile(lhs_coef, n)
     rhs_coef, _ = _reconcile(rhs_coef, n)
 
-    # Convolution of Toeplitz coefficients
-    # Use numpy for convolution since torch doesn't have a direct 1D convolve
-    conv = np.convolve(
-        lhs_coef.detach().cpu().numpy(), rhs_coef.detach().cpu().numpy()
-    )[:n]
-    result = torch.as_tensor(conv, dtype=lhs_coef.dtype)
-    return result.to(lhs_coef.device)
+    # Differentiable convolution via FFT (supports autograd for L-BFGS
+    # optimization of BLT/banded Toeplitz with workload_coef).
+    full_len = len(lhs_coef) + len(rhs_coef) - 1
+    fa = torch.fft.rfft(lhs_coef, n=full_len)
+    fb = torch.fft.rfft(rhs_coef, n=full_len)
+    conv = torch.fft.irfft(fa * fb, n=full_len)[:n]
+    return conv
 
 
 def inverse_coef(coef: torch.Tensor, n: int | None = None) -> torch.Tensor:

@@ -78,6 +78,8 @@ class _StreamingMatrixBuilder:
         buf_decay = torch.tensor(
             self.buf_decay, dtype=state.dtype, device=state.device,
         )
+        if len(buf_decay) == 0:
+            return state
         bufs = torch.diag(buf_decay) @ state.reshape(len(buf_decay), -1)
         bufs = bufs.reshape(state.shape) + next_rhs_value
         return bufs
@@ -1087,6 +1089,13 @@ def optimize_loss(
     params = parameterization.params_from_blt(blt)
 
     loss_fn_to_optimize = get_parameterized_loss(parameterization, loss_fn)
+
+    # For buf_decay_pair parameterization, all parameters are buf_decay
+    # values (theta and theta_hat) which must be in (0, 1).
+    if "bounds" not in kwargs:
+        eps = 1e-9
+        kwargs["bounds"] = [(eps, 1.0 - eps)] * len(params)
+
     params = optim_mod.optimize(
         loss_fn_to_optimize,
         params,
