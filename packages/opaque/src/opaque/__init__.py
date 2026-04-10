@@ -43,6 +43,7 @@ from opaque.noise import (
     identity_mf_noise,
     truncated_gaussian_noise,
 )
+from opaque.noise.per_group_noise import per_group_noise_stddev
 from opaque.sampling import (
     CyclicPoissonSampler,
     PoissonSampler,
@@ -50,7 +51,8 @@ from opaque.sampling import (
     poisson_collate,
 )
 from opaque._env import parse_skip_env
-from opaque.utils import make_functional, with_batch_dim
+from opaque.utils import make_functional, per_group, with_batch_dim
+from opaque.utils.per_group import PerGroup
 
 # =============================================================================
 # Auto-patching for compatible libraries
@@ -91,6 +93,7 @@ __all__ = [
     "custom_mf_noise",
     "dense_mf_noise",
     "identity_mf_noise",
+    "per_group_noise_stddev",
     # Accounting
     "accounting",
     # Auditing
@@ -100,4 +103,6 @@ __all__ = [
     # Utils
     "make_functional",
     "with_batch_dim",
+    "PerGroup",
+    "per_group",
 ]

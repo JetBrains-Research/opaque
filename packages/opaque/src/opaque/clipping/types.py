@@ -1,7 +1,11 @@
 """Type definitions for clipping operations."""
 
+from __future__ import annotations
+
 from abc import ABC
 from dataclasses import dataclass
+
+from opaque.utils.per_group import PerGroup
 
 
 class ClipState(ABC):
@@ -26,12 +30,13 @@ class ClipState(ABC):
         >>> noisy_grads, noise_state = noise_fn(grads, noise_state)
     """
 
-    clipping_norm: float
+    clipping_norm: float | PerGroup
     """The raw per-example clipping norm used at the current step.
 
     For fixed clipping this is the constant L2 norm bound.
     For adaptive clipping this is the threshold that was actually applied
     to clip the gradients, **not** the updated threshold for the next step.
+    When ``PerGroup``, each group has its own norm bound.
     """
 
     normalize_by: float
@@ -44,14 +49,37 @@ class ClipState(ABC):
 
     @property
     def sensitivity(self) -> float:
-        """L2 sensitivity of the clipped query.
+        r"""L2 sensitivity of the clipped query (always a scalar).
 
-        Equal to ``clipping_norm / normalize_by`` — the maximum L2 change
+        For scalar ``clipping_norm`` this is simply ``clipping_norm / normalize_by``.
+
+        For per-group clipping with group norms :math:`C_1, \dots, C_K`,
+        the L2 sensitivity of the full parameter vector is the norm of the
+        per-group bounds:
+
+        .. math::
+
+            \Delta_2 = \frac{\lVert C \rVert_2}{n}
+                     = \frac{\sqrt{\sum_{i=1}^{K} C_i^2}}{n}
+
+        This is always a **scalar** — it represents the maximum L2 change
         in the output when one record is added or removed.
 
-        This is the value you multiply by ``noise_multiplier`` to get
-        the required noise standard deviation.
+        Multiply by ``noise_multiplier`` to get the isotropic noise standard
+        deviation:
+
+        .. math::
+
+            \sigma = \text{nm} \cdot \Delta_2
+
+        Accounting is simply ``gaussian(nm)`` — no composition penalty,
+        regardless of the number of groups.
+
+        See :func:`~opaque.noise.per_group_noise_stddev` for an alternative
+        that allocates less total noise by varying σ across groups.
         """
+        if isinstance(self.clipping_norm, PerGroup):
+            return self.clipping_norm.effective / self.normalize_by
         return self.clipping_norm / self.normalize_by
 
 
@@ -63,7 +91,8 @@ class FixedClipState(ClipState):
     where the clipping norm remains constant throughout training.
 
     Attributes:
-        clipping_norm: The L2 norm bound after clipping.
+        clipping_norm: The L2 norm bound after clipping.  When ``PerGroup``,
+            each parameter group has its own norm bound.
         normalize_by: Divisor applied to the clipped sum (1.0 = no averaging).
 
     Example:
@@ -80,15 +109,23 @@ class FixedClipState(ClipState):
         >>> assert new_state.clipping_norm == 1.5  # Still the same
     """
 
-    clipping_norm: float
+    clipping_norm: float | PerGroup
     normalize_by: float = 1.0
 
     def __post_init__(self):
         """Validate state parameters."""
-        if self.clipping_norm <= 0:
-            raise ValueError(
-                f"clipping_norm must be positive, got {self.clipping_norm}"
-            )
+        if isinstance(self.clipping_norm, PerGroup):
+            for gname, val in self.clipping_norm.values.items():
+                if val <= 0:
+                    raise ValueError(
+                        f"clipping_norm must be positive for all groups, "
+                        f"got {val} for group '{gname}'"
+                    )
+        else:
+            if self.clipping_norm <= 0:
+                raise ValueError(
+                    f"clipping_norm must be positive, got {self.clipping_norm}"
+                )
         if self.normalize_by <= 0:
             raise ValueError(f"normalize_by must be positive, got {self.normalize_by}")
 

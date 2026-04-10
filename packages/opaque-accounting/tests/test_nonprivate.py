@@ -42,15 +42,6 @@ class TestNonPrivateConstructor:
         assert g.noise_multiplier == 0
         assert g.epsilon_at(1e-5) == math.inf
 
-    def test_truncated_gaussian_zero_returns_truncated_gaussian(self):
-        """truncated_gaussian(0) should return TruncatedGaussian with non-private PLD."""
-        from opaque_accounting.mechanisms.truncated_gaussian import TruncatedGaussian
-
-        tg = acc.truncated_gaussian(0)
-        assert isinstance(tg, TruncatedGaussian)
-        assert tg.noise_multiplier == 0
-        assert tg.epsilon_at(1e-5) == math.inf
-
     def test_poisson_gaussian_zero(self):
         """poisson(gaussian(0)) should produce non-private PLD."""
         step = acc.poisson(acc.gaussian(0), sample_rate=0.01)

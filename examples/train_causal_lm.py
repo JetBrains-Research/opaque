@@ -67,13 +67,30 @@ from opaque.accounting import calibration as cal, Accountant
 from opaque.clipping import adaptive_clipped_grad, clipped_grad
 from opaque.compat.transformers import is_kernel_patched
 from opaque.distributed import sum_gradients_, sync
-from opaque.noise import gaussian_noise, truncated_gaussian_noise
-from opaque.profiling import StepTimer, TrainingProfiler, print_memory, reset_peak_memory
+from opaque.noise import gaussian_noise, per_group_noise_stddev, truncated_gaussian_noise
+from opaque.profiling import (
+    StepTimer,
+    TrainingProfiler,
+    print_memory,
+    reset_peak_memory,
+)
 from opaque.random import key, fold_in
 from opaque.sampling import PoissonSampler, TruncatedPoissonSampler
 from opaque.sampling.distributed import local_shard
-from opaque.utils import make_functional
+from opaque.utils import PerGroup, make_functional, per_group
 import wandb
+
+
+def _effective(value):
+    """Extract scalar from float or PerGroup for logging/printing."""
+    return value.effective if isinstance(value, PerGroup) else value
+
+
+def _noise_stddev(clip_state, noise_multiplier, *, per_group=True):
+    """Noise stddev: MSE-optimal per-group when available, isotropic otherwise."""
+    if per_group and isinstance(clip_state.clipping_norm, PerGroup):
+        return per_group_noise_stddev(clip_state, noise_multiplier)
+    return noise_multiplier * clip_state.sensitivity
 
 
 def _select_device(local_rank: int | None = None) -> tuple[torch.device, str]:
@@ -440,14 +457,25 @@ def parse_args():
         type=str,
         choices=["gaussian", "truncated_gaussian"],
         default="gaussian",
-        help="Noise mechanism: gaussian (standard) "
-             "or truncated_gaussian (renormalized, tighter accounting)",
+        help="Noise mechanism: gaussian (standard, unbounded) "
+             "or truncated_gaussian (renormalized, bounded support)",
     )
     dp_group.add_argument(
         "--noise-radius",
         type=float,
         default=3.0,
         help="Support half-width in sigma units for rectified/truncated Gaussian (ignored for standard gaussian)",
+    )
+    dp_group.add_argument(
+        "--per-group-clipping",
+        type=str,
+        nargs="+",
+        default=None,
+        metavar="PATTERN=NORM",
+        help="Per-group clipping norms as PATTERN=NORM pairs (e.g., self_attn=1.0 mlp=2.0). "
+        "Each trainable param must match exactly one pattern substring. "
+        "Use 'fallback=NORM' as catch-all for unmatched params. "
+        "Compatible with --adaptive-clipping (each group adapts independently).",
     )
 
     # Model precision
@@ -620,6 +648,23 @@ def parse_args():
     # Needed because argparse type=int can't accept None on CLI to override presets.
     if args.microbatch_size == 0:
         args.microbatch_size = None
+
+    # Parse --per-group-clipping PATTERN=NORM pairs
+    if args.per_group_clipping:
+        parsed = {}
+        fallback_value = None
+        for item in args.per_group_clipping:
+            if "=" not in item:
+                parser.error(
+                    f"--per-group-clipping values must be PATTERN=NORM, got '{item}'"
+                )
+            pattern, value = item.split("=", 1)
+            if pattern == "fallback":
+                fallback_value = float(value)
+            else:
+                parsed[pattern] = float(value)
+        args.per_group_clipping = parsed
+        args.per_group_clipping_fallback = fallback_value
 
     return args
 
@@ -987,11 +1032,30 @@ def main():
 
             return total_loss / total_tokens
 
+    # Build clipping norm (scalar or per-group)
+    if args.per_group_clipping:
+        clip_norm = per_group(
+            trainable_params,
+            fallback=args.per_group_clipping_fallback,
+            **args.per_group_clipping,
+        )
+        if is_main_process:
+            print("\nPer-group clipping norms:")
+            for gname, val in clip_norm.values.items():
+                count = sum(1 for g in clip_norm.groups.values() if g == gname)
+                print(f"  {gname}: {val:.3f} ({count} params)")
+            print(f"  Effective (for accounting): {clip_norm.effective:.3f}")
+    else:
+        clip_norm = args.clipping_norm
+
     # Setup optimizer
     print("\nSetting up DP-SGD training...")
     print(f"  Optimizer: {args.optimizer}")
     print(f"  Learning rate: {args.learning_rate}")
-    print(f"  Clip norm: {args.clipping_norm}")
+    if isinstance(clip_norm, PerGroup):
+        print(f"  Clip norm: per-group (effective={clip_norm.effective:.3f})")
+    else:
+        print(f"  Clip norm: {clip_norm}")
     print(f"  Noise mechanism: {args.noise_mechanism}")
     if args.noise_mechanism != "gaussian":
         print(f"  Noise radius: {args.noise_radius}σ")
@@ -1014,7 +1078,7 @@ def main():
             per_example_loss_fn,
             argnums=0,
             batch_argnums=(1,),
-            initial_clipping_norm=args.clipping_norm,
+            initial_clipping_norm=clip_norm,
             target_quantile=1.0 - args.target_clipping_rate,
             clipping_norm_max=args.clipping_norm_max,
             microbatch_size=args.microbatch_size,
@@ -1027,7 +1091,7 @@ def main():
             per_example_loss_fn,
             argnums=0,
             batch_argnums=(1,),
-            clipping_norm=args.clipping_norm,
+            clipping_norm=clip_norm,
             normalize_by=args.batch_size,
             microbatch_size=args.microbatch_size,
             return_aux=True,
@@ -1048,11 +1112,14 @@ def main():
 
     # Noise injection — bind mechanism-specific parameters once.
     # Chain: base mechanism → adaclip (optional) → amplification.
+    # Truncated Gaussian noise provides bounded support but converges to
+    # Gaussian for high-dimensional tasks, so we use acc.gaussian() for accounting.
+    _num_groups = len(clip_norm.values) if isinstance(clip_norm, PerGroup) else 1
     if args.noise_multiplier == 0:
         mechanism = lambda nm: acc.nonprivate()
         make_noise = gaussian_noise
     elif args.noise_mechanism == "truncated_gaussian":
-        mechanism = functools.partial(acc.truncated_gaussian, radius=args.noise_radius)
+        mechanism = acc.gaussian
         make_noise = functools.partial(truncated_gaussian_noise, radius=args.noise_radius)
     else:
         mechanism = acc.gaussian
@@ -1060,8 +1127,8 @@ def main():
 
     if args.adaptive_clipping:
         _base_mechanism = mechanism
-        mechanism = lambda nm, ebs=args.batch_size: acc.adaclip(
-            _base_mechanism(nm), expected_batch_size=ebs,
+        mechanism = lambda nm, ebs=args.batch_size, ng=_num_groups: acc.adaclip(
+            _base_mechanism(nm), expected_batch_size=ebs, num_groups=ng
         )
 
     _unamplified = mechanism
@@ -1086,7 +1153,7 @@ def main():
         if use_parallel_poisson:
             print(f"  Accounting: parallel_poisson (world_size={world_size})")
         print(f"  Noise mechanism: {args.noise_mechanism}")
-        if args.noise_mechanism != "gaussian":
+        if args.noise_mechanism == "truncated_gaussian":
             print(f"  Noise radius: {args.noise_radius}σ")
         print(f"  δ = {args.target_delta:.2e} (n={global_train_size})")
         print(f"  Total steps: {total_steps}")
@@ -1119,7 +1186,8 @@ def main():
 
     # Noise function — created once; per-call stddev override tracks adaptive clipping_norm.
     noise_fn, noise_state = make_noise(
-        stddev=noise_multiplier * clip_state.sensitivity, key=key(args.seed),
+        stddev=_noise_stddev(clip_state, noise_multiplier),
+        key=key(args.seed),
     )
 
     # Training loop
@@ -1140,14 +1208,14 @@ def main():
     # Step-0 eval: log baseline metrics before any training
     initial_eval_loss = eval_loss(trainable_params)
     initial_epsilon = accounting.epsilon_at(args.target_delta)
-    initial_noise_std = noise_multiplier * clip_state.sensitivity
+    initial_noise_std = _noise_stddev(clip_state, noise_multiplier)
     print(f"  → Step 0 eval: loss={initial_eval_loss:.4f}, ε={initial_epsilon:.3f}")
     if use_wandb:
         wandb.log({
             "eval/loss": initial_eval_loss,
             "privacy/epsilon": initial_epsilon,
-            "train/noise_std": initial_noise_std,
-            "train/clipping_norm": args.clipping_norm,
+            "train/noise_std": _effective(initial_noise_std),
+            "train/clipping_norm": _effective(clip_norm),
         }, step=0)
 
     for epoch in range(args.num_epochs):
@@ -1201,7 +1269,7 @@ def main():
                     clip_state, aux = sync(clip_state, aux)
                     sum_gradients_(grads_tuple)
 
-                noise_stddev = noise_multiplier * clip_state.sensitivity
+                noise_stddev = _noise_stddev(clip_state, noise_multiplier)
                 noisy_grads, noise_state = noise_fn(
                     grads_tuple, noise_state, stddev=noise_stddev,
                 )
@@ -1222,12 +1290,12 @@ def main():
 
             # === Step metrics ===
             avg_loss = aux.loss_values.mean().item()
-            clipping_norm = clip_state.clipping_norm
+            step_clip_norm = clip_state.clipping_norm
             clip_rate = aux.clipping_rate
             mean_grad_norm = aux.grad_norms.mean().item()
 
             losses.append(avg_loss)
-            clip_norms_history.append(clipping_norm)
+            clip_norms_history.append(_effective(step_clip_norm))
             clip_rates_history.append(clip_rate)
 
             global_step += 1
@@ -1239,28 +1307,38 @@ def main():
                 perf = profiler.current_metrics()
 
                 if use_wandb:
-                    wandb.log({
+                    wb_metrics = {
                         "train/loss": avg_loss,
                         "train/batch_size": batch_size,
-                        "train/clipping_norm": clipping_norm,
+                        "train/clipping_norm": _effective(step_clip_norm),
                         "train/clip_rate": clip_rate,
                         "train/grad_norm_mean": mean_grad_norm,
                         "train/clipped_grad_norm_mean": aux.clipped_grad_norms.mean().item(),
-                        "train/noise_std": noise_stddev,
+                        "train/noise_std": _effective(noise_stddev),
                         "perf/step_time_sec": perf["step_time_sec"],
                         "perf/throughput_samples_per_sec": perf["throughput_samples_sec"],
                         "perf/allocated_gb": perf["memory_allocated_gb"],
                         "perf/reserved_gb": perf["memory_reserved_gb"],
                         "perf/peak_gb": perf["memory_peak_gb"],
-                    }, step=global_step)
+                    }
+                    # Per-group metrics under group/ section
+                    if isinstance(step_clip_norm, PerGroup) and aux.group_norms is not None:
+                        for gname in step_clip_norm.values:
+                            gn_bound = step_clip_norm.values[gname]
+                            wb_metrics[f"group/clipping_norm/{gname}"] = gn_bound
+                            gnorms = aux.group_norms[gname]
+                            wb_metrics[f"group/grad_norm/{gname}"] = gnorms.mean().item()
+                            gn_clipped = float((gnorms > gn_bound).sum().item())
+                            wb_metrics[f"group/clip_rate/{gname}"] = gn_clipped / max(1.0, float(batch_size))
+                    wandb.log(wb_metrics, step=global_step)
 
                 print(
                     f"Step {global_step:4d} [E{epoch + 1} S{step_idx + 1:3d}/{expected_steps_per_epoch:3d}] | "
                     f"BS: {batch_size} | "
                     f"Loss: {avg_loss:.4f} | "
-                    f"Clip: norm={clipping_norm:.3f}, rate={clip_rate:.1%} | "
+                    f"Clip: norm={_effective(step_clip_norm):.3f}, rate={clip_rate:.1%} | "
                     f"GradNorm: μ={mean_grad_norm:.3f} | "
-                    f"Noise: σ={noise_stddev:.4f} | "
+                    f"Noise: σ={_effective(noise_stddev):.4f} | "
                     f"Time: {perf['step_time_sec']:.2f}s | Mem: {perf['memory_peak_gb']:.1f}GB"
                 )
 
@@ -1312,10 +1390,28 @@ def main():
 
     if args.adaptive_clipping:
         print("\nAdaptive clipping:")
-        print(f"  Initial clip norm: {args.clipping_norm:.3f}")
-        print(f"  Final clip norm: {clip_state.clipping_norm:.3f}")
+        final_cn = clip_state.clipping_norm
+        if isinstance(final_cn, PerGroup):
+            print("  Per-group adaptive thresholds:")
+            initial_cn = clip_norm
+            for gname in sorted(final_cn.values.keys()):
+                print(
+                    f"    {gname}: {initial_cn.values[gname]:.3f} → {final_cn.values[gname]:.3f}"
+                )
+            print(f"  Effective (final): {final_cn.effective:.3f}")
+        else:
+            print(f"  Initial clip norm: {_effective(clip_norm):.3f}")
+            print(f"  Final clip norm: {final_cn:.3f}")
         print(
             f"  Clip norm range: [{min(clip_norms_history):.3f}, {max(clip_norms_history):.3f}]"
+        )
+    elif isinstance(clip_norm, PerGroup):
+        print("\nPer-group clipping:")
+        for gname, val in clip_norm.values.items():
+            print(f"  {gname}: {val:.3f}")
+        print(f"  Effective: {clip_norm.effective:.3f}")
+        print(
+            f"  Average clip rate: {sum(clip_rates_history) / len(clip_rates_history):.2%}"
         )
     else:
         print("\nFixed clipping:")

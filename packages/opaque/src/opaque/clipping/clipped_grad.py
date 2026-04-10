@@ -1,5 +1,7 @@
 """Per-example gradient clipping for differential privacy."""
 
+from __future__ import annotations
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -15,6 +17,7 @@ from opaque.clipping._helpers import (
 )
 from opaque.clipping.clipped_fun import clipped_fun
 from opaque.clipping.types import FixedClipState
+from opaque.utils.per_group import PerGroup
 
 
 @dataclass(frozen=True)
@@ -33,6 +36,9 @@ class ClippedGradAux:
         clipping_rate: Fraction of per-example gradients whose norm exceeded
             the clipping threshold.
         batch_size: Number of examples in the batch.
+        group_norms: Per-group per-example gradient L2 norms before clipping
+            (dict[str, Tensor] with shape [batch_size] per group), or None
+            when global clipping is used.
     """
 
     loss_values: Any | None = None
@@ -41,6 +47,7 @@ class ClippedGradAux:
     loss_aux: Any | None = None
     clipping_rate: float | None = None
     batch_size: int = 0
+    group_norms: dict[str, torch.Tensor] | None = None
 
 
 def _validate_static_args(argnums, batch_argnums, normalize_by):
@@ -68,7 +75,7 @@ def clipped_grad(
     argnums: int | tuple[int, ...] = 0,
     has_aux: bool = False,
     *,
-    clipping_norm: float,
+    clipping_norm: float | PerGroup,
     normalize_by: float = 1.0,
     batch_argnums: int | tuple[int, ...] = 1,
     return_aux: bool = False,
@@ -239,6 +246,7 @@ def clipped_grad(
                         loss_aux=None,
                         clipping_rate=aux.clipping_rate,
                         batch_size=aux.batch_size,
+                        group_norms=aux.group_norms,
                     )
                     return (clipped_grads, grad_aux), returned_state
                 return result, returned_state
@@ -261,6 +269,7 @@ def clipped_grad(
                 loss_aux=aux.value_aux,
                 clipping_rate=aux.clipping_rate,
                 batch_size=aux.batch_size,
+                group_norms=aux.group_norms,
             )
             return (clipped_grads, grad_aux), returned_state
 

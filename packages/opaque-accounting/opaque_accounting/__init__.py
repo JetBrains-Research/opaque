@@ -91,7 +91,6 @@ from opaque_accounting.mechanisms import (
     gaussian,
     identity,
     nonprivate,
-    truncated_gaussian,
 )
 
 # Transformations
@@ -113,7 +112,6 @@ __all__ = [
     "get_discretization",
     # Mechanisms (factories only; classes via subpackage import)
     "gaussian",
-    "truncated_gaussian",
     "eps_delta",
     "identity",
     "nonprivate",

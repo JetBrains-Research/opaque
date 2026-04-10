@@ -1,22 +1,78 @@
 """Core clipping operations for PyTrees."""
 
+from __future__ import annotations
+
 from collections import namedtuple
 
 import torch
 
+from opaque.utils.per_group import PerGroup
 from opaque.utils.pytree import global_norm, tree_map
 
-ClipPytreeAux = namedtuple("ClipPytreeAux", ["norm"])
+ClipPytreeAux = namedtuple("ClipPytreeAux", ["norm", "group_norms"])
 """Auxiliary outputs from clip_pytree.
 
 Fields:
     norm: The L2 norm of the original (unclipped) pytree.
+    group_norms: Per-group L2 norms before clipping (dict[str, Tensor]),
+        or None when global clipping is used.
 """
+
+
+def _clip_pytree_per_group(
+    pytree: dict[str, torch.Tensor],
+    pg: PerGroup,
+    return_zero: bool,
+) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
+    """Per-group clipping: each group is clipped to its own L2 norm bound."""
+    # 1. Accumulate squared norms per group
+    group_sq_norms: dict[str, torch.Tensor] = {}
+    for key, tensor in pytree.items():
+        if not isinstance(tensor, torch.Tensor):
+            continue
+        group_name = pg.groups[key]
+        sq = (tensor.to(torch.float32) ** 2).sum()
+        if group_name in group_sq_norms:
+            group_sq_norms[group_name] = group_sq_norms[group_name] + sq
+        else:
+            group_sq_norms[group_name] = sq
+
+    # 2. Compute per-group scale factors: min(1, norm_bound / norm)
+    group_scales: dict[str, torch.Tensor] = {}
+    for group_name, sq_norm in group_sq_norms.items():
+        norm = torch.sqrt(sq_norm)
+        cn = torch.tensor(pg.values[group_name], dtype=norm.dtype, device=norm.device)
+        cn = torch.clamp(cn, min=0.0)
+        one = torch.tensor(1.0, device=norm.device)
+        zero = torch.tensor(0.0, device=norm.device)
+        scale = torch.minimum(one, cn / norm)
+        scale = torch.where(torch.isfinite(scale), scale, zero)
+        group_scales[group_name] = scale
+
+    # 3. Apply per-group scales
+    clipped: dict[str, torch.Tensor] = {}
+    for key, val in pytree.items():
+        if isinstance(val, torch.Tensor):
+            group_name = pg.groups[key]
+            scale = group_scales[group_name]
+            clipped[key] = scale.to(dtype=val.dtype) * val
+        else:
+            clipped[key] = val
+
+    if return_zero:
+        clipped = tree_map(
+            lambda t: torch.zeros_like(t) if isinstance(t, torch.Tensor) else t,
+            clipped,
+        )
+
+    orig_norm = global_norm(pytree)
+    group_norms = {name: torch.sqrt(sq) for name, sq in group_sq_norms.items()}
+    return clipped, ClipPytreeAux(norm=orig_norm, group_norms=group_norms)
 
 
 def clip_pytree(
     pytree: dict[str, torch.Tensor],
-    clipping_norm: float,
+    clipping_norm: float | PerGroup,
     return_zero: bool = False,
 ) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
     """Clip a PyTree of tensors to a maximum L2 norm.
@@ -26,7 +82,9 @@ def clip_pytree(
 
     Args:
         pytree: Dictionary of tensors to clip
-        clipping_norm: Maximum L2 norm (non-negative, or inf for no clipping)
+        clipping_norm: Maximum L2 norm (non-negative, or inf for no clipping).
+            When ``PerGroup``, each group of parameters is clipped independently
+            to its own norm bound.
         return_zero: If True, the output PyTree is guaranteed to be zero no matter
             what the inputs are. Does not influence the formal guarantees but useful
             for privacy amplification via padding (see https://arxiv.org/pdf/2411.04205).
@@ -53,6 +111,12 @@ def clip_pytree(
         ),
         pytree,
     )
+
+    # Per-group path: clip each group independently
+    if isinstance(clipping_norm, PerGroup):
+        return _clip_pytree_per_group(pytree, clipping_norm, return_zero)
+
+    # --- Global (flat) clipping path ---
 
     # Compute original norm (always finite after sanitization)
     orig_norm = global_norm(pytree)
@@ -85,7 +149,7 @@ def clip_pytree(
             lambda t: torch.zeros_like(t) if isinstance(t, torch.Tensor) else t, clipped
         )
 
-    return clipped, ClipPytreeAux(norm=orig_norm)
+    return clipped, ClipPytreeAux(norm=orig_norm, group_norms=None)
 
 
 __all__ = ["clip_pytree", "ClipPytreeAux"]

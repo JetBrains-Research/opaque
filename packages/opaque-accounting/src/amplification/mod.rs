@@ -3,18 +3,15 @@
 //! Each public function takes scalar parameters directly (no structs, no traits).
 //!
 //! - [`poisson_gaussian_pld`] — Poisson-subsampled Gaussian
-//! - [`poisson_truncated_gaussian_pld`] — Poisson-subsampled truncated Gaussian
 //! - [`truncated_poisson_gaussian_pld`] — Truncated Poisson-subsampled Gaussian
 //! - [`parallel_poisson_gaussian_pld`] — Parallel Poisson Gaussian (gradient accumulation or parallel workers)
 
 mod parallel_poisson;
 pub(crate) mod poisson;
-mod poisson_truncated_gaussian;
 mod truncated_poisson;
 
 pub use parallel_poisson::parallel_poisson_gaussian_pld;
 pub use poisson::poisson_gaussian_pld;
-pub use poisson_truncated_gaussian::poisson_truncated_gaussian_pld;
 pub use truncated_poisson::truncated_poisson_gaussian_pld;
 
 use crate::error::{PldError, Result};

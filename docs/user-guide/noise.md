@@ -83,6 +83,36 @@ When `stddev=0`, `gaussian_noise` returns a no-op function that passes
 gradients through unchanged. This is useful for toggling DP on and off
 without changing the training loop.
 
+### Per-group noise
+
+When using [per-group clipping](clipping.md#per-group-clipping), the
+recommended approach is MSE-optimal allocation via `per_group_noise_stddev`,
+which varies σ across groups — putting less noise on smaller-norm groups:
+
+```python
+from opaque.noise import per_group_noise_stddev
+
+stddev = per_group_noise_stddev(clip_state, noise_multiplier)
+noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
+```
+
+This returns a `PerGroup` of per-group standard deviations with
+$\sigma_i \propto \sqrt{C_i}$. Privacy accounting is identical to the
+isotropic case — just `gaussian(nm)`.
+
+The [training script](../../examples/train_causal_lm.py) uses this by default
+when per-group clipping is active.
+
+Alternatively, isotropic noise (same σ everywhere) also works:
+
+```python
+stddev = noise_multiplier * clip_state.sensitivity
+noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
+```
+
+`clip_state.sensitivity` returns a scalar $\lVert C \rVert_2 / n$ even with
+per-group clipping norms, so no code changes are needed.
+
 ## Bounded Gaussian noise
 
 Standard Gaussian noise has unbounded support, which means privatized outputs
@@ -114,14 +144,15 @@ noisy_grads, noise_state = noise_fn(grads, noise_state)
 The truncation uses an inverse-CDF method: for each gradient element, noise is
 sampled from a Gaussian centered on that element and truncated to the bounds.
 
-Pair with `acc.truncated_gaussian(noise_multiplier, radius)` for
-accounting.
+For high-dimensional tasks like model training, the truncated Gaussian
+converges to the standard Gaussian, so use `acc.gaussian(noise_multiplier)`
+for accounting.
 
 ### Which variant to use
 
-The truncated Gaussian gives tighter ε than `acc.gaussian()` because its
-bounded density limits worst-case hockey-stick divergence. For most
-workloads, prefer truncated when bounded noise is desired.
+The truncated Gaussian provides bounded support, which can be useful when
+gradient bounds are important for downstream optimization. For privacy
+accounting, use `acc.gaussian()` regardless of the noise variant.
 
 ## Matrix-factorization noise (DP-FTRL)
 

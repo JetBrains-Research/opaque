@@ -1,5 +1,7 @@
 """Per-example clipping and summing for arbitrary functions."""
 
+from __future__ import annotations
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -10,6 +12,7 @@ from torch.func import vmap as _vmap
 from opaque.clipping._helpers import normalize_to_tuple
 from opaque.clipping.pytree import clip_pytree
 from opaque.clipping.types import FixedClipState
+from opaque.utils.per_group import PerGroup
 from opaque.utils.pytree import global_norm, tree_map
 
 
@@ -29,6 +32,9 @@ class ClippedFunAux:
         clipping_rate: Fraction of per-example outputs whose norm exceeded the
             clipping threshold.  Equal to ``num_clipped / batch_size``.
         batch_size: Number of examples in the batch.
+        group_norms: Per-group per-example L2 norms before clipping
+            (dict[str, Tensor] with shape [batch_size] per group), or None
+            when global clipping is used.
     """
 
     values: Any | None = None
@@ -37,6 +43,7 @@ class ClippedFunAux:
     value_aux: Any | None = None
     clipping_rate: float | None = None
     batch_size: int = 0
+    group_norms: dict[str, torch.Tensor] | None = None
 
 
 def _resolve_accumulation_dtype(
@@ -219,7 +226,7 @@ def clipped_fun(
     has_aux: bool = False,
     *,
     batch_argnums: int | tuple[int, ...] = 0,
-    clipping_norm: float = 1.0,
+    clipping_norm: float | PerGroup = 1.0,
     normalize_by: float = 1.0,
     return_aux: bool = False,
     microbatch_size: int | None = None,
@@ -311,6 +318,12 @@ def clipped_fun(
                     "clipped_norms": global_norm(clipped_value).detach(),
                 }
 
+                # Per-group norms (dict of scalar tensors → dict of 1D tensors after vmap)
+                if norm.group_norms is not None:
+                    aux_dict["group_norms"] = {
+                        k: v.detach() for k, v in norm.group_norms.items()
+                    }
+
                 # Extract nested values and aux from wrapped functions (e.g., grad_fn)
                 # aux may be a dict like {"values": val, "value_aux": user_aux} or just user_aux
                 if isinstance(aux, dict):
@@ -386,9 +399,24 @@ def clipped_fun(
 
         aux_dict = aux if isinstance(aux, dict) else {}
         norms = aux_dict.get("norms")
+        group_norms_dict = aux_dict.get("group_norms")
         batch_size = norms.numel() if isinstance(norms, torch.Tensor) else 0
         if isinstance(norms, torch.Tensor) and batch_size > 0:
-            num_clipped = float((norms > clipping_norm).sum().item())
+            if isinstance(clipping_norm, PerGroup) and group_norms_dict is not None:
+                # Per-group: a sample is "clipped" if ANY group exceeds its bound
+                any_clipped = torch.zeros(
+                    batch_size, dtype=torch.bool, device=norms.device
+                )
+                for gname, gnorms in group_norms_dict.items():
+                    any_clipped = any_clipped | (gnorms > clipping_norm.values[gname])
+                num_clipped = float(any_clipped.sum().item())
+            else:
+                effective_cn = (
+                    clipping_norm.effective
+                    if isinstance(clipping_norm, PerGroup)
+                    else clipping_norm
+                )
+                num_clipped = float((norms > effective_cn).sum().item())
             rate = num_clipped / max(1.0, float(batch_size))
         else:
             rate = None
@@ -400,6 +428,7 @@ def clipped_fun(
             value_aux=aux_dict.get("value_aux"),
             clipping_rate=rate,
             batch_size=batch_size,
+            group_norms=aux_dict.get("group_norms"),
         )
 
         return result, aux

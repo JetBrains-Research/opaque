@@ -36,7 +36,6 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 - **[Accounting](accounting.md)**: Privacy budget tracking
   - `gaussian()`, `poisson()`, `truncated_poisson()`, `parallel_poisson()` - Standard mechanisms
-  - `truncated_gaussian()` - Bounded Gaussian mechanism
   - `band_mf()`, `blt_mf()`, `dense_mf()`, `cyclic_poisson()` - Matrix factorization mechanisms
   - `DpProcess` operators: `*` (repeat), `|` (compose)
   - `.epsilon_at()`, `.delta_at()`, `.advantage()`, `.beta_at()`, `.risk_at()` - Privacy metrics
@@ -122,7 +121,6 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | Function                  | Purpose                           | User Guide                                                              |
 |---------------------------|-----------------------------------|-------------------------------------------------------------------------|
 | `gaussian()`              | Gaussian mechanism                | [Guide](../user-guide/accounting.md#mechanisms)                         |
-| `truncated_gaussian()`    | Bounded Gaussian — truncated      | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `poisson()`               | Poisson-subsampled mechanism      | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `truncated_poisson()`     | Truncated Poisson subsampling     | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `parallel_poisson()`      | Parallel Poisson subsampling      | [Guide](../user-guide/accounting.md#mechanisms)                         |

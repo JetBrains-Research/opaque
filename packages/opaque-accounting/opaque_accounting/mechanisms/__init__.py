@@ -40,10 +40,6 @@ from opaque_accounting.mechanisms.nonprivate import (
     NonPrivate,
     nonprivate,
 )
-from opaque_accounting.mechanisms.truncated_gaussian import (
-    TruncatedGaussian,
-    truncated_gaussian,
-)
 
 __all__ = [
     # Dataclass types
@@ -54,7 +50,6 @@ __all__ = [
     "BandMf",
     "BltMf",
     "DenseMf",
-    "TruncatedGaussian",
     # Constructor functions
     "gaussian",
     "eps_delta",
@@ -63,5 +58,4 @@ __all__ = [
     "band_mf",
     "blt_mf",
     "dense_mf",
-    "truncated_gaussian",
 ]

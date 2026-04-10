@@ -12,7 +12,7 @@ from opaque_accounting.amplification import (
     TruncatedPoisson,
 )
 from opaque_accounting.base import DpProcess
-from opaque_accounting.mechanisms import Gaussian, TruncatedGaussian
+from opaque_accounting.mechanisms import Gaussian
 
 # ── Amplification dataclass tests ────────────────────────────────────
 
@@ -166,13 +166,6 @@ class TestParallelPoissonConstructor:
         with pytest.raises(TypeError, match="Gaussian"):
             acc.parallel_poisson("bad", sample_rate=0.01, num_workers=4)  # type: ignore[arg-type]
 
-    def test_rejects_bounded_gaussian(self):
-        """parallel_poisson rejects TruncatedGaussian directly."""
-        with pytest.raises(TypeError, match="Gaussian"):
-            acc.parallel_poisson(
-                acc.truncated_gaussian(1.0, 5.0), sample_rate=0.01, num_workers=4
-            )
-
 
 # ── Bounded Gaussian amplification tests ─────────────────────────────
 
@@ -193,30 +186,3 @@ class TestParallelPoissonAutoTruncation:
         # Looser truncation bound allows more aggressive k truncation, producing
         # a conservative (not tighter) epsilon.
         assert eps_loose >= eps_tight - 1e-10
-
-
-class TestPoissonTruncatedGaussian:
-    """Poisson subsampling with truncated Gaussian inner."""
-
-    def test_accepts_truncated_gaussian(self):
-        p = acc.poisson(acc.truncated_gaussian(1.1, 5.0), 0.01)
-        assert isinstance(p, Poisson)
-        assert isinstance(p.inner, TruncatedGaussian)
-
-    def test_pld_returns_valid(self):
-        p = acc.poisson(acc.truncated_gaussian(1.1, 5.0), 0.01)
-        eps = p.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
-
-    def test_epsilon_le_poisson_gaussian(self):
-        """Poisson + truncated should give ε ≤ Poisson + standard Gaussian."""
-        nm, R, rate = 1.0, 5.0, 0.01
-        eps_gauss = acc.poisson(acc.gaussian(nm), rate).epsilon_at(1e-5)
-        eps_trunc = acc.poisson(acc.truncated_gaussian(nm, R), rate).epsilon_at(1e-5)
-        assert eps_trunc <= eps_gauss + 1e-6
-
-    def test_composition_works(self):
-        step = acc.poisson(acc.truncated_gaussian(1.1, 5.0), 0.01)
-        training = step * 100
-        eps = training.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
