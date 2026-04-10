@@ -25,6 +25,12 @@ except ImportError:
     distributed = None
     sampling = None
 
+try:
+    from opaque import optimizers
+except ImportError:
+    # torchopt not installed - optimizers module unavailable
+    optimizers = None
+
 from opaque.clipping import (
     AdaptiveClipState,
     AutoClipState,
