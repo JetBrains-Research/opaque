@@ -19,7 +19,6 @@ Opaque provides several noise mechanisms:
 
 - **`band_mf_noise()`** — BandMF banded Toeplitz correlated noise
 - **`blt_mf_noise()`** — Buffered Linear Toeplitz (BLT) correlated noise
-- **`dense_mf_noise()`** — Dense optimal strategy (small n)
 - **`identity_mf_noise()`** — Identity (DP-SGD via MF API, easy to swap)
 - **`custom_mf_noise()`** — Bring-your-own noising matrix
 
@@ -56,8 +55,6 @@ across ranks. It auto-dispatches based on type:
 ::: opaque.noise.band_mf_noise
 
 ::: opaque.noise.blt_mf_noise
-
-::: opaque.noise.dense_mf_noise
 
 ::: opaque.noise.identity_mf_noise
 

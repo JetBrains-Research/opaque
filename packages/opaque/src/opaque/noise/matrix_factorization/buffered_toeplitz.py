@@ -767,15 +767,22 @@ class LossFn:
         error: str = "max",
         min_sep: int = 1,
         max_participations: int | None = None,
+        workload_coef: torch.Tensor | None = None,
         **kwargs,
     ) -> LossFn:
         """Construct LossFn for min-sep participation."""
 
         def mean_error_fn(inv_blt):
-            return toeplitz.mean_error(noising_coef=toeplitz_coefs(inv_blt, n))
+            return toeplitz.mean_error(
+                noising_coef=toeplitz_coefs(inv_blt, n),
+                workload_coef=workload_coef,
+            )
 
         def max_error_fn(inv_blt):
-            return toeplitz.max_error(noising_coef=toeplitz_coefs(inv_blt, n))
+            return toeplitz.max_error(
+                noising_coef=toeplitz_coefs(inv_blt, n),
+                workload_coef=workload_coef,
+            )
 
         if error == "mean":
             error_fn = mean_error_fn
@@ -1137,6 +1144,7 @@ def optimize(
     min_buffers: int = 0,
     max_buffers: int = 10,
     rtol: float = 1.01,
+    workload_coef: torch.Tensor | None = None,
     **kwargs,
 ) -> BufferedToeplitz:
     """Compute an optimised BLT with dynamically-chosen num_buffers.
@@ -1158,6 +1166,9 @@ def optimize(
         min_buffers: Minimum buffers to try (inclusive).
         max_buffers: Maximum buffers to try (inclusive).
         rtol: Relative tolerance for loss improvement.
+        workload_coef: Toeplitz coefficients of the workload matrix.
+            Defaults to ``None`` (prefix-sum workload).  For momentum-SGD
+            with coefficient β, pass ``[1, β, β², ...]``.
         **kwargs: Additional keyword arguments forwarded to
             ``optimize_loss`` / ``optimization.optimize``.
 
@@ -1171,7 +1182,8 @@ def optimize(
         n=n, min_sep=min_sep, max_participations=max_participations
     )
 
-    if k == 1 and error == "max":
+    # Closed-form path only works for prefix-sum workload (workload_coef=None)
+    if k == 1 and error == "max" and workload_coef is None:
         loss_fn = LossFn.build_closed_form_single_participation(n=n)
     else:
         loss_fn = LossFn.build_min_sep(
@@ -1179,6 +1191,7 @@ def optimize(
             error=error,
             min_sep=min_sep,
             max_participations=max_participations,
+            workload_coef=workload_coef,
         )
 
     return _optimize_increasing_nbuf(

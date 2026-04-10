@@ -196,7 +196,6 @@ Opaque provides four MF noise strategies, plus two utility variants:
 |----------|--------|----------|
 | `band_mf_noise` | O(bands) | General use, good default |
 | `blt_mf_noise` | O(buffers) | Long training runs (n > 5000) |
-| `dense_mf_noise` | O(n^2) | Short runs (n < 100), optimal noise |
 | `custom_mf_noise` | varies | Research, custom strategies |
 | `identity_mf_noise` | O(1) | Testing MF infrastructure with standard noise |
 
@@ -247,23 +246,6 @@ noise_fn, noise_state = blt_mf_noise(
     stddev=noise_multiplier * clip_state.sensitivity,
     key=key(42),
     max_buffers=10,
-)
-```
-
-### `dense_mf_noise`
-
-Computes the optimal dense strategy matrix. Materializes the full n*n matrix,
-so memory grows quadratically with n. Best for short training runs.
-
-```python
-from opaque import dense_mf_noise
-from opaque.random import key
-
-noise_fn, noise_state = dense_mf_noise(
-    grad_template=params,
-    n_steps=50,
-    stddev=noise_multiplier * clip_state.sensitivity,
-    key=key(42),
 )
 ```
 

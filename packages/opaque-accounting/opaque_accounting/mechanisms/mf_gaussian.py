@@ -1,14 +1,13 @@
 """Matrix factorization Gaussian mechanism — correlated noise for MF-DP.
 
 Provides privacy accounting for matrix factorization DP mechanisms
-(BandMF, BLT, Dense). Unlike standard DP-SGD which composes per-step
+(BandMF, BLT). Unlike standard DP-SGD which composes per-step
 Gaussian PLDs, MF mechanisms compute a single PLD for the entire training
 run based on the effective noise multiplier σ/S.
 
 References:
     - BandMF: Choquette-Choo et al. (2023) https://arxiv.org/abs/2306.08153
     - BLT: Choquette-Choo et al. (2024) https://arxiv.org/abs/2404.16706
-    - Dense MF: Denisov et al. (2022) https://arxiv.org/abs/2202.08312
 """
 
 from __future__ import annotations
@@ -68,8 +67,7 @@ def mf_gaussian(noise_multiplier: float, sensitivity: float) -> MfGaussian:
     single Gaussian mechanism with effective noise multiplier σ/S.
 
     The sensitivity should be pre-computed based on the MF strategy
-    (BandMF, BLT, Dense) and participation pattern (single, min-sep,
-    fixed-epoch).
+    (BandMF, BLT) and participation pattern (single, min-sep).
 
     Args:
         noise_multiplier: Raw noise standard deviation σ (before matrix

@@ -98,7 +98,6 @@ nav:
     - Gaussian: mechanisms/gaussian.md
     - BandMF: mechanisms/band-mf.md
     - BLT: mechanisms/blt.md
-    - Dense MF: mechanisms/dense-mf.md
   - Tutorials:
     - Overview: tutorials/README.md
     - DP-SGD Training: tutorials/dp_sgd_training.ipynb

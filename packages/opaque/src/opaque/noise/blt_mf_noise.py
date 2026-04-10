@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from opaque.noise.band_mf_noise import _momentum_workload_coef
 from opaque.noise.matrix_factorization.buffered_toeplitz import (
     inverse_as_streaming_matrix,
     optimize,
@@ -34,6 +35,7 @@ def blt_mf_noise(
     max_participations: int | None = 1,
     error: str = "max",
     max_buffers: int = 10,
+    momentum: float,
 ) -> tuple[
     Callable[[Any, MFNoiseState], tuple[Any, MFNoiseState]],
     MFNoiseState,
@@ -60,6 +62,11 @@ def blt_mf_noise(
         max_participations: Maximum participations per user (default 1).
         error: Error metric to optimize: ``'max'`` or ``'mean'``.
         max_buffers: Maximum number of BLT buffers to try (default 10).
+        momentum: Polyak momentum coefficient (must be >= 0).
+            Determines the optimizer workload ``[1, β, β², ...]``.
+            Use β=1.0 for prefix-sum (true FTRL), β<1 for momentum-SGD.
+            β=0.0 is allowed for testing (identity workload, equivalent to
+            independent noise) but emits a warning.
 
     Returns:
         A tuple ``(noise_fn, state)`` where:
@@ -69,16 +76,21 @@ def blt_mf_noise(
 
     Example:
         >>> from opaque.random import key
-        >>> noise_fn, state = blt_mf_noise(grad_template, 1000, stddev=1.0, key=key(42))
+        >>> noise_fn, state = blt_mf_noise(
+        ...     grad_template, 1000, stddev=1.0, key=key(42), momentum=0.9,
+        ... )
         >>> for step in range(1000):
         ...     noisy_grads, state = noise_fn(clipped_grads, state)
     """
+    workload_coef = _momentum_workload_coef(momentum, n_steps)
+
     blt = optimize(
         n=n_steps,
         min_sep=min_sep,
         max_participations=max_participations,
         error=error,
         max_buffers=max_buffers,
+        workload_coef=workload_coef,
     )
     noising = inverse_as_streaming_matrix(blt)
     return _matrix_factorization_noise(

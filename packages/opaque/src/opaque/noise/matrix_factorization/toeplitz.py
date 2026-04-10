@@ -388,8 +388,9 @@ def loss(
     strategy_coef: torch.Tensor,
     n: int | None = None,
     error_fn: ErrorOrLossFn = mean_error,
+    workload_coef: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Error of C on prefix workload under single participation.
+    """Error of C on a workload under single participation.
 
     Returns error * sensitivity_squared.
 
@@ -397,12 +398,14 @@ def loss(
         strategy_coef: Toeplitz coefficients of C.
         n: Matrix size.
         error_fn: Error function (mean_error or max_error).
+        workload_coef: Toeplitz coefficients of the workload matrix.
+            Defaults to ``None`` (prefix-sum workload, i.e. all ones).
 
     Returns:
         Total squared error times sensitivity.
     """
     strategy_coef, n = _reconcile(strategy_coef, n)
-    error = error_fn(strategy_coef=strategy_coef, n=n)
+    error = error_fn(strategy_coef=strategy_coef, n=n, workload_coef=workload_coef)
     sens_sq = sensitivity_squared(strategy_coef, n)
     return error * sens_sq
 
@@ -417,8 +420,9 @@ def optimize(
     strategy_coef: torch.Tensor | None = None,
     max_optimizer_steps: int = 250,
     loss_fn=mean_loss,
+    workload_coef: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Optimize banded Toeplitz strategy on a Prefix workload.
+    """Optimize banded Toeplitz strategy for a given workload.
 
     The resulting strategy can be used for single- and multi-participation
     settings, as long as the minimum separation >= number of bands.
@@ -429,11 +433,17 @@ def optimize(
         strategy_coef: Optional initial coefficients.
         max_optimizer_steps: Maximum L-BFGS iterations.
         loss_fn: Loss function (default: mean_loss).
+        workload_coef: Toeplitz coefficients of the workload matrix.
+            Defaults to ``None`` (prefix-sum workload).  For momentum-SGD
+            with coefficient β, pass ``[1, β, β², ...]``.
 
     Returns:
         Optimized coefficients with L2 norm 1.
     """
-    partial_loss = functools.partial(loss_fn, n=n)
+    if workload_coef is not None:
+        partial_loss = functools.partial(loss_fn, n=n, workload_coef=workload_coef)
+    else:
+        partial_loss = functools.partial(loss_fn, n=n)
 
     if strategy_coef is None:
         strategy_coef = optimal_max_error_strategy_coefs(bands)

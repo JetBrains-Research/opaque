@@ -2,7 +2,7 @@
 
 This module provides a compositional API for tracking privacy guarantees:
 
-- **Mechanisms**: gaussian(), band_mf(), blt_mf(), dense_mf(), etc.
+- **Mechanisms**: gaussian(), band_mf(), blt_mf(), etc.
 - **Amplification**: poisson(), cyclic_poisson(), truncated_poisson(), etc.
 - **Composition**: Combine processes using ``*`` (repeat) or ``|`` (compose)
 - **Metrics**: Query privacy with epsilon_at(), delta_at(), advantage(), etc.
@@ -86,7 +86,6 @@ from opaque_accounting.discretization import (
 from opaque_accounting.mechanisms import (
     band_mf,
     blt_mf,
-    dense_mf,
     eps_delta,
     gaussian,
     identity,
@@ -117,7 +116,6 @@ __all__ = [
     "nonprivate",
     "band_mf",
     "blt_mf",
-    "dense_mf",
     # Amplification
     "poisson",
     "truncated_poisson",

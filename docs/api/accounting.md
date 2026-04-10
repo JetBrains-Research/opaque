@@ -234,21 +234,6 @@ proc = acc.blt_mf(1.0, 5000, min_sep=100, max_participations=5)
 eps = proc.epsilon_at(1e-5)
 ```
 
-### `dense_mf(noise_multiplier, n_steps, *, epochs=1, bands=None, equal_norm=False) -> DpProcess`
-
-Dense MF with optimal strategy matrix. Materializes the full n x n matrix.
-
-- `noise_multiplier` (float): Raw noise standard deviation sigma.
-- `n_steps` (int): Number of training iterations.
-- `epochs` (int): Number of epochs; must divide `n_steps`.
-- `bands` (int | None): Optional banded constraint.
-- `equal_norm` (bool): If True, optimize with equal column norm constraint.
-
-```python
-proc = acc.dense_mf(noise_multiplier=1.0, n_steps=50, epochs=2)
-eps = proc.epsilon_at(1e-5)
-```
-
 ### `cyclic_poisson(inner, sample_rate) -> DpProcess`
 
 Cyclic Poisson amplification for BandMF. Decomposes the training run into

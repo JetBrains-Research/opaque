@@ -37,20 +37,19 @@ USAGE:
   # Quick smoke test (~2 minutes, GPT-2 on ag_news)
   python examples/train_dp_ftrl.py --preset smoke
 
-  # BandMF with b=8 bands on Mellum
-  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism band_mf --bands 8
+  # BLT on Mellum (default mechanism, near-optimal correlated noise)
+  python examples/train_dp_ftrl.py --preset mellum-kstack
 
-  # BLT (near-optimal correlated noise)
-  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism blt
+  # BandMF with b=64 bands on Mellum
+  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism band_mf --bands 64
 
-  # DP-SGD baseline for fair comparison
+  # DP-SGD baseline for fair comparison (same loop, independent noise)
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism identity
 
 REFERENCES:
 
   - BandMF: https://arxiv.org/abs/2306.08153
   - BLT: https://arxiv.org/abs/2404.16706
-  - Dense MF / DP-FTRL: https://arxiv.org/abs/2202.08312
   - DP-FTRL: https://arxiv.org/abs/2103.00039
 """
 
@@ -279,8 +278,8 @@ def parse_args():
     priv_g.add_argument("--target-epsilon", type=float, default=3.0)
     priv_g.add_argument("--target-delta", type=float, default=None)
     priv_g.add_argument("--noise-multiplier", type=float, default=None, help="Fixed noise multiplier (skip calibration)")
-    priv_g.add_argument("--calibration-min", type=float, default=0.2)
-    priv_g.add_argument("--calibration-max", type=float, default=3.5)
+    priv_g.add_argument("--calibration-min", type=float, default=0.1)
+    priv_g.add_argument("--calibration-max", type=float, default=20.0)
     priv_g.add_argument("--calibration-tolerance", type=float, default=1e-3)
 
     # W&B
@@ -328,14 +327,14 @@ def parse_args():
         _set("model_name", "JetBrains/Mellum-4b-base")
         _set("dataset", "JetBrains/KStack")
         _set("dataset_text_field", "content")
-        _set("num_train_samples", 50000)
+        _set("num_train_samples", 200000)
         _set("num_eval_samples", 1000)
-        _set("num_epochs", 3)
-        _set("batch_size", 128)
-        _set("log_steps", 2)
-        _set("eval_steps", 10)
-        _set("target_epsilon", 10.0)
-        _set("learning_rate", 5e-4)
+        _set("num_epochs", 20)
+        _set("batch_size", 256)
+        _set("log_steps", 50)
+        _set("eval_steps", 200)
+        _set("target_epsilon", 3.0)
+        _set("learning_rate", 2e-3)
         _set("lora_r", 16)
         _set("lora_alpha", 32)
         _set("max_seq_len", 1024)
@@ -345,6 +344,11 @@ def parse_args():
         ])
         _set("dtype", "bfloat16")
         _set("microbatch_size", 16)
+        _set("bands", 64)
+        _set("mechanism", "blt")
+        _set("warmup_frac", 0.05)
+        _set("cooldown_frac", 0.30)
+        _set("cooldown_end_frac", 0.01)
 
     if args.microbatch_size == 0:
         args.microbatch_size = None
@@ -628,10 +632,13 @@ def main():
     # sensitivity = clipping_norm / normalize_by (accounts for batch averaging)
     noise_stddev = noise_multiplier * clip_state.sensitivity
 
+    print(f"\nCreating MF noise (optimizing for momentum-SGD workload, β={args.momentum})...")
+    t0 = time.time()
     if args.mechanism == "band_mf":
         noise_fn, noise_state = band_mf_noise(
             trainable_params, total_steps,
             stddev=noise_stddev, key=key(args.seed), bands=args.bands,
+            momentum=args.momentum,
         )
     elif args.mechanism == "blt":
         noise_fn, noise_state = blt_mf_noise(
@@ -640,11 +647,13 @@ def main():
             min_sep=expected_steps_per_epoch,
             max_participations=args.num_epochs,
             max_buffers=args.max_buffers,
+            momentum=args.momentum,
         )
     elif args.mechanism == "identity":
         noise_fn, noise_state = identity_mf_noise(
             trainable_params, stddev=noise_stddev, key=key(args.seed),
         )
+    print(f"  Noise function created in {time.time() - t0:.1f}s")
 
     optimizer = torchopt.sgd(
         lr=lambda step: lr_schedule[min(step, len(lr_schedule) - 1)].item(),
@@ -652,12 +661,34 @@ def main():
     )
     opt_state = optimizer.init(trainable_params)
 
+    # --- Diagnostic: compute what identity baseline σ would be ---
+    identity_sigma = None
+    if args.mechanism != "identity" and args.noise_multiplier is None:
+        try:
+            identity_cal = cal.calibrate(
+                cal.epsilon_budget(args.target_epsilon, delta=args.target_delta),
+                lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=sample_rate) * total_steps,
+                param_min=args.calibration_min,
+                param_max=args.calibration_max,
+                tolerance=args.calibration_tolerance,
+            )
+            identity_sigma = identity_cal.param
+        except Exception:
+            pass  # Non-critical diagnostic
+
     print("\nDP-FTRL setup:")
     print(f"  Mechanism: {args.mechanism}")
     print(f"  Optimizer: SGD + Polyak momentum (β={args.momentum})")
+    print(f"  Workload: momentum-SGD (β={args.momentum}){' [prefix-sum]' if args.momentum == 1.0 else ''}")
     print(f"  Clipping norm: {args.clipping_norm} (fixed)")
     print(f"  Sensitivity: {clip_state.sensitivity:.6f} (= {args.clipping_norm} / {args.batch_size})")
-    print(f"  Noise σ: {noise_stddev:.6f} (fixed, = {noise_multiplier:.4f} × {clip_state.sensitivity:.6f})")
+    print(f"  Noise multiplier (σ): {noise_multiplier:.4f}")
+    print(f"  Noise stddev: {noise_stddev:.6f} (= {noise_multiplier:.4f} × {clip_state.sensitivity:.6f})")
+    if identity_sigma is not None:
+        ratio = noise_multiplier / identity_sigma
+        print(f"  Identity baseline σ: {identity_sigma:.4f} (ratio: {ratio:.2f}×)")
+        print(f"  → MF needs {ratio:.2f}× more noise to hit ε={args.target_epsilon}; "
+              f"correlated structure must compensate")
     print(f"  Microbatch size: {args.microbatch_size}")
     if args.mechanism == "band_mf":
         print(f"  Bands: {args.bands}")

@@ -30,8 +30,8 @@ def identity_mf_noise(
 
     This adds independent Gaussian noise at each step, equivalent to
     standard DP-SGD. Use this as a drop-in baseline that can be swapped
-    for correlated noise mechanisms (``band_mf_noise``, ``blt_mf_noise``,
-    ``dense_mf_noise``) without changing the training loop.
+    for correlated noise mechanisms (``band_mf_noise``, ``blt_mf_noise``)
+    without changing the training loop.
 
     The noise function uses exactly the ``key`` you provide — no auto-detection
     of distributed state. For synchronized noise in DDP, pass the same key on

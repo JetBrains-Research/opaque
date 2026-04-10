@@ -1,4 +1,4 @@
-"""Tests for MF accounting mechanisms — BandMf, BltMf, DenseMf, CyclicPoisson."""
+"""Tests for MF accounting mechanisms — BandMf, BltMf, CyclicPoisson."""
 
 import math
 from dataclasses import FrozenInstanceError
@@ -13,7 +13,6 @@ from opaque_accounting.base import DpProcess
 from opaque_accounting.mechanisms import (
     BandMf,
     BltMf,
-    DenseMf,
 )
 
 # ── BandMf dataclass tests ──────────────────────────────────────────
@@ -220,68 +219,6 @@ class TestBltMfConstructor:
     def test_rejects_bad_error(self):
         with pytest.raises(ValueError):
             acc.blt_mf(1.0, 50, error="invalid")
-
-
-# ── DenseMf tests ───────────────────────────────────────────────────
-
-
-class TestDenseMfDataclass:
-    """DenseMf frozen dataclass."""
-
-    def test_fields(self):
-        proc = DenseMf(1.0, 20, 1, None, False)
-        assert proc.noise_multiplier == pytest.approx(1.0)
-        assert proc.n_steps == 20
-        assert proc.epochs == 1
-        assert proc.bands is None
-        assert proc.equal_norm is False
-
-    def test_frozen(self):
-        proc = DenseMf(1.0, 20, 1, None, False)
-        with pytest.raises(FrozenInstanceError):
-            proc.noise_multiplier = 2.0  # type: ignore[misc]
-
-    def test_is_dp_process(self):
-        assert isinstance(DenseMf(1.0, 20, 1, None, False), DpProcess)
-
-    def test_pld_returns_valid(self):
-        proc = acc.dense_mf(1.0, 20)
-        eps = proc.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
-
-    def test_sensitivity_positive(self):
-        proc = acc.dense_mf(1.0, 20)
-        assert proc.sensitivity() > 0
-
-    def test_multi_epoch(self):
-        """Multi-epoch dense MF computes successfully."""
-        proc = acc.dense_mf(1.0, 20, epochs=2)
-        eps = proc.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
-
-
-class TestDenseMfConstructor:
-    """acc.dense_mf() validates and returns DenseMf."""
-
-    def test_returns_correct_type(self):
-        proc = acc.dense_mf(1.0, 20)
-        assert isinstance(proc, DenseMf)
-
-    def test_rejects_non_positive_noise(self):
-        with pytest.raises(ValueError):
-            acc.dense_mf(0.0, 20)
-
-    def test_rejects_bad_n_steps(self):
-        with pytest.raises(ValueError):
-            acc.dense_mf(1.0, 0)
-
-    def test_rejects_bad_epochs(self):
-        with pytest.raises(ValueError):
-            acc.dense_mf(1.0, 20, epochs=0)
-
-    def test_rejects_non_dividing_epochs(self):
-        with pytest.raises(ValueError):
-            acc.dense_mf(1.0, 20, epochs=3)  # 3 doesn't divide 20
 
 
 # ── Composition tests ───────────────────────────────────────────────

@@ -8,8 +8,6 @@ private machine learning, including:
 - Sensitivity computation under various participation patterns
 - Toeplitz matrix mechanisms (BandMF)
 - Buffered Linear Toeplitz (BLT) mechanisms
-- Dense matrix optimization
-- Banded matrix support
 
 These mechanisms enable correlated noise addition (vs independent noise in
 standard DP-SGD), achieving 10-50% utility improvement at the same privacy

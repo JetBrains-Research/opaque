@@ -183,16 +183,6 @@ proc = acc.blt_mf(1.0, 5000, min_sep=100, max_participations=5)
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
-### `acc.dense_mf(noise_multiplier, n_steps, *, epochs)`
-
-Dense MF with optimal strategy matrix. Materializes the full n x n matrix,
-so use only for short training runs (n < 100).
-
-```python
-proc = acc.dense_mf(noise_multiplier=1.0, n_steps=50, epochs=2)
-eps = proc.epsilon_at(delta=1e-5)
-```
-
 ### `acc.cyclic_poisson(inner, sample_rate)`
 
 Cyclic Poisson amplification for BandMF. Decomposes the training run

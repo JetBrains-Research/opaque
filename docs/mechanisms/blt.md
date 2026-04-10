@@ -70,8 +70,7 @@ between participations, sensitivity uses the Toeplitz min-sep algorithm
 2. Computes cumulative sums within blocks
 3. Uses sliding-window subtraction to find the worst-case participation
 
-**Fixed-epoch participation** (not natively supported by BLT — use
-[Dense MF](dense-mf.md) instead).
+**Fixed-epoch participation** is not natively supported by BLT.
 
 ### Privacy analysis
 

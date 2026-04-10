@@ -20,10 +20,6 @@ from opaque_accounting.mechanisms.blt_mf import (
     BltMf,
     blt_mf,
 )
-from opaque_accounting.mechanisms.dense_mf import (
-    DenseMf,
-    dense_mf,
-)
 from opaque_accounting.mechanisms.eps_delta import (
     EpsDelta,
     eps_delta,
@@ -49,7 +45,6 @@ __all__ = [
     "NonPrivate",
     "BandMf",
     "BltMf",
-    "DenseMf",
     # Constructor functions
     "gaussian",
     "eps_delta",
@@ -57,5 +52,4 @@ __all__ = [
     "nonprivate",
     "band_mf",
     "blt_mf",
-    "dense_mf",
 ]

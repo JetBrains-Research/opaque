@@ -31,12 +31,12 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 - **[Noise](noise.md)**: Noise injection for DP
   - `gaussian_noise()` - Standard Gaussian noise
   - `truncated_gaussian_noise()` - Bounded Gaussian noise
-  - `band_mf_noise()`, `blt_mf_noise()`, `dense_mf_noise()` - Correlated noise (DP-FTRL)
+  - `band_mf_noise()`, `blt_mf_noise()` - Correlated noise (DP-FTRL)
   - `identity_mf_noise()`, `custom_mf_noise()` - MF API utilities
 
 - **[Accounting](accounting.md)**: Privacy budget tracking
   - `gaussian()`, `poisson()`, `truncated_poisson()`, `parallel_poisson()` - Standard mechanisms
-  - `band_mf()`, `blt_mf()`, `dense_mf()`, `cyclic_poisson()` - Matrix factorization mechanisms
+  - `band_mf()`, `blt_mf()`, `cyclic_poisson()` - Matrix factorization mechanisms
   - `DpProcess` operators: `*` (repeat), `|` (compose)
   - `.epsilon_at()`, `.delta_at()`, `.advantage()`, `.beta_at()`, `.risk_at()` - Privacy metrics
   - `calibrate()` - Binary-search noise multiplier for target privacy
@@ -112,7 +112,6 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | `truncated_gaussian_noise()`           | Bounded Gaussian — renormalized density       | [Guide](../user-guide/noise.md#bounded-gaussian-noise) |
 | `band_mf_noise()`                   | BandMF correlated noise (DP-FTRL)           | [Guide](../user-guide/noise.md) |
 | `blt_mf_noise()`                    | BLT correlated noise (DP-FTRL)              | [Guide](../user-guide/noise.md) |
-| `dense_mf_noise()`                  | Dense optimal correlated noise               | [Guide](../user-guide/noise.md) |
 | `identity_mf_noise()`               | Identity noise via MF API                    | [Guide](../user-guide/noise.md) |
 | `custom_mf_noise()`                 | Bring-your-own noising matrix                | [Guide](../user-guide/noise.md) |
 
@@ -134,7 +133,6 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 |---------------------------|-----------------------------------|-------------------------------------------------------------------------|
 | `band_mf()`              | BandMF banded Toeplitz mechanism  | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)    |
 | `blt_mf()`               | BLT mechanism (multi-epoch)       | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)    |
-| `dense_mf()`             | Dense optimal MF mechanism        | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)    |
 | `cyclic_poisson()`       | Cyclic Poisson amplification (BandMF) | [Guide](../user-guide/accounting.md#matrix-factorization-mechanisms)|
 
 ### Accounting (Composition & Metrics)

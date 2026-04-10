@@ -155,7 +155,7 @@ def _matrix_factorization_noise(
         ``(noise_fn, state)`` where ``noise_fn(grads, state) -> (noisy, state)``.
     """
     if isinstance(noising, torch.Tensor):
-        return _dense_mf_noise(
+        return _tensor_mf_noise(
             grad_template, noising, stddev=stddev, key=key, dtype=dtype
         )
     elif isinstance(noising, streaming_matrix.StreamingMatrix):
@@ -166,7 +166,7 @@ def _matrix_factorization_noise(
         raise TypeError(f"Unsupported noising type: {type(noising)}")
 
 
-def _dense_mf_noise(
+def _tensor_mf_noise(
     grad_template: Any,
     noising: torch.Tensor,
     *,
@@ -174,7 +174,7 @@ def _dense_mf_noise(
     key: RngKey,
     dtype: torch.dtype | None = None,
 ) -> tuple[Callable, MFNoiseState]:
-    """(noise_fn, state) from a dense noising matrix C^{-1}."""
+    """(noise_fn, state) from a 2D noising matrix C^{-1}."""
     if noising.ndim != 2:
         raise ValueError(f"Expected 2D matrix, found shape {noising.shape}")
 

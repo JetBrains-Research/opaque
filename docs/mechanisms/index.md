@@ -28,7 +28,6 @@ privacy budget — at the cost of knowing the total number of steps in advance.
 |-----------|----------|--------|----------|
 | [BandMF](band-mf.md) | Banded Toeplitz | $O(\text{bands})$ | General use, moderate runs |
 | [BLT](blt.md) | Buffered Linear Toeplitz | $O(\text{buffers})$ | Long runs ($n > 5000$), multi-epoch |
-| [Dense MF](dense-mf.md) | Full $n \times n$ matrix | $O(n^2)$ | Short runs ($n < 100$), optimal noise |
 
 ## Which mechanism should I use?
 
@@ -40,7 +39,6 @@ Need correlated noise across steps (DP-FTRL)?
 │         accounting always uses acc.gaussian().
 │
 └─ Yes ── How many training steps?
-          ├─ n < 100  → Dense MF (optimal but O(n²) memory)
           ├─ n < 5000 → BandMF + cyclic Poisson (good default)
           └─ n > 5000 → BLT (memory-efficient, supports multi-epoch)
 ```
@@ -59,15 +57,14 @@ support all amplification types:
 | Gaussian | Yes | Yes | — |
 | BandMF | — | — | Yes |
 | BLT | *internal* | — | — |
-| Dense MF | *internal* | — | — |
 
 - **`poisson()`**: Standard Poisson subsampling. Each example included
   independently with probability $q$.
 - **`truncated_poisson()`**: Poisson with a batch-size cap.
 - **`cyclic_poisson()`**: Cyclic decomposition specific to BandMF. Decomposes
   $n$ steps into $\lceil n/b \rceil$ independent groups.
-- **internal**: BLT and Dense MF handle multi-participation patterns (epochs,
-  min-sep) within their own sensitivity computation — no external amplification
+- **internal**: BLT handles multi-participation patterns (min-sep)
+  within its own sensitivity computation — no external amplification
   wrapper needed.
 
 ## Quick comparison
@@ -83,9 +80,7 @@ gauss     = acc.poisson(acc.gaussian(1.0), sample_rate=0.01) * 1000
 # (typically ≈ bands * q when q is the usual DP-SGD sampling rate).
 band      = acc.cyclic_poisson(acc.band_mf(1.0, 1000, bands=10), sample_rate=0.01)
 blt       = acc.blt_mf(1.0, 1000)
-dense     = acc.dense_mf(1.0, 50, epochs=2)
 
-for name, proc in [("Gaussian", gauss), ("BandMF", band),
-                    ("BLT", blt), ("Dense", dense)]:
+for name, proc in [("Gaussian", gauss), ("BandMF", band), ("BLT", blt)]:
     print(f"{name:12s}  ε = {proc.epsilon_at(1e-5):.4f}")
 ```

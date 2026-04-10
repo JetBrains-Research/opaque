@@ -17,7 +17,6 @@
 //!
 //! - BandMF: Choquette-Choo et al. (2023) <https://arxiv.org/abs/2306.08153>
 //! - BLT: Choquette-Choo et al. (2024) <https://arxiv.org/abs/2404.16706>
-//! - Dense MF: Denisov et al. (2022) <https://arxiv.org/abs/2202.08312>
 
 use crate::discretization::{discretize_symmetric_mechanism, DiscretizationConfig, EpsilonBounds};
 use crate::error::{PldError, Result};

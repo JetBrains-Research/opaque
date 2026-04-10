@@ -5,7 +5,7 @@ Bring-your-own-matrix entry point for DP-FTRL. Accepts a dense tensor or
 ``(noise_fn, state)`` ready for a training loop.
 
 For pre-built strategies, use ``band_mf_noise``, ``blt_mf_noise``,
-``dense_mf_noise``, or ``identity_mf_noise`` instead.
+or ``identity_mf_noise`` instead.
 """
 
 from __future__ import annotations
@@ -39,8 +39,7 @@ def custom_mf_noise(
     ``noising`` argument represents C^{-1} in the factorization A = B @ C.
 
     For pre-built strategies, use :func:`band_mf_noise`,
-    :func:`blt_mf_noise`, :func:`dense_mf_noise`, or
-    :func:`identity_mf_noise` instead.
+    :func:`blt_mf_noise`, or :func:`identity_mf_noise` instead.
 
     The noise function uses exactly the ``key`` you provide — no auto-detection
     of distributed state. For synchronized noise in DDP, pass the same key on

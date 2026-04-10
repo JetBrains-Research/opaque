@@ -4,7 +4,6 @@ Implements sensitivity computations for matrix factorization mechanisms
 under various participation schemas:
 - Single participation (one gradient per user)
 - Min-sep participation (minimum separation between participations)
-- Fixed-epoch participation (deterministic multi-epoch order)
 
 References:
     - Algorithm 3 (VecSens): https://arxiv.org/abs/2306.08153
@@ -23,7 +22,6 @@ __all__ = [
     "minsep_true_max_participations",
     "get_min_sep_sensitivity_upper_bound",
     "get_sensitivity_banded",
-    "fixed_epoch_sensitivity",
 ]
 
 
@@ -225,46 +223,3 @@ def get_sensitivity_banded(
     return get_sensitivity_banded_for_X(C.T @ C, min_sep, max_participations)
 
 
-def fixed_epoch_sensitivity_for_X(X: torch.Tensor, epochs: int) -> float:
-    """Compute the sensitivity of X under (k,b)-fixed-epoch participation.
-
-    Reference: https://arxiv.org/abs/2211.06530
-
-    Args:
-        X: The Gram matrix of the encoder.
-        epochs: Number of epochs.
-
-    Returns:
-        The L2 sensitivity.
-    """
-    if not isinstance(X, torch.Tensor):
-        X = torch.tensor(X)
-    checks.check(X=X)
-    if epochs <= 0:
-        raise ValueError(f"epochs={epochs} must be positive.")
-    if X.shape[0] % epochs != 0:
-        raise ValueError(f"epochs={epochs} must divide n={X.shape[0]}.")
-
-    n = X.shape[0]
-    rounds_per_epoch = n // epochs
-    submatrix_size = n // rounds_per_epoch
-
-    all_indices = torch.arange(n, dtype=torch.long)
-    all_indices = all_indices.reshape(submatrix_size, -1)
-
-    max_sq_sens = torch.tensor(0.0, dtype=X.dtype)
-    for col_idx in range(all_indices.shape[1]):
-        indices = all_indices[:, col_idx]
-        ix = indices.unsqueeze(0).expand(len(indices), -1)
-        iy = indices.unsqueeze(1).expand(-1, len(indices))
-        submatrix = X[iy, ix]
-        sq_sens = torch.abs(submatrix).sum()
-        max_sq_sens = torch.maximum(max_sq_sens, sq_sens)
-
-    return float(torch.sqrt(max_sq_sens))
-
-
-def fixed_epoch_sensitivity(C: torch.Tensor, epochs: int) -> float:
-    """Like fixed_epoch_sensitivity_for_X, but takes encoder C."""
-    checks.check(C=C)
-    return fixed_epoch_sensitivity_for_X(C.T @ C, epochs)
