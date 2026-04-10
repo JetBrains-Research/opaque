@@ -828,15 +828,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#acctruncated_gaussiannoise_multiplier-radius" class="md-nav__link">
-    <span class="md-ellipsis">
-      acc.truncated_gaussian(noise_multiplier, radius)
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#accadaclipinner-fraction_noise_std-expected_batch_size" class="md-nav__link">
     <span class="md-ellipsis">
       acc.adaclip(inner, *, fraction_noise_std, expected_batch_size)
@@ -1277,29 +1268,6 @@
   
   <span class="md-ellipsis">
     Gaussian
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../mechanisms/truncated-gaussian/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Truncated Gaussian
     
   </span>
   
@@ -2056,15 +2024,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#acctruncated_gaussiannoise_multiplier-radius" class="md-nav__link">
-    <span class="md-ellipsis">
-      acc.truncated_gaussian(noise_multiplier, radius)
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#accadaclipinner-fraction_noise_std-expected_batch_size" class="md-nav__link">
     <span class="md-ellipsis">
       acc.adaclip(inner, *, fraction_noise_std, expected_batch_size)
@@ -2343,8 +2302,7 @@ typically uses Poisson sampling.</p>
 <h3 id="accpoissoninner-sample_rate"><code>acc.poisson(inner, sample_rate)</code><a class="headerlink" href="#accpoissoninner-sample_rate" title="Permanent link">&para;</a></h3>
 <p>Standard Poisson-subsampled mechanism. Each example is included independently
 with probability <code>sample_rate</code>. This provides privacy amplification through
-subsampling. Accepts <code>gaussian()</code>,
-<code>truncated_gaussian()</code>, or <code>adaclip()</code> as the inner mechanism.</p>
+subsampling. Accepts <code>gaussian()</code> or <code>adaclip()</code> as the inner mechanism.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.8</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mi">256</span> <span class="o">/</span> <span class="mi">50_000</span><span class="p">)</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">training</span> <span class="o">=</span> <span class="n">step</span> <span class="o">*</span> <span class="mi">1000</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
@@ -2368,43 +2326,30 @@ inner Gaussian mechanism and sample rate directly.</p>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.8</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="p">)</span>
 </code></pre></div>
-<h3 id="acctruncated_gaussiannoise_multiplier-radius"><code>acc.truncated_gaussian(noise_multiplier, radius)</code><a class="headerlink" href="#acctruncated_gaussiannoise_multiplier-radius" title="Permanent link">&para;</a></h3>
-<p>Bounded Gaussian mechanism — truncated variant. The density is renormalized
-over <code>[-R*sigma, R*sigma]</code> (no point masses at boundaries). Tighter than
-<code>acc.gaussian()</code> because the bounded support limits worst-case hockey-stick
-divergence.</p>
-<p>Use this when adding noise via <code>truncated_gaussian_noise()</code>.
-Composable with <code>poisson()</code> for subsampled accounting.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">truncated_gaussian</span><span class="p">(</span><span class="mf">1.1</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="mf">5.0</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">training</span> <span class="o">=</span> <span class="n">step</span> <span class="o">*</span> <span class="mi">1000</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>  <span class="c1"># tighter than acc.gaussian(1.1)</span>
-</code></pre></div>
-<p>The truncated variant gives tighter ε than <code>acc.gaussian()</code>. For most
-workloads, prefer truncated when bounded noise is desired.</p>
 <h3 id="accadaclipinner-fraction_noise_std-expected_batch_size"><code>acc.adaclip(inner, *, fraction_noise_std, expected_batch_size)</code><a class="headerlink" href="#accadaclipinner-fraction_noise_std-expected_batch_size" title="Permanent link">&para;</a></h3>
 <p>Accounts for the additional privacy cost of adaptive clipping (the noisy
 quantile query). Use this when using <code>adaptive_clipped_grad</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">expected_batch_size</span> <span class="o">=</span> <span class="n">sample_rate</span> <span class="o">*</span> <span class="n">dataset_size</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">adaclip</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.8</span><span class="p">),</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>                <span class="n">fraction_noise_std</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>                <span class="n">expected_batch_size</span><span class="o">=</span><span class="n">expected_batch_size</span><span class="p">),</span>
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
-<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">expected_batch_size</span> <span class="o">=</span> <span class="n">sample_rate</span> <span class="o">*</span> <span class="n">dataset_size</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">adaclip</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.8</span><span class="p">),</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>                <span class="n">fraction_noise_std</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>                <span class="n">expected_batch_size</span><span class="o">=</span><span class="n">expected_batch_size</span><span class="p">),</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="p">)</span>
 </code></pre></div>
 <h3 id="acceps_deltaepsilon-delta00"><code>acc.eps_delta(epsilon, delta=0.0)</code><a class="headerlink" href="#acceps_deltaepsilon-delta00" title="Permanent link">&para;</a></h3>
 <p>A fixed (epsilon, delta)-DP mechanism. Useful for composing external privacy
 costs (e.g., a hyperparameter tuning step with known privacy cost).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">external_cost</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">eps_delta</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">)</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">total</span> <span class="o">=</span> <span class="n">external_cost</span> <span class="o">|</span> <span class="p">(</span><span class="n">step</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">external_cost</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">eps_delta</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">)</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">total</span> <span class="o">=</span> <span class="n">external_cost</span> <span class="o">|</span> <span class="p">(</span><span class="n">step</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="accidentity"><code>acc.identity()</code><a class="headerlink" href="#accidentity" title="Permanent link">&para;</a></h3>
 <p>Zero privacy cost. Identity element for composition. Useful as an initial
 value when building up a process programmatically.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">process</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">identity</span><span class="p">()</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="k">for</span> <span class="n">step_proc</span> <span class="ow">in</span> <span class="n">step_list</span><span class="p">:</span>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="n">process</span> <span class="o">=</span> <span class="n">process</span> <span class="o">|</span> <span class="n">step_proc</span>
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">process</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">process</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">identity</span><span class="p">()</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="k">for</span> <span class="n">step_proc</span> <span class="ow">in</span> <span class="n">step_list</span><span class="p">:</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    <span class="n">process</span> <span class="o">=</span> <span class="n">process</span> <span class="o">|</span> <span class="n">step_proc</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">process</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="matrix-factorization-mechanisms">Matrix factorization mechanisms<a class="headerlink" href="#matrix-factorization-mechanisms" title="Permanent link">&para;</a></h2>
 <p>MF noise introduces correlations between training steps, reducing
@@ -2415,49 +2360,49 @@ the strategy internally and compute the correct sensitivity — do not use
 <h3 id="accband_mfnoise_multiplier-n_steps-bands"><code>acc.band_mf(noise_multiplier, n_steps, bands)</code><a class="headerlink" href="#accband_mfnoise_multiplier-n_steps-bands" title="Permanent link">&para;</a></h3>
 <p>BandMF mechanism with banded Toeplitz strategy. Computes single-participation
 sensitivity from the optimized encoder.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
 <p>For subsampling amplification, wrap with <code>cyclic_poisson</code> (see below).</p>
 <h3 id="accblt_mfnoise_multiplier-n_steps-min_sep-max_participations"><code>acc.blt_mf(noise_multiplier, n_steps, *, min_sep, max_participations)</code><a class="headerlink" href="#accblt_mfnoise_multiplier-n_steps-min_sep-max_participations" title="Permanent link">&para;</a></h3>
 <p>BLT mechanism with Buffered Linear Toeplitz strategy. Supports
 multi-epoch training via <code>min_sep</code> and <code>max_participations</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># Single participation</span>
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">blt_mf</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">5000</span><span class="p">)</span>
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
-<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>
-<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="c1"># Multi-epoch: each user participates up to 5 times, at least 100 steps apart</span>
-<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">blt_mf</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mi">5000</span><span class="p">,</span> <span class="n">min_sep</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">max_participations</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
-<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Single participation</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">blt_mf</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">5000</span><span class="p">)</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="c1"># Multi-epoch: each user participates up to 5 times, at least 100 steps apart</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">blt_mf</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mi">5000</span><span class="p">,</span> <span class="n">min_sep</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">max_participations</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="accdense_mfnoise_multiplier-n_steps-epochs"><code>acc.dense_mf(noise_multiplier, n_steps, *, epochs)</code><a class="headerlink" href="#accdense_mfnoise_multiplier-n_steps-epochs" title="Permanent link">&para;</a></h3>
 <p>Dense MF with optimal strategy matrix. Materializes the full n x n matrix,
 so use only for short training runs (n &lt; 100).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">dense_mf</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">epochs</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">dense_mf</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">epochs</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="acccyclic_poissoninner-sample_rate"><code>acc.cyclic_poisson(inner, sample_rate)</code><a class="headerlink" href="#acccyclic_poissoninner-sample_rate" title="Permanent link">&para;</a></h3>
 <p>Cyclic Poisson amplification for BandMF. Decomposes the training run
 into <code>ceil(n_steps / bands)</code> independent groups, each analyzed as a
 Poisson-subsampled Gaussian mechanism. Only accepts <code>band_mf</code> processes.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">cyclic_poisson</span><span class="p">(</span>
-<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">),</span>
-<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
-<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="p">)</span>
-<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">cyclic_poisson</span><span class="p">(</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">),</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>    <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="p">)</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="calibrating-mf-noise">Calibrating MF noise<a class="headerlink" href="#calibrating-mf-noise" title="Permanent link">&para;</a></h3>
 <p>Calibration works the same way — pass a lambda that builds the MF process:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span>
-<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">cyclic_poisson</span><span class="p">(</span>
-<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>        <span class="n">acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="n">nm</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">),</span>
-<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>        <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
-<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>    <span class="p">),</span>
-<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a>    <span class="n">param_min</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
-<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>    <span class="n">param_max</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span>
-<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a><span class="p">)</span>
-<a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a><span class="n">noise_multiplier</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">param</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">cyclic_poisson</span><span class="p">(</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>        <span class="n">acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="n">nm</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">),</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>        <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>    <span class="p">),</span>
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a>    <span class="n">param_min</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>    <span class="n">param_max</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span>
+<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="p">)</span>
+<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="n">noise_multiplier</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">param</span>
 </code></pre></div>
 <h2 id="privacy-metrics">Privacy metrics<a class="headerlink" href="#privacy-metrics" title="Permanent link">&para;</a></h2>
 <p>All metrics are methods on <code>DpProcess</code>. They compute the underlying PLD on
@@ -2498,13 +2443,13 @@ demand and cache the result.</p>
 </tr>
 </tbody>
 </table>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="n">training</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">1.1</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span>
-<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>
-<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
-<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="n">delta</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">delta_at</span><span class="p">(</span><span class="n">epsilon</span><span class="o">=</span><span class="mf">3.0</span><span class="p">)</span>
-<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="n">adv</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">advantage</span><span class="p">()</span>
-<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="n">beta</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">beta_at</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
-<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="n">risk</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">risk_at</span><span class="p">(</span><span class="n">prior</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="n">training</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">1.1</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="n">delta</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">delta_at</span><span class="p">(</span><span class="n">epsilon</span><span class="o">=</span><span class="mf">3.0</span><span class="p">)</span>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="n">adv</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">advantage</span><span class="p">()</span>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="n">beta</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">beta_at</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="n">risk</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">risk_at</span><span class="p">(</span><span class="n">prior</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
 </code></pre></div>
 <p>See <a href="../dp-concepts/#privacy-metrics">DP Concepts</a> for the meaning of each
 metric.</p>
@@ -2513,13 +2458,13 @@ metric.</p>
 achieves a target privacy budget. It uses binary search over the parameter
 space.</p>
 <h3 id="basic-calibration">Basic calibration<a class="headerlink" href="#basic-calibration" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
-<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span>
-<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">,</span>
-<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>    <span class="n">param_min</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
-<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>    <span class="n">param_max</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span>
-<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="p">)</span>
-<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="n">noise_multiplier</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">param</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span>
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">,</span>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>    <span class="n">param_min</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>    <span class="n">param_max</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span>
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="p">)</span>
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="n">noise_multiplier</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">param</span>
 </code></pre></div>
 <p>The <code>process</code> argument is a lambda that takes the parameter being calibrated
 and returns a <code>DpProcess</code>. <code>calibrate</code> binary-searches for the parameter
@@ -2564,54 +2509,54 @@ value where the budget metric equals the target.</p>
 <h3 id="calibrating-other-parameters">Calibrating other parameters<a class="headerlink" href="#calibrating-other-parameters" title="Permanent link">&para;</a></h3>
 <p><code>calibrate</code> works with any float parameter, not just noise multiplier. For
 example, calibrating the sample rate:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
-<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span>
-<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>    <span class="k">lambda</span> <span class="n">sr</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="n">sr</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">,</span>
-<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>    <span class="n">param_min</span><span class="o">=</span><span class="mf">0.001</span><span class="p">,</span>
-<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>    <span class="n">param_max</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
-<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="p">)</span>
-<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="n">sample_rate</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">param</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>    <span class="k">lambda</span> <span class="n">sr</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="n">sr</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">,</span>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>    <span class="n">param_min</span><span class="o">=</span><span class="mf">0.001</span><span class="p">,</span>
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>    <span class="n">param_max</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="p">)</span>
+<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="n">sample_rate</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">param</span>
 </code></pre></div>
 <h2 id="accountant">Accountant<a class="headerlink" href="#accountant" title="Permanent link">&para;</a></h2>
 <p>The <code>Accountant</code> class provides step-by-step privacy tracking during training.
 It wraps a <code>DpProcess</code> and provides budget checking.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting.accountant</span><span class="w"> </span><span class="kn">import</span> <span class="n">Accountant</span>
-<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>
-<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="n">acct</span> <span class="o">=</span> <span class="n">Accountant</span><span class="p">(</span><span class="n">budget</span><span class="o">=</span><span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">))</span>
-<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">),</span> <span class="n">sample_rate</span><span class="p">)</span>
-<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>
-<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">dataloader</span><span class="p">:</span>
-<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a>    <span class="c1"># ... train ...</span>
-<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a>    <span class="n">acct</span> <span class="o">=</span> <span class="n">acct</span> <span class="o">|</span> <span class="n">step</span>
-<a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a>    <span class="k">if</span> <span class="n">acct</span><span class="o">.</span><span class="n">budget_exceeded</span><span class="p">:</span>
-<a id="__codelineno-18-10" name="__codelineno-18-10" href="#__codelineno-18-10"></a>        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Privacy budget exhausted&quot;</span><span class="p">)</span>
-<a id="__codelineno-18-11" name="__codelineno-18-11" href="#__codelineno-18-11"></a>        <span class="k">break</span>
-<a id="__codelineno-18-12" name="__codelineno-18-12" href="#__codelineno-18-12"></a>
-<a id="__codelineno-18-13" name="__codelineno-18-13" href="#__codelineno-18-13"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">acct</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting.accountant</span><span class="w"> </span><span class="kn">import</span> <span class="n">Accountant</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="n">acct</span> <span class="o">=</span> <span class="n">Accountant</span><span class="p">(</span><span class="n">budget</span><span class="o">=</span><span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">))</span>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">),</span> <span class="n">sample_rate</span><span class="p">)</span>
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">dataloader</span><span class="p">:</span>
+<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a>    <span class="c1"># ... train ...</span>
+<a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a>    <span class="n">acct</span> <span class="o">=</span> <span class="n">acct</span> <span class="o">|</span> <span class="n">step</span>
+<a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a>    <span class="k">if</span> <span class="n">acct</span><span class="o">.</span><span class="n">budget_exceeded</span><span class="p">:</span>
+<a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a>        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Privacy budget exhausted&quot;</span><span class="p">)</span>
+<a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a>        <span class="k">break</span>
+<a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a>
+<a id="__codelineno-17-13" name="__codelineno-17-13" href="#__codelineno-17-13"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">acct</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
 <p><code>Accountant</code> is functional: <code>acct | step</code> returns a new <code>Accountant</code> without
 mutating the original. The <code>budget_exceeded</code> property checks whether the
 accumulated process exceeds the budget.</p>
 <h3 id="serialization">Serialization<a class="headerlink" href="#serialization" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="n">state</span> <span class="o">=</span> <span class="n">acct</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span>
-<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="c1"># Save state to disk...</span>
-<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>
-<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="n">acct</span> <span class="o">=</span> <span class="n">Accountant</span><span class="o">.</span><span class="n">from_state_dict</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="n">state</span> <span class="o">=</span> <span class="n">acct</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="c1"># Save state to disk...</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="n">acct</span> <span class="o">=</span> <span class="n">Accountant</span><span class="o">.</span><span class="n">from_state_dict</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="discretization">Discretization<a class="headerlink" href="#discretization" title="Permanent link">&para;</a></h2>
 <p>PLD computation uses a discretized grid. The default parameters are suitable
 for most use cases. For tighter bounds at the cost of computation, adjust the
 discretization:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="kn">import</span> <span class="n">set_discretization</span>
-<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>
-<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="c1"># Tighter (slower)</span>
-<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="n">set_discretization</span><span class="p">(</span><span class="n">discretization</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">max_grid_size</span><span class="o">=</span><span class="mi">50_000_000</span><span class="p">)</span>
-<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>
-<a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a><span class="c1"># Faster (looser)</span>
-<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a><span class="n">set_discretization</span><span class="p">(</span><span class="n">discretization</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="kn">import</span> <span class="n">set_discretization</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="c1"># Tighter (slower)</span>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="n">set_discretization</span><span class="p">(</span><span class="n">discretization</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">max_grid_size</span><span class="o">=</span><span class="mi">50_000_000</span><span class="p">)</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="c1"># Faster (looser)</span>
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="n">set_discretization</span><span class="p">(</span><span class="n">discretization</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
 </code></pre></div>
 <p>Parameters can also be overridden per query:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">discretization</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">discretization</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
 <table>
 <thead>

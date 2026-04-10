@@ -974,29 +974,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/truncated-gaussian/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Truncated Gaussian
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../mechanisms/band-mf/" class="md-nav__link">
         
   
@@ -1524,15 +1501,6 @@
   <a href="#parallel_poissoninner-sample_rate-num_workers-dpprocess" class="md-nav__link">
     <span class="md-ellipsis">
       parallel_poisson(inner, sample_rate, num_workers) -&gt; DpProcess
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#truncated_gaussiannoise_multiplier-radius-dpprocess" class="md-nav__link">
-    <span class="md-ellipsis">
-      truncated_gaussian(noise_multiplier, radius) -&gt; DpProcess
     </span>
   </a>
   
@@ -2080,15 +2048,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#truncated_gaussiannoise_multiplier-radius-dpprocess" class="md-nav__link">
-    <span class="md-ellipsis">
-      truncated_gaussian(noise_multiplier, radius) -&gt; DpProcess
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#adaclipinner-fraction_noise_std-expected_batch_size-dpprocess" class="md-nav__link">
     <span class="md-ellipsis">
       adaclip(inner, *, fraction_noise_std, expected_batch_size) -&gt; DpProcess
@@ -2479,7 +2438,7 @@ sensitivity-1 queries. Base mechanism for DP-SGD.</p>
 <p>Poisson-subsampled mechanism (standard DP-SGD step). <code>sample_rate</code> is
 <code>batch_size / dataset_size</code>.</p>
 <ul>
-<li><code>inner</code> (Gaussian | TruncatedGaussian | AdaClip): Base mechanism</li>
+<li><code>inner</code> (Gaussian | AdaClip): Base mechanism</li>
 <li><code>sample_rate</code> (float): Probability of including each example, in (0, 1]</li>
 </ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mi">256</span> <span class="o">/</span> <span class="mi">50_000</span><span class="p">)</span>
@@ -2511,21 +2470,12 @@ Like <code>poisson()</code> and <code>truncated_poisson()</code>, this is a full
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="p">)</span>
 </code></pre></div>
-<h3 id="truncated_gaussiannoise_multiplier-radius-dpprocess"><code>truncated_gaussian(noise_multiplier, radius) -&gt; DpProcess</code><a class="headerlink" href="#truncated_gaussiannoise_multiplier-radius-dpprocess" title="Permanent link">&para;</a></h3>
-<p>Bounded Gaussian mechanism — truncated variant. The density is renormalized
-over <code>[-R*sigma, R*sigma]</code> (no point masses at boundaries). Tighter than
-the standard Gaussian.</p>
-<ul>
-<li><code>noise_multiplier</code> (float): Ratio of noise std to sensitivity.</li>
-<li><code>radius</code> (float): Bound radius in units of sigma (R ≥ 1).</li>
-</ul>
-<p>Composable with <code>poisson()</code> for subsampled accounting.</p>
 <h3 id="adaclipinner-fraction_noise_std-expected_batch_size-dpprocess"><code>adaclip(inner, *, fraction_noise_std, expected_batch_size) -&gt; DpProcess</code><a class="headerlink" href="#adaclipinner-fraction_noise_std-expected_batch_size-dpprocess" title="Permanent link">&para;</a></h3>
 <p>Accounts for the extra privacy cost of adaptive clipping's noisy
 fraction query. Returns an <code>AdaClip</code> process composable with
 <code>poisson()</code> or <code>truncated_poisson()</code>.</p>
 <ul>
-<li><code>inner</code> (Gaussian | TruncatedGaussian): Base mechanism (from <code>gaussian()</code> or <code>truncated_gaussian()</code>)</li>
+<li><code>inner</code> (Gaussian): Base mechanism (from <code>gaussian()</code>)</li>
 <li><code>fraction_noise_std</code> (float): Noise std on the clipping fraction. Default: 0.05.</li>
 <li><code>expected_batch_size</code> (float): Expected batch size (<code>sample_rate × dataset_size</code>), used to compute the absolute noise std for the quantile query.</li>
 </ul>

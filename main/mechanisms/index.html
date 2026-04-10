@@ -1066,29 +1066,6 @@
   
   
     <li class="md-nav__item">
-      <a href="truncated-gaussian/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Truncated Gaussian
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="band-mf/" class="md-nav__link">
         
   
@@ -1826,7 +1803,6 @@ Simple and broadly applicable.</p>
 <th>Mechanism</th>
 <th>Noise distribution</th>
 <th>Support</th>
-<th>Privacy ordering</th>
 </tr>
 </thead>
 <tbody>
@@ -1834,20 +1810,11 @@ Simple and broadly applicable.</p>
 <td><a href="gaussian/">Gaussian</a></td>
 <td><span class="arithmatex">\(\mathcal{N}(0, \sigma^2)\)</span></td>
 <td><span class="arithmatex">\((-\infty, +\infty)\)</span></td>
-<td>Baseline</td>
-</tr>
-<tr>
-<td><a href="truncated-gaussian/">Truncated Gaussian</a></td>
-<td><span class="arithmatex">\(\mathcal{N}(0, \sigma^2)\)</span> renormalized</td>
-<td><span class="arithmatex">\([-R\sigma, R\sigma]\)</span></td>
-<td><span class="arithmatex">\(\leq\)</span> Gaussian</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Privacy ordering</strong> means: for the same noise multiplier <span class="arithmatex">\(\sigma\)</span> and radius <span class="arithmatex">\(R\)</span>,</p>
-<div class="arithmatex">\[\varepsilon_{\text{truncated}} \leq \varepsilon_{\text{Gaussian}}\]</div>
-<p>at every <span class="arithmatex">\(\delta\)</span>. Truncated gives the tightest accounting; Gaussian the loosest.
-They converge as <span class="arithmatex">\(R \to \infty\)</span>.</p>
+<p>For bounded noise support, use <code>truncated_gaussian_noise()</code> for noise injection
+while accounting with <code>acc.gaussian()</code>. See <a href="gaussian/#bounded-noise-variant">Gaussian — Bounded noise variant</a>.</p>
 <h2 id="correlated-noise-dp-ftrl">Correlated noise (DP-FTRL)<a class="headerlink" href="#correlated-noise-dp-ftrl" title="Permanent link">&para;</a></h2>
 <p>Instead of independent noise at each step, matrix-factorization (MF) mechanisms
 add <em>correlated</em> noise designed to partially cancel over the training run. This
@@ -1886,9 +1853,9 @@ privacy budget — at the cost of knowing the total number of steps in advance.<
 <h2 id="which-mechanism-should-i-use">Which mechanism should I use?<a class="headerlink" href="#which-mechanism-should-i-use" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Need correlated noise across steps (DP-FTRL)?
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>│
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├─ No ─── Want tighter bounds from bounded noise?
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│         ├─ Yes → Truncated Gaussian (tightest independent bounds)
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│         └─ No  → Gaussian (standard DP-SGD, simplest)
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├─ No ─── Gaussian (standard DP-SGD)
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│         Use truncated_gaussian_noise() for bounded support if desired;
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│         accounting always uses acc.gaussian().
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>└─ Yes ── How many training steps?
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>          ├─ n &lt; 100  → Dense MF (optimal but O(n²) memory)
@@ -1896,10 +1863,8 @@ privacy budget — at the cost of knowing the total number of steps in advance.<
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>          └─ n &gt; 5000 → BLT (memory-efficient, supports multi-epoch)
 </code></pre></div>
 <p>For most DP-SGD workloads, <strong>Gaussian</strong> is the right starting point.
-Switch to <strong>Truncated Gaussian</strong> if you want ~5-15% tighter <span class="arithmatex">\(\varepsilon\)</span>
-for free (same noise level, better accounting). Use an MF mechanism only
-when you need the privacy-utility improvement of correlated noise and are
-willing to fix the training length in advance.</p>
+Use an MF mechanism only when you need the privacy-utility improvement
+of correlated noise and are willing to fix the training length in advance.</p>
 <h2 id="amplification-compatibility">Amplification compatibility<a class="headerlink" href="#amplification-compatibility" title="Permanent link">&para;</a></h2>
 <p>Subsampling amplification reduces per-step privacy cost. Not all mechanisms
 support all amplification types:</p>
@@ -1917,12 +1882,6 @@ support all amplification types:</p>
 <td>Gaussian</td>
 <td style="text-align: center;">Yes</td>
 <td style="text-align: center;">Yes</td>
-<td style="text-align: center;">—</td>
-</tr>
-<tr>
-<td>Truncated Gaussian</td>
-<td style="text-align: center;">Yes</td>
-<td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 </tr>
 <tr>
@@ -1947,9 +1906,8 @@ support all amplification types:</p>
 </table>
 <ul>
 <li><strong><code>poisson()</code></strong>: Standard Poisson subsampling. Each example included
-  independently with probability <span class="arithmatex">\(q\)</span>. Works with all three Gaussian variants.</li>
-<li><strong><code>truncated_poisson()</code></strong>: Poisson with a batch-size cap. Currently only
-  supports standard Gaussian as the inner mechanism.</li>
+  independently with probability <span class="arithmatex">\(q\)</span>.</li>
+<li><strong><code>truncated_poisson()</code></strong>: Poisson with a batch-size cap.</li>
 <li><strong><code>cyclic_poisson()</code></strong>: Cyclic decomposition specific to BandMF. Decomposes
   <span class="arithmatex">\(n\)</span> steps into <span class="arithmatex">\(\lceil n/b \rceil\)</span> independent groups.</li>
 <li><strong>internal</strong>: BLT and Dense MF handle multi-participation patterns (epochs,
@@ -1961,19 +1919,17 @@ support all amplification types:</p>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="c1"># --- Independent noise ---</span>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">gauss</span>     <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">trunc</span>     <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">truncated_gaussian</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="c1"># --- Correlated noise ---</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="c1"># Note: cyclic_poisson&#39;s sample_rate is a per-group Poisson probability</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="c1"># (typically ≈ bands * q when q is the usual DP-SGD sampling rate).</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="n">band</span>      <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">cyclic_poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="n">blt</span>       <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">blt_mf</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mi">1000</span><span class="p">)</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="n">dense</span>     <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">dense_mf</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mi">50</span><span class="p">,</span> <span class="n">epochs</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">proc</span> <span class="ow">in</span> <span class="p">[(</span><span class="s2">&quot;Gaussian&quot;</span><span class="p">,</span> <span class="n">gauss</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;Rectified&quot;</span><span class="p">,</span> <span class="n">rect</span><span class="p">),</span>
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>                    <span class="p">(</span><span class="s2">&quot;Truncated&quot;</span><span class="p">,</span> <span class="n">trunc</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;BandMF&quot;</span><span class="p">,</span> <span class="n">band</span><span class="p">),</span>
-<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>                    <span class="p">(</span><span class="s2">&quot;BLT&quot;</span><span class="p">,</span> <span class="n">blt</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;Dense&quot;</span><span class="p">,</span> <span class="n">dense</span><span class="p">)]:</span>
-<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">12s</span><span class="si">}</span><span class="s2">  ε = </span><span class="si">{</span><span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="c1"># --- Correlated noise ---</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="c1"># Note: cyclic_poisson&#39;s sample_rate is a per-group Poisson probability</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="c1"># (typically ≈ bands * q when q is the usual DP-SGD sampling rate).</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="n">band</span>      <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">cyclic_poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="n">blt</span>       <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">blt_mf</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mi">1000</span><span class="p">)</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="n">dense</span>     <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">dense_mf</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mi">50</span><span class="p">,</span> <span class="n">epochs</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">proc</span> <span class="ow">in</span> <span class="p">[(</span><span class="s2">&quot;Gaussian&quot;</span><span class="p">,</span> <span class="n">gauss</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;BandMF&quot;</span><span class="p">,</span> <span class="n">band</span><span class="p">),</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>                    <span class="p">(</span><span class="s2">&quot;BLT&quot;</span><span class="p">,</span> <span class="n">blt</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;Dense&quot;</span><span class="p">,</span> <span class="n">dense</span><span class="p">)]:</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">12s</span><span class="si">}</span><span class="s2">  ε = </span><span class="si">{</span><span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 
 

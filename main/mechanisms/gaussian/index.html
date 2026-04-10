@@ -18,7 +18,7 @@
         <link rel="prev" href="../">
       
       
-        <link rel="next" href="../truncated-gaussian/">
+        <link rel="next" href="../band-mf/">
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
@@ -1150,6 +1150,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#bounded-noise-variant" class="md-nav__link">
+    <span class="md-ellipsis">
+      Bounded noise variant
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#references" class="md-nav__link">
     <span class="md-ellipsis">
       References
@@ -1162,29 +1171,6 @@
   
 </nav>
       
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../truncated-gaussian/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Truncated Gaussian
-    
-  </span>
-  
-
-      </a>
     </li>
   
 
@@ -2001,6 +1987,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#bounded-noise-variant" class="md-nav__link">
+    <span class="md-ellipsis">
+      Bounded noise variant
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#references" class="md-nav__link">
     <span class="md-ellipsis">
       References
@@ -2160,6 +2155,28 @@ sample. A given example may appear on multiple workers.</p>
 <li>If <span class="arithmatex">\(\varepsilon &gt; 10\)</span> after calibration, the privacy guarantee is weak.
   Consider more noise, fewer steps, or a larger dataset.</li>
 </ul>
+<h2 id="bounded-noise-variant">Bounded noise variant<a class="headerlink" href="#bounded-noise-variant" title="Permanent link">&para;</a></h2>
+<p>Opaque also provides <code>truncated_gaussian_noise()</code>, which samples from a
+Gaussian truncated to <span class="arithmatex">\([-R\sigma, R\sigma]\)</span> with renormalized density. This
+gives bounded support while adding negligibly more noise than the standard
+Gaussian for typical radius values (<span class="arithmatex">\(R \geq 3\)</span>). For high-dimensional
+tasks like model training, the truncated Gaussian converges to the standard
+Gaussian, so use <code>acc.gaussian()</code> for accounting.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque</span><span class="w"> </span><span class="kn">import</span> <span class="n">truncated_gaussian_noise</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># Noise injection: bounded support</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">truncated_gaussian_noise</span><span class="p">(</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    <span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">sensitivity</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="p">)</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="c1"># Accounting</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">),</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="n">training</span> <span class="o">=</span> <span class="n">step</span> <span class="o">*</span> <span class="mi">1000</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
+</code></pre></div>
 <h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Abadi et al. (2016)</strong> — <a href="https://arxiv.org/abs/1607.00133">Deep Learning with Differential Privacy</a>.

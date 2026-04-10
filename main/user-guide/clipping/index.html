@@ -898,6 +898,75 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#per-group-clipping" class="md-nav__link">
+    <span class="md-ellipsis">
+      Per-group clipping
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Per-group clipping">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      Setup
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-it-works_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      How it works
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sensitivity-and-noise" class="md-nav__link">
+    <span class="md-ellipsis">
+      Sensitivity and noise
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#per-group-noise-allocation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Per-group noise allocation
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#diagnostics_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      Diagnostics
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adaptive-per-group-clipping" class="md-nav__link">
+    <span class="md-ellipsis">
+      Adaptive per-group clipping
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#api-reference" class="md-nav__link">
     <span class="md-ellipsis">
       API reference
@@ -1208,29 +1277,6 @@
   
   <span class="md-ellipsis">
     Gaussian
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../mechanisms/truncated-gaussian/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Truncated Gaussian
     
   </span>
   
@@ -2103,6 +2149,75 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#per-group-clipping" class="md-nav__link">
+    <span class="md-ellipsis">
+      Per-group clipping
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Per-group clipping">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      Setup
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-it-works_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      How it works
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sensitivity-and-noise" class="md-nav__link">
+    <span class="md-ellipsis">
+      Sensitivity and noise
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#per-group-noise-allocation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Per-group noise allocation
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#diagnostics_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      Diagnostics
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adaptive-per-group-clipping" class="md-nav__link">
+    <span class="md-ellipsis">
+      Adaptive per-group clipping
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#api-reference" class="md-nav__link">
     <span class="md-ellipsis">
       API reference
@@ -2457,6 +2572,89 @@ frozen parameters:</p>
 </code></pre></div>
 <p>Only the trainable parameters receive per-example gradients. Frozen parameters
 are treated as constants by <code>vmap</code>.</p>
+<h2 id="per-group-clipping">Per-group clipping<a class="headerlink" href="#per-group-clipping" title="Permanent link">&para;</a></h2>
+<p>Per-group clipping assigns different clipping norms to different parameter
+groups. Instead of a single global L2 norm bound, each group is clipped
+independently. This can better match the natural gradient scale of different
+layers or module types (e.g., attention vs. MLP).</p>
+<h3 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h3>
+<p>Use <code>per_group</code> to construct a <code>PerGroup</code> from parameter keys and substring
+patterns:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque</span><span class="w"> </span><span class="kn">import</span> <span class="n">per_group</span><span class="p">,</span> <span class="n">clipped_grad</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="c1"># Two groups: attention layers (norm 1.0) and MLP layers (norm 2.0)</span>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="n">pg</span> <span class="o">=</span> <span class="n">per_group</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">self_attn</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">mlp</span><span class="o">=</span><span class="mf">2.0</span><span class="p">)</span>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a>    <span class="n">loss_fn</span><span class="p">,</span>
+<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>    <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+<a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a>    <span class="n">clipping_norm</span><span class="o">=</span><span class="n">pg</span><span class="p">,</span>
+<a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a>    <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+<a id="__codelineno-14-12" name="__codelineno-14-12" href="#__codelineno-14-12"></a><span class="p">)</span>
+</code></pre></div>
+<p>Each trainable parameter key (from <code>make_functional</code>) is matched by substring
+against the patterns. Every parameter must match exactly one pattern. Use
+<code>fallback=&lt;value&gt;</code> as a catch-all for unmatched parameters:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="n">pg</span> <span class="o">=</span> <span class="n">per_group</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">self_attn</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">fallback</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
+</code></pre></div>
+<h3 id="how-it-works_1">How it works<a class="headerlink" href="#how-it-works_1" title="Permanent link">&para;</a></h3>
+<p>With per-group clipping norms <span class="arithmatex">\(C_1, \dots, C_K\)</span>:</p>
+<ol>
+<li>Per-example gradients are computed as usual via <code>vmap(grad(...))</code>.</li>
+<li>Each group's gradient slice is clipped to its own L2 norm bound.</li>
+<li>The clipped gradients are summed across the batch and divided by
+   <code>normalize_by</code>.</li>
+</ol>
+<h3 id="sensitivity-and-noise">Sensitivity and noise<a class="headerlink" href="#sensitivity-and-noise" title="Permanent link">&para;</a></h3>
+<p>The L2 sensitivity of the full clipped query is a <strong>scalar</strong>:</p>
+<div class="arithmatex">\[\Delta_2 = \frac{\lVert C \rVert_2}{n} = \frac{\sqrt{\sum_i C_i^2}}{n}\]</div>
+<p>This is always available via <code>clip_state.sensitivity</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="n">stddev</span> <span class="o">=</span> <span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">stddev</span><span class="o">=</span><span class="n">stddev</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+</code></pre></div>
+<p>Accounting is simply <code>gaussian(nm)</code> — no composition penalty, regardless of
+the number of groups. The isotropic noise (same σ everywhere) is sufficient
+for correct privacy.</p>
+<h3 id="per-group-noise-allocation">Per-group noise allocation<a class="headerlink" href="#per-group-noise-allocation" title="Permanent link">&para;</a></h3>
+<p>For an MSE-optimal allocation that puts less noise on small-norm groups, use
+<code>per_group_noise_stddev</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">per_group_noise_stddev</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="n">stddev</span> <span class="o">=</span> <span class="n">per_group_noise_stddev</span><span class="p">(</span><span class="n">clip_state</span><span class="p">,</span> <span class="n">noise_multiplier</span><span class="p">)</span>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">stddev</span><span class="o">=</span><span class="n">stddev</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
+</code></pre></div>
+<p>This sets <span class="arithmatex">\(\sigma_i \propto \sqrt{C_i}\)</span> instead of a uniform σ. Privacy
+accounting remains <code>gaussian(nm)</code> — the allocation satisfies the same
+Mahalanobis constraint, just with better MSE.</p>
+<h3 id="diagnostics_1">Diagnostics<a class="headerlink" href="#diagnostics_1" title="Permanent link">&para;</a></h3>
+<p>With <code>return_aux=True</code>, the returned auxiliary data includes per-group norms:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="n">pg</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">return_aux</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="p">)</span>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">aux</span><span class="p">),</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="c1"># aux.group_norms: dict mapping group name → per-example norms tensor</span>
+<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">norms</span> <span class="ow">in</span> <span class="n">aux</span><span class="o">.</span><span class="n">group_norms</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">: mean_norm=</span><span class="si">{</span><span class="n">norms</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+<h3 id="adaptive-per-group-clipping">Adaptive per-group clipping<a class="headerlink" href="#adaptive-per-group-clipping" title="Permanent link">&para;</a></h3>
+<p>Per-group clipping works with <code>adaptive_clipped_grad</code>. Each group's threshold
+adapts independently based on its own clipping rate:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque</span><span class="w"> </span><span class="kn">import</span> <span class="n">adaptive_clipped_grad</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="n">pg</span> <span class="o">=</span> <span class="n">per_group</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">self_attn</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">mlp</span><span class="o">=</span><span class="mf">2.0</span><span class="p">)</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">adaptive_clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a>    <span class="n">loss_fn</span><span class="p">,</span>
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a>    <span class="n">initial_clipping_norm</span><span class="o">=</span><span class="n">pg</span><span class="p">,</span>
+<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a>    <span class="n">target_quantile</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+<a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+<a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a>    <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+<a id="__codelineno-19-12" name="__codelineno-19-12" href="#__codelineno-19-12"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">7</span><span class="p">),</span>
+<a id="__codelineno-19-13" name="__codelineno-19-13" href="#__codelineno-19-13"></a><span class="p">)</span>
+</code></pre></div>
 <h2 id="api-reference">API reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
 <p>See <a href="../../api/clipping/">Clipping API Reference</a> for complete function
 signatures, all parameters, and return types.</p>

@@ -1086,29 +1086,6 @@
   
   
     <li class="md-nav__item">
-      <a href="mechanisms/truncated-gaussian/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Truncated Gaussian
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="mechanisms/band-mf/" class="md-nav__link">
         
   
@@ -1888,7 +1865,7 @@ functions return <code>(noise_fn, state)</code>. Pass the same key on all ranks 
 </code></pre></div>
 <p>Three noise families are available: <strong>standard Gaussian</strong> (<code>gaussian_noise</code>),
 <strong>bounded Gaussian</strong> (<code>truncated_gaussian_noise</code>) for
-tighter accounting at the same noise level, and <strong>matrix factorization</strong>
+bounded support at the same noise level, and <strong>matrix factorization</strong>
 (<code>band_mf_noise</code>, <code>blt_mf_noise</code>, <code>dense_mf_noise</code>) for correlated noise that
 reduces effective noise on cumulative updates (DP-FTRL). See the
 <a href="mechanisms/">Mechanisms</a> reference for details.</p>
