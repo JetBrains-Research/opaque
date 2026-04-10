@@ -95,6 +95,11 @@ class TestStandardMode:
 # ---------------------------------------------------------------------------
 
 
+def _bc_state(chain_state):
+    """Extract DPAdamWState from the chain state tuple."""
+    return chain_state[0]
+
+
 class TestBCMode:
     """DP-AdamW-BC: bias-corrected second moment."""
 
@@ -106,33 +111,35 @@ class TestBCMode:
     def test_init_returns_dp_state(self, params):
         opt = dp_adamw(lr=1e-3, noise_variance=0.5)
         state = opt.init(params)
+        bc = _bc_state(state)
 
-        assert isinstance(state, DPAdamWState)
-        assert state.step == 0
+        assert isinstance(bc, DPAdamWState)
+        assert bc.step == 0
         # Moments initialised to zeros.
         for k in params:
-            assert torch.equal(state.mu[k], torch.zeros_like(params[k]))
-            assert torch.equal(state.nu[k], torch.zeros_like(params[k]))
+            assert torch.equal(bc.mu[k], torch.zeros_like(params[k]))
+            assert torch.equal(bc.nu[k], torch.zeros_like(params[k]))
 
     def test_update_advances_step(self, params, grads):
         opt = dp_adamw(lr=1e-3, noise_variance=0.5)
         state = opt.init(params)
         _, state2 = opt.update(grads, state, params=params)
-        assert state2.step == 1
+        assert _bc_state(state2).step == 1
         _, state3 = opt.update(grads, state2, params=params)
-        assert state3.step == 2
+        assert _bc_state(state3).step == 2
 
     def test_moments_updated(self, params, grads):
         opt = dp_adamw(lr=1e-3, noise_variance=0.5)
         state = opt.init(params)
         _, state2 = opt.update(grads, state, params=params)
 
+        bc = _bc_state(state2)
         b1, b2 = 0.9, 0.999
         for k in grads:
             expected_mu = (1 - b1) * grads[k]
             expected_nu = (1 - b2) * grads[k] * grads[k]
-            torch.testing.assert_close(state2.mu[k], expected_mu)
-            torch.testing.assert_close(state2.nu[k], expected_nu)
+            torch.testing.assert_close(bc.mu[k], expected_mu)
+            torch.testing.assert_close(bc.nu[k], expected_nu)
 
     def test_bc_differs_from_standard(self, params, grads):
         """BC mode must produce different updates than standard mode."""
@@ -186,9 +193,11 @@ class TestBCMode:
 
     def test_nested_pytree(self, nested_params):
         grads = {
-            k: {kk: torch.randn_like(vv) for kk, vv in v.items()}
-            if isinstance(v, dict)
-            else torch.randn_like(v)
+            k: (
+                {kk: torch.randn_like(vv) for kk, vv in v.items()}
+                if isinstance(v, dict)
+                else torch.randn_like(v)
+            )
             for k, v in nested_params.items()
         }
 
@@ -196,7 +205,7 @@ class TestBCMode:
         state = opt.init(nested_params)
         updates, state2 = opt.update(grads, state, params=nested_params)
 
-        assert state2.step == 1
+        assert _bc_state(state2).step == 1
         assert "layer1" in updates and "layer2" in updates
         assert (
             updates["layer1"]["weight"].shape == nested_params["layer1"]["weight"].shape
@@ -204,7 +213,8 @@ class TestBCMode:
 
 
 # ---------------------------------------------------------------------------
-# Weight decay
+# Weight decay (BC mode — standard mode reuses torchopt.adamw which is
+# already tested upstream)
 # ---------------------------------------------------------------------------
 
 
@@ -218,16 +228,10 @@ class TestWeightDecay:
         state = opt.init(params)
         updates, _ = opt.update(grads, state, params=params)
 
-        # update = -lr * (m_hat/(sqrt(v_hat)+eps) + wd * params)
-        # With zero grads, m_hat=0, so update = -lr * wd * params.
+        # With zero grads, m_hat=0 so the adam-scaled part is zero.
+        # Only weight decay contributes:  update = -lr * wd * params.
         expected = -0.1 * 0.1 * params["w"]
         torch.testing.assert_close(updates["w"], expected)
-
-    def test_params_required_with_weight_decay(self, grads):
-        opt = dp_adamw(lr=1e-3, weight_decay=0.1, noise_variance=0.1)
-        state = opt.init({k: torch.randn_like(v) for k, v in grads.items()})
-        with pytest.raises(ValueError, match="params must be passed"):
-            opt.update(grads, state)
 
     def test_no_weight_decay_no_params_needed(self):
         params = {"w": torch.randn(3)}

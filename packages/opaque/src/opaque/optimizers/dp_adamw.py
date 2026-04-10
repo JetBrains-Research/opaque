@@ -40,12 +40,22 @@ except ImportError as exc:
 from opaque.utils.pytree import tree_map
 
 
+# ---------------------------------------------------------------------------
+# State
+# ---------------------------------------------------------------------------
+
+
 @dataclasses.dataclass(frozen=True)
 class DPAdamWState:
-    """Immutable state for DP-AdamW-BC optimizer (Algorithm 2).
+    """Immutable state for the bias-corrected moment scaling (Algorithm 2).
+
+    This is the first element of the chain state returned by
+    :func:`dp_adamw` when ``noise_variance > 0``.  The full optimizer
+    state is a tuple ``(DPAdamWState, wd_state, lr_state)`` managed by
+    ``torchopt.chain``.
 
     When ``noise_variance=0``, :func:`dp_adamw` delegates to
-    ``torchopt.adamw`` and uses TorchOpt's own state type instead.
+    ``torchopt.adamw`` which uses TorchOpt's own state types.
 
     Attributes:
         mu: First moment estimates (pytree matching params).
@@ -56,6 +66,66 @@ class DPAdamWState:
     mu: Any
     nu: Any
     step: int
+
+
+# ---------------------------------------------------------------------------
+# Internal: bias-corrected moment scaling (replaces torchopt.scale_by_adam)
+# ---------------------------------------------------------------------------
+
+
+def _scale_by_adam_bc(
+    b1: float,
+    b2: float,
+    eps: float,
+    noise_variance: float,
+    bc_floor: float,
+) -> GradientTransformation:
+    """Adam moment scaling with DP bias correction (Algorithm 2, step 2).
+
+    Like ``torchopt.transform.scale_by_adam`` but subtracts the DP noise
+    variance from the bias-corrected second moment before dividing::
+
+        v_hat_corrected = max(v_hat - noise_variance, bc_floor)
+        output = m_hat / (sqrt(v_hat_corrected) + eps)
+    """
+
+    def init_fn(params: Any) -> DPAdamWState:
+        mu = tree_map(torch.zeros_like, params)
+        nu = tree_map(torch.zeros_like, params)
+        return DPAdamWState(mu=mu, nu=nu, step=0)
+
+    def update_fn(
+        updates: Any,
+        state: DPAdamWState,
+        *,
+        params: Any = None,
+        inplace: bool = False,
+    ) -> tuple[Any, DPAdamWState]:
+        t = state.step + 1
+
+        # Moment updates (paper steps 3-4).
+        new_mu = tree_map(lambda m, g: b1 * m + (1 - b1) * g, state.mu, updates)
+        new_nu = tree_map(lambda v, g: b2 * v + (1 - b2) * g * g, state.nu, updates)
+
+        # Bias correction (paper steps 5-6) + BC noise subtraction.
+        bc1 = 1 - b1**t
+        bc2 = 1 - b2**t
+
+        def _compute(m: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+            m_hat = m / bc1
+            v_hat = torch.clamp(v / bc2 - noise_variance, min=bc_floor)
+            return m_hat / (v_hat.sqrt() + eps)
+
+        result = tree_map(_compute, new_mu, new_nu)
+        new_state = DPAdamWState(mu=new_mu, nu=new_nu, step=t)
+        return result, new_state
+
+    return GradientTransformation(init_fn, update_fn)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 
 def dp_adamw(
@@ -76,6 +146,10 @@ def dp_adamw(
     subtracts the DP noise variance from the second moment estimate::
 
         v_hat_corrected = max(v_hat - noise_variance, bc_floor)
+
+    The BC variant reuses ``torchopt.transform.add_decayed_weights`` and
+    ``torchopt.transform.scale`` for weight decay and learning-rate
+    application; only the moment scaling is custom.
 
     The optimizer expects gradients that are already clipped and noised.
     Clipping and noise injection are separate concerns handled by
@@ -121,61 +195,13 @@ def dp_adamw(
     if noise_variance == 0:
         return torchopt.adamw(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
 
-    # Algorithm 2: DP-AdamW-BC with bias-corrected second moment.
-    b1, b2 = betas
-
-    def init_fn(params: Any) -> DPAdamWState:
-        mu = tree_map(torch.zeros_like, params)
-        nu = tree_map(torch.zeros_like, params)
-        return DPAdamWState(mu=mu, nu=nu, step=0)
-
-    def update_fn(
-        updates: Any,
-        state: DPAdamWState,
-        *,
-        params: Any = None,
-        inplace: bool = False,
-    ) -> tuple[Any, DPAdamWState]:
-        if weight_decay != 0 and params is None:
-            raise ValueError(
-                "params must be passed to update() when weight_decay != 0 "
-                "(use opt.update(grads, state, params=params))"
-            )
-
-        t = state.step + 1
-
-        # Moment updates (paper steps 3-4).
-        new_mu = tree_map(lambda m, g: b1 * m + (1 - b1) * g, state.mu, updates)
-        new_nu = tree_map(lambda v, g: b2 * v + (1 - b2) * g * g, state.nu, updates)
-
-        # Bias-correction denominators (paper steps 5-6).
-        bc1 = 1 - b1**t
-        bc2 = 1 - b2**t
-
-        # DP-AdamW-BC update (paper step 7, Algorithm 2):
-        #   v_hat_corrected = max(v_hat - Phi, gamma)
-        #   update = -lr * (m_hat / (sqrt(v_hat_corrected) + eps) + wd * theta)
-        if params is not None and weight_decay != 0:
-
-            def _step(m: torch.Tensor, v: torch.Tensor, p: torch.Tensor):
-                m_hat = m / bc1
-                v_hat = torch.clamp(v / bc2 - noise_variance, min=bc_floor)
-                return -(lr * (m_hat / (v_hat.sqrt() + eps) + weight_decay * p))
-
-            result = tree_map(_step, new_mu, new_nu, params)
-        else:
-
-            def _step_no_wd(m: torch.Tensor, v: torch.Tensor):
-                m_hat = m / bc1
-                v_hat = torch.clamp(v / bc2 - noise_variance, min=bc_floor)
-                return -(lr * m_hat / (v_hat.sqrt() + eps))
-
-            result = tree_map(_step_no_wd, new_mu, new_nu)
-
-        new_state = DPAdamWState(mu=new_mu, nu=new_nu, step=t)
-        return result, new_state
-
-    return GradientTransformation(init_fn, update_fn)
+    # Algorithm 2: DP-AdamW-BC.
+    # Only the moment scaling is custom; weight decay and lr reuse torchopt.
+    return torchopt.chain(
+        _scale_by_adam_bc(betas[0], betas[1], eps, noise_variance, bc_floor),
+        torchopt.transform.add_decayed_weights(weight_decay=weight_decay),
+        torchopt.transform.scale(-lr),
+    )
 
 
 __all__ = ["dp_adamw", "DPAdamWState"]
