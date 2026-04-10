@@ -139,6 +139,7 @@ class TestBCMode:
 
         assert isinstance(bc, DPAdamWState)
         assert bc.step == 0
+        assert bc.phi == 0.0
         # Moments initialised to zeros.
         for k in params:
             assert torch.equal(bc.mu[k], torch.zeros_like(params[k]))
@@ -234,6 +235,109 @@ class TestBCMode:
         assert (
             updates["layer1"]["weight"].shape == nested_params["layer1"]["weight"].shape
         )
+
+
+# ---------------------------------------------------------------------------
+# Noise variance EMA tracking (adaptive clipping support)
+# ---------------------------------------------------------------------------
+
+
+class TestNoiseVarianceEMA:
+    """The phi EMA must track per-step noise variance correctly."""
+
+    def test_phi_ema_matches_manual_computation(self, params, grads):
+        """After several steps with constant noise_variance, phi EMA
+        should equal the manual recurrence: phi_t = b2*phi_{t-1} + (1-b2)*nv."""
+        b2 = 0.999
+        nv = 0.5
+        opt = dp_adamw(lr=1e-3, betas=(0.9, b2), noise_variance=nv)
+        state = opt.init(params)
+
+        expected_phi = 0.0
+        for _ in range(10):
+            _, state = opt.update(grads, state, params=params)
+            expected_phi = b2 * expected_phi + (1 - b2) * nv
+
+        assert _bc_state(state).phi == pytest.approx(expected_phi)
+
+    def test_constant_phi_converges_to_nv(self, params, grads):
+        """With constant noise_variance, phi_hat = phi/(1-b2^t) → nv."""
+        b2 = 0.999
+        nv = 0.25
+        opt = dp_adamw(lr=1e-3, betas=(0.9, b2), noise_variance=nv)
+        state = opt.init(params)
+
+        for _ in range(5000):
+            _, state = opt.update(grads, state, params=params)
+
+        bc = _bc_state(state)
+        phi_hat = bc.phi / (1 - b2**bc.step)
+        assert phi_hat == pytest.approx(nv, rel=1e-3)
+
+    def test_per_step_override_tracks_varying_nv(self, params, grads):
+        """Per-step noise_variance override should produce different phi
+        than using the constructor default."""
+        b2 = 0.999
+        opt = dp_adamw(lr=1e-3, betas=(0.9, b2), noise_variance=0.1)
+        state_default = opt.init(params)
+        state_override = opt.init(params)
+
+        for step in range(10):
+            _, state_default = opt.update(grads, state_default, params=params)
+            # Override with increasing noise variance.
+            varying_nv = 0.1 + step * 0.05
+            _, state_override = opt.update(
+                grads, state_override, params=params, noise_variance=varying_nv
+            )
+
+        # Default uses constant 0.1; override uses increasing values → different phi.
+        assert _bc_state(state_default).phi != pytest.approx(
+            _bc_state(state_override).phi
+        )
+        # Override phi should be larger (noise_variance was always >= 0.1).
+        assert _bc_state(state_override).phi > _bc_state(state_default).phi
+
+    def test_per_step_override_ema_manual(self, params, grads):
+        """Verify the EMA recurrence with per-step overrides."""
+        b2 = 0.999
+        opt = dp_adamw(lr=1e-3, betas=(0.9, b2), noise_variance=0.0)
+        state = opt.init(params)
+
+        expected_phi = 0.0
+        nv_schedule = [0.1, 0.2, 0.3, 0.2, 0.1]
+        for nv in nv_schedule:
+            _, state = opt.update(grads, state, params=params, noise_variance=nv)
+            expected_phi = b2 * expected_phi + (1 - b2) * nv
+
+        assert _bc_state(state).phi == pytest.approx(expected_phi)
+
+    def test_zero_override_disables_bc_for_step(self, params, grads):
+        """Passing noise_variance=0 per-step should contribute 0 to the EMA."""
+        b2 = 0.999
+        opt = dp_adamw(lr=1e-3, betas=(0.9, b2), noise_variance=0.5)
+        state = opt.init(params)
+
+        # 5 steps with default nv=0.5, then 5 with override nv=0.
+        for _ in range(5):
+            _, state = opt.update(grads, state, params=params)
+        phi_after_5 = _bc_state(state).phi
+
+        for _ in range(5):
+            _, state = opt.update(grads, state, params=params, noise_variance=0.0)
+        phi_after_10 = _bc_state(state).phi
+
+        # phi should decay toward 0 when we feed in 0.
+        assert phi_after_10 < phi_after_5
+
+    def test_standard_mode_phi_stays_zero(self, params, grads):
+        """With noise_variance=0 and no override, phi remains 0."""
+        opt = dp_adamw(lr=1e-3, noise_variance=0.0)
+        state = opt.init(params)
+
+        for _ in range(10):
+            _, state = opt.update(grads, state, params=params)
+
+        assert _bc_state(state).phi == 0.0
 
 
 # ---------------------------------------------------------------------------

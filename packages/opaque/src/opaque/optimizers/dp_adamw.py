@@ -11,9 +11,15 @@ Algorithm 1 (``noise_variance=0``, default):
     weight decay and learning-rate application reuse torchopt transforms.
 
 Algorithm 2 (``noise_variance > 0``):
-    DP-AdamW-BC.  Subtracts the DP noise variance |Phi| from the bias-corrected
-    second moment estimate v-hat_t, clamped to a floor gamma, to undo the
-    upward bias that Gaussian noise injection introduces.
+    DP-AdamW-BC.  Tracks an exponential moving average of the per-step
+    noise variance using the same beta_2 coefficient as the second moment,
+    then subtracts the bias-corrected noise EMA from v-hat_t::
+
+        phi_t = beta_2 * phi_{t-1} + (1-beta_2) * Phi_t
+        v_hat_corrected = max(v_hat_t - phi_t/(1-beta_2^t), gamma)
+
+    This correctly handles adaptive clipping (where Phi_t varies per step)
+    and reduces to the paper's constant subtraction when Phi is fixed.
 
 Both variants follow TorchOpt's ``GradientTransformation`` protocol::
 
@@ -53,16 +59,21 @@ class DPAdamWState:
 
     This is the first element of the chain state returned by
     :func:`dp_adamw`.  The full optimizer state is a tuple
-    ``(DPAdamWState, wd_state, lr_state)`` managed by ``torchopt.chain``.
+    ``(DPAdamWState, wd_state, lr_state)``.
 
     Attributes:
         mu: First moment estimates (pytree matching params).
         nu: Second moment estimates (pytree matching params).
+        phi: Noise variance EMA.  A ``float`` for scalar noise_variance,
+            or ``dict[str, float]`` for per-group noise_variance.  Tracks
+            the beta_2-weighted running average of the per-step noise
+            variance Phi_t injected into gradients.
         step: Number of update steps completed.
     """
 
     mu: Any
     nu: Any
+    phi: Any
     step: int
 
 
@@ -71,38 +82,49 @@ class DPAdamWState:
 # ---------------------------------------------------------------------------
 
 
+def _resolve_nv_scalar(nv: float | PerGroup, key: str) -> float:
+    """Resolve noise variance to a scalar for a given param key.
+
+    Scalar input is returned as-is (already variance = stddev**2).
+    PerGroup input contains stddevs; returns stddev**2 for the key's group.
+    """
+    if isinstance(nv, PerGroup):
+        return nv.for_key(key) ** 2
+    return nv
+
+
 def _scale_by_adam_bc(
     b1: float,
     b2: float,
     eps: float,
-    noise_variance: float | PerGroup,
+    default_nv: float | PerGroup,
     bc_floor: float,
 ) -> GradientTransformation:
     """Adam moment scaling with optional DP bias correction.
 
     Equivalent to ``torchopt.transform.scale_by_adam`` when
-    ``noise_variance=0``.  When ``noise_variance > 0``, subtracts the DP
-    noise variance from the bias-corrected second moment (Algorithm 2)::
+    ``noise_variance=0`` and no per-step override is given.
 
-        v_hat_corrected = max(v_hat - noise_variance, bc_floor)
-        output = m_hat / (sqrt(v_hat_corrected) + eps)
+    When noise variance is active, tracks a beta_2-EMA of the per-step
+    noise variance and subtracts it (bias-corrected) from v-hat::
 
-    When ``noise_variance`` is a :class:`~opaque.utils.per_group.PerGroup`,
-    each parameter group has its own variance subtracted — required for
-    MSE-optimal per-group noise allocation.
+        phi_t = beta_2 * phi_{t-1} + (1-beta_2) * Phi_t
+        v_hat_corrected = max(v_hat_t - phi_t/(1-beta_2^t), bc_floor)
+
+    The ``noise_variance`` kwarg on ``update_fn`` overrides the default
+    for that step (e.g. when adaptive clipping changes the sensitivity).
     """
-    # Whether we need per-key variance lookup.
-    _per_group = isinstance(noise_variance, PerGroup)
-    _any_bc = (
-        any(v > 0 for v in noise_variance.values.values())
-        if _per_group
-        else noise_variance > 0
-    )
+    _default_per_group = isinstance(default_nv, PerGroup)
 
     def init_fn(params: Any) -> DPAdamWState:
         mu = tree_map(torch.zeros_like, params)
         nu = tree_map(torch.zeros_like, params)
-        return DPAdamWState(mu=mu, nu=nu, step=0)
+        phi: float | dict[str, float]
+        if _default_per_group:
+            phi = {k: 0.0 for k in params}
+        else:
+            phi = 0.0
+        return DPAdamWState(mu=mu, nu=nu, phi=phi, step=0)
 
     def update_fn(
         updates: Any,
@@ -110,45 +132,59 @@ def _scale_by_adam_bc(
         *,
         params: Any = None,
         inplace: bool = False,
+        noise_variance: float | PerGroup | None = None,
     ) -> tuple[Any, DPAdamWState]:
+        effective_nv = noise_variance if noise_variance is not None else default_nv
         t = state.step + 1
 
         # Moment updates (paper steps 3-4).
         new_mu = tree_map(lambda m, g: b1 * m + (1 - b1) * g, state.mu, updates)
         new_nu = tree_map(lambda v, g: b2 * v + (1 - b2) * g * g, state.nu, updates)
 
-        # Bias correction (paper steps 5-6) + BC noise subtraction.
+        # Bias correction denominators.
         bc1 = 1 - b1**t
         bc2 = 1 - b2**t
 
-        if not _any_bc:
-            # Standard AdamW path — no noise correction.
-            def _compute(m: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-                return (m / bc1) / ((v / bc2).sqrt() + eps)
+        per_group = isinstance(effective_nv, PerGroup) or isinstance(state.phi, dict)
+
+        if per_group:
+            # Per-group path: each parameter has its own noise variance EMA.
+            result = {}
+            new_phi: dict[str, float] = {}
+            for key in new_mu:
+                nv_k = _resolve_nv_scalar(effective_nv, key)
+                old_phi_k = state.phi[key] if isinstance(state.phi, dict) else state.phi
+                new_phi_k = b2 * old_phi_k + (1 - b2) * nv_k
+                new_phi[key] = new_phi_k
+
+                m_hat = new_mu[key] / bc1
+                phi_hat = new_phi_k / bc2
+                if phi_hat > 0:
+                    v_hat = torch.clamp(new_nu[key] / bc2 - phi_hat, min=bc_floor)
+                else:
+                    v_hat = new_nu[key] / bc2
+                result[key] = m_hat / (v_hat.sqrt() + eps)
+        else:
+            # Scalar path: same noise variance EMA for all parameters.
+            scalar_nv = float(effective_nv)
+            new_phi_scalar = b2 * state.phi + (1 - b2) * scalar_nv
+            phi_hat = new_phi_scalar / bc2
+
+            if phi_hat > 0:
+
+                def _compute(m: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+                    m_hat = m / bc1
+                    v_hat = torch.clamp(v / bc2 - phi_hat, min=bc_floor)
+                    return m_hat / (v_hat.sqrt() + eps)
+            else:
+
+                def _compute(m: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+                    return (m / bc1) / ((v / bc2).sqrt() + eps)
 
             result = tree_map(_compute, new_mu, new_nu)
-        elif not _per_group:
-            # Scalar BC: same variance subtracted from every parameter.
-            def _compute_bc(m: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-                m_hat = m / bc1
-                v_hat = torch.clamp(v / bc2 - noise_variance, min=bc_floor)
-                return m_hat / (v_hat.sqrt() + eps)
+            new_phi = new_phi_scalar
 
-            result = tree_map(_compute_bc, new_mu, new_nu)
-        else:
-            # Per-group BC: each parameter gets its group's variance.
-            result = {}
-            for key in new_mu:
-                m, v = new_mu[key], new_nu[key]
-                m_hat = m / bc1
-                nv = noise_variance.for_key(key) ** 2
-                if nv > 0:
-                    v_hat = torch.clamp(v / bc2 - nv, min=bc_floor)
-                else:
-                    v_hat = v / bc2
-                result[key] = m_hat / (v_hat.sqrt() + eps)
-
-        new_state = DPAdamWState(mu=new_mu, nu=new_nu, step=t)
+        new_state = DPAdamWState(mu=new_mu, nu=new_nu, phi=new_phi, step=t)
         return result, new_state
 
     return GradientTransformation(init_fn, update_fn)
@@ -174,17 +210,26 @@ def dp_adamw(
     ``torchopt.transform.scale_by_adam`` (Algorithm 1).
 
     When ``noise_variance > 0``, the second moment is bias-corrected by
-    subtracting the DP noise variance (Algorithm 2, DP-AdamW-BC)::
+    tracking a beta_2-EMA of the noise variance and subtracting the
+    bias-corrected EMA from v-hat (Algorithm 2, DP-AdamW-BC)::
 
-        v_hat_corrected = max(v_hat - noise_variance, bc_floor)
+        phi_t = beta_2 * phi_{t-1} + (1-beta_2) * Phi_t
+        v_hat_corrected = max(v_hat - phi_t/(1-beta_2^t), bc_floor)
+
+    The ``noise_variance`` parameter sets the default.  It can be
+    overridden per step via ``opt.update(..., noise_variance=current_phi)``
+    — the same pattern as :func:`~opaque.noise.gaussian_noise` where the
+    constructor sets a default stddev and each call can override it.  This
+    is necessary with adaptive clipping, where the sensitivity (and thus
+    the injected noise variance) changes every step.
 
     When ``noise_variance`` is a :class:`~opaque.utils.per_group.PerGroup`
-    (from MSE-optimal per-group noise allocation), each parameter group has
-    its own noise **stddev** looked up and squared internally.
+    (from MSE-optimal per-group noise allocation), each parameter group
+    has its own noise **stddev** looked up and squared internally.
 
-    In both cases, weight decay and learning-rate application reuse
+    Weight decay and learning-rate application reuse
     ``torchopt.transform.add_decayed_weights`` and
-    ``torchopt.transform.scale`` via ``torchopt.chain``.
+    ``torchopt.transform.scale``.
 
     The optimizer expects gradients that are already clipped and noised.
     Clipping and noise injection are separate concerns handled by
@@ -195,7 +240,7 @@ def dp_adamw(
         betas: Coefficients (beta_1, beta_2) for moment estimation.
         eps: Denominator stability constant epsilon.
         weight_decay: Decoupled weight decay coefficient lambda.
-        noise_variance: DP noise variance Phi for bias correction.
+        noise_variance: Default DP noise variance Phi for bias correction.
             A scalar ``stddev**2`` applies uniformly.
             A :class:`~opaque.utils.per_group.PerGroup` of **stddevs**
             (as returned by
@@ -203,12 +248,14 @@ def dp_adamw(
             per-group correction (each group's stddev is squared
             internally).
             When ``0``, moment scaling matches standard AdamW exactly.
+            Can be overridden per step in ``.update()``.
         bc_floor: Minimum value gamma for the corrected second moment.
             Prevents division by zero in the BC variant.
 
     Returns:
         A ``torchopt.base.GradientTransformation`` with ``.init`` and
-        ``.update`` methods.
+        ``.update`` methods.  The ``.update`` method accepts an optional
+        ``noise_variance`` keyword to override the default for that step.
 
     Example (Algorithm 1 -- standard DP-AdamW)::
 
@@ -217,13 +264,21 @@ def dp_adamw(
         >>> updates, state = opt.update(noisy_grads, state, params=params)
         >>> params = torchopt.apply_updates(params, updates)
 
-    Example (Algorithm 2 -- DP-AdamW-BC, scalar noise)::
+    Example (Algorithm 2 -- DP-AdamW-BC, fixed noise)::
 
         >>> noise_stddev = noise_multiplier * clip_state.sensitivity
         >>> opt = dp_adamw(lr=1e-4, noise_variance=noise_stddev ** 2)
         >>> state = opt.init(params)
         >>> updates, state = opt.update(noisy_grads, state, params=params)
-        >>> params = torchopt.apply_updates(params, updates)
+
+    Example (Algorithm 2 -- DP-AdamW-BC, adaptive clipping)::
+
+        >>> opt = dp_adamw(lr=1e-4, noise_variance=initial_nv)
+        >>> state = opt.init(params)
+        >>> # Each step, pass current noise variance:
+        >>> current_nv = (noise_multiplier * clip_state.sensitivity) ** 2
+        >>> updates, state = opt.update(grads, state, params=params,
+        ...                             noise_variance=current_nv)
 
     Example (Algorithm 2 -- DP-AdamW-BC, per-group noise)::
 
@@ -245,13 +300,37 @@ def dp_adamw(
     elif noise_variance < 0:
         raise ValueError(f"noise_variance must be non-negative, got {noise_variance}")
 
-    # Chain: moment scaling (custom) + weight decay + lr (both from torchopt).
-    # When noise_variance=0, _scale_by_adam_bc is identical to scale_by_adam.
-    return torchopt.chain(
-        _scale_by_adam_bc(betas[0], betas[1], eps, noise_variance, bc_floor),
-        torchopt.transform.add_decayed_weights(weight_decay=weight_decay),
-        torchopt.transform.scale(-lr),
-    )
+    # Compose: moment scaling (custom) + weight decay + lr (both from torchopt).
+    # Manual composition (not torchopt.chain) so that the noise_variance kwarg
+    # reaches _scale_by_adam_bc's update_fn.
+    adam_bc = _scale_by_adam_bc(betas[0], betas[1], eps, noise_variance, bc_floor)
+    wd = torchopt.transform.add_decayed_weights(weight_decay=weight_decay)
+    lr_scale = torchopt.transform.scale(-lr)
+
+    def init_fn(params: Any) -> tuple:
+        return (adam_bc.init(params), wd.init(params), lr_scale.init(params))
+
+    def update_fn(
+        updates: Any,
+        state: tuple,
+        *,
+        params: Any = None,
+        inplace: bool = False,
+        noise_variance: float | PerGroup | None = None,
+    ) -> tuple[Any, tuple]:
+        s_adam, s_wd, s_lr = state
+        updates, s_adam = adam_bc.update(
+            updates,
+            s_adam,
+            params=params,
+            inplace=inplace,
+            noise_variance=noise_variance,
+        )
+        updates, s_wd = wd.update(updates, s_wd, params=params, inplace=inplace)
+        updates, s_lr = lr_scale.update(updates, s_lr, params=params, inplace=inplace)
+        return updates, (s_adam, s_wd, s_lr)
+
+    return GradientTransformation(init_fn, update_fn)
 
 
 __all__ = ["dp_adamw", "DPAdamWState"]

@@ -1367,8 +1367,17 @@ def main():
                 if is_ddp:
                     noise_state = sync(noise_state)
 
+                # For adamw-bc: pass current noise variance so the EMA
+                # tracks adaptive clipping changes.  For other optimizers
+                # the extra kwarg is harmless (torchopt ignores it).
+                opt_kwargs = {}
+                if args.optimizer == "adamw-bc":
+                    if isinstance(noise_stddev, PerGroup):
+                        opt_kwargs["noise_variance"] = noise_stddev
+                    else:
+                        opt_kwargs["noise_variance"] = noise_stddev**2
                 updates, opt_state = base_opt.update(
-                    noisy_grads, opt_state, params=trainable_params
+                    noisy_grads, opt_state, params=trainable_params, **opt_kwargs
                 )
                 trainable_params = torchopt.apply_updates(trainable_params, updates)
 
