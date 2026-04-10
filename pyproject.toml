@@ -13,6 +13,7 @@ dev = [
   "pytest-cov>=4.0.0",
   "ruff>=0.1.0",
   "scipy>=1.11.0",         # Statistical tests
+  {include-group = "optimizers"},
 ]
 
 # Compatibility testing with HuggingFace ecosystem
@@ -29,13 +30,19 @@ cross-validation = [
   "riskcal>=1.2.0",
 ]
 
+# TorchOpt-based optimizers (dp_adamw, etc.)
+# Install with: uv sync --group optimizers
+optimizers = [
+  "torchopt>=0.7.3",
+]
+
 # Examples and tutorials
 # Install with: uv sync --group examples
 examples = [
   "transformers>=4.57.0",
   "peft>=0.18.0",
   "datasets>=2.0.0",
-  "torchopt>=0.7.3",
+  {include-group = "optimizers"},
   "jupyter>=1.0.0",
   "matplotlib>=3.10.7",
   "torchvision>=0.25.0",
