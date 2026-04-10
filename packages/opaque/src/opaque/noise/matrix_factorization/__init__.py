@@ -7,6 +7,7 @@ private machine learning, including:
   multiplication
 - Sensitivity computation under various participation patterns
 - Toeplitz matrix mechanisms (BandMF)
+- Buffered Linear Toeplitz (BLT) mechanisms
 
 These mechanisms enable correlated noise addition (vs independent noise in
 standard DP-SGD), achieving 10-50% utility improvement at the same privacy
@@ -14,6 +15,8 @@ budget.
 
 References:
     - BandMF: https://arxiv.org/abs/2306.08153
+    - BLT: https://arxiv.org/abs/2404.16706
+    - Multi-epoch BLT: https://arxiv.org/abs/2408.08868
 """
 
 from opaque.noise.matrix_factorization.noise import MFNoiseState

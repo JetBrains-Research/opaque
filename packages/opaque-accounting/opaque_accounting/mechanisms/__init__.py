@@ -16,6 +16,10 @@ from opaque_accounting.mechanisms.band_mf import (
     BandMf,
     band_mf,
 )
+from opaque_accounting.mechanisms.blt_mf import (
+    BltMf,
+    blt_mf,
+)
 from opaque_accounting.mechanisms.eps_delta import (
     EpsDelta,
     eps_delta,
@@ -40,10 +44,12 @@ __all__ = [
     "Identity",
     "NonPrivate",
     "BandMf",
+    "BltMf",
     # Constructor functions
     "gaussian",
     "eps_delta",
     "identity",
     "nonprivate",
     "band_mf",
+    "blt_mf",
 ]

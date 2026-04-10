@@ -64,6 +64,10 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_blt_sensitivity_squared,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
         matrix_factorization::py_toeplitz_minsep_sensitivity_squared,
         m
     )?)?;

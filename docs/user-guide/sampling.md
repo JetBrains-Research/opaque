@@ -125,7 +125,7 @@ training = step * num_steps
 Partitions the dataset into `cycle_length` groups and cycles through them,
 sampling from each group with probability `sampling_prob`. This sampler
 is required for matrix-factorization correlated noise mechanisms
-(`band_mf_noise`) which need a fixed participation pattern.
+(`band_mf_noise`, `blt_mf_noise`) which need a fixed participation pattern.
 
 ```python
 from opaque.sampling import CyclicPoissonSampler, PartitionType

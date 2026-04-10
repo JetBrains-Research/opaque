@@ -217,6 +217,23 @@ proc = acc.band_mf(noise_multiplier=1.0, n_steps=1000, bands=10)
 eps = proc.epsilon_at(1e-5)
 ```
 
+### `blt_mf(noise_multiplier, n_steps, *, min_sep=1, max_participations=1, error="max", max_buffers=10) -> DpProcess`
+
+BLT (Buffered Linear Toeplitz) mechanism. Supports multi-epoch participation
+patterns via `min_sep` and `max_participations`.
+
+- `noise_multiplier` (float): Raw noise standard deviation sigma.
+- `n_steps` (int): Number of training iterations.
+- `min_sep` (int): Minimum steps between participations (default 1).
+- `max_participations` (int | None): Maximum participations per user (default 1).
+- `error` (str): Error metric to optimize: `"max"` or `"mean"`.
+- `max_buffers` (int): Maximum number of BLT buffers (default 10).
+
+```python
+proc = acc.blt_mf(1.0, 5000, min_sep=100, max_participations=5)
+eps = proc.epsilon_at(1e-5)
+```
+
 ### `cyclic_poisson(inner, sample_rate) -> DpProcess`
 
 Cyclic Poisson amplification for BandMF. Decomposes the training run into

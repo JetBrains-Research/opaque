@@ -233,7 +233,7 @@ pub fn gaussian_log_cdf(z: f64) -> f64 {
 ///
 /// # References
 ///
-/// JAX-Privacy: <https://github.com/google-deepmind/jax-privacy>
+/// BLT paper, Lemma 5.3: <https://arxiv.org/abs/2404.16706>
 pub fn geometric_sum(a: f64, r: f64, num: f64) -> f64 {
     if num.is_infinite() {
         return a / (1.0 - r);

@@ -27,6 +27,8 @@ MECHANISMS:
 
   band_mf   — Banded Toeplitz (Choquette-Choo et al., 2023)
                O(bands × d) memory, uses cyclic_poisson sampling.
+  blt       — Buffered Linear Toeplitz (Choquette-Choo et al., 2024)
+               O(buffers × d) memory, near-optimal, handles multi-epoch.
   identity  — DP-SGD baseline via MF API (C^{-1} = I, independent noise).
                Same training loop for fair comparison.
 
@@ -35,11 +37,11 @@ USAGE:
   # Quick smoke test (~2 minutes, GPT-2 on ag_news)
   python examples/train_dp_ftrl.py --preset smoke
 
-  # BandMF on Mellum (default mechanism, banded correlated noise)
+  # BLT on Mellum (default mechanism, near-optimal correlated noise)
   python examples/train_dp_ftrl.py --preset mellum-kstack
 
-  # BandMF with b=8 bands on Mellum
-  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism band_mf --bands 8
+  # BandMF with b=64 bands on Mellum
+  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism band_mf --bands 64
 
   # DP-SGD baseline for fair comparison (same loop, independent noise)
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism identity
@@ -47,6 +49,7 @@ USAGE:
 REFERENCES:
 
   - BandMF: https://arxiv.org/abs/2306.08153
+  - BLT: https://arxiv.org/abs/2404.16706
   - DP-FTRL: https://arxiv.org/abs/2103.00039
 """
 
@@ -73,7 +76,7 @@ import torchopt
 import opaque.accounting as acc
 from opaque.accounting import calibration as cal
 from opaque.clipping import clipped_grad
-from opaque.noise import band_mf_noise, identity_mf_noise
+from opaque.noise import band_mf_noise, blt_mf_noise, identity_mf_noise
 from opaque.profiling import StepTimer, TrainingProfiler, print_memory, reset_peak_memory
 from opaque.random import key, fold_in
 from opaque.sampling import CyclicPoissonSampler, PoissonSampler, poisson_collate
@@ -256,14 +259,18 @@ def parse_args():
     dp_g = parser.add_argument_group("dp", "DP-FTRL mechanism and clipping")
     dp_g.add_argument(
         "--mechanism", type=str, default="band_mf",
-        choices=["band_mf", "identity"],
-        help="MF mechanism: band_mf (banded Toeplitz), identity (DP-SGD baseline).",
+        choices=["band_mf", "blt", "identity"],
+        help="MF mechanism: band_mf (banded Toeplitz), blt (buffered linear Toeplitz), identity (DP-SGD baseline).",
     )
     dp_g.add_argument("--clipping-norm", type=float, default=0.9, help="Fixed clipping norm")
     dp_g.add_argument("--microbatch-size", type=int, default=None)
     dp_g.add_argument(
         "--bands", type=int, default=8,
         help="Band count for band_mf mechanism and cyclic_poisson sampling.",
+    )
+    dp_g.add_argument(
+        "--max-buffers", type=int, default=10,
+        help="Maximum BLT buffers to try (higher = better noise, slower init).",
     )
 
     # Privacy
@@ -338,7 +345,7 @@ def parse_args():
         _set("dtype", "bfloat16")
         _set("microbatch_size", 16)
         _set("bands", 64)
-        _set("mechanism", "band_mf")
+        _set("mechanism", "blt")
         _set("warmup_frac", 0.05)
         _set("cooldown_frac", 0.30)
         _set("cooldown_end_frac", 0.01)
@@ -469,6 +476,12 @@ def main():
 
     global_train_size = len(train_dataset)
 
+    # BLT uses fixed iteration order so consecutive participations by the
+    # same example are separated by exactly steps_per_epoch steps.
+    # Shuffle once before training.
+    if args.mechanism == "blt":
+        train_dataset = train_dataset.shuffle(seed=args.seed)
+
     eval_loader = DataLoader(eval_dataset, batch_size=args.eval_batch_size, shuffle=False, collate_fn=collate, drop_last=False)
 
     # --- Sampling ---
@@ -482,11 +495,19 @@ def main():
                 f"cyclic_poisson sampling_prob = {sampling_prob:.4f} > 1.0. "
                 f"Reduce --bands ({args.bands}) or --batch-size ({args.batch_size})."
             )
+    elif args.mechanism == "blt":
+        pass
+    elif args.mechanism == "identity":
+        pass
 
     print("\nSampling:")
     print(f"  Mechanism: {args.mechanism}")
     if args.mechanism == "band_mf":
         print(f"  Sampler: cyclic_poisson (cycle={args.bands}, q={sampling_prob:.6f})")
+    elif args.mechanism == "blt":
+        print("  Sampler: epoch-based (fixed order, drop_last=True)")
+        print(f"  min_sep: {expected_steps_per_epoch} (= steps/epoch)")
+        print(f"  max_participations: {args.num_epochs}")
     else:
         print(f"  Sampler: poisson (q={sample_rate:.6f})")
     print(f"  Expected batch size: {args.batch_size}")
@@ -568,6 +589,15 @@ def main():
                             momentum=args.momentum),
                 sample_rate=sampling_prob,
             )
+    elif args.mechanism == "blt":
+        def acct_mechanism(nm):
+            return acc.blt_mf(
+                nm, n_steps=total_steps,
+                min_sep=expected_steps_per_epoch,
+                max_participations=args.num_epochs,
+                max_buffers=args.max_buffers,
+                momentum=args.momentum,
+            )
     elif args.mechanism == "identity":
         def acct_mechanism(nm):
             return acc.poisson(acc.gaussian(nm), sample_rate=sample_rate) * total_steps
@@ -610,6 +640,15 @@ def main():
         noise_fn, noise_state = band_mf_noise(
             trainable_params, total_steps,
             stddev=noise_stddev, key=key(args.seed), bands=args.bands,
+            momentum=args.momentum,
+        )
+    elif args.mechanism == "blt":
+        noise_fn, noise_state = blt_mf_noise(
+            trainable_params, total_steps,
+            stddev=noise_stddev, key=key(args.seed),
+            min_sep=expected_steps_per_epoch,
+            max_participations=args.num_epochs,
+            max_buffers=args.max_buffers,
             momentum=args.momentum,
         )
     elif args.mechanism == "identity":
@@ -656,6 +695,10 @@ def main():
     print(f"  Microbatch size: {args.microbatch_size}")
     if args.mechanism == "band_mf":
         print(f"  Bands: {args.bands}")
+    elif args.mechanism == "blt":
+        print(f"  Max buffers: {args.max_buffers}")
+        print(f"  Min separation: {expected_steps_per_epoch}")
+        print(f"  Max participations: {args.num_epochs}")
 
     # ===================================================================
     # Training loop
@@ -692,6 +735,11 @@ def main():
                 key=fold_in(key(args.seed), epoch),
             )
             epoch_loader = DataLoader(train_dataset, batch_sampler=epoch_sampler, collate_fn=collate)
+        elif args.mechanism == "blt":
+            epoch_loader = DataLoader(
+                train_dataset, batch_size=args.batch_size,
+                shuffle=False, collate_fn=collate, drop_last=True,
+            )
         else:  # identity
             epoch_sampler = PoissonSampler(
                 train_dataset,

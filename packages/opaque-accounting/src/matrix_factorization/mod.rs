@@ -1,9 +1,10 @@
 //! Matrix factorization (MF) privacy accounting.
 //!
 //! This module provides privacy accounting for matrix factorization DP
-//! mechanisms (BandMF). Unlike standard DP-SGD which uses i.i.d. Gaussian
-//! noise at each step, MF mechanisms inject *correlated* noise across all
-//! training steps via a matrix factorization A = C⁻¹.
+//! mechanisms, including BandMF and BLT strategies. Unlike standard
+//! DP-SGD which uses i.i.d. Gaussian noise at each step, MF mechanisms
+//! inject *correlated* noise across all training steps via a matrix
+//! factorization A = C⁻¹.
 //!
 //! # Privacy Analysis
 //!
@@ -20,19 +21,20 @@
 //! |----------|--------------|---------------------|
 //! | BandMF   | Single       | [`single_participation_sensitivity`] |
 //! | BandMF   | Min-sep      | [`banded_sensitivity`] |
-//! | Any      | Fixed-epoch  | [`fixed_epoch_sensitivity`] |
+//! | BLT      | Min-sep      | [`banded_sensitivity`] or [`general_sensitivity_upper_bound`] |
 //! | Any      | General      | [`general_sensitivity_upper_bound`] |
 //!
 //! # References
 //!
 //! - BandMF: Choquette-Choo et al. (2023) <https://arxiv.org/abs/2306.08153>
+//! - BLT: Choquette-Choo et al. (2024) <https://arxiv.org/abs/2404.16706>
 
 mod mf_gaussian;
 pub mod sensitivity;
 
 pub use mf_gaussian::mf_gaussian_pld;
 pub use sensitivity::{
-    banded_sensitivity, fixed_epoch_sensitivity,
+    banded_sensitivity, blt_sensitivity_squared, fixed_epoch_sensitivity,
     general_sensitivity_upper_bound, max_participation_for_linear_fn,
     minsep_true_max_participations, single_participation_sensitivity,
     toeplitz_minsep_sensitivity_squared,

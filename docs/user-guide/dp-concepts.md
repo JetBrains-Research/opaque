@@ -279,8 +279,8 @@ Strategies to improve accuracy at fixed privacy budget:
 - **Use bounded Gaussian mechanisms.** Rectified and truncated Gaussian noise
   provide tighter privacy accounting at the same noise level as standard Gaussian.
   See [Mechanisms](../mechanisms/index.md) for the privacy ordering.
-- **Use correlated noise (DP-FTRL).** Matrix factorization mechanisms (BandMF)
-  inject correlated noise that partially cancels across steps,
+- **Use correlated noise (DP-FTRL).** Matrix factorization mechanisms (BandMF,
+  BLT) inject correlated noise that partially cancels across steps,
   reducing the effective noise on cumulative model updates.
 - **Use adaptive clipping** to avoid over-clipping gradients.
 - **Use LoRA** or other parameter-efficient methods to reduce gradient
@@ -351,6 +351,7 @@ Three MF strategies are available:
 | Strategy | Memory | Best for |
 |----------|--------|----------|
 | **BandMF** | $O(b)$ | Streaming, long training runs |
+| **BLT** | $O(b)$ | Multi-epoch training |
 
 MF mechanisms require different samplers (CyclicPoissonSampler for BandMF)
 and have different amplification properties. See the

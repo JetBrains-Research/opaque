@@ -1,4 +1,4 @@
-"""Compare calibrated noise multipliers for BandMF vs DP-SGD.
+"""Compare calibrated noise multipliers for BandMF vs BLT vs DP-SGD.
 
 Run this before choosing a mechanism to see which one requires the
 least noise for your target (ε, δ).  Lower σ = less noise = better utility.
@@ -82,6 +82,27 @@ def main():
             results[f"bandmf_b{bands}"] = r.param
         except Exception as e:
             print(f"  FAILED: {e}")
+
+    # BLT
+    print()
+    print(f"BLT (min_sep={steps_per_epoch}, max_part={epochs}, no subsampling)")
+    t0 = time.time()
+    try:
+        r = cal.calibrate(
+            cal.epsilon_budget(target_eps, delta=target_delta),
+            lambda nm: acc.blt_mf(
+                nm, n_steps=T,
+                min_sep=steps_per_epoch,
+                max_participations=epochs,
+                max_buffers=10,
+            ),
+            param_min=args.cal_min, param_max=args.cal_max, tolerance=1e-3,
+        )
+        ratio = r.param / results["dpsgd"] if "dpsgd" in results else float("nan")
+        print(f"  σ = {r.param:.4f}, ε = {r.achieved:.4f}  (ratio: {ratio:.2f}×)  ({time.time()-t0:.1f}s)")
+        results["blt"] = r.param
+    except Exception as e:
+        print(f"  FAILED: {e}")
 
     # Summary
     if results:
