@@ -325,6 +325,27 @@ def parallel_poisson_gaussian_pld(
     """
     ...
 
+def balls_in_bins_gaussian_pld(
+    noise_multiplier: float,
+    num_bins: int,
+    config: DiscretizationConfig,
+) -> Pld:
+    """Compute the per-epoch PLD for a Balls-in-Bins Gaussian mechanism.
+
+    The dataset is randomly partitioned into ``num_bins`` equally-sized bins
+    each epoch. Each bin is processed once with a Gaussian mechanism.
+    Uses a conservative Poisson per-step approximation composed ``num_bins`` times.
+
+    Args:
+        noise_multiplier: σ/Δ ratio.
+        num_bins: Number of bins (k ≥ 2).
+        config: PLD discretization configuration.
+
+    Returns:
+        The per-epoch privacy loss distribution.
+    """
+    ...
+
 # ---------------------------------------------------------------------------
 # Matrix factorization functions
 # ---------------------------------------------------------------------------

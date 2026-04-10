@@ -34,6 +34,10 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         amplification::py_parallel_poisson_gaussian_pld,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(
+        amplification::py_balls_in_bins_gaussian_pld,
+        m
+    )?)?;
     // Matrix Factorization
     m.add_function(wrap_pyfunction!(
         matrix_factorization::py_mf_gaussian_pld,

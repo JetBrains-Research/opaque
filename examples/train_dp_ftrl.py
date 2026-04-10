@@ -29,6 +29,8 @@ MECHANISMS:
                O(bands × d) memory, uses cyclic_poisson sampling.
   blt       — Buffered Linear Toeplitz (Choquette-Choo et al., 2024)
                O(buffers × d) memory, near-optimal, handles multi-epoch.
+  blt_bnb   — BLT noise + Balls-in-Bins sampling (Chua et al., 2025)
+               Same BLT noise, but with proper random-partition amplification.
   identity  — DP-SGD baseline via MF API (C^{-1} = I, independent noise).
                Same training loop for fair comparison.
 
@@ -42,6 +44,9 @@ USAGE:
 
   # BandMF with b=64 bands on Mellum
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism band_mf --bands 64
+
+  # BLT with Balls-in-Bins sampling (random-partition amplification)
+  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism blt_bnb
 
   # DP-SGD baseline for fair comparison (same loop, independent noise)
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism identity
@@ -79,7 +84,7 @@ from opaque.clipping import clipped_grad
 from opaque.noise import band_mf_noise, blt_mf_noise, identity_mf_noise
 from opaque.profiling import StepTimer, TrainingProfiler, print_memory, reset_peak_memory
 from opaque.random import key, fold_in
-from opaque.sampling import CyclicPoissonSampler, PoissonSampler, poisson_collate
+from opaque.sampling import BallsInBinsSampler, CyclicPoissonSampler, PoissonSampler, poisson_collate
 from opaque.utils import make_functional
 
 try:
@@ -259,8 +264,8 @@ def parse_args():
     dp_g = parser.add_argument_group("dp", "DP-FTRL mechanism and clipping")
     dp_g.add_argument(
         "--mechanism", type=str, default="band_mf",
-        choices=["band_mf", "blt", "identity"],
-        help="MF mechanism: band_mf (banded Toeplitz), blt (buffered linear Toeplitz), identity (DP-SGD baseline).",
+        choices=["band_mf", "blt", "blt_bnb", "identity"],
+        help="MF mechanism: band_mf (banded Toeplitz), blt (buffered linear Toeplitz), blt_bnb (BLT + Balls-in-Bins), identity (DP-SGD baseline).",
     )
     dp_g.add_argument("--clipping-norm", type=float, default=0.9, help="Fixed clipping norm")
     dp_g.add_argument("--microbatch-size", type=int, default=None)
@@ -479,7 +484,7 @@ def main():
     # BLT uses fixed iteration order so consecutive participations by the
     # same example are separated by exactly steps_per_epoch steps.
     # Shuffle once before training.
-    if args.mechanism == "blt":
+    if args.mechanism in ("blt", "blt_bnb"):
         train_dataset = train_dataset.shuffle(seed=args.seed)
 
     eval_loader = DataLoader(eval_dataset, batch_size=args.eval_batch_size, shuffle=False, collate_fn=collate, drop_last=False)
@@ -495,7 +500,7 @@ def main():
                 f"cyclic_poisson sampling_prob = {sampling_prob:.4f} > 1.0. "
                 f"Reduce --bands ({args.bands}) or --batch-size ({args.batch_size})."
             )
-    elif args.mechanism == "blt":
+    elif args.mechanism in ("blt", "blt_bnb"):
         pass
     elif args.mechanism == "identity":
         pass
@@ -506,6 +511,10 @@ def main():
         print(f"  Sampler: cyclic_poisson (cycle={args.bands}, q={sampling_prob:.6f})")
     elif args.mechanism == "blt":
         print("  Sampler: epoch-based (fixed order, drop_last=True)")
+        print(f"  min_sep: {expected_steps_per_epoch} (= steps/epoch)")
+        print(f"  max_participations: {args.num_epochs}")
+    elif args.mechanism == "blt_bnb":
+        print(f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, random partition/epoch)")
         print(f"  min_sep: {expected_steps_per_epoch} (= steps/epoch)")
         print(f"  max_participations: {args.num_epochs}")
     else:
@@ -598,6 +607,17 @@ def main():
                 max_buffers=args.max_buffers,
                 momentum=args.momentum,
             )
+    elif args.mechanism == "blt_bnb":
+        # BLT noise with Balls-in-Bins accounting: BLT sensitivity
+        # analysis (same as blt) but per-epoch BnB amplification.
+        def acct_mechanism(nm):
+            return acc.blt_mf(
+                nm, n_steps=total_steps,
+                min_sep=expected_steps_per_epoch,
+                max_participations=args.num_epochs,
+                max_buffers=args.max_buffers,
+                momentum=args.momentum,
+            )
     elif args.mechanism == "identity":
         def acct_mechanism(nm):
             return acc.poisson(acc.gaussian(nm), sample_rate=sample_rate) * total_steps
@@ -642,7 +662,7 @@ def main():
             stddev=noise_stddev, key=key(args.seed), bands=args.bands,
             momentum=args.momentum,
         )
-    elif args.mechanism == "blt":
+    elif args.mechanism in ("blt", "blt_bnb"):
         noise_fn, noise_state = blt_mf_noise(
             trainable_params, total_steps,
             stddev=noise_stddev, key=key(args.seed),
@@ -695,7 +715,7 @@ def main():
     print(f"  Microbatch size: {args.microbatch_size}")
     if args.mechanism == "band_mf":
         print(f"  Bands: {args.bands}")
-    elif args.mechanism == "blt":
+    elif args.mechanism in ("blt", "blt_bnb"):
         print(f"  Max buffers: {args.max_buffers}")
         print(f"  Min separation: {expected_steps_per_epoch}")
         print(f"  Max participations: {args.num_epochs}")
@@ -740,6 +760,14 @@ def main():
                 train_dataset, batch_size=args.batch_size,
                 shuffle=False, collate_fn=collate, drop_last=True,
             )
+        elif args.mechanism == "blt_bnb":
+            epoch_sampler = BallsInBinsSampler(
+                train_dataset,
+                num_bins=expected_steps_per_epoch,
+                num_epochs=1,
+                key=fold_in(key(args.seed), epoch),
+            )
+            epoch_loader = DataLoader(train_dataset, batch_sampler=epoch_sampler, collate_fn=collate)
         else:  # identity
             epoch_sampler = PoissonSampler(
                 train_dataset,

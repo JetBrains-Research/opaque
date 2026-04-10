@@ -2,14 +2,16 @@
 
 import torch
 import torch.nn as nn
+from torch.utils.data import TensorDataset
 
-from opaque.noise import custom_mf_noise
+from opaque.noise import blt_mf_noise, custom_mf_noise
 from opaque.noise.matrix_factorization import identity
 from opaque.noise.matrix_factorization.toeplitz import (
     inverse_as_streaming_matrix,
     optimal_max_error_strategy_coefs,
 )
 from opaque.random import key
+from opaque.sampling import BallsInBinsSampler
 
 
 def _train_loop(model, optimizer, noise_fn, state, x_data, y_data, steps):
@@ -248,3 +250,89 @@ class TestBandMFvsDPSGD:
 
         # BandMF final loss should be at least better than start
         assert losses_mf[-1] < losses_sgd[0]
+
+
+class TestBLTWithBnB:
+    """End-to-end test: BLT noise with Balls-in-Bins sampling."""
+
+    def _make_template(self, model):
+        return {i: torch.zeros_like(p) for i, p in enumerate(model.parameters())}
+
+    def test_blt_bnb_trains(self):
+        """BLT noise with BnB sampler trains a simple model.
+
+        Simulates the BLT+BnB pipeline: each epoch the dataset is
+        randomly partitioned into bins, BLT noise is applied per step.
+        """
+        torch.manual_seed(0)
+        n_samples = 200
+        dim = 5
+        x = torch.randn(n_samples, dim)
+        true_w = torch.randn(dim, 1)
+        y = x @ true_w
+        dataset = TensorDataset(x, y)
+
+        num_bins = 10  # 10 bins → batch_size=20
+        num_epochs = 3
+        steps_per_epoch = num_bins
+        total_steps = num_epochs * steps_per_epoch
+        momentum = 0.9
+
+        model = nn.Linear(dim, 1, bias=False)
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=momentum)
+
+        noise_fn, noise_state = blt_mf_noise(
+            self._make_template(model),
+            total_steps,
+            stddev=0.05,
+            key=key(42),
+            min_sep=steps_per_epoch,
+            max_participations=num_epochs,
+            momentum=momentum,
+        )
+
+        sampler = BallsInBinsSampler(
+            dataset, num_bins=num_bins, num_epochs=num_epochs, key=key(99),
+        )
+
+        params = list(model.parameters())
+        losses = []
+        for indices in sampler:
+            optimizer.zero_grad()
+            batch_x = x[indices]
+            batch_y = y[indices]
+            pred = model(batch_x)
+            loss = ((pred - batch_y) ** 2).mean()
+            loss.backward()
+
+            grads = {i: p.grad.clone() for i, p in enumerate(params)}
+            noisy_grads, noise_state = noise_fn(grads, noise_state)
+            for i, p in enumerate(params):
+                p.grad = noisy_grads[i].to(p.dtype)
+
+            optimizer.step()
+            losses.append(loss.item())
+
+        assert len(losses) == total_steps
+        assert losses[-1] < losses[0]
+
+    def test_bnb_sampler_covers_dataset(self):
+        """BnB sampler gives exactly one participation per example per epoch."""
+        n_samples = 100
+        num_bins = 10
+        dataset = list(range(n_samples))
+
+        sampler = BallsInBinsSampler(
+            dataset, num_bins=num_bins, num_epochs=1, key=key(42),
+        )
+
+        all_indices = []
+        for batch in sampler:
+            assert len(batch) == n_samples // num_bins
+            all_indices.extend(batch)
+
+        # Every example appears exactly once (some may be dropped if
+        # n_samples not divisible by num_bins)
+        expected = num_bins * (n_samples // num_bins)
+        assert len(all_indices) == expected
+        assert len(set(all_indices)) == expected

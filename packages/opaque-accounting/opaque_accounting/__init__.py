@@ -54,6 +54,7 @@ from opaque_accounting.accountant import Accountant
 
 # Amplification
 from opaque_accounting.amplification import (
+    balls_in_bins,
     cyclic_poisson,
     parallel_poisson,
     poisson,
@@ -117,6 +118,7 @@ __all__ = [
     "band_mf",
     "blt_mf",
     # Amplification
+    "balls_in_bins",
     "poisson",
     "truncated_poisson",
     "parallel_poisson",

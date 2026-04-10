@@ -44,6 +44,7 @@ from opaque.noise import (
 )
 from opaque.noise.per_group_noise import per_group_noise_stddev
 from opaque.sampling import (
+    BallsInBinsSampler,
     CyclicPoissonSampler,
     PoissonSampler,
     TruncatedPoissonSampler,
@@ -80,6 +81,7 @@ __all__ = [
     "AdaptiveClipState",
     # Sampling
     "sampling",
+    "BallsInBinsSampler",
     "PoissonSampler",
     "TruncatedPoissonSampler",
     "CyclicPoissonSampler",
