@@ -213,7 +213,7 @@ def multiply(
     rhs_coef, _ = _reconcile(rhs_coef, n)
 
     # Differentiable convolution via FFT (supports autograd for L-BFGS
-    # optimization of BLT/banded Toeplitz with workload_coef).
+    # optimization of banded Toeplitz with workload_coef).
     full_len = len(lhs_coef) + len(rhs_coef) - 1
     fa = torch.fft.rfft(lhs_coef, n=full_len)
     fb = torch.fft.rfft(rhs_coef, n=full_len)

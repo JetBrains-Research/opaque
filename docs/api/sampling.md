@@ -105,7 +105,7 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 
 In distributed training, shard the dataset with `local_shard()` and pass
 a per-rank key via `fold_in(key, rank)`. Best used with `band_mf_noise`
-or `blt_mf_noise` for correlated noise.
+or `band_mf_noise` for correlated noise.
 
 ## Distributed Helpers
 

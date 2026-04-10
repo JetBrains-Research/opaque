@@ -5,7 +5,7 @@ Tests verify that MF noise mechanisms produce:
 2. Proper noise correlation over multiple training steps
 3. Cross-rank agreement on noise values
 
-Note: BandMF and BLT have device placement limitations with streaming
+Note: BandMF has device placement limitations with streaming
 matrices (coefficients kept on CPU). These tests focus on identity_mf_noise which
 doesn't use streaming matrices and is fully functional on CUDA.
 """

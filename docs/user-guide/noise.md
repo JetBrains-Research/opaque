@@ -195,7 +195,6 @@ Opaque provides four MF noise strategies, plus two utility variants:
 | Function | Memory | Best for |
 |----------|--------|----------|
 | `band_mf_noise` | O(bands) | General use, good default |
-| `blt_mf_noise` | O(buffers) | Long training runs (n > 5000) |
 | `custom_mf_noise` | varies | Research, custom strategies |
 | `identity_mf_noise` | O(1) | Testing MF infrastructure with standard noise |
 
@@ -229,25 +228,6 @@ the gradients (e.g., the model parameters).
 In distributed training, pass the same `key(seed)` on all ranks to produce
 identical noise. See [Distributed Training](distributed.md) and
 [RNG Key](rng-key.md) for details.
-
-### `blt_mf_noise`
-
-Buffered Linear Toeplitz strategy. More memory-efficient than band_mf for
-long training runs, using a parametric representation of the Toeplitz
-coefficients.
-
-```python
-from opaque import blt_mf_noise
-from opaque.random import key
-
-noise_fn, noise_state = blt_mf_noise(
-    grad_template=params,
-    n_steps=10000,
-    stddev=noise_multiplier * clip_state.sensitivity,
-    key=key(42),
-    max_buffers=10,
-)
-```
 
 ### `custom_mf_noise`
 
@@ -299,30 +279,10 @@ import opaque.accounting as acc
 # BandMF (with cyclic Poisson amplification)
 proc = acc.cyclic_poisson(acc.band_mf(1.0, 1000, 10), sample_rate=0.01)
 eps = proc.epsilon_at(1e-5)
-
-# BLT (multi-epoch)
-proc = acc.blt_mf(1.0, 5000, min_sep=100, max_participations=5)
-eps = proc.epsilon_at(1e-5)
 ```
 
 See [Privacy Accounting — Matrix factorization mechanisms](accounting.md#matrix-factorization-mechanisms)
 for the full API.
-
-### Multi-participation (multi-epoch)
-
-When training for multiple epochs, each example participates multiple times.
-The sensitivity computation must account for this:
-
-```python
-noise_fn, state = blt_mf_noise(
-    grad_template,
-    n_steps=5000,
-    stddev=noise_multiplier * clipping_norm,
-    min_sep=100,            # minimum steps between participations
-    max_participations=5,   # 5 epochs
-    key=key(42),
-)
-```
 
 ### Sensitivity computation
 
@@ -346,7 +306,6 @@ For a linear regression with n=1000 steps, epsilon=1.0:
 |--------|-----------|-------------|--------|
 | DP-SGD | Independent noise | Baseline | O(1) |
 | BandMF (bands=4) | Banded Toeplitz | ~0.7x | O(bands) |
-| BLT (3 buffers) | Buffered Toeplitz | ~0.6x | O(buffers) |
 
 Values are illustrative; actual results depend on problem specifics.
 
@@ -398,8 +357,6 @@ noise state type. See [Distributed Training](distributed.md) for details.
 ## References
 
 - [Choquette-Choo et al., 2023](https://arxiv.org/abs/2306.08153) -- BandMF
-- [McMahan et al., 2024](https://arxiv.org/abs/2404.16706) -- BLT
-- [Choquette-Choo et al., 2024](https://arxiv.org/abs/2408.08868) -- Multi-epoch BLT
 - [McMahan et al., 2025](https://arxiv.org/abs/2504.21413) -- Inversion theorem
 - [Kairouz et al., 2021](https://arxiv.org/abs/2103.00039) -- DP-FTRL
 

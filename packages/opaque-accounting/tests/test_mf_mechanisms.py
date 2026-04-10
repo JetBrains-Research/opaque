@@ -1,4 +1,4 @@
-"""Tests for MF accounting mechanisms — BandMf, BltMf, CyclicPoisson."""
+"""Tests for MF accounting mechanisms — BandMf, CyclicPoisson."""
 
 import math
 from dataclasses import FrozenInstanceError
@@ -12,7 +12,6 @@ from opaque_accounting.amplification import (
 from opaque_accounting.base import DpProcess
 from opaque_accounting.mechanisms import (
     BandMf,
-    BltMf,
 )
 
 # ── BandMf dataclass tests ──────────────────────────────────────────
@@ -164,63 +163,6 @@ class TestCyclicPoissonConstructor:
             acc.cyclic_poisson(acc.band_mf(1.0, 100, 5), 1.5)
 
 
-# ── BltMf tests ─────────────────────────────────────────────────────
-
-
-class TestBltMfDataclass:
-    """BltMf frozen dataclass."""
-
-    def test_fields(self):
-        proc = BltMf(1.0, 50, 1, 1, "max", 5)
-        assert proc.noise_multiplier == pytest.approx(1.0)
-        assert proc.n_steps == 50
-        assert proc.min_sep == 1
-        assert proc.max_participations == 1
-        assert proc.error == "max"
-        assert proc.max_buffers == 5
-
-    def test_frozen(self):
-        proc = BltMf(1.0, 50, 1, 1, "max", 5)
-        with pytest.raises(FrozenInstanceError):
-            proc.noise_multiplier = 2.0  # type: ignore[misc]
-
-    def test_is_dp_process(self):
-        assert isinstance(BltMf(1.0, 50, 1, 1, "max", 5), DpProcess)
-
-    def test_pld_returns_valid(self):
-        proc = acc.blt_mf(1.0, 50, max_buffers=3)
-        eps = proc.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0
-
-    def test_sensitivity_positive(self):
-        proc = acc.blt_mf(1.0, 50, max_buffers=3)
-        assert proc.sensitivity() > 0
-
-
-class TestBltMfConstructor:
-    """acc.blt_mf() validates and returns BltMf."""
-
-    def test_returns_correct_type(self):
-        proc = acc.blt_mf(1.0, 50)
-        assert isinstance(proc, BltMf)
-
-    def test_rejects_non_positive_noise(self):
-        with pytest.raises(ValueError):
-            acc.blt_mf(0.0, 50)
-
-    def test_rejects_bad_n_steps(self):
-        with pytest.raises(ValueError):
-            acc.blt_mf(1.0, 0)
-
-    def test_rejects_bad_min_sep(self):
-        with pytest.raises(ValueError):
-            acc.blt_mf(1.0, 50, min_sep=0)
-
-    def test_rejects_bad_error(self):
-        with pytest.raises(ValueError):
-            acc.blt_mf(1.0, 50, error="invalid")
-
-
 # ── Composition tests ───────────────────────────────────────────────
 
 
@@ -278,15 +220,4 @@ class TestMomentumAccounting:
         with pytest.raises(ValueError, match="momentum"):
             acc.band_mf(1.0, 100, 5, momentum=-0.1)
 
-    def test_blt_mf_momentum_field(self):
-        """BltMf stores momentum."""
-        proc = acc.blt_mf(1.0, 50, momentum=0.9, max_buffers=3)
-        assert proc.momentum == pytest.approx(0.9)
 
-    def test_blt_mf_default_momentum_is_prefix_sum(self):
-        proc = acc.blt_mf(1.0, 50, max_buffers=3)
-        assert proc.momentum == pytest.approx(1.0)
-
-    def test_blt_mf_rejects_negative_momentum(self):
-        with pytest.raises(ValueError, match="momentum"):
-            acc.blt_mf(1.0, 50, momentum=-0.1)

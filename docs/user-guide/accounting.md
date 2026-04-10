@@ -168,21 +168,6 @@ eps = proc.epsilon_at(delta=1e-5)
 
 For subsampling amplification, wrap with `cyclic_poisson` (see below).
 
-### `acc.blt_mf(noise_multiplier, n_steps, *, min_sep, max_participations)`
-
-BLT mechanism with Buffered Linear Toeplitz strategy. Supports
-multi-epoch training via `min_sep` and `max_participations`.
-
-```python
-# Single participation
-proc = acc.blt_mf(noise_multiplier=1.0, n_steps=5000)
-eps = proc.epsilon_at(delta=1e-5)
-
-# Multi-epoch: each user participates up to 5 times, at least 100 steps apart
-proc = acc.blt_mf(1.0, 5000, min_sep=100, max_participations=5)
-eps = proc.epsilon_at(delta=1e-5)
-```
-
 ### `acc.cyclic_poisson(inner, sample_rate)`
 
 Cyclic Poisson amplification for BandMF. Decomposes the training run

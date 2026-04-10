@@ -11,7 +11,7 @@ use super::pld::PyPld;
 /// single Gaussian mechanism with effective noise multiplier σ/S.
 ///
 /// The sensitivity S should be pre-computed based on the MF strategy
-/// (BandMF, BLT, Dense) and participation pattern.
+/// and participation pattern.
 ///
 /// Args:
 ///     noise_multiplier (float): Raw noise std σ (before MF). Must be positive.
@@ -163,31 +163,6 @@ pub fn py_general_sensitivity_upper_bound(
 #[pyo3(name = "fixed_epoch_sensitivity", signature = (gram_matrix, n, epochs))]
 pub fn py_fixed_epoch_sensitivity(gram_matrix: Vec<f64>, n: usize, epochs: usize) -> PyResult<f64> {
     crate::matrix_factorization::fixed_epoch_sensitivity(&gram_matrix, n, epochs)
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
-}
-
-/// Sensitivity squared for a BLT strategy matrix.
-///
-/// Implements Lemma 5.3 of the BLT paper (https://arxiv.org/abs/2404.16706).
-///
-/// Args:
-///     buf_decay (list[float]): Decay factors for each buffer, each in (0, 1).
-///     output_scale (list[float]): Scale factors for each buffer.
-///     n (float): Number of iterations (use float('inf') for asymptotic).
-///
-/// Returns:
-///     float: The sensitivity squared.
-///
-/// Raises:
-///     ValueError: If parameters are invalid.
-#[pyfunction]
-#[pyo3(name = "blt_sensitivity_squared", signature = (buf_decay, output_scale, n))]
-pub fn py_blt_sensitivity_squared(
-    buf_decay: Vec<f64>,
-    output_scale: Vec<f64>,
-    n: f64,
-) -> PyResult<f64> {
-    crate::matrix_factorization::blt_sensitivity_squared(&buf_decay, &output_scale, n)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
 

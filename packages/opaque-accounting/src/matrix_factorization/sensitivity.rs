@@ -308,63 +308,6 @@ pub fn fixed_epoch_sensitivity(gram_matrix: &[f64], n: usize, epochs: usize) -> 
     Ok(max_sq_sens.sqrt())
 }
 
-/// Sensitivity squared for a Buffered Linear Toeplitz (BLT) strategy matrix.
-///
-/// Implements Lemma 5.3 of the BLT paper. The sensitivity is:
-///   sensitivity^2(C) = 1 + sum_{i,j} omega_i * omega_j * geometric_sum(1, theta_i * theta_j, n-1)
-///
-/// # Arguments
-///
-/// * `buf_decay` — Decay factors θ for each buffer, each in (0, 1).
-/// * `output_scale` — Scale factors ω for each buffer. Must be same length as buf_decay.
-/// * `n` — Number of iterations (can be f64::INFINITY for asymptotic limit).
-///
-/// # Returns
-///
-/// The squared sensitivity as f64.
-///
-/// # Errors
-///
-/// Returns `InvalidParameter` if buf_decay and output_scale have different lengths.
-///
-/// # References
-///
-/// Lemma 5.3 of <https://arxiv.org/abs/2404.16706>
-pub fn blt_sensitivity_squared(buf_decay: &[f64], output_scale: &[f64], n: f64) -> Result<f64> {
-    if buf_decay.len() != output_scale.len() {
-        return Err(PldError::InvalidParameter(
-            "buf_decay and output_scale must have the same length".into(),
-        ));
-    }
-
-    if buf_decay.is_empty() {
-        return Ok(1.0);
-    }
-
-    for &d in buf_decay {
-        if d > 1.0 {
-            return Ok(f64::INFINITY);
-        }
-    }
-
-    let num = if n.is_infinite() {
-        f64::INFINITY
-    } else {
-        n - 1.0
-    };
-
-    let mut total = 0.0;
-    for i in 0..buf_decay.len() {
-        for j in 0..buf_decay.len() {
-            let omega_pair = output_scale[i] * output_scale[j];
-            let theta_pair = buf_decay[i] * buf_decay[j];
-            total += crate::numerics::special::geometric_sum(omega_pair, theta_pair, num);
-        }
-    }
-
-    Ok(1.0 + total)
-}
-
 /// Sensitivity squared for a Toeplitz strategy matrix under min-sep participation.
 ///
 /// Implements the closed-form from Theorem 2 of the BSR paper. Requires
@@ -624,61 +567,6 @@ mod tests {
         ];
         let sens = fixed_epoch_sensitivity(&gram, 4, 4).unwrap();
         assert!((sens - 2.0).abs() < 1e-10);
-    }
-
-    // ---- blt_sensitivity_squared ----
-
-    #[test]
-    fn test_blt_empty_buffers() {
-        // No buffers: sensitivity^2 = 1.0
-        assert!((blt_sensitivity_squared(&[], &[], 100.0).unwrap() - 1.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_blt_decay_exceeds_one() {
-        // buf_decay > 1 → infinity
-        assert!(blt_sensitivity_squared(&[1.5], &[1.0], 10.0)
-            .unwrap()
-            .is_infinite());
-    }
-
-    #[test]
-    fn test_blt_length_mismatch() {
-        assert!(blt_sensitivity_squared(&[0.5, 0.3], &[1.0], 10.0).is_err());
-    }
-
-    #[test]
-    fn test_blt_single_buffer() {
-        // Single buffer: 1 + omega^2 * geometric_sum(1, theta^2, n-1)
-        let theta = 0.5;
-        let omega = 0.3;
-        let n = 50.0;
-        let result = blt_sensitivity_squared(&[theta], &[omega], n).unwrap();
-        // omega^2 * (1 + theta^2 + theta^4 + ... + theta^(2*(n-2)))
-        let geo = omega * omega * (1.0 - (theta * theta).powf(n - 1.0)) / (1.0 - theta * theta);
-        let expected = 1.0 + geo;
-        assert!(
-            (result - expected).abs() / expected < 1e-10,
-            "result={result}, expected={expected}"
-        );
-    }
-
-    #[test]
-    fn test_blt_infinite_n() {
-        // Infinite n: 1 + sum(omega_i*omega_j / (1 - theta_i*theta_j))
-        let buf_decay = vec![0.5, 0.3];
-        let output_scale = vec![0.2, 0.1];
-        let result = blt_sensitivity_squared(&buf_decay, &output_scale, f64::INFINITY).unwrap();
-        let mut expected = 1.0;
-        for i in 0..2 {
-            for j in 0..2 {
-                expected += output_scale[i] * output_scale[j] / (1.0 - buf_decay[i] * buf_decay[j]);
-            }
-        }
-        assert!(
-            (result - expected).abs() / expected < 1e-10,
-            "result={result}, expected={expected}"
-        );
     }
 
     // ---- toeplitz_minsep_sensitivity_squared ----

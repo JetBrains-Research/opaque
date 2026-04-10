@@ -36,7 +36,6 @@ from opaque.clipping import (
 )
 from opaque.noise import (
     band_mf_noise,
-    blt_mf_noise,
     custom_mf_noise,
     gaussian_noise,
     identity_mf_noise,
@@ -88,7 +87,6 @@ __all__ = [
     "gaussian_noise",
     "truncated_gaussian_noise",
     "band_mf_noise",
-    "blt_mf_noise",
     "custom_mf_noise",
     "identity_mf_noise",
     "per_group_noise_stddev",

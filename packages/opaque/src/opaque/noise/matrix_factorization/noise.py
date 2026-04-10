@@ -6,13 +6,12 @@ each step (standard DP-SGD), these mechanisms add correlated noise that
 achieves better utility at the same privacy budget.
 
 The user-facing entry point is ``custom_mf_noise`` (in ``opaque.noise``).
-Internally, recipe wrappers (``band_mf_noise``, ``blt_mf_noise``, etc.)
+Internally, recipe wrappers (``band_mf_noise``, etc.)
 call ``_matrix_factorization_noise`` which returns ``(noise_fn, state)``.
 
 References:
     - Correlated noise mechanisms: https://arxiv.org/abs/2506.08201
     - BandMF: https://arxiv.org/abs/2306.08153
-    - BLT mechanisms: https://arxiv.org/abs/2404.16706
 """
 
 from __future__ import annotations

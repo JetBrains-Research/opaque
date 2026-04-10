@@ -27,8 +27,6 @@ MECHANISMS:
 
   band_mf   — Banded Toeplitz (Choquette-Choo et al., 2023)
                O(bands × d) memory, uses cyclic_poisson sampling.
-  blt       — Buffered Linear Toeplitz (Choquette-Choo et al., 2024)
-               O(buffers × d) memory, near-optimal, handles multi-epoch.
   identity  — DP-SGD baseline via MF API (C^{-1} = I, independent noise).
                Same training loop for fair comparison.
 
@@ -37,31 +35,18 @@ USAGE:
   # Quick smoke test (~2 minutes, GPT-2 on ag_news)
   python examples/train_dp_ftrl.py --preset smoke
 
-  # BLT on Mellum (default mechanism, near-optimal correlated noise)
+  # BandMF on Mellum (default mechanism, banded correlated noise)
   python examples/train_dp_ftrl.py --preset mellum-kstack
 
-  # BandMF with b=64 bands on Mellum
-  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism band_mf --bands 64
+  # BandMF with b=8 bands on Mellum
+  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism band_mf --bands 8
 
   # DP-SGD baseline for fair comparison (same loop, independent noise)
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism identity
 
-  # Alignment-like: small dataset (N=3500), large batch, BLT shines here
-  python examples/train_dp_ftrl.py --preset mellum-align --mechanism blt
-
-  # Identity baseline for alignment comparison
-  python examples/train_dp_ftrl.py --preset mellum-align --mechanism identity
-
-  # Full-batch mode: B=N, no Poisson amplification (BandMF shines here: 4.5× less noise)
-  python examples/train_dp_ftrl.py --preset mellum-align --mechanism band_mf --full-batch --num-epochs 20
-
-  # Full-batch identity baseline for comparison
-  python examples/train_dp_ftrl.py --preset mellum-align --mechanism identity --full-batch --num-epochs 20
-
 REFERENCES:
 
   - BandMF: https://arxiv.org/abs/2306.08153
-  - BLT: https://arxiv.org/abs/2404.16706
   - DP-FTRL: https://arxiv.org/abs/2103.00039
 """
 
@@ -88,7 +73,7 @@ import torchopt
 import opaque.accounting as acc
 from opaque.accounting import calibration as cal
 from opaque.clipping import clipped_grad
-from opaque.noise import band_mf_noise, blt_mf_noise, identity_mf_noise
+from opaque.noise import band_mf_noise, identity_mf_noise
 from opaque.profiling import StepTimer, TrainingProfiler, print_memory, reset_peak_memory
 from opaque.random import key, fold_in
 from opaque.sampling import CyclicPoissonSampler, PoissonSampler, poisson_collate
@@ -222,7 +207,7 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--preset", type=str, choices=["custom", "smoke", "mellum-kstack", "mellum-align"],
+        "--preset", type=str, choices=["custom", "smoke", "mellum-kstack"],
         default="smoke",
         help="Preset configuration.",
     )
@@ -260,11 +245,6 @@ def parse_args():
     train_g.add_argument("--seed", type=int, default=42)
     train_g.add_argument("--gradient-checkpointing", action=argparse.BooleanOptionalAction, default=False)
     train_g.add_argument("--cpu-offload", action=argparse.BooleanOptionalAction, default=False)
-    train_g.add_argument(
-        "--full-batch", action=argparse.BooleanOptionalAction, default=False,
-        help="Full-batch mode: B=N, no Poisson subsampling, epoch-based DataLoader. "
-             "Accounting uses gaussian/band_mf composition without amplification.",
-    )
 
     # LoRA
     lora_g = parser.add_argument_group("lora")
@@ -276,18 +256,14 @@ def parse_args():
     dp_g = parser.add_argument_group("dp", "DP-FTRL mechanism and clipping")
     dp_g.add_argument(
         "--mechanism", type=str, default="band_mf",
-        choices=["band_mf", "blt", "identity"],
-        help="MF mechanism: band_mf (banded Toeplitz), blt (buffered linear Toeplitz), identity (DP-SGD baseline).",
+        choices=["band_mf", "identity"],
+        help="MF mechanism: band_mf (banded Toeplitz), identity (DP-SGD baseline).",
     )
     dp_g.add_argument("--clipping-norm", type=float, default=0.9, help="Fixed clipping norm")
     dp_g.add_argument("--microbatch-size", type=int, default=None)
     dp_g.add_argument(
         "--bands", type=int, default=8,
         help="Band count for band_mf mechanism and cyclic_poisson sampling.",
-    )
-    dp_g.add_argument(
-        "--max-buffers", type=int, default=10,
-        help="Maximum BLT buffers to try (higher = better noise, slower init).",
     )
 
     # Privacy
@@ -362,46 +338,14 @@ def parse_args():
         _set("dtype", "bfloat16")
         _set("microbatch_size", 16)
         _set("bands", 64)
-        _set("mechanism", "blt")
+        _set("mechanism", "band_mf")
         _set("warmup_frac", 0.05)
         _set("cooldown_frac", 0.30)
         _set("cooldown_end_frac", 0.01)
-    elif args.preset == "mellum-align":
-        _set("model_name", "JetBrains/Mellum-4b-base")
-        _set("dataset", "JetBrains/KStack")
-        _set("dataset_text_field", "content")
-        _set("num_train_samples", 3500)
-        _set("num_eval_samples", 500)
-        _set("num_epochs", 5)
-        _set("batch_size", 256)
-        _set("log_steps", 1)
-        _set("eval_steps", 5)
-        _set("target_epsilon", 3.0)
-        _set("learning_rate", 2e-3)
-        _set("momentum", 1.0)
-        _set("lora_r", 16)
-        _set("lora_alpha", 32)
-        _set("max_seq_len", 1024)
-        _set("lora_modules", [
-            "q_proj", "k_proj", "v_proj", "o_proj",
-            "gate_proj", "up_proj", "down_proj",
-        ])
-        _set("dtype", "bfloat16")
-        _set("microbatch_size", 16)
-        _set("mechanism", "blt")
-        _set("warmup_frac", 0.10)
-        _set("cooldown_frac", 0.30)
-        _set("cooldown_end_frac", 0.01)
-        _set("calibration_max", 200.0)
-
     if args.microbatch_size == 0:
         args.microbatch_size = None
     if args.eval_batch_size is None:
         args.eval_batch_size = args.batch_size
-
-    # Full-batch mode: batch_size = N, accounting without Poisson amplification
-    if args.full_batch:
-        args.batch_size = args.num_train_samples
 
     return args
 
@@ -525,40 +469,24 @@ def main():
 
     global_train_size = len(train_dataset)
 
-    # BLT and full-batch modes use fixed iteration order so consecutive
-    # participations by the same example are separated by exactly
-    # steps_per_epoch steps. Shuffle once before training.
-    if args.mechanism == "blt" or args.full_batch:
-        train_dataset = train_dataset.shuffle(seed=args.seed)
-
     eval_loader = DataLoader(eval_dataset, batch_size=args.eval_batch_size, shuffle=False, collate_fn=collate, drop_last=False)
 
     # --- Sampling ---
     sample_rate = args.batch_size / global_train_size
     expected_steps_per_epoch = global_train_size // args.batch_size
 
-    if args.mechanism == "band_mf" and not args.full_batch:
+    if args.mechanism == "band_mf":
         sampling_prob = args.batch_size * args.bands / global_train_size
         if sampling_prob > 1.0:
             raise ValueError(
                 f"cyclic_poisson sampling_prob = {sampling_prob:.4f} > 1.0. "
                 f"Reduce --bands ({args.bands}) or --batch-size ({args.batch_size})."
             )
-    elif args.mechanism == "blt":
-        pass
-    elif args.mechanism == "identity":
-        pass
 
     print("\nSampling:")
     print(f"  Mechanism: {args.mechanism}")
-    if args.full_batch:
-        print(f"  Mode: FULL-BATCH (B=N={global_train_size}, no Poisson amplification)")
-    elif args.mechanism == "band_mf":
+    if args.mechanism == "band_mf":
         print(f"  Sampler: cyclic_poisson (cycle={args.bands}, q={sampling_prob:.6f})")
-    elif args.mechanism == "blt":
-        print("  Sampler: epoch-based (fixed order, drop_last=True)")
-        print(f"  min_sep: {expected_steps_per_epoch} (= steps/epoch)")
-        print(f"  max_participations: {args.num_epochs}")
     else:
         print(f"  Sampler: poisson (q={sample_rate:.6f})")
     print(f"  Expected batch size: {args.batch_size}")
@@ -633,52 +561,18 @@ def main():
         args.target_delta = 1.0 / (global_train_size ** 1.1)
 
     # Build the accounting mechanism
-    if args.full_batch:
-        # Full-batch: no Poisson amplification, use mechanism directly
-        effective_bands = min(args.bands, total_steps)
-        if args.mechanism == "band_mf":
-            if effective_bands != args.bands:
-                print(f"  Note: clamping bands {args.bands} → {effective_bands} (≤ total_steps)")
-            def acct_mechanism(nm):
-                return acc.band_mf(nm, n_steps=total_steps, bands=effective_bands,
-                                   momentum=args.momentum)
-        elif args.mechanism == "blt":
-            def acct_mechanism(nm):
-                return acc.blt_mf(
-                    nm, n_steps=total_steps,
-                    min_sep=expected_steps_per_epoch,
-                    max_participations=args.num_epochs,
-                    max_buffers=args.max_buffers,
-                    momentum=args.momentum,
-                )
-        elif args.mechanism == "identity":
-            def acct_mechanism(nm):
-                return acc.gaussian(nm) * total_steps
-        else:
-            raise ValueError(f"Unknown mechanism: {args.mechanism}")
+    if args.mechanism == "band_mf":
+        def acct_mechanism(nm):
+            return acc.cyclic_poisson(
+                acc.band_mf(nm, n_steps=total_steps, bands=args.bands,
+                            momentum=args.momentum),
+                sample_rate=sampling_prob,
+            )
+    elif args.mechanism == "identity":
+        def acct_mechanism(nm):
+            return acc.poisson(acc.gaussian(nm), sample_rate=sample_rate) * total_steps
     else:
-        # Standard: Poisson-amplified accounting
-        if args.mechanism == "band_mf":
-            def acct_mechanism(nm):
-                return acc.cyclic_poisson(
-                    acc.band_mf(nm, n_steps=total_steps, bands=args.bands,
-                                momentum=args.momentum),
-                    sample_rate=sampling_prob,
-                )
-        elif args.mechanism == "blt":
-            def acct_mechanism(nm):
-                return acc.blt_mf(
-                    nm, n_steps=total_steps,
-                    min_sep=expected_steps_per_epoch,
-                    max_participations=args.num_epochs,
-                    max_buffers=args.max_buffers,
-                    momentum=args.momentum,
-                )
-        elif args.mechanism == "identity":
-            def acct_mechanism(nm):
-                return acc.poisson(acc.gaussian(nm), sample_rate=sample_rate) * total_steps
-        else:
-            raise ValueError(f"Unknown mechanism: {args.mechanism}")
+        raise ValueError(f"Unknown mechanism: {args.mechanism}")
 
     if args.noise_multiplier is not None:
         noise_multiplier = args.noise_multiplier
@@ -713,19 +607,9 @@ def main():
     print(f"\nCreating MF noise (optimizing for momentum-SGD workload, β={args.momentum})...")
     t0 = time.time()
     if args.mechanism == "band_mf":
-        bands_for_noise = effective_bands if args.full_batch else args.bands
         noise_fn, noise_state = band_mf_noise(
             trainable_params, total_steps,
-            stddev=noise_stddev, key=key(args.seed), bands=bands_for_noise,
-            momentum=args.momentum,
-        )
-    elif args.mechanism == "blt":
-        noise_fn, noise_state = blt_mf_noise(
-            trainable_params, total_steps,
-            stddev=noise_stddev, key=key(args.seed),
-            min_sep=expected_steps_per_epoch,
-            max_participations=args.num_epochs,
-            max_buffers=args.max_buffers,
+            stddev=noise_stddev, key=key(args.seed), bands=args.bands,
             momentum=args.momentum,
         )
     elif args.mechanism == "identity":
@@ -744,10 +628,7 @@ def main():
     identity_sigma = None
     if args.mechanism != "identity" and args.noise_multiplier is None:
         try:
-            if args.full_batch:
-                identity_acct = lambda nm: acc.gaussian(nm) * total_steps
-            else:
-                identity_acct = lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=sample_rate) * total_steps
+            identity_acct = lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=sample_rate) * total_steps
             identity_cal = cal.calibrate(
                 cal.epsilon_budget(args.target_epsilon, delta=args.target_delta),
                 identity_acct,
@@ -775,10 +656,6 @@ def main():
     print(f"  Microbatch size: {args.microbatch_size}")
     if args.mechanism == "band_mf":
         print(f"  Bands: {args.bands}")
-    elif args.mechanism == "blt":
-        print(f"  Max buffers: {args.max_buffers}")
-        print(f"  Min separation: {expected_steps_per_epoch}")
-        print(f"  Max participations: {args.num_epochs}")
 
     # ===================================================================
     # Training loop
@@ -806,13 +683,7 @@ def main():
         print("-" * 80)
 
         # Create epoch data loader — each mechanism needs a different sampler.
-        if args.full_batch:
-            # Full-batch: fixed-order, all data in one batch per epoch
-            epoch_loader = DataLoader(
-                train_dataset, batch_size=args.batch_size,
-                shuffle=False, collate_fn=collate, drop_last=True,
-            )
-        elif args.mechanism == "band_mf":
+        if args.mechanism == "band_mf":
             epoch_sampler = CyclicPoissonSampler(
                 train_dataset,
                 sampling_prob=sampling_prob,
@@ -821,11 +692,6 @@ def main():
                 key=fold_in(key(args.seed), epoch),
             )
             epoch_loader = DataLoader(train_dataset, batch_sampler=epoch_sampler, collate_fn=collate)
-        elif args.mechanism == "blt":
-            epoch_loader = DataLoader(
-                train_dataset, batch_size=args.batch_size,
-                shuffle=False, collate_fn=collate, drop_last=True,
-            )
         else:  # identity
             epoch_sampler = PoissonSampler(
                 train_dataset,

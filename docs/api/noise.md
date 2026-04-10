@@ -18,7 +18,6 @@ Opaque provides several noise mechanisms:
 ### Correlated Noise (DP-FTRL / Matrix Factorization)
 
 - **`band_mf_noise()`** — BandMF banded Toeplitz correlated noise
-- **`blt_mf_noise()`** — Buffered Linear Toeplitz (BLT) correlated noise
 - **`identity_mf_noise()`** — Identity (DP-SGD via MF API, easy to swap)
 - **`custom_mf_noise()`** — Bring-your-own noising matrix
 
@@ -53,8 +52,6 @@ across ranks. It auto-dispatches based on type:
 ## Matrix Factorization Noise
 
 ::: opaque.noise.band_mf_noise
-
-::: opaque.noise.blt_mf_noise
 
 ::: opaque.noise.identity_mf_noise
 
