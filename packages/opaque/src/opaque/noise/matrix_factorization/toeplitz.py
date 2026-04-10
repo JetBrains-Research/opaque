@@ -379,7 +379,11 @@ class ErrorOrLossFn(Protocol):
     """Protocol for error functions."""
 
     def __call__(
-        self, *, strategy_coef: torch.Tensor, n: int | None = None
+        self,
+        *,
+        strategy_coef: torch.Tensor,
+        n: int | None = None,
+        workload_coef: torch.Tensor | None = None,
     ) -> torch.Tensor:
         raise NotImplementedError
 

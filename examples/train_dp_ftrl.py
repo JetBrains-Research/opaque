@@ -327,12 +327,12 @@ def parse_args():
         _set("model_name", "JetBrains/Mellum-4b-base")
         _set("dataset", "JetBrains/KStack")
         _set("dataset_text_field", "content")
-        _set("num_train_samples", 200000)
+        _set("num_train_samples", 500000)
         _set("num_eval_samples", 1000)
-        _set("num_epochs", 20)
+        _set("num_epochs", 8)
         _set("batch_size", 256)
-        _set("log_steps", 50)
-        _set("eval_steps", 200)
+        _set("log_steps", 10)
+        _set("eval_steps", 25)
         _set("target_epsilon", 3.0)
         _set("learning_rate", 2e-3)
         _set("lora_r", 16)
@@ -585,7 +585,8 @@ def main():
     if args.mechanism == "band_mf":
         def acct_mechanism(nm):
             return acc.cyclic_poisson(
-                acc.band_mf(nm, n_steps=total_steps, bands=args.bands),
+                acc.band_mf(nm, n_steps=total_steps, bands=args.bands,
+                            momentum=args.momentum),
                 sample_rate=sampling_prob,
             )
     elif args.mechanism == "blt":
@@ -595,6 +596,7 @@ def main():
                 min_sep=expected_steps_per_epoch,
                 max_participations=args.num_epochs,
                 max_buffers=args.max_buffers,
+                momentum=args.momentum,
             )
     elif args.mechanism == "identity":
         def acct_mechanism(nm):

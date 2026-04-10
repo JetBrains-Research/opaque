@@ -43,15 +43,18 @@ class BandMf(DpProcess):
     noise_multiplier: float
     n_steps: int
     bands: int
+    momentum: float = 1.0
 
     @functools.lru_cache(maxsize=1)
     def _optimized_coefs(self):
         """Optimize Toeplitz coefficients and cache them."""
+        from opaque.noise.band_mf_noise import _momentum_workload_coef
         from opaque.noise.matrix_factorization.toeplitz import (
             optimize as optimize_toeplitz,
         )
 
-        return optimize_toeplitz(self.n_steps, self.bands)
+        workload_coef = _momentum_workload_coef(self.momentum, self.n_steps)
+        return optimize_toeplitz(self.n_steps, self.bands, workload_coef=workload_coef)
 
     @functools.lru_cache(maxsize=1)
     def sensitivity(self) -> float:
@@ -89,6 +92,7 @@ def band_mf(
     noise_multiplier: float,
     n_steps: int,
     bands: int,
+    momentum: float = 1.0,
 ) -> BandMf:
     """BandMF mechanism — banded Toeplitz correlated noise.
 
@@ -105,6 +109,8 @@ def band_mf(
         n_steps: Number of training iterations. Must be >= 1.
         bands: Number of bands in the Toeplitz matrix. Must be >= 1
             and <= ``n_steps``.
+        momentum: Polyak momentum coefficient (default 1.0 = prefix-sum).
+            Must match the momentum used in the optimizer/noise function.
 
     Returns:
         A :class:`BandMf` process.
@@ -127,4 +133,6 @@ def band_mf(
         raise ValueError(f"n_steps must be >= 1, got {n_steps}")
     if bands < 1 or bands > n_steps:
         raise ValueError(f"bands must be in [1, n_steps={n_steps}], got {bands}")
-    return BandMf(noise_multiplier, n_steps, bands)
+    if momentum < 0:
+        raise ValueError(f"momentum must be >= 0, got {momentum}")
+    return BandMf(noise_multiplier, n_steps, bands, momentum)

@@ -41,20 +41,24 @@ class BltMf(DpProcess):
     max_participations: int | None
     error: str
     max_buffers: int
+    momentum: float = 1.0
 
     @functools.lru_cache(maxsize=1)
     def _optimized_blt(self):
         """Optimize the BLT and cache it."""
+        from opaque.noise.band_mf_noise import _momentum_workload_coef
         from opaque.noise.matrix_factorization.buffered_toeplitz import (
             optimize,
         )
 
+        workload_coef = _momentum_workload_coef(self.momentum, self.n_steps)
         return optimize(
             n=self.n_steps,
             min_sep=self.min_sep,
             max_participations=self.max_participations,
             error=self.error,
             max_buffers=self.max_buffers,
+            workload_coef=workload_coef,
         )
 
     @functools.lru_cache(maxsize=1)
@@ -128,6 +132,7 @@ def blt_mf(
     max_participations: int | None = 1,
     error: str = "max",
     max_buffers: int = 10,
+    momentum: float = 1.0,
 ) -> BltMf:
     """BLT mechanism — Buffered Linear Toeplitz correlated noise.
 
@@ -142,6 +147,8 @@ def blt_mf(
         max_participations: Maximum participations per user (default 1).
         error: Error metric to optimize: ``'max'`` or ``'mean'``.
         max_buffers: Maximum number of BLT buffers to try (default 10).
+        momentum: Polyak momentum coefficient (default 1.0 = prefix-sum).
+            Must match the momentum used in the optimizer/noise function.
 
     Returns:
         A :class:`BltMf` process.
@@ -167,6 +174,9 @@ def blt_mf(
         raise ValueError(f"error must be 'max' or 'mean', got {error!r}")
     if max_buffers < 0:
         raise ValueError(f"max_buffers must be >= 0, got {max_buffers}")
+    if momentum < 0:
+        raise ValueError(f"momentum must be >= 0, got {momentum}")
     return BltMf(
-        noise_multiplier, n_steps, min_sep, max_participations, error, max_buffers
+        noise_multiplier, n_steps, min_sep, max_participations, error, max_buffers,
+        momentum,
     )

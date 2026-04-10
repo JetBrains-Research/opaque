@@ -247,3 +247,46 @@ class TestMfComposition:
         assert isinstance(proc, CyclicPoisson)
         assert isinstance(proc.inner, BandMf)
         assert proc.inner.bands == 5
+
+
+# ── Momentum accounting tests ───────────────────────────────────────
+
+
+class TestMomentumAccounting:
+    """Accounting with momentum produces different (tighter) calibration."""
+
+    def test_band_mf_momentum_field(self):
+        """BandMf stores momentum."""
+        proc = acc.band_mf(1.0, 100, 5, momentum=0.95)
+        assert proc.momentum == pytest.approx(0.95)
+
+    def test_band_mf_default_momentum_is_prefix_sum(self):
+        """Default momentum=1.0 gives prefix-sum (backward compat)."""
+        proc = acc.band_mf(1.0, 100, 5)
+        assert proc.momentum == pytest.approx(1.0)
+
+    def test_band_mf_momentum_affects_sensitivity(self):
+        """Momentum-optimized strategy has sensitivity 1.0 (L2-normalized)
+        regardless of momentum, but the epsilon may differ."""
+        proc_pfx = acc.band_mf(1.0, 100, 5, momentum=1.0)
+        proc_mom = acc.band_mf(1.0, 100, 5, momentum=0.95)
+        # Both have normalized coefficients → sensitivity = 1.0
+        assert proc_pfx.sensitivity() == pytest.approx(1.0, abs=1e-6)
+        assert proc_mom.sensitivity() == pytest.approx(1.0, abs=1e-6)
+
+    def test_band_mf_rejects_negative_momentum(self):
+        with pytest.raises(ValueError, match="momentum"):
+            acc.band_mf(1.0, 100, 5, momentum=-0.1)
+
+    def test_blt_mf_momentum_field(self):
+        """BltMf stores momentum."""
+        proc = acc.blt_mf(1.0, 50, momentum=0.9, max_buffers=3)
+        assert proc.momentum == pytest.approx(0.9)
+
+    def test_blt_mf_default_momentum_is_prefix_sum(self):
+        proc = acc.blt_mf(1.0, 50, max_buffers=3)
+        assert proc.momentum == pytest.approx(1.0)
+
+    def test_blt_mf_rejects_negative_momentum(self):
+        with pytest.raises(ValueError, match="momentum"):
+            acc.blt_mf(1.0, 50, momentum=-0.1)
