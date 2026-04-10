@@ -190,6 +190,13 @@ def truncated_gaussian_noise(
     def noise_fn(grads, st, *, stddev=None):
         """Add truncated Gaussian noise to gradients."""
         effective_stddev = stddev if stddev is not None else default_stddev
+        if isinstance(effective_stddev, PerGroup):
+            raise TypeError(
+                "truncated_gaussian_noise does not support PerGroup stddev. "
+                "Use gaussian_noise for per-group noise, or pass a scalar stddev."
+            )
+        if effective_stddev < 0:
+            raise ValueError(f"stddev must be non-negative, got {effective_stddev}")
         bound = effective_stddev * radius
 
         if effective_stddev == 0:

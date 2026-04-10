@@ -140,6 +140,7 @@ def gaussian_noise(
     def noise_fn(grads, st, *, stddev=None):
         """Add Gaussian noise to gradients."""
         effective_stddev = stddev if stddev is not None else default_stddev
+        _validate_stddev(effective_stddev)
 
         next_state = GaussianNoiseState(
             _step_counter=st._step_counter + 1,

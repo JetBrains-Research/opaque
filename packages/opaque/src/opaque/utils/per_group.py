@@ -47,7 +47,11 @@ class PerGroup:
     Flows through the entire DP-SGD pipeline as clipping_norm, sensitivity,
     and noise stddev. Supports arithmetic so training loop code is unchanged::
 
-        noise_multiplier * clip_state.sensitivity  # returns PerGroup
+        noise_multiplier * clipping_norm  # returns PerGroup when clipping_norm is PerGroup
+
+    For MSE-optimal per-group noise allocation, use
+    :func:`~opaque.noise.per_group_noise_stddev` instead of
+    ``noise_multiplier * clip_state.sensitivity`` (which is always a scalar).
 
     Attributes:
         groups: Mapping from parameter key to group name (pre-resolved).
