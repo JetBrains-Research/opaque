@@ -6,8 +6,9 @@ Implements Algorithm 1 (DP-AdamW) and Algorithm 2 (DP-AdamW-BC) from::
     Correction in Private Deep Learning", arXiv:2511.07843 (ICML 2025).
 
 Algorithm 1 (``noise_variance=0``, default):
-    Standard AdamW applied to (already noised) gradients.  Delegates entirely
-    to ``torchopt.adamw`` -- no custom math.
+    Standard AdamW applied to (already noised) gradients.  Moment scaling
+    is mathematically identical to ``torchopt.transform.scale_by_adam``;
+    weight decay and learning-rate application reuse torchopt transforms.
 
 Algorithm 2 (``noise_variance > 0``):
     DP-AdamW-BC.  Subtracts the DP noise variance |Phi| from the bias-corrected
@@ -50,12 +51,8 @@ class DPAdamWState:
     """Immutable state for the bias-corrected moment scaling (Algorithm 2).
 
     This is the first element of the chain state returned by
-    :func:`dp_adamw` when ``noise_variance > 0``.  The full optimizer
-    state is a tuple ``(DPAdamWState, wd_state, lr_state)`` managed by
-    ``torchopt.chain``.
-
-    When ``noise_variance=0``, :func:`dp_adamw` delegates to
-    ``torchopt.adamw`` which uses TorchOpt's own state types.
+    :func:`dp_adamw`.  The full optimizer state is a tuple
+    ``(DPAdamWState, wd_state, lr_state)`` managed by ``torchopt.chain``.
 
     Attributes:
         mu: First moment estimates (pytree matching params).
@@ -80,10 +77,11 @@ def _scale_by_adam_bc(
     noise_variance: float,
     bc_floor: float,
 ) -> GradientTransformation:
-    """Adam moment scaling with DP bias correction (Algorithm 2, step 2).
+    """Adam moment scaling with optional DP bias correction.
 
-    Like ``torchopt.transform.scale_by_adam`` but subtracts the DP noise
-    variance from the bias-corrected second moment before dividing::
+    Equivalent to ``torchopt.transform.scale_by_adam`` when
+    ``noise_variance=0``.  When ``noise_variance > 0``, subtracts the DP
+    noise variance from the bias-corrected second moment (Algorithm 2)::
 
         v_hat_corrected = max(v_hat - noise_variance, bc_floor)
         output = m_hat / (sqrt(v_hat_corrected) + eps)
@@ -113,7 +111,9 @@ def _scale_by_adam_bc(
 
         def _compute(m: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
             m_hat = m / bc1
-            v_hat = torch.clamp(v / bc2 - noise_variance, min=bc_floor)
+            v_hat = v / bc2
+            if noise_variance > 0:
+                v_hat = torch.clamp(v_hat - noise_variance, min=bc_floor)
             return m_hat / (v_hat.sqrt() + eps)
 
         result = tree_map(_compute, new_mu, new_nu)
@@ -139,17 +139,17 @@ def dp_adamw(
 ) -> GradientTransformation:
     """Create a DP-AdamW optimizer.
 
-    When ``noise_variance=0`` (default), returns ``torchopt.adamw`` directly --
-    standard AdamW with no modifications (Algorithm 1).
+    When ``noise_variance=0`` (default), the moment scaling is identical to
+    ``torchopt.transform.scale_by_adam`` (Algorithm 1).
 
-    When ``noise_variance > 0``, returns DP-AdamW-BC (Algorithm 2) which
-    subtracts the DP noise variance from the second moment estimate::
+    When ``noise_variance > 0``, the second moment is bias-corrected by
+    subtracting the DP noise variance (Algorithm 2, DP-AdamW-BC)::
 
         v_hat_corrected = max(v_hat - noise_variance, bc_floor)
 
-    The BC variant reuses ``torchopt.transform.add_decayed_weights`` and
-    ``torchopt.transform.scale`` for weight decay and learning-rate
-    application; only the moment scaling is custom.
+    In both cases, weight decay and learning-rate application reuse
+    ``torchopt.transform.add_decayed_weights`` and
+    ``torchopt.transform.scale`` via ``torchopt.chain``.
 
     The optimizer expects gradients that are already clipped and noised.
     Clipping and noise injection are separate concerns handled by
@@ -161,7 +161,7 @@ def dp_adamw(
         eps: Denominator stability constant epsilon.
         weight_decay: Decoupled weight decay coefficient lambda.
         noise_variance: DP noise variance Phi = stddev**2 for bias correction.
-            When 0, disables BC and delegates to ``torchopt.adamw``.
+            When 0, moment scaling matches standard AdamW exactly.
         bc_floor: Minimum value gamma for the corrected second moment.
             Prevents division by zero in the BC variant.
 
@@ -191,12 +191,8 @@ def dp_adamw(
     if noise_variance < 0:
         raise ValueError(f"noise_variance must be non-negative, got {noise_variance}")
 
-    # Algorithm 1: standard AdamW -- delegate entirely to torchopt.
-    if noise_variance == 0:
-        return torchopt.adamw(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
-
-    # Algorithm 2: DP-AdamW-BC.
-    # Only the moment scaling is custom; weight decay and lr reuse torchopt.
+    # Chain: moment scaling (custom) + weight decay + lr (both from torchopt).
+    # When noise_variance=0, _scale_by_adam_bc is identical to scale_by_adam.
     return torchopt.chain(
         _scale_by_adam_bc(betas[0], betas[1], eps, noise_variance, bc_floor),
         torchopt.transform.add_decayed_weights(weight_decay=weight_decay),

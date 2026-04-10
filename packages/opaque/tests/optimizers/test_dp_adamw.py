@@ -37,12 +37,12 @@ def nested_params():
 
 
 # ---------------------------------------------------------------------------
-# Algorithm 1: standard mode (noise_variance=0) — delegates to torchopt
+# Algorithm 1: standard mode (noise_variance=0) — same math as torchopt.adamw
 # ---------------------------------------------------------------------------
 
 
 class TestStandardMode:
-    """When noise_variance=0, dp_adamw delegates to torchopt.adamw."""
+    """When noise_variance=0, dp_adamw is numerically identical to torchopt.adamw."""
 
     def test_returns_gradient_transformation(self):
         opt = dp_adamw(lr=1e-3)
@@ -60,6 +60,13 @@ class TestStandardMode:
         for k in params:
             assert updates[k].shape == params[k].shape
 
+    def test_state_is_chain_tuple(self, params):
+        opt = dp_adamw(lr=1e-3)
+        state = opt.init(params)
+        # Chain state: (DPAdamWState, wd_state, lr_state).
+        assert isinstance(state, tuple)
+        assert isinstance(state[0], DPAdamWState)
+
     def test_params_change_after_apply(self, params, grads):
         opt = dp_adamw(lr=1e-2)
         state = opt.init(params)
@@ -72,22 +79,38 @@ class TestStandardMode:
         changed = any(not torch.equal(params[k], orig[k]) for k in params)
         assert changed
 
-    def test_matches_torchopt_adamw(self, params, grads):
-        """dp_adamw(noise_variance=0) should produce identical results to
-        torchopt.adamw with the same hyperparameters."""
-        kwargs = dict(lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01)
-
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            dict(lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01),
+            dict(lr=0.1, betas=(0.85, 0.99), eps=1e-6, weight_decay=0.0),
+            dict(lr=5e-4, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.1),
+        ],
+        ids=["default", "high_lr_no_wd", "heavy_wd"],
+    )
+    def test_matches_torchopt_adamw(self, params, kwargs):
+        """dp_adamw(noise_variance=0) must produce identical updates to
+        torchopt.adamw at every step, across hyperparameter configs."""
         opt_dp = dp_adamw(**kwargs)
         opt_ref = torchopt.adamw(**kwargs)
 
         state_dp = opt_dp.init(params)
         state_ref = opt_ref.init(params)
 
-        updates_dp, _ = opt_dp.update(grads, state_dp, params=params)
-        updates_ref, _ = opt_ref.update(grads, state_ref, params=params)
+        torch.manual_seed(42)
+        for step in range(10):
+            # Varying gradients expose moment accumulation differences.
+            grads = {k: torch.randn_like(v) for k, v in params.items()}
 
-        for k in params:
-            torch.testing.assert_close(updates_dp[k], updates_ref[k])
+            updates_dp, state_dp = opt_dp.update(grads, state_dp, params=params)
+            updates_ref, state_ref = opt_ref.update(grads, state_ref, params=params)
+
+            for k in params:
+                torch.testing.assert_close(
+                    updates_dp[k],
+                    updates_ref[k],
+                    msg=f"Mismatch at step {step}, key '{k}', config {kwargs}",
+                )
 
 
 # ---------------------------------------------------------------------------
