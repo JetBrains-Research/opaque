@@ -8,6 +8,7 @@ torchopt = pytest.importorskip(
 )
 
 from opaque.optimizers import DPAdamWState, dp_adamw  # noqa: E402
+from opaque.utils.per_group import PerGroup  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -233,6 +234,104 @@ class TestBCMode:
         assert (
             updates["layer1"]["weight"].shape == nested_params["layer1"]["weight"].shape
         )
+
+
+# ---------------------------------------------------------------------------
+# Algorithm 2: per-group BC (PerGroup noise_variance)
+# ---------------------------------------------------------------------------
+
+
+class TestPerGroupBC:
+    """DP-AdamW-BC with per-group noise variance (MSE-optimal allocation)."""
+
+    @pytest.fixture
+    def pg_params(self):
+        return {"q_proj.weight": torch.randn(4, 3), "mlp.weight": torch.randn(3, 2)}
+
+    @pytest.fixture
+    def pg_grads(self, pg_params):
+        return {k: torch.randn_like(v) for k, v in pg_params.items()}
+
+    @pytest.fixture
+    def pg_stddev(self):
+        """PerGroup of noise stddevs (like per_group_noise_stddev returns)."""
+        return PerGroup(
+            groups={"q_proj.weight": "attn", "mlp.weight": "mlp"},
+            values={"attn": 0.3, "mlp": 0.8},
+        )
+
+    def test_per_group_produces_different_correction_per_key(
+        self, pg_params, pg_grads, pg_stddev
+    ):
+        """Each param group should get its own BC correction."""
+        opt_pg = dp_adamw(lr=1e-3, noise_variance=pg_stddev)
+        # Use scalar variance matching the "attn" group — updates differ
+        # for the "mlp" key because its variance is different.
+        opt_scalar = dp_adamw(lr=1e-3, noise_variance=0.3**2)
+
+        s_pg = opt_pg.init(pg_params)
+        s_sc = opt_scalar.init(pg_params)
+
+        for _ in range(5):
+            u_pg, s_pg = opt_pg.update(pg_grads, s_pg, params=pg_params)
+            u_sc, s_sc = opt_scalar.update(pg_grads, s_sc, params=pg_params)
+
+        # "attn" group has stddev=0.3 in both → should match.
+        torch.testing.assert_close(u_pg["q_proj.weight"], u_sc["q_proj.weight"])
+        # "mlp" group has stddev=0.8 vs 0.3 → must differ.
+        assert not torch.equal(u_pg["mlp.weight"], u_sc["mlp.weight"])
+
+    def test_per_group_bc_increases_effective_lr(self, pg_params, pg_grads, pg_stddev):
+        """Per-group BC should produce larger updates than standard mode."""
+        big_grads = {k: v * 10 for k, v in pg_grads.items()}
+
+        opt_std = dp_adamw(lr=1e-3, noise_variance=0.0)
+        opt_pg = dp_adamw(lr=1e-3, noise_variance=pg_stddev)
+
+        s_std = opt_std.init(pg_params)
+        s_pg = opt_pg.init(pg_params)
+
+        for _ in range(10):
+            u_std, s_std = opt_std.update(big_grads, s_std, params=pg_params)
+            u_pg, s_pg = opt_pg.update(big_grads, s_pg, params=pg_params)
+
+        norm_std = sum(u.norm() for u in u_std.values())
+        norm_pg = sum(u.norm() for u in u_pg.values())
+        assert norm_pg >= norm_std
+
+    def test_per_group_with_zero_group(self, pg_params, pg_grads):
+        """A group with stddev=0 should match standard AdamW for that key."""
+        pg_mixed = PerGroup(
+            groups={"q_proj.weight": "attn", "mlp.weight": "mlp"},
+            values={"attn": 0.0, "mlp": 0.5},
+        )
+        opt = dp_adamw(lr=1e-3, noise_variance=pg_mixed)
+        opt_std = dp_adamw(lr=1e-3, noise_variance=0.0)
+
+        s = opt.init(pg_params)
+        s_std = opt_std.init(pg_params)
+
+        for _ in range(5):
+            u, s = opt.update(pg_grads, s, params=pg_params)
+            u_std, s_std = opt_std.update(pg_grads, s_std, params=pg_params)
+
+        # attn group has stddev=0 → matches standard.
+        torch.testing.assert_close(u["q_proj.weight"], u_std["q_proj.weight"])
+        # mlp group has stddev=0.5 → differs.
+        assert not torch.equal(u["mlp.weight"], u_std["mlp.weight"])
+
+    def test_per_group_floor_prevents_zero_denominator(self, pg_params, pg_grads):
+        """Huge per-group stddev should be clamped by bc_floor."""
+        huge = PerGroup(
+            groups={"q_proj.weight": "attn", "mlp.weight": "mlp"},
+            values={"attn": 1000.0, "mlp": 1000.0},
+        )
+        opt = dp_adamw(lr=1e-3, noise_variance=huge, bc_floor=1e-8)
+        state = opt.init(pg_params)
+        updates, _ = opt.update(pg_grads, state, params=pg_params)
+
+        for k in pg_params:
+            assert torch.isfinite(updates[k]).all()
 
 
 # ---------------------------------------------------------------------------
