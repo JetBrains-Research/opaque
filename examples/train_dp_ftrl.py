@@ -46,6 +46,12 @@ USAGE:
   # DP-SGD baseline for fair comparison (same loop, independent noise)
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism identity
 
+  # Alignment-like: small dataset (N=3500), large batch, BLT shines here
+  python examples/train_dp_ftrl.py --preset mellum-align --mechanism blt
+
+  # Identity baseline for alignment comparison
+  python examples/train_dp_ftrl.py --preset mellum-align --mechanism identity
+
 REFERENCES:
 
   - BandMF: https://arxiv.org/abs/2306.08153
@@ -210,7 +216,7 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--preset", type=str, choices=["custom", "smoke", "mellum-kstack"],
+        "--preset", type=str, choices=["custom", "smoke", "mellum-kstack", "mellum-align"],
         default="smoke",
         help="Preset configuration.",
     )
@@ -349,6 +355,33 @@ def parse_args():
         _set("warmup_frac", 0.05)
         _set("cooldown_frac", 0.30)
         _set("cooldown_end_frac", 0.01)
+    elif args.preset == "mellum-align":
+        _set("model_name", "JetBrains/Mellum-4b-base")
+        _set("dataset", "JetBrains/KStack")
+        _set("dataset_text_field", "content")
+        _set("num_train_samples", 3500)
+        _set("num_eval_samples", 500)
+        _set("num_epochs", 5)
+        _set("batch_size", 256)
+        _set("log_steps", 1)
+        _set("eval_steps", 5)
+        _set("target_epsilon", 3.0)
+        _set("learning_rate", 2e-3)
+        _set("momentum", 1.0)
+        _set("lora_r", 16)
+        _set("lora_alpha", 32)
+        _set("max_seq_len", 1024)
+        _set("lora_modules", [
+            "q_proj", "k_proj", "v_proj", "o_proj",
+            "gate_proj", "up_proj", "down_proj",
+        ])
+        _set("dtype", "bfloat16")
+        _set("microbatch_size", 16)
+        _set("mechanism", "blt")
+        _set("warmup_frac", 0.10)
+        _set("cooldown_frac", 0.30)
+        _set("cooldown_end_frac", 0.01)
+        _set("calibration_max", 200.0)
 
     if args.microbatch_size == 0:
         args.microbatch_size = None
