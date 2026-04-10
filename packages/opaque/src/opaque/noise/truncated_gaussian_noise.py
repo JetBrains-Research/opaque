@@ -38,6 +38,7 @@ import torch
 from opaque.noise.gaussian_noise import GaussianNoiseState
 from opaque.random import RngKey, generator_from_key
 from opaque.random import fold_in as rng_fold_in
+from opaque.utils.per_group import PerGroup
 from opaque.utils.pytree import tree_map
 
 _SQRT2 = math.sqrt(2.0)
@@ -98,8 +99,22 @@ def _truncated_normal_around(
     return samples.to(device=device)
 
 
+def _validate_truncated_stddev(stddev: float | PerGroup) -> None:
+    """Validate that stddev is non-negative (scalar or per-group)."""
+    if isinstance(stddev, PerGroup):
+        for gname, val in stddev.values.items():
+            if val < 0:
+                raise ValueError(
+                    f"stddev must be non-negative for all groups, "
+                    f"got {val} for group '{gname}'"
+                )
+    else:
+        if stddev < 0:
+            raise ValueError(f"stddev must be non-negative, got {stddev}")
+
+
 def truncated_gaussian_noise(
-    stddev: float,
+    stddev: float | PerGroup,
     radius: float = 3.0,
     *,
     key: RngKey,
@@ -120,6 +135,10 @@ def truncated_gaussian_noise(
     ``radius`` (in σ-units) is fixed at creation and the truncation bounds
     adjust automatically: [−radius·stddev, radius·stddev].
 
+    When ``stddev`` is a :class:`~opaque.utils.per_group.PerGroup`, each
+    parameter receives noise scaled by its group's stddev value, with
+    per-group truncation bounds [−radius·σ_g, radius·σ_g].
+
     The noise function uses exactly the ``key`` you provide — no auto-detection
     of distributed state. For synchronized noise in DDP, pass the same key on
     every rank.
@@ -127,6 +146,8 @@ def truncated_gaussian_noise(
     Args:
         stddev: Standard deviation of the underlying Gaussian noise
             (usually ``noise_multiplier * clip_state.sensitivity``).
+            When ``PerGroup``, each parameter group gets its own noise scale
+            and truncation bounds.
         radius: Truncation radius in units of standard deviations.
             Noise is truncated to [−radius·stddev, radius·stddev].
             Must be positive. Typical values: 3–10.
@@ -164,15 +185,7 @@ def truncated_gaussian_noise(
         Differential Privacy," J. Privacy and Confidentiality, 14(1), 2024.
         https://arxiv.org/abs/2211.17230
     """
-    from opaque.utils.per_group import PerGroup
-
-    if isinstance(stddev, PerGroup):
-        raise TypeError(
-            "truncated_gaussian_noise does not support PerGroup stddev. "
-            "Use gaussian_noise for per-group noise, or pass a scalar stddev."
-        )
-    if stddev < 0:
-        raise ValueError(f"stddev must be non-negative, got {stddev}")
+    _validate_truncated_stddev(stddev)
 
     if radius <= 0:
         raise ValueError(f"radius must be positive, got {radius}")
@@ -190,22 +203,42 @@ def truncated_gaussian_noise(
     def noise_fn(grads, st, *, stddev=None):
         """Add truncated Gaussian noise to gradients."""
         effective_stddev = stddev if stddev is not None else default_stddev
+        _validate_truncated_stddev(effective_stddev)
+
+        next_state = GaussianNoiseState(
+            _step_counter=st._step_counter + 1,
+            _rng_key=st._rng_key,
+        )
+
+        # Per-group noise path
         if isinstance(effective_stddev, PerGroup):
-            raise TypeError(
-                "truncated_gaussian_noise does not support PerGroup stddev. "
-                "Use gaussian_noise for per-group noise, or pass a scalar stddev."
-            )
-        if effective_stddev < 0:
-            raise ValueError(f"stddev must be non-negative, got {effective_stddev}")
+            if all(v == 0 for v in effective_stddev.values.values()):
+                return grads, next_state
+
+            step_key = rng_fold_in(st._rng_key, st._step_counter)
+            g = generator_from_key(step_key)
+
+            noisy = {}
+            for param_key, tensor in grads.items():
+                group_std = effective_stddev.for_key(param_key)
+                bound = group_std * radius
+                noisy[param_key] = _truncated_normal_around(
+                    tensor,
+                    stddev=group_std,
+                    lower=-bound,
+                    upper=bound,
+                    generator=g,
+                )
+
+            return noisy, next_state
+
+        # Global (scalar) noise path
         bound = effective_stddev * radius
 
         if effective_stddev == 0:
             return tree_map(
                 lambda t: torch.clamp(t, min=-bound, max=bound), grads
-            ), GaussianNoiseState(
-                _step_counter=st._step_counter + 1,
-                _rng_key=st._rng_key,
-            )
+            ), next_state
 
         step_key = rng_fold_in(st._rng_key, st._step_counter)
         g = generator_from_key(step_key)
@@ -221,10 +254,7 @@ def truncated_gaussian_noise(
 
         noisy = tree_map(add_bounded_noise, grads)
 
-        return noisy, GaussianNoiseState(
-            _step_counter=st._step_counter + 1,
-            _rng_key=st._rng_key,
-        )
+        return noisy, next_state
 
     return noise_fn, state
 

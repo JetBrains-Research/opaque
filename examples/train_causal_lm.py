@@ -93,11 +93,6 @@ def _noise_stddev(clip_state, noise_multiplier, *, per_group=True):
     return noise_multiplier * clip_state.sensitivity
 
 
-def _noise_stddev_scalar(clip_state, noise_multiplier):
-    """Always-scalar noise stddev (for mechanisms that don't support PerGroup)."""
-    return noise_multiplier * clip_state.sensitivity
-
-
 def _select_device(local_rank: int | None = None) -> tuple[torch.device, str]:
     """Select best available device with user-facing label."""
     if torch.cuda.is_available():
@@ -1190,12 +1185,8 @@ def main():
     accounting = Accountant()
 
     # Noise function — created once; per-call stddev override tracks adaptive clipping_norm.
-    _stddev_fn = (
-        _noise_stddev_scalar if args.noise_mechanism == "truncated_gaussian"
-        else _noise_stddev
-    )
     noise_fn, noise_state = make_noise(
-        stddev=_stddev_fn(clip_state, noise_multiplier),
+        stddev=_noise_stddev(clip_state, noise_multiplier),
         key=key(args.seed),
     )
 
@@ -1278,7 +1269,7 @@ def main():
                     clip_state, aux = sync(clip_state, aux)
                     sum_gradients_(grads_tuple)
 
-                noise_stddev = _stddev_fn(clip_state, noise_multiplier)
+                noise_stddev = _noise_stddev(clip_state, noise_multiplier)
                 noisy_grads, noise_state = noise_fn(
                     grads_tuple, noise_state, stddev=noise_stddev,
                 )

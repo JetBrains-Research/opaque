@@ -7,6 +7,7 @@ import torch
 from opaque.noise import truncated_gaussian_noise
 from opaque.noise.gaussian_noise import GaussianNoiseState
 from opaque.random import key
+from opaque.utils.per_group import PerGroup
 
 
 class TestBoundedGaussian:
@@ -292,3 +293,122 @@ class TestBoundedGaussianKey:
             truncated_gaussian_noise(stddev=1.0, radius=0.0, key=key(42))
         with pytest.raises(ValueError, match="radius must be positive"):
             truncated_gaussian_noise(stddev=1.0, radius=-1.0, key=key(42))
+
+
+class TestTruncatedGaussianPerGroup:
+    """Tests for truncated_gaussian_noise() with PerGroup stddev."""
+
+    def test_returns_tuple(self):
+        pg = PerGroup(groups={"w": "g", "b": "g"}, values={"g": 1.0})
+        noise_fn, state = truncated_gaussian_noise(stddev=pg, radius=3.0, key=key(0))
+        assert callable(noise_fn)
+        assert isinstance(state, GaussianNoiseState)
+
+    def test_adds_per_group_noise(self):
+        """Each parameter should receive noise scaled by its group's stddev."""
+        pg = PerGroup(
+            groups={"weight": "attn", "bias": "mlp"},
+            values={"attn": 1.0, "mlp": 5.0},
+        )
+        noise_fn, state = truncated_gaussian_noise(stddev=pg, radius=5.0, key=key(42))
+        grads = {
+            "weight": torch.zeros(1000),
+            "bias": torch.zeros(1000),
+        }
+        noisy, state = noise_fn(grads, state)
+
+        assert not torch.allclose(noisy["weight"], grads["weight"])
+        assert not torch.allclose(noisy["bias"], grads["bias"])
+
+        # mlp (stddev=5) should have larger noise than attn (stddev=1)
+        attn_var = noisy["weight"].var().item()
+        mlp_var = noisy["bias"].var().item()
+        assert mlp_var > attn_var * 5
+
+    def test_per_group_bounds_respected(self):
+        """Each group's output must lie within its own ±radius·σ_g bounds."""
+        pg = PerGroup(
+            groups={"small": "lo", "large": "hi"},
+            values={"lo": 0.5, "hi": 2.0},
+        )
+        radius = 3.0
+        noise_fn, state = truncated_gaussian_noise(stddev=pg, radius=radius, key=key(0))
+        grads = {
+            "small": torch.zeros(10000),
+            "large": torch.zeros(10000),
+        }
+        noisy, state = noise_fn(grads, state)
+
+        # small group: bounds = ±0.5*3 = ±1.5
+        assert noisy["small"].min().item() >= -0.5 * radius
+        assert noisy["small"].max().item() <= 0.5 * radius
+
+        # large group: bounds = ±2.0*3 = ±6.0
+        assert noisy["large"].min().item() >= -2.0 * radius
+        assert noisy["large"].max().item() <= 2.0 * radius
+
+    def test_all_zero_stddev_returns_original(self):
+        """All groups with stddev=0 should return original gradients."""
+        pg = PerGroup(
+            groups={"a": "g1", "b": "g2"},
+            values={"g1": 0.0, "g2": 0.0},
+        )
+        noise_fn, state = truncated_gaussian_noise(stddev=pg, radius=3.0, key=key(0))
+        grads = {"a": torch.randn(3), "b": torch.randn(3)}
+        noisy, state = noise_fn(grads, state)
+        torch.testing.assert_close(noisy["a"], grads["a"])
+        torch.testing.assert_close(noisy["b"], grads["b"])
+
+    def test_per_call_override(self):
+        """Per-call stddev override should work with PerGroup."""
+        pg_default = PerGroup(groups={"w": "g1"}, values={"g1": 1.0})
+        pg_override = PerGroup(groups={"w": "g1"}, values={"g1": 10.0})
+        noise_fn, state = truncated_gaussian_noise(
+            stddev=pg_default, radius=5.0, key=key(0)
+        )
+        grads = {"w": torch.zeros(1000)}
+
+        noisy_default, state = noise_fn(grads, state)
+        noisy_override, state = noise_fn(grads, state, stddev=pg_override)
+
+        var_default = noisy_default["w"].var().item()
+        var_override = noisy_override["w"].var().item()
+        assert var_override > var_default * 10
+
+    def test_scalar_override_with_per_group_default(self):
+        """Scalar override should work even when default is PerGroup."""
+        pg = PerGroup(groups={"w": "g"}, values={"g": 1.0})
+        noise_fn, state = truncated_gaussian_noise(stddev=pg, radius=3.0, key=key(0))
+
+        grads = {"w": torch.zeros(5)}
+        noisy, state = noise_fn(grads, state, stddev=0.0)
+        torch.testing.assert_close(noisy["w"], grads["w"])
+
+    def test_negative_group_stddev_raises(self):
+        pg = PerGroup(groups={"w": "g"}, values={"g": -1.0})
+        with pytest.raises(ValueError, match="non-negative"):
+            truncated_gaussian_noise(stddev=pg, radius=3.0, key=key(0))
+
+    def test_deterministic_noise(self):
+        """Same key + step should produce same noise."""
+        pg = PerGroup(groups={"w": "g"}, values={"g": 1.0})
+        grads = {"w": torch.zeros(10)}
+
+        noise_fn1, state1 = truncated_gaussian_noise(stddev=pg, radius=3.0, key=key(42))
+        noisy1, _ = noise_fn1(grads, state1)
+
+        noise_fn2, state2 = truncated_gaussian_noise(stddev=pg, radius=3.0, key=key(42))
+        noisy2, _ = noise_fn2(grads, state2)
+
+        torch.testing.assert_close(noisy1["w"], noisy2["w"])
+
+    def test_step_counter_advances(self):
+        pg = PerGroup(groups={"w": "g"}, values={"g": 1.0})
+        noise_fn, state = truncated_gaussian_noise(stddev=pg, radius=3.0, key=key(0))
+        assert state._step_counter == 0
+
+        grads = {"w": torch.zeros(3)}
+        _, state = noise_fn(grads, state)
+        assert state._step_counter == 1
+        _, state = noise_fn(grads, state)
+        assert state._step_counter == 2
