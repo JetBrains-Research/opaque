@@ -284,6 +284,38 @@ pub fn py_lambda_cgd_normalized_sensitivity_squared(
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
 
+/// Compute the BnB Gram matrix for DP-λCGD.
+///
+/// For the BnB dominating pair, computes G_{ij} = ⟨m_i, m_j⟩ where
+/// m_i = Σ_{epoch} C_λ[:,b·epoch+i] (or normalized C̃_λ).
+///
+/// Args:
+///     lambda_ (float): Correlation coefficient in [0, 1).
+///     n_steps (int): Total steps (= bins_per_epoch × num_epochs).
+///     min_sep (int): Bins per epoch (= b).
+///     max_participations (int | None): Number of epochs. None infers.
+///     normalized (bool): Whether to use column-normalized matrix.
+///
+/// Returns:
+///     list[float]: Flattened row-major b×b Gram matrix.
+///
+/// Raises:
+///     ValueError: If parameters are invalid.
+#[pyfunction]
+#[pyo3(name = "lambda_cgd_gram_matrix", signature = (lambda_, n_steps, min_sep=1, max_participations=None, normalized=true))]
+pub fn py_lambda_cgd_gram_matrix(
+    lambda_: f64,
+    n_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+    normalized: bool,
+) -> PyResult<Vec<f64>> {
+    crate::matrix_factorization::lambda_cgd_gram_matrix(
+        lambda_, n_steps, min_sep, max_participations, normalized,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
 /// Max column L2 norm of the DP-λCGD strategy matrix.
 ///
 /// The first column has the largest norm: sqrt((1 - λ^{2n}) / (1 - λ²)).

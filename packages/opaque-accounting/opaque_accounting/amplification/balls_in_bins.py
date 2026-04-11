@@ -44,8 +44,9 @@ class BallsInBins(DpProcess):
         epoch = acc.balls_in_bins(acc.gaussian(1.1), num_bins=100)
         training = epoch * 10  # 10 epochs
 
-    For λCGD with reused bin allocation across epochs, pass the
-    full multi-epoch matrix and do NOT compose::
+    For λCGD, pass the full multi-epoch parameters.  The PLD is computed
+    via Monte Carlo sampling of the BnB dominating pair (arxiv:2410.06266).
+    This IS the total privacy cost — do NOT compose with ``* num_epochs``::
 
         training = acc.balls_in_bins(
             acc.lambda_cgd(nm, lambda_=0.9, n_steps=total_steps,
@@ -53,6 +54,7 @@ class BallsInBins(DpProcess):
                            max_participations=num_epochs),
             num_bins=steps_per_epoch,
         )
+        eps = training.epsilon_at(1e-5)  # total cost
     """
 
     inner: _Inner
@@ -94,15 +96,25 @@ class BallsInBins(DpProcess):
             case AdaClip(inner=NonPrivate() | Gaussian(noise_multiplier=0)):
                 return _native.non_private_pld(native_cfg)
             case LambdaCgd() as lc:
-                # effective_nm = σ / sensitivity accounts for the
-                # worst-case column-sum norm under the configured
-                # participation pattern.  For single-epoch normalized
-                # (max_participations=1) this is σ/1 = σ.  For
-                # multi-epoch (max_participations>1) it captures
-                # cross-epoch column correlations in C̃_λ.
-                effective_nm = lc.noise_multiplier / lc.sensitivity()
-                return _native.balls_in_bins_gaussian_pld(
-                    effective_nm, self.num_bins, native_cfg
+                # Monte Carlo BnB accounting (Lemma 3.2 of arxiv:2410.06266).
+                # Compute Gram matrix of the dominating pair mixture means
+                # from the full multi-epoch C_λ parameters, then sample
+                # the PLD via Monte Carlo.  This is the paper-correct
+                # approach — no per-epoch composition needed.
+                gram = _native.lambda_cgd_gram_matrix(
+                    lc.lambda_,
+                    lc.n_steps,
+                    lc.min_sep,
+                    lc.max_participations,
+                    lc.normalized,
+                )
+                return _native.bnb_mc_pld(
+                    gram,
+                    self.num_bins,
+                    lc.noise_multiplier,
+                    1_000_000,  # MC samples
+                    42,  # seed
+                    native_cfg,
                 )
             case _:
                 raise TypeError(

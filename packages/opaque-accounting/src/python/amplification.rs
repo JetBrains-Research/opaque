@@ -119,3 +119,41 @@ pub fn py_balls_in_bins_gaussian_pld(
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
     Ok(PyPld::new(pld))
 }
+
+/// Compute the BnB PLD via Monte Carlo sampling of the dominating pair.
+///
+/// Uses Algorithm 2 of Choquette-Choo et al. (2024) "Near Exact Privacy
+/// Amplification for Matrix Mechanisms" (arxiv:2410.06266).
+///
+/// The dominating pair is P = (1/b) Σ N(m_i, σ²I), Q = N(0, σ²I), where
+/// the Gram matrix G captures the inner products ⟨m_i, m_j⟩.
+///
+/// Args:
+///     gram (list[float]): Flattened row-major b×b Gram matrix.
+///     num_bins (int): Number of bins b.
+///     sigma (float): Noise multiplier σ, must be > 0.
+///     num_samples (int): Number of Monte Carlo samples.
+///     seed (int): RNG seed for reproducibility.
+///     config (DiscretizationConfig): Discretization configuration.
+///
+/// Returns:
+///     Pld: The privacy loss distribution (asymmetric, remove + add).
+///
+/// Raises:
+///     ValueError: If parameters are invalid.
+#[pyfunction]
+#[pyo3(name = "bnb_mc_pld", signature = (gram, num_bins, sigma, num_samples, seed, config))]
+pub fn py_bnb_mc_pld(
+    gram: Vec<f64>,
+    num_bins: usize,
+    sigma: f64,
+    num_samples: usize,
+    seed: u64,
+    config: &PyDiscretizationConfig,
+) -> PyResult<PyPld> {
+    let pld = crate::amplification::bnb_mc_pld(
+        &gram, num_bins, sigma, num_samples, seed, &config.inner,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}

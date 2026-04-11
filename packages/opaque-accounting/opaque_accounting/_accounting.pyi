@@ -346,6 +346,32 @@ def balls_in_bins_gaussian_pld(
     """
     ...
 
+def bnb_mc_pld(
+    gram: list[float],
+    num_bins: int,
+    sigma: float,
+    num_samples: int,
+    seed: int,
+    config: DiscretizationConfig,
+) -> Pld:
+    """Compute the BnB PLD via Monte Carlo sampling of the dominating pair.
+
+    Uses Algorithm 2 of Choquette-Choo et al. (2024) for near-exact
+    BnB privacy accounting with matrix mechanisms.
+
+    Args:
+        gram: Flattened row-major b×b Gram matrix.
+        num_bins: Number of bins b.
+        sigma: Noise multiplier.
+        num_samples: Number of Monte Carlo samples.
+        seed: RNG seed for reproducibility.
+        config: PLD discretization configuration.
+
+    Returns:
+        The privacy loss distribution (asymmetric).
+    """
+    ...
+
 # ---------------------------------------------------------------------------
 # Matrix factorization functions
 # ---------------------------------------------------------------------------
@@ -578,6 +604,29 @@ def lambda_cgd_max_column_norm(
 
     Returns:
         The max column L2 norm.
+    """
+    ...
+
+def lambda_cgd_gram_matrix(
+    lambda_: float,
+    n_steps: int,
+    min_sep: int = 1,
+    max_participations: int | None = None,
+    normalized: bool = True,
+) -> list[float]:
+    """Compute the BnB Gram matrix for DP-λCGD.
+
+    G_{ij} = ⟨m_i, m_j⟩ where m_i = Σ_epoch C[:,b·epoch+i].
+
+    Args:
+        lambda_: Correlation coefficient in [0, 1).
+        n_steps: Total steps (= bins_per_epoch × num_epochs).
+        min_sep: Bins per epoch (= b).
+        max_participations: Number of epochs. None infers.
+        normalized: Whether to use column-normalized matrix.
+
+    Returns:
+        Flattened row-major b×b Gram matrix.
     """
     ...
 
