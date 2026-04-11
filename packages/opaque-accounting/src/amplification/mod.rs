@@ -8,11 +8,13 @@
 //! - [`balls_in_bins_gaussian_pld`] — Balls-in-Bins Gaussian (epoch-level composition)
 
 mod balls_in_bins;
+pub mod bnb_monte_carlo;
 mod parallel_poisson;
 pub(crate) mod poisson;
 mod truncated_poisson;
 
-pub use balls_in_bins::balls_in_bins_gaussian_pld;
+pub use balls_in_bins::{balls_in_bins_gaussian_pld, balls_in_bins_gaussian_pld_epochs};
+pub use bnb_monte_carlo::bnb_mc_pld;
 pub use parallel_poisson::parallel_poisson_gaussian_pld;
 pub use poisson::poisson_gaussian_pld;
 pub use truncated_poisson::truncated_poisson_gaussian_pld;

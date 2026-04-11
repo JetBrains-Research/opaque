@@ -38,6 +38,12 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         amplification::py_balls_in_bins_gaussian_pld,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(
+        amplification::py_balls_in_bins_gaussian_pld_epochs,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(amplification::py_bnb_mc_pld, m)?)?;
+
     // Matrix Factorization
     m.add_function(wrap_pyfunction!(
         matrix_factorization::py_mf_gaussian_pld,
@@ -85,6 +91,10 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(
         matrix_factorization::py_lambda_cgd_max_column_norm,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_lambda_cgd_gram_matrix,
         m
     )?)?;
 

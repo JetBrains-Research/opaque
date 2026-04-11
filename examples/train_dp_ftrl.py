@@ -639,11 +639,9 @@ def main():
             )
     elif args.mechanism == "lambda_cgd":
         # DP-λCGD with Balls-in-Bins amplification (Algorithm 1 of the paper).
-        # Build the full n×n strategy matrix (n = total_steps) and pass it
-        # to BnB once.  The multi-epoch sensitivity (cross-epoch column
-        # correlations) is handled inside BnB via lc.sensitivity().
-        # NO per-epoch composition — BnB over the full matrix IS the
-        # total privacy cost.
+        # Uses Monte Carlo BnB accounting from arxiv:2410.06266:
+        # full multi-epoch strategy matrix → Gram matrix → MC dominating pair.
+        # balls_in_bins() returns the TOTAL cost (no * num_epochs).
         def acct_mechanism(nm):
             return acc.balls_in_bins(
                 acc.lambda_cgd(nm, lambda_=args.lambda_,
@@ -651,6 +649,7 @@ def main():
                                min_sep=expected_steps_per_epoch,
                                max_participations=args.num_epochs),
                 num_bins=expected_steps_per_epoch,
+                num_epochs=args.num_epochs,
             )
     elif args.mechanism == "identity":
         def acct_mechanism(nm):

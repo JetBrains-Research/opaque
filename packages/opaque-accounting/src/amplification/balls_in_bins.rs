@@ -42,6 +42,31 @@ pub fn balls_in_bins_gaussian_pld(
     num_bins: usize,
     config: &DiscretizationConfig,
 ) -> Result<PrivacyLossDistribution> {
+    balls_in_bins_gaussian_pld_epochs(noise_multiplier, num_bins, 1, config)
+}
+
+/// Compute the **total** PLD for a multi-epoch Balls-in-Bins Gaussian mechanism.
+///
+/// Each epoch the dataset is partitioned into `num_bins` bins. Each bin is
+/// processed with a Gaussian mechanism. Over `num_epochs` epochs, each
+/// example participates `num_epochs` times.
+///
+/// For Gaussian (independent noise), this equals composing the per-step
+/// Poisson PLD `num_bins * num_epochs` times — equivalent to
+/// `per_epoch.self_compose(num_epochs)`, but done in a single call.
+///
+/// # Arguments
+///
+/// * `noise_multiplier` — σ/Δ, must be > 0
+/// * `num_bins` — bins per epoch (k ≥ 2)
+/// * `num_epochs` — number of epochs (≥ 1)
+/// * `config` — discretization configuration
+pub fn balls_in_bins_gaussian_pld_epochs(
+    noise_multiplier: f64,
+    num_bins: usize,
+    num_epochs: usize,
+    config: &DiscretizationConfig,
+) -> Result<PrivacyLossDistribution> {
     validate_noise_multiplier(noise_multiplier)?;
 
     if num_bins < 2 {
@@ -50,10 +75,15 @@ pub fn balls_in_bins_gaussian_pld(
             num_bins
         )));
     }
+    if num_epochs == 0 {
+        return Err(PldError::InvalidParameter(
+            "num_epochs must be >= 1".to_string(),
+        ));
+    }
 
     let rate = 1.0 / num_bins as f64;
     let per_step = poisson_gaussian_pld(noise_multiplier, rate, config)?;
-    Ok(per_step.self_compose(num_bins))
+    Ok(per_step.self_compose(num_bins * num_epochs))
 }
 
 #[cfg(test)]
