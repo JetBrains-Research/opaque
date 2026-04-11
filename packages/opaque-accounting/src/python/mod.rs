@@ -97,6 +97,10 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         matrix_factorization::py_lambda_cgd_gram_matrix,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_lambda_cgd_gram_matrix_lr,
+        m
+    )?)?;
 
     // AdaClip
     m.add_function(wrap_pyfunction!(adaclip::py_adaclip_sensitivity, m)?)?;

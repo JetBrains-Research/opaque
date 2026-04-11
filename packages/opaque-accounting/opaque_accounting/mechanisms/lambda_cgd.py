@@ -38,6 +38,10 @@ class LambdaCgd(DpProcess):
     (Appendix A of the paper).  All columns have unit norm, so:
     - Single-participation sensitivity = 1 (exact BnB analysis)
     - RMSE is strictly improved (Lemma 9)
+
+    When ``momentum > 0``, the sensitivity accounts for the optimizer's
+    momentum accumulation, giving a tighter privacy analysis than the
+    standard prefix-sum workload.
     """
 
     noise_multiplier: float
@@ -46,6 +50,7 @@ class LambdaCgd(DpProcess):
     min_sep: int
     max_participations: int | None
     normalized: bool = True
+    momentum: float = 0.0
 
     @functools.lru_cache(maxsize=1)
     def sensitivity(self) -> float:
@@ -53,6 +58,7 @@ class LambdaCgd(DpProcess):
 
         When ``normalized=True``: uses Lemma 8 (column-normalized matrix).
         When ``normalized=False``: uses Theorem 1 eq 15 (unnormalized).
+        With ``momentum > 0``: uses momentum-aware column inner products.
         """
         if self.normalized:
             sens_sq = _native.lambda_cgd_normalized_sensitivity_squared(
@@ -60,6 +66,7 @@ class LambdaCgd(DpProcess):
                 self.n_steps,
                 self.min_sep,
                 self.max_participations,
+                self.momentum,
             )
         else:
             sens_sq = _native.lambda_cgd_sensitivity_squared(
@@ -67,6 +74,7 @@ class LambdaCgd(DpProcess):
                 self.n_steps,
                 self.min_sep,
                 self.max_participations,
+                self.momentum,
             )
         return float(sens_sq**0.5)
 
@@ -100,6 +108,7 @@ def lambda_cgd(
     min_sep: int = 1,
     max_participations: int | None = 1,
     normalized: bool = True,
+    momentum: float = 0.0,
 ) -> LambdaCgd:
     """DP-λCGD mechanism — correlated gradient descent.
 
@@ -115,6 +124,11 @@ def lambda_cgd(
     - Exact BnB amplification (all columns have unit norm)
     - Strictly improved RMSE (Lemma 9)
 
+    When ``momentum > 0``, the sensitivity and Gram matrix account for
+    the optimizer's Polyak momentum (β). This gives a tighter privacy
+    analysis when the optimizer uses momentum-SGD (β < 1) vs the
+    default prefix-sum workload (β = 1 / FTRL).
+
     Args:
         noise_multiplier: Raw noise standard deviation σ. Must be positive.
         lambda_: Correlation coefficient in [0, 1). λ=0 is DP-SGD.
@@ -124,6 +138,8 @@ def lambda_cgd(
             ``None`` means inferred from ``n_steps / min_sep``.
         normalized: If True (default), use column-normalized C̃_λ = C_λ·D⁻¹
             for improved sensitivity and exact BnB analysis.
+        momentum: Optimizer momentum β in [0, 1). Default 0 (no momentum).
+            Must match the momentum used in the training optimizer.
 
     Returns:
         A :class:`LambdaCgd` process.
@@ -132,14 +148,15 @@ def lambda_cgd(
 
         import opaque.accounting as acc
 
-        # With BnB amplification (per-epoch, column-normalized)
-        epoch = acc.balls_in_bins(
-            acc.lambda_cgd(1.0, lambda_=0.9, n_steps=1875,
-                           min_sep=1875, max_participations=1),
+        # With BnB amplification + momentum-aware accounting
+        training = acc.balls_in_bins(
+            acc.lambda_cgd(1.0, lambda_=0.9, n_steps=15000,
+                           min_sep=1875, max_participations=8,
+                           momentum=0.9),
             num_bins=1875,
+            num_epochs=8,
         )
-        total = epoch * 8  # 8 epochs
-        eps = total.epsilon_at(1e-5)
+        eps = training.epsilon_at(1e-5)
     """
     if noise_multiplier <= 0:
         raise ValueError(f"noise_multiplier must be positive, got {noise_multiplier}")
@@ -153,6 +170,9 @@ def lambda_cgd(
         raise ValueError(
             f"max_participations must be >= 1 or None, got {max_participations}"
         )
+    if momentum < 0 or momentum >= 1.0:
+        raise ValueError(f"momentum must be in [0, 1), got {momentum}")
     return LambdaCgd(
-        noise_multiplier, lambda_, n_steps, min_sep, max_participations, normalized
+        noise_multiplier, lambda_, n_steps, min_sep, max_participations,
+        normalized, momentum,
     )

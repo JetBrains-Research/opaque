@@ -573,17 +573,20 @@ def lambda_cgd_sensitivity_squared(
     n_steps: int,
     min_sep: int = 1,
     max_participations: int | None = None,
+    momentum: float = 0.0,
 ) -> float:
     """Squared L2 sensitivity of the DP-λCGD strategy matrix.
 
     Uses the closed-form expression from Theorem 1 (eq 15) of
-    Kalinin et al. (2026) "DP-λCGD".
+    Kalinin et al. (2026) "DP-λCGD". With momentum β > 0, uses
+    momentum-aware column inner products.
 
     Args:
         lambda_: Correlation coefficient in [0, 1). λ=0 is DP-SGD.
         n_steps: Total number of training steps.
         min_sep: Minimum separation between participations (>= 1).
         max_participations: Optional upper bound on participations.
+        momentum: Optimizer momentum β in [0, 1). Default 0.
 
     Returns:
         The squared L2 sensitivity.
@@ -595,6 +598,7 @@ def lambda_cgd_normalized_sensitivity_squared(
     n_steps: int,
     min_sep: int = 1,
     max_participations: int | None = None,
+    momentum: float = 0.0,
 ) -> float:
     """Squared L2 sensitivity of the column-normalized DP-λCGD.
 
@@ -606,6 +610,7 @@ def lambda_cgd_normalized_sensitivity_squared(
         n_steps: Total number of training steps.
         min_sep: Minimum separation between participations (>= 1).
         max_participations: Optional upper bound on participations.
+        momentum: Optimizer momentum β in [0, 1). Default 0.
 
     Returns:
         The squared L2 sensitivity of the column-normalized matrix.
@@ -635,10 +640,12 @@ def lambda_cgd_gram_matrix(
     min_sep: int = 1,
     max_participations: int | None = None,
     normalized: bool = True,
+    momentum: float = 0.0,
 ) -> list[float]:
     """Compute the BnB Gram matrix for DP-λCGD.
 
-    G_{ij} = ⟨m_i, m_j⟩ where m_i = Σ_epoch C[:,b·epoch+i].
+    G_{ij} = ⟨m_i, m_j⟩ where m_i = Σ_epoch m^β_{b·epoch+i}
+    (momentum-accumulated columns).
 
     Args:
         lambda_: Correlation coefficient in [0, 1).
@@ -646,6 +653,34 @@ def lambda_cgd_gram_matrix(
         min_sep: Bins per epoch (= b).
         max_participations: Number of epochs. None infers.
         normalized: Whether to use column-normalized matrix.
+        momentum: Optimizer momentum β in [0, 1). Default 0.
+
+    Returns:
+        Flattened row-major b×b Gram matrix.
+    """
+    ...
+
+def lambda_cgd_gram_matrix_lr(
+    lambda_: float,
+    momentum: float,
+    n_steps: int,
+    min_sep: int,
+    max_participations: int | None,
+    normalized: bool,
+    lr_weights: list[float],
+) -> list[float]:
+    """Compute the BnB Gram matrix with LR-schedule weighting.
+
+    Numerical computation of the Gram matrix with per-step LR weights.
+
+    Args:
+        lambda_: Correlation coefficient in [0, 1).
+        momentum: Optimizer momentum β in [0, 1).
+        n_steps: Total steps.
+        min_sep: Bins per epoch.
+        max_participations: Number of epochs.
+        normalized: Whether to use column-normalized matrix.
+        lr_weights: Per-step LR weights, length = n_steps.
 
     Returns:
         Flattened row-major b×b Gram matrix.

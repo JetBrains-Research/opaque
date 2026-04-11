@@ -227,13 +227,15 @@ pub fn py_toeplitz_minsep_sensitivity_squared(
 /// Squared L2 sensitivity of the DP-λCGD strategy matrix.
 ///
 /// Uses the closed-form expression from Theorem 1 (eq 15) of
-/// Kalinin et al. (2026) "DP-λCGD".
+/// Kalinin et al. (2026) "DP-λCGD". With momentum β > 0, computes
+/// via momentum-aware column inner products.
 ///
 /// Args:
 ///     lambda_ (float): Correlation coefficient in [0, 1). λ=0 is DP-SGD.
 ///     n_steps (int): Total number of training steps.
 ///     min_sep (int): Minimum separation between participations (>= 1).
 ///     max_participations (int | None): Optional upper bound on participations.
+///     momentum (float): Optimizer momentum β in [0, 1). Default 0.
 ///
 /// Returns:
 ///     float: The squared L2 sensitivity.
@@ -241,15 +243,16 @@ pub fn py_toeplitz_minsep_sensitivity_squared(
 /// Raises:
 ///     ValueError: If parameters are invalid.
 #[pyfunction]
-#[pyo3(name = "lambda_cgd_sensitivity_squared", signature = (lambda_, n_steps, min_sep=1, max_participations=None))]
+#[pyo3(name = "lambda_cgd_sensitivity_squared", signature = (lambda_, n_steps, min_sep=1, max_participations=None, momentum=0.0))]
 pub fn py_lambda_cgd_sensitivity_squared(
     lambda_: f64,
     n_steps: usize,
     min_sep: usize,
     max_participations: Option<usize>,
+    momentum: f64,
 ) -> PyResult<f64> {
     crate::matrix_factorization::lambda_cgd_sensitivity_squared(
-        lambda_, n_steps, min_sep, max_participations,
+        lambda_, n_steps, min_sep, max_participations, momentum,
     )
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
@@ -264,6 +267,7 @@ pub fn py_lambda_cgd_sensitivity_squared(
 ///     n_steps (int): Total number of training steps.
 ///     min_sep (int): Minimum separation between participations (>= 1).
 ///     max_participations (int | None): Optional upper bound on participations.
+///     momentum (float): Optimizer momentum β in [0, 1). Default 0.
 ///
 /// Returns:
 ///     float: The squared L2 sensitivity of the column-normalized matrix.
@@ -271,15 +275,16 @@ pub fn py_lambda_cgd_sensitivity_squared(
 /// Raises:
 ///     ValueError: If parameters are invalid.
 #[pyfunction]
-#[pyo3(name = "lambda_cgd_normalized_sensitivity_squared", signature = (lambda_, n_steps, min_sep=1, max_participations=None))]
+#[pyo3(name = "lambda_cgd_normalized_sensitivity_squared", signature = (lambda_, n_steps, min_sep=1, max_participations=None, momentum=0.0))]
 pub fn py_lambda_cgd_normalized_sensitivity_squared(
     lambda_: f64,
     n_steps: usize,
     min_sep: usize,
     max_participations: Option<usize>,
+    momentum: f64,
 ) -> PyResult<f64> {
     crate::matrix_factorization::lambda_cgd_normalized_sensitivity_squared(
-        lambda_, n_steps, min_sep, max_participations,
+        lambda_, n_steps, min_sep, max_participations, momentum,
     )
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
@@ -287,7 +292,8 @@ pub fn py_lambda_cgd_normalized_sensitivity_squared(
 /// Compute the BnB Gram matrix for DP-λCGD.
 ///
 /// For the BnB dominating pair, computes G_{ij} = ⟨m_i, m_j⟩ where
-/// m_i = Σ_{epoch} C_λ[:,b·epoch+i] (or normalized C̃_λ).
+/// m_i = Σ_{epoch} m^β_{b·epoch+i} (momentum-accumulated columns,
+/// or normalized C̃_λ).
 ///
 /// Args:
 ///     lambda_ (float): Correlation coefficient in [0, 1).
@@ -295,6 +301,7 @@ pub fn py_lambda_cgd_normalized_sensitivity_squared(
 ///     min_sep (int): Bins per epoch (= b).
 ///     max_participations (int | None): Number of epochs. None infers.
 ///     normalized (bool): Whether to use column-normalized matrix.
+///     momentum (float): Optimizer momentum β in [0, 1). Default 0.
 ///
 /// Returns:
 ///     list[float]: Flattened row-major b×b Gram matrix.
@@ -302,16 +309,53 @@ pub fn py_lambda_cgd_normalized_sensitivity_squared(
 /// Raises:
 ///     ValueError: If parameters are invalid.
 #[pyfunction]
-#[pyo3(name = "lambda_cgd_gram_matrix", signature = (lambda_, n_steps, min_sep=1, max_participations=None, normalized=true))]
+#[pyo3(name = "lambda_cgd_gram_matrix", signature = (lambda_, n_steps, min_sep=1, max_participations=None, normalized=true, momentum=0.0))]
 pub fn py_lambda_cgd_gram_matrix(
     lambda_: f64,
     n_steps: usize,
     min_sep: usize,
     max_participations: Option<usize>,
     normalized: bool,
+    momentum: f64,
 ) -> PyResult<Vec<f64>> {
     crate::matrix_factorization::lambda_cgd_gram_matrix(
-        lambda_, n_steps, min_sep, max_participations, normalized,
+        lambda_, n_steps, min_sep, max_participations, normalized, momentum,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// Compute the BnB Gram matrix for DP-λCGD with LR-schedule weighting.
+///
+/// Numerical computation: the effective column for bin i is
+///   m_i[t] = η_t · Σ_{epoch} accumulated(C_λ[:,b·epoch+i], β)[t]
+///
+/// Args:
+///     lambda_ (float): Correlation coefficient in [0, 1).
+///     momentum (float): Optimizer momentum β in [0, 1).
+///     n_steps (int): Total steps (= bins_per_epoch × num_epochs).
+///     min_sep (int): Bins per epoch (= b).
+///     max_participations (int | None): Number of epochs. None infers.
+///     normalized (bool): Whether to use column-normalized matrix.
+///     lr_weights (list[float]): Per-step LR weights, length = n_steps.
+///
+/// Returns:
+///     list[float]: Flattened row-major b×b Gram matrix.
+///
+/// Raises:
+///     ValueError: If parameters are invalid.
+#[pyfunction]
+#[pyo3(name = "lambda_cgd_gram_matrix_lr", signature = (lambda_, momentum, n_steps, min_sep, max_participations, normalized, lr_weights))]
+pub fn py_lambda_cgd_gram_matrix_lr(
+    lambda_: f64,
+    momentum: f64,
+    n_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+    normalized: bool,
+    lr_weights: Vec<f64>,
+) -> PyResult<Vec<f64>> {
+    crate::matrix_factorization::lambda_cgd_gram_matrix_lr(
+        lambda_, momentum, n_steps, min_sep, max_participations, normalized, &lr_weights,
     )
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }

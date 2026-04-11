@@ -34,7 +34,7 @@ pub mod lambda_cgd;
 mod mf_gaussian;
 pub mod sensitivity;
 
-pub use gram_matrix::lambda_cgd_gram_matrix;
+pub use gram_matrix::{lambda_cgd_gram_matrix, lambda_cgd_gram_matrix_lr};
 pub use lambda_cgd::{
     lambda_cgd_max_column_norm, lambda_cgd_normalized_sensitivity_squared,
     lambda_cgd_sensitivity_squared,

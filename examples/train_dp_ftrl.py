@@ -642,14 +642,22 @@ def main():
         # Uses Monte Carlo BnB accounting from arxiv:2410.06266:
         # full multi-epoch strategy matrix → Gram matrix → MC dominating pair.
         # balls_in_bins() returns the TOTAL cost (no * num_epochs).
+        #
+        # Momentum-aware accounting: when β > 0, the Gram matrix uses
+        # momentum-accumulated column inner products for tighter bounds.
+        # LR-schedule-aware accounting: passes the per-step LR weights
+        # so the analysis accounts for warmup/cooldown phases.
+        lr_weights_list = lr_schedule.double().tolist()
         def acct_mechanism(nm):
             return acc.balls_in_bins(
                 acc.lambda_cgd(nm, lambda_=args.lambda_,
                                n_steps=total_steps,
                                min_sep=expected_steps_per_epoch,
-                               max_participations=args.num_epochs),
+                               max_participations=args.num_epochs,
+                               momentum=args.momentum),
                 num_bins=expected_steps_per_epoch,
                 num_epochs=args.num_epochs,
+                lr_weights=lr_weights_list,
             )
     elif args.mechanism == "identity":
         def acct_mechanism(nm):
