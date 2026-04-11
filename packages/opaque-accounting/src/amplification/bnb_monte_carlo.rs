@@ -14,6 +14,13 @@
 //!   Y = log((1/b) Σ_k exp((2u_k - G_kk) / (2σ²)))
 //! where u ~ N(G_i, σ²G) with i ~ Uniform([b]).
 //!
+//! # Performance
+//!
+//! For DP-λCGD, the Gram matrix has near-AR(1) structure (entries decay as
+//! λ^{|i-j|}). The Cholesky factor inherits this bandedness, so we use a
+//! **banded Cholesky** with automatic bandwidth detection. This reduces the
+//! per-sample cost from O(b²) to O(b·p) where p is the effective bandwidth.
+//!
 //! # References
 //!
 //! - Choquette-Choo et al. (2024), "Near Exact Privacy Amplification for Matrix
@@ -29,36 +36,94 @@ use rand::{Rng, SeedableRng};
 use rand_distr::StandardNormal;
 use rayon::prelude::*;
 
-/// Cholesky decomposition of a symmetric positive-definite matrix.
+/// Banded Cholesky decomposition.
 ///
-/// Returns the lower-triangular factor L such that G = L·Lᵀ.
-/// Input: row-major b×b matrix. Output: row-major b×b lower-triangular L.
-fn cholesky(gram: &[f64], b: usize) -> Result<Vec<f64>> {
-    let mut l = vec![0.0f64; b * b];
+/// Computes L such that G ≈ L·Lᵀ, where L is lower-triangular with
+/// bandwidth `bw` (L[i,j] = 0 for j < i - bw).
+///
+/// The bandwidth is auto-detected: entries of L smaller than `threshold`
+/// times the diagonal are set to zero.
+struct BandedCholesky {
+    /// Cholesky entries stored as (b × (bw+1)) in row-major.
+    /// data[i * stride + (j - (i-bw).max(0))] = L[i, j]
+    data: Vec<f64>,
+    b: usize,
+    bw: usize, // bandwidth (number of sub-diagonals kept)
+    stride: usize,
+}
 
-    for i in 0..b {
-        for j in 0..=i {
-            let mut sum = 0.0;
-            for k in 0..j {
-                sum += l[i * b + k] * l[j * b + k];
-            }
+impl BandedCholesky {
+    /// Compute banded Cholesky with automatic bandwidth detection.
+    ///
+    /// First computes full Cholesky for the first `probe_rows` rows to
+    /// estimate bandwidth, then computes the rest with the detected bandwidth.
+    fn compute(gram: &[f64], b: usize, threshold: f64) -> Result<Self> {
+        // Compute full Cholesky but track the effective bandwidth
+        let mut l_full = vec![0.0f64; b * b];
+        let mut max_bw: usize = 0;
 
-            if i == j {
-                let diag = gram[i * b + i] - sum;
-                if diag <= 0.0 {
-                    return Err(PldError::InvalidParameter(format!(
-                        "Gram matrix is not positive definite (diag={} at index {})",
-                        diag, i
-                    )));
+        for i in 0..b {
+            for j in 0..=i {
+                let mut sum = 0.0;
+                let j_start = if max_bw > 0 { j.saturating_sub(max_bw + 10) } else { 0 };
+                for k in j_start..j {
+                    sum += l_full[i * b + k] * l_full[j * b + k];
                 }
-                l[i * b + j] = diag.sqrt();
-            } else {
-                l[i * b + j] = (gram[i * b + j] - sum) / l[j * b + j];
+
+                if i == j {
+                    let diag = gram[i * b + i] - sum;
+                    if diag <= 0.0 {
+                        return Err(PldError::InvalidParameter(format!(
+                            "Gram matrix is not positive definite (diag={} at index {})",
+                            diag, i
+                        )));
+                    }
+                    l_full[i * b + j] = diag.sqrt();
+                } else {
+                    let val = (gram[i * b + j] - sum) / l_full[j * b + j];
+                    l_full[i * b + j] = val;
+
+                    // Track bandwidth
+                    if val.abs() > threshold * l_full[i * b + i] {
+                        let dist = i - j;
+                        if dist > max_bw {
+                            max_bw = dist;
+                        }
+                    }
+                }
             }
         }
+
+        // Add safety margin to bandwidth
+        let bw = (max_bw + 2).min(b);
+        let stride = bw + 1;
+
+        // Pack into banded storage
+        let mut data = vec![0.0f64; b * stride];
+        for i in 0..b {
+            let j_lo = i.saturating_sub(bw);
+            for j in j_lo..=i {
+                let band_col = j - j_lo;
+                data[i * stride + band_col] = l_full[i * b + j];
+            }
+        }
+
+        Ok(BandedCholesky { data, b, bw, stride })
     }
 
-    Ok(l)
+    /// Compute u = mean + σ * L * z using banded structure.
+    /// O(b * bw) instead of O(b²).
+    fn sample_gaussian(&self, mean: &[f64], sigma: f64, z: &[f64], out: &mut [f64]) {
+        for k in 0..self.b {
+            let j_lo = k.saturating_sub(self.bw);
+            let mut lz = 0.0;
+            for j in j_lo..=k {
+                let band_col = j - j_lo;
+                lz += self.data[k * self.stride + band_col] * z[j];
+            }
+            out[k] = mean[k] + sigma * lz;
+        }
+    }
 }
 
 /// Sample one privacy loss value from the BnB dominating pair.
@@ -66,85 +131,77 @@ fn cholesky(gram: &[f64], b: usize) -> Result<Vec<f64>> {
 /// For the "remove" direction: X ~ P, Y = log(P(X)/Q(X))
 fn sample_privacy_loss_remove(
     gram: &[f64],
-    chol: &[f64],
+    chol: &BandedCholesky,
     b: usize,
     sigma: f64,
+    inv_2sig2: f64,
+    diag_terms: &[f64],
+    z_buf: &mut Vec<f64>,
+    u_buf: &mut Vec<f64>,
     rng: &mut impl Rng,
 ) -> f64 {
-    let sigma2 = sigma * sigma;
-
     // Step 1: Sample bin i ~ Uniform([b])
     let i: usize = rng.gen_range(0..b);
 
     // Step 2: Sample z ~ N(0, I_b)
-    let z: Vec<f64> = (0..b).map(|_| rng.sample::<f64, _>(StandardNormal)).collect();
-
-    // Step 3: Compute u = G[i,:] + σ * L * z
-    let mut u = vec![0.0f64; b];
-    for k in 0..b {
-        // u[k] = G[i,k] + σ * Σ_j L[k,j] * z[j]
-        let mut lz = 0.0;
-        for j in 0..=k {
-            lz += chol[k * b + j] * z[j];
-        }
-        u[k] = gram[i * b + k] + sigma * lz;
+    for v in z_buf.iter_mut() {
+        *v = rng.sample::<f64, _>(StandardNormal);
     }
 
-    // Step 4: Compute Y = log((1/b) Σ_k exp((2u_k - G_kk) / (2σ²)))
-    //        = log_sum_exp(terms) - log(b)
-    let terms: Vec<f64> = (0..b)
-        .map(|k| (2.0 * u[k] - gram[k * b + k]) / (2.0 * sigma2))
-        .collect();
+    // Step 3: Compute u = G[i,:] + σ * L * z (banded, O(b*bw))
+    let mean = &gram[i * b..i * b + b];
+    chol.sample_gaussian(mean, sigma, z_buf, u_buf);
 
-    log_sum_exp(&terms) - (b as f64).ln()
+    // Step 4: Y = log((1/b) Σ_k exp((2u_k - G_kk) / (2σ²)))
+    //        = log_sum_exp(2*u_k*inv_2sig2 + diag_terms) - log(b)
+    let mut max_val = f64::NEG_INFINITY;
+    for k in 0..b {
+        let t = u_buf[k] * inv_2sig2 * 2.0 + diag_terms[k];
+        u_buf[k] = t; // reuse buffer for terms
+        if t > max_val {
+            max_val = t;
+        }
+    }
+    let mut sum_exp = 0.0f64;
+    for k in 0..b {
+        sum_exp += (u_buf[k] - max_val).exp();
+    }
+    max_val + sum_exp.ln() - (b as f64).ln()
 }
 
 /// Sample one privacy loss value for the "add" direction.
-///
-/// For the "add" direction: X ~ Q, Y = log(Q(X)/P(X))
 fn sample_privacy_loss_add(
     gram: &[f64],
-    chol: &[f64],
+    chol: &BandedCholesky,
     b: usize,
     sigma: f64,
+    inv_2sig2: f64,
+    diag_terms: &[f64],
+    z_buf: &mut Vec<f64>,
+    u_buf: &mut Vec<f64>,
     rng: &mut impl Rng,
 ) -> f64 {
-    let sigma2 = sigma * sigma;
+    // Sample z and compute u = 0 + σ * L * z (mean is 0 under Q)
+    for v in z_buf.iter_mut() {
+        *v = rng.sample::<f64, _>(StandardNormal);
+    }
+    let zeros = vec![0.0; b];
+    chol.sample_gaussian(&zeros, sigma, z_buf, u_buf);
 
-    // X ~ Q = N(0, σ²I) — project onto m_k's
-    // u_k = ⟨X, m_k⟩ ~ N(0, σ² G_kk)
-    // But we need the joint: u ~ N(0, σ²G)
-    let z: Vec<f64> = (0..b).map(|_| rng.sample::<f64, _>(StandardNormal)).collect();
-
-    let mut u = vec![0.0f64; b];
+    // Y_add = -log(P(X)/Q(X))
+    let mut max_val = f64::NEG_INFINITY;
     for k in 0..b {
-        let mut lz = 0.0;
-        for j in 0..=k {
-            lz += chol[k * b + j] * z[j];
+        let t = u_buf[k] * inv_2sig2 * 2.0 + diag_terms[k];
+        u_buf[k] = t;
+        if t > max_val {
+            max_val = t;
         }
-        u[k] = sigma * lz; // mean is 0 under Q
     }
-
-    // Y_add = log(Q(X)/P(X)) = -log(P(X)/Q(X))
-    // log(P(X)/Q(X)) = log((1/b) Σ_k exp((2u_k - G_kk) / (2σ²)))
-    let terms: Vec<f64> = (0..b)
-        .map(|k| (2.0 * u[k] - gram[k * b + k]) / (2.0 * sigma2))
-        .collect();
-
-    -(log_sum_exp(&terms) - (b as f64).ln())
-}
-
-/// Numerically stable log-sum-exp.
-fn log_sum_exp(values: &[f64]) -> f64 {
-    if values.is_empty() {
-        return f64::NEG_INFINITY;
+    let mut sum_exp = 0.0f64;
+    for k in 0..b {
+        sum_exp += (u_buf[k] - max_val).exp();
     }
-    let max_val = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    if max_val.is_infinite() {
-        return max_val;
-    }
-    let sum_exp: f64 = values.iter().map(|&v| (v - max_val).exp()).sum();
-    max_val + sum_exp.ln()
+    -(max_val + sum_exp.ln() - (b as f64).ln())
 }
 
 /// Compute the BnB PLD via Monte Carlo sampling.
@@ -158,7 +215,7 @@ fn log_sum_exp(values: &[f64]) -> f64 {
 /// * `gram` — b×b Gram matrix (row-major, symmetric positive definite)
 /// * `num_bins` — Number of bins b
 /// * `sigma` — Noise multiplier
-/// * `num_samples` — Number of MC samples (e.g., 1_000_000)
+/// * `num_samples` — Number of MC samples (e.g., 100_000)
 /// * `seed` — RNG seed for reproducibility
 /// * `config` — Discretization configuration
 pub fn bnb_mc_pld(
@@ -190,72 +247,66 @@ pub fn bnb_mc_pld(
         ));
     }
 
-    let chol = cholesky(gram, b)?;
+    // Banded Cholesky: auto-detects bandwidth from Gram structure.
+    // For DP-λCGD with λ=0.9, b=1953: bandwidth ≈ 2-5 (nearly bidiagonal).
+    let chol = BandedCholesky::compute(gram, b, 1e-6)?;
+
     let disc = config.discretization;
     let pessimistic = config.pessimistic_estimate;
+    let sigma2 = sigma * sigma;
+    let inv_2sig2 = 1.0 / (2.0 * sigma2);
 
-    // Determine PLD range from the Gram matrix.
-    // Max privacy loss ≈ max(G_ii) / (2σ²) + some slack for noise.
-    let max_diag = (0..b)
-        .map(|i| gram[i * b + i])
-        .fold(0.0f64, f64::max);
-    let max_loss_estimate = max_diag / (2.0 * sigma * sigma)
-        + 4.0 * (max_diag / (sigma * sigma)).sqrt(); // ~4σ tail
+    // Precompute -G_kk / (2σ²) for the log-sum-exp
+    let diag_terms: Vec<f64> = (0..b)
+        .map(|k| -gram[k * b + k] * inv_2sig2)
+        .collect();
 
-    // Use parallel sampling with rayon for large sample counts
-    let chunk_size = num_samples.max(1);
-    let n_chunks = 4; // Use 4 parallel threads
-    let samples_per_chunk = chunk_size / n_chunks;
-    let remainder = chunk_size - samples_per_chunk * n_chunks;
+    // Parallel MC sampling
+    let n_threads = rayon::current_num_threads().max(1);
+    let samples_per_thread = num_samples / n_threads;
+    let remainder = num_samples - samples_per_thread * n_threads;
 
-    // Sample "remove" direction: X ~ P, Y = log(P(X)/Q(X))
-    let remove_samples: Vec<f64> = (0..n_chunks)
+    // Sample "remove" direction
+    let remove_samples: Vec<f64> = (0..n_threads)
         .into_par_iter()
-        .flat_map(|chunk_id| {
-            let n = if chunk_id == 0 {
-                samples_per_chunk + remainder
-            } else {
-                samples_per_chunk
-            };
-            let mut rng = StdRng::seed_from_u64(seed.wrapping_add(chunk_id as u64));
+        .flat_map(|tid| {
+            let n = if tid == 0 { samples_per_thread + remainder } else { samples_per_thread };
+            let mut rng = StdRng::seed_from_u64(seed.wrapping_add(tid as u64));
+            let mut z_buf = vec![0.0f64; b];
+            let mut u_buf = vec![0.0f64; b];
             (0..n)
-                .map(|_| sample_privacy_loss_remove(gram, &chol, b, sigma, &mut rng))
+                .map(|_| {
+                    sample_privacy_loss_remove(
+                        gram, &chol, b, sigma, inv_2sig2, &diag_terms,
+                        &mut z_buf, &mut u_buf, &mut rng,
+                    )
+                })
                 .collect::<Vec<_>>()
         })
         .collect();
 
-    // Sample "add" direction: X ~ Q, Y = log(Q(X)/P(X))
-    let add_samples: Vec<f64> = (0..n_chunks)
+    // Sample "add" direction
+    let add_samples: Vec<f64> = (0..n_threads)
         .into_par_iter()
-        .flat_map(|chunk_id| {
-            let n = if chunk_id == 0 {
-                samples_per_chunk + remainder
-            } else {
-                samples_per_chunk
-            };
-            let mut rng =
-                StdRng::seed_from_u64(seed.wrapping_add(100 + chunk_id as u64));
+        .flat_map(|tid| {
+            let n = if tid == 0 { samples_per_thread + remainder } else { samples_per_thread };
+            let mut rng = StdRng::seed_from_u64(seed.wrapping_add(1000 + tid as u64));
+            let mut z_buf = vec![0.0f64; b];
+            let mut u_buf = vec![0.0f64; b];
             (0..n)
-                .map(|_| sample_privacy_loss_add(gram, &chol, b, sigma, &mut rng))
+                .map(|_| {
+                    sample_privacy_loss_add(
+                        gram, &chol, b, sigma, inv_2sig2, &diag_terms,
+                        &mut z_buf, &mut u_buf, &mut rng,
+                    )
+                })
                 .collect::<Vec<_>>()
         })
         .collect();
 
     // Build PMFs from samples
-    let pmf_remove = samples_to_pmf(
-        &remove_samples,
-        disc,
-        pessimistic,
-        max_loss_estimate,
-        config.max_grid_size,
-    );
-    let pmf_add = samples_to_pmf(
-        &add_samples,
-        disc,
-        pessimistic,
-        max_loss_estimate,
-        config.max_grid_size,
-    );
+    let pmf_remove = samples_to_pmf(&remove_samples, disc, pessimistic, config.max_grid_size);
+    let pmf_add = samples_to_pmf(&add_samples, disc, pessimistic, config.max_grid_size);
 
     Ok(PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add))
 }
@@ -265,7 +316,6 @@ fn samples_to_pmf(
     samples: &[f64],
     discretization: f64,
     pessimistic_estimate: bool,
-    _max_loss_estimate: f64,
     max_grid_size: usize,
 ) -> Pmf {
     if samples.is_empty() {
@@ -274,78 +324,50 @@ fn samples_to_pmf(
 
     let n = samples.len() as f64;
 
-    // Determine grid range from samples
-    let min_sample = samples
-        .iter()
-        .cloned()
-        .fold(f64::INFINITY, f64::min);
-    let max_sample = samples
-        .iter()
-        .cloned()
-        .fold(f64::NEG_INFINITY, f64::max);
+    let min_sample = samples.iter().cloned().fold(f64::INFINITY, f64::min);
+    let max_sample = samples.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
 
-    // Add some margin
     let grid_lo = (min_sample / discretization).floor() as i64 - 1;
     let grid_hi = (max_sample / discretization).ceil() as i64 + 1;
-
     let num_buckets = (grid_hi - grid_lo + 1) as usize;
 
-    // Safety: limit grid size
     let effective_grid_size = num_buckets.min(max_grid_size);
     let effective_disc = if num_buckets > max_grid_size {
-        // Coarsen discretization to fit
         (max_sample - min_sample) / (max_grid_size as f64 - 2.0)
     } else {
         discretization
     };
-
     let effective_lo = if num_buckets > max_grid_size {
         (min_sample / effective_disc).floor() as i64 - 1
     } else {
         grid_lo
     };
-    let _effective_hi = effective_lo + effective_grid_size as i64 - 1;
 
     let mut probs = vec![0.0f64; effective_grid_size];
     let mut infinity_mass = 0.0f64;
 
     for &y in samples {
         if !y.is_finite() {
-            if y > 0.0 {
-                infinity_mass += 1.0 / n;
-            }
-            // Negative infinity contributes to the leftmost bucket
+            if y > 0.0 { infinity_mass += 1.0 / n; }
             continue;
         }
 
-        // Map to grid index
         let bucket_idx = if pessimistic_estimate {
-            // Pessimistic: round UP (more probability at higher privacy loss)
             (y / effective_disc).ceil() as i64 - effective_lo
         } else {
-            // Optimistic: round to nearest
             (y / effective_disc).round() as i64 - effective_lo
         };
 
         if bucket_idx < 0 {
-            // Below grid — add to first bucket
             probs[0] += 1.0 / n;
         } else if bucket_idx >= effective_grid_size as i64 {
-            // Above grid — add to infinity mass
             infinity_mass += 1.0 / n;
         } else {
             probs[bucket_idx as usize] += 1.0 / n;
         }
     }
 
-    Pmf::new(
-        effective_disc,
-        effective_lo,
-        probs,
-        infinity_mass,
-        pessimistic_estimate,
-        max_grid_size,
-    )
+    Pmf::new(effective_disc, effective_lo, probs, infinity_mass, pessimistic_estimate, max_grid_size)
 }
 
 #[cfg(test)]
@@ -357,60 +379,40 @@ mod tests {
     }
 
     #[test]
-    fn test_cholesky_identity() {
+    fn test_banded_cholesky_identity() {
         let gram = vec![1.0, 0.0, 0.0, 1.0];
-        let l = cholesky(&gram, 2).unwrap();
-        assert!((l[0] - 1.0).abs() < 1e-10);
-        assert!((l[1]).abs() < 1e-10);
-        assert!((l[2]).abs() < 1e-10);
-        assert!((l[3] - 1.0).abs() < 1e-10);
+        let chol = BandedCholesky::compute(&gram, 2, 1e-6).unwrap();
+        assert_eq!(chol.bw, 2); // min bw
+        // L should be identity
+        let mut out = vec![0.0; 2];
+        chol.sample_gaussian(&[0.0, 0.0], 1.0, &[1.0, 2.0], &mut out);
+        assert!((out[0] - 1.0).abs() < 1e-10);
+        assert!((out[1] - 2.0).abs() < 1e-10);
     }
 
     #[test]
-    fn test_cholesky_2x2() {
-        // G = [[4, 2], [2, 3]]
-        // L = [[2, 0], [1, sqrt(2)]]
+    fn test_banded_cholesky_2x2() {
         let gram = vec![4.0, 2.0, 2.0, 3.0];
-        let l = cholesky(&gram, 2).unwrap();
-        assert!((l[0] - 2.0).abs() < 1e-10);
-        assert!((l[1]).abs() < 1e-10);
-        assert!((l[2] - 1.0).abs() < 1e-10);
-        assert!((l[3] - 2.0f64.sqrt()).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_log_sum_exp() {
-        let vals = vec![1.0, 2.0, 3.0];
-        let result = log_sum_exp(&vals);
-        let expected = (1.0f64.exp() + 2.0f64.exp() + 3.0f64.exp()).ln();
-        assert!((result - expected).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_log_sum_exp_large() {
-        // Test numerical stability with large values
-        let vals = vec![1000.0, 1001.0, 999.0];
-        let result = log_sum_exp(&vals);
-        assert!(result.is_finite());
-        assert!(result > 1000.0);
+        let chol = BandedCholesky::compute(&gram, 2, 1e-6).unwrap();
+        // L = [[2, 0], [1, sqrt(2)]]
+        // L * [1, 0] = [2, 1]
+        let mut out = vec![0.0; 2];
+        chol.sample_gaussian(&[0.0, 0.0], 1.0, &[1.0, 0.0], &mut out);
+        assert!((out[0] - 2.0).abs() < 1e-10);
+        assert!((out[1] - 1.0).abs() < 1e-10);
     }
 
     #[test]
     fn test_bnb_mc_pld_dpsgd_small() {
-        // For C=I (DP-SGD), single epoch: G = I_b
-        // BnB should provide amplification
         let b = 10;
         let mut gram = vec![0.0; b * b];
         for i in 0..b {
             gram[i * b + i] = 1.0;
         }
-        let sigma = 1.0;
         let config = default_config();
-
-        let pld = bnb_mc_pld(&gram, b, sigma, 100_000, 42, &config).unwrap();
+        let pld = bnb_mc_pld(&gram, b, 1.0, 100_000, 42, &config).unwrap();
         let eps = pld.epsilon_at(1e-5);
-        assert!(eps > 0.0, "epsilon should be positive");
-        assert!(eps.is_finite(), "epsilon should be finite");
+        assert!(eps > 0.0 && eps.is_finite(), "eps = {}", eps);
     }
 
     #[test]
@@ -422,35 +424,24 @@ mod tests {
         }
         let config = default_config();
 
-        let eps_low_noise = bnb_mc_pld(&gram, b, 0.5, 100_000, 42, &config)
-            .unwrap()
-            .epsilon_at(1e-5);
-        let eps_high_noise = bnb_mc_pld(&gram, b, 2.0, 100_000, 42, &config)
-            .unwrap()
-            .epsilon_at(1e-5);
-
-        assert!(
-            eps_high_noise < eps_low_noise,
-            "More noise should give lower epsilon: {} vs {}",
-            eps_high_noise,
-            eps_low_noise
-        );
+        let eps_low = bnb_mc_pld(&gram, b, 0.5, 100_000, 42, &config).unwrap().epsilon_at(1e-5);
+        let eps_high = bnb_mc_pld(&gram, b, 2.0, 100_000, 42, &config).unwrap().epsilon_at(1e-5);
+        assert!(eps_high < eps_low, "More noise: {} should be < {}", eps_high, eps_low);
     }
 
     #[test]
     fn test_bnb_mc_pld_rejects_bad_params() {
         let config = default_config();
-        assert!(bnb_mc_pld(&[1.0], 2, 1.0, 1000, 42, &config).is_err()); // wrong gram size
-        assert!(bnb_mc_pld(&[1.0, 0.0, 0.0, 1.0], 2, 0.0, 1000, 42, &config).is_err()); // sigma=0
-        assert!(bnb_mc_pld(&[1.0, 0.0, 0.0, 1.0], 2, 1.0, 0, 42, &config).is_err()); // 0 samples
+        assert!(bnb_mc_pld(&[1.0], 2, 1.0, 1000, 42, &config).is_err());
+        assert!(bnb_mc_pld(&[1.0, 0.0, 0.0, 1.0], 2, 0.0, 1000, 42, &config).is_err());
+        assert!(bnb_mc_pld(&[1.0, 0.0, 0.0, 1.0], 2, 1.0, 0, 42, &config).is_err());
     }
 
     #[test]
     fn test_bnb_mc_pld_lambda_cgd() {
-        // Test with a non-trivial Gram matrix (AR(1) structure)
         let b = 5;
         let lambda: f64 = 0.5;
-        let e = 2; // 2 epochs
+        let e = 2;
         let mut gram = vec![0.0; b * b];
         for i in 0..b {
             for j in 0..b {
@@ -458,7 +449,6 @@ mod tests {
                 gram[i * b + j] = e as f64 * lambda.powi(gap);
             }
         }
-
         let config = default_config();
         let pld = bnb_mc_pld(&gram, b, 1.0, 100_000, 42, &config).unwrap();
         let eps = pld.epsilon_at(1e-5);

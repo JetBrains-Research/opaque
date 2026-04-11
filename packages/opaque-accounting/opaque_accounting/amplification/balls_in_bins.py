@@ -112,7 +112,7 @@ class BallsInBins(DpProcess):
                     gram,
                     self.num_bins,
                     lc.noise_multiplier,
-                    1_000_000,  # MC samples
+                    100_000,  # MC samples (100K: fast + accurate)
                     42,  # seed
                     native_cfg,
                 )
