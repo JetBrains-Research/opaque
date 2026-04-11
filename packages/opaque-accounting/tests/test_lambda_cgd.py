@@ -165,7 +165,7 @@ class TestLambdaCgdPld:
 class TestLambdaCgdBnb:
     @pytest.mark.slow
     def test_bnb_gives_amplification(self):
-        """BnB + compose should have lower epsilon than no amplification."""
+        """MC BnB should have lower epsilon than unamplified λCGD."""
         nm = 1.0
         lam = 0.9
         n_per_epoch = 100
@@ -179,14 +179,14 @@ class TestLambdaCgdBnb:
         )
         eps_no_amp = proc_no_amp.epsilon_at(1e-5)
 
-        # BnB amplification
-        epoch = acc.balls_in_bins(
-            acc.lambda_cgd(nm, lambda_=lam, n_steps=n_per_epoch,
-                           min_sep=n_per_epoch, max_participations=1),
+        # MC BnB amplification (unified multi-epoch path)
+        training = acc.balls_in_bins(
+            acc.lambda_cgd(nm, lambda_=lam, n_steps=n_total,
+                           min_sep=n_per_epoch, max_participations=n_epochs),
             num_bins=n_per_epoch,
+            num_epochs=n_epochs,
         )
-        total = epoch * n_epochs
-        eps_bnb = total.epsilon_at(1e-5)
+        eps_bnb = training.epsilon_at(1e-5)
 
         assert eps_bnb < eps_no_amp, (
             f"BnB eps={eps_bnb} should be < no-amp eps={eps_no_amp}"
@@ -222,28 +222,89 @@ class TestLambdaCgdBnb:
 
     @pytest.mark.slow
     def test_normalized_bnb_tighter_than_unnormalized(self):
-        """Column-normalized BnB should give equal or lower epsilon
-        than unnormalized BnB (exact vs conservative analysis)."""
+        """Column-normalized MC BnB should give equal or lower epsilon
+        than unnormalized MC BnB (exact vs conservative analysis)."""
         nm = 1.0
         lam = 0.9
         bins = 100
         n_epochs = 5
+        n_total = bins * n_epochs
 
-        epoch_norm = acc.balls_in_bins(
-            acc.lambda_cgd(nm, lambda_=lam, n_steps=bins,
-                           min_sep=bins, max_participations=1, normalized=True),
+        training_norm = acc.balls_in_bins(
+            acc.lambda_cgd(nm, lambda_=lam, n_steps=n_total,
+                           min_sep=bins, max_participations=n_epochs,
+                           normalized=True),
             num_bins=bins,
+            num_epochs=n_epochs,
         )
-        epoch_unnorm = acc.balls_in_bins(
-            acc.lambda_cgd(nm, lambda_=lam, n_steps=bins,
-                           min_sep=bins, max_participations=1, normalized=False),
+        training_unnorm = acc.balls_in_bins(
+            acc.lambda_cgd(nm, lambda_=lam, n_steps=n_total,
+                           min_sep=bins, max_participations=n_epochs,
+                           normalized=False),
             num_bins=bins,
+            num_epochs=n_epochs,
         )
 
-        eps_norm = (epoch_norm * n_epochs).epsilon_at(1e-5)
-        eps_unnorm = (epoch_unnorm * n_epochs).epsilon_at(1e-5)
+        eps_norm = training_norm.epsilon_at(1e-5)
+        eps_unnorm = training_unnorm.epsilon_at(1e-5)
 
         # Normalized gives lower epsilon (tighter analysis)
         assert eps_norm < eps_unnorm, (
             f"normalized eps={eps_norm} should be < unnormalized eps={eps_unnorm}"
         )
+
+    @pytest.mark.slow
+    def test_mc_bnb_more_noise_lowers_epsilon(self):
+        """MC BnB: more noise → lower epsilon (monotonicity for calibration)."""
+        lam = 0.9
+        n_per_epoch = 50
+        n_epochs = 3
+        n_total = n_per_epoch * n_epochs
+
+        eps_low_noise = acc.balls_in_bins(
+            acc.lambda_cgd(0.5, lambda_=lam, n_steps=n_total,
+                           min_sep=n_per_epoch, max_participations=n_epochs),
+            num_bins=n_per_epoch,
+            num_epochs=n_epochs,
+        ).epsilon_at(1e-5)
+
+        eps_high_noise = acc.balls_in_bins(
+            acc.lambda_cgd(2.0, lambda_=lam, n_steps=n_total,
+                           min_sep=n_per_epoch, max_participations=n_epochs),
+            num_bins=n_per_epoch,
+            num_epochs=n_epochs,
+        ).epsilon_at(1e-5)
+
+        assert eps_high_noise < eps_low_noise, (
+            f"high-noise eps={eps_high_noise} should be < low-noise eps={eps_low_noise}"
+        )
+
+    @pytest.mark.slow
+    def test_mc_bnb_deterministic_with_seed(self):
+        """MC BnB gives reproducible epsilon (fixed seed=42 in implementation)."""
+        lam = 0.9
+        n_per_epoch = 50
+        n_epochs = 3
+        n_total = n_per_epoch * n_epochs
+
+        def compute():
+            return acc.balls_in_bins(
+                acc.lambda_cgd(1.0, lambda_=lam, n_steps=n_total,
+                               min_sep=n_per_epoch, max_participations=n_epochs),
+                num_bins=n_per_epoch,
+                num_epochs=n_epochs,
+            ).epsilon_at(1e-5)
+
+        eps1 = compute()
+        eps2 = compute()
+        assert eps1 == pytest.approx(eps2, rel=1e-10)
+
+    def test_num_epochs_validation(self):
+        """num_epochs conflicting with max_participations raises ValueError."""
+        with pytest.raises(ValueError, match="conflicts"):
+            acc.balls_in_bins(
+                acc.lambda_cgd(1.0, lambda_=0.9, n_steps=100,
+                               min_sep=20, max_participations=5),
+                num_bins=20,
+                num_epochs=3,  # conflicts with max_participations=5
+            )

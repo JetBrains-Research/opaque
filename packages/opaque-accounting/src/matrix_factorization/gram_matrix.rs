@@ -163,12 +163,7 @@ pub fn lambda_cgd_gram_matrix(
                         ip
                     };
 
-                    if skip_cross_epoch {
-                        val += contribution;
-                    } else {
-                        // Count same-epoch once, cross-epoch twice (p,q) and (q,p)
-                        val += if p == q { contribution } else { 2.0 * contribution };
-                    }
+                    val += contribution;
                 }
             }
 
@@ -320,6 +315,36 @@ mod tests {
         let b = 10;
         for i in 0..b {
             assert!(gram[i * b + i] > 0.0, "Diagonal entry G[{},{}] not positive", i, i);
+        }
+    }
+
+    #[test]
+    fn test_gram_matrix_multi_epoch_psd() {
+        // Regression test: multi-epoch Gram must be PSD (not just have positive diagonal).
+        // Verify via Cholesky: if Cholesky succeeds without negative diagonals, G is PSD.
+        for &(lam, b, e) in &[(0.9, 20, 5), (0.5, 50, 3), (0.99, 10, 8)] {
+            let gram = lambda_cgd_gram_matrix(lam, b * e, b, Some(e), true).unwrap();
+            // Naive Cholesky check: compute L[0,0]..L[b-1,b-1]
+            let mut l = vec![0.0f64; b * b];
+            for i in 0..b {
+                let mut diag = gram[i * b + i];
+                for k in 0..i {
+                    diag -= l[i * b + k] * l[i * b + k];
+                }
+                assert!(
+                    diag > -1e-10,
+                    "Gram not PSD: Cholesky diagonal {} at row {} for λ={}, b={}, E={}",
+                    diag, i, lam, b, e
+                );
+                l[i * b + i] = diag.max(0.0).sqrt();
+                for j in (i + 1)..b {
+                    let mut off = gram[j * b + i];
+                    for k in 0..i {
+                        off -= l[j * b + k] * l[i * b + k];
+                    }
+                    l[j * b + i] = if l[i * b + i] > 0.0 { off / l[i * b + i] } else { 0.0 };
+                }
+            }
         }
     }
 }

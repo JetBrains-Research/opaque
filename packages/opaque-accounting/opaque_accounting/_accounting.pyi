@@ -346,6 +346,28 @@ def balls_in_bins_gaussian_pld(
     """
     ...
 
+def balls_in_bins_gaussian_pld_epochs(
+    noise_multiplier: float,
+    num_bins: int,
+    num_epochs: int,
+    config: DiscretizationConfig,
+) -> Pld:
+    """Compute the multi-epoch BnB Gaussian PLD.
+
+    Exact per-bin Poisson composition across all ``num_epochs`` epochs.
+    The returned PLD covers the full training run.
+
+    Args:
+        noise_multiplier: σ/Δ ratio.
+        num_bins: Number of bins (k ≥ 2).
+        num_epochs: Number of training epochs.
+        config: PLD discretization configuration.
+
+    Returns:
+        The privacy loss distribution for the entire training run.
+    """
+    ...
+
 def bnb_mc_pld(
     gram: list[float],
     num_bins: int,
