@@ -120,6 +120,34 @@ pub fn py_balls_in_bins_gaussian_pld(
     Ok(PyPld::new(pld))
 }
 
+/// Compute the **total** multi-epoch PLD for a Balls-in-Bins Gaussian mechanism.
+///
+/// Equivalent to ``balls_in_bins_gaussian_pld(...).self_compose(num_epochs)``
+/// but done in a single call for clarity: the result IS the total cost.
+///
+/// Args:
+///     noise_multiplier (float): σ/Δ ratio, must be > 0.
+///     num_bins (int): Number of bins per epoch (k ≥ 2).
+///     num_epochs (int): Number of training epochs (≥ 1).
+///     config (DiscretizationConfig): Discretization configuration.
+///
+/// Returns:
+///     Pld: The total privacy loss distribution for all epochs.
+#[pyfunction]
+#[pyo3(name = "balls_in_bins_gaussian_pld_epochs", signature = (noise_multiplier, num_bins, num_epochs, config))]
+pub fn py_balls_in_bins_gaussian_pld_epochs(
+    noise_multiplier: f64,
+    num_bins: usize,
+    num_epochs: usize,
+    config: &PyDiscretizationConfig,
+) -> PyResult<PyPld> {
+    let pld = crate::amplification::balls_in_bins_gaussian_pld_epochs(
+        noise_multiplier, num_bins, num_epochs, &config.inner,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}
+
 /// Compute the BnB PLD via Monte Carlo sampling of the dominating pair.
 ///
 /// Uses Algorithm 2 of Choquette-Choo et al. (2024) "Near Exact Privacy

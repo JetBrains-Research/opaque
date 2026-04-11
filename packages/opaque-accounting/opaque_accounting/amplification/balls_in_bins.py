@@ -1,17 +1,22 @@
-"""Balls-in-Bins amplification for Gaussian mechanism.
+"""Balls-in-Bins amplification — always returns **total** multi-epoch cost.
 
 In the Balls-in-Bins (BnB) sampling scheme, the dataset is randomly
 partitioned into ``num_bins`` equally-sized bins each epoch. Each bin is
-processed once with a Gaussian mechanism, so every example participates
-exactly once per epoch.
+processed once, so every example participates exactly once per epoch.
 
-This provides privacy amplification because the adversary does not know
-which bin contains the target example. The per-epoch PLD is computed using
-a conservative Poisson per-step approximation composed ``num_bins`` times.
+The returned process represents the **total** privacy cost across all
+``num_epochs`` epochs.  Do NOT compose further with ``* num_epochs``.
+
+For independent-noise mechanisms (Gaussian, AdaClip), uses a conservative
+Poisson per-step approximation.
+
+For correlated-noise mechanisms (DP-λCGD), uses Monte Carlo sampling of
+the dominating pair from Choquette-Choo et al. (2024) arxiv:2410.06266.
 
 References:
     - Chua et al. (2025), "Scalable Shuffle Differential Privacy"
-    - Choquette-Choo et al. (2024), "Privacy Amplification for Matrix Mechanisms"
+    - Choquette-Choo et al. (2024), "Near Exact Privacy Amplification
+      for Matrix Mechanisms"
 """
 
 from __future__ import annotations
@@ -33,32 +38,31 @@ _Inner = Gaussian | LambdaCgd | AdaClip | NonPrivate
 
 @dataclass(frozen=True, slots=True)
 class BallsInBins(DpProcess):
-    """Balls-in-Bins amplified Gaussian mechanism.
+    """Balls-in-Bins amplified mechanism — **total** multi-epoch cost.
 
-    The dataset is partitioned into ``num_bins`` bins each epoch.
-    Each bin is processed with the inner Gaussian mechanism.
+    The returned PLD covers all ``num_epochs`` epochs.
+    Do NOT compose further with ``* num_epochs``.
 
-    For mechanisms without cross-epoch correlations (Gaussian, AdaClip),
-    the PLD represents one epoch — multiply by the number of epochs::
+    Example (Gaussian)::
 
-        epoch = acc.balls_in_bins(acc.gaussian(1.1), num_bins=100)
-        training = epoch * 10  # 10 epochs
+        training = acc.balls_in_bins(acc.gaussian(1.1), num_bins=100, num_epochs=10)
+        eps = training.epsilon_at(1e-5)  # total cost, 10 epochs
 
-    For λCGD, pass the full multi-epoch parameters.  The PLD is computed
-    via Monte Carlo sampling of the BnB dominating pair (arxiv:2410.06266).
-    This IS the total privacy cost — do NOT compose with ``* num_epochs``::
+    Example (DP-λCGD)::
 
         training = acc.balls_in_bins(
             acc.lambda_cgd(nm, lambda_=0.9, n_steps=total_steps,
                            min_sep=steps_per_epoch,
                            max_participations=num_epochs),
             num_bins=steps_per_epoch,
+            num_epochs=num_epochs,
         )
         eps = training.epsilon_at(1e-5)  # total cost
     """
 
     inner: _Inner
     num_bins: int
+    num_epochs: int
 
     @functools.lru_cache(maxsize=8)
     def pld(
@@ -84,13 +88,14 @@ class BallsInBins(DpProcess):
             case NonPrivate() | Gaussian(noise_multiplier=0):
                 return _native.non_private_pld(native_cfg)
             case Gaussian(noise_multiplier=nm):
-                return _native.balls_in_bins_gaussian_pld(
-                    nm, self.num_bins, native_cfg
+                return _native.balls_in_bins_gaussian_pld_epochs(
+                    nm, self.num_bins, self.num_epochs, native_cfg
                 )
             case AdaClip(inner=Gaussian()) as ac:
-                return _native.balls_in_bins_gaussian_pld(
+                return _native.balls_in_bins_gaussian_pld_epochs(
                     ac.effective_noise_multiplier,
                     self.num_bins,
+                    self.num_epochs,
                     native_cfg,
                 )
             case AdaClip(inner=NonPrivate() | Gaussian(noise_multiplier=0)):
@@ -99,8 +104,7 @@ class BallsInBins(DpProcess):
                 # Monte Carlo BnB accounting (Lemma 3.2 of arxiv:2410.06266).
                 # Compute Gram matrix of the dominating pair mixture means
                 # from the full multi-epoch C_λ parameters, then sample
-                # the PLD via Monte Carlo.  This is the paper-correct
-                # approach — no per-epoch composition needed.
+                # the PLD via Monte Carlo.
                 gram = _native.lambda_cgd_gram_matrix(
                     lc.lambda_,
                     lc.n_steps,
@@ -112,7 +116,7 @@ class BallsInBins(DpProcess):
                     gram,
                     self.num_bins,
                     lc.noise_multiplier,
-                    100_000,  # MC samples (100K: fast + accurate)
+                    100_000,  # MC samples
                     42,  # seed
                     native_cfg,
                 )
@@ -126,49 +130,62 @@ class BallsInBins(DpProcess):
 def balls_in_bins(
     inner: _Inner,
     num_bins: int,
+    num_epochs: int = 1,
 ) -> BallsInBins:
-    """Balls-in-Bins amplified Gaussian mechanism.
+    """Balls-in-Bins amplified mechanism — returns **total** multi-epoch cost.
 
     Each epoch, the dataset is randomly partitioned into ``num_bins``
-    equally-sized bins. Each bin is processed with the inner Gaussian
-    mechanism. Every example participates exactly once per epoch.
+    equally-sized bins.  Each bin is processed with the inner mechanism.
+    Every example participates exactly once per epoch.
 
-    For simple mechanisms (Gaussian, AdaClip), the returned process
-    represents one epoch.  Multiply by the number of epochs::
+    The returned process covers **all** ``num_epochs`` epochs.
+    Do NOT compose further with ``* num_epochs``.
 
-        epoch = acc.balls_in_bins(acc.gaussian(1.1), num_bins=100)
-        training = epoch * 10  # 10 epochs
-
-    For :func:`lambda_cgd` with reused bin allocation, encode the
-    full multi-epoch participation pattern and do NOT compose::
-
-        training = acc.balls_in_bins(
-            acc.lambda_cgd(nm, lambda_=0.9, n_steps=total_steps,
-                           min_sep=steps_per_epoch,
-                           max_participations=num_epochs),
-            num_bins=steps_per_epoch,
-        )
+    For independent-noise mechanisms (Gaussian, AdaClip), ``num_epochs``
+    controls how many epochs to compose.  For correlated-noise mechanisms
+    (DP-λCGD), the epoch count is already encoded in the inner
+    mechanism's ``n_steps`` / ``max_participations``, and ``num_epochs``
+    serves as validation.
 
     Args:
-        inner: The base mechanism — :func:`gaussian` or :func:`adaclip`.
-        num_bins: Number of bins (k ≥ 2). Typically ``dataset_size / batch_size``.
+        inner: Base mechanism — :func:`gaussian`, :func:`lambda_cgd`, or
+            :func:`adaclip`.
+        num_bins: Bins per epoch (k ≥ 2).  Typically ``dataset_size / batch_size``.
+        num_epochs: Number of training epochs (default 1).
 
     Returns:
-        A :class:`BallsInBins` process.
+        A :class:`BallsInBins` process (total cost).
 
     Example::
 
-        epoch = acc.balls_in_bins(acc.gaussian(1.1), num_bins=100)
-        eps = (epoch * 10).epsilon_at(1e-5)
+        training = acc.balls_in_bins(acc.gaussian(1.1), num_bins=100, num_epochs=10)
+        eps = training.epsilon_at(1e-5)
     """
     if not isinstance(inner, (Gaussian, LambdaCgd, AdaClip, NonPrivate)):
         raise TypeError(
             f"balls_in_bins() requires a Gaussian, LambdaCgd, AdaClip, or NonPrivate "
             f"inner mechanism, got {type(inner).__name__}. "
-            "Example: acc.balls_in_bins(acc.gaussian(nm), num_bins=k)"
+            "Example: acc.balls_in_bins(acc.gaussian(nm), num_bins=k, num_epochs=E)"
         )
     if num_bins < 2:
         raise ValueError(
             f"num_bins must be >= 2 for BnB amplification, got {num_bins}"
         )
-    return BallsInBins(inner=inner, num_bins=num_bins)
+    if num_epochs < 1:
+        raise ValueError(
+            f"num_epochs must be >= 1, got {num_epochs}"
+        )
+
+    # For λCGD: validate that num_epochs is consistent with inner params
+    if isinstance(inner, LambdaCgd) and inner.max_participations is not None:
+        if num_epochs != 1 and num_epochs != inner.max_participations:
+            raise ValueError(
+                f"num_epochs={num_epochs} conflicts with lambda_cgd "
+                f"max_participations={inner.max_participations}. "
+                "For DP-λCGD, the epoch structure is encoded in the "
+                "inner mechanism's n_steps/min_sep/max_participations."
+            )
+        # Use the inner's epoch count for consistency
+        num_epochs = inner.max_participations
+
+    return BallsInBins(inner=inner, num_bins=num_bins, num_epochs=num_epochs)

@@ -107,7 +107,25 @@ pub fn lambda_cgd_gram_matrix(
     }
 
     // G_{ij} = Σ_{p=0}^{E-1} Σ_{q=0}^{E-1} ⟨C[:,b*p+i], C[:,b*q+j]⟩ / (d_{b*p+i} · d_{b*q+j})
-    // where the normalization divisors are 1.0 if not normalized.
+    //
+    // Optimization: cross-epoch terms have a factor λ^{b·|p-q|}.
+    // When λ^b < 1e-15, only same-epoch terms (p=q) contribute,
+    // reducing complexity from O(b²·E²) to O(b²·E).
+    let lambda_b = if b > 0 { lambda.powi(b as i32) } else { 1.0 };
+    let skip_cross_epoch = lambda_b.abs() < 1e-15;
+
+    // Precompute column norms for the normalized case
+    let col_norms: Vec<f64> = if normalized {
+        (0..e)
+            .flat_map(|p| (0..b).map(move |i| {
+                let col = b * p + i;
+                if col < n { column_norm_squared(lambda, n, col).sqrt() } else { 1.0 }
+            }))
+            .collect()
+    } else {
+        Vec::new()
+    };
+
     let mut gram = vec![0.0f64; b * b];
 
     for i in 0..b {
@@ -120,13 +138,15 @@ pub fn lambda_cgd_gram_matrix(
                     break;
                 }
 
-                for q in 0..e {
+                let q_start = if skip_cross_epoch { p } else { 0 };
+                let q_end = if skip_cross_epoch { p + 1 } else { e };
+
+                for q in q_start..q_end {
                     let col_c = b * q + j;
                     if col_c >= n {
                         break;
                     }
 
-                    // Ensure a <= c for the inner product function
                     let (lo, hi) = if col_a <= col_c {
                         (col_a, col_c)
                     } else {
@@ -135,19 +155,26 @@ pub fn lambda_cgd_gram_matrix(
 
                     let ip = column_inner_product(lambda, n, lo, hi);
 
-                    if normalized {
-                        let d_a = column_norm_squared(lambda, n, col_a).sqrt();
-                        let d_c = column_norm_squared(lambda, n, col_c).sqrt();
-                        val += ip / (d_a * d_c);
+                    let contribution = if normalized {
+                        let d_a = col_norms[p * b + i];
+                        let d_c = col_norms[q * b + j];
+                        ip / (d_a * d_c)
                     } else {
-                        val += ip;
+                        ip
+                    };
+
+                    if skip_cross_epoch {
+                        val += contribution;
+                    } else {
+                        // Count same-epoch once, cross-epoch twice (p,q) and (q,p)
+                        val += if p == q { contribution } else { 2.0 * contribution };
                     }
                 }
             }
 
             gram[i * b + j] = val;
             if i != j {
-                gram[j * b + i] = val; // Symmetric
+                gram[j * b + i] = val;
             }
         }
     }
