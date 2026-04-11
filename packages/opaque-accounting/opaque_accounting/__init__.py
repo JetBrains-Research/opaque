@@ -90,6 +90,7 @@ from opaque_accounting.mechanisms import (
     eps_delta,
     gaussian,
     identity,
+    lambda_cgd,
     nonprivate,
 )
 
@@ -117,6 +118,7 @@ __all__ = [
     "nonprivate",
     "band_mf",
     "blt_mf",
+    "lambda_cgd",
     # Amplification
     "balls_in_bins",
     "poisson",

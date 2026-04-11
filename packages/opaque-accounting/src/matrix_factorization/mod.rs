@@ -29,9 +29,14 @@
 //! - BandMF: Choquette-Choo et al. (2023) <https://arxiv.org/abs/2306.08153>
 //! - BLT: Choquette-Choo et al. (2024) <https://arxiv.org/abs/2404.16706>
 
+pub mod lambda_cgd;
 mod mf_gaussian;
 pub mod sensitivity;
 
+pub use lambda_cgd::{
+    lambda_cgd_max_column_norm, lambda_cgd_normalized_sensitivity_squared,
+    lambda_cgd_sensitivity_squared,
+};
 pub use mf_gaussian::mf_gaussian_pld;
 pub use sensitivity::{
     banded_sensitivity, blt_sensitivity_squared, fixed_epoch_sensitivity,

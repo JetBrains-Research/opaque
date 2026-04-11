@@ -32,6 +32,10 @@ from opaque_accounting.mechanisms.identity import (
     Identity,
     identity,
 )
+from opaque_accounting.mechanisms.lambda_cgd import (
+    LambdaCgd,
+    lambda_cgd,
+)
 from opaque_accounting.mechanisms.nonprivate import (
     NonPrivate,
     nonprivate,
@@ -45,6 +49,7 @@ __all__ = [
     "NonPrivate",
     "BandMf",
     "BltMf",
+    "LambdaCgd",
     # Constructor functions
     "gaussian",
     "eps_delta",
@@ -52,4 +57,5 @@ __all__ = [
     "nonprivate",
     "band_mf",
     "blt_mf",
+    "lambda_cgd",
 ]

@@ -31,6 +31,8 @@ MECHANISMS:
                O(buffers × d) memory, near-optimal, handles multi-epoch.
   blt_bnb   — BLT noise + Balls-in-Bins sampling (Chua et al., 2025)
                Same BLT noise, but with proper random-partition amplification.
+  lambda_cgd — DP-λCGD (Kalinin et al., 2026), bandwidth-2 correlated noise
+               via PRNG replay. Single hyperparam λ, zero extra memory.
   identity  — DP-SGD baseline via MF API (C^{-1} = I, independent noise).
                Same training loop for fair comparison.
 
@@ -48,6 +50,9 @@ USAGE:
   # BLT with Balls-in-Bins sampling (random-partition amplification)
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism blt_bnb
 
+  # DP-λCGD with Balls-in-Bins sampling (bandwidth-2 correlated noise, λ=0.9)
+  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism lambda_cgd --lambda_ 0.9
+
   # DP-SGD baseline for fair comparison (same loop, independent noise)
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism identity
 
@@ -55,6 +60,7 @@ REFERENCES:
 
   - BandMF: https://arxiv.org/abs/2306.08153
   - BLT: https://arxiv.org/abs/2404.16706
+  - DP-λCGD: https://arxiv.org/abs/2601.22334
   - DP-FTRL: https://arxiv.org/abs/2103.00039
 """
 
@@ -81,7 +87,7 @@ import torchopt
 import opaque.accounting as acc
 from opaque.accounting import calibration as cal
 from opaque.clipping import clipped_grad
-from opaque.noise import band_mf_noise, blt_mf_noise, identity_mf_noise
+from opaque.noise import band_mf_noise, blt_mf_noise, identity_mf_noise, lambda_cgd_noise
 from opaque.profiling import StepTimer, TrainingProfiler, print_memory, reset_peak_memory
 from opaque.random import key, fold_in
 from opaque.sampling import BallsInBinsSampler, CyclicPoissonSampler, PoissonSampler, poisson_collate
@@ -264,8 +270,8 @@ def parse_args():
     dp_g = parser.add_argument_group("dp", "DP-FTRL mechanism and clipping")
     dp_g.add_argument(
         "--mechanism", type=str, default="band_mf",
-        choices=["band_mf", "blt", "blt_bnb", "identity"],
-        help="MF mechanism: band_mf (banded Toeplitz), blt (buffered linear Toeplitz), blt_bnb (BLT + Balls-in-Bins), identity (DP-SGD baseline).",
+        choices=["band_mf", "blt", "blt_bnb", "lambda_cgd", "identity"],
+        help="MF mechanism: band_mf, blt, blt_bnb, lambda_cgd, identity.",
     )
     dp_g.add_argument("--clipping-norm", type=float, default=0.9, help="Fixed clipping norm")
     dp_g.add_argument("--microbatch-size", type=int, default=None)
@@ -276,6 +282,10 @@ def parse_args():
     dp_g.add_argument(
         "--max-buffers", type=int, default=10,
         help="Maximum BLT buffers to try (higher = better noise, slower init).",
+    )
+    dp_g.add_argument(
+        "--lambda_", type=float, default=0.9,
+        help="Correlation coefficient for lambda_cgd mechanism (0=DP-SGD, higher=more correlation).",
     )
 
     # Privacy
@@ -487,6 +497,10 @@ def main():
     if args.mechanism in ("blt", "blt_bnb"):
         train_dataset = train_dataset.shuffle(seed=args.seed)
 
+    # λCGD uses BnB sampling (random partition each epoch)
+    if args.mechanism == "lambda_cgd":
+        train_dataset = train_dataset.shuffle(seed=args.seed)
+
     eval_loader = DataLoader(eval_dataset, batch_size=args.eval_batch_size, shuffle=False, collate_fn=collate, drop_last=False)
 
     # --- Sampling ---
@@ -501,6 +515,8 @@ def main():
                 f"Reduce --bands ({args.bands}) or --batch-size ({args.batch_size})."
             )
     elif args.mechanism in ("blt", "blt_bnb"):
+        pass
+    elif args.mechanism == "lambda_cgd":
         pass
     elif args.mechanism == "identity":
         pass
@@ -517,6 +533,9 @@ def main():
         print(f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, random partition/epoch)")
         print(f"  min_sep: {expected_steps_per_epoch} (= steps/epoch)")
         print(f"  max_participations: {args.num_epochs}")
+    elif args.mechanism == "lambda_cgd":
+        print(f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, random partition/epoch)")
+        print(f"  DP-λCGD: λ={args.lambda_}")
     else:
         print(f"  Sampler: poisson (q={sample_rate:.6f})")
     print(f"  Expected batch size: {args.batch_size}")
@@ -618,6 +637,21 @@ def main():
                 max_buffers=args.max_buffers,
                 momentum=args.momentum,
             )
+    elif args.mechanism == "lambda_cgd":
+        # DP-λCGD with Balls-in-Bins amplification (Algorithm 1 of the paper).
+        # Build the full n×n strategy matrix (n = total_steps) and pass it
+        # to BnB once.  The multi-epoch sensitivity (cross-epoch column
+        # correlations) is handled inside BnB via lc.sensitivity().
+        # NO per-epoch composition — BnB over the full matrix IS the
+        # total privacy cost.
+        def acct_mechanism(nm):
+            return acc.balls_in_bins(
+                acc.lambda_cgd(nm, lambda_=args.lambda_,
+                               n_steps=total_steps,
+                               min_sep=expected_steps_per_epoch,
+                               max_participations=args.num_epochs),
+                num_bins=expected_steps_per_epoch,
+            )
     elif args.mechanism == "identity":
         def acct_mechanism(nm):
             return acc.poisson(acc.gaussian(nm), sample_rate=sample_rate) * total_steps
@@ -671,6 +705,12 @@ def main():
             max_buffers=args.max_buffers,
             momentum=args.momentum,
         )
+    elif args.mechanism == "lambda_cgd":
+        noise_fn, noise_state = lambda_cgd_noise(
+            trainable_params, total_steps,
+            stddev=noise_stddev, key=key(args.seed),
+            lambda_=args.lambda_,
+        )
     elif args.mechanism == "identity":
         noise_fn, noise_state = identity_mf_noise(
             trainable_params, stddev=noise_stddev, key=key(args.seed),
@@ -719,6 +759,10 @@ def main():
         print(f"  Max buffers: {args.max_buffers}")
         print(f"  Min separation: {expected_steps_per_epoch}")
         print(f"  Max participations: {args.num_epochs}")
+    elif args.mechanism == "lambda_cgd":
+        print(f"  λ (lambda): {args.lambda_}")
+        print(f"  Bandwidth: 2 (bidiagonal inverse)")
+        print(f"  Column normalization: enabled (Appendix A, exact BnB)")
 
     # ===================================================================
     # Training loop
@@ -761,6 +805,14 @@ def main():
                 shuffle=False, collate_fn=collate, drop_last=True,
             )
         elif args.mechanism == "blt_bnb":
+            epoch_sampler = BallsInBinsSampler(
+                train_dataset,
+                num_bins=expected_steps_per_epoch,
+                num_epochs=1,
+                key=fold_in(key(args.seed), epoch),
+            )
+            epoch_loader = DataLoader(train_dataset, batch_sampler=epoch_sampler, collate_fn=collate)
+        elif args.mechanism == "lambda_cgd":
             epoch_sampler = BallsInBinsSampler(
                 train_dataset,
                 num_bins=expected_steps_per_epoch,

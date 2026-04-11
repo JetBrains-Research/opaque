@@ -223,3 +223,83 @@ pub fn py_toeplitz_minsep_sensitivity_squared(
     )
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
+
+/// Squared L2 sensitivity of the DP-λCGD strategy matrix.
+///
+/// Uses the closed-form expression from Theorem 1 (eq 15) of
+/// Kalinin et al. (2026) "DP-λCGD".
+///
+/// Args:
+///     lambda_ (float): Correlation coefficient in [0, 1). λ=0 is DP-SGD.
+///     n_steps (int): Total number of training steps.
+///     min_sep (int): Minimum separation between participations (>= 1).
+///     max_participations (int | None): Optional upper bound on participations.
+///
+/// Returns:
+///     float: The squared L2 sensitivity.
+///
+/// Raises:
+///     ValueError: If parameters are invalid.
+#[pyfunction]
+#[pyo3(name = "lambda_cgd_sensitivity_squared", signature = (lambda_, n_steps, min_sep=1, max_participations=None))]
+pub fn py_lambda_cgd_sensitivity_squared(
+    lambda_: f64,
+    n_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+) -> PyResult<f64> {
+    crate::matrix_factorization::lambda_cgd_sensitivity_squared(
+        lambda_, n_steps, min_sep, max_participations,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// Squared L2 sensitivity of the column-normalized DP-λCGD.
+///
+/// Column normalization: C̃_λ = C_λ · D⁻¹ where D = diag(‖C_λ[:,j]‖).
+/// For single participation (k=1), always returns 1.0.
+///
+/// Args:
+///     lambda_ (float): Correlation coefficient in [0, 1).
+///     n_steps (int): Total number of training steps.
+///     min_sep (int): Minimum separation between participations (>= 1).
+///     max_participations (int | None): Optional upper bound on participations.
+///
+/// Returns:
+///     float: The squared L2 sensitivity of the column-normalized matrix.
+///
+/// Raises:
+///     ValueError: If parameters are invalid.
+#[pyfunction]
+#[pyo3(name = "lambda_cgd_normalized_sensitivity_squared", signature = (lambda_, n_steps, min_sep=1, max_participations=None))]
+pub fn py_lambda_cgd_normalized_sensitivity_squared(
+    lambda_: f64,
+    n_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+) -> PyResult<f64> {
+    crate::matrix_factorization::lambda_cgd_normalized_sensitivity_squared(
+        lambda_, n_steps, min_sep, max_participations,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// Max column L2 norm of the DP-λCGD strategy matrix.
+///
+/// The first column has the largest norm: sqrt((1 - λ^{2n}) / (1 - λ²)).
+///
+/// Args:
+///     lambda_ (float): Correlation coefficient in [0, 1).
+///     n_steps (int): Total number of steps.
+///
+/// Returns:
+///     float: The max column L2 norm.
+///
+/// Raises:
+///     ValueError: If parameters are invalid.
+#[pyfunction]
+#[pyo3(name = "lambda_cgd_max_column_norm", signature = (lambda_, n_steps))]
+pub fn py_lambda_cgd_max_column_norm(lambda_: f64, n_steps: usize) -> PyResult<f64> {
+    crate::matrix_factorization::lambda_cgd_max_column_norm(lambda_, n_steps)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}

@@ -23,20 +23,36 @@ from .. import opaque_accounting as _native
 
 from opaque_accounting.base import DpProcess, Pld
 from opaque_accounting.mechanisms.gaussian import Gaussian
+from opaque_accounting.mechanisms.lambda_cgd import LambdaCgd
 from opaque_accounting.mechanisms.nonprivate import NonPrivate
 from opaque_accounting.transformations.adaclip import AdaClip
 
 #: Mechanism types accepted by :func:`balls_in_bins`.
-_Inner = Gaussian | AdaClip | NonPrivate
+_Inner = Gaussian | LambdaCgd | AdaClip | NonPrivate
 
 
 @dataclass(frozen=True, slots=True)
 class BallsInBins(DpProcess):
-    """Balls-in-Bins amplified Gaussian mechanism (one epoch).
+    """Balls-in-Bins amplified Gaussian mechanism.
 
     The dataset is partitioned into ``num_bins`` bins each epoch.
     Each bin is processed with the inner Gaussian mechanism.
-    The PLD represents the privacy cost of one full epoch.
+
+    For mechanisms without cross-epoch correlations (Gaussian, AdaClip),
+    the PLD represents one epoch — multiply by the number of epochs::
+
+        epoch = acc.balls_in_bins(acc.gaussian(1.1), num_bins=100)
+        training = epoch * 10  # 10 epochs
+
+    For λCGD with reused bin allocation across epochs, pass the
+    full multi-epoch matrix and do NOT compose::
+
+        training = acc.balls_in_bins(
+            acc.lambda_cgd(nm, lambda_=0.9, n_steps=total_steps,
+                           min_sep=steps_per_epoch,
+                           max_participations=num_epochs),
+            num_bins=steps_per_epoch,
+        )
     """
 
     inner: _Inner
@@ -77,9 +93,20 @@ class BallsInBins(DpProcess):
                 )
             case AdaClip(inner=NonPrivate() | Gaussian(noise_multiplier=0)):
                 return _native.non_private_pld(native_cfg)
+            case LambdaCgd() as lc:
+                # effective_nm = σ / sensitivity accounts for the
+                # worst-case column-sum norm under the configured
+                # participation pattern.  For single-epoch normalized
+                # (max_participations=1) this is σ/1 = σ.  For
+                # multi-epoch (max_participations>1) it captures
+                # cross-epoch column correlations in C̃_λ.
+                effective_nm = lc.noise_multiplier / lc.sensitivity()
+                return _native.balls_in_bins_gaussian_pld(
+                    effective_nm, self.num_bins, native_cfg
+                )
             case _:
                 raise TypeError(
-                    "BallsInBins requires a Gaussian or AdaClip inner "
+                    "BallsInBins requires a Gaussian, LambdaCgd, or AdaClip inner "
                     f"mechanism, got {type(self.inner).__name__}."
                 )
 
@@ -88,17 +115,27 @@ def balls_in_bins(
     inner: _Inner,
     num_bins: int,
 ) -> BallsInBins:
-    """Balls-in-Bins amplified Gaussian mechanism (one epoch).
+    """Balls-in-Bins amplified Gaussian mechanism.
 
     Each epoch, the dataset is randomly partitioned into ``num_bins``
     equally-sized bins. Each bin is processed with the inner Gaussian
     mechanism. Every example participates exactly once per epoch.
 
-    The returned process represents one epoch. Multiply by the number
-    of epochs for multi-epoch training::
+    For simple mechanisms (Gaussian, AdaClip), the returned process
+    represents one epoch.  Multiply by the number of epochs::
 
         epoch = acc.balls_in_bins(acc.gaussian(1.1), num_bins=100)
         training = epoch * 10  # 10 epochs
+
+    For :func:`lambda_cgd` with reused bin allocation, encode the
+    full multi-epoch participation pattern and do NOT compose::
+
+        training = acc.balls_in_bins(
+            acc.lambda_cgd(nm, lambda_=0.9, n_steps=total_steps,
+                           min_sep=steps_per_epoch,
+                           max_participations=num_epochs),
+            num_bins=steps_per_epoch,
+        )
 
     Args:
         inner: The base mechanism — :func:`gaussian` or :func:`adaclip`.
@@ -112,9 +149,9 @@ def balls_in_bins(
         epoch = acc.balls_in_bins(acc.gaussian(1.1), num_bins=100)
         eps = (epoch * 10).epsilon_at(1e-5)
     """
-    if not isinstance(inner, (Gaussian, AdaClip, NonPrivate)):
+    if not isinstance(inner, (Gaussian, LambdaCgd, AdaClip, NonPrivate)):
         raise TypeError(
-            f"balls_in_bins() requires a Gaussian, AdaClip, or NonPrivate "
+            f"balls_in_bins() requires a Gaussian, LambdaCgd, AdaClip, or NonPrivate "
             f"inner mechanism, got {type(inner).__name__}. "
             "Example: acc.balls_in_bins(acc.gaussian(nm), num_bins=k)"
         )

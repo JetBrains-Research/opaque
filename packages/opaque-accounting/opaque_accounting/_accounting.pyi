@@ -520,6 +520,67 @@ def toeplitz_minsep_sensitivity_squared(
     """
     ...
 
+def lambda_cgd_sensitivity_squared(
+    lambda_: float,
+    n_steps: int,
+    min_sep: int = 1,
+    max_participations: int | None = None,
+) -> float:
+    """Squared L2 sensitivity of the DP-λCGD strategy matrix.
+
+    Uses the closed-form expression from Theorem 1 (eq 15) of
+    Kalinin et al. (2026) "DP-λCGD".
+
+    Args:
+        lambda_: Correlation coefficient in [0, 1). λ=0 is DP-SGD.
+        n_steps: Total number of training steps.
+        min_sep: Minimum separation between participations (>= 1).
+        max_participations: Optional upper bound on participations.
+
+    Returns:
+        The squared L2 sensitivity.
+    """
+    ...
+
+def lambda_cgd_normalized_sensitivity_squared(
+    lambda_: float,
+    n_steps: int,
+    min_sep: int = 1,
+    max_participations: int | None = None,
+) -> float:
+    """Squared L2 sensitivity of the column-normalized DP-λCGD.
+
+    Column normalization: C̃_λ = C_λ · D⁻¹ where D = diag(‖C_λ[:,j]‖).
+    For single participation (k=1), always returns 1.0.
+
+    Args:
+        lambda_: Correlation coefficient in [0, 1).
+        n_steps: Total number of training steps.
+        min_sep: Minimum separation between participations (>= 1).
+        max_participations: Optional upper bound on participations.
+
+    Returns:
+        The squared L2 sensitivity of the column-normalized matrix.
+    """
+    ...
+
+def lambda_cgd_max_column_norm(
+    lambda_: float,
+    n_steps: int,
+) -> float:
+    """Max column L2 norm of the DP-λCGD strategy matrix.
+
+    The first column has the largest norm: sqrt((1 - λ^{2n}) / (1 - λ²)).
+
+    Args:
+        lambda_: Correlation coefficient in [0, 1).
+        n_steps: Total number of steps.
+
+    Returns:
+        The max column L2 norm.
+    """
+    ...
+
 # ---------------------------------------------------------------------------
 # AdaClip utility
 # ---------------------------------------------------------------------------

@@ -75,6 +75,18 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         matrix_factorization::py_toeplitz_minsep_sensitivity_squared,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_lambda_cgd_sensitivity_squared,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_lambda_cgd_normalized_sensitivity_squared,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_lambda_cgd_max_column_norm,
+        m
+    )?)?;
 
     // AdaClip
     m.add_function(wrap_pyfunction!(adaclip::py_adaclip_sensitivity, m)?)?;
