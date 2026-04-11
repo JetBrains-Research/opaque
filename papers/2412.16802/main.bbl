@@ -1,0 +1,278 @@
+\begin{thebibliography}{42}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Abadi et~al.(2016)Abadi, Chu, Goodfellow, McMahan, Mironov, Talwar,
+  and Zhang]{abadi16deep}
+Mart{\'{\i}}n Abadi, Andy Chu, Ian~J. Goodfellow, H.~Brendan McMahan, Ilya
+  Mironov, Kunal Talwar, and Li~Zhang.
+\newblock Deep learning with differential privacy.
+\newblock In \emph{CCS}, pages 308--318, 2016.
+
+\bibitem[Anil et~al.(2022)Anil, Ghazi, Gupta, Kumar, and
+  Manurangsi]{anil22dpbert}
+Rohan Anil, Badih Ghazi, Vineet Gupta, Ravi Kumar, and Pasin Manurangsi.
+\newblock Large-scale differentially private {BERT}.
+\newblock In \emph{EMNLP (Findings)}, 2022.
+
+\bibitem[Annamalai(2024)]{annamalai2024loss}
+Meenatchi Sundaram Muthu~Selva Annamalai.
+\newblock It's our loss: No privacy amplification for hidden state {DP-SGD}
+  with non-convex loss.
+\newblock In \emph{AISec}, pages 24--30, 2024.
+
+\bibitem[Annamalai et~al.(2024)Annamalai, Balle, Cristofaro, and
+  Hayes]{annamalai24shuffle}
+Meenatchi Sundaram Muthu~Selva Annamalai, Borja Balle, Emiliano~De Cristofaro,
+  and Jamie Hayes.
+\newblock To shuffle or not to shuffle: Auditing {DP-SGD} with shuffling.
+\newblock \emph{CoRR}, abs/2411.10614, 2024.
+
+\bibitem[Balle and Wang(2018)]{balle18improving}
+Borja Balle and Yu{-}Xiang Wang.
+\newblock Improving the gaussian mechanism for differential privacy: Analytical
+  calibration and optimal denoising.
+\newblock In \emph{ICML}, 2018.
+
+\bibitem[Balle et~al.(2020)Balle, Kairouz, McMahan, Thakkar, and
+  Guha~Thakurta]{balle20checkin}
+Borja Balle, Peter Kairouz, Brendan McMahan, Om~Thakkar, and Abhradeep
+  Guha~Thakurta.
+\newblock Privacy amplification via random check-ins.
+\newblock In \emph{NeurIPS}, pages 4623--4634, 2020.
+
+\bibitem[Balle et~al.(2022)Balle, Berrada, De, Ghalebikesabi, Hayes, Pappu,
+  Smith, and Stanforth]{jax-privacy2022github}
+Borja Balle, Leonard Berrada, Soham De, Sahra Ghalebikesabi, Jamie Hayes,
+  Aneesh Pappu, Samuel~L Smith, and Robert Stanforth.
+\newblock {JAX}-{P}rivacy: Algorithms for privacy-preserving machine learning
+  in {JAX}, 2022.
+\newblock URL \url{http://github.com/google-deepmind/jax_privacy}.
+
+\bibitem[Beltran et~al.(2024)Beltran, Tobaben, J\"alk\"o, Loppi, and
+  Honkela]{beltran24towards}
+Sebastian~Rodriguez Beltran, Marlon Tobaben, Joonas J\"alk\"o, Niki Loppi, and
+  Antti Honkela.
+\newblock Towards efficient and scalable training of differentially private
+  deep learning.
+\newblock In \emph{NeurIPS}, 2024.
+
+\bibitem[Ben~Slimane(2001)]{slimane01bounds}
+S.~Ben~Slimane.
+\newblock Bounds on the distribution of a sum of independent lognormal random
+  variables.
+\newblock \emph{IEEE Trans. Comm.}, 49\penalty0 (6):\penalty0 975--978, 2001.
+
+\bibitem[Bradbury et~al.(2018)Bradbury, Frostig, Hawkins, Johnson, Leary,
+  Maclaurin, Necula, Paszke, Vander{P}las, Wanderman-{M}ilne, and
+  Zhang]{jax2018github}
+James Bradbury, Roy Frostig, Peter Hawkins, Matthew~James Johnson, Chris Leary,
+  Dougal Maclaurin, George Necula, Adam Paszke, Jake Vander{P}las, Skye
+  Wanderman-{M}ilne, and Qiao Zhang.
+\newblock {JAX}: composable transformations of {P}ython+{N}um{P}y programs,
+  2018.
+\newblock URL \url{http://github.com/jax-ml/jax}.
+
+\bibitem[Choquette{-}Choo et~al.(2025)Choquette{-}Choo, Ganesh, Haque, Steinke,
+  and Thakurta]{choquettechoo24near}
+Christopher~A. Choquette{-}Choo, Arun Ganesh, Saminul Haque, Thomas Steinke,
+  and Abhradeep Thakurta.
+\newblock Near exact privacy amplification for matrix mechanisms.
+\newblock In \emph{ICLR}, 2025.
+
+\bibitem[Chua et~al.(2024{\natexlab{a}})Chua, Ghazi, Kamath, Kumar, Manurangsi,
+  Sinha, and Zhang]{chua24private}
+Lynn Chua, Badih Ghazi, Pritish Kamath, Ravi Kumar, Pasin Manurangsi, Amer
+  Sinha, and Chiyuan Zhang.
+\newblock How private are {DP-SGD} implementations?
+\newblock In \emph{ICML}, 2024{\natexlab{a}}.
+
+\bibitem[Chua et~al.(2024{\natexlab{b}})Chua, Ghazi, Kamath, Kumar, Manurangsi,
+  Sinha, and Zhang]{chua24scalable}
+Lynn Chua, Badih Ghazi, Pritish Kamath, Ravi Kumar, Pasin Manurangsi, Amer
+  Sinha, and Chiyuan Zhang.
+\newblock Scalable {DP-SGD}: Shuffling vs. {P}oisson subsampling.
+\newblock In \emph{NeurIPS}, 2024{\natexlab{b}}.
+
+\bibitem[David and Nagaraja(2004)]{david04order}
+Herbert~A David and Haikady~N Nagaraja.
+\newblock \emph{Order Statistics}.
+\newblock John Wiley \& Sons, 2004.
+
+\bibitem[De et~al.(2022)De, Berrada, Hayes, Smith, and Balle]{de22unlocking}
+Soham De, Leonard Berrada, Jamie Hayes, Samuel~L. Smith, and Borja Balle.
+\newblock Unlocking high-accuracy differentially private image classification
+  through scale.
+\newblock \emph{CoRR}, abs/2204.13650, 2022.
+
+\bibitem[Dean and Ghemawat(2004)]{dean04mapreduce}
+Jeffrey Dean and Sanjay Ghemawat.
+\newblock Mapreduce: Simplified data processing on large clusters.
+\newblock In \emph{OSDI}, pages 137--150, 2004.
+
+\bibitem[Desfontaines(2021)]{desfontainesblog2021list}
+Damien Desfontaines.
+\newblock A list of real-world uses of differential privacy.
+\newblock
+  \url{https://desfontain.es/blog/real-world-differential-privacy.html}, Oct
+  2021.
+\newblock Ted is writing things (personal blog).
+
+\bibitem[Dockhorn et~al.(2023)Dockhorn, Cao, Vahdat, and
+  Kreis]{dockhorn2022differentially}
+Tim Dockhorn, Tianshi Cao, Arash Vahdat, and Karsten Kreis.
+\newblock Differentially private diffusion models.
+\newblock \emph{TMLR}, 2023.
+
+\bibitem[Dwork and Rothblum(2016)]{dwork16concentrated}
+Cynthia Dwork and Guy~N. Rothblum.
+\newblock Concentrated differential privacy.
+\newblock \emph{CoRR}, abs/1603.01887, 2016.
+
+\bibitem[Feldman and Shenfeld(2025)]{feldmanshenfeld25}
+Vitaly Feldman and Moshe Shenfeld.
+\newblock Privacy amplification by random allocation.
+\newblock \emph{CoRR}, abs/2502.08202, 2025.
+
+\bibitem[{Google's DP Library.}(2020)]{GoogleDP}
+{Google's DP Library.}
+\newblock D{P} {A}ccounting {L}ibrary, 2020.
+\newblock URL
+  \url{https://github.com/google/differential-privacy/tree/main/python/dp_accounting}.
+
+\bibitem[He et~al.(2023)He, Li, Yu, Zhang, Kulkarni, Lee, Backurs, Yu, and
+  Bian]{he2022exploring}
+Jiyan He, Xuechen Li, Da~Yu, Huishuai Zhang, Janardhan Kulkarni, Yin~Tat Lee,
+  Arturs Backurs, Nenghai Yu, and Jiang Bian.
+\newblock Exploring the limits of differentially private deep learning with
+  group-wise clipping.
+\newblock In \emph{ICLR}, 2023.
+
+\bibitem[Hoeffding(1963)]{hoeffding63probability}
+Wassily Hoeffding.
+\newblock Probability inequalities for sums of bounded random variables.
+\newblock \emph{J. ASA}, 58\penalty0 (301):\penalty0 13--30, 1963.
+
+\bibitem[Igamberdiev et~al.(2024)Igamberdiev, Vu, K{\"u}nnecke, Yu, Holmer, and
+  Habernal]{igamberdiev2023dp}
+Timour Igamberdiev, Doan Nam~Long Vu, Felix K{\"u}nnecke, Zhuo Yu, Jannik
+  Holmer, and Ivan Habernal.
+\newblock {DP-NMT}: Scalable differentially-private machine translation.
+\newblock In \emph{EACL (Demonstrations)}, pages 94--105, 2024.
+
+\bibitem[Jean-Baptiste~Tien(2014)]{tien14criteokaggle}
+Olivier~Chapelle Jean-Baptiste~Tien, joycenv.
+\newblock Display advertising challenge, 2014.
+\newblock URL
+  \url{https://kaggle.com/competitions/criteo-display-ad-challenge}.
+
+\bibitem[Kairouz et~al.(2015)Kairouz, Oh, and Viswanath]{kairouz15composition}
+Peter Kairouz, Sewoong Oh, and Pramod Viswanath.
+\newblock The composition theorem for differential privacy.
+\newblock In \emph{ICML}, pages 1376--1385, 2015.
+
+\bibitem[Kairouz et~al.(2021)Kairouz, McMahan, Song, Thakkar, Thakurta, and
+  Xu]{kairouz21practical}
+Peter Kairouz, Brendan McMahan, Shuang Song, Om~Thakkar, Abhradeep Thakurta,
+  and Zheng Xu.
+\newblock Practical and private (deep) learning without sampling or shuffling.
+\newblock In \emph{ICML}, pages 5213--5225, 2021.
+
+\bibitem[Koskela et~al.(2020)Koskela, J{\"a}lk{\"o}, and
+  Honkela]{koskela2020computing}
+Antti Koskela, Joonas J{\"a}lk{\"o}, and Antti Honkela.
+\newblock Computing tight differential privacy guarantees using {FFT}.
+\newblock In \emph{AISTATS}, pages 2560--2569, 2020.
+
+\bibitem[Koskela et~al.(2023)Koskela, Heikkil{\"{a}}, and
+  Honkela]{koskela23numerical}
+Antti Koskela, Mikko~A. Heikkil{\"{a}}, and Antti Honkela.
+\newblock Numerical accounting in the shuffle model of differential privacy.
+\newblock \emph{TMLR}, 2023, 2023.
+
+\bibitem[Lebeda et~al.(2024)Lebeda, Regehr, and Kamath]{lebeda2024avoiding}
+Christian~Janos Lebeda, Matthew Regehr, and Gautam Kamath.
+\newblock Avoiding pitfalls for privacy accounting of subsampled mechanisms
+  under composition.
+\newblock \emph{CoRR}, abs/2405.20769, 2024.
+
+\bibitem[Marsaglia and Tsang(2000)]{marsaglia00simple}
+George Marsaglia and Wai~Wan Tsang.
+\newblock A simple method for generating gamma variables.
+\newblock \emph{ACM Trans. Math. Softw.}, 26\penalty0 (3):\penalty0 363–372,
+  2000.
+
+\bibitem[McMahan et~al.(2022)McMahan, Rush, and Thakurta]{mcmahan22dpmf}
+Brendan McMahan, Keith Rush, and Abhradeep~Guha Thakurta.
+\newblock Private online prefix sums via optimal matrix factorizations.
+\newblock \emph{CoRR}, abs/2202.08312, 2022.
+
+\bibitem[Microsoft.(2021)]{MicrosoftDP}
+Microsoft.
+\newblock A fast algorithm to optimally compose privacy guarantees of
+  differentially private ({DP}) mechanisms to arbitrary accuracy., 2021.
+\newblock URL \url{https://github.com/microsoft/prv_accountant}.
+
+\bibitem[Mironov(2017)]{mironov17renyi}
+Ilya Mironov.
+\newblock R{\'{e}}nyi differential privacy.
+\newblock In \emph{CSF}, pages 263--275, 2017.
+
+\bibitem[Ponomareva et~al.(2023)Ponomareva, Hazimeh, Kurakin, Xu, Denison,
+  McMahan, Vassilvitskii, Chien, and Thakurta]{ponomareva23dpfy}
+Natalia Ponomareva, Hussein Hazimeh, Alex Kurakin, Zheng Xu, Carson Denison,
+  H.~Brendan McMahan, Sergei Vassilvitskii, Steve Chien, and Abhradeep~Guha
+  Thakurta.
+\newblock How to dp-fy {ML:} {A} practical guide to machine learning with
+  differential privacy.
+\newblock \emph{J. AIR}, 77:\penalty0 1113--1201, 2023.
+
+\bibitem[Prediger and Koskela(2020)]{DPBayes}
+Lukas Prediger and Antti Koskela.
+\newblock Code for computing tight guarantees for differential privacy., 2020.
+\newblock URL \url{https://github.com/DPBayes/PLD-Accountant}.
+
+\bibitem[Tallis and Yadav(2018)]{tallis2018reacting}
+Marcelo Tallis and Pranjul Yadav.
+\newblock Reacting to variations in product demand: An application for
+  conversion rate {(CR)} prediction in sponsored search.
+\newblock \emph{CoRR}, abs/1806.08211, 2018.
+
+\bibitem[Tang et~al.(2024)Tang, Panda, Nasr, Mahloujifar, and
+  Mittal]{tang2024private}
+Xinyu Tang, Ashwinee Panda, Milad Nasr, Saeed Mahloujifar, and Prateek Mittal.
+\newblock Private fine-tuning of large language models with zeroth-order
+  optimization.
+\newblock \emph{CoRR}, abs/2401.04343, 2024.
+
+\bibitem[Tensorflow Privacy()]{tf_privacy}
+Tensorflow Privacy, 2024.
+\newblock URL
+  \url{https://www.tensorflow.org/responsible_ai/privacy/api_docs/python/tf_privacy}.
+
+\bibitem[Wang et~al.(2023)Wang, Mahloujifar, Wu, Jia, and
+  Mittal]{wang23randomized}
+Jiachen~(Tianhao) Wang, Saeed Mahloujifar, Tong Wu, Ruoxi Jia, and Prateek
+  Mittal.
+\newblock A randomized approach to tight privacy accounting.
+\newblock In \emph{NeurIPS}, pages 33856--33893, 2023.
+
+\bibitem[Yousefpour et~al.(2021)Yousefpour, Shilov, Sablayrolles, Testuggine,
+  Prasad, Malek, Nguyen, Ghosh, Bharadwaj, Zhao, Cormode, and
+  Mironov]{yousefpour21opacus}
+Ashkan Yousefpour, Igor Shilov, Alexandre Sablayrolles, Davide Testuggine,
+  Karthik Prasad, Mani Malek, John Nguyen, Sayan Ghosh, Akash Bharadwaj,
+  Jessica Zhao, Graham Cormode, and Ilya Mironov.
+\newblock Opacus: User-friendly differential privacy library in {PyTorch}.
+\newblock \emph{CoRR}, abs/2109.12298, 2021.
+
+\bibitem[Zhu et~al.(2022)Zhu, Dong, and Wang]{zhu22optimal}
+Yuqing Zhu, Jinshuo Dong, and Yu{-}Xiang Wang.
+\newblock Optimal accounting of differential privacy via characteristic
+  function.
+\newblock In \emph{AISTATS}, pages 4782--4817, 2022.
+
+\end{thebibliography}

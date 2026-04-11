@@ -1,0 +1,44 @@
+\section{Simulation Experiments} \label{sec:exp}
+
+\input{tab_sonwp}
+
+We run simulation experiments before applying our BLT-DP-FTRL algorithm in \cref{sec:background_blt} to train production LMs. The BLT parameters $(\theta, \omega)$ are optimized with our multi-participation approach in \cref{sec:blt_mp}. We present private-utility trade-off on StackOverflow benchmark dataset in \cref{sec:sonwp}, and \maxloss, \rmsloss across a range of scenarios in \cref{sec:rmse_exp}. We compare \blts to both flexible \treeagg~\citep{kairouz21practical} and state-of-the-art \bandmf~\citep{choquette2023amplified} (see \cref{sec:background} for more discussion). 
+In the simulation experiments, we are \emph{maximally generous} in evaluating \treeagg mechanisms, considering the memory cost to be $\ceil{\log_2 \nd}$, while calculating \rmse and \maxerr using the optimal \tafull~\citep{denisov22matfact} without memory-efficient implementation, and use the lower bound of \cref{rem:senslb} to account for overly optimistic privacy-utility trade-off. Thus, in all cases we over-estimates the true performance of the binary tree, but nevertheless we show \blts have superior performance in terms of both error and memory.
+
+% \subsection{Baselines}\label{sec:baselines}
+% We consider the following mechanism
+% \begin{itemize}
+%     \item \blt mechanisms, introduced for single participation by \citet{mcmahan2024efficient}, and using techniques introduced here, optimized for \bparticipation under \rmse and \maxerr. \bnote{TODO - think about whether we need to do this.}
+ 
+%     \item \bandmf \citep{choquette2023amplified}, which optimizes arbitrary (e.g., not Toeplitz) banded $\bfC$ for \bparticipation under \rmse. 
+
+%     \item \bandtoep \citep{mckenna2024scaling}, which optimizes banded Toeplitz matrices $\bfC$ for \bparticipation under \rmse. The primary advantage of this mechanism compared to \bandmf is that \bandtoep matrices can be optimized for much larger $\nd$.
+    
+%     \item Several schemes based on binary \treeagg for prefix sums appear in the literature.  Prior work on DP-FTRL \citep{kairouz21practical} used the streaming (``from below'') estimator of  \citet{honaker15efficient}, but \citet{denisov22matfact} showed that in fact the ``fully efficient''\footnote{Here ``fully efficient'' referes to the statistical efficiency of the estimator of the prefix sum, not the memory or time efficiency of noise generation} estimator of \citet{honaker15efficient} (the Moore-Penrose pseudoinverse of the binary tree matrix $\bfC$) could in fact be used in the streaming setting. A memory-efficient implementation of streaming ``fully efficient'' estimation is not known, and other works (e.g. \citet{andersson24smooth}) consider alternative memory-efficient approaches. Hence, for simplicity, we are \emph{maximally generous} in evaluating \treeagg mechanisms, considering the memory cost to be $\ceil{\log_2 \nd}$ (the minimum for any estimator), while calculating \rmse and \maxerr using the optimal (but possibly not memory efficient) pseudo-inverse estimator. Finally, we use the easy-to-compute sensitivity lower bound of \cref{rem:senslb}, which though apparently tight could under-estimate the sensitivity of \treeagg. Thus, in all cases we over-estimates the true performance of the binary tree, but nevertheless we show \blts have superior performance in terms of both error and memory.
+
+\begin{figure}[htb]
+    \centering
+    % From https://colab.corp.google.com/drive/1_BRrt0jUniaOixKwasKDr7jiSToRwJLj#scrollTo=bPzQxRSvA3rk&uniqifier=1
+    \includegraphics[width=0.9\linewidth]{images/rmsloss_k25.pdf}
+    \caption{\small Comparison of mechanisms in terms of prefix-sum root-mean-squared error at a fixed privacy level. \blts were optimized for either \rmsloss (``mean'') or \maxloss (``max''), and for either $\maxpart=2$ or $\maxpart=5$ participations at min-separation $\minsep=400$. BandMF matrices were optimized for $\minsep \in \{200, 400, 800\}$ (the \bandmf optimization does not depend on $\maxpart$, and previous work optimizes for \rmsloss). %Thus $b=400$ lines at $k=2$ and $k=5$ correspond to the scenarios targeted directly by optimization; the other $k$ and min-separation values show how well the mechanisms generalize to other scenarios. 
+    We also include \tafull using the optimal (``full Honaker'') decoding (for which a memory-efficient noise generation algorithm is unknown). 
+    \textbf{We observe that all the \blts perform competitively with \bandmf, and can outperform \bandmf} when the min-separation differs significantly from the number of bands. For example, with $k=2$ participations (left panel) our BLT($k=2$,mean) (light blue) BLT outperforms BandMF($b=400$) when min separation is less than 390 or greater than 700. 
+    }
+    \vspace{-0.4cm}
+    \label{fig:rmse}
+\end{figure}
+
+\subsection{StackOverflow NWP Benchmark} \label{sec:sonwp}
+
+We follow \citet{choquette2023amplified} for StackOverflow next word prediction (NWP) experiments, including all hyperparameter tuning, and vary only the DP mechanism to compare \bandmf, \tafull, and \blts. Results are summarized in \cref{tab:sonwp}. \bandmf still achieves the highest performance, as in this scenario we train for a fixed known number of rounds, with an exactly known max participations $\maxpart=6$ and min-separation $\minsep=342$. \tafull and \blts optimized for only $\maxpart=1$ participation~\citep{mcmahan2024efficient} are noticeably worse, but our multi-participation-optimized \blts are very competitive with \bandmf with only 2 or 3 buffers (with a $171\times$ and $114\times$ reduction in runtime memory overhead). 
+\ifthenelse{\boolean{acl}}{}{We expect the negligibly worse performance of larger numbers of buffers may be due to the impact of regularization during the optimization of the \blt parameters.}
+In the relatively large signal-to-noise ratio regime ($\epsilon=8$), \ourblt achieves comparable or even better learning accuracy though the \rmsloss (\maxloss) is slightly worse.
+
+
+\subsection{\rmsloss and \maxloss Experiments} \label{sec:rmse_exp}
+
+\paragraph{Comparing BLT to \tafull and \bandmf} We further show that \blt is better than {\small \tafull}, and more flexible than \bandmf by computing \rmsloss (\maxloss) in a wide range of scenarios. Because the \bandmf mechanisms are optimized for \rmsloss, we compare on this metric in \cref{fig:rmse}. However, in both our StackOverflow and Gboard experiments described subsequently, we deploy BLT mechanisms optimized for \maxerr following \citep{mcmahan2024efficient}. For completeness, we provide \cref{fig:maxloss} in \cref{app:plots} that compares the mechanisms on \maxloss. 
+\ifthenelse{\boolean{acl}}{}{The BLTs directly optimized for the metric perform better than optimizing for a different metric.} 
+We observe that \emph{all the \blts perform competitively with \bandmf, and can outperform \bandmf} when the min-sep differs significantly from the number of bands. For example, in \cref{fig:rmse}, with $k=2$ participations (left panel) our BLT($k=2$,mean) (light blue) BLT outperforms BandMF($b=400$) when min separation is less than 390 or greater than 700. 
+
+\ifthenelse{\boolean{acl}}{We provide more results on the robustness of \blts to min-sep $b$, number of rounds $n$, and comparing with \bandtoep in \cref{app:mse}.  }{\input{subsec_mse}}

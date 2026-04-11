@@ -1,0 +1,1152 @@
+\newif\ifcomments  %(shows comments)
+%%%%%%%%%% TOGGLE FLAGS HERE %%%%%%%%%%
+\commentsfalse
+%%%%%%%%%%%%%%%%%%%%
+\documentclass{article}
+
+% if you need to pass options to natbib, use, e.g.:
+%     \PassOptionsToPackage{numbers, compress}{natbib}
+% before loading neurips_2020
+
+% ready for submission
+% \usepackage{neurips_2020}
+
+% to compile a preprint version, e.g., for submission to arXiv, add add the
+% [preprint] option:
+%     \usepackage[preprint]{neurips_2020}
+
+% to compile a camera-ready version, add the [final] option, e.g.:
+%     \usepackage[final]{neurips_2020}
+
+% to avoid loading the natbib package, add option nonatbib:
+\usepackage[nonatbib]{neurips_2023}
+
+
+\input{pkgs}
+
+
+\newtheorem{definition}{Definition}
+\newtheorem{theorem}{Theorem}
+\newtheorem{problem}{Problem}
+
+\input{macros}
+
+% The \author macro works with any number of authors. There are two commands
+% used to separate the names and addresses of multiple authors: \And and \AND.
+%
+% Using \And between authors leaves it to LaTeX to determine where to break the
+% lines. Using \AND forces a line break at that point. So, if LaTeX puts 3 of 4
+% authors names on the first line, and the last on the second line, try using
+% \AND instead of \And before the third author name.
+
+
+
+\title{%
+%All You Need is (Amplified) Banded Matrix Factorization for Private Machine Learning
+(Amplified) Banded Matrix Factorization:\\
+A unified approach to private training
+}
+\author{Anonymous / TBD \\ 
+}
+
+\begin{document}
+
+\maketitle
+\begin{abstract}
+\ctodo{Please do not use macros in abstract :).}
+%
+Matrix factorization (MF) mechanisms for differential privacy (DP) have substantially improved the state-of-the-art in privacy-utility-computation tradeoffs for ML applications in a variety of scenarios, but in both the centralized and federated settings there remain instances where either MF cannot be easily applied, or other algorithms provide better tradeoffs (typically, as $\epsilon$ becomes small).
+
+In this work, we show how MF can subsume prior state-of-the-art algorithms in both federated and centralized training settings, across all privacy budgets. The key technique throughout is the construction of MF mechanisms with banded matrices. For cross-device federated learning, this enables multiple-participations with a relaxed device participation schema compatible with practical FL infrastructure (as demonstrated by a production deployment).  In the centralized setting, we prove that banded matrices enjoy the same privacy amplification results as for the ubiquitous DP-SGD algorithm, but can provide strictly better performance  in most scenarios---this lets us always at least match DP-SGD, and often outperform it even at $\epsilon\ll2$. Finally, $\hat{b}$-banded matrices substantially reduce the memory and time complexity of per-iteration noise generation from $\mathcal{O}(n)$, $n$ the total number of iterations, to a constant $\mathcal{O}(\hat{b})$, compared to general MF mechanisms.
+\end{abstract}
+
+% \section{Proposed Reorganization/Outline}
+
+% \begin{enumerate}
+%     \item Introduction: Motivation, prior work, contributions, applications.
+%     \item Background: DP-FTRL, Matrix Factorization
+%     \item Privacy amplification for banded matrix factorization (with application to centralized training):
+%     \begin{enumerate}
+%         \item Privacy amplification by sampling
+%         \item Privacy amplifcation  by shuffling
+%     \end{enumerate}
+%     %\item Application 1: Centralized Training, participation pattern, amplification. \anote{I will advocate for adding bullets 5 and 6 to the experiments section, as the technical meat will be covered in Sections 3 and 4 (I believe).} \rnote{Agree we need experiments for both applications, but had intended these sections to have some technical meat.  I think my vision for Section 5 is the same as Section 4: it'll be important to specify that section 4 is primarily applicable to the centralized training setting, and the exact participation pattern (which is a little funky) should be highlighted as well.}
+%     \item min\_sep participation (with application to cross-device FL)
+%     \item Optimizing over banded matrices
+%     \item Experiments
+% \end{enumerate}
+
+%\btodo{Decide whether we want to write ``example'', ``user'', or ``record'' for the general unit of privacy. We used ``example'' in the multi-epoch paper, so going with that for now.}
+% \ifdraft
+% \section*{Proposed conventions (to be cut)}
+% Names for algorithms in figures and tables:
+% \begin{itemize}
+% \item \textbf{DP-SGD, no ampl.}
+% \item \textbf{DP-SGD, w/ ampl.}
+% \item \textbf{Optimal TreeAgg}
+% \item \textbf{Single-epoch MF} (Single-Epoch MF-DP-FTRL)
+% \item \textbf{Multi-epoch MF} (Multi-Epoch MF-DP-FTRL), using \textbf{Multi-epoch MF (Ours*)} where enabled by our sensitivity analysis
+
+% \item \textbf{Band MF (Ours)}
+% \item \textbf{Band MF, $\bands{=}342$ (Ours)}  for banded with a specific number of bands
+% \item \textbf{(Band) MF w/ ampl. (Ours)} for amplified MF, possibly with banded matrices
+% \end{itemize}
+
+% In the text in some places we should refer to MF-DP-FTRL, but I think in most places because learning is clearly our application, we can probably safely drop the DP-FTRL in figures and tables.
+
+% Other possible conventions:
+% \begin{itemize}
+%     \item Give accuracies as a percent (\%) rather than decimal (in figures and tables).
+%  \item Prefer not to give citations for algorithms in the figures, let's leave that in the text where it is less distracting and easier to change (also, citing one paper isn't always clear).
+%  \item Standardize on some matplotlib / seaborn configuration using a shared colab cell
+%  \item Capitalize all words in figure titles
+%  \item Capitalize only the first word in x and y axis labels
+%  \item For epsilon in an axis, use \textbf{Privacy budget $\epsilon$ at $\delta=10^{-6}}$
+%  \item Use $\epsilon$ for privacy rather than $\varepsilon$.
+% \end{itemize}
+% \else
+% \fi
+
+\section{Introduction}
+%\ctodo{IMO, structure is the most important part to explain, which requires some intro of the MF setup. Figured we can condense both into the intro.}
+%\ctodo{There seems to be a question: how much setup do we want in the intro, and, how much motivation for MF. I took the standpoint of }
+
+% \paragraph{old intro}
+
+% MF represents the current state-of-the-art in DP ML, as shown by~\citet{choquette2022multi}, where significant utility gains over DP-SGD (with amplification) can be observed consistently.
+% Training a ML model with a \mfftrl approach amounts to choosing matrices $\bfB,\bfC$ that then, through \cref{eq:mat_mech} are used to obtain DP estiamtaes of the gradients $\obs$.  MF defines a rich space of mechanisms that achieve substantially different privacy-utility tradeoffs. For example, the tree aggregation~\cite{CSS11-continual,Dwork-continual} approach that initiated the DP-FTRL line of study~\cite{guha2013nearly,kairouz2021practical} and the popular \dpsgd~\cite{song2013stochastic,BST14,DP-DL} can both be represented as specific factorizations of a single matrix $\bfA$.
+% \bnote{The following sentence doesn't quite work for me. What is a "multi-epoch matrix"? Structure of what?}
+% \ctodo{Updated; the nuance in this is difficult to explain.}Indeed, even the optimal matrices of~\citet{choquette2022multi} were observed to have a specific structure in $\bfC$, where columns corresponding to repeat participations were orthogonal, which arose from the optimization over their \multiepoch-participation constraints (\cref{sec:structure} has visualizations).
+% so-called \multiepoch-fixed-participation---where it is assumed that each example (user) participates exactly $\minsep$ steps apart and no more than $\maxpart$ times---imparts a specific structure in these matrices. By tightly capturing the sensitivity of this mechanism $\sens(\bfC)$, they minimize the total noise added throughout training, i.e., the total squared error $\calL(\bfB, \bfC) = \sensd^2(\bfC) \left\|\bfB\right\|_F^2$ to generate optimal factorizations $\bfA=\bfB\bfC$ for a given \multiepoch-fixed-participation. This leads to \MFFTRL mechanisms that achieve state-of-the-art performance, over even \dpsgd with amplification~\cite{choquette2022multi}.
+
+%  \rnote{I think this $\epsilon=2$ finding is over-specialized to a single experimental regime, and not a universal threshold.   See https://arxiv.org/abs/2302.01463 }\agnote{maybe when we give the value 2 we give it as "(e.g., [?] observed DP-SGD outperforms MF for $\epsilon \leq 2$"?}
+% % \ctodo{This was to illustrate that this regime is nontrivially small, but also often still too high. I've fixed accordingly.}
+
+We consider machine learning with differential privacy in the centralized (datacenter) setting and the cross-device federated learning (FL) setting. Our approach is motivated by considering the current state-of-the-art in each.
+
+In \textbf{datacenter applications}, precise control of the sampling/shuffling of training data is possible, and so \DPSGD with privacy amplification \citep{DP-DL} is one of the most popular ways to train machine learning models with formal privacy guarantees. However, \citet{choquette2022multi} recently (building on work described in the paragraph below) demonstrated that a multi-epoch extension of the \MFFTRL algorithm can outperform amplified \DPSGD in some settings, depending on the privacy and computational budget.
+%typically when the privacy parameter $\epsilon  \gtrapprox 2$.\footnote{When the batch size B or the number of participations \maxpart grow large, \dpsgd may also outperform existing \mfftrl} 
+This leaves the state-of-the-art for centralized DP training in the unsatisfactory state where one must try both algorithms to be assured of the best performance (since the crossover is dataset specific). 
+
+In \textbf{cross-device federated learning}, devices choose when they are available to participate in training, and so precise sampling and shuffling is generally not possible.
+Motivated by these limitations which make amplified \DPSGD infeasible, \citet{kairouz2021practical} developed the (tree-aggregation-based) \DPFTRL algorithm.   Their \DPFTRL does not rely on (or benefit from) privacy amplification and instead adds carefully correlated noise to the gradients to boost utility.  \citet{denisov22matfact} proposed \MFFTRL, replacing the tree-aggregation scheme of \citet{kairouz2021practical} with a general matrix-factorization mechanism. By optimizing over this space to find mechanisms with optimal error, substantial performance improvements were possible. However, \MFFTRL \citep{denisov22matfact} applies only to the single participation (single epoch) setting. Hence, for cross-device FL the state-of-the-art also requires considering multiple algorithms: tree-aggregation-based \DPFTRL when devices may participate more than one time, or \MFFTRL when devices participate only once. Importantly, the extension of \MFFTRL to multiple epochs of \citet{choquette2022multi} only applies in the centralized setting, as it again requires precise control of the participation pattern.
+
+In this work, we address the limitations of \MFFTRL (\MF for short) noted above, and show that it can, in fact, achieve across-the-board state-of-the-art performance in both settings across all $\epsilon$.
+%However, there remain two critical challenges to widespread adoption of MF. 
+%However, there are three limitations of DP-MF that we aim to overcome in this work.  
+%
+%First, the approach of \citet{choquette2022multi} critically leveraged the assumption that once examples participate $\maxpart > 1$ times, they must repeat exactly $\minsep$ steps apart---which they denote the \multiepoch-participation pattern. Though straightforward to realize in centralized (datacenter) training, this restriction is too prohibitive for cross-device federated learning (FL) where devices cannot be assumed to rejoin the protocol at specific points in time \citep{bonawitz2019towards}. %
+%
+%Second, in the centralized setting, it is possible to implement precise sampling or shuffling in the data processing pipeline, which for \dpsgd allows for significant privacy amplification. Privacy amplification is particularly helpful as as $\epsilon \to 0$, and thus, for small $\epsilon$ (e.g., $\epsilon \lessapprox 2$ as observed in \cite{choquette2022multi}), \DPSGD still outperforms \mfftrl. 
+% \bnote{Commented out the following.}
+%Though the assumptions for amplification rarely hold in practice~\cite{kairouz2021practical}, it is important to note that nearly all works still use this accounting in practice. 
+%
+%This leads us to the question, ``can \MFFTRL attain amplification guarantees equivalent to \DPSGD?'' An answer in the affirmative would enable \MFFTRL to fully subsume \dpsgd. 
+% \sqrt(b/n)
+%Third, \MFFTRL has an $O(n^2 d)$ time and $O(n d)$ space overhead, which can be problematic in the large model setting when both $n$ and $d$ may be very large. 
+
+\mypar{Our contributions}
+
+\begin{figure}[t]  % Forcing top of next page.
+    \centering
+    \vspace{-2em} % SPACE
+    \subfigure[Centralized CIFAR-10]{\includegraphics[height=1.5in]{figures/central/cifar10-main-single.pdf}}
+    \subfigure[Centralized StackOverflow]{\includegraphics[height=1.5in]{figures/stackoverflow/so_centralized_accuracy.pdf}}
+    \vspace{-0.5em} % SPACE
+    \caption{\textbf{In the centralized setting, our banded matrices consistently perform at least as well as the best prior methods.} 
+    \textsc{Left, (a)}:
+    At $\epsilon\geq0.5$, we observe consistent utility benefits from the banded mechanism around $1-4$ percentage points over either \dpsgd~\citep{DP-DL} or \memf~\citep{choquette2022multi}.  
+    %Empirical setup is in \cref{sec:cifar-detail}.
+    %
+    \textsc{Right, (b)}: Banded matrices (bands $\bands=9, 18, 32,$ and $64$ for $\epsilon=1-8$ respectively) significantly outperform both (unamplified) \memf and amplified \DPSGD.
+    }\label{fig:centralized}
+    \vspace{-1em} % SPACE
+\end{figure}
+To address these challenges, we define a family of \emph{banded} MF mechanisms, shown in~\cref{fig:query-decomposition}. For cross-device FL, we propose \bparticipation, a strict generalization of the \multiepoch-participation schema of \citet{choquette2022multi}, which is compatible with practical FL infrastructure, as demonstrated by a production deployment (\cref{sec:experiments}). Computing the \emph{sensitivity} of a MF mechanism under the relevant participation schema is the key step in providing privacy guarantees for MF (see \cref{sec:sensitivity}); once this is done, the machinery of \citet{denisov22matfact} applies and reduces the (non-amplified) analysis to that of a simple Gaussian mechanism.
+%
+In \cref{thm:minsepsens}, we show \bparticipation sensitivity may be exactly and efficiently computed, and then empirically demonstrate using banded matrices  incurs only a small utility decrease compared with optimal (non-banded) matrices even under \multiepoch-participation, while being compatible with cross device FL (see \cref{sec:experiments}). Along the way, we generalize the sensitivity calculations of \citet{choquette2022multi} to provide a general upper-bound on \bparticipation sensitivity (\cref{thm:minsepsensgen}), which allows the matrices of \citet{choquette2022multi} to be used in the FL setting, as well as removing the need to exactly bound $\minsep$ before training (see \cref{sec:experiments} and \cref{sec:production-detail}).
+
+
+To address centralized training, we prove in \cref{sec:amplification} that banded matrices enjoys the benefits of privacy amplification, and discover that \dpsgd is a special case, giving us the best of both algorithms:
+%. This lets us leverage the benefits of both MF and amplification. More formally, we show the following:
+
+\begin{theorem}[Informal version of \cref{thm:general-amplification}, \cref{cor:amplification-by-sampling}, \cref{cor:amplification-by-shuffling}]\label{thm:amplification-informal}
+% \rnote{should $\minsep$ be $\bands$?}\agnote{I was using $\minsep$ since $\bands$ has not been introduced yet + since we satisfy \multiepochpart and $\bands = \minsep$ optimally, but happy to change it.}
+% If examples use \multiepochpart, and further only participate with probability $q$ each time they could participate, then a $\minsep$-banded matrix mechanism satisfies the same privacy guarantees as answering $\dimension / \minsep$ queries with the Gaussian mechanism on a dataset of size $\numusers / \minsep$, where each element of the dataset is included in each query with probability $q$. \rnote{I think you need to specify that you are answering the queries via the Gaussian mechanism.  Also, I don't think this guarantee should depend on the dataset size. }\agnote{Done; wrt the dataset size, we need to somehow convey that as $\bands$ increases, there is a privacy cost; the number of queries alone implies the opposite.} \rnote{what about this rewrite?  answering $n/b$ sensitivity $b$ queries with the Gaussian mechanism.}
+
+Suppose we partition the dataset into $\minsep$ equal-size subsets, and in round $i$ each example in the $i \pmod \minsep$-th subset participates with probability $\frac{\batchsize \minsep}{\numusers}$ where there are $\numusers$ examples and the batch size is $\batchsize$. Then a $\minsep$-banded matrix mechanism satisfies the same privacy guarantees as answering $\dimension / \minsep$ queries on a dataset, where each element of the dataset is independently included in each query with probability $\frac{\batchsize \minsep}{\numusers}$.
+%
+In addition, in the single-epoch setting, if we determine participations by uniformly shuffling the examples and taking batches of size $\batchsize$, then a $\minsep$-banded matrix mechanism satisfies the same privacy guarantees as answering $\dimension / \minsep$ queries with the Gaussian mechanism on batches of $\batchsize$ examples from a shuffled dataset of size $\numusers / \minsep$. 
+\end{theorem}
+
+% \ctodo{I think it is important to mention equal column norms here...maybe not}
+
+As a special case, \bnote{Make sure we give DP-SGD as a special case once we have introduced the specifics of MF} \DPSGD is simply \MF with a suitable diagonal matrix with $\minsep=1$, and thus \cref{thm:amplification-informal} recovers the privacy guarantees of \DPSGD with amplification by either of sampling or shuffling. Empirically, we show that \MF with amplification has privacy-utility tradeoffs that are \emph{no worse than DP-SGD for all $\epsilon$, and often significantly better} 
+%for $\epsilon$ as low as $\approx 0.5$, % \btodo{Commented this out, it was confusing as it wasn't clear if we meant it is only no worse in this regime.}
+as can be seen in~\cref{fig:centralized}. 
+
+Finally, we explore the computational tradeoffs of our approach. We find that banded matrices with \bparticipation are equally efficient to optimize as those under \multiepoch-participation but significantly reduce the memory and time complexity of the per-iteration noise generation from $\calO(n)$ to a constant $\calO(\bands)$. Observe that often, the total number of steps $\dimension \gg \bands$. We will release all code with the final manuscript.
+
+%\mypar{Future work} \anote{Not sure necessary. But may be nice to have.}
+
+%\subsection{Our contributions}\agnote{Should we move this subsection's start to before the paragraph starting "To address..."? Or at least, maybe we want the informal theorem above here?}
+%\label{sec:contrib}
+
+\paragraph{Related work}
+The matrix mechanism~\citep{Li2015TheMM} has a rich history in offline, statistical queries~\citep{hdmm,edmonds_nikolov_ullman,opt_convex_fact,HT10}, with many applications including to online PCA~\cite{dwork2014analyze}, estimating marginals~\cite{edmonds_nikolov_ullman}, and top-k selection~\citep{denisov22matfact}. Recently, this has been studied under the \emph{adaptive streaming} setting, where privacy analysis must account for an adversary adaptively defining the inputs at each step~\citep{fichtenberger_constant22,denisov22matfact}.
+\citet{denisov22matfact} showed a connection with the DP-FTRL algorithm of~\citet{kairouz2021practical} and with DP ML broadly; they showed that computing optimal MF significantly improves the privacy-utility-computation tradeoffs when making only a single pass (epoch) over the training data. \citet{choquette2022multi} showed that MF achieves state-of-the-art results in DP ML by showing how to optimize MF under arbitrary passes over the training data.~\citet{henzinger2022constant} study the problem of DP-continual observation~\cite{CSS11-continual,Dwork-continual} and the explicit factorization of the workload matrix $\bfA$ that minimizes the \emph{completely bounded norm}, which is only off from the optimal by an additive constant. 
+%
+The connection between DP empirical risk minimization~\cite{chaudhuri2011differentially,kifer2012private,BST14,song2013stochastic,mcmahan2017learning, smith2017interaction, WLKCJN17, iyengar2019towards, song2020characterizing,ChourasiaYS21,bassily2019private,feldman2019private,bassily2020stability,kulkarni2021private,gopi2022private,asi2021adapting,asi2023near,asi2022private} and DP online regret minimization~\cite{JKT-online,guha2013nearly,kairouz2021practical,agarwal2017price,asi2022private,asi2023near} has been studied for a long time.~\citet{asi2023near} demonstrated that DP-FTRL style algorithms~\cite{kairouz2021practical,denisov22matfact} achieve the best known regret in certain classes of online learning problems.
+\anote{I have taken a pass over the related work. @all and especially @BM and @KR please take a look at the discussion around regret minimization.}
+
+% \ctodo{@abhradeep, can you add what you want from the below?}
+% \begin{enumerate}
+%     \item The work of Jalaj and co: \url{https://arxiv.org/abs/2202.11205}
+%     \item Boiler plate stuff on the relation to online learning, DP-ERM~\cite{chaudhuri2011differentially,kifer2012private,BST14,song2013stochastic,mcmahan2017learning, smith2017interaction, WLKCJN17, iyengar2019towards, song2020characterizing,ChourasiaYS21,bassily2019private,feldman2019private,bassily2020stability,kulkarni2021private,gopi2022private,asi2021adapting}  and highlight that MF/DP-FTRL provides the best known regret bounds :~\url{https://arxiv.org/pdf/2210.13537.pdf}.
+%     \item Borrow some discussion on the prefix sum from our previous papers on DP-FTRL and DP-MF.
+% \end{enumerate}
+
+\section{Matrix Factorization, Sensitivity, and Efficient Implementations}\label{sec:setup}
+
+Matrix mechanisms use a factorization $\bfA = \bfB\bfC$ to compute the estimate
+\begin{equation}\label{eq:mat_mech}
+\widehat{\bfA\obs} = \bfB\left(\bfC\obs + \bfz\right)
+\end{equation}
+where $\bfA$ is an appropriate linear query (prefix-sums, or an encoding of SGDM \citep{denisov22matfact}), $\obs$ represents a stream of model gradients and $\bfz$ is suitably calibrated noise to the sensitivity of the so-called `query matrix' $\bfC$.
+
+\mypar{Efficiently implementing \mfftrl}
+\cref{eq:mat_mech} can be re-arranged as $\bfA(\obs + \bfC\inv \bfz)$. The multiplication by the linear operator $\bfA$ can now be viewed as post-processing of the noisy mechanism outputs $\obs + \bfC\inv \bfz$; in many cases, this postprocessing has an efficient streaming implementation, e.g., simply passing gradients into a SGDM implementation. Thus, implementing \MFFTRL is essentially equivalent to \DPSGD. The only difference is that the per-iteration gradient $\obs_i$ is protected with noise $[\bfC\inv \bfz]\idx{i}{:}$ rather than $\bfz\idx{i}{:}$. Indeed, we see \DPSGD is a special case simply by taking $\bfC = \bfC\inv = \bfI$. Further, as long as the noise $\bfC\inv \bfz$ is computed correctly, the privacy guarantee holds, independent of the choice of $\bfA$ (downstream learning algorithm). 
+%
+Hence, multiplication of Gaussian noise $\bfz \in \R^\datadim$ (which need never be fully materialized at once) by $\bfC\inv$ is the critical step in efficient implementation of \MF. In \cref{sec:efficientlinops}, we note this multiplication can be completed online for $\bands$-banded matrices (defined formally in \cref{sec:sensitivity}) in time and memory $\calO(\bands \mdim)$ per training iteration (or $\calO(\bands \mdim \dimension)$ time in total).
+
+
+%\btodo{It might clarify things to introduce notation for individual examples, as well as a ``data processing function'' which assigns examples to batches for each iteration.}
+
+\mypar{Multiple participations} We adopt the formalisms for multiple-participations of \citet{choquette2022multi}. We assume there are $\numusers$ examples (or users in FL) in the database where $\batchsize$ examples are selected on each step $i \in [\dimension]$. These $\batchsize$ chosen examples are said to \emph{participate} on this step $i$.
+The examples at each step are processed via any adaptive function, e.g., computing a gradient of the current model (which depends on the model parameter values). The per-example output vectors are each bounded to $\ell_2$ norm at most $\clipnorm$ (which, after noting that our notions of sensitivity scale linearly in $\clipnorm$, WLOG we take to be 1 in analysis below). These clipped vectors are then summed to yield $\obs_i \in \R^\mdim$. The \MFFTRL mechanism releases a privatized version of $[\obs_1, \dots, \obs_i]$, the stream (of gradient updates from a ML optimizer) so far. The multi-epoch setting occurs when $\numusers < \dimension \cdot \batchsize$, so that every example necessarily participates more than once. \cref{tab:notation} in \cref{sec:notation} summarizes our notation and key symbols.
+
+\mypar{Adjacency and participation schemas}
+DP requires a notion of adjacent datasets. Two data streams $\obs$ and $\obsp$ are adjacent if the data associated with any single example is altered, but not when this example participated. Thus, any $\obs_i$ where this example participated can be changed subject to the $\ell_2$ norm bound $\clipnorm$ on the example's contribution (gradient) to $\obs_i$. However, the participation pattern does not change. A \emph{participation schema} $\Pi$ gives the set of possible \emph{participation patterns} $\pi \in \Pi$, with each $\pi \subseteq [\dimension]$ indicating a set of steps in which a single example might participate.
+%
+Let $\bfN$ be the set of all pairs of neighboring streams $\obs$ and $\deltaset := \left\{ \obs - \obsp \mid (\obs, \obsp) \in \bfN \right\}$ represent the set of all possible deltas between neighboring $\obs,\obsp$. The definition of $\deltaset$ implies it is symmetric ($\contrib \in \deltaset \Rightarrow -\contrib \in \deltaset$). We will say a $\deltaset$ \textbf{satisfies the participation schema $\Pi$} if the indices of all nonzero rows in each $\R^{\dimension \times \mdim}$ matrix $\contrib \in \deltaset$ are a subset of some $\pi \in \Pi$. 
+To illustrate this, single-participation is represented as $\Pi = \big\{ \{1\}, \{2\}, \dots \{\dimension\}\big\}$) and full-batch gradient descent (every-step) as $\Pi = \{ [\dimension]\}$).  \citet{choquette2022multi} studied \emph{fixed-epoch-order participation}, denoted \emph{\multiepoch-participation}, where each example participates at most $\maxpart$ times, with any adjacent participations exactly $\minsep$ steps apart: formally, $\Pi$ is the set of all $\pi$ such that $|\pi| \le \maxpart$, and if $\pi = \{i_1, \dots, i_k\}$ indexed in increasing order, we have $\forall j \in \{2, \dots, k\}, i_j - i_{j-1} = \minsep$. For example $\maxpartsep{2}{3}$-participation has $\Pi = \{\{1, 4\}, \{2, 5\}, \{3, 6\}\}$. As discussed in \citet{choquette2022multi}, this setting faithfully captures standard multi-epoch ML training setups with single and every-step as special cases.
+
+%\paragraph{Sensitivity of MF}
+%Critically, for linear queries $\deltaset$ fully captures the sensitivity:
+%\begin{definition}\label{def:sensopmech}
+We can now define the \textbf{sensitivity} of the matrix factorization mechanism as
+\begin{equation}\label{eq:sensopnorm}
+\sensd(\bfC) = \sup_{(\obs, \obsp) \in \bfN} \| \bfC \obs - \bfC \obsp \|_F
+ = \sup_{\contrib \in \deltaset} \| \bfC\contrib \|_F. 
+\end{equation}
+%\end{definition}
+%
+%\begin{prop}[\citet{choquette2022multi}]\btodo{The new plan is to have this be a new result here, perhaps vieweed as an extension of results in the MEMF paper?}
+%The sensitivity of $\bfC$ can be upper bounded by. 
+%\[ 
+%\max_{\pi \in \Pi} \sum_{i,j \in \pi} | \bfX_{[i,j]} | 
+%\]
+%where $\bfX = \bfC\tp \bfC$.  This upper bound is tight when $\bfX \geq 0$, and, from~\citet{choquette2022multi}[Corollary 2.1], holds under situations where $\obs_i$ is a $\mdim$-dimensional vector as in ML training.
+%\end{prop}
+%\ctodo{@krush, add in grothendieck stuff \rnote{to ICML paper}. See your note commented out.}
+
+% \rnote{+1 to putting some of this stuff in the ICML paper, that way we can avoid this nuance here and just cite the relevant sensitivity theorem from that paper.}
+%
+\paragraph{Optimizing factorizations}
+Different factorizations $\bfA = \bfB \bfC$ can have very different performance in practice.  Thus, \citet{denisov22matfact,choquette2022multi} propose optimizing over the space of factorizations, where the objective function is the expected total squared error on $\bfA$, represented as $\calL(\bfB, \bfC) = \sensd^2(\bfC) \left\|\bfB\right\|_F^2$.  In the remainder of the paper, we will refer to RMSE as the expected root-mean-squared error, which can be calculated as $\sigma \sqrt{\mathcal{L}(\bfB, \bfC) / n}$, where $\sigma$ is the standard deviation of the Gaussian noise. We take $\sigma=1$ when simply comparing mechanisms, or (in \cref{sec:experiments}), calibrate $\sigma$ to achieve specific $(\epsilon, \delta)$-DP guarantees.
+
+Utilizing the fact that the optimal-for-squared-error decoder $\bfB$ is $\bfA \bfC^\dagger$, we can express this objective function in terms of $\bfC$ alone, using the \emph{error profile}.
+\begin{definition} \cite{Li2015TheMM}
+The \textbf{error profile} of an encoder $\bfC$ is defined as the magnification in error from estimating answers to the queries in $\bfA$ from noisy answers to the queries in $\bfC$.  It can be calculated as $\norm{\bfA \bfC^{\dagger}}_F^2$, assuming $\bfA$ is in the rowspace of $\bfC$.
+\end{definition}
+
+The expected total squared error is invariant to scaling $\bfC$  by a constant, and hence the optimization problem to minimize the error profile under a sensitivity $1$ constraint is given in \cref{prob:optconvex}.
+Note that it is useful to express sensitivity and error profile in terms of $\bfX = \bfC\tp \bfC$ (note $\bfX$ is unrelated to the data $\obs$).  Doing so yields the following optimization problem:
+
+\begin{problem} \label{prob:optconvex}
+The matrix factorization optimization problem is to solve
+\begin{equation} \label{eq:optconvex}
+\underset{\bfX \in \bfS^{n}_{+}}{\text{minimize}}
+\quad
+\tr[\bfA\tp \bfA \bfX^{-1}] 
+\qquad
+\text{subject to}
+%& & \max_{\contrib \in \deltaset}\  \bfu\tp \bfX \bfu \leq 1
+\quad
+\sensd^2(\bfX) \leq 1,
+\end{equation}
+%\bnote{I changed the transpose above, $\bfu$ is a column vector, right?  Also, we need to align this with Prop 2.1 ... we should either additionally constraint $\bfX \ge 0$, or have the constraint apply to the absolute value of $\bfX$ --- which I'm not sure we've actually considered before, but it should be possible, right?} \rnote{Can we just sidestep this issue by writing $\sens_{\Pi}{(\bfX)}\leq 1$ as the constraint?} \krnote{+1 to sidestepping so that we don't have to worry about the type of $\bfu$, which we may, I think, be interpreting as a vector or a matrix.}
+and then find $\bfC$ so that $\bfC\tp \bfC = \bfX$, e.g., via Cholesky decomposition.
+\end{problem}
+
+
+
+
+\section{Sensitivity of Banded Matrices}\label{sec:sensitivity}
+\vspace{-0.5em} % SPACE
+\ctodo{I removed the banded from the previous section, can we define it here? It's commented out below.}
+% \paragraph{Banded matrices}
+% 
+
+In cross-device FL, devices make local decisions about if and when they will participate in training~\citep{FLO,bonawitz2019towards}. This makes it practically difficult to enforce the \multiepoch-participation of~\citet{choquette2022multi}, where users are assumed to participate at the same relative position in each epoch (note this is trivial in datacenter/centralized FL).
+% \footnote{Note however, that this is trivial in datacenter (or centralized) FL.
+% \agnote{Datacenter = cross-silo? If so we should say that, datacenter to me implies centralized setting.}\ctodo{datacenter = both}
+% } %---this restriction prevents us from their multi-epoch MF which was shown to provide significant improvements over single-epoch MF of~\citet{denisov22matfact}\agnote{I get what the sentence is saying but I think ``this restriction prevents us from their multi-epoch MF'' needs a rewrite?}. \footnote{This enables, for instance, larger batch sizes to improve privacy-utility tradeoff.}
+Hence the key open question we address here is: \emph{Can \MFFTRL be extended to the cross-device federated learning setting with multiple client participations?} 
+
+
+
+% We may want to move some of this to related work.
+% While \multiepoch-participation is a good fit for centralized training infrastructure, in cross-device federated learning the order in which data is processed cannot be tightly controlled, as devices make local decisions about if and when they will participate in training \citep{FLO,bonawitz2019towards}. This led to the development of alternative DP training protocols that could benefit from some amplification, such as that of \citet{balle2020privacy}. The cross-device FL setting was in fact a primary motivation for the development of the DP-FTRL algorithm \citep{kairouz2021practical}, which allows performance competitive with DP-SGD analyzed with amplification-via-sampling, but applies to arbitrary data processing patterns (with sensitivity calculated based on the minimum separation between participations).  \citet{denisov22matfact} improved on this approach in the single-participation setting by using matrix factorization in place of tree aggregation; the dense lower-triangular matrix mechanisms introduced in this work could be used in cross-device FL, but only if each client was restricted to participate at most once.  \citet{choquette2022multi} extended to \citet{denisov22matfact}, but focused on \multiepoch-participation, which as noted above is only feasible in centralized training scenarios. Hence the key open question we address here: \emph{Can matrix-factorization DP-FTRL (\MFFTRL) be extended to the cross-device federated learning setting with multiple client participations?} 
+
+% This question is of substantial practical importance, as \citet{choquette2022multi} showed \MFFTRL can substantially outperform tree-aggregation-based DP-FTRL. However, in practice the limitation to a single participation (single epoch) is prohibitive in many private training scenarios, as increasing the number of clients per round (equivalent to the batch size in centralized training) and hence the total epochs of training is perhaps the single most important technique in improving privacy/utility tradeoffs in differentially private machine learning \citep{ponomareva2023dpfy}.
+
+%\ctodo{idk if this is the right place/way to mention the "inflation". I just mean we don't want the loss much higher than multiepoch participation.}
+%\krnote{I'm not sure I fully grok the distinction between (a) and (c) here. I guess I'm also not sure what (b) means? Going to take a shot at rewriting.}
+%With sensitivity under \multiepoch-participation incompatible\agnote{weird clause; should this mean "With multiepoch paricipation hard to enforce in practice?"}, our first challenge is to define a new participation schema whose (a) sensitivity we can tightly bound, and with (b) minimal inflation, which would hurt the privacy-utility tradeoffs\agnote{Maybe just say something like "whose performance is not much worse than MEMF"?}\agnote{This list should mention that the participation constraint is easy to enforce in cross-device FL too, right?}. However, this alone is not enough---we also require that high utility factorizations can be optimized (as we will discuss in \cref{sec:optimizing}). For example, consider the trivial factorization $\bfB \leftarrow \bfA$ and $\bfC \leftarrow \bfI$. We can tightly bound $\sensd(\bfC)$, but we obtain no benefits from correlated noise to reduce the loss of the mechanism. Indeed, as a direct result of our~\cref{sec:amplification}, this setting exactly corresponds to DP-SGD, which adds independent noise at each step. So, to obtain these benefits, we require that (c) $\sensd(\bfC)$ can be efficiently represented as a constraint in a mathematical program so as to be able to find a \emph{optimal} factorization $\bfA = \bfB \bfC$.
+
+% \ctodo{A small but important change imo. It make sthe transition from (a) to (b) clearer on the "bound"}
+With \multiepoch-participation difficult to enforce in practice, our first challenge is to define a new participation schema with several properties: (a) the sensitivity of any matrix mechanism under this query can be bounded; (b) this bound is known to be tight over an expressive class of matrices; (c) this bound can be efficiently represented as a constraint in a mathematical program so as to be able to find a near-optimal factorization $\bfA = \bfB \bfC$.
+
+
+In~\cref{def:bparticipation}, we propose \bparticipation, a generalization of \multiepoch-participation which can be practically enforced by cross-device FL systems.\footnote{Observe it is easy to enforce the same user will not rejoin before some period $\minsep$. But, it is impractical to enforce they re-join on a step exactly $\minsep$ later, as required by \multiepoch-participation, if, e.g., they left the protocol.}
+In \bparticipation, the distance between any two participations is \emph{at least} \minsep, rather than \emph{exactly} $\minsep$ as in \multiepoch-participation:
+\begin{definition}\label{def:bparticipation}
+The \textbf{\bparticipation} schema is given by
+\[
+  \Pi_\minsep = \left\{\pi \subseteq [n]  \mid \{i, j\} \subseteq \pi, i \ne j \Rightarrow |i - j| \ge \minsep\right\}.
+\]
+\end{definition}
+
+
+Note that for \multiepoch-participation, $|\Pi_{(\maxpart,\minsep)}| = \minsep$, a fact \citet[Eq. 3]{choquette2022multi} critically exploited when computing sensitivity via brute force computation of a maximum over the elements in $\Pi$. With \bparticipation, we have $|\Pi_b| = \calO(\exp(n))$,  \btodo{Could compute something more exact here.} and hence any brute force approach which requires checking some value for all $\pi \in \Pi$ will be impractical.
+%
+Following the formalism of~\citep[Section 2]{choquette2022multi}, a participation schema $\Pi$ (plus a specification of model dimension $\mdim$) yields an expression for the sensitivity of the function $\obs \mapsto \bfC\obs$ assuming that the contributions of any given user to the data structure $\obs$ are restricted to the rows in $\obs$ indexed by some $\pi \in \Pi$. By ~\cref{prop:trace_sens}, independent of model dimension $\mdim$, this sensitivity may be bounded by 
+%
+\begin{equation}\label{eq:abs_val_sens_bound}
+    \sensd\left(\bfC\right)^2  \leq \max_{\pi \in \Pi} \sum_{i,j \in \pi} | \bfX_{[i,j]}|,
+\end{equation}
+\btodo{TODO - I don't think we usually inlcude $\clipnorm$ in the sensitivity of $\bfC$, suggedted removing it..}
+%
+%where $\bfC_\pi$ represents the matrix formed by deleting rows and columns in $\bfC$ corresponding to zeros in $\pi$, and $\obsset$ represents the set of permissible per-step user contributions (e.g., in our setting $\bfx$ is a $\maxpart \times \mdim$ matrix, the $\obsset$ is the set of these matrices with $\ell_2$ row norms bounded by $\clipnorm$).
+%
+%
+%The formulation~\cref{eq:abs_val_sens_bound} makes clear that the precise value of $\sensd\left(\bfC\right)$ may depend on the space $\calL$; in our setting, where we consider the rows of all $\obs \in \obsset$ to be vectors of dimension $\mdim$, it can be seen immediately that this sensitivity is \emph{nondecreasing in $\mdim$}. Precisely controlling the relationship between $\mdim$-dimensional sensitivity and $1$ dimensional sensitivity is a subtle question, addressed in~\citep[Theorem G.1]{choquette2022multi}. 
+%
+% Our approach to extending \MFFTRL to cross-device FL thus begins with a generalization of \multiepoch-participation, \bparticipation, which can practically be enforced by cross-device FL systems \btodo{Will need to say more about this somewhere.}  Then, we introduce a class of matrix mechanisms that perform extremely well while allowing for the efficient computation of sensitivity, and hence, efficient convex optimization to find the necessary matrix factorizations.
+%
+\cref{eq:abs_val_sens_bound} highlights several subtleties in computing sensitivity. First, and most clearly, is the presence of an exponentially large number of terms in $\Pi$. Second is the question of tightness of the inequality in~\cref{eq:abs_val_sens_bound}: how much are we losing by effectively ignoring any cancellation in the matrix $\bfX$?
+
+\ctodo{we need to clarify the efficiency more. Its quite nuanced. Attempted to.}
+\paragraph{Banded matrices} Fortunately, certain structural assumptions on the matrices $\bfC$ render~\cref{eq:abs_val_sens_bound} both exactly computable and tight, independent of dimension $\mdim$. \bparticipation, when computed over a particular structure of matrices which we call banded matrices, can be computed exactly and efficiently, showing that $\Pi_\minsep$ satisfies the requirements of (b) and (c) above. Without these structural constraints, the right-hand side of~\cref{eq:abs_val_sens_bound} remains efficiently computable (but not expressible in a mathematical program), enabling us to provide nontrivial privacy guarantees for matrices which are not $\minsep$ banded under $\minsep$-min-sep, showing that $\Pi_b$ satisfies (a) as well.
+
+We say a (general) matrix $\bfX$ is $\bands$-banded if for all $i,j \in [n]$, $|i -j| \ge \bands$ implies $\bfX\idx{i}{j} = 0$. While this is off-by-one from the typical definition of bandwidth ($\bfX$ has bandwidth $b-1$), our definition will be useful as it will be natural to match $\bands$-banded matrices with $\minsep$-min-separation. Further, for $\bands$-banded lower-triangular matrices (which will play a central role), $\bands$ intuitively gives the number of bands in the matrix.  Proofs for the following theorems are deferred to \cref{app:analysis}.\btodo{TODO - I think we need to add a few sentences here about the \VecSens subroutine and how we use it to construct efficient algorithms \cref{alg:minsepsens}, etc, using it.}
+
+%We define $\bands$-banded matrix as a matrix with no nonzero elements outside of the $\bands-1$ diagonals below the main diagonal. Though each column may have arbitrary norm, we find that the setting where all columns have the same value achieve good performance. Thus, we will focus primarily on this setting---and, hereafter we will refer to \dpsgd as $\bands=1$-banded mechanisms as they are equivalent in this setting.
+
+%\begin{cor}\label{cor:matrix_to_vector_sens}
+%For any dimensionality $\mdim \ge 1$, when per-step contributions are bounded by $\clipnorm=1$, consider a participation schema $\Pi \subseteq \Pi_b$ and matrix $\bfC$ such %that for all $\pi \in \Pi$, for any $i, j \in \pi$ with $i \ne j$, we have $\left<\bfC\idx{:}{i}, \bfC\idx{:}{j} \right> = 0$ (that is, any pair of columns of $\bfC$ %corresponding to distinct iterations $i, j$ where the same example might participate must be orthogonal).  Then,
+%\[
+%\senss(\bfC) = \sensv(\bfC).
+%\]
+%\end{cor}
+%\begin{proof}
+%The orthogonality condition implies $\bfC\idx{:}{\pi}\tp \bfC\idx{:}{\pi}$ is a diagonal matrix, with the (non-negative) norms of the selected columns forming the diagonal, %and hence Condition 2 of \citet[Thm. G.1]{choquette2022multi} applies to $\bfC\idx{:}{\pi}$, and the result follows.
+%\end{proof}
+
+%Observe that a sufficient condition for \cref{cor:matrix_to_vector_sens} to hold is that $\bfC$ is $\bands$-banded.\footnote{A stronger version of \cref{cor:matrix_to_vector_sens} can of course be proved immediately, requiring only  $\left<\bfC\idx{:}{i}, \bfC\idx{:}{j} \right> \ge 0$. However, this extra generality is not necessary for our purposes.} In the following theorem, we present two practical approaches to bounding sensitivity:
+
+%%%% Previous Alg 1, while we only applied to b-banded matrices %%%
+%\begin{algorithm}[t]
+%\caption{Efficient sensitivity calculation for \bparticipation} \label{alg:minsepsens}
+%\begin{algorithmic}%[1]
+%\State \textbf{Inputs:} min-separation $\minsep$, Gram matrix $\bfX$, max participations $\maxpart$
+%\State Initialize $F \in \R^{n \times k}$
+%\For{$m = 1, \dots, k$}
+%\For{$i = n, \dots, 1$}
+% \Comment{We use the convention that $F[s,t] = 0$ if $s,t$ are out-of-bounds.}
+%\State $F[i, m] = \max{\Big(\bfX_{ii} + F[i+b, m-1], F[i+1, m]\Big)}$
+%\EndFor
+%\EndFor
+%\Return $\sqrt{F[1, k]}$
+%\end{algorithmic}
+%\end{algorithm}
+
+\newcommand{\indpi}{u(\pi)}
+
+\begin{theorem}\label{thm:minsepsens}
+Let $\bfC \in \R^\dimdim$ be a lower-triangular matrix, and $\Pi_b$ the \bparticipation schema.  Further, suppose $k'$ upper-bounds the actual maximum number of participations that occurred in a data stream $\obs$ (at worst, we may take $k' \le \ceil{\frac{n}{b}}$):
+Then:
+%\begin{enumerate}
+(1) If $\kappa$ is an upper-bound on the column norms of $\bfC$, that is $\ \forall j \in [n], \ \norm{\bfC\idx{:}{j}} \le \kappa$,  and $\bfC$ is $\minsep$-banded, then the sensitivity is bounded by $\kappa \sqrt{k'}$.
+(2) If $\bfC$ is $\minsep$-banded, \cref{alg:minsepsensbanded} invoked with Gram matrix $\bfX = \bfC^\top\bfC$ and $\minsep, k'$ as in the setup, exactly computes $\sens(\bfC)$ under schema $\Pi_\minsep$ in polynomial time for any dimension $\mdim$.
+%\end{enumerate}
+\end{theorem}
+%
+\begin{theorem}\label{thm:minsepsensgen}
+Under the setting of \cref{thm:minsepsens}, but without any structural assumptions on $\bfC$, \cref{alg:minsepsensgeneral}, invoked with Gram matrix $\bfX = \bfC^\top\bfC$ and $\minsep, k'$ as in the setup, upper-bounds $\sens(\bfC)$ under schema $\Pi_b$ in polynomial time for any dimension $\mdim$.%, and if $k' < \ceil{\frac{n}{b}}$, may produce a tighter bound on sensitivity for streams matching the actual participations in $\obs$.\footnote{Recall that for our notion of adjacency, all adjacent streams $\obsp$ must have this property.}
+\end{theorem}
+
+
+%\ctodo{The ending is abrupt, but not sure what to say yet...}
+% \krnote{Cut a small paragraph here on all-equal-norm matrices; maybe belongs in optimization somewhere?}
+% \ctodo{Thanks, agreed. Moved.}
+
+
+\section{Optimizing Banded Matrices}\label{sec:optimizing}
+
+To enjoy the benefits of banded matrices within the framework of \MFFTRL, we need to design an algorithm that can efficiently optimize over the space of \bands-banded $\bfC$ matrices.  To solve this problem, we will work in the domain of $\bfX = \bfC\tp \bfC$, and utilize the following fact:
+
+\begin{prop} \label{thm:banded-cholesky}
+Let $\bfX \in \R^{n \times n}$ be a $\bands$-banded symmetric positive definite matrix.  Then there exists a lower triangular \bands-banded matrix $\bfC \in \R^{n \times n}$ such that $\bfX = \bfC\tp \bfC$.
+\end{prop}
+
+Utilizing \cref{thm:banded-cholesky}, we can modify \cref{prob:optconvex} by introducing the constraint $\bfX_{[i,j]} = 0 \: \text{ if } | i - j | \geq \bands$.  This additional linear constraint preserves convexity of the optimization problem, and makes the sensitivity calculation tractable as well.  However, it is still not immediately obvious how to solve the optimization problem, since we need to run the dynamic program defined in \cref{alg:minsepsensbanded} to compute sensitivity.  For this reason, we impose the additional constraint that $ \diag{(\bfX)} = \bf1$. This constraint, together with bandedness, ensures that the squared sensitivity is equal to $k$ for all $\bfX$ by \cref{thm:minsepsens}.  The final optimization problem we seek to solve is stated below:
+%
+%\begin{prop}
+%Let $\bfX$ be a symmetric positive definite matrix satisfying $\bfX_{[i,j]} = 0$ if $|i - j| \geq \bands$ and $\diag{(\bfX)} = \bf1$.  Let $k=\frac{n}{b}$.  Then both $(k, b)$-sensitivity and $b$-min-sep sensitivity is equal to $\sqrt{k}$.  
+%\end{prop}
+%
+\begin{problem}\label{prob:bandedopt}
+The matrix factorization optimization problem for banded matrices requires solving: \rnote{add equal\_norm=False to appendix}
+\begin{equation} \label{eq:bandedopt}
+\underset{\bfX \in \bfS^{n}_{+}}{\text{minimize}} \:
+\tr[\bfA\tp \bfA \bfX^{-1}] 
+\qquad
+\text{subject to}
+\quad
+\diag{(\bfX)} = \mathbf{1} 
+\text{\ \ and\ \ }
+ \bfX_{[i,j]} = 0 \:\:\text{if}\:\: | i - j | \geq \bands, 
+\end{equation}
+and choosing $\bfC$ so that $\bfC\tp \bfC = \bfX$ via \cref{thm:banded-cholesky}.
+\end{problem}
+%
+We would like to remark on the similarity between \cref{prob:bandedopt} and the single-participation version of \cref{prob:optconvex}.  The two problems are identical modulo the bandedness constraint, which is an equality constraint on individual entries of $\bfX$.  Therefore, existing primal-optimization based solvers \cite{mckenna2021hdmm} for the single-participation matrix mechanism can be extended to optimize over this new space of matrices with little modification.  Specifically, the only modification necessary is to initialize to an appropriately banded feasible $\bfX$ matrix, like $\bfX=\bfI$, and to post-process the gradient w.r.t $\bfX$ by setting $\frac{\partial L}{\partial \bfX_{[i,j]}} = 0$ if $|i - j| \geq \bands$ in each iteration.  Since we only have equality constraints on individual entries of $\bfX$, \cref{prob:bandedopt} is essentially an unconstrained optimization problem, and can be solved with any number of off-the-shelf unconstrained optimization algorithms.\footnote{Note that the constraint that $\bfX$ is positive definite is typically handled implicitly by taking sufficiently small step sizes to avoid violating that constraint \cite{yuan2016convex,mckenna2021hdmm}.}  As recommended by \citet{mckenna2021hdmm}, we use the LBFGS algorithm \cite{byrd1995limited} to solve this problem.  
+
+\mypar{Remarks on the $\diag{(\bfX)} = \bf1$ constraint}
+%
+The constraint $\diag{(\bfX)}$ serves multiple purposes that warrants further discussion.  First, note that $\diag{(\bfX)} = \bf1$ implies that $ \norm{\bfC_{[:,i]}}_2 = 1$ for all $i$, i.e., that $\bfC$ has equal column norms.  This ensures that $\BANDMF$ reduces to $\dpsgd$ when $\bands=1$, which is desirable.  Second $\diag{(\bfX)} = \bf1$ simplifies the optimization problem greatly, as the sensitivity computation for both \multiepochpart and \minsep-min-sep are trivial under this constraint (\cref{thm:minsepsens}).  Third, imposing this constraint does not drastically change the search landscape, or cost much in terms of RMSE.  %Moreover, we have evidence that imposing this constraint actually helps in terms of learning performance, even though it comes at a cost in terms of RMSE. 
+
+
+\section{Amplification for Banded Matrix Mechanisms}\label{sec:amplification}
+
+\newcommand{\usersperband}{\check{m}}
+\newcommand{\amaxpart}{\maxpart}  %  formerly \ceil{\dimension / \bands}
+
+\begin{figure}[t]
+\vspace{-2em} % SPACE
+    \begin{minipage}{0.48\textwidth}
+    \begin{algorithm}[H]
+    \caption{Sampling scheme}\label{alg:querysimple}
+    \begin{algorithmic}%[1]
+    \State $D_1, \ldots, D_{\minsep} \leftarrow$ arbitrary partition of $D$.
+    \For{$i = 1, 2, \ldots, \dimension$}
+    \State $j = i \pmod \minsep$ ($\minsep$ if $i / \minsep$ is integer).
+    \State $S_i \leftarrow$ random size $\batchsize$ subset of $D_j$.
+    \State Compute $\obs_i$ on $S_i$.
+    \EndFor
+    \State Release $\bfC \obs + \bfz$.
+    \end{algorithmic}
+    \label{alg:dp-mf-with-sampling}
+    \end{algorithm}
+    \vspace{-1.5em} % SPACE
+    \caption{\label{fig:dp-mf-with-sampling}An example of our sampling scheme, where $\calS$ takes random subsets of $D_j$ of size $\batchsize$ in each round.}
+    \end{minipage}
+    %
+    %\hspace{0.5cm}
+    \hfill
+    %
+    \begin{minipage}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{figures/query-decomposition.png}
+    \vspace{-1em} % SPACE
+    \caption{\label{fig:query-decomposition}A visualization of how we can decompose \BANDMF into independent queries on subsets of $D_j$ (as in \cref{alg:queryub}) under our sampling scheme.}%In ML, each query is a gradient computation, as computed by the desired SGD variant. See \cref{fig:query-decomposition-big} in \cref{sec:app-amplification} for a larger version. \agnote{Updated the figure, @BM/CC let me know if this addresses your concerns.}\ctodo{Can you say "gradients" instead of examples, to make it clear x == gradients. I think folks external to the project will have trouble grokking that connection.}\agnote{In my view the value of the gradients is the query being made and not the example itself... I think @AT feels keeping it as a reduction to general queries and not gradient queries is desirable?}\anote{I would support @AG.}\ctodo{True, my mistake. I will say though, the most common question I've answered is "Where are the gradients". In DP-SGD the algorithm is explained simply "noise + clip gradients". Here, we ahve to talk about something a bit deeper into the DP literature which si the notion of the query, which here the adaptive query is the gradient. Instead of making readers understand all of this, it'd be good to put it where readers look most to reinforce it since our main application is to ML.}}
+    \end{minipage}
+ \end{figure}
+%Figure source: https://docs.google.com/presentation/d/1YwTbPj-VZSzye_PPiMQ5G6urJqVJPRjAxeR6_U_qeIs/edit?usp=sharing
+
+%\anote{@AG: I think we need some more introductory text, in particular, driving the idea that to ensure DP and amplification, the view  set of independent base queries, can be chosen independently for every data sample, which is the crux of our proof. Also a proof sketch of the main theorem would be great, with a picture analgous to the one we discussed at some point.}\agnote{Done except for the figure, I'll try to add it by tonight.}
+
+In this section, we show that in the centralized setting, where we may be able to control the participation patterns of individual examples, the privacy guarantees of banded matrix mechanisms can be amplified using standard techniques such as sampling, shuffling, etc.
+
+We propose the following sampling scheme for choosing which examples participate in each round of \BANDMF, made formal as \cref{alg:amplified-dpmf} in \cref{sec:amplification-algorithms}: Let $D_1, D_2, \ldots, D_{\bands}$ be an arbitrary partition of $D$ into $\bands$ indexed subsets of size $\usersperband := \floor{\numusers / \bands}$ (for simplicity, we discard extra examples so all $D_j$ have size exactly $\usersperband$). For each $j$, in rounds $j, \bands + j, 2 \bands + j, \ldots$, we will only use examples in $D_j$. Hence, participation follows \multiepochpart for $\minsep = \bands$; because it is optimal for \multiepochpart to have $\bands = \minsep$, in the remainder of this section and the associated appendices we simply write $\minsep$ instead of $\bands$. Within each of these rounds, we sample a subset of $D_j$ to use in computing $\bfx$ according to an unspecified black box $\calS$; the black box nature of $\calS$ enables use of different sampling schemes so as to get different privacy amplification guarantees. For example, $\calS$ could choose a random subset of $D_j$ of size $B$ in each of these rounds; \cref{alg:amplified-dpmf} can then be instantiated as \cref{alg:dp-mf-with-sampling}, given in \cref{fig:dp-mf-with-sampling}.
+
+%%%
+
+%We intentionally leave $\calS$ unspecified; this enables use of different sampling schemes so as to get different privacy amplification guarantees.
+
+% In \cref{sec:reduction-to-queries} we give a scheme (\cref{alg:amplified-dpmf} in \cref{sec:amplification-algorithms}) for choosing which examples participate in each round of the MF mechanism. This scheme partitions the dataset into $\bands$ subsets $D_1, D_2, \ldots$, $D_{\bands}$ where examples in $D_j$ can only participate in rounds $j, \bands + j, 2 \bands + j \ldots$. 
+% \ctodo{I don't believe the following is true. The examples are re-participating in the band, not in the batch as in \multiepoch, and, these should technically be reshuffled each epoch no?}\agnote{I think this is confusion over the definition?  e.g. in $(2, 3)$-participation, $\dimension = 6$, whether $\pi = \{1\}$ satisfies the participation pattern or not. Basically, if $\calS$ includes all of $D_j$ in every round, we get \multiepochpart, but examples can participate less.}
+% hence, participation follows \multiepochpart for $\minsep = \bands$; Because it is optimal for \multiepochpart to have $\bands = \minsep$, in the remainder of this section and the associated appendices we simply write $\minsep$ instead of $\bands$.
+% The manner in which examples from $D_j$ are sampled for use in these rounds is left as an unspecified black box $\calS$. For example, we could choose a random subset of $D_j$ of size $B$ in each of these rounds; \cref{alg:amplified-dpmf} can then be instantiated as \cref{alg:dp-mf-with-sampling}, given in \cref{fig:dp-mf-with-sampling}.
+
+%As examples, $\calS$ could (i) Include all examples in $D_j$ in each of these rounds, (ii) perform sampling with replacement on $D_j$, i.e., independent sample a batch of $\batchsize$ examples from $D_j$ in each round (iii) shuffle $D_j$ once and then repeatedly iterate over $D_j$ in batches of size $B$. %\btodo{This is confusing, we should give some examples of $\calS$ here.}\agtodo{Added some, let me know if more are needed!}
+
+% \ctodo{With theorem 3 being explained so soon in 5.1, I find this very repetitive. I think we should do the following. Remove everything after "the key idea..." and place that in 5.1. Then, simply say "We prove and provide intuition for this result in Sec 5.1" This is what I have done, and left hte old commented out.}\agnote{LGTM}
+
+% \mypar{Main results and organization} In Theorem~\ref{thm:general-amplification}, we show that the privacy of the matrix mechanism under any sampling $\cal{S}$ of these batches $D_j$ is upper bounded by the privacy of computing queries on examples in $D_j$ chosen using the same choice of $\calS$ (formalized as \cref{alg:queryub} in \cref{sec:amplification-algorithms}). We provide intuition for this result in \cref{sec:reduction-to-queries}.
+% %
+% In \cref{sec:amp-corollaries}, we discuss some instantiations of the black-box $\calS$ of interest. In particular, we consider taking examples from each $D_j$ using sampling and shuffling, and for each give a concrete statement of how the privacy guarantees are amplified via \cref{thm:general-amplification}.
+
+% \btodo{Can we use the definition and macros for $\bands$-banded matrices introduce above? I think under that definition $\bands = \bands$ and we can get rid of $\bands$? Or if we want to be more clear about the distinction between num bands and min-sep, we could redefine \textbackslash{bands} to $\tilde{b}$. }\agtodo{I switched to assuming lower-triangular $\bfC$ for now, though I think Keith was interested in the general case, where there can be more than $\bands$ non-zero diagonals...}\btodo{It's possible I was missing something with the previous notation, I think the general case is potentially interesting, maybe easiest to chat briefly.}\agtodo{I think in light of the deadline this is deprioritized so commenting out for now, but happy to discuss later}.
+
+% \subsection{Reduction to queries}\label{sec:reduction-to-queries}
+
+%We consider the following method for sampling examples from $D$ to use in each round of the matrix factorization mechanism. Let $D_1, D_2, \ldots, D_{\minsep}$ be an arbitrary partition of $D$ into $\minsep$ indexed subsets of size $\usersperband := \floor{\numusers / \minsep}$ (for simplicity, we discard extra examples so all $D_j$ have size exactly $\usersperband$). For each $j$, in rounds $j, \minsep + j, 2 \minsep + j, \ldots$, we will only use examples in $D_j$. For each $j$, we have a joint distribution $\calS$ over the subsets of $D_j$ we use in each of these rounds. We intentionally leave $\calS$ unspecified; this enables use of different sampling schemes so as to get different privacy amplification guarantees. See Algorithm~\ref{alg:amplified-dpmf} for a formalization of this sampling scheme.
+
+%Let $\calS$ be a distribution over $(2^{[\usersperband]})^{\amaxpart}$. That is, $\calS$ is a distribution over $\amaxpart$-tuples of subsets of $\{1, 2, \ldots, \usersperband\}$. For each $j$, we independently sample $(S_j, S_{\bands + j}, \ldots, S_{(\amaxpart - 1) \bands + j}) \sim \calS$, and then in round $i$ we use the examples in $D_{i \pmod \bands}$ whose indices are given by $S_i$. That is, elements in $D_j$ only participate in rounds $i$ such that $i \pmod \bands = j$, and $\calS$ captures the joint distribution of which examples in $D_j$ participate in each of these rounds. See Algorithm~\ref{alg:amplified-dpmf} for a formalization of this sampling scheme.\rnote{I like the addition of the algorithm block.  Since we have that maybe we can simplify/reduce notation in the text above?} %\rnote{can we consider adding an example here?  Or maybe packaging this up in an algorithm block somehow.  Could also be helpful to add an intuitive interpretation of this theorem before or after the statement.}\agnote{Added algorithm blocks for DP-MF as well as the set of queries we're reducing to}
+
+The following \cref{thm:general-amplification} shows that if we use \cref{alg:amplified-dpmf}, matrix factorization satisfies any standard privacy guarantees satisfied by \cref{alg:queryub} in \cref{sec:amplification-algorithms}, which performs $\maxpart :=  \ceil{\dimension / \minsep}$ queries\footnote{In \cref{fig:query-decomposition}, each query, i.e., block of $\bfC \bfx$, is a noisy linear function of the gradient on the queried examples (see \cref{eq:query} in \cref{sec:app-amplification}). So, wherever we say ``query'', it is roughly equivalent to ``noisy gradient computation.''} on subsets of a dataset of size $\usersperband$, with the subsets chosen in the same manner as $\calS$. 
+
+\begin{theorem}\label{thm:general-amplification}
+Suppose $\bfC$ is $\minsep$-banded and lower triangular, and the examples participating in each round of matrix factorization are chosen according to \cref{alg:amplified-dpmf} in \cref{sec:amplification-algorithms} with a given choice of $\calS$. Then the matrix factorization mechanism satisfies any standard DP guarantee\footnote{Standard DP includes $\epsilon$-DP, $(\epsilon,\delta)$-DP, R\'enyi DP, zCDP, and Gaussian DP.} satisfied by \cref{alg:queryub} in \cref{sec:amplification-algorithms} with $\Delta = \max_{i \in [n]} \ltwo{\bfC \bfe_i} = \max_{i \in [n]} \sqrt{\bfX_{i,i}}$ and the same choice of $\calS$. See \cref{sec:proof-amplification} for the proof.
+%\anote{I made a stylistic change to quantify what the DP means, just ensure some one does not complain about a weird notion of DP which we may not have heard of, and violates the semantics we are operating with. PTAL.}\agnote{LGTM}
+%the following mechanism run on a dataset $\tilde{D}$ of size $\usersperband$: Sample $(S_1, S_2, \ldots) \sim \calS$, then run $\amaxpart$ adaptive scalar queries with sensitivity $\max_{i \in [n]} \ltwo{\bfC \bfe_i}$ (with $\bfe_i$ being the $i$th elementary vector) and noise $N(0, \sigma^2)$ (where $\sigma^2$ is the coordinate-wise variance of $\bfz$), with the $i$th query run on the examples in $\tilde{D}$ whose indices are given by $S_i$. %
+\end{theorem}
+%\ctodo{I moved the proof to the appendix. We can move back if desired.}
+
+The key idea behind \cref{thm:general-amplification} (proven in \cref{sec:proof-amplification}) is the following: For simplicity, let's assume we have two datasets $D, D'$ that differ in an example in $D_1$, i.e., the differing example can only participate in rounds $1, \minsep + 1, \ldots, (\maxpart-1)\minsep + 1$. Then by the banded structure of $\bfC$ and the standard technique of reducing adaptive queries to non-adaptive queries (see e.g. Claim D.1 in \cite{denisov22matfact}), the first $\minsep$ rows of $\bfC \bfx$ (i.e., all the rows that the examples in round 1 participate in) can be viewed as a query on the examples in $D_1$ that were included in round 1, the next $\minsep$ rows can be viewed as an adaptively chosen query on the examples included in rounds $\minsep + 1$, and so on. See \cref{fig:query-decomposition} for a visualization. 
+
+\mypar{Corollaries of \cref{thm:general-amplification}} In \cref{sec:amp-corollaries}, we provide \cref{cor:amplification-by-sampling} and \cref{cor:amplification-by-shuffling}, which show explicitly that sampling and shuffling, the two most common amplification results used in the DP literature (and in particular, for \dpsgd), apply directly to our \BANDMF. We also provide an explicit algorithm for accounting for amplification via sampling in terms of the
+\texttt{dp\_accounting} library~\citep{pldlib}, along with examples of concrete privacy parameters derived from these corollaries.
+
+% \subsection{Corollaries of \cref{thm:general-amplification}}\label{sec:amp-corollaries}
+
+\mypar{Optimizing the number of bands}
+\cref{thm:general-amplification} shows that different numbers of bands give different privacy amplification guarantees. In particular, while having more bands reduces the number of queries, it also increases the sampling probability we need to achieve a target batch size. Generally, this implies smaller values of $\minsep$ will allow us to add less noise to achieve the same privacy budget $\epsilon$. Let $\sigma(\epsilon, \delta, \dimension, \minsep, \batchsize)$ be the required Gaussian noise magnitude we need for a $\minsep$-banded matrix factorization run for $n$ iterations using e.g. \cref{alg:dp-mf-with-sampling} to achieve $(\epsilon, \delta)$-DP with per-round batch size $\batchsize$. While larger values of $\minsep$ require more noise, smaller values of $\minsep$ restrict the optimization problem more, so there is a delicate trade-off to balance. To get the best privacy/utility trade-off, we would need to search over all $\minsep \in [1, \dimension]$; we can reduce this to $\minsep \in \{1, 2, \dots, \frac{\numusers}{\batchsize}, \dimension \}$ since for $\minsep = \frac{\numusers}{\batchsize}$ we have $|D_j| = \batchsize$, i.e. \cref{alg:dp-mf-with-sampling} and \cref{thm:general-amplification} provide no privacy amplification.  The expected total squared error that accounts for the effects of amplification would be $\sigma(\epsilon, \delta, \dimension, \minsep, \batchsize)^2 \tr{[\bfA^T \bfA \bfX^{-1}]}$. Unlike the un-amplified version of \MF, now the best factorization depends on the privacy parameters $(\epsilon, \delta)$.  Generally with smaller values of $\epsilon$, we expect the benefits of amplification to outweigh the benefits of correlated noise, in which case $\minsep=1$ will be optimal. With larger values of $\epsilon$, we expect the benefits of correlated noise to outweigh the benefits of amplification, and in this regime $\minsep=\dimension$ will be optimal. For moderate values of $\epsilon$, we expect the optimal $\minsep$ to be somewhere in the middle.
+
+
+\section{Experiments}\label{sec:experiments}
+Our experiments on example-level DP for image classification (of CIFAR10) and user-level DP for next word prediction (NWP) (of Stack Overflow NWP) focus on comparing our \BANDMF with the existing state-of-the-art \memf~\cite{choquette2022multi} and \dpsgd~\cite{DP-DL}. %which outperforms prior work in the tight privacy regime (around $\epsilon\lessapprox2$ as observed in~\cite{choquette2022multi}). 
+We finish by showing that \BANDMF improves over state-of-the-art~\cite{kairouz2021practical} for a production mobile keyboard next word prediction model. 
+In all cases, noise $\sigma$ is calibrated using privacy loss distributions \cite{koskela2020tight} to achieve the stated privacy guarantees for zero-out adjacency \citep{kairouz2021practical,ponomareva2023dpfy}, as implemented in \citep{pldlib}. Following the common convention, amplified results are based on privacy accounting for Poisson sampling, though shuffling was used in non-production training.
+%\btodo{TODO - Make sure privacy unit, other details described.}
+
+
+% \ctodo{REMOVE NOTES BELOW BEFORE SUBMISSION.}
+% \ifdraft
+% \subsection{Outline}
+% \textbf{Main claims we want to make.}
+% \begin{enumerate}
+%     \item Imposing bandedness constraints does not have a steep cost for DP-MF, even without amplification.
+%     \item By optimizing the number of bands, we can operate below the Pareto frontier of DP-MF and DP-SGD, and improve them by up to X\% (RMSE and Learning Performance).  
+%     \item Amplified DP-MF (with an optimized number of bands) outperforms both DP-MF and DP-SGD across all choices of $\epsilon$.
+%     \item Best mechanism for \bparticipation is close to best mechanism for \multiepochpart.
+% \end{enumerate}
+
+% \textbf{Main questions we want to answer.}
+% \begin{enumerate}
+%     \item In what regimes does DP-SGD outperform DP-MF and vice versa?  Factors that influence this: $\epsilon, \delta$, $n$, epochs.  
+% \end{enumerate}
+
+% \textbf{Planned Experiments}
+% \begin{enumerate}
+%     \item RMSE Experiments: vary bands, compare DP-MF, DP-SGD, Amplified DP-MF. [supports Claims 1 and 2 and maybe 4 above].  
+%     \item CIFAR 10 experiments: Compare DP-MF, DP-SGD, and Amplified DP-MF with optimal number of bands.  [Supports Claims 2 and 3 above]
+%     \item StackOverflow experiments: \rnote{ Would this be another dataset to support Claims 2 and 3, or would it showcase the cross-device FL capabilities? Did prior experiments use (k,b)-participation?}
+% \end{enumerate}
+% \else
+% \fi
+
+\mypar{Main results} Our most prominent finding is that \BANDMF can outperform both mechanisms across a wide range of privacy budgets to as low as $\varepsilon\approx0.5$.
+
+
+\mypar{RMSE experiments}
+We begin by comparing \dpsgd with \memf and \BANDMF in terms of their RMSE (\cref{sec:setup}) on the prefix workload.  This is one measure for how much noise these mechanisms add during training, and is a reasonable proxy for learning performance.\footnote{In fact, this proxy is exactly what inspired the line of work on the \DPFTRL algorithm.}
+
+%We define RMSE as $\sigma \cdot \sqrt{\tr[\bfA^{\top} \bfA \bfX^{-1}]/n}$, where $\tr[\bfA^{\top} \bfA \bfX^{-1}]$ represensts the total squared error and $\sigma$ is the noise multiplier used to achieve the given privacy guarantee.  
+
+
+Observe in \cref{fig:rmse_mf_sgd} that there are regimes where \DPSGD outperforms \memf and vice versa in terms of RMSE.  However, as shown in \cref{fig:rmse_banded_sgd}, we see that \BANDMF is always at least as good as \DPSGD in terms of \rmse.  The improvement is most potent in the lower number of epochs regime, which is standard for (large) language model training. In \cref{fig:rmse_vs_epochs}, we see that for fixed $\dimension$ as the number of epochs increases, all mechanisms enjoy improved RMSE, and \BANDMF in fact reduces to \dpsgd in that regime (though \BANDMF may be outperformed in RMSE by \memf due to our imposed optimization constraint of constant diagonals in $\bfX$).
+
+\begin{figure}
+\vspace{-2em} % SPACE
+    \centering
+    \subfigure[\DPSGD vs. \memf]{\label{fig:rmse_mf_sgd}
+    \includegraphics[width=0.32\linewidth]{figures/mf_vs_sgd.pdf}}
+    %
+    %\subfigure[\DPSGD vs \MFFTRL \rnote{regenerating.}]{\label{fig:mnist_mf_sgd}\includegraphics[width=0.32\linewidth]{figures/mnist_mf_vs_sgd.pdf}}
+    \subfigure[\DPSGD vs Ampl. \BANDMF]{\label{fig:rmse_banded_sgd}
+    \includegraphics[width=0.32\linewidth]{figures/banded_mf_vs_sgd.pdf}}
+    \subfigure[RMSE vs Epochs at $\epsilon=1$]{\label{fig:rmse_vs_epochs}
+    \includegraphics[width=0.32\linewidth]{figures/rmse_vs_epochs.pdf}}
+    \vspace{-0.5em} % SPACE
+    %
+    \caption{Comparison between \DPSGD, \memf, and \BANDMF in terms of RMSE on the prefix-sum queries, for $n=1024$ iterations, $\epsilon \in [\frac{1}{32}, 16]$, $\delta = 10^{-6}$, and epochs $\in [1, 1024]$.  Color indicates the ratio in RMSE between two mechanisms.}
+    \label{fig:rmse}
+    \vspace{-1em} % SPACE
+\end{figure}
+
+\mypar{Centralized training with amplification}
+
+We evaluate on CIFAR-10 closely following \citet{choquette2022multi}; notably, we train for $20$ epochs on CIFAR-10 using a batch size $\batchsize=500$. We tune all mechanisms to achieve their best performance for each $\epsilon$ (e.g., optimizing over number of bands as described in~\cref{sec:optimizing}), and use $12$ repeated runs. See \cref{sec:cifar-detail} for the full setup.
+
+%To begin, we compare the ratios of the RMSE defined above for each mechanism. We use this RMSE as a proxy for the utility (converged test accuracy) of the trained ML model at a fixed privacy level; thus, we may efficiently tune the choice of $\bands$ in our \BANDMF.
+\btodo{Add a reference to discussion in Sec 4/5.}
+%\cref{fig:cifar-loss-compare} in \cref{sec:cifar-detail} shows RMSE is highly correlated with ML training accuracy, validating this approach.
+
+%i.e., that the RMSE faithfully describes the utility of the trained ML model.
+
+%\mypar{Main Results} 
+\cref{fig:centralized} shows that \BANDMF with amplification can obtain utility benefits over both prior mechanisms. We find that in a marginally higher regime of $\epsilon \in [2,5]$, \BANDMF achieves a consistent $\approx 1$ percentage point boost in performance over~\citet{choquette2022multi}. Below $\epsilon \approx 2$, where prior \dpsgd dominated, we find that \BANDMF obtains larger benefits around $3$ percentage points. These two findings show that \BANDMF is able to leverage the benefits of both amplification and \memf simultaneously to achieve additional performance gains. As the budget $\epsilon$ gets smaller, we find that \BANDMF is equivalent to \dpsgd ($\bands=1$ is optimal).
+
+% BM: Commented this out, I don't think this Theorem needs corroboration, in that
+% it's a theorem --- \BANDMF cannot lose to DPSGD.  :)
+%further corroborating our \cref{thm:general-amplification} that in this case, \BANDMF is equivalent to \dpsgd and thus subsumes it. We show results for a wider range of $\epsilon$ in \cref{fig:cifar10-main}.
+
+
+
+
+%\mypar{StackOverflow NWP}%\label{sec:sonwp}
+We next consider the now-standard StackOverflow next-word-prediction (NWP) task with user-level differential privacy, again  following  \cite{choquette2022multi}, in particular 2052 steps and 6 epochs, with $\batchsize=1000$. The previous state-of-the-art for centralized training at $\epsilon \ge 2$ corresponds to their \memf. We again tune $\bands$ under amplification for optimal RMSE, selecting  $\bands =  9, 18, 32, 64$ for $\epsilon = 1, 2, 4, 8$ respectively. At $\epsilon=16$ we find \memf is optimal. \cref{fig:centralized}(b) shows substantial improvements for combining amplification with \MF for $\epsilon \in [1, 8]$.
+
+
+%In the centralized setting, as with our CIFAR-10 results above, we include privacy amplification where possible. However, because these assumptions cannot be realized in the cross-device setting~\cite{kairouz2021practical}, we do not apply amplification there.
+% We also show prior state-of-the-art methods: tree aggregation~\cite{honaker2015efficient,kairouz2021practical} with the optimal decoder defined in~\cite{choquette2022multi} denoted as \texttt{Optimal TreeAgg}, and the single-epoch approach of \citet{denisov22matfact} denoted as \texttt{Single-epoch MF}.
+
+\paragraph{Cross-device federated learning}
+We consider SO NWP prediction again, but now assuming each user's data corresponds to the data on one device. We assume 2052 rounds and 6 epochs as above. Amplification is generally not possible in the cross-device setting (hence \dpsgd is not included), and so the prior state-of-the-art was (1) \semf of \citet{denisov22matfact} for single-epoch training (using $\batchsize=167$ rather than $\batchsize=1000$), and (2) \opttreeagg, which essentially takes the binary-tree matrix $\Ctree$, and instead of using the less-efficient ``online'' estimator of \citet{honaker2015efficient} as done in \citet{kairouz2021practical}, uses the pseudo-inverse $\Ctree^\dagger$ for noise generation (see \cref{sec:setup}). The \bparticipation sensitivity of $\Ctree$ can still be calculated using the dynamic program of \citet{kairouz2021practical}, while the use of $\Ctree^\dagger$ requires the machinery of \citet{denisov22matfact}. To our knowledge, \opttreeagg has not been tested in the multi-epoch setting previously.  Our \cref{thm:minsepsensgen} further enables an upper-bound on the \bparticipation sensitivity of the \memf matrices of \citet{choquette2022multi}; this incurs a penalty of about 15\% (see \cref{tab:matrices}) compared to \multiepoch-sensitivity.  \cref{fig:federated}(a) shows that our \BANDMF and \memf again outperform prior baselines (though the previously untested multi-epoch \opttreeagg performs quite well).
+
+%We observe the most significant benefits in the cross-device setting. Here, the prior state-of-the-art was the \texttt{Single-epoch MF} of~\citet{denisov22matfact}, where the multi-epoch matrices of~\citet{choquette2022multi} could not be applied due to the incompatible sensitivity calculation based on \multiepochpart. By leveraging our \bparticipation of \cref{sec:sensitivity}, we can immediately apply these matrices along with the tree aggregation approach of~\citet{kairouz2021practical,honaker2015efficient} with the optimizations in~\cite{choquette2022multi} to obtain \texttt{Optimal TreeAgg}. \emph{Our \BANDMF outperforms all others.}
+%In the centralized setting, our findings align with our results on CIFAR-10 above. We find that \BANDMF achieves new state-of-the-art across all $\epsilon\in [1, 16]$ typically considered in the literature, with consistent benefits around $0.5$ percentage points over the best prior work.
+
+%\btodo{Explain why dpsgd not in federated experiments}
+
+% \btodo{Work this in} Test-set accuracy for centralized StackOverflow NWP training for a range of mechanism. Following \citet{choquette2022multi}, all mechanisms used 2052 iterations and $\maxpart=6$ epochs, under $\maxpartsep{6}{342}$-participation. The previous SOTA corresponds to \texttt{Opt MF, b=2052}, that is, a full lower-triangular matrix optimized for \multiepochpart. Even without amplification, matrices with many fewer bands do almost as well; once apply the amplification results of \cref{sec:amplification}, \btodo{Add a caveat about how we did not exactly do sampling, maybe we did shuffling?} we see a substantial improvement, particularly at lower $\epsilon$s. 
+
+    %\rnote{I would consider separating the description of the plot from the analysis of the results by moving the last sentence elsewhere.}
+
+
+\mypar{Application in production cross-device FL}
+\znote{First version, need to adjust for consistency/make connection with the rest of the paper, potentially update the figure and text. } \bnote{I would recommend applying some smoothing to the eval data as I think the figure would be more readable?  Are the dips due to diurnal variation in training?  }
+
+\begin{figure*}[t]
+    \vspace{-2em} % SPACE
+    \begin{center}
+    % From https://colab.corp.google.com/drive/1wSZuY97WUkBssLRQC7IuO9EGVqtBaajS?usp=sharing
+    
+    \subfigure[Simulated cross-device FL, SO NWP]{
+        \includegraphics[height=1.5in]{figures/stackoverflow/so_federated_privacy_accuracy.pdf}
+    }
+    \subfigure[Production mobile keyboard training]{
+    \includegraphics[height=1.5in]{figures/gboard-es-es.pdf}}
+  %  
+    \vspace{-0.5em} % SPACE
+    \caption{%
+    \textbf{\textsc{Both:}} Amplification is infeasible as outlined in \cref{sec:experiments} and \cref{sec:production-detail}.
+    % SO NWP
+    \textbf{\textsc{Left, (a):}} Cross-device FL results under $\minsep{=}342$-min-sep-participation. Our \BANDMF, and \memf (with the application to FL made possible by our \cref{thm:minsepsensgen}) outperform all prior baselines.
+    %
+    %Here we assume the more general $\minsep=342$-min-sep-participation schema. In this setting, the SOTA baselines are tree-aggregation based DP-FTRL (\texttt{6e Honaker TA}~\citep{kairouz2021practical} \btodo{TODO - explain that what we do heere is much better, using the pseudo-inverse of the tree matrix $\bfC$}) and optimal single-participation MF (\texttt{1e Opt MF}~\citep{denisov22matfact}).
+    %
+    \textbf{\textsc{Right, (b):}} Evaluation accuracy of training a language model in real-world FL system. Our \BANDMF achieves higher utility and a stronger $(\epsilon{=}4.35, \delta{=}10^{-10})$-DP compared with the $(\epsilon{=}6.69, \delta{=}10^{-10})$-DP achieved by \onlinetreeagg~\citep{kairouz2021practical}.
+    %
+    } % end caption
+    \label{fig:federated}
+    \vspace{-1em} % SPACE
+    \end{center}
+\end{figure*}
+We fine-tune a Spanish next word prediction model, pretrained on the multilingual C4 dataset \citep{raffel2020t5,xue2020mt5}, with on-device user data using FL. Our setup 
+%is similar to~\citet{xu2023gboard} as 
+is described in full in \cref{sec:production-detail}. %Further, we remind the reader that in this setting precise control over the participation pattern is not possible, as is also detailed there.  
+We compared to an existing implementation of the \onlinetreeagg algorithm of \citet{kairouz2021practical} (not the optimal version using $\Ctree^{\dagger}$ in simulation). Both algorithms ran for $\dimension=2000$ training rounds. The \BANDMF matrix was optimized for $\bands=400$ bands; however, the production system only allows approximate control of the separation between participations, and post-hoc we could only bound $\minsep$ by 390 rounds for \onlinetreeagg and 385 for \BANDMF, necessitating the use of \cref{thm:minsepsensgen} for the analysis of \BANDMF as $\minsep < \bands$.
+
+We used the same clients/round goal of 6500 for both, and \emph{tuned noise multipliers to achieve comparable RMSE}, hence tuning for a stronger privacy guarantee rather than improved accuracy. \cref{fig:federated}(b) shows our results, and we see \BANDMF actually achieves a slight improvement in accuracy, possibly due to learning-rate cooldown (which was only implemented for \BANDMF). 
+\textbf{Our primary result is then that we are able to improve the privacy guarantee from $\rho{=}0.52$-zCDP for \onlinetreeagg to $\rho{=}0.24$-zCDP for \BANDMF,} or $(\epsilon{=}6.69, \delta{=}10^{-10})$-DP to $(\epsilon{=}4.35, \delta{=}10^{-10})$-DP. Full details of the privacy guarantee following the best practices of \citet{ponomareva2023dpfy} are given in \cref{sec:production-detail}.
+
+%/ for TA-DP-FTRL,MF-DP-FTRL achieves both a strong privacy guarntee of , compared with  and also a utility improvement.  \btodo{TODO - Give details of the matrix use, and explain how \cref{thm:minsepsensgen} enabled the calculation of privacy guarantees even though min separation $\minsep=385$ was fewer than the chosen $\numbands=400$. It would also be good to give the sensitivity inflation this caused.}
+
+
+%Under these constraints, Tree Aggregation (TA)-DP-FTRL~\citep{kairouz2021practical} is the only known algorithm that achieves a meaningful formal device-level DP guarantee in practice \citep{mcmahan2022federated,xu2023gboard}.
+% In a common practical FL system, clients have to satisfy criteria like being charged,idle and connected to unmetered network to participate in a round \citep{NWP18,bonawitz2019towards,paulik2021federated,huba2022papaya}, hence only a subset of clients can be reached and there is a strong diurnal pattern of client participation \citep{yang2018applied,zhu2022diurnal}.
+
+% We apply the proposed method to train a one-layer LSTM language model of $\sim$2.4 million parameters in a practical cross-device FL system following \citep{xu2023gboard}. The model is used for predicting the next word of Spanish in a mobile virtual keyboard. We pretrain the model on public multilingual C4 dataset \citep{raffel2020t5,xue2020mt5}, and then fine-tune with on-device user data in FL. 
+
+ %We find that \mfftrl achieves a significant improvement in the privacy-utility tradeoff. By round 2000, a client can participate at most 4 times, and the two participation of the same client are separated by at least 390 rounds for TA-DP-FTRL and 385 for \mfftrl: these differ due to the practical challenges in implementing the participation protocols. 
+% BM: Commenting this out for blind review.
+%The absolute values are also smaller than \citep{xu2023gboard} as a system update affects the client participation.
+
+
+% \cref{fig:gbaord-es-es} shows the evaluation accuracy of next word prediction for DP-FTRL algorithms. The fluctuations of the curves are likely due to the subset of clients (hundreds or thousands of devices out of commonly millions of total possible participating devices) for evaluation is changing in each round. 
+% In a common practical FL system, clients have to satisfy criteria like being charged,idle and connected to unmetered network to participate in a round \citep{NWP18,bonawitz2019towards,paulik2021federated,huba2022papaya}, hence only a subset of clients can be reached and there is a strong diurnal pattern of client participation \citep{yang2018applied,zhu2022diurnal}.
+% It is very challenging to hold a fixed set of clients for evaluation, or develop random sampling for privacy amplification. Instead of amplification by sampling, the strong privacy of DP-FTRL algorithms are achieved by a much simpler and easier to implement participation protocol in practice: limiting the number of client participation in a certain period. 
+% Using the participation protocol, Tree Aggregation (TA)-DP-FTRL~\citep{kairouz2021practical} is the only known algorithm that achieves a meaningful formal device-level DP guarantee in practice \citep{mcmahan2022federated,xu2023gboard}. The proposed MF-DP-FTRL can use the same participation protocol, and achieves both better utility/accuracy and privacy. At round 2000 in \cref{fig:gbaord-es-es}, a client can participate at most 4 times, and the two participation of the same client are separated by 390/385 rounds for TA/MF-DP-FTRL~\footnote{The separation rounds are different for the two algorithms due to the practical challenge in implementing the participation protocol. The absolute values are also smaller than \citep{xu2023gboard} as a system update affects the client participation.}; MF-DP-FTRL achieves $\rho=0.24$-zCDP/$(\epsilon=6.69, \delta=10^{-10})$-DP, which is stronger than $\rho=0.52$-zCDP/$(\epsilon=4.35, \delta=10^{-10})$-DP achieved by TA-DP-FTRL.
+
+
+\section{Discussion and Limitations}
+In this paper, we proposed the \BANDMF mechanism, which extends \MFFTRL and enjoys the benefits of privacy amplification.  This allows it to \emph{solely} operate above the previous Pareto frontier defined by both amplified \dpsgd and \mfftrl in centralized training scenarios.  Moreover, \BANDMF is well-suited to federated training scenarios, and improves state-of-the-art there as well.  Additionally, the computational overhead of \BANDMF is less than \mfftrl by a factor of $\nicefrac{b}{n}$. It still has a $b\times$ time and space overhead compared to \dpsgd, which can be prohibitive for very large models with 10s of billions of parameters. This is an interesting research direction to consider for future work.
+
+\bibliographystyle{plainnat}
+\bibliography{reference}
+
+% Insert a clear page so we can submit the main body separately from the appendix
+\clearpage
+
+\appendix
+
+
+\section{Notation summary}\label{sec:notation}
+\begin{table}[H]
+\renewcommand{\arraystretch}{1.4}%
+\begin{tabular}{ll}
+\toprule
+\dimension & Number of steps of the streaming linear query (SGD steps or FL rounds) \\
+\numusers & Total number of records (examples or users in the database) \\
+$\minsep$ & Minimum separation between participations; $\minsep=1$ allows every step \\
+$\maxpart$ & The maximum number of times any user might participate in training. \\
+\mdim & Dimension of per-step user contributions (e.g., model size). \\
+$\obs_i \in \R$ or $\R^\mdim$ & Sum of per-example gradients (or per-user model updates) on step $i$. \\
+$\obs \in \R^\datadim$ & Stream of inputs $\obs_i$, equiv. matrix with rows $\obs_i$ (so  $\obs_i = \obs\idx{i}{:}$). \\
+$\clipnorm$ & Clipping norm that limits the size of per-example contributions to $\obs_i$.  \\
+$\pi \subseteq [n]$ & Participation pattern, the set of steps that an example participates in.\\
+$\Pi$ & Participation schema, set of sets of steps (set of all $\pi$) an example could participate in. \\
+$\deltaset$ & $=\left\{ \obs - \obsp \mid (\obs, \obsp) \in \bfN \right\}$, the set of deltas between neighboring input streams $\obs,\obsp$. \\
+$\Dcorners$ & Corners of $\deltaset$ when assumed to be a polytope, $\deltaset = \conv(\Dcorners)$. \\
+\multiepoch-participation & participation schema $\Pi$ with at most $\maxpart$ participations, separated by exactly $\minsep$. \\
+$\bfA \in \R^\dimdim$  & Lower-triangular linear query matrix to be factorized as $\bfA = \bfB \bfC$. \\
+$\bfT \in \R^\dimdim$  & $\bfT := \AAT$ for convenience. \\
+$\lambda_{\min}(\bfA)$, $\lambda_{\max}(\bfA)$. & Smallest and largest eigenvalues of real matrix $\bfA$. \\
+$\bfA\herm$  & Conjugate (Hermitian) transpose of $\bfA$. \\
+$\bfX^\star$  & A matrix $\bfX$ that is ``optimal'' in a context-dependent sense. \\
+$\bfA^\dagger$  & Moore-Penrose pseudoinverse of matrix $\bfA$. \\
+$\bfA\idx{i}{j}$ & The $(i, j)^{\text{th}}$ entry of matrix $\bfA$. \\
+$\bfA\idx{i}{:}$ and $\bfA\idx{:}{j}$  & The $i^{\text{th}}$ row and $j^{\text{th}}$ column. \\
+$\conv\left(S\right)$ & Convex hull of the set $S$.\\
+$[n]$ & $=\{1, \dots, n\}$ \\
+$\lfrob{\bfX}$  & The Frobenius norm of a matrix $\bfX$. \\
+\bottomrule
+\end{tabular}
+\caption{Summary of notation}\label{tab:notation}
+\end{table}
+
+
+\section{Empirical evaluation of banded matrices}\label{sec:matrixtable}
+\btodo{I suspect most of this section and the table will need to move to the appendix}
+\input{tables/losses}
+\cref{tab:matrices} compares the matrix mechanisms studied under different participation patterns but normalized to have sensitivity $\sens(\bfC)=1$ under \maxpartsep{6}{342}-participation. The sensitivity under single participation $\maxpart=1$ is lowest as expected. With column normalization, sensitivity is also $1$ under \bpartval{6}. We make the following observations:
+\begin{itemize}
+    \item For the MF mechanisms, column normalization hurts \rmse for \multiepoch-participation (as it is an additional constraint), but actually improves \rmse under \bparticipation.  
+    
+    \item We conjecture that the \multiepoch-participation optimized matrices (MF without column normalization) are optimal for the prefix-sum workload\footnote{It might not be, because we enforce a non-negativity or orthogonality constraint; see \citet[Appendix I.3]{choquette2022multi}.}; With this in mind, we see there is only a small increase in \rmse for switching to the more challenging \bparticipation schema ($1.00 \rightarrow 1.05$) . If (as we further conjecture) the optimal matrices for prefix-sum in fact are $\maxpart$-banded, the gap is even smaller (at most $1.04 \rightarrow 1.05)$. Hence, at least for the prefix-sum workload $\bfA$,  there is limited room for improvement in developing optimization procedures that directly exploit \bparticipation.
+    
+    \item Using fewer than $\minsep$ bands does degrade performance on the RMSE metric, with DP-SGD being the extreme case, yielding prefix sum estimates almost $10\times$ worse than the MF mechanisms.
+    
+    \item The results of \citet{denisov22matfact} imply that the binary-tree $\bfC$ matrix can in fact be used in the online setting, with the Moore-Penrose pseudo-inverse giving the optimal decoder for \rmse~\cite{choquette2022multi}, corresponding to the `full' estimator of \citet{honaker2015efficient}. We include this in the table as a baseline, and see that it is in general outperformed by our MF mechanisms by about $1.5\times$ in \rmse.  
+\end{itemize}
+
+\section{Example structures of MF}\label{sec:structure}
+\subsection{Single-Epoch MF}
+\begin{figure}[H]
+    \centering
+    % Comment out to speed compilation. These need to be regenerated anyway
+    %\includegraphics[width=1.1\linewidth]{figures/opt_w_h.png}
+    \vspace{-2em}
+    \caption{An example optimal factorization $\bfS = \bfW \bfH$ ($\bfB = \bfW$, $\bfC = \bfH$) under single-participation as taken from~\citet{denisov22matfact}. Matrix $\bfS$ encodes SGD with no momentum or learning rate cooldown.}
+    \label{fig:me-visualization}
+    \vspace{-1em}
+\end{figure}
+\subsection{Multi-Epoch MF}
+\begin{figure}[H]
+    \centering
+    % Comment out to speed compilation. These need to be regenerated anyway
+    %\includegraphics[width=1.1\linewidth]{figures/stackoverflow/axbc_matrices.png}
+    \vspace{-2em}
+    \caption{An example optimal factorization $\bfA = \bfB \bfC$ under \maxpartsep{6}{342}-participation as taken from~\citet{choquette2022multi}. Matrix $\bfA$ encodes SGD with momentum 0.95 and a learning-rate cooldown schedule for the last 25\% of rounds. The unique structure imparted by the \multiepoch-participation sensitivity constraints are evident. For example, the white diagonals with a period of $b=342$ in $\bfX = \bfC\tp \bfC$ show that the columns of $\bfC$ that could correspond to a pair of rounds $(i, j)$ where the same user might participate are in fact orthogonal.}
+    \label{fig:me-visualization}
+    \vspace{-1em}
+\end{figure}
+
+\subsection{\dpsgd}
+Due to our \cref{sec:amplification}, the following matrices visualizing $\bfB=\bfA$ and $\bfC=\bfI$ exactly correspond to \dpsgd with amplification. Observe how all entries have the same value, whereas for general \mfftrl (e.g., the single-epoch MF and multi-epoch MF shown above), coordinate-wise entries differ.
+
+% \begin{figure}
+%     \centering
+%     %\includegraphics{}
+%     \caption{Caption}
+%     \label{fig:banded-visualization}
+% \end{figure}
+
+\section{Algorithms and Analysis for~\cref{sec:sensitivity}}
+\subsection{Algorithms}
+
+\begin{algorithm}[H]
+\caption{(\VecSens): Maximum of $\langle \bfv, \bfu\rangle$ where $\bfu$ is a vector in the $\ell_\infty$ unit ball satisfying $\Pi_\minsep$.}
+\label{alg:minsepvectorsens}
+\floatname{algorithm}{SomeName}
+\begin{algorithmic}%[1]
+\State \textbf{Inputs:} min-separation $\minsep$, vector $\bfv$, max participations $\maxpart$
+\State Initialize $F \in \R^{n \times k}$
+\For{$m = 1, \dots, k$}
+\For{$i = n, \dots, 1$}
+ \Comment{We use the convention that $F[s,t] = 0$ if $s,t$ are out-of-bounds.}
+\State $F[i, m] = \max{\Big(\bfv_i + F[i+b, m-1], F[i+1, m]\Big)}$
+\EndFor
+\EndFor
+\Return $F[1, k]$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Efficient sensitivity upper bound for \bparticipation} \label{alg:minsepsensgeneral}
+\begin{algorithmic}%[1]
+\State \textbf{Inputs:} min-separation $\minsep$, matrix $\bfX$, max participations $\maxpart$
+\State Initialize $F \in \R^{n \times k}$, $\bfv \in \R^n$.
+\For{$j = 1, \dots, n$}
+\State $\bfv_i = \VecSens(\minsep, |\bfX_{[i, :]}|, k)$
+
+\EndFor
+\Return $\sqrt{\VecSens(\minsep, \bfv, \maxpart)}$
+\end{algorithmic}
+\end{algorithm}
+
+
+\begin{algorithm}[H]
+\caption{Efficient sensitivity calculation for \bparticipation, assuming $\bfX$ is $\minsep$-banded.} \label{alg:minsepsensbanded}
+\begin{algorithmic}%[1]
+\State \textbf{Inputs:} min-separation $\minsep$, $\minsep$-banded matrix $\bfX$, max participations $\maxpart$.\\
+\Return $\sqrt{\VecSens(\minsep, \diag(\bfX), k)}$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Analysis}
+\label{app:analysis}
+\begin{prop}\label{prop:trace_sens}
+
+The sensitivity of $\bfC$ for a given participation schema $\Pi$ may be expressed as:
+
+\begin{equation}\label{eq:trace_norm_rep}
+    \sensd\left(\bfC\right)^2 = \max_{\pi \in \Pi} \sup_{\contrib \in \deltaset} \tr\left( \left[\proj \bfC^\top\bfC \proj \right]\left[\contrib \contrib^\top\right]\right),
+\end{equation}
+
+where $\proj$ represent the axis-aligned projection onto the set of rows indexed by $\pi$; that is, $\proj[i, i] = 1$ for $i \in \pi$, and $0$ otherwise. Assuming that $\deltaset$ represents a set of matrices with rows bounded by $\ell_2$ norm 1, this can be upper bounded by:
+\[ 
+\max_{\pi \in \Pi} \sum_{i,j \in \pi} | \bfX_{[i,j]} |.
+\]
+where $\bfX = \bfC\tp \bfC$.  This upper bound is tight when $\proj \bfC^\top\bfC \proj \geq 0 \forall \pi \in \Pi$, and is independent of the dimension $\mdim$ of the rows of $\contrib$.
+
+\end{prop}
+\begin{proof}
+
+Recall that $\Pi$ determines the rows of $\contrib$ which may be nonzero in the definition \cref{eq:sensopnorm}. Take some $\contrib \in \deltaset$, an element of $\R^{\dimension \times \mdim}$, which therefore has nonzero rows only at some set of indices $\pi \in \Pi$.% Let $\proj$ represent the axis-aligned projection onto the set of rows indexed by $\pi$, that is $\proj[i, i] = 1$ for $i \in \pi$, and $0$ otherwise.
+Note, clearly $\contrib = \proj\contrib$, $\proj^\top = \proj$, and $\proj = \proj \proj$.
+
+Therefore
+
+\begin{align}\label{eq:trace_norm_rep_derivation}
+\begin{split}
+    \|\bfC \contrib\|_F^2 &= \tr\left(\left[\bfC\proj\contrib\right]^\top \bfC\proj\contrib\right) = \tr\left(\contrib^\top \proj^\top \bfC^\top\bfC \proj \contrib\right)\\
+    &= \tr\left( \proj \proj \bfC^\top\bfC \proj \proj \contrib \contrib^\top\right) = \tr\left( \left[\proj \bfC^\top\bfC \proj \right]\left[\proj \contrib \contrib^\top \proj \right]\right)\\
+    &= \tr\left( \left[\proj \bfC^\top\bfC \proj \right]\left[\contrib \contrib^\top\right]\right).
+\end{split}
+\end{align}
+
+This implies the statement ~\cref{eq:trace_norm_rep} by the definition of sensitivity and neighboring in our setting.
+
+%We may take at least two perspectives on the trace~\cref{eq:trace_norm_rep}. In one, we note that the terms inside the square brackets are $\dimension \times \dimension$ matrices, with particular rows and columns zeroed out (indexed by $\pi$). In another, we note that the trace in~\cref{eq:trace_norm_rep} is equivalent to a trace computed on `subsampled' matrices, where we simply delete the rows and columns zeroed out by $\proj$. Equivalence can be easily seen by writing down expressions for the elements on the diagonal of the full product. For $\pidim = |\pi|$, these subsampled square matrices take values in $\mathbb{R}^{\pidim \times \pidim}$. This second view represents the claimed~\cref{eq:trace_norm_rep}.
+
+%We will take the second view below. Let $\bfC_\pi \in \mathbb{R}^{\dimension \times \pidim}$ represent the selection from $\bfC$ of the columns indexed by $\pi$, so that $\bfC_\pi^\top \bfC_\pi \in \mathbb{R}^{\pidim \times \pidim}$ is the `subsampled' representation of $\proj \bfC^\top\bfC \proj$.  Let $ \calL = \{\bfV \in \mathbb{R}^{\pidim \times \mdim}: \max_{i \in [1, \dots, k]} \|\bfV_{[i, :]}\|_2^2 \leq 1\}$ be the matrices in $\mathbb{R}^{\pidim \times \mdim}$ with row norms at most 1. (Technically this $\calL$ is $\pi$-dependent, via $\pidim$, but we will suppress this dependence for the moment).
+
+
+%Then the problem of estimating $\sensd(\bfC)$ for a $\deltaset$ which satisfies the schema $\Pi$ is therefore identical to:
+
+%\begin{equation}
+%    \sensd\left(\bfC\right)^2 = \max_{\pi \in \Pi} \sup_{\obs \in \calL} \tr\left(\bfC_\pi^\top\bfC_\pi \obs\obs^\top\right).
+%\end{equation}
+
+Now, let $\bfX_\pi := \proj \bfC^\top\bfC \proj$ be the matrix formed by zeroing out the rows and columns \emph{not} indexed by $\pi$ from $\bfX$. Assume that every $\bfu \in \deltaset$ has row norms bounded by 1. Expanding the trace in~\cref{eq:trace_norm_rep}, writing $x_{ij}$ for the elements of $\bfX_\pi$ and $\contrib_{[j, :]}$ for the $j^{th}$ row of $\contrib$, we have 
+$$
+\tr\left(\bfX_\pi \contrib\contrib^\top\right) = \sum_{i=1}^k\sum_{j=1}^k x_{ij}\langle \contrib_{[i, :]}, \contrib_{[j, :]}\rangle \leq \sum_{i=1}^k\sum_{j=1}^k |x_{ij}|
+$$
+which yields the claimed bound. When $\bfX_\pi$ is elementwise nonnegative, taking $\contrib_{[i, :]} = \contrib_{[j, :]}$ for any unit vector shows the claimed tightness in this case.
+
+
+\end{proof}
+\mypar{Remark.} This statement can be viewed as a partial extension of~\citep[Theorem G.1]{choquette2022multi}. It does not imply every case handled there, but also implies results which cannot be derived from that Theorem.
+
+
+\begin{proof}[Proof of \cref{thm:minsepsens}]
+\btodo{Not clear having these proofs here really works without having the algorithms. If we had to pick, it would be better to have the algorithms in the main body, and the proofs in the appendix.}
+Conclusion (1) is implied by (2), noting that the conditions on $\bfC$ imply that~\cref{alg:minsepsensbanded} will return a value at most $\kappa\sqrt{k'}$ in this setting.
+
+
+For (2), let $c \in \R^\dimension$ with entries $c_i = \norm{\bfC\idx{:}{i}}^2$ for $i \in \{0, \dots, \dimension-1\}$. We have
+\begin{equation}\label{eq:orthcolnorm}
+\senss(\bfC) 
+  = \max_{\pi \in \Pi_b} \norm{\bfC \indpi} 
+  = \max_{\pi \in \Pi_b} \norm{\sum_{i \in \pi} \bfC\idx{:}{i}}  
+  = \max_{\pi \in \Pi_b} \sqrt{\sum_{i \in \pi} c_i}
+\end{equation}
+where $\indpi \in \{0, 1\}^\dimension$ is given by $\indpi_i = 1$ if $i \in \pi$ and $0$ otherwise. The last equality follows from the orthogonality condition on sufficiently separated columns of $\bfC$ trivially implied by bandedness. It is straightforward to verify the dynamic program of \cref{alg:minsepvectorsens} constructs a feasible $\pi$ which attains the maximum.
+\end{proof}
+
+\begin{proof}[Proof of \cref{thm:minsepsensgen}]Via~\cref{prop:trace_sens}, the result follows from showing that~\cref{alg:minsepsensgeneral} outputs a value at least as large as $\sum_{(i, j) \in \pi} |\bfX_{ij}|$ for any $\pi \in \Pi_\minsep$. So let $\hat{\pi}$ be an element of $\Pi_\minsep$. Note that \VecSens is monotonically increasing in values of the vector $\bfv$ if $\bfv$ is nonnegative, and therefore~\cref{alg:minsepsensgeneral} is monotonically increasing in absolute values of $\bfX$. Therefore we will have our conclusion (3) if we can show that, for $\bfX_{\hat{\pi}}$ the matrix formed by zeroing out all rows and columns of $\bfX$ not indexed by $\hat{\pi}$,~\cref{alg:minsepsensgeneral} returns the value $\sum_{(i, j) \in \pi} |\bfX_{ij}|$. Yet this is straightforward by the characterization of \VecSens as an oracle for computing the maximum of $\langle \bfv, \bfu \rangle$, where $\bfu$ is a vector in the $\ell_\infty$ unit ball.
+\end{proof}
+
+
+\section{Additional Analysis for \cref{sec:amplification}}\label{sec:app-amplification}
+
+Recall that we use $\minsep$ instead of $\bands$ in this appendix since our sampling scheme enforces \multiepochpart. Throughout this section, we slightly abuse notation by letting $i \pmod \minsep = \minsep$ instead of $0$ if $i / \minsep$ is integer. 
+
+\subsection{Algorithms for Sampling}\label{sec:amplification-algorithms}
+\begin{algorithm}[H]
+\caption{Sampling scheme for banded DP-MF} \label{alg:amplified-dpmf}
+\begin{algorithmic}%[1]
+%\State \anote{Noise standard deviation should be taken as input.}
+\State \textbf{Inputs:} Dataset $D$, sampling distribution $\calS$ over $(2^{[\usersperband}])^{\amaxpart}$, noise standard deviation $\sigma$.
+\State $D_1, \ldots, D_{\minsep} \leftarrow$ arbitrary partition of $D$ such that $\forall j: |D_j|  = \usersperband $.
+\State Let $D_j = \{d_{j,1}, d_{j,2}, \ldots, d_{j,\usersperband}\}$ for each $j$. 
+\For{$j = 1, 2, \ldots, \minsep$}
+  \State Sample $\maxpart$ sets to index $D_j$ as $(S_j, S_{\minsep+j}, \ldots, S_{(\amaxpart - 1)\minsep + j}) \sim \calS$, with $S_j \subseteq [\usersperband]$.
+\EndFor
+\For{$i = 1, 2, \ldots, \dimension$}
+\State Let $j = i \pmod \minsep$; compute $\obs_i$ by querying $\{d_{j,\ell}: \ell \in S_i\}$.
+\EndFor
+\State Let $\obs = [\obs_1, \dots, \obs_n]\tp \in \R^\datadim$, release $\bfC \obs + \bfz$ with each entry of $\bfz\idx{i}{j} \sim \calN(0, \sigma^2)$.
+\LineComment{As $\bfC$ is lower-triangular, results could also be released in streaming fashion}
+\anote{For the setup we have, $\bfC$ does not need to be lower triangular, meaning our argument is more generic and the~\cite{denisov22matfact} approach from going from adaptive methods to non-adaptive methods would also work. Not sure if we want to mention it somewhere.}\agnote{I think we avoid mentioning it in this version, it seems like it's a bit complicated to convey the main ideas as is.}
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Sequence of queries that bounds privacy of \cref{alg:amplified-dpmf}} \label{alg:queryub}
+\begin{algorithmic}%[1]
+%\State \bnote{We need to add noise in \cref{alg:amplified-dpmf} if we want this series of queries to be equivalent. Added something above}\agnote{LGTM}
+\State \textbf{Inputs:} Dataset $\tilde{D} = \{d_1, d_2, \ldots, d_{\usersperband}\}$, sampling distribution $\calS$ over $(2^{[\usersperband]})^{\amaxpart}$.
+\State Sample $(S_1, S_2, \ldots, S_{\amaxpart}) \sim \calS$.
+\For{$i = 1, 2, \ldots,\amaxpart$}
+\State $\tilde{D}_i \leftarrow \{d_j: j \in S_i\}$.
+\State Perform (adaptively chosen) sensitivity $\Delta$ query on $\tilde{D}_i$ with noise $\calN(0, \sigma^2)$.
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Proof for \cref{thm:general-amplification}}\label{sec:proof-amplification}
+\begin{proof}
+Consider two datasets $D, D'$ that differ by an example contained in the partition subset $D_j$. We argue about the privacy of $\bfC \obs + \bfz$. For simplicity we assume $j$ is such that $(\amaxpart - 1) \minsep + j \leq \dimension$; elements in $D_j$ such that $j$ does not satisfy this condition can potentially participate $\amaxpart - 1$ times instead of $\amaxpart$, and in turn the privacy guarantee we can prove for these elements can only be stronger.
+ 
+Since $\bfC$ is $\minsep$-banded, we can partition the rows of $\bfC$ into $\amaxpart + 1$ subsets \[R_j, R_{\minsep + j}, R_{2 \minsep + j} \ldots R_{(\amaxpart - 1) \minsep + j}, R_{\emptyset},\] where $R_j$ (resp. $R_{\minsep + j}, R_{2 \minsep + j} \ldots R_{(\amaxpart - 1) \minsep + j}$) denotes the set of rows in $\bfC$ for which the $j$th entry is non-zero, and $R_{\emptyset} = [\dimension] \setminus (R_j \cup R_{\minsep + j} \cup \ldots)$, i.e., $R_{\emptyset}$ are the rows not included in any of these sets, i.e., rows of $\bfC$ where entries $j, \minsep + j, \ldots$ are all zero. The fact that $\bfC$ is lower-triangular and $\minsep$-banded ensures that these subsets do not overlap, i.e., this is a valid partition as can be observed in \cref{fig:query-decomposition}. 
+
+Let $\bfC_R$ denote $\bfC$ restricted to the set of rows in $R$. From the perspective of an adversary distinguishing $D$ from $D'$, each row of $(\bfC \obs + \bfz)_{R_{\emptyset}} = \bfC_{R_{\emptyset}} \obs + \bfz_{R_{\emptyset}}$ has a distribution independent of whether $D$ or $D'$ was used. So it suffices to give privacy guarantees for outputting only $(\bfC \obs + \bfz)_{R_j}, (\bfC \obs + \bfz)_{R_{\minsep + j}}, \ldots, (\bfC \obs + \bfz)_{R_{(\amaxpart - 1) \minsep + j}}$. 
+
+We can decompose rows $R_j$ of $\bfC \obs + \bfz$ as follows:
+
+\begin{equation}\label{eq:query}
+(\bfC \obs + \bfz)_{R_j} = \bfC_{R_j} \obs + \bfz_{R_j} = \bfC_{R_j} \obs_j + \bfC_{R_j} \obs_{-j} + \bfz_{R_j}.
+\end{equation}
+
+Where $\obs_j$ denotes $\obs$ with all rows except $j$ zeroed out, and $\obs_{-j}$ denotes $\obs - \obs_j$, i.e., $\obs$ with row $j$ zeroed out. By the $\minsep$-banded property of $\bfC$, $\bfC_{R_j} \obs_{-j}$ has 0 sensitivity to the examples in $D \setminus D_j$. Then, by \cref{eq:query}, for $i \in R_j$, we observe that the $i$th row of $(\bfC \obs + \bfz)_{R_j}$ corresponds to an (adaptive) query made with $\ell_2$-sensitivity $\bfe_i^\top \bfC \bfe_j$ to the examples used in round $j$, i.e., those given by $D_j$ and $S_j$, and noise $N(0, \sigma^2)^d$. So $(\bfC \obs + \bfz)_{R_j}$ corresponds to a sequence of adaptive queries on the examples used in round $j$, and answering this sequence of queries satisfies any standard privacy guarantee satisfied by answering a single (scalar, adaptively chosen) query with sensitivity $\ltwo{\bfC \bfe_j}$ to the example chosen in round $j$ and noise $N(0, \sigma^2)$ by Claim D.1 in \cite{denisov22matfact}.
+
+The same logic applies to each of $(\bfC \obs + \bfz)_{R_{\minsep + j}}, \ldots, (\bfC \obs + \bfz)_{R_{(\amaxpart - 1) \minsep + j}}$. Putting it all together and taking a max over the sensitivity of the individual queries, releasing $\bfC \obs + \bfz$ satisfies any standard privacy guarantee satisfied by answering $\amaxpart$ adaptively chosen queries, with sensitivity $\max_{i \in [n]} \ltwo{\bfC \bfe_i}$ to the examples used in rounds $j, \minsep + j, \ldots, (\amaxpart - 1) \minsep + j$ respectively. This is exactly \cref{alg:queryub} with the specified choice of $\Delta, \calS$.
+\end{proof}
+\subsection{Corollaries of \cref{thm:general-amplification}}\label{sec:amp-corollaries}
+
+We give here several corollaries of \cref{thm:general-amplification} that are of interest.
+
+\mypar{Equivalence to DP-SGD:} Note that when $\minsep = 1$, the partition contains a single subset, i.e., is the the entire dataset. In particular, in this setting \cref{thm:general-amplification} recovers the privacy guarantees of amplified DP-SGD under any amplification scheme, e.g. including the ones discussed below.
+
+\mypar{Amplification via sampling:} Take the distribution over $2^{[\usersperband]}$ given by including each element of $[\usersperband]$ independently with probability $q$, and let $\calS$ be the product of this distribution with itself $\amaxpart$ times. This is equivalent to the following: in round $i$, we include each element of $D_{i \pmod \minsep}$ independently with probability $q$. In particular, within each $D_j$, we are just using sampling with replacement to choose which elements to include in each round. From this we get the following corollary, which allows us to reduce to a setting whose privacy guarantees are well-understood:
+
+\begin{cor}\label{cor:amplification-by-sampling}
+Suppose the examples participating in round $i$ of matrix factorization are chosen by including each element of $D_{i \pmod \minsep}$ independently with probability $q$. Then the matrix factorization mechanism satisfies any standard privacy guarantee satisfied by  $\amaxpart$ adaptive scalar queries with sensitivity $\max_{i \in [n]} \ltwo{\bfC \bfe_i}$ and noise $N(0, \sigma^2)$, with the $i$th query run on a batch given by sampling each element of a $\usersperband$-element database with probability $q$. 
+\end{cor}
+
+We next make this explicit in terms of the \texttt{dp\_accounting} Python library~\citep{pldlib}. Given $\dimension, \numusers, \minsep$ and a target per-round batch size $\batchsize$, we could write a \texttt{dp\_accounting.DpEvent} capturing the privacy guarantees of the matrix factorization mechanism as follows:
+
+\begin{verbatim}
+gaussian_event = dp_accounting.GaussianDpEvent(noise_multiplier)
+q = B / math.floor(n / b)
+sampled_event = dp_accounting.PoissonSampledDpEvent(
+    q, gaussian_event
+)
+composed_event = dp_accounting.SelfComposedDpEvent(
+    sampled_event, math.ceil(m / b)
+)
+\end{verbatim}
+
+
+
+% \anote{Can we get a statement about the final $(\epsilon, \delta)$-DP guarantee given the parameters, even if in big-Oh. Basically, from the description above, it is still not clear that we would get roughly $\sqrt{b/n}$ factor amplification in $\epsilon$. Basically, something analogous to Theorem 1 in~\cite{DP-DL}. We do not need an exact theorem statement, even a remark would do.}\agnote{Is RDP okay? Gives simpler expressions / lets us use more up to date results; see below.}\anote{This is perfect.}
+
+\begin{example}
+To give an example of the amplification guarantee, for simplicity assume $\dimension / \minsep, \numusers / \minsep$ are integer. If all column norms in $\bfC$ are 1, each row of $\bfx$ has sensitivity 1, and each entry of $\bfz$ has standard deviation $\sigma$, then outputting $\bfC \bfx + \bfz$ satisfies $(\alpha, \frac{\alpha \dimension}{2 \sigma^2 \minsep})$-RDP. 
+
+Using Theorem 11 of \cite{MTZ19} and \cref{cor:amplification-by-sampling}, for appropriate choice of $\alpha$ and $q$, this improves to $(\alpha, q^2 \cdot \frac{2 \alpha \dimension}{\sigma^2 \minsep})$-RDP with amplification by sampling. In particular, if we have a target per-round batch size $\batchsize$, then we should choose $q = \frac{\batchsize \minsep}{\numusers}$, and if this choice of $q$ satisfies the conditions in \cite{MTZ19} plugging this in gives $(\alpha, \frac{2 \alpha \batchsize^2 \minsep \dimension}{\sigma^2 \numusers^2})$-RDP. Notice that $\minsep = 1$ recovers the privacy guarantees of DP-SGD with Poisson sampling, and this privacy guarantee weakens as $\minsep$ increases.
+\end{example}
+
+\mypar{Amplification via shuffling:} Fix a per-round batch size $\batchsize$. Then, suppose we shuffle the list of examples, and cyclically iterate over batches of size $\batchsize$ in this list as the sets of examples to use in each round of matrix factorization. That is, we shuffle $D$ into an ordered list $d_1, d_2, \ldots$, and in round $i$ use examples $d_{(i-1)\batchsize + 1 \pmod \numusers}, d_{(i-1)\batchsize + 2\pmod \numusers}, \ldots, d_{i\batchsize \pmod \numusers}$. 
+
+For simplicity let's consider the case where $\numusers / (\batchsize \minsep)$ is integer. In particular, this means in this shuffling scheme, each example appears once every $\numusers / \batchsize$ rounds, and for each of these rounds $i$, $i \pmod \minsep$ is the same. Then this shuffling scheme is equivalent to the following: First, rather than choose an arbitrary partition to apply \cref{thm:general-amplification}, we choose a uniformly random partition into $\minsep$ subsets of size $\numusers / \minsep$. Then, we choose $\calS$ to be the distribution giving by shuffling $[\numusers / \minsep]$ and then cyclically iterating over the shuffled list in batches of size $\batchsize$. Given this equivalence, we get the following:
+
+\begin{cor}\label{cor:amplification-by-shuffling}
+Suppose the examples in matrix factorization are chosen by shuffling $D$ and then iterating over batches of size $\batchsize$. If $n / (\batchsize \minsep)$ is integer, then the matrix factorization mechanism satisfies any standard privacy guarantee satisfied by  $\amaxpart$ adaptive scalar queries with sensitivity $\max_{i \in [n]} \ltwo{\bfC \bfe_i}$ and noise $N(0, \sigma^2)$, with the examples in each query given by shuffling a dataset of size $\numusers / \minsep$ and cyclically iterating over this list in batches of size $\batchsize$.
+\end{cor}
+
+%\anote{Something similar to the comment for the sampling case. You can instantiate from https://arxiv.org/pdf/2007.06605.pdf or from https://arxiv.org/pdf/2208.04591.pdf  for the amplification statement for shuffling.}\agnote{I'm going to use the first one, since the other shuffle paper assumes pure DP randomizers; there is probably a more up-to-date result for the shuffle model, but I think the asymptotics should be the same?}\anote{I think what you wrote should be sufficient.}
+
+\begin{example}
+Consider the simplified case where $\numusers = \dimension$, we choose a random permutation $\pi$, and in round $i$ query example $d_{\pi(i)}$. In this case, if all the column norms of $\bfC$ are 1, $\bfx$'s rows have sensitivity 1, and $\bfz$'s entries have standard deviation $\sigma = \calO\left(\frac{\sqrt{\ln(1/\delta)}}{\epsilon}\right)$, we get that $\bfC \bfx + \bfz$ satisfies $(\epsilon, \delta)$-DP. With e.g., the amplification for shuffled $(\epsilon, \delta)$-DP mechanisms given by Theorem 5.1 of \cite{balle2020privacy} and \cref{cor:amplification-by-shuffling}, if $\epsilon$ is a constant, we instead get that $\bfC \bfx + \bfz$ satisfies $\left(\epsilon \cdot \calO\left(\sqrt{\frac{\minsep \log(1/\delta)}{\dimension}}\right), \delta \cdot \calO\left(\frac{\dimension  \ln(1/\delta)}{\minsep}\right)\right)$-DP.
+\end{example}
+
+\subsection{Additional Figures}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figures/query-decomposition.png}
+    \caption{A visualization of how we can decompose a banded matrix mechanism into independent queries on $D_j$ (as in \cref{alg:queryub}) under our sampling scheme.}
+%Figure source: https://docs.google.com/presentation/d/1YwTbPj-VZSzye_PPiMQ5G6urJqVJPRjAxeR6_U_qeIs/edit?usp=sharing
+%\bnote{Great figure. But, should the ``Query on examples in round X'' be lined up with the horizontal lines? Right now they seem to apply to the "blocks" in between the lines. That is, I think the lines are supposed to represent rows/columns of $\bfC$, right? It could be worth making them slightly thicker for that reason.} \btodo{Also, please include a pointer to the source for the figure in a latex comment.}}
+    \label{fig:query-decomposition-big}
+\end{figure}
+
+\section{Additional RMSE Experiment Details}
+
+In this section, we provide more discussion and supplementary experiments surrounding the RMSE experiments in \cref{fig:rmse}. \cref{table:optbands} shows the optimal number of bands for each $(\epsilon, k)$ pair considered in the RMSE experiments.  It shows the general trend that as $\epsilon$ decreases, or $k$ increases, the optimal number of bands decreases.  
+
+\begin{table}
+\centering
+\begin{tabular}{l|rrrrrrrrrrr}
+\toprule
+$\epsilon / k$ &  1    &  2    &  4    &  8    &  16   &  32   &  64   &  128  &  256  &  512  &  1024 \\
+\midrule
+0.03125  &     2 &     2 &     1 &     1 &     1 &     1 &     1 &     1 &     1 &     1 &     1 \\
+0.0625  &     4 &     2 &     1 &     1 &     1 &     1 &     1 &     1 &     1 &     1 &     1 \\
+0.125  &     8 &     4 &     2 &     1 &     1 &     1 &     1 &     1 &     1 &     1 &     1 \\
+0.25  &     8 &     4 &     4 &     2 &     1 &     1 &     1 &     1 &     1 &     1 &     1 \\
+0.5  &    16 &     8 &     4 &     4 &     2 &     1 &     1 &     1 &     1 &     1 &     1 \\
+1.0  &    32 &    16 &     8 &     4 &     2 &     2 &     1 &     1 &     1 &     1 &     1 \\
+2.0  &    64 &    32 &    16 &     8 &     4 &     2 &     2 &     1 &     1 &     1 &     1 \\
+4.0  &   128 &    64 &    32 &    16 &     8 &     4 &     2 &     2 &     1 &     1 &     1 \\
+8.0  &  1024 &   512 &   256 &    32 &    16 &     8 &     4 &     2 &     2 &     1 &     1 \\
+16.0 &  1024 &   512 &   256 &   128 &    64 &    32 &     8 &     4 &     4 &     2 &     1 \\
+\bottomrule
+\end{tabular}
+\caption{\label{table:optbands} Optimal number of bands for each $(\epsilon, k)$ pair, when $n=1024$ and $\delta = 10^{-6}$.}
+\end{table}
+
+\section{Additional CIFAR-10 Experiment Details}\label{sec:cifar-detail}
+
+\subsection{Setup and Tuning}\label{sec:cifar-tuning}
+We tune all jobs on a learning rate grid of coefficients in [1, 2, 5] on powers in [-2, 3].
+We find that no momentum works best for DP-SGD and momentum=0.95 works best for \mfftrl mechanisms on average in tuning; though initial tuning found that tuning momentum as well could lead to slightly better results at some $\epsilon$ budgets, we found that a more refined grid of learning rates nearly always led to a fixed momentum being optimal, and so we fix this parameter. We also found that a learning rate cooldown to $0.05\times$ the initial learning rate over the last 500 steps of training improved all runs and so we fix this parameter.
+All models trained for 20 epochs on CIFAR10 with a batch size of 500. We repeat each setting 12 times and show 95\% bootstrapped confidence intervals. 
+
+\subsection{Additional Figures}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{figures/central/banded_relative_heatmap_restyle.pdf}
+    \caption{\textbf{\BANDMF is at least as good as \dpsgd across all $\epsilon$, and often significantly better.} \BANDMF is better than the prior \mfftrl from~\citet{choquette2022multi} up to $\epsilon\approx5$. We compare the ratio of the total error (see \cref{sec:optimizing}) of  \BANDMF with either mechanism. Lower values indicate that \BANDMF is better. The yellow markers indicate the best \BANDMF mechanism that was better for that $\epsilon$ budget if one existed.
+    Note that we only optimize the Band MF over $\bands \in [0, \dimension/\maxpart]$ which leads to a regime around $\epsilon > 5$ where the it performs worse than the Multi-epoch MF of~\citet{choquette2022multi};  $\bands=\dimension$ is equivalent to this approach modulo the sensitivity definition which we exclude to emphasize the regime we improve on.\rnote{the optimal number of bands at $\epsilon=0.01$ seems suspicious.  I'd expect it to be $1$ there}\ctodo{I'll double check after the deadline, this seems minor. But, I did do some inspection and this seemed correct (note also 0.02 is also > 1)}}
+    \label{fig:cifar-loss-compare}
+\end{figure}
+
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[height=1.5in]{figures/central/cifar10-main-double.pdf}
+    \caption{\textbf{Our banded matrices consistently perform at least as well as the best prior method in each range of $\epsilon$.} 
+    Around $\epsilon\approx1$, we observe significant utility benefits from the banded mechanism around $2-3$ percentage points over \dpsgd. Note that we only optimize the Band MF over $\bands \in [0, \dimension/\maxpart]$ which leads to a regime around $\epsilon > 5$ where the it performs worse than the Multi-epoch MF of~\citet{choquette2022multi};  $\bands=\dimension$ is equivalent to this approach modulo the sensitivity definition which we exclude to emphasize the regime we improve on. Empirical setup is in \cref{sec:cifar-detail}.
+    }\label{fig:cifar10-main}
+\end{figure}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Additional SO NWP Experiment Details}\label{sec:sonwpdetail}
+
+We follow the experimental setup for StackOverflow NWP from \citet{denisov22matfact,choquette2022multi}. Except for \semf (which uses $B=167$ clients/round for 1 epoch), all privacy guarantees and accuracies are for 6 epochs of training using 1000 clients/round for 2052 rounds.
+
+For computational efficiency in estimating model accuracy at a given privacy guarantee, we actually compute in simulation updates from only 100 clients/round, and scale the noise multiplier by a corresponding factor ($\frac{100}{1000}$ for 6 epoch experiments, $\frac{100}{167}$ for \semf). This approach has been used previously \citep{dplangmodels,kairouz2021practical}, and we independently verified it has a negligible impact on the estimates of accuracy we report.
+
+\mypar{Optimizer and learning-rate tuning} For all SO NWP experiments with use the FedSGDM optimizer~\citep{reddi20adaptive}. This optimization approach first takes multiple local SGD steps (with learning rate 1.0 in our experiments) on the training data of each user in the batch before clipping to $\clipnorm=1$, summing, and passing the result $\obs_i$ into the DP mechanism which adds noise $[\bfC^\dagger \bfz]\idx{i}{:} \in \R^\mdim$ on each iteration $i$. The resulting privatized sum is then divided by the batch size $\batchsize$ and passed to the ``server'' (post-aggregation) optimizer, in our case SGDM with momentum parameter $\beta=0.95$ and learning rate $\serverlr$.  We find tuning $\serverlr$ depending on the noise level is critical.  By using the computationally efficient approach mentioned above, we were able to conduct rigorous tuning over a learning rate grid of $1.7^i$ for powers $i$ in $\{-9, \dots, 4\}$, estimating good initial guesses based on prior work.  \cref{tab:so_fed_slr_tuning} gives the full set of results.
+
+
+\newcommand{\efferr}{L_{e}}
+\mypar{Using RMSE to tune select optimal server learning rates}
+\cref{fig:so_lr_vs_error} plots the server learning rates $\serverlr$ from \cref{tab:so_opt_rates} on the $y$-axis (with the optimal rates shown as larger symbols, and sub-optimal rates as small symbols, versus two different measures of the error for the DP mechanism: The prefix-sum RMSE we use for optimizing (banded) matrices $\bfC$, and the error in individual gradient estimates. These errors capture the actual error in the per-round iterates during training
+\[
+  L_{e} = \text{(Mechanism error)} \times \text{(noise multiplier)} / \text{(clients-per-round)}
+\]
+where the mechanism error is ... \btodo{FINISH}
+
+We see a strong linear correlation between the prefix-sum RMSE and optimal learning rate in the left plot; this does not hold for individual gradient errors.  Based on this, we use the following linear regression to choose learning rates for the non-federated (amplified) SO NWP experiments:
+
+%  SLOPE = -0.94833392
+%  INTERCEPT = -4.64116983942467
+\[
+ \log(\eta_s) = -0.95 \cdot \log(\efferr) -4.64
+ \]
+
+\begin{figure*}[t!]
+    \centering
+    % From https://colab.corp.google.com/drive/15lWnXjiXsDGd3vl-6wGta9PBbBGpsH-i#scrollTo=rXMTnkvV3vZr
+    \includegraphics[width=\textwidth]{figures/stackoverflow/so_lr_vs_error.pdf}
+    \caption{\ctodo{@mcmahan}}
+    \label{fig:so_lr_vs_error}
+\end{figure*}
+
+\begin{figure*}[t!]
+    \centering
+    % From https://colab.corp.google.com/drive/15lWnXjiXsDGd3vl-6wGta9PBbBGpsH-i#scrollTo=rXMTnkvV3vZr
+    \includegraphics[width=\textwidth]{figures/stackoverflow/so_federated_convergence.pdf}
+    \caption{Convergence plots for all cross-device federated learning simulation experiments.}
+    \label{fig:fed_so_convergence}
+\end{figure*}
+
+
+
+\begin{landscape}
+\begin{table}[t]
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\newcommand{\bst}[1]{\textbf{#1}\cellcolor{YellowGreen!15}}
+\begin{footnotesize}
+\input{tables/federated_so_learning_rates} % AUTO GENERATED
+\end{footnotesize}
+\vspace{0.2cm}
+\caption{%
+Validation accuracy smoothed over the final 400 rounds of training, used to select the best server learning rates for the comparison of test-set accuracy presented in \cref{fig:federated}[a].} \label{tab:so_fed_slr_tuning}
+\end{center}
+\end{table}
+\end{landscape}
+
+\section{Efficient Multiplication and Inverse of Banded Matrices}\label{sec:efficientlinops}
+
+\begin{figure}[!t]
+\begin{minipage}{0.46\textwidth}
+\begin{algorithm}[H]
+\caption{Banded Matrix Multiplication} \label{alg:lintrans}
+\begin{algorithmic}%[1]
+\State \textbf{Input:} $\bands$-Banded lower triangular matrix $\bfC \in \mathbb{R}^{n \times n}$, vector $\bfx \in \mathbb{R}^n$
+\State \textbf{Output:} $\bfC \bfx$
+\For{$i=1, \dots, n$}  
+\State $\bfy_i = \sum_{j=i-\bands+1}^i \bfC_{[i,j]} \bfx_j $
+\EndFor
+\Return $\bfy$
+\end{algorithmic}
+\end{algorithm}
+\end{minipage}
+\hfill
+\begin{minipage}{0.46\textwidth}
+\begin{algorithm}[H]
+\caption{Banded Inverse Multiplication} \label{alg:invlintrans}
+\begin{algorithmic}%[1]
+\State \textbf{Input:} $\bands$-Banded lower triangular matrix $\bfC \in \mathbb{R}^{n \times n}$, vector $\bfy \in \mathbb{R}^n$
+\State \textbf{Output:} $\bfC^{-1} \bfy$
+\For{$i=1, \dots, n$}
+\State $\bfx_i = 
+(\bfy_i - \sum_{j=i-\bands+1}^{i-1} \bfC_{[i,j]} \bfx_j) / \bfC_{[i,i]} $
+\EndFor
+\Return $\bfx$
+\end{algorithmic}
+\end{algorithm}
+\end{minipage}
+\caption{\label{fig:bandedlinops} Algorithms for matrix-vector and inverse matrix-vector multiplication by a banded matrix.  To simplify the presentation, we use the convention that out-of-bounds indexing into a matrix or vector returns $0$.}
+\end{figure}
+
+\cref{alg:lintrans,alg:invlintrans} (\cref{fig:bandedlinops}) give algorithms for lower triangular banded matrix-vector multiplication and inverse banded matrix-vector multiplication.  Note that both algorithms are compatible with the streaming nature of gradients.  As soon as the next input $\bfx_i$ is received, the algorithm can immediately output $\bfy_i$.  Both algorithms require storing a state of size $\bands$, and run in $O(n \cdot \bands)$ time.  While the algorithms are described with respect to computing matrix-vector products, they can also be used to compute matrix-matrix products where the right-hand-side is a $n \times d$ matrix by multiplying by each column independently.  In this setting, these algorithms require $O(\bands \cdot d)$ space and $O(n \cdot \bands \cdot d)$ time. Both algorithms have appeared previously in the literature on Monte Carlo methods, which have a similar problem at their core to that of noise generation for \MF; see e.g.~\citep[Section 2]{vono2021highdimensional}.
+
+\section{Application to a Real-World Cross-Device FL System}\label{sec:production-detail}
+We train a one-layer LSTM language model of $\sim$2.4 million parameters in a practical cross-device FL system %following \citep{xu2023gboard}
+. 
+The model is used for predicting the next word of Spanish in a mobile virtual keyboard. We pretrain the model on public multilingual C4 dataset \citep{raffel2020t5,xue2020mt5}, and then fine-tune with on-device user data in FL. In a common practical FL system, clients have to satisfy criteria like being charged, idle and connected to unmetered network to participate in a round \citep{NWP18,bonawitz2019towards,paulik2021federated,huba2022papaya}, hence only a subset of clients can be reached and there is a strong diurnal pattern of client participation \citep{yang2018applied,zhu2022diurnal}. It is very challenging to hold a fixed set of clients for evaluation, or develop random sampling for privacy amplification.
+
+\end{document}

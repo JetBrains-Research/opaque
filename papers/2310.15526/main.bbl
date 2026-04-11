@@ -1,0 +1,163 @@
+\begin{thebibliography}{29}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Abadi et~al.(2016)Abadi, Chu, Goodfellow, McMahan, Mironov, Talwar, and Zhang]{abadi2016deep}
+Martin Abadi, Andy Chu, Ian Goodfellow, H~Brendan McMahan, Ilya Mironov, Kunal Talwar, and Li~Zhang.
+\newblock Deep learning with differential privacy.
+\newblock In \emph{Proceedings of the 2016 ACM SIGSAC conference on computer and communications security}, pages 308--318, 2016.
+
+\bibitem[Balle et~al.(2020)Balle, Kairouz, McMahan, Thakkar, and Thakurta]{balle2020privacy}
+Borja Balle, Peter Kairouz, H~Brendan McMahan, Om~Thakkar, and Abhradeep Thakurta.
+\newblock Privacy amplification via random check-ins.
+\newblock In \emph{NeurIPS}, 2020.
+
+\bibitem[Bassily et~al.(2014)Bassily, Smith, and Thakurta]{BST14}
+Raef Bassily, Adam Smith, and Abhradeep Thakurta.
+\newblock Private empirical risk minimization: Efficient algorithms and tight error bounds.
+\newblock In \emph{Proc. of the 2014 IEEE 55th Annual Symp. on Foundations of Computer Science (FOCS)}, pages 464--473, 2014.
+
+\bibitem[Chan et~al.(2011)Chan, Shi, and Song]{CSS11-continual}
+T.-H.~Hubert Chan, Elaine Shi, and Dawn Song.
+\newblock Private and continual release of statistics.
+\newblock \emph{{ACM} Trans. on Information Systems Security}, 14\penalty0 (3):\penalty0 26:1--26:24, November 2011.
+
+\bibitem[Choquette-Choo et~al.(2023{\natexlab{a}})Choquette-Choo, Ganesh, McKenna, McMahan, Rush, Thakurta, and Xu]{BandedMF}
+Christopher~A Choquette-Choo, Arun Ganesh, Ryan McKenna, H~Brendan McMahan, Keith Rush, Abhradeep~Guha Thakurta, and Zheng Xu.
+\newblock (amplified) banded matrix factorization: A unified approach to private training.
+\newblock \emph{arXiv preprint arXiv:2306.08153}, 2023{\natexlab{a}}.
+\newblock URL \url{https://arxiv.org/abs/2306.08153}.
+
+\bibitem[Choquette-Choo et~al.(2023{\natexlab{b}})Choquette-Choo, McMahan, Rush, and Guha~Thakurta]{MEMF}
+Christopher~A. Choquette-Choo, Hugh~Brendan McMahan, J~Keith Rush, and Abhradeep Guha~Thakurta.
+\newblock Multi-epoch matrix factorization mechanisms for private machine learning.
+\newblock In Andreas Krause, Emma Brunskill, Kyunghyun Cho, Barbara Engelhardt, Sivan Sabato, and Jonathan Scarlett, editors, \emph{Proceedings of the 40th International Conference on Machine Learning}, volume 202 of \emph{Proceedings of Machine Learning Research}, pages 5924--5963. PMLR, 23--29 Jul 2023{\natexlab{b}}.
+\newblock URL \url{https://proceedings.mlr.press/v202/choquette-choo23a.html}.
+
+\bibitem[Denisov et~al.(2022)Denisov, McMahan, Rush, Smith, and Guha~Thakurta]{denisovDPMF}
+Sergey Denisov, H.~Brendan McMahan, John Rush, Adam Smith, and Abhradeep Guha~Thakurta.
+\newblock Improved differential privacy for sgd via optimal private linear operators on adaptive streams.
+\newblock In S.~Koyejo, S.~Mohamed, A.~Agarwal, D.~Belgrave, K.~Cho, and A.~Oh, editors, \emph{Advances in Neural Information Processing Systems}, volume~35, pages 5910--5924. Curran Associates, Inc., 2022.
+\newblock URL \url{https://proceedings.neurips.cc/paper_files/paper/2022/file/271ec4d1a9ff5e6b81a6e21d38b1ba96-Paper-Conference.pdf}.
+
+\bibitem[{DP Team}(2022)]{pldlib}
+{DP Team}.
+\newblock Google's differential privacy libraries., 2022.
+\newblock \url{https://github.com/google/differential-privacy}.
+
+\bibitem[Dwork and Roth(2014)]{dwork2014algorithmic}
+Cynthia Dwork and Aaron Roth.
+\newblock The algorithmic foundations of differential privacy.
+\newblock \emph{Foundations and Trends in Theoretical Computer Science}, 9\penalty0 (3--4):\penalty0 211--407, 2014.
+
+\bibitem[Dwork et~al.(2010)Dwork, Naor, Pitassi, and Rothblum]{dwork2010differential}
+Cynthia Dwork, Moni Naor, Toniann Pitassi, and Guy~N Rothblum.
+\newblock Differential privacy under continual observation.
+\newblock In \emph{Proceedings of the forty-second ACM symposium on Theory of computing}, pages 715--724, 2010.
+
+\bibitem[Erlingsson et~al.(2019)Erlingsson, Feldman, Mironov, Raghunathan, Talwar, and Thakurta]{LocalToCentral}
+\'Ulfar Erlingsson, Vitaly Feldman, Ilya Mironov, Ananth Raghunathan, Kunal Talwar, and Abhradeep Thakurta.
+\newblock Amplification by shuffling: From local to central differential privacy via anonymity.
+\newblock In \emph{ACM-SIAM Symposium on Discrete Algorithms (SODA)}, 2019.
+\newblock URL \url{https://arxiv.org/abs/1811.12469}.
+
+\bibitem[Feldman et~al.(2018)Feldman, Mironov, Talwar, and Thakurta]{feldman2018privacy}
+Vitaly Feldman, Ilya Mironov, Kunal Talwar, and Abhradeep Thakurta.
+\newblock Privacy amplification by iteration.
+\newblock In \emph{2018 IEEE 59th Annual Symposium on Foundations of Computer Science (FOCS)}, pages 521--532. IEEE, 2018.
+
+\bibitem[Feldman et~al.(2022)Feldman, McMillan, and Talwar]{HidingAmongTheClones}
+Vitaly Feldman, Audra McMillan, and Kunal Talwar.
+\newblock Hiding among the clones: A simple and nearly optimal analysis of privacy amplification by shuffling.
+\newblock In \emph{2021 IEEE 62nd Annual Symposium on Foundations of Computer Science (FOCS)}, pages 954--964, 2022.
+\newblock \doi{10.1109/FOCS52979.2021.00096}.
+
+\bibitem[Fichtenberger et~al.(2023)Fichtenberger, Henzinger, and Upadhyay]{HU22}
+Hendrik Fichtenberger, Monika Henzinger, and Jalaj Upadhyay.
+\newblock Constant matters: Fine-grained error bound on differentially private continual observation.
+\newblock In Andreas Krause, Emma Brunskill, Kyunghyun Cho, Barbara Engelhardt, Sivan Sabato, and Jonathan Scarlett, editors, \emph{International Conference on Machine Learning, {ICML} 2023, 23-29 July 2023, Honolulu, Hawaii, {USA}}, volume 202 of \emph{Proceedings of Machine Learning Research}, pages 10072--10092. {PMLR}, 2023.
+\newblock URL \url{https://proceedings.mlr.press/v202/fichtenberger23a.html}.
+
+\bibitem[Ganesh(2024)]{ganesh2024tight}
+Arun Ganesh.
+\newblock Tight group-level dp guarantees for dp-sgd with sampling via mixture of gaussians mechanisms, 2024.
+
+\bibitem[Henzinger et~al.(2023)Henzinger, Upadhyay, and Upadhyay]{HUU23}
+Monika Henzinger, Jalaj Upadhyay, and Sarvagya Upadhyay.
+\newblock A unifying framework for differentially private sums under continual observation, 2023.
+
+\bibitem[Honaker(2015)]{honaker15}
+James Honaker.
+\newblock Efficient use of differentially private binary trees, 2015.
+
+\bibitem[Kairouz et~al.(2021)Kairouz, McMahan, Song, Thakkar, Thakurta, and Xu]{kairouz2021practical}
+Peter Kairouz, Brendan McMahan, Shuang Song, Om~Thakkar, Abhradeep Thakurta, and Zheng Xu.
+\newblock Practical and private (deep) learning without sampling or shuffling.
+\newblock In \emph{ICML}, 2021.
+
+\bibitem[Kasiviswanathan and Smith(2014)]{KS14}
+Shiva~Prasad Kasiviswanathan and Adam Smith.
+\newblock On the 'semantics' of differential privacy: {A} bayesian formulation.
+\newblock \emph{J. Priv. Confidentiality}, 6\penalty0 (1), 2014.
+\newblock \doi{10.29012/jpc.v6i1.634}.
+\newblock URL \url{https://doi.org/10.29012/jpc.v6i1.634}.
+
+\bibitem[Kasiviswanathan et~al.(2008)Kasiviswanathan, Lee, Nissim, Raskhodnikova, and Smith]{KLNRS}
+Shiva~Prasad Kasiviswanathan, Homin~K. Lee, Kobbi Nissim, Sofya Raskhodnikova, and Adam~D. Smith.
+\newblock What can we learn privately?
+\newblock In \emph{49th Annual {IEEE} Symp. on Foundations of Computer Science (FOCS)}, pages 531--540, 2008.
+
+\bibitem[Koskela et~al.(2020)Koskela, J{\"a}lk{\"o}, and Honkela]{koskela2020computing}
+Antti Koskela, Joonas J{\"a}lk{\"o}, and Antti Honkela.
+\newblock Computing tight differential privacy guarantees using fft.
+\newblock In \emph{International Conference on Artificial Intelligence and Statistics}, pages 2560--2569. PMLR, 2020.
+
+\bibitem[McKenna et~al.(2021)McKenna, Miklau, Hay, and Machanavajjhala]{mckenna2021hdmm}
+Ryan McKenna, Gerome Miklau, Michael Hay, and Ashwin Machanavajjhala.
+\newblock Hdmm: Optimizing error of high-dimensional statistical queries under differential privacy.
+\newblock \emph{arXiv preprint arXiv:2106.12118}, 2021.
+
+\bibitem[Mironov et~al.(2019)Mironov, Talwar, and Zhang]{mironov2019r}
+Ilya Mironov, Kunal Talwar, and Li~Zhang.
+\newblock R$\backslash$'enyi differential privacy of the sampled gaussian mechanism.
+\newblock \emph{arXiv preprint arXiv:1908.10530}, 2019.
+\newblock URL \url{https://arxiv.org/abs/1908.10530}.
+
+\bibitem[Ponomareva et~al.(2023)Ponomareva, Hazimeh, Kurakin, Xu, Denison, McMahan, Vassilvitskii, Chien, and Thakurta]{ponomareva2023dpfy}
+Natalia Ponomareva, Hussein Hazimeh, Alex Kurakin, Zheng Xu, Carson Denison, H.~Brendan McMahan, Sergei Vassilvitskii, Steve Chien, and Abhradeep~Guha Thakurta.
+\newblock How to {DP}-fy {ML}: A practical guide to machine learning with differential privacy.
+\newblock \emph{Journal of Artificial Intelligence Research}, 77:\penalty0 1113--1201, jul 2023.
+\newblock \doi{10.1613/jair.1.14649}.
+\newblock URL \url{https://doi.org/10.1613%2Fjair.1.14649}.
+
+\bibitem[Smith and Thakurta(2013)]{thakurta2013nearly}
+Adam Smith and Abhradeep Thakurta.
+\newblock (nearly) optimal algorithms for private online learning in full-information and bandit settings.
+\newblock In \emph{Advances in Neural Information Processing Systems}, pages 2733--2741, 2013.
+
+\bibitem[Song et~al.(2013)Song, Chaudhuri, and Sarwate]{song2013stochastic}
+Shuang Song, Kamalika Chaudhuri, and Anand~D Sarwate.
+\newblock Stochastic gradient descent with differentially private updates.
+\newblock In \emph{2013 IEEE Global Conference on Signal and Information Processing}, pages 245--248. IEEE, 2013.
+
+\bibitem[Steinke(2022)]{steinke2022composition}
+Thomas Steinke.
+\newblock Composition of differential privacy \& privacy amplification by subsampling.
+\newblock \emph{arXiv preprint arXiv:2210.00597}, 2022.
+\newblock URL \url{https://arxiv.org/abs/2210.00597}.
+
+\bibitem[Vadhan(2017)]{vadhan2017complexity}
+Salil Vadhan.
+\newblock The complexity of differential privacy.
+\newblock In \emph{Tutorials on the Foundations of Cryptography}, pages 347--450. Springer, 2017.
+
+\bibitem[Zhu et~al.(2022)Zhu, Dong, and Wang]{CharacteristicAccounting}
+Yuqing Zhu, Jinshuo Dong, and Yu-Xiang Wang.
+\newblock Optimal accounting of differential privacy via characteristic function.
+\newblock In Gustau Camps-Valls, Francisco J.~R. Ruiz, and Isabel Valera, editors, \emph{Proceedings of The 25th International Conference on Artificial Intelligence and Statistics}, volume 151 of \emph{Proceedings of Machine Learning Research}, pages 4782--4817. PMLR, 28--30 Mar 2022.
+\newblock URL \url{https://proceedings.mlr.press/v151/zhu22c.html}.
+
+\end{thebibliography}

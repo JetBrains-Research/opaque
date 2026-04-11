@@ -1,0 +1,44 @@
+ \begin{minipage}[t]{0.49\textwidth}
+\begin{algorithm}[H]
+\caption{\small Stream Mult. by $\bltm(\theta, \omega)$~\citep{mcmahan2024efficient}} \label{alg:multC}
+\begin{algorithmic}%[1]
+\STATE \textbf{Input:} 
+\STATE \myind Input stream $\hat \bfZ \in \R^{\nd \times \mdim}$
+\STATE \myind $\theta \in \R^\nbuf, \omega \in \R^\nbuf$ for $\bfC = \bltm(\theta, \omega)$
+\STATE \textbf{Output:}
+\STATE \myind The rows $\bfZ\idx{t}{:}$ of $\bfZ = \bfC \hat \bfZ$
+\STATE
+\STATE Initialize buffers $\Buf_{-1} \assign \mathbf{0} \in \R^{\nbuf \times \mdim}$
+\FOR{$t=0, \dots, n - 1$}
+  \STATE  $\bfZ_{t,\vfm} = \hat\bfZ_{t,\vfm} + \outp^T \bfS_{t-1}$ 
+  \STATEComment Decay each buffer by $\theta$ and add $\hat\bfZ_{t,\vfm}$ to each
+  \STATE $\bfS_{t} = \diag(\theta) \bfS_{t-1}  + \bm{1}_\nbuf \hat\bfZ_{t,\vfm}$
+  \STATE Output $\bfZ_{t,\vfm}$
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
+\end{minipage}
+%
+\hfill
+%
+\begin{minipage}[t]{0.49\textwidth}
+\begin{algorithm}[H]
+\caption{\small Stream Mult. by $\bltm^{-1}(\theta, \omega)$} \label{alg:multCinv}
+\begin{algorithmic}%[1]
+\STATE \textbf{Input:} 
+\STATE \myind Input stream $\bfZ \in \R^{\nd \times \mdim}$
+\STATE \myind $\theta \in \R^\nbuf, \omega \in \R^\nbuf$ for $\bfC = \bltm(\theta, \omega)$
+\STATE \textbf{Output:}
+\STATE \myind The rows $\hat \bfZ\idx{t}{:}$ of $\hat \bfZ = \bfC^{-1} \bfZ$
+
+\STATE
+\STATE Initialize buffers $\Buf_{-1} \assign \mathbf{0} \in \R^{\nbuf \times \mdim}$
+\FOR{$t=0, \dots, n - 1$}
+  \STATE $\hat\bfZ_{t,\vfm}  = \bfZ_{t,\vfm} - \outp^T \bfS_{t-1}$
+  \STATEComment The buffer update is the same as \cref{alg:multC}
+  \STATE $  \bfS_{t} = \diag(\theta) \bfS_{t-1}  + \bm{1}_\nbuf \hat\bfZ_{t,\vfm}$
+  \STATE Output $\hat \bfZ\idx{t}{:}$
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
+\end{minipage}

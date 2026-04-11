@@ -1,0 +1,108 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1.25in]{geometry}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% To be added in other templates
+\usepackage[colorlinks=true,citecolor=blue,urlcolor=blue]{hyperref}
+\usepackage{booktabs}
+\usepackage{amsmath,amsfonts,amsthm}
+\usepackage{mathtools}
+\usepackage{xcolor}
+\usepackage{xspace}
+\usepackage{nicefrac}
+
+\usepackage{caption}% or \usepackage{caption}
+\usepackage{varwidth}
+
+\usepackage[capitalise]{cleveref}
+\Crefname{equation}{Eq.}{Eqs.}
+\Crefname{figure}{Fig.}{Figs.}
+\Crefname{table}{Tab.}{Tabs.}
+\Crefname{algorithm}{Alg.}{Algs.}
+\Crefname{section}{Sec.}{Secs.}
+\Crefname{appendix}{App.}{Apps.}
+\Crefname{theorem}{Thm.}{Thms.}
+\Crefname{remark}{Rmk.}{Rmks.}
+
+\usepackage{graphicx}
+\graphicspath{./images/}
+\usepackage[skip=0pt]{subcaption}
+
+\usepackage[framemethod=tikz]{mdframed}
+\usepackage{multicol}
+\usepackage{multirow}
+\usepackage[noend]{algorithmic}
+\usepackage{algorithm}
+
+%\usepackage{algorithm}
+%\usepackage{algorithmicx}  % Done automatically by algpseudocode
+%\usepackage[noend]{algpseudocode}
+
+\newcommand{\noisestate}{\mathbf{\mathcal{S}}}
+\newcommand{\optstate}{\mathcal{P}}
+
+\usepackage[inline]{enumitem}
+\setenumerate[1]{itemsep=0pt,partopsep=0pt,parsep=\parskip,topsep=5pt}
+\setitemize[1]{itemsep=0pt,partopsep=0pt,parsep=\parskip,topsep=5pt}
+\setdescription{itemsep=0pt,partopsep=0pt,parsep=\parskip,topsep=5pt}
+
+\input{macros.tex}
+\newif\ifacl
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\newcommand\zx[1]{{\color{blue} \textbf{ZX: }{#1} }}
+\definecolor{darkgreen}{rgb}{0,0.4,0.0}
+\newcommand{\bnote}[1]{[{\color{darkgreen}{\textbf{Brendan:} \emph{#1}}}]}
+
+% \newcommand\zx[1]{}
+% \newcommand{\bnote}[1]{}
+
+\PassOptionsToPackage{sort}{natbib}
+\PassOptionsToPackage{square}{natbib}
+\usepackage[numbers]{natbib}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\title{A Hassle-free Algorithm for Private Learning in Practice: \\ Don't Use Tree Aggregation, Use BLTs
+}
+
+\author{
+H. Brendan McMahan,\;\;Zheng Xu,\;\;Yanxiang Zhang\thanks{Alphabetical order. \texttt{\{mcmahan, xuzheng, zhangyx\}@google.com}}\vspace{0.5em}\\
+\textit{Google}\vspace{0.5em}\\
+}
+\date{}
+
+\begin{document}
+\sloppy
+\setboolean{acl}{false} 
+
+\maketitle
+
+\input{sec_abs}
+
+\input{sec_intro}
+
+\input{sec_dpftrl}
+
+\input{sec_blt_mp}
+
+\input{sec_exp}
+
+\input{sec_gboard}
+
+\input{sec_concl}
+
+\subsection*{Acknowledgement}
+The authors thank Zachary Garrett, Nicole Mitchell, and Keith Rush for supporting the production code; Yu Xiao for helping some of the production experiments; Ryan McKenna and Yuanbo Zhang for reviewing an early draft; and Nikita Kalinin and Krishna Pillutla for pointing out typos in \cref{alg:multC} and \cref{alg:blt_pair} in the initial arXiv version.
+
+\bibliographystyle{plainnat}
+\bibliography{refer}
+
+\clearpage
+
+\appendix
+\sloppy
+\input{sec_app}
+
+
+\end{document}

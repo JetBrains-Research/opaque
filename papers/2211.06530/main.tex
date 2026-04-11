@@ -1,0 +1,971 @@
+
+\documentclass{article} %
+
+\usepackage[accepted]{icml2023}
+
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{graphicx}
+\usepackage{mathtools}
+\usepackage{color}
+\usepackage{xcolor}
+\usepackage{booktabs,siunitx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+
+\usepackage{amsfonts}
+\usepackage{amsthm}
+\usepackage[capitalise]{cleveref}
+\usepackage{xspace}
+\usepackage{algorithm}
+\usepackage{setspace}
+\usepackage{todonotes}
+\usepackage{wrapfig}
+\usepackage{makecell}
+\usepackage{multirow}
+\usepackage{multicol}
+\usepackage{placeins}
+\usepackage{siunitx}
+
+\usepackage{breqn}
+
+\usepackage{subcaption}
+
+\newcommand{\theHalgorithm}{\arabic{algorithm}}
+\let\Algorithm\algorithm
+\renewcommand\algorithm[1][]{\Algorithm[#1]\setstretch{1.35}}
+
+\input{macros.tex}
+
+\input{math_commands.tex}
+
+
+\newcommand{\epsper}{6}
+\newcommand\myadd[2]{\the\numexpr(#1)+(#2)\relax}
+
+\newtheorem{definition}{Definition}
+
+\usepackage{hyperref}
+\hypersetup{linktoc=all,colorlinks=true,linkcolor={red!50!black},
+    citecolor={blue!50!black},
+    urlcolor={blue!80!black},hidelinks}
+\makeatletter
+\def\Hy@toccolor#1{%
+  \ifcsname toccolor@#1\endcsname
+    \edef\@linkcolor{\csname toccolor@#1\endcsname}%
+  \fi
+}
+
+
+\title{Multi-Epoch Matrix Factorization\\Mechanisms for Private Machine Learning}
+\icmltitlerunning{Multi-Epoch Matrix Factorization}
+
+
+
+
+
+\newcommand{\fix}{\marginpar{FIX}}
+\newcommand{\new}{\marginpar{NEW}}
+
+\newtheoremstyle{named}{}{}{\itshape}{}{\bfseries}{.}{.5em}{\thmnote{#3 Restated}}
+\theoremstyle{named}
+\newtheorem*{namedtheorem}{Theorem}
+\newtheorem*{namedcorollary}{Corollary}
+\newtheorem*{namedlemma}{Lemma}
+
+\begin{document}
+
+ 
+\twocolumn[
+\icmltitle{Multi-Epoch Matrix Factorization\\Mechanisms for Private Machine Learning}
+           
+\begin{icmlauthorlist}
+\icmlauthor{Christopher A. Choquette-Choo}{G}
+\icmlauthor{H. Brendan McMahan}{G}
+\icmlauthor{Keith Rush}{G}
+\icmlauthor{Abhradeep Thakurta}{G}
+\end{icmlauthorlist}
+
+\icmlaffiliation{G}{Google Research}
+\icmlcorrespondingauthor{}{\{cchoquette,krush,mcmahan,athakurta\}@google.com}
+\icmlkeywords{Machine Learning, Differential Privacy, Federated Learning, Matrix MechanismICML}
+
+\vskip 0.3in
+]
+
+\printAffiliationsAndNotice{}
+
+
+\begin{abstract}
+We introduce new differentially private (DP) mechanisms for gradient-based machine learning (ML) with multiple passes (epochs) over a dataset, substantially improving the achievable privacy-utility-computation tradeoffs. We formalize the problem of DP mechanisms for adaptive streams with multiple participations and introduce a non-trivial extension of online matrix factorization DP mechanisms to our setting. This includes establishing the necessary theory for sensitivity calculations and efficient computation of optimal matrices.
+For some applications like $>\!\! 10,000$ SGD steps, applying these optimal techniques becomes computationally expensive. We thus design an efficient Fourier-transform-based mechanism with only a minor utility loss.
+Extensive empirical evaluation on both example-level DP for image classification and user-level DP for language modeling demonstrate substantial improvements over all previous methods, including the widely-used \DPSGD . Though our primary application is to ML, our main DP results are applicable to arbitrary linear queries and hence may have much broader applicability.
+
+\end{abstract}
+
+\section{Introduction}\label{sec:intro}
+
+
+Differentially private stochastic gradient descent (\DPSGD) is the de facto standard algorithm for DP machine learning (ML)~\citep{song2013stochastic,BST14,abadi2016deep}. However, obtaining state-of-the-art privacy-utility tradeoffs critically requires use of privacy amplification techniques like shuffling~\citep{erlingsson2019amplification,feldman2022hiding} or (Poisson) subsampling~\citep{BST14,zhu2019poission,WangBK19}. These in turn require strong assumptions on the manner in which data is processed that often do not hold under the processing performed by centralized ML pipelines, and are particularly challenging in cross-device federated learning \citep{kairouz2021practical}.
+
+\citet{kairouz2021practical} recently proposed the DP-FTRL framework that avoids reliance on amplification by sampling, instead leveraging DP streaming of prefix sums~\citep{Dwork-continual,CSS11-continual,honaker_trick}. DP-FTRL can match (or outperform) \DPSGD in privacy-utility tradeoffs. This algorithm enabled~\citet{mcmahan2022dpftrlblog} to train the first known provably DP ML model on user data in a production setting.
+
+Several works have since focused on this primitive as an instantiation of the streaming matrix mechanism (see \cref{eq:mat_mech})~\cite{HUU22,fichtenberger_constant22,denisov22matfact};  in particular, \citet{denisov22matfact} showed that leveraging the flexibility inherent in this formulation to design optimal matrices led to significant empirical improvements, though their work was restricted to the single-epoch setting.
+
+\begin{figure*}[t]
+    \centering
+    \vspace{-0.5em} %
+    \includegraphics[width=\linewidth]{icml2023/figures/central/cifar10-dpftrl-final-nofft.pdf}
+    \vspace{-2em}
+    \caption{\textbf{Our optimal multi-epoch matrix and FFT-based mechanisms outperform all others, including \DPSGD with amplification}, as low as $\varepsilon\approx 4$. Using our sensitivity calculation of \cref{thm:eval_sens_ub} and stamping (\cref{sec:empirical-eval}), we optimize a single pass ($k=1$) matrix of~\citet{denisov22matfact} but apply it here with $>1$ pass. We use an online Honaker-based decoder equivalent to that of~\citet{kairouz2021practical} except for a significant improvement to tree-completion in \cref{app:ssec:tree_completion}. Models trained for 20 epochs on CIFAR10 with a batch size of 500. We repeat each setting 12 times and show 95\% bootstrapped confidence intervals. Empirical setup is in \cref{ssec:central-experiments}.}
+    \label{fig:cifar10_results}
+\end{figure*}
+
+ \mypar{Our Contributions} 
+This single-epoch restriction is unnatural from the perspective of modern ML, where many passes over the training data are common. We extend matrix factorization mechanisms for ML to the multi-epoch setting by tackling several intertwined problems. This enables state-of-the-art mechanisms for DP-ML, with potentially broader applicability to, e.g., online PCA, marginal estimation, and top-k selection, as discussed in~\citet{denisov22matfact}.
+
+1) We provide a framework for computing the sensitivity of matrix mechanisms under general participation schemas \emph{with vector contributions}: these are essential to ML applications where we wish to privatize high-dimensional models. However, the efficient computation of optimal matrix factorizations only allows for sensitivity constraints on scalar contributions. In the single participation case a trivial argument equates sensitivity under scalar and vector contributions and the computation of sensitivity is $\calO(n)$ by inspection. The situation becomes dramatically more complex under multiple participations. To our surprise, computing even scalar sensitivity can be NP-hard, and the vector-to-scalar reduction does not hold in general (see \cref{sec:counterexample}). Nevertheless, we establish sufficient conditions for both computational tractability and the necessary reduction (\cref{cor:matrix_to_vector_sens}, \cref{thm:multidim}), enabling our next contribution:
+
+2) We obtain a closed-form representation of the Lagrange dual function for the loss-minimization problem of computing an optimal matrix factorization subject to multiple-participation sensitivity constraints, in \cref{eq:symmetrized_problem}, substantially generalizing the approach of~\citet{denisov22matfact}. This dual formulation is used to efficiently compute optimal factorizations for our experiments.
+
+3) %
+We explore the computational tradeoffs of our approaches. Computing optimal matrix factorizations may become relatively expensive when more than $\approx10,000$ steps are required. While this is uncommon in federated algorithms for user-level DP, it can be a limitation when training with SGD for example-level privacy. To reduce this cost, we propose and investigate an approach based on the Fast Fourier Transform (FFT)~\citep{cooley1965algorithm}. Careful analysis of the DFT, shows it is near-optimal for the single-epoch setting and efficiently computable for most, if all, ML settings. Indeed, we find this approach still outperforms the mechanisms from the extant literature, even under multiple participations.
+    
+4) We perform detailed empirical comparisons of our mechanisms, e.g., above in \cref{fig:cifar10_results}. We compare with both the prior matrix mechanism approaches and \DPSGD. We show that the methods proposed here outperform all others (in particular, \DPSGD with amplification), to privacy budgets as low as $\varepsilon\approx2$, and without any need for privacy amplification. We also find in  \cref{fig:stackoverflow_main} that our methods can achieve near the folklore upper bound of full-batch DPGD, but at $340$x less compute. Our code is at: \url{https://github.com/google-research/federated/tree/master/multi_epoch_dp_matrix_factorization}.
+
+
+
+
+
+    
+    
+
+
+\mypar{Related work} 
+The core privacy primitive here is the matrix mechanism~\citep{Li2015TheMM}. Its long history of study and application was, until recently, primarily oriented towards offline, statistical queries~\citep{hdmm,edmonds_nikolov_ullman,opt_convex_fact,HT10}.
+\citet{fichtenberger_constant22,denisov22matfact} independently applied it to the \emph{adaptive streaming} setting, where outputs are released one-by-one and privacy analysis must account for an adversary adaptively defining the inputs. 
+\citet{denisov22matfact} connected the matrix mechanism to DP ML, via the DP-FTRL algorithm of~\citet{kairouz2021practical}, and showed that computing optimal factorizations significantly improves the privacy-utility-computation tradeoffs when making only a single pass (epoch) over the training data.
+
+\mypar{Example- and user-level DP, and the connection to federated learning (FL)}
+In addition to example-level DP, we consider user-level DP. As observed by~\citet{mcmahan2017learning}, private FL algorithms are well suited to providing user-level DP or other multi-example units of privacy, e.g. document-level, as bounding the sensitivity of a single user's contribution to an aggregate update is made straightforward by the per-user data processing pattern inherent in FL. However, our primary application is to datacenter training, where user data can be processed in a fixed shuffled order, unlike cross-device FL. We use the term `participation' to denote the event that an example (user or client in FL) contributes to the gradient sum (or a model update in FL) $\obs_i$ for a given step/iteration (round in FL) $i$. Individual contributions to $\obs_i$ are scaled so their maximum $\ell_2$ norm is $\clipnorm$. Our mechanisms compute sums over individual clipped contributions and post-process by dividing by the batch size (or clients/round) to compute an average gradient (or model update).
+We assume $\clipnorm=1$, applying appropriate scaling as needed. \cref{sec:notation} lists terminology and notation.
+
+\section{Differential Privacy for Adaptive Streams with Multiple Participations}
+\label{sec:sensitivity}
+We define and efficiently bound the sensitivity of the multi-participation adaptive streaming (continual release) setting, by generalizing~\citet[Sec. 2]{denisov22matfact}. Assume a database of $\numusers$ examples (users in FL, records in general DP applications) that is processed as a stream over $\dimension$ steps. A batch of $\batchsize$ examples is selected on each step $i$, and processed via an adaptively chosen function (e.g., computing a gradient at the current model), producing a vector of $\ell_2$ norm at most $\clipnorm$. These vectors are summed and provided to the DP mechanism as $\obs_i \in \R^\mdim$, which 
+releases a privatized function of $[\obs_1, \dots, \obs_i]$, the stream so far. When a particular example contributes to the sum $\obs_i$, we say it \emph{participates} on step $i$. We are primarily interested in the case where $\dimension \times \batchsize / \numusers > 1$, and hence, some examples are used on more than one step. This is the multiple epoch setting of ML. Because our privacy guarantee is for the worst-case data-sample, we take $k$ to be the ceiling of this value.
+
+Two data streams $\obs$ and $\obsp$ are said to be neighboring if they differ in the contributions derived from a single example, either by zeroing out all of its contributions, or by replacing them arbitrarily subject to the norm bound $\clipnorm$. Thus, the participation pattern does not change: all records contribute to the same steps in $\obs$ and $\obsp$, with only the vector contributions associated with one record changing. We define a \emph{participation schema} $\Pi$ as the set of possible \emph{participation patterns} $\pi \in \Pi$, with each $\pi \subseteq [\dimension]$ indicating a set of steps in which a single example might participate.
+Assuming each record contributes at most once (\emph{single-participation}, $\Pi = \big\{ \{1\}, \{2\}, \dots \{\dimension\}\big\}$), recovers the standard streaming setting. This captures, for example, training with minibatch SGD using a single pass (epoch) over a training dataset. 
+At the other extreme, we have
+\emph{every-step participation} with $\Pi = \{ [\dimension]\}$ where each record contributes to every step. This captures full gradient descent, where the gradient is computed on the full training dataset at each iteration.  
+
+\mypar{Fixed-epoch-order participation}  We focus on a generalization of the above two, \emph{\multiepoch-participation}, where each example participates at most $\maxpart$ times, with any adjacent participations exactly $\assumedsep$ steps apart: formally, $\Pi$ is the set of all $\pi$ such that $|\pi| \le \maxpart$, and if $\pi = \{i_1, \dots, i_k\}$ indexed in increasing order, we have $\forall j \in \{2, \dots, k\}, i_j - i_{j-1} = \assumedsep$. Note $\maxpartsep{1}{\dimension}$-participation recovers the single-epoch setting, and $\maxpartsep{\dimension}{1}$-participation recovers every-step participation, and for example $\maxpartsep{3}{2}$-participation has $\Pi = \{\{1, 3, 5\}, \{2, 4, 6\}\}$. We focus on this participation schema because of the following three reasons.
+1) It encompasses multi-epoch SGD training using a data processing pattern well-supported by modern ML infrastracture.\footnote{This is in contrast to Poisson or independent fixed-sized batch sampling, with replacement across steps, as is assumed by many works~\citep{abadi2016deep,BST14,zhu2019poission,WangBK19}. Many works in fact process batches in a shuffled order without replacement and then incorrectly apply DP analysis for, e.g., Poisson sampling. Indeed, we use this same---incorrect---analysis for our DP-SGD baseline because it reproduces the previous state-of-the-art results for \DPSGD.} The only requirement is that rather than shuffling the dataset for each epoch, the dataset is shuffled once and the same order of minibatches is used for each epoch. With this setup, $\maxpart$ epochs of training on a dataset of size $\numusers$ with a batch size $\batchsize$ gives $\dimension = \numusers \maxpart / \batchsize$ total training steps, and satisfies $(\maxpart, \numusers/B)$-participation.     
+2) We show that in important cases, e.g., \cref{eq:bruteforce}, this participation schema allows for the efficient computation of sensitivity.
+3) We will see in \cref{sec:optimizing_mechanisms} that the more possible participation patterns $\pi$, the more constrained the problem of finding optimal mechanisms becomes (that is, fewer matrix factorizations satisfy sensitivty $\le 1$). Hence, a relatively limited (but practical) schema like \multiepoch-participation yields more favorable privacy-utility tradeoffs when we directly optimize matrices for this schema.
+
+
+\mypar{Sensitivity of linear queries on multi-participation adaptive streams}
+Consider a full-rank square query (or workload) matrix $\bfA \in \R^\dimsquarematrix$; we wish to compute the function $\obs \mapsto \bfA\obs$ in a differentially private manner, where we consider inputs $\obs$ and outputs $\bfA\obs$ to be elements of $\R^{\dimension\times\mdim}$, under geometry inherited from the Frobenius inner product.
+
+Gradient descent with fixed learning rate represents a canonical example of this setup: letting $\obs$ represent the stream of unnoised gradients generated by a training procedure, the partially trained model at every step of the training procedure is simply a scalar multiple (with scalar being the negative learning rate) of the partial sums of this gradient stream. This partial-sum operation is represented by the matrix $\bfA$ of all 1s on the lower triangle. The `adaptivity' of the stream $\obs$ reflects the fact that the point at which we compute gradients during the training procedure depends on the previously released models, and is therefore required to capture privacy guarantees for ML model training.
+
+We utilize the matrix mechanism~\citep{Li2015TheMM}, which, provided a factorization $\bfA = \bfB\bfC$, computes the estimate
+\begin{equation}\label{eq:mat_mech}
+\widehat{\bfA\obs} = \bfB\left(\bfC\obs + \bfz\right),
+\end{equation}
+where $\bfz$ is a sample from appropriately scaled isotropic Gaussian noise. The scale is determined by the \emph{sensitivity} of the mapping $\obs \mapsto \bfC \obs$; roughly, how much outputs of this mapping can vary (in $\ell_2$ norm) when we swap the input stream $\obs$ for a neighboring one $\obsp$. We refer to this matrix $\bfC$ as the ``encoder'', as it encodes $\obs$ as $\bfC \obs$ before adding Gaussian noise. Similarly, we call $\bfB$ the ``decoder''.
+
+Let $\bfN$ be the set of all pairs of neighboring streams $\obs$ and $\deltaset := \left\{ \obs - \obsp \mid (\obs, \obsp) \in \bfN \right\}$ represent the set of all possible deltas between neighboring $\obs,\obsp$. The definition of $\deltaset$ implies it is symmetric ($\contrib \in \deltaset \Rightarrow -\contrib \in \deltaset$). We will say a $\deltaset$ \textbf{satisfies the participation schema $\Pi$} if the indices of all nonzero elements in each vector $\contrib \in \deltaset$ correspond to some $\pi \in \Pi$. Critically, for linear queries $\deltaset$ fully captures the sensitivity of the query:
+\begin{definition}\label{def:sensopmech}
+The \textbf{sensitivity} of the matrix factorization mechanism \cref{eq:mat_mech} is defined as
+\begin{equation}\label{eq:sensopnorm}
+\sensd(\bfC) = \sup_{(\obs, \obsp) \in \bfN} \| \bfC \obs - \bfC \obsp \|_F
+ = \sup_{\contrib \in \deltaset} \| \bfC\contrib \|_F. 
+\end{equation}
+\end{definition}
+Convexity of $\|\bfC\contrib\|_F$ in $\contrib$ implies that $\sup_{\contrib \in \deltaset} \| \bfC\contrib \|_F = \sup_{\contrib \in \conv(\deltaset)} \| \bfC\contrib \|_F$, and hence without loss of generality (wlog), we take $\deltaset$ to be convex as needed.
+It is illustrative to consider some specific $\deltaset$s for scalar per-step contributions with $\clipnorm = \mdim = 1$. Single-participation corresponds to $\deltaset  = \conv\{ \alpha e_i | \alpha \in [-1, 1], i \in [\dimension] \}$ where $e_i$ for $i\in [\dimension]$ are the standard basis vectors. Noting $\norm{\bfC\contrib} = \norm{-\bfC\contrib}$ and convexity of $\norm{\bfC \contrib}$, we see the maximum will be achieved at some $e_i$, recovering the `max-$\ell_2$-norm-over-columns' measurement of sensitivity of~\citet[Proposition 3]{Li2015TheMM}. 
+Every-step participation corresponds to the $\ell_\infty$ ball, $\deltaset = \{\obs \mid \norm{\obs}_\infty \le 1\}$.
+
+\mypar{Reductions to per-iterate scalar contributions}
+In ML, examples are used to calculate gradients of $\mdim>1$ dimensions, and so we wish to consider $\obs \in \R^{\dimension\times\mdim}$, with rows $\obs_i \in \R^\mdim$ corresponding to the sum of gradients for examples participating in step $i$.
+In order to compute sensitivity, one may hope %
+that the sensitivity for each $\obs_i \in \R^{d}$ can be bounded by only considering some appropriately worst-case $x_i \in \R$. More formally, consider a fixed participation schema $\Pi$, and further assume (wlog) $\clipnorm=1$. Then, for vector-valued contributions we have
+\begin{multline*}
+\deltaset^\mdim_\Pi = \conv\{\bfG \in \R^\datadim \mid 
+   \exists \pi \in \Pi \text{ s.t. } \\
+      \norm{\bfG\idx{i}{:}}_2 \le 1 \text { for $i \in \pi$ and } \bfG\idx{i}{:} = \textbf{0} \text { for $i \not\in \pi$} \}.
+\end{multline*}
+In the $\mdim=1$ case, we have a much simpler polytope, $\deltaset^1_\Pi = \conv(\Dcorners^1_\Pi)$ where
+\[
+\Dcorners^1_\Pi = \bigcup_{\pi \in \Pi} \Big\{ \contrib \in \R^\dimension \mid \contrib_i \in \{-1, 1\} \text{ if } i \in \pi, 0 \text{ otherwise}\Big\}.
+\]
+One might hope to show $\sens_{\deltaset^\mdim_\Pi}(\bfC) \le \sens_{\deltaset^1_\Pi}(\bfC)$, and the authors in fact initially conjectured this to be true. To our surprise, while this inequality holds under a variety of assumptions, it does not hold in general (\cref{sec:counterexample} gives a counterexample).\footnote{We conjecture it is ``almost'' true; tightly bounding the necessary error term is an interesting open question.} 
+Empirically we have observed that for various query matrices $\bfA$ and $\multiepoch$-participation with $\mdim=1$, the optimal $\bfC$ satisfy (or almost satisfy) the condition $\bfC\tp \bfC \ge 0$ (element-wise non-negativity). In this case, we can show:
+
+\begin{cor}\label{cor:matrix_to_vector_sens}
+When per-step contributions bounded by $\clipnorm=1$, for any participation schema $\Pi$ and dimensionality $\mdim \ge 1$, when $\bfC\tp\bfC \ge 0$ elementwise, we have
+$
+\sens_{\deltaset^\mdim_\Pi}(\bfC) = \sens_{\deltaset^1_\Pi}(\bfC).
+$
+\end{cor}
+
+In particular, this implies that if $\bfC$ is optimal in the $\mdim=1$ case and satisfies $\bfC\tp\bfC \ge 0$, it is also optimal in the $\mdim > 1$ case. This result is a corollary of \cref{thm:multidim}, which establishes additional conditions under which $\sens_{\deltaset^\mdim_\Pi}(\bfC) \le \sens_{\deltaset^1_\Pi}(\bfC)$ holds. All proofs are in \cref{sec:startofproofs} onwards.%
+
+\mypar{Difficulty of computing $\mathbf{\sens(\bfC)}$} In general, computing $\sens(\bfC)$ is a convex quadratic \emph{maximization} problem over a convex set, which can be NP-hard. Even the simple case of computing the sensitivity for an arbitrary matrix $\bfC$ under every-step participation with scalar ($\mdim = 1$) contributions is NP-hard---it is exactly the problem of computing the $\ell_\infty\!-\!\ell_2$ operator norm \citep{tropp_thesis}. In fact, it is useful to observe $\sensd(\cdot)$ can always be viewed as an operator norm, see \cref{sec:opnorm}. This hardness is in stark contrast to the single-participation setting, where calculating sensitivity is trivial. However, we \emph{can in some cases compute sensitivity exactly by} \textbf{brute force}. Take $\mdim=1$. Observe $\Dcorners^1_\Pi$ is a finite set and so a direct calculation by using \cref{eq:sensopnorm} is often possible. But, $|\Dcorners^1_\Pi| = |\Pi|2^\maxpart$, and observing the symmetry $\norm{\bfC \contrib} = \norm{\bfC (-\contrib)}$ can reduce the computational cost only by half. In general $|\Pi|$ may be exponential in $\maxpart$, but in the special case of $\multiepoch$-participation, we have $|\Pi| = \assumedsep$ (the number of steps in one epoch). Hence, for modest numbers of epochs $\maxpart$, directly computing sensitivity is possible, e.g., in our StackOverflow experiments in \cref{ssec:federated-experiments}, we can reduce $\contrib \in \Dcorners^1_\Pi$ to only $342\cdot2^5 = 10,944$ vectors. \cref{thm:multidim} can be used to translate bounds from scalar to higher dimensions.%
+
+\mypar{Computing sensitivity when $\mathbf{\bfC\tp\bfC \ge 0}$}
+Let $\bfX = \bfC\tp\bfC.$ When $\bfX$ has only nonnegative elements, one may reduce the problem of computing $\sens_{\deltaset^\mdim_\Pi}(\bfC)$ to
+\begin{align}
+ \sens_{\deltaset^\mdim_\Pi}(\bfC) \nonumber
+ &= \max_{\contrib \in \deltaset^1_\Pi} \lfrob{\bfC\contrib}  \quad\quad \text{by \cref{cor:matrix_to_vector_sens}}\\
+ &= \max_{\contrib \in \deltaset^1_\Pi} \sqrt{\contrib\tp \bfX \contrib  }
+ = \max_{\pi \in \Pi} \sqrt{\mathbf{1}\tp\bfX\idx{\pi}{\pi}\mathbf{1}},\label{eq:bruteforce}
+\end{align}
+where $\bfX\idx{\pi}{\pi} \in \R^{\maxpart \times \maxpart}$ is the submatrix of $\bfX$ formed from the rows and columns selected by $\pi$, $|\pi| = \maxpart$ and $\mathbf{1} \in \R^\maxpart$. The max over $\contrib$ must be achieved by the maximum-magnitude nonnegative vector $\bfu$, specifically $\mathbf{1}^\maxpart$. As noted above, the matrices we consider satisfy this property, and hence we can compute the exact sensitivity for $\multiepoch$-participation in time $\calO(bk^2)$.
+
+
+\mypar{Upper-bounding sensitivity} As an alternative to structural conditions on $\bfC$ or $\bfX$ allowing efficient exact computation of sensitivity for $\mdim > 1$, we can look to (reasonably tight) upper bounds on the sensitivity of $\bfC$. %
+In the case of \multiepoch-participation, one efficient method of computing upper bounds for the multiple-participation sensitivity of $\bfC$ has shown itself to be particularly useful:
+\newcommand{\absDcorners}{\bar{\Dcorners}}
+
+\begin{thm}\label{thm:eval_sens_ub}
+Let $\bfC \in \R^\dimdim$, and take some participation schema $\Pi$, with $\maxpart = \max_{\pi \in \Pi} |\pi|$ the maximum number of participations. With $\bfC\idx{:}{\pi}$ representing selecting the columns of the matrix $\bfC$ indexed by $\pi$ and $\ltwo{\cdot}$ the spectral matrix norm, let
+$
+\lambda=\max\limits_{\pi \in \Pi}\ltwo{\bfC\idx{:}{\pi}}
+$. 
+Then 
+$
+\sens_{\deltaset^1_\Pi}(\bfC) \le \lambda\sqrt{k}
+$.
+
+\end{thm}
+In the \multiepoch-participation case, $|\Pi| = \assumedsep$. The complexity of computing the largest eigenvalue of the subselected $\bfC$ matrix is cubic in $\maxpart$. Thus, computing this upper bound is $\calO(b\maxpart^3)$, easily computable for the range of $\maxpart, b$ considered here ($\maxpart \leq 100, b \leq 500$).
+
+
+
+\mypar{Differential Privacy Guarantee}
+Using our generalization of adaptive streams to multiple participations we obtain the following result (a straightforward generalization of \citet[Theorem 2.1]{denisov22matfact}). The proof is identical to~\cite{denisov22matfact}, except we replace the sensitivity bound with that for multiple participations obtained via \cref{cor:matrix_to_vector_sens}.
+
+\begin{thm}\label{thm:GaussianAdaptive}
+Let $\bfA\in\mathbb{R}^{\dimension\times \dimension}$ be a lower-triangular full-rank query matrix, and let $\bfA=\bfB\bfC$ be any factorization with the following property: for any two \textit{neighboring} streams $\obs, \obsp\in \R^\datadim$, we have $\|\bfC(\obs - \obsp)\|_F\leq \kappa$.\ Let $\bfZ\sim\calN(0,\kappa^2\sigma^2)^{\dimension\times d}$ with $\sigma$ large enough so that $\mech(\obs) = \bfA\obs + \bfB\bfZ = \bfB(\bfC \obs +\bfZ)$ satisfies  $(\varepsilon,\delta)$-DP (or $\rho$-zCDP or $\mu$-Gaussian DP) in the \textit{nonadaptive} continual release model. Then, $\mech$ satisfies the same DP guarantee (with the same parameters) even when the 
+rows of the input are chosen adaptively.
+\end{thm}
+
+\section{Optimal Matrices for Multiple Epochs}\label{sec:optimizing_mechanisms}
+
+\begin{figure*}[t]
+    \centering
+    \vspace{-0.5em}
+    \includegraphics[width=0.75\linewidth]{icml2023/figures/stackoverflow/axbc_matrices_row.png}
+    \vspace{-1.5em} %
+    \caption{The optimal factorization $\bfA = \bfB \bfC$ under \maxpartsep{6}{342}-participation, constructed by solving the optimization problem \cref{eq:constrained_problem}.  Matrix $\bfA$ encodes SGD with momentum 0.95 and a learning-rate cooldown schedule for the last 25\% of rounds, as used in our StackOverlow experiments (\cref{ssec:federated-experiments}). The constraints on sensitivity imposed by this participation schema are evident in the resulting matrices. For example, the white diagonals with a period of $b=342$ in $\bfX = \bfC\tp \bfC$ show that the columns of $\bfC$ that could correspond to a pair of rounds $(i, j)$ where the same user might participate are in fact orthogonal. See \cref{fig:axbc_matrices} in \cref{ssec:app:complete-results} for a larger view.}
+    \label{fig:axbc_matrices_row}
+\end{figure*}
+
+
+We now present methods for computing optimal matrix mechanisms that are specialized to (optimized for) a specific participation schema $\Pi$ and query matrix $\bfA$. For example, \cref{fig:axbc_matrices_row} shows the optimal factorization for $\bfA$ representing SGD with momentum and learning-rate cooldown under \maxpartsep{6}{342}-participation, used in \cref{ssec:federated-experiments}. Specializing the mechanism to both the participation pattern and specific query workload enables us to obtain state-of-the-art results in ML (\cref{sec:empirical-eval}).
+
+We build on the approach of~\citet{denisov22matfact}. We begin by defining the loss of interest, i.e., the total variance of noise added, for the mechanism defined in \cref{eq:mat_mech}. Note that this loss characterizes other downstream tasks like DP mean estimation. Given $\deltaset$, assume that we may represent $\deltaset = \conv(\Dcorners)$ for some finite set $\Dcorners$---as we have seen, this is the case, e.g., in \multiepoch-participation. Then the loss which corresponds to total squared error of a factorization, at a fixed privacy level, may be expressed as: 
+\begin{equation}\label{eq:l_expression}
+\begin{aligned}
+  \calL(\bfB, \bfC) = \sensd^2(\bfC) \left\|\bfB\right\|_F^2
+  \qquad \text{where}\\
+  \qquad \sensd^2(\bfC) = \sup_{\contrib \in \deltaset} \| \bfC\contrib \|_2^2 = \sup_{\contrib \in \Dcorners} \| \bfC\contrib \|_2^2.
+ \end{aligned}
+\end{equation}
+Observing that $\forall\alpha$ the mechanism $\bfA = \big(\alpha\bfB\big)\big(\frac{1}{\alpha}\bfC\big)$ has identical loss, we conclude that we may consider the constrained version of the problem of minimizing this loss where $\sensd(\bfC) \le 1$.
+Since for any $\bfC$, $\bfB = \bfA\bfC\pinv$ produces the minimum-Frobenius norm $\bfB$-matrix, it is sufficient to solve:
+\begin{equation}\label{eq:constrained_problem}
+\min_{\bfC} \calL\left(\bfA\bfC^\dagger, \bfC\right) 
+    = \min_{\bfC: \sensd^2(\bfC) = 1} \left\|\bfA\bfC^\dagger\right\|_F^2.
+\end{equation}
+With the change of variables $\bfX = \bfC\tp\bfC$, equivalently: 
+\begin{align}
+    \min_\bfX\ \  &\tr(\AAT \bfX^{-1})  \label{eq:symmetrized_problem}\\    
+    \text{s.t.}\ \  &  \bfX \text{ is PD} %
+    \quad \text{and} \quad 
+    \max_{\contrib \in \Dcorners^1_\Pi} \contrib\tp \bfX \contrib \le 1. \notag
+\end{align}
+One of our main contributions is the following theorem which leads directly to efficient algorithms with provable optimality gaps for the mathematical program \cref{eq:symmetrized_problem}:
+\begin{thm}\label{thm:dual_fn}
+Let a finite $\Dcorners = \{\contrib_i\}_{i=1}^k$ be given, and assume that the vectors $\{\contrib_i\}_{i=1}^k$ span $\R^n$. Assume that $\bfA$ is full-rank, and for $\dualv \in \R^k$ define 
+$
+\Hv = [\contrib_1, \dots, \contrib_k] \diag(\dualv)^{1/2}, \quad \bfU = \Hv\Hv\tp.
+$
+Define the Lagrangian $L$ as
+$
+L\left(\bfX, \dualv\right) := \tr(\AAT\bfX^{-1})
+     + \sum_{\contrib \in \Dcorners} \dualv_\contrib \left(\contrib\tp \bfX \contrib - 1\right).
+$
+Then, for Lagrange multipliers $\bfv$ such that the $\bfU$ is full-rank, the minimizer $\bfX\left(\dualv\right)$ of $L$ for this fixed $\dualv$ may be represented
+$
+\bfX\left(\dualv\right) = \bfU\nhlf \big(\bfU\hlf \AAT \bfU\hlf \big)\hlf \bfU\nhlf,
+$
+and the Lagrange dual function $g$ for the problem \cref{eq:symmetrized_problem} can be expressed in closed form in terms of the dual variables $\dualv$: 
+\begin{equation}\label{eq:dual_fn_rep}
+\begin{gathered}[b]
+g(\dualv) := \inf_{\bfX\text{ is PD}} L(\bfX, \dualv) = \\
+2\,\tr \left( \big(\bfU\hlf \AAT \bfU\hlf \big)\hlf \right) - \sum_{\contrib\in\Dcorners} \dualv_\contrib.
+\end{gathered}
+\end{equation}
+\end{thm}
+\mypar{Remark} The restriction that $\dualv$ yields a full-rank $\bfU$ serves to restrict to cases where the Lagrangian has a finite, positive-definite minimizer in the primal variable; if the vectors $\{\contrib\}$ span $\R^n$, the problem \cref{eq:symmetrized_problem} has a finite minimizer by \cref{lem:finite_minimizer}. Any setting of the dual variables $\dualv$ corresponding to this minimizer is contained in a neighborhood uniformly satisfying this full-rank property, and so it is valid to differentiate our expression for $g$ with respect to such $\dualv$ (as we will do in \cref{app:ssec:dual-proof-multipliers-proof}).
+\begin{cor}\label{cor:gen_fixed_point}
+In the same setup as \cref{thm:dual_fn}, the gradient of the dual function $g$ is:
+$
+ \frac{\partial g}{\partial \dualv_i} =  \contrib_i\tp \bfU\nhlf \big(\bfU\hlf \AAT \bfU\hlf \big)\hlf \bfU\nhlf \contrib_i - 1.
+$
+Moreover, a maximizer of the dual $\vopt$ must satisfy:
+\begin{align}
+\vopt 
+  &= \diagpart\left(\big(\Hvopt\tp \AAT \Hvopt\big)\hlf\right)  \label{eq:genfixedpoint}.
+\end{align}
+The optimal value of \cref{eq:symmetrized_problem} is $\tr\left(\vopt\right)$.
+\end{cor}
+
+\mypar{Remark} In the single-participation case of~\citet{denisov22matfact}, $\Hv = \diag(\dualv)\hlf$, and \cref{eq:genfixedpoint} recovers the fixed point expression of that paper's Theorem 3.2. Our \cref{cor:gen_fixed_point} implies that the optimization methods presented in~\citet{denisov22matfact} may be applied, with suitable translation, to our setting; we use these methods to generate the optimal matrices studied empirically in \cref{sec:empirical-eval}.
+
+
+\mypar{Additional constraints on $\bfX$} While \cref{eq:symmetrized_problem} gives a mathematical program for finding optimal matrices, two challenges arise: 1) for $\multiepoch$-participation, we have $|\Dcorners^1_\Pi| = \assumedsep 2^\maxpart$, equal to the number of Lagrange multipliers that must be used to represent the constraint in \cref{eq:symmetrized_problem}. Hence, solving the dual problem will be intractible for moderately large $\maxpart$.  2) Even if we could surmount this issue, we cannot in general use \cref{cor:matrix_to_vector_sens} to bound sensitivity under vector contributions. In order to resolve these issues, in our experiments we introduce an additional constraint $\bfX \ge 0$ element-wise, requiring only $\dimension^2$ additional Lagrange multipliers. This lets us only consider the positive vectors $\bfu \in \Dcorners^1_\Pi$ in the sensitivity constraint (following \cref{eq:bruteforce}), and hence we need only a total of $\dimension^2 + \assumedsep$ Lagrange multipliers in the dual optimization. Our empirical results indicate that $\bfX \ge 0$ holds for the optimal solution for the prefix-sum workload $\bfA$ (proving this conjecture is an interesting open problem). However, this conjecture does not hold in general, and in particular it fails for momentum workloads; see \cref{sec:nonneg}. Nevertheless, enforcing $\bfX \ge 0$ produces mechanisms that lead to state-of-the-art learning performance in all cases.  \cref{sec:nonneg} demonstrates these gaps on small examples and provides additional discussion.
+
+\section{FFT-based Matrix Factorization}
+\label{sec:fft}
+Our work has two types of computation costs: \textbf{optimization costs} are those associated with optimizing and generating (or, computing) a mechanism whereas \textbf{noise generation costs} are those associated with using the mechanism to sample noise as part of a ML training algorithm. Once optimized, a single mechanism can be reused indefinitely to generate noise for other runs by simply resampling new noise and applying the same decoder.
+The best known methods for computing the optimal factorizations scale as at least $\calO(\dimension^3)$~\citep{opt_convex_fact,denisov22matfact}. This optimization cost can become intractable when $\dimension$ grows too large. Thus, in this section we focus on reducing optimization computation at a small decrease in the achievable privacy-utility tradeoff.
+
+A prime candidate for this goal is the Discrete Fourier Transform (DFT) because there are known algorithms both for nearly-optimal private convolutions~\citep{fawaz2013nearly} which are intimately related to the DFT,
+and for efficient calculation of the DFT using the Fast Fourier Transform (FFT)~\citep{cooley1965algorithm,nussbaumer1981fast}. 
+We present an FFT-based mechanism that reduces noise generation costs, prove rigorous DP guarantees for it, and show that these lead to near-optimal privacy-utility tradeoffs in the single-epoch setting. We provide two improvements over prior work~\cite{fawaz2013nearly}: 1) extending the result to the multi-epoch and multi-dimensional setting and 2) providing explicit non-asymptotic analysis of the algorithm's utility.%
+
+Let $\bfA$ represent the (Toeplitz) matrix of all $1$s on or below the main diagonal and $0$s elsewhere; i.e., the prefix-sum matrix. We perform our analysis in the Fourier domain. To release $\bfA\obs$, we define a circulant matrix $\acirc\in\mathbb{R}^{2n\times 2n}$
+with a corresponding input vector $\exd={\sf concat}(\obs,{\bf0}_n),{\bf0}_n\in\{0\}^n$ so that the first $n$ entries of $\acirc\exd$ are equal to $\bfA\obs$ (see \cref{app:ssec:fft-additional-definitions}). Thus, we study the DP release of $\acirc\exd$. 
+Note, to be consistent with the literature on FFT, in this section, and in \cref{app:sfft-details}, we will index all the vectors and matrices with starting index of~\emph{zero}. 
+ 
+\cref{thm:circDiag} of~\citet{gray2006toeplitz} (restated in \cref{app:ssec:fft-additional-definitions}) shows there exists a diagonal $\Sigma$ such that $\acirc=\fft\herm\Sigma\fft$ for diagonal $\Sigma$, where $\fft$ is the DFT matrix.  Then, $\acirc$ can then be factorized as  $\acirc=\bcirc\ccirc$ where $\bcirc=\fft\herm\Sigma^{1/2}$ and $\ccirc=\Sigma^{1/2}\fft$. 
+
+
+The (complex-valued) matrix mechanism specified by the factorization above (and presented as \cref{alg:fft} of \cref{app:ssec:comp-costs}) is empirically nearly optimal in the class of matrix-factorization-based mechanisms, as we show in \cref{app:sfft-details}. Though we prove a simple zCDP guarantee for \emph{any} participation schema having at most $\maxpart = \max_{\pi \in \Pi} |\pi|$ participations in \cref{thm:multip}, we can instead use our \cref{cor:matrix_to_vector_sens} when the participation schema is known in advance (as in our experiments with $\multiepoch$-participation).
+\begin{thm}
+Under $\maxpart$-participation, Algorithm~\ref{alg:fft} satisfies $(\maxpart^2\rho)$-zCDP.
+\label{thm:multip}
+\end{thm}
+\mypar{The optimal FFT decoder} Observe from \cref{thm:eval_sens_ub,thm:GaussianAdaptive} that the privacy guarantee of our multi-participation adaptive setting is independent of the choice of decoder, $\bfB$. Thus, instead of taking $\bcirc$ above, we take the optimal decoder using the Moore-Penrose pseudoinverse of a distributionally equivalent real-valued encoder, as discussed in \cref{app:two_dft_mechanisms}.
+This optimization leads to significant improvements in the privacy-utility tradeoff (see \cref{fig:fig1-appendix} in \cref{app:cifar10_details}).
+
+\mypar{Computation Costs}
+Though we define the optimal FFT decoder as a pseudoinverse, observe that we do not need to optimize (or even compute) the decoder; by \cref{app:two_dft_mechanisms}, the problem is reduced to that of solving a highly structured linear system. However, we find that even suboptimal implementations using the pseudoinverse can still factorize a mechanism for $\dimension=10,000$ in 146 minutes on a V100 GPU, remaining well within practical requirements since we need only generate a mechanism once, before it can be reused indefinitely for training. In contrast, computing optimal matrices becomes practically difficult near $\dimension\approx10,000$, taking $24$ hours to compute an effective factorization for $\dimension=8,192$ using batch-priority cloud CPU resources. We remark that this regime of $\dimension$ is highly practical, e.g., standard federated benchmarks use $\dimension\approx 2000$~\citep{reddi20adaptive} and our central image classification uses $\dimension=2000$.
+In terms of noise generation, the FFT mechanism shows preferable asymptotic properties, scaling as $\calO(\mdim\dimension\log^2{\dimension})$. However, even the optimal matrix mechanism with runtime scaling as $\calO(\mdim\dimension^2)$, noise generation on a GPU (even with significantly suboptimal implementation) takes negligible time. Further, noise from our mechanisms can be pre-generated if needed, at a tradeoff in the (typically cheaper) disk space. We discuss these tradeoffs in \cref{app:ssec:comp-costs}.
+
+\section{Empirical Evaluation}\label{sec:empirical-eval}
+We compare four main mechanism classes: tree-based mechanisms~\citep{honaker_trick}, including `tree-completion' of~\citet{kairouz2021practical}; our FFT mechanism; our optimal factorizations; and \DPSGD (incorrectly) assuming amplification via Poisson subsampling~\citep{dpsgd_2016}.
+
+The manner in which baselines from the extant literature map to this setting can be found in \cref{app:ssec:baselines}.
+Since the matrix mechanism reduces privacy cost of training to that of the release of a single Gaussian mechanism, accounting in our case becomes quite simple; see \cref{app:ssec:privacy-accounting}.
+
+\subsection{Applying our Matrix Mechanisms to ML}\label{ssec:empirical-pragmatics}
+Our work can be viewed as a drop-in replacement for noise sampling in DP optimizers through one additional step in training. Concretely, the three main steps to create DP-SGD are to 1) compute the per-example gradients, 2) clip each one to some chosen threshold $\clipnorm$, then compute the average as $\obs$, and 3) add noise $\bfz \sim \mathcal{N}(0, \sigma)$ to $\bfx$ where $\sigma,\clipnorm$ are calibrated for DP. In our work, we define an additional step 4) which uses \cref{eq:mat_mech} to generate the noise as $\bfB\bfz$ using $\obs$ from step 2) and $\bfz$ from step 3) with $\sigma=1$. 
+Because $\bfA=\bfB\bfC$ is the chosen optimizer workload (e.g., residual prefix-sum or momentum-sum corresponding with SGD and SGD-M), we may ignore operations on $\obs$.
+
+To generate the $\bfB,\bfC$, we must solve  \cref{eq:symmetrized_problem}.\footnote{Equivalently we must use \cref{alg:fft} of \cref{app:ssec:comp-costs} for the FFT mechanism or \cref{app:two_dft_mechanisms} for the Optimal FFT Decoder.} Observe that solving this linear task minimizes the noise required for a formal DP guarantee; instead, the ML optimizer generates gradients $\obs$ for the non-linear learning task.
+We can instantiate the sensitivity constraint set $\Dcorners$ to encode the exact \multiepoch-participation schema used in training. However, an encoder $\bfC$ factorized for one value of $\maxpart$ can be applied for another, by simply computing its new sensitivity (due to our \cref{sec:sensitivity}), though this will alter its privacy-utility tradeoffs. For example, 
+our \OneEpochSix in \cref{fig:stackoverflow_main} uses this to extend~\citet{denisov22matfact} to $\maxpart>1$.
+
+When applying a mechanism that is determined independently of the number of participations (e.g., FFT or tree aggregation) or extending an optimal mechanism for $\maxpart$ participations to a larger number of participations, the sensitivity may scale poorly in $\maxpart$. In such cases, it may actually have lower sensitivity to reuse a single encoder multiple times over the course of $\dimension$ steps, and hence more favorable privacy-utility tradeoffs. We term this approach \textbf{encoder stamping}. This also provides a straightforward method for extending any factorization to handle more iterations without, e.g., re-optimizing \cref{eq:symmetrized_problem}. Combined with our \cref{sec:sensitivity}, stamping lets us apply mechanisms from~\citet{denisov22matfact}, e.g., \textbf{MF(}$\mathbf{k{=}1,n{=}1000}$\textbf{)}$\mathbf{\times2}$ in \cref{fig:cifar10_results}; mechanisms with stamping have ``$\times\stamps$" appended in this way. Discussion of stamping and its relation to existing literature are in \cref{app:ssec:repeated_mechs}. 
+
+
+
+
+\begin{figure*}[t!]
+    \centering
+    \vspace{-0.5em} %
+    \includegraphics[height=2.15in]{icml2023/figures/stackoverflow/so_privacy_accuracy_tradeoffs_best.png}
+    \includegraphics[height=2.15in]{icml2023/figures/stackoverflow/so_privacy_accuracy_tradeoffs_best_zoomed.png}
+    \vspace{-1.5em}
+    \caption{\textbf{Our \SixEpoch achieves within $2\%$ relative difference in performance from the non-private baseline at} \boldmath$\varepsilon\!=\!8.8,\delta\!=\!10^{-6}$.  Our \OneEpochSix (which is not specifically optimized for the participation schema) still outperforms all baselines from the literature. Select runs were replicated multiple times, with bootstrap $95\%$ intervals shown. \DPGD is the extreme case of every-round participation ($342\times$ more computationally expensive than 6 epochs of training), and hence generally infeasible. The server learning rate $\eta_s$ was optimized over 0.5 and 1.0, and additionally 0.25 for $\varepsilon = 2$. The blue bands give the non-private baseline accuracy for 6 epochs of training with $\eta_s = 1.0$ and $0.5$.}
+    \label{fig:stackoverflow_main}
+\end{figure*}
+
+\subsection{Example-level DP for an Image Classification Task}\label{ssec:central-experiments}
+We train image classification models on CIFAR10~\citep{cifar10} which has become a de facto standard for comparing DP ML algorithms---sufficiently easy for existing DP algorithms to achieve nontrivial accuracy, but not so simple so as to be unable differentiating approaches. Details on our full setup are in \cref{app:cifar10_details}; generally, they match those of~\citet{kairouz2021practical}. Notably, we make improvements on their Online Honaker-based approach by not just completing the tree with virtual steps, but also zeroing out noise from virtual steps as detailed in \cref{app:ssec:tree_completion}. We find this led to significant improvements around a few percentage points. For all matrix mechanisms except the~\citet{denisov22matfact} baseline and our Optimal MF$(\maxpart=20,\dimension=2000)\times1$, we optimize over the stamps $\stamps$ by the losses in \cref{app:ssec:losses}, which we find well match the ordering in ML accuracy.
+
+In contrast to \cref{ssec:federated-experiments}, in this section we only compare factorizations of the prefix-sum matrix; we do not incorporate momentum or cooldown directly into the mechanisms, though we use both momentum and cooldown as postprocessing for the matrix-factorization-based mechanisms and report results for the best settings we find (with both). For \DPSGD, we report results for the best setting (no momentum, with cooldown). Details are in \cref{app:cifar10_details}.
+\mypar{Main results (\cref{fig:cifar10_results})} First, we see that the optimal factorization for the target $\multiepoch = (20, 100)$ setting outperforms all other mechanisms across (nearly) all privacy levels, only slightly underperforming \DPSGD with amplification at $\varepsilon=2$. To the best of our knowledge, this represents the first empirical demonstration of an ML algorithm which is competitive with \DPSGD into this high-privacy regime, \emph{without any amplification by sampling}. The FFT (optimal decoder) mechanism outperforms all baselines, again well toward the high-privacy regime at $\varepsilon\approx 4$. Though at a worse privacy-utility tradeoff compared with our multi-epoch optimal matrices, this mechanism shows promise for outperforming prior work when $\dimension$ grows too large for generating optimal factorizations.
+
+\mypar{Discussion of results}
+A major reason we outperform DP-SGD is because we take a fundamentally different approach that enables us to account and optimize for the specifics of the entire training procedure in a single shot. That is, DP-SGD views itself as the repeated independent application of a single mechanism on each iteration, using techniques like strong composition to obtain a finite DP guarantee across 
+ independent and arbitrary queries (gradient steps). Our matrix-factorization based ML training procedures, by contrast, consider the entire training procedure to be the application of a single mechanism, parameterized by factorizations of the matrix $\bfA$; we optimize over this space of mechanisms. We believe this is a more powerful class of mechanisms because it essentially enables us to (anti-) correlate noise across iterations to achieve minimal total squared error (DP-SGD can only use independent noise). 
+
+
+
+
+
+\subsection{User-level DP for a Next Word Prediction Task}\label{ssec:federated-experiments}
+User-level DP for language models is an important real-word task~\citep{mcmahan2022dpftrlblog}. There is much history in the DP language modelling literature which we briefly describe in \cref{app:ssec:sonwp-history}. We use the standard benchmark: StackOverflow next-word prediction~\citep{reddi20adaptive}. We use the same empirical setup as~\citet{kairouz2021practical} and~\citet{denisov22matfact} except notable changes below. Details are in \cref{app:ssec:sonwp-setup}.
+\mypar{Notable changes from prior work} We use a much higher $1000$ clients per round ($\approx 100$ in prior work)---enabled mainly by our multi-epoch factorizations. We also zero out large updates with $\ell_\infty$ norm greater than $100$ (rather than scaling down to our clipping norm of $\clipnorm = 1$) as we found this improved the stability of noisy training (see \cref{tab:zeroing} in \cref{sec:zeroing_details}). This may have enabled more consistent success of a higher server learning rate $ \eta_s = 1.0$.
+
+We conducted initial simulations which verified that two observations from~\citet{denisov22matfact} for the single-epoch setting extended to our multi-epoch and large-batch (1000 clients/round instead of 167) setting. First, linear server learning rate cooldown from $1\times$ to $0.05\times$ over the final 512 rounds offered a small improvement over constant rates (more so in higher-privacy regimes). Second, optimizing and factorizing with momentum and cooldown encoded in the query matrix $\bfA$, rather than applying both as post-processing, consistently offers a small benefit. See \cref{app:ssec:sonwp-setup} for details. Thus, we fix these preferable design choices here and compare the following algorithms.
+
+\vspace{-0.5em} %
+\mypar{Algorithms} All algorithms train for $6$ epochs $2052$ rounds, and a large-batch 1000 clients/round (better for DP training) unless otherwise noted. \Honaker is the DP-FTRL algorithm of~\citet{kairouz2021practical}, trained for 2048 rounds (a power of 2). \OneEpochOne \citep{denisov22matfact} is the state-of-the-art for single-epoch training, using $167$ clients/round and $\maxpart{=}1$. \OneEpochSix uses our \cref{eq:bruteforce} to take the (non-negative) $(\maxpart{=}1)$-optimized matrix of the previous approach but compute the sensitivity under \maxpartsep{6}{342}-participation, allowing us to train for 6 epochs (2048 rounds) with large batches. \SixEpoch is our approach directly optimizing the matrix factorization for \maxpartsep{6}{342}-participation via \cref{eq:symmetrized_problem}. \DPSGDSix is the \texttt{DP-FedAvg} algorithm of~\citet{mcmahan2017learning}, to 2052 rounds, and accounted with Poisson sampling---incorrect, though standard, as noted in \cref{sec:intro}. \DPGD estimates the \emph{infeasible-to-actually-run} benchmark of full-batch gradient descent for 2052 rounds and 2052 epochs, or $342\times$ the computation cost of our 6 epoch runs. We compute the exact privacy cost, and estimate the accuracy from experiments with 1000 clients per round, following the methodology of \citet{kairouz2021practical}. This is essentially an upper bound on the best privacy-accuracy tradeoffs with unlimited computational resources.
+
+
+\vspace{-0.5em}
+\newcommand{\epsdelta}[1]{$(#1, 10^{-6})$-DP}
+\mypar{Main results (\cref{fig:stackoverflow_main})}
+We find that our \SixEpoch, is the best feasible private result at $25.25\%$ accuracy and \epsdelta{17.7}. This exceeds the non-private baseline of $25.2\%$ accuracy reported by~\citet{kairouz2021practical}, is within the margins of small hyperparameter tuning differences of our improved non-private baselines (25.43\%) and private full-batch gradient descent ($25.31\%$).
+At \epsdelta{8.84}, \SixEpoch achieves $24.94\%$ accuracy, substantially improving over the previous state-of-the-art at this privacy level given by \OneEpochOne at $24.11\%$ accuracy, and considerably improves on both the accuracy and privacy of \Honaker ($24.86\%$ accuracy at \epsdelta{21.0}). In fact, we achieve better accuracy at $\varepsilon=8.84$ than prior methods achieve at $\varepsilon=17.7$. \DPSGDSix is outperformed by \SixEpoch and \OneEpochSix across all $\varepsilon$ values evaluated. \cref{fig:stackoverflow_per_lr} in \cref{sec:addl_stackoverflow} shows results for each learning rate separately, with numeric results in \cref{tab:mf,tab:sgd}.
+
+\vspace{-1em}
+\section{Discussion and Conclusions}
+Our work significantly improves the privacy-utility tradeoffs in DP ML.
+Indeed, our work outperforms the state-of-the-art (and, DPSGD with amplification) by $\approx 5$ percentage points across many privacy levels---and as low as $\varepsilon\approx 2$---with practically implementable assumptions. 
+
+We compare our mechanisms with \DPSGD on a level-ground using well-performing but not state-of-the-art models and training protocols---e.g., very large models, augmentations before clipping~\citep{de2022unlocking}, public data usage, and large batch sizes can all aid training. Many, if not all, of these techniques are applicable to our setting and can thus be used with our mechanisms to realize additional absolute performance gains, again, likely beyond the performances achieved by \DPSGD. \cref{app:sec:discussion-conclusion} contains limitations and ethical considerations.
+
+
+
+
+ \paragraph{Acknowledgements}
+The authors would like to thank Adam Smith for helpful conversations in the formulation of the FFT approach. Shuang Song helped ensure correctness and comparability with~\citet{kairouz2021practical} on CIFAR. Galen Andrew and Sewoong Oh contributed their expertise in matrix calculus, and Ryan McKenna provided helpful feedback on the manuscript as well as contributing the concise counter-example presented in \cref{sec:counterexample}.
+
+
+\clearpage
+\bibliography{references}
+\bibliographystyle{icml2023}
+
+\clearpage
+\appendix
+\onecolumn
+
+\section{Summary of notation and terminology}\label{sec:notation}
+The following table summarizes the notation used throughout the paper:
+
+\begin{table}[H]
+\renewcommand{\arraystretch}{1.4}%
+\begin{tabular}{ll}
+\toprule
+\dimension & Number of steps of the streaming linear query (SGD steps or FL rounds) \\
+\mdim & Dimension of per-step user contributions. \\
+$\obs_i \in \R$ or $\R^\mdim$ & Sum of per-example gradients (or per-user model updates) on step $i$. \\
+$\obs \in \R^\datadim$ & Stream of inputs $\obs_i$, equiv. matrix with rows $\obs_i$ (so  $\obs_i = \obs\idx{i}{:}$). \\
+$\clipnorm$ & Clipping norm that limits the size of per-example contributions to $\obs_i$.  \\
+$\pi$ & Participation pattern, the set of steps that an example could participation in.\\
+$\Pi$ & Participation schema, set of sets of steps (set of all $\pi$) an example could participate in. \\
+$\deltaset$ & $=\left\{ \obs - \obsp \mid (\obs, \obsp) \in \bfN \right\}$, the set of deltas between neighboring input streams $\obs,\obsp$. \\
+$\Dcorners$ & Corners of $\deltaset$ when assumed to be a polytope, $\deltaset = \conv(\Dcorners)$. \\
+\multiepoch-participation & participation schema $\Pi$ with at most $\maxpart$ participations, separated by exactly $\assumedsep$. \\
+$\bfA \in \R^\dimdim$  & Lower-triangular linear query matrix to be factorized as $\bfA = \bfB \bfC$. \\
+$\bfT \in \R^\dimdim$  & $\bfT := \AAT$ for convenience. \\
+$\lambda_{\min}(\bfA)$, $\lambda_{\max}(\bfA)$. & Smallest and largest eigenvalues of real matrix $\bfA$. \\
+$\bfA\herm$  & Conjugate (Hermitian) transpose of $\bfA$. \\
+$\bfX^\star$  & A matrix $\bfX$ that is ``optimal'' in a context-dependent sense. \\
+$\bfA^\dagger$  & Moore-Penrose pseudoinverse of matrix $\bfA$. \\
+$\bfA\idx{i}{j}$ & The $(i, j)^{\text{th}}$ entry of matrix $\bfA$. \\
+$\bfA\idx{i}{:}$ and $\bfA\idx{:}{j}$  & The $i^{\text{th}}$ row and $j^{\text{th}}$ column. \\
+$\stamps$ &  Number of encoder $\bfC$ replications (stamps) into a block-diagonal matrix.\\
+$\conv\left(S\right)$ & Convex hull of the set $S$.\\
+$[n]$ & $=\{1, \dots, n\}$ \\
+$\lfrob{\bfX}$  & The Frobenius norm of a matrix $\bfX$. \\
+\bottomrule
+\end{tabular}
+\end{table}
+We utilize terminology from federated learning as well as standard centralized training, which generally map as follows:
+\begin{table}[H]
+\renewcommand{\arraystretch}{1.4}%
+\begin{tabular}{ll}
+\toprule
+\textbf{Centralized} & \textbf{Federated}  \\
+
+\midrule
+example     & user or client        \\
+batch size  & clients-per-round    \\
+DP-SGD      & DP-FedAvg             \\
+step or iteration   & (communication) round \\
+gradient            & model update           \\
+\bottomrule
+
+\end{tabular}
+\end{table}
+
+\section{Generalized sensitivity as an operator norm}\label{sec:opnorm}
+\cref{eq:sensopnorm} shows that our generalized notion of sensitivity can be viewed directly as a particular operator norm. To see this, view $\bfC: \bfV_1 \rightarrow \bfV_2$ as a linear operator from vector space $\bfV_1$ to $\bfV_2$. Then with $\normin{\cdot}$ the vector norm on $\bfV_1$ and similarly for $\bfV_2$, an operator norm is defined as
+\[
+\norm{\bfC}_{(1),(2)} = \max_{u \in \bfV_1: \normin{u} \le 1} \normout{\bfC \contrib}.
+\]
+Because we use the Gaussian mechanism and thus are interested in the $\ell_2$ sensitivity, $\normout{\cdot} = \norm{\cdot}_2$, and we define the norm
+\[
+\normin{\contrib} = \norm{\contrib}_\deltaset := \inf \left\{ r > 0 : \frac{\contrib}{r} \in \deltaset \right\}, 
+\]
+the vector norm induced by $\deltaset$ (the fact that $\deltaset$ is a closed, convex, symmetric set ensures this is a norm). Note $\contrib \in \deltaset\ \Leftrightarrow\ \norm{\contrib}_\deltaset \le 1$. Thus, we have
+\begin{equation}
+\sensd(\bfC) = \norm{\bfC}_{\deltaset, 2}.\label{eq:sensX}
+\end{equation}
+
+\section{The FFT Mechanisms and Reducing Computation}\label{app:ssec:comp-costs}
+\begin{algorithm}[h]
+\caption{DP-Prefix Sum Computation via FFT (with $\mdim = 1$)}
+
+\begin{algorithmic}%
+\STATE \textbf{Inputs:} Data vector $\obs\in\mathbb{R}^{n}$ (with each $| \obs_i | \leq \clipnorm$) and zCDP parameter $\rho$.
+\STATE $\fexd\in\mathbb{C}^{2n} \leftarrow $ the DFT of $\bfv$ (defined in \cref{eq:circRep}). Let $\fexd_{[:n]}$ be the first $n$ coordinates.
+\STATE $\fft\leftarrow$ DFT matrix in $2n$-dimensions, where the $k$-th row of $\fft$ is given by 
+\[
+\fft\idx{k}{:} = \frac{1}{\sqrt{2n}}\left[
+  \exp\left(-\frac{j2\pi ka}{2n}\right):a\in\{0,\ldots,2n-1\}\right].
+\] 
+\STATE $(\Sigma, \bfw)\leftarrow $ ($\diag(\fexd)$, standard complex Normal in $2n$-dimensions).
+\STATE  $(\trout,\actnoise)\leftarrow
+   \left(\left[\obs_0, \obs_0 + \obs_1,\ldots,\sum\limits_{a=0}^{n-1}x_a\right],
+   \sqrt{\frac{\kappa^2\lone{\fexdt}}{4n\rho}}\left(\fft\herm\Sigma^{1/2}\cdot\bfw\right)\right)$. 
+\STATE \textbf{Output} $\trout+\actnoise.\texttt{real}[0,\ldots,n-1]$.
+\end{algorithmic}
+\label{alg:fft}
+\end{algorithm}
+We propose two FFT mechanisms. First, we propose the FFT mechanism which is described in \cref{alg:fft}. This mechanism has the same computation complexity---no optimization costs and $\calO(\dimension\mdim\log{\dimension})$ noise generation---as the Honaker method used in~\citet{kairouz2021practical} but at a better privacy-utility tradeoff, as shown in \cref{fig:fig1-appendix}. The privacy and utility analysis can be found in \cref{app:sfft-details}.
+
+The FFT Optimal Decoder (FFT\_Opt\_Dec) mechanism presented in \cref{sec:fft} represents taking (a real-valued translation of) the encoder $\bfC$ from \cref{alg:fft} and using the optimal decoder, defined in terms of the Moore-Penrose pseudoinverse of $\bfC$. Similarly to~\cref{alg:fft}, there is no need to construct a literal matrix to multiply by in the case of noise defined by the optimal decoder; noise generation time of the mechanism, however, increases by a logarithmic factor to $\calO(\dimension\mdim\log^2{\dimension})$ (as discussed in \cref{app:two_dft_mechanisms}). This complexity is still feasible for many steps (which we will discuss below) and comes with significant utility benefits (see \cref{fig:cifar10_results}).
+
+All the mechanisms we study scale as either $\calO(\dimension^2)$ or $\calO(n \cdot \polylog(n))$. For our $\dimension=2000$ step environments, and even far beyond to $\dimension\approx10,000$, our algorithms can be efficiently realized on GPUs with runtime on the order of seconds per step (including computing and applying gradients and noise). The main challenge in these cases are storing the $\dimension^2 + \dimension\mdim$ coordinates in GPU memory (the former for the decoder matrix, the latter for the noise samples). Given that each of the $\mdim$ coordinates of noise can be sampled independently, this algorithm is straightforwardly parallelizable and so work may be partitioned across many processors when needed. Noises could instead be pre-generated in an entirely separate process, and stored on disk, to be loaded into memory row-by-row concurrently with training.
+
+Outside of computation, both our FFT mechanisms take $O(\dimension\mdim)$ space as all noises for the $\obs \in \R^\datadim$ must be pre-generated. This is in contrast to all prior work, and even our optimal factorizations, which require only $\calO(\mdim)$ space to generate the noise at the current step. Again, we note that space is ofter much cheaper so this is typically not the limiting factor.
+
+\section{Mechanisms under consideration: baselines, subtleties, and losses.}\label{app:mechanism_discussion}
+
+\subsection{Baselines}\label{app:ssec:baselines}
+\citet{kairouz2021practical} and \citet{denisov22matfact} both present approaches for ML model training which can be understood as instances of the matrix mechanism--the former grounded in the binary-tree mechanism as refined by \citet{honaker_trick}, and the latter explicitly optimizing a factorization under single participation. These two works yield two natural baselines:
+\begin{itemize}
+    \item \citet{kairouz2021practical} explores `tree restarts' (generalized as our notion of `stamps', \stamps,~in \cref{sec:empirical-eval}) and the so-called `tree-completion trick' for the Honaker estimator-from-below variant of the binary tree method for computing differentially private prefix sums; the matrix-factorization perspective on this estimator allows us to implement slightly optimized versions of these methods; see \cref{app:ssec:tree_completion,app:ssec:repeated_mechs}.
+    \item \citet{denisov22matfact} computes optimal factorizations of various optimization-related matrices, though only for a single epoch. For these matrices, we leverage the results in \cref{sec:sensitivity} to directly compute the sensitivity of the encoder matrices for multiple participations.
+\end{itemize}
+
+These two papers can be combined in other ways as well; e.g., the results of \citet{denisov22matfact} show that the `fully efficient estimator' of \citet{honaker_trick} may be used as a drop-in replacement for the estimator from below in \citet{kairouz2021practical}. We focus on the two mechanisms specified above as the natural baselines for the present work.
+
+
+\subsection{Privacy Accounting}\label{app:ssec:privacy-accounting}
+\newcommand{\nmult}{z}
+\newcommand{\cpr}{K}
+The matrix mechanism \cref{eq:mat_mech} conceptually adds isotropic Gaussian noise in some encoded space. In our case, we encode a matrix of gradients (clipped to $\ell_2$ norm $\clipnorm$) computed over the course of training, denoted by $\bfG$, with the matrix $\bfC$, and add Gaussian noise to each entry in the matrix $\bfC \bfG$. Under the assumption that the matrix factorization has been appropriately scaled so $\bfC$ has sensitivity 1, this Gaussian noise will have standard deviation $\sigma = \clipnorm \nmult$ in each coordinate, where $\nmult$ is the `noise multiplier' parameter determining the privacy level of the mechanism (see \cref{tab:noise_mult_stackoverflow} for example).
+
+Privacy costs are computed as a single application of the Gaussian mechanism to $\bfG \bfC$ using the \texttt{PLDAccountant} provided by the Google DP Library\footnote{\url{https://github.com/google/differential-privacy}}. We also use this accountant to analyze DP-(S)GD baselines (which require more complex accounting), yielding a small improvements in $\varepsilon$ over the Renyi-DP accounting used in prior works.
+
+\subsection{Improvements to `Tree completion' By Removing Noise from Virtual Steps}\label{app:ssec:tree_completion}
+The ``tree completion'' trick of \citet{kairouz2021practical} is used on the last step of any restart (in ours, stamp) to reduce the noise added on this step. This is achieved by adding virtual steps (with 0 inputs) until the final step of that level in the tree, because this noise will be the lowest in that level. In this section, we show how to further improve on this trick and that our matrix mechanisms make analyzing such tricks easier. Our implementations of the binary-tree baslines~\citet{honaker_trick,kairouz2021practical} utilize these improvements.
+
+For the online Honaker estimate, \citet{honaker_trick} obtain a DP estimate for the release node $i \in [n]$ (representing the prefix sum until $i$) but summing the corresponding subtrees prior to this node. These are exactly the subtrees corresponding to the binary representation of this node~\citep{honaker_trick}. 
+\btodo{Can we re-word the following to be more clear. Are we talking about the error in an estimate of a prefix sum, or error in a node? What is $\mu$ below, it seems to be unbound.}
+Then, the variance required to release node $i$, with subtrees of height $0, 1, ..., l_i-1$, is
+\begin{equation*}
+    \left(\sum\limits_{j=0}^{l_i-1} c_j^2\cdot 2^j\right)\cdot\sigma^2
+    = \frac{1}{2\cdot(1-2^{-\mu})}\cdot \sigma^2
+    \qquad \text{where} \qquad
+    c_j=\frac{1/2^j}{\sum\limits_{j=0}^{l_1-1} (1/2^{j})}.
+\end{equation*}
+Notice that reaching a new height in the tree decreases the variance needed.
+In~\citet{kairouz2021practical} and just before terminating on some non-power-of-two step $n'<n$, they run $n-n'$ virtual steps on zero gradients. This enables their mechanism to use the minimal noise for the power-of-two-step for the final real step. 
+
+However, notice that in both these cases, the methods assume that these virtual steps must be privatized. Indeed, they do not need to be because we know apriori that these steps are virtual, i.e., not corresponding to real gradients. Thus, in our methods we account for this in our mechanism and reduce the noise of the final step accordingly. Importantly, this can be computed without altering the asymptotic runtime and storage complexity of the algorithm: on the last step, the contributions of the virtual steps to the power-of-two noise can be calculated using, e.g., a second binary tree, and removed. This leads to a significant benefit in the loss as we observed in Table~\ref{tab:cifar_mechanism_table} in \cref{app:ssec:losses}.
+
+\newcommand{\treeencoder}{\ensuremath{\bfC_{\text{tree}}}}
+\newcommand{\hondecoder}{\ensuremath{\bfB_{\text{Hon}}}}
+\newcommand{\pwrtwo}{\ensuremath{2^{\lceil \log_2(\dimension)\rceil}}}
+We believe this oversight of prior works showcases the power of our matrix mechanism approach. Indeed, let $\treeencoder$ \btodo{Can we give the dimension of this matrix for concreteness?} be a matrix representing the (complete) binary tree used in the mechanisms of~\citet{honaker_trick,kairouz2021practical} with $\pwrtwo$ leaves; for the sake of concreteness, assume this is the matrix constructed in Appendix C of~\citet{denisov22matfact}. Let $\hondecoder$ represent the Honaker estimator-from-below; in our language, the decoder used by~\citep{kairouz2021practical}.
+
+The tree completion trick of~\citep{Kairouz-extremal} can be understood as follows. The matrix $\hondecoder \treeencoder$ is of size $\pwrtwo \times \pwrtwo$. In the case that $\dimension$ is not a power of two, the penultimate \btodo{I think $\pwrtwo - \dimension$} rows and columns of this matrix will go unused. However, for this factorization, the variance added by \hondecoder on the final row will be quite small, due to the binary tree's redundancy in encoding estimates of this sum. The matrix we wish to factorize is a prefix-sum matrix $\bfS$ of size $\dimension \times \dimension$; this matrix can be expressed as any one of a family of transformations of the (potentially larger) product $\hondecoder \treeencoder$:
+
+$$\bfS = \bfP_j \hondecoder \treeencoder \bfE,$$
+
+where $\bfE$ embeds a $\dimension$-dimensional vector into $\pwrtwo$ dimensions by padding with zeros, and $\bfP_j$ projects back down to $\dimension$ dimensions in a similarly axis-aligned way, taking the first $\dimension-1$ rows of its right-hand matrix argument, and only one, but \emph{any} of the $j^{th}$ rows for $n \leq j \leq \pwrtwo$.
+To minimize the Frobenius norm of the constructed decoder in the factorization of $\bfS$, we may simply pick the row with the lowest $\ell_2$ norm; in the case of $\hondecoder$, this is the final row.
+
+\ktodo{added from cc, check please}
+One more optimization becomes clear when tree completion is formulated in this manner.
+Similar to our optimal decoder of \cref{sec:fft}, any decoder can be used without changing the sensitivity of the encoder. Noting that nonzero entries in the decoder increase our loss of \cref{eq:l_expression}, we can simply zero out the columns of the decoder corresponding to these virtual steps---this decreases the loss, preserves the same error in the DP estimate of the prefix sum (the inputs are 0), and maintains the same DP guarantee. In other words, we need not account for the noise, or the error it introduces, of virtual steps. We now provide a more rigorous explanation.
+
+The image of $\treeencoder \bfE$ can be contained in an axis-aligned subspace; effectively, the subspace corresponding to elements that may be nonzero in the binary tree when run for $\dimension$ steps. 
+In other words, the columns of the decoder corresponding to rows of the encoder that are removed via the projection need not be included: because the input is not processed.
+Therefore, denoting the projection onto this subspace by $\Pi$, \btodo{Notation collision with participation patterns, maybe OK?} we may write:
+
+$$\bfS = \bfP_j \hondecoder \Pi \treeencoder \bfE = \left(\bfP_j \hondecoder \Pi\right)\left(\Pi \treeencoder \bfE\right),$$
+
+further reducing the variance of the decoder (without increasing the sensitivity of the encoder) in this incomplete binary tree case.
+
+In our implementations of the online Honaker mechanism, we freely use these tricks, in addition to exact calculations of the sensitivity of the mechanism enabled by noting that the encoder is all-nonnegative and the observations of \cref{sec:sensitivity}, leading to some improvements in these mechanisms over those in the existing literature. No changes to accounting are required, as privacy is inherited from the matrix mechanism perspective.
+
+\subsection{Stamping: Repeated mechanisms in the matrix-factorization setting}\label{app:ssec:repeated_mechs}
+
+In stamping, we define a new encoder matrix as the Kronecker product of some given encoder $\bfC$ with an $\stamps \times \stamps$ identity matrix $\bfI$, creating a new $\stamps\dimension$-dimensional linear DP query mechanism. Assuming $\bfC$ is of shape $\dimension \times \dimension$, the resulting encoder is an $\stamps \dimension \times \stamps \dimension$ block-diagonal encoder matrix, formed by `repeating' the matrix $\bfC$ along the diagonal.
+
+~\citet{kairouz2021practical} explored `restarting' their binary-tree based prefix sum estimation mechanism, treating the number of restarts used as a hyperparameter, and treating the result of a `completed' application of the binary tree as fixed. For linear operators $\bfA$ with constant columns below the diagonal, this approach may be used to construct a new factorization from an existing one. This constant-columns property, or a block-based variant thereof, is \emph{required} to simply treat the output from a `completed' application of the existing mechanism as fixed; for a general matrix $\bfA$, there is no clear prefix property which can be leveraged for this purpose.
+
+Taking the matrix view, one may construct a similar encoder/decoder pair for the prefix-sum matrix by reusing the initial decoder $\bfB$ on the block-diagonal and fixing the columns to simply repeat the final row of this decoder below the block-diagonal; notice that the constant-column property of the prefix sum matrix guarantees that this construction appropriately factorizes $\bfA$. The noise that the matrix mechanism thus constructed adds can be implemented as a `restarted' tree mechanism; however, since we compute sensitivities exactly for decoders of this structure as in \cref{sec:sensitivity}, the privacy properties of these mechanisms we construct to replicate the `restarts' of~\citep{kairouz2021practical} may not be identical to those presented there, where accounting is performed by composition.
+
+The matrix-mechanism perspective additionally allows one to apply the `stamping' construction to \emph{any} linear operator $\bfA$ (e.g. the momentum matrix), where a reuse of fixed previous outputs is not possible. A `stamped' factorization of \emph{any} $\bfA$ may be obtained, for example, by matrix pseudoinversion: letting $\bfB = \bfA\left(\bfC \otimes \bfI\right)\pinv$. This defines a legitimate factorization of any $\bfA$ requiring only suitable non-degeneracy assumptions on $\bfC$, and indeed represents the optimal decoder for the stamped encoder.
+
+The pseudoinverse-based construction can, even in the prefix-sum case, be \emph{quite different} from a construction designed to replicate `restarted' mechanisms. For example, if $\bfC$ is a matrix representation of the binary-tree encoder and $\bfI = 1$, then the resulting decoder matrix represents the \emph{full}, rather than online, Honaker decoder~\citep{honaker_trick}; the validity of this mechanism in the adaptive streaming setting was only shown quite recently by~\citet{denisov22matfact}.
+
+For comparability with existing literature (and to preserve potential for an efficient implementation), however, all of the tree-based mechanisms we explore in the main body have decoders which replicate the setting of composition\footnote{We show how the optimal binary-tree decoder differs from the online, composition-based decoder in \cref{fig:cifar10-stamping-restart-sensitiv}}. All other stamped mechanisms used the optimal decoder.
+
+
+
+\btodo{I don't know that there is a notion of "sensitivity to the DP composition of these mechanisms. I think we can say something precise if we stamp out one copy of the encoder for each epoch, and we can refer to \cref{cor:matrix_to_vector_sens} if we stamp out the mechanism in a way where multiple participations may hit the base mechanism, but I'm not sure we can say much more than that.}
+\ktodo{There is something a little subtle here, I think--taking the encoder/decoder view, the Kronecker-producted binary tree encoder with the matrix perspective releases the same values, with the same distribution, as a `restarted' mechanism. AFAICT, it's the results of our previous paper (combined with sensitivity calculations here) which allow us to bypass composition in doing the accounting for this mechanism--since we compute sensitivity exactly in this case, presumably the super-simple accounting we do must be as least as good as any composition-based accounting (is there some result on this?). I'm going to try to rework the above and suppress any explicit discussion of accounting, taking the matrix view, and just noting that we do accounting differently because we compute exact sensitivities.}
+
+
+
+
+
+
+
+
+
+
+
+\mypar{Optimizing over $\stamps$}
+\btodo{I think two paragraphs could be made more concise and more clear by focussing on what I think are the two main points.  1) Optimizing over $\stamps$ can produce better mechanisms in terms of ML accuracy. 2) Rather than comparing mechanisms by training ML models, we can compare them directly in terms of total squared error, which is cheap and we find is predictive of ML perofrmance.}
+
+Considering instantiation enables us to directly analyze and minimize (over $\stamps$) the stamped mechanism's multi-epoch loss \cref{eq:l_expression} without running compute intensive ML experiments. Indeed, we observe in Table~\ref{tab:cifar_mechanism_table} of \cref{app:ssec:losses} that for mechanisms which were not explicitly optimized for the \multiepoch participation setting, there exist stamped mechanisms ($\stamps>1$) with much lower loss that correspondingly led to much more performant ML models (e.g., Figures~\ref{fig:cifar10_tree_restart_ablations} and~\ref{fig:cifar10_epoch_ablations} of \cref{app:mechanism_discussion}).
+
+Interestingly, with our capacity to measure mechanisms at a single shot in the multi-epoch setting, we see a similar trend as was observed for restarts in~\citet{kairouz2021practical}: that `stamped' mechanisms have lower total loss than their non-stamped full-tree counterparts in the 20-epoch, 100 steps / epoch setting (see \cref{tab:cifar_mechanism_table}); training performance of these `stamped' mechanisms on CIFAR10 can be found in \cref{fig:cifar10_tree_restart_ablations}. However, there is a significant improvement in our approach in that we can now directly tune this hyperparameter without the need to actually run ML training. This lets us reduce computation by only analyzing the loss of the generated matrices and then running the mechanism with the lowest loss.
+
+\subsection{Factorization losses and per-iterate variance}\label{app:ssec:losses} 
+As a first measure of the privacy-utility tradeoff, we compare the losses of each mechanism from \cref{eq:l_expression} for factorizations of the matrices under consideration.
+
+We compare measured losses of several factorizations of the prefix-sum matrix for the $\multiepoch=(20, 100)$ setting of the CIFAR experiments in \cref{tab:cifar_mechanism_table}. We plot the per-iterate variance of the mechanisms in \cref{fig:cifar10_results}, along with several variations, in \cref{fig:cifar10_variance_plots}. 
+In \cref{fig:so_nwp_variance_plots}, we plot the per-iterate variance distribution of factorizations of the momentum and cooldown matrix (described in \cref{sec:empirical-eval}) at a fixed variance level, and with various privacies, computed for the $\multiepoch=(6,342)$ participation setting.
+
+\cref{fig:cifar10_variance_plots,fig:so_nwp_variance_plots} both demonstrate the effect of \multiepoch-participations on the optimization problem. Particularly interesting to consider are the optimally-factorized matrices; in both cases, the epoch structure is clearly visible in the manner in which the mechanisms distribute variance. We see also the effect of `stamps' \stamps~in the variance distribution, effectively a proxy for the epoch structure directly accounted for by the optimal mechanisms.
+
+\begin{figure}
+    \begin{subfigure}[b]{0.45\linewidth}
+    \includegraphics[width=\linewidth]{icml2023/figures/variance_plots/PerRoundVarianceMainCIFAR10Mechanisms.png}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.45\linewidth}
+    \includegraphics[width=\linewidth]{icml2023/figures/variance_plots/PerRoundVarianceOptimalRestarted.png}
+    
+    \end{subfigure}
+    \vfill
+    \begin{subfigure}[b]{0.45\linewidth}
+    \includegraphics[width=\linewidth]{icml2023/figures/variance_plots/PerRoundVarianceHonakerMechanisms.png}
+    
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.45\linewidth}
+    \includegraphics[width=\linewidth]{icml2023/figures/variance_plots/PerRoundVarianceFTMechanisms.png}
+    
+    \end{subfigure}
+    \caption{Per-iterate variance for prefix-sum factorizations. All mechanisms above yield the same privacy ($(\varepsilon, \delta) = (4.38, 10^{-5})$ in the $\multiepoch=(20, 100)$ setting), but have different total variances (the integral of the curves above). \btodo{Maybe highlight the difference in the $y$-axis scales here? If we regenerate, replace "geometry" with "participation" in the plot titles, and maybe plot Honaker last in the top-left plot so the other liens are on top. Maybe include $MF(k=20,n=2000)$ in all the plots as a common baseline?}}
+    \label{fig:cifar10_variance_plots}
+\end{figure}
+
+
+
+\begin{table}[h!]
+\begin{center}
+\begin{tabular}{lcl}
+\toprule
+Mechanism & \makecell{$(k,b)=(20,100)$\\Prefix Sum Loss} & Computation for $n$ Steps, $\mdim=1$\\
+\midrule
+(Online) Honaker($n=2000$) & 5.8e6 & $\calO(n\log{n})$ Noise Generation\\
+(Online) Honaker($n=1000$)$\times2$ & 3.3e6 & \\
+(Online) Honaker($n=400$)$\times5$ & 2.1e6 & \\
+\textbf{(Online) Honaker($\mathbf{n=200}$)$\mathbf{\times10}$} & \textbf{2.0e6} & \\
+(Online) Honaker($n=100$)$\times20$ & 2.1e6 & \\
+\midrule
+Optimal Decoder Honaker($n=2000$) & 2.4e6 & $\calO(n^2)$ Noise Generation\\
+Optimal Decoder Honaker($n=1000$)$\times2$ & 1.6e6 & \\
+\textbf{Optimal Decoder Honaker($\mathbf{n=400}$)$\mathbf{\times5}$} & \textbf{1.2e6} & \\
+Optimal Decoder Honaker($n=200$)$\times10$ & 1.4e6 & \\
+Optimal Decoder Honaker($n=100$)$\times20$ & 1.8e6 & \\
+\midrule
+\textbf{MF($\mathbf{k=20,n=2000}$)} & \textbf{6.5e5} & \makecell{$\calO(n^3)$ Optimization +\\$\calO(n^2)$ Noise Generation}\\
+MF($k=10,n=1000$)$\times2$ & 8.8e5 & \\
+MF($k=5,n=500$)$\times4$ & 1.2e6 & \\
+MF($k=1,n=100$)$\times20$ & 2.5e6 & \\
+MF($k=1,n=2000$) & 1.6e6 & \\
+\textbf{MF($\mathbf{k=1,n=1000}$)$\mathbf{\times2}$} & \textbf{1.37e6} & \\
+MF($k=1,n=500$)$\times4$ & 1.4e6 & \\
+MF($k=1,n=400$)$\times5$ & 1.5e6 & \\
+MF($k=1,n=200$)$\times10$ & 1.8e6 & \\
+MF($k=1,n=100$)$\times20$ & 2.5e6 & \\
+\midrule
+FFT($n=2000$) & 2.3e6 & $\calO(n\log{n})$ Noise Generation\\
+FFT($n=1000$)$\times2$ & 1.8e6 & \\
+\textbf{FFT($\mathbf{n=400}$)$\mathbf{\times5}$} & \textbf{1.6e6} & \\
+FFT($n=200$)$\times10$ & 1.9e6 & \\
+FFT($n=100$)$\times20$ & 2.5e6 & \\
+\midrule
+FFT Optimal Decoder($n=2000$) & 2.2e6 & $\calO(n\log^2{n})$ Noise Generation\\
+FFT Optimal Decoder($n=1000$)$\times2$ & 1.5e6 & \\
+\textbf{FFT Optimal Decoder($\mathbf{n=400}$)$\mathbf{\times5}$} & \textbf{1.1e6} & \\
+FFT Optimal Decoder($n=200$)$\times10$ & 1.2e6 & \\
+FFT Optimal Decoder($n=100$)$\times20$ & 1.7e6 & \\
+\bottomrule
+\end{tabular}
+\end{center}
+\caption{Loss for various prefix-sum factorizations, computed via \cref{eq:l_expression}, in multiple-participation setting for 20 epochs with 100 steps per epoch. Lowest-loss mechanism in each class bolded. Note that `(Online) Honaker' corresponds to the restarted decoder. By evaluating the dual problem (\cref{sec:optimizing_mechanisms}), 6.53e5 represents a lower bound on the optimal loss; the optimal matrix factorization is within 0.2\% of this optimal value. Though up to $\calO{n^2}$ noise generation can be tolerated practically for large ML training runs, we find that the stamped FFT optimal decoder obtains the best privacy-utility tradeoffs while requiring only $\calO(n\log^2{(n)})$ time. Sensitivity is calculated exhaustively with contributions constrained to $+1$ for all matrices except FFT ones, where sensitivity is calculated using Theorem~\ref{thm:eval_sens_ub}. \btodo{I made some initial changes to better match formatting best practices. I'm not sure where the group is supposed to be in the MF block (there are two bolded rows).}}
+\label{tab:cifar_mechanism_table}
+\end{table}
+
+
+\clearpage
+
+
+
+
+
+\begin{figure}
+    \includegraphics[width=\linewidth]{icml2023/figures/variance_plots/PerRoundVarianceForFederatedMechanisms.png}
+    
+\caption{Per-iterate variance for momentum + cooldown matrix factorizations. Privacy measured in the $\multiepoch=(6, 342)$ setting.}
+    \label{fig:so_nwp_variance_plots}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=\linewidth]{icml2023/figures/central/cifar10_ablations/Cifar10FullHonakerVs20EpochOpt.png}
+    \caption{Comparing the optimal decoder, i.e., \textbf{OptDecoderHonaker}, with the standard stamping decoder (including fixing the output of each block), i.e., \textbf{Online Honaker}, with the optimal factorization. \btodo{We should replace restarts with stamps in the caption. Does "X epochs" represent the total number of training epochs? Does $T$ steps mean $T$ total steps or $T$ steps per epoch? We need to make it clear that all of these lines are using the same amount of computation (or if that's not true, why are we comparing different levels of computation?)}}
+    \label{fig:cifar10-stamping-restart-sensitiv}
+\end{figure}
+
+\section{Details and additional experiments for CIFAR10.}\label{app:cifar10_details}
+
+
+We train image-classification models using the CIFAR10 dataset as hosted in \texttt{tensorflow-datasets}, containing 50,000 training and 10,000 test examples. We evaluate and compute test accuracies on the entire test set, following the open-sourced code of \citet{kairouz2021practical}. We reuse the network architecture, dataset processing and initialization strategies presented in \citet{kairouz2021practical}; in particular, the architecture we use can be found in their Table 2 (b).
+
+\mypar{Optimization setup and hyperparameters}
+ We train all mechanisms for 20 epochs with batch size of 500, yielding 100 steps per epoch and 2000 total. After performing some small initial grid searches, we settled on using linear learning rate cooldown to $0.05\times$ the initial learning rate over the last 500 steps of training. We found this consistently improved utility for all mechanisms and privacy levels.
+ 
+ As mentioned in \cref{sec:empirical-eval}, for this 20-epoch training setup, we only compare factorizations of the prefix-sum matrix, and do not include any factorizations of matrices which incorporate momentum of learning rate cooldown directly in the mechanism itself~\citep{denisov22matfact}.
+ We sweep over learning rates of values $(1 \times 10^{i}, 2 \times 10^{i}, 5 \times 10^{i})$ for $i$ in $\{-2, -1\}$; for all mechanisms and noise levels, optimal values were in the interior of this sweep. We sweep over momentum values of $0, 0.85, 0.9, 0.95$ though find nonzero momentum works best for all matrix mechanisms, and no momentum works best for \DPSGD at our scale as found previously by~\citet{kairouz2021practical}.
+ 
+ For Honaker and FFT-based factorizations, there is no known a-priori way to choose the optimal number of \stamps~for a given \multiepoch~setting. Therefore we treat the value \stamps~as a hyperparameter, and sweep across it, for $\stamps \in \{1, 2, 5, 10, 20\}$. As can be seen in \cref{tab:cifar_mechanism_table}, the optimal \stamps~for both of these factorizations was in the interior of this sweep. As shown, e.g., in \cref{fig:cifar10_tree_restart_ablations}, the training-time performance of these mechanisms matched the expected order for computed loss. This value \stamps~represents an extra hyperarameter which must be set for the Honaker and FFT mechanisms; to the best of our knowledge, computing the loss for various instantiations of these mechanisms via \cref{eq:l_expression} represents the only known method for setting this parameter other than simply training models.
+ 
+ We also apply our sensitivity analysis of \cref{sec:sensitivity} to the matrices of~\citet{denisov22matfact} which are optimized for $\maxpart=1$. In doing so, we can also optimize the number of stamps which we do. We report the best results as identified by the losses in \cref{tab:cifar_mechanism_table}.
+
+
+
+
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\linewidth]{icml2023/figures/central/cifar10_ablations/Cifar10TreeRestartAblations.png}
+    \caption{DP-FTRL-Honaker baseline ablation with respect to number of `stamps' \stamps.}
+    \label{fig:cifar10_tree_restart_ablations}
+\end{figure}
+
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\linewidth]{icml2023/figures/central/cifar10_ablations/Cifar10EpochFactorizationAblation.png}
+    \caption{Ablation of prefix-sum factorizations, optimized for different number of epochs, and `stamped' as appropriate. Performance improves as the geometry used for computing the factorization approaches that used for training.}
+    \label{fig:cifar10_epoch_ablations}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\linewidth]{icml2023/figures/central/cifar10-dpftrl-final.pdf}
+    \caption{\textbf{Our optimal multi-epoch matrix and FFT-based mechanisms outperform all others, including \DPSGD with amplification}, as low as $\varepsilon\approx 4$. Using our sensitivity calculation of \cref{thm:eval_sens_ub} and stamping (\cref{sec:empirical-eval}), we optimize a single pass ($k=1$) matrix of~\citet{denisov22matfact} but apply it here with $>1$ pass. We use an online Honaker-based decoder equivalent to that of~\citet{kairouz2021practical} except for a significant improvement to tree-completion in \cref{app:ssec:tree_completion}. Models trained for 20 epochs on CIFAR10 with a batch size of 500. We repeat each setting 12 times and show 95\% bootstrapped confidence intervals. Empirical setup is in \cref{ssec:central-experiments}.}
+    \label{fig:fig1-appendix}
+\end{figure}
+
+\clearpage
+\section{Additional StackOverflow Details}\label{sec:addl_stackoverflow}
+\subsection{Privacy and Language Modelling}\label{app:ssec:sonwp-history}
+Language models trained on user data are an important real-world application of DP training, as these models can memorize their training data if appropriate mitigations are not applied \citep{carlini19secret,song2019auditing,carlini21extracting}.  Since one user might contribute 1000s of tokens (training examples) to a dataset, it is particularly important to consider user-level guarantees  \citep{mcmahan2017learning}. Building on the approach of \citet{kairouz2021practical}, Google recently announced the first-ever launch of a language model trained on user data with a formal user-level DP guarantee ($\rho=0.81$ zCDP), further demonstrating the importance of this application \citep{mcmahan2022dpftrlblog}.
+
+The StackOverflow next-word prediction task, introduced in \citep{reddi20adaptive}, has become a benchmark problem for DP training, and our experimental setup here fixes the same model and adapts hyperparmaeters from previous work including \citet{kairouz2021practical,denisov22matfact}.
+
+
+\subsection{Hyperparameter tuning and initial experiments}\label{app:ssec:sonwp-setup}
+All runs use server momentum 0.95, a client learning rate of 1.0, and a server learning-rate cooldown schedule for the last 25\% of rounds. The clipping norm was fixed at $\clipnorm=1$. Zeroing outlier updates and using 1000 clients/round (6 epoch runs) allows the use of the higher server learning rates. \OneEpochOne replicates the result of single-epoch training from \citet{denisov22matfact}; note that with 167 clients/round and this mechanism, the higher learning rate does not appear to help.
+\cref{fig:prelim} gives preliminary experimental results which informed the main experiments used in the paper. Note that the y-axis range (Test set accuracy) is highly compressed, and so the primary point of comparison is on epsilons. For example, \citet{denisov22matfact} shows that cross-run variation of 0.002 or more is typical.
+
+The 6 horizontal lines give test-set accuracy for various non-private training mechanisms. The ``Unnoised MF'' runs correspond to the same code path used for privacy, but without any noise addition. In particular, these use momentum with learning rate cooldown; the other unnoised runs use a standard FL implementation with momentum but a fixed learning rate schedule; ``cpr=167`` corresponds to one epoch of training (167 clients/round), and ``cpr=50'' is 50 clients/rounds (only about 1/3 of an epoch). This last non-private baseline uses the best hyperparameters for FedAvgM from \citet{reddi20adaptive}. 
+
+The two ``Unnoised MF'' runs with accuracies between 0.246 and 0.248 are functionally identical, and the line near 0.248 accuracy is the same except it does not use learning-rate cooldown. Thus, for the given learning rates, we see the higher-epsilon private runs are adding sufficiently small noise that the accuracy is essentially equivalent to unnoised baselines with the same hyperparameters. However, using larger learning rates can achieve accuracy over $25\%$, even with privacy as in the case of the MF-6-6 run, hence motivating the inclusion of larger learning rates in the main experiments.
+
+The MF (Matrix Factorization) runs with ``prefix'' in the name correspond to computing an optimal factorization of the prefix-sum matrix (lower triangular matrix of ones) and then applying momentum (and possibly learning rate cooldown) as post-processing. The other MF runs directly factor the momentum or momentum+cooldown matrix.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\linewidth]{icml2023/figures/stackoverflow/preliminary_privacy_accuracy_tradeoffs.png}
+    \caption{Preliminary experimental results and non-private (unnoised) baselines. The notation $sX,cY$ indicates a server learning rate $X$ and client learning rate $Y$.}
+    \label{fig:prelim}
+\end{figure}
+
+\subsection{Impact of zeroing-out large-norm updates}\label{sec:zeroing_details}
+We observed that zeroing out updates with an $\ell_\infty$ norm greater than $100 \clipnorm = 100$ greatly stabilized training, allowing larger learning rates, particularly for \SixEpoch. We conducted ablation experiments where we turned off this zeroing, which produced a large fraction of unconverged runs as detailed in \cref{tab:zeroing}. The number of updates zeroed increases significantly with larger amounts of noise and larger learning rates, as shown in \cref{fig:zeroing_by_round}.
+
+\begin{figure}
+    \begin{subfigure}[b]{0.4\linewidth}
+    \includegraphics[height=2in]{icml2023/figures/stackoverflow/so_zeroing_nm=0.60.png}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.6\linewidth}
+   \includegraphics[height=2in]{icml2023/figures/stackoverflow/so_zeroing_nm=2.23.png}    \end{subfigure}
+
+    \caption{Number of large-magnitude updates zeroed per training round.}
+    \label{fig:zeroing_by_round}
+\end{figure}
+
+
+\begin{table}[H]
+\begin{center}
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{llrr}
+\toprule
+                 & & \multicolumn{2}{c}{Unconverged runs with} \\
+Mechanism        & $\varepsilon$ & Zeroing  & No Zeroing \\
+\midrule                 
+\DPSGDSix, $\eta_s = 0.5$    & 2 & 0 of 3 & 1 of 2 \\
+\DPSGDSix, $\eta_s = 0.5$    & 9 & 0 of 3 & 0 of 2 \\
+\SixEpoch, $\eta_s = 0.5$ & 2 & 0 of 3 & 3 of 4 \\
+\SixEpoch, $\eta_s = 1.0$ & 9 & 0 of 3 & 3 of 4 \\
+\bottomrule \\
+\end{tabular}
+\caption{Number of divergent training runs with and without zeroing of user updates with $\ell_\infty$ norm greater than 100; $\eta_s$ gives the server learning rate. } \label{tab:zeroing}
+\end{center}
+\end{table}
+
+\subsection{Complete results}\label{ssec:app:complete-results}
+In this section we give additional details on our main grid of experiments. \cref{fig:stackoverflow_per_lr} uses the same data as \cref{fig:stackoverflow_main}, but shows results for each learning rate individually. \cref{tab:sgd,tab:mf} give the mean, minimum, maximum, and standard deviation of test-set accuracy corresponding to \cref{fig:stackoverflow_per_lr}, as well as the number of replicated experiments (`count').
+
+\cref{tab:noise_mult_stackoverflow} gives the noise multipliers to achieve our various privacy targets $\varepsilon$. Due to a change in the accountant used, we have slightly different $\varepsilon$ targets around 8.8 for the different methods. Note the noise multipliers here are incomparable between the MF and (S)GD mechanisms in terms of the total noise introduced. For matrix factorization, we sample $\bfZ \sim \mathcal{N}(0, \clipnorm^2 z^2)$ for noise multiplier $z$; this noise is applied after mapping the raw gradients/updates $\obs$ through the linear map $\bfC$ which is normalized so the total sensitivity is $\clipnorm$. For the (S)GD mechanisms, we add noise $\mathcal{N}(0, \clipnorm^2 z^2)$ independently to each model update. In all cases, noise is added to the sum of per-user updates, so the effective noise in the average update scales down with the number of clients per round.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[height=2.27in]{icml2023/figures/stackoverflow/so_privacy_accuracy_tradeoffs_per_lr.png}
+    \includegraphics[height=2.27in]{icml2023/figures/stackoverflow/so_privacy_accuracy_tradeoffs_per_lr_zoom.png}
+    \caption{Complete data used in \cref{fig:stackoverflow_main} showing results for server learning rates $\eta_s = 0.5$ and $1.0$, as well as $0.25$ when $\varepsilon{=}2$. All algorithms use momentum 0.95 and a client learning rate of 1.0. For the 1 and 6 epoch runs, we observe MF generally tolerates larger learning rates, though lower learning rates perform better for all algorithms at $\varepsilon{=}2$.}
+    \label{fig:stackoverflow_per_lr}
+    \vspace{-1em}
+\end{figure}
+
+\begin{table}[H]
+\begin{centering}
+\begin{tabular}{rrrr}
+\toprule
+                   & \multicolumn{3}{c}{Noise multiplier $z$} \\
+ target $\varepsilon$ &    MF &  DP-SGD (6e) &  GD (2052e)    \\
+\midrule
+         17.648 & 0.341 &           0.402 &         15.518 \\
+          8.841 & 0.600 &               - &              - \\
+          8.824 &     - &           0.491 &         27.493 \\
+          2.000 & 2.231 &           0.757 &        106.023 \\
+\bottomrule
+\end{tabular}
+\caption{Noise multiplier parameters for the StackOverflow experiments to achieve various $\varepsilon$s at $\delta=10^{-6}$. Privacy was computed using the PLD accountant, see \cref{app:ssec:privacy-accounting}.} \label{tab:noise_mult_stackoverflow}
+\end{centering}
+
+\end{table}
+
+\begin{table}[H]
+\begin{centering}
+\begin{footnotesize}
+\begin{tabular}{lS[table-format=2.2]lrrrrr}
+\toprule
+       &       &      & \multicolumn{5}{c}{Test set accuracy} \\
+clients/round & $\varepsilon$ & $\eta_s$ &         mean &     std &     min &     max & count \\
+\midrule
+1000   & 2.00  & 0.25 &           0.22654 & 0.00009 & 0.22648 & 0.22660 &     2 \\
+       &       & 0.50 &           0.22592 & 0.00013 & 0.22581 & 0.22606 &     3 \\
+       &       & 1.00 &           0.21869 &         & 0.21869 & 0.21869 &     1 \\
+       & 8.82  & 0.25 &           0.23154 & 0.00015 & 0.23143 & 0.23164 &     2 \\
+       &       & 0.50 &           0.23447 & 0.00033 & 0.23419 & 0.23495 &     4 \\
+       &       & 1.00 &           0.23135 & 0.00041 & 0.23106 & 0.23164 &     2 \\
+       & 17.65 & 0.25 &           0.23290 & 0.00002 & 0.23289 & 0.23291 &     2 \\
+       &       & 0.50 &           0.23728 & 0.00014 & 0.23710 & 0.23741 &     4 \\
+       &       & 1.00 &           0.23571 & 0.00019 & 0.23558 & 0.23585 &     2 \\
+342477 & 2.00  & 0.50 &           0.24074 &         & 0.24074 & 0.24074 &     1 \\
+       &       & 1.00 &           0.24056 & 0.00097 & 0.23886 & 0.24125 &     5 \\
+       & 8.82  & 0.50 &           0.24640 & 0.00011 & 0.24632 & 0.24647 &     2 \\
+       &       & 1.00 &           0.25279 & 0.00019 & 0.25261 & 0.25306 &     4 \\
+       & 17.65 & 0.50 &           0.24686 & 0.00025 & 0.24668 & 0.24704 &     2 \\
+       &       & 1.00 &           0.25370 & 0.00039 & 0.25312 & 0.25394 &     4 \\
+\bottomrule
+\end{tabular}
+\end{footnotesize}
+\caption{Test set accuracy statistics for \DPSGDSix (1000 clients/round) and \DPGD (342,477 clients/round). Accuracy for \DPGD was estimated with 1000 clients/round with an appropriately scaled noise multiplier. The \texttt{count} columns gives the number of repeated trials of the given configuration, with $\eta_s$ indicating the server learning rate.}
+\label{tab:sgd}
+\end{centering}
+\end{table}
+
+\begin{table}[H]
+\begin{centering}
+\renewcommand{\arraystretch}{1}
+\begin{footnotesize}
+\begin{tabular}{lS[table-format=2.2]lrrrrr}
+\toprule
+               &          &      & \multicolumn{5}{c}{Test set accuracy} \\
+ & $\varepsilon$ & $\eta_s$ &            mean &     std &     min &     max & count \\
+\midrule
+Honaker, 6e (Kairouz'21) & 2.00  & 0.25 &           0.20951 & 0.00134 & 0.20857 & 0.21046 &     2 \\
+               &       & 0.50 &           0.19535 & 0.00114 & 0.19429 & 0.19655 &     3 \\
+               &       & 1.00 &           0.00011 &         & 0.00011 & 0.00011 &     1 \\
+               & 8.84  & 0.50 &           0.23952 & 0.00101 & 0.23881 & 0.24023 &     2 \\
+               &       & 1.00 &           0.23799 & 0.00212 & 0.23649 & 0.23949 &     2 \\
+               & 17.65 & 0.50 &           0.24422 & 0.00037 & 0.24383 & 0.24456 &     3 \\
+               &       & 1.00 &           0.24675 & 0.00128 & 0.24540 & 0.24810 &     5 \\
+MF1, 1e (Denisov'22) & 2.00  & 0.25 &           0.19674 & 0.00057 & 0.19633 & 0.19715 &     2 \\
+               &       & 0.50 &           0.00093 & 0.00108 & 0.00017 & 0.00169 &     2 \\
+               & 8.84  & 0.25 &           0.23500 & 0.00009 & 0.23493 & 0.23506 &     2 \\
+               &       & 0.50 &           0.24105 & 0.00083 & 0.24019 & 0.24190 &     4 \\
+               &       & 1.00 &           0.23909 & 0.00196 & 0.23767 & 0.24132 &     3 \\
+               & 17.65 & 0.25 &           0.23576 & 0.00019 & 0.23562 & 0.23590 &     2 \\
+               &       & 0.50 &           0.24503 & 0.00056 & 0.24408 & 0.24565 &     6 \\
+               &       & 1.00 &           0.24522 & 0.00102 & 0.24424 & 0.24628 &     3 \\
+MF1, 6e (Ours) & 2.00  & 0.25 &           0.22953 & 0.00046 & 0.22921 & 0.22985 &     2 \\
+               &       & 0.50 &           0.22324 & 0.00017 & 0.22308 & 0.22341 &     3 \\
+               &       & 1.00 &           0.00010 &         & 0.00010 & 0.00010 &     1 \\
+               & 8.84  & 0.50 &           0.24516 &         & 0.24516 & 0.24516 &     1 \\
+               &       & 1.00 &           0.24676 & 0.00044 & 0.24628 & 0.24714 &     3 \\
+               & 17.65 & 0.50 &           0.24628 &         & 0.24628 & 0.24628 &     1 \\
+               &       & 1.00 &           0.25194 & 0.00085 & 0.25124 & 0.25288 &     3 \\
+MF6, 6e (Ours) & 2.00  & 0.25 &           0.22978 & 0.00038 & 0.22939 & 0.23014 &     3 \\
+               &       & 0.50 &           0.23237 & 0.00078 & 0.23147 & 0.23286 &     3 \\
+               &       & 1.00 &           0.22413 & 0.00055 & 0.22365 & 0.22472 &     3 \\
+               & 8.84  & 0.50 &           0.24509 & 0.00010 & 0.24497 & 0.24515 &     3 \\
+               &       & 1.00 &           0.24897 & 0.00081 & 0.24804 & 0.24955 &     3 \\
+               & 17.65 & 0.50 &           0.24632 & 0.00015 & 0.24618 & 0.24648 &     3 \\
+               &       & 1.00 &           0.25265 & 0.00025 & 0.25240 & 0.25291 &     3 \\
+
+\bottomrule
+\end{tabular}
+\end{footnotesize}
+\caption{Test set accuracy for matrix-factorization based mechanisms. Note: Some 6 epoch runs were conducted with shuffling between epochs, and some were conducted using a fixed order for all epochs (as required by our DP analysis). We saw no impact of reshuffling on the final test set accuracy, and so include all runs in these results regardless of the shuffling setting.}
+\label{tab:mf}
+\end{centering}
+\end{table}
+
+\subsection{Optimal matrix mechanisms}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{icml2023/figures/stackoverflow/axbc_matrices.png}
+    \vspace{-2em}
+    \caption{A more detailed view of the matrices shown in \cref{fig:axbc_matrices_row}.}
+    \label{fig:axbc_matrices}
+    \vspace{-1em}
+\end{figure}
+
+
+\section{Limitations and Ethical Considerations}\label{app:sec:discussion-conclusion}
+The major limitation of our approach is the computation required to generate the optimal matrices. Though our optimal FFT decoder bridges the gap between the mechanisms without optimizer costs and our optimal mechanism, it still leaves some room for improvement in the privacy-utility tradeoff. We believe this is an important area for future work.
+
+Our work aims to enable privacy-preserving ML with rigorous DP guarantees in broader settings via improved (state-of-the-art) privacy-utility tradeoffs.
+Though DP is the gold-standard in this area, it is currently impossible to train high-utility ML models with tight DP guarantees $<1$ in many, if not all, real-world settings without large amounts of public data. In this regime, it is not well-understood what privacy leakage may occur.
+
+\input{icml2023/appendices/sensitivity_analysis}
+
+\input{icml2023/appendices/opt_analysis}
+
+\input{icml2023/appendices/fft_analysis}
+
+\input{icml2023/appendices/dft_matrix}
+
+\end{document}

@@ -1,0 +1,26 @@
+\paragraph{Adjacent Data Streams and Privacy Accounting} We assume users (FL clients) participate in training according to a \emph{participation schema} $\Pi \subset \text{Powerset}([\nd])$, where each \emph{participation pattern} $\pi \in \Pi$ (and so $\pi \subseteq [\nd]$) indicates a set of indexes of steps in which a single user might participate. 
+Each $\Pi$ results in a adjacency relation $\bfN_\Pi$ on data streams:
+two data streams $\obs$ and $\obsp$ are adjacent, that is $(\obs, \obsp) \in \bfN$, if there exists a $\pi \in \Pi$ such that $\obs_t = \obsp_t$ for $t \notin \pi$, and $\norm{\obs_t - \obsp_t}_2 \le \clipnorm$ for $t \in \pi$. 
+In FL for user-level DP (~\cref{algo:dpfl}), $\obs_t:=\sum_i \Delta_i^t$ is a sum over per-user model gradients each subject to an L2-norm bound $\clipnorm$, and two streaming datasets are adjacent if one can be formed from the other by ``zeroing out'' all the gradient contributions from any one user following Defn.~1.1 of~\citet{kairouz21practical}.  
+Under this adjacent relationship, the DP guarantees of MF mechanism in DP-FTRL can be accounted for the release of $\bfC \bfX + \zeta \bfZ$ according \cref{eq:matrixmech}, computing the sensitivity of $\bfC \bfX$ to calibrate with the Gaussian noise $\bfZ$ of zero mean and $\sigma$ standard deviation~\citep{choquette2023amplified}. 
+
+\paragraph{Multi-participation Sensitivity} We consider \bparticipation, where the distance between any two participations is \emph{at least} b and there are at most $\maxpart$ total participations, formally 
+\[
+  \Pi_{\minsep, \maxpart} = \left\{\pi \subseteq [n]  \mid \abs{\pi} < \maxpart, \{i, j\} \subseteq \pi, i \ne j \Rightarrow |i - j| \ge \minsep\right\}.
+\]
+This is motivated not only by the applicability to federated learning (as discussed by \citet{choquette2023amplified}, which also formalized this schema), but also because (implicitly) it is the participation schema under which \treeagg was extended to multiple participations by \citet{kairouz21practical}.
+
+Let $\deltaset := \left\{ \obs - \obsp \mid (\obs, \obsp) \in \bfN \right\}$ represent the set of all possible differences between adjacent $\obs,\obsp$. Then, the L2 sensitivity of $\bfC$ under $\bfN$ is given by
+\begin{equation}\label{eq:sensgeneral}
+\sens_{\bfN}(\bfC) = \sup_{(\obs, \obsp) \in \bfN} \| \bfC \obs - \bfC \obsp \|_F
+ = \sup_{\contrib \in \deltaset} \| \bfC\contrib \|_F. 
+\end{equation}
+
+In this work, we only consider $\bfC \ge 0$ (elementwise), and so the supremum over $\contrib$ in \cref{eq:sensgeneral} will always be achieved by some $\contrib \ge 0$ (observe each non-zero entry $\contrib_i \in \R^\mdim$ can be chosen arbitrarily from the unit ball of radius $\clipnorm$). The non-negativity also implies $\bfC\tp \bfC \ge 0$, and hence following Corollary~2.1 of \citet{choquette22multiepoch}, we have
+\begin{equation} \label{eq:sens}
+  \sens_{\bfN_\Pi}(\bfC) = \clipnorm \max_{\pi \in \Pi} \norm{\bfC \ind(\pi)}_2 \qquad \text{when} \qquad \bfC \ge 0. 
+\end{equation}
+where $\ind(\pi) \in \{0, 1\}^\nd$ is given by $\ind(\pi)_i = 1$ if $i \in \pi$ and $0$ otherwise. Note that $\clipnorm$ simply introduces a linear scaling, and so we can take $\clipnorm=1$ w.l.o.g. both when optimizing mechanisms and when computing \maxloss and \rmsloss.
+
+%\bnote{We might instead work from \citet{choquette2023amplified} Eq. (5) and Prop E.1, which handles the dimensionality easily, rather than directly appealing to Cor. 2.1}
+

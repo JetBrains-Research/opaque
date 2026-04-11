@@ -1,0 +1,11 @@
+\paragraph{A Sensitivity Lower Bound} Inspired by \cref{thm:toepminsepsens}, we state a sensitivity lower bound for general matrix in \cref{rem:senslb}. 
+An overly optimistic (instead of commonly worst-case) DP guarantees can be computed for MF mechanism with sensitivity in \cref{rem:senslb}. We \emph{only} use \cref{rem:senslb} for the privacy accounting of baseline binary tree mechanisms in simulation experiments in \cref{sec:exp} as the dynamic programming accounting in \citep{kairouz21practical} is computationally expensive. 
+In practice we find the lower-bound of \cref{rem:senslb} is tight for the binary tree matrices we consider; proving this is an interesting open problem.
+\begin{rem}\label{rem:senslb}
+Letting $\pistar \in \Pi$ as in \cref{eq:badpi}, for any mechanism $\bfC$,
+\begin{equation}\label{eq:senslb}
+\sens_\Pi(\bfC) \geq \norm{\bfC u(\pistar)}_2 
+\end{equation}
+is a lower-bound on sensitivity (the actual sensitivity might be higher). While \citet{kairouz21practical} introduced a dynamic program for computing binary-tree sensitivity, it requires some work to extend it to the tree completion trick, and in practice it is expensive to compute. Hence, when evaluating \treeagg approaches, for simplicity we use the lower bound of \cref{eq:senslb}, which can be computed immediately for the tree-completion matrices $\bfC$ used when $\nd$ is not a power of $2$.
+\end{rem}
+

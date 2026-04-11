@@ -1,0 +1,206 @@
+\usepackage{bm}
+% a few definitions that are *not* needed in general:
+\newcommand{\op}[1]{\operatorname{#1}}
+
+\DeclarePairedDelimiter\ceil{\lceil}{\rceil}
+
+\newtheorem{lem}{Lemma}[section]
+\newtheorem{theorem}[lem]{Theorem}
+\newtheorem{cor}[lem]{Corollary}
+\newtheorem{example}[lem]{Example}
+\newtheorem{rem}[lem]{Remark}
+\newtheorem{prop}[lem]{Proposition}
+\newtheorem{definition}[lem]{Definition}
+
+% ALGORITHMS
+\newcommand{\alg}[1]{\textsc{#1}\xspace}
+\newcommand{\bandmf}{\alg{BandMF}}
+\newcommand{\bandtoep}{\alg{BandToep}}
+\newcommand{\blt}{\alg{BLT}}
+\newcommand{\blts}{\alg{BLTs}}
+\newcommand{\ourblt}{\alg{BLT$^\star$}}
+
+\newcommand{\treeagg}{\alg{TreeAgg}}
+\newcommand{\tafull}{\alg{TreeAgg-Full}}
+%\newcommand{\honfull}{\alg{TreeAgg-Full}}
+%\newcommand{\honstream}{\alg{TreeAgg-Streaming}}
+\newcommand{\bandfhu}{\alg{BandFHU}}
+
+
+\newcommand{\rmse}{RmsError\xspace}
+\newcommand{\maxerr}{MaxError\xspace}
+\newcommand{\rmsloss}{RmsLoss\xspace}
+\newcommand{\maxloss}{MaxLoss\xspace}
+
+\DeclareMathOperator{\rmseop}{RmsError}
+\DeclareMathOperator{\maxerrop}{MaxError}
+\DeclareMathOperator{\rmslossop}{RmsLoss}
+\DeclareMathOperator{\maxlossop}{MaxLoss}
+\DeclareMathOperator{\diag}{diag}
+
+\newcommand{\LtToep}{\text{LtToep}}
+\newcommand{\bltm}{\text{BLT}}
+
+\newcommand{\hth}{\hat{\theta}}
+\newcommand{\homega}{\hat{\omega}}
+
+
+\newcommand{\STATEComment}{\STATE $\triangleright$\ }
+\newcommand{\Comment}{\ $\triangleright$\ }
+\newcommand{\Buf}{\bfS}  % Matrix buffer
+\newcommand{\myind}{\hspace{0.5cm}}
+\newcommand{\assign}{\leftarrow}
+
+\newcommand{\seqi}[1]{(#1)_{i=0}^\infty}
+\DeclareMathOperator{\sens}{sens}
+\newcommand{\abs}[1]{|#1|}
+\DeclareMathOperator{\len}{len}
+\newcommand{\bands}{\hat{b}}
+\newcommand{\inp}{\alpha}  % "input" parameters
+\newcommand{\outp}{\omega} % "output" parameters
+\newcommand{\houtp}{\hat{\outp}} % "output" parameters
+\newcommand{\bfTh}{\ensuremath{\Theta}}  % buffer updatimg parameters
+
+
+\newcommand{\ie}{\emph{i.e.}}
+\newcommand{\eg}{\emph{e.g.}}
+\newcommand{\etc}{\emph{etc}}
+\newcommand{\now}{\textsc{now}}
+
+
+% Participation patterns
+\newcommand{\obs}{\bfx}
+\newcommand{\obsp}{\tilde{\bfx}}
+\newcommand{\Dcorners}{\mathcal{D}}
+\newcommand{\deltaset}{\mathfrak{D}}
+\newcommand{\contrib}{\bfu}
+\newcommand{\sensd}{\sens_{\deltaset}}
+\newcommand{\sensdx}{\widehat{\sens}_{\deltaset}}
+\newcommand{\clipnorm}{\zeta}
+% Participation patterns
+%\newcommand{\minsep}{\ensuremath{b}}
+%\newcommand{\bands}{\ensuremath{\hat{\minsep}}}
+\newcommand{\bparticipation}{$\minsep$-min-sep-participation\xspace}
+\newcommand{\multiepoch}{\ensuremath{(\maxpart,\minsep)}}
+\newcommand{\multiepochpart}{$\multiepoch$-participation\xspace}
+\newcommand{\maxpartsep}[2]{\ensuremath{(\maxpart{=}#1, \minsep{=}#2)}}
+\newcommand{\bpartval}[1]{$\minsep{\ge}{#1}$-min-sep-participation\xspace}
+\newcommand{\ind}{u}
+
+% Recommended macros for common notation:
+\newcommand{\nd}{\ensuremath{n}} % num steps = matrix factorization dimension
+\newcommand{\ndnd}{{\nd \times \nd}}
+\newcommand{\nbuf}{d}  % Number of buffers
+\newcommand{\mdim}{m}  % model / gradient dimension
+\newcommand{\dimdim}{{\nd \times \nd}}
+
+\newcommand{\dgr}{d}  % Degree of a polynomial or rational
+\newcommand{\maxpart}{k}  % might need $k$ as an index
+\newcommand{\minsep}{b}
+\newcommand{\inv}{^{-1}}
+%\newcommand{\inv}[1]{{{#1}^{-1}}}
+%\newcommand{\invb}[1]{{{\br{#1}}^{-1}}}
+
+\newcommand{\bfA}{{\bm{A}}}
+\newcommand{\bfB}{{\bm{B}}}
+\newcommand{\bfC}{{\bm{C}}}
+\newcommand{\bfD}{{\bm{D}}}
+\newcommand{\bfE}{{\bm{E}}}
+\newcommand{\bfF}{{\bm{F}}}
+\newcommand{\bfG}{{\bm{G}}}
+\newcommand{\bfH}{{\bm{H}}}
+\newcommand{\bfI}{{\bm{I}}}
+\newcommand{\bfJ}{{\bm{J}}}
+\newcommand{\bfK}{{\bm{K}}}
+\newcommand{\bfL}{{{\bm{L}}}}
+\newcommand{\bfM}{{\bm{M}}}
+\newcommand{\bfN}{{\bm{N}}}
+\newcommand{\bfO}{{\bm{O}}}
+\newcommand{\bfP}{{\bm{P}}}
+\newcommand{\bfQ}{{\bm{Q}}}
+\newcommand{\bfR}{{\bm{R}}}
+\newcommand{\bfS}{{\bm{S}}}
+\newcommand{\bfT}{{\bm{T}}}
+\newcommand{\bfU}{{\bm{U}}}
+\newcommand{\bfV}{{\bm{V}}}
+\newcommand{\bfW}{{\bm{W}}}
+\newcommand{\bfX}{{\bm{X}}}
+\newcommand{\bfY}{{\bm{Y}}}
+\newcommand{\bfZ}{{\bm{Z}}}
+
+
+
+\newcommand{\bfa}{{\bm{a}}}
+\newcommand{\bfb}{{\bm{b}}}
+\newcommand{\bfc}{{\bm{c}}}
+\newcommand{\bfd}{{\bm{d}}}
+\newcommand{\bfe}{{\bm{e}}}
+\newcommand{\bff}{{\bm{f}}}
+\newcommand{\bfg}{{\bm{g}}}
+\newcommand{\bfh}{{\bm{h}}}
+\newcommand{\bfi}{{\bm{i}}}
+\newcommand{\bfj}{{\bm{j}}}
+\newcommand{\bfk}{{\bm{k}}}
+\newcommand{\bfl}{{\bm{l}}}
+\newcommand{\bfm}{{\bm{m}}}
+\newcommand{\bfn}{{\bm{n}}}
+\newcommand{\bfo}{{\bm{o}}}
+\newcommand{\bfp}{{\bm{p}}}
+\newcommand{\bfq}{{\bm{q}}}
+\newcommand{\bfr}{{\bm{r}}}
+\newcommand{\bfs}{{\bm{s}}}
+\newcommand{\bft}{{\bm{t}}}
+\newcommand{\bfu}{{\bm{u}}}
+\newcommand{\bfv}{{\bm{v}}}
+\newcommand{\bfw}{{\bm{w}}}
+\newcommand{\bfx}{{\bm{x}}}
+\newcommand{\bfy}{{\bm{y}}}
+\newcommand{\bfz}{{\bm{z}}}
+
+\newcommand{\bfSigma}{\ensuremath{\bm{\varSigma}}}
+\newcommand{\bftheta}{\ensuremath{\bm{\theta}}}
+\newcommand{\bfTheta}{\ensuremath{\bm{\varTheta}}}
+\newcommand{\bfdelta}{\ensuremath{\bm{\delta}}}
+\newcommand{\bfalpha}{\ensuremath{\bm{\alpha}}}
+\newcommand{\bfbeta}{\ensuremath{{\bm{\beta}}}}
+\newcommand{\bfLambda}{\ensuremath{\bm{\varLambda}}}
+\newcommand{\bflambda}{\ensuremath{\bm{\lambda}}}
+\newcommand{\bfphi}{\ensuremath{\bm{\phi}}}
+\newcommand{\bfxi}{\ensuremath{\bm{\xi}}}
+\newcommand{\bfzeta}{\ensuremath{\bm{\zeta}}}
+
+\newcommand{\br}[1]{\left({#1}\right)}
+%\DeclareMathOperator{\LTT}{M}
+
+
+\DeclareMathOperator*{\Exp}{\mathbb{E}}
+\newcommand{\ExP}[2]{\Exp_{#1}\left[{#2}\right]}
+\newcommand{\Pdata}{\mathbb{P}_{\mathrm{data}}}
+\newcommand{\norm}[1]{\left\|{#1}\right\|}
+\newcommand{\tp}{^\top} 
+\newcommand{\seqk}[1]{(#1)_{k=0}^\infty}
+% Numpy-style indexing into matrices
+\newcommand{\idx}[2]{_{#1, #2}}
+\newcommand{\ceiling}[1]{\left\lceil #1 \right\rceil}
+\newcommand{\vfm}{:} % used in \idx to get a row or a column in the matrix
+
+\newcommand{\lone}[1]{\left\|#1\right\|_1}
+\newcommand{\ltwo}[1]{\left\|#1\right\|_2}
+\newcommand{\lfrob}[1]{\left\|#1\right\|_{\op{F}}}
+\newcommand{\colnorm}[1]{\left\| #1 \right\|_{\op{2 \to \infty}}}
+\newcommand{\rownorm}[1]{\left\| #1 \right\|_{\op{1 \to 2}}}
+\newcommand{\ip}[2]{\left\langle #1,#2 \right\rangle}
+\newcommand{\schurprod}[2]{#1 \bullet #2}
+\newcommand{\trace}[1]{\mathsf{Tr}(#1)}
+\newcommand{\ptrace}[1]{\mathsf{Tr}_{p}(#1)}
+\newcommand{\tran}[1]{{#1}^{\top}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\C}{\mathbb{C}}
+
+\newcommand{\mech}{\mathcal{M}}
+\newcommand{\calN}{\mathcal{N}}
+\newcommand{\calO}{\mathcal{O}}
+
+\newcommand{\var}[1]{\mathtt{#1}}
+\newcommand{\hc}{\hat{c}}

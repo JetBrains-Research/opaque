@@ -1,0 +1,109 @@
+\ifthenelse{\boolean{acl}}{\section{(\blt-)DP-FTRL for Private Learning}}{\section{(\blt-)DP-FTRL for Private Learning in Practice}} \label{sec:background}
+
+\ifthenelse{\boolean{acl}}{\subsection{Background}}{}
+
+\ifthenelse{\boolean{acl}}{
+We use ($\epsilon$, $\delta$)-DP~\citep{dwork2006calibrating,dwork2014algorithmic} and $\rho$-zCDP (zero-Concentrated DP)~\citep{bun2016concentrated} to quantify the privacy protection: smaller $\epsilon$ ($\rho$) correspond to stronger DP guarantees. A formal definition and more discussion are in \cref{subsec:dp_def}.
+}{
+\input{subsec_dp_def}
+\input{alg_dpfl}
+}
+
+\ifthenelse{\boolean{acl}}{\textbf{FL with DP}}{\subsection{Federated Learning with Differential Privacy (FL with DP)}}
+We apply the generalized Federated Averaging (FedAvg) algorithm~\citep{mcmahan2017fedavg,wang2021fieldguide}, as shown in \cref{algo:dpfl} \ifthenelse{\boolean{acl}}{of \cref{app:background}}{}. 
+FedAvg is the most common algorithm in cross-device FL systems. In a training round $t$ of total $n$ rounds, the server broadcasts a global model $y^t$ to a subset of clients; each client $i$ then updates their local model $y_i$ by SGD, and sends back the model delta; the model deltas are aggregated and used as a pseudo gradient on the server to update the global model. DP is achieved by clipping the $l_2$ norm of the model delta to control the sensitivity (contribution of each device), and then adding noise to the aggregated deltas on the server.
+
+While our primary focus is federated learning with decentralized data in this paper, \cref{algo:dpfl} can also be applied in datacenter to achieve user-level DP~\citep{xu2022learning,chua2024mind,charles2024fine}. When using only one batch of a single sample for gradient computation in the ClientUpdate function and \treeagg for correlated noise, \cref{algo:dpfl} coincides with the DP-FTRL algorithm described in~\citep{kairouz21practical}. The DP guarantee is determined by noise calibrated to sensitivity, which depends on clip norm noise multiplier $\sigma$, the correlated noise mechanism, total number of rounds $T$, and client participation pattern (min-sep $b$). Clip norm $\zeta$ and clip norm noise multiplier $\sigma$ are used as algorithmic hyperparameters, similar to independent noise mechanism (e.g., DP-SGD/DP-FedAvg~\citep{abadi2016deep,mcmahan18learning}). However, instead of directly applying independent Gaussian noise of standard deviation $\sigma \zeta$, correlated noise are generated to privatize model updates. 
+
+\ifthenelse{\boolean{acl}}{\textbf{MF for DP-FTRL}}{\subsection{Matrix Factorization (MF) for DP-FTRL}}
+DP-FTRL~\citep{kairouz21practical} adds correlated noise to achieve strong privacy-utility trade-offs, observing that privatizing the prefix sum of model updates are essential for privatizing the training process.
+The intuition of privatizing prefix sum is easier to understand when server optimizer is SGD, as the iterative process of per-round updates is equivalent to updating with prefix sum, i.e.,  
+$$y^t=y^{t-1} - \eta_s \Delta^t = y^{-1}- \eta_s \sum_{j=0}^{t} \Delta^j.$$ We can write similar formulation for additional linear operation in optimization, such as momentum in SGD. In practice, it is often easier to get privatized per-round update by (conceptually) subtracting the privatized prefix sum from two consecutive rounds, and use the privatized update $\tilde{\Delta^t}$ in various server optimizers, guaranteed by the post-processing property of DP. 
+
+We represent the model updates for $n$ rounds as a matrix $\bfX \in \R^{n \times \mdim}$, where each row is the sum of clipped updates (i.e., $\bfX_{t,\vfm} \coloneqq \sum_{i \in \mathcal{Q}^t} \Delta_i^t \in \R^{m}$ from~\cref{algo:dpfl}),
+we aim to privatize $\bfA \bfX$, where $\bfA \in \R^{n \times n}$ is a lower triangular matrix of ones, i.e., $\bfA_{i,j}=1, \forall i\leq j$ and $\bfA_{i,j}=0, \forall i > j$. Given the privatized prefix sum $\widetilde{AX}$, the privatized model update is $\tilde{\Delta}^t \gets \widetilde{\bfA \bfX}_{t,\vfm} - \widetilde{\bfA \bfX}_{t-1,\vfm}$, and \cref{algo:dpfl} is privatized because of the post-processing property of DP. \citet{kairouz21practical} adopts the \treeagg\ifthenelse{\boolean{acl}}{}{\citep{dwork10continual,chan11continual,honaker15efficient}} mechanism to privatize $\bfA \bfX$. Recent work suggest a general matrix factorization framework\ifthenelse{\boolean{acl}}{~\citep{choquette2023amplified}}{~\citep{denisov22matfact, choquette2023amplified}} can be used to achieve even stronger privacy-utility trade-offs, and both \treeagg-DP-FTRL and the popular DP-SGD algorithm~\citep{abadi2016deep} are special cases in the MF-DP-FTRL framework. MF mechanism considers the factorization of $\bfA=\bfB \bfC$ and privatizes $\bfC \bfX$ by adding independent noise $\bfZ \in \R^{n \times m}$ with standard deviation $\sigma\zeta$.  
+We can use the (pseudo-)inverse of the $\bfC$ matrix to generate the correlated noise in the streaming setting~\citep{choquette2023amplified},
+\ifthenelse{\boolean{acl}}{
+%{\small
+\begin{align}
+\widetilde{\bfA \bfX} & = \bfB(\bfC \bfX + \zeta \bfZ) = \bfA \bfX + \zeta \bfC^{-1} \bfZ \nonumber \\ \Rightarrow \tilde{\Delta}^{t} & = \Delta^{t} + (\zeta \bfC^{-1} \bfZ)_{t, \vfm} \label{eq:matrixmech}
+\end{align}
+%}%%
+}{
+\begin{equation}\label{eq:matrixmech}
+\widetilde{\bfA \bfX} = \bfB(\bfC \bfX + \zeta \bfZ) = \bfA (\bfX + \zeta \bfC^{-1} \bfZ) \Rightarrow \tilde{\Delta}^{t} = \Delta^{t} + (\zeta \bfC^{-1} \bfZ)_{t, \vfm}
+\end{equation}
+}
+\cref{eq:matrixmech} also suggests the alternative interpretation of correlated noise in DP-FTRL: at round t, the noise added in previous rounds can be cancelled when $\bfC^{-1}\idx{t}{\vfm}$ is negative.   
+
+\ifthenelse{\boolean{acl}}{
+\treeagg can be written in MF form, and the stronger variance reduction variant (\tafull)~\citep{honaker15efficient} is equivalent to setting $\bfB=\bfA \bfC^{-1} \in \R^{2^{l-1} \times (2^l-1)}$ by computing the Moore-Penrose pseudoinverse of $\bfC$~\citep{denisov22matfact}. However, the MF-based\tafull does not have a memory-efficient implementation, and consumes $n m$ memory. In this paper, we consider memory-efficient \treeagg~\citep{kairouz21practical} that is widely used in industry~\citep{xu2023federated}, and \tafull~\citep{denisov22matfact} that achieves better privacy-utility trade-off but less memory and computation efficient. \bandmf~\citep{choquette2023amplified} is the state-of-the-art for FL, which optimizes matrices with estimated min-sep bands. More related work  with detailed discussion are in \cref{app:ta_mf}.
+}{
+\input{subsec_ta_mf}
+}
+
+\subsection{\blt Mechanisms in DP-FTRL} \label{sec:background_blt}
+We now consider lower-triangular Toeplitz matrix in MF mechanism, i.e., $\bfC := \LtToep(c) \in \R^\dimdim$ where $\bfC\idx{i}{j}=c_{i-j}, \forall i\leq j$ otherwise $C\idx{i}{j}=0$. Buffered-linear Toeplitz (\blt) matrices \citep{mcmahan2024efficient} parameterize $\bfC$ by $\theta \in (0, 1]^\nbuf$ (the ``buffer decay'' parameters) and non-negative $\omega \in \R_+^\nbuf$ (the ``output scale'' parameters), where the Toeplitz coefficients are given by
+\begin{equation} \label{eq:closedcoefs}
+c_i = 
+\begin{cases}
+1  & i = 0 \\
+\sum_{j \in [\nbuf]} \omega_j \theta_j^{i-1} & i > 0.
+\end{cases}
+\end{equation}
+
+% {\color{red}
+% The $\bltm(\omega, \theta)$ matrices have many useful properties,
+% %\footnote{\blt matrices are closely connected to both rational functions and constant-recurrent sequences, see \citet[Sec. 3.1]{mcmahan2024efficient}. These deep mathematical roots can be highly useful, but are not necessary for our presentation.}
+% most importantly for our purposes:
+% \begin{enumerate*}%[label=\color{purple}(\arabic*)]
+%     \item Streaming multiplication by $\bfC$, $\bfZ = \bfC \bfY$ for $\bfZ \in \R^{\nd \times \mdim}$ can be computed efficiently \citep{mcmahan2024efficient}; for completeness we give the specialization in \cref{alg:multC}.\footnote{This specialization follows by applying their Alg. 1 to the $W$ matrix of their Sec. 5.1} More relevant for our setting, a simple modification of this algorithm allow for multiplication by $\bfC\inv$, \cref{alg:multCinv}. That is, given the parameters $(\theta, \omega)$  defining $\bfC = \bltm(\theta, \omega)$, we can also efficiently compute the multiplication $\bfC\inv\bfZ$, which is precisely the key noise generation step of \cref{eq:matrixmech}.
+    
+%     More precisely we can compute the entries $(\bfC\inv \bfZ)\idx{i}{:}$ for $i \in [\nd]$ in streaming fashion using only $\calO(\nbuf \mdim)$ memory and $\calO(\nbuf \mdim)$ time per iterate $i$, without ever materializing $\bfC$, $\bfC\inv$, or $\bfZ$ (one need only materialize $\bfZ\idx{i}{:}$ on iteration $i$. That is, the \blt requires only $\nbuf$ memory buffers each equal in size to one row of $\bfZ$; hence, we refer to $\nbuf$ as the number of buffers, and term $\bfC$ a $\nbuf$-buffer \blt. Note \cref{alg:multCinv} did not appear in \citet{mcmahan2024efficient} and is new to this work.
+    
+%     \item Given a $\bfC = \bltm(\omega, \theta)$, a $\nbuf$-buffer \blt, then $\bfC\inv = \bltm(\homega, \hth)$, another $\nbuf$-buffer \blt matrix, and so in particular we can also efficiently compute its Toeplitz coefficients using \cref{eq:closedcoefs} applied to $(\homega, \hth)$.
+% \end{enumerate*}
+
+% \textbf{Remark.} The above results give two distinct methods for efficiently multiplying by $\bfC\inv$: we can apply \cref{alg:multCinv} directly to $(\theta, \omega)$, or we can derive the BLT parameterization of $\bfC\inv$, finding $(\hth, \homega)$ such that $\bfC\inv = \bltm(\hth, \homega)$, and then apply \cref{alg:multC} to $(\hth, \homega)$. We prefer to use \cref{alg:multCinv} directly, as this avoids the need to derive the parameters $(\hth, \homega)$ (which requires somewhat numerically subtle computations, e.g. polynomial root-finding or computing an SVD) in the privacy-critical code: we can easily compute sensitivity for $\bfC$ and multiply by $\bfC\inv$ using only the parameters $(\omega, \theta)$.
+% }
+% %%%% End Old stuff to be re-integrated
+
+
+The $\bltm(\omega, \theta)$ matrices have many useful properties\ifthenelse{\boolean{acl}}{}{~\citep{mcmahan2024efficient}}, most importantly for our purposes:
+\begin{enumerate*}[label=\color{purple}(\arabic*)]
+    \item Streaming multiplication by $\bfC$ ($\bfZ = \bfC \hat\bfZ$ for $\bfZ,\hat\bfZ \in \R^{\nd \times \mdim}$) can be computed efficiently using only $\calO(\nbuf \mdim)$ memory and $\calO(\nbuf \mdim)$ time per round $t$, without fully materializing $\bfC$, $\bfZ$, or $\hat\bfZ$. Hence $\bfC$ is referred as a $\nbuf$-buffer \blt.
+    \item The inverse of a $\nbuf$-buffer \blt ($\bfC = \bltm(\omega, \theta)$) is another $\nbuf$-buffer \blt ($\bfC\inv = \bltm(\homega, \hth)$), and we can efficiently compute Toeplitz coefficients of $\bfC\inv$ using \cref{eq:closedcoefs} applied to $(\homega, \hth)$.
+\end{enumerate*}
+We now derive the correlated noise generation schema for $\bfC\inv\bfZ$ in \cref{eq:matrixmech} based on the BLT properties. We can first derive the BLT parameters $(\hth, \homega)$ of $\bfC\inv$ such that $\bfC\inv = \bltm(\hth, \homega)$, and then generate the correlated noise based on $(\hth, \homega)$ in streaming setting. However, we show a simpler alternative that directly uses the BLT parameters $(\theta, \omega)$ to generate streaming correlated noise $\hat\bfZ$. 
+
+Applying the parameterization in \cref{eq:closedcoefs} \ifthenelse{\boolean{acl}}{}{(also appear in \citep[Sec 5]{mcmahan2024efficient})} to \citep[Alg 1]{mcmahan2024efficient}, and initializing buffers $\bfS_{-1} \gets \mathbf{0} \in \R^{\nbuf \times \mdim}$, we can efficiently compute $\bfZ_{t,\vfm}$ from $\hat\bfZ_{t,\vfm}$ in the streaming setting,
+  $
+  \bfZ_{t,\vfm} = \hat\bfZ_{t,\vfm} + \outp^T \bfS_{t-1}, 
+  \bfS_{t} = \diag(\theta) \bfS_{t-1}  + \bm{1}_\nbuf \hat\bfZ_{t,\vfm}
+  $. We rearrange the update equations to get $\hat\bfZ$ from $\bfZ$ and $\bfS$, 
+  \ifthenelse{\boolean{acl}}{
+  %{\small
+  \begin{align}
+  \hat\bfZ_{t,\vfm}  = \bfZ_{t,\vfm} - \outp^T \bfS_{t-1}, \nonumber \\ 
+  \bfS_{t} = \diag(\theta) \bfS_{t-1}  + \bm{1}_\nbuf \hat\bfZ_{t,\vfm}. \label{eq:blt_noise}
+  \end{align}
+  %}%%
+  }{
+  \begin{align}
+  \hat\bfZ_{t,\vfm}  = \bfZ_{t,\vfm} - \outp^T \bfS_{t-1},  
+  \bfS_{t} = \diag(\theta) \bfS_{t-1}  + \bm{1}_\nbuf \hat\bfZ_{t,\vfm}. \label{eq:blt_noise}
+  \end{align}
+  }
+  To efficiently generate correlated noise $\hat\bfZ_{t,\vfm}$ at round $t$, we only need to materialize the independent noise $\bfZ_{t,\vfm} \in \R^{1 \times m}$ and use the buffers $\bfS_{t-1} \in \R^{\nbuf \times \mdim}$ in \cref{eq:blt_noise}. The efficient correlated noise generation parameterized by BLT parameters $(\theta, \omega)$ for $\bfC\inv$ (instead of $\bfC$) did not appear in \citet{mcmahan2024efficient} and is new to this work. \cref{eq:blt_noise} intuitively shows the noise cancellation view of correlated noise, where the previous noises are tracked in the states decaying with $\theta \in (0, 1]$, and then subtracted in the current round after scaling with $\omega$. 
+  
+  For completeness, we provide the streaming multiplication algorithm of $\bfZ = \bfC \hat \bfZ$ and $\hat \bfZ = C^{-1} \bfZ$ for $\bfC = \bltm(\theta, \omega)$ in \cref{alg:multC} and \cref{alg:multCinv}, respectively. 
+  \cref{alg:multC} is a direct application of \citep[Alg 1]{mcmahan2024efficient} and only used to derive \cref{alg:multCinv}, which is our streaming algorithm for generating correlated noise with \blts using only $dm$ memory. 
+  Finally, we apply the streaming correlated noise $\hat\bfZ$ by BLT from \cref{alg:multCinv} (using \cref{eq:blt_noise})  in \cref{algo:dpfl} for the BLT-DP-FTRL algorithm, i.e., 
+  \begin{equation}
+      \tilde{\Delta}^t \leftarrow \sum_{i \in \mathcal{Q}^t} \Delta^{t}_i + \hat\bfZ_{t,\vfm}.
+  \end{equation}
+
+ 
+\ifthenelse{\boolean{acl}}{}{\input{alg_stream_multi}}
+
+\ifthenelse{\boolean{acl}}{}{\input{tab_mech}}

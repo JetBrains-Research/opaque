@@ -1,0 +1,41 @@
+\begin{tabular}{lrrrrrr}
+\toprule
+       Mechanism &
+       \parbox{1.5cm}{clients per round $\batchsize$} &
+       $\epsilon$ &
+       \parbox{1.3cm}{noise mult. $\sigma$} &
+       \parbox{1cm}{server\\ lr $\serverlr$} &
+       \parbox{1.9cm}{Eval Accuracy (\%, Smoothed)} &
+       \parbox{1.9cm}{Test Accuracy (\%)} \\
+\midrule
+          DP-SGD &           1000 &          1 &          4.22468 &             0.0244 &                             16.82 &             16.69 \\
+ Single-epoch MF &            167 &          1 &          4.22468 &             0.1197 &                             20.29 &             20.44 \\
+ Optimal TreeAgg &           1000 &          1 &          4.22468 &             0.2035 &                             21.15 &             21.25 \\
+  Multi-epoch MF &           1000 &          1 &          4.76079 &             0.2035 &                             21.96 &             21.92 \\
+  Band MF (Ours) &           1000 &          1 &          4.22468 &             0.2035 &                             22.12 &             22.05 \\
+\midrule  
+          DP-SGD &           1000 &          2 &          2.23048 &             0.0414 &                             18.70 &             18.42 \\
+ Single-epoch MF &            167 &          2 &          2.23048 &             0.2035 &                             21.66 &             21.70 \\
+ Optimal TreeAgg &           1000 &          2 &          2.23048 &             0.3460 &                             22.52 &             22.59 \\
+  Multi-epoch MF &           1000 &          2 &          2.51352 &             0.3460 &                             23.15 &             23.04 \\
+  Band MF (Ours) &           1000 &          2 &          2.23048 &             0.5882 &                             23.31 &             23.19 \\
+\midrule  
+          DP-SGD &           1000 &          4 &          1.19352 &             0.0704 &                             20.07 &             19.81 \\
+ Single-epoch MF &            167 &          4 &          1.19352 &             0.3460 &                             22.94 &             22.90 \\
+ Optimal TreeAgg &           1000 &          4 &          1.19352 &             0.5882 &                             23.66 &             23.62 \\
+  Multi-epoch MF &           1000 &          4 &          1.34498 &             0.5882 &                             24.19 &             24.02 \\
+  Band MF (Ours) &           1000 &          4 &          1.19352 &             1.0000 &                             24.35 &             24.16 \\
+\midrule  
+          DP-SGD &           1000 &          8 &          0.65294 &             0.1197 &                             21.26 &             21.08 \\
+ Single-epoch MF &            167 &          8 &          0.65293 &             0.5882 &                             24.03 &             23.88 \\
+ Optimal TreeAgg &           1000 &          8 &          0.65294 &             1.0000 &                             24.54 &             24.45 \\
+  Multi-epoch MF &           1000 &          8 &          0.73579 &             1.0000 &                             24.95 &               - \\
+  Band MF (Ours) &           1000 &          8 &          0.65294 &             1.0000 &                             25.06 &             24.88 \\
+\midrule  
+          DP-SGD &           1000 &         16 &          0.36861 &             0.3460 &                             22.51 &             22.26 \\
+ Single-epoch MF &            167 &         16 &          0.36861 &             1.0000 &                             24.80 &             24.62 \\
+ Optimal TreeAgg &           1000 &         16 &          0.36861 &             1.7000 &                             25.15 &             25.14 \\
+  Multi-epoch MF &           1000 &         16 &          0.41539 &             1.7000 &                             25.50 &             25.33 \\
+  Band MF (Ours) &           1000 &         16 &          0.36861 &             1.7000 &                             25.59 &             25.41 \\
+\bottomrule
+\end{tabular}

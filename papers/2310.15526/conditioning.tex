@@ -1,0 +1,26 @@
+\section{Conditional Composition}\label{sec:conditioningtrick}
+
+We first show a conditional composition theorem, which allows us to analyze a sequence of adaptive mechanisms using high-probability instead of worst-case privacy guarantees for each mechanism. We state conditional composition formally as \cref{thm:conditioningtrick}. This is a generalization of an idea used in \cite{LocalToCentral,balle2020privacy} to analyze amplification by shuffling.
+
+\begin{theorem}\label{thm:conditioningtrick}
+Let $\calM_1: \calD \rightarrow \calX_1, \calM_2: \calX_1 \times \calD \rightarrow \calX_2, \calM_3: \calX_1 \times \calX_2 \times \calD \rightarrow \calX_3, \ldots \calM_n$ be a sequence of adaptive mechanisms, where each $\calM_i$ takes a dataset in $\calD$ and the output of mechanisms $\calM_1, \ldots, \calM_{i-1}$ as input. Let $\calM$ be the mechanism that outputs $(x_1 = \calM_1(D), x_2 = \calM_2(x_1, D), \ldots, x_n = \calM_n(x_1, \ldots, x_{n-1}, D))$. Fix any two adjacent datasets $D, D'$. 
+
+Suppose there exists ``bad events'' $E_1 \subseteq \calX_1, E_2 \subseteq \calX_1 \times \calX_2, \ldots... E_{n-1} \subseteq \calX_1 \times \calX_2 \times \ldots \times \calX_{n-1}$ such that \[\Pr_{x \sim \calM(D)}\left[\exists i: (x_1, x_2, \ldots x_i) \in E_i\right] \leq \delta\] and pairs of distributions $(P_1, Q_1), (P_2, Q_2), \ldots (P_n, Q_n)$ such that the PLD of $\calM_1(D)$ and $\calM_1(D')$ is dominated by the PLD of $P_1, Q_1$ and for any $i \geq 1$ and ``good'' output $(x_1, x_2, \ldots x_i) \notin E_i$, the PLD of $\calM_{i+1}(x_1, \ldots, x_i, D)$ and $\calM_{i+1}(x_1, \ldots, x_i, D')$ is dominated by the PLD of $P_{i+1}, Q_{i+1}$. Then for all $\epsilon$:
+
+\[H_\epsilon(\calM(D), \calM(D')) \leq H_\epsilon\left(P_1 \times P_2 \times \ldots \times P_n, Q_1 \times Q_2 \times \ldots \times Q_n\right) + \delta.\]
+\end{theorem}
+\begin{proof}
+Let $L_1$ be the privacy loss random variable of $\calM$, and let $L_2$ be the privacy loss random variable of $P_1 \times P_2 \times \ldots \times P_n, Q_1 \times Q_2 \times \ldots \times Q_n$. We want to show $H_\epsilon(L_1) \leq H_\epsilon(L_2) + \delta$ for all $\delta$.
+
+Let $L_1'$ be the random variable coupled with $L_1$, with the coupling defined as follows: If $\exists i: (x_1, x_2, \ldots, x_i) \in E_i$, then $L_1' = -\infty$, otherwise $L_1' = L_1$. Let $E = \{x | \exists i: (x_1, x_2, \ldots x_i) \in E_i\}$. Then for all $\epsilon$:
+\[H_\epsilon(L_1) = \mathbb{E}_{x}\left[\max\left\{1-e^{\epsilon - L_1(x)}, 0\right\}\right]\]
+\[= \Pr_x[x \notin E] \cdot \mathbb{E}_{x}\left[\max\left\{1-e^{\epsilon - L_1(x)}, 0\right\} \middle| x \notin E\right] + \Pr_x[x \in E] \cdot \mathbb{E}_{x}\left[\max\left\{1-e^{\epsilon - L_1(x)}, 0\right\} \middle| x \in E\right]\]
+\[=H_\epsilon(L_1') + \Pr_x[x \in E] \cdot \mathbb{E}_{x}\left[\max\left\{1-e^{\epsilon - L_1(x)}, 0\right\} \middle| x \in E\right] \leq H_\epsilon(L_1') + \Pr_x[x \in E] \leq H_\epsilon(L_1') + \delta.\]
+
+So it suffices to show $L_1'$ is dominated by $L_2$. We consider the following process for sampling $L_1'$: For each $i$, if for any $i' < i$, $(x_1, x_2, \ldots, x_{i'}) \in E_{i'}$, then we let $L_{1,i} = -\infty$ deterministically. Otherwise we sample $x_i \sim \calM_i(x_1, \ldots, x_{i-1}, D)$, $L_{1,i} = \ln\left(\frac{\Pr_{y_i \sim \calM_i(x_1, \ldots, x_{i-1}, D)}\left[y_i = x_i\right]}{\Pr_{y_i \sim \calM_i(x_1, \ldots, x_{i-1}, D)}\left[y_i = x_i\right]}\right)$. Then $L_1' = \sum_i L_{1,i}'$. Similarly, let $L_{2,i}$ be the privacy loss random variable for $P_i, Q_i$, and let $L_2 = \sum_i L_{2,i}$. By assumption, the distribution of $L_{1,i}'$ conditioned on $x_1, x_2, \ldots, x_{i-1}$ is always dominated by $L_{2,i}$. So by \cref{lem:dominatingcomposition}, $L_1'$ is dominated by $L_2$.
+\end{proof}
+To apply \cref{thm:conditioningtrick} to correlated noise mechanisms, we observe that they can be viewed as a sequence of adaptive independent-noise mechanisms:
+
+\begin{observation}\label{obs:bayesianfaker}
+Let $\calM: \calD \rightarrow \calX_1 \times \calX_2 \times \ldots \times \calX_n$ be a mechanism that takes a dataset $D$ and outputs the tuple $x = (x_1, x_2, \ldots, x_n)$ drawn from the distribution $\calM(D)$. Let $\calM_i: \calX_1 \times \calX_2 \times \ldots \times \calX_{i-1} \times \calD \rightarrow \calX_i$ be the mechanism that takes $x_1', x_2', \ldots, x_{i-1}'$ and a dataset $D$ and outputs $x_i'$ with probability (or likelihood) $\Pr_{x \sim \calM(D)}\left[x_i = x_i' | x_1 = x_1', x_2 = x_2', \ldots, x_{i-1} = x_{i-1}'\right].$ The output distributions of $\calM$ and the composition of $\calM_1, \calM_2, \ldots$ are the same.
+\end{observation}

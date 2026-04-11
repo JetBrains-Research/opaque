@@ -1,0 +1,62 @@
+\begin{algorithm}[htbp]
+\caption{Differentiable Loss for BLTs} \label{alg:blt_loss}
+\begin{algorithmic}%[1]
+\STATE \textbf{Inputs:} 
+\STATE \myind Pair of buffer-decay parameters $(\theta, \hth)$ with $\nbuf$ buffers each ($\theta, \hth \in [0, 1]^\nbuf$).
+\STATE \myind num rounds $\nd$, min-separation $\minsep$, max participations $\maxpart$
+\STATE \myind Penalty strength $\lambda$, set to zero for loss calculation, or $\lambda = 10^{-7}$ to stabilize optimization
+\STATE \textbf{Outputs:}
+
+\STATE \myind Either $\maxlossop(\bfA \bfC\inv, \bfC)$ or $\rmslossop(\bfA \bfC\inv, \bfC)$.
+\STATE
+\STATEComment Use \cref{alg:blt_pair} to calculate the unique $\omega$ and $\homega$ such that $\bfC = \bltm(\theta, \omega)$ and $\bfC\inv = \bltm(\hth, \homega)$
+\STATE $\omega = \mathtt{calc\_output\_scale}(\theta, \hth)$
+\STATE $\homega = \mathtt{calc\_output\_scale}(\hth, \theta)$
+\STATE
+\STATEComment Compute $\var{sens} = \norm{\bfC \pistar}_2$ where $\bfC = \LtToep(c)$ 
+\STATE Compute $c \in \R^n$ where $c_0 = 1$ and $
+c_i = \sum_{j \in [\nbuf]} \omega_j \theta_j^{i-1}$ for $i \in \{1, \dots, \nd\}.$
+\STATE $\bar{c} = 0 \in \R^\nd$  \Comment Holds the sum of columns of $\bfC$
+\FOR{$i \in [\maxpart]$}
+  \STATE $\bar{c}{[b\cdot i:]}\  +\!\!=\  c{[0 : n - b\cdot i]}$  \Comment \texttt{numpy}-like semantics
+\ENDFOR
+\STATE $\var{sens} = \norm{\bar{c}}_2$ \Comment{Because $\bar{c} = \bfC \pistar$.}
+\STATE
+\STATEComment Compute $\text{Errror}(\bfA \bfC\inv)$ where $\bfC\inv = \LtToep(\hc)$.
+\STATE Compute $\hc \in \R^n$ where $\hc_0 = 1$ and $
+\hc_i = \sum_{j \in [\nbuf]} \homega_j \hth_j^{i-1}$ for $i \in \{1, \dots, \nd\}.$
+\STATE Compute $b \in \R^n$ by $b_i = \sum_{j=0}^{i} \hc_i$  \Comment So $\bfB = \bfA\bfC\inv = \LtToep(b)$.
+\STATE $\var{err} = \begin{cases}
+\sqrt{\sum_{i \in [\nd]} b_i^2} & \text{for \maxerr} \\
+\sqrt{ \sum_{i \in [\nd]} (n - i) b_i^2 / \nd} & \text{for \rmse}.
+\end{cases}$
+
+\STATE
+\STATEComment Log-barrier penalties to keep $\theta > 0$, $\theta < 1$, and $\omega > 0$ for numerical stability when optimizing
+\STATE $\var{penalty} = \lambda (-\log(\theta) -\log(1 - \theta) -\log(\omega))$
+
+\STATE 
+\STATE \textbf{Return} $\var{loss} = \var{err} \cdot \var{sens} + \var{penalty}$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[htbp]
+\caption{\texttt{calc\_output\_scale}  (Lemma 5.2 of \citet{mcmahan2024efficient})} \label{alg:blt_pair}
+\begin{algorithmic}%[1]
+\STATE \textbf{Input:} 
+\STATE \myind Pair of buffer-decay parameters $(\theta, \hth)$ with $\nbuf$ buffers each ($\theta, \hth \in [0, 1]^\nbuf$).
+
+\STATE \textbf{Output:}
+\STATE \myind The unique $\omega$ s.t. $\bfC = \bltm(\theta, \omega)$ has a \blt inverse with buffer-decay $\hth$ ($\bfC\inv = \bltm(\hth, \cdot)$).
+\STATE
+\STATEComment Note that in \citep{mcmahan2024efficient}, $\bfC$ was parameterized by $\hth$ and $\bfC\inv$ was parameterized by $\theta$.
+\STATE $p(x) = \prod_{i \in [\nbuf]} (1 - \hth_i x)$
+\STATE $q(x) = \prod_{i \in [\nbuf]} (1 - \theta_i x)$
+\STATE $f(x) = (p(x) - q(x)) / x$  \Comment Polynomial division gives $f$, a polynomial of degree $\nbuf-1$
+\STATE $z = \prod_{i \in [\nbuf]} -\theta_i$ 
+\STATE $w_i = \left(\prod_{j \ne i} (\theta_i\inv - \theta_j\inv)\right)\inv$ for $i \in [\nbuf]$
+\STATE Define $\omega$ by $\omega_i = f(\theta_i\inv)\frac{-\theta_i w_i}{z}$ for $i \in [\nbuf]$
+\STATE \textbf{Return} $\omega$
+
+\end{algorithmic}
+\end{algorithm}

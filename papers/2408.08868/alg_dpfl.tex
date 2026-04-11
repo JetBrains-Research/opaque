@@ -1,0 +1,42 @@
+\begin{algorithm}[thb]
+\caption{\small FedAvg~\citep{mcmahan18learning} with \colorbox{blue!25}{DP-FTRL~\citep{kairouz21practical}} for \colorbox{blue!25}{DP} FL}
+\label{algo:dpfl}
+\begin{algorithmic}
+\INPUT: clients per round $m$, learning rate on client $\eta_{c}$ and on server $\eta_{s}$, momentum $\beta=0.9$,  total number of rounds $T$, \colorbox{blue!25}{clip norm $\zeta$, clip norm noise multiplier $\sigma$,} 
+\begin{multicols}{2}
+\STATE Initialize model $y^{-1}$ with pretraining
+\STATE Initialize server optimizer state $\optstate$
+\STATE \colorbox{blue!25}{Initialize correlated noise state $\noisestate$ with $\sigma \zeta$}
+\FOR{each round $t=0, 1, 2, \ldots, n-1$}
+\STATE $\mathcal{Q}^t \leftarrow$ (at least $m$ users that did not participate in the previous $b$ rounds)
+\FOR{each user $i \in \mathcal{Q}^t$ \textbf{in parallel}}
+\STATE $\Delta^{t}_i \leftarrow$ ClientUpdate$(i, y^{t-1})$
+\ENDFOR
+\vspace{0.1cm}
+\STATE \colorbox{blue!25}{$\tilde{\Delta}^t, \noisestate \leftarrow$AddCorrNoise$(\noisestate, \sum_{i \in \mathcal{Q}^t} \Delta^{t}_i)$}
+\vspace{0.1cm}
+\STATE $y^{t}, \optstate \leftarrow$ServerOpt$(y^{t-1}, \frac{1}{m}\tilde{\Delta}^t, \eta_{s}, \beta, \optstate)$ 
+\ENDFOR
+
+%\vspace{1.5ex}
+\begin{mdframed}[
+    linecolor=black,
+    linewidth=1.5pt,
+    roundcorner=4pt,
+    % backgroundcolor=olive!15,
+    userdefinedwidth=\linewidth,
+]
+\FUNCTION{ClientUpdate($i$, $x_i$)}
+\STATE $\mathcal{G} \leftarrow $ (batches of user $i$'s local data)
+\FOR{batch $g \in \mathcal{G}$}
+\STATE $y_i \leftarrow y_i - \eta_c \nabla \ell(y_i;g)$
+\ENDFOR
+\STATE $\Delta \leftarrow y_i - y_i^{(0)}$
+\STATE \colorbox{blue!25}{$\Delta' \leftarrow \Delta \cdot \min{\left(1, \frac{\zeta}{||\Delta||}\right)}$}
+\STATE \textbf{return} $\Delta'$
+\ENDFUNCTION
+\end{mdframed}
+\end{multicols}
+\end{algorithmic}
+\vspace{-0.2cm}
+\end{algorithm}

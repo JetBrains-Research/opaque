@@ -1,0 +1,191 @@
+\ifthenelse{\boolean{acl}}{
+\section{Additional Background on Federated Learning (FL) with Differential Privacy (DP)} \label{app:background}
+\input{subsec_dp_def}
+\subsection{DP-FTRL for DP FL algorithm}
+\input{alg_dpfl}
+\subsection{\treeagg and \bandmf in DP-FTRL} \label{app:ta_mf}
+\input{subsec_ta_mf}
+}{}
+
+\ifthenelse{\boolean{acl}}{
+\section{Stream Multiplication by BLT matrices $C$ and $C^{-1}$}
+\input{alg_stream_multi}
+}{}
+
+\ifthenelse{\boolean{acl}}{
+\section{More discussion on BLT-DP-FTRL} \label{app:blt-dp-ftrl}
+%\subsection{DP-FTRL Mechanism Summary} 
+\input{tab_mech}
+\subsection{Background on Multi-participation Sensitivity} \label{app:mp_sens}
+\input{subsec_blt_sens}
+\subsection{A    Sensitivity    Lower    Bound} \label{app:sens_lower_bound}
+\input{subsec_sens_lower_bound}
+}{}
+
+\ifthenelse{\boolean{acl}}{
+\section{Optimizing for BLT Matrices}
+\input{alg_opt_blt}
+\input{subsec_opt_eff}
+}{}
+
+\ifthenelse{\boolean{acl}}{
+\section{More \rmsloss and \maxloss Experiments} \label{app:mse}
+\input{subsec_mse}
+}{}
+
+\section{BLT Parameters for Production Training} \label{app:blt_params}
+We provide the \ourblt parameters we generated and used in training production LMs with DP FL in \cref{sec:gboard}. The \ourblt matrices are optimized for three min-sep settings $b=(100, 400, 1000)$ and each BLT is parameterized by 8 values for buffer size $d=4$, i.e., buffer decay $\theta \in \R^d$ and output scale $\omega \in \R^d$. 
+\begin{itemize}
+    \item min-sep $b=100$, total rounds $n=2000$, max participation $k=10  \, \Rightarrow$, \\
+    $\theta=(        0.989739971007307,
+        0.7352001759538236,
+        0.16776199983448145,
+        0.1677619998016191)$, 
+        $\omega = (        0.20502892852480875,
+        0.23357939425278557,
+        0.03479503245420878,
+        0.03479509876050538)$.
+    \item min-sep $b=400$, total rounds $n=4000$, max participation $k=5  \, \Rightarrow$, \\
+    $\theta=(0.9999999999921251,
+        0.9944453083640997,
+        0.8985923474607591,
+        0.4912001418098778)$, 
+        $\omega = (0.0070314825502323835,
+        0.10613806907600574,
+        0.1898159060327625,
+        0.1966594748073734)$.
+    \item min-sep $b=1000$, total rounds $n=4000$, max participation $k=2  \, \Rightarrow$, \\
+    $\theta=(        0.9999999999983397,
+        0.9973412136664378,
+        0.9584629472313878,
+        0.6581796870749317)$, 
+        $\omega = (        0.008657392263671862,
+        0.05890891298180163,
+        0.14548176930698697,
+        0.2770117005326523)$.
+\end{itemize}
+
+\cref{fig:blt_coeff} visualizes the corresponding Toeplitz coefficients for $\bfC$ to compute sensitivity and $\bfC^{-1}$ for generating correlated noise. The coefficients of $\blt(\theta, \omega)$ for $b=100$ decaying faster than $b=400$ and $b=1000$. 
+
+\begin{figure}[thb]
+\centering
+\begin{subfigure}[b]{0.45\linewidth}
+\centering
+\includegraphics[width=\textwidth]{images/blt_c_coeff.pdf}
+\caption{\small }
+\label{fig:blt_c}
+\end{subfigure}
+%
+\begin{subfigure}[b]{0.44\linewidth}
+\centering
+\includegraphics[width=\textwidth]{images/blt_c_inv.pdf}
+\caption{\small }
+\label{fig:blt_c_inv} 
+\end{subfigure}
+\caption{\small Toeplitz coefficients $\{c_0,\ldots,c_n\}$ for $\bfC=\LtToep(c)$ and $\{\hat c_0,\ldots,\hat c_n\}$ for $\bfC^{-1}=\LtToep(\hat c)$; For $\blt(\theta, \omega)$, $c$ can be computed by \cref{eq:closedcoefs}, and there are many ways to derive corresponding $\hat c$ (e.g., set $\bfZ=\bfI$ in \cref{alg:multCinv}).}\label{fig:blt_coeff}
+\end{figure}
+
+\section{Additional Simulation and Production Results} \label{app:plots}
+\ifthenelse{\boolean{acl}}{
+\subsection{Production Setting for Mobile Keyboard LMs} \label{app:prod_config}
+\input{subsec_gboard_config}
+\subsection{Extrapolation Results for Production Setting} \label{app:extrap}
+\input{subsec_gboard_extrap}
+\subsection{Additional Plots}
+}{}
+
+\begin{figure*}[tbh]
+    \centering
+    % From https://colab.corp.google.com/drive/1vaZjMTrTIPDmTTsRtc-Rm7l_LEJUqKe6#scrollTo=QzeNkbKQWHxN&uniqifier=2
+    \includegraphics[width=0.8\linewidth]{images/sonwp_bar_chart.pdf}
+    \caption{\small Visualizing the results in \cref{tab:sonwp}.}
+    \label{fig:sonwp}
+\end{figure*}
+
+\begin{figure*}[tbh]
+    \centering
+    % From https://colab.corp.google.com/drive/1_BRrt0jUniaOixKwasKDr7jiSToRwJLj#scrollTo=bPzQxRSvA3rk&uniqifier=1
+    \includegraphics[width=\linewidth]{images/maxloss_k245.pdf}
+    \caption{\small The same mechanisms from \cref{fig:rmse}, but compared on \maxloss instead of \rmsloss.}
+    \label{fig:maxloss}
+\end{figure*}
+
+\input{fig_acc}
+\input{fig_acc2}
+\input{fig_priv}
+
+
+
+% \section{Proof}
+% A proof is provided for completeness:
+% \begin{proof}
+% %\bnote{The proof currently assumes $\abs{\pi} = \maxpart$, but we need to show this. In fact, in some settings $\pistar$ might be the only participation pattern of size $\maxpart$. Probably we can address these eagerly, by arguing }
+% For the proof, it will be useful to treat each $\pi$ as a list of indices given in increasing order as in \cref{eq:badpi}, rather than as a set. 
+% %\[
+% %  \pi = \max_{\ii \in [\maxpart]} \left\{\pi \in \arg\max_{\Pi} \norm{\bfC \ind(\pi)}, \forall i < \ii, \pi_i = \pistar_i \left\}.
+% %\]
+% Let $\pi \in \Pi_\minsep$ be a participation pattern that maximizes \cref{eq:sens}, and further shares a maximal-length prefix with $\pistar$ of all such optimal $\pi$. If $\pi = \pistar$, we are done. Alternatively, suppose $\pi \ne \pistar$ with $\sens(\pi) > \sens(\pistar)$. Locally, we take $\kk \coloneqq \len(\pi)$, ``lightly'' re-defining $k$ for this proof; here $k$ might be the maximum number of participations, but it could be less. Note $\pi$ cannot be a prefix of $\pistar$, because adding additional participations can only increase sensitivity in \cref{eq:sens}. Thus, there exists a minimal $\ii \in [\kk]$ such that $\pi_\ii \ne \pistar_\ii$ and by construction no other optimal $\pi$ has a smaller $\ii$; we will show a contradiction.  Let $s = \pi_\ii - \pistar_\ii \in [\nd]$, and define
+% \begin{align*}
+% \pi' &= (\pi_0, \pi_1, \dots, \pi_{\ii-1}, && \pi_\ii - s,&& \pi_{\ii+1} -s, \dots, \pi_\kk -s) & \\
+%      &= (0, b, \dots, (\ii-1)b,            &&\ii b,  &&      \pi_{\ii+1} -s, \dots, \pi_\kk - s), &
+% \end{align*}
+% since by construction $\pistar_i = \pi_i$ for $i < \ii$. Essentially, we find the first opportunity to shift participations earlier, and take it. It is straightforward to verify $\pi' \in \Pi_\minsep$ as long as $\pistar$ and $\pi$ are.
+
+% For any participation pattern $\pi$, for brevity we define 
+% \[
+% \sens(\pi) \coloneqq \norm{\bfC \ind(\pi)}_2.
+% \]
+% Then, it is sufficient to show $\sens(\pi') \ge \sens(\pi)$, a contradiction to how $\pi$ was chosen as $\pi'$ agrees with $\pi$ over a larger prefix. By definition,
+% \[
+% \sens^2(\pi) = \sum_{i \in [\kk]} \sum_{j \in [\kk]} \cc_{\pi_i} \cdot \cc_{\pi_j}.
+% \]
+% These dot products can be expressed directly in terms of the Toeplitz coefficients. Taking $a, b \in [\nd]$ with $a \le b$ wlog,
+% \begin{equation} \label{eq:dotsum}
+%  \cc_{\pi_a} \cdot \cc_{\pi_b} 
+%   = \sum_{i=b}^n c_{i-a} c_{i-b}
+%   = \sum_{i=0}^{n-b} c_{i + b -a} c_{i}.
+% \end{equation}
+
+% Matching terms in this sum between $\sens^2(\pi)$ and $\sens^2(\pi')$, we show that for all $i \in [\kk], j \in [\kk]$,
+% \[
+% \cc_{\pi'_i} \cdot \cc_{\pi'_j} \ge \cc_{\pi_i} \cdot \cc_{\pi_j}.
+% \]
+% There are four cases.
+% \begin{itemize}
+%   \item When $i < \ii, j < \ii$, then we have equality.
+%   \item When $i < \ii, j \ge \ii$, we need to show
+%   \[
+%      \cc_{\pi_i} \cdot \cc_{\pi_j - s} \ge \cc_{\pi_i} \cdot \cc_{\pi_j}.
+%   \]
+%   This follows immediately from the fact $\cc_{\pi_i} \ge 0$ and $\cc_{\pi_j - s} \ge  \cc_{\pi_j}$ since $c$ is non-increasing.
+%   \item The case $i \ge \ii, j < \ii$ is equivalent to the previous case.
+%   \item When $i > \ii, j> \ii$, we need to show
+%   \[
+%      \cc_{\pi_i - s} \cdot \cc_{\pi_j - s} \ge \cc_{\pi_i} \cdot \cc_{\pi_j},
+%   \]
+%   which follows immediately from the non-negativity of $\cc$ and the rightmost expression in \cref{eq:dotsum}, which shows decreasing $a$ and $b$ by a constant simply adds more non-negative terms to the sum.
+% \end{itemize}
+% Thus, we conclude $\sens(\pi') \ge \sens(\pi)$, a contradiction.
+% \end{proof}
+
+\clearpage
+\section{Reporting privacy guarantees}\label{app:privacy-guarantees}
+This section clarifies the nuances of the DP guarantees following the guidelines outlined in \citep[Sec. 5.3]{ponomareva2023dpfy}. They are similar (if not identical)  to \citep[Appendix A]{xu2023federated} and \citep[Appendix C.3]{wu2024prompt}, except for the exact DP guarantees. We include the entire checklist for completeness.
+
+\begin{enumerate}
+    \item \textbf{DP setting}. This is a central DP guarantee where the service provider is trusted to correctly implement the mechanism.
+    \item \textbf{Instantiating the DP Definition}
+     \begin{enumerate}
+        \item \textit{Data accesses covered}: The DP guarantee applies to all well-behaved clients\footnote{Clients that faithfully follow the algorithm including participation limits. Due to the design of the algorithm, a mis-behaved client does not adversely affect the DP guarantee of any well-behaved clients.} in a single training run. We do not account for hyperparameter tuning, or the selection of the final model checkpoint using evaluation metrics or A/B testing in our guarantees. Public data such as C4~\citep{xue2020mt5} or LLM-based synthetic data~\citep{wu2024prompt}, are used for pre-training. 
+        \item \textit{Final mechanism output}: Only the final model checkpoint is released for production deployment, however the mechanism’s output is technically the full sequence of privatized gradients, and so the guarantee also applies at this level, and hence all intermediate models are protected (including those sent to devices participating in federated learning). 
+        \item \textit{Unit of privacy}. Device-level DP is considered, i.e., the notion of adjacency is with respect to arbitrary training datasets on each client device, and the device might have an arbitrarily large local dataset containing arbitrary training examples. For user's with a single device, this corresponds directly to user-level DP; for devices shared with multiple users, this provides a stronger notion of DP than user-level; for a user with multiple devices that happen to both participate in training the model, the notion is weaker, but group privacy can be used to obtain a user-level guarantee.
+        \item \textit{Adjacency definition for ``neigbouring'' datasets}: We use the zero-out definition~\citep{kairouz21practical}. This is a a special form of the add-or-remove definition, where neighboring data sets differ by addition/removal of a single client. In the absence of a client at any training step, we assume that the client's model update gets replaced with the all zeros vector. This assumption enforces a subtle modification to the traditional definition of the add/remove notion of DP which allows neighboring data sets to have the same number of records.
+    \end{enumerate}
+    \item \textbf{Privacy accounting details}
+    \begin{enumerate}
+        \item \textit{Type of accounting used}: Both $\rho-$zCDP~\citep{bun2016concentrated} accounting, and PLD accounting~\citep{pldlib} for $(\epsilon, \delta)-$DP are used.
+        \item \textit{Accounting assumptions }: Each client only participates limited times during the training, and there are at least a min-separation number of rounds between two consecutive participation of a client. Client participation is enforced by a timer on clients in the cross-device FL system.    
+        \item \textit{The formal DP statement}: See \cref{sec:gboard} \textbf{model launches} for reported DP guarantees.
+        \item \textit{Transparency and verifiability}: We use the open-sourced core implementation code in TensorFlow Federated and Tensorflow Privacy. Key portions of the cross-device FL system are also open sourced.
+    \end{enumerate}
+\end{enumerate}

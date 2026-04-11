@@ -1,0 +1,57 @@
+\section{Privacy Loss Distributions and Monte Carlo Accounting}\label{sec:montecarlo}
+
+We can define $(\epsilon, \delta)$-DP in terms of the hockey-stick divergence. For any two distributions $P, Q$, their $\alpha$-hockey stick divergence for $\alpha \geq 0$ is given by:
+
+\[H_\alpha(P, Q) = \int_x \max\{P(x) - \alpha Q(x), 0\}.\]
+
+A mechanism $\calM$ is $(\epsilon, \delta)$-DP if for any adjacent databases $D \sim D'$ (under the add-remove adjacency), we have $H_{e^\epsilon}(\calM(D), \calM(D')) \leq \delta$. Suppose $P, Q$ are a \textit{dominating pair} \citep{zhu22optimal} for $\calM$ of interest; that is, for any $D \sim D', \alpha \geq 0$ we have $H_\alpha(\calM(D), \calM(D')) \leq H_\alpha(P, Q)$.
+Then, by sampling $X \sim P$ and computing $Y = \log P(X)/Q(X)$, we then say that the \textit{privacy-loss distribution} (PLD) \citep{BBG18} of $P$ and $Q$ is the law of $Y$.
+
+Now to prove $(\epsilon, \delta)$-DP for $\calM$, it suffices to show $H_{e^\epsilon}(P, Q) \leq \delta$.
+The main observation in Monte Carlo accounting is that we can write $H_\alpha$ as an expectation over $Y$, $H_\alpha(P, Q) = \mathbb{E}_Y [\max\{1 - \alpha e^{-Y}, 0\}]$.
+Then, if exactly computing $H_\alpha(P, Q)$ is hard but sampling $Y$ is easy, we can estimate $\delta$ for some $\epsilon$ by taking the average of sufficiently many samples of $\max\{1 - e^{\epsilon-Y}, 0\}$. Namely, let $\hat{\delta}$ be the estimated $\delta$ value, i.e. the average over some samples of $\max\{1 - e^{\epsilon-Y}, 0\}$. As a starting point, we can already claim $(\epsilon, \hat{\delta})$-DP as an informal privacy statement. To make it formal, we can use 
+the Estimate-Verify-Release framework of \citep{wang2023randomized} (\cref{alg:wrapper}): we fix a target $(\epsilon, \delta)$-DP privacy guarantee ahead of time, and use Monte Carlo accounting to verify that $\calM$ satisfies with $(\epsilon, \delta)$-DP, and only run $\calM$ if the verification succeeds.
+
+\begin{algorithm}[htb]
+\caption{Estimate-Verify-Release of \citep{wang2023randomized}} \label{alg:wrapper}
+ \hspace*{\algorithmicindent} \textbf{Inputs:} Mechanism $\calM$, dataset $D$, estimated privacy parameters $\eps, \delta$.
+\begin{algorithmic}[1]
+\State Determine dominating pair $P, Q$ of $\calM$, get $\hat{\delta}$, an estimate of $H_{e^\epsilon}(P, Q)$.
+\If{$\hat{\delta} \leq \delta$}
+\State \Return $\calM(D)$
+\Else
+\State \Return $\bot$
+\EndIf 
+\end{algorithmic}
+\end{algorithm}
+
+The below theorem shows that Algorithm~\ref{alg:wrapper} can be made to incur only a constant blowup in $\delta$:
+
+\begin{theorem}[Theorem 9 of \citet{wang2023randomized}]
+Suppose in~\cref{alg:wrapper} that for any $P, Q$ such that $H_\epsilon(P, Q) > \tau \delta$, $\hat{\delta} > \delta$ w.p. at least $1 - \tau \delta$. Then~\cref{alg:wrapper} is $(\epsilon, \tau \delta)$-DP.   
+\end{theorem}\label{thm:wrapper}
+
+The following theorem can be used to derive the tail bound required for \cref{thm:wrapper}:
+
+\begin{theorem}\label{thm:bernstein}
+Suppose we use $s$ samples in computing $\hat{\delta}$ in Algorithm~\ref{alg:wrapper}. Then for any $P, Q$ such that $H_\epsilon(P, Q) \geq \tau \delta, \tau > 1$, we have $\Pr[\hat{\delta} < \delta] \leq \exp\left(-\frac{s(\tau-1)^2\delta}{ 8\tau/3-2/3}\right).$
+\end{theorem}
+\begin{proof}
+If $H_\epsilon(P, Q) > \tau \delta$, then we can express $\hat{\delta} = \frac{1}{s} \sum_{i=1}^s \hat{\delta}_i$, where each $\hat{\delta}_i$ is an i.i.d. random variable in the range $[0, 1]$ with mean $\mu \geq \tau \delta$. By the Bhatia-Davis inequality, we have $\Var{\hat{\delta}_i} \leq (1 - \mu)\mu$. So $\mathbb{E}[\hat{\delta}_i^2] = \mathbb{E}[\hat{\delta}_i^2]^2 + \Var{\hat{\delta}_i} = \mu^2 + \Var{\hat{\delta}_i} \leq \mu$.
+
+Now we can apply Bernstein's inequality to get that:
+
+\[\Pr[\hat{\delta} < \mu - t] \leq \exp\left(-\frac{st^2 / 2}{ \mathbb{E}[\hat{\delta}_1^2] + t/3}\right) \leq \exp\left(-\frac{st^2 / 2}{ \mu + t/3}\right).\]
+
+Setting $t = \mu - \delta$:
+
+\[\Pr[\hat{\delta} < \delta] \leq \exp\left(-\frac{s(\mu - \delta)^2 / 2}{ 4\mu/3 - \delta/3}\right).\]
+
+Since $\mu \geq \tau \delta > \delta$, we have:
+
+\[\frac{d}{d\mu} \frac{s(\mu - \delta)^2 / 2}{ 4\mu/3 - \delta/3} = \frac{3s (\mu - \delta)(2\mu - \delta)}{(4\mu - 3\delta)^2} > 0,\]
+
+i.e. the bound $\Pr[\hat{\delta} < \delta]$ is decreasing in $\mu$, so it is minimized by setting $\mu = \tau \delta$. Plugging this value of $\mu$ in gives as desired:
+
+\[\Pr[\hat{\delta} < \delta] \leq \exp\left(-\frac{s(\tau-1)^2\delta}{ 8\tau/3-2/3}\right).\]
+\end{proof}

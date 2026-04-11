@@ -1,0 +1,9 @@
+\subsection{DP Formulation} \label{subsec:dp_def}
+We present the definition of ($\epsilon$, $\delta$)-DP~\citep{dwork2006calibrating,dwork2014algorithmic} to quantify the privacy protection. 
+\begin{definition}[$(\epsilon,\delta)$-Differential Privacy]
+  A randomized algorithm $\mathcal{M}$ satisfies  ($\epsilon$, $\delta$)-DP for $\mathbb{D}$ if for any two neighboring datasets $\mathbb{D}$, $\mathbb{D}'$ and for all $\mathcal{S}\subset \text{Range}(\mathcal{M})$: 
+\[
+\textstyle{\Pr[\mathcal{M}(\mathbb{D}) \in \mathcal{S}] \leq e^{\epsilon}\Pr[\mathcal{M}(\mathbb{D}') \in \mathcal{S}] +\delta}
+.\]
+\end{definition}
+Smaller ($\epsilon$, $\delta$) values suggest stronger DP guarantees, and we often measure $\epsilon$ at a fixed small $\delta=10^{-10}$. DP-FTRL also uses an alternative definition, $\rho$-zCDP (zero-Concentrated DP)~\citep{bun2016concentrated} designed for Gaussian mechanism, and smaller $\rho$ suggests stronger DP guarantees. We use PLD (privacy Loss Distributions) accounting~\citep{doroshenko2022connect,pldlib} to convert $\rho$-zCDP to ($\epsilon$, $\delta$) DP. When applying DP in FL, the neighboring datasets $\mathbb{D}$, $\mathbb{D}'$ are defined by zeroing out the contribution of all data on a user device. More discussions on neighboring dataset for the streaming setting in learning, and connection to DP guarantees are provided in \cref{sec:sensitivity}.

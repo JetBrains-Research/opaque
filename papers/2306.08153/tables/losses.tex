@@ -1,0 +1,46 @@
+
+\begin{table}[t]
+\begin{center}
+\renewcommand{\arraystretch}{1.4}
+\newcommand{\bst}[1]{\textbf{#1}}
+\newcolumntype{P}[2]{%
+  >{\begin{turn}{#1}\begin{minipage}{#2}\small\raggedright\hspace{0pt}}l%
+  <{\end{minipage}\end{turn}}%
+}
+\newlength{\vertheadheight}
+\setlength{\vertheadheight}{2.6cm}
+\newcommand{\graycell}{\cellcolor{gray!5}}
+
+
+\begin{footnotesize}
+\begin{tabular}{lrlrrrll}
+\toprule
+\multicolumn{3}{c}{Matrix}  & \multicolumn{3}{c}{Sensitivity\graycell} & \multicolumn{2}{c}{Error}  \\
+ %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+ % AUTO-GENERATED DO NOT EDIT
+ % https://colab.corp.google.com/drive/15Ck6m14oQ2J3QHUWnYhb3sycWFhe1gDL#scrollTo=SUVXcPnDLO4T&uniqifier=7
+ % 
+   \multicolumn{1}{P{90}{\vertheadheight}}{Mechanism} &  \multicolumn{1}{P{90}{\vertheadheight}}{Bands $\bands$} &  \multicolumn{1}{P{90}{\vertheadheight}}{Equal colum norms? (Ours)} &  \multicolumn{1}{P{90}{\vertheadheight}}{$\maxpart{=}1$~\cite{denisov22matfact}} &  \multicolumn{1}{P{90}{\vertheadheight}}{$\maxpartsep{6}{342}$~\cite{choquette2022multi}} &  \multicolumn{1}{P{90}{\vertheadheight}}{$\minsep{\ge}342$-min-sep (Ours)} & \multicolumn{1}{P{90}{\vertheadheight}}{(A) RMSE under $\maxpartsep{6}{342}$~\cite{choquette2022multi} } & \multicolumn{1}{P{90}{\vertheadheight}}{(B) RMSE under $\minsep{\ge}342$-min-sep (Ours)} \\
+\midrule
+     \opttreeagg~\cite{kairouz2021practical,honaker2015efficient} &   - &             F & 0.32 &       1.00 &           1.00 &                  1.53 &                 1.53 \\
+      \dpsgd~\cite{DP-DL} &      1 &              T & 0.41 &       1.00 &           1.00 &                  9.63 &                 9.63 \\
+ \MF($b{=}128$) (Ours) &    128 &             F & 0.52 &       1.00 &           1.04 &                  1.23 &                 1.29 \\
+ \MF($b{=}128$) (Ours) &    128 &              T & 0.41 &       1.00 &           1.00 &                  1.27 &                 1.27 \\
+ \MF($b{=}342$) (Ours) &    342 &             F & 0.52 &       1.00 &           1.04 &                  1.04 &                 1.08 \\
+ \MF($b{=}342$) (Ours) &    342 &              T & 0.41 &       1.00 &           1.00 &                  1.05 &           \bst{1.05} \\
+          \MF~\cite{choquette2022multi} &   - &             F & 0.50 &       1.00 &          $\le$1.15 &            \bst{1.00} &                 1.15 \\
+          \MF~\cite{choquette2022multi} &   - &              T & 0.41 &       1.00 &          $\le$1.13 &                  1.01 &                 1.14 \\
+\bottomrule
+\end{tabular}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\end{footnotesize}
+\vspace{1em}
+\caption{A comparison of matrix mechanisms for $n=2052$ under different participation patterns. \textbf{Banded matrices are near-optimal under \multiepoch-participation and best under \bparticipation.} Each error is computed under the indicated measure of sensitivity. Thus, the error in column (B) can be obtained by multiplying the error in column (A) by the corresponding entry under $b{\ge}342$ sensitivity. 
+%Note that the mechanisms require the corresponding sensitivity definition to be applied to that setting, and the corresponding error definition to have the factorization optimized for minimal error.
+}
+ \label{tab:matrices}
+\end{center}
+\end{table}

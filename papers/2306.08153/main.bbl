@@ -1,0 +1,463 @@
+\begin{thebibliography}{63}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Abadi et~al.(2016)Abadi, Chu, Goodfellow, McMahan, Mironov, Talwar,
+  and Zhang]{DP-DL}
+Mart{\'{\i}}n Abadi, Andy Chu, Ian~J. Goodfellow, H.~Brendan McMahan, Ilya
+  Mironov, Kunal Talwar, and Li~Zhang.
+\newblock Deep learning with differential privacy.
+\newblock In \emph{Proc. of the 2016 {ACM} {SIGSAC} Conf. on Computer and
+  Communications Security ({CCS}'16)}, pages 308--318, 2016.
+
+\bibitem[Agarwal and Singh(2017)]{agarwal2017price}
+Naman Agarwal and Karan Singh.
+\newblock The price of differential privacy for online learning.
+\newblock In \emph{International Conference on Machine Learning}, pages 32--40.
+  PMLR, 2017.
+
+\bibitem[Asi et~al.(2021)Asi, Levy, and Duchi]{asi2021adapting}
+Hilal Asi, Daniel Asher~Nathan Levy, and John Duchi.
+\newblock Adapting to function difficulty and growth conditions in private
+  optimization.
+\newblock In \emph{Advances in Neural Information Processing Systems}, 2021.
+
+\bibitem[Asi et~al.(2022)Asi, Feldman, Koren, and Talwar]{asi2022private}
+Hilal Asi, Vitaly Feldman, Tomer Koren, and Kunal Talwar.
+\newblock Private online prediction from experts: Separations and faster rates.
+\newblock \emph{arXiv preprint arXiv:2210.13537}, 2022.
+
+\bibitem[Asi et~al.(2023)Asi, Feldman, Koren, and Talwar]{asi2023near}
+Hilal Asi, Vitaly Feldman, Tomer Koren, and Kunal Talwar.
+\newblock Near-optimal algorithms for private online optimization in the
+  realizable regime.
+\newblock \emph{arXiv preprint arXiv:2302.14154}, 2023.
+
+\bibitem[Balle et~al.(2020)Balle, Kairouz, McMahan, Thakkar, and
+  Thakurta]{balle2020privacy}
+Borja Balle, Peter Kairouz, H~Brendan McMahan, Om~Thakkar, and Abhradeep
+  Thakurta.
+\newblock Privacy amplification via random check-ins.
+\newblock In \emph{NeurIPS}, 2020.
+
+\bibitem[Bassily et~al.(2014)Bassily, Smith, and Thakurta]{BST14}
+Raef Bassily, Adam Smith, and Abhradeep Thakurta.
+\newblock Private empirical risk minimization: Efficient algorithms and tight
+  error bounds.
+\newblock In \emph{Proc. of the 2014 IEEE 55th Annual Symp. on Foundations of
+  Computer Science (FOCS)}, pages 464--473, 2014.
+
+\bibitem[Bassily et~al.(2019)Bassily, Feldman, Talwar, and
+  Thakurta]{bassily2019private}
+Raef Bassily, Vitaly Feldman, Kunal Talwar, and Abhradeep Thakurta.
+\newblock Private stochastic convex optimization with optimal rates.
+\newblock In \emph{Advances in Neural Information Processing Systems}, pages
+  11279--11288, 2019.
+
+\bibitem[Bassily et~al.(2020)Bassily, Feldman, Guzm{\'a}n, and
+  Talwar]{bassily2020stability}
+Raef Bassily, Vitaly Feldman, Crist{\'o}bal Guzm{\'a}n, and Kunal Talwar.
+\newblock Stability of stochastic gradient descent on nonsmooth convex losses.
+\newblock \emph{arXiv preprint arXiv:2006.06914}, 2020.
+
+\bibitem[Bonawitz et~al.(2019)Bonawitz, Eichner, Grieskamp, Huba, Ingerman,
+  Ivanov, Kiddon, Konecny, Mazzocchi, McMahan, et~al.]{bonawitz2019towards}
+Keith Bonawitz, Hubert Eichner, Wolfgang Grieskamp, Dzmitry Huba, Alex
+  Ingerman, Vladimir Ivanov, Chloe Kiddon, Jakub Konecny, Stefano Mazzocchi,
+  H~Brendan McMahan, et~al.
+\newblock Towards federated learning at scale: System design.
+\newblock \emph{arXiv preprint arXiv:1902.01046}, 2019.
+
+\bibitem[Bun and Steinke(2016)]{bun2016concentrated}
+Mark Bun and Thomas Steinke.
+\newblock Concentrated differential privacy: Simplifications, extensions, and
+  lower bounds.
+\newblock In \emph{Theory of Cryptography Conference}, pages 635--658.
+  Springer, 2016.
+
+\bibitem[Byrd et~al.(1995)Byrd, Lu, Nocedal, and Zhu]{byrd1995limited}
+Richard~H Byrd, Peihuang Lu, Jorge Nocedal, and Ciyou Zhu.
+\newblock A limited memory algorithm for bound constrained optimization.
+\newblock \emph{SIAM Journal on scientific computing}, 16\penalty0
+  (5):\penalty0 1190--1208, 1995.
+
+\bibitem[Chan et~al.(2011)Chan, Shi, and Song]{CSS11-continual}
+T.-H.~Hubert Chan, Elaine Shi, and Dawn Song.
+\newblock Private and continual release of statistics.
+\newblock \emph{{ACM} Trans. on Information Systems Security}, 14\penalty0
+  (3):\penalty0 26:1--26:24, November 2011.
+
+\bibitem[Chaudhuri et~al.(2011)Chaudhuri, Monteleoni, and
+  Sarwate]{chaudhuri2011differentially}
+Kamalika Chaudhuri, Claire Monteleoni, and Anand~D Sarwate.
+\newblock Differentially private empirical risk minimization.
+\newblock \emph{Journal of Machine Learning Research}, 12\penalty0
+  (Mar):\penalty0 1069--1109, 2011.
+
+\bibitem[Choquette-Choo et~al.(2023)Choquette-Choo, McMahan, Rush, and
+  Thakurta]{choquette2022multi}
+Christopher~A Choquette-Choo, H~Brendan McMahan, Keith Rush, and Abhradeep
+  Thakurta.
+\newblock Multi-epoch matrix factorization mechanisms for private machine
+  learning.
+\newblock \emph{arXiv preprint arXiv:2211.06530}, 2023.
+
+\bibitem[Chourasia et~al.(2021)Chourasia, Ye, and Shokri]{ChourasiaYS21}
+Rishav Chourasia, Jiayuan Ye, and Reza Shokri.
+\newblock Differential privacy dynamics of langevin diffusion and noisy
+  gradient descent.
+\newblock In \emph{Advances in Neural Information Processing Systems}, 2021.
+
+\bibitem[Denisov et~al.(2022)Denisov, McMahan, Rush, Smith, and
+  Thakurta]{denisov22matfact}
+Sergey Denisov, Brendan McMahan, Keith Rush, Adam Smith, and Abhradeep~Guha
+  Thakurta.
+\newblock Improved differential privacy for sgd via optimal private linear
+  operators on adaptive streams, 2022.
+\newblock URL \url{https://arxiv.org/abs/2202.08312}.
+
+\bibitem[{DP Team}(2022)]{pldlib}
+{DP Team}.
+\newblock Google's differential privacy libraries., 2022.
+\newblock \url{https://github.com/google/differential-privacy}.
+
+\bibitem[Du~Croz et~al.(2005)Du~Croz, Mayes, and
+  Radicati]{du2005factorizations}
+Jeremy Du~Croz, Peter Mayes, and Giuseppe Radicati.
+\newblock Factorizations of band matrices using level 3 blas.
+\newblock In \emph{CONPAR 90—VAPP IV: Joint International Conference on
+  Vector and Parallel Processing Zurich, Switzerland, September 10--13, 1990
+  Proceedings}, pages 222--231. Springer, 2005.
+
+\bibitem[Dwork et~al.(2010)Dwork, Naor, Pitassi, and Rothblum]{Dwork-continual}
+Cynthia Dwork, Moni Naor, Toniann Pitassi, and Guy~N. Rothblum.
+\newblock Differential privacy under continual observation.
+\newblock In \emph{Proc. of the Forty-Second {ACM} Symp. on Theory of Computing
+  ({STOC}'10)}, pages 715--724, 2010.
+
+\bibitem[Dwork et~al.(2014)Dwork, Talwar, Thakurta, and
+  Zhang]{dwork2014analyze}
+Cynthia Dwork, Kunal Talwar, Abhradeep Thakurta, and Li~Zhang.
+\newblock Analyze gauss: optimal bounds for privacy-preserving principal
+  component analysis.
+\newblock In \emph{Proceedings of the forty-sixth annual ACM symposium on
+  Theory of computing}, pages 11--20, 2014.
+
+\bibitem[Edmonds et~al.(2020)Edmonds, Nikolov, and
+  Ullman]{edmonds_nikolov_ullman}
+Alexander Edmonds, Aleksandar Nikolov, and Jonathan Ullman.
+\newblock \emph{The Power of Factorization Mechanisms in Local and Central
+  Differential Privacy}, page 425–438.
+\newblock Association for Computing Machinery, New York, NY, USA, 2020.
+\newblock ISBN 9781450369794.
+\newblock URL \url{https://doi.org/10.1145/3357713.3384297}.
+
+\bibitem[Feldman et~al.(2020)Feldman, Koren, and Talwar]{feldman2019private}
+Vitaly Feldman, Tomer Koren, and Kunal Talwar.
+\newblock Private stochastic convex optimization: Optimal rates in linear time.
+\newblock In \emph{Proc. of the Fifty-Second {ACM} Symp. on Theory of Computing
+  ({STOC}'20)}, 2020.
+
+\bibitem[Fichtenberger et~al.(2022)Fichtenberger, Henzinger, and
+  Upadhyay]{fichtenberger_constant22}
+Hendrik Fichtenberger, Monika Henzinger, and Jalaj Upadhyay.
+\newblock Constant matters: Fine-grained complexity of differentially private
+  continual observation, 2022.
+\newblock URL \url{https://arxiv.org/abs/2202.11205}.
+
+\bibitem[Gopi et~al.(2022)Gopi, Lee, and Liu]{gopi2022private}
+Sivakanth Gopi, Yin~Tat Lee, and Daogao Liu.
+\newblock Private convex optimization via exponential mechanism.
+\newblock \emph{arXiv preprint arXiv:2203.00263}, 2022.
+
+\bibitem[Guha~Thakurta and Smith(2013)]{guha2013nearly}
+Abhradeep Guha~Thakurta and Adam Smith.
+\newblock (nearly) optimal algorithms for private online learning in
+  full-information and bandit settings.
+\newblock \emph{Advances in Neural Information Processing Systems}, 26, 2013.
+
+\bibitem[Hard et~al.(2018)Hard, Rao, Mathews, Beaufays, Augenstein, Eichner,
+  Kiddon, and Ramage]{NWP18}
+Andrew Hard, Kanishka Rao, Rajiv Mathews, Fran{\c{c}}oise Beaufays, Sean
+  Augenstein, Hubert Eichner, Chlo{\'{e}} Kiddon, and Daniel Ramage.
+\newblock Federated learning for mobile keyboard prediction.
+\newblock \emph{CoRR}, abs/1811.03604, 2018.
+\newblock URL \url{http://arxiv.org/abs/1811.03604}.
+
+\bibitem[Hardt and Talwar(2010)]{HT10}
+Moritz Hardt and Kunal Talwar.
+\newblock On the geometry of differential privacy.
+\newblock In \emph{STOC}, 2010.
+
+\bibitem[Henzinger and Upadhyay(2022)]{henzinger2022constant}
+Monika Henzinger and Jalaj Upadhyay.
+\newblock Constant matters: Fine-grained complexity of differentially private
+  continual observation using completely bounded norms.
+\newblock \emph{arXiv preprint arXiv:2202.11205}, 2022.
+
+\bibitem[Honaker(2015)]{honaker2015efficient}
+James Honaker.
+\newblock Efficient use of differentially private binary trees.
+\newblock \emph{Theory and Practice of Differential Privacy (TPDP 2015),
+  London, UK}, 2:\penalty0 26--27, 2015.
+
+\bibitem[Huba et~al.(2022)Huba, Nguyen, Malik, Zhu, Rabbat, Yousefpour, Wu,
+  Zhan, Ustinov, Srinivas, et~al.]{huba2022papaya}
+Dzmitry Huba, John Nguyen, Kshitiz Malik, Ruiyu Zhu, Mike Rabbat, Ashkan
+  Yousefpour, Carole-Jean Wu, Hongyuan Zhan, Pavel Ustinov, Harish Srinivas,
+  et~al.
+\newblock Papaya: Practical, private, and scalable federated learning.
+\newblock \emph{Proceedings of Machine Learning and Systems}, 4:\penalty0
+  814--832, 2022.
+
+\bibitem[Iyengar et~al.(2019)Iyengar, Near, Song, Thakkar, Thakurta, and
+  Wang]{iyengar2019towards}
+Roger Iyengar, Joseph~P Near, Dawn Song, Om~Thakkar, Abhradeep Thakurta, and
+  Lun Wang.
+\newblock Towards practical differentially private convex optimization.
+\newblock In \emph{2019 IEEE Symposium on Security and Privacy (SP)}, 2019.
+
+\bibitem[Jain et~al.(2012)Jain, Kothari, and Thakurta]{JKT-online}
+Prateek Jain, Pravesh Kothari, and Abhradeep Thakurta.
+\newblock Differentially private online learning.
+\newblock In \emph{Proc. of the 25th Annual Conf. on Learning Theory (COLT)},
+  volume~23, pages 24.1--24.34, June 2012.
+
+\bibitem[Kairouz et~al.(2019)Kairouz, McMahan, Avent, Bellet, Bennis, Bhagoji,
+  Bonawitz, Charles, Cormode, Cummings, D'Oliveira, Rouayheb, Evans, Gardner,
+  Garrett, Gasc{\'{o}}n, Ghazi, Gibbons, Gruteser, Harchaoui, He, He, Huo,
+  Hutchinson, Hsu, Jaggi, Javidi, Joshi, Khodak, Konecn{\'{y}}, Korolova,
+  Koushanfar, Koyejo, Lepoint, Liu, Mittal, Mohri, Nock, {\"{O}}zg{\"{u}}r,
+  Pagh, Raykova, Qi, Ramage, Raskar, Song, Song, Stich, Sun, Suresh,
+  Tram{\`{e}}r, Vepakomma, Wang, Xiong, Xu, Yang, Yu, Yu, and Zhao]{FLO}
+Peter Kairouz, H.~Brendan McMahan, Brendan Avent, Aur{\'{e}}lien Bellet, Mehdi
+  Bennis, Arjun~Nitin Bhagoji, Keith Bonawitz, Zachary Charles, Graham Cormode,
+  Rachel Cummings, Rafael G.~L. D'Oliveira, Salim~El Rouayheb, David Evans,
+  Josh Gardner, Zachary Garrett, Adri{\`{a}} Gasc{\'{o}}n, Badih Ghazi,
+  Phillip~B. Gibbons, Marco Gruteser, Za{\"{\i}}d Harchaoui, Chaoyang He, Lie
+  He, Zhouyuan Huo, Ben Hutchinson, Justin Hsu, Martin Jaggi, Tara Javidi,
+  Gauri Joshi, Mikhail Khodak, Jakub Konecn{\'{y}}, Aleksandra Korolova,
+  Farinaz Koushanfar, Sanmi Koyejo, Tancr{\`{e}}de Lepoint, Yang Liu, Prateek
+  Mittal, Mehryar Mohri, Richard Nock, Ayfer {\"{O}}zg{\"{u}}r, Rasmus Pagh,
+  Mariana Raykova, Hang Qi, Daniel Ramage, Ramesh Raskar, Dawn Song, Weikang
+  Song, Sebastian~U. Stich, Ziteng Sun, Ananda~Theertha Suresh, Florian
+  Tram{\`{e}}r, Praneeth Vepakomma, Jianyu Wang, Li~Xiong, Zheng Xu, Qiang
+  Yang, Felix~X. Yu, Han Yu, and Sen Zhao.
+\newblock Advances and open problems in federated learning.
+\newblock \emph{CoRR}, abs/1912.04977, 2019.
+\newblock URL \url{http://arxiv.org/abs/1912.04977}.
+
+\bibitem[Kairouz et~al.(2021)Kairouz, McMahan, Song, Thakkar, Thakurta, and
+  Xu]{kairouz2021practical}
+Peter Kairouz, Brendan McMahan, Shuang Song, Om~Thakkar, Abhradeep Thakurta,
+  and Zheng Xu.
+\newblock Practical and private (deep) learning without sampling or shuffling.
+\newblock In \emph{ICML}, 2021.
+
+\bibitem[Kifer et~al.(2012)Kifer, Smith, and Thakurta]{kifer2012private}
+Daniel Kifer, Adam Smith, and Abhradeep Thakurta.
+\newblock Private convex empirical risk minimization and high-dimensional
+  regression.
+\newblock In \emph{Conference on Learning Theory}, pages 25--1, 2012.
+
+\bibitem[Koren et~al.(2009)Koren, Bell, and Volinsky]{koren09recommender}
+Yehuda Koren, Robert Bell, and Chris Volinsky.
+\newblock Matrix factorization techniques for recommender systems.
+\newblock \emph{Computer}, 42\penalty0 (8):\penalty0 30–37, aug 2009.
+\newblock ISSN 0018-9162.
+\newblock \doi{10.1109/MC.2009.263}.
+\newblock URL \url{https://doi.org/10.1109/MC.2009.263}.
+
+\bibitem[Koskela et~al.(2020)Koskela, J{\"a}lk{\"o}, Prediger, and
+  Honkela]{koskela2020tight}
+Antti Koskela, Joonas J{\"a}lk{\"o}, Lukas Prediger, and Antti Honkela.
+\newblock Tight approximate differential privacy for discrete-valued mechanisms
+  using fft, 2020.
+
+\bibitem[Kulkarni et~al.(2021)Kulkarni, Lee, and Liu]{kulkarni2021private}
+Janardhan Kulkarni, Yin~Tat Lee, and Daogao Liu.
+\newblock Private non-smooth erm and sco in subquadratic steps.
+\newblock \emph{Advances in Neural Information Processing Systems}, 34, 2021.
+
+\bibitem[Li et~al.(2015)Li, Miklau, Hay, Mcgregor, and Rastogi]{Li2015TheMM}
+Chao Li, Gerome Miklau, Michael Hay, Andrew Mcgregor, and Vibhor Rastogi.
+\newblock The matrix mechanism: optimizing linear counting queries under
+  differential privacy.
+\newblock \emph{The VLDB Journal}, 24:\penalty0 757--781, 2015.
+
+\bibitem[Li et~al.(2021)Li, Ding, Zhang, Li, and Zhou]{zitao21fedmf}
+Zitao Li, Bolin Ding, Ce~Zhang, Ninghui Li, and Jingren Zhou.
+\newblock Federated matrix factorization with privacy guarantee.
+\newblock \emph{Proc. VLDB Endow.}, 15\penalty0 (4):\penalty0 900–913, dec
+  2021.
+\newblock ISSN 2150-8097.
+\newblock \doi{10.14778/3503585.3503598}.
+\newblock URL \url{https://doi.org/10.14778/3503585.3503598}.
+
+\bibitem[McKenna et~al.(2018)McKenna, Miklau, Hay, and Machanavajjhala]{hdmm}
+Ryan McKenna, Gerome Miklau, Michael Hay, and Ashwin Machanavajjhala.
+\newblock Optimizing error of high-dimensional statistical queries under
+  differential privacy.
+\newblock \emph{Proc. VLDB Endow.}, 11\penalty0 (10):\penalty0 1206–1219, jun
+  2018.
+\newblock ISSN 2150-8097.
+\newblock \doi{10.14778/3231751.3231769}.
+\newblock URL \url{https://doi.org/10.14778/3231751.3231769}.
+
+\bibitem[McKenna et~al.(2021)McKenna, Miklau, Hay, and
+  Machanavajjhala]{mckenna2021hdmm}
+Ryan McKenna, Gerome Miklau, Michael Hay, and Ashwin Machanavajjhala.
+\newblock Hdmm: Optimizing error of high-dimensional statistical queries under
+  differential privacy.
+\newblock \emph{arXiv preprint arXiv:2106.12118}, 2021.
+
+\bibitem[McMahan et~al.(2017{\natexlab{a}})McMahan, Ramage, Talwar, and
+  Zhang]{dplangmodels}
+H.~Brendan McMahan, Daniel Ramage, Kunal Talwar, and Li~Zhang.
+\newblock Learning differentially private language models without losing
+  accuracy.
+\newblock \emph{CoRR}, abs/1710.06963, 2017{\natexlab{a}}.
+\newblock URL \url{http://arxiv.org/abs/1710.06963}.
+
+\bibitem[McMahan et~al.(2017{\natexlab{b}})McMahan, Ramage, Talwar, and
+  Zhang]{mcmahan2017learning}
+H~Brendan McMahan, Daniel Ramage, Kunal Talwar, and Li~Zhang.
+\newblock Learning differentially private recurrent language models.
+\newblock \emph{arXiv preprint arXiv:1710.06963}, 2017{\natexlab{b}}.
+
+\bibitem[Mironov et~al.(2019)Mironov, Talwar, and Zhang]{MTZ19}
+Ilya Mironov, Kunal Talwar, and Li~Zhang.
+\newblock R{\'{e}}nyi differential privacy of the sampled gaussian mechanism.
+\newblock \emph{CoRR}, abs/1908.10530, 2019.
+\newblock URL \url{http://arxiv.org/abs/1908.10530}.
+
+\bibitem[Paulik et~al.(2021)Paulik, Seigel, Mason, Telaar, Kluivers, van Dalen,
+  Lau, Carlson, Granqvist, Vandevelde, et~al.]{paulik2021federated}
+Matthias Paulik, Matt Seigel, Henry Mason, Dominic Telaar, Joris Kluivers,
+  Rogier van Dalen, Chi~Wai Lau, Luke Carlson, Filip Granqvist, Chris
+  Vandevelde, et~al.
+\newblock Federated evaluation and tuning for on-device personalization: System
+  design \& applications.
+\newblock \emph{arXiv preprint arXiv:2102.08503}, 2021.
+
+\bibitem[Ponomareva et~al.(2023)Ponomareva, Hazimeh, Kurakin, Xu, Denison,
+  McMahan, Vassilvitskii, Chien, and Thakurta]{ponomareva2023dpfy}
+Natalia Ponomareva, Hussein Hazimeh, Alex Kurakin, Zheng Xu, Carson Denison,
+  H.~Brendan McMahan, Sergei Vassilvitskii, Steve Chien, and Abhradeep
+  Thakurta.
+\newblock How to dp-fy ml: A practical guide to machine learning with
+  differential privacy, 2023.
+
+\bibitem[Raffel et~al.(2020)Raffel, Shazeer, Roberts, Lee, Narang, Matena,
+  Zhou, Li, and Liu]{raffel2020t5}
+Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael
+  Matena, Yanqi Zhou, Wei Li, and Peter~J. Liu.
+\newblock Exploring the limits of transfer learning with a unified text-to-text
+  transformer.
+\newblock \emph{Journal of Machine Learning Research}, 21\penalty0
+  (140):\penalty0 1--67, 2020.
+\newblock URL \url{http://jmlr.org/papers/v21/20-074.html}.
+
+\bibitem[Reddi et~al.(2020)Reddi, Charles, Zaheer, Garrett, Rush,
+  Kone{\v{c}}n{\'y}, Kumar, and McMahan]{reddi20adaptive}
+Sashank~J. Reddi, Zachary Charles, Manzil Zaheer, Zachary Garrett, Keith Rush,
+  Jakub Kone{\v{c}}n{\'y}, Sanjiv Kumar, and H.~Brendan McMahan.
+\newblock Adaptive federated optimization.
+\newblock \emph{CoRR}, abs/2003.00295, 2020.
+\newblock URL \url{https://arxiv.org/abs/2003.00295}.
+
+\bibitem[Shin et~al.(2018)Shin, Kim, Shin, and Xiao]{hyejin18privmf}
+Hyejin Shin, Sungwook Kim, Junbum Shin, and Xiaokui Xiao.
+\newblock Privacy enhanced matrix factorization for recommendation with local
+  differential privacy.
+\newblock \emph{IEEE Transactions on Knowledge and Data Engineering},
+  30\penalty0 (9):\penalty0 1770--1782, 2018.
+\newblock \doi{10.1109/TKDE.2018.2805356}.
+
+\bibitem[Smith et~al.(2017)Smith, Thakurta, and Upadhyay]{smith2017interaction}
+Adam Smith, Abhradeep Thakurta, and Jalaj Upadhyay.
+\newblock Is interaction necessary for distributed private learning?
+\newblock In \emph{2017 IEEE Symposium on Security and Privacy (SP)}, pages
+  58--77. IEEE, 2017.
+
+\bibitem[Song et~al.(2013)Song, Chaudhuri, and Sarwate]{song2013stochastic}
+Shuang Song, Kamalika Chaudhuri, and Anand~D Sarwate.
+\newblock Stochastic gradient descent with differentially private updates.
+\newblock In \emph{2013 IEEE Global Conference on Signal and Information
+  Processing}, pages 245--248. IEEE, 2013.
+
+\bibitem[Song et~al.(2020)Song, Thakkar, and Thakurta]{song2020characterizing}
+Shuang Song, Om~Thakkar, and Abhradeep Thakurta.
+\newblock Characterizing private clipped gradient descent on convex generalized
+  linear problems.
+\newblock \emph{arXiv preprint arXiv:2006.06783}, 2020.
+
+\bibitem[Steinke(2022)]{steinke2022composition}
+Thomas Steinke.
+\newblock Composition of differential privacy \& privacy amplification by
+  subsampling, 2022.
+
+\bibitem[Vono et~al.(2021)Vono, Dobigeon, and
+  Chainais]{vono2021highdimensional}
+Maxime Vono, Nicolas Dobigeon, and Pierre Chainais.
+\newblock High-dimensional gaussian sampling: a review and a unifying approach
+  based on a stochastic proximal point algorithm, 2021.
+
+\bibitem[Wu et~al.(2017)Wu, Li, Kumar, Chaudhuri, Jha, and Naughton]{WLKCJN17}
+Xi~Wu, Fengan Li, Arun Kumar, Kamalika Chaudhuri, Somesh Jha, and Jeffrey~F.
+  Naughton.
+\newblock Bolt-on differential privacy for scalable stochastic gradient
+  descent-based analytics.
+\newblock In Semih Salihoglu, Wenchao Zhou, Rada Chirkova, Jun Yang, and Dan
+  Suciu, editors, \emph{Proceedings of the 2017 {ACM} International Conference
+  on Management of Data, {SIGMOD}}, 2017.
+
+\bibitem[Xu et~al.(2023{\natexlab{a}})Xu, Zhang, Andrew, Choquette, Kairouz,
+  McMahan, Rosenstock, and Zhang]{xu2023gboard}
+Zheng Xu, Yanxiang Zhang, Galen Andrew, Christopher Choquette, Peter Kairouz,
+  Brendan McMahan, Jesse Rosenstock, and Yuanbo Zhang.
+\newblock Federated learning of gboard language models with differential
+  privacy, 2023{\natexlab{a}}.
+
+\bibitem[Xu et~al.(2023{\natexlab{b}})Xu, Zhang, Andrew, Choquette-Choo,
+  Kairouz, McMahan, Rosenstock, and Zhang]{xu2023federated}
+Zheng Xu, Yanxiang Zhang, Galen Andrew, Christopher~A Choquette-Choo, Peter
+  Kairouz, H~Brendan McMahan, Jesse Rosenstock, and Yuanbo Zhang.
+\newblock Federated learning of gboard language models with differential
+  privacy.
+\newblock \emph{arXiv preprint arXiv:2305.18465}, 2023{\natexlab{b}}.
+
+\bibitem[Xue et~al.(2020)Xue, Constant, Roberts, Kale, Al-Rfou, Siddhant,
+  Barua, and Raffel]{xue2020mt5}
+Linting Xue, Noah Constant, Adam Roberts, Mihir Kale, Rami Al-Rfou, Aditya
+  Siddhant, Aditya Barua, and Colin Raffel.
+\newblock mt5: A massively multilingual pre-trained text-to-text transformer.
+\newblock \emph{arXiv preprint arXiv:2010.11934}, 2020.
+
+\bibitem[Yang et~al.(2018)Yang, Andrew, Eichner, Sun, Li, Kong, Ramage, and
+  Beaufays]{yang2018applied}
+Timothy Yang, Galen Andrew, Hubert Eichner, Haicheng Sun, Wei Li, Nicholas
+  Kong, Daniel Ramage, and Fran{\c{c}}oise Beaufays.
+\newblock Applied federated learning: Improving google keyboard query
+  suggestions.
+\newblock \emph{arXiv preprint arXiv:1812.02903}, 2018.
+
+\bibitem[Yuan et~al.(2016)Yuan, Yang, Zhang, and Hao]{yuan2016convex}
+Ganzhao Yuan, Yin Yang, Zhenjie Zhang, and Zhifeng Hao.
+\newblock Convex optimization for linear query processing under approximate
+  differential privacy.
+\newblock In \emph{Proceedings of the 22nd ACM SIGKDD International Conference
+  on Knowledge Discovery and Data Mining}, pages 2005--2014, 2016.
+
+\bibitem[Zhu et~al.(2022)Zhu, Xu, Chen, Kone{\v{c}}n{\`y}, Hard, and
+  Goldstein]{zhu2022diurnal}
+Chen Zhu, Zheng Xu, Mingqing Chen, Jakub Kone{\v{c}}n{\`y}, Andrew Hard, and
+  Tom Goldstein.
+\newblock Diurnal or nocturnal? federated learning of multi-branch networks
+  from periodically shifting distributions.
+\newblock In \emph{International Conference on Learning Representations}, 2022.
+
+\end{thebibliography}

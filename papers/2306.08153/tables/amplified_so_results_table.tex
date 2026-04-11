@@ -1,0 +1,31 @@
+\begin{tabular}{lrrrrrr}
+\toprule
+       Mechanism &
+       \parbox{1.3cm}{clients per round $\batchsize$} &
+       $\epsilon$ &
+       \parbox{1.3cm}{noise mult. $\sigma$} &
+       \parbox{1cm}{server\\ lr $\serverlr$} &
+       \parbox{1.9cm}{Eval Accuracy (\%, Smoothed)} &
+       \parbox{1.9cm}{Test Accuracy (\%)} \\
+\midrule
+           DP-SGD, w/ ampl. &           1000 &          1 &          0.37313 &             0.3460 &                             22.50 &             22.22 \\
+   Multi-epoch MF, no ampl. &           1000 &          1 &          4.22468 &             0.2035 &                             22.11 &             22.10 \\
+ (Band) MF, w/ ampl. (Ours) &           1000 &          1 &          0.79118 &             0.3460 &                             23.11 &             22.83 \\
+\midrule
+           DP-SGD, w/ ampl. &           1000 &          2 &          0.30481 &             0.3460 &                             22.89 &             22.62 \\
+   Multi-epoch MF, no ampl. &           1000 &          2 &          2.23048 &             0.3460 &                             23.36 &             23.24 \\
+ (Band) MF, w/ ampl. (Ours) &           1000 &          2 &          0.64708 &             0.5882 &                             24.01 &             23.71 \\
+\midrule
+           DP-SGD, w/ ampl. &           1000 &          4 &          0.25136 &             0.3460 &                             23.27 &             22.94 \\
+   Multi-epoch MF, no ampl. &           1000 &          4 &          1.19352 &             0.5882 &                             24.36 &             24.16 \\
+ (Band) MF, w/ ampl. (Ours) &           1000 &          4 &          0.52224 &             1.0000 &                             24.67 &             24.42 \\
+\midrule
+           DP-SGD, w/ ampl. &           1000 &          8 &          0.20567 &             0.5882 &                             23.59 &             23.30 \\
+   Multi-epoch MF, no ampl. &           1000 &          8 &          0.65294 &             1.0000 &                             25.08 &             24.88 \\
+ (Band) MF, w/ ampl. (Ours) &           1000 &          8 &          0.43490 &             1.7000 &                             25.26 &             24.99 \\
+\midrule
+           DP-SGD, w/ ampl. &           1000 &         16 &          0.16876 &             0.5882 &                             23.96 &             23.61 \\
+   Multi-epoch MF, no ampl. &           1000 &         16 &          0.36861 &             1.7000 &                             25.59 &             25.43 \\
+ (Band) MF, w/ ampl. (Ours) &           1000 &         16 &          0.36861 &             1.7000 &                             25.59 &             25.43 \\
+\bottomrule
+\end{tabular}

@@ -1,0 +1,46 @@
+\documentclass{article}
+\usepackage[nonatbib]{neurips_2023}
+\input{pkgs}
+\input{macros}
+
+\begin{document}
+
+
+\section*{Additional figures for author response, paper \#8945}
+
+\newcommand{\ex}{\mathbf{d}}
+\newcommand{\exg}{\mathbf{g}}
+
+\begin{algorithm}[h]
+\caption{\MFFTRL and \DPSGD}\label{alg:dpftrl}
+\begin{algorithmic}%[1]
+\State \textbf{Inputs:}  Initial model $\btheta_1 \in \R^\mdim$, dataset $D$ examples, matrix $\bfC\inv \in \R^{\dimdim}$, 
+noise $\bfz \in \R^\datadim$ with entries i.i.d. $\calN(0, \sigma^2)$, clipnorm $\clipnorm$ 
+\LineComment{\dpsgd is simply the case $\bfC\inv = \bfI$, the $\dimdim$ identity matrix.}
+\For{$i = 1, 2, \dots, \dimension$}
+  
+  \State Select a set $S_i = \{\ex_1, \dots, \ex_\batchsize \} \subseteq D$
+  \Comment{Respecting schema $\Pi$, possibly sampling} %\rnote{Should $\Pi$ be an input?}\bnote{I was thinking of $\Pi$ as an analysis construct chosen to match what happens when running, so in that sense it isn't an input.}
+  %\rnote{This suggests we will always sample a fixed size batch.  How do we enforce that in cross-device FL setting?} \bnote{E.g. by discarding stragglers. I don't think the distinction is essential?}
+  \State $\exg_j = \text{clip}(\nabla_\theta \text{loss}(\ex_j, \btheta_i), \clipnorm)$ for $j \in [\batchsize]$, where $\text{clip}(\ex, \clipnorm) = \min(1, \clipnorm/\norm{\ex})\,\ex$ 
+  \State $\obs_i = \sum_{j=1}^\batchsize \exg_j$
+  \State $\hat{\obs}_i = \obs_i + \clipnorm [\bfC\inv \bfz]\idx{i}{:}$
+  \Comment{$\hat{\obs}_i$ is now a DP estimate of $\obs_i$}
+  \State $\btheta_{i+1} = \text{SGDM}(\btheta_i, \hat{\obs}_i$) 
+  \Comment{Any first-order optimizer can be used in place of SGDM}
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\begin{figure}[h]
+    \centering
+    % Source:
+    % https://docs.google.com/drawings/d/1Z0FIw4qvby1mNAC_Fwsa-r2lQ0mqaMO1SpVcYAMk0uk/edit?usp=sharing
+    \includegraphics[width=\linewidth]{figures/mf_intuition.pdf}
+    \vspace{-2em}
+    \caption{A comparison of \dpsgd and general \mfftrl (\cref{alg:dpftrl}). For simplicity, we assume $\bfC\inv$ has $1$s on the main diagonal, with below-main-diagonal entries $\color{BrickRed}{\bfC\inv_{i,j}}$, with $\bfz_i := \bfz\idx{i}{:}$ the  rows of $\bfz$.  The entries $\color{BrickRed}{\bfC\inv_{i,j}}$, are mostly negative for the matrices $\bfC\inv$ we consider, and in the range $[0, -1)$ specifically, and so the {\color{BrickRed}red} terms show that optimal MF mechanisms can ``cancel out'' noise added on earlier iterations.}
+    \label{fig:mf_intuition}
+    \vspace{-1em}
+\end{figure}
+
+\end{document}

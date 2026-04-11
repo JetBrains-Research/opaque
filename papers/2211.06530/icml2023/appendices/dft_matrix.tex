@@ -1,0 +1,118 @@
+\section{Two related FFT mechanisms.}\label{app:two_dft_mechanisms}
+
+The FFT mechanism presented in~\cref{sec:fft} can be understood as an application of a complex-valued matrix mechanism factorizing the prefix-sum matrix as
+\[
+\bfB = \bfP \fft\herm \sqrt{\Sigma},
+\]
+\[
+\bfC = \sqrt{\Sigma} \fft \bfE,
+\]
+where $\bfE$ and $\bfP$ are appropriate embedding and projection matrices, respectively embedding an $\dimension$-dimensional vector in the first $\dimension$ components of $\R^{2\dimension}$, and projecting those same first $\dimension$ components back to $\R^n$, and following this application by `chopping off' the imaginary part of the noise. The entries of $\Sigma$ may be computed exactly; they contain no purely negative entries, so specifying the principal branch of the square root resolves the implicit ambiguity in the formulation above. This branch corresponds as well to the implementation of the complex square root in major software frameworks (e.g., NumPy).
+
+All these operations are linear; and since everything begins and ends in the real domain, this mechanism can be expressed as a real-valued mechanism. Therefore identical codepaths can be used for implementing experiments with the FFT, though notably without some special implementation of the mechanism, realizing the potential computational savings will not be immediate. In this small section, we translate this complex-valued mechanism into \emph{two} real-valued mechanism which can be integrated with the code backing the rest of the paper. These mechanisms differ in their decoding matrix $\bfB$, and thus achieve different levels of loss. Both have efficient implementations, though with asymptotics differing by a logarithmic factor. We implement and experiment with \emph{both} of these mechanisms, though we only report results from the mechanism with lower loss in the main body.
+
+These two mechanisms share an encoding matrix:
+
+\newcommand{\fftencoder}{\ensuremath{\bfC_\bfF}}
+\newcommand{\fftdecoder}{\ensuremath{\bfB_\bfF}}
+
+\[
+ \fftencoder= \fft\herm\bfC,
+\]
+
+which is real-valued by~\cref{lem:real_sqrt}. 
+Note that the sensitivity of $\fftencoder$ is identical to that of $\bfC$ for any notion of sensitivity expressible as~\cref{def:sensopmech} due to the unitary of the Fourier transform. Since this matrix is of shape $[2\dimension, \dimension]$, there is choice in computing the decoder $\bfB$ such that $\bfB\fftencoder$ represents the prefix-sum matrix. The two decoders we present below correspond to two subtly distinct mechanisms.
+
+\mypar{Mechanism 1: A real-valued version of the mechanism presented in~\cref{sec:fft}}
+
+One natural translation of the analysis in~\cref{sec:fft} (indeed, a real-valued version of the precise operation described in~\cref{alg:fft}) may be computed by inserting a Fourier transform to match the inverse transform in $\fftencoder$:
+
+\[
+\fftdecoder = \bfB\fft,
+\]
+
+Clearly $\fftdecoder\fftencoder = \bfB\bfC$, and $\fftdecoder$ real-valued by~\cref{lem:real_sqrt}.
+
+\begin{prop}
+For any $\deltaset$, the mechanism described in~\cref{sec:fft} is distributionally equivalent to an application of the real-valued matrix mechanism with the factorization $\left(\fftdecoder, \fftencoder\right)$, and satisfies the same privacy guarantees.
+\end{prop}
+
+\begin{proof}
+To show this result, by noting that $\fftencoder$ and $\bfC$ have the same sensitivity, it suffices to show that:
+\begin{center}
+ $\Re[\fft\herm \sqrt{\Sigma} \bfz]$ (for $\bfz$ a sample from an isotropic complex Gaussian) is distributionally equivalent to $\bfP\fft\herm \sqrt{\Sigma} \fft \bfb$ for $\bfb$ a sample from a real (isotropic) Gaussian with the same variance.
+\end{center}
+
+This is a consequence of the distributional invariance of the Gaussian under unitary transformations:
+
+\begin{align*}
+\Re[\fft\herm \sqrt{\Sigma} \bfz] &\sim \Re[\bf\fft\herm \sqrt{\Sigma} \fft \bfz] \\
+&= \fft\herm \sqrt{\Sigma} \fft \Re[\bfz] \quad \text {(as } \fft\herm \sqrt{\Sigma} \fft \text{ is real)}\\
+&\sim \fft\herm \sqrt{\Sigma} \fft \bfb,
+\end{align*}
+
+where the variances are as desired.
+\end{proof}
+
+Note that the efficiency of the mechanism described in~\cref{sec:fft} carries over immediately to this factorization $\left(\fftdecoder, \fftencoder\right)$; indeed, the capacity to compute the noise $\fftdecoder \bfb$ with complexity $\dimension\log(\dimension)$ may be reasoned to directly, in a similar manner.
+
+This mechanism is not, however, the optimal one for the encoder $\fftencoder$, and this subtlety has difficult downstream effects in integrating with real-valued factorization codepaths (e.g., see the discussion in~\cref{app:ssec:repeated_mechs}). We proceed to show that the optimal decoder can be used directly, at only a moderate loss of efficiency with sufficiently careful implementation.
+
+\mypar{Mechanism 2: A real-valued optimal decoder with complexity $\dimension\log^2(\dimension)$}
+
+As noted in the literature (e.g. Section 3 of~\citet{denisov22matfact}), for a fixed encoder, the optimal decoder may always be computed in terms of an appropriate pseudoinversion of the encoder. Therefore, we may compute the optimal decoder for the encoder $\fftencoder$, defining:
+
+\newcommand{\fftopt}{\ensuremath{\bfB_{\bfF\text{opt}}}}
+
+\[
+\fftopt = \bfS\fftencoder\pinv,
+\]
+
+where $\bfS$ is the prefix-sum matrix. Since $\fftencoder$ is real, its pseudoinverse is as well, and $\fftopt$ is also real-valued. Since $\fftopt$ can have no more variance than $\fftdecoder$, all the utility analysis of the DFT mechanism in~\cref{sec:fft} carries through as an upper bound for this factorization. Privacy of this mechanism is ensured by the fact that this mechanism reuses the encoder \fftencoder. The major way in which these mechanisms operationally differ comes down to the cost of computing the noise vector $\fftopt \bfb$, where $\bfb$ represents a sample from an isotropic Gaussian distribution. Though we do not know of a complexity result which matches the decoder \fftdecoder, we will show that the complexity cost which must be paid is only logarithmically higher.
+
+\begin{prop}\label{prop:toeplitz_decoding}
+The mapping $\bfb \mapsto \fftopt \bfb$, where $\bfb \in \R^\dimension$, may be evaluated in $\calO(\dimension\log^2(\dimension))$ time.
+\end{prop}
+
+\begin{proof}
+First, notice that the matrix $\fftencoder$ is one-to-one; indeed, this is immediately implied by the factorization $\bfS = \fftdecoder \fftencoder$. By Theorem 1.2.1 (P6) of~\citep{nla.cat-vn1139431}, any one-to-one matrix $\bfT$ admits the following representation for its pseudoinverse:
+
+\[
+\bfT\pinv = \left(\bfT\herm \bfT\right)\inv \bfT\herm.
+\]
+
+We compute:
+
+\begin{align*}
+    \fftencoder^\dagger &= \left(\fftencoder\herm \fftencoder\right)\inv \fftencoder\herm \\
+    &=\left(\left(\fft\herm \sqrt{\Sigma} \fft\bfE\right)\herm \fft\herm \sqrt{\Sigma} \fft\bfE\right)\inv \left(\fft\herm \sqrt{\Sigma} \fft\bfE\right)\herm \\
+    &=\left(\bfP \fft\herm \sqrt{\Sigma}\herm \fft \fft\herm \sqrt{\Sigma} \fft\bfE\right)\inv \left(\fft\herm \sqrt{\Sigma} \fft\bfE\right)\herm\\
+    &=\left(\bfP \fft\herm |\Sigma| \fft\bfE\right)\inv \left(\fft\herm \sqrt{\Sigma} \fft\bfE\right)\herm
+\end{align*}
+
+Now, the matrix $\bfP \fft\herm |\Sigma| \fft\bfE$ is Toeplitz, since $\fft\herm |\Sigma| \fft$ is circulant, and $\bfP$, $\bfE$ combine to select out the top-left $\dimension \times \dimension$ square of $\fft\herm |\Sigma| \fft$. Notice that $\bfP \fft\herm |\Sigma| \fft\bfE$ is not circulant, and cannot therefore be diagonalized by the $\dimension$-dimensional Fourier transform.
+
+The development of~\cref{sec:fft} yield the representation:
+\[
+\bfS = \bfP \fft\herm \Sigma \fft \bfE,
+\]
+
+which implies that matrix-vector products with the matrix $\bfS$ may be computed in $\dimension\log\dimension$ time by the use of the FFT. Similarly, matrix-vector products with $\left(\fft\herm \sqrt{\Sigma} \fft\bfE\right)\herm$ may be computed in $\dimension\log\dimension$ time.
+
+Therefore the computational cost of computing the mapping $\bfb \mapsto \bfS\fftencoder\pinv\bfb$ can be upper bounded by the maximum of $\dimension\log\dimension$ and the cost of computing the mapping $\bfv \mapsto \left(\bfP \fft\herm |\Sigma| \fft\bfE\right)\inv \bfv$.
+
+The cost of computing this mapping is, in turn, bounded by the cost of inverting a general (full-rank) Toeplitz system, since  $\left(\bfP \fft\herm |\Sigma| \fft\bfE\right)\inv \bfv$ may be alternatively characterized as the solution $\bfx$ to the equation $\bfP \fft\herm |\Sigma| \fft\bfE\bfx = \bfv$. The computational cost of solving such a system is known to be $\dimension\log^2(\dimension)$; see, e.g.,~\citep{invert_toeplitz}.
+\end{proof}
+
+
+\begin{lem}\label{lem:real_sqrt}
+For a real-valued vector $\bfv$, let $\hat{\bfv}$ represent its discrete Fourier transform. If $\hat{\bfv}$ has no purely real, negative entries, then letting $\sqrt{\cdot}$ denote the (pointwise) principal branch of the square root and $\bfF$ the matrix representation of the Fourier transform, the matrix $\bfF^* \sqrt{\hat{\bfv}} \bfF$ is real-valued.
+\end{lem}
+
+\begin{proof}
+Conjugate symmetry of the DFT states that for a $j$-dimensional real-valued vector $\bfx$, $\hat{\bfx}[m] = \overline{\hat{\bfx}}[j-m]$, and that the converse also holds--that if $\hat{\bfx}$ has this symmetry, $\bfx$ is real-valued. This can be seen by examining the action of conjugation of $\bfx$ on the Fourier transform $\hat{\bfx}$.
+
+Now, by the assumptions on $\hat{\bfv}$ and the choice of the principal branch of the square root\footnote{These assumptions can be avoided, though at the cost of taking care in choosing the square root of the negative elements of $\hat{\bfv}$ to preserve the appropriate symmetry.}, if $\hat{\bfv}$ has this conjugate symmetry, so does $\sqrt{\hat{\bfv}}$. Therefore there is some real-valued vector $\bfy$ such that $\hat{\bfy} = \sqrt{\hat{\bfv}}$. The matrix $\bfF^* \sqrt{\hat{\bfv}} \bfF$ represents convolution with $\bfy$ in the standard basis, and hence is real-valued.
+\end{proof}
+
+\mypar{Remark} ~\cref{lem:real_sqrt} can be understood as a statement about the solvability of a certain repeated-convolution equation over real-valued functions (the equation $g * g = f$). We suspect that this fact has been observed in the harmonic analysis literature as a general property of all Fourier transforms; we could find no reference. The symmetries discussed above take a slightly different form in the continuous and noncompact case (IE, Fourier transform on real-valued function on $\R^d$) and the finite-dimensional Fourier transform here, so we choose to prove this statement in this limited setting.

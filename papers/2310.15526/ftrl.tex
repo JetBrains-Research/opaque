@@ -1,0 +1,160 @@
+\section{Amplification via Shuffling for Non-Adaptive Binary Tree }\label{sec:ftrl}
+
+In this section, we show that amplification allows us to improve the privacy guarantees of the binary tree mechanism of \citep{dwork2010differential,CSS11-continual}. We consider the setting where first the data set $D$ is randomly permuted (call it $\Pi(D))$, and each function $\bfx_i$ (in the definition of \texttt{MM} from Section~\ref{sec:probdef}) picks the $i$-th data record in $\Pi(D)$. Roughly speaking, using privacy amplification by shuffling (see Section~\ref{sec:probdef}) we improve $\sigma$ for this mechanism by $\Omega(\sqrt{\log n} / \sqrt{\log \log (1/\delta)})$, while maintaining that each example participates once. For simplicity throughout the section we restrict to the case where $n$ is a power of 2.
+
+% \cc{For someone not intimately familiar, this is going to be difficult to parse.}
+% We recall the binary tree mechanism. To obtain a DP estimate, the binary tree computes the sum using only $\log{n}$ nodes. To do this, we create a tree where each leaf represents the output of a row of $\bfx$, $\bfx_i$. Then, computing any prefix sum $\Sigma_i^j \bfx_i$ can be computed using prior intermediate 
+\mypar{Binary tree mechanism} 
+%Given the matrix $\bfx$ (see Section~\ref{sec:probdef} for a definition), it computes a DP estimate of the sum via a binary tree over $\bfx$, where nodes on each higher level represent the sum of all nodes beneath them. Using intermediate nodes, computing a prefix sum requires only a $\log{n}$ increase in the number of nodes touched. More formally, 
+The binary tree computes sums of rows of $\bfx$ over the intervals $[1:1], [2:2], \ldots, [n:n], [1:2], [3:4], \ldots, [n-1:n], [1:4], \ldots [1:n]$ with noise. That is, it outputs 
+%
+\[\left\{\sum_{k \cdot 2^j + 1 \leq i \leq (k+1) \cdot 2^j} \bfx_i + \bfz_{j,k}\right\}_{0 \leq j \leq \log n, 0 \leq k < n/2^j},\]
+%
+where $\bfz_{j,k} \stackrel{i.i.d.}{\sim} N(0, \sigma^2)$. Equivalently, it is a (non-square) matrix mechanism where for each $j, k$ pair there is a row of $\bfC$ where the entries in the interval $[k \cdot 2^j + 1 : (k+1) \cdot 2^j]$ are 1 and the remaining entries are 0. We refer to all the noisy sums indexed by the same $j$ as level $j$. In the single-epoch setting (without shuffling), each row of $\bfx_i$ is a sensitivity-1 function computed on the $i$th example in $D$. The binary tree mechanism then satisfies the privacy guarantees of distinguishing $\bfz$ and $\bfC \bfe_i + \bfz$, where $\bfe_i$ is an elementary vector. Since each row of $\bfx$ is included in $\log n + 1$ of the sums, we have $\ltwo{\bfC \bfe_i} = \sqrt{\log n + 1}$, i.e. the binary tree mechanism satisfies $\left(O\left(\frac{\sqrt{\log(n) \log(1/\delta)}}{\sigma}\right), \delta\right)$-DP. We show the following improvement of the $\log n$ term to $\log \log (1/\delta)$ under shuffling:
+\begin{theorem}\label{thm:ftrl-shuffle}
+The non-adaptive binary tree mechanism run on $\Pi(D)$ satisfies $\left(O\left(\frac{\sqrt{\log(1/\delta) \log \log(1/\delta)}}{\sigma}\right), \delta\right)$-DP for $\sigma = \Omega(\sqrt{\log (1/\delta) \log \log (1/\delta)})$, $\delta \in [2^{-\Omega(n)}, 1/n]$. 
+\end{theorem}
+
+% \subsection{Simple split noise argument for high $\sigma$}
+
+% If $\sigma$ is sufficiently large, then a simple ``noise splitting'' argument gives the desired amplification guarantee from amplification via subsampling. 
+
+% \begin{theorem}\label{thm:splitnoise}
+% The binary tree mechanism where each $\bfx_i$ is computed on an independent subsample of $D$ with sampling probability $1/n$ satisfies $\left(\alpha, \alpha \cdot O\left(\frac{1}{\sigma^2}\right)\right)$-RDP for $\sigma = \Omega(\sqrt{n})$ and $\alpha = O(n)$.
+% \end{theorem}
+
+% The above theorem gives a $\Omega(\log n)$ multiplicative improvement in the RDP guarantee (i.e., roughly a $\sqrt{\log n}$ multiplicative improvement in $\epsilon$) over the single-epoch setting, while maintaining the same expected number of participations. This improvement is tight; further improvements would allow one to subvert lower bounds on private regret minimization \cite{}\agnote{@AT can you fill in this citation?}. 
+
+% \begin{proof}
+% We can write each noisy sum as:
+
+% \[\sum_{k \cdot 2^j + 1 \leq i \leq (k+1) \cdot 2^j} \bfx_i + \bfz_{j,k} = \sum_{k \cdot 2^j + 1 \leq i \leq (k+1) \cdot 2^j} (\bfx_i + \bfz'_{i,j}) \]
+
+% Where $\bfz'_{i,j}  \stackrel{i.i.d.}{\sim} N(0, \sigma^2 / 2^j)$. Then, it is immediate that the binary tree mechanism with i.i.d. subsampling is a postprocessing of $n$ independent copies of the following mechanism: We sample a subset of $D$, compute $\bfx_i$ using this subset, and then release $\{\bfx_i + \bfz'_{i,j}\}_{0 \leq j \leq \log n}$, where again $\bfz'_{i,j}  \stackrel{i.i.d.}{\sim} N(0, \sigma^2 / 2^j)$. By rescaling, each of these mechanisms is equivalent to releasing $\{2^{j/2} \cdot x_i + \bfz''_{i,j}\}_{0 \leq j \leq \log n}$, $\bfz''_{i,j} \stackrel{i.i.d.}{\sim} N(0, \sigma^2)$. In other words, each mechanism is equivalent to a subsampled Gaussian mechanism with sensitivity $\sqrt{2n - 1}$ and variance $\sigma^2$. Theorem 11 of~\cite{SubsampledGaussianRDP} gives that for $\alpha, \sigma$ satisfying the assumptions of the theorem, each of these mechanisms satisfies $\left(\alpha, \alpha \cdot O\left(\frac{1}{n\sigma^2}\right)\right)$-RDP. By RDP composition~\cite{mironov2017renyi}, we get that the binary tree mechanism satisfies $\left(\alpha, \alpha \cdot O\left(\frac{1}{\sigma^2}\right)\right)$-RDP.
+% \end{proof}
+
+% \subsection{Conditioning-based argument for medium $\sigma$}
+
+% Theorem~\ref{thm:splitnoise} requires $\sigma$ corresponding to $\epsilon = O(1/\sqrt{n})$. This is because it requires that amplification guarantees can be applied after ``splitting the noise,'' i.e. $\sigma$ should be sufficiently large such that the benefits of amplification are large even for adding noise with standard deviation $\sigma / \sqrt{n}$. We show that in the case of amplification by shuffling (i.e., any example participates in exactly one of $\bfx_1, \ldots, \bfx_n$, chosen uniformly at random), we can retrieve the logarithmic improvement in privacy parameter due to amplification at for $\sigma$ with a logarithmic instead of polynomial dependence on $n$. 
+
+% We now analyze the binary tree mechanism under shuffling. We use shuffling instead of sampling for the following reasons: First, it demonstrates the versatility of conditional composition (\cref{sec:conditioningtrick}). Second if we use amplification by shuffling, for each $j$, then looking at the noisy sums corresponding to $j$, i.e.:
+
+
+% \[\left\{\sum_{k \cdot 2^j + 1 \leq i \leq (k+1) \cdot 2^j} \bfx_i + \bfz_{j,k}\right\}_{0 \leq k < n/2^j},\]
+
+% an example participates in exactly one of these sums uniformly at random. That is, each ``level'' of the tree in the binary tree mechanism is a mechanism run on a shuffled dataset. The same is not true for amplification via sampling, where an example can participate multiple times in a sum for all sums corresponding to $j > 0$, which does not fit in the framework of most existing amplification by sampling results. So while e.g. \CPTB{} can be used to give a privacy guarantee for the binary tree mechanism with sampling for a fixed value of $n$, it is more challenging to give an asymptotic privacy guarantee as a function of $n$. In contrast, we will be able to give a formal asymptotic guarantee for shuffling.
+
+\subsection{0-1 Setting}
+
+For ease of exposition, we first analyze the binary tree mechanism under shuffling, in a simpler case when $\bfx$'s rows consist of $n-1$ 0s and a single 1 for $D$, and $\bfx = \boldzero$ for $D'$. 
+%The marginal distribution of each level is a set of Gaussian mechanisms run on shuffled inputs, but due to shared randomness across levels we cannot simply apply a black-box amplification result to each level of the tree and then apply composition across the levels of the tree. 
+To apply \cref{thm:conditioningtrick}, we need the analysis of ``approximate shuffling'' given in \cref{lem:approximateshuffle}.
+
+\begin{lem}\label{lem:approximateshuffle}
+Suppose we run $n$ Gaussian mechanisms on $n$ inputs, where the order of the inputs is chosen according to a distribution such that no input appears in a certain position with probability more than $1/n'$. Then for $\delta \geq 2^{-\Omega(n')}, \delta_0 \geq 0$, this set of mechanisms satisfies $\left(O\left(\frac{\sqrt{ \ln (1/\delta_0) \ln(1/\delta)}}{\sigma \sqrt{n'}}\right), \delta + n' \delta_0\right)$-DP.
+\end{lem}
+\begin{proof}
+Since each $0 \leq p_i \leq 1/n'$, the mechanism is the same as the following: For each example we choose a subset $S \subseteq [n]$ of size $n'$ according to some distribution that is a function of the $p_i$, and then choose $i$ uniformly at random from the elements of $S$, and include the example in the $i$th subset. By quasi-convexity of approximate DP, it suffices to prove the DP guarantee for a fixed choice of $S$. For any fixed choice of $S$, the mechanism satisfies $\left(O\left(\frac{\sqrt{ \ln (1/\delta_0) \ln(1/\delta)}}{\sigma \sqrt{n'}}\right), \delta + n' \delta_0\right)$-DP by the amplification via shuffling statement of Theorem 3.8 of \cite{HidingAmongTheClones}.
+\end{proof}
+%\anoteinline{The above theorem needs editing, to be consistent with the problem definition. $\bfx$ is not shuffled but the data is shuffled.}
+% The proof of \cref{thm:ftrl-shuffle} is given in \cref{sec:deferredproofs}. We give a summary here: For the ``top'' levels $j \in [\log n - O(\log \log(1/\delta)), \log n]$, the number of sums per level (i.e., $n'$ in \cref{lem:approximateshuffle}) is less than $\log(1/\delta)$ so we cannot apply \cref{lem:approximateshuffle}. Instead we use the unamplified privacy analysis of the Gaussian mechanism to analyze the privacy of the corresponding noisy sums. 
+% % \cc{Why is this the case? I'm guessing because all samples are included?}
+% % \agnote{Added an explanation; basically, shuffling $ < \log 1/\delta$ nodes doesn't meet the assumptions in \cref{lem:approximateshuffle}}
+% For the remaining levels, we combine \cref{thm:conditioningtrick} and \cref{lem:approximateshuffle} to show level $j$'s privacy parameter $\epsilon$ is exponentially decaying in $\log n - j$, i.e. the top $O(\log \log (1/\delta))$ levels dominate the privacy guarantee.
+%For the remaining levels, we roughly tail bound the conditional probability of the sensitive example participating in $\bfx_i$ for all $i$ conditioned on the higher levels. \cref{thm:conditioningtrick} and \cref{lem:approximateshuffle} then allows us to get an approximate DP guarantee for each $j$. In particular, we can show the $\epsilon$ parameter for level $j$ is exponentially decreasing in $\log n - j$, i.e. the top levels dominate the privacy guarantee. 
+
+\begin{proof}[Proof of \cref{thm:ftrl-shuffle} in simplified case]
+Let $\tau_{j,k}$ be the value of the noisy sum $\sum_{k \cdot 2^j + 1 \leq i \leq (k+1) \cdot 2^j} \bfx_i + \bfz_{j,k}$, $\tau = \{\tau_{j,k}\}_{0 \leq j \leq \log n, 0 \leq k < n/2^j}$ and let $\Theta(D)$ be the distribution of these values under dataset $D$. We consider a single sensitive example; 
+let $i^*$ be the (random) coordinate of $\bfx_{i^*}$ that this example contributes to. 
+
+Now, again abusing notation to let $\Pr$ denote a likelihood, we have for any $j$:
+
+\[\Pr_{\tau \sim \Theta(D)}\left[\{\tau_{j,k}\}_{0 \leq k < n/2^j} = \{\theta_{j',k}\}_{j' > j, 0 \leq k < n/2^{j'}}\middle| \{\tau_{j',k}\}_{j' > j, 0 \leq k < n/2^{j'}} = \{\theta_{j',k}\}_{j' > j, 0 \leq k < n/2^{j'}}\right] \propto \]
+\[\sum_{0 \leq k^* \leq n/2^j} \Pr_{\tau \sim \Theta(D)}\left[\{\tau_{j,k}\}_{0 \leq k < n/2^j} = \{\theta_{j',k}\}_{j' > j, 0 \leq k < n/2^{j'}}\middle| k^* \cdot 2^j + 1 \leq i^* \leq (k^*+1) \cdot 2^j\right] \cdot \]
+\[\Pr_{\tau \sim \Theta(D)}\left[k^* \cdot 2^j + 1 \leq i^* \leq (k^*+1) \cdot 2^j\middle| \{\tau_{j',k}\}_{j' > j, 0 \leq k < n/2^{j'}} = \{\theta_{j',k}\}_{j' > j, 0 \leq k < n/2^{j'}}\right]\]
+
+In other words, for any $j$, the distribution of the $j$-th level of the tree, $\{\tau_{j,k}\}_{0 \leq k \leq n/2^j}$, conditioned on the higher levels of the tree, $\{\tau_{j',k}\}_{j' > j, 0 \leq k \leq n/2^{j'}}$, is the output distribution of mechanism described  in~\cref{lem:approximateshuffle}, where the probabilities are 
+
+\[p_{j,k} := \Pr_{\tau \sim \Theta(D)}\left[k \cdot 2^j + 1 \leq i^* \leq (k+1) \cdot 2^j \middle|\{\tau_{j',k}\}_{j' > j, 0 \leq k < n/2^{j'}} = \{\theta_{j',k}\}_{j' > j, 0 \leq k < n/2^{j'}}\right].\]
+
+We now show a high probability bound on each of these probabilities. We have:
+
+\begin{align*}
+\Pr_{\tau \sim \Theta(D)}&\left[k \cdot 2^j + 1 \leq i^* \leq (k+1) \cdot 2^j \middle|\{\tau_{j',k}\}_{j' > j, 0 \leq k < n/2^{j'}} = \{\theta_{j',k}\}_{j' > j, 0 \leq k < n/2^{j'}}\right] \\
+&= \frac{\sum_{i = k \cdot 2^j + 1}^{(k+1) \cdot 2^j} \Pr_{\tau \sim \Theta(D)}\left[\{\tau_{j',k}\}_{j' > j, 0 \leq k < n/2^{j'}} = \{\theta_{j',k}\}_{j' > j, 0 \leq k < n/2^{j'}}\middle | i^* = i \right]}{\sum_{i = 1}^{n} \Pr_{\tau \sim \Theta(D)}\left[\{\tau_{j',k}\}_{j' > j, 0 \leq k < n/2^{j'}} = \{\theta_{j',k}\}_{j' > j, 0 \leq k < n/2^{j'}}\middle | i^* = i \right]}\\
+&= \frac{\sum_{i = k \cdot 2^j + 1}^{(k+1) \cdot 2^j} \prod_{j' > j, 0 \leq k < n/2^{j'}} \exp\left(-\frac{\left(\tau_{j',k} - \mathbb{1}(k \cdot 2^{j'}+ 1 \leq i^* \leq (k+1) \cdot 2^{j'}) \right)^2}{2\sigma^2}\right) }{\sum_{i = 1}^{n} \prod_{j' > j, 0 \leq k < n/2^{j'}} \exp\left(-\frac{\left(\tau_{j',k} - \mathbb{1}(k \cdot 2^{j'}+ 1 \leq i^* \leq (k+1) \cdot 2^{j'}) \right)^2}{2\sigma^2}\right)}\\
+&= \frac{\sum_{i = k \cdot 2^j + 1}^{(k+1) \cdot 2^j} \prod_{j,k:k \cdot 2^{j'} + 1 \leq i \leq (k+1) \cdot 2^{j'}} \exp\left(-\frac{\tau_{j',k}}{\sigma^2}\right)}{\sum_{i = 1}^{n} \prod_{j,k:k \cdot 2^{j'} + 1 \leq i \leq (k+1) \cdot 2^{j'}} \exp\left(-\frac{ \tau_{j',k}}{\sigma^2}\right)}\\
+&\leq \frac{2^j}{n} \cdot \frac{\max_{i \in [n]} \prod_{j,k:k \cdot 2^{j'} + 1 \leq i \leq (k+1) \cdot 2^{j'}} \exp\left(-\frac{\tau_{j',k}}{\sigma^2}\right)}{\min_{i \in [n]}\prod_{j,k:k \cdot 2^{j'} + 1 \leq i \leq (k+1) \cdot 2^{j'}} \exp\left(-\frac{\tau_{j',k} }{\sigma^2}\right)} \\
+&\leq \frac{2^j}{n} \cdot \exp\left(\frac{(\log n - j) \max_{j',k} \tau_{j',k} - \min_{j',k} \tau_{j',k}}{\sigma^2}\right).
+\end{align*}
+
+With probability $1 - \delta/2$, by a union bound for all $2n$ pairs $j, k$ we have $|\tau_{j,k}| \leq \sqrt{2 \ln(4n/\delta)} \sigma$, so the above bound is at most:
+
+\[\frac{2^j}{n} \cdot \exp\left(\frac{(\log n - j) 2 \sqrt{2 \ln (4n/\delta)}}{\sigma}\right).\]
+
+If $\sigma \geq \frac{4 \sqrt{2 \ln (4n/\delta)}}{\ln 2}$ in turn this is at most:
+
+\[\frac{2^j}{n} \cdot \sqrt{2}^{\log n - j} = \sqrt{\frac{2^j}{n}}.\]
+
+Now, by \cref{thm:conditioningtrick} and \cref{obs:bayesianfaker} it suffices to show that conditioned on this probability $1 - \delta/2$ event, the binary tree mechanism satisfies $\left(O\left(\frac{\sqrt{\log(1/\delta) \log \log(1/\delta)}}{\sigma}\right), \delta/2\right)$-DP. For $\log n - 16e \log \log (16n/\delta) \leq j \leq \log n$, releasing $\tau_{j,k}$ satisfies $\left(O\left(\frac{\sqrt{\log(1/\delta) \log \log(n/\delta)}}{\sigma}\right), \delta/4\right)$-DP by the analysis of the (unamplified) Gaussian mechanism. For levels $0 \leq j < \log n - 16e \log \log (16n/\delta)$, our upper bound on the conditional probabilities and \cref{lem:approximateshuffle} with $\delta_0 = \delta / 8 n' \log n$ shows that, conditioned on the high-probability event, the distribution of the privacy loss of outputting $\{\tau_{j,k}\}_k$ conditioned on levels $j' > j$ satisfies 
+
+\[\left(O\left(\frac{\sqrt{ \ln (n' / \delta) \ln(1/\delta)}}{\sigma \sqrt{n'}}\right), \delta / 4 \log n\right)\text{-DP},\] with $n' = \left\lceil \sqrt{\frac{n}{2^j}} \right\rceil$. By basic composition, the overall privacy loss distribution conditioned on the $1 - \delta / 2$ probability event satisfies:
+
+\[\left(O\left(\frac{\sqrt{\log(1/\delta) \log \log(1/\delta)}}{\sigma}\right) + O\left(\sum_{j = \log n - 16e \log \log (16n/\delta)}^0 + \frac{2^{j/4} \ln (1 / \delta)}{\sigma n^{1/4}}\right), \delta/2\right)\text{-DP}.\]
+
+Here we use the upper bound on $\delta$ which is equivalent to $\log(n/\delta) = O(\log(1/\delta))$. We conclude by bounding the sum as:
+
+\[\sum_{j = \log n - 16e \log \log (16n/\delta)}^0 + \frac{2^{j/4} \ln(1/\delta)}{\sigma n^{1/4}}\]
+\[ \leq \sum_{l = 0}^{ \log n - 16e \log \log (16n/\delta)} + \frac{\ln(1/\delta)}{\sigma 2^{l/4} \sqrt{\ln(1/\delta)}} = \frac{\sqrt{\ln(1/\delta)}}{\sigma}\sum_{l = 0}^{ \log n - 16e \log \log (16n/\delta)} \frac{1}{2^{l/4}} = \frac{\sqrt{\ln(1/\delta)}}{\sigma(1 - 2^{-1/4})}.\]
+\end{proof}
+
+\subsection{Proof of \cref{thm:ftrl-shuffle} in General Case}
+
+We now discuss how to extend the proof to a more general case. In other words, we choose some $\bfy$ with each row having 2-norm at most 1 for $D$, and then set $\bfy'$ for $D'$ to be $\bfy$ with the first row zeroed out. Then, $\bfx$ is chosen by shuffling the rows of $\bfy$ or $\bfy'$. 
+
+\begin{lem}\label{lem:approximateshuffle-general}
+Under the above setup, for some $k$ that divides $n$, consider the mechanism that chooses a random size $k$ equipartition of $[n]$, $P = (S_1, S_2, \ldots S_k)$ of $[n]$ according to some distribution and outputs $(\theta_1, \theta_2, \ldots, \theta_k)$, $\theta_i \sim N(\sum_{j \in S_i} \bfy_i, \sigma^2)$. Suppose for any two equipartitions $P, P'$, the probability of choosing $P$ is at most $c$ times the probability of choosing $P'$, and let $n' = \lfloor k / c \rfloor$.
+
+Then, for any $\delta \geq 2e^{-\frac{n'}{16e}}, \delta_0 \geq 0$, if $\sigma = \Omega(\sqrt{\ln(1/\delta_0)})$ then this mechanism satisfies 
+
+\[\left(O\left(\frac{\sqrt{ \ln (1/\delta_0) \ln(1/\delta)}}{\sigma \sqrt{n'}}\right), \delta + n' \delta_0\right)\text{-DP}.\]
+\end{lem}
+\begin{proof}
+Recall that $\bfy_1$ is the example differing between $D$ and $D'$. By post-processing and quasi-convexity, we can instead analyze the mechanism that for each $S_i$, also publishes all but one element in $S_i$, and specifically for the $S_i$ including 1 (the sensitive element), the element of $S_i$ not published must be 1. This is equivalent to saying: without loss of generality we can assume $n = k$.
+
+Next, the assumption on the distribution over $P$ implies that the distribution is in the convex hull of distributions over $P$ that deterministically choose $k-n'$ elements of $P$, with 1 being one of these $n'$ unchosen elements, and then uniformly shuffle the remaining $n'$ elements. In terms of privacy guarantees, each individual mechanism using one of these distributions is equivalent to $n'$ Gaussian mechanisms on shuffled elements. Then, by quasi-convexity, the privacy guarantees of this mechanism are no worse than those of a Gaussian mechanism over $n'$ shuffled elements. We conclude using the analysis of amplification by shuffling in \cite{HidingAmongTheClones}.
+\end{proof}
+
+We will also need the following black-box reduction from $(\epsilon, \delta)$-DP guarantees to high-probability privacy loss bounds:
+
+\begin{lem}[\cite{KS14}]\label{lem:dp-to-pdp}
+If a mechanism satisfies $(\epsilon, \delta)$-DP, then the probability the privacy loss of its output exceeds $2\epsilon$ is at most $\frac{\delta}{\epsilon e^\epsilon}$.
+\end{lem}
+
+Now, the high-level idea is that the $(\epsilon, \delta)$-DP guarantee on outputting levels $j' > j$ implies a high-probability bound on the privacy loss of outputting these levels via \cref{lem:dp-to-pdp}, which in turn implies a bound on $c$ in \cref{lem:approximateshuffle-general} if we use the posterior distribution over shuffles as the distribution in that lemma. Then, we can use \cref{lem:approximateshuffle-general} to get an $(\epsilon, \delta)$-DP guarantee for round $j$ conditioned on the previous rounds, and as before the resulting $\epsilon$ per level decays geometrically and we can use basic composition. 
+
+\begin{proof}[Proof of \cref{thm:ftrl-shuffle}]
+
+By the upper bound on $\delta$, $\log(\poly{n}/\delta) = O(\log(1/\delta))$. So, for any constant $c_1$ and another constant $c_2$ depending on $c_1$, releasing levels $\log n - c_1 \log \log 1/\delta$ to $\log n$ satisfies \[\left(\frac{c_2 \sqrt{\log(1/\delta) \log \log(1/\delta)}}{\sigma}, \delta / n^2\right)\text{-DP}\] by analysis of the Gaussian mechanism.
+
+Now, we will show by induction that releasing levels $j$ to $\log n$, $j \leq \log n - c_1 \log \log 1/\delta$, satisfies $(\epsilon_j, \delta_j)$-DP for:
+
+\[\epsilon_j = \frac{c_2 \sqrt{\log(1/\delta) \log \log(1/\delta)}}{\sigma} + \sum_{j'=\log n - c_1 \log \log (1/\delta)}^{j} \frac{c_3 \log(1/\delta)}{\sigma \sqrt{2^{\log n - j}}}, \]
+\[\delta_j = \frac{\delta}{n^2} \cdot \sum_{j'=\log n - c_1 \log \log (1/\delta)}^{j} (1 + 1/e)^{\log n - c_1 \log \log (1/\delta) - j}. \]
+
+In the inequality on $\epsilon_j$ we assume $c_1$ is sufficiently large. The base case of $j = \log n - c_1 \log \log 1/\delta$ holds by the aforementioned analysis of the Gaussian mechanism. 
+Now, assuming releasing levels $j+1$ to $\log n$  satisfies $(\epsilon_j, \delta_j)$-DP, we will prove releasing levels $j$ to $\log n$ satisfies $(\epsilon_j, \delta_j)$-DP. Consider the output distribution of level $j$, conditioned on the event that the privacy loss of releasing levels $j+1$ to $\log n$ is at most 1. The privacy loss being at most 1 implies that conditioned on levels $j+1$ to $\log n$'s output, no shuffle is more than $e$ times as likely as any other shuffle, and thus the same is true for equipartitions of the data into the sums in level $j$. 
+Then by \cref{lem:approximateshuffle-general}, level $j$ satisfies, say, $(\frac{c_3 \sqrt{\log^2(1/\delta)}}{\sigma \sqrt{2^{\log n - j}}}, \delta / n^2)$-DP for some sufficiently large constant $c_3$, assuming $c_1$ is sufficiently large and $\sigma \geq c_4 \sqrt{\log(1/\delta) \log \log(1/\delta)}$ for a sufficiently large constant $c_4$. We have
+
+\[\epsilon_{j+1} \leq \frac{c_2 \sqrt{\log(1/\delta) \log \log(1/\delta)} + 4c_3 \sqrt{\log(1/\delta)}}{\sigma}\]
+
+So $\epsilon_j < 1/2$ for all $j$, again assuming $\sigma \geq c_4 \sqrt{\log(1/\delta) \log \log(1/\delta)}$ for sufficiently large $c_4$, by \cref{lem:dp-to-pdp} this event happens with probability at least $1 - \delta_{j+1} / e$. Then assuming releasing levels $j+1$ to $\log n$ satisfies $(\epsilon_{j+1}, \delta_{j+1})$-DP by \cref{thm:conditioning} and basic composition, we have proven releasing levels $j$ to $\log n$ satisfies $(\epsilon_j, \delta_j)$-DP for
+
+\[\epsilon_j = \epsilon_{j+1} + \frac{c_3 \log(1/\delta)}{\sigma \sqrt{2^{\log n - j}}}, \delta_j = \delta_{j+1}(1 + 1/e) + \delta / n^2.\]
+
+The claimed non-recursively defined values for $\epsilon_j, \delta_j$ follow by unrolling the above recursive formula and plugging in the base case $j = \log n - c_1 \log \log 1/\delta$. 
+Now, the full binary tree mechanism with shuffling satisfies $(\epsilon_0, \delta_0)$-DP for $\epsilon_0 = O\left(\frac{ \sqrt{\log(1/\delta) \log \log(1/\delta)}}{\sigma}\right), \delta_0 \leq \delta$ as desired. (Note that the between the constants $c_1, c_2, c_3, c_4$ there are no circular dependencies, i.e. there does exist a set of constants satisfying the assumptions in the proof.)
+\end{proof}
+
+Note that the theorem is proven in the non-adaptive case; our argument for adaptivity in \cref{sec:cptb} implicitly requires independence of participations across examples, which does not hold for shuffling.
+
