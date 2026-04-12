@@ -688,6 +688,53 @@ def lambda_cgd_gram_matrix_lr(
     ...
 
 # ---------------------------------------------------------------------------
+# BISR (Banded Inverse Square Root)
+# ---------------------------------------------------------------------------
+
+def bisr_sensitivity_squared(
+    coefficients: list[float],
+    n_steps: int,
+    min_sep: int = 1,
+    max_participations: int | None = None,
+    momentum: float = 0.0,
+) -> float:
+    """Squared L2 sensitivity for BISR under min-sep participation."""
+    ...
+
+def bisr_normalized_sensitivity_squared(
+    coefficients: list[float],
+    n_steps: int,
+    min_sep: int = 1,
+    max_participations: int | None = None,
+    momentum: float = 0.0,
+) -> float:
+    """Squared L2 sensitivity of column-normalized BISR."""
+    ...
+
+def bisr_gram_matrix(
+    coefficients: list[float],
+    n_steps: int,
+    min_sep: int = 1,
+    max_participations: int | None = None,
+    normalized: bool = True,
+    momentum: float = 0.0,
+) -> list[float]:
+    """BnB Gram matrix for BISR with optional momentum."""
+    ...
+
+def bisr_gram_matrix_lr(
+    coefficients: list[float],
+    momentum: float,
+    n_steps: int,
+    min_sep: int,
+    max_participations: int | None,
+    normalized: bool,
+    lr_weights: list[float],
+) -> list[float]:
+    """BnB Gram matrix for BISR with LR-schedule weighting."""
+    ...
+
+# ---------------------------------------------------------------------------
 # AdaClip utility
 # ---------------------------------------------------------------------------
 

@@ -379,3 +379,115 @@ pub fn py_lambda_cgd_max_column_norm(lambda_: f64, n_steps: usize) -> PyResult<f
     crate::matrix_factorization::lambda_cgd_max_column_norm(lambda_, n_steps)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
+
+// ── BISR (Banded Inverse Square Root) ────────────────────────────
+
+/// Squared L2 sensitivity for BISR under min-sep participation.
+///
+/// Args:
+///     coefficients (list[float]): Banded C^{-1} coefficients [c̃_0, ..., c̃_{p-1}].
+///     n_steps (int): Total number of training steps.
+///     min_sep (int): Minimum separation between participations.
+///     max_participations (int | None): Optional upper bound.
+///     momentum (float): Optimizer momentum β in [0, 1). Default 0.
+///
+/// Returns:
+///     float: The squared L2 sensitivity.
+#[pyfunction]
+#[pyo3(name = "bisr_sensitivity_squared", signature = (coefficients, n_steps, min_sep=1, max_participations=None, momentum=0.0))]
+pub fn py_bisr_sensitivity_squared(
+    coefficients: Vec<f64>,
+    n_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+    momentum: f64,
+) -> PyResult<f64> {
+    crate::matrix_factorization::bisr_sensitivity_squared(
+        &coefficients, n_steps, min_sep, max_participations, momentum,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// Squared L2 sensitivity of column-normalized BISR.
+///
+/// Args:
+///     coefficients (list[float]): Banded C^{-1} coefficients.
+///     n_steps (int): Total number of training steps.
+///     min_sep (int): Minimum separation between participations.
+///     max_participations (int | None): Optional upper bound.
+///     momentum (float): Optimizer momentum β in [0, 1). Default 0.
+///
+/// Returns:
+///     float: The squared L2 sensitivity of the column-normalized matrix.
+#[pyfunction]
+#[pyo3(name = "bisr_normalized_sensitivity_squared", signature = (coefficients, n_steps, min_sep=1, max_participations=None, momentum=0.0))]
+pub fn py_bisr_normalized_sensitivity_squared(
+    coefficients: Vec<f64>,
+    n_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+    momentum: f64,
+) -> PyResult<f64> {
+    crate::matrix_factorization::bisr_normalized_sensitivity_squared(
+        &coefficients, n_steps, min_sep, max_participations, momentum,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// BnB Gram matrix for BISR with optional momentum.
+///
+/// Args:
+///     coefficients (list[float]): Banded C^{-1} coefficients.
+///     n_steps (int): Total steps.
+///     min_sep (int): Bins per epoch (= b).
+///     max_participations (int | None): Number of epochs. None infers.
+///     normalized (bool): Whether to use column-normalized matrix.
+///     momentum (float): Optimizer momentum β in [0, 1). Default 0.
+///
+/// Returns:
+///     list[float]: Flattened row-major b×b Gram matrix.
+#[pyfunction]
+#[pyo3(name = "bisr_gram_matrix", signature = (coefficients, n_steps, min_sep=1, max_participations=None, normalized=true, momentum=0.0))]
+pub fn py_bisr_gram_matrix(
+    coefficients: Vec<f64>,
+    n_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+    normalized: bool,
+    momentum: f64,
+) -> PyResult<Vec<f64>> {
+    crate::matrix_factorization::bisr_gram_matrix(
+        &coefficients, n_steps, min_sep, max_participations, normalized, momentum,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// BnB Gram matrix for BISR with LR-schedule weighting.
+///
+/// Args:
+///     coefficients (list[float]): Banded C^{-1} coefficients.
+///     momentum (float): Optimizer momentum β in [0, 1).
+///     n_steps (int): Total steps.
+///     min_sep (int): Bins per epoch.
+///     max_participations (int | None): Number of epochs.
+///     normalized (bool): Whether to use column-normalized matrix.
+///     lr_weights (list[float]): Per-step LR weights, length = n_steps.
+///
+/// Returns:
+///     list[float]: Flattened row-major b×b Gram matrix.
+#[pyfunction]
+#[pyo3(name = "bisr_gram_matrix_lr", signature = (coefficients, momentum, n_steps, min_sep, max_participations, normalized, lr_weights))]
+pub fn py_bisr_gram_matrix_lr(
+    coefficients: Vec<f64>,
+    momentum: f64,
+    n_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+    normalized: bool,
+    lr_weights: Vec<f64>,
+) -> PyResult<Vec<f64>> {
+    crate::matrix_factorization::bisr_gram_matrix_lr(
+        &coefficients, momentum, n_steps, min_sep, max_participations, normalized, &lr_weights,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}

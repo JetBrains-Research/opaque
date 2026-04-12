@@ -34,6 +34,7 @@ from opaque_accounting.mechanisms.identity import (
 )
 from opaque_accounting.mechanisms.lambda_cgd import (
     LambdaCgd,
+    bisr,
     lambda_cgd,
 )
 from opaque_accounting.mechanisms.nonprivate import (
@@ -56,6 +57,7 @@ __all__ = [
     "identity",
     "nonprivate",
     "band_mf",
+    "bisr",
     "blt_mf",
     "lambda_cgd",
 ]

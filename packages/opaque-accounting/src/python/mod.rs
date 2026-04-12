@@ -102,6 +102,24 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
 
+    // BISR (Banded Inverse Square Root)
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_bisr_sensitivity_squared,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_bisr_normalized_sensitivity_squared,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_bisr_gram_matrix,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_bisr_gram_matrix_lr,
+        m
+    )?)?;
+
     // AdaClip
     m.add_function(wrap_pyfunction!(adaclip::py_adaclip_sensitivity, m)?)?;
 

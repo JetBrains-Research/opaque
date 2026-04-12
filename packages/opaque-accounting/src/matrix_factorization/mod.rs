@@ -29,11 +29,16 @@
 //! - BandMF: Choquette-Choo et al. (2023) <https://arxiv.org/abs/2306.08153>
 //! - BLT: Choquette-Choo et al. (2024) <https://arxiv.org/abs/2404.16706>
 
+pub mod bisr;
 pub mod gram_matrix;
 pub mod lambda_cgd;
 mod mf_gaussian;
 pub mod sensitivity;
 
+pub use bisr::{
+    bisr_gram_matrix, bisr_gram_matrix_lr, bisr_normalized_sensitivity_squared,
+    bisr_sensitivity_squared,
+};
 pub use gram_matrix::{lambda_cgd_gram_matrix, lambda_cgd_gram_matrix_lr};
 pub use lambda_cgd::{
     lambda_cgd_max_column_norm, lambda_cgd_normalized_sensitivity_squared,

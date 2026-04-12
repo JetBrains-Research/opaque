@@ -87,6 +87,7 @@ from opaque_accounting.discretization import (
 from opaque_accounting.mechanisms import (
     band_mf,
     blt_mf,
+    bisr,
     eps_delta,
     gaussian,
     identity,
@@ -117,6 +118,7 @@ __all__ = [
     "identity",
     "nonprivate",
     "band_mf",
+    "bisr",
     "blt_mf",
     "lambda_cgd",
     # Amplification

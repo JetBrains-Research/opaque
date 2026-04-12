@@ -111,30 +111,35 @@ class BallsInBins(DpProcess):
                 return _native.non_private_pld(native_cfg)
             case LambdaCgd() as lc:
                 # Monte Carlo BnB accounting (Lemma 3.2 of arxiv:2410.06266).
-                # Compute Gram matrix of the dominating pair mixture means
-                # from the full multi-epoch C_λ parameters, then sample
-                # the PLD via Monte Carlo.
-                if self.lr_weights is not None:
-                    # LR-weighted numerical Gram matrix
-                    gram = _native.lambda_cgd_gram_matrix_lr(
-                        lc.lambda_,
-                        lc.momentum,
-                        lc.n_steps,
-                        lc.min_sep,
-                        lc.max_participations,
-                        lc.normalized,
-                        list(self.lr_weights),
-                    )
+                # Compute Gram matrix of the dominating pair mixture means,
+                # then sample the PLD via Monte Carlo.
+                if lc._use_fast_lambda_cgd_path():
+                    # Fast closed-form path for standard λCGD (bandwidth=2)
+                    if self.lr_weights is not None:
+                        gram = _native.lambda_cgd_gram_matrix_lr(
+                            lc.lambda_, lc.momentum, lc.n_steps, lc.min_sep,
+                            lc.max_participations, lc.normalized,
+                            list(self.lr_weights),
+                        )
+                    else:
+                        gram = _native.lambda_cgd_gram_matrix(
+                            lc.lambda_, lc.n_steps, lc.min_sep,
+                            lc.max_participations, lc.normalized, lc.momentum,
+                        )
                 else:
-                    # Closed-form Gram matrix (with optional momentum)
-                    gram = _native.lambda_cgd_gram_matrix(
-                        lc.lambda_,
-                        lc.n_steps,
-                        lc.min_sep,
-                        lc.max_participations,
-                        lc.normalized,
-                        lc.momentum,
-                    )
+                    # General BISR path (bandwidth > 2 or explicit coefficients)
+                    coefs = list(lc._effective_coefficients())
+                    if self.lr_weights is not None:
+                        gram = _native.bisr_gram_matrix_lr(
+                            coefs, lc.momentum, lc.n_steps, lc.min_sep,
+                            lc.max_participations, lc.normalized,
+                            list(self.lr_weights),
+                        )
+                    else:
+                        gram = _native.bisr_gram_matrix(
+                            coefs, lc.n_steps, lc.min_sep,
+                            lc.max_participations, lc.normalized, lc.momentum,
+                        )
                 return _native.bnb_mc_pld(
                     gram,
                     self.num_bins,

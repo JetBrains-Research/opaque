@@ -87,7 +87,7 @@ import torchopt
 import opaque.accounting as acc
 from opaque.accounting import calibration as cal
 from opaque.clipping import clipped_grad
-from opaque.noise import band_mf_noise, blt_mf_noise, identity_mf_noise, lambda_cgd_noise
+from opaque.noise import band_mf_noise, bisr_noise, blt_mf_noise, identity_mf_noise, lambda_cgd_noise
 from opaque.profiling import StepTimer, TrainingProfiler, print_memory, reset_peak_memory
 from opaque.random import key, fold_in
 from opaque.sampling import BallsInBinsSampler, CyclicPoissonSampler, PoissonSampler, poisson_collate
@@ -251,8 +251,8 @@ def parse_args():
     dp_g = parser.add_argument_group("dp", "DP-FTRL mechanism and clipping")
     dp_g.add_argument(
         "--mechanism", type=str, default="band_mf",
-        choices=["band_mf", "blt", "blt_bnb", "lambda_cgd", "identity"],
-        help="MF mechanism: band_mf, blt, blt_bnb, lambda_cgd, identity.",
+        choices=["band_mf", "blt", "blt_bnb", "lambda_cgd", "bisr", "identity"],
+        help="MF mechanism: band_mf, blt, blt_bnb, lambda_cgd, bisr, identity.",
     )
     dp_g.add_argument("--clipping-norm", type=float, default=0.9, help="Fixed clipping norm")
     dp_g.add_argument("--microbatch-size", type=int, default=None)
@@ -267,6 +267,10 @@ def parse_args():
     dp_g.add_argument(
         "--lambda_", type=float, default=0.9,
         help="Correlation coefficient for lambda_cgd mechanism (0=DP-SGD, higher=more correlation).",
+    )
+    dp_g.add_argument(
+        "--bisr-bandwidth", type=int, default=4,
+        help="Bandwidth for BISR mechanism (>= 2). Higher = better utility, more PRNG replays.",
     )
 
     # Privacy
@@ -643,6 +647,22 @@ def main():
                 num_epochs=args.num_epochs,
                 lr_weights=lr_weights_list,
             )
+    elif args.mechanism == "bisr":
+        # BISR with Balls-in-Bins amplification (arxiv:2505.12128).
+        # Uses BISR optimal inverse square-root coefficients for bandwidth p.
+        # Same accounting pipeline as lambda_cgd but with general bandwidth.
+        lr_weights_list = lr_schedule.double().tolist()
+        def acct_mechanism(nm):
+            return acc.balls_in_bins(
+                acc.bisr(nm, n_steps=total_steps,
+                         bandwidth=args.bisr_bandwidth,
+                         min_sep=expected_steps_per_epoch,
+                         max_participations=args.num_epochs,
+                         momentum=args.momentum),
+                num_bins=expected_steps_per_epoch,
+                num_epochs=args.num_epochs,
+                lr_weights=lr_weights_list,
+            )
     elif args.mechanism == "identity":
         # Identity baseline: C⁻¹ = I, standard DP-SGD composition.
         # Accounting is independent of momentum and LR schedule.
@@ -706,6 +726,12 @@ def main():
             trainable_params, total_steps,
             stddev=noise_stddev, key=key(args.seed),
             lambda_=args.lambda_,
+        )
+    elif args.mechanism == "bisr":
+        noise_fn, noise_state = bisr_noise(
+            trainable_params, total_steps,
+            stddev=noise_stddev, key=key(args.seed),
+            bandwidth=args.bisr_bandwidth,
         )
     elif args.mechanism == "identity":
         noise_fn, noise_state = identity_mf_noise(
