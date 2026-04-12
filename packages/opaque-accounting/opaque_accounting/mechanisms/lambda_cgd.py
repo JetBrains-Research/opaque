@@ -130,29 +130,34 @@ class LambdaCgd(DpProcess):
 
     @functools.lru_cache(maxsize=1)
     def sensitivity(self) -> float:
-        """L2 sensitivity under the configured participation pattern."""
+        """L2 sensitivity under the configured participation pattern.
+
+        Sensitivity depends only on the strategy matrix C, not on the
+        optimizer workload (momentum, LR schedule). This is a fundamental
+        property of the MF privacy framework (BandMF paper, Thm 1).
+        """
         if self._use_fast_lambda_cgd_path():
             if self.normalized:
                 sens_sq = _native.lambda_cgd_normalized_sensitivity_squared(
                     self.lambda_, self.n_steps, self.min_sep,
-                    self.max_participations, self.momentum,
+                    self.max_participations,
                 )
             else:
                 sens_sq = _native.lambda_cgd_sensitivity_squared(
                     self.lambda_, self.n_steps, self.min_sep,
-                    self.max_participations, self.momentum,
+                    self.max_participations,
                 )
         else:
             coefs = list(self._effective_coefficients())
             if self.normalized:
                 sens_sq = _native.bisr_normalized_sensitivity_squared(
                     coefs, self.n_steps, self.min_sep,
-                    self.max_participations, self.momentum,
+                    self.max_participations,
                 )
             else:
                 sens_sq = _native.bisr_sensitivity_squared(
                     coefs, self.n_steps, self.min_sep,
-                    self.max_participations, self.momentum,
+                    self.max_participations,
                 )
         return float(sens_sq**0.5)
 

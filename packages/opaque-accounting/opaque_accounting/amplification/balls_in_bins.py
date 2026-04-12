@@ -10,25 +10,19 @@ The returned process represents the **total** privacy cost across all
 For independent-noise mechanisms (Gaussian, AdaClip), uses a conservative
 Poisson per-step approximation.
 
-For correlated-noise mechanisms (DP-λCGD), uses Monte Carlo sampling of
+For correlated-noise mechanisms (DP-λCGD, BISR), uses Monte Carlo sampling of
 the dominating pair from Choquette-Choo et al. (2024) arxiv:2410.06266.
-
-When ``lr_weights`` is provided, the privacy analysis accounts for the
-learning rate schedule, giving tighter bounds for steps with low LR
-(Kalinin & Andersson, 2025, arxiv:2511.17994).
 
 References:
     - Chua et al. (2025), "Scalable Shuffle Differential Privacy"
     - Choquette-Choo et al. (2024), "Near Exact Privacy Amplification
       for Matrix Mechanisms"
-    - Kalinin & Andersson (2025), "Learning Rate Scheduling with MF"
 """
 
 from __future__ import annotations
 
 import functools
 from dataclasses import dataclass
-from collections.abc import Sequence
 
 from .. import opaque_accounting as _native
 
@@ -54,16 +48,14 @@ class BallsInBins(DpProcess):
         training = acc.balls_in_bins(acc.gaussian(1.1), num_bins=100, num_epochs=10)
         eps = training.epsilon_at(1e-5)  # total cost, 10 epochs
 
-    Example (DP-λCGD with momentum + LR schedule)::
+    Example (DP-λCGD)::
 
         training = acc.balls_in_bins(
             acc.lambda_cgd(nm, lambda_=0.9, n_steps=total_steps,
                            min_sep=steps_per_epoch,
-                           max_participations=num_epochs,
-                           momentum=0.9),
+                           max_participations=num_epochs),
             num_bins=steps_per_epoch,
             num_epochs=num_epochs,
-            lr_weights=lr_schedule,
         )
         eps = training.epsilon_at(1e-5)  # total cost
     """
@@ -71,7 +63,6 @@ class BallsInBins(DpProcess):
     inner: _Inner
     num_bins: int
     num_epochs: int
-    lr_weights: tuple[float, ...] | None = None
 
     @functools.lru_cache(maxsize=8)
     def pld(
@@ -113,33 +104,22 @@ class BallsInBins(DpProcess):
                 # Monte Carlo BnB accounting (Lemma 3.2 of arxiv:2410.06266).
                 # Compute Gram matrix of the dominating pair mixture means,
                 # then sample the PLD via Monte Carlo.
+                #
+                # Note: the Gram matrix uses raw C columns (momentum=0).
+                # Sensitivity and Gram are workload-independent (BandMF paper,
+                # Thm 1). Momentum only affects BISR coefficient choice and
+                # BandMF/BLT noise optimization, never the privacy analysis.
                 if lc._use_fast_lambda_cgd_path():
-                    # Fast closed-form path for standard λCGD (bandwidth=2)
-                    if self.lr_weights is not None:
-                        gram = _native.lambda_cgd_gram_matrix_lr(
-                            lc.lambda_, lc.momentum, lc.n_steps, lc.min_sep,
-                            lc.max_participations, lc.normalized,
-                            list(self.lr_weights),
-                        )
-                    else:
-                        gram = _native.lambda_cgd_gram_matrix(
-                            lc.lambda_, lc.n_steps, lc.min_sep,
-                            lc.max_participations, lc.normalized, lc.momentum,
-                        )
+                    gram = _native.lambda_cgd_gram_matrix(
+                        lc.lambda_, lc.n_steps, lc.min_sep,
+                        lc.max_participations, lc.normalized,
+                    )
                 else:
-                    # General BISR path (bandwidth > 2 or explicit coefficients)
                     coefs = list(lc._effective_coefficients())
-                    if self.lr_weights is not None:
-                        gram = _native.bisr_gram_matrix_lr(
-                            coefs, lc.momentum, lc.n_steps, lc.min_sep,
-                            lc.max_participations, lc.normalized,
-                            list(self.lr_weights),
-                        )
-                    else:
-                        gram = _native.bisr_gram_matrix(
-                            coefs, lc.n_steps, lc.min_sep,
-                            lc.max_participations, lc.normalized, lc.momentum,
-                        )
+                    gram = _native.bisr_gram_matrix(
+                        coefs, lc.n_steps, lc.min_sep,
+                        lc.max_participations, lc.normalized,
+                    )
                 return _native.bnb_mc_pld(
                     gram,
                     self.num_bins,
@@ -159,8 +139,6 @@ def balls_in_bins(
     inner: _Inner,
     num_bins: int,
     num_epochs: int = 1,
-    *,
-    lr_weights: Sequence[float] | None = None,
 ) -> BallsInBins:
     """Balls-in-Bins amplified mechanism — returns **total** multi-epoch cost.
 
@@ -177,19 +155,11 @@ def balls_in_bins(
     mechanism's ``n_steps`` / ``max_participations``, and ``num_epochs``
     serves as validation.
 
-    When ``lr_weights`` is provided (a sequence of per-step learning
-    rates), the Gram matrix is computed numerically with LR weighting.
-    This gives tighter privacy bounds when the LR schedule has warmup
-    or cooldown phases (Kalinin & Andersson, 2025).
-
     Args:
-        inner: Base mechanism — :func:`gaussian`, :func:`lambda_cgd`, or
-            :func:`adaclip`.
+        inner: Base mechanism — :func:`gaussian`, :func:`lambda_cgd`,
+            :func:`bisr`, or :func:`adaclip`.
         num_bins: Bins per epoch (k ≥ 2).  Typically ``dataset_size / batch_size``.
         num_epochs: Number of training epochs (default 1).
-        lr_weights: Optional per-step learning rate weights. If provided,
-            must have length equal to the inner mechanism's ``n_steps``.
-            Only supported for DP-λCGD inner mechanisms.
 
     Returns:
         A :class:`BallsInBins` process (total cost).
@@ -214,13 +184,7 @@ def balls_in_bins(
             f"num_epochs must be >= 1, got {num_epochs}"
         )
 
-    if lr_weights is not None and not isinstance(inner, LambdaCgd):
-        raise TypeError(
-            "lr_weights is only supported for DP-λCGD inner mechanisms, "
-            f"got {type(inner).__name__}"
-        )
-
-    # For λCGD: validate that num_epochs is consistent with inner params
+    # For λCGD/BISR: validate that num_epochs is consistent with inner params
     if isinstance(inner, LambdaCgd) and inner.max_participations is not None:
         if num_epochs != 1 and num_epochs != inner.max_participations:
             raise ValueError(
@@ -232,15 +196,4 @@ def balls_in_bins(
         # Use the inner's epoch count for consistency
         num_epochs = inner.max_participations
 
-    if lr_weights is not None:
-        if isinstance(inner, LambdaCgd) and len(lr_weights) != inner.n_steps:
-            raise ValueError(
-                f"lr_weights length ({len(lr_weights)}) must equal "
-                f"inner.n_steps ({inner.n_steps})"
-            )
-        lr_weights = tuple(lr_weights)
-
-    return BallsInBins(
-        inner=inner, num_bins=num_bins, num_epochs=num_epochs,
-        lr_weights=lr_weights,
-    )
+    return BallsInBins(inner=inner, num_bins=num_bins, num_epochs=num_epochs)
