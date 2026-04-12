@@ -98,6 +98,33 @@ def blt_mf_noise(
         max_buffers=max_buffers,
         workload_coef=workload_coef,
     )
+    return blt_mf_noise_from_blt(grad_template, blt, stddev=stddev, key=key)
+
+
+def blt_mf_noise_from_blt(
+    grad_template: Any,
+    blt: Any,
+    *,
+    stddev: float,
+    key: RngKey,
+) -> tuple[
+    Callable[[Any, MFNoiseState], tuple[Any, MFNoiseState]],
+    MFNoiseState,
+]:
+    """Create BLT noise from a pre-optimized BufferedToeplitz.
+
+    Use this to avoid re-optimizing when the BLT is already known
+    (e.g., from the accounting class's cached optimization).
+
+    Args:
+        grad_template: Pytree matching gradient structure.
+        blt: Pre-optimized BufferedToeplitz object.
+        stddev: Standard deviation for the base noise.
+        key: Explicit RNG key.
+
+    Returns:
+        (noise_fn, state) tuple.
+    """
     noising = inverse_as_streaming_matrix(blt)
     return _matrix_factorization_noise(
         grad_template,
@@ -107,4 +134,4 @@ def blt_mf_noise(
     )
 
 
-__all__ = ["blt_mf_noise"]
+__all__ = ["blt_mf_noise", "blt_mf_noise_from_blt"]

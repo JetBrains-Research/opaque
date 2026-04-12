@@ -491,3 +491,48 @@ pub fn py_bisr_gram_matrix_lr(
     )
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
+
+/// BnB Gram matrix for a banded Toeplitz strategy (known forward coefficients).
+///
+/// For BandMF/BLT where the optimized strategy coefficients are known directly.
+///
+/// Args:
+///     strategy_coef (list[float]): Toeplitz strategy coefficients.
+///     n_steps (int): Total steps.
+///     min_sep (int): Bins per epoch.
+///     max_participations (int | None): Number of epochs.
+///     normalized (bool): Whether to column-normalize.
+///
+/// Returns:
+///     list[float]: Flattened row-major b×b Gram matrix.
+#[pyfunction]
+#[pyo3(name = "toeplitz_gram_matrix", signature = (strategy_coef, n_steps, min_sep=1, max_participations=None, normalized=true))]
+pub fn py_toeplitz_gram_matrix(
+    strategy_coef: Vec<f64>,
+    n_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+    normalized: bool,
+) -> PyResult<Vec<f64>> {
+    crate::matrix_factorization::toeplitz_gram_matrix(
+        &strategy_coef, n_steps, min_sep, max_participations, normalized,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// Compute BISR strategy coefficients from inverse coefficients.
+///
+/// Args:
+///     coefficients (list[float]): Inverse coefficients [c̃_0, ..., c̃_{p-1}].
+///     n (int): Number of entries to compute.
+///
+/// Returns:
+///     list[float]: First n entries of column 0 of the strategy matrix.
+#[pyfunction]
+#[pyo3(name = "bisr_strategy_coefficients", signature = (coefficients, n))]
+pub fn py_bisr_strategy_coefficients(
+    coefficients: Vec<f64>,
+    n: usize,
+) -> Vec<f64> {
+    crate::matrix_factorization::bisr::bisr_column_zero_pub(&coefficients, n)
+}

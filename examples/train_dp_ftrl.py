@@ -88,6 +88,8 @@ import opaque.accounting as acc
 from opaque.accounting import calibration as cal
 from opaque.clipping import clipped_grad
 from opaque.noise import band_mf_noise, bisr_noise, blt_mf_noise, identity_mf_noise, lambda_cgd_noise
+from opaque.noise.band_mf_noise import band_mf_noise_from_coefs
+from opaque.noise.blt_mf_noise import blt_mf_noise_from_blt
 from opaque.profiling import StepTimer, TrainingProfiler, print_memory, reset_peak_memory
 from opaque.random import key, fold_in
 from opaque.sampling import BallsInBinsSampler, CyclicPoissonSampler, PoissonSampler, poisson_collate
@@ -593,8 +595,9 @@ def main():
     #
     # NOTE on LR-schedule awareness:
     #   Only λCGD passes lr_weights to the accounting.  BandMF/BLT use
-    #   LR-schedule-aware workload: the Toeplitz/BLT optimizers now accept
+    #   LR-schedule-aware workload: the Toeplitz/BLT optimizers accept
     #   per-step LR weights via workload_coef = [η₀, η₁·β, η₂·β², ...].
+    #   This affects the noise OPTIMIZATION (utility), not the privacy analysis.
     lr_weights_list = lr_schedule.double().tolist()
     if args.mechanism == "band_mf":
         def acct_mechanism(nm):
@@ -615,10 +618,12 @@ def main():
                 lr_schedule=lr_weights_list,
             )
     elif args.mechanism == "blt_bnb":
-        # BLT noise with Balls-in-Bins accounting: BLT sensitivity
-        # analysis (same as blt) but per-epoch BnB amplification.
+        # BLT noise with Balls-in-Bins accounting: optimize the BLT,
+        # then compute a BnB Gram matrix from its Toeplitz coefficients
+        # for MC dominating-pair amplification.
         def acct_mechanism(nm):
-            return acc.blt_mf(
+            from opaque.noise.matrix_factorization.buffered_toeplitz import toeplitz_coefs
+            blt_proc = acc.blt_mf(
                 nm, n_steps=total_steps,
                 min_sep=expected_steps_per_epoch,
                 max_participations=args.num_epochs,
@@ -626,6 +631,23 @@ def main():
                 momentum=args.momentum,
                 lr_schedule=lr_weights_list,
             )
+            # Extract Toeplitz coefficients of the optimized BLT
+            blt_obj = blt_proc._optimized_blt()
+            coefs = toeplitz_coefs(blt_obj, total_steps)
+            coefs_list = coefs.detach().cpu().tolist()
+            # Compute BnB Gram matrix from the strategy coefficients
+            from opaque_accounting import opaque_accounting as _native
+            from opaque_accounting.discretization import get_discretization
+            config = get_discretization()
+            gram = _native.toeplitz_gram_matrix(
+                coefs_list, total_steps, expected_steps_per_epoch,
+                args.num_epochs, True,
+            )
+            pld = _native.bnb_mc_pld(
+                gram, expected_steps_per_epoch, nm, 100_000, 42,
+                config.to_native(),
+            )
+            return pld
     elif args.mechanism == "lambda_cgd":
         # DP-λCGD with Balls-in-Bins amplification (Algorithm 1 of the paper).
         # Uses Monte Carlo BnB accounting from arxiv:2410.06266:
@@ -700,24 +722,41 @@ def main():
     if args.mechanism == "identity":
         print("\nCreating identity noise (i.i.d. Gaussian, DP-SGD baseline)...")
     else:
-        print(f"\nCreating MF noise (optimizing for momentum-SGD workload, β={args.momentum})...")
+        print(f"\nCreating MF noise (β={args.momentum})...")
     t0 = time.time()
     if args.mechanism == "band_mf":
-        noise_fn, noise_state = band_mf_noise(
-            trainable_params, total_steps,
-            stddev=noise_stddev, key=key(args.seed), bands=args.bands,
-            momentum=args.momentum,
-            lr_schedule=lr_schedule.double(),
+        # Reuse the accounting object's optimized coefficients to avoid
+        # double-optimization (accounting + noise calling optimize_toeplitz
+        # independently). The calibrated noise_multiplier is the final nm.
+        acct_obj = acct_mechanism(noise_multiplier)
+        # acct_obj is cyclic_poisson(band_mf(...)), extract the inner BandMf
+        coefs = acct_obj.inner._optimized_coefs()
+        noise_fn, noise_state = band_mf_noise_from_coefs(
+            trainable_params, coefs,
+            stddev=noise_stddev, key=key(args.seed),
         )
     elif args.mechanism in ("blt", "blt_bnb"):
-        noise_fn, noise_state = blt_mf_noise(
-            trainable_params, total_steps,
+        # Reuse the accounting object's optimized BLT
+        acct_obj = acct_mechanism(noise_multiplier)
+        if args.mechanism == "blt":
+            blt_obj = acct_obj._optimized_blt()
+        else:
+            # For blt_bnb, acct_mechanism returns a PLD directly, so
+            # we need to optimize the BLT separately. This is the one case
+            # where we can't fully deduplicate (the BnB accounting path
+            # already extracts the BLT internally).
+            blt_proc = acc.blt_mf(
+                noise_multiplier, n_steps=total_steps,
+                min_sep=expected_steps_per_epoch,
+                max_participations=args.num_epochs,
+                max_buffers=args.max_buffers,
+                momentum=args.momentum,
+                lr_schedule=lr_weights_list,
+            )
+            blt_obj = blt_proc._optimized_blt()
+        noise_fn, noise_state = blt_mf_noise_from_blt(
+            trainable_params, blt_obj,
             stddev=noise_stddev, key=key(args.seed),
-            min_sep=expected_steps_per_epoch,
-            max_participations=args.num_epochs,
-            max_buffers=args.max_buffers,
-            momentum=args.momentum,
-            lr_schedule=lr_schedule.double(),
         )
     elif args.mechanism == "lambda_cgd":
         noise_fn, noise_state = lambda_cgd_noise(

@@ -21,6 +21,7 @@ from typing import Any
 
 import torch
 
+from opaque_accounting import opaque_accounting as _native
 from opaque.noise.matrix_factorization.noise import (
     MFNoiseState,
     _matrix_factorization_noise,
@@ -126,8 +127,8 @@ def bisr_noise(
     else:
         inv_coefs = _bisr_inverse_coefficients(bandwidth, beta=momentum)
 
-    # Recover strategy coefficients from inverse coefficients
-    strategy_coefs = _recover_strategy_coefficients(inv_coefs, bandwidth)
+    # Recover strategy coefficients from inverse coefficients (via Rust)
+    strategy_coefs = _native.bisr_strategy_coefficients(inv_coefs, bandwidth)
 
     # Build StreamingMatrix: inverse_as_streaming_matrix takes strategy coefs
     # and builds a streaming C^{-1} that applies the banded inverse.

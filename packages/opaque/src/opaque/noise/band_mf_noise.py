@@ -153,6 +153,33 @@ def band_mf_noise(
     workload_coef = _momentum_workload_coef(momentum, n_steps, lr_schedule=lr_schedule)
 
     coefs = optimize_toeplitz(n_steps, bands, workload_coef=workload_coef)
+    return band_mf_noise_from_coefs(grad_template, coefs, stddev=stddev, key=key)
+
+
+def band_mf_noise_from_coefs(
+    grad_template: Any,
+    coefs: torch.Tensor,
+    *,
+    stddev: float,
+    key: RngKey,
+) -> tuple[
+    Callable[[Any, MFNoiseState], tuple[Any, MFNoiseState]],
+    MFNoiseState,
+]:
+    """Create BandMF noise from pre-optimized Toeplitz coefficients.
+
+    Use this to avoid re-optimizing when the coefficients are already known
+    (e.g., from the accounting class's cached optimization).
+
+    Args:
+        grad_template: Pytree matching gradient structure.
+        coefs: Pre-optimized Toeplitz coefficients (L2-normalized).
+        stddev: Standard deviation for the base noise.
+        key: Explicit RNG key.
+
+    Returns:
+        (noise_fn, state) tuple.
+    """
     noising = inverse_as_streaming_matrix(coefs)
     return _matrix_factorization_noise(
         grad_template,
@@ -162,4 +189,4 @@ def band_mf_noise(
     )
 
 
-__all__ = ["band_mf_noise"]
+__all__ = ["band_mf_noise", "band_mf_noise_from_coefs"]

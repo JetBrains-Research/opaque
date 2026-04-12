@@ -30,6 +30,10 @@ use crate::error::{PldError, Result};
 /// need column 0 of length n.
 ///
 /// Returns a Vec of length `len` containing C[0..len, 0].
+pub fn bisr_column_zero_pub(coefficients: &[f64], len: usize) -> Vec<f64> {
+    bisr_column_zero(coefficients, len)
+}
+
 fn bisr_column_zero(coefficients: &[f64], len: usize) -> Vec<f64> {
     if len == 0 {
         return Vec::new();
@@ -501,6 +505,143 @@ pub fn bisr_gram_matrix_lr(
                     continue;
                 }
                 gram[i * b + j] /= d_i * d_j;
+            }
+        }
+    }
+
+    Ok(gram)
+}
+
+/// BnB Gram matrix for a banded Toeplitz strategy with known forward coefficients.
+///
+/// For a Toeplitz strategy with coefficients `[c_0, c_1, ..., c_{p-1}]`,
+/// column j has entries `C[t,j] = c_{t-j}` for `j ≤ t < j+p`, else 0.
+///
+/// The inner product of columns a and c (a ≤ c, gap d = c-a) is:
+///   ⟨C[:,a], C[:,c]⟩ = Σ_{k=0}^{p-1-d} c_{k+d} · c_k   (if d < p, else 0)
+///
+/// This is used for BnB accounting of BandMF/BLT mechanisms where the
+/// strategy coefficients are known from the Toeplitz optimization.
+///
+/// Note: the columns are NOT generated via a recurrence (unlike BISR).
+/// The strategy coefficients ARE the column entries directly.
+pub fn toeplitz_gram_matrix(
+    strategy_coef: &[f64],
+    n_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+    normalized: bool,
+) -> Result<Vec<f64>> {
+    if strategy_coef.is_empty() {
+        return Err(PldError::InvalidParameter(
+            "strategy_coef must be non-empty".into(),
+        ));
+    }
+    if n_steps == 0 {
+        return Err(PldError::InvalidParameter("n_steps must be >= 1".into()));
+    }
+    if min_sep == 0 {
+        return Err(PldError::InvalidParameter("min_sep must be >= 1".into()));
+    }
+
+    let p = strategy_coef.len(); // bandwidth
+    let b = min_sep;
+    let n = n_steps;
+    let k_inferred = (n + b - 1) / b;
+    let e = match max_participations {
+        Some(k) => k.min(k_inferred),
+        None => k_inferred,
+    };
+
+    if e == 0 || b == 0 {
+        return Ok(vec![0.0; b * b]);
+    }
+
+    // Precompute the inner product for each gap d = 0..p-1.
+    // ip_by_gap[d] = Σ_{k=0}^{p-1-d} c_{k+d} · c_k
+    let mut ip_by_gap = vec![0.0f64; p];
+    for d in 0..p {
+        let mut s = 0.0;
+        for k in 0..(p - d) {
+            s += strategy_coef[k + d] * strategy_coef[k];
+        }
+        ip_by_gap[d] = s;
+    }
+
+    // Column norm = sqrt(ip_by_gap[0]) for all columns (Toeplitz → same norm).
+    // But boundary columns (near end of matrix) have truncated entries.
+    // For simplicity and correctness, compute norms per-column accounting for truncation.
+    let col_norm = |col: usize| -> f64 {
+        let remaining = n - col; // entries available
+        let effective_len = remaining.min(p);
+        let mut s = 0.0;
+        for k in 0..effective_len {
+            s += strategy_coef[k] * strategy_coef[k];
+        }
+        s.sqrt()
+    };
+
+    let col_ip = |a: usize, c: usize| -> f64 {
+        // Inner product of columns a and c (a ≤ c)
+        let d = c - a;
+        if d >= p {
+            return 0.0;
+        }
+        let remaining = n - c; // both columns exist from c to min(c+p, n)
+        let effective_len = remaining.min(p - d);
+        let mut s = 0.0;
+        for k in 0..effective_len {
+            s += strategy_coef[k + d] * strategy_coef[k];
+        }
+        s
+    };
+
+    // Build BnB Gram matrix: G[i,j] = Σ_{p,q epochs} ⟨C[:,b*p+i], C[:,b*q+j]⟩ / (norm * norm)
+    let mut gram = vec![0.0f64; b * b];
+
+    for i in 0..b {
+        for j in i..b {
+            let mut val = 0.0;
+
+            for ep_p in 0..e {
+                let col_a = b * ep_p + i;
+                if col_a >= n {
+                    break;
+                }
+
+                for ep_q in 0..e {
+                    let col_c = b * ep_q + j;
+                    if col_c >= n {
+                        break;
+                    }
+
+                    let (lo, hi) = if col_a <= col_c {
+                        (col_a, col_c)
+                    } else {
+                        (col_c, col_a)
+                    };
+
+                    let ip = col_ip(lo, hi);
+
+                    let contribution = if normalized {
+                        let d_a = col_norm(col_a);
+                        let d_c = col_norm(col_c);
+                        if d_a > 0.0 && d_c > 0.0 {
+                            ip / (d_a * d_c)
+                        } else {
+                            0.0
+                        }
+                    } else {
+                        ip
+                    };
+
+                    val += contribution;
+                }
+            }
+
+            gram[i * b + j] = val;
+            if i != j {
+                gram[j * b + i] = val;
             }
         }
     }

@@ -120,6 +120,16 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
 
+    // Toeplitz Gram matrix (for BnB with BandMF/BLT strategy coefs)
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_toeplitz_gram_matrix,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_bisr_strategy_coefficients,
+        m
+    )?)?;
+
     // AdaClip
     m.add_function(wrap_pyfunction!(adaclip::py_adaclip_sensitivity, m)?)?;
 

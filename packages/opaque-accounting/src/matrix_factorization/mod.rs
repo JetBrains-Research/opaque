@@ -37,7 +37,7 @@ pub mod sensitivity;
 
 pub use bisr::{
     bisr_gram_matrix, bisr_gram_matrix_lr, bisr_normalized_sensitivity_squared,
-    bisr_sensitivity_squared,
+    bisr_sensitivity_squared, toeplitz_gram_matrix,
 };
 pub use gram_matrix::{lambda_cgd_gram_matrix, lambda_cgd_gram_matrix_lr};
 pub use lambda_cgd::{
