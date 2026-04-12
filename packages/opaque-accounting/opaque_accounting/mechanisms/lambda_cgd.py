@@ -31,24 +31,54 @@ from opaque_accounting.discretization import (
 )
 
 
-def _bisr_inverse_coefficients(bandwidth: int) -> tuple[float, ...]:
-    """Compute BISR inverse square-root coefficients c̃_k for prefix-sum workload.
+def _bisr_inverse_coefficients(
+    bandwidth: int,
+    alpha: float = 1.0,
+    beta: float = 0.0,
+) -> tuple[float, ...]:
+    """Compute BISR inverse square-root coefficients (Lemma 1, arxiv:2505.12128).
 
-    From Lemma 1 of arxiv:2505.12128. For α=1, β=0 (standard prefix-sum):
-        c̃_k = r̃_k  where  r̃_0 = 1, r̃_j = ((j - 3/2) / j) · r̃_{j-1}
+    The workload matrix A_{α,β} has entries:
+        A[i,j] = Σ_{l=0}^{i-j} α^l · β^{(i-j)-l}
 
-    First values: 1, -1/2, 1/8, -1/16, 5/128, -7/256, ...
+    where α encodes weight decay and β encodes optimizer momentum.
+
+    The inverse square-root coefficients are:
+        c̃_k = Σ_{j=0}^{k} r̃_j · β^j · r̃_{k-j} · α^{k-j}
+
+    where r̃_0 = 1, r̃_j = ((j - 3/2) / j) · r̃_{j-1}.
+
+    Special cases:
+        α=1, β=0 (prefix-sum / FTRL): c̃_k = r̃_k
+        α=1, β>0 (momentum-SGD): convolution of r̃ with β-geometric
+        α<1 (weight decay): faster-decaying coefficients
 
     Args:
         bandwidth: Number of bands p ≥ 2.
+        alpha: Weight decay parameter (default 1.0 = no decay).
+        beta: Optimizer momentum (default 0.0 = no momentum / FTRL).
 
     Returns:
         Tuple of p coefficients (c̃_0, c̃_1, ..., c̃_{p-1}).
     """
-    coefs = [0.0] * bandwidth
-    coefs[0] = 1.0
+    # Compute base sequence r̃_k
+    r_tilde = [0.0] * bandwidth
+    r_tilde[0] = 1.0
     for j in range(1, bandwidth):
-        coefs[j] = ((j - 1.5) / j) * coefs[j - 1]
+        r_tilde[j] = ((j - 1.5) / j) * r_tilde[j - 1]
+
+    # For α=1, β=0: c̃_k = r̃_k (fast path)
+    if beta == 0.0 and alpha == 1.0:
+        return tuple(r_tilde)
+
+    # General case: c̃_k = Σ_{j=0}^{k} r̃_j · β^j · r̃_{k-j} · α^{k-j}
+    coefs = [0.0] * bandwidth
+    for k in range(bandwidth):
+        s = 0.0
+        for j in range(k + 1):
+            s += r_tilde[j] * (beta ** j) * r_tilde[k - j] * (alpha ** (k - j))
+        coefs[k] = s
+
     return tuple(coefs)
 
 
@@ -84,14 +114,15 @@ class LambdaCgd(DpProcess):
         """Compute the C^{-1} band coefficients.
 
         For bandwidth=2, coefficients=None: [1, -lambda_] (standard λCGD).
-        For bandwidth>2, coefficients=None: BISR optimal (inverse square-root).
+        For bandwidth>2, coefficients=None: BISR optimal (inverse square-root),
+            accounting for the optimizer momentum via the workload A_{1,β}.
         For explicit coefficients: use as provided.
         """
         if self.coefficients is not None:
             return self.coefficients
         if self.bandwidth == 2:
             return (1.0, -self.lambda_)
-        return _bisr_inverse_coefficients(self.bandwidth)
+        return _bisr_inverse_coefficients(self.bandwidth, beta=self.momentum)
 
     def _use_fast_lambda_cgd_path(self) -> bool:
         """Whether to use the optimised closed-form λCGD Rust functions."""

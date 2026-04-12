@@ -732,6 +732,7 @@ def main():
             trainable_params, total_steps,
             stddev=noise_stddev, key=key(args.seed),
             bandwidth=args.bisr_bandwidth,
+            momentum=args.momentum,
         )
     elif args.mechanism == "identity":
         noise_fn, noise_state = identity_mf_noise(

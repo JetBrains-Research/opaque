@@ -31,15 +31,26 @@ from opaque.noise.matrix_factorization.toeplitz import (
 from opaque.random import RngKey
 
 
-def _bisr_inverse_coefficients(bandwidth: int) -> list[float]:
-    """Compute BISR inverse square-root coefficients for prefix-sum workload.
+def _bisr_inverse_coefficients(bandwidth: int, beta: float = 0.0) -> list[float]:
+    """Compute BISR inverse square-root coefficients (Lemma 1, arxiv:2505.12128).
 
-    r̃_0 = 1, r̃_j = ((j - 3/2) / j) · r̃_{j-1}
+    For α=1: c̃_k = Σ_{j=0}^{k} r̃_j · β^j · r̃_{k-j}
+    where r̃_0 = 1, r̃_j = ((j - 3/2) / j) · r̃_{j-1}.
     """
-    coefs = [0.0] * bandwidth
-    coefs[0] = 1.0
+    r_tilde = [0.0] * bandwidth
+    r_tilde[0] = 1.0
     for j in range(1, bandwidth):
-        coefs[j] = ((j - 1.5) / j) * coefs[j - 1]
+        r_tilde[j] = ((j - 1.5) / j) * r_tilde[j - 1]
+
+    if beta == 0.0:
+        return r_tilde
+
+    coefs = [0.0] * bandwidth
+    for k in range(bandwidth):
+        s = 0.0
+        for j in range(k + 1):
+            s += r_tilde[j] * (beta ** j) * r_tilde[k - j]
+        coefs[k] = s
     return coefs
 
 
@@ -71,6 +82,7 @@ def bisr_noise(
     stddev: float,
     key: RngKey,
     bandwidth: int,
+    momentum: float = 0.0,
     coefficients: Sequence[float] | None = None,
     column_normalize: bool = True,
     dtype: torch.dtype | None = None,
@@ -80,8 +92,9 @@ def bisr_noise(
 ]:
     """Create BISR noise mechanism via StreamingMatrix.
 
-    Computes BISR inverse coefficients, recovers strategy coefficients,
-    and delegates to the standard matrix factorization noise infrastructure.
+    Computes BISR inverse coefficients (accounting for optimizer momentum
+    in the workload), recovers strategy coefficients, and delegates to
+    the standard matrix factorization noise infrastructure.
 
     For bandwidth=2, this is equivalent to lambda_cgd_noise with λ=1/2.
     For bandwidth>2, the StreamingMatrix maintains a buffer of p-1 vectors.
@@ -92,6 +105,8 @@ def bisr_noise(
         stddev: Standard deviation for base noise.
         key: Explicit RNG key.
         bandwidth: BISR bandwidth p (>= 2).
+        momentum: Optimizer momentum β (default 0.0). Affects the BISR
+            coefficient computation via the workload A_{1,β}.
         coefficients: Explicit C^{-1} coefficients. Default: BISR optimal.
         column_normalize: If True (default), apply column-norm scaling.
         dtype: Optional dtype for intermediate computation.
@@ -109,7 +124,7 @@ def bisr_noise(
                 f"coefficients length ({len(inv_coefs)}) must equal bandwidth ({bandwidth})"
             )
     else:
-        inv_coefs = _bisr_inverse_coefficients(bandwidth)
+        inv_coefs = _bisr_inverse_coefficients(bandwidth, beta=momentum)
 
     # Recover strategy coefficients from inverse coefficients
     strategy_coefs = _recover_strategy_coefficients(inv_coefs, bandwidth)
