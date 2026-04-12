@@ -13,6 +13,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+import torch
+
 from opaque.noise.band_mf_noise import _momentum_workload_coef
 from opaque.noise.matrix_factorization.buffered_toeplitz import (
     inverse_as_streaming_matrix,
@@ -36,6 +38,7 @@ def blt_mf_noise(
     error: str = "max",
     max_buffers: int = 10,
     momentum: float,
+    lr_schedule: torch.Tensor | None = None,
 ) -> tuple[
     Callable[[Any, MFNoiseState], tuple[Any, MFNoiseState]],
     MFNoiseState,
@@ -67,6 +70,9 @@ def blt_mf_noise(
             Use β=1.0 for prefix-sum (true FTRL), β<1 for momentum-SGD.
             β=0.0 is allowed for testing (identity workload, equivalent to
             independent noise) but emits a warning.
+        lr_schedule: Optional per-step learning rate schedule, shape [n_steps].
+            When provided, the workload becomes ``[η₀, η₁·β, η₂·β², ...]``
+            so the noise is optimized for the actual LR trajectory.
 
     Returns:
         A tuple ``(noise_fn, state)`` where:
@@ -82,7 +88,7 @@ def blt_mf_noise(
         >>> for step in range(1000):
         ...     noisy_grads, state = noise_fn(clipped_grads, state)
     """
-    workload_coef = _momentum_workload_coef(momentum, n_steps)
+    workload_coef = _momentum_workload_coef(momentum, n_steps, lr_schedule=lr_schedule)
 
     blt = optimize(
         n=n_steps,

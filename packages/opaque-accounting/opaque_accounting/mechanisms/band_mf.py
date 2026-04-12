@@ -14,7 +14,10 @@ References:
 from __future__ import annotations
 
 import functools
+from collections.abc import Sequence
 from dataclasses import dataclass
+
+import torch
 
 from .. import opaque_accounting as _native
 
@@ -36,6 +39,10 @@ class BandMf(DpProcess):
     one step; the sensitivity equals the maximum column norm of the
     optimized encoder matrix (= 1 for the standard Toeplitz optimization).
 
+    When ``lr_schedule`` is provided, the Toeplitz coefficients are
+    optimized for the LR-weighted workload ``[η₀, η₁·β, η₂·β², ...]``
+    rather than the constant-LR workload ``[1, β, β², ...]``.
+
     For cyclic Poisson amplification, wrap with
     :func:`~opaque.accounting.amplification.cyclic_poisson.cyclic_poisson`.
     """
@@ -44,6 +51,7 @@ class BandMf(DpProcess):
     n_steps: int
     bands: int
     momentum: float = 1.0
+    lr_schedule: tuple[float, ...] | None = None
 
     @functools.lru_cache(maxsize=1)
     def _optimized_coefs(self):
@@ -53,7 +61,8 @@ class BandMf(DpProcess):
             optimize as optimize_toeplitz,
         )
 
-        workload_coef = _momentum_workload_coef(self.momentum, self.n_steps)
+        lr_tensor = torch.tensor(self.lr_schedule, dtype=torch.float64) if self.lr_schedule is not None else None
+        workload_coef = _momentum_workload_coef(self.momentum, self.n_steps, lr_schedule=lr_tensor)
         return optimize_toeplitz(self.n_steps, self.bands, workload_coef=workload_coef)
 
     @functools.lru_cache(maxsize=1)
@@ -93,11 +102,16 @@ def band_mf(
     n_steps: int,
     bands: int,
     momentum: float = 1.0,
+    lr_schedule: Sequence[float] | None = None,
 ) -> BandMf:
     """BandMF mechanism — banded Toeplitz correlated noise.
 
     Creates a privacy accounting process for the BandMF mechanism under
     single participation (each user contributes one gradient at one step).
+
+    When ``lr_schedule`` is provided, the Toeplitz coefficients are
+    optimized for the LR-weighted workload ``[η₀, η₁·β, η₂·β², ...]``
+    rather than assuming constant learning rate.
 
     For cyclic Poisson amplification (the common case), wrap with
     :func:`~opaque.accounting.amplification.cyclic_poisson`::
@@ -111,6 +125,8 @@ def band_mf(
             and <= ``n_steps``.
         momentum: Polyak momentum coefficient (default 1.0 = prefix-sum).
             Must match the momentum used in the optimizer/noise function.
+        lr_schedule: Optional per-step learning rate schedule. If provided,
+            must have length ``n_steps``.
 
     Returns:
         A :class:`BandMf` process.
@@ -135,4 +151,10 @@ def band_mf(
         raise ValueError(f"bands must be in [1, n_steps={n_steps}], got {bands}")
     if momentum < 0:
         raise ValueError(f"momentum must be >= 0, got {momentum}")
-    return BandMf(noise_multiplier, n_steps, bands, momentum)
+    if lr_schedule is not None:
+        if len(lr_schedule) != n_steps:
+            raise ValueError(
+                f"lr_schedule length ({len(lr_schedule)}) must equal n_steps ({n_steps})"
+            )
+        lr_schedule = tuple(lr_schedule)
+    return BandMf(noise_multiplier, n_steps, bands, momentum, lr_schedule)

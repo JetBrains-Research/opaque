@@ -593,16 +593,15 @@ def main():
     #
     # NOTE on LR-schedule awareness:
     #   Only λCGD passes lr_weights to the accounting.  BandMF/BLT use
-    #   Toeplitz-structure optimization where the workload must be
-    #   shift-invariant [1, β, β², ...].  An LR schedule breaks this
-    #   invariance (W[t,s] = η_t·β^{t-s} depends on absolute t), so it
-    #   cannot be folded into their Toeplitz optimizers.  The privacy
-    #   guarantee is correct regardless — LR is post-noise scaling.
+    #   LR-schedule-aware workload: the Toeplitz/BLT optimizers now accept
+    #   per-step LR weights via workload_coef = [η₀, η₁·β, η₂·β², ...].
+    lr_weights_list = lr_schedule.double().tolist()
     if args.mechanism == "band_mf":
         def acct_mechanism(nm):
             return acc.cyclic_poisson(
                 acc.band_mf(nm, n_steps=total_steps, bands=args.bands,
-                            momentum=args.momentum),
+                            momentum=args.momentum,
+                            lr_schedule=lr_weights_list),
                 sample_rate=sampling_prob,
             )
     elif args.mechanism == "blt":
@@ -613,6 +612,7 @@ def main():
                 max_participations=args.num_epochs,
                 max_buffers=args.max_buffers,
                 momentum=args.momentum,
+                lr_schedule=lr_weights_list,
             )
     elif args.mechanism == "blt_bnb":
         # BLT noise with Balls-in-Bins accounting: BLT sensitivity
@@ -624,6 +624,7 @@ def main():
                 max_participations=args.num_epochs,
                 max_buffers=args.max_buffers,
                 momentum=args.momentum,
+                lr_schedule=lr_weights_list,
             )
     elif args.mechanism == "lambda_cgd":
         # DP-λCGD with Balls-in-Bins amplification (Algorithm 1 of the paper).
@@ -711,6 +712,7 @@ def main():
             trainable_params, total_steps,
             stddev=noise_stddev, key=key(args.seed), bands=args.bands,
             momentum=args.momentum,
+            lr_schedule=lr_schedule.double(),
         )
     elif args.mechanism in ("blt", "blt_bnb"):
         noise_fn, noise_state = blt_mf_noise(
@@ -720,6 +722,7 @@ def main():
             max_participations=args.num_epochs,
             max_buffers=args.max_buffers,
             momentum=args.momentum,
+            lr_schedule=lr_schedule.double(),
         )
     elif args.mechanism == "lambda_cgd":
         noise_fn, noise_state = lambda_cgd_noise(

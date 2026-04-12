@@ -13,7 +13,10 @@ References:
 from __future__ import annotations
 
 import functools
+from collections.abc import Sequence
 from dataclasses import dataclass
+
+import torch
 
 from .. import opaque_accounting as _native
 
@@ -33,6 +36,9 @@ class BltMf(DpProcess):
     Represents the privacy cost of an entire BLT training run.
     The BLT encoder is optimized internally for the given participation
     pattern, and sensitivity is computed from the optimized result.
+
+    When ``lr_schedule`` is provided, the BLT parameters are optimized
+    for the LR-weighted workload rather than constant LR.
     """
 
     noise_multiplier: float
@@ -42,6 +48,7 @@ class BltMf(DpProcess):
     error: str
     max_buffers: int
     momentum: float = 1.0
+    lr_schedule: tuple[float, ...] | None = None
 
     @functools.lru_cache(maxsize=1)
     def _optimized_blt(self):
@@ -51,7 +58,8 @@ class BltMf(DpProcess):
             optimize,
         )
 
-        workload_coef = _momentum_workload_coef(self.momentum, self.n_steps)
+        lr_tensor = torch.tensor(self.lr_schedule, dtype=torch.float64) if self.lr_schedule is not None else None
+        workload_coef = _momentum_workload_coef(self.momentum, self.n_steps, lr_schedule=lr_tensor)
         return optimize(
             n=self.n_steps,
             min_sep=self.min_sep,
@@ -133,12 +141,16 @@ def blt_mf(
     error: str = "max",
     max_buffers: int = 10,
     momentum: float = 1.0,
+    lr_schedule: Sequence[float] | None = None,
 ) -> BltMf:
     """BLT mechanism — Buffered Linear Toeplitz correlated noise.
 
     Creates a privacy accounting process for the BLT mechanism.  The BLT
     encoder is optimized internally for the given participation pattern
     and the sensitivity is computed from the result.
+
+    When ``lr_schedule`` is provided, the BLT parameters are optimized
+    for the LR-weighted workload rather than constant LR.
 
     Args:
         noise_multiplier: Raw noise standard deviation sigma. Must be positive.
@@ -149,6 +161,8 @@ def blt_mf(
         max_buffers: Maximum number of BLT buffers to try (default 10).
         momentum: Polyak momentum coefficient (default 1.0 = prefix-sum).
             Must match the momentum used in the optimizer/noise function.
+        lr_schedule: Optional per-step learning rate schedule. If provided,
+            must have length ``n_steps``.
 
     Returns:
         A :class:`BltMf` process.
@@ -176,7 +190,13 @@ def blt_mf(
         raise ValueError(f"max_buffers must be >= 0, got {max_buffers}")
     if momentum < 0:
         raise ValueError(f"momentum must be >= 0, got {momentum}")
+    if lr_schedule is not None:
+        if len(lr_schedule) != n_steps:
+            raise ValueError(
+                f"lr_schedule length ({len(lr_schedule)}) must equal n_steps ({n_steps})"
+            )
+        lr_schedule = tuple(lr_schedule)
     return BltMf(
         noise_multiplier, n_steps, min_sep, max_participations, error, max_buffers,
-        momentum,
+        momentum, lr_schedule,
     )

@@ -28,19 +28,33 @@ from opaque.noise.matrix_factorization.toeplitz import (
 from opaque.random import RngKey
 
 
-def _momentum_workload_coef(momentum: float, n: int) -> torch.Tensor:
-    """Compute Toeplitz workload coefficients for momentum-SGD.
+def _momentum_workload_coef(
+    momentum: float,
+    n: int,
+    lr_schedule: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Compute Toeplitz workload coefficients for momentum-SGD + LR schedule.
 
-    For momentum β, the workload matrix W has entries W[t,s] = β^{t-s}
-    for s ≤ t.  The Toeplitz coefficients are [1, β, β², ...].
+    For momentum β and per-step learning rates η_t, the workload matrix W
+    has entries W[t,s] = η_t · β^{t-s} for s ≤ t.  The Toeplitz
+    coefficients are [η_0, η_1·β, η_2·β², ...].
+
+    When ``lr_schedule=None``, assumes constant η=1 everywhere (the
+    original behavior).
 
     Special cases:
-        β = 0.0 → [1, 0, 0, ...] (identity workload, equivalent to DP-SGD)
-        β = 0.95 → [1, 0.95, 0.9025, ...] (momentum-SGD workload)
-        β = 1.0 → [1, 1, 1, ...] (prefix-sum workload, true FTRL)
+        β = 0.0 → [η_0, 0, 0, ...] (identity workload)
+        β = 0.95, lr=None → [1, 0.95, 0.9025, ...] (momentum-SGD)
+        β = 1.0, lr=None → [1, 1, 1, ...] (prefix-sum workload, true FTRL)
+
+    Args:
+        momentum: Polyak momentum β (must be >= 0).
+        n: Number of steps.
+        lr_schedule: Optional per-step learning rates, shape [n].
+            If None, assumes constant LR (implicit η=1).
 
     Raises:
-        ValueError: If momentum < 0.
+        ValueError: If momentum < 0 or lr_schedule has wrong length.
     """
     if momentum < 0:
         raise ValueError(f"momentum must be >= 0, got {momentum}")
@@ -54,10 +68,24 @@ def _momentum_workload_coef(momentum: float, n: int) -> torch.Tensor:
         )
         coef = torch.zeros(n, dtype=torch.float64)
         coef[0] = 1.0
+        if lr_schedule is not None:
+            lr = torch.as_tensor(lr_schedule, dtype=torch.float64)
+            coef[0] = lr[0]
         return coef
-    return torch.tensor(
+
+    base = torch.tensor(
         [momentum**i for i in range(n)], dtype=torch.float64
     )
+
+    if lr_schedule is not None:
+        lr = torch.as_tensor(lr_schedule, dtype=torch.float64)
+        if lr.shape[0] != n:
+            raise ValueError(
+                f"lr_schedule length ({lr.shape[0]}) must equal n ({n})"
+            )
+        return lr * base
+
+    return base
 
 
 def band_mf_noise(
@@ -68,6 +96,7 @@ def band_mf_noise(
     key: RngKey,
     bands: int | None = None,
     momentum: float,
+    lr_schedule: torch.Tensor | None = None,
 ) -> tuple[
     Callable[[Any, MFNoiseState], tuple[Any, MFNoiseState]],
     MFNoiseState,
@@ -96,6 +125,10 @@ def band_mf_noise(
             Use β=1.0 for prefix-sum (true FTRL), β<1 for momentum-SGD.
             β=0.0 is allowed for testing (identity workload, equivalent to
             independent noise) but emits a warning.
+        lr_schedule: Optional per-step learning rate schedule, shape [n_steps].
+            When provided, the workload becomes ``[η₀, η₁·β, η₂·β², ...]``
+            so the noise is optimized for the actual LR trajectory
+            (warmup + constant + cosine cooldown) rather than constant LR.
 
     Raises:
         ValueError: If ``momentum < 0``.
@@ -117,7 +150,7 @@ def band_mf_noise(
     if bands is None:
         bands = n_steps
 
-    workload_coef = _momentum_workload_coef(momentum, n_steps)
+    workload_coef = _momentum_workload_coef(momentum, n_steps, lr_schedule=lr_schedule)
 
     coefs = optimize_toeplitz(n_steps, bands, workload_coef=workload_coef)
     noising = inverse_as_streaming_matrix(coefs)
