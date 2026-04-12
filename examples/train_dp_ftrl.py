@@ -14,7 +14,7 @@ KEY DIFFERENCES FROM DP-SGD (train_causal_lm.py):
   2. Clipping: Fixed norm ONLY (adaptive clipping changes sensitivity
      mid-training which invalidates the single-shot MF privacy proof).
 
-  3. LR schedule: Linear warmup + cosine cooldown, fully predetermined
+  3. LR schedule: Linear warmup → constant, fully predetermined
      before training starts (the optimizer must be a fixed linear map).
 
   4. Accounting: Single-shot from MF encoder sensitivity. No per-step
@@ -171,41 +171,24 @@ def make_lr_schedule(
     base_lr: float,
     total_steps: int,
     warmup_frac: float = 0.15,
-    cooldown_frac: float = 0.25,
-    cooldown_end_frac: float = 0.05,
 ) -> torch.Tensor:
-    """Create a predetermined LR schedule: linear warmup → constant → cosine cooldown.
+    """Create a predetermined LR schedule: linear warmup → constant.
 
     Args:
         base_lr: Peak learning rate.
         total_steps: Total number of training steps.
         warmup_frac: Fraction of steps for linear warmup (0→base_lr).
-        cooldown_frac: Fraction of steps for cosine cooldown.
-        cooldown_end_frac: LR at end of cooldown as fraction of base_lr.
 
     Returns:
         Tensor of shape [total_steps] with per-step learning rates.
     """
     warmup_steps = int(total_steps * warmup_frac)
-    cooldown_steps = int(total_steps * cooldown_frac)
-    body_steps = total_steps - warmup_steps - cooldown_steps
-
-    if body_steps < 0:
-        raise ValueError(
-            f"warmup_frac ({warmup_frac}) + cooldown_frac ({cooldown_frac}) > 1.0"
-        )
 
     schedule = torch.ones(total_steps, dtype=torch.float64)
 
     # Linear warmup: 0 → 1
     if warmup_steps > 0:
         schedule[:warmup_steps] = torch.linspace(0.0, 1.0, warmup_steps, dtype=torch.float64)
-
-    # Cosine cooldown: 1 → cooldown_end_frac
-    if cooldown_steps > 0:
-        t = torch.linspace(0.0, math.pi, cooldown_steps, dtype=torch.float64)
-        cd_min = cooldown_end_frac
-        schedule[warmup_steps + body_steps:] = cd_min + (1.0 - cd_min) * 0.5 * (1.0 + torch.cos(t))
 
     return (schedule * base_lr).to(torch.float32)
 
@@ -251,8 +234,6 @@ def parse_args():
     train_g.add_argument("--learning-rate", type=float, default=5e-4)
     train_g.add_argument("--momentum", type=float, default=0.95, help="Polyak momentum (default: 0.95 per BandMF paper)")
     train_g.add_argument("--warmup-frac", type=float, default=0.15, help="LR warmup fraction (default: 0.15)")
-    train_g.add_argument("--cooldown-frac", type=float, default=0.25, help="LR cooldown fraction (default: 0.25)")
-    train_g.add_argument("--cooldown-end-frac", type=float, default=0.05, help="LR at end of cooldown as fraction of peak (default: 0.05)")
     train_g.add_argument("--log-steps", type=int, default=1)
     train_g.add_argument("--eval-steps", type=int, default=10)
     train_g.add_argument("--max-steps", type=int, default=None)
@@ -362,8 +343,6 @@ def parse_args():
         _set("bands", 64)
         _set("mechanism", "blt")
         _set("warmup_frac", 0.05)
-        _set("cooldown_frac", 0.30)
-        _set("cooldown_end_frac", 0.01)
     if args.microbatch_size == 0:
         args.microbatch_size = None
     if args.eval_batch_size is None:
@@ -596,20 +575,25 @@ def main():
     lr_schedule = make_lr_schedule(
         args.learning_rate, total_steps,
         warmup_frac=args.warmup_frac,
-        cooldown_frac=args.cooldown_frac,
-        cooldown_end_frac=args.cooldown_end_frac,
     )
 
-    print(f"\nLR schedule: warmup {args.warmup_frac:.0%} → constant → cooldown {args.cooldown_frac:.0%}")
+    print(f"\nLR schedule: warmup {args.warmup_frac:.0%} → constant")
     print(f"  Peak LR: {args.learning_rate}")
-    print(f"  Cooldown end: {args.cooldown_end_frac:.0%} of peak")
     print(f"  Total steps: {total_steps}")
 
     # --- Privacy calibration (single-shot) ---
     if args.target_delta is None:
         args.target_delta = 1.0 / (global_train_size ** 1.1)
 
-    # Build the accounting mechanism
+    # Build the accounting mechanism.
+    #
+    # NOTE on LR-schedule awareness:
+    #   Only λCGD passes lr_weights to the accounting.  BandMF/BLT use
+    #   Toeplitz-structure optimization where the workload must be
+    #   shift-invariant [1, β, β², ...].  An LR schedule breaks this
+    #   invariance (W[t,s] = η_t·β^{t-s} depends on absolute t), so it
+    #   cannot be folded into their Toeplitz optimizers.  The privacy
+    #   guarantee is correct regardless — LR is post-noise scaling.
     if args.mechanism == "band_mf":
         def acct_mechanism(nm):
             return acc.cyclic_poisson(
@@ -646,7 +630,7 @@ def main():
         # Momentum-aware accounting: when β > 0, the Gram matrix uses
         # momentum-accumulated column inner products for tighter bounds.
         # LR-schedule-aware accounting: passes the per-step LR weights
-        # so the analysis accounts for warmup/cooldown phases.
+        # so the analysis accounts for the warmup phase.
         lr_weights_list = lr_schedule.double().tolist()
         def acct_mechanism(nm):
             return acc.balls_in_bins(
@@ -660,6 +644,8 @@ def main():
                 lr_weights=lr_weights_list,
             )
     elif args.mechanism == "identity":
+        # Identity baseline: C⁻¹ = I, standard DP-SGD composition.
+        # Accounting is independent of momentum and LR schedule.
         def acct_mechanism(nm):
             return acc.poisson(acc.gaussian(nm), sample_rate=sample_rate) * total_steps
     else:
@@ -695,7 +681,10 @@ def main():
     # sensitivity = clipping_norm / normalize_by (accounts for batch averaging)
     noise_stddev = noise_multiplier * clip_state.sensitivity
 
-    print(f"\nCreating MF noise (optimizing for momentum-SGD workload, β={args.momentum})...")
+    if args.mechanism == "identity":
+        print("\nCreating identity noise (i.i.d. Gaussian, DP-SGD baseline)...")
+    else:
+        print(f"\nCreating MF noise (optimizing for momentum-SGD workload, β={args.momentum})...")
     t0 = time.time()
     if args.mechanism == "band_mf":
         noise_fn, noise_state = band_mf_noise(
