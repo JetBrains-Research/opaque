@@ -252,7 +252,11 @@ pub fn py_lambda_cgd_sensitivity_squared(
     momentum: f64,
 ) -> PyResult<f64> {
     crate::matrix_factorization::lambda_cgd_sensitivity_squared(
-        lambda_, n_steps, min_sep, max_participations, momentum,
+        lambda_,
+        n_steps,
+        min_sep,
+        max_participations,
+        momentum,
     )
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
@@ -284,7 +288,11 @@ pub fn py_lambda_cgd_normalized_sensitivity_squared(
     momentum: f64,
 ) -> PyResult<f64> {
     crate::matrix_factorization::lambda_cgd_normalized_sensitivity_squared(
-        lambda_, n_steps, min_sep, max_participations, momentum,
+        lambda_,
+        n_steps,
+        min_sep,
+        max_participations,
+        momentum,
     )
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
@@ -319,7 +327,12 @@ pub fn py_lambda_cgd_gram_matrix(
     momentum: f64,
 ) -> PyResult<Vec<f64>> {
     crate::matrix_factorization::lambda_cgd_gram_matrix(
-        lambda_, n_steps, min_sep, max_participations, normalized, momentum,
+        lambda_,
+        n_steps,
+        min_sep,
+        max_participations,
+        normalized,
+        momentum,
     )
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
@@ -355,7 +368,13 @@ pub fn py_lambda_cgd_gram_matrix_lr(
     lr_weights: Vec<f64>,
 ) -> PyResult<Vec<f64>> {
     crate::matrix_factorization::lambda_cgd_gram_matrix_lr(
-        lambda_, momentum, n_steps, min_sep, max_participations, normalized, &lr_weights,
+        lambda_,
+        momentum,
+        n_steps,
+        min_sep,
+        max_participations,
+        normalized,
+        &lr_weights,
     )
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
@@ -403,7 +422,11 @@ pub fn py_bisr_sensitivity_squared(
     momentum: f64,
 ) -> PyResult<f64> {
     crate::matrix_factorization::bisr_sensitivity_squared(
-        &coefficients, n_steps, min_sep, max_participations, momentum,
+        &coefficients,
+        n_steps,
+        min_sep,
+        max_participations,
+        momentum,
     )
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
@@ -429,7 +452,11 @@ pub fn py_bisr_normalized_sensitivity_squared(
     momentum: f64,
 ) -> PyResult<f64> {
     crate::matrix_factorization::bisr_normalized_sensitivity_squared(
-        &coefficients, n_steps, min_sep, max_participations, momentum,
+        &coefficients,
+        n_steps,
+        min_sep,
+        max_participations,
+        momentum,
     )
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
@@ -457,7 +484,12 @@ pub fn py_bisr_gram_matrix(
     momentum: f64,
 ) -> PyResult<Vec<f64>> {
     crate::matrix_factorization::bisr_gram_matrix(
-        &coefficients, n_steps, min_sep, max_participations, normalized, momentum,
+        &coefficients,
+        n_steps,
+        min_sep,
+        max_participations,
+        normalized,
+        momentum,
     )
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
@@ -487,7 +519,13 @@ pub fn py_bisr_gram_matrix_lr(
     lr_weights: Vec<f64>,
 ) -> PyResult<Vec<f64>> {
     crate::matrix_factorization::bisr_gram_matrix_lr(
-        &coefficients, momentum, n_steps, min_sep, max_participations, normalized, &lr_weights,
+        &coefficients,
+        momentum,
+        n_steps,
+        min_sep,
+        max_participations,
+        normalized,
+        &lr_weights,
     )
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
@@ -515,7 +553,11 @@ pub fn py_toeplitz_gram_matrix(
     normalized: bool,
 ) -> PyResult<Vec<f64>> {
     crate::matrix_factorization::toeplitz_gram_matrix(
-        &strategy_coef, n_steps, min_sep, max_participations, normalized,
+        &strategy_coef,
+        n_steps,
+        min_sep,
+        max_participations,
+        normalized,
     )
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
@@ -530,9 +572,6 @@ pub fn py_toeplitz_gram_matrix(
 ///     list[float]: First n entries of column 0 of the strategy matrix.
 #[pyfunction]
 #[pyo3(name = "bisr_strategy_coefficients", signature = (coefficients, n))]
-pub fn py_bisr_strategy_coefficients(
-    coefficients: Vec<f64>,
-    n: usize,
-) -> Vec<f64> {
+pub fn py_bisr_strategy_coefficients(coefficients: Vec<f64>, n: usize) -> Vec<f64> {
     crate::matrix_factorization::bisr::bisr_column_zero_pub(&coefficients, n)
 }

@@ -62,17 +62,17 @@ pub fn parallel_poisson_gaussian_pld(
     let one_sided_x_tail_mass = 0.5 * log_mass.exp();
 
     let full_log_probs = binomial_log_probs(microbatches, rate);
-    let effective_k = auto_k_max_from_x_tail_mass(
-        &full_log_probs,
-        microbatches,
-        one_sided_x_tail_mass,
-    );
+    let effective_k =
+        auto_k_max_from_x_tail_mass(&full_log_probs, microbatches, one_sided_x_tail_mass);
     let (normalized_log_probs, head_mass, tail_mass) = if effective_k < microbatches {
         let head_log_probs = &full_log_probs[..=effective_k];
         let head_log_mass = log_sumexp(head_log_probs);
         let head_mass = head_log_mass.exp();
         let tail_mass = (1.0 - head_mass).clamp(0.0, 1.0);
-        let normalized: Vec<f64> = head_log_probs.iter().map(|&lp| lp - head_log_mass).collect();
+        let normalized: Vec<f64> = head_log_probs
+            .iter()
+            .map(|&lp| lp - head_log_mass)
+            .collect();
         (normalized, head_mass, tail_mass)
     } else {
         (full_log_probs, 1.0, 0.0)

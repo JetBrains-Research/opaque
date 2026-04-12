@@ -61,9 +61,7 @@ impl BandedCholesky {
     fn compute(gram: &[f64], b: usize, threshold: f64) -> Result<Self> {
         // Estimate bandwidth from the Gram matrix: find the smallest p such
         // that max_{|i-j|>p} |G_{ij}| < threshold * max(G_{ii}).
-        let max_diag = (0..b)
-            .map(|i| gram[i * b + i])
-            .fold(0.0f64, f64::max);
+        let max_diag = (0..b).map(|i| gram[i * b + i]).fold(0.0f64, f64::max);
         let abs_thresh = threshold * max_diag;
 
         let mut est_bw: usize = 1;
@@ -123,7 +121,12 @@ impl BandedCholesky {
             }
         }
 
-        Ok(BandedCholesky { data, b, bw, stride })
+        Ok(BandedCholesky {
+            data,
+            b,
+            bw,
+            stride,
+        })
     }
 
     /// Compute u = mean + σ * L * z using banded structure.
@@ -257,9 +260,7 @@ pub fn bnb_mc_pld(
         )));
     }
     if num_samples == 0 {
-        return Err(PldError::InvalidParameter(
-            "num_samples must be > 0".into(),
-        ));
+        return Err(PldError::InvalidParameter("num_samples must be > 0".into()));
     }
 
     // Banded Cholesky: auto-detects bandwidth from Gram structure.
@@ -272,9 +273,7 @@ pub fn bnb_mc_pld(
     let inv_2sig2 = 1.0 / (2.0 * sigma2);
 
     // Precompute -G_kk / (2σ²) for the log-sum-exp
-    let diag_terms: Vec<f64> = (0..b)
-        .map(|k| -gram[k * b + k] * inv_2sig2)
-        .collect();
+    let diag_terms: Vec<f64> = (0..b).map(|k| -gram[k * b + k] * inv_2sig2).collect();
 
     // Parallel MC sampling
     let n_threads = rayon::current_num_threads().max(1);
@@ -285,15 +284,26 @@ pub fn bnb_mc_pld(
     let remove_samples: Vec<f64> = (0..n_threads)
         .into_par_iter()
         .flat_map(|tid| {
-            let n = if tid == 0 { samples_per_thread + remainder } else { samples_per_thread };
+            let n = if tid == 0 {
+                samples_per_thread + remainder
+            } else {
+                samples_per_thread
+            };
             let mut rng = StdRng::seed_from_u64(seed.wrapping_add(tid as u64));
             let mut z_buf = vec![0.0f64; b];
             let mut u_buf = vec![0.0f64; b];
             (0..n)
                 .map(|_| {
                     sample_privacy_loss_remove(
-                        gram, &chol, b, sigma, inv_2sig2, &diag_terms,
-                        &mut z_buf, &mut u_buf, &mut rng,
+                        gram,
+                        &chol,
+                        b,
+                        sigma,
+                        inv_2sig2,
+                        &diag_terms,
+                        &mut z_buf,
+                        &mut u_buf,
+                        &mut rng,
                     )
                 })
                 .collect::<Vec<_>>()
@@ -304,15 +314,26 @@ pub fn bnb_mc_pld(
     let add_samples: Vec<f64> = (0..n_threads)
         .into_par_iter()
         .flat_map(|tid| {
-            let n = if tid == 0 { samples_per_thread + remainder } else { samples_per_thread };
+            let n = if tid == 0 {
+                samples_per_thread + remainder
+            } else {
+                samples_per_thread
+            };
             let mut rng = StdRng::seed_from_u64(seed.wrapping_add(1000 + tid as u64));
             let mut z_buf = vec![0.0f64; b];
             let mut u_buf = vec![0.0f64; b];
             (0..n)
                 .map(|_| {
                     sample_privacy_loss_add(
-                        gram, &chol, b, sigma, inv_2sig2, &diag_terms,
-                        &mut z_buf, &mut u_buf, &mut rng,
+                        gram,
+                        &chol,
+                        b,
+                        sigma,
+                        inv_2sig2,
+                        &diag_terms,
+                        &mut z_buf,
+                        &mut u_buf,
+                        &mut rng,
                     )
                 })
                 .collect::<Vec<_>>()
@@ -334,7 +355,14 @@ fn samples_to_pmf(
     max_grid_size: usize,
 ) -> Pmf {
     if samples.is_empty() {
-        return Pmf::new(discretization, 0, vec![1.0], 0.0, pessimistic_estimate, max_grid_size);
+        return Pmf::new(
+            discretization,
+            0,
+            vec![1.0],
+            0.0,
+            pessimistic_estimate,
+            max_grid_size,
+        );
     }
 
     let n = samples.len() as f64;
@@ -363,7 +391,9 @@ fn samples_to_pmf(
 
     for &y in samples {
         if !y.is_finite() {
-            if y > 0.0 { infinity_mass += 1.0 / n; }
+            if y > 0.0 {
+                infinity_mass += 1.0 / n;
+            }
             continue;
         }
 
@@ -382,7 +412,14 @@ fn samples_to_pmf(
         }
     }
 
-    Pmf::new(effective_disc, effective_lo, probs, infinity_mass, pessimistic_estimate, max_grid_size)
+    Pmf::new(
+        effective_disc,
+        effective_lo,
+        probs,
+        infinity_mass,
+        pessimistic_estimate,
+        max_grid_size,
+    )
 }
 
 #[cfg(test)]
@@ -438,9 +475,18 @@ mod tests {
         }
         let config = default_config();
 
-        let eps_low = bnb_mc_pld(&gram, b, 0.5, 100_000, 42, &config).unwrap().epsilon_at(1e-5);
-        let eps_high = bnb_mc_pld(&gram, b, 2.0, 100_000, 42, &config).unwrap().epsilon_at(1e-5);
-        assert!(eps_high < eps_low, "More noise: {} should be < {}", eps_high, eps_low);
+        let eps_low = bnb_mc_pld(&gram, b, 0.5, 100_000, 42, &config)
+            .unwrap()
+            .epsilon_at(1e-5);
+        let eps_high = bnb_mc_pld(&gram, b, 2.0, 100_000, 42, &config)
+            .unwrap()
+            .epsilon_at(1e-5);
+        assert!(
+            eps_high < eps_low,
+            "More noise: {} should be < {}",
+            eps_high,
+            eps_low
+        );
     }
 
     #[test]

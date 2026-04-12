@@ -675,7 +675,9 @@ mod tests {
             assert!(
                 (col[t] - expected).abs() < 1e-10,
                 "t={}: got {}, expected {}",
-                t, col[t], expected
+                t,
+                col[t],
+                expected
             );
         }
     }
@@ -691,7 +693,9 @@ mod tests {
             assert!(
                 (col[t] - expected).abs() < 1e-10,
                 "t={}: got {}, expected {}",
-                t, col[t], expected
+                t,
+                col[t],
+                expected
             );
         }
     }
@@ -705,11 +709,7 @@ mod tests {
         let max_entry = col.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
         assert!(max_entry < 10.0, "column entries should be bounded");
         // Late entries should be small
-        assert!(
-            col[29].abs() < 0.1,
-            "col[29] = {} should be small",
-            col[29]
-        );
+        assert!(col[29].abs() < 0.1, "col[29] = {} should be small", col[29]);
     }
 
     #[test]
@@ -722,7 +722,11 @@ mod tests {
 
         // Compare with λCGD
         let lcgd_sens = crate::matrix_factorization::lambda_cgd_sensitivity_squared(
-            lambda, 100, 10, Some(3), 0.0,
+            lambda,
+            100,
+            10,
+            Some(3),
+            0.0,
         )
         .unwrap();
 
@@ -739,10 +743,13 @@ mod tests {
         let lambda: f64 = 0.9;
         let coefs = lambda_cgd_coefs(lambda);
 
-        let bisr_sens =
-            bisr_normalized_sensitivity_squared(&coefs, 100, 10, Some(3), 0.0).unwrap();
+        let bisr_sens = bisr_normalized_sensitivity_squared(&coefs, 100, 10, Some(3), 0.0).unwrap();
         let lcgd_sens = crate::matrix_factorization::lambda_cgd_normalized_sensitivity_squared(
-            lambda, 100, 10, Some(3), 0.0,
+            lambda,
+            100,
+            10,
+            Some(3),
+            0.0,
         )
         .unwrap();
 
@@ -772,7 +779,12 @@ mod tests {
     fn test_sensitivity_positive_finite() {
         for coefs in [&BISR_P3[..], &BISR_P4[..], &BISR_P5[..]] {
             let sens = bisr_sensitivity_squared(coefs, 200, 20, Some(5), 0.0).unwrap();
-            assert!(sens > 0.0 && sens.is_finite(), "p={}: sens = {}", coefs.len(), sens);
+            assert!(
+                sens > 0.0 && sens.is_finite(),
+                "p={}: sens = {}",
+                coefs.len(),
+                sens
+            );
         }
     }
 

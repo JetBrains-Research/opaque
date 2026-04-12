@@ -142,7 +142,10 @@ pub fn py_balls_in_bins_gaussian_pld_epochs(
     config: &PyDiscretizationConfig,
 ) -> PyResult<PyPld> {
     let pld = crate::amplification::balls_in_bins_gaussian_pld_epochs(
-        noise_multiplier, num_bins, num_epochs, &config.inner,
+        noise_multiplier,
+        num_bins,
+        num_epochs,
+        &config.inner,
     )
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
     Ok(PyPld::new(pld))
@@ -179,9 +182,8 @@ pub fn py_bnb_mc_pld(
     seed: u64,
     config: &PyDiscretizationConfig,
 ) -> PyResult<PyPld> {
-    let pld = crate::amplification::bnb_mc_pld(
-        &gram, num_bins, sigma, num_samples, seed, &config.inner,
-    )
-    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    let pld =
+        crate::amplification::bnb_mc_pld(&gram, num_bins, sigma, num_samples, seed, &config.inner)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
     Ok(PyPld::new(pld))
 }

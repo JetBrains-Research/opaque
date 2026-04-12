@@ -26,12 +26,7 @@
 use crate::error::{PldError, Result};
 use crate::matrix_factorization::gram_matrix::column_inner_product_momentum;
 
-fn validate_params(
-    lambda: f64,
-    n_steps: usize,
-    min_sep: usize,
-    momentum: f64,
-) -> Result<()> {
+fn validate_params(lambda: f64, n_steps: usize, min_sep: usize, momentum: f64) -> Result<()> {
     if lambda < 0.0 || lambda >= 1.0 {
         return Err(PldError::InvalidParameter(format!(
             "lambda must be in [0, 1), got {}",
@@ -279,8 +274,7 @@ mod tests {
         // k=1: sens² = Σ_{r=0}^{n-1} λ^{2r} = (1-λ^{2n})/(1-λ²)
         let lambda = 0.5;
         let n = 10;
-        let sens_sq =
-            lambda_cgd_sensitivity_squared(lambda, n, n, Some(1), 0.0).unwrap();
+        let sens_sq = lambda_cgd_sensitivity_squared(lambda, n, n, Some(1), 0.0).unwrap();
         let expected: f64 = (0..n).map(|r| lambda.powi(2 * r as i32)).sum();
         assert!(
             (sens_sq - expected).abs() < 1e-10,
@@ -318,7 +312,10 @@ mod tests {
         let lambda = 0.5;
         let n = 20;
         let norm = lambda_cgd_max_column_norm(lambda, n).unwrap();
-        let expected: f64 = ((0..n).map(|r| (lambda * lambda).powi(r as i32)).sum::<f64>()).sqrt();
+        let expected: f64 = ((0..n)
+            .map(|r| (lambda * lambda).powi(r as i32))
+            .sum::<f64>())
+        .sqrt();
         assert!((norm - expected).abs() < 1e-10);
     }
 
@@ -329,8 +326,7 @@ mod tests {
         let b = 2000; // λ^b ≈ 0
         let k = 5;
         let n = k * b;
-        let sens_sq =
-            lambda_cgd_sensitivity_squared(lambda, n, b, Some(k), 0.0).unwrap();
+        let sens_sq = lambda_cgd_sensitivity_squared(lambda, n, b, Some(k), 0.0).unwrap();
         let expected = k as f64 / (1.0 - lambda * lambda);
         assert!(
             (sens_sq - expected).abs() / expected < 1e-6,
@@ -400,10 +396,8 @@ mod tests {
     fn test_normalized_single_participation_is_one() {
         // k=1: all columns have unit norm → sensitivity = 1
         for lambda in [0.0, 0.3, 0.5, 0.9, 0.99] {
-            let sens_sq = lambda_cgd_normalized_sensitivity_squared(
-                lambda, 100, 100, Some(1), 0.0,
-            )
-            .unwrap();
+            let sens_sq =
+                lambda_cgd_normalized_sensitivity_squared(lambda, 100, 100, Some(1), 0.0).unwrap();
             assert!(
                 (sens_sq - 1.0).abs() < 1e-10,
                 "λ={}: normalized sens² should be 1.0, got {}",
@@ -417,10 +411,8 @@ mod tests {
     fn test_normalized_single_participation_with_momentum() {
         // k=1 with momentum: still 1.0 (normalization)
         for beta in [0.5, 0.9, 0.95] {
-            let sens_sq = lambda_cgd_normalized_sensitivity_squared(
-                0.9, 100, 100, Some(1), beta,
-            )
-            .unwrap();
+            let sens_sq =
+                lambda_cgd_normalized_sensitivity_squared(0.9, 100, 100, Some(1), beta).unwrap();
             assert!(
                 (sens_sq - 1.0).abs() < 1e-10,
                 "β={}: normalized sens² should be 1.0, got {}",
@@ -433,10 +425,8 @@ mod tests {
     #[test]
     fn test_normalized_lambda_zero_is_k() {
         // λ=0: columns are orthogonal unit vectors → sens² = k
-        let sens_sq = lambda_cgd_normalized_sensitivity_squared(
-            0.0, 100, 10, Some(3), 0.0,
-        )
-        .unwrap();
+        let sens_sq =
+            lambda_cgd_normalized_sensitivity_squared(0.0, 100, 10, Some(3), 0.0).unwrap();
         assert!(
             (sens_sq - 3.0).abs() < 1e-10,
             "got {}, expected 3.0",
@@ -449,18 +439,15 @@ mod tests {
         // Normalized sensitivity should be ≤ unnormalized (improvement)
         let lambda = 0.9;
         for k in [1, 2, 3, 5] {
-            let unnorm = lambda_cgd_sensitivity_squared(
-                lambda, 100, 10, Some(k), 0.0,
-            )
-            .unwrap();
-            let norm = lambda_cgd_normalized_sensitivity_squared(
-                lambda, 100, 10, Some(k), 0.0,
-            )
-            .unwrap();
+            let unnorm = lambda_cgd_sensitivity_squared(lambda, 100, 10, Some(k), 0.0).unwrap();
+            let norm =
+                lambda_cgd_normalized_sensitivity_squared(lambda, 100, 10, Some(k), 0.0).unwrap();
             assert!(
                 norm <= unnorm + 1e-10,
                 "k={}: normalized {} should be ≤ unnormalized {}",
-                k, norm, unnorm
+                k,
+                norm,
+                unnorm
             );
         }
     }
@@ -472,10 +459,8 @@ mod tests {
         let b = 2000;
         let k = 5;
         let n = k * b;
-        let sens_sq = lambda_cgd_normalized_sensitivity_squared(
-            lambda, n, b, Some(k), 0.0,
-        )
-        .unwrap();
+        let sens_sq =
+            lambda_cgd_normalized_sensitivity_squared(lambda, n, b, Some(k), 0.0).unwrap();
         assert!(
             (sens_sq - k as f64).abs() < 0.01,
             "got {}, expected {} (large b limit)",
