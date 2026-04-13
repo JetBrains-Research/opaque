@@ -111,14 +111,20 @@ class BallsInBins(DpProcess):
                 # BandMF/BLT noise optimization, never the privacy analysis.
                 if lc._use_fast_lambda_cgd_path():
                     gram = _native.lambda_cgd_gram_matrix(
-                        lc.lambda_, lc.n_steps, lc.min_sep,
-                        lc.max_participations, lc.normalized,
+                        lc.lambda_,
+                        lc.n_steps,
+                        lc.min_sep,
+                        lc.max_participations,
+                        lc.normalized,
                     )
                 else:
                     coefs = list(lc._effective_coefficients())
                     gram = _native.bisr_gram_matrix(
-                        coefs, lc.n_steps, lc.min_sep,
-                        lc.max_participations, lc.normalized,
+                        coefs,
+                        lc.n_steps,
+                        lc.min_sep,
+                        lc.max_participations,
+                        lc.normalized,
                     )
                 return _native.bnb_mc_pld(
                     gram,
@@ -176,13 +182,9 @@ def balls_in_bins(
             "Example: acc.balls_in_bins(acc.gaussian(nm), num_bins=k, num_epochs=E)"
         )
     if num_bins < 2:
-        raise ValueError(
-            f"num_bins must be >= 2 for BnB amplification, got {num_bins}"
-        )
+        raise ValueError(f"num_bins must be >= 2 for BnB amplification, got {num_bins}")
     if num_epochs < 1:
-        raise ValueError(
-            f"num_epochs must be >= 1, got {num_epochs}"
-        )
+        raise ValueError(f"num_epochs must be >= 1, got {num_epochs}")
 
     # For λCGD/BISR: validate that num_epochs is consistent with inner params
     if isinstance(inner, LambdaCgd) and inner.max_participations is not None:

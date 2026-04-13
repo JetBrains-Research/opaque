@@ -76,7 +76,7 @@ def _bisr_inverse_coefficients(
     for k in range(bandwidth):
         s = 0.0
         for j in range(k + 1):
-            s += r_tilde[j] * (beta ** j) * r_tilde[k - j] * (alpha ** (k - j))
+            s += r_tilde[j] * (beta**j) * r_tilde[k - j] * (alpha ** (k - j))
         coefs[k] = s
 
     return tuple(coefs)
@@ -139,24 +139,32 @@ class LambdaCgd(DpProcess):
         if self._use_fast_lambda_cgd_path():
             if self.normalized:
                 sens_sq = _native.lambda_cgd_normalized_sensitivity_squared(
-                    self.lambda_, self.n_steps, self.min_sep,
+                    self.lambda_,
+                    self.n_steps,
+                    self.min_sep,
                     self.max_participations,
                 )
             else:
                 sens_sq = _native.lambda_cgd_sensitivity_squared(
-                    self.lambda_, self.n_steps, self.min_sep,
+                    self.lambda_,
+                    self.n_steps,
+                    self.min_sep,
                     self.max_participations,
                 )
         else:
             coefs = list(self._effective_coefficients())
             if self.normalized:
                 sens_sq = _native.bisr_normalized_sensitivity_squared(
-                    coefs, self.n_steps, self.min_sep,
+                    coefs,
+                    self.n_steps,
+                    self.min_sep,
                     self.max_participations,
                 )
             else:
                 sens_sq = _native.bisr_sensitivity_squared(
-                    coefs, self.n_steps, self.min_sep,
+                    coefs,
+                    self.n_steps,
+                    self.min_sep,
                     self.max_participations,
                 )
         return float(sens_sq**0.5)
@@ -271,8 +279,15 @@ def lambda_cgd(
         coefficients = tuple(coefficients)
 
     return LambdaCgd(
-        noise_multiplier, lambda_, n_steps, min_sep, max_participations,
-        normalized, momentum, bandwidth, coefficients,
+        noise_multiplier,
+        lambda_,
+        n_steps,
+        min_sep,
+        max_participations,
+        normalized,
+        momentum,
+        bandwidth,
+        coefficients,
     )
 
 

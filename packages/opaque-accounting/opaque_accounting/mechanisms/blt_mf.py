@@ -58,8 +58,14 @@ class BltMf(DpProcess):
             optimize,
         )
 
-        lr_tensor = torch.tensor(self.lr_schedule, dtype=torch.float64) if self.lr_schedule is not None else None
-        workload_coef = _momentum_workload_coef(self.momentum, self.n_steps, lr_schedule=lr_tensor)
+        lr_tensor = (
+            torch.tensor(self.lr_schedule, dtype=torch.float64)
+            if self.lr_schedule is not None
+            else None
+        )
+        workload_coef = _momentum_workload_coef(
+            self.momentum, self.n_steps, lr_schedule=lr_tensor
+        )
         return optimize(
             n=self.n_steps,
             min_sep=self.min_sep,
@@ -197,6 +203,12 @@ def blt_mf(
             )
         lr_schedule = tuple(lr_schedule)
     return BltMf(
-        noise_multiplier, n_steps, min_sep, max_participations, error, max_buffers,
-        momentum, lr_schedule,
+        noise_multiplier,
+        n_steps,
+        min_sep,
+        max_participations,
+        error,
+        max_buffers,
+        momentum,
+        lr_schedule,
     )

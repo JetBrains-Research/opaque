@@ -77,8 +77,17 @@ class TestLambdaCgdConstructor:
 class TestLambdaCgdSensitivity:
     def test_lambda_zero_is_dpsgd(self):
         """λ=0 → C_λ = I, sensitivity = sqrt(k) for both normalized and unnormalized."""
-        proc_norm = acc.lambda_cgd(1.0, lambda_=0.0, n_steps=100, min_sep=10, max_participations=3)
-        proc_unnorm = acc.lambda_cgd(1.0, lambda_=0.0, n_steps=100, min_sep=10, max_participations=3, normalized=False)
+        proc_norm = acc.lambda_cgd(
+            1.0, lambda_=0.0, n_steps=100, min_sep=10, max_participations=3
+        )
+        proc_unnorm = acc.lambda_cgd(
+            1.0,
+            lambda_=0.0,
+            n_steps=100,
+            min_sep=10,
+            max_participations=3,
+            normalized=False,
+        )
         assert proc_norm.sensitivity() == pytest.approx(math.sqrt(3), rel=1e-6)
         assert proc_unnorm.sensitivity() == pytest.approx(math.sqrt(3), rel=1e-6)
 
@@ -86,14 +95,23 @@ class TestLambdaCgdSensitivity:
         """Unnormalized k=1: sens² = (1 - λ^{2n}) / (1 - λ²)."""
         lam = 0.5
         n = 20
-        proc = acc.lambda_cgd(1.0, lambda_=lam, n_steps=n, min_sep=n, max_participations=1, normalized=False)
+        proc = acc.lambda_cgd(
+            1.0,
+            lambda_=lam,
+            n_steps=n,
+            min_sep=n,
+            max_participations=1,
+            normalized=False,
+        )
         expected = sum(lam ** (2 * r) for r in range(n)) ** 0.5
         assert proc.sensitivity() == pytest.approx(expected, rel=1e-6)
 
     def test_single_participation_normalized_is_one(self):
         """Column-normalized k=1: sensitivity = 1.0 for any λ > 0."""
         for lam in [0.3, 0.5, 0.7, 0.9, 0.99]:
-            proc = acc.lambda_cgd(1.0, lambda_=lam, n_steps=100, min_sep=100, max_participations=1)
+            proc = acc.lambda_cgd(
+                1.0, lambda_=lam, n_steps=100, min_sep=100, max_participations=1
+            )
             assert proc.sensitivity() == pytest.approx(1.0, abs=1e-8), (
                 f"λ={lam}: normalized sens should be 1.0, got {proc.sensitivity()}"
             )
@@ -102,17 +120,40 @@ class TestLambdaCgdSensitivity:
         """Normalized sensitivity ≤ unnormalized for any configuration."""
         for lam in [0.3, 0.7, 0.9]:
             for k in [1, 2, 3]:
-                norm = acc.lambda_cgd(1.0, lambda_=lam, n_steps=100, min_sep=10, max_participations=k).sensitivity()
-                unnorm = acc.lambda_cgd(1.0, lambda_=lam, n_steps=100, min_sep=10, max_participations=k, normalized=False).sensitivity()
+                norm = acc.lambda_cgd(
+                    1.0, lambda_=lam, n_steps=100, min_sep=10, max_participations=k
+                ).sensitivity()
+                unnorm = acc.lambda_cgd(
+                    1.0,
+                    lambda_=lam,
+                    n_steps=100,
+                    min_sep=10,
+                    max_participations=k,
+                    normalized=False,
+                ).sensitivity()
                 assert norm <= unnorm + 1e-10, (
                     f"λ={lam}, k={k}: norm={norm} > unnorm={unnorm}"
                 )
 
     def test_sensitivity_increases_with_lambda(self):
         """Higher λ → higher sensitivity for unnormalized (normalized k=1 is always 1)."""
-        prev = acc.lambda_cgd(1.0, lambda_=0.0, n_steps=100, min_sep=100, max_participations=1, normalized=False).sensitivity()
+        prev = acc.lambda_cgd(
+            1.0,
+            lambda_=0.0,
+            n_steps=100,
+            min_sep=100,
+            max_participations=1,
+            normalized=False,
+        ).sensitivity()
         for lam in [0.3, 0.5, 0.7, 0.9]:
-            curr = acc.lambda_cgd(1.0, lambda_=lam, n_steps=100, min_sep=100, max_participations=1, normalized=False).sensitivity()
+            curr = acc.lambda_cgd(
+                1.0,
+                lambda_=lam,
+                n_steps=100,
+                min_sep=100,
+                max_participations=1,
+                normalized=False,
+            ).sensitivity()
             assert curr > prev, f"λ={lam}: {curr} should be > {prev}"
             prev = curr
 
@@ -120,13 +161,19 @@ class TestLambdaCgdSensitivity:
         """More participations → higher sensitivity."""
         for k in [1, 2, 3, 5]:
             if k == 1:
-                prev = acc.lambda_cgd(1.0, lambda_=0.9, n_steps=100, min_sep=10, max_participations=k).sensitivity()
+                prev = acc.lambda_cgd(
+                    1.0, lambda_=0.9, n_steps=100, min_sep=10, max_participations=k
+                ).sensitivity()
             else:
-                curr = acc.lambda_cgd(1.0, lambda_=0.9, n_steps=100, min_sep=10, max_participations=k).sensitivity()
+                curr = acc.lambda_cgd(
+                    1.0, lambda_=0.9, n_steps=100, min_sep=10, max_participations=k
+                ).sensitivity()
                 assert curr > prev
 
     def test_sensitivity_cached(self):
-        proc = acc.lambda_cgd(1.0, lambda_=0.9, n_steps=100, min_sep=10, max_participations=3)
+        proc = acc.lambda_cgd(
+            1.0, lambda_=0.9, n_steps=100, min_sep=10, max_participations=3
+        )
         s1 = proc.sensitivity()
         s2 = proc.sensitivity()
         assert s1 == s2
@@ -138,21 +185,29 @@ class TestLambdaCgdSensitivity:
 class TestLambdaCgdPld:
     @pytest.mark.slow
     def test_epsilon_is_finite_positive(self):
-        proc = acc.lambda_cgd(1.0, lambda_=0.9, n_steps=100, min_sep=10, max_participations=3)
+        proc = acc.lambda_cgd(
+            1.0, lambda_=0.9, n_steps=100, min_sep=10, max_participations=3
+        )
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     @pytest.mark.slow
     def test_more_noise_lowers_epsilon(self):
-        eps_low = acc.lambda_cgd(0.5, lambda_=0.9, n_steps=100, min_sep=10, max_participations=3).epsilon_at(1e-5)
-        eps_high = acc.lambda_cgd(2.0, lambda_=0.9, n_steps=100, min_sep=10, max_participations=3).epsilon_at(1e-5)
+        eps_low = acc.lambda_cgd(
+            0.5, lambda_=0.9, n_steps=100, min_sep=10, max_participations=3
+        ).epsilon_at(1e-5)
+        eps_high = acc.lambda_cgd(
+            2.0, lambda_=0.9, n_steps=100, min_sep=10, max_participations=3
+        ).epsilon_at(1e-5)
         assert eps_high < eps_low
 
     @pytest.mark.slow
     def test_lambda_zero_matches_gaussian(self):
         """λ=0, single participation should be close to gaussian(nm)."""
         nm = 1.0
-        proc_lcgd = acc.lambda_cgd(nm, lambda_=0.0, n_steps=1, min_sep=1, max_participations=1)
+        proc_lcgd = acc.lambda_cgd(
+            nm, lambda_=0.0, n_steps=1, min_sep=1, max_participations=1
+        )
         proc_gauss = acc.gaussian(nm)
         eps_lcgd = proc_lcgd.epsilon_at(1e-5)
         eps_gauss = proc_gauss.epsilon_at(1e-5)
@@ -174,15 +229,23 @@ class TestLambdaCgdBnb:
 
         # No amplification
         proc_no_amp = acc.lambda_cgd(
-            nm, lambda_=lam, n_steps=n_total,
-            min_sep=n_per_epoch, max_participations=n_epochs,
+            nm,
+            lambda_=lam,
+            n_steps=n_total,
+            min_sep=n_per_epoch,
+            max_participations=n_epochs,
         )
         eps_no_amp = proc_no_amp.epsilon_at(1e-5)
 
         # MC BnB amplification (unified multi-epoch path)
         training = acc.balls_in_bins(
-            acc.lambda_cgd(nm, lambda_=lam, n_steps=n_total,
-                           min_sep=n_per_epoch, max_participations=n_epochs),
+            acc.lambda_cgd(
+                nm,
+                lambda_=lam,
+                n_steps=n_total,
+                min_sep=n_per_epoch,
+                max_participations=n_epochs,
+            ),
             num_bins=n_per_epoch,
             num_epochs=n_epochs,
         )
@@ -200,8 +263,9 @@ class TestLambdaCgdBnb:
         eps_prev = float("inf")
         for bins in [10, 50, 100]:
             epoch = acc.balls_in_bins(
-                acc.lambda_cgd(nm, lambda_=lam, n_steps=bins,
-                               min_sep=bins, max_participations=1),
+                acc.lambda_cgd(
+                    nm, lambda_=lam, n_steps=bins, min_sep=bins, max_participations=1
+                ),
                 num_bins=bins,
             )
             eps = (epoch * 5).epsilon_at(1e-5)
@@ -212,8 +276,9 @@ class TestLambdaCgdBnb:
     def test_composition(self):
         """Can compose BnB epochs with * operator."""
         epoch = acc.balls_in_bins(
-            acc.lambda_cgd(1.0, lambda_=0.9, n_steps=50,
-                           min_sep=50, max_participations=1),
+            acc.lambda_cgd(
+                1.0, lambda_=0.9, n_steps=50, min_sep=50, max_participations=1
+            ),
             num_bins=50,
         )
         total = epoch * 3
@@ -231,16 +296,26 @@ class TestLambdaCgdBnb:
         n_total = bins * n_epochs
 
         training_norm = acc.balls_in_bins(
-            acc.lambda_cgd(nm, lambda_=lam, n_steps=n_total,
-                           min_sep=bins, max_participations=n_epochs,
-                           normalized=True),
+            acc.lambda_cgd(
+                nm,
+                lambda_=lam,
+                n_steps=n_total,
+                min_sep=bins,
+                max_participations=n_epochs,
+                normalized=True,
+            ),
             num_bins=bins,
             num_epochs=n_epochs,
         )
         training_unnorm = acc.balls_in_bins(
-            acc.lambda_cgd(nm, lambda_=lam, n_steps=n_total,
-                           min_sep=bins, max_participations=n_epochs,
-                           normalized=False),
+            acc.lambda_cgd(
+                nm,
+                lambda_=lam,
+                n_steps=n_total,
+                min_sep=bins,
+                max_participations=n_epochs,
+                normalized=False,
+            ),
             num_bins=bins,
             num_epochs=n_epochs,
         )
@@ -262,15 +337,25 @@ class TestLambdaCgdBnb:
         n_total = n_per_epoch * n_epochs
 
         eps_low_noise = acc.balls_in_bins(
-            acc.lambda_cgd(0.5, lambda_=lam, n_steps=n_total,
-                           min_sep=n_per_epoch, max_participations=n_epochs),
+            acc.lambda_cgd(
+                0.5,
+                lambda_=lam,
+                n_steps=n_total,
+                min_sep=n_per_epoch,
+                max_participations=n_epochs,
+            ),
             num_bins=n_per_epoch,
             num_epochs=n_epochs,
         ).epsilon_at(1e-5)
 
         eps_high_noise = acc.balls_in_bins(
-            acc.lambda_cgd(2.0, lambda_=lam, n_steps=n_total,
-                           min_sep=n_per_epoch, max_participations=n_epochs),
+            acc.lambda_cgd(
+                2.0,
+                lambda_=lam,
+                n_steps=n_total,
+                min_sep=n_per_epoch,
+                max_participations=n_epochs,
+            ),
             num_bins=n_per_epoch,
             num_epochs=n_epochs,
         ).epsilon_at(1e-5)
@@ -289,8 +374,13 @@ class TestLambdaCgdBnb:
 
         def compute():
             return acc.balls_in_bins(
-                acc.lambda_cgd(1.0, lambda_=lam, n_steps=n_total,
-                               min_sep=n_per_epoch, max_participations=n_epochs),
+                acc.lambda_cgd(
+                    1.0,
+                    lambda_=lam,
+                    n_steps=n_total,
+                    min_sep=n_per_epoch,
+                    max_participations=n_epochs,
+                ),
                 num_bins=n_per_epoch,
                 num_epochs=n_epochs,
             ).epsilon_at(1e-5)
@@ -303,8 +393,9 @@ class TestLambdaCgdBnb:
         """num_epochs conflicting with max_participations raises ValueError."""
         with pytest.raises(ValueError, match="conflicts"):
             acc.balls_in_bins(
-                acc.lambda_cgd(1.0, lambda_=0.9, n_steps=100,
-                               min_sep=20, max_participations=5),
+                acc.lambda_cgd(
+                    1.0, lambda_=0.9, n_steps=100, min_sep=20, max_participations=5
+                ),
                 num_bins=20,
                 num_epochs=3,  # conflicts with max_participations=5
             )

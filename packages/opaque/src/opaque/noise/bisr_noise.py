@@ -50,7 +50,7 @@ def _bisr_inverse_coefficients(bandwidth: int, beta: float = 0.0) -> list[float]
     for k in range(bandwidth):
         s = 0.0
         for j in range(k + 1):
-            s += r_tilde[j] * (beta ** j) * r_tilde[k - j]
+            s += r_tilde[j] * (beta**j) * r_tilde[k - j]
         coefs[k] = s
     return coefs
 

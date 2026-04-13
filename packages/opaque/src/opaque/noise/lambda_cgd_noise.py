@@ -24,7 +24,6 @@ References:
 
 from __future__ import annotations
 
-import dataclasses
 from collections.abc import Callable
 from typing import Any
 
@@ -35,7 +34,6 @@ import torch
 from opaque.noise.matrix_factorization.noise import (
     MFNoiseState,
     _iid_normal_noise,
-    _internal_compute_dtype,
 )
 from opaque.random import RngKey, generator_from_key
 from opaque.random import fold_in as rng_fold_in
@@ -51,7 +49,7 @@ def _column_norm(lambda_: float, n_steps: int, step: int) -> float:
         return 1.0
     remaining = n_steps - step  # n − t
     lambda2 = lambda_ * lambda_
-    lambda2r = lambda2 ** remaining
+    lambda2r = lambda2**remaining
     if lambda2r < 1e-30:
         return math.sqrt(1.0 / (1.0 - lambda2))
     return math.sqrt((1.0 - lambda2r) / (1.0 - lambda2))

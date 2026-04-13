@@ -108,5 +108,3 @@ class TestBandedSensitivity:
         result = get_sensitivity_banded_for_X(X, min_sep=1, max_participations=2)
         # Identity: diagonal X has x[i]=1, sum of 2 best = 2
         assert result == pytest.approx(torch.sqrt(torch.tensor(2.0)).item())
-
-

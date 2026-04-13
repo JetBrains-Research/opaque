@@ -14,7 +14,9 @@ class TestLambdaCgdNoise:
     def test_basic_noise_generation(self):
         """Noise function returns correctly shaped output."""
         template = self._make_template()
-        noise_fn, state = lambda_cgd_noise(template, 100, stddev=1.0, key=key(42), lambda_=0.9)
+        noise_fn, state = lambda_cgd_noise(
+            template, 100, stddev=1.0, key=key(42), lambda_=0.9
+        )
         noisy, new_state = noise_fn({"w": torch.zeros(10)}, state)
         assert noisy["w"].shape == (10,)
         assert new_state._step_counter == 1
@@ -24,7 +26,9 @@ class TestLambdaCgdNoise:
         template = self._make_template()
         results = []
         for _ in range(2):
-            noise_fn, state = lambda_cgd_noise(template, 100, stddev=1.0, key=key(42), lambda_=0.9)
+            noise_fn, state = lambda_cgd_noise(
+                template, 100, stddev=1.0, key=key(42), lambda_=0.9
+            )
             noisy, state = noise_fn({"w": torch.zeros(10)}, state)
             noisy2, state = noise_fn({"w": torch.zeros(10)}, state)
             results.append(torch.cat([noisy["w"], noisy2["w"]]))
@@ -33,8 +37,12 @@ class TestLambdaCgdNoise:
     def test_different_keys_give_different_noise(self):
         """Different keys produce different sequences."""
         template = self._make_template()
-        noise_fn1, state1 = lambda_cgd_noise(template, 100, stddev=1.0, key=key(1), lambda_=0.9)
-        noise_fn2, state2 = lambda_cgd_noise(template, 100, stddev=1.0, key=key(2), lambda_=0.9)
+        noise_fn1, state1 = lambda_cgd_noise(
+            template, 100, stddev=1.0, key=key(1), lambda_=0.9
+        )
+        noise_fn2, state2 = lambda_cgd_noise(
+            template, 100, stddev=1.0, key=key(2), lambda_=0.9
+        )
         noisy1, _ = noise_fn1({"w": torch.zeros(10)}, state1)
         noisy2, _ = noise_fn2({"w": torch.zeros(10)}, state2)
         assert not torch.allclose(noisy1["w"], noisy2["w"])
@@ -42,7 +50,9 @@ class TestLambdaCgdNoise:
     def test_lambda_zero_is_independent(self):
         """λ=0 should produce independent noise at each step (DP-SGD)."""
         template = self._make_template()
-        noise_fn, state = lambda_cgd_noise(template, 100, stddev=1.0, key=key(42), lambda_=0.0)
+        noise_fn, state = lambda_cgd_noise(
+            template, 100, stddev=1.0, key=key(42), lambda_=0.0
+        )
 
         # First step: z_0
         noisy0, state = noise_fn({"w": torch.zeros(10)}, state)
@@ -57,8 +67,12 @@ class TestLambdaCgdNoise:
         """First step is z_0 regardless of λ (no previous noise to subtract) — unnormalized."""
         template = self._make_template()
 
-        noise_fn_corr, state_corr = lambda_cgd_noise(template, 100, stddev=1.0, key=key(42), lambda_=0.9, normalized=False)
-        noise_fn_ind, state_ind = lambda_cgd_noise(template, 100, stddev=1.0, key=key(42), lambda_=0.0, normalized=False)
+        noise_fn_corr, state_corr = lambda_cgd_noise(
+            template, 100, stddev=1.0, key=key(42), lambda_=0.9, normalized=False
+        )
+        noise_fn_ind, state_ind = lambda_cgd_noise(
+            template, 100, stddev=1.0, key=key(42), lambda_=0.0, normalized=False
+        )
 
         noisy_corr, _ = noise_fn_corr({"w": torch.zeros(10)}, state_corr)
         noisy_ind, _ = noise_fn_ind({"w": torch.zeros(10)}, state_ind)
@@ -69,8 +83,12 @@ class TestLambdaCgdNoise:
         """Second step with λ>0 should differ from λ=0."""
         template = self._make_template()
 
-        noise_fn_corr, state_corr = lambda_cgd_noise(template, 100, stddev=1.0, key=key(42), lambda_=0.9)
-        noise_fn_ind, state_ind = lambda_cgd_noise(template, 100, stddev=1.0, key=key(42), lambda_=0.0)
+        noise_fn_corr, state_corr = lambda_cgd_noise(
+            template, 100, stddev=1.0, key=key(42), lambda_=0.9
+        )
+        noise_fn_ind, state_ind = lambda_cgd_noise(
+            template, 100, stddev=1.0, key=key(42), lambda_=0.0
+        )
 
         _, state_corr = noise_fn_corr({"w": torch.zeros(10)}, state_corr)
         _, state_ind = noise_fn_ind({"w": torch.zeros(10)}, state_ind)
@@ -83,7 +101,9 @@ class TestLambdaCgdNoise:
     def test_multi_param(self):
         """Works with multiple parameter tensors."""
         template = {"w1": torch.zeros(5), "w2": torch.zeros(3, 4)}
-        noise_fn, state = lambda_cgd_noise(template, 100, stddev=1.0, key=key(42), lambda_=0.9)
+        noise_fn, state = lambda_cgd_noise(
+            template, 100, stddev=1.0, key=key(42), lambda_=0.9
+        )
         noisy, new_state = noise_fn(
             {"w1": torch.zeros(5), "w2": torch.zeros(3, 4)}, state
         )
@@ -93,18 +113,24 @@ class TestLambdaCgdNoise:
     def test_noise_adds_to_grads(self):
         """Noise is added to the gradient, not overwriting it."""
         template = self._make_template()
-        noise_fn, state = lambda_cgd_noise(template, 100, stddev=1.0, key=key(42), lambda_=0.9)
+        noise_fn, state = lambda_cgd_noise(
+            template, 100, stddev=1.0, key=key(42), lambda_=0.9
+        )
         grad = {"w": torch.ones(10) * 5.0}
         noisy, _ = noise_fn(grad, state)
         # The result should be 5.0 + noise, so different from just noise
-        noise_fn2, state2 = lambda_cgd_noise(template, 100, stddev=1.0, key=key(42), lambda_=0.9)
+        noise_fn2, state2 = lambda_cgd_noise(
+            template, 100, stddev=1.0, key=key(42), lambda_=0.9
+        )
         noise_only, _ = noise_fn2({"w": torch.zeros(10)}, state2)
         torch.testing.assert_close(noisy["w"] - 5.0, noise_only["w"])
 
     def test_step_counter_increments(self):
         """Step counter increments with each call."""
         template = self._make_template()
-        noise_fn, state = lambda_cgd_noise(template, 100, stddev=1.0, key=key(42), lambda_=0.9)
+        noise_fn, state = lambda_cgd_noise(
+            template, 100, stddev=1.0, key=key(42), lambda_=0.9
+        )
         assert state._step_counter == 0
         _, state = noise_fn({"w": torch.zeros(10)}, state)
         assert state._step_counter == 1
@@ -115,6 +141,7 @@ class TestLambdaCgdNoise:
         with torch.no_grad():
             template = self._make_template()
             import pytest
+
             with pytest.raises(ValueError):
                 lambda_cgd_noise(template, 100, stddev=1.0, key=key(42), lambda_=-0.1)
             with pytest.raises(ValueError):
@@ -125,12 +152,16 @@ class TestLambdaCgdNoise:
         template = {"w": torch.zeros(20)}
 
         # Run with λ=0, normalized=False to get individual z_0 and z_1
-        noise_fn_ind, state_ind = lambda_cgd_noise(template, 100, stddev=1.0, key=key(42), lambda_=0.0, normalized=False)
+        noise_fn_ind, state_ind = lambda_cgd_noise(
+            template, 100, stddev=1.0, key=key(42), lambda_=0.0, normalized=False
+        )
         z0, state_ind = noise_fn_ind({"w": torch.zeros(20)}, state_ind)
         z1, _ = noise_fn_ind({"w": torch.zeros(20)}, state_ind)
 
         # Run with λ>0, normalized=False: step 1 should be z_1 - λ*z_0
-        noise_fn_corr, state_corr = lambda_cgd_noise(template, 100, stddev=1.0, key=key(42), lambda_=0.5, normalized=False)
+        noise_fn_corr, state_corr = lambda_cgd_noise(
+            template, 100, stddev=1.0, key=key(42), lambda_=0.5, normalized=False
+        )
         _, state_corr = noise_fn_corr({"w": torch.zeros(20)}, state_corr)
         step1_corr, _ = noise_fn_corr({"w": torch.zeros(20)}, state_corr)
 
@@ -190,10 +221,20 @@ class TestLambdaCgdColumnNormalization:
         """Step 0 with normalized=True: d_0 * z_0 ≠ z_0 for λ>0."""
         template = self._make_template()
         noise_fn_norm, state_norm = lambda_cgd_noise(
-            template, 100, stddev=1.0, key=key(42), lambda_=0.9, normalized=True,
+            template,
+            100,
+            stddev=1.0,
+            key=key(42),
+            lambda_=0.9,
+            normalized=True,
         )
         noise_fn_raw, state_raw = lambda_cgd_noise(
-            template, 100, stddev=1.0, key=key(42), lambda_=0.9, normalized=False,
+            template,
+            100,
+            stddev=1.0,
+            key=key(42),
+            lambda_=0.9,
+            normalized=False,
         )
         out_norm, _ = noise_fn_norm({"w": torch.zeros(20)}, state_norm)
         out_raw, _ = noise_fn_raw({"w": torch.zeros(20)}, state_raw)
@@ -209,10 +250,20 @@ class TestLambdaCgdColumnNormalization:
         lam = 0.7
 
         noise_fn_norm, state_norm = lambda_cgd_noise(
-            template, n_steps, stddev=1.0, key=key(42), lambda_=lam, normalized=True,
+            template,
+            n_steps,
+            stddev=1.0,
+            key=key(42),
+            lambda_=lam,
+            normalized=True,
         )
         noise_fn_raw, state_raw = lambda_cgd_noise(
-            template, n_steps, stddev=1.0, key=key(42), lambda_=lam, normalized=False,
+            template,
+            n_steps,
+            stddev=1.0,
+            key=key(42),
+            lambda_=lam,
+            normalized=False,
         )
 
         for step in range(5):
@@ -220,12 +271,16 @@ class TestLambdaCgdColumnNormalization:
             out_raw, state_raw = noise_fn_raw({"w": torch.zeros(20)}, state_raw)
             d_t = _column_norm(lam, n_steps, step)
             torch.testing.assert_close(
-                out_norm["w"], out_raw["w"] * d_t, atol=1e-5, rtol=1e-5,
+                out_norm["w"],
+                out_raw["w"] * d_t,
+                atol=1e-5,
+                rtol=1e-5,
             )
 
     def test_column_norm_decreasing(self):
         """Column norms decrease from first to last step."""
         from opaque.noise.lambda_cgd_noise import _column_norm
+
         n_steps = 100
         lam = 0.9
         d_prev = _column_norm(lam, n_steps, 0)
@@ -239,6 +294,7 @@ class TestLambdaCgdColumnNormalization:
     def test_column_norm_lambda_zero(self):
         """λ=0: all column norms are 1.0 (identity matrix)."""
         from opaque.noise.lambda_cgd_noise import _column_norm
+
         for t in range(10):
             assert _column_norm(0.0, 100, t) == 1.0
 
@@ -248,7 +304,12 @@ class TestLambdaCgdColumnNormalization:
         results = []
         for _ in range(2):
             noise_fn, state = lambda_cgd_noise(
-                template, 100, stddev=1.0, key=key(42), lambda_=0.9, normalized=True,
+                template,
+                100,
+                stddev=1.0,
+                key=key(42),
+                lambda_=0.9,
+                normalized=True,
             )
             out, _ = noise_fn({"w": torch.zeros(20)}, state)
             results.append(out["w"].clone())
@@ -257,6 +318,7 @@ class TestLambdaCgdColumnNormalization:
     def test_rejects_invalid_n_steps(self):
         """n_steps < 1 should raise ValueError."""
         import pytest
+
         template = self._make_template()
         with pytest.raises(ValueError):
             lambda_cgd_noise(template, 0, stddev=1.0, key=key(42), lambda_=0.9)

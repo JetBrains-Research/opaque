@@ -292,7 +292,10 @@ class TestBLTWithBnB:
         )
 
         sampler = BallsInBinsSampler(
-            dataset, num_bins=num_bins, num_epochs=num_epochs, key=key(99),
+            dataset,
+            num_bins=num_bins,
+            num_epochs=num_epochs,
+            key=key(99),
         )
 
         params = list(model.parameters())
@@ -323,7 +326,10 @@ class TestBLTWithBnB:
         dataset = list(range(n_samples))
 
         sampler = BallsInBinsSampler(
-            dataset, num_bins=num_bins, num_epochs=1, key=key(42),
+            dataset,
+            num_bins=num_bins,
+            num_epochs=1,
+            key=key(42),
         )
 
         all_indices = []

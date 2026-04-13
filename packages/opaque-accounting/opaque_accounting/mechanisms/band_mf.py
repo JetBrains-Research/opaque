@@ -61,8 +61,14 @@ class BandMf(DpProcess):
             optimize as optimize_toeplitz,
         )
 
-        lr_tensor = torch.tensor(self.lr_schedule, dtype=torch.float64) if self.lr_schedule is not None else None
-        workload_coef = _momentum_workload_coef(self.momentum, self.n_steps, lr_schedule=lr_tensor)
+        lr_tensor = (
+            torch.tensor(self.lr_schedule, dtype=torch.float64)
+            if self.lr_schedule is not None
+            else None
+        )
+        workload_coef = _momentum_workload_coef(
+            self.momentum, self.n_steps, lr_schedule=lr_tensor
+        )
         return optimize_toeplitz(self.n_steps, self.bands, workload_coef=workload_coef)
 
     @functools.lru_cache(maxsize=1)

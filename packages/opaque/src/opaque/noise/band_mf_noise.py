@@ -73,16 +73,12 @@ def _momentum_workload_coef(
             coef[0] = lr[0]
         return coef
 
-    base = torch.tensor(
-        [momentum**i for i in range(n)], dtype=torch.float64
-    )
+    base = torch.tensor([momentum**i for i in range(n)], dtype=torch.float64)
 
     if lr_schedule is not None:
         lr = torch.as_tensor(lr_schedule, dtype=torch.float64)
         if lr.shape[0] != n:
-            raise ValueError(
-                f"lr_schedule length ({lr.shape[0]}) must equal n ({n})"
-            )
+            raise ValueError(f"lr_schedule length ({lr.shape[0]}) must equal n ({n})")
         return lr * base
 
     return base

@@ -221,5 +221,3 @@ def get_sensitivity_banded(
     """Like get_sensitivity_banded_for_X, but takes encoder C."""
     checks.check(C=C)
     return get_sensitivity_banded_for_X(C.T @ C, min_sep, max_participations)
-
-

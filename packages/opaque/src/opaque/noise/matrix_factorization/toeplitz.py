@@ -15,7 +15,6 @@ from __future__ import annotations
 import functools
 from typing import Protocol
 
-import numpy as np
 import torch
 from scipy.linalg import toeplitz as scipy_toeplitz
 

@@ -68,7 +68,9 @@ class _StreamingMatrixBuilder:
 
     def _read(self, state: torch.Tensor) -> torch.Tensor:
         output_scale = torch.tensor(
-            self.output_scale, dtype=state.dtype, device=state.device,
+            self.output_scale,
+            dtype=state.dtype,
+            device=state.device,
         )
         return torch.tensordot(output_scale, state, dims=([0], [0]))
 
@@ -76,7 +78,9 @@ class _StreamingMatrixBuilder:
         self, state: torch.Tensor, next_rhs_value: torch.Tensor
     ) -> torch.Tensor:
         buf_decay = torch.tensor(
-            self.buf_decay, dtype=state.dtype, device=state.device,
+            self.buf_decay,
+            dtype=state.dtype,
+            device=state.device,
         )
         if len(buf_decay) == 0:
             return state
