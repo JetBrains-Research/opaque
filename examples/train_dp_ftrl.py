@@ -100,9 +100,19 @@ from opaque.noise.mf import (
     lambda_cgd_strategy,
     mf_noise,
 )
-from opaque.profiling import StepTimer, TrainingProfiler, print_memory, reset_peak_memory
+from opaque.profiling import (
+    StepTimer,
+    TrainingProfiler,
+    print_memory,
+    reset_peak_memory,
+)
 from opaque.random import key, fold_in
-from opaque.sampling import BallsInBinsSampler, CyclicPoissonSampler, PoissonSampler, poisson_collate
+from opaque.sampling import (
+    BallsInBinsSampler,
+    CyclicPoissonSampler,
+    PoissonSampler,
+    poisson_collate,
+)
 from opaque.utils import make_functional
 
 try:
@@ -134,9 +144,14 @@ def _is_dtype_supported(device: torch.device, dtype: torch.dtype) -> bool:
 
 
 def _resolve_model_dtype(
-    requested_name: str, device: torch.device,
+    requested_name: str,
+    device: torch.device,
 ) -> tuple[str, torch.dtype, str | None]:
-    dtype_map = {"float32": torch.float32, "float16": torch.float16, "bfloat16": torch.bfloat16}
+    dtype_map = {
+        "float32": torch.float32,
+        "float16": torch.float16,
+        "bfloat16": torch.bfloat16,
+    }
     requested_dtype = dtype_map[requested_name]
     if _is_dtype_supported(device, requested_dtype):
         return requested_name, requested_dtype, None
@@ -150,7 +165,9 @@ def _resolve_model_dtype(
         if _is_dtype_supported(device, fallback_dtype):
             reason = f"Requested dtype '{requested_name}' not supported on {device.type}; using '{fallback_name}'."
             return fallback_name, fallback_dtype, reason
-    raise RuntimeError(f"No supported dtype for device={device.type}. Requested '{requested_name}'.")
+    raise RuntimeError(
+        f"No supported dtype for device={device.type}. Requested '{requested_name}'."
+    )
 
 
 def _load_streaming_subset(
@@ -162,7 +179,10 @@ def _load_streaming_subset(
 ) -> Dataset:
     print("  Streaming source dataset and materializing required subset...")
     stream_ds = load_dataset(
-        dataset_name, name=dataset_subset, split=dataset_split, streaming=True,
+        dataset_name,
+        name=dataset_subset,
+        split=dataset_split,
+        streaming=True,
     )
     rows = list(stream_ds.take(total_needed))
     if rows and dataset_text_field not in rows[0]:
@@ -170,7 +190,9 @@ def _load_streaming_subset(
             f"Text field '{dataset_text_field}' not found. Available: {list(rows[0].keys())}"
         )
     if len(rows) < total_needed:
-        raise ValueError(f"Stream ended after {len(rows)} examples, need {total_needed}.")
+        raise ValueError(
+            f"Stream ended after {len(rows)} examples, need {total_needed}."
+        )
     return Dataset.from_list(rows)
 
 
@@ -200,7 +222,9 @@ def make_lr_schedule(
 
     # Linear warmup: 0 → 1
     if warmup_steps > 0:
-        schedule[:warmup_steps] = torch.linspace(0.0, 1.0, warmup_steps, dtype=torch.float64)
+        schedule[:warmup_steps] = torch.linspace(
+            0.0, 1.0, warmup_steps, dtype=torch.float64
+        )
 
     return (schedule * base_lr).to(torch.float32)
 
@@ -216,7 +240,9 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--preset", type=str, choices=["custom", "smoke", "mellum-kstack"],
+        "--preset",
+        type=str,
+        choices=["custom", "smoke", "mellum-kstack"],
         default="smoke",
         help="Preset configuration.",
     )
@@ -224,14 +250,28 @@ def parse_args():
     # Model
     model_g = parser.add_argument_group("model")
     model_g.add_argument("--model-name", type=str, default="gpt2")
-    model_g.add_argument("--attention", type=str, choices=["eager", "sdpa"], default="sdpa")
-    model_g.add_argument("--sdpa-backend", type=str, choices=["flash", "efficient", "cudnn", "math"], default=None)
-    model_g.add_argument("--dtype", type=str, default="bfloat16", choices=["float32", "float16", "bfloat16"])
+    model_g.add_argument(
+        "--attention", type=str, choices=["eager", "sdpa"], default="sdpa"
+    )
+    model_g.add_argument(
+        "--sdpa-backend",
+        type=str,
+        choices=["flash", "efficient", "cudnn", "math"],
+        default=None,
+    )
+    model_g.add_argument(
+        "--dtype",
+        type=str,
+        default="bfloat16",
+        choices=["float32", "float16", "bfloat16"],
+    )
 
     # Data
     data_g = parser.add_argument_group("data")
     data_g.add_argument("--dataset", type=str, default="ag_news")
-    data_g.add_argument("--dataset-subset", dest="dataset_subset", type=str, default=None)
+    data_g.add_argument(
+        "--dataset-subset", dest="dataset_subset", type=str, default=None
+    )
     data_g.add_argument("--dataset-split", type=str, default="train")
     data_g.add_argument("--dataset-text-field", type=str, default="text")
     data_g.add_argument("--num-train-samples", type=int, default=5000)
@@ -244,44 +284,72 @@ def parse_args():
     train_g.add_argument("--eval-batch-size", type=int, default=None)
     train_g.add_argument("--num-epochs", type=int, default=3)
     train_g.add_argument("--learning-rate", type=float, default=5e-4)
-    train_g.add_argument("--momentum", type=float, default=0.95, help="Polyak momentum (default: 0.95 per BandMF paper)")
-    train_g.add_argument("--warmup-frac", type=float, default=0.15, help="LR warmup fraction (default: 0.15)")
+    train_g.add_argument(
+        "--momentum",
+        type=float,
+        default=0.95,
+        help="Polyak momentum (default: 0.95 per BandMF paper)",
+    )
+    train_g.add_argument(
+        "--warmup-frac",
+        type=float,
+        default=0.15,
+        help="LR warmup fraction (default: 0.15)",
+    )
     train_g.add_argument("--log-steps", type=int, default=1)
     train_g.add_argument("--eval-steps", type=int, default=10)
     train_g.add_argument("--max-steps", type=int, default=None)
     train_g.add_argument("--seed", type=int, default=42)
-    train_g.add_argument("--gradient-checkpointing", action=argparse.BooleanOptionalAction, default=False)
-    train_g.add_argument("--cpu-offload", action=argparse.BooleanOptionalAction, default=False)
+    train_g.add_argument(
+        "--gradient-checkpointing", action=argparse.BooleanOptionalAction, default=False
+    )
+    train_g.add_argument(
+        "--cpu-offload", action=argparse.BooleanOptionalAction, default=False
+    )
 
     # LoRA
     lora_g = parser.add_argument_group("lora")
     lora_g.add_argument("--lora-r", type=int, default=4)
     lora_g.add_argument("--lora-alpha", type=int, default=8)
-    lora_g.add_argument("--lora-modules", type=str, nargs="+", default=["c_attn", "c_proj"])
+    lora_g.add_argument(
+        "--lora-modules", type=str, nargs="+", default=["c_attn", "c_proj"]
+    )
 
     # DP / MF mechanism
     dp_g = parser.add_argument_group("dp", "DP-FTRL mechanism and clipping")
     dp_g.add_argument(
-        "--mechanism", type=str, default="band_mf",
+        "--mechanism",
+        type=str,
+        default="band_mf",
         choices=["band_mf", "blt", "blt_bnb", "lambda_cgd", "bisr", "identity"],
         help="MF mechanism: band_mf, blt, blt_bnb, lambda_cgd, bisr, identity.",
     )
-    dp_g.add_argument("--clipping-norm", type=float, default=0.9, help="Fixed clipping norm")
+    dp_g.add_argument(
+        "--clipping-norm", type=float, default=0.9, help="Fixed clipping norm"
+    )
     dp_g.add_argument("--microbatch-size", type=int, default=None)
     dp_g.add_argument(
-        "--bands", type=int, default=8,
+        "--bands",
+        type=int,
+        default=8,
         help="Band count for band_mf mechanism and cyclic_poisson sampling.",
     )
     dp_g.add_argument(
-        "--max-buffers", type=int, default=10,
+        "--max-buffers",
+        type=int,
+        default=10,
         help="Maximum BLT buffers to try (higher = better noise, slower init).",
     )
     dp_g.add_argument(
-        "--lambda_", type=float, default=0.9,
+        "--lambda_",
+        type=float,
+        default=0.9,
         help="Correlation coefficient for lambda_cgd mechanism (0=DP-SGD, higher=more correlation).",
     )
     dp_g.add_argument(
-        "--bisr-bandwidth", type=int, default=4,
+        "--bisr-bandwidth",
+        type=int,
+        default=4,
         help="Bandwidth for BISR mechanism (>= 2). Higher = better utility, more PRNG replays.",
     )
 
@@ -289,7 +357,12 @@ def parse_args():
     priv_g = parser.add_argument_group("privacy")
     priv_g.add_argument("--target-epsilon", type=float, default=3.0)
     priv_g.add_argument("--target-delta", type=float, default=None)
-    priv_g.add_argument("--noise-multiplier", type=float, default=None, help="Fixed noise multiplier (skip calibration)")
+    priv_g.add_argument(
+        "--noise-multiplier",
+        type=float,
+        default=None,
+        help="Fixed noise multiplier (skip calibration)",
+    )
     priv_g.add_argument("--calibration-min", type=float, default=0.1)
     priv_g.add_argument("--calibration-max", type=float, default=20.0)
     priv_g.add_argument("--calibration-tolerance", type=float, default=1e-3)
@@ -297,9 +370,17 @@ def parse_args():
     # W&B
     track_g = parser.add_argument_group("tracking")
     track_g.add_argument("--no-wandb", action="store_true")
-    track_g.add_argument("--wandb-project", type=str, default=os.environ.get("WANDB_PROJECT", "opaque"))
-    track_g.add_argument("--wandb-run-name", type=str, default=os.environ.get("WANDB_NAME") or os.environ.get("RUN_NAME"))
-    track_g.add_argument("--wandb-entity", type=str, default=os.environ.get("WANDB_ENTITY"))
+    track_g.add_argument(
+        "--wandb-project", type=str, default=os.environ.get("WANDB_PROJECT", "opaque")
+    )
+    track_g.add_argument(
+        "--wandb-run-name",
+        type=str,
+        default=os.environ.get("WANDB_NAME") or os.environ.get("RUN_NAME"),
+    )
+    track_g.add_argument(
+        "--wandb-entity", type=str, default=os.environ.get("WANDB_ENTITY")
+    )
 
     args = parser.parse_args()
 
@@ -310,7 +391,9 @@ def parse_args():
         if not action.option_strings:
             continue
         for opt in action.option_strings:
-            if any(token == opt or token.startswith(f"{opt}=") for token in argv_tokens):
+            if any(
+                token == opt or token.startswith(f"{opt}=") for token in argv_tokens
+            ):
                 provided_dests.add(action.dest)
                 break
 
@@ -350,10 +433,18 @@ def parse_args():
         _set("lora_r", 16)
         _set("lora_alpha", 32)
         _set("max_seq_len", 1024)
-        _set("lora_modules", [
-            "q_proj", "k_proj", "v_proj", "o_proj",
-            "gate_proj", "up_proj", "down_proj",
-        ])
+        _set(
+            "lora_modules",
+            [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
+        )
         _set("dtype", "bfloat16")
         _set("microbatch_size", 16)
         _set("bands", 64)
@@ -389,8 +480,15 @@ def main():
                 f"_lr{args.learning_rate}_m{args.momentum}"
             )
         if not os.environ.get("WANDB_MODE"):
-            os.environ["WANDB_MODE"] = "online" if os.environ.get("WANDB_API_KEY") else "offline"
-        wandb.init(project=args.wandb_project, entity=args.wandb_entity, name=args.wandb_run_name, config=vars(args))
+            os.environ["WANDB_MODE"] = (
+                "online" if os.environ.get("WANDB_API_KEY") else "offline"
+            )
+        wandb.init(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            name=args.wandb_run_name,
+            config=vars(args),
+        )
         print(f"W&B initialized (mode: {os.environ.get('WANDB_MODE', 'online')})")
 
     # --- Device ---
@@ -414,8 +512,16 @@ def main():
     # --- Model ---
     print(f"\nLoading model: {args.model_name}...")
     config = AutoConfig.from_pretrained(args.model_name)
-    for attr in ["attn_pdrop", "resid_pdrop", "embd_pdrop", "attention_dropout",
-                 "hidden_dropout", "dropout", "attn_dropout", "ffn_dropout"]:
+    for attr in [
+        "attn_pdrop",
+        "resid_pdrop",
+        "embd_pdrop",
+        "attention_dropout",
+        "hidden_dropout",
+        "dropout",
+        "attn_dropout",
+        "ffn_dropout",
+    ]:
         if hasattr(config, attr):
             setattr(config, attr, 0.0)
 
@@ -451,8 +557,12 @@ def main():
     # --- LoRA ---
     print("Applying LoRA...")
     lora_config = LoraConfig(
-        r=args.lora_r, lora_alpha=args.lora_alpha, target_modules=args.lora_modules,
-        lora_dropout=0.0, bias="none", task_type="CAUSAL_LM",
+        r=args.lora_r,
+        lora_alpha=args.lora_alpha,
+        target_modules=args.lora_modules,
+        lora_dropout=0.0,
+        bias="none",
+        task_type="CAUSAL_LM",
     )
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
@@ -463,18 +573,35 @@ def main():
     print(f"\nLoading dataset: {args.dataset}...")
     total_needed = args.num_train_samples + args.num_eval_samples
     dataset = _load_streaming_subset(
-        args.dataset, args.dataset_subset, args.dataset_split,
-        args.dataset_text_field, total_needed,
+        args.dataset,
+        args.dataset_subset,
+        args.dataset_split,
+        args.dataset_text_field,
+        total_needed,
     )
 
     eval_dataset = dataset.take(args.num_eval_samples)
     train_dataset = dataset.skip(args.num_eval_samples).take(args.num_train_samples)
 
     def tokenize_function(examples):
-        return tokenizer(examples[args.dataset_text_field], truncation=True, max_length=args.max_seq_len)
+        return tokenizer(
+            examples[args.dataset_text_field],
+            truncation=True,
+            max_length=args.max_seq_len,
+        )
 
-    eval_dataset = eval_dataset.map(tokenize_function, batched=True, remove_columns=eval_dataset.column_names, desc="Tokenizing eval")
-    train_dataset = train_dataset.map(tokenize_function, batched=True, remove_columns=train_dataset.column_names, desc="Tokenizing train")
+    eval_dataset = eval_dataset.map(
+        tokenize_function,
+        batched=True,
+        remove_columns=eval_dataset.column_names,
+        desc="Tokenizing eval",
+    )
+    train_dataset = train_dataset.map(
+        tokenize_function,
+        batched=True,
+        remove_columns=train_dataset.column_names,
+        desc="Tokenizing train",
+    )
     print(f"Prepared: {len(train_dataset)} train, {len(eval_dataset)} eval")
 
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
@@ -496,7 +623,13 @@ def main():
     if args.mechanism == "lambda_cgd":
         train_dataset = train_dataset.shuffle(seed=args.seed)
 
-    eval_loader = DataLoader(eval_dataset, batch_size=args.eval_batch_size, shuffle=False, collate_fn=collate, drop_last=False)
+    eval_loader = DataLoader(
+        eval_dataset,
+        batch_size=args.eval_batch_size,
+        shuffle=False,
+        collate_fn=collate,
+        drop_last=False,
+    )
 
     # --- Sampling ---
     sample_rate = args.batch_size / global_train_size
@@ -525,11 +658,15 @@ def main():
         print(f"  min_sep: {expected_steps_per_epoch} (= steps/epoch)")
         print(f"  max_participations: {args.num_epochs}")
     elif args.mechanism == "blt_bnb":
-        print(f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, random partition/epoch)")
+        print(
+            f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, random partition/epoch)"
+        )
         print(f"  min_sep: {expected_steps_per_epoch} (= steps/epoch)")
         print(f"  max_participations: {args.num_epochs}")
     elif args.mechanism == "lambda_cgd":
-        print(f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, random partition/epoch)")
+        print(
+            f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, random partition/epoch)"
+        )
         print(f"  DP-λCGD: λ={args.lambda_}")
     else:
         print(f"  Sampler: poisson (q={sample_rate:.6f})")
@@ -538,19 +675,24 @@ def main():
 
     # --- Gradient checkpointing ---
     if args.gradient_checkpointing:
-        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+        model.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": False}
+        )
         print("\nGradient checkpointing: enabled")
 
     offload_ctx = (
         torch.autograd.graph.save_on_cpu(pin_memory=True)
-        if args.cpu_offload else contextlib.nullcontext()
+        if args.cpu_offload
+        else contextlib.nullcontext()
     )
 
     # --- Functional conversion ---
     print("\nConverting to functional form...")
     t0 = time.time()
     fmodel, trainable_params, frozen_params = make_functional(
-        model, disable_autograd_tracking=True, partition_trainable=True,
+        model,
+        disable_autograd_tracking=True,
+        partition_trainable=True,
     )
     param_names = list(trainable_params.keys())
     print(f"Trainable parameters: {len(param_names)} (took {time.time() - t0:.1f}s)")
@@ -589,7 +731,8 @@ def main():
         total_steps = min(total_steps, args.max_steps)
 
     lr_schedule = make_lr_schedule(
-        args.learning_rate, total_steps,
+        args.learning_rate,
+        total_steps,
         warmup_frac=args.warmup_frac,
     )
 
@@ -599,19 +742,23 @@ def main():
 
     # --- Privacy calibration (single-shot) ---
     if args.target_delta is None:
-        args.target_delta = 1.0 / (global_train_size ** 1.1)
+        args.target_delta = 1.0 / (global_train_size**1.1)
 
     # Build the accounting mechanism.
     strategy = None
     if args.mechanism == "band_mf":
         strategy = band_mf_strategy(
-            n_steps=total_steps, bands=args.bands,
-            momentum=args.momentum, lr_schedule=lr_schedule,
+            n_steps=total_steps,
+            bands=args.bands,
+            momentum=args.momentum,
+            lr_schedule=lr_schedule,
         )
+
         def acct_mechanism(nm):
             return acc.cyclic_poisson(
-                acc.band_mf(nm, sensitivity=strategy.sensitivity,
-                            num_groups=strategy.num_groups),
+                acc.band_mf(
+                    nm, sensitivity=strategy.sensitivity, num_groups=strategy.num_groups
+                ),
                 sample_rate=sampling_prob,
             )
     elif args.mechanism == "blt":
@@ -620,8 +767,10 @@ def main():
             min_sep=expected_steps_per_epoch,
             max_participations=args.num_epochs,
             max_buffers=args.max_buffers,
-            momentum=args.momentum, lr_schedule=lr_schedule,
+            momentum=args.momentum,
+            lr_schedule=lr_schedule,
         )
+
         def acct_mechanism(nm):
             return acc.blt(nm, sensitivity=strategy.sensitivity)
     elif args.mechanism == "blt_bnb":
@@ -630,44 +779,60 @@ def main():
             min_sep=expected_steps_per_epoch,
             max_participations=args.num_epochs,
             max_buffers=args.max_buffers,
-            momentum=args.momentum, lr_schedule=lr_schedule,
+            momentum=args.momentum,
+            lr_schedule=lr_schedule,
         )
+
         def acct_mechanism(nm):
             return acc.balls_in_bins(
-                acc.blt(nm, sensitivity=strategy.sensitivity,
-                        gram_matrix=strategy.gram_matrix),
+                acc.blt(
+                    nm,
+                    sensitivity=strategy.sensitivity,
+                    gram_matrix=strategy.gram_matrix,
+                ),
                 num_bins=expected_steps_per_epoch,
                 num_epochs=args.num_epochs,
             )
     elif args.mechanism == "lambda_cgd":
         strategy = lambda_cgd_strategy(
-            lambda_=args.lambda_, n_steps=total_steps,
+            lambda_=args.lambda_,
+            n_steps=total_steps,
             min_sep=expected_steps_per_epoch,
             max_participations=args.num_epochs,
             momentum=args.momentum,
         )
+
         def acct_mechanism(nm):
             return acc.balls_in_bins(
-                acc.lambda_cgd(nm, sensitivity=strategy.sensitivity,
-                               gram_matrix=strategy.gram_matrix),
+                acc.lambda_cgd(
+                    nm,
+                    sensitivity=strategy.sensitivity,
+                    gram_matrix=strategy.gram_matrix,
+                ),
                 num_bins=expected_steps_per_epoch,
                 num_epochs=args.num_epochs,
             )
     elif args.mechanism == "bisr":
         strategy = bisr_strategy(
-            bandwidth=args.bisr_bandwidth, n_steps=total_steps,
+            bandwidth=args.bisr_bandwidth,
+            n_steps=total_steps,
             min_sep=expected_steps_per_epoch,
             max_participations=args.num_epochs,
             momentum=args.momentum,
         )
+
         def acct_mechanism(nm):
             return acc.balls_in_bins(
-                acc.bisr(nm, sensitivity=strategy.sensitivity,
-                         gram_matrix=strategy.gram_matrix),
+                acc.bisr(
+                    nm,
+                    sensitivity=strategy.sensitivity,
+                    gram_matrix=strategy.gram_matrix,
+                ),
                 num_bins=expected_steps_per_epoch,
                 num_epochs=args.num_epochs,
             )
     elif args.mechanism == "identity":
+
         def acct_mechanism(nm):
             return acc.poisson(acc.gaussian(nm), sample_rate=sample_rate) * total_steps
     else:
@@ -690,14 +855,19 @@ def main():
             tolerance=args.calibration_tolerance,
         )
         noise_multiplier = calibration.param
-        print(f"  Calibrated in {time.time() - t0:.1f}s: σ={noise_multiplier:.4f} (ε≈{calibration.achieved:.3f})")
+        print(
+            f"  Calibrated in {time.time() - t0:.1f}s: σ={noise_multiplier:.4f} (ε≈{calibration.achieved:.3f})"
+        )
 
     if use_wandb:
-        wandb.config.update({
-            "noise_multiplier": noise_multiplier,
-            "target_delta": args.target_delta,
-            "total_steps": total_steps,
-        }, allow_val_change=True)
+        wandb.config.update(
+            {
+                "noise_multiplier": noise_multiplier,
+                "target_delta": args.target_delta,
+                "total_steps": total_steps,
+            },
+            allow_val_change=True,
+        )
 
     # --- Create MF noise function (fixed stddev) ---
     # sensitivity = clipping_norm / normalize_by (accounts for batch averaging)
@@ -710,13 +880,17 @@ def main():
     t0 = time.time()
     if args.mechanism == "identity":
         noise_fn, noise_state = mf_noise(
-            trainable_params, identity_strategy(),
-            stddev=noise_stddev, key=key(args.seed),
+            trainable_params,
+            identity_strategy(),
+            stddev=noise_stddev,
+            key=key(args.seed),
         )
     else:
         noise_fn, noise_state = mf_noise(
-            trainable_params, strategy,
-            stddev=noise_stddev, key=key(args.seed),
+            trainable_params,
+            strategy,
+            stddev=noise_stddev,
+            key=key(args.seed),
         )
     print(f"  Noise function created in {time.time() - t0:.1f}s")
 
@@ -730,7 +904,10 @@ def main():
     identity_sigma = None
     if args.mechanism != "identity" and args.noise_multiplier is None:
         try:
-            identity_acct = lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=sample_rate) * total_steps
+            identity_acct = (
+                lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=sample_rate)
+                * total_steps
+            )
             identity_cal = cal.calibrate(
                 cal.epsilon_budget(args.target_epsilon, delta=args.target_delta),
                 identity_acct,
@@ -745,16 +922,24 @@ def main():
     print("\nDP-FTRL setup:")
     print(f"  Mechanism: {args.mechanism}")
     print(f"  Optimizer: SGD + Polyak momentum (β={args.momentum})")
-    print(f"  Workload: momentum-SGD (β={args.momentum}){' [prefix-sum]' if args.momentum == 1.0 else ''}")
+    print(
+        f"  Workload: momentum-SGD (β={args.momentum}){' [prefix-sum]' if args.momentum == 1.0 else ''}"
+    )
     print(f"  Clipping norm: {args.clipping_norm} (fixed)")
-    print(f"  Sensitivity: {clip_state.sensitivity:.6f} (= {args.clipping_norm} / {args.batch_size})")
+    print(
+        f"  Sensitivity: {clip_state.sensitivity:.6f} (= {args.clipping_norm} / {args.batch_size})"
+    )
     print(f"  Noise multiplier (σ): {noise_multiplier:.4f}")
-    print(f"  Noise stddev: {noise_stddev:.6f} (= {noise_multiplier:.4f} × {clip_state.sensitivity:.6f})")
+    print(
+        f"  Noise stddev: {noise_stddev:.6f} (= {noise_multiplier:.4f} × {clip_state.sensitivity:.6f})"
+    )
     if identity_sigma is not None:
         ratio = noise_multiplier / identity_sigma
         print(f"  Identity baseline σ: {identity_sigma:.4f} (ratio: {ratio:.2f}×)")
-        print(f"  → MF needs {ratio:.2f}× more noise to hit ε={args.target_epsilon}; "
-              f"correlated structure must compensate")
+        print(
+            f"  → MF needs {ratio:.2f}× more noise to hit ε={args.target_epsilon}; "
+            f"correlated structure must compensate"
+        )
     print(f"  Microbatch size: {args.microbatch_size}")
     if args.mechanism == "band_mf":
         print(f"  Bands: {args.bands}")
@@ -764,8 +949,8 @@ def main():
         print(f"  Max participations: {args.num_epochs}")
     elif args.mechanism == "lambda_cgd":
         print(f"  λ (lambda): {args.lambda_}")
-        print(f"  Bandwidth: 2 (bidiagonal inverse)")
-        print(f"  Column normalization: enabled (Appendix A, exact BnB)")
+        print("  Bandwidth: 2 (bidiagonal inverse)")
+        print("  Column normalization: enabled (Appendix A, exact BnB)")
 
     # ===================================================================
     # Training loop
@@ -786,7 +971,9 @@ def main():
     initial_eval_loss = eval_loss(trainable_params)
     print(f"  → Step 0 eval: loss={initial_eval_loss:.4f}")
     if use_wandb:
-        wandb.log({"eval/loss": initial_eval_loss, "train/lr": lr_schedule[0].item()}, step=0)
+        wandb.log(
+            {"eval/loss": initial_eval_loss, "train/lr": lr_schedule[0].item()}, step=0
+        )
 
     for epoch in range(args.num_epochs):
         print(f"\nEpoch {epoch + 1}/{args.num_epochs}")
@@ -801,11 +988,16 @@ def main():
                 iterations=expected_steps_per_epoch,
                 key=fold_in(key(args.seed), epoch),
             )
-            epoch_loader = DataLoader(train_dataset, batch_sampler=epoch_sampler, collate_fn=collate)
+            epoch_loader = DataLoader(
+                train_dataset, batch_sampler=epoch_sampler, collate_fn=collate
+            )
         elif args.mechanism == "blt":
             epoch_loader = DataLoader(
-                train_dataset, batch_size=args.batch_size,
-                shuffle=False, collate_fn=collate, drop_last=True,
+                train_dataset,
+                batch_size=args.batch_size,
+                shuffle=False,
+                collate_fn=collate,
+                drop_last=True,
             )
         elif args.mechanism == "blt_bnb":
             epoch_sampler = BallsInBinsSampler(
@@ -814,7 +1006,9 @@ def main():
                 num_epochs=1,
                 key=fold_in(key(args.seed), epoch),
             )
-            epoch_loader = DataLoader(train_dataset, batch_sampler=epoch_sampler, collate_fn=collate)
+            epoch_loader = DataLoader(
+                train_dataset, batch_sampler=epoch_sampler, collate_fn=collate
+            )
         elif args.mechanism == "lambda_cgd":
             epoch_sampler = BallsInBinsSampler(
                 train_dataset,
@@ -822,7 +1016,9 @@ def main():
                 num_epochs=1,
                 key=fold_in(key(args.seed), epoch),
             )
-            epoch_loader = DataLoader(train_dataset, batch_sampler=epoch_sampler, collate_fn=collate)
+            epoch_loader = DataLoader(
+                train_dataset, batch_sampler=epoch_sampler, collate_fn=collate
+            )
         else:  # identity
             epoch_sampler = PoissonSampler(
                 train_dataset,
@@ -830,7 +1026,9 @@ def main():
                 num_iterations=expected_steps_per_epoch,
                 key=fold_in(key(args.seed), epoch),
             )
-            epoch_loader = DataLoader(train_dataset, batch_sampler=epoch_sampler, collate_fn=collate)
+            epoch_loader = DataLoader(
+                train_dataset, batch_sampler=epoch_sampler, collate_fn=collate
+            )
 
         for step_idx, batch in enumerate(epoch_loader):
             if args.max_steps is not None and global_step >= args.max_steps:
@@ -845,12 +1043,16 @@ def main():
             with step_timer:
                 with offload_ctx:
                     (grads, aux), clip_state = grad_fn(
-                        trainable_params, input_ids, state=clip_state,
+                        trainable_params,
+                        input_ids,
+                        state=clip_state,
                     )
 
                 noisy_grads, noise_state = noise_fn(grads, noise_state)
                 updates, opt_state = optimizer.update(
-                    noisy_grads, opt_state, params=trainable_params,
+                    noisy_grads,
+                    opt_state,
+                    params=trainable_params,
                 )
                 trainable_params = torchopt.apply_updates(trainable_params, updates)
 
@@ -873,22 +1075,27 @@ def main():
                 perf = profiler.current_metrics()
 
                 if use_wandb:
-                    wandb.log({
-                        "train/loss": avg_loss,
-                        "train/batch_size": batch_size,
-                        "train/clipping_norm": args.clipping_norm,
-                        "train/clip_rate": clip_rate,
-                        "train/grad_norm_mean": mean_grad_norm,
-                        "train/noise_std": noise_stddev,
-                        "train/lr": lr_t,
-                        "train/momentum": args.momentum,
-                        "perf/step_time_sec": perf["step_time_sec"],
-                        "perf/throughput_samples_per_sec": perf["throughput_samples_sec"],
-                        "perf/peak_gb": perf["memory_peak_gb"],
-                    }, step=global_step)
+                    wandb.log(
+                        {
+                            "train/loss": avg_loss,
+                            "train/batch_size": batch_size,
+                            "train/clipping_norm": args.clipping_norm,
+                            "train/clip_rate": clip_rate,
+                            "train/grad_norm_mean": mean_grad_norm,
+                            "train/noise_std": noise_stddev,
+                            "train/lr": lr_t,
+                            "train/momentum": args.momentum,
+                            "perf/step_time_sec": perf["step_time_sec"],
+                            "perf/throughput_samples_per_sec": perf[
+                                "throughput_samples_sec"
+                            ],
+                            "perf/peak_gb": perf["memory_peak_gb"],
+                        },
+                        step=global_step,
+                    )
 
                 print(
-                    f"Step {global_step:4d} [E{epoch+1} S{step_idx+1:3d}/{expected_steps_per_epoch:3d}] | "
+                    f"Step {global_step:4d} [E{epoch + 1} S{step_idx + 1:3d}/{expected_steps_per_epoch:3d}] | "
                     f"BS: {batch_size} | Loss: {avg_loss:.4f} | "
                     f"Clip: {clip_rate:.1%} | GradNorm: {mean_grad_norm:.3f} | "
                     f"LR: {lr_t:.2e} | "

@@ -17,7 +17,7 @@ use crate::error::{PldError, Result};
 use crate::mechanisms::validate_noise_multiplier;
 use crate::pld::PrivacyLossDistribution;
 
-use super::poisson::poisson_gaussian_pld;
+use super::super::poisson::poisson_gaussian_pld;
 
 /// Compute the per-epoch PLD for a Balls-in-Bins Gaussian mechanism.
 ///

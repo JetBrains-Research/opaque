@@ -174,5 +174,3 @@ def balls_in_bins(
         raise ValueError(f"num_epochs must be >= 1, got {num_epochs}")
 
     return BallsInBins(inner=inner, num_bins=num_bins, num_epochs=num_epochs)
-
-    return BallsInBins(inner=inner, num_bins=num_bins, num_epochs=num_epochs)
