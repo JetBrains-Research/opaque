@@ -72,6 +72,15 @@ class BandMf(DpProcess):
         return optimize_toeplitz(self.n_steps, self.bands, workload_coef=workload_coef)
 
     @functools.lru_cache(maxsize=1)
+    def strategy_coefficients(self) -> list[float]:
+        """Toeplitz strategy coefficients of the optimized encoder.
+
+        Returns the banded Toeplitz coefficients as a list, suitable for
+        Gram matrix computation in BnB amplification.
+        """
+        return self._optimized_coefs().detach().cpu().tolist()
+
+    @functools.lru_cache(maxsize=1)
     def sensitivity(self) -> float:
         """L2 sensitivity under single participation.
 

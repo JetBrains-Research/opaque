@@ -76,6 +76,21 @@ class BltMf(DpProcess):
         )
 
     @functools.lru_cache(maxsize=1)
+    def strategy_coefficients(self) -> list[float]:
+        """Toeplitz strategy coefficients of the optimized BLT.
+
+        Returns the first row of the equivalent Toeplitz strategy matrix,
+        suitable for Gram matrix computation in BnB amplification.
+        """
+        from opaque.noise.matrix_factorization.buffered_toeplitz import (
+            toeplitz_coefs,
+        )
+
+        blt = self._optimized_blt()
+        coefs = toeplitz_coefs(blt, self.n_steps)
+        return coefs.detach().cpu().tolist()
+
+    @functools.lru_cache(maxsize=1)
     def sensitivity(self) -> float:
         """L2 sensitivity under the configured participation pattern.
 
