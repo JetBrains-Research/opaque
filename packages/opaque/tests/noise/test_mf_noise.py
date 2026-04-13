@@ -128,10 +128,11 @@ class TestLambdaCgdStrategy:
         assert new.sensitivity > 0
 
     def test_with_momentum(self):
-        s = lambda_cgd_strategy(
-            0.5, n_steps=100, min_sep=25, max_participations=4, momentum=0.95
-        )
-        assert s.sensitivity > 0
+        """lambda_cgd_strategy does not accept momentum (use bisr_strategy)."""
+        with pytest.raises(TypeError):
+            lambda_cgd_strategy(
+                0.5, n_steps=100, min_sep=25, max_participations=4, momentum=0.95
+            )
 
     def test_unnormalized(self):
         s = lambda_cgd_strategy(
