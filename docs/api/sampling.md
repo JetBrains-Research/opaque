@@ -9,7 +9,7 @@ Privacy amplification through sampling is a key technique in DP-SGD: training
 on randomly selected subsets provides stronger privacy than training on the
 full dataset.
 
-Opaque provides three sampling strategies:
+Opaque provides four sampling strategies:
 
 1. **Poisson Sampling** (`PoissonSampler`): Each example sampled independently
    with probability `sample_rate`. Variable batch sizes, strong privacy
@@ -23,6 +23,11 @@ Opaque provides three sampling strategies:
    dataset into groups and cycles through them. Designed for matrix-
    factorization noise mechanisms (BandMF) where predictable sampling
    structure enables correlated noise.
+
+4. **Balls-in-Bins Sampling** (`BallsInBinsSampler`): Each epoch, the
+   dataset is randomly shuffled and partitioned into equal-sized bins.
+   Deterministic batch sizes with privacy amplification from random
+   assignment. Used with DP-λCGD, BISR, and BLT mechanisms.
 
 **See also**: [Sampling & Microbatching User Guide](../user-guide/sampling.md)
 
@@ -77,6 +82,35 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 Account with `acc.truncated_poisson(acc.gaussian(nm), sample_rate,
 batch_size_cap, dataset_size)`.
 
+## BallsInBinsSampler
+
+```python
+from opaque import BallsInBinsSampler
+from opaque.random import key
+
+sampler = BallsInBinsSampler(
+    data_source,
+    num_bins=dataset_size // batch_size,
+    num_epochs=8,
+    key=key(42),
+)
+loader = DataLoader(dataset, batch_sampler=sampler)
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `data_source` | dataset with `len()` | required | The training dataset |
+| `num_bins` | `int` | required | Number of bins per epoch (≥ 2). Typically `dataset_size / batch_size` |
+| `num_epochs` | `int` or `None` | `None` | Number of epochs. `None` = infinite |
+| `key` | `RngKey` | required | RNG key for reproducible sampling |
+
+Batch size is deterministic: `floor(len(dataset) / num_bins)`. Remainder
+examples are dropped each epoch (like `drop_last=True`).
+
+Account with `acc.balls_in_bins(mechanism, num_bins, num_epochs)` where
+`mechanism` is `acc.lambda_cgd(...)`, `acc.bisr(...)`, `acc.blt(...)`, or
+`acc.gaussian(...)`.
+
 ## CyclicPoissonSampler
 
 ```python
@@ -104,8 +138,8 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 | `key` | `RngKey` | required | RNG key for reproducible sampling |
 
 In distributed training, shard the dataset with `local_shard()` and pass
-a per-rank key via `fold_in(key, rank)`. Best used with `band_mf_noise`
-or `blt_mf_noise` for correlated noise.
+a per-rank key via `fold_in(key, rank)`. Best used with `mf_noise`
+for correlated noise (DP-FTRL).
 
 ## Distributed Helpers
 
@@ -153,6 +187,11 @@ loader = DataLoader(shard, batch_sampler=sampler)
       heading_level: 3
 
 ::: opaque.sampling.cyclic_poisson.CyclicPoissonSampler
+    options:
+      show_source: true
+      heading_level: 3
+
+::: opaque.sampling.balls_in_bins.BallsInBinsSampler
     options:
       show_source: true
       heading_level: 3

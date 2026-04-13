@@ -39,7 +39,8 @@ noisy_grads, noise_state = noise_fn(grads, noise_state)
 Three noise families are available: **standard Gaussian** (`gaussian_noise`),
 **bounded Gaussian** (`truncated_gaussian_noise`) for
 bounded support at the same noise level, and **matrix factorization**
-(`band_mf_noise`, `blt_mf_noise`) for correlated noise that
+(`mf_noise` with strategies like `band_mf_strategy`, `blt_strategy`,
+`lambda_cgd_strategy`) for correlated noise that
 reduces effective noise on cumulative updates (DP-FTRL). See the
 [Mechanisms](mechanisms/index.md) reference for details.
 

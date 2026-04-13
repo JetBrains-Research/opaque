@@ -109,16 +109,16 @@ If you need subsampling amplification with correlated noise, use
 ### Noise injection
 
 ```python
-from opaque import blt_mf_noise
+from opaque.noise.mf import mf_noise, blt_strategy
 from opaque.random import key
 
 # Single participation
-noise_fn, noise_state = blt_mf_noise(
+strategy = blt_strategy(n_steps=10000, min_sep=1, max_buffers=10)
+noise_fn, noise_state = mf_noise(
     grad_template=params,
-    n_steps=10000,
+    strategy=strategy,
     stddev=noise_multiplier * clip_state.sensitivity,
     key=key(42),
-    max_buffers=10,
 )
 
 for step in range(10000):
@@ -129,67 +129,47 @@ for step in range(10000):
 
 ```python
 # Multi-epoch: each user participates up to 5 times, ≥100 steps apart
-noise_fn, noise_state = blt_mf_noise(
+strategy = blt_strategy(
+    n_steps=5000, min_sep=100, max_participations=5,
+)
+noise_fn, noise_state = mf_noise(
     grad_template=params,
-    n_steps=5000,
+    strategy=strategy,
     stddev=noise_multiplier * clipping_norm,
     key=key(42),
-    min_sep=100,
-    max_participations=5,
 )
 ```
 
 ### Privacy accounting
 
-```python
-import opaque.accounting as acc
+The accounting constructor receives `sensitivity` and `gram_matrix` from the
+same `blt_strategy` used for noise generation:
 
-# Single participation
-proc = acc.blt_mf(noise_multiplier=1.0, n_steps=10000)
+```python
+import opaque_accounting as acc
+from opaque.noise.mf import blt_strategy
+
+strategy = blt_strategy(
+    n_steps=5000, min_sep=100, max_participations=5,
+)
+
+# Unamplified BLT
+proc = acc.blt(1.0, sensitivity=strategy.sensitivity)
 eps = proc.epsilon_at(delta=1e-5)
 
-# Multi-epoch
-proc = acc.blt_mf(
-    noise_multiplier=1.0,
-    n_steps=5000,
-    min_sep=100,
-    max_participations=5,
+# With Balls-in-Bins amplification (recommended)
+proc = acc.balls_in_bins(
+    acc.blt(1.0, sensitivity=strategy.sensitivity,
+            gram_matrix=strategy.gram_matrix),
+    num_bins=100, num_epochs=5,
 )
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
-### Calibration
-
-```python
-result = acc.calibrate(
-    acc.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: acc.blt_mf(nm, n_steps=5000, min_sep=100, max_participations=5),
-    param_min=0.1,
-    param_max=10.0,
-)
-noise_multiplier = result.param
-```
-
-### Multi-epoch calibration
-
-```python
-# 5 epochs over 10k examples, batch=100, min_sep=100 steps
-n_examples = 10_000
-batch_size = 100
-steps_per_epoch = n_examples // batch_size  # 100
-n_steps = 5 * steps_per_epoch  # 500
-
-result = acc.calibrate(
-    acc.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: acc.blt_mf(
-        nm, n_steps=n_steps,
-        min_sep=steps_per_epoch,
-        max_participations=5,
-    ),
-    param_min=0.1,
-    param_max=10.0,
-)
-```
+!!! note
+    Always use `strategy.sensitivity` and `strategy.gram_matrix` rather than
+    hardcoded values. The strategy computes these from the optimized BLT
+    parameters and the participation pattern.
 
 ## Parameter guide
 

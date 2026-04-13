@@ -2,7 +2,7 @@
 
 A **mechanism** is a randomized algorithm that adds noise to a query result to
 provide differential privacy. The mechanism determines the noise distribution,
-its support, and how privacy loss is computed. Opaque implements six mechanisms
+its support, and how privacy loss is computed. Opaque implements several mechanisms
 across two families.
 
 ## Independent noise (DP-SGD)
@@ -28,6 +28,9 @@ privacy budget — at the cost of knowing the total number of steps in advance.
 |-----------|----------|--------|----------|
 | [BandMF](band-mf.md) | Banded Toeplitz | $O(\text{bands})$ | General use, moderate runs |
 | [BLT](blt.md) | Buffered Linear Toeplitz | $O(\text{buffers})$ | Long runs ($n > 5000$), multi-epoch |
+| [DP-λCGD](lambda-cgd.md) | PRNG replay (exponential decay) | $O(1)$ | Zero extra memory, any run length |
+| [BISR](bisr.md) | Banded inverse square root | $O(p)$ | Asymptotically optimal, generalises λCGD |
+| Identity | $I$ (no correlation) | $O(1)$ | Baseline / ablation |
 
 ## Which mechanism should I use?
 
@@ -38,9 +41,11 @@ Need correlated noise across steps (DP-FTRL)?
 │         Use truncated_gaussian_noise() for bounded support if desired;
 │         accounting always uses acc.gaussian().
 │
-└─ Yes ── How many training steps?
+└─ Yes ── Constraints?
+          ├─ Zero extra memory → DP-λCGD (PRNG replay)
+          ├─ Asymptotically optimal → BISR (generalises λCGD)
           ├─ n < 5000 → BandMF + cyclic Poisson (good default)
-          └─ n > 5000 → BLT (memory-efficient, supports multi-epoch)
+          └─ n > 5000, multi-epoch → BLT (memory-efficient)
 ```
 
 For most DP-SGD workloads, **Gaussian** is the right starting point.
@@ -52,35 +57,54 @@ of correlated noise and are willing to fix the training length in advance.
 Subsampling amplification reduces per-step privacy cost. Not all mechanisms
 support all amplification types:
 
-| Mechanism | `poisson()` | `truncated_poisson()` | `cyclic_poisson()` |
-|-----------|:-----------:|:---------------------:|:-------------------:|
-| Gaussian | Yes | Yes | — |
-| BandMF | — | — | Yes |
-| BLT | *internal* | — | — |
+| Mechanism | `poisson()` | `truncated_poisson()` | `cyclic_poisson()` | `balls_in_bins()` |
+|-----------|:-----------:|:---------------------:|:-------------------:|:-----------------:|
+| Gaussian | Yes | Yes | — | Yes |
+| BandMF | — | — | Yes | — |
+| BLT | *internal* | — | — | Yes |
+| DP-λCGD | — | — | — | Yes |
+| BISR | — | — | — | Yes |
 
 - **`poisson()`**: Standard Poisson subsampling. Each example included
   independently with probability $q$.
 - **`truncated_poisson()`**: Poisson with a batch-size cap.
 - **`cyclic_poisson()`**: Cyclic decomposition specific to BandMF. Decomposes
   $n$ steps into $\lceil n/b \rceil$ independent groups.
+- **`balls_in_bins()`**: Random-partition amplification. Each epoch, examples
+  are randomly assigned to bins. Used with BLT, DP-λCGD, and BISR.
 - **internal**: BLT handles multi-participation patterns (min-sep)
   within its own sensitivity computation — no external amplification
-  wrapper needed.
+  wrapper needed. BLT also supports `balls_in_bins()` with a pre-computed
+  Gram matrix.
 
 ## Quick comparison
 
 ```python
-import opaque.accounting as acc
+import opaque_accounting as acc
+from opaque.noise.mf import band_mf_strategy, lambda_cgd_strategy
 
 # --- Independent noise ---
 gauss     = acc.poisson(acc.gaussian(1.0), sample_rate=0.01) * 1000
 
 # --- Correlated noise ---
-# Note: cyclic_poisson's sample_rate is a per-group Poisson probability
-# (typically ≈ bands * q when q is the usual DP-SGD sampling rate).
-band      = acc.cyclic_poisson(acc.band_mf(1.0, 1000, bands=10), sample_rate=0.01)
-blt       = acc.blt_mf(1.0, 1000)
+# BandMF: strategy computes sensitivity and num_groups
+band_s = band_mf_strategy(n_steps=1000, bands=10)
+band   = acc.cyclic_poisson(
+    acc.band_mf(1.0, sensitivity=band_s.sensitivity,
+                num_groups=band_s.num_groups),
+    sample_rate=0.01,
+)
 
-for name, proc in [("Gaussian", gauss), ("BandMF", band), ("BLT", blt)]:
+# DP-λCGD: strategy computes sensitivity and gram_matrix
+lcgd_s = lambda_cgd_strategy(
+    lambda_=0.9, n_steps=1000, min_sep=100, max_participations=5,
+)
+lcgd   = acc.balls_in_bins(
+    acc.lambda_cgd(1.0, sensitivity=lcgd_s.sensitivity,
+                   gram_matrix=lcgd_s.gram_matrix),
+    num_bins=100, num_epochs=5,
+)
+
+for name, proc in [("Gaussian", gauss), ("BandMF", band), ("λCGD", lcgd)]:
     print(f"{name:12s}  ε = {proc.epsilon_at(1e-5):.4f}")
 ```

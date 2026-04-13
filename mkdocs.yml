@@ -98,6 +98,8 @@ nav:
     - Gaussian: mechanisms/gaussian.md
     - BandMF: mechanisms/band-mf.md
     - BLT: mechanisms/blt.md
+    - DP-λCGD: mechanisms/lambda-cgd.md
+    - BISR: mechanisms/bisr.md
   - Tutorials:
     - Overview: tutorials/README.md
     - DP-SGD Training: tutorials/dp_sgd_training.ipynb

@@ -200,38 +200,97 @@ composition: `identity() | a` returns `a`.
 
 ## Matrix Factorization Mechanisms
 
-MF mechanisms compute the correct sensitivity of the correlated noise strategy
-internally. They return a `DpProcess` that composes with all standard operators.
+MF mechanisms take pre-computed `sensitivity` and `gram_matrix` values from the
+corresponding noise **strategy** (e.g. `band_mf_strategy()`, `blt_strategy()`).
+The strategy is the single source of truth for these quantities — never hardcode
+them. This keeps noise generation and accounting in sync.
 
-### `band_mf(noise_multiplier, n_steps, bands) -> DpProcess`
+All MF constructors return a `DpProcess` that composes with standard operators.
 
-BandMF mechanism with banded Toeplitz strategy. Single-participation sensitivity
-is computed from the optimized encoder matrix.
+### `band_mf(noise_multiplier, sensitivity, num_groups=1) -> DpProcess`
+
+BandMF mechanism for cyclic Poisson amplification. Takes `sensitivity` and
+`num_groups` from a `band_mf_strategy()`.
 
 - `noise_multiplier` (float): Raw noise standard deviation sigma.
-- `n_steps` (int): Number of training iterations.
-- `bands` (int): Number of bands in the Toeplitz matrix (1 to `n_steps`).
+- `sensitivity` (float): From `strategy.sensitivity`.
+- `num_groups` (int): From `strategy.num_groups`.
 
 ```python
-proc = acc.band_mf(noise_multiplier=1.0, n_steps=1000, bands=10)
+from opaque.noise.mf import band_mf_strategy
+strategy = band_mf_strategy(n_steps=1000, bands=10)
+proc = acc.band_mf(1.0, sensitivity=strategy.sensitivity,
+                   num_groups=strategy.num_groups)
 eps = proc.epsilon_at(1e-5)
 ```
 
-### `blt_mf(noise_multiplier, n_steps, *, min_sep=1, max_participations=1, error="max", max_buffers=10) -> DpProcess`
+### `blt(noise_multiplier, sensitivity, gram_matrix=()) -> DpProcess`
 
-BLT (Buffered Linear Toeplitz) mechanism. Supports multi-epoch participation
-patterns via `min_sep` and `max_participations`.
+BLT (Buffered Linear Toeplitz) mechanism. Takes `sensitivity` and optional
+`gram_matrix` from a `blt_strategy()`.
 
 - `noise_multiplier` (float): Raw noise standard deviation sigma.
-- `n_steps` (int): Number of training iterations.
-- `min_sep` (int): Minimum steps between participations (default 1).
-- `max_participations` (int | None): Maximum participations per user (default 1).
-- `error` (str): Error metric to optimize: `"max"` or `"mean"`.
-- `max_buffers` (int): Maximum number of BLT buffers (default 10).
+- `sensitivity` (float): From `strategy.sensitivity`.
+- `gram_matrix` (tuple[float, ...]): From `strategy.gram_matrix`. Empty for unamplified accounting.
 
 ```python
-proc = acc.blt_mf(1.0, 5000, min_sep=100, max_participations=5)
-eps = proc.epsilon_at(1e-5)
+from opaque.noise.mf import blt_strategy
+strategy = blt_strategy(n_steps=10000, min_sep=1000, max_participations=5)
+
+# Unamplified
+proc = acc.blt(1.0, sensitivity=strategy.sensitivity)
+
+# With Balls-in-Bins amplification
+proc = acc.balls_in_bins(
+    acc.blt(1.0, sensitivity=strategy.sensitivity,
+            gram_matrix=strategy.gram_matrix),
+    num_bins=1000, num_epochs=5,
+)
+```
+
+### `lambda_cgd(noise_multiplier, sensitivity, gram_matrix=()) -> DpProcess`
+
+DP-λCGD mechanism (Kalinin et al., 2026). Takes `sensitivity` and
+`gram_matrix` from a `lambda_cgd_strategy()`.
+
+- `noise_multiplier` (float): Raw noise standard deviation sigma.
+- `sensitivity` (float): From `strategy.sensitivity`.
+- `gram_matrix` (tuple[float, ...]): From `strategy.gram_matrix`.
+
+```python
+from opaque.noise.mf import lambda_cgd_strategy
+strategy = lambda_cgd_strategy(
+    lambda_=0.9, n_steps=total_steps,
+    min_sep=steps_per_epoch, max_participations=num_epochs,
+)
+proc = acc.balls_in_bins(
+    acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
+                   gram_matrix=strategy.gram_matrix),
+    num_bins=steps_per_epoch, num_epochs=num_epochs,
+)
+```
+
+### `bisr(noise_multiplier, sensitivity, gram_matrix=()) -> DpProcess`
+
+BISR (Banded Inverse Square Root) mechanism (Kalinin et al., ICLR 2026).
+Generalises λCGD to arbitrary bandwidth. Takes `sensitivity` and
+`gram_matrix` from a `bisr_strategy()`.
+
+- `noise_multiplier` (float): Raw noise standard deviation sigma.
+- `sensitivity` (float): From `strategy.sensitivity`.
+- `gram_matrix` (tuple[float, ...]): From `strategy.gram_matrix`.
+
+```python
+from opaque.noise.mf import bisr_strategy
+strategy = bisr_strategy(
+    bandwidth=4, n_steps=total_steps,
+    min_sep=steps_per_epoch, max_participations=num_epochs,
+)
+proc = acc.balls_in_bins(
+    acc.bisr(1.0, sensitivity=strategy.sensitivity,
+             gram_matrix=strategy.gram_matrix),
+    num_bins=steps_per_epoch, num_epochs=num_epochs,
+)
 ```
 
 ### `cyclic_poisson(inner, sample_rate) -> DpProcess`
@@ -244,10 +303,43 @@ Poisson-subsampled Gaussian. Only accepts `BandMf` inner processes.
 - `sample_rate` (float): Poisson sampling probability per group.
 
 ```python
+strategy = band_mf_strategy(n_steps=1000, bands=10)
 proc = acc.cyclic_poisson(
-    acc.band_mf(1.0, 1000, 10), sample_rate=0.01,
+    acc.band_mf(1.0, sensitivity=strategy.sensitivity,
+                num_groups=strategy.num_groups),
+    sample_rate=0.01,
 )
 eps = proc.epsilon_at(1e-5)
+```
+
+### `balls_in_bins(inner, num_bins, num_epochs, *, lr_weights=None) -> DpProcess`
+
+Balls-in-Bins (random-partition) amplification. Returns the **total** privacy
+cost across all epochs — do NOT compose further with `* num_epochs`.
+
+For independent-noise mechanisms (Gaussian, AdaClip), uses a conservative
+Poisson per-step approximation. For correlated-noise mechanisms (DP-λCGD, BISR,
+BLT), uses Monte Carlo sampling of the dominating pair.
+
+- `inner` (Gaussian | LambdaCgd | Bisr | Blt | AdaClip): Core mechanism.
+- `num_bins` (int): Number of bins per epoch (typically `dataset_size / batch_size`).
+- `num_epochs` (int): Number of epochs.
+- `lr_weights` (list[float] | None): Optional per-step learning rate weights for tighter accounting.
+
+```python
+# With DP-λCGD
+strategy = lambda_cgd_strategy(
+    lambda_=0.9, n_steps=total_steps,
+    min_sep=steps_per_epoch, max_participations=num_epochs,
+)
+proc = acc.balls_in_bins(
+    acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
+                   gram_matrix=strategy.gram_matrix),
+    num_bins=steps_per_epoch, num_epochs=num_epochs,
+)
+
+# With Gaussian (conservative Poisson approximation)
+proc = acc.balls_in_bins(acc.gaussian(1.1), num_bins=100, num_epochs=10)
 ```
 
 ---

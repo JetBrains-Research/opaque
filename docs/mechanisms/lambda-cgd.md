@@ -13,31 +13,57 @@ PRNG seed replay instead of storing previous noise vectors.
 
 ## Accounting
 
+The noise **strategy** and the privacy **accounting** are connected through two
+values that the strategy computes: `sensitivity` and `gram_matrix`. The strategy
+knows the full structure of the mechanism (λ, participation pattern, number of
+steps) and derives these quantities from the strategy matrix C. The accounting
+constructor then takes only these pre-computed values — it does not need to know
+how they were obtained.
+
+This separation keeps accounting constructors simple and avoids duplicating
+mechanism parameters in two places.
+
 ```python
+from opaque.noise.mf import lambda_cgd_strategy
 import opaque_accounting as acc
 
-# Multi-epoch BnB accounting (returns TOTAL cost, no further composition needed)
+# 1. Create strategy — computes sensitivity and Gram matrix internally
+strategy = lambda_cgd_strategy(
+    lambda_=0.9,
+    n_steps=total_steps,
+    min_sep=steps_per_epoch,
+    max_participations=num_epochs,
+)
+
+# 2. Build accounting mechanism from strategy-derived quantities
 training = acc.balls_in_bins(
-    acc.lambda_cgd(noise_multiplier, lambda_=0.9,
-                   n_steps=total_steps,
-                   min_sep=steps_per_epoch,
-                   max_participations=num_epochs),
+    acc.lambda_cgd(noise_multiplier,
+                   sensitivity=strategy.sensitivity,
+                   gram_matrix=strategy.gram_matrix),
     num_bins=steps_per_epoch,
     num_epochs=num_epochs,
 )
 eps = training.epsilon_at(1e-5)
 ```
 
-### Parameters
+### Strategy parameters
 
 | Parameter | Description |
 |-----------|-------------|
-| `noise_multiplier` | Raw noise σ (calibrated or fixed) |
 | `lambda_` | Correlation coefficient in [0, 1). λ=0 is DP-SGD. |
 | `n_steps` | Total training steps |
 | `min_sep` | Steps per epoch (= bins per epoch) |
 | `max_participations` | Number of epochs |
 | `normalized` | Column-normalize C (default True, gives sensitivity=1 for k=1) |
+| `momentum` | Optimizer momentum (enters coefficient computation) |
+
+### Accounting parameters
+
+| Parameter | Description |
+|-----------|-------------|
+| `noise_multiplier` | Raw noise σ (calibrated or fixed) |
+| `sensitivity` | From `strategy.sensitivity` — L2 sensitivity of C |
+| `gram_matrix` | From `strategy.gram_matrix` — for BnB Monte Carlo accounting |
 
 ### Sensitivity
 
@@ -49,14 +75,18 @@ has a closed-form expression in terms of λ, min_sep, and max_participations.
 ## Noise generation
 
 ```python
-from opaque.noise.mf_noise import mf_noise, lambda_cgd_strategy
+from opaque.noise.mf import mf_noise, lambda_cgd_strategy
+from opaque.random import key
 
 strategy = lambda_cgd_strategy(
-    n_steps=total_steps, lambda_=0.9,
+    lambda_=0.9,
+    n_steps=total_steps,
+    min_sep=steps_per_epoch,
+    max_participations=num_epochs,
 )
 noise_fn, state = mf_noise(
     grad_template, strategy,
-    stddev=noise_multiplier * clip_sensitivity,
+    stddev=noise_multiplier * clip_state.sensitivity,
     key=key(seed),
 )
 ```

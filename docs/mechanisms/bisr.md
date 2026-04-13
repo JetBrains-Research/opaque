@@ -13,29 +13,51 @@ from the inverse square root of the workload matrix.
 
 ## Accounting
 
+Like all MF mechanisms, the noise **strategy** computes `sensitivity` and
+`gram_matrix` from the mechanism parameters; the accounting constructor
+receives only these pre-computed values. This avoids duplicating mechanism
+parameters and keeps the accounting API uniform across all MF mechanisms.
+
 ```python
+from opaque.noise.mf import bisr_strategy
 import opaque_accounting as acc
 
-# BISR with bandwidth=4
+# 1. Create strategy — computes sensitivity and Gram matrix internally
+strategy = bisr_strategy(
+    bandwidth=4, n_steps=total_steps,
+    min_sep=steps_per_epoch,
+    max_participations=num_epochs,
+    momentum=0.9,
+)
+
+# 2. Build accounting mechanism from strategy-derived quantities
 training = acc.balls_in_bins(
-    acc.bisr(noise_multiplier, n_steps=total_steps, bandwidth=4,
-             min_sep=steps_per_epoch, max_participations=num_epochs),
+    acc.bisr(noise_multiplier,
+             sensitivity=strategy.sensitivity,
+             gram_matrix=strategy.gram_matrix),
     num_bins=steps_per_epoch,
     num_epochs=num_epochs,
 )
 eps = training.epsilon_at(1e-5)
 ```
 
-### Parameters
+### Strategy parameters
+
+| Parameter | Description |
+|-----------|-------------|
+| `bandwidth` | Number of bands p (≥ 2). Higher = better utility, more PRNG replays. |
+| `n_steps` | Total training steps |
+| `min_sep` | Steps per epoch |
+| `max_participations` | Number of epochs |
+| `momentum` | Optimizer momentum β. Enters coefficient computation (changes C). |
+
+### Accounting parameters
 
 | Parameter | Description |
 |-----------|-------------|
 | `noise_multiplier` | Raw noise σ |
-| `n_steps` | Total training steps |
-| `bandwidth` | Number of bands p (≥ 2). Higher = better utility, more PRNG replays. |
-| `min_sep` | Steps per epoch |
-| `max_participations` | Number of epochs |
-| `momentum` | Optimizer momentum β. Enters coefficient computation (changes C). |
+| `sensitivity` | From `strategy.sensitivity` — L2 sensitivity of the BISR strategy |
+| `gram_matrix` | From `strategy.gram_matrix` — for BnB Monte Carlo accounting |
 
 ### BISR coefficients
 
@@ -54,14 +76,15 @@ enter sensitivity or Gram matrix computation).
 ## Noise generation
 
 ```python
-from opaque.noise.mf_noise import mf_noise, bisr_strategy
+from opaque.noise.mf import mf_noise, bisr_strategy
+from opaque.random import key
 
 strategy = bisr_strategy(
     n_steps=total_steps, bandwidth=4, momentum=0.9,
 )
 noise_fn, state = mf_noise(
     grad_template, strategy,
-    stddev=noise_multiplier * clip_sensitivity,
+    stddev=noise_multiplier * clip_state.sensitivity,
     key=key(seed),
 )
 ```

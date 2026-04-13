@@ -156,31 +156,111 @@ modified sensitivity of the strategy matrix. These mechanisms optimize
 the strategy internally and compute the correct sensitivity — do not use
 `acc.gaussian()` for MF noise.
 
-### `acc.band_mf(noise_multiplier, n_steps, bands)`
+### Strategy-driven accounting
 
-BandMF mechanism with banded Toeplitz strategy. Computes single-participation
-sensitivity from the optimized encoder.
+Each MF accounting constructor takes a `sensitivity` (and optionally a
+`gram_matrix`) that describes the privacy cost of the strategy matrix.
+These values are **computed by the noise strategy**, not set manually.
+
+The workflow is:
+
+1. Create a **noise strategy** (e.g. `band_mf_strategy()`,
+   `lambda_cgd_strategy()`) with the training parameters (number of steps,
+   bands, participation pattern, momentum, etc.).
+2. The strategy computes `sensitivity` and `gram_matrix` internally from
+   the strategy matrix C.
+3. Pass `strategy.sensitivity` and `strategy.gram_matrix` to the accounting
+   constructor.
+
+This separation ensures that noise generation and privacy accounting always
+agree on the mechanism parameters — the strategy is the single source of
+truth.
 
 ```python
-proc = acc.band_mf(noise_multiplier=1.0, n_steps=1000, bands=10)
+from opaque.noise.mf import band_mf_strategy
+import opaque.accounting as acc
+
+# Strategy computes sensitivity and num_groups internally
+strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.95)
+
+proc = acc.cyclic_poisson(
+    acc.band_mf(1.0, sensitivity=strategy.sensitivity,
+                num_groups=strategy.num_groups),
+    sample_rate=0.01,
+)
+eps = proc.epsilon_at(delta=1e-5)
+```
+
+### `acc.band_mf(noise_multiplier, sensitivity, num_groups=1)`
+
+BandMF mechanism for cyclic Poisson amplification. Takes `sensitivity` and
+`num_groups` from a `band_mf_strategy()`.
+
+```python
+strategy = band_mf_strategy(n_steps=1000, bands=10)
+proc = acc.band_mf(1.0, sensitivity=strategy.sensitivity,
+                   num_groups=strategy.num_groups)
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
 For subsampling amplification, wrap with `cyclic_poisson` (see below).
 
-### `acc.blt_mf(noise_multiplier, n_steps, *, min_sep, max_participations)`
+### `acc.blt(noise_multiplier, sensitivity, gram_matrix=())`
 
-BLT mechanism with Buffered Linear Toeplitz strategy. Supports
-multi-epoch training via `min_sep` and `max_participations`.
+BLT mechanism. Takes `sensitivity` and optional `gram_matrix` from a
+`blt_strategy()`.
 
 ```python
-# Single participation
-proc = acc.blt_mf(noise_multiplier=1.0, n_steps=5000)
+strategy = blt_strategy(
+    n_steps=10000, min_sep=1000, max_participations=5,
+)
+
+# Unamplified
+proc = acc.blt(1.0, sensitivity=strategy.sensitivity)
 eps = proc.epsilon_at(delta=1e-5)
 
-# Multi-epoch: each user participates up to 5 times, at least 100 steps apart
-proc = acc.blt_mf(1.0, 5000, min_sep=100, max_participations=5)
+# With Balls-in-Bins amplification
+proc = acc.balls_in_bins(
+    acc.blt(1.0, sensitivity=strategy.sensitivity,
+            gram_matrix=strategy.gram_matrix),
+    num_bins=1000, num_epochs=5,
+)
+```
+
+### `acc.lambda_cgd(noise_multiplier, sensitivity, gram_matrix=())`
+
+DP-λCGD mechanism (Kalinin et al., 2026). Takes `sensitivity` and
+`gram_matrix` from a `lambda_cgd_strategy()`.
+
+```python
+strategy = lambda_cgd_strategy(
+    lambda_=0.9, n_steps=total_steps,
+    min_sep=steps_per_epoch, max_participations=num_epochs,
+)
+proc = acc.balls_in_bins(
+    acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
+                   gram_matrix=strategy.gram_matrix),
+    num_bins=steps_per_epoch, num_epochs=num_epochs,
+)
 eps = proc.epsilon_at(delta=1e-5)
+```
+
+### `acc.bisr(noise_multiplier, sensitivity, gram_matrix=())`
+
+BISR mechanism (Kalinin et al., ICLR 2026). Generalises λCGD to
+arbitrary bandwidth. Takes `sensitivity` and `gram_matrix` from a
+`bisr_strategy()`.
+
+```python
+strategy = bisr_strategy(
+    bandwidth=4, n_steps=total_steps,
+    min_sep=steps_per_epoch, max_participations=num_epochs,
+)
+proc = acc.balls_in_bins(
+    acc.bisr(1.0, sensitivity=strategy.sensitivity,
+             gram_matrix=strategy.gram_matrix),
+    num_bins=steps_per_epoch, num_epochs=num_epochs,
+)
 ```
 
 ### `acc.cyclic_poisson(inner, sample_rate)`
@@ -190,22 +270,49 @@ into `ceil(n_steps / bands)` independent groups, each analyzed as a
 Poisson-subsampled Gaussian mechanism. Only accepts `band_mf` processes.
 
 ```python
+strategy = band_mf_strategy(n_steps=1000, bands=10)
 proc = acc.cyclic_poisson(
-    acc.band_mf(noise_multiplier=1.0, n_steps=1000, bands=10),
+    acc.band_mf(1.0, sensitivity=strategy.sensitivity,
+                num_groups=strategy.num_groups),
     sample_rate=0.01,
+)
+eps = proc.epsilon_at(delta=1e-5)
+```
+
+### `acc.balls_in_bins(inner, num_bins, num_epochs)`
+
+Balls-in-Bins (random-partition) amplification. Returns the **total** privacy
+cost across all epochs — do NOT compose further with `* num_epochs`.
+
+Used with DP-λCGD, BISR, BLT (with Gram matrix), and Gaussian mechanisms.
+
+```python
+strategy = lambda_cgd_strategy(
+    lambda_=0.9, n_steps=total_steps,
+    min_sep=steps_per_epoch, max_participations=num_epochs,
+)
+proc = acc.balls_in_bins(
+    acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
+                   gram_matrix=strategy.gram_matrix),
+    num_bins=steps_per_epoch, num_epochs=num_epochs,
 )
 eps = proc.epsilon_at(delta=1e-5)
 ```
 
 ### Calibrating MF noise
 
-Calibration works the same way — pass a lambda that builds the MF process:
+Calibration works the same way — create the strategy first, then build
+the accounting mechanism from strategy-derived quantities. The strategy is
+created once, and the calibration lambda varies only `noise_multiplier`:
 
 ```python
+strategy = band_mf_strategy(n_steps=1000, bands=10)
+
 result = acc.calibrate(
     acc.epsilon_budget(3.0, delta=1e-5),
     lambda nm: acc.cyclic_poisson(
-        acc.band_mf(nm, n_steps=1000, bands=10),
+        acc.band_mf(nm, sensitivity=strategy.sensitivity,
+                    num_groups=strategy.num_groups),
         sample_rate=0.01,
     ),
     param_min=0.1,
