@@ -1,6 +1,5 @@
 """Tests for BltStrategy factory and accounting equivalence."""
 
-
 import opaque_accounting as acc
 from opaque.noise.mf.blt import BltStrategy, blt_strategy
 
