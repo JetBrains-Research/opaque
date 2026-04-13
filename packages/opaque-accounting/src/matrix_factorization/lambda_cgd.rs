@@ -27,7 +27,7 @@ use crate::error::{PldError, Result};
 use crate::matrix_factorization::gram_matrix::column_inner_product_momentum;
 
 fn validate_params(lambda: f64, n_steps: usize, min_sep: usize, momentum: f64) -> Result<()> {
-    if lambda < 0.0 || lambda >= 1.0 {
+    if !(0.0..1.0).contains(&lambda) {
         return Err(PldError::InvalidParameter(format!(
             "lambda must be in [0, 1), got {}",
             lambda
@@ -43,7 +43,7 @@ fn validate_params(lambda: f64, n_steps: usize, min_sep: usize, momentum: f64) -
             "min_sep must be >= 1".to_string(),
         ));
     }
-    if momentum < 0.0 || momentum >= 1.0 {
+    if !(0.0..1.0).contains(&momentum) {
         return Err(PldError::InvalidParameter(format!(
             "momentum must be in [0, 1), got {}",
             momentum

@@ -159,7 +159,7 @@ fn validate_common(
     if min_sep == 0 {
         return Err(PldError::InvalidParameter("min_sep must be >= 1".into()));
     }
-    if momentum < 0.0 || momentum >= 1.0 {
+    if !(0.0..1.0).contains(&momentum) {
         return Err(PldError::InvalidParameter(format!(
             "momentum must be in [0, 1), got {}",
             momentum
@@ -382,6 +382,7 @@ pub fn bisr_gram_matrix(
 ///
 /// The effective column for bin i at step t uses a ring buffer of p-1
 /// recent column values for the banded recurrence.
+#[allow(clippy::needless_range_loop)]
 pub fn bisr_gram_matrix_lr(
     coefficients: &[f64],
     momentum: f64,
@@ -561,10 +562,11 @@ pub fn toeplitz_gram_matrix(
     // ip_by_gap[d] = Σ_{k=0}^{p-1-d} c_{k+d} · c_k
     let mut ip_by_gap = vec![0.0f64; p];
     for d in 0..p {
-        let mut s = 0.0;
-        for k in 0..(p - d) {
-            s += strategy_coef[k + d] * strategy_coef[k];
-        }
+        let s: f64 = strategy_coef[d..p]
+            .iter()
+            .zip(strategy_coef[..p - d].iter())
+            .map(|(a, b)| a * b)
+            .sum();
         ip_by_gap[d] = s;
     }
 
@@ -574,10 +576,7 @@ pub fn toeplitz_gram_matrix(
     let col_norm = |col: usize| -> f64 {
         let remaining = n - col; // entries available
         let effective_len = remaining.min(p);
-        let mut s = 0.0;
-        for k in 0..effective_len {
-            s += strategy_coef[k] * strategy_coef[k];
-        }
+        let s: f64 = strategy_coef[..effective_len].iter().map(|c| c * c).sum();
         s.sqrt()
     };
 

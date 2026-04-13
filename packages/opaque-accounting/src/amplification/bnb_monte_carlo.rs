@@ -135,9 +135,8 @@ impl BandedCholesky {
         for k in 0..self.b {
             let j_lo = k.saturating_sub(self.bw);
             let mut lz = 0.0;
-            for j in j_lo..=k {
-                let band_col = j - j_lo;
-                lz += self.data[k * self.stride + band_col] * z[j];
+            for (idx, zj) in z[j_lo..=k].iter().enumerate() {
+                lz += self.data[k * self.stride + idx] * zj;
             }
             out[k] = mean[k] + sigma * lz;
         }
@@ -147,6 +146,7 @@ impl BandedCholesky {
 /// Sample one privacy loss value from the BnB dominating pair.
 ///
 /// For the "remove" direction: X ~ P, Y = log(P(X)/Q(X))
+#[allow(clippy::too_many_arguments, clippy::ptr_arg)]
 fn sample_privacy_loss_remove(
     gram: &[f64],
     chol: &BandedCholesky,
@@ -181,15 +181,16 @@ fn sample_privacy_loss_remove(
         }
     }
     let mut sum_exp = 0.0f64;
-    for k in 0..b {
-        sum_exp += (u_buf[k] - max_val).exp();
+    for val in &u_buf[..b] {
+        sum_exp += (val - max_val).exp();
     }
     max_val + sum_exp.ln() - (b as f64).ln()
 }
 
 /// Sample one privacy loss value for the "add" direction.
+#[allow(clippy::too_many_arguments, clippy::ptr_arg)]
 fn sample_privacy_loss_add(
-    gram: &[f64],
+    _gram: &[f64],
     chol: &BandedCholesky,
     b: usize,
     sigma: f64,
@@ -216,8 +217,8 @@ fn sample_privacy_loss_add(
         }
     }
     let mut sum_exp = 0.0f64;
-    for k in 0..b {
-        sum_exp += (u_buf[k] - max_val).exp();
+    for val in &u_buf[..b] {
+        sum_exp += (val - max_val).exp();
     }
     -(max_val + sum_exp.ln() - (b as f64).ln())
 }

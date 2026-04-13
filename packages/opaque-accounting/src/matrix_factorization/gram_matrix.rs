@@ -165,11 +165,6 @@ pub(crate) fn column_inner_product_momentum(
     inv_diff_sq * (term1 - term2 + term3)
 }
 
-/// Column norm squared: ‖C_λ[:,k]‖² = (1 - λ^{2(n-k)}) / (1 - λ²)
-fn column_norm_squared(lambda: f64, n: usize, k: usize) -> f64 {
-    column_inner_product(lambda, n, k, k)
-}
-
 /// Compute the BnB Gram matrix for DP-λCGD with optional momentum.
 ///
 /// For the BnB dominating pair (Lemma 3.2 of arxiv:2410.06266):
@@ -201,7 +196,7 @@ pub fn lambda_cgd_gram_matrix(
     normalized: bool,
     momentum: f64,
 ) -> Result<Vec<f64>> {
-    if lambda < 0.0 || lambda >= 1.0 {
+    if !(0.0..1.0).contains(&lambda) {
         return Err(PldError::InvalidParameter(format!(
             "lambda must be in [0, 1), got {}",
             lambda
@@ -213,7 +208,7 @@ pub fn lambda_cgd_gram_matrix(
     if min_sep == 0 {
         return Err(PldError::InvalidParameter("min_sep must be >= 1".into()));
     }
-    if momentum < 0.0 || momentum >= 1.0 {
+    if !(0.0..1.0).contains(&momentum) {
         return Err(PldError::InvalidParameter(format!(
             "momentum must be in [0, 1), got {}",
             momentum
@@ -332,6 +327,7 @@ pub fn lambda_cgd_gram_matrix(
 /// # Returns
 ///
 /// Row-major b×b Gram matrix as a flat Vec<f64>.
+#[allow(clippy::needless_range_loop)]
 pub fn lambda_cgd_gram_matrix_lr(
     lambda: f64,
     momentum: f64,
@@ -341,7 +337,7 @@ pub fn lambda_cgd_gram_matrix_lr(
     normalized: bool,
     lr_weights: &[f64],
 ) -> Result<Vec<f64>> {
-    if lambda < 0.0 || lambda >= 1.0 {
+    if !(0.0..1.0).contains(&lambda) {
         return Err(PldError::InvalidParameter(format!(
             "lambda must be in [0, 1), got {}",
             lambda
@@ -353,7 +349,7 @@ pub fn lambda_cgd_gram_matrix_lr(
     if min_sep == 0 {
         return Err(PldError::InvalidParameter("min_sep must be >= 1".into()));
     }
-    if momentum < 0.0 || momentum >= 1.0 {
+    if !(0.0..1.0).contains(&momentum) {
         return Err(PldError::InvalidParameter(format!(
             "momentum must be in [0, 1), got {}",
             momentum
