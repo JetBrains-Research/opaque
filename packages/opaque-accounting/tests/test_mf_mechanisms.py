@@ -105,10 +105,12 @@ class TestCyclicPoissonDataclass:
     def test_more_groups_higher_epsilon(self):
         """More groups → more composition → higher epsilon."""
         eps_small = acc.cyclic_poisson(
-            acc.band_mf(1.0, sensitivity=1.0, num_groups=2), 0.01,
+            acc.band_mf(1.0, sensitivity=1.0, num_groups=2),
+            0.01,
         ).epsilon_at(1e-5)
         eps_large = acc.cyclic_poisson(
-            acc.band_mf(1.0, sensitivity=1.0, num_groups=20), 0.01,
+            acc.band_mf(1.0, sensitivity=1.0, num_groups=20),
+            0.01,
         ).epsilon_at(1e-5)
         assert eps_small < eps_large
 
@@ -118,7 +120,8 @@ class TestCyclicPoissonConstructor:
 
     def test_returns_correct_type(self):
         proc = acc.cyclic_poisson(
-            acc.band_mf(1.0, sensitivity=1.0, num_groups=20), 0.01,
+            acc.band_mf(1.0, sensitivity=1.0, num_groups=20),
+            0.01,
         )
         assert isinstance(proc, CyclicPoisson)
 

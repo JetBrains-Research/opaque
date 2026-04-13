@@ -68,7 +68,9 @@ def _worker_identity_mf_three_steps(rank: int, world_size: int, port: int) -> No
         grad_template = {"weight": torch.zeros(batch_size, param_dim, device=device)}
 
         # Initialize identity MF (standard Gaussian noise)
-        noise_fn, state = mf_noise(grad_template, identity_strategy(), stddev=1.0, key=None)
+        noise_fn, state = mf_noise(
+            grad_template, identity_strategy(), stddev=1.0, key=None
+        )
 
         # Run 3 training steps
         step_noise_values = []

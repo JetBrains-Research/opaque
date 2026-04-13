@@ -99,7 +99,9 @@ def test_cached_state_dict_structure():
 
 
 def test_cyclic_poisson_state_dict_structure():
-    proc = acc.cyclic_poisson(acc.band_mf(1.0, sensitivity=2.5, num_groups=200), sample_rate=0.01)
+    proc = acc.cyclic_poisson(
+        acc.band_mf(1.0, sensitivity=2.5, num_groups=200), sample_rate=0.01
+    )
     state = cast(dict[str, object], proc.state_dict())
     assert state["type"] == "CyclicPoisson"
     assert state["sample_rate"] == 0.01
@@ -111,7 +113,9 @@ def test_cyclic_poisson_state_dict_structure():
 
 
 def test_cyclic_poisson_round_trip():
-    proc = acc.cyclic_poisson(acc.band_mf(1.0, sensitivity=2.5, num_groups=200), sample_rate=0.01)
+    proc = acc.cyclic_poisson(
+        acc.band_mf(1.0, sensitivity=2.5, num_groups=200), sample_rate=0.01
+    )
     state = proc.state_dict()
     restored = DpProcess.from_state_dict(state)
     assert isinstance(restored, CyclicPoisson)

@@ -103,11 +103,17 @@ def lambda_cgd_strategy(
     # Sensitivity (closed-form Rust)
     if normalized:
         sens_sq = _native.lambda_cgd_normalized_sensitivity_squared(
-            lambda_, n_steps, min_sep, max_participations,
+            lambda_,
+            n_steps,
+            min_sep,
+            max_participations,
         )
     else:
         sens_sq = _native.lambda_cgd_sensitivity_squared(
-            lambda_, n_steps, min_sep, max_participations,
+            lambda_,
+            n_steps,
+            min_sep,
+            max_participations,
         )
     sensitivity = float(sens_sq**0.5)
 
@@ -116,7 +122,11 @@ def lambda_cgd_strategy(
 
     # Gram matrix (closed-form Rust)
     gram = _native.lambda_cgd_gram_matrix(
-        lambda_, n_steps, min_sep, max_participations, normalized,
+        lambda_,
+        n_steps,
+        min_sep,
+        max_participations,
+        normalized,
     )
     gram_matrix = tuple(gram)
 
@@ -173,10 +183,15 @@ def _make_lambda_cgd_noise(
             prev_key = rng_fold_in(st._rng_key, step - 1)
             g_prev = generator_from_key(prev_key)
             z_prev = _iid_normal_noise(
-                clipped_grads, stddev, generator=g_prev, dtype=dtype,
+                clipped_grads,
+                stddev,
+                generator=g_prev,
+                dtype=dtype,
             )
             corr_noise = tree_map(
-                lambda zt, zp: zt - lambda_ * zp, z_t, z_prev,
+                lambda zt, zp: zt - lambda_ * zp,
+                z_t,
+                z_prev,
             )
 
         if normalized:

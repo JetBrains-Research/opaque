@@ -23,7 +23,11 @@ from collections.abc import Callable
 import numpy as np
 import torch
 
-from . import _sensitivity as sensitivity, _streaming_matrix as streaming_matrix, _toeplitz as toeplitz
+from . import (
+    _sensitivity as sensitivity,
+    _streaming_matrix as streaming_matrix,
+    _toeplitz as toeplitz,
+)
 from ._engine import _internal_compute_dtype
 
 logger = logging.getLogger(__name__)

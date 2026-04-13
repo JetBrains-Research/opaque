@@ -31,7 +31,7 @@ class TestBandMfStrategy:
         assert s._streaming_matrix is not None
 
     def test_matches_old_sensitivity(self):
-        old = acc.band_mf(1.0, sensitivity=1.0, num_groups=10)
+        acc.band_mf(1.0, sensitivity=1.0, num_groups=10)
         new = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
         assert new.sensitivity == pytest.approx(1.0, abs=1e-6)
 

@@ -13,7 +13,6 @@ References:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 import torch
 
@@ -92,7 +91,9 @@ def blt_strategy(
 
     # Sensitivity
     k = minsep_true_max_participations(
-        n=n_steps, min_sep=min_sep, max_participations=max_participations,
+        n=n_steps,
+        min_sep=min_sep,
+        max_participations=max_participations,
     )
     if k == 1:
         sens_sq = _blt_sensitivity_squared(blt, n=n_steps)
@@ -113,7 +114,11 @@ def blt_strategy(
 
     # Gram matrix
     gram = _native.toeplitz_gram_matrix(
-        list(coefficients), n_steps, min_sep, max_participations, True,
+        list(coefficients),
+        n_steps,
+        min_sep,
+        max_participations,
+        True,
     )
     gram_matrix = tuple(gram)
 

@@ -36,7 +36,9 @@ from ._streaming_matrix import (
 )
 from opaque.random import RngKey
 
-MfStrategy = BandMfStrategy | BltStrategy | LambdaCgdStrategy | BisrStrategy | IdentityStrategy
+MfStrategy = (
+    BandMfStrategy | BltStrategy | LambdaCgdStrategy | BisrStrategy | IdentityStrategy
+)
 
 
 def mf_noise(
@@ -70,12 +72,19 @@ def mf_noise(
     match strategy:
         case IdentityStrategy():
             return _matrix_factorization_noise(
-                grad_template, identity(),
-                stddev=stddev, key=key, dtype=dtype,
+                grad_template,
+                identity(),
+                stddev=stddev,
+                key=key,
+                dtype=dtype,
             )
         case LambdaCgdStrategy():
             return _make_lambda_cgd_noise(
-                grad_template, strategy, stddev=stddev, key=key, dtype=dtype,
+                grad_template,
+                strategy,
+                stddev=stddev,
+                key=key,
+                dtype=dtype,
             )
         case BandMfStrategy() | BltStrategy() | BisrStrategy():
             if strategy._streaming_matrix is None:
@@ -83,8 +92,11 @@ def mf_noise(
                     "Strategy must have a _streaming_matrix for noise generation."
                 )
             return _matrix_factorization_noise(
-                grad_template, strategy._streaming_matrix,
-                stddev=stddev, key=key, dtype=dtype,
+                grad_template,
+                strategy._streaming_matrix,
+                stddev=stddev,
+                key=key,
+                dtype=dtype,
             )
         case _:
             raise TypeError(f"Unknown strategy type: {type(strategy).__name__}")

@@ -20,7 +20,11 @@ from typing import Any, Protocol, TypeAlias, TypeVar
 import torch
 from scipy.linalg import toeplitz as scipy_toeplitz
 
-from . import _checks as checks, _sensitivity as sensitivity, _streaming_matrix as streaming_matrix
+from . import (
+    _checks as checks,
+    _sensitivity as sensitivity,
+    _streaming_matrix as streaming_matrix,
+)
 
 # ---------------------------------------------------------------------------
 # Optimization (L-BFGS wrapper, formerly optimization.py)

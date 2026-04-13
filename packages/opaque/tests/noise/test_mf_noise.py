@@ -45,7 +45,7 @@ class TestBandMfStrategy:
         assert s._streaming_matrix is not None
 
     def test_matches_old_sensitivity(self):
-        old = acc.band_mf(1.0, sensitivity=1.0, num_groups=10)
+        acc.band_mf(1.0, sensitivity=1.0, num_groups=10)
         new = band_mf_strategy(n_steps=100, bands=10, momentum=0.95)
         assert new.sensitivity == pytest.approx(1.0, abs=1e-6)
 
@@ -128,11 +128,15 @@ class TestLambdaCgdStrategy:
         assert new.sensitivity > 0
 
     def test_with_momentum(self):
-        s = lambda_cgd_strategy(0.5, n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
+        s = lambda_cgd_strategy(
+            0.5, n_steps=100, min_sep=25, max_participations=4, momentum=0.95
+        )
         assert s.sensitivity > 0
 
     def test_unnormalized(self):
-        s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4, normalized=False)
+        s = lambda_cgd_strategy(
+            0.9, n_steps=100, min_sep=25, max_participations=4, normalized=False
+        )
         assert s.sensitivity > 0
 
     def test_rejects_bad_lambda(self):
@@ -174,7 +178,9 @@ class TestBisrStrategy:
         assert new.sensitivity > 0
 
     def test_with_momentum(self):
-        s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
+        s = bisr_strategy(
+            bandwidth=4, n_steps=100, min_sep=25, max_participations=4, momentum=0.95
+        )
         assert s.sensitivity > 0
 
     def test_rejects_bad_bandwidth(self):
@@ -238,7 +244,8 @@ class TestBnbEquivalence:
         s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
         bnb_new = acc.balls_in_bins(
             acc.lambda_cgd(1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix),
-            num_bins=25, num_epochs=4,
+            num_bins=25,
+            num_epochs=4,
         )
         eps = bnb_new.epsilon_at(self.delta)
         assert eps > 0
@@ -247,7 +254,8 @@ class TestBnbEquivalence:
         s = blt_strategy(n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
         bnb_new = acc.balls_in_bins(
             acc.blt(1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix),
-            num_bins=25, num_epochs=4,
+            num_bins=25,
+            num_epochs=4,
         )
         eps = bnb_new.epsilon_at(self.delta)
         assert eps > 0
@@ -256,7 +264,8 @@ class TestBnbEquivalence:
         s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
         bnb_new = acc.balls_in_bins(
             acc.bisr(1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix),
-            num_bins=25, num_epochs=4,
+            num_bins=25,
+            num_epochs=4,
         )
         eps = bnb_new.epsilon_at(self.delta)
         assert eps > 0
@@ -266,7 +275,8 @@ class TestBnbEquivalence:
         with pytest.raises(ValueError):
             acc.balls_in_bins(
                 acc.blt(1.0, sensitivity=1.0),
-                num_bins=25, num_epochs=4,
+                num_bins=25,
+                num_epochs=4,
             ).epsilon_at(1e-5)
 
 

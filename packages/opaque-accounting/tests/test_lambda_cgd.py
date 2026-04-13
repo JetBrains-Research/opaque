@@ -119,7 +119,8 @@ class TestBnbAmplification:
         with pytest.raises(ValueError, match="gram_matrix"):
             acc.balls_in_bins(
                 acc.lambda_cgd(1.0, sensitivity=1.0),
-                num_bins=50, num_epochs=3,
+                num_bins=50,
+                num_epochs=3,
             ).epsilon_at(1e-5)
 
     @pytest.mark.slow
@@ -128,15 +129,13 @@ class TestBnbAmplification:
         with pytest.raises(TypeError):
             acc.balls_in_bins(
                 acc.band_mf(1.0, sensitivity=1.0, num_groups=20),
-                num_bins=50, num_epochs=3,
+                num_bins=50,
+                num_epochs=3,
             )
 
     @pytest.mark.slow
     def test_composition(self):
         """Can compose BnB epochs with * operator."""
-        # Use a simple gram matrix (identity-like) for testing
-        gram = tuple([1.0] + [0.0] * 49 for _ in range(1))[0] * 50  # rough identity
-        # Actually just test that composition of BnB processes works
         proc = acc.lambda_cgd(1.0, sensitivity=1.0)
         eps = (proc * 3).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0

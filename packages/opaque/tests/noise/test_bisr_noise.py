@@ -29,7 +29,9 @@ class TestBisrStrategy:
         assert new.sensitivity > 0
 
     def test_with_momentum(self):
-        s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
+        s = bisr_strategy(
+            bandwidth=4, n_steps=100, min_sep=25, max_participations=4, momentum=0.95
+        )
         assert s.sensitivity > 0
 
     def test_rejects_bad_bandwidth(self):
@@ -49,6 +51,7 @@ class TestBisrPld:
         s = bisr_strategy(bandwidth=4, n_steps=100, min_sep=25, max_participations=4)
         eps = acc.balls_in_bins(
             acc.bisr(1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix),
-            num_bins=25, num_epochs=4,
+            num_bins=25,
+            num_epochs=4,
         ).epsilon_at(self.delta)
         assert eps > 0

@@ -133,11 +133,17 @@ def bisr_strategy(
     # Sensitivity (Rust)
     if normalized:
         sens_sq = _native.bisr_normalized_sensitivity_squared(
-            inv_coefs, n_steps, min_sep, max_participations,
+            inv_coefs,
+            n_steps,
+            min_sep,
+            max_participations,
         )
     else:
         sens_sq = _native.bisr_sensitivity_squared(
-            inv_coefs, n_steps, min_sep, max_participations,
+            inv_coefs,
+            n_steps,
+            min_sep,
+            max_participations,
         )
     sensitivity = float(sens_sq**0.5)
 
@@ -148,7 +154,11 @@ def bisr_strategy(
 
     # Gram matrix (Rust)
     gram = _native.bisr_gram_matrix(
-        inv_coefs, n_steps, min_sep, max_participations, normalized,
+        inv_coefs,
+        n_steps,
+        min_sep,
+        max_participations,
+        normalized,
     )
     gram_matrix = tuple(gram)
 

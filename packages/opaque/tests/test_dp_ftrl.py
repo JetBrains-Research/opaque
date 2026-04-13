@@ -398,7 +398,9 @@ class TestMfNoiseStrategies:
         """identity_strategy via mf_noise gives same noise as _matrix_factorization_noise + identity()."""
         tmpl = {"w": torch.zeros(10)}
         nf1, ns1 = mf_noise(tmpl, identity_strategy(), stddev=1.0, key=key(42))
-        nf2, ns2 = _matrix_factorization_noise(tmpl, identity(), stddev=1.0, key=key(42))
+        nf2, ns2 = _matrix_factorization_noise(
+            tmpl, identity(), stddev=1.0, key=key(42)
+        )
 
         grad = {"w": torch.ones(10)}
         out1, _ = nf1(grad, ns1)

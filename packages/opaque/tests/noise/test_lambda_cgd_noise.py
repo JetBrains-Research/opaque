@@ -12,7 +12,10 @@ from opaque.random import key
 def _make_noise(template, n_steps=100, lambda_=0.9, normalized=True, seed=42):
     """Helper: create lambda-CGD noise via the strategy + mf_noise API."""
     strategy = lambda_cgd_strategy(
-        lambda_, n_steps=n_steps, min_sep=1, max_participations=1,
+        lambda_,
+        n_steps=n_steps,
+        min_sep=1,
+        max_participations=1,
         normalized=normalized,
     )
     return mf_noise(template, strategy, stddev=1.0, key=key(seed))
@@ -129,12 +132,16 @@ class TestLambdaCgdNoise:
         template = {"w": torch.zeros(20)}
 
         # Run with lambda=0, normalized=False to get individual z_0 and z_1
-        noise_fn_ind, state_ind = _make_noise(template, n_steps=100, lambda_=0.0, normalized=False)
+        noise_fn_ind, state_ind = _make_noise(
+            template, n_steps=100, lambda_=0.0, normalized=False
+        )
         z0, state_ind = noise_fn_ind({"w": torch.zeros(20)}, state_ind)
         z1, _ = noise_fn_ind({"w": torch.zeros(20)}, state_ind)
 
         # Run with lambda>0, normalized=False: step 1 should be z_1 - lambda*z_0
-        noise_fn_corr, state_corr = _make_noise(template, n_steps=100, lambda_=0.5, normalized=False)
+        noise_fn_corr, state_corr = _make_noise(
+            template, n_steps=100, lambda_=0.5, normalized=False
+        )
         _, state_corr = noise_fn_corr({"w": torch.zeros(20)}, state_corr)
         step1_corr, _ = noise_fn_corr({"w": torch.zeros(20)}, state_corr)
 
@@ -162,11 +169,15 @@ class TestLambdaCgdStrategy:
         assert s.sensitivity == pytest.approx(1.0, abs=1e-6)
 
     def test_with_momentum(self):
-        s = lambda_cgd_strategy(0.5, n_steps=100, min_sep=25, max_participations=4, momentum=0.95)
+        s = lambda_cgd_strategy(
+            0.5, n_steps=100, min_sep=25, max_participations=4, momentum=0.95
+        )
         assert s.sensitivity > 0
 
     def test_unnormalized(self):
-        s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4, normalized=False)
+        s = lambda_cgd_strategy(
+            0.9, n_steps=100, min_sep=25, max_participations=4, normalized=False
+        )
         assert s.sensitivity > 0
 
     def test_internal_fields(self):
@@ -188,6 +199,7 @@ class TestLambdaCgdPld:
         s = lambda_cgd_strategy(0.9, n_steps=100, min_sep=25, max_participations=4)
         eps = acc.balls_in_bins(
             acc.lambda_cgd(1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix),
-            num_bins=25, num_epochs=4,
+            num_bins=25,
+            num_epochs=4,
         ).epsilon_at(self.delta)
         assert eps > 0
