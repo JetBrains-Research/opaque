@@ -54,12 +54,15 @@ enter sensitivity or Gram matrix computation).
 ## Noise generation
 
 ```python
-from opaque.noise import bisr_noise
+from opaque.noise.mf_noise import mf_noise, bisr_strategy
 
-noise_fn, state = bisr_noise(
-    grad_template, n_steps=total_steps,
+strategy = bisr_strategy(
+    n_steps=total_steps, bandwidth=4, momentum=0.9,
+)
+noise_fn, state = mf_noise(
+    grad_template, strategy,
     stddev=noise_multiplier * clip_sensitivity,
-    key=key(seed), bandwidth=4, momentum=0.9,
+    key=key(seed),
 )
 ```
 

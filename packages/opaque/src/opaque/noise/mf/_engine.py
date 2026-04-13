@@ -5,8 +5,8 @@ matrix factorization. Instead of adding independent Gaussian noise at
 each step (standard DP-SGD), these mechanisms add correlated noise that
 achieves better utility at the same privacy budget.
 
-The user-facing entry point is ``custom_mf_noise`` (in ``opaque.noise``).
-Internally, recipe wrappers (``band_mf_noise``, ``blt_mf_noise``, etc.)
+The user-facing entry point is ``mf_noise`` (in ``opaque.noise``).
+Internally, strategy modules (``band_mf``, ``blt``, etc.)
 call ``_matrix_factorization_noise`` which returns ``(noise_fn, state)``.
 
 References:
@@ -28,7 +28,7 @@ from opaque.random import RngKey, generator_from_key
 from opaque.random import fold_in as rng_fold_in
 from opaque.utils.pytree import tree_map
 
-from . import streaming_matrix
+from . import _streaming_matrix as streaming_matrix
 
 
 @dataclasses.dataclass(frozen=True)
@@ -141,8 +141,8 @@ def _matrix_factorization_noise(
 ]:
     """Internal: create ``(noise_fn, state)`` from a noising matrix.
 
-    This is the engine that all ``*_mf_noise`` wrappers call. Users
-    should use ``custom_mf_noise`` (or a recipe wrapper) instead.
+    This is the engine that all strategy modules call. Users
+    should use ``mf_noise`` (or a strategy wrapper) instead.
 
     Args:
         grad_template: Pytree with the same structure/shapes as gradients.

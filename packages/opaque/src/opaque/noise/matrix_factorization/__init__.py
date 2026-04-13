@@ -19,6 +19,11 @@ References:
     - Multi-epoch BLT: https://arxiv.org/abs/2408.08868
 """
 
+from opaque.noise.matrix_factorization.band_mf_noise import BandMfStrategy, band_mf_strategy
+from opaque.noise.matrix_factorization.bisr_noise import BisrStrategy, bisr_strategy
+from opaque.noise.matrix_factorization.blt_mf_noise import BltStrategy, blt_strategy
+from opaque.noise.matrix_factorization.identity_mf_noise import IdentityStrategy, identity_strategy
+from opaque.noise.matrix_factorization.lambda_cgd_noise import LambdaCgdStrategy, lambda_cgd_strategy
 from opaque.noise.matrix_factorization.noise import MFNoiseState
 from opaque.noise.matrix_factorization.streaming_matrix import (
     StreamingMatrix,
@@ -32,10 +37,20 @@ from opaque.noise.matrix_factorization.streaming_matrix import (
 )
 
 __all__ = [
+    "BandMfStrategy",
+    "BisrStrategy",
+    "BltStrategy",
+    "IdentityStrategy",
+    "LambdaCgdStrategy",
     "MFNoiseState",
     "StreamingMatrix",
+    "band_mf_strategy",
+    "bisr_strategy",
+    "blt_strategy",
     "diagonal",
     "identity",
+    "identity_strategy",
+    "lambda_cgd_strategy",
     "momentum_sgd_matrix",
     "multiply_array",
     "multiply_streaming_matrices",

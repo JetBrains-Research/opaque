@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from opaque.noise.matrix_factorization.sensitivity import (
+from opaque.noise.mf._sensitivity import (
     banded_lower_triangular_mask,
     banded_symmetric_mask,
     get_sensitivity_banded_for_X,

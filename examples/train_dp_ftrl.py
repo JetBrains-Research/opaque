@@ -92,7 +92,14 @@ import torchopt
 import opaque.accounting as acc
 from opaque.accounting import calibration as cal
 from opaque.clipping import clipped_grad
-from opaque.noise import band_mf_noise, bisr_noise, blt_mf_noise, identity_mf_noise, lambda_cgd_noise
+from opaque.noise.mf import (
+    band_mf_strategy,
+    bisr_strategy,
+    blt_strategy,
+    identity_strategy,
+    lambda_cgd_strategy,
+    mf_noise,
+)
 from opaque.profiling import StepTimer, TrainingProfiler, print_memory, reset_peak_memory
 from opaque.random import key, fold_in
 from opaque.sampling import BallsInBinsSampler, CyclicPoissonSampler, PoissonSampler, poisson_collate
@@ -595,56 +602,68 @@ def main():
         args.target_delta = 1.0 / (global_train_size ** 1.1)
 
     # Build the accounting mechanism.
-    lr_weights_list = lr_schedule.double().tolist()
+    strategy = None
     if args.mechanism == "band_mf":
+        strategy = band_mf_strategy(
+            n_steps=total_steps, bands=args.bands,
+            momentum=args.momentum, lr_schedule=lr_schedule,
+        )
         def acct_mechanism(nm):
             return acc.cyclic_poisson(
-                acc.band_mf(nm, n_steps=total_steps, bands=args.bands,
-                            momentum=args.momentum,
-                            lr_schedule=lr_weights_list),
+                acc.band_mf(nm, sensitivity=strategy.sensitivity,
+                            num_groups=strategy.num_groups),
                 sample_rate=sampling_prob,
             )
     elif args.mechanism == "blt":
+        strategy = blt_strategy(
+            n_steps=total_steps,
+            min_sep=expected_steps_per_epoch,
+            max_participations=args.num_epochs,
+            max_buffers=args.max_buffers,
+            momentum=args.momentum, lr_schedule=lr_schedule,
+        )
         def acct_mechanism(nm):
-            return acc.blt_mf(
-                nm, n_steps=total_steps,
-                min_sep=expected_steps_per_epoch,
-                max_participations=args.num_epochs,
-                max_buffers=args.max_buffers,
-                momentum=args.momentum,
-                lr_schedule=lr_weights_list,
-            )
+            return acc.blt(nm, sensitivity=strategy.sensitivity)
     elif args.mechanism == "blt_bnb":
+        strategy = blt_strategy(
+            n_steps=total_steps,
+            min_sep=expected_steps_per_epoch,
+            max_participations=args.num_epochs,
+            max_buffers=args.max_buffers,
+            momentum=args.momentum, lr_schedule=lr_schedule,
+        )
         def acct_mechanism(nm):
             return acc.balls_in_bins(
-                acc.blt_mf(nm, n_steps=total_steps,
-                           min_sep=expected_steps_per_epoch,
-                           max_participations=args.num_epochs,
-                           max_buffers=args.max_buffers,
-                           momentum=args.momentum,
-                           lr_schedule=lr_weights_list),
+                acc.blt(nm, sensitivity=strategy.sensitivity,
+                        gram_matrix=strategy.gram_matrix),
                 num_bins=expected_steps_per_epoch,
                 num_epochs=args.num_epochs,
             )
     elif args.mechanism == "lambda_cgd":
+        strategy = lambda_cgd_strategy(
+            lambda_=args.lambda_, n_steps=total_steps,
+            min_sep=expected_steps_per_epoch,
+            max_participations=args.num_epochs,
+            momentum=args.momentum,
+        )
         def acct_mechanism(nm):
             return acc.balls_in_bins(
-                acc.lambda_cgd(nm, lambda_=args.lambda_,
-                               n_steps=total_steps,
-                               min_sep=expected_steps_per_epoch,
-                               max_participations=args.num_epochs,
-                               momentum=args.momentum),
+                acc.lambda_cgd(nm, sensitivity=strategy.sensitivity,
+                               gram_matrix=strategy.gram_matrix),
                 num_bins=expected_steps_per_epoch,
                 num_epochs=args.num_epochs,
             )
     elif args.mechanism == "bisr":
+        strategy = bisr_strategy(
+            bandwidth=args.bisr_bandwidth, n_steps=total_steps,
+            min_sep=expected_steps_per_epoch,
+            max_participations=args.num_epochs,
+            momentum=args.momentum,
+        )
         def acct_mechanism(nm):
             return acc.balls_in_bins(
-                acc.bisr(nm, n_steps=total_steps,
-                         bandwidth=args.bisr_bandwidth,
-                         min_sep=expected_steps_per_epoch,
-                         max_participations=args.num_epochs,
-                         momentum=args.momentum),
+                acc.bisr(nm, sensitivity=strategy.sensitivity,
+                         gram_matrix=strategy.gram_matrix),
                 num_bins=expected_steps_per_epoch,
                 num_epochs=args.num_epochs,
             )
@@ -689,39 +708,15 @@ def main():
     else:
         print(f"\nCreating MF noise (β={args.momentum})...")
     t0 = time.time()
-    if args.mechanism == "band_mf":
-        noise_fn, noise_state = band_mf_noise(
-            trainable_params, total_steps,
+    if args.mechanism == "identity":
+        noise_fn, noise_state = mf_noise(
+            trainable_params, identity_strategy(),
             stddev=noise_stddev, key=key(args.seed),
-            bands=args.bands, momentum=args.momentum,
-            lr_schedule=lr_schedule,
         )
-    elif args.mechanism in ("blt", "blt_bnb"):
-        noise_fn, noise_state = blt_mf_noise(
-            trainable_params, total_steps,
+    else:
+        noise_fn, noise_state = mf_noise(
+            trainable_params, strategy,
             stddev=noise_stddev, key=key(args.seed),
-            min_sep=expected_steps_per_epoch,
-            max_participations=args.num_epochs,
-            max_buffers=args.max_buffers,
-            momentum=args.momentum,
-            lr_schedule=lr_schedule,
-        )
-    elif args.mechanism == "lambda_cgd":
-        noise_fn, noise_state = lambda_cgd_noise(
-            trainable_params, total_steps,
-            stddev=noise_stddev, key=key(args.seed),
-            lambda_=args.lambda_,
-        )
-    elif args.mechanism == "bisr":
-        noise_fn, noise_state = bisr_noise(
-            trainable_params, total_steps,
-            stddev=noise_stddev, key=key(args.seed),
-            bandwidth=args.bisr_bandwidth,
-            momentum=args.momentum,
-        )
-    elif args.mechanism == "identity":
-        noise_fn, noise_state = identity_mf_noise(
-            trainable_params, stddev=noise_stddev, key=key(args.seed),
         )
     print(f"  Noise function created in {time.time() - t0:.1f}s")
 

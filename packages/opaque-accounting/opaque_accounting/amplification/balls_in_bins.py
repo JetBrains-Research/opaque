@@ -27,14 +27,18 @@ from dataclasses import dataclass
 from .. import opaque_accounting as _native
 
 from opaque_accounting.base import DpProcess, Pld
-from opaque_accounting.mechanisms.blt_mf import BltMf
 from opaque_accounting.mechanisms.gaussian import Gaussian
+from opaque_accounting.mechanisms.bisr import Bisr
+from opaque_accounting.mechanisms.blt import Blt
 from opaque_accounting.mechanisms.lambda_cgd import LambdaCgd
 from opaque_accounting.mechanisms.nonprivate import NonPrivate
 from opaque_accounting.transformations.adaclip import AdaClip
 
+#: MF types with pre-computed Gram matrix for MC BnB.
+_BnbMf = Blt | LambdaCgd | Bisr
+
 #: Mechanism types accepted by :func:`balls_in_bins`.
-_Inner = Gaussian | LambdaCgd | BltMf | AdaClip | NonPrivate
+_Inner = Gaussian | _BnbMf | AdaClip | NonPrivate
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,9 +56,8 @@ class BallsInBins(DpProcess):
     Example (DP-λCGD)::
 
         training = acc.balls_in_bins(
-            acc.lambda_cgd(nm, lambda_=0.9, n_steps=total_steps,
-                           min_sep=steps_per_epoch,
-                           max_participations=num_epochs),
+            acc.lambda_cgd(nm, sensitivity=s.sensitivity,
+                           gram_matrix=s.gram_matrix),
             num_bins=steps_per_epoch,
             num_epochs=num_epochs,
         )
@@ -101,59 +104,24 @@ class BallsInBins(DpProcess):
                 )
             case AdaClip(inner=NonPrivate() | Gaussian(noise_multiplier=0)):
                 return _native.non_private_pld(native_cfg)
-            case BltMf() as blt:
-                # MC BnB accounting for BLT (same approach as λCGD).
-                # Extract Toeplitz strategy coefficients from the
-                # optimized BLT, compute the Gram matrix, then MC PLD.
-                coefs = blt.strategy_coefficients()
-                gram = _native.toeplitz_gram_matrix(
-                    coefs,
-                    blt.n_steps,
-                    blt.min_sep,
-                    blt.max_participations,
-                    True,  # column-normalized
-                )
-                return _native.bnb_mc_pld(
-                    gram,
-                    self.num_bins,
-                    blt.noise_multiplier,
-                    100_000,  # MC samples
-                    42,  # seed
-                    native_cfg,
-                )
-            case LambdaCgd() as lc:
-                # Monte Carlo BnB accounting (Lemma 3.2 of arxiv:2410.06266).
-                # Compute Gram matrix of the dominating pair mixture means,
-                # then sample the PLD via Monte Carlo.
-                if lc._use_fast_lambda_cgd_path():
-                    gram = _native.lambda_cgd_gram_matrix(
-                        lc.lambda_,
-                        lc.n_steps,
-                        lc.min_sep,
-                        lc.max_participations,
-                        lc.normalized,
-                    )
-                else:
-                    coefs = list(lc._effective_coefficients())
-                    gram = _native.bisr_gram_matrix(
-                        coefs,
-                        lc.n_steps,
-                        lc.min_sep,
-                        lc.max_participations,
-                        lc.normalized,
+            case Blt() | LambdaCgd() | Bisr() as mg:
+                if not mg.gram_matrix:
+                    raise ValueError(
+                        f"{type(mg).__name__} requires a non-empty gram_matrix "
+                        "for BnB amplification."
                     )
                 return _native.bnb_mc_pld(
-                    gram,
+                    list(mg.gram_matrix),
                     self.num_bins,
-                    lc.noise_multiplier,
+                    mg.noise_multiplier,
                     100_000,  # MC samples
                     42,  # seed
                     native_cfg,
                 )
             case _:
                 raise TypeError(
-                    "BallsInBins requires a Gaussian, LambdaCgd, BltMf, or AdaClip "
-                    f"inner mechanism, got {type(self.inner).__name__}."
+                    "BallsInBins requires a Gaussian, Blt, LambdaCgd, Bisr, "
+                    f"or AdaClip inner mechanism, got {type(self.inner).__name__}."
                 )
 
 
@@ -191,10 +159,13 @@ def balls_in_bins(
         training = acc.balls_in_bins(acc.gaussian(1.1), num_bins=100, num_epochs=10)
         eps = training.epsilon_at(1e-5)
     """
-    if not isinstance(inner, (Gaussian, LambdaCgd, BltMf, AdaClip, NonPrivate)):
+    if not isinstance(
+        inner,
+        (Gaussian, Blt, LambdaCgd, Bisr, AdaClip, NonPrivate),
+    ):
         raise TypeError(
-            f"balls_in_bins() requires a Gaussian, LambdaCgd, BltMf, AdaClip, or "
-            f"NonPrivate inner mechanism, got {type(inner).__name__}. "
+            f"balls_in_bins() requires a Gaussian, Blt, LambdaCgd, Bisr, "
+            f"AdaClip, or NonPrivate inner mechanism, got {type(inner).__name__}. "
             "Example: acc.balls_in_bins(acc.gaussian(nm), num_bins=k, num_epochs=E)"
         )
     if num_bins < 2:
@@ -202,24 +173,6 @@ def balls_in_bins(
     if num_epochs < 1:
         raise ValueError(f"num_epochs must be >= 1, got {num_epochs}")
 
-    # For correlated mechanisms: validate that num_epochs is consistent
-    if isinstance(inner, LambdaCgd) and inner.max_participations is not None:
-        if num_epochs != 1 and num_epochs != inner.max_participations:
-            raise ValueError(
-                f"num_epochs={num_epochs} conflicts with lambda_cgd "
-                f"max_participations={inner.max_participations}. "
-                "For DP-λCGD, the epoch structure is encoded in the "
-                "inner mechanism's n_steps/min_sep/max_participations."
-            )
-        num_epochs = inner.max_participations
-    if isinstance(inner, BltMf) and inner.max_participations is not None:
-        if num_epochs != 1 and num_epochs != inner.max_participations:
-            raise ValueError(
-                f"num_epochs={num_epochs} conflicts with blt_mf "
-                f"max_participations={inner.max_participations}. "
-                "For BLT with BnB, the epoch structure is encoded in the "
-                "inner mechanism's n_steps/min_sep/max_participations."
-            )
-        num_epochs = inner.max_participations
+    return BallsInBins(inner=inner, num_bins=num_bins, num_epochs=num_epochs)
 
     return BallsInBins(inner=inner, num_bins=num_bins, num_epochs=num_epochs)

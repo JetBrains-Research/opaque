@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from opaque.noise.matrix_factorization.checks import (
+from opaque.noise.mf._checks import (
     check,
     check_exactly_one,
     check_finite,

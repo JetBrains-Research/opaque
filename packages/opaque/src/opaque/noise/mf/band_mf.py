@@ -17,11 +17,11 @@ from dataclasses import dataclass
 
 import torch
 
-from opaque.noise.matrix_factorization.streaming_matrix import StreamingMatrix
-from opaque.noise.matrix_factorization.toeplitz import (
+from ._streaming_matrix import StreamingMatrix
+from ._toeplitz import (
     inverse_as_streaming_matrix,
 )
-from opaque.noise.matrix_factorization.toeplitz import (
+from ._toeplitz import (
     optimize as optimize_toeplitz,
 )
 

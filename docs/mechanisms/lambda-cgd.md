@@ -49,12 +49,15 @@ has a closed-form expression in terms of λ, min_sep, and max_participations.
 ## Noise generation
 
 ```python
-from opaque.noise import lambda_cgd_noise
+from opaque.noise.mf_noise import mf_noise, lambda_cgd_strategy
 
-noise_fn, state = lambda_cgd_noise(
-    grad_template, n_steps=total_steps,
+strategy = lambda_cgd_strategy(
+    n_steps=total_steps, lambda_=0.9,
+)
+noise_fn, state = mf_noise(
+    grad_template, strategy,
     stddev=noise_multiplier * clip_sensitivity,
-    key=key(seed), lambda_=0.9,
+    key=key(seed),
 )
 ```
 

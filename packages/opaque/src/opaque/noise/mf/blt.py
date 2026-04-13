@@ -18,18 +18,18 @@ from typing import Any
 import torch
 
 from opaque_accounting import opaque_accounting as _native
-from opaque.noise.band_mf_noise import _momentum_workload_coef
-from opaque.noise.matrix_factorization.buffered_toeplitz import (
+from .band_mf import _momentum_workload_coef
+from ._blt_math import (
     inverse_as_streaming_matrix,
     optimize,
     sensitivity_squared as _blt_sensitivity_squared,
     toeplitz_coefs as _blt_toeplitz_coefs,
 )
-from opaque.noise.matrix_factorization.sensitivity import (
+from ._sensitivity import (
     minsep_true_max_participations,
 )
-from opaque.noise.matrix_factorization.streaming_matrix import StreamingMatrix
-from opaque.noise.matrix_factorization.toeplitz import (
+from ._streaming_matrix import StreamingMatrix
+from ._toeplitz import (
     minsep_sensitivity_squared as _toeplitz_minsep_sensitivity_squared,
 )
 

@@ -12,13 +12,115 @@ References:
 
 from __future__ import annotations
 
+import dataclasses
 import functools
-from typing import Protocol
+from collections.abc import Callable
+from typing import Any, Protocol, TypeAlias, TypeVar
 
 import torch
 from scipy.linalg import toeplitz as scipy_toeplitz
 
-from . import checks, optimization, sensitivity, streaming_matrix
+from . import _checks as checks, _sensitivity as sensitivity, _streaming_matrix as streaming_matrix
+
+# ---------------------------------------------------------------------------
+# Optimization (L-BFGS wrapper, formerly optimization.py)
+# ---------------------------------------------------------------------------
+
+_ParamT = TypeVar("_ParamT")
+_CallbackFnType: TypeAlias = Callable[["_OptimCallbackArgs"], None | bool]
+
+
+@dataclasses.dataclass
+class _OptimCallbackArgs:
+    """Information passed to the callback on each optimization step."""
+
+    step: int
+    loss: torch.Tensor
+    grad: Any | None
+    params: Any
+    state: Any
+
+
+class _EarlyStopException(Exception):
+    """Internal exception for early stopping in scipy optimization."""
+
+    def __init__(self, params):
+        self.params = params
+        super().__init__("Early stop")
+
+
+def _lbfgs_optimize(
+    loss_fn: Callable,
+    params: torch.Tensor,
+    *,
+    max_optimizer_steps: int = 250,
+    grad: bool = False,
+    callback: _CallbackFnType = lambda _: None,
+    bounds: list[tuple[float | None, float | None]] | None = None,
+) -> torch.Tensor:
+    """Optimize a differentiable loss function using L-BFGS.
+
+    Uses scipy's L-BFGS-B optimizer. Parameters are internally cast to
+    float64 for numerical stability.
+    """
+    from scipy.optimize import minimize
+
+    original_dtype = params.dtype
+    params_np = params.detach().double().numpy().copy()
+
+    step_counter = [0]
+
+    def scipy_loss(x):
+        x_tensor = torch.tensor(x, dtype=torch.float64, requires_grad=not grad)
+
+        if grad:
+            loss_val, grad_val = loss_fn(x_tensor)
+            loss_np = float(loss_val.detach())
+            if isinstance(grad_val, torch.Tensor):
+                grad_np = grad_val.detach().numpy().copy()
+            else:
+                grad_np = grad_val
+        else:
+            loss_val = loss_fn(x_tensor)
+            loss_val.backward()
+            loss_np = float(loss_val.detach())
+            grad_np = x_tensor.grad.numpy().copy()
+
+        cb_result = callback(
+            _OptimCallbackArgs(
+                step=step_counter[0],
+                loss=torch.tensor(loss_np),
+                grad=torch.tensor(grad_np) if grad_np is not None else None,
+                params=x_tensor.detach(),
+                state=None,
+            )
+        )
+        step_counter[0] += 1
+
+        if cb_result:
+            raise _EarlyStopException(x)
+
+        return loss_np, grad_np.astype("float64")
+
+    try:
+        result = minimize(
+            scipy_loss,
+            params_np,
+            method="L-BFGS-B",
+            jac=True,
+            bounds=bounds,
+            options={"maxiter": max_optimizer_steps, "ftol": 1e-15, "gtol": 1e-10},
+        )
+        optimal_params = torch.tensor(result.x, dtype=original_dtype)
+    except _EarlyStopException as e:
+        optimal_params = torch.tensor(e.params, dtype=original_dtype)
+
+    return optimal_params
+
+
+# ---------------------------------------------------------------------------
+# Toeplitz matrix library
+# ---------------------------------------------------------------------------
 
 __all__ = [
     "optimize",
@@ -453,7 +555,7 @@ def optimize(
     if strategy_coef.shape[0] != bands:
         raise ValueError(f"{strategy_coef.shape=} != {bands=}")
 
-    params = optimization.optimize(
+    params = _lbfgs_optimize(
         partial_loss,
         strategy_coef,
         max_optimizer_steps=max_optimizer_steps,

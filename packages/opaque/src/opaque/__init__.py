@@ -34,12 +34,10 @@ from opaque.clipping import (
     clipped_fun,
     clipped_grad,
 )
+from opaque import noise
 from opaque.noise import (
-    band_mf_noise,
-    blt_mf_noise,
-    custom_mf_noise,
     gaussian_noise,
-    identity_mf_noise,
+    mf_noise,
     truncated_gaussian_noise,
 )
 from opaque.noise.per_group_noise import per_group_noise_stddev
@@ -87,12 +85,10 @@ __all__ = [
     "CyclicPoissonSampler",
     "poisson_collate",
     # Noise
+    "noise",
     "gaussian_noise",
+    "mf_noise",
     "truncated_gaussian_noise",
-    "band_mf_noise",
-    "blt_mf_noise",
-    "custom_mf_noise",
-    "identity_mf_noise",
     "per_group_noise_stddev",
     # Accounting
     "accounting",

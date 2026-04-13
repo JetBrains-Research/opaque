@@ -1,4 +1,4 @@
-"""Tests for MF accounting mechanisms — BandMf, BltMf, CyclicPoisson."""
+"""Tests for MF accounting mechanisms — BandMf, Blt, CyclicPoisson."""
 
 import math
 from dataclasses import FrozenInstanceError
@@ -12,8 +12,9 @@ from opaque_accounting.amplification import (
 from opaque_accounting.base import DpProcess
 from opaque_accounting.mechanisms import (
     BandMf,
-    BltMf,
+    Blt,
 )
+
 
 # ── BandMf dataclass tests ──────────────────────────────────────────
 
@@ -22,62 +23,40 @@ class TestBandMfDataclass:
     """BandMf frozen dataclass."""
 
     def test_fields(self):
-        proc = BandMf(1.0, 100, 5)
+        proc = BandMf(1.0, 1.0, num_groups=20)
         assert proc.noise_multiplier == pytest.approx(1.0)
-        assert proc.n_steps == 100
-        assert proc.bands == 5
+        assert proc.sensitivity == pytest.approx(1.0)
+        assert proc.num_groups == 20
 
     def test_frozen(self):
-        proc = BandMf(1.0, 100, 5)
+        proc = BandMf(1.0, 1.0, num_groups=20)
         with pytest.raises(FrozenInstanceError):
             proc.noise_multiplier = 2.0  # type: ignore[misc]
 
     def test_is_dp_process(self):
-        assert isinstance(BandMf(1.0, 100, 5), DpProcess)
+        assert isinstance(BandMf(1.0, 1.0, num_groups=20), DpProcess)
 
     def test_equality(self):
-        assert BandMf(1.0, 100, 5) == BandMf(1.0, 100, 5)
-        assert BandMf(1.0, 100, 5) != BandMf(1.0, 100, 10)
+        assert BandMf(1.0, 1.0, 20) == BandMf(1.0, 1.0, 20)
+        assert BandMf(1.0, 1.0, 20) != BandMf(1.0, 1.0, 10)
 
     @pytest.mark.slow
     def test_pld_returns_valid(self):
-        proc = BandMf(1.0, 100, 5)
+        proc = BandMf(1.0, 1.0, num_groups=20)
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
-    def test_sensitivity_is_one_for_normalized_toeplitz(self):
-        """Optimized Toeplitz coefficients have L2 norm 1, so sensitivity = 1."""
-        proc = BandMf(1.0, 100, 5)
-        assert proc.sensitivity() == pytest.approx(1.0, abs=1e-6)
-
-    def test_sensitivity_cached(self):
-        """Sensitivity is computed once and cached."""
-        proc = BandMf(1.0, 100, 5)
-        s1 = proc.sensitivity()
-        s2 = proc.sensitivity()
-        assert s1 == s2
-
 
 class TestBandMfConstructor:
-    """acc.band_mf() validates and returns BandMf."""
+    """acc.band_mf() returns BandMf."""
 
     def test_returns_correct_type(self):
-        proc = acc.band_mf(1.0, 100, 5)
+        proc = acc.band_mf(1.0, sensitivity=1.0, num_groups=20)
         assert isinstance(proc, BandMf)
 
-    def test_rejects_non_positive_noise(self):
-        with pytest.raises(ValueError):
-            acc.band_mf(0.0, 100, 5)
-
-    def test_rejects_bad_n_steps(self):
-        with pytest.raises(ValueError):
-            acc.band_mf(1.0, 0, 5)
-
-    def test_rejects_bad_bands(self):
-        with pytest.raises(ValueError):
-            acc.band_mf(1.0, 100, 0)
-        with pytest.raises(ValueError):
-            acc.band_mf(1.0, 100, 101)  # bands > n_steps
+    def test_num_groups_default(self):
+        proc = acc.band_mf(1.0, sensitivity=1.0)
+        assert proc.num_groups == 1
 
 
 # ── CyclicPoisson tests ─────────────────────────────────────────────
@@ -87,41 +66,36 @@ class TestCyclicPoissonDataclass:
     """CyclicPoisson frozen dataclass."""
 
     def test_fields(self):
-        inner = BandMf(1.0, 100, 5)
+        inner = BandMf(1.0, 1.0, num_groups=20)
         proc = CyclicPoisson(inner, 0.01)
         assert proc.inner is inner
         assert proc.sample_rate == pytest.approx(0.01)
 
     def test_frozen(self):
-        proc = CyclicPoisson(BandMf(1.0, 100, 5), 0.01)
+        proc = CyclicPoisson(BandMf(1.0, 1.0, num_groups=20), 0.01)
         with pytest.raises(FrozenInstanceError):
             proc.sample_rate = 0.5  # type: ignore[misc]
 
     def test_is_dp_process(self):
-        proc = CyclicPoisson(BandMf(1.0, 100, 5), 0.01)
+        proc = CyclicPoisson(BandMf(1.0, 1.0, num_groups=20), 0.01)
         assert isinstance(proc, DpProcess)
 
-    def test_num_groups(self):
-        """num_groups = ceil(n_steps / bands)."""
-        proc = CyclicPoisson(BandMf(1.0, 100, 5), 0.01)
-        assert proc.num_groups == 20  # ceil(100 / 5)
-
-        proc2 = CyclicPoisson(BandMf(1.0, 103, 5), 0.01)
-        assert proc2.num_groups == 21  # ceil(103 / 5)
-
     def test_pld_returns_valid(self):
-        proc = acc.cyclic_poisson(acc.band_mf(1.0, 100, 5), 0.01)
+        proc = acc.cyclic_poisson(
+            acc.band_mf(1.0, sensitivity=1.0, num_groups=20),
+            0.01,
+        )
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_matches_manual_poisson_composition(self):
         """CyclicPoisson(BandMf) should match poisson(gaussian(nm/S)) * k."""
-        nm, n_steps, bands, rate = 1.0, 100, 5, 0.01
-        proc = acc.cyclic_poisson(acc.band_mf(nm, n_steps, bands), rate)
+        nm, sensitivity, num_groups, rate = 1.0, 1.0, 20, 0.01
+        proc = acc.cyclic_poisson(
+            acc.band_mf(nm, sensitivity=sensitivity, num_groups=num_groups),
+            rate,
+        )
 
-        # BandMf has sensitivity ~1.0 for normalized Toeplitz
-        sensitivity = acc.band_mf(nm, n_steps, bands).sensitivity()
-        num_groups = math.ceil(n_steps / bands)
         manual = acc.poisson(acc.gaussian(nm / sensitivity), rate) * num_groups
 
         eps_proc = proc.epsilon_at(1e-5)
@@ -130,26 +104,22 @@ class TestCyclicPoissonDataclass:
 
     def test_more_groups_higher_epsilon(self):
         """More groups → more composition → higher epsilon."""
-        # Fewer groups (larger bands)
-        eps_small = acc.cyclic_poisson(acc.band_mf(1.0, 100, 50), 0.01).epsilon_at(1e-5)
-        # More groups (smaller bands)
-        eps_large = acc.cyclic_poisson(acc.band_mf(1.0, 100, 5), 0.01).epsilon_at(1e-5)
+        eps_small = acc.cyclic_poisson(
+            acc.band_mf(1.0, sensitivity=1.0, num_groups=2), 0.01,
+        ).epsilon_at(1e-5)
+        eps_large = acc.cyclic_poisson(
+            acc.band_mf(1.0, sensitivity=1.0, num_groups=20), 0.01,
+        ).epsilon_at(1e-5)
         assert eps_small < eps_large
-
-    def test_transparent_to_inner(self):
-        """CyclicPoisson accesses BandMf's internal parameters."""
-        inner = acc.band_mf(1.0, 100, 5)
-        proc = acc.cyclic_poisson(inner, 0.01)
-        assert proc.inner.bands == 5
-        assert proc.inner.n_steps == 100
-        assert proc.inner.noise_multiplier == 1.0
 
 
 class TestCyclicPoissonConstructor:
     """acc.cyclic_poisson() validates and returns CyclicPoisson."""
 
     def test_returns_correct_type(self):
-        proc = acc.cyclic_poisson(acc.band_mf(1.0, 100, 5), 0.01)
+        proc = acc.cyclic_poisson(
+            acc.band_mf(1.0, sensitivity=1.0, num_groups=20), 0.01,
+        )
         assert isinstance(proc, CyclicPoisson)
 
     def test_rejects_non_band_mf(self):
@@ -158,67 +128,49 @@ class TestCyclicPoissonConstructor:
             acc.cyclic_poisson(acc.gaussian(1.0), 0.01)  # type: ignore[arg-type]
 
     def test_rejects_bad_sample_rate(self):
+        inner = acc.band_mf(1.0, sensitivity=1.0, num_groups=20)
         with pytest.raises(ValueError):
-            acc.cyclic_poisson(acc.band_mf(1.0, 100, 5), 0.0)
+            acc.cyclic_poisson(inner, 0.0)
         with pytest.raises(ValueError):
-            acc.cyclic_poisson(acc.band_mf(1.0, 100, 5), 1.5)
+            acc.cyclic_poisson(inner, 1.5)
 
 
-# ── BltMf tests ─────────────────────────────────────────────────────
+# ── Blt tests ────────────────────────────────────────────────────────
 
 
-class TestBltMfDataclass:
-    """BltMf frozen dataclass."""
+class TestBltDataclass:
+    """Blt frozen dataclass."""
 
     def test_fields(self):
-        proc = BltMf(1.0, 50, 1, 1, "max", 5)
+        proc = Blt(1.0, 1.0, gram_matrix=(0.1, 0.2))
         assert proc.noise_multiplier == pytest.approx(1.0)
-        assert proc.n_steps == 50
-        assert proc.min_sep == 1
-        assert proc.max_participations == 1
-        assert proc.error == "max"
-        assert proc.max_buffers == 5
+        assert proc.sensitivity == pytest.approx(1.0)
+        assert proc.gram_matrix == (0.1, 0.2)
 
     def test_frozen(self):
-        proc = BltMf(1.0, 50, 1, 1, "max", 5)
+        proc = Blt(1.0, 1.0)
         with pytest.raises(FrozenInstanceError):
             proc.noise_multiplier = 2.0  # type: ignore[misc]
 
     def test_is_dp_process(self):
-        assert isinstance(BltMf(1.0, 50, 1, 1, "max", 5), DpProcess)
+        assert isinstance(Blt(1.0, 1.0), DpProcess)
 
     def test_pld_returns_valid(self):
-        proc = acc.blt_mf(1.0, 50, max_buffers=3)
+        proc = acc.blt(1.0, sensitivity=1.0)
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
-    def test_sensitivity_positive(self):
-        proc = acc.blt_mf(1.0, 50, max_buffers=3)
-        assert proc.sensitivity() > 0
 
-
-class TestBltMfConstructor:
-    """acc.blt_mf() validates and returns BltMf."""
+class TestBltConstructor:
+    """acc.blt() returns Blt."""
 
     def test_returns_correct_type(self):
-        proc = acc.blt_mf(1.0, 50)
-        assert isinstance(proc, BltMf)
+        proc = acc.blt(1.0, sensitivity=1.0)
+        assert isinstance(proc, Blt)
 
-    def test_rejects_non_positive_noise(self):
-        with pytest.raises(ValueError):
-            acc.blt_mf(0.0, 50)
-
-    def test_rejects_bad_n_steps(self):
-        with pytest.raises(ValueError):
-            acc.blt_mf(1.0, 0)
-
-    def test_rejects_bad_min_sep(self):
-        with pytest.raises(ValueError):
-            acc.blt_mf(1.0, 50, min_sep=0)
-
-    def test_rejects_bad_error(self):
-        with pytest.raises(ValueError):
-            acc.blt_mf(1.0, 50, error="invalid")
+    def test_gram_matrix_default_empty(self):
+        proc = acc.blt(1.0, sensitivity=1.0)
+        assert proc.gram_matrix == ()
 
 
 # ── Composition tests ───────────────────────────────────────────────
@@ -229,64 +181,22 @@ class TestMfComposition:
 
     def test_band_mf_composes_with_gaussian(self):
         """BandMf | Gaussian works."""
-        proc = acc.band_mf(1.0, 100, 5) | acc.gaussian(1.0)
+        proc = acc.band_mf(1.0, sensitivity=1.0) | acc.gaussian(1.0)
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_cyclic_poisson_composes_with_gaussian(self):
         """CyclicPoisson | Gaussian works."""
-        proc = acc.cyclic_poisson(acc.band_mf(1.0, 100, 5), 0.01) | acc.gaussian(1.0)
+        inner = acc.band_mf(1.0, sensitivity=1.0, num_groups=20)
+        proc = acc.cyclic_poisson(inner, 0.01) | acc.gaussian(1.0)
         eps = proc.epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
 
     def test_class_tree_visible(self):
         """The composition tree preserves class types for debugging."""
-        inner = acc.band_mf(1.0, 100, 5)
+        inner = acc.band_mf(1.0, sensitivity=1.0, num_groups=20)
         proc = acc.cyclic_poisson(inner, 0.01)
 
         assert isinstance(proc, CyclicPoisson)
         assert isinstance(proc.inner, BandMf)
-        assert proc.inner.bands == 5
-
-
-# ── Momentum accounting tests ───────────────────────────────────────
-
-
-class TestMomentumAccounting:
-    """Accounting with momentum produces different (tighter) calibration."""
-
-    def test_band_mf_momentum_field(self):
-        """BandMf stores momentum."""
-        proc = acc.band_mf(1.0, 100, 5, momentum=0.95)
-        assert proc.momentum == pytest.approx(0.95)
-
-    def test_band_mf_default_momentum_is_prefix_sum(self):
-        """Default momentum=1.0 gives prefix-sum (backward compat)."""
-        proc = acc.band_mf(1.0, 100, 5)
-        assert proc.momentum == pytest.approx(1.0)
-
-    def test_band_mf_momentum_affects_sensitivity(self):
-        """Momentum-optimized strategy has sensitivity 1.0 (L2-normalized)
-        regardless of momentum, but the epsilon may differ."""
-        proc_pfx = acc.band_mf(1.0, 100, 5, momentum=1.0)
-        proc_mom = acc.band_mf(1.0, 100, 5, momentum=0.95)
-        # Both have normalized coefficients → sensitivity = 1.0
-        assert proc_pfx.sensitivity() == pytest.approx(1.0, abs=1e-6)
-        assert proc_mom.sensitivity() == pytest.approx(1.0, abs=1e-6)
-
-    def test_band_mf_rejects_negative_momentum(self):
-        with pytest.raises(ValueError, match="momentum"):
-            acc.band_mf(1.0, 100, 5, momentum=-0.1)
-
-    def test_blt_mf_momentum_field(self):
-        """BltMf stores momentum."""
-        proc = acc.blt_mf(1.0, 50, momentum=0.9, max_buffers=3)
-        assert proc.momentum == pytest.approx(0.9)
-
-    def test_blt_mf_default_momentum_is_prefix_sum(self):
-        proc = acc.blt_mf(1.0, 50, max_buffers=3)
-        assert proc.momentum == pytest.approx(1.0)
-
-    def test_blt_mf_rejects_negative_momentum(self):
-        with pytest.raises(ValueError, match="momentum"):
-            acc.blt_mf(1.0, 50, momentum=-0.1)
+        assert proc.inner.num_groups == 20

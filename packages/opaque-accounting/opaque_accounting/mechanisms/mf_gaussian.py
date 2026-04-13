@@ -1,13 +1,15 @@
-"""Matrix factorization Gaussian mechanism — correlated noise for MF-DP.
+"""MF Gaussian base mechanism — correlated noise for MF-DP.
 
-Provides privacy accounting for matrix factorization DP mechanisms
-(BandMF, BLT). Unlike standard DP-SGD which composes per-step
-Gaussian PLDs, MF mechanisms compute a single PLD for the entire training
-run based on the effective noise multiplier σ/S.
+Provides the base :class:`MfGaussian` type used by all matrix factorization
+mechanisms. The privacy reduces to a single Gaussian mechanism with effective
+noise multiplier σ/S.
 
-References:
-    - BandMF: Choquette-Choo et al. (2023) https://arxiv.org/abs/2306.08153
-    - BLT: Choquette-Choo et al. (2024) https://arxiv.org/abs/2404.16706
+Per-method subclasses live in their own modules:
+
+- :mod:`~opaque_accounting.mechanisms.band_mf` — :class:`BandMf`
+- :mod:`~opaque_accounting.mechanisms.blt` — :class:`Blt`
+- :mod:`~opaque_accounting.mechanisms.lambda_cgd` — :class:`LambdaCgd`
+- :mod:`~opaque_accounting.mechanisms.bisr` — :class:`Bisr`
 """
 
 from __future__ import annotations
@@ -28,11 +30,18 @@ from opaque_accounting.discretization import (
 
 @dataclass(frozen=True, slots=True)
 class MfGaussian(DpProcess):
-    """MF Gaussian mechanism — stores noise_multiplier and sensitivity.
+    """MF Gaussian mechanism — internal base type.
 
     Represents the privacy cost of an entire matrix factorization DP
-    training run. The privacy reduces to a single Gaussian mechanism
+    training process. The privacy reduces to a single Gaussian mechanism
     with effective noise multiplier σ/S.
+
+    Use one of the per-method factories instead of constructing directly:
+
+    - :func:`~opaque_accounting.mechanisms.band_mf.band_mf` → :class:`~opaque_accounting.mechanisms.band_mf.BandMf`
+    - :func:`~opaque_accounting.mechanisms.blt.blt` → :class:`~opaque_accounting.mechanisms.blt.Blt`
+    - :func:`~opaque_accounting.mechanisms.lambda_cgd.lambda_cgd` → :class:`~opaque_accounting.mechanisms.lambda_cgd.LambdaCgd`
+    - :func:`~opaque_accounting.mechanisms.bisr.bisr` → :class:`~opaque_accounting.mechanisms.bisr.Bisr`
     """
 
     noise_multiplier: float
@@ -58,32 +67,3 @@ class MfGaussian(DpProcess):
             self.sensitivity,
             config.to_native(),
         )
-
-
-def mf_gaussian(noise_multiplier: float, sensitivity: float) -> MfGaussian:
-    """Matrix factorization Gaussian mechanism.
-
-    Computes the privacy guarantee for the entire MF training run as a
-    single Gaussian mechanism with effective noise multiplier σ/S.
-
-    The sensitivity should be pre-computed based on the MF strategy
-    (BandMF, BLT) and participation pattern (single, min-sep).
-
-    Args:
-        noise_multiplier: Raw noise standard deviation σ (before matrix
-            factorization). Must be positive.
-        sensitivity: L2 sensitivity S of the encoder matrix under the
-            given participation pattern. Must be positive.
-
-    Returns:
-        An :class:`MfGaussian` process.
-
-    Example::
-
-        import opaque.accounting as acc
-
-        # BandMF with pre-computed sensitivity
-        proc = acc.mf_gaussian(noise_multiplier=1.0, sensitivity=2.5)
-        eps = proc.epsilon_at(1e-5)
-    """
-    return MfGaussian(noise_multiplier, sensitivity)

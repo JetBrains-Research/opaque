@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import torch
 
-from . import checks
+from . import _checks as checks
 
 __all__ = [
     "single_participation_sensitivity",

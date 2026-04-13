@@ -23,8 +23,8 @@ from collections.abc import Callable
 import numpy as np
 import torch
 
-from . import sensitivity, streaming_matrix, toeplitz
-from .noise import _internal_compute_dtype
+from . import _sensitivity as sensitivity, _streaming_matrix as streaming_matrix, _toeplitz as toeplitz
+from ._engine import _internal_compute_dtype
 
 logger = logging.getLogger(__name__)
 
@@ -1071,7 +1071,7 @@ def optimize_loss(
             ``Parameterization.buf_decay_pair()``.
         max_optimizer_steps: Maximum L-BFGS iterations.
         **kwargs: Additional keyword arguments forwarded to
-            ``optimization.optimize``.
+            ``_lbfgs_optimize``.
 
     Returns:
         Tuple ``(blt, loss_val)`` where *blt* is the optimised BLT and
@@ -1080,7 +1080,7 @@ def optimize_loss(
     Raises:
         RuntimeError: If the optimiser produces a BLT with non-finite loss.
     """
-    from . import optimization as optim_mod
+    from ._toeplitz import _lbfgs_optimize
 
     if num_buffers == 0:
         blt = BufferedToeplitz.build(buf_decay=[], output_scale=[])
@@ -1100,7 +1100,7 @@ def optimize_loss(
         eps = 1e-9
         kwargs["bounds"] = [(eps, 1.0 - eps)] * len(params)
 
-    params = optim_mod.optimize(
+    params = _lbfgs_optimize(
         loss_fn_to_optimize,
         params,
         max_optimizer_steps=max_optimizer_steps,
@@ -1183,7 +1183,7 @@ def optimize(
             Defaults to ``None`` (prefix-sum workload).  For momentum-SGD
             with coefficient β, pass ``[1, β, β², ...]``.
         **kwargs: Additional keyword arguments forwarded to
-            ``optimize_loss`` / ``optimization.optimize``.
+            ``optimize_loss`` / ``_lbfgs_optimize``.
 
     Returns:
         An optimised BLT.

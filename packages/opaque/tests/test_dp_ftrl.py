@@ -4,9 +4,17 @@ import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset
 
-from opaque.noise import blt_mf_noise, custom_mf_noise
-from opaque.noise.matrix_factorization import identity
-from opaque.noise.matrix_factorization.toeplitz import (
+from opaque.noise import mf_noise
+from opaque.noise.mf import (
+    band_mf_strategy,
+    bisr_strategy,
+    blt_strategy,
+    identity_strategy,
+    lambda_cgd_strategy,
+)
+from opaque.noise.mf._engine import _matrix_factorization_noise
+from opaque.noise.mf._streaming_matrix import identity
+from opaque.noise.mf._toeplitz import (
     inverse_as_streaming_matrix,
     optimal_max_error_strategy_coefs,
 )
@@ -41,7 +49,7 @@ def _train_loop(model, optimizer, noise_fn, state, x_data, y_data, steps):
 
 
 class TestDPFTRLTrainingLoop:
-    """Tests for using custom_mf_noise in a training loop."""
+    """Tests for using _matrix_factorization_noise in a training loop."""
 
     def _make_template(self, model):
         return {i: torch.zeros_like(p) for i, p in enumerate(model.parameters())}
@@ -51,7 +59,7 @@ class TestDPFTRLTrainingLoop:
         torch.manual_seed(0)
         model = nn.Linear(5, 1, bias=False)
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
-        noise_fn, state = custom_mf_noise(
+        noise_fn, state = _matrix_factorization_noise(
             self._make_template(model),
             identity(),
             stddev=0.1,
@@ -73,7 +81,7 @@ class TestDPFTRLTrainingLoop:
         steps = 50
         coefs = optimal_max_error_strategy_coefs(steps)
         noising = inverse_as_streaming_matrix(coefs)
-        noise_fn, state = custom_mf_noise(
+        noise_fn, state = _matrix_factorization_noise(
             self._make_template(model),
             noising,
             stddev=0.1,
@@ -94,7 +102,7 @@ class TestDPFTRLTrainingLoop:
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
         steps = 5
         noising = torch.eye(steps, dtype=torch.float64)
-        noise_fn, state = custom_mf_noise(
+        noise_fn, state = _matrix_factorization_noise(
             self._make_template(model),
             noising,
             stddev=0.1,
@@ -113,7 +121,7 @@ class TestDPFTRLTrainingLoop:
         torch.manual_seed(0)
         model = nn.Linear(5, 1, bias=False)
         optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-        noise_fn, state = custom_mf_noise(
+        noise_fn, state = _matrix_factorization_noise(
             self._make_template(model),
             identity(),
             stddev=0.1,
@@ -136,7 +144,7 @@ class TestDPFTRLTrainingLoop:
             nn.Linear(5, 1),
         )
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
-        noise_fn, state = custom_mf_noise(
+        noise_fn, state = _matrix_factorization_noise(
             self._make_template(model),
             identity(),
             stddev=0.1,
@@ -157,7 +165,7 @@ class TestDPFTRLTrainingLoop:
             torch.manual_seed(0)
             model = nn.Linear(5, 1, bias=False)
             optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
-            noise_fn, state = custom_mf_noise(
+            noise_fn, state = _matrix_factorization_noise(
                 self._make_template(model),
                 identity(),
                 stddev=1.0,
@@ -194,7 +202,7 @@ class TestBandMFvsDPSGD:
         steps = 50
         coefs = optimal_max_error_strategy_coefs(steps)
         noising = inverse_as_streaming_matrix(coefs)
-        noise_fn, state = custom_mf_noise(
+        noise_fn, state = _matrix_factorization_noise(
             self._make_template(model),
             noising,
             stddev=0.1,
@@ -222,7 +230,7 @@ class TestBandMFvsDPSGD:
         torch.manual_seed(0)
         model_sgd = nn.Linear(5, 1, bias=False)
         opt_sgd = torch.optim.SGD(model_sgd.parameters(), lr=0.01)
-        noise_sgd, state_sgd = custom_mf_noise(
+        noise_sgd, state_sgd = _matrix_factorization_noise(
             self._make_template(model_sgd),
             identity(),
             stddev=stddev,
@@ -236,7 +244,7 @@ class TestBandMFvsDPSGD:
         opt_mf = torch.optim.SGD(model_mf.parameters(), lr=0.01)
         coefs = optimal_max_error_strategy_coefs(steps)
         noising = inverse_as_streaming_matrix(coefs)
-        noise_mf, state_mf = custom_mf_noise(
+        noise_mf, state_mf = _matrix_factorization_noise(
             self._make_template(model_mf),
             noising,
             stddev=stddev,
@@ -281,14 +289,17 @@ class TestBLTWithBnB:
         model = nn.Linear(dim, 1, bias=False)
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=momentum)
 
-        noise_fn, noise_state = blt_mf_noise(
-            self._make_template(model),
-            total_steps,
-            stddev=0.05,
-            key=key(42),
+        strategy = blt_strategy(
+            n_steps=total_steps,
             min_sep=steps_per_epoch,
             max_participations=num_epochs,
             momentum=momentum,
+        )
+        noise_fn, noise_state = mf_noise(
+            self._make_template(model),
+            strategy,
+            stddev=0.05,
+            key=key(42),
         )
 
         sampler = BallsInBinsSampler(
@@ -342,3 +353,54 @@ class TestBLTWithBnB:
         expected = num_bins * (n_samples // num_bins)
         assert len(all_indices) == expected
         assert len(set(all_indices)) == expected
+
+
+class TestMfNoiseStrategies:
+    """End-to-end tests: each strategy trains a simple model via mf_noise()."""
+
+    def _setup(self, steps=50, seed=0):
+        torch.manual_seed(seed)
+        model = nn.Linear(5, 1, bias=False)
+        opt = torch.optim.SGD(model.parameters(), lr=0.01)
+        template = {i: torch.zeros_like(p) for i, p in enumerate(model.parameters())}
+        x = torch.randn(50, 5)
+        y = x @ torch.randn(5, 1)
+        return model, opt, template, x, y
+
+    def test_identity_strategy_trains(self):
+        model, opt, tmpl, x, y = self._setup()
+        nf, ns = mf_noise(tmpl, identity_strategy(), stddev=0.1, key=key(42))
+        losses = _train_loop(model, opt, nf, ns, x, y, steps=50)
+        assert losses[-1] < losses[0]
+
+    def test_band_mf_strategy_trains(self):
+        model, opt, tmpl, x, y = self._setup()
+        s = band_mf_strategy(n_steps=50, bands=10, momentum=0.0)
+        nf, ns = mf_noise(tmpl, s, stddev=0.1, key=key(42))
+        losses = _train_loop(model, opt, nf, ns, x, y, steps=50)
+        assert losses[-1] < losses[0]
+
+    def test_lambda_cgd_strategy_trains(self):
+        model, opt, tmpl, x, y = self._setup()
+        s = lambda_cgd_strategy(0.9, n_steps=50, min_sep=1, max_participations=1)
+        nf, ns = mf_noise(tmpl, s, stddev=0.1, key=key(42))
+        losses = _train_loop(model, opt, nf, ns, x, y, steps=50)
+        assert losses[-1] < losses[0]
+
+    def test_bisr_strategy_trains(self):
+        model, opt, tmpl, x, y = self._setup()
+        s = bisr_strategy(bandwidth=4, n_steps=50, min_sep=10, max_participations=5)
+        nf, ns = mf_noise(tmpl, s, stddev=0.1, key=key(42))
+        losses = _train_loop(model, opt, nf, ns, x, y, steps=50)
+        assert losses[-1] < losses[0]
+
+    def test_identity_matches_raw_engine(self):
+        """identity_strategy via mf_noise gives same noise as _matrix_factorization_noise + identity()."""
+        tmpl = {"w": torch.zeros(10)}
+        nf1, ns1 = mf_noise(tmpl, identity_strategy(), stddev=1.0, key=key(42))
+        nf2, ns2 = _matrix_factorization_noise(tmpl, identity(), stddev=1.0, key=key(42))
+
+        grad = {"w": torch.ones(10)}
+        out1, _ = nf1(grad, ns1)
+        out2, _ = nf2(grad, ns2)
+        torch.testing.assert_close(out1["w"], out2["w"])
