@@ -1,4 +1,4 @@
-//! Gram matrix computation for BnB dominating pair.
+//! Gram matrix computation for BnB dominating pair (DP-λCGD).
 //!
 //! Given a DP-λCGD strategy matrix C_λ with BnB batching (b bins, E epochs),
 //! computes the Gram matrix G ∈ R^{b×b} of the dominating pair mixture means:
@@ -6,11 +6,11 @@
 //!   m_i = Σ_{j=0}^{E-1} C[:,b·j+i]
 //!   G_{ij} = ⟨m_i, m_j⟩
 //!
-//! With momentum β, the effective column becomes the momentum-accumulated
-//! version:  m_j^β[t] = Σ_{s=j}^{t} β^{t-s} · C_λ[s,j].
-//!
-//! With LR weights η, the effective column is further scaled:
-//! m_j^{β,η}[t] = η_t · m_j^β[t].
+//! The Gram matrix uses raw C columns (momentum=0). Sensitivity and Gram
+//! are workload-independent — momentum and LR schedule affect only utility
+//! optimization, never privacy analysis. The `momentum` and `lr_weights`
+//! parameters exist in the Rust API for flexibility but the standard
+//! Python API always passes momentum=0.
 //!
 //! For normalized C̃_λ = C_λ·D⁻¹, the columns have unit norm and the inner
 //! products decay as λ^{|i-j|} within an epoch, with cross-epoch terms O(λ^b).
@@ -19,8 +19,6 @@
 //!
 //! - Choquette-Choo et al. (2024) "Near Exact Privacy Amplification for Matrix
 //!   Mechanisms" <https://arxiv.org/abs/2410.06266>, Lemma 3.2
-//! - Kalinin & Andersson (2025) "Learning Rate Scheduling with MF"
-//!   <https://arxiv.org/abs/2511.17994>
 
 use crate::error::{PldError, Result};
 
@@ -151,8 +149,16 @@ pub(crate) fn column_inner_product_momentum(
     // General closed form: β ≠ λ, β > 0
     let inv_diff_sq = 1.0 / ((lambda - beta) * (lambda - beta));
 
-    let lambda_d = if d == 0 { 1.0 } else { lambda.powi(d as i32) };
-    let beta_d = if d == 0 { 1.0 } else { beta.powi(d as i32) };
+    let lambda_d = if d == 0 {
+        1.0
+    } else {
+        lambda.powi(d as i32)
+    };
+    let beta_d = if d == 0 {
+        1.0
+    } else {
+        beta.powi(d as i32)
+    };
 
     let s_lambda2 = geom_sum(lambda * lambda, r);
     let s_lambda_beta = geom_sum(lambda * beta, r);
@@ -163,6 +169,11 @@ pub(crate) fn column_inner_product_momentum(
     let term3 = beta * beta * beta_d * s_beta2;
 
     inv_diff_sq * (term1 - term2 + term3)
+}
+
+/// Column norm squared: ‖C_λ[:,k]‖² = (1 - λ^{2(n-k)}) / (1 - λ²)
+fn column_norm_squared(lambda: f64, n: usize, k: usize) -> f64 {
+    column_inner_product(lambda, n, k, k)
 }
 
 /// Compute the BnB Gram matrix for DP-λCGD with optional momentum.
@@ -196,7 +207,7 @@ pub fn lambda_cgd_gram_matrix(
     normalized: bool,
     momentum: f64,
 ) -> Result<Vec<f64>> {
-    if !(0.0..1.0).contains(&lambda) {
+    if lambda < 0.0 || lambda >= 1.0 {
         return Err(PldError::InvalidParameter(format!(
             "lambda must be in [0, 1), got {}",
             lambda
@@ -208,7 +219,7 @@ pub fn lambda_cgd_gram_matrix(
     if min_sep == 0 {
         return Err(PldError::InvalidParameter("min_sep must be >= 1".into()));
     }
-    if !(0.0..1.0).contains(&momentum) {
+    if momentum < 0.0 || momentum >= 1.0 {
         return Err(PldError::InvalidParameter(format!(
             "momentum must be in [0, 1), got {}",
             momentum
@@ -227,8 +238,9 @@ pub fn lambda_cgd_gram_matrix(
         return Ok(vec![0.0; b * b]);
     }
 
-    let ip_fn =
-        |a: usize, c: usize| -> f64 { column_inner_product_momentum(lambda, momentum, n, a, c) };
+    let ip_fn = |a: usize, c: usize| -> f64 {
+        column_inner_product_momentum(lambda, momentum, n, a, c)
+    };
 
     // G_{ij} = Σ_{p=0}^{E-1} Σ_{q=0}^{E-1} ⟨m_{b*p+i}, m_{b*q+j}⟩ / (d_{b*p+i} · d_{b*q+j})
     //
@@ -327,7 +339,6 @@ pub fn lambda_cgd_gram_matrix(
 /// # Returns
 ///
 /// Row-major b×b Gram matrix as a flat Vec<f64>.
-#[allow(clippy::needless_range_loop)]
 pub fn lambda_cgd_gram_matrix_lr(
     lambda: f64,
     momentum: f64,
@@ -337,7 +348,7 @@ pub fn lambda_cgd_gram_matrix_lr(
     normalized: bool,
     lr_weights: &[f64],
 ) -> Result<Vec<f64>> {
-    if !(0.0..1.0).contains(&lambda) {
+    if lambda < 0.0 || lambda >= 1.0 {
         return Err(PldError::InvalidParameter(format!(
             "lambda must be in [0, 1), got {}",
             lambda
@@ -349,7 +360,7 @@ pub fn lambda_cgd_gram_matrix_lr(
     if min_sep == 0 {
         return Err(PldError::InvalidParameter("min_sep must be >= 1".into()));
     }
-    if !(0.0..1.0).contains(&momentum) {
+    if momentum < 0.0 || momentum >= 1.0 {
         return Err(PldError::InvalidParameter(format!(
             "momentum must be in [0, 1), got {}",
             momentum
@@ -483,7 +494,8 @@ mod tests {
         let n = 10;
         let ip = column_inner_product(lambda, n, 2, 5);
         // = λ^3 · Σ_{r=0}^{4} λ^{2r}
-        let expected: f64 = lambda.powi(3) * (0..5).map(|r| lambda.powi(2 * r as i32)).sum::<f64>();
+        let expected: f64 =
+            lambda.powi(3) * (0..5).map(|r| lambda.powi(2 * r as i32)).sum::<f64>();
         assert!(
             (ip - expected).abs() < 1e-10,
             "got {}, expected {}",
@@ -506,10 +518,7 @@ mod tests {
                 assert!(
                     (orig - with_mom).abs() < 1e-10,
                     "a={}, c={}: orig={}, momentum(β=0)={}",
-                    a,
-                    c,
-                    orig,
-                    with_mom
+                    a, c, orig, with_mom
                 );
             }
         }
@@ -647,7 +656,8 @@ mod tests {
         // Normalized, single epoch: all diagonal entries = 1
         let lambda = 0.9;
         let b = 20;
-        let gram = lambda_cgd_gram_matrix(lambda, b, b, Some(1), true, 0.0).unwrap();
+        let gram =
+            lambda_cgd_gram_matrix(lambda, b, b, Some(1), true, 0.0).unwrap();
         for i in 0..b {
             assert!(
                 (gram[i * b + i] - 1.0).abs() < 1e-8,
@@ -661,7 +671,8 @@ mod tests {
 
     #[test]
     fn test_gram_matrix_symmetric() {
-        let gram = lambda_cgd_gram_matrix(0.9, 100, 10, Some(5), true, 0.0).unwrap();
+        let gram =
+            lambda_cgd_gram_matrix(0.9, 100, 10, Some(5), true, 0.0).unwrap();
         let b = 10;
         for i in 0..b {
             for j in 0..b {
@@ -683,7 +694,8 @@ mod tests {
         let lambda = 0.9;
         let b = 200; // Large enough that λ^b ≈ 0
         let e = 5;
-        let gram = lambda_cgd_gram_matrix(lambda, b * e, b, Some(e), true, 0.0).unwrap();
+        let gram =
+            lambda_cgd_gram_matrix(lambda, b * e, b, Some(e), true, 0.0).unwrap();
         for i in 0..b {
             assert!(
                 (gram[i * b + i] - e as f64).abs() < 0.1,
@@ -709,15 +721,11 @@ mod tests {
     #[test]
     fn test_gram_matrix_positive_definite() {
         // Gram matrix should be positive semidefinite
-        let gram = lambda_cgd_gram_matrix(0.9, 50, 10, Some(3), true, 0.0).unwrap();
+        let gram =
+            lambda_cgd_gram_matrix(0.9, 50, 10, Some(3), true, 0.0).unwrap();
         let b = 10;
         for i in 0..b {
-            assert!(
-                gram[i * b + i] > 0.0,
-                "Diagonal entry G[{},{}] not positive",
-                i,
-                i
-            );
+            assert!(gram[i * b + i] > 0.0, "Diagonal entry G[{},{}] not positive", i, i);
         }
     }
 
@@ -758,10 +766,7 @@ mod tests {
                 assert!(
                     (gram[i * b + j] - gram[j * b + i]).abs() < 1e-10,
                     "G not symmetric at ({},{}) with β=0.9: {} vs {}",
-                    i,
-                    j,
-                    gram[i * b + j],
-                    gram[j * b + i]
+                    i, j, gram[i * b + j], gram[j * b + i]
                 );
             }
         }
@@ -827,18 +832,14 @@ mod tests {
         let lr_high = vec![1.0; n];
         let lr_low = vec![0.5; n];
 
-        let gram_high =
-            lambda_cgd_gram_matrix_lr(lambda, 0.0, n, b, Some(e), false, &lr_high).unwrap();
-        let gram_low =
-            lambda_cgd_gram_matrix_lr(lambda, 0.0, n, b, Some(e), false, &lr_low).unwrap();
+        let gram_high = lambda_cgd_gram_matrix_lr(lambda, 0.0, n, b, Some(e), false, &lr_high).unwrap();
+        let gram_low = lambda_cgd_gram_matrix_lr(lambda, 0.0, n, b, Some(e), false, &lr_low).unwrap();
 
         for i in 0..b {
             assert!(
                 gram_low[i * b + i] < gram_high[i * b + i],
                 "bin {}: low LR gram {} should be < high LR gram {}",
-                i,
-                gram_low[i * b + i],
-                gram_high[i * b + i]
+                i, gram_low[i * b + i], gram_high[i * b + i]
             );
         }
     }
@@ -860,9 +861,7 @@ mod tests {
             assert!(
                 diag > -1e-10,
                 "Gram not PSD: Cholesky diagonal {} at row {} for {}",
-                diag,
-                i,
-                label
+                diag, i, label
             );
             l[i * b + i] = diag.max(0.0).sqrt();
             for j in (i + 1)..b {

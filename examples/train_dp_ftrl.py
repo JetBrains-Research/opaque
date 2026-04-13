@@ -33,6 +33,8 @@ MECHANISMS:
                Same BLT noise, but with proper random-partition amplification.
   lambda_cgd — DP-λCGD (Kalinin et al., 2026), bandwidth-2 correlated noise
                via PRNG replay. Single hyperparam λ, zero extra memory.
+  bisr      — BISR (Kalinin et al., ICLR 2026), generalises λCGD to
+               arbitrary bandwidth p. Coefficients from inverse square root.
   identity  — DP-SGD baseline via MF API (C^{-1} = I, independent noise).
                Same training loop for fair comparison.
 
@@ -53,6 +55,9 @@ USAGE:
   # DP-λCGD with Balls-in-Bins sampling (bandwidth-2 correlated noise, λ=0.9)
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism lambda_cgd --lambda_ 0.9
 
+  # BISR with bandwidth=4, Balls-in-Bins sampling
+  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism bisr --bisr-bandwidth 4
+
   # DP-SGD baseline for fair comparison (same loop, independent noise)
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism identity
 
@@ -61,6 +66,7 @@ REFERENCES:
   - BandMF: https://arxiv.org/abs/2306.08153
   - BLT: https://arxiv.org/abs/2404.16706
   - DP-λCGD: https://arxiv.org/abs/2601.22334
+  - BISR: https://arxiv.org/abs/2505.12128
   - DP-FTRL: https://arxiv.org/abs/2103.00039
 """
 

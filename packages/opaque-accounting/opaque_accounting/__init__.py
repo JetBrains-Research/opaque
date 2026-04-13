@@ -2,8 +2,8 @@
 
 This module provides a compositional API for tracking privacy guarantees:
 
-- **Mechanisms**: gaussian(), band_mf(), blt_mf(), etc.
-- **Amplification**: poisson(), cyclic_poisson(), truncated_poisson(), etc.
+- **Mechanisms**: gaussian(), lambda_cgd(), bisr(), band_mf(), blt_mf(), etc.
+- **Amplification**: balls_in_bins(), poisson(), cyclic_poisson(), etc.
 - **Composition**: Combine processes using ``*`` (repeat) or ``|`` (compose)
 - **Metrics**: Query privacy with epsilon_at(), delta_at(), advantage(), etc.
 
@@ -12,12 +12,20 @@ The underlying implementation uses Google's PLD accounting via the
 
 Example::
 
-    import opaque.accounting as acc
+    import opaque_accounting as acc
 
     # Standard DP-SGD step
     step = acc.poisson(acc.gaussian(1.1), sample_rate=0.01)
     training = step * 1000
     epsilon = training.epsilon_at(1e-5)
+
+    # DP-λCGD with Balls-in-Bins amplification
+    training = acc.balls_in_bins(
+        acc.lambda_cgd(1.0, lambda_=0.9, n_steps=15000,
+                       min_sep=1875, max_participations=8),
+        num_bins=1875, num_epochs=8,
+    )
+    eps = training.epsilon_at(1e-5)
 
     # BandMF with cyclic Poisson amplification
     proc = acc.cyclic_poisson(acc.band_mf(1.0, 1000, 10), sample_rate=0.01)

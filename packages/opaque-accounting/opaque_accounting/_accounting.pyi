@@ -578,15 +578,17 @@ def lambda_cgd_sensitivity_squared(
     """Squared L2 sensitivity of the DP-λCGD strategy matrix.
 
     Uses the closed-form expression from Theorem 1 (eq 15) of
-    Kalinin et al. (2026) "DP-λCGD". With momentum β > 0, uses
-    momentum-aware column inner products.
+    Kalinin et al. (2026) "DP-λCGD".
+
+    Note: the standard Python API always passes momentum=0.
+    Sensitivity is workload-independent (BandMF paper, Thm 1).
 
     Args:
         lambda_: Correlation coefficient in [0, 1). λ=0 is DP-SGD.
         n_steps: Total number of training steps.
         min_sep: Minimum separation between participations (>= 1).
         max_participations: Optional upper bound on participations.
-        momentum: Optimizer momentum β in [0, 1). Default 0.
+        momentum: Unused in standard API (default 0.0).
 
     Returns:
         The squared L2 sensitivity.
@@ -610,7 +612,7 @@ def lambda_cgd_normalized_sensitivity_squared(
         n_steps: Total number of training steps.
         min_sep: Minimum separation between participations (>= 1).
         max_participations: Optional upper bound on participations.
-        momentum: Optimizer momentum β in [0, 1). Default 0.
+        momentum: Unused in standard API (default 0.0).
 
     Returns:
         The squared L2 sensitivity of the column-normalized matrix.
@@ -644,8 +646,10 @@ def lambda_cgd_gram_matrix(
 ) -> list[float]:
     """Compute the BnB Gram matrix for DP-λCGD.
 
-    G_{ij} = ⟨m_i, m_j⟩ where m_i = Σ_epoch m^β_{b·epoch+i}
-    (momentum-accumulated columns).
+    G_{ij} = ⟨m_i, m_j⟩ where m_i = Σ_epoch C[:,b·epoch+i].
+
+    Note: the standard Python API always passes momentum=0.
+    Gram matrix is workload-independent.
 
     Args:
         lambda_: Correlation coefficient in [0, 1).
@@ -653,7 +657,7 @@ def lambda_cgd_gram_matrix(
         min_sep: Bins per epoch (= b).
         max_participations: Number of epochs. None infers.
         normalized: Whether to use column-normalized matrix.
-        momentum: Optimizer momentum β in [0, 1). Default 0.
+        momentum: Unused in standard API (default 0.0).
 
     Returns:
         Flattened row-major b×b Gram matrix.
@@ -732,6 +736,52 @@ def bisr_gram_matrix_lr(
     lr_weights: list[float],
 ) -> list[float]:
     """BnB Gram matrix for BISR with LR-schedule weighting."""
+    ...
+
+# ---------------------------------------------------------------------------
+# Toeplitz Gram matrix (for BnB with BandMF/BLT strategy coefs)
+# ---------------------------------------------------------------------------
+
+def toeplitz_gram_matrix(
+    strategy_coef: list[float],
+    n_steps: int,
+    min_sep: int = 1,
+    max_participations: int | None = None,
+    normalized: bool = True,
+) -> list[float]:
+    """BnB Gram matrix for banded Toeplitz strategy with known forward coefficients.
+
+    For BandMF/BLT mechanisms where the optimized strategy coefficients
+    are known directly.
+
+    Args:
+        strategy_coef: Toeplitz strategy coefficients [c_0, ..., c_{p-1}].
+        n_steps: Total steps.
+        min_sep: Bins per epoch.
+        max_participations: Number of epochs.
+        normalized: Whether to column-normalize.
+
+    Returns:
+        Flattened row-major b x b Gram matrix.
+    """
+    ...
+
+def bisr_strategy_coefficients(
+    coefficients: list[float],
+    n: int,
+) -> list[float]:
+    """Recover strategy matrix column from banded C^{-1} coefficients.
+
+    Computes the first n entries of column 0 of the strategy matrix C
+    defined by the banded inverse C^{-1} with the given coefficients.
+
+    Args:
+        coefficients: Inverse coefficients [c_tilde_0, ..., c_tilde_{p-1}].
+        n: Number of entries to compute.
+
+    Returns:
+        First n entries of column 0.
+    """
     ...
 
 # ---------------------------------------------------------------------------
