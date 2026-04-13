@@ -78,11 +78,14 @@ def lambda_cgd_strategy(
     max_participations: int | None = 1,
     *,
     normalized: bool = True,
-    momentum: float = 0.0,
 ) -> LambdaCgdStrategy:
     """Create a DP-lambda-CGD strategy (bandwidth=2, PRNG-replay noise).
 
     Uses closed-form Rust functions for sensitivity and Gram matrix.
+
+    Note: momentum does not affect lambda-CGD (bandwidth=2). The strategy
+    coefficients are always [1, -lambda]. For momentum-aware coefficients,
+    use :func:`bisr_strategy` with bandwidth > 2.
 
     Args:
         lambda_: Correlation coefficient in [0, 1).
@@ -90,7 +93,6 @@ def lambda_cgd_strategy(
         min_sep: Minimum separation between participations.
         max_participations: Maximum participations per user (default 1).
         normalized: Use column-normalized matrix (default True).
-        momentum: Optimizer momentum in [0, 1). Default 0.
 
     Returns:
         A :class:`LambdaCgdStrategy` with pre-computed Gram matrix.

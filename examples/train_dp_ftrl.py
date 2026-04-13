@@ -619,8 +619,8 @@ def main():
     if args.mechanism in ("blt", "blt_bnb"):
         train_dataset = train_dataset.shuffle(seed=args.seed)
 
-    # λCGD uses BnB sampling (random partition each epoch)
-    if args.mechanism == "lambda_cgd":
+    # λCGD and BISR use BnB sampling (random partition each epoch)
+    if args.mechanism in ("lambda_cgd", "bisr"):
         train_dataset = train_dataset.shuffle(seed=args.seed)
 
     eval_loader = DataLoader(
@@ -799,7 +799,6 @@ def main():
             n_steps=total_steps,
             min_sep=expected_steps_per_epoch,
             max_participations=args.num_epochs,
-            momentum=args.momentum,
         )
 
         def acct_mechanism(nm):
@@ -1009,7 +1008,7 @@ def main():
             epoch_loader = DataLoader(
                 train_dataset, batch_sampler=epoch_sampler, collate_fn=collate
             )
-        elif args.mechanism == "lambda_cgd":
+        elif args.mechanism in ("lambda_cgd", "bisr"):
             epoch_sampler = BallsInBinsSampler(
                 train_dataset,
                 num_bins=expected_steps_per_epoch,
