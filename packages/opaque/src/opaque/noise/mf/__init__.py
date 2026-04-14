@@ -20,12 +20,14 @@ from .bisr import BisrStrategy, bisr_strategy
 from .blt import BltStrategy, blt_strategy
 from .dispatcher import MfStrategy, mf_noise
 from .identity import IdentityStrategy, identity_strategy
+from .jme import JmeStrategy, jme_noise, jme_strategy, JmeNoiseState
 from .lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
 from ._engine import MFNoiseState
 
 __all__ = [
     # Dispatcher
     "mf_noise",
+    "jme_noise",
     "MfStrategy",
     # Strategy types & factories
     "BandMfStrategy",
@@ -36,8 +38,11 @@ __all__ = [
     "blt_strategy",
     "IdentityStrategy",
     "identity_strategy",
+    "JmeStrategy",
+    "jme_strategy",
     "LambdaCgdStrategy",
     "lambda_cgd_strategy",
     # State
     "MFNoiseState",
+    "JmeNoiseState",
 ]
