@@ -22,7 +22,6 @@ from .band_mf import BandMfStrategy, band_mf_strategy
 from .bisr import BisrStrategy, bisr_strategy
 from .blt import BltStrategy, blt_strategy
 from .identity import IdentityStrategy, identity_strategy
-from .jme import JmeStrategy, jme_noise, jme_strategy
 from .lambda_cgd import (
     LambdaCgdStrategy,
     _make_lambda_cgd_noise,
@@ -38,12 +37,7 @@ from ._streaming_matrix import (
 from opaque.random import RngKey
 
 MfStrategy = (
-    BandMfStrategy
-    | BltStrategy
-    | LambdaCgdStrategy
-    | BisrStrategy
-    | IdentityStrategy
-    | JmeStrategy
+    BandMfStrategy | BltStrategy | LambdaCgdStrategy | BisrStrategy | IdentityStrategy
 )
 
 
@@ -76,12 +70,6 @@ def mf_noise(
         A tuple ``(noise_fn, state)`` for the training loop.
     """
     match strategy:
-        case JmeStrategy():
-            raise TypeError(
-                "JmeStrategy requires jme_noise() instead of mf_noise(). "
-                "JME produces two noise streams (first + second moment) and "
-                "uses a different call signature. See jme_noise() docs."
-            )
         case IdentityStrategy():
             return _matrix_factorization_noise(
                 grad_template,
@@ -120,14 +108,11 @@ __all__ = [
     "IdentityStrategy",
     "LambdaCgdStrategy",
     "BisrStrategy",
-    "JmeStrategy",
     "MfStrategy",
     "band_mf_strategy",
     "blt_strategy",
     "identity_strategy",
     "lambda_cgd_strategy",
     "bisr_strategy",
-    "jme_strategy",
-    "jme_noise",
     "mf_noise",
 ]

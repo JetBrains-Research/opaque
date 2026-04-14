@@ -4,6 +4,12 @@
 
 **Goal**: Enable DP-Adam and DP-AdaGrad with MF correlated noise by implementing JME within Opaque's existing matrix factorization framework.
 
+**Design**: JME is NOT a new noise mechanism type — it is a **calibration result**
+that allows two standard `mf_noise` streams to share a privacy budget. The math
+lives in `noise/mf/jme.py` (three pure functions), and the integration lives
+directly in `train_dp_ftrl.py --optimizer adam`. No `JmeStrategy`, no `jme_noise`
+entry point — just two `mf_noise` calls with the right stddevs.
+
 ---
 
 ## 1. Background & Motivation
