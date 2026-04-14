@@ -105,10 +105,9 @@ from opaque.noise.mf import (
     blt_strategy,
     identity_strategy,
     jme_joint_sensitivity,
-    jme_lambda,
-    jme_second_moment_stddev,
     lambda_cgd_strategy,
     mf_noise,
+    mf_noise_jme,
 )
 from opaque.profiling import (
     StepTimer,
@@ -856,9 +855,6 @@ def main():
             return None
 
     strategy = _make_strategy(lr_sched=lr_schedule)
-    strategy_v = None  # second-moment strategy (Adam only)
-    if use_adam and args.mechanism not in ("identity", "none"):
-        strategy_v = _make_strategy(momentum_override=args.beta2)
 
     if args.mechanism == "band_mf" and strategy is not None:
         def acct_mechanism(nm):
@@ -936,22 +932,14 @@ def main():
             allow_val_change=True,
         )
 
-    # --- Create MF noise function(s) (fixed stddev) ---
-    # sensitivity = clipping_norm / normalize_by (accounts for batch averaging)
+    # --- Create MF noise function (fixed stddev) ---
     zeta = clip_state.sensitivity
 
     if use_adam and args.mechanism not in ("identity", "none"):
-        # JME: joint sensitivity covers both moment streams at no extra cost.
-        # s_joint = 2ζ·‖C₁‖_{1→2}  (Theorem 3.2, arXiv:2502.06597)
         joint_sens = jme_joint_sensitivity(strategy.sensitivity, zeta)
         noise_stddev = noise_multiplier * joint_sens
-        c2_sens = strategy_v.sensitivity if strategy_v is not None else strategy.sensitivity
-        lam = jme_lambda(strategy.sensitivity, c2_sens, zeta)
-        noise_stddev_v = jme_second_moment_stddev(noise_stddev, lam)
     else:
         noise_stddev = noise_multiplier * zeta
-        noise_stddev_v = 0.0
-        lam = None
 
     if args.mechanism == "none":
         print("\nNon-DP mode: using identity noise with stddev=0...")
@@ -963,8 +951,19 @@ def main():
         print(f"\nCreating MF noise (β={args.momentum})...")
     t0 = time.time()
 
-    # First-moment noise (gradient stream) — always created
-    if args.mechanism in ("identity", "none"):
+    if use_adam and args.mechanism not in ("identity", "none"):
+        # JME: single call creates both noise streams internally.
+        # noise_fn has the same signature as mf_noise: (grads, state) → (noisy_grads, state)
+        # The noisy squared grads are on state.noisy_squared_grads.
+        noise_fn, noise_state = mf_noise_jme(
+            trainable_params,
+            strategy,
+            stddev=noise_stddev,
+            key=key(args.seed),
+            zeta=zeta,
+            beta2=args.beta2,
+        )
+    elif args.mechanism in ("identity", "none"):
         noise_fn, noise_state = mf_noise(
             trainable_params,
             identity_strategy(),
@@ -976,23 +975,9 @@ def main():
             trainable_params,
             strategy,
             stddev=noise_stddev,
-            key=fold_in(key(args.seed), 0),
+            key=key(args.seed),
         )
-
-    # Second-moment noise (squared-gradient stream) — Adam only
-    noise_fn_v = None
-    noise_state_v = None
-    if use_adam:
-        strat_v = strategy_v if strategy_v is not None else identity_strategy()
-        if args.mechanism in ("identity", "none"):
-            strat_v = identity_strategy()
-        noise_fn_v, noise_state_v = mf_noise(
-            trainable_params,
-            strat_v,
-            stddev=noise_stddev_v,
-            key=fold_in(key(args.seed), 1),
-        )
-    print(f"  Noise function(s) created in {time.time() - t0:.1f}s")
+    print(f"  Noise function created in {time.time() - t0:.1f}s")
 
     # --- Optimizer ---
     if use_adam:
@@ -1041,9 +1026,7 @@ def main():
     )
     if use_adam and args.mechanism not in ("identity", "none"):
         print(f"  JME joint sensitivity: {joint_sens:.6f} (= 2 × {zeta:.6f} × {strategy.sensitivity:.6f})")
-        print(f"  JME λ: {lam:.4f}")
         print(f"  Noise stddev (1st moment): {noise_stddev:.6f}")
-        print(f"  Noise stddev (2nd moment): {noise_stddev_v:.6f}")
     else:
         print(f"  Noise multiplier (σ): {noise_multiplier:.4f}")
         print(
@@ -1127,11 +1110,8 @@ def main():
                 if use_adam:
                     from opaque.utils.pytree import tree_map as _tree_map
 
-                    # Second-moment noise on element-wise squared grads
-                    sq_grads = _tree_map(lambda g: g * g, grads)
-                    noisy_sq, noise_state_v = noise_fn_v(sq_grads, noise_state_v)
+                    noisy_sq = noise_state.noisy_squared_grads
 
-                    # Adam EMA updates (linear operations on noisy estimates)
                     adam_m = _tree_map(
                         lambda m, g: args.beta1 * m + (1 - args.beta1) * g,
                         adam_m, noisy_grads,
@@ -1141,7 +1121,6 @@ def main():
                         adam_v, noisy_sq,
                     )
 
-                    # Bias correction
                     bc1 = 1.0 - args.beta1 ** (global_step + 1)
                     bc2 = 1.0 - args.beta2 ** (global_step + 1)
 

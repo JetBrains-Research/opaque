@@ -2,14 +2,15 @@
 
 Public API:
 
-- :func:`mf_noise` — strategy-based dispatcher (the main entry point)
+- :func:`mf_noise` — strategy-based dispatcher (SGD + Polyak momentum)
+- :func:`mf_noise_jme` — JME wrapper for DP-Adam (two streams, one budget)
 
 Strategy factories:
 
 - :func:`band_mf_strategy`, :func:`blt_strategy`, :func:`bisr_strategy`
 - :func:`lambda_cgd_strategy`, :func:`identity_strategy`
 
-JME helpers (for DP-Adam, see ``examples/train_dp_ftrl.py --optimizer adam``):
+JME calibration helpers:
 
 - :func:`jme_lambda`, :func:`jme_joint_sensitivity`, :func:`jme_second_moment_stddev`
 
@@ -25,13 +26,20 @@ from .bisr import BisrStrategy, bisr_strategy
 from .blt import BltStrategy, blt_strategy
 from .dispatcher import MfStrategy, mf_noise
 from .identity import IdentityStrategy, identity_strategy
-from .jme import jme_joint_sensitivity, jme_lambda, jme_second_moment_stddev
+from .jme import (
+    JmeNoiseState,
+    jme_joint_sensitivity,
+    jme_lambda,
+    jme_second_moment_stddev,
+    mf_noise_jme,
+)
 from .lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
 from ._engine import MFNoiseState
 
 __all__ = [
-    # Dispatcher
+    # Dispatchers
     "mf_noise",
+    "mf_noise_jme",
     "MfStrategy",
     # Strategy types & factories
     "BandMfStrategy",
@@ -44,10 +52,11 @@ __all__ = [
     "identity_strategy",
     "LambdaCgdStrategy",
     "lambda_cgd_strategy",
-    # JME helpers (DP-Adam calibration)
+    # JME helpers
     "jme_lambda",
     "jme_joint_sensitivity",
     "jme_second_moment_stddev",
     # State
     "MFNoiseState",
+    "JmeNoiseState",
 ]
