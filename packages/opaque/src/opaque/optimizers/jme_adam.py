@@ -4,16 +4,19 @@ Paired with :func:`~opaque.noise.mf.jme_noise`, this optimizer
 consumes noisy gradients (first moment) and noisy squared gradients
 (second moment) produced by the JME mechanism (arXiv:2502.06597).
 
-Follows the ``torchopt.GradientTransformation`` protocol and reuses
-``torchopt.transform.add_decayed_weights`` and ``torchopt.transform.scale``
-for weight decay and learning-rate application (same pattern as
-:func:`~opaque.optimizers.dp_adamw`).
+Follows ``torchopt.adam``'s composition structure::
+
+    chain(
+        flip_sign_and_add_weight_decay,   # reused from torchopt
+        scale_by_jme_adam,                 # custom: external second moment
+        scale_by_neg_lr,                   # reused from torchopt
+    )
 
 Usage::
 
     from opaque.optimizers import jme_adam
 
-    optimizer = jme_adam(lr=1e-3, beta1=0.9, beta2=0.999)
+    optimizer = jme_adam(lr=1e-3, betas=(0.9, 0.999))
     opt_state = optimizer.init(params)
 
     (noisy_grads, noisy_sq), noise_state = noise_fn(clipped_grads, noise_state)
@@ -32,7 +35,6 @@ from typing import Any
 import torch
 
 try:
-    import torchopt
     from torchopt.base import GradientTransformation
 except ImportError as exc:
     raise ImportError(
@@ -53,7 +55,6 @@ class JmeAdamState:
     """State for the JME moment-scaling transform.
 
     First element of the chain state returned by :func:`jme_adam`.
-    The full optimizer state is ``(JmeAdamState, wd_state, lr_state)``.
 
     Attributes:
         mu: First-moment EMA (pytree matching params).
@@ -67,7 +68,7 @@ class JmeAdamState:
 
 
 # ---------------------------------------------------------------------------
-# Internal: moment scaling (replaces torchopt.transform.scale_by_adam)
+# Internal: moment scaling with external second moment
 # ---------------------------------------------------------------------------
 
 
@@ -75,18 +76,13 @@ def _scale_by_jme_adam(
     b1: float,
     b2: float,
     eps: float,
-    lr: float | Callable[[int], float],
 ) -> GradientTransformation:
     """Adam moment scaling with externally-provided second moments.
 
-    Like ``torchopt.transform.scale_by_adam``, but the second moment
-    uses noisy squared gradients from JME instead of squaring the
-    (already-noisy) gradient input.  Includes LR application (supports
-    callables for LR schedules).
+    Identical to ``torchopt.transform.scale_by_adam`` except the second
+    moment uses ``noisy_squared_grads`` from JME instead of squaring the
+    gradient input (``order=2``).
     """
-
-    def _get_lr(step: int) -> float:
-        return lr(step) if callable(lr) else lr
 
     def init_fn(params: Any) -> JmeAdamState:
         return JmeAdamState(
@@ -118,10 +114,9 @@ def _scale_by_jme_adam(
 
         bc1 = 1 - b1**t
         bc2 = 1 - b2**t
-        current_lr = _get_lr(state.step)
 
         result = tree_map(
-            lambda m, v: -current_lr * (m / bc1) / ((v / bc2).sqrt() + eps),
+            lambda m, v: (m / bc1) / ((v / bc2).sqrt() + eps),
             new_mu, new_nu,
         )
 
@@ -144,20 +139,25 @@ def jme_adam(
 ) -> GradientTransformation:
     """Create a JME-Adam optimizer (Adam with JME dual-stream noise).
 
-    Follows the ``torchopt.GradientTransformation`` protocol.  Composes:
+    Follows ``torchopt.adam``'s composition: weight decay + moment
+    scaling + LR application.  The only difference is that the second
+    moment comes from the ``noisy_squared_grads`` kwarg (JME's second
+    noise stream) instead of squaring the gradient input.
 
-    1. JME moment scaling + LR (custom — uses external ``noisy_squared_grads``)
-    2. Weight decay (``torchopt.transform.add_decayed_weights``)
+    Reuses ``torchopt`` primitives:
+
+    - ``flip_sign_and_add_weight_decay`` — sign flip + L2 weight decay
+    - ``scale_by_neg_lr`` — learning rate (supports callable schedules)
 
     The ``noisy_squared_grads`` kwarg on ``update()`` provides the
     privately-estimated second moment from :func:`~opaque.noise.mf.jme_noise`.
 
     Args:
         lr: Learning rate — a float or a callable ``step -> float``
-            for LR schedules.
+            for LR schedules (same as ``torchopt.adam``).
         betas: ``(beta1, beta2)`` for moment estimation.
         eps: Denominator stability constant.
-        weight_decay: Decoupled weight decay (default 0, set >0 for AdamW).
+        weight_decay: Weight decay coefficient (default 0).
 
     Returns:
         A ``torchopt.base.GradientTransformation``.
@@ -177,11 +177,16 @@ def jme_adam(
         )
         params = torchopt.apply_updates(params, updates)
     """
-    adam = _scale_by_jme_adam(betas[0], betas[1], eps, lr)
-    wd = torchopt.transform.add_decayed_weights(weight_decay=weight_decay)
+    from torchopt.alias.utils import flip_sign_and_add_weight_decay, scale_by_neg_lr
+
+    b1, b2 = betas
+
+    wd_and_sign = flip_sign_and_add_weight_decay(weight_decay=weight_decay)
+    adam_scale = _scale_by_jme_adam(b1, b2, eps)
+    neg_lr = scale_by_neg_lr(lr)
 
     def init_fn(params: Any) -> tuple:
-        return (adam.init(params), wd.init(params))
+        return (wd_and_sign.init(params), adam_scale.init(params), neg_lr.init(params))
 
     def update_fn(
         updates: Any,
@@ -191,14 +196,17 @@ def jme_adam(
         inplace: bool = False,
         noisy_squared_grads: Any = None,
     ) -> tuple[Any, tuple]:
-        s_adam, s_wd = state
-        updates, s_adam = adam.update(
+        s_wd, s_adam, s_lr = state
+
+        updates, s_wd = wd_and_sign.update(updates, s_wd, params=params, inplace=inplace)
+        updates, s_adam = adam_scale.update(
             updates, s_adam,
             params=params, inplace=inplace,
             noisy_squared_grads=noisy_squared_grads,
         )
-        updates, s_wd = wd.update(updates, s_wd, params=params, inplace=inplace)
-        return updates, (s_adam, s_wd)
+        updates, s_lr = neg_lr.update(updates, s_lr, inplace=inplace)
+
+        return updates, (s_wd, s_adam, s_lr)
 
     return GradientTransformation(init_fn, update_fn)
 
