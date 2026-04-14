@@ -35,7 +35,7 @@ class Jme(DpProcess):
 
     Wraps an ``MfGaussian`` mechanism and adjusts the sensitivity to
     account for privately estimating both moments.  The effective
-    sensitivity becomes ``2 × zeta × inner.sensitivity`` (Theorem 3.2).
+    sensitivity becomes ``2 × zeta × max_column_norm`` (Theorem 3.2).
 
     Amplification modules (``cyclic_poisson``, ``balls_in_bins``)
     pattern-match on ``Jme`` and unwrap the inner mechanism with the
@@ -44,15 +44,23 @@ class Jme(DpProcess):
 
     inner: MfGaussian
     zeta: float
+    max_column_norm: float | None = None
 
     @property
     def noise_multiplier(self) -> float:
         return self.inner.noise_multiplier
 
     @property
+    def _c1_norm(self) -> float:
+        """‖C₁‖_{1→2} — max column norm of the strategy matrix."""
+        if self.max_column_norm is not None:
+            return self.max_column_norm
+        return self.inner.sensitivity
+
+    @property
     def sensitivity(self) -> float:
-        """Joint sensitivity: ``2 × zeta × inner.sensitivity``."""
-        return 2.0 * self.zeta * self.inner.sensitivity
+        """Joint sensitivity: ``2 × zeta × ‖C₁‖_{1→2}`` (Theorem 3.2)."""
+        return 2.0 * self.zeta * self._c1_norm
 
     @property
     def gram_matrix(self) -> tuple[float, ...] | None:
@@ -86,7 +94,12 @@ class Jme(DpProcess):
         )
 
 
-def jme(inner: MfGaussian, *, zeta: float) -> Jme:
+def jme(
+    inner: MfGaussian,
+    *,
+    zeta: float,
+    max_column_norm: float | None = None,
+) -> Jme:
     """Account for JME joint moment estimation.
 
     Wraps an MF mechanism to reflect the privacy cost of estimating both
@@ -98,6 +111,11 @@ def jme(inner: MfGaussian, *, zeta: float) -> Jme:
             ``lambda_cgd()``, ``bisr()``.
         zeta: Per-sample clipping bound (``clip_state.sensitivity``,
             typically ``clipping_norm / batch_size``).
+        max_column_norm: Max column norm ``‖C₁‖_{1→2}`` of the strategy
+            matrix.  If ``None``, falls back to ``inner.sensitivity``
+            (correct for single-participation; conservative for
+            multi-participation).  Pass ``strategy._max_column_norm``
+            for tight multi-participation accounting.
 
     Returns:
         A :class:`Jme` process.
@@ -118,4 +136,4 @@ def jme(inner: MfGaussian, *, zeta: float) -> Jme:
         )
     if zeta <= 0:
         raise ValueError(f"zeta must be positive, got {zeta}")
-    return Jme(inner=inner, zeta=zeta)
+    return Jme(inner=inner, zeta=zeta, max_column_norm=max_column_norm)

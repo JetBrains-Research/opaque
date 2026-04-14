@@ -106,6 +106,11 @@ class BandMfStrategy:
     _bands: int = 0
 
     @property
+    def _max_column_norm(self) -> float:
+        """Max column L2 norm ‖C‖_{1→2} (equals sensitivity for BandMF)."""
+        return self.sensitivity
+
+    @property
     def num_groups(self) -> int:
         """Number of independent cyclic groups: ceil(n_steps / bands)."""
         return math.ceil(self._n_steps / self._bands) if self._bands > 0 else 0

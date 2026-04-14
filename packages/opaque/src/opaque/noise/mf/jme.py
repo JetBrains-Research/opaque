@@ -269,10 +269,13 @@ def jme_noise(
     if strat_v is None:
         strat_v = _derive_second_strategy(strategy, beta2)
 
-    # JME calibration
-    joint_sens = jme_joint_sensitivity(strategy.sensitivity, zeta)
+    # JME calibration — uses max column norms ‖C‖_{1→2}, not
+    # multi-participation sensitivity (Theorem 3.2, Algorithm 1).
+    c1_norm = strategy._max_column_norm
+    c2_norm = strat_v._max_column_norm
+    joint_sens = jme_joint_sensitivity(c1_norm, zeta)
     stddev = noise_multiplier * joint_sens
-    lam = jme_lambda(strategy.sensitivity, strat_v.sensitivity, zeta)
+    lam = jme_lambda(c1_norm, c2_norm, zeta)
     stddev_v = jme_second_moment_stddev(stddev, lam)
 
     # Two independent noise streams

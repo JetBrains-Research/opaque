@@ -863,13 +863,15 @@ def main():
                 nm, sensitivity=strategy.sensitivity, num_groups=strategy.num_groups
             )
             if use_adam:
-                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity)
+                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
+                                   max_column_norm=strategy._max_column_norm)
             return acc.cyclic_poisson(mechanism, sample_rate=sampling_prob)
     elif args.mechanism == "blt" and strategy is not None:
         def acct_mechanism(nm):
             mechanism = acc.blt(nm, sensitivity=strategy.sensitivity)
             if use_adam:
-                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity)
+                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
+                                   max_column_norm=strategy._max_column_norm)
             return mechanism
     elif args.mechanism == "lambda_cgd" and strategy is not None:
         def acct_mechanism(nm):
@@ -879,7 +881,8 @@ def main():
                 gram_matrix=strategy.gram_matrix,
             )
             if use_adam:
-                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity)
+                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
+                                   max_column_norm=strategy._max_column_norm)
             return acc.balls_in_bins(
                 mechanism,
                 num_bins=expected_steps_per_epoch,
@@ -893,7 +896,8 @@ def main():
                 gram_matrix=strategy.gram_matrix,
             )
             if use_adam:
-                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity)
+                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
+                                   max_column_norm=strategy._max_column_norm)
             return acc.balls_in_bins(
                 mechanism,
                 num_bins=expected_steps_per_epoch,
