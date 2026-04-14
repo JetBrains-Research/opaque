@@ -61,6 +61,9 @@ USAGE:
   # DP-SGD baseline for fair comparison (same loop, independent noise)
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism identity
 
+  # Non-DP baseline (no noise, no privacy accounting, same loop)
+  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism none
+
 REFERENCES:
 
   - BandMF: https://arxiv.org/abs/2306.08153
@@ -321,8 +324,8 @@ def parse_args():
         "--mechanism",
         type=str,
         default="band_mf",
-        choices=["band_mf", "blt", "blt_bnb", "lambda_cgd", "bisr", "identity"],
-        help="MF mechanism: band_mf, blt, blt_bnb, lambda_cgd, bisr, identity.",
+        choices=["band_mf", "blt", "blt_bnb", "lambda_cgd", "bisr", "identity", "none"],
+        help="MF mechanism: band_mf, blt, blt_bnb, lambda_cgd, bisr, identity, none (non-DP).",
     )
     dp_g.add_argument(
         "--clipping-norm", type=float, default=0.9, help="Fixed clipping norm"
@@ -834,10 +837,17 @@ def main():
 
         def acct_mechanism(nm):
             return acc.poisson(acc.gaussian(nm), sample_rate=sample_rate) * total_steps
+    elif args.mechanism == "none":
+        # Non-DP baseline: same training loop, zero noise, no privacy accounting.
+        def acct_mechanism(nm):
+            return acc.nonprivate()
     else:
         raise ValueError(f"Unknown mechanism: {args.mechanism}")
 
-    if args.noise_multiplier is not None:
+    if args.mechanism == "none":
+        noise_multiplier = 0.0
+        print("\nNon-DP mode: noise_multiplier=0 (no privacy)")
+    elif args.noise_multiplier is not None:
         noise_multiplier = args.noise_multiplier
         print(f"\nFixed noise multiplier: {noise_multiplier:.4f}")
     else:
@@ -872,12 +882,14 @@ def main():
     # sensitivity = clipping_norm / normalize_by (accounts for batch averaging)
     noise_stddev = noise_multiplier * clip_state.sensitivity
 
-    if args.mechanism == "identity":
+    if args.mechanism == "none":
+        print("\nNon-DP mode: using identity noise with stddev=0...")
+    elif args.mechanism == "identity":
         print("\nCreating identity noise (i.i.d. Gaussian, DP-SGD baseline)...")
     else:
         print(f"\nCreating MF noise (β={args.momentum})...")
     t0 = time.time()
-    if args.mechanism == "identity":
+    if args.mechanism in ("identity", "none"):
         noise_fn, noise_state = mf_noise(
             trainable_params,
             identity_strategy(),
@@ -901,7 +913,7 @@ def main():
 
     # --- Diagnostic: compute what identity baseline σ would be ---
     identity_sigma = None
-    if args.mechanism != "identity" and args.noise_multiplier is None:
+    if args.mechanism not in ("identity", "none") and args.noise_multiplier is None:
         try:
             identity_acct = (
                 lambda nm: acc.poisson(acc.gaussian(nm), sample_rate=sample_rate)
@@ -974,6 +986,17 @@ def main():
             {"eval/loss": initial_eval_loss, "train/lr": lr_schedule[0].item()}, step=0
         )
 
+    # Create BnB sampler once before the training loop — the same fixed
+    # partition is reused every epoch (required by BnB privacy accounting,
+    # see Lemma 3.2 of Choquette-Choo et al. 2024).
+    if args.mechanism in ("blt_bnb", "lambda_cgd", "bisr"):
+        bnb_sampler = BallsInBinsSampler(
+            train_dataset,
+            num_bins=expected_steps_per_epoch,
+            num_epochs=1,
+            key=key(args.seed),
+        )
+
     for epoch in range(args.num_epochs):
         print(f"\nEpoch {epoch + 1}/{args.num_epochs}")
         print("-" * 80)
@@ -998,25 +1021,9 @@ def main():
                 collate_fn=collate,
                 drop_last=True,
             )
-        elif args.mechanism == "blt_bnb":
-            epoch_sampler = BallsInBinsSampler(
-                train_dataset,
-                num_bins=expected_steps_per_epoch,
-                num_epochs=1,
-                key=fold_in(key(args.seed), epoch),
-            )
+        elif args.mechanism in ("blt_bnb", "lambda_cgd", "bisr"):
             epoch_loader = DataLoader(
-                train_dataset, batch_sampler=epoch_sampler, collate_fn=collate
-            )
-        elif args.mechanism in ("lambda_cgd", "bisr"):
-            epoch_sampler = BallsInBinsSampler(
-                train_dataset,
-                num_bins=expected_steps_per_epoch,
-                num_epochs=1,
-                key=fold_in(key(args.seed), epoch),
-            )
-            epoch_loader = DataLoader(
-                train_dataset, batch_sampler=epoch_sampler, collate_fn=collate
+                train_dataset, batch_sampler=bnb_sampler, collate_fn=collate
             )
         else:  # identity
             epoch_sampler = PoissonSampler(
@@ -1134,14 +1141,17 @@ def main():
         print(f"  Average clip rate: {sum(clip_rates) / len(clip_rates):.2%}")
 
     # Single-shot accounting
-    final_epsilon = acct_mechanism(noise_multiplier).epsilon_at(args.target_delta)
-    print("\nPrivacy (single-shot):")
-    print(f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e}")
-    print(f"  Noise multiplier: {noise_multiplier:.4f}")
-    print(f"  Final ε: {final_epsilon:.4f}")
+    if args.mechanism == "none":
+        print("\nPrivacy: Non-DP baseline (no privacy guarantee)")
+    else:
+        final_epsilon = acct_mechanism(noise_multiplier).epsilon_at(args.target_delta)
+        print("\nPrivacy (single-shot):")
+        print(f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e}")
+        print(f"  Noise multiplier: {noise_multiplier:.4f}")
+        print(f"  Final ε: {final_epsilon:.4f}")
 
-    if use_wandb:
-        wandb.log({"privacy/epsilon_final": final_epsilon}, step=global_step)
+        if use_wandb:
+            wandb.log({"privacy/epsilon_final": final_epsilon}, step=global_step)
 
     profiler, _ = profiler.mark("training_complete")
     print("\n" + profiler.final_summary())

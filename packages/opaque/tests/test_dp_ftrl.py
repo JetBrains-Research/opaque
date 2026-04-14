@@ -269,8 +269,8 @@ class TestBLTWithBnB:
     def test_blt_bnb_trains(self):
         """BLT noise with BnB sampler trains a simple model.
 
-        Simulates the BLT+BnB pipeline: each epoch the dataset is
-        randomly partitioned into bins, BLT noise is applied per step.
+        Simulates the BLT+BnB pipeline: the dataset is randomly partitioned
+        into fixed bins, BLT noise is applied per step.
         """
         torch.manual_seed(0)
         n_samples = 200
@@ -331,8 +331,8 @@ class TestBLTWithBnB:
         assert losses[-1] < losses[0]
 
     def test_bnb_sampler_covers_dataset(self):
-        """BnB sampler gives exactly one participation per example per epoch."""
-        n_samples = 100
+        """BnB sampler places every example in exactly one bin per epoch."""
+        n_samples = 1000
         num_bins = 10
         dataset = list(range(n_samples))
 
@@ -345,14 +345,56 @@ class TestBLTWithBnB:
 
         all_indices = []
         for batch in sampler:
-            assert len(batch) == n_samples // num_bins
             all_indices.extend(batch)
 
-        # Every example appears exactly once (some may be dropped if
-        # n_samples not divisible by num_bins)
-        expected = num_bins * (n_samples // num_bins)
-        assert len(all_indices) == expected
-        assert len(set(all_indices)) == expected
+        # Every example appears exactly once (true BnB: independent
+        # assignment, so all N examples are assigned to some bin).
+        assert len(all_indices) == n_samples
+        assert set(all_indices) == set(range(n_samples))
+
+    def test_bnb_sampler_fixed_bins_across_epochs(self):
+        """BnB sampler yields the same bin assignment every epoch."""
+        n_samples = 1000
+        num_bins = 10
+        num_epochs = 3
+        dataset = list(range(n_samples))
+
+        sampler = BallsInBinsSampler(
+            dataset,
+            num_bins=num_bins,
+            num_epochs=num_epochs,
+            key=key(42),
+        )
+
+        all_batches = list(sampler)
+        batches_per_epoch = len(all_batches) // num_epochs
+        assert len(all_batches) == batches_per_epoch * num_epochs
+
+        epoch_1 = all_batches[:batches_per_epoch]
+        epoch_2 = all_batches[batches_per_epoch : 2 * batches_per_epoch]
+        epoch_3 = all_batches[2 * batches_per_epoch : 3 * batches_per_epoch]
+
+        for i in range(batches_per_epoch):
+            assert epoch_1[i] == epoch_2[i], f"bin {i} differs between epoch 1 and 2"
+            assert epoch_1[i] == epoch_3[i], f"bin {i} differs between epoch 1 and 3"
+
+    def test_bnb_sampler_variable_bin_sizes(self):
+        """True BnB produces variable-size bins (not all equal)."""
+        n_samples = 10000
+        num_bins = 50
+        dataset = list(range(n_samples))
+
+        sampler = BallsInBinsSampler(
+            dataset,
+            num_bins=num_bins,
+            num_epochs=1,
+            key=key(123),
+        )
+
+        sizes = [len(batch) for batch in sampler]
+        # With N=10000 and b=50, expected size is 200. True independent
+        # assignment should produce variation (not all sizes equal).
+        assert len(set(sizes)) > 1, "all bins have equal size — not true BnB"
 
 
 class TestMfNoiseStrategies:

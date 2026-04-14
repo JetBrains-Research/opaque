@@ -1,15 +1,18 @@
 """Balls-in-Bins sampler for DP-SGD training.
 
-In the Balls-in-Bins (BnB) sampling scheme, each epoch the dataset is
-randomly shuffled and partitioned into ``num_bins`` equally-sized bins.
-Each bin is processed exactly once, so every example participates exactly
-once per epoch with deterministic batch sizes.
+In the Balls-in-Bins (BnB) sampling scheme each example independently
+and uniformly picks one of ``num_bins`` bins (Definition 3.1 of
+Choquette-Choo et al. 2024).  Bin sizes are therefore **random**,
+following Binomial(N, 1/num_bins) marginally.
 
-This provides privacy amplification because the adversary does not know
-which bin contains a given example (rate = 1/num_bins).
+The bin assignment is generated once in ``__init__`` and reused every
+epoch (round-robin).  This is required for the dominating-pair privacy
+accounting (Lemma 3.2) to be valid: each example must stay in its bin
+across all epochs.
 
-For distributed training, shard the dataset **before** creating the sampler
-using ``local_shard()`` and derive a per-rank key with ``fold_in(key, rank)``.
+For distributed training, shard the dataset **before** creating the
+sampler using ``local_shard()`` and derive a per-rank key with
+``fold_in(key, rank)``.
 
 References:
     - Chua et al. (2025), "Scalable Shuffle Differential Privacy"
@@ -25,18 +28,22 @@ from opaque.random import RngKey
 
 
 class BallsInBinsSampler(Sampler):
-    """Balls-in-Bins sampler: deterministic batch sizes, random assignment.
+    """Balls-in-Bins sampler: random independent bin assignment, fixed across epochs.
 
-    Each epoch, the dataset is reshuffled and split into ``num_bins``
-    contiguous bins of size ``floor(len(dataset) / num_bins)``.
-    Remainder examples are dropped (like PyTorch's ``drop_last=True``).
+    Each example independently chooses one of ``num_bins`` bins uniformly
+    at random (true BnB, Definition 3.1 of Choquette-Choo et al. 2024).
+    Bin sizes are random — some bins may be larger or smaller than the
+    expected size ``len(dataset) / num_bins``, and bins can even be empty.
+
+    The assignment is generated once and reused every epoch — this is
+    required for the BnB privacy accounting (Lemma 3.2) to be valid.
 
     For distributed training, shard the dataset externally and pass a
     per-rank key via ``fold_in(key, rank)``.
 
     Args:
         data_source: Dataset to sample from (any object with ``__len__``).
-        num_bins: Number of bins per epoch (k ≥ 2). Typically
+        num_bins: Number of bins per epoch (b ≥ 2). Typically
             ``dataset_size / desired_batch_size``.
         num_epochs: Number of epochs to yield. If None, yields indefinitely.
         key: RNG key for reproducibility.
@@ -72,53 +79,50 @@ class BallsInBinsSampler(Sampler):
         self.num_epochs = num_epochs
 
         self._num_samples = len(data_source)
-        self._bin_size = self._num_samples // num_bins
 
-        if self._bin_size == 0:
-            raise ValueError(
-                f"dataset too small ({self._num_samples}) for {num_bins} bins"
-            )
-
-        self.generator = np.random.default_rng(key.seed)
-
-    def _epoch_batches(self) -> list[list[int]]:
-        """Shuffle and partition into bins for one epoch."""
-        indices = self.generator.permutation(self._num_samples)
-        # Take only num_bins * bin_size elements (drop remainder)
-        usable = self.num_bins * self._bin_size
-        indices = indices[:usable]
-        # Split into num_bins contiguous chunks
-        bins = indices.reshape(self.num_bins, self._bin_size)
-        return [row.tolist() for row in bins]
+        generator = np.random.default_rng(key.seed)
+        # True BnB: each example independently picks a bin.
+        assignments = generator.integers(0, num_bins, size=self._num_samples)
+        # Group indices by bin — bins have variable sizes.
+        self._bins: list[list[int]] = [[] for _ in range(num_bins)]
+        for idx, b in enumerate(assignments):
+            self._bins[b].append(idx)
 
     def __iter__(self) -> Iterator[list[int]]:
-        """Yield batches: all bins from each epoch in order.
+        """Yield batches: all bins from each epoch in order (round-robin).
+
+        The same bin assignment is yielded every epoch.  Empty bins are
+        skipped.
 
         Yields:
-            Lists of indices, one per bin. Each epoch produces
-            ``num_bins`` batches.
+            Lists of indices, one per non-empty bin.
         """
         if self.num_epochs is None:
             while True:
-                yield from self._epoch_batches()
+                for batch in self._bins:
+                    if batch:
+                        yield batch
         else:
             for _ in range(self.num_epochs):
-                yield from self._epoch_batches()
+                for batch in self._bins:
+                    if batch:
+                        yield batch
 
     def __len__(self) -> int:
-        """Total number of batches across all epochs.
+        """Total number of non-empty batches across all epochs.
 
         Raises:
             TypeError: If num_epochs is None (infinite iteration).
         """
         if self.num_epochs is None:
             raise TypeError("len() of unsized object (num_epochs=None)")
-        return self.num_bins * self.num_epochs
+        non_empty = sum(1 for b in self._bins if b)
+        return non_empty * self.num_epochs
 
     @property
-    def batch_size(self) -> int:
-        """Deterministic batch size: floor(len(dataset) / num_bins)."""
-        return self._bin_size
+    def expected_batch_size(self) -> float:
+        """Expected batch size: len(dataset) / num_bins."""
+        return self._num_samples / self.num_bins
 
     @property
     def sample_rate(self) -> float:
