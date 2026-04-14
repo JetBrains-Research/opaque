@@ -1,4 +1,4 @@
-"""JME-Adam optimizer — Adam with JME dual-stream noise.
+"""JME-AdamW optimizer — Adam with JME dual-stream noise.
 
 Paired with :func:`~opaque.noise.mf.jme_noise`, this optimizer
 consumes noisy gradients (first moment) and noisy squared gradients
@@ -7,7 +7,7 @@ consumes noisy gradients (first moment) and noisy squared gradients
 Follows ``dp_adamw``'s AdamW composition (decoupled weight decay)::
 
     chain(
-        scale_by_jme_adam,                 # custom: external second moment
+        scale_by_jme_adamw,                 # custom: external second moment
         add_decayed_weights,               # reused from torchopt (decoupled)
         scale_by_neg_lr,                   # reused from torchopt
     )
@@ -16,9 +16,9 @@ With ``weight_decay=0`` (default) this is plain Adam per the JME paper.
 
 Usage::
 
-    from opaque.optimizers import jme_adam
+    from opaque.optimizers import jme_adamw
 
-    optimizer = jme_adam(lr=1e-3, betas=(0.9, 0.999))
+    optimizer = jme_adamw(lr=1e-3, betas=(0.9, 0.999))
     opt_state = optimizer.init(params)
 
     (noisy_grads, noisy_sq), noise_state = noise_fn(clipped_grads, noise_state)
@@ -53,10 +53,10 @@ from opaque.utils.pytree import tree_map
 
 
 @dataclasses.dataclass(frozen=True)
-class JmeAdamState:
+class JmeAdamWState:
     """State for the JME moment-scaling transform.
 
-    First element of the chain state returned by :func:`jme_adam`.
+    First element of the chain state returned by :func:`jme_adamw`.
 
     Attributes:
         mu: First-moment EMA (pytree matching params).
@@ -74,7 +74,7 @@ class JmeAdamState:
 # ---------------------------------------------------------------------------
 
 
-def _scale_by_jme_adam(
+def _scale_by_jme_adamw(
     b1: float,
     b2: float,
     eps: float,
@@ -86,8 +86,8 @@ def _scale_by_jme_adam(
     gradient input (``order=2``).
     """
 
-    def init_fn(params: Any) -> JmeAdamState:
-        return JmeAdamState(
+    def init_fn(params: Any) -> JmeAdamWState:
+        return JmeAdamWState(
             mu=tree_map(torch.zeros_like, params),
             nu=tree_map(torch.zeros_like, params),
             step=0,
@@ -95,15 +95,15 @@ def _scale_by_jme_adam(
 
     def update_fn(
         updates: Any,
-        state: JmeAdamState,
+        state: JmeAdamWState,
         *,
         params: Any = None,
         inplace: bool = False,
         noisy_squared_grads: Any = None,
-    ) -> tuple[Any, JmeAdamState]:
+    ) -> tuple[Any, JmeAdamWState]:
         if noisy_squared_grads is None:
             raise ValueError(
-                "jme_adam requires noisy_squared_grads from jme_noise(). "
+                "jme_adamw requires noisy_squared_grads from jme_noise(). "
                 "Pass noisy_squared_grads to optimizer.update()."
             )
 
@@ -122,7 +122,7 @@ def _scale_by_jme_adam(
             new_mu, new_nu,
         )
 
-        new_state = JmeAdamState(mu=new_mu, nu=new_nu, step=t)
+        new_state = JmeAdamWState(mu=new_mu, nu=new_nu, step=t)
         return result, new_state
 
     return GradientTransformation(init_fn, update_fn)
@@ -133,13 +133,13 @@ def _scale_by_jme_adam(
 # ---------------------------------------------------------------------------
 
 
-def jme_adam(
+def jme_adamw(
     lr: float | Callable[[int], float] = 1e-3,
     betas: tuple[float, float] = (0.9, 0.999),
     eps: float = 1e-8,
     weight_decay: float = 0.0,
 ) -> GradientTransformation:
-    """Create a JME-Adam optimizer (AdamW with JME dual-stream noise).
+    """Create a JME-AdamW optimizer (AdamW with JME dual-stream noise).
 
     Composes (same order as ``dp_adamw`` from PR #119):
 
@@ -170,7 +170,7 @@ def jme_adam(
 
     Example::
 
-        optimizer = jme_adam(lr=1e-3, weight_decay=0.01)
+        optimizer = jme_adamw(lr=1e-3, weight_decay=0.01)
         opt_state = optimizer.init(params)
 
         (noisy_grads, noisy_sq), noise_state = noise_fn(grads, noise_state)
@@ -185,7 +185,7 @@ def jme_adam(
 
     b1, b2 = betas
 
-    adam_scale = _scale_by_jme_adam(b1, b2, eps)
+    adam_scale = _scale_by_jme_adamw(b1, b2, eps)
     wd = torchopt.transform.add_decayed_weights(weight_decay=weight_decay)
     neg_lr = scale_by_neg_lr(lr)
 
@@ -215,4 +215,4 @@ def jme_adam(
     return GradientTransformation(init_fn, update_fn)
 
 
-__all__ = ["jme_adam", "JmeAdamState"]
+__all__ = ["jme_adamw", "JmeAdamWState"]

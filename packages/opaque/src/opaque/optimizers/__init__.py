@@ -8,9 +8,9 @@ Provides DP-aware optimizer variants that follow TorchOpt's
     params = torchopt.apply_updates(params, updates)
 """
 
-from opaque.optimizers.jme_adam import JmeAdamState, jme_adam
+from opaque.optimizers.jme_adamw import JmeAdamWState, jme_adamw
 
 __all__ = [
-    "jme_adam",
-    "JmeAdamState",
+    "jme_adamw",
+    "JmeAdamWState",
 ]

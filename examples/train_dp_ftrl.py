@@ -109,7 +109,7 @@ from opaque.noise.mf import (
     mf_noise,
     jme_noise,
 )
-from opaque.optimizers import jme_adam
+from opaque.optimizers import jme_adamw
 from opaque.profiling import (
     StepTimer,
     TrainingProfiler,
@@ -986,7 +986,7 @@ def main():
     print(f"  Noise function created in {time.time() - t0:.1f}s")
 
     if use_adam:
-        optimizer = jme_adam(
+        optimizer = jme_adamw(
             lr=lambda step: lr_schedule[min(step, len(lr_schedule) - 1)].item(),
             betas=(args.beta1, args.beta2),
             eps=args.adam_eps,
