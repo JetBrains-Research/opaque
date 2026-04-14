@@ -85,6 +85,11 @@ class BisrStrategy:
     coefficients: tuple[float, ...]
     gram_matrix: tuple[float, ...] | None = None
     _streaming_matrix: StreamingMatrix | None = None
+    _max_column_norm: float = 0.0
+    _bandwidth: int = 2
+    _n_steps: int = 1
+    _min_sep: int = 1
+    _max_participations: int | None = 1
 
 
 def bisr_strategy(
@@ -130,7 +135,16 @@ def bisr_strategy(
     else:
         inv_coefs = _bisr_inverse_coefficients(bandwidth, beta=momentum)
 
-    # Sensitivity (Rust)
+    # Max column norm ‖C‖_{1→2} (single-participation sensitivity)
+    if normalized:
+        max_column_norm = 1.0  # all columns have unit norm after normalization
+    else:
+        mcn_sq = _native.bisr_sensitivity_squared(
+            inv_coefs, n_steps, n_steps, 1,
+        )
+        max_column_norm = float(mcn_sq**0.5)
+
+    # Sensitivity under actual participation pattern
     if normalized:
         sens_sq = _native.bisr_normalized_sensitivity_squared(
             inv_coefs,
@@ -173,4 +187,9 @@ def bisr_strategy(
         coefficients=coefs_tuple,
         gram_matrix=gram_matrix,
         _streaming_matrix=streaming,
+        _max_column_norm=max_column_norm,
+        _bandwidth=bandwidth,
+        _n_steps=n_steps,
+        _min_sep=min_sep,
+        _max_participations=max_participations,
     )

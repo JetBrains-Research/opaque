@@ -7,9 +7,10 @@ combined with the correct optimizer.
 
 KEY DIFFERENCES FROM DP-SGD (train_causal_lm.py):
 
-  1. Optimizer: SGD with Polyak momentum ONLY (Adam/AdaGrad are nonlinear
-     operators on the gradient stream and destroy the noise correlation
-     structure that MF depends on for utility gains).
+  1. Optimizer: SGD with Polyak momentum (default) OR Adam via JME
+     (--optimizer adam). JME (Joint Moment Estimation, arXiv:2502.06597)
+     enables Adam/AdaGrad by privately estimating both gradient moments
+     with MF correlated noise at zero additional privacy cost.
 
   2. Clipping: Fixed norm ONLY (adaptive clipping changes sensitivity
      mid-training which invalidates the single-shot MF privacy proof).
@@ -22,6 +23,8 @@ KEY DIFFERENCES FROM DP-SGD (train_causal_lm.py):
 
   5. Noise: Fixed stddev, correlated across steps via C^{-1} streaming
      multiplication. Cannot change noise level mid-training.
+     With --optimizer adam: two independent MF noise streams (one per
+     Adam moment), calibrated via JME joint sensitivity.
 
 MECHANISMS:
 
@@ -59,6 +62,11 @@ USAGE:
   # Non-DP baseline (no noise, no privacy accounting, same loop)
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism none
 
+  # DP-Adam via JME (two MF noise streams, second moment is "free")
+  python examples/train_dp_ftrl.py --preset smoke --optimizer adam
+  python examples/train_dp_ftrl.py --preset smoke --optimizer adam --mechanism blt
+  python examples/train_dp_ftrl.py --preset smoke --optimizer adam --beta1 0.9 --beta2 0.999
+
 REFERENCES:
 
   - BandMF: https://arxiv.org/abs/2306.08153
@@ -66,6 +74,7 @@ REFERENCES:
   - DP-λCGD: https://arxiv.org/abs/2601.22334
   - BISR: https://arxiv.org/abs/2505.12128
   - DP-FTRL: https://arxiv.org/abs/2103.00039
+  - JME (DP-Adam): https://arxiv.org/abs/2502.06597
 """
 
 import argparse
@@ -95,9 +104,12 @@ from opaque.noise.mf import (
     bisr_strategy,
     blt_strategy,
     identity_strategy,
+    jme_joint_sensitivity,
     lambda_cgd_strategy,
     mf_noise,
+    jme_noise,
 )
+from opaque.optimizers import jme_adamw
 from opaque.profiling import (
     StepTimer,
     TrainingProfiler,
@@ -284,10 +296,35 @@ def parse_args():
     train_g.add_argument("--num-epochs", type=int, default=3)
     train_g.add_argument("--learning-rate", type=float, default=5e-4)
     train_g.add_argument(
+        "--optimizer",
+        type=str,
+        choices=["sgd", "adam"],
+        default="sgd",
+        help="Optimizer: sgd (Polyak momentum, default) or adam (via JME).",
+    )
+    train_g.add_argument(
         "--momentum",
         type=float,
         default=0.95,
-        help="Polyak momentum (default: 0.95 per BandMF paper)",
+        help="Polyak momentum for SGD (default: 0.95 per BandMF paper)",
+    )
+    train_g.add_argument(
+        "--beta1",
+        type=float,
+        default=0.9,
+        help="Adam first moment decay (default: 0.9). Ignored for --optimizer sgd.",
+    )
+    train_g.add_argument(
+        "--beta2",
+        type=float,
+        default=0.999,
+        help="Adam second moment decay (default: 0.999). Ignored for --optimizer sgd.",
+    )
+    train_g.add_argument(
+        "--adam-eps",
+        type=float,
+        default=1e-8,
+        help="Adam epsilon (default: 1e-8). Ignored for --optimizer sgd.",
     )
     train_g.add_argument(
         "--warmup-frac",
@@ -778,77 +815,98 @@ def main():
         args.target_delta = 1.0 / (global_train_size**1.1)
 
     # Build the accounting mechanism.
-    strategy = None
-    if args.mechanism == "band_mf":
-        strategy = band_mf_strategy(
-            n_steps=total_steps,
-            bands=args.bands,
-            momentum=args.momentum,
-            lr_schedule=lr_schedule,
-        )
+    # For Adam via JME, the first-moment strategy uses β₁ as the workload
+    # momentum and the second-moment strategy uses β₂.  For SGD, a single
+    # strategy uses the Polyak momentum.
+    use_adam = args.optimizer == "adam"
 
-        def acct_mechanism(nm):
-            return acc.cyclic_poisson(
-                acc.band_mf(
-                    nm, sensitivity=strategy.sensitivity, num_groups=strategy.num_groups
-                ),
-                sample_rate=sampling_prob,
+    def _workload_momentum() -> float:
+        """Workload momentum for the primary (first moment) strategy."""
+        return args.beta1 if use_adam else args.momentum
+
+    def _make_strategy(momentum_override=None, lr_sched=None):
+        """Build a strategy for the selected mechanism with given workload momentum."""
+        mom = momentum_override if momentum_override is not None else _workload_momentum()
+        if args.mechanism == "band_mf":
+            return band_mf_strategy(
+                n_steps=total_steps, bands=args.bands,
+                momentum=mom, lr_schedule=lr_sched,
             )
-    elif args.mechanism == "blt":
-        strategy = blt_strategy(
-            n_steps=total_steps,
-            min_sep=expected_steps_per_epoch,
-            max_participations=args.num_epochs,
-            max_buffers=args.max_buffers,
-            momentum=args.momentum,
-            lr_schedule=lr_schedule,
-        )
+        elif args.mechanism == "blt":
+            return blt_strategy(
+                n_steps=total_steps, min_sep=expected_steps_per_epoch,
+                max_participations=args.num_epochs, max_buffers=args.max_buffers,
+                momentum=mom, lr_schedule=lr_sched,
+            )
+        elif args.mechanism == "lambda_cgd":
+            return lambda_cgd_strategy(
+                lambda_=args.lambda_, n_steps=total_steps,
+                min_sep=expected_steps_per_epoch,
+                max_participations=args.num_epochs,
+            )
+        elif args.mechanism == "bisr":
+            return bisr_strategy(
+                bandwidth=args.bisr_bandwidth, n_steps=total_steps,
+                min_sep=expected_steps_per_epoch,
+                max_participations=args.num_epochs, momentum=mom,
+            )
+        elif args.mechanism == "identity":
+            return identity_strategy()
+        else:
+            return None
 
-        def acct_mechanism(nm):
-            return acc.blt(nm, sensitivity=strategy.sensitivity)
-    elif args.mechanism == "lambda_cgd":
-        strategy = lambda_cgd_strategy(
-            lambda_=args.lambda_,
-            n_steps=total_steps,
-            min_sep=expected_steps_per_epoch,
-            max_participations=args.num_epochs,
-        )
+    strategy = _make_strategy(lr_sched=lr_schedule)
 
+    if args.mechanism == "band_mf" and strategy is not None:
         def acct_mechanism(nm):
+            mechanism = acc.band_mf(
+                nm, sensitivity=strategy.sensitivity, num_groups=strategy.num_groups
+            )
+            if use_adam:
+                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
+                                   max_column_norm=strategy._max_column_norm)
+            return acc.cyclic_poisson(mechanism, sample_rate=sampling_prob)
+    elif args.mechanism == "blt" and strategy is not None:
+        def acct_mechanism(nm):
+            mechanism = acc.blt(nm, sensitivity=strategy.sensitivity)
+            if use_adam:
+                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
+                                   max_column_norm=strategy._max_column_norm)
+            return mechanism
+    elif args.mechanism == "lambda_cgd" and strategy is not None:
+        def acct_mechanism(nm):
+            mechanism = acc.lambda_cgd(
+                nm,
+                sensitivity=strategy.sensitivity,
+                gram_matrix=strategy.gram_matrix,
+            )
+            if use_adam:
+                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
+                                   max_column_norm=strategy._max_column_norm)
             return acc.balls_in_bins(
-                acc.lambda_cgd(
-                    nm,
-                    sensitivity=strategy.sensitivity,
-                    gram_matrix=strategy.gram_matrix,
-                ),
+                mechanism,
                 num_bins=expected_steps_per_epoch,
                 num_epochs=args.num_epochs,
             )
-    elif args.mechanism == "bisr":
-        strategy = bisr_strategy(
-            bandwidth=args.bisr_bandwidth,
-            n_steps=total_steps,
-            min_sep=expected_steps_per_epoch,
-            max_participations=args.num_epochs,
-            momentum=args.momentum,
-        )
-
+    elif args.mechanism == "bisr" and strategy is not None:
         def acct_mechanism(nm):
+            mechanism = acc.bisr(
+                nm,
+                sensitivity=strategy.sensitivity,
+                gram_matrix=strategy.gram_matrix,
+            )
+            if use_adam:
+                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
+                                   max_column_norm=strategy._max_column_norm)
             return acc.balls_in_bins(
-                acc.bisr(
-                    nm,
-                    sensitivity=strategy.sensitivity,
-                    gram_matrix=strategy.gram_matrix,
-                ),
+                mechanism,
                 num_bins=expected_steps_per_epoch,
                 num_epochs=args.num_epochs,
             )
     elif args.mechanism == "identity":
-
         def acct_mechanism(nm):
             return acc.poisson(acc.gaussian(nm), sample_rate=sample_rate) * total_steps
     elif args.mechanism == "none":
-        # Non-DP baseline: same training loop, zero noise, no privacy accounting.
         def acct_mechanism(nm):
             return acc.nonprivate()
     else:
@@ -888,18 +946,30 @@ def main():
             allow_val_change=True,
         )
 
-    # --- Create MF noise function (fixed stddev) ---
-    # sensitivity = clipping_norm / normalize_by (accounts for batch averaging)
-    noise_stddev = noise_multiplier * clip_state.sensitivity
+    # --- Create MF noise function + optimizer ---
+    zeta = clip_state.sensitivity
+    noise_stddev = noise_multiplier * zeta
 
     if args.mechanism == "none":
         print("\nNon-DP mode: using identity noise with stddev=0...")
     elif args.mechanism == "identity":
         print("\nCreating identity noise (i.i.d. Gaussian, DP-SGD baseline)...")
+    elif use_adam:
+        print(f"\nCreating JME noise (β₁={args.beta1}, β₂={args.beta2})...")
     else:
         print(f"\nCreating MF noise (β={args.momentum})...")
     t0 = time.time()
-    if args.mechanism in ("identity", "none"):
+
+    if use_adam and args.mechanism not in ("identity", "none"):
+        noise_fn, noise_state = jme_noise(
+            trainable_params,
+            strategy,
+            noise_multiplier=noise_multiplier,
+            key=key(args.seed),
+            zeta=zeta,
+            beta2=args.beta2,
+        )
+    elif args.mechanism in ("identity", "none"):
         noise_fn, noise_state = mf_noise(
             trainable_params,
             identity_strategy(),
@@ -915,10 +985,17 @@ def main():
         )
     print(f"  Noise function created in {time.time() - t0:.1f}s")
 
-    optimizer = torchopt.sgd(
-        lr=lambda step: lr_schedule[min(step, len(lr_schedule) - 1)].item(),
-        momentum=args.momentum,
-    )
+    if use_adam:
+        optimizer = jme_adamw(
+            lr=lambda step: lr_schedule[min(step, len(lr_schedule) - 1)].item(),
+            betas=(args.beta1, args.beta2),
+            eps=args.adam_eps,
+        )
+    else:
+        optimizer = torchopt.sgd(
+            lr=lambda step: lr_schedule[min(step, len(lr_schedule) - 1)].item(),
+            momentum=args.momentum,
+        )
     opt_state = optimizer.init(trainable_params)
 
     # --- Diagnostic: compute what identity baseline σ would be ---
@@ -942,18 +1019,27 @@ def main():
 
     print("\nDP-FTRL setup:")
     print(f"  Mechanism: {args.mechanism}")
-    print(f"  Optimizer: SGD + Polyak momentum (β={args.momentum})")
-    print(
-        f"  Workload: momentum-SGD (β={args.momentum}){' [prefix-sum]' if args.momentum == 1.0 else ''}"
-    )
+    if use_adam:
+        print(f"  Optimizer: Adam via JME (β₁={args.beta1}, β₂={args.beta2}, ε={args.adam_eps})")
+        print(f"  Workload: EMA β₁={args.beta1} (1st moment), β₂={args.beta2} (2nd moment)")
+    else:
+        print(f"  Optimizer: SGD + Polyak momentum (β={args.momentum})")
+        print(
+            f"  Workload: momentum-SGD (β={args.momentum}){' [prefix-sum]' if args.momentum == 1.0 else ''}"
+        )
     print(f"  Clipping norm: {args.clipping_norm} (fixed)")
     print(
-        f"  Sensitivity: {clip_state.sensitivity:.6f} (= {args.clipping_norm} / {args.batch_size})"
+        f"  Sensitivity: {zeta:.6f} (= {args.clipping_norm} / {args.batch_size})"
     )
     print(f"  Noise multiplier (σ): {noise_multiplier:.4f}")
-    print(
-        f"  Noise stddev: {noise_stddev:.6f} (= {noise_multiplier:.4f} × {clip_state.sensitivity:.6f})"
-    )
+    if use_adam and args.mechanism not in ("identity", "none"):
+        joint_sens = jme_joint_sensitivity(strategy.sensitivity, zeta)
+        print(f"  JME joint sensitivity: {joint_sens:.6f}")
+        print(f"  Noise stddev (1st moment): {noise_multiplier * joint_sens:.6f}")
+    else:
+        print(
+            f"  Noise stddev: {noise_stddev:.6f} (= {noise_multiplier:.4f} × {zeta:.6f})"
+        )
     if identity_sigma is not None:
         ratio = noise_multiplier / identity_sigma
         print(f"  Identity baseline σ: {identity_sigma:.4f} (ratio: {ratio:.2f}×)")
@@ -1027,12 +1113,19 @@ def main():
                         state=clip_state,
                     )
 
-                noisy_grads, noise_state = noise_fn(grads, noise_state)
-                updates, opt_state = optimizer.update(
-                    noisy_grads,
-                    opt_state,
-                    params=trainable_params,
-                )
+                if use_adam:
+                    (noisy_grads, noisy_sq), noise_state = noise_fn(grads, noise_state)
+                    updates, opt_state = optimizer.update(
+                        noisy_grads, opt_state,
+                        noisy_squared_grads=noisy_sq,
+                    )
+                else:
+                    noisy_grads, noise_state = noise_fn(grads, noise_state)
+                    updates, opt_state = optimizer.update(
+                        noisy_grads,
+                        opt_state,
+                        params=trainable_params,
+                    )
                 trainable_params = torchopt.apply_updates(trainable_params, updates)
 
             profiler = profiler.add_step(step_timer)
@@ -1101,7 +1194,10 @@ def main():
     print(f"Model: {args.model_name}")
     print(f"Dataset: {args.dataset} ({global_train_size} train samples)")
     print(f"\nMechanism: {args.mechanism}")
-    print(f"Optimizer: SGD + Polyak momentum (β={args.momentum})")
+    if use_adam:
+        print(f"Optimizer: Adam via JME (β₁={args.beta1}, β₂={args.beta2})")
+    else:
+        print(f"Optimizer: SGD + Polyak momentum (β={args.momentum})")
     print("\nTraining results:")
     print(f"  Total steps: {global_step}")
     if losses:

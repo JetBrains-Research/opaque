@@ -49,6 +49,11 @@ class BltStrategy:
     coefficients: tuple[float, ...]
     gram_matrix: tuple[float, ...] | None = None
     _streaming_matrix: StreamingMatrix | None = None
+    _max_column_norm: float = 0.0
+    _n_steps: int = 0
+    _min_sep: int = 1
+    _max_participations: int | None = 1
+    _max_buffers: int = 10
 
 
 def blt_strategy(
@@ -90,14 +95,17 @@ def blt_strategy(
     )
 
     # Sensitivity
+    # max_column_norm = ‖C‖_{1→2} (single-participation, always needed for JME)
+    max_col_norm_sq = _blt_sensitivity_squared(blt, n=n_steps)
+    max_column_norm = float(max_col_norm_sq.sqrt())
+
     k = minsep_true_max_participations(
         n=n_steps,
         min_sep=min_sep,
         max_participations=max_participations,
     )
     if k == 1:
-        sens_sq = _blt_sensitivity_squared(blt, n=n_steps)
-        sensitivity = float(sens_sq.sqrt())
+        sensitivity = max_column_norm
     else:
         coefs_tensor = _blt_toeplitz_coefs(blt, n_steps)
         sens_sq = _toeplitz_minsep_sensitivity_squared(
@@ -130,4 +138,9 @@ def blt_strategy(
         coefficients=coefficients,
         gram_matrix=gram_matrix,
         _streaming_matrix=streaming,
+        _max_column_norm=max_column_norm,
+        _n_steps=n_steps,
+        _min_sep=min_sep,
+        _max_participations=max_participations,
+        _max_buffers=max_buffers,
     )

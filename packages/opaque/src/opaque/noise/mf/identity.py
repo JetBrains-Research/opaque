@@ -17,6 +17,7 @@ class IdentityStrategy:
     """
 
     sensitivity: float = 1.0
+    _max_column_norm: float = 1.0
 
 
 def identity_strategy() -> IdentityStrategy:

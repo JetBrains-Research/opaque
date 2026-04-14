@@ -24,6 +24,10 @@ from opaque_accounting.discretization import (
     get_discretization,
 )
 from opaque_accounting.mechanisms.band_mf import BandMf
+from opaque_accounting.transformations.jme import Jme
+
+#: Mechanism types accepted by :func:`cyclic_poisson`.
+_Inner = BandMf | Jme
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +38,7 @@ class CyclicPoisson(DpProcess):
     groups, each analyzed as a Poisson-subsampled Gaussian.
     """
 
-    inner: BandMf
+    inner: _Inner
     sample_rate: float
 
     @functools.lru_cache(maxsize=8)
@@ -53,16 +57,27 @@ class CyclicPoisson(DpProcess):
             max_grid_size=max_grid_size,
         )
 
-        effective_nm = self.inner.noise_multiplier / self.inner.sensitivity
+        match self.inner:
+            case Jme(inner=BandMf()) as j:
+                effective_nm = j.noise_multiplier / j.sensitivity
+                num_groups = j.num_groups
+            case BandMf():
+                effective_nm = self.inner.noise_multiplier / self.inner.sensitivity
+                num_groups = self.inner.num_groups
+            case _:
+                raise TypeError(
+                    f"CyclicPoisson requires BandMf or Jme(BandMf) inner, "
+                    f"got {type(self.inner).__name__}."
+                )
 
         per_group_pld = _native.poisson_gaussian_pld(
             effective_nm, self.sample_rate, config.to_native()
         )
-        return per_group_pld.self_compose(self.inner.num_groups)
+        return per_group_pld.self_compose(num_groups)
 
 
 def cyclic_poisson(
-    inner: BandMf,
+    inner: _Inner,
     sample_rate: float,
 ) -> CyclicPoisson:
     """Cyclic Poisson amplification for BandMF.
@@ -89,9 +104,9 @@ def cyclic_poisson(
         )
         eps = proc.epsilon_at(1e-5)
     """
-    if not isinstance(inner, BandMf):
+    if not isinstance(inner, (BandMf, Jme)):
         raise TypeError(
-            f"cyclic_poisson() requires a BandMf inner mechanism, got "
+            f"cyclic_poisson() requires a BandMf or Jme(BandMf) inner mechanism, got "
             f"{type(inner).__name__}. "
             "Use: acc.cyclic_poisson(acc.band_mf(nm, sensitivity, num_groups), sample_rate)"
         )

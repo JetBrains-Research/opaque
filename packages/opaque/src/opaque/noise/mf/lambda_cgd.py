@@ -69,6 +69,9 @@ class LambdaCgdStrategy:
     _lambda: float = 0.0
     _n_steps: int = 0
     _normalized: bool = True
+    _max_column_norm: float = 0.0
+    _min_sep: int = 1
+    _max_participations: int | None = 1
 
 
 def lambda_cgd_strategy(
@@ -132,6 +135,11 @@ def lambda_cgd_strategy(
     )
     gram_matrix = tuple(gram)
 
+    if normalized:
+        max_column_norm = 1.0  # all columns have unit norm after normalization
+    else:
+        max_column_norm = float(_native.lambda_cgd_max_column_norm(lambda_, n_steps))
+
     return LambdaCgdStrategy(
         sensitivity=sensitivity,
         coefficients=coefficients,
@@ -139,6 +147,9 @@ def lambda_cgd_strategy(
         _lambda=lambda_,
         _n_steps=n_steps,
         _normalized=normalized,
+        _max_column_norm=max_column_norm,
+        _min_sep=min_sep,
+        _max_participations=max_participations,
     )
 
 
