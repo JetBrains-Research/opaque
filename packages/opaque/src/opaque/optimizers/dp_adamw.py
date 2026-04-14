@@ -31,6 +31,7 @@ Both variants follow TorchOpt's ``GradientTransformation`` protocol::
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Callable
 from typing import Any
 
 import torch
@@ -196,7 +197,7 @@ def _scale_by_adam_bc(
 
 
 def dp_adamw(
-    lr: float = 1e-3,
+    lr: float | Callable[[int], float] = 1e-3,
     betas: tuple[float, float] = (0.9, 0.999),
     eps: float = 1e-8,
     weight_decay: float = 0.01,
@@ -236,7 +237,8 @@ def dp_adamw(
     :func:`opaque.clipped_grad` and :func:`opaque.gaussian_noise`.
 
     Args:
-        lr: Learning rate eta.
+        lr: Learning rate eta — a float or a callable ``step -> float``
+            for LR schedules.
         betas: Coefficients (beta_1, beta_2) for moment estimation.
         eps: Denominator stability constant epsilon.
         weight_decay: Decoupled weight decay coefficient lambda.
@@ -300,15 +302,18 @@ def dp_adamw(
     elif noise_variance < 0:
         raise ValueError(f"noise_variance must be non-negative, got {noise_variance}")
 
-    # Compose: moment scaling (custom) + weight decay + lr (both from torchopt).
+    # Compose: moment scaling (custom) + weight decay + lr.
     # Manual composition (not torchopt.chain) so that the noise_variance kwarg
     # reaches _scale_by_adam_bc's update_fn.
+    # Uses scale_by_neg_lr (not scale(-lr)) to support callable LR schedules.
+    from torchopt.alias.utils import scale_by_neg_lr
+
     adam_bc = _scale_by_adam_bc(betas[0], betas[1], eps, noise_variance, bc_floor)
     wd = torchopt.transform.add_decayed_weights(weight_decay=weight_decay)
-    lr_scale = torchopt.transform.scale(-lr)
+    neg_lr = scale_by_neg_lr(lr)
 
     def init_fn(params: Any) -> tuple:
-        return (adam_bc.init(params), wd.init(params), lr_scale.init(params))
+        return (adam_bc.init(params), wd.init(params), neg_lr.init(params))
 
     def update_fn(
         updates: Any,
@@ -327,7 +332,7 @@ def dp_adamw(
             noise_variance=noise_variance,
         )
         updates, s_wd = wd.update(updates, s_wd, params=params, inplace=inplace)
-        updates, s_lr = lr_scale.update(updates, s_lr, params=params, inplace=inplace)
+        updates, s_lr = neg_lr.update(updates, s_lr, inplace=inplace)
         return updates, (s_adam, s_wd, s_lr)
 
     return GradientTransformation(init_fn, update_fn)
