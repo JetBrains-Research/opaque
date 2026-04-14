@@ -1,19 +1,17 @@
-"""DP-Adam optimizer for use with JME noise.
+"""JME-Adam optimizer — Adam with JME dual-stream noise.
+
+Paired with :func:`~opaque.noise.mf.mf_noise_jme`, this optimizer
+consumes noisy gradients (first moment) and noisy squared gradients
+(second moment) produced by the JME mechanism (arXiv:2502.06597).
 
 Returns a ``(init, update)`` pair matching the ``torchopt``
-:class:`~torchopt.base.GradientTransformation` protocol, so it
-plugs directly into training loops that already use ``torchopt.sgd``.
-
-The key difference from standard Adam: the caller provides **noisy
-squared gradients** (from JME's second noise stream) alongside the
-noisy gradients.  These are passed via the ``noisy_squared_grads``
-keyword argument to ``update``.
+:class:`~torchopt.base.GradientTransformation` protocol.
 
 Usage::
 
-    from opaque.optimizers import dp_adam
+    from opaque.optimizers import jme_adam
 
-    optimizer = dp_adam(lr=1e-3, beta1=0.9, beta2=0.999, eps=1e-8)
+    optimizer = jme_adam(lr=1e-3, beta1=0.9, beta2=0.999, eps=1e-8)
     opt_state = optimizer.init(params)
 
     # In training loop:
@@ -37,8 +35,8 @@ from opaque.utils.pytree import tree_map
 
 
 @dataclasses.dataclass(frozen=True)
-class DPAdamState:
-    """Optimizer state for :func:`dp_adam`.
+class JmeAdamState:
+    """Optimizer state for :func:`jme_adam`.
 
     Attributes:
         m: First-moment EMA (same pytree shape as params).
@@ -51,20 +49,20 @@ class DPAdamState:
     step: int
 
 
-class DPAdamTransformation(NamedTuple):
-    """``torchopt``-compatible ``(init, update)`` pair for DP-Adam."""
+class JmeAdamTransformation(NamedTuple):
+    """``torchopt``-compatible ``(init, update)`` pair for JME-Adam."""
 
-    init: Callable[[Any], DPAdamState]
-    update: Callable[..., tuple[Any, DPAdamState]]
+    init: Callable[[Any], JmeAdamState]
+    update: Callable[..., tuple[Any, JmeAdamState]]
 
 
-def dp_adam(
+def jme_adam(
     lr: float | Callable[[int], float] = 1e-3,
     beta1: float = 0.9,
     beta2: float = 0.999,
     eps: float = 1e-8,
-) -> DPAdamTransformation:
-    """Create a DP-Adam optimizer.
+) -> JmeAdamTransformation:
+    """Create a JME-Adam optimizer (Adam with JME dual-stream noise).
 
     Returns an ``(init, update)`` named tuple matching the ``torchopt``
     :class:`~torchopt.base.GradientTransformation` protocol.
@@ -82,11 +80,15 @@ def dp_adam(
         eps: Denominator epsilon (default 1e-8).
 
     Returns:
-        A ``DPAdamTransformation(init, update)`` named tuple.
+        A :class:`JmeAdamTransformation` ``(init, update)`` named tuple.
+
+    References:
+        - Kalinin, Upadhyay, Lampert (2025) "Continual Release Moment
+          Estimation with Differential Privacy" https://arxiv.org/abs/2502.06597
 
     Example::
 
-        optimizer = dp_adam(lr=1e-3)
+        optimizer = jme_adam(lr=1e-3)
         opt_state = optimizer.init(params)
 
         noisy_grads, noise_state = noise_fn(grads, noise_state)
@@ -100,8 +102,8 @@ def dp_adam(
     def _lr(step: int) -> float:
         return lr(step) if callable(lr) else lr
 
-    def init(params: Any) -> DPAdamState:
-        return DPAdamState(
+    def init(params: Any) -> JmeAdamState:
+        return JmeAdamState(
             m=tree_map(torch.zeros_like, params),
             v=tree_map(torch.zeros_like, params),
             step=0,
@@ -109,13 +111,13 @@ def dp_adam(
 
     def update(
         updates: Any,
-        state: DPAdamState,
+        state: JmeAdamState,
         *,
         noisy_squared_grads: Any,
         params: Any | None = None,  # unused, kept for torchopt compat
         inplace: bool = False,  # unused, kept for torchopt compat
-    ) -> tuple[Any, DPAdamState]:
-        """Compute Adam parameter updates.
+    ) -> tuple[Any, JmeAdamState]:
+        """Compute Adam parameter updates from JME noise streams.
 
         Args:
             updates: Noisy gradients (first moment input).
@@ -149,7 +151,7 @@ def dp_adam(
             new_m, new_v,
         )
 
-        new_state = DPAdamState(m=new_m, v=new_v, step=new_step)
+        new_state = JmeAdamState(m=new_m, v=new_v, step=new_step)
         return param_updates, new_state
 
-    return DPAdamTransformation(init=init, update=update)
+    return JmeAdamTransformation(init=init, update=update)
