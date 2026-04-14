@@ -111,7 +111,9 @@ def _scale_by_jme_adamw(
 
         new_mu = tree_map(lambda m, g: b1 * m + (1 - b1) * g, state.mu, updates)
         new_nu = tree_map(
-            lambda v, g2: b2 * v + (1 - b2) * g2, state.nu, noisy_squared_grads,
+            lambda v, g2: b2 * v + (1 - b2) * g2,
+            state.nu,
+            noisy_squared_grads,
         )
 
         bc1 = 1 - b1**t
@@ -119,7 +121,8 @@ def _scale_by_jme_adamw(
 
         result = tree_map(
             lambda m, v: (m / bc1) / ((v / bc2).sqrt() + eps),
-            new_mu, new_nu,
+            new_mu,
+            new_nu,
         )
 
         new_state = JmeAdamWState(mu=new_mu, nu=new_nu, step=t)
@@ -203,8 +206,10 @@ def jme_adamw(
         s_adam, s_wd, s_lr = state
 
         updates, s_adam = adam_scale.update(
-            updates, s_adam,
-            params=params, inplace=inplace,
+            updates,
+            s_adam,
+            params=params,
+            inplace=inplace,
             noisy_squared_grads=noisy_squared_grads,
         )
         updates, s_wd = wd.update(updates, s_wd, params=params, inplace=inplace)

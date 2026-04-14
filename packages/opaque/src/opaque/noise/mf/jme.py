@@ -213,15 +213,9 @@ def _derive_second_strategy(
             )
         case BisrStrategy():
             return bisr_strategy(
-                bandwidth=strategy._bandwidth
-                if hasattr(strategy, "_bandwidth")
-                else 4,
-                n_steps=strategy._n_steps
-                if hasattr(strategy, "_n_steps")
-                else 1,
-                min_sep=strategy._min_sep
-                if hasattr(strategy, "_min_sep")
-                else 1,
+                bandwidth=strategy._bandwidth if hasattr(strategy, "_bandwidth") else 4,
+                n_steps=strategy._n_steps if hasattr(strategy, "_n_steps") else 1,
+                min_sep=strategy._min_sep if hasattr(strategy, "_min_sep") else 1,
                 max_participations=strategy._max_participations
                 if hasattr(strategy, "_max_participations")
                 else 1,
@@ -305,10 +299,18 @@ def jme_noise(
     key_v = rng_fold_in(key, 1)
 
     first_fn, first_state = mf_noise(
-        grad_template, strategy, stddev=stddev, key=key_m, dtype=dtype,
+        grad_template,
+        strategy,
+        stddev=stddev,
+        key=key_m,
+        dtype=dtype,
     )
     second_fn, second_state = mf_noise(
-        grad_template, strat_v, stddev=stddev_v, key=key_v, dtype=dtype,
+        grad_template,
+        strat_v,
+        stddev=stddev_v,
+        key=key_v,
+        dtype=dtype,
     )
 
     init_state = JmeNoiseState(

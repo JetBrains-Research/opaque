@@ -140,7 +140,10 @@ def bisr_strategy(
         max_column_norm = 1.0  # all columns have unit norm after normalization
     else:
         mcn_sq = _native.bisr_sensitivity_squared(
-            inv_coefs, n_steps, n_steps, 1,
+            inv_coefs,
+            n_steps,
+            n_steps,
+            1,
         )
         max_column_norm = float(mcn_sq**0.5)
 

@@ -22,6 +22,7 @@ def sq_grads(grads):
 def _requires_torchopt():
     try:
         import torchopt  # noqa: F401
+
         return False
     except ImportError:
         return True
@@ -37,11 +38,13 @@ class TestJmeAdamW:
     def test_is_gradient_transformation(self):
         from opaque.optimizers import jme_adamw
         from torchopt.base import GradientTransformation
+
         opt = jme_adamw(lr=1e-3)
         assert isinstance(opt, GradientTransformation)
 
     def test_init_state(self, params):
         from opaque.optimizers import jme_adamw, JmeAdamWState
+
         opt = jme_adamw(lr=1e-3)
         state = opt.init(params)
         assert isinstance(state, tuple)
@@ -53,16 +56,20 @@ class TestJmeAdamW:
 
     def test_update_produces_correct_shapes(self, params, grads, sq_grads):
         from opaque.optimizers import jme_adamw
+
         opt = jme_adamw(lr=1e-3)
         state = opt.init(params)
         updates, new_state = opt.update(
-            grads, state, noisy_squared_grads=sq_grads,
+            grads,
+            state,
+            noisy_squared_grads=sq_grads,
         )
         assert updates["w"].shape == (4, 3)
         assert updates["b"].shape == (4,)
 
     def test_step_increments(self, params, grads, sq_grads):
         from opaque.optimizers import jme_adamw
+
         opt = jme_adamw(lr=1e-3)
         state = opt.init(params)
         _, state = opt.update(grads, state, noisy_squared_grads=sq_grads)
@@ -73,6 +80,7 @@ class TestJmeAdamW:
     def test_updates_descend(self, params, grads, sq_grads):
         """Updates should point opposite to gradient direction."""
         from opaque.optimizers import jme_adamw
+
         opt = jme_adamw(lr=0.1)
         state = opt.init(params)
         updates, _ = opt.update(grads, state, noisy_squared_grads=sq_grads)
@@ -82,6 +90,7 @@ class TestJmeAdamW:
 
     def test_callable_lr(self, params, grads, sq_grads):
         from opaque.optimizers import jme_adamw
+
         opt = jme_adamw(lr=lambda step: 1e-3 * (0.1 if step > 5 else 1.0))
         state = opt.init(params)
         updates, _ = opt.update(grads, state, noisy_squared_grads=sq_grads)
@@ -90,6 +99,7 @@ class TestJmeAdamW:
     def test_weight_decay(self, params, grads, sq_grads):
         """Weight decay should affect updates when params are provided."""
         from opaque.optimizers import jme_adamw
+
         opt_no_wd = jme_adamw(lr=1e-3, weight_decay=0.0)
         opt_wd = jme_adamw(lr=1e-3, weight_decay=0.1)
 
@@ -98,12 +108,16 @@ class TestJmeAdamW:
 
         u1, _ = opt_no_wd.update(grads, s1, noisy_squared_grads=sq_grads)
         u2, _ = opt_wd.update(
-            grads, s2, params=params, noisy_squared_grads=sq_grads,
+            grads,
+            s2,
+            params=params,
+            noisy_squared_grads=sq_grads,
         )
         assert not torch.allclose(u1["w"], u2["w"])
 
     def test_missing_noisy_squared_grads_raises(self, params, grads):
         from opaque.optimizers import jme_adamw
+
         opt = jme_adamw(lr=1e-3)
         state = opt.init(params)
         with pytest.raises(ValueError, match="noisy_squared_grads"):
@@ -113,11 +127,14 @@ class TestJmeAdamW:
         """Full cycle: init → update → apply."""
         import torchopt
         from opaque.optimizers import jme_adamw
+
         opt = jme_adamw(lr=1e-3)
         old_w = params["w"].clone()
         state = opt.init(params)
         updates, state = opt.update(
-            grads, state, noisy_squared_grads=sq_grads,
+            grads,
+            state,
+            noisy_squared_grads=sq_grads,
         )
         new_params = torchopt.apply_updates(params, updates)
         assert new_params["w"].shape == old_w.shape

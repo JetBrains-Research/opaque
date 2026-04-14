@@ -94,8 +94,11 @@ class TestJmeNoise:
     def test_returns_correct_types(self, grad_template):
         strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
         noise_fn, state = jme_noise(
-            grad_template, strategy,
-            noise_multiplier=1.0, key=key(42), zeta=0.1,
+            grad_template,
+            strategy,
+            noise_multiplier=1.0,
+            key=key(42),
+            zeta=0.1,
         )
         assert isinstance(state, JmeNoiseState)
 
@@ -107,8 +110,11 @@ class TestJmeNoise:
     def test_output_shapes_match_input(self, grad_template):
         strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
         noise_fn, state = jme_noise(
-            grad_template, strategy,
-            noise_multiplier=1.0, key=key(42), zeta=0.1,
+            grad_template,
+            strategy,
+            noise_multiplier=1.0,
+            key=key(42),
+            zeta=0.1,
         )
         grads = {"w": torch.randn(4, 3), "b": torch.randn(4)}
         (noisy_g, noisy_sq), state = noise_fn(grads, state)
@@ -120,8 +126,11 @@ class TestJmeNoise:
     def test_tuple_unpacking(self, grad_template):
         strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
         noise_fn, state = jme_noise(
-            grad_template, strategy,
-            noise_multiplier=1.0, key=key(42), zeta=0.1,
+            grad_template,
+            strategy,
+            noise_multiplier=1.0,
+            key=key(42),
+            zeta=0.1,
         )
         grads = {"w": torch.randn(4, 3), "b": torch.randn(4)}
         (noisy_g, noisy_sq), new_state = noise_fn(grads, state)
@@ -131,8 +140,11 @@ class TestJmeNoise:
     def test_step_counter_increments(self, grad_template):
         strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
         noise_fn, state = jme_noise(
-            grad_template, strategy,
-            noise_multiplier=1.0, key=key(42), zeta=0.1,
+            grad_template,
+            strategy,
+            noise_multiplier=1.0,
+            key=key(42),
+            zeta=0.1,
         )
         assert state._step_counter == 0
         grads = {"w": torch.randn(4, 3), "b": torch.randn(4)}
@@ -146,14 +158,20 @@ class TestJmeNoise:
         grads = {"w": torch.randn(4, 3), "b": torch.randn(4)}
 
         noise_fn1, state1 = jme_noise(
-            grad_template, strategy,
-            noise_multiplier=1.0, key=key(42), zeta=0.1,
+            grad_template,
+            strategy,
+            noise_multiplier=1.0,
+            key=key(42),
+            zeta=0.1,
         )
         (g1, sq1), _ = noise_fn1(grads, state1)
 
         noise_fn2, state2 = jme_noise(
-            grad_template, strategy,
-            noise_multiplier=1.0, key=key(42), zeta=0.1,
+            grad_template,
+            strategy,
+            noise_multiplier=1.0,
+            key=key(42),
+            zeta=0.1,
         )
         (g2, sq2), _ = noise_fn2(grads, state2)
 
@@ -165,20 +183,28 @@ class TestJmeNoise:
         grads = {"w": torch.randn(4, 3), "b": torch.randn(4)}
 
         noise_fn1, s1 = jme_noise(
-            grad_template, strategy,
-            noise_multiplier=1.0, key=key(42), zeta=0.1,
+            grad_template,
+            strategy,
+            noise_multiplier=1.0,
+            key=key(42),
+            zeta=0.1,
         )
         (g1, _), _ = noise_fn1(grads, s1)
 
         noise_fn2, s2 = jme_noise(
-            grad_template, strategy,
-            noise_multiplier=1.0, key=key(99), zeta=0.1,
+            grad_template,
+            strategy,
+            noise_multiplier=1.0,
+            key=key(99),
+            zeta=0.1,
         )
         (g2, _), _ = noise_fn2(grads, s2)
 
         assert not torch.allclose(g1["w"], g2["w"])
 
-    @pytest.mark.parametrize("mechanism", ["band_mf", "blt", "lambda_cgd", "bisr", "identity"])
+    @pytest.mark.parametrize(
+        "mechanism", ["band_mf", "blt", "lambda_cgd", "bisr", "identity"]
+    )
     def test_works_with_all_mechanisms(self, grad_template, mechanism):
         if mechanism == "band_mf":
             strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
@@ -192,8 +218,11 @@ class TestJmeNoise:
             strategy = identity_strategy()
 
         noise_fn, state = jme_noise(
-            grad_template, strategy,
-            noise_multiplier=1.0, key=key(42), zeta=0.1,
+            grad_template,
+            strategy,
+            noise_multiplier=1.0,
+            key=key(42),
+            zeta=0.1,
         )
         grads = {"w": torch.randn(4, 3), "b": torch.randn(4)}
         (noisy_g, noisy_sq), new_state = noise_fn(grads, state)
@@ -204,8 +233,11 @@ class TestJmeNoise:
         """The noisy squared grads should differ from raw g²."""
         strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
         noise_fn, state = jme_noise(
-            grad_template, strategy,
-            noise_multiplier=1.0, key=key(42), zeta=0.1,
+            grad_template,
+            strategy,
+            noise_multiplier=1.0,
+            key=key(42),
+            zeta=0.1,
         )
         grads = {"w": torch.ones(4, 3), "b": torch.ones(4)}
         (_, noisy_sq), _ = noise_fn(grads, state)
