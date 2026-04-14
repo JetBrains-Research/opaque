@@ -104,7 +104,7 @@ from opaque_accounting.mechanisms import (
 )
 
 # Transformations
-from opaque_accounting.transformations import adaclip, jme
+from opaque_accounting.transformations import adaclip, jme_adam
 
 __all__ = [
     # Submodules
@@ -137,7 +137,7 @@ __all__ = [
     "cyclic_poisson",
     # Transformations
     "adaclip",
-    "jme",
+    "jme_adam",
     # Composition
     "repeat",
     "compose",

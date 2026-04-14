@@ -857,40 +857,45 @@ def main():
 
     strategy = _make_strategy(lr_sched=lr_schedule)
 
-    def _maybe_jme(mech):
-        """Wrap with acc.jme() when using Adam (JME joint sensitivity)."""
-        return acc.jme(mech, zeta=clip_state.sensitivity) if use_adam else mech
-
     if args.mechanism == "band_mf" and strategy is not None:
         def acct_mechanism(nm):
-            return acc.cyclic_poisson(
-                _maybe_jme(acc.band_mf(
-                    nm, sensitivity=strategy.sensitivity, num_groups=strategy.num_groups
-                )),
-                sample_rate=sampling_prob,
+            mechanism = acc.band_mf(
+                nm, sensitivity=strategy.sensitivity, num_groups=strategy.num_groups
             )
+            if use_adam:
+                mechanism = acc.jme_adam(mechanism, zeta=clip_state.sensitivity)
+            return acc.cyclic_poisson(mechanism, sample_rate=sampling_prob)
     elif args.mechanism == "blt" and strategy is not None:
         def acct_mechanism(nm):
-            return acc.blt(nm, sensitivity=strategy.sensitivity)
+            mechanism = acc.blt(nm, sensitivity=strategy.sensitivity)
+            if use_adam:
+                mechanism = acc.jme_adam(mechanism, zeta=clip_state.sensitivity)
+            return mechanism
     elif args.mechanism == "lambda_cgd" and strategy is not None:
         def acct_mechanism(nm):
+            mechanism = acc.lambda_cgd(
+                nm,
+                sensitivity=strategy.sensitivity,
+                gram_matrix=strategy.gram_matrix,
+            )
+            if use_adam:
+                mechanism = acc.jme_adam(mechanism, zeta=clip_state.sensitivity)
             return acc.balls_in_bins(
-                _maybe_jme(acc.lambda_cgd(
-                    nm,
-                    sensitivity=strategy.sensitivity,
-                    gram_matrix=strategy.gram_matrix,
-                )),
+                mechanism,
                 num_bins=expected_steps_per_epoch,
                 num_epochs=args.num_epochs,
             )
     elif args.mechanism == "bisr" and strategy is not None:
         def acct_mechanism(nm):
+            mechanism = acc.bisr(
+                nm,
+                sensitivity=strategy.sensitivity,
+                gram_matrix=strategy.gram_matrix,
+            )
+            if use_adam:
+                mechanism = acc.jme_adam(mechanism, zeta=clip_state.sensitivity)
             return acc.balls_in_bins(
-                _maybe_jme(acc.bisr(
-                    nm,
-                    sensitivity=strategy.sensitivity,
-                    gram_matrix=strategy.gram_matrix,
-                )),
+                mechanism,
                 num_bins=expected_steps_per_epoch,
                 num_epochs=args.num_epochs,
             )

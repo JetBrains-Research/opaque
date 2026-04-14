@@ -11,7 +11,7 @@ Usage::
     acc.cyclic_poisson(acc.band_mf(nm, sensitivity=S, num_groups=k), sample_rate=q)
 
     # Adam (with JME):
-    acc.cyclic_poisson(acc.jme(acc.band_mf(nm, sensitivity=S, num_groups=k), zeta=ζ), sample_rate=q)
+    acc.cyclic_poisson(acc.jme_adam(acc.band_mf(nm, sensitivity=S, num_groups=k), zeta=ζ), sample_rate=q)
 
 References:
     - Kalinin, Upadhyay, Lampert (2025) "Continual Release Moment
@@ -86,8 +86,8 @@ class Jme(DpProcess):
         )
 
 
-def jme(inner: MfGaussian, *, zeta: float) -> Jme:
-    """Account for JME joint moment estimation (DP-Adam).
+def jme_adam(inner: MfGaussian, *, zeta: float) -> Jme:
+    """Account for DP-Adam via JME joint moment estimation.
 
     Wraps an MF mechanism to reflect the privacy cost of estimating both
     first and second moments.  The joint sensitivity (Theorem 3.2 of
@@ -106,14 +106,14 @@ def jme(inner: MfGaussian, *, zeta: float) -> Jme:
 
         def acct(nm):
             return acc.cyclic_poisson(
-                acc.jme(acc.band_mf(nm, sensitivity=S, num_groups=k), zeta=zeta),
+                acc.jme_adam(acc.band_mf(nm, sensitivity=S, num_groups=k), zeta=zeta),
                 sample_rate=q,
             )
         result = cal.calibrate(budget, acct, param_min=0.1, param_max=20.0)
     """
     if not isinstance(inner, MfGaussian):
         raise TypeError(
-            f"jme() requires an MfGaussian mechanism (band_mf, blt, lambda_cgd, bisr), "
+            f"jme_adam() requires an MfGaussian mechanism (band_mf, blt, lambda_cgd, bisr), "
             f"got {type(inner).__name__}."
         )
     if zeta <= 0:
