@@ -1,9 +1,11 @@
 """JME transformation — accounts for joint first+second moment estimation.
 
 When using JME (arXiv:2502.06597) to enable DP-Adam, the noise must
-cover both moment streams.  The joint sensitivity is ``2ζ · S`` where
-``S = ‖C₁‖_{1→2}`` is the strategy's max column norm and ``ζ`` is the
-per-sample clipping bound.
+cover both moment streams.  Under add/remove DP (Opaque's model), the
+joint sensitivity is ``ζ · ‖C₁‖_{1→2} · √(1 + 1/c_d)`` where
+``‖C₁‖_{1→2}`` is the strategy's max column norm and ``ζ`` is the
+per-sample clipping bound.  For d ≥ 2 this is ``ζ · S · √(3/2)``
+— the second moment costs ~22% more noise than first-moment-only.
 
 Usage::
 
@@ -34,8 +36,10 @@ class Jme(DpProcess):
     """JME transformation — joint first+second moment estimation.
 
     Wraps an ``MfGaussian`` mechanism and adjusts the sensitivity to
-    account for privately estimating both moments.  The effective
-    sensitivity becomes ``2 × zeta × max_column_norm`` (Theorem 3.2).
+    account for privately estimating both moments under add/remove DP.
+    The effective sensitivity becomes
+    ``zeta × max_column_norm × √(1 + 1/c_d)`` (Theorem 3.2 adapted
+    to add/remove adjacency).
 
     Amplification modules (``cyclic_poisson``, ``balls_in_bins``)
     pattern-match on ``Jme`` and unwrap the inner mechanism with the
@@ -59,8 +63,16 @@ class Jme(DpProcess):
 
     @property
     def sensitivity(self) -> float:
-        """Joint sensitivity: ``2 × zeta × ‖C₁‖_{1→2}`` (Theorem 3.2)."""
-        return 2.0 * self.zeta * self._c1_norm
+        """Joint sensitivity under add/remove DP.
+
+        ``s = ζ · ‖C₁‖_{1→2} · √(1 + 1/c_d)``
+
+        For d ≥ 2: ``s = ζ · ‖C₁‖ · √(3/2)``.
+        """
+        import math
+
+        cd = 2.0  # c_d for d ≥ 2 (neural networks)
+        return self.zeta * self._c1_norm * math.sqrt(1.0 + 1.0 / cd)
 
     @property
     def gram_matrix(self) -> tuple[float, ...] | None:

@@ -607,24 +607,26 @@ pub fn py_jme_lambda(
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
 
-/// Compute the joint sensitivity for JME.
+/// Compute the joint sensitivity for JME under add/remove DP.
 ///
-/// With optimal λ, the joint sensitivity for estimating both first and
-/// second moments is s = 2ζ · ‖C₁‖_{1→2} (Theorem 3.2 of arXiv:2502.06597).
+/// ``s = ζ · ‖C₁‖_{1→2} · √(1 + 1/c_d)``
+///
+/// For d ≥ 2: ``s = ζ · ‖C₁‖ · √(3/2)`` (≈ 1.22× first-moment-only).
 ///
 /// Args:
 ///     c1_max_col_norm (float): ‖C₁‖_{1→2}, max column norm of first moment strategy.
 ///     zeta (float): Clipping bound per sample.
+///     d (int): Parameter dimension (≥ 2 for neural networks).
 ///
 /// Returns:
-///     float: The joint sensitivity 2ζ · ‖C₁‖_{1→2}.
+///     float: The joint sensitivity under add/remove DP.
 ///
 /// Raises:
-///     ValueError: If inputs are non-positive.
+///     ValueError: If inputs are non-positive or d is 0.
 #[pyfunction]
-#[pyo3(name = "jme_joint_sensitivity", signature = (c1_max_col_norm, zeta))]
-pub fn py_jme_joint_sensitivity(c1_max_col_norm: f64, zeta: f64) -> PyResult<f64> {
-    crate::matrix_factorization::jme_joint_sensitivity(c1_max_col_norm, zeta)
+#[pyo3(name = "jme_joint_sensitivity", signature = (c1_max_col_norm, zeta, d=2))]
+pub fn py_jme_joint_sensitivity(c1_max_col_norm: f64, zeta: f64, d: usize) -> PyResult<f64> {
+    crate::matrix_factorization::jme_joint_sensitivity(c1_max_col_norm, zeta, d)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
 

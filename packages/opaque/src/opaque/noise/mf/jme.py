@@ -81,9 +81,12 @@ def jme_lambda(
     zeta: float,
     d: int = 2,
 ) -> float:
-    """Optimal JME scaling parameter λ (Algorithm 1).
+    """JME scaling parameter λ (Algorithm 1, arXiv:2502.06597).
 
     ``λ = ‖C₁‖²_{1→2} / (c_d · ζ² · ‖C₂‖²_{1→2})``
+
+    Controls the noise allocation between first and second moment
+    streams.  Smaller λ → more noise on the second moment stream.
     """
     if c1_sensitivity <= 0:
         raise ValueError(f"c1_sensitivity must be positive, got {c1_sensitivity}")
@@ -95,13 +98,32 @@ def jme_lambda(
     return (c1_sensitivity**2) / (cd * zeta**2 * c2_sensitivity**2)
 
 
-def jme_joint_sensitivity(c1_sensitivity: float, zeta: float) -> float:
-    """Joint sensitivity for both moments: ``s = 2ζ · ‖C₁‖_{1→2}`` (Theorem 3.2)."""
+def jme_joint_sensitivity(
+    c1_sensitivity: float,
+    zeta: float,
+    d: int = 2,
+) -> float:
+    """Joint sensitivity for both moments under add/remove DP.
+
+    Derived from Theorem 3.2 of arXiv:2502.06597 adapted to
+    add/remove adjacency (Opaque's DP model)::
+
+        s = ζ · ‖C₁‖_{1→2} · √(1 + 1/c_d)
+
+    For d ≥ 2: ``s = ζ · ‖C₁‖ · √(3/2)`` (≈ 1.22× the first-moment-only
+    sensitivity — the second moment costs ~22% more noise).
+
+    The paper's original formula ``s = 2ζ · ‖C₁‖`` assumes substitute-one
+    adjacency, where the second moment is "free".  Under add/remove, the
+    two sensitivity contributions ``‖x‖`` and ``‖x‖²`` are both maximised
+    at ``‖x‖ = ζ`` with no cancellation, yielding the √(1 + 1/c_d) factor.
+    """
     if c1_sensitivity <= 0:
         raise ValueError(f"c1_sensitivity must be positive, got {c1_sensitivity}")
     if zeta <= 0:
         raise ValueError(f"zeta must be positive, got {zeta}")
-    return 2.0 * zeta * c1_sensitivity
+    cd = _c_d(d)
+    return zeta * c1_sensitivity * math.sqrt(1.0 + 1.0 / cd)
 
 
 def jme_second_moment_stddev(

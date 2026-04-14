@@ -10,16 +10,19 @@
 //! with optimal λ, the second moment estimation is "free" — the joint
 //! sensitivity equals the first-moment-only sensitivity.
 //!
-//! # Joint Sensitivity (Theorem 3.2)
+//! # Joint Sensitivity (Theorem 3.2 adapted to add/remove DP)
 //!
-//! For noise-shaping matrices C₁ (first moment) and C₂ (second moment),
-//! clipping bound ζ, and optimal scaling parameter λ:
+//! The paper's original formula assumes substitute-one adjacency:
+//! `s = 2ζ · ‖C₁‖_{1→2}` ("privacy for free").
+//!
+//! Opaque uses add/remove adjacency, where the joint sensitivity is:
 //!
 //! ```text
-//! s_joint = 2ζ · ‖C₁‖_{1→2}
+//! s = ζ · ‖C₁‖_{1→2} · √(1 + 1/c_d)
 //! ```
 //!
-//! where ‖C‖_{1→2} = max_j ‖C[:,j]‖₂ is the maximum column L2 norm.
+//! For d ≥ 2: `s = ζ · ‖C₁‖ · √(3/2)` — the second moment costs
+//! ~22% more noise than first-moment-only (√(3/2) ≈ 1.22).
 //!
 //! # Scaling Parameter λ (Algorithm 1)
 //!
@@ -100,24 +103,35 @@ pub fn jme_lambda(
     Ok(c1_max_col_norm * c1_max_col_norm / denom)
 }
 
-/// Compute the joint sensitivity for JME.
+/// Compute the joint sensitivity for JME under add/remove DP.
 ///
-/// With optimal λ, the joint sensitivity for both first and second
-/// moment estimation is `s = 2ζ · ‖C₁‖_{1→2}` (Theorem 3.2).
+/// Adapted from Theorem 3.2 (arXiv:2502.06597) to add/remove adjacency:
+///
+/// ```text
+/// s = ζ · ‖C₁‖_{1→2} · √(1 + 1/c_d)
+/// ```
+///
+/// For d ≥ 2: `s = ζ · ‖C₁‖ · √(3/2)` (≈ 1.22× first-moment-only).
+///
+/// The paper's original formula `s = 2ζ · ‖C₁‖` assumes substitute-one
+/// adjacency.  Under add/remove, the contributions from `‖x‖` (first
+/// moment) and `‖x‖²` (second moment) are both maximised at `‖x‖ = ζ`
+/// without the cross-term cancellation that substitute-one provides.
 ///
 /// # Arguments
 ///
 /// * `c1_max_col_norm` — ‖C₁‖_{1→2}, max column L2 norm of the first moment strategy.
 /// * `zeta` — Clipping bound per sample.
+/// * `d` — Parameter dimension (≥ 2 for neural networks).
 ///
 /// # Returns
 ///
-/// The joint sensitivity `2ζ · ‖C₁‖_{1→2}`.
+/// The joint sensitivity under add/remove DP.
 ///
 /// # Errors
 ///
-/// Returns `InvalidParameter` if inputs are non-positive.
-pub fn jme_joint_sensitivity(c1_max_col_norm: f64, zeta: f64) -> Result<f64> {
+/// Returns `InvalidParameter` if inputs are non-positive or d is 0.
+pub fn jme_joint_sensitivity(c1_max_col_norm: f64, zeta: f64, d: usize) -> Result<f64> {
     if c1_max_col_norm <= 0.0 {
         return Err(PldError::InvalidParameter(format!(
             "c1_max_col_norm must be positive, got {}",
@@ -131,7 +145,8 @@ pub fn jme_joint_sensitivity(c1_max_col_norm: f64, zeta: f64) -> Result<f64> {
         )));
     }
 
-    Ok(2.0 * zeta * c1_max_col_norm)
+    let cd = c_d_constant(d)?;
+    Ok(zeta * c1_max_col_norm * (1.0 + 1.0 / cd).sqrt())
 }
 
 /// Compute the noise scaling factor for the second moment stream.
@@ -236,19 +251,59 @@ mod tests {
     }
 
     #[test]
-    fn test_jme_joint_sensitivity() {
+    fn test_jme_joint_sensitivity_d2() {
+        // For d≥2: s = ζ · ‖C₁‖ · √(3/2)
         let c1_norm = 1.5;
         let zeta = 0.1;
-        let s = jme_joint_sensitivity(c1_norm, zeta).unwrap();
-        let expected = 2.0 * zeta * c1_norm;
-        assert!((s - expected).abs() < 1e-10);
+        let s = jme_joint_sensitivity(c1_norm, zeta, 2).unwrap();
+        let expected = zeta * c1_norm * (1.5_f64).sqrt();
+        assert!(
+            (s - expected).abs() < 1e-10,
+            "got {}, expected {}",
+            s,
+            expected
+        );
+    }
+
+    #[test]
+    fn test_jme_joint_sensitivity_d1() {
+        // For d=1: s = ζ · ‖C₁‖ · √(1 + 1/c₁)
+        let c1_norm = 2.0;
+        let zeta = 0.5;
+        let c1 = 8.0 / (11.0 + 5.0 * 5.0_f64.sqrt());
+        let s = jme_joint_sensitivity(c1_norm, zeta, 1).unwrap();
+        let expected = zeta * c1_norm * (1.0 + 1.0 / c1).sqrt();
+        assert!(
+            (s - expected).abs() < 1e-10,
+            "got {}, expected {}",
+            s,
+            expected
+        );
+    }
+
+    #[test]
+    fn test_jme_joint_sensitivity_vs_first_only() {
+        // Joint sensitivity should be √(3/2) ≈ 1.22× the first-moment-only
+        let c1_norm = 3.0;
+        let zeta = 0.5;
+        let first_only = zeta * c1_norm; // ζ · ‖C₁‖
+        let joint = jme_joint_sensitivity(c1_norm, zeta, 2).unwrap();
+        let ratio = joint / first_only;
+        let expected_ratio = (1.5_f64).sqrt(); // √(3/2)
+        assert!(
+            (ratio - expected_ratio).abs() < 1e-10,
+            "ratio={}, expected √(3/2)={}",
+            ratio,
+            expected_ratio
+        );
     }
 
     #[test]
     fn test_jme_joint_sensitivity_rejects_invalid() {
-        assert!(jme_joint_sensitivity(0.0, 1.0).is_err());
-        assert!(jme_joint_sensitivity(1.0, 0.0).is_err());
-        assert!(jme_joint_sensitivity(-1.0, 1.0).is_err());
+        assert!(jme_joint_sensitivity(0.0, 1.0, 2).is_err());
+        assert!(jme_joint_sensitivity(1.0, 0.0, 2).is_err());
+        assert!(jme_joint_sensitivity(-1.0, 1.0, 2).is_err());
+        assert!(jme_joint_sensitivity(1.0, 1.0, 0).is_err());
     }
 
     #[test]
@@ -268,29 +323,46 @@ mod tests {
     }
 
     #[test]
-    fn test_privacy_for_free_property() {
-        // The key JME result: with optimal λ, the joint sensitivity
-        // equals 2ζ · ‖C₁‖_{1→2}, which is exactly twice the
-        // single-moment sensitivity (ζ · ‖C₁‖_{1→2}).
+    fn test_add_remove_joint_sensitivity() {
+        // Under add/remove DP, the joint sensitivity is:
+        //   s² = ‖C₁‖²·ζ² + λ·‖C₂‖²·ζ⁴
+        // With λ = ‖C₁‖²/(c_d·ζ²·‖C₂‖²):
+        //   s² = ‖C₁‖²·ζ²·(1 + 1/c_d)
+        //   s  = ζ·‖C₁‖·√(3/2) for d≥2
         //
-        // This means the noise for the first moment is the same as if
-        // we only estimated the first moment with a substitute-one
-        // DP model — the second moment is "free".
+        // This is √(3/2) ≈ 1.22× the first-moment-only sensitivity.
+        // The second moment costs ~22% more noise, not zero.
         let c1_norm = 3.0;
         let c2_norm = 2.0;
         let zeta = 0.5;
         let d = 10;
 
         let lambda = jme_lambda(c1_norm, c2_norm, zeta, d).unwrap();
-        let joint_s = jme_joint_sensitivity(c1_norm, zeta).unwrap();
+        let joint_s = jme_joint_sensitivity(c1_norm, zeta, d).unwrap();
 
-        // Verify: s = 2ζ · ‖C₁‖
-        let expected_s = 2.0 * zeta * c1_norm;
-        assert!((joint_s - expected_s).abs() < 1e-10);
+        // Verify via direct computation
+        let s_sq = c1_norm * c1_norm * zeta * zeta
+            + lambda * c2_norm * c2_norm * zeta * zeta * zeta * zeta;
+        assert!(
+            (joint_s * joint_s - s_sq).abs() / s_sq < 1e-10,
+            "joint_s²={}, direct={}",
+            joint_s * joint_s,
+            s_sq
+        );
 
-        // Verify: the second moment scale factor is λ^{-1/2}
+        // Verify ratio to first-moment-only
+        let first_only = zeta * c1_norm;
+        let ratio = joint_s / first_only;
+        assert!(
+            (ratio - (1.5_f64).sqrt()).abs() < 1e-10,
+            "ratio={}, expected √(3/2)={}",
+            ratio,
+            (1.5_f64).sqrt()
+        );
+
+        // Verify λ^{-1/2} scale factor
         let scale = jme_second_moment_noise_scale(lambda).unwrap();
-        let cd: f64 = 2.0; // d >= 2
+        let cd: f64 = 2.0;
         let expected_scale = zeta * cd.sqrt() * c2_norm / c1_norm;
         assert!(
             (scale - expected_scale).abs() / expected_scale < 1e-10,
