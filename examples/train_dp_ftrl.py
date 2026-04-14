@@ -1102,11 +1102,10 @@ def main():
                     )
 
                 if use_adam:
-                    noise_out, noise_state = noise_fn(grads, noise_state)
+                    (noisy_grads, noisy_sq), noise_state = noise_fn(grads, noise_state)
                     updates, opt_state = optimizer.update(
-                        noise_out.noisy_grads,
-                        opt_state,
-                        noisy_squared_grads=noise_out.noisy_squared_grads,
+                        noisy_grads, opt_state,
+                        noisy_squared_grads=noisy_sq,
                     )
                 else:
                     noisy_grads, noise_state = noise_fn(grads, noise_state)

@@ -20,9 +20,10 @@ Setup::
 
 Training loop::
 
-    output, state = noise_fn(clipped_grads, state)
-    # output.noisy_grads       → feed to jme_adam (first moment)
-    # output.noisy_squared_grads → feed to jme_adam (second moment)
+    (noisy_grads, noisy_sq), state = noise_fn(clipped_grads, state)
+    updates, opt_state = optimizer.update(
+        noisy_grads, opt_state, noisy_squared_grads=noisy_sq,
+    )
 
 References:
     - JME: https://arxiv.org/abs/2502.06597
@@ -259,11 +260,10 @@ def jme_noise(
         dtype: Optional dtype for intermediate noise.
 
     Returns:
-        ``(noise_fn, state)`` where::
+        ``(noise_fn, state)`` where ``noise_fn`` returns a
+        :class:`JmeNoiseOutput` that unpacks as a tuple::
 
-            output, state = noise_fn(clipped_grads, state)
-            output.noisy_grads            # → jme_adam first moment
-            output.noisy_squared_grads    # → jme_adam second moment
+            (noisy_grads, noisy_sq), state = noise_fn(clipped_grads, state)
     """
     strat_v = second_moment_strategy
     if strat_v is None:
