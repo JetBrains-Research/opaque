@@ -4,13 +4,15 @@ Paired with :func:`~opaque.noise.mf.jme_noise`, this optimizer
 consumes noisy gradients (first moment) and noisy squared gradients
 (second moment) produced by the JME mechanism (arXiv:2502.06597).
 
-Follows ``torchopt.adam``'s composition structure::
+Follows ``dp_adamw``'s AdamW composition (decoupled weight decay)::
 
     chain(
-        flip_sign_and_add_weight_decay,   # reused from torchopt
         scale_by_jme_adam,                 # custom: external second moment
+        add_decayed_weights,               # reused from torchopt (decoupled)
         scale_by_neg_lr,                   # reused from torchopt
     )
+
+With ``weight_decay=0`` (default) this is plain Adam per the JME paper.
 
 Usage::
 
@@ -137,27 +139,27 @@ def jme_adam(
     eps: float = 1e-8,
     weight_decay: float = 0.0,
 ) -> GradientTransformation:
-    """Create a JME-Adam optimizer (Adam with JME dual-stream noise).
+    """Create a JME-Adam optimizer (AdamW with JME dual-stream noise).
 
-    Follows ``torchopt.adam``'s composition: weight decay + moment
-    scaling + LR application.  The only difference is that the second
-    moment comes from the ``noisy_squared_grads`` kwarg (JME's second
-    noise stream) instead of squaring the gradient input.
+    Composes (same order as ``dp_adamw`` from PR #119):
 
-    Reuses ``torchopt`` primitives:
+    1. JME moment scaling (custom — external ``noisy_squared_grads``)
+    2. Decoupled weight decay (``torchopt.transform.add_decayed_weights``)
+    3. Learning rate (``scale_by_neg_lr`` — supports callable schedules)
 
-    - ``flip_sign_and_add_weight_decay`` — sign flip + L2 weight decay
-    - ``scale_by_neg_lr`` — learning rate (supports callable schedules)
+    With ``weight_decay=0`` (default) this is plain Adam per the JME
+    paper.  With ``weight_decay > 0`` it is AdamW (decoupled — weight
+    decay bypasses the moment EMAs).
 
     The ``noisy_squared_grads`` kwarg on ``update()`` provides the
     privately-estimated second moment from :func:`~opaque.noise.mf.jme_noise`.
 
     Args:
         lr: Learning rate — a float or a callable ``step -> float``
-            for LR schedules (same as ``torchopt.adam``).
+            for LR schedules.
         betas: ``(beta1, beta2)`` for moment estimation.
         eps: Denominator stability constant.
-        weight_decay: Weight decay coefficient (default 0).
+        weight_decay: Decoupled weight decay (default 0 = pure Adam).
 
     Returns:
         A ``torchopt.base.GradientTransformation``.
@@ -173,20 +175,22 @@ def jme_adam(
 
         (noisy_grads, noisy_sq), noise_state = noise_fn(grads, noise_state)
         updates, opt_state = optimizer.update(
-            noisy_grads, opt_state, noisy_squared_grads=noisy_sq,
+            noisy_grads, opt_state,
+            params=params, noisy_squared_grads=noisy_sq,
         )
         params = torchopt.apply_updates(params, updates)
     """
-    from torchopt.alias.utils import flip_sign_and_add_weight_decay, scale_by_neg_lr
+    import torchopt
+    from torchopt.alias.utils import scale_by_neg_lr
 
     b1, b2 = betas
 
-    wd_and_sign = flip_sign_and_add_weight_decay(weight_decay=weight_decay)
     adam_scale = _scale_by_jme_adam(b1, b2, eps)
+    wd = torchopt.transform.add_decayed_weights(weight_decay=weight_decay)
     neg_lr = scale_by_neg_lr(lr)
 
     def init_fn(params: Any) -> tuple:
-        return (wd_and_sign.init(params), adam_scale.init(params), neg_lr.init(params))
+        return (adam_scale.init(params), wd.init(params), neg_lr.init(params))
 
     def update_fn(
         updates: Any,
@@ -196,17 +200,17 @@ def jme_adam(
         inplace: bool = False,
         noisy_squared_grads: Any = None,
     ) -> tuple[Any, tuple]:
-        s_wd, s_adam, s_lr = state
+        s_adam, s_wd, s_lr = state
 
-        updates, s_wd = wd_and_sign.update(updates, s_wd, params=params, inplace=inplace)
         updates, s_adam = adam_scale.update(
             updates, s_adam,
             params=params, inplace=inplace,
             noisy_squared_grads=noisy_squared_grads,
         )
+        updates, s_wd = wd.update(updates, s_wd, params=params, inplace=inplace)
         updates, s_lr = neg_lr.update(updates, s_lr, inplace=inplace)
 
-        return updates, (s_wd, s_adam, s_lr)
+        return updates, (s_adam, s_wd, s_lr)
 
     return GradientTransformation(init_fn, update_fn)
 
