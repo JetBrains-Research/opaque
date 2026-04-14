@@ -863,13 +863,13 @@ def main():
                 nm, sensitivity=strategy.sensitivity, num_groups=strategy.num_groups
             )
             if use_adam:
-                mechanism = acc.jme_adam(mechanism, zeta=clip_state.sensitivity)
+                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity)
             return acc.cyclic_poisson(mechanism, sample_rate=sampling_prob)
     elif args.mechanism == "blt" and strategy is not None:
         def acct_mechanism(nm):
             mechanism = acc.blt(nm, sensitivity=strategy.sensitivity)
             if use_adam:
-                mechanism = acc.jme_adam(mechanism, zeta=clip_state.sensitivity)
+                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity)
             return mechanism
     elif args.mechanism == "lambda_cgd" and strategy is not None:
         def acct_mechanism(nm):
@@ -879,7 +879,7 @@ def main():
                 gram_matrix=strategy.gram_matrix,
             )
             if use_adam:
-                mechanism = acc.jme_adam(mechanism, zeta=clip_state.sensitivity)
+                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity)
             return acc.balls_in_bins(
                 mechanism,
                 num_bins=expected_steps_per_epoch,
@@ -893,7 +893,7 @@ def main():
                 gram_matrix=strategy.gram_matrix,
             )
             if use_adam:
-                mechanism = acc.jme_adam(mechanism, zeta=clip_state.sensitivity)
+                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity)
             return acc.balls_in_bins(
                 mechanism,
                 num_bins=expected_steps_per_epoch,
@@ -984,8 +984,7 @@ def main():
     if use_adam:
         optimizer = jme_adam(
             lr=lambda step: lr_schedule[min(step, len(lr_schedule) - 1)].item(),
-            beta1=args.beta1,
-            beta2=args.beta2,
+            betas=(args.beta1, args.beta2),
             eps=args.adam_eps,
         )
     else:
