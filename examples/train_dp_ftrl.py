@@ -107,7 +107,7 @@ from opaque.noise.mf import (
     jme_joint_sensitivity,
     lambda_cgd_strategy,
     mf_noise,
-    mf_noise_jme,
+    jme_noise,
 )
 from opaque.optimizers import jme_adam
 from opaque.profiling import (
@@ -948,7 +948,7 @@ def main():
     t0 = time.time()
 
     if use_adam and args.mechanism not in ("identity", "none"):
-        noise_fn, noise_state = mf_noise_jme(
+        noise_fn, noise_state = jme_noise(
             trainable_params,
             strategy,
             noise_multiplier=noise_multiplier,

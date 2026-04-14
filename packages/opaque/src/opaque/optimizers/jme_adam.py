@@ -1,6 +1,6 @@
 """JME-Adam optimizer — Adam with JME dual-stream noise.
 
-Paired with :func:`~opaque.noise.mf.mf_noise_jme`, this optimizer
+Paired with :func:`~opaque.noise.mf.jme_noise`, this optimizer
 consumes noisy gradients (first moment) and noisy squared gradients
 (second moment) produced by the JME mechanism (arXiv:2502.06597).
 
@@ -70,7 +70,7 @@ def jme_adam(
     Unlike ``torchopt.adam``, this optimizer does **not** compute the
     second moment from the gradients.  Instead, the caller supplies
     pre-computed *noisy squared gradients* (from
-    :func:`~opaque.noise.mf.mf_noise_jme`) via the
+    :func:`~opaque.noise.mf.jme_noise`) via the
     ``noisy_squared_grads`` keyword argument to ``update``.
 
     Args:

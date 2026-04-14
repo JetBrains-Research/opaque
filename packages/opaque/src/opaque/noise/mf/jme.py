@@ -7,13 +7,13 @@ noise scales are set correctly.  The second moment is "free".
 
 User-facing API
 ---------------
-:func:`mf_noise_jme` — drop-in companion to :func:`mf_noise`.
+:func:`jme_noise` — drop-in companion to :func:`mf_noise`.
 Takes a ``noise_multiplier`` (same value used for accounting) and
 internally computes both noise stddevs via JME calibration.
 
 Setup::
 
-    noise_fn, state = mf_noise_jme(
+    noise_fn, state = jme_noise(
         grad_template, strategy,
         noise_multiplier=sigma, key=rng_key,
         zeta=clip_state.sensitivity,
@@ -47,7 +47,7 @@ from ._engine import MFNoiseState
 from .dispatcher import MfStrategy, mf_noise
 
 __all__ = [
-    "mf_noise_jme",
+    "jme_noise",
     "JmeNoiseState",
     "jme_lambda",
     "jme_joint_sensitivity",
@@ -120,7 +120,7 @@ def jme_second_moment_stddev(
 
 @dataclasses.dataclass(frozen=True)
 class JmeNoiseState(NoiseState):
-    """Noise state for :func:`mf_noise_jme`.
+    """Noise state for :func:`jme_noise`.
 
     Attributes:
         noisy_squared_grads: Noisy element-wise squared gradients from
@@ -209,7 +209,7 @@ def _derive_second_strategy(
 # ---------------------------------------------------------------------------
 
 
-def mf_noise_jme(
+def jme_noise(
     grad_template: Any,
     strategy: MfStrategy,
     *,

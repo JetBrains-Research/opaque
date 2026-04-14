@@ -3,7 +3,7 @@
 Public API:
 
 - :func:`mf_noise` — strategy-based dispatcher (SGD + Polyak momentum)
-- :func:`mf_noise_jme` — JME wrapper for DP-Adam (two streams, one budget)
+- :func:`jme_noise` — JME wrapper for DP-Adam (two streams, one budget)
 
 Strategy factories:
 
@@ -31,7 +31,7 @@ from .jme import (
     jme_joint_sensitivity,
     jme_lambda,
     jme_second_moment_stddev,
-    mf_noise_jme,
+    jme_noise,
 )
 from .lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
 from ._engine import MFNoiseState
@@ -39,7 +39,7 @@ from ._engine import MFNoiseState
 __all__ = [
     # Dispatchers
     "mf_noise",
-    "mf_noise_jme",
+    "jme_noise",
     "MfStrategy",
     # Strategy types & factories
     "BandMfStrategy",

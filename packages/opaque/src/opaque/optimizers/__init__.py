@@ -1,7 +1,7 @@
 """DP-compatible optimizers.
 
 - :func:`jme_adam` — Adam optimizer paired with JME noise
-  (:func:`~opaque.noise.mf.mf_noise_jme`).  Compatible with the
+  (:func:`~opaque.noise.mf.jme_noise`).  Compatible with the
   ``torchopt`` ``GradientTransformation`` protocol (``init`` / ``update``
   / ``apply_updates``).
 """
