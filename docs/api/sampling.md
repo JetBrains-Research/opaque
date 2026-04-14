@@ -9,7 +9,7 @@ Privacy amplification through sampling is a key technique in DP-SGD: training
 on randomly selected subsets provides stronger privacy than training on the
 full dataset.
 
-Opaque provides four sampling strategies:
+Opaque provides five sampling strategies:
 
 1. **Poisson Sampling** (`PoissonSampler`): Each example sampled independently
    with probability `sample_rate`. Variable batch sizes, strong privacy
@@ -28,6 +28,11 @@ Opaque provides four sampling strategies:
    dataset is randomly shuffled and partitioned into equal-sized bins.
    Deterministic batch sizes with privacy amplification from random
    assignment. Used with DP-λCGD, BISR, and BLT mechanisms.
+
+5. **Sequential Batch Sampling** (`SequentialBatchSampler`): Iterates
+   through the dataset in fixed-size contiguous batches with no randomness.
+   The dataset should be pre-shuffled once before constructing the sampler.
+   Used with the BLT mechanism.
 
 **See also**: [Sampling & Microbatching User Guide](../user-guide/sampling.md)
 
@@ -192,6 +197,36 @@ loader = DataLoader(shard, batch_sampler=sampler)
       heading_level: 3
 
 ::: opaque.sampling.balls_in_bins.BallsInBinsSampler
+    options:
+      show_source: true
+      heading_level: 3
+
+## SequentialBatchSampler
+
+```python
+from opaque import SequentialBatchSampler
+
+sampler = SequentialBatchSampler(
+    data_source,
+    batch_size=256,
+)
+loader = DataLoader(dataset, batch_sampler=sampler)
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `data_source` | dataset with `len()` | required | The training dataset (must not be empty) |
+| `batch_size` | `int` | required | Exact number of examples per batch (≥ 1) |
+
+Batch size is deterministic and fixed. The last incomplete batch is
+dropped (like `drop_last=True`). This sampler has no RNG key — it is
+fully deterministic. Pre-shuffle the dataset before constructing the
+sampler.
+
+Used with the BLT mechanism, which requires deterministic batch order
+with fixed separation between participations.
+
+::: opaque.sampling.sequential.SequentialBatchSampler
     options:
       show_source: true
       heading_level: 3

@@ -29,8 +29,6 @@ MECHANISMS:
                O(bands × d) memory, uses cyclic_poisson sampling.
   blt       — Buffered Linear Toeplitz (Choquette-Choo et al., 2024)
                O(buffers × d) memory, near-optimal, handles multi-epoch.
-  blt_bnb   — BLT noise + Balls-in-Bins sampling (Chua et al., 2025)
-               Same BLT noise, but with proper random-partition amplification.
   lambda_cgd — DP-λCGD (Kalinin et al., 2026), bandwidth-2 correlated noise
                via PRNG replay. Single hyperparam λ, zero extra memory.
   bisr      — BISR (Kalinin et al., ICLR 2026), generalises λCGD to
@@ -48,9 +46,6 @@ USAGE:
 
   # BandMF with b=64 bands on Mellum
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism band_mf --bands 64
-
-  # BLT with Balls-in-Bins sampling (random-partition amplification)
-  python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism blt_bnb
 
   # DP-λCGD with Balls-in-Bins sampling (bandwidth-2 correlated noise, λ=0.9)
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism lambda_cgd --lambda_ 0.9
@@ -114,6 +109,7 @@ from opaque.sampling import (
     BallsInBinsSampler,
     CyclicPoissonSampler,
     PoissonSampler,
+    SequentialBatchSampler,
     poisson_collate,
 )
 from opaque.utils import make_functional
@@ -324,8 +320,8 @@ def parse_args():
         "--mechanism",
         type=str,
         default="band_mf",
-        choices=["band_mf", "blt", "blt_bnb", "lambda_cgd", "bisr", "identity", "none"],
-        help="MF mechanism: band_mf, blt, blt_bnb, lambda_cgd, bisr, identity, none (non-DP).",
+        choices=["band_mf", "blt", "lambda_cgd", "bisr", "identity", "none"],
+        help="MF mechanism: band_mf, blt, lambda_cgd, bisr, identity, none (non-DP).",
     )
     dp_g.add_argument(
         "--clipping-norm", type=float, default=0.9, help="Fixed clipping norm"
@@ -616,14 +612,10 @@ def main():
 
     global_train_size = len(train_dataset)
 
-    # BLT uses fixed iteration order so consecutive participations by the
-    # same example are separated by exactly steps_per_epoch steps.
-    # Shuffle once before training.
-    if args.mechanism in ("blt", "blt_bnb"):
-        train_dataset = train_dataset.shuffle(seed=args.seed)
-
-    # λCGD and BISR use BnB sampling (random partition each epoch)
-    if args.mechanism in ("lambda_cgd", "bisr"):
+    # BLT uses fixed iteration order (sequential DataLoader, drop_last=True),
+    # so shuffle once to randomize which examples land in which batch.
+    # λ-CGD and BISR use BnB sampling which randomizes assignment itself.
+    if args.mechanism == "blt":
         train_dataset = train_dataset.shuffle(seed=args.seed)
 
     eval_loader = DataLoader(
@@ -638,6 +630,9 @@ def main():
     sample_rate = args.batch_size / global_train_size
     expected_steps_per_epoch = global_train_size // args.batch_size
 
+    # Create sampler (or per-epoch sampler factory).
+    # Static samplers (BnB, sequential) are created once and reused.
+    # Dynamic samplers (CyclicPoisson, Poisson) get a fresh key each epoch.
     if args.mechanism == "band_mf":
         sampling_prob = args.batch_size * args.bands / global_train_size
         if sampling_prob > 1.0:
@@ -645,25 +640,55 @@ def main():
                 f"cyclic_poisson sampling_prob = {sampling_prob:.4f} > 1.0. "
                 f"Reduce --bands ({args.bands}) or --batch-size ({args.batch_size})."
             )
-    elif args.mechanism in ("blt", "blt_bnb"):
-        pass
-    elif args.mechanism == "lambda_cgd":
-        pass
-    elif args.mechanism == "identity":
-        pass
+
+        def make_epoch_sampler(epoch):
+            return CyclicPoissonSampler(
+                train_dataset,
+                sampling_prob=sampling_prob,
+                cycle_length=args.bands,
+                iterations=expected_steps_per_epoch,
+                key=fold_in(key(args.seed), epoch),
+            )
+
+    elif args.mechanism == "blt":
+        _blt_sampler = SequentialBatchSampler(
+            train_dataset,
+            batch_size=args.batch_size,
+        )
+
+        def make_epoch_sampler(epoch):
+            return _blt_sampler
+
+    elif args.mechanism in ("lambda_cgd", "bisr"):
+        # BnB sampler created once — the same fixed partition is reused every
+        # epoch (required by BnB privacy accounting, Lemma 3.2 of
+        # Choquette-Choo et al. 2024).
+        _bnb_sampler = BallsInBinsSampler(
+            train_dataset,
+            num_bins=expected_steps_per_epoch,
+            num_epochs=1,
+            key=key(args.seed),
+        )
+
+        def make_epoch_sampler(epoch):
+            return _bnb_sampler
+
+    else:  # identity, none
+
+        def make_epoch_sampler(epoch):
+            return PoissonSampler(
+                train_dataset,
+                sample_rate=sample_rate,
+                num_iterations=expected_steps_per_epoch,
+                key=fold_in(key(args.seed), epoch),
+            )
 
     print("\nSampling:")
     print(f"  Mechanism: {args.mechanism}")
     if args.mechanism == "band_mf":
         print(f"  Sampler: cyclic_poisson (cycle={args.bands}, q={sampling_prob:.6f})")
     elif args.mechanism == "blt":
-        print("  Sampler: epoch-based (fixed order, drop_last=True)")
-        print(f"  min_sep: {expected_steps_per_epoch} (= steps/epoch)")
-        print(f"  max_participations: {args.num_epochs}")
-    elif args.mechanism == "blt_bnb":
-        print(
-            f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, random partition/epoch)"
-        )
+        print("  Sampler: sequential (fixed order, drop_last=True)")
         print(f"  min_sep: {expected_steps_per_epoch} (= steps/epoch)")
         print(f"  max_participations: {args.num_epochs}")
     elif args.mechanism == "lambda_cgd":
@@ -671,6 +696,11 @@ def main():
             f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, random partition/epoch)"
         )
         print(f"  DP-λCGD: λ={args.lambda_}")
+    elif args.mechanism == "bisr":
+        print(
+            f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, random partition/epoch)"
+        )
+        print(f"  BISR bandwidth: {args.bisr_bandwidth}")
     else:
         print(f"  Sampler: poisson (q={sample_rate:.6f})")
     print(f"  Expected batch size: {args.batch_size}")
@@ -776,26 +806,6 @@ def main():
 
         def acct_mechanism(nm):
             return acc.blt(nm, sensitivity=strategy.sensitivity)
-    elif args.mechanism == "blt_bnb":
-        strategy = blt_strategy(
-            n_steps=total_steps,
-            min_sep=expected_steps_per_epoch,
-            max_participations=args.num_epochs,
-            max_buffers=args.max_buffers,
-            momentum=args.momentum,
-            lr_schedule=lr_schedule,
-        )
-
-        def acct_mechanism(nm):
-            return acc.balls_in_bins(
-                acc.blt(
-                    nm,
-                    sensitivity=strategy.sensitivity,
-                    gram_matrix=strategy.gram_matrix,
-                ),
-                num_bins=expected_steps_per_epoch,
-                num_epochs=args.num_epochs,
-            )
     elif args.mechanism == "lambda_cgd":
         strategy = lambda_cgd_strategy(
             lambda_=args.lambda_,
@@ -954,13 +964,16 @@ def main():
     print(f"  Microbatch size: {args.microbatch_size}")
     if args.mechanism == "band_mf":
         print(f"  Bands: {args.bands}")
-    elif args.mechanism in ("blt", "blt_bnb"):
+    elif args.mechanism == "blt":
         print(f"  Max buffers: {args.max_buffers}")
         print(f"  Min separation: {expected_steps_per_epoch}")
         print(f"  Max participations: {args.num_epochs}")
     elif args.mechanism == "lambda_cgd":
         print(f"  λ (lambda): {args.lambda_}")
         print("  Bandwidth: 2 (bidiagonal inverse)")
+        print("  Column normalization: enabled (Appendix A, exact BnB)")
+    elif args.mechanism == "bisr":
+        print(f"  BISR bandwidth: {args.bisr_bandwidth}")
         print("  Column normalization: enabled (Appendix A, exact BnB)")
 
     # ===================================================================
@@ -986,55 +999,15 @@ def main():
             {"eval/loss": initial_eval_loss, "train/lr": lr_schedule[0].item()}, step=0
         )
 
-    # Create BnB sampler once before the training loop — the same fixed
-    # partition is reused every epoch (required by BnB privacy accounting,
-    # see Lemma 3.2 of Choquette-Choo et al. 2024).
-    if args.mechanism in ("blt_bnb", "lambda_cgd", "bisr"):
-        bnb_sampler = BallsInBinsSampler(
-            train_dataset,
-            num_bins=expected_steps_per_epoch,
-            num_epochs=1,
-            key=key(args.seed),
-        )
-
     for epoch in range(args.num_epochs):
         print(f"\nEpoch {epoch + 1}/{args.num_epochs}")
         print("-" * 80)
 
-        # Create epoch data loader — each mechanism needs a different sampler.
-        if args.mechanism == "band_mf":
-            epoch_sampler = CyclicPoissonSampler(
-                train_dataset,
-                sampling_prob=sampling_prob,
-                cycle_length=args.bands,
-                iterations=expected_steps_per_epoch,
-                key=fold_in(key(args.seed), epoch),
-            )
-            epoch_loader = DataLoader(
-                train_dataset, batch_sampler=epoch_sampler, collate_fn=collate
-            )
-        elif args.mechanism == "blt":
-            epoch_loader = DataLoader(
-                train_dataset,
-                batch_size=args.batch_size,
-                shuffle=False,
-                collate_fn=collate,
-                drop_last=True,
-            )
-        elif args.mechanism in ("blt_bnb", "lambda_cgd", "bisr"):
-            epoch_loader = DataLoader(
-                train_dataset, batch_sampler=bnb_sampler, collate_fn=collate
-            )
-        else:  # identity
-            epoch_sampler = PoissonSampler(
-                train_dataset,
-                sample_rate=sample_rate,
-                num_iterations=expected_steps_per_epoch,
-                key=fold_in(key(args.seed), epoch),
-            )
-            epoch_loader = DataLoader(
-                train_dataset, batch_sampler=epoch_sampler, collate_fn=collate
-            )
+        epoch_loader = DataLoader(
+            train_dataset,
+            batch_sampler=make_epoch_sampler(epoch),
+            collate_fn=collate,
+        )
 
         for step_idx, batch in enumerate(epoch_loader):
             if args.max_steps is not None and global_step >= args.max_steps:
