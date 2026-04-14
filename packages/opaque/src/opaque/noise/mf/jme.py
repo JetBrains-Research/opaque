@@ -7,9 +7,7 @@ noise scales are set correctly.  The second moment is "free".
 
 User-facing API
 ---------------
-:func:`jme_noise` — drop-in companion to :func:`mf_noise`.
-Takes a ``noise_multiplier`` (same value used for accounting) and
-internally computes both noise stddevs via JME calibration.
+:func:`jme_noise` — creates a noise function for DP-Adam.
 
 Setup::
 
@@ -20,10 +18,11 @@ Setup::
         beta2=0.999,
     )
 
-Training loop (same call signature as ``mf_noise``)::
+Training loop::
 
-    noisy_grads, state = noise_fn(clipped_grads, state)
-    noisy_sq_grads = state.noisy_squared_grads
+    output, state = noise_fn(clipped_grads, state)
+    # output.noisy_grads       → feed to jme_adam (first moment)
+    # output.noisy_squared_grads → feed to jme_adam (second moment)
 
 References:
     - JME: https://arxiv.org/abs/2502.06597
@@ -34,7 +33,7 @@ from __future__ import annotations
 import dataclasses
 import math
 from collections.abc import Callable
-from typing import Any
+from typing import Any, NamedTuple
 
 import torch
 
@@ -48,6 +47,7 @@ from .dispatcher import MfStrategy, mf_noise
 
 __all__ = [
     "jme_noise",
+    "JmeNoiseOutput",
     "JmeNoiseState",
     "jme_lambda",
     "jme_joint_sensitivity",
@@ -114,22 +114,28 @@ def jme_second_moment_stddev(
 
 
 # ---------------------------------------------------------------------------
-# State
+# Output and state
 # ---------------------------------------------------------------------------
+
+
+class JmeNoiseOutput(NamedTuple):
+    """Per-step output of a :func:`jme_noise` noise function.
+
+    Attributes:
+        noisy_grads: Noisy clipped gradients (first moment).
+        noisy_squared_grads: Noisy element-wise squared gradients (second moment).
+    """
+
+    noisy_grads: Any
+    noisy_squared_grads: Any
 
 
 @dataclasses.dataclass(frozen=True)
 class JmeNoiseState(NoiseState):
-    """Noise state for :func:`jme_noise`.
-
-    Attributes:
-        noisy_squared_grads: Noisy element-wise squared gradients from
-            the most recent call.  ``None`` before the first call.
-    """
+    """Internal state for :func:`jme_noise` (two MF streams)."""
 
     _first_state: MFNoiseState
     _second_state: MFNoiseState
-    noisy_squared_grads: Any = None
 
     @property
     def _step_counter(self) -> int:  # type: ignore[override]
@@ -220,14 +226,14 @@ def jme_noise(
     second_moment_strategy: MfStrategy | None = None,
     dtype: torch.dtype | None = None,
 ) -> tuple[
-    Callable[[Any, JmeNoiseState], tuple[Any, JmeNoiseState]],
+    Callable[[Any, JmeNoiseState], tuple[JmeNoiseOutput, JmeNoiseState]],
     JmeNoiseState,
 ]:
     """Create a JME noise function for DP-Adam.
 
-    Same call shape as :func:`mf_noise`: returns ``(noise_fn, state)``
-    where ``noise_fn(grads, state) -> (noisy_grads, state)``.  The noisy
-    *squared* gradients are on ``state.noisy_squared_grads``.
+    Returns ``(noise_fn, state)`` where each call to ``noise_fn``
+    produces a :class:`JmeNoiseOutput` containing both noisy gradients
+    and noisy squared gradients.
 
     Internally:
 
@@ -253,7 +259,11 @@ def jme_noise(
         dtype: Optional dtype for intermediate noise.
 
     Returns:
-        ``(noise_fn, state)`` — drop-in shape for :func:`mf_noise`.
+        ``(noise_fn, state)`` where::
+
+            output, state = noise_fn(clipped_grads, state)
+            output.noisy_grads            # → jme_adam first moment
+            output.noisy_squared_grads    # → jme_adam second moment
     """
     strat_v = second_moment_strategy
     if strat_v is None:
@@ -279,23 +289,25 @@ def jme_noise(
     init_state = JmeNoiseState(
         _first_state=first_state,
         _second_state=second_state,
-        noisy_squared_grads=None,
     )
 
     def noise_fn(
         clipped_grads: Any,
         st: JmeNoiseState,
-    ) -> tuple[Any, JmeNoiseState]:
+    ) -> tuple[JmeNoiseOutput, JmeNoiseState]:
         noisy_grads, new_first = first_fn(clipped_grads, st._first_state)
 
         sq_grads = tree_map(lambda g: g * g, clipped_grads)
         noisy_sq, new_second = second_fn(sq_grads, st._second_state)
 
+        output = JmeNoiseOutput(
+            noisy_grads=noisy_grads,
+            noisy_squared_grads=noisy_sq,
+        )
         new_state = JmeNoiseState(
             _first_state=new_first,
             _second_state=new_second,
-            noisy_squared_grads=noisy_sq,
         )
-        return noisy_grads, new_state
+        return output, new_state
 
     return noise_fn, init_state

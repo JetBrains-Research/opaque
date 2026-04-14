@@ -1101,15 +1101,15 @@ def main():
                         state=clip_state,
                     )
 
-                noisy_grads, noise_state = noise_fn(grads, noise_state)
-
                 if use_adam:
+                    noise_out, noise_state = noise_fn(grads, noise_state)
                     updates, opt_state = optimizer.update(
-                        noisy_grads,
+                        noise_out.noisy_grads,
                         opt_state,
-                        noisy_squared_grads=noise_state.noisy_squared_grads,
+                        noisy_squared_grads=noise_out.noisy_squared_grads,
                     )
                 else:
+                    noisy_grads, noise_state = noise_fn(grads, noise_state)
                     updates, opt_state = optimizer.update(
                         noisy_grads,
                         opt_state,

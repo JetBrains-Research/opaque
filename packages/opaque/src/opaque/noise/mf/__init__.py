@@ -27,11 +27,12 @@ from .blt import BltStrategy, blt_strategy
 from .dispatcher import MfStrategy, mf_noise
 from .identity import IdentityStrategy, identity_strategy
 from .jme import (
+    JmeNoiseOutput,
     JmeNoiseState,
     jme_joint_sensitivity,
     jme_lambda,
-    jme_second_moment_stddev,
     jme_noise,
+    jme_second_moment_stddev,
 )
 from .lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
 from ._engine import MFNoiseState
@@ -56,7 +57,8 @@ __all__ = [
     "jme_lambda",
     "jme_joint_sensitivity",
     "jme_second_moment_stddev",
-    # State
+    # State / output
     "MFNoiseState",
     "JmeNoiseState",
+    "JmeNoiseOutput",
 ]

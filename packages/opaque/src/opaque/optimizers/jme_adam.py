@@ -15,10 +15,10 @@ Usage::
     opt_state = optimizer.init(params)
 
     # In training loop:
-    noisy_grads, noise_state = noise_fn(clipped_grads, noise_state)
+    noise_out, noise_state = noise_fn(clipped_grads, noise_state)
     updates, opt_state = optimizer.update(
-        noisy_grads, opt_state,
-        noisy_squared_grads=noise_state.noisy_squared_grads,
+        noise_out.noisy_grads, opt_state,
+        noisy_squared_grads=noise_out.noisy_squared_grads,
     )
     params = torchopt.apply_updates(params, updates)
 """
@@ -91,10 +91,10 @@ def jme_adam(
         optimizer = jme_adam(lr=1e-3)
         opt_state = optimizer.init(params)
 
-        noisy_grads, noise_state = noise_fn(grads, noise_state)
+        noise_out, noise_state = noise_fn(grads, noise_state)
         updates, opt_state = optimizer.update(
-            noisy_grads, opt_state,
-            noisy_squared_grads=noise_state.noisy_squared_grads,
+            noise_out.noisy_grads, opt_state,
+            noisy_squared_grads=noise_out.noisy_squared_grads,
         )
         params = torchopt.apply_updates(params, updates)
     """
