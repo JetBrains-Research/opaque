@@ -109,6 +109,7 @@ from opaque.noise.mf import (
     mf_noise,
     mf_noise_jme,
 )
+from opaque.optimizers import dp_adam
 from opaque.profiling import (
     StepTimer,
     TrainingProfiler,
@@ -932,14 +933,9 @@ def main():
             allow_val_change=True,
         )
 
-    # --- Create MF noise function (fixed stddev) ---
+    # --- Create MF noise function + optimizer ---
     zeta = clip_state.sensitivity
-
-    if use_adam and args.mechanism not in ("identity", "none"):
-        joint_sens = jme_joint_sensitivity(strategy.sensitivity, zeta)
-        noise_stddev = noise_multiplier * joint_sens
-    else:
-        noise_stddev = noise_multiplier * zeta
+    noise_stddev = noise_multiplier * zeta
 
     if args.mechanism == "none":
         print("\nNon-DP mode: using identity noise with stddev=0...")
@@ -952,13 +948,10 @@ def main():
     t0 = time.time()
 
     if use_adam and args.mechanism not in ("identity", "none"):
-        # JME: single call creates both noise streams internally.
-        # noise_fn has the same signature as mf_noise: (grads, state) → (noisy_grads, state)
-        # The noisy squared grads are on state.noisy_squared_grads.
         noise_fn, noise_state = mf_noise_jme(
             trainable_params,
             strategy,
-            stddev=noise_stddev,
+            noise_multiplier=noise_multiplier,
             key=key(args.seed),
             zeta=zeta,
             beta2=args.beta2,
@@ -979,17 +972,19 @@ def main():
         )
     print(f"  Noise function created in {time.time() - t0:.1f}s")
 
-    # --- Optimizer ---
     if use_adam:
-        from opaque.utils.pytree import tree_map as _tree_map
-        adam_m = _tree_map(torch.zeros_like, trainable_params)
-        adam_v = _tree_map(torch.zeros_like, trainable_params)
+        optimizer = dp_adam(
+            lr=lambda step: lr_schedule[min(step, len(lr_schedule) - 1)].item(),
+            beta1=args.beta1,
+            beta2=args.beta2,
+            eps=args.adam_eps,
+        )
     else:
         optimizer = torchopt.sgd(
             lr=lambda step: lr_schedule[min(step, len(lr_schedule) - 1)].item(),
             momentum=args.momentum,
         )
-        opt_state = optimizer.init(trainable_params)
+    opt_state = optimizer.init(trainable_params)
 
     # --- Diagnostic: compute what identity baseline σ would be ---
     identity_sigma = None
@@ -1024,11 +1019,12 @@ def main():
     print(
         f"  Sensitivity: {zeta:.6f} (= {args.clipping_norm} / {args.batch_size})"
     )
+    print(f"  Noise multiplier (σ): {noise_multiplier:.4f}")
     if use_adam and args.mechanism not in ("identity", "none"):
-        print(f"  JME joint sensitivity: {joint_sens:.6f} (= 2 × {zeta:.6f} × {strategy.sensitivity:.6f})")
-        print(f"  Noise stddev (1st moment): {noise_stddev:.6f}")
+        joint_sens = jme_joint_sensitivity(strategy.sensitivity, zeta)
+        print(f"  JME joint sensitivity: {joint_sens:.6f}")
+        print(f"  Noise stddev (1st moment): {noise_multiplier * joint_sens:.6f}")
     else:
-        print(f"  Noise multiplier (σ): {noise_multiplier:.4f}")
         print(
             f"  Noise stddev: {noise_stddev:.6f} (= {noise_multiplier:.4f} × {zeta:.6f})"
         )
@@ -1108,28 +1104,10 @@ def main():
                 noisy_grads, noise_state = noise_fn(grads, noise_state)
 
                 if use_adam:
-                    from opaque.utils.pytree import tree_map as _tree_map
-
-                    noisy_sq = noise_state.noisy_squared_grads
-
-                    adam_m = _tree_map(
-                        lambda m, g: args.beta1 * m + (1 - args.beta1) * g,
-                        adam_m, noisy_grads,
-                    )
-                    adam_v = _tree_map(
-                        lambda v, g2: args.beta2 * v + (1 - args.beta2) * g2,
-                        adam_v, noisy_sq,
-                    )
-
-                    bc1 = 1.0 - args.beta1 ** (global_step + 1)
-                    bc2 = 1.0 - args.beta2 ** (global_step + 1)
-
-                    updates = _tree_map(
-                        lambda m, v: -lr_t * (m / bc1) / (torch.sqrt(v / bc2) + args.adam_eps),
-                        adam_m, adam_v,
-                    )
-                    trainable_params = _tree_map(
-                        lambda p, u: p + u, trainable_params, updates,
+                    updates, opt_state = optimizer.update(
+                        noisy_grads,
+                        opt_state,
+                        noisy_squared_grads=noise_state.noisy_squared_grads,
                     )
                 else:
                     updates, opt_state = optimizer.update(
@@ -1137,7 +1115,7 @@ def main():
                         opt_state,
                         params=trainable_params,
                     )
-                    trainable_params = torchopt.apply_updates(trainable_params, updates)
+                trainable_params = torchopt.apply_updates(trainable_params, updates)
 
             profiler = profiler.add_step(step_timer)
 

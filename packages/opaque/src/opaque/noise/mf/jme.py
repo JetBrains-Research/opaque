@@ -7,23 +7,23 @@ noise scales are set correctly.  The second moment is "free".
 
 User-facing API
 ---------------
-:func:`mf_noise_jme` — drop-in replacement for :func:`mf_noise` that
-internally runs **two** correlated-noise streams and returns the noisy
-squared gradients on the state object.
+:func:`mf_noise_jme` — drop-in companion to :func:`mf_noise`.
+Takes a ``noise_multiplier`` (same value used for accounting) and
+internally computes both noise stddevs via JME calibration.
 
 Setup::
 
     noise_fn, state = mf_noise_jme(
         grad_template, strategy,
-        stddev=noise_stddev, key=rng_key,
-        beta2=0.999,           # Adam second-moment workload
+        noise_multiplier=sigma, key=rng_key,
         zeta=clip_state.sensitivity,
+        beta2=0.999,
     )
 
-Training loop (same signature as ``mf_noise``)::
+Training loop (same call signature as ``mf_noise``)::
 
     noisy_grads, state = noise_fn(clipped_grads, state)
-    noisy_sq_grads = state.noisy_squared_grads     # ← the extra output
+    noisy_sq_grads = state.noisy_squared_grads
 
 References:
     - JME: https://arxiv.org/abs/2502.06597
@@ -83,12 +83,6 @@ def jme_lambda(
     """Optimal JME scaling parameter λ (Algorithm 1).
 
     ``λ = ‖C₁‖²_{1→2} / (c_d · ζ² · ‖C₂‖²_{1→2})``
-
-    Args:
-        c1_sensitivity: Max column norm of C₁ (``strategy.sensitivity``).
-        c2_sensitivity: Max column norm of C₂.
-        zeta: Per-sample clipping bound (``clip_state.sensitivity``).
-        d: Dimension (≥ 2 for neural nets, 1 for scalars).
     """
     if c1_sensitivity <= 0:
         raise ValueError(f"c1_sensitivity must be positive, got {c1_sensitivity}")
@@ -101,10 +95,7 @@ def jme_lambda(
 
 
 def jme_joint_sensitivity(c1_sensitivity: float, zeta: float) -> float:
-    """Joint sensitivity for both moments (Theorem 3.2).
-
-    ``s = 2ζ · ‖C₁‖_{1→2}``
-    """
+    """Joint sensitivity for both moments: ``s = 2ζ · ‖C₁‖_{1→2}`` (Theorem 3.2)."""
     if c1_sensitivity <= 0:
         raise ValueError(f"c1_sensitivity must be positive, got {c1_sensitivity}")
     if zeta <= 0:
@@ -131,13 +122,9 @@ def jme_second_moment_stddev(
 class JmeNoiseState(NoiseState):
     """Noise state for :func:`mf_noise_jme`.
 
-    Carries the usual MF state plus the noisy squared gradients
-    produced by the second noise stream.
-
     Attributes:
         noisy_squared_grads: Noisy element-wise squared gradients from
-            the most recent ``noise_fn`` call.  ``None`` before the first
-            call.  Feed this to Adam's second-moment EMA.
+            the most recent call.  ``None`` before the first call.
     """
 
     _first_state: MFNoiseState
@@ -154,7 +141,7 @@ class JmeNoiseState(NoiseState):
 
 
 # ---------------------------------------------------------------------------
-# Factory: second-moment strategy derivation
+# Second-strategy auto-derivation
 # ---------------------------------------------------------------------------
 
 
@@ -162,11 +149,7 @@ def _derive_second_strategy(
     strategy: MfStrategy,
     beta2: float,
 ) -> MfStrategy:
-    """Build a second-moment strategy from the first-moment strategy.
-
-    Same mechanism type and participation parameters, different workload
-    momentum (β₂ instead of β₁).
-    """
+    """Same mechanism, ``momentum=beta2`` workload."""
     from .band_mf import BandMfStrategy, band_mf_strategy
     from .bisr import BisrStrategy, bisr_strategy
     from .blt import BltStrategy, blt_strategy
@@ -230,7 +213,7 @@ def mf_noise_jme(
     grad_template: Any,
     strategy: MfStrategy,
     *,
-    stddev: float,
+    noise_multiplier: float,
     key: RngKey,
     zeta: float,
     beta2: float = 0.999,
@@ -242,61 +225,43 @@ def mf_noise_jme(
 ]:
     """Create a JME noise function for DP-Adam.
 
-    Drop-in shape for :func:`mf_noise`: returns ``(noise_fn, state)``
-    where ``noise_fn(grads, state) -> (noisy_grads, state)``.  The
-    noisy *squared* gradients are available on ``state.noisy_squared_grads``
-    after each call.
+    Same call shape as :func:`mf_noise`: returns ``(noise_fn, state)``
+    where ``noise_fn(grads, state) -> (noisy_grads, state)``.  The noisy
+    *squared* gradients are on ``state.noisy_squared_grads``.
 
-    Internally creates two ``mf_noise`` streams:
+    Internally:
 
-    - **First moment** (gradients): uses ``strategy`` as-is.
-    - **Second moment** (squared gradients): auto-derived from
-      ``strategy`` with ``momentum=beta2``, or pass
-      ``second_moment_strategy`` explicitly.
-
-    Noise scales are set by JME (Theorem 3.2, arXiv:2502.06597) so that
-    the second moment comes at zero additional privacy cost.
+    1. Computes JME joint sensitivity and both noise stddevs.
+    2. Auto-derives the second-moment strategy (same mechanism,
+       ``momentum=beta2``).
+    3. Creates two ``mf_noise`` streams with independent RNG keys.
+    4. ``noise_fn`` computes ``g²`` and runs both streams per call.
 
     Args:
-        grad_template: Pytree with same structure/shapes as gradients.
+        grad_template: Pytree matching gradient shapes.
         strategy: MF strategy for the first moment (gradient stream).
-            The ``momentum`` used when creating this strategy should match
-            Adam's ``beta1``.
-        stddev: Noise stddev for the first moment stream, typically
-            ``noise_multiplier * jme_joint_sensitivity(strategy.sensitivity, zeta)``.
-        key: RNG key for deterministic noise.
+            Build with ``momentum=beta1`` (Adam's β₁).
+        noise_multiplier: The calibrated noise multiplier σ — same value
+            used in privacy accounting.  JME joint sensitivity and stddev
+            are computed internally.
+        key: RNG key.
         zeta: Per-sample clipping bound (``clip_state.sensitivity``).
-        beta2: Adam's second-moment decay.  Used to auto-derive the
-            second-moment strategy when ``second_moment_strategy`` is None.
-        second_moment_strategy: Explicit strategy for the second moment.
-            If None, derived from ``strategy`` with ``momentum=beta2``.
-        dtype: Optional dtype for intermediate noise computation.
+        beta2: Adam's β₂.  Used to auto-derive the second-moment
+            strategy.
+        second_moment_strategy: Explicit override for the second-moment
+            strategy.  If ``None``, derived from ``strategy``.
+        dtype: Optional dtype for intermediate noise.
 
     Returns:
-        ``(noise_fn, state)`` — same shape as :func:`mf_noise`.
-
-    Example::
-
-        strategy = blt_strategy(n_steps=1000, ..., momentum=0.9)
-        joint_s = jme_joint_sensitivity(strategy.sensitivity, zeta)
-        noise_stddev = noise_multiplier * joint_s
-
-        noise_fn, state = mf_noise_jme(
-            grad_template, strategy,
-            stddev=noise_stddev, key=rng_key,
-            zeta=zeta, beta2=0.999,
-        )
-
-        # Training loop — same call signature as mf_noise:
-        noisy_grads, state = noise_fn(clipped_grads, state)
-        noisy_sq = state.noisy_squared_grads   # for Adam's v_t
+        ``(noise_fn, state)`` — drop-in shape for :func:`mf_noise`.
     """
-    # Second-moment strategy
     strat_v = second_moment_strategy
     if strat_v is None:
         strat_v = _derive_second_strategy(strategy, beta2)
 
-    # JME noise scaling
+    # JME calibration
+    joint_sens = jme_joint_sensitivity(strategy.sensitivity, zeta)
+    stddev = noise_multiplier * joint_sens
     lam = jme_lambda(strategy.sensitivity, strat_v.sensitivity, zeta)
     stddev_v = jme_second_moment_stddev(stddev, lam)
 
@@ -321,10 +286,8 @@ def mf_noise_jme(
         clipped_grads: Any,
         st: JmeNoiseState,
     ) -> tuple[Any, JmeNoiseState]:
-        # First moment: noise on gradients
         noisy_grads, new_first = first_fn(clipped_grads, st._first_state)
 
-        # Second moment: noise on element-wise squared gradients
         sq_grads = tree_map(lambda g: g * g, clipped_grads)
         noisy_sq, new_second = second_fn(sq_grads, st._second_state)
 
