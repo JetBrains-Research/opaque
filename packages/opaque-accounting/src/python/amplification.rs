@@ -221,3 +221,51 @@ pub fn py_bandmf_b_min_sep_warm_mc_pld(
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
     Ok(PyPld::new(pld))
 }
+
+#[pyfunction]
+#[pyo3(name = "bandmf_b_min_sep_prepare_transcripts", signature = (strategy_coef, n_steps, p, num_samples, seed))]
+pub fn py_bandmf_b_min_sep_prepare_transcripts(
+    strategy_coef: Vec<f64>,
+    n_steps: usize,
+    p: f64,
+    num_samples: usize,
+    seed: u64,
+) -> PyResult<(Vec<f64>, Vec<f64>, Vec<f64>)> {
+    crate::amplification::bandmf_b_min_sep_prepare_transcripts(
+        &strategy_coef,
+        n_steps,
+        p,
+        num_samples,
+        seed,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+#[pyfunction]
+#[pyo3(
+    name = "bandmf_b_min_sep_pld_from_transcripts",
+    signature = (remove_x, remove_zeta, add_eta, strategy_coef, n_steps, p, sigma, config)
+)]
+pub fn py_bandmf_b_min_sep_pld_from_transcripts(
+    remove_x: Vec<f64>,
+    remove_zeta: Vec<f64>,
+    add_eta: Vec<f64>,
+    strategy_coef: Vec<f64>,
+    n_steps: usize,
+    p: f64,
+    sigma: f64,
+    config: &PyDiscretizationConfig,
+) -> PyResult<PyPld> {
+    let pld = crate::amplification::bandmf_b_min_sep_pld_from_transcripts(
+        &remove_x,
+        &remove_zeta,
+        &add_eta,
+        &strategy_coef,
+        n_steps,
+        p,
+        sigma,
+        &config.inner,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}

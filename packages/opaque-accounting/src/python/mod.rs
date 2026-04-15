@@ -47,6 +47,14 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         amplification::py_bandmf_b_min_sep_warm_mc_pld,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(
+        amplification::py_bandmf_b_min_sep_prepare_transcripts,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        amplification::py_bandmf_b_min_sep_pld_from_transcripts,
+        m
+    )?)?;
 
     // Matrix Factorization
     m.add_function(wrap_pyfunction!(

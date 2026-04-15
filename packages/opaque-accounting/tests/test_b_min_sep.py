@@ -29,6 +29,18 @@ def test_b_min_sep_smoke_pld():
     assert eps > 0.0 and eps < 500.0
 
 
+def test_transcript_cache_reuses_same_buffers():
+    """Small (n, S) transcripts are cached; repeated get_or_prepare returns same lists."""
+    from opaque_accounting.amplification._b_min_sep_transcript_cache import get_or_prepare
+
+    t1 = get_or_prepare((1.0, 0.0), 12, 0.08, 80, 7)
+    t2 = get_or_prepare((1.0, 0.0), 12, 0.08, 80, 7)
+    assert t1 is not None and t2 is not None
+    assert t1[0] is t2[0]
+    assert t1[1] is t2[1]
+    assert t1[2] is t2[2]
+
+
 def test_b_min_sep_stricter_than_mf_only():
     """Subsampling should lower ε at fixed σ vs unamplified BandMF PLD."""
     from opaque_accounting import opaque_accounting as native
