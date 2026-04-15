@@ -43,6 +43,14 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_function(wrap_pyfunction!(amplification::py_bnb_mc_pld, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        amplification::py_bnb_deterministic_pld,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        amplification::py_random_allocation_pld,
+        m
+    )?)?;
 
     // Matrix Factorization
     m.add_function(wrap_pyfunction!(
@@ -131,10 +139,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
 
     // JME (Joint Moment Estimation)
-    m.add_function(wrap_pyfunction!(
-        matrix_factorization::py_jme_lambda,
-        m
-    )?)?;
+    m.add_function(wrap_pyfunction!(matrix_factorization::py_jme_lambda, m)?)?;
     m.add_function(wrap_pyfunction!(
         matrix_factorization::py_jme_joint_sensitivity,
         m

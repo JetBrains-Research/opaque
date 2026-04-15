@@ -10,19 +10,24 @@ The returned process represents the **total** privacy cost across all
 For independent-noise mechanisms (Gaussian, AdaClip), uses a conservative
 Poisson per-step approximation.
 
-For correlated-noise mechanisms (DP-λCGD, BISR), uses Monte Carlo sampling of
-the dominating pair from Choquette-Choo et al. (2024) arxiv:2410.06266.
+For correlated-noise mechanisms (DP-λCGD, BISR), the default is Monte Carlo
+sampling of the dominating pair from Choquette-Choo et al. (2024) arxiv:2410.06266.
+Use ``method="deterministic"`` for a sampling-free Rényi upper bound (Schuchardt &
+Kalinin, 2026, arxiv:2601.21636).
 
 References:
     - Chua et al. (2025), "Scalable Shuffle Differential Privacy"
     - Choquette-Choo et al. (2024), "Near Exact Privacy Amplification
       for Matrix Mechanisms"
+    - Schuchardt & Kalinin (2026), "Sampling-Free Privacy Accounting for Matrix
+      Mechanisms under Random Allocation"
 """
 
 from __future__ import annotations
 
 import functools
 from dataclasses import dataclass
+from typing import Literal
 
 from .. import opaque_accounting as _native
 
@@ -68,6 +73,7 @@ class BallsInBins(DpProcess):
     inner: _Inner
     num_bins: int
     num_epochs: int
+    method: Literal["monte_carlo", "deterministic"] = "monte_carlo"
 
     @functools.lru_cache(maxsize=8)
     def pld(
@@ -111,6 +117,16 @@ class BallsInBins(DpProcess):
                         f"{type(mg).__name__} requires a non-empty gram_matrix "
                         "for BnB amplification."
                     )
+                if self.method == "deterministic":
+                    return _native.bnb_deterministic_pld(
+                        list(mg.gram_matrix),
+                        self.num_bins,
+                        mg.noise_multiplier,
+                        20,  # alpha_max
+                        max(1, min(8, self.num_bins // 8)),  # heuristic bandwidth
+                        1e-8,  # target_delta
+                        native_cfg,
+                    )
                 return _native.bnb_mc_pld(
                     list(mg.gram_matrix),
                     self.num_bins,
@@ -124,6 +140,16 @@ class BallsInBins(DpProcess):
                     raise ValueError(
                         f"Jme({type(j.inner).__name__}) requires a non-empty "
                         "gram_matrix for BnB amplification."
+                    )
+                if self.method == "deterministic":
+                    return _native.bnb_deterministic_pld(
+                        list(j.gram_matrix),
+                        self.num_bins,
+                        j.noise_multiplier,
+                        20,  # alpha_max
+                        max(1, min(8, self.num_bins // 8)),  # heuristic bandwidth
+                        1e-8,  # target_delta
+                        native_cfg,
                     )
                 return _native.bnb_mc_pld(
                     list(j.gram_matrix),
@@ -144,6 +170,7 @@ def balls_in_bins(
     inner: _Inner,
     num_bins: int,
     num_epochs: int = 1,
+    method: Literal["monte_carlo", "deterministic"] = "monte_carlo",
 ) -> BallsInBins:
     """Balls-in-Bins amplified mechanism — returns **total** multi-epoch cost.
 
@@ -165,6 +192,8 @@ def balls_in_bins(
             :func:`bisr`, or :func:`adaclip`.
         num_bins: Bins per epoch (k ≥ 2).  Typically ``dataset_size / batch_size``.
         num_epochs: Number of training epochs (default 1).
+        method: Accounting backend for MF/JME mechanisms:
+            ``"monte_carlo"`` (default) or ``"deterministic"``.
 
     Returns:
         A :class:`BallsInBins` process (total cost).
@@ -187,5 +216,11 @@ def balls_in_bins(
         raise ValueError(f"num_bins must be >= 2 for BnB amplification, got {num_bins}")
     if num_epochs < 1:
         raise ValueError(f"num_epochs must be >= 1, got {num_epochs}")
+    if method not in ("monte_carlo", "deterministic"):
+        raise ValueError(
+            f"method must be one of ('monte_carlo', 'deterministic'), got {method!r}"
+        )
 
-    return BallsInBins(inner=inner, num_bins=num_bins, num_epochs=num_epochs)
+    return BallsInBins(
+        inner=inner, num_bins=num_bins, num_epochs=num_epochs, method=method
+    )

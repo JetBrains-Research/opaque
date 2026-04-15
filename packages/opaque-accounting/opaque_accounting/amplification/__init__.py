@@ -9,6 +9,7 @@ participates with probability < 1.
 - :func:`parallel_poisson` — Poisson subsampling under parallel worker execution
 - :func:`cyclic_poisson` — cyclic Poisson subsampling for BandMF amplification
 - :func:`balls_in_bins` — Balls-in-Bins partitioning (exact once-per-epoch participation)
+- :func:`random_allocation_pld` — random allocation from a base PLD (deterministic path)
 """
 
 from opaque_accounting.amplification.balls_in_bins import (
@@ -27,6 +28,7 @@ from opaque_accounting.amplification.poisson import (
     Poisson,
     poisson,
 )
+from opaque_accounting.amplification.random_allocation import random_allocation_pld
 from opaque_accounting.amplification.truncated_poisson import (
     TruncatedPoisson,
     truncated_poisson,
@@ -41,6 +43,7 @@ __all__ = [
     "CyclicPoisson",
     # Constructor functions
     "balls_in_bins",
+    "random_allocation_pld",
     "poisson",
     "truncated_poisson",
     "parallel_poisson",

@@ -186,3 +186,41 @@ class TestParallelPoissonAutoTruncation:
         # Looser truncation bound allows more aggressive k truncation, producing
         # a conservative (not tighter) epsilon.
         assert eps_loose >= eps_tight - 1e-10
+
+
+class TestRandomAllocation:
+    """Random-allocation PLD wrapper tests."""
+
+    def test_random_allocation_reduces_epsilon(self):
+        base = acc.gaussian(1.0).pld()
+        amp = acc.random_allocation_pld(base, t=128, k=1, target_delta=1e-6)
+        assert amp.epsilon_at(1e-6) < base.epsilon_at(1e-6)
+
+    def test_random_allocation_rejects_invalid_args(self):
+        base = acc.gaussian(1.0).pld()
+        with pytest.raises(ValueError):
+            acc.random_allocation_pld(base, t=0, k=1)
+        with pytest.raises(ValueError):
+            acc.random_allocation_pld(base, t=8, k=9)
+
+
+class TestBnbDeterministicMethod:
+    """Deterministic BnB method selection tests."""
+
+    @pytest.mark.slow
+    def test_bnb_deterministic_is_reproducible(self):
+        gram = tuple(0.8 ** abs(i - j) for i in range(8) for j in range(8))
+        inner = acc.lambda_cgd(1.0, sensitivity=1.0, gram_matrix=gram)
+        proc = acc.balls_in_bins(
+            inner,
+            num_bins=8,
+            num_epochs=1,
+            method="deterministic",
+        )
+        e1 = proc.epsilon_at(1e-5)
+        e2 = proc.epsilon_at(1e-5)
+        assert abs(e1 - e2) < 1e-12
+
+    def test_bnb_rejects_bad_method(self):
+        with pytest.raises(ValueError, match="method"):
+            acc.balls_in_bins(acc.gaussian(1.0), num_bins=10, method="bad")

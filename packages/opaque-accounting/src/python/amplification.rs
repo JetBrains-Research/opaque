@@ -187,3 +187,71 @@ pub fn py_bnb_mc_pld(
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
     Ok(PyPld::new(pld))
 }
+
+/// Compute the BnB PLD via deterministic Rényi accounting.
+///
+/// Implements a sampling-free deterministic upper bound inspired by
+/// Schuchardt & Kalinin (2026, arXiv:2601.21636).
+///
+/// Args:
+///     gram (list[float]): Flattened row-major b×b Gram matrix.
+///     num_bins (int): Number of bins b.
+///     sigma (float): Noise multiplier σ, must be > 0.
+///     alpha_max (int): Maximum integer Rényi order scanned (>= 2).
+///     bandwidth (int): Cyclic bandwidth parameter p.
+///     target_delta (float): Internal target delta in (0, 1) for epsilon calibration.
+///     config (DiscretizationConfig): Discretization configuration.
+///
+/// Returns:
+///     Pld: A conservative deterministic PLD surrogate.
+#[pyfunction]
+#[pyo3(name = "bnb_deterministic_pld", signature = (gram, num_bins, sigma, alpha_max, bandwidth, target_delta, config))]
+pub fn py_bnb_deterministic_pld(
+    gram: Vec<f64>,
+    num_bins: usize,
+    sigma: f64,
+    alpha_max: usize,
+    bandwidth: usize,
+    target_delta: f64,
+    config: &PyDiscretizationConfig,
+) -> PyResult<PyPld> {
+    let pld = crate::amplification::bnb_deterministic_pld(
+        &gram,
+        num_bins,
+        sigma,
+        alpha_max,
+        bandwidth,
+        target_delta,
+        &config.inner,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}
+
+/// Random-allocation amplification from a base PLD.
+///
+/// Args:
+///     base_pld (Pld): Base mechanism PLD.
+///     t (int): Total number of steps.
+///     k (int): Participations per record.
+///     target_delta (float): Target delta in (0, 1).
+///     config (DiscretizationConfig): Discretization configuration.
+#[pyfunction]
+#[pyo3(name = "random_allocation_pld", signature = (base_pld, t, k, target_delta, config))]
+pub fn py_random_allocation_pld(
+    base_pld: &PyPld,
+    t: usize,
+    k: usize,
+    target_delta: f64,
+    config: &PyDiscretizationConfig,
+) -> PyResult<PyPld> {
+    let pld = crate::amplification::random_allocation_pld(
+        &base_pld.inner,
+        t,
+        k,
+        target_delta,
+        &config.inner,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}

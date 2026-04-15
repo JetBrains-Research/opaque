@@ -9,8 +9,10 @@
 //!   correlated-noise matrix mechanisms (DP-λCGD, BISR, BLT).  Uses banded
 //!   Cholesky on the Gram matrix.
 
+pub mod deterministic;
 mod gaussian;
 pub mod monte_carlo;
 
+pub use deterministic::bnb_deterministic_pld;
 pub use gaussian::{balls_in_bins_gaussian_pld, balls_in_bins_gaussian_pld_epochs};
 pub use monte_carlo::bnb_mc_pld;
