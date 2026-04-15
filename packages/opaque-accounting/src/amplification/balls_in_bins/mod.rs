@@ -10,7 +10,11 @@
 //!   Cholesky on the Gram matrix.
 
 mod gaussian;
+pub mod deterministic;
 pub mod monte_carlo;
 
 pub use gaussian::{balls_in_bins_gaussian_pld, balls_in_bins_gaussian_pld_epochs};
+pub use deterministic::{
+    bnb_deterministic_delta_curve, bnb_deterministic_pld, DeterministicOptions,
+};
 pub use monte_carlo::bnb_mc_pld;

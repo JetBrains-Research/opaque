@@ -139,3 +139,54 @@ class TestBnbAmplification:
         proc = acc.lambda_cgd(1.0, sensitivity=1.0)
         eps = (proc * 3).epsilon_at(1e-5)
         assert math.isfinite(eps) and eps > 0
+
+    @pytest.mark.slow
+    def test_bnb_deterministic_method_runs_with_gram(self):
+        """Deterministic BnB path returns a valid epsilon."""
+        gram = (
+            1.0, 0.2, 0.0,
+            0.2, 1.0, 0.2,
+            0.0, 0.2, 1.0,
+        )
+        proc = acc.balls_in_bins(
+            acc.lambda_cgd(1.0, sensitivity=1.0, gram_matrix=gram),
+            num_bins=3,
+            num_epochs=1,
+            method="deterministic",
+        )
+        eps = proc.epsilon_at(1e-5)
+        assert math.isfinite(eps) and eps >= 0.0
+
+    @pytest.mark.slow
+    def test_bnb_deterministic_vs_mc_same_gram_sanity(self):
+        """Deterministic and MC both produce finite privacy metrics."""
+        gram = (
+            1.0, 0.3, 0.0,
+            0.3, 1.0, 0.3,
+            0.0, 0.3, 1.0,
+        )
+        proc_mc = acc.balls_in_bins(
+            acc.bisr(1.0, sensitivity=1.0, gram_matrix=gram),
+            num_bins=3,
+            num_epochs=1,
+            method="mc",
+        )
+        proc_det = acc.balls_in_bins(
+            acc.bisr(1.0, sensitivity=1.0, gram_matrix=gram),
+            num_bins=3,
+            num_epochs=1,
+            method="deterministic",
+        )
+        eps_mc = proc_mc.epsilon_at(1e-5)
+        eps_det = proc_det.epsilon_at(1e-5)
+        assert math.isfinite(eps_mc) and eps_mc >= 0.0
+        assert math.isfinite(eps_det) and eps_det >= 0.0
+
+    def test_bnb_rejects_invalid_method(self):
+        with pytest.raises(ValueError, match="method"):
+            acc.balls_in_bins(
+                acc.lambda_cgd(1.0, sensitivity=1.0),
+                num_bins=10,
+                num_epochs=1,
+                method="foo",  # type: ignore[arg-type]
+            )

@@ -187,3 +187,91 @@ pub fn py_bnb_mc_pld(
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
     Ok(PyPld::new(pld))
 }
+
+/// Deterministic BnB PLD for matrix mechanisms (sampling-free moment envelope).
+///
+/// Args:
+///     gram (list[float]): Flattened row-major b×b Gram matrix.
+///     num_bins (int): Number of bins b.
+///     sigma (float): Noise multiplier σ, must be > 0.
+///     config (DiscretizationConfig): Discretization configuration.
+///     max_order_k (int): Maximum integer moment order k (default 12).
+///     epsilon_max (float): Upper ε bound for the δ(ε) discretization grid.
+///     epsilon_points (int): Grid size for the diagnostic delta curve helper.
+///     max_states (int): Hard cap on DP state count for moment computation.
+///
+/// Returns:
+///     Pld: Asymmetric PLD (remove + add placeholders share the same envelope).
+#[pyfunction]
+#[pyo3(
+    name = "bnb_deterministic_pld",
+    signature = (
+        gram,
+        num_bins,
+        sigma,
+        config,
+        max_order_k=12,
+        epsilon_max=20.0,
+        epsilon_points=256,
+        max_states=200_000,
+    )
+)]
+pub fn py_bnb_deterministic_pld(
+    gram: Vec<f64>,
+    num_bins: usize,
+    sigma: f64,
+    config: &PyDiscretizationConfig,
+    max_order_k: usize,
+    epsilon_max: f64,
+    epsilon_points: usize,
+    max_states: usize,
+) -> PyResult<PyPld> {
+    let opts = crate::amplification::DeterministicOptions {
+        max_order_k,
+        epsilon_max,
+        epsilon_points,
+        max_states,
+    };
+    let pld = crate::amplification::bnb_deterministic_pld(
+        &gram,
+        num_bins,
+        sigma,
+        &config.inner,
+        opts,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}
+
+/// Return (epsilons, delta_remove, delta_add) for deterministic BnB accounting.
+#[pyfunction]
+#[pyo3(
+    name = "bnb_deterministic_delta_curve",
+    signature = (
+        gram,
+        num_bins,
+        sigma,
+        max_order_k=12,
+        epsilon_max=20.0,
+        epsilon_points=256,
+        max_states=200_000,
+    )
+)]
+pub fn py_bnb_deterministic_delta_curve(
+    gram: Vec<f64>,
+    num_bins: usize,
+    sigma: f64,
+    max_order_k: usize,
+    epsilon_max: f64,
+    epsilon_points: usize,
+    max_states: usize,
+) -> PyResult<(Vec<f64>, Vec<f64>, Vec<f64>)> {
+    let opts = crate::amplification::DeterministicOptions {
+        max_order_k,
+        epsilon_max,
+        epsilon_points,
+        max_states,
+    };
+    crate::amplification::bnb_deterministic_delta_curve(&gram, num_bins, sigma, opts)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}

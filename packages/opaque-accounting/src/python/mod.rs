@@ -44,6 +44,9 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(amplification::py_bnb_mc_pld, m)?)?;
 
+    m.add_function(wrap_pyfunction!(amplification::py_bnb_deterministic_pld, m)?)?;
+    m.add_function(wrap_pyfunction!(amplification::py_bnb_deterministic_delta_curve, m)?)?;
+
     // Matrix Factorization
     m.add_function(wrap_pyfunction!(
         matrix_factorization::py_mf_gaussian_pld,

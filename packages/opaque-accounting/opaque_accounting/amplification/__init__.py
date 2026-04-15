@@ -13,6 +13,7 @@ participates with probability < 1.
 
 from opaque_accounting.amplification.balls_in_bins import (
     BallsInBins,
+    DeterministicOptions,
     balls_in_bins,
 )
 from opaque_accounting.amplification.cyclic_poisson import (
@@ -35,6 +36,7 @@ from opaque_accounting.amplification.truncated_poisson import (
 __all__ = [
     # Dataclass types
     "BallsInBins",
+    "DeterministicOptions",
     "Poisson",
     "TruncatedPoisson",
     "ParallelPoisson",

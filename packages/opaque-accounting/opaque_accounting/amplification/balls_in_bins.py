@@ -10,19 +10,24 @@ The returned process represents the **total** privacy cost across all
 For independent-noise mechanisms (Gaussian, AdaClip), uses a conservative
 Poisson per-step approximation.
 
-For correlated-noise mechanisms (DP-λCGD, BISR), uses Monte Carlo sampling of
-the dominating pair from Choquette-Choo et al. (2024) arxiv:2410.06266.
+For correlated-noise mechanisms (DP-λCGD, BISR, BLT), uses either Monte Carlo
+sampling of the dominating pair from Choquette-Choo et al. (2024)
+arxiv:2410.06266 (default), or a deterministic moment-based envelope
+(Schuchardt & Kalinin, 2026 arxiv:2601.21636) when ``method="deterministic"``.
 
 References:
     - Chua et al. (2025), "Scalable Shuffle Differential Privacy"
     - Choquette-Choo et al. (2024), "Near Exact Privacy Amplification
       for Matrix Mechanisms"
+    - Schuchardt & Kalinin (2026), "Sampling-Free Privacy Accounting for
+      Matrix Mechanisms under Random Allocation"
 """
 
 from __future__ import annotations
 
 import functools
 from dataclasses import dataclass
+from typing import Any, Literal
 
 from .. import opaque_accounting as _native
 
@@ -35,11 +40,23 @@ from opaque_accounting.mechanisms.nonprivate import NonPrivate
 from opaque_accounting.transformations.adaclip import AdaClip
 from opaque_accounting.transformations.jme import Jme
 
-#: MF types with pre-computed Gram matrix for MC BnB.
+#: MF types with pre-computed Gram matrix for BnB accounting.
 _BnbMf = Blt | LambdaCgd | Bisr
 
 #: Mechanism types accepted by :func:`balls_in_bins`.
 _Inner = Gaussian | _BnbMf | AdaClip | Jme | NonPrivate
+
+BnbMethod = Literal["mc", "deterministic"]
+
+
+@dataclass(frozen=True, slots=True)
+class DeterministicOptions:
+    """Parameters for sampling-free BnB accounting (matrix mechanisms only)."""
+
+    max_order_k: int = 12
+    epsilon_max: float = 20.0
+    epsilon_points: int = 256
+    max_states: int = 200_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +85,19 @@ class BallsInBins(DpProcess):
     inner: _Inner
     num_bins: int
     num_epochs: int
+    method: BnbMethod = "mc"
+    deterministic_options: DeterministicOptions | None = None
+
+    def _bnb_native_kwargs(self) -> dict[str, Any]:
+        if self.deterministic_options is None:
+            return {}
+        d = self.deterministic_options
+        return {
+            "max_order_k": d.max_order_k,
+            "epsilon_max": d.epsilon_max,
+            "epsilon_points": d.epsilon_points,
+            "max_states": d.max_states,
+        }
 
     @functools.lru_cache(maxsize=8)
     def pld(
@@ -111,13 +141,21 @@ class BallsInBins(DpProcess):
                         f"{type(mg).__name__} requires a non-empty gram_matrix "
                         "for BnB amplification."
                     )
-                return _native.bnb_mc_pld(
+                if self.method == "mc":
+                    return _native.bnb_mc_pld(
+                        list(mg.gram_matrix),
+                        self.num_bins,
+                        mg.noise_multiplier,
+                        100_000,  # MC samples
+                        42,  # seed
+                        native_cfg,
+                    )
+                return _native.bnb_deterministic_pld(
                     list(mg.gram_matrix),
                     self.num_bins,
                     mg.noise_multiplier,
-                    100_000,  # MC samples
-                    42,  # seed
                     native_cfg,
+                    **self._bnb_native_kwargs(),
                 )
             case Jme(inner=Blt() | LambdaCgd() | Bisr()) as j:
                 if not j.gram_matrix:
@@ -125,13 +163,21 @@ class BallsInBins(DpProcess):
                         f"Jme({type(j.inner).__name__}) requires a non-empty "
                         "gram_matrix for BnB amplification."
                     )
-                return _native.bnb_mc_pld(
+                if self.method == "mc":
+                    return _native.bnb_mc_pld(
+                        list(j.gram_matrix),
+                        self.num_bins,
+                        j.noise_multiplier,
+                        100_000,  # MC samples
+                        42,  # seed
+                        native_cfg,
+                    )
+                return _native.bnb_deterministic_pld(
                     list(j.gram_matrix),
                     self.num_bins,
                     j.noise_multiplier,
-                    100_000,  # MC samples
-                    42,  # seed
                     native_cfg,
+                    **self._bnb_native_kwargs(),
                 )
             case _:
                 raise TypeError(
@@ -144,6 +190,9 @@ def balls_in_bins(
     inner: _Inner,
     num_bins: int,
     num_epochs: int = 1,
+    *,
+    method: BnbMethod = "mc",
+    deterministic_options: DeterministicOptions | None = None,
 ) -> BallsInBins:
     """Balls-in-Bins amplified mechanism — returns **total** multi-epoch cost.
 
@@ -163,8 +212,10 @@ def balls_in_bins(
     Args:
         inner: Base mechanism — :func:`gaussian`, :func:`lambda_cgd`,
             :func:`bisr`, or :func:`adaclip`.
-        num_bins: Bins per epoch (k ≥ 2).  Typically ``dataset_size / batch_size``.
+        num_bins: Bins per epoch (k >= 2).  Typically ``dataset_size / batch_size``.
         num_epochs: Number of training epochs (default 1).
+        method: ``"mc"`` (default) or ``"deterministic"`` for matrix mechanisms.
+        deterministic_options: Optional tuning for deterministic accounting.
 
     Returns:
         A :class:`BallsInBins` process (total cost).
@@ -187,5 +238,13 @@ def balls_in_bins(
         raise ValueError(f"num_bins must be >= 2 for BnB amplification, got {num_bins}")
     if num_epochs < 1:
         raise ValueError(f"num_epochs must be >= 1, got {num_epochs}")
+    if method not in ("mc", "deterministic"):
+        raise ValueError(f"method must be 'mc' or 'deterministic', got {method!r}")
 
-    return BallsInBins(inner=inner, num_bins=num_bins, num_epochs=num_epochs)
+    return BallsInBins(
+        inner=inner,
+        num_bins=num_bins,
+        num_epochs=num_epochs,
+        method=method,
+        deterministic_options=deterministic_options,
+    )
