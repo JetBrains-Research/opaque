@@ -349,7 +349,7 @@ pub fn bnb_mc_pld(
 }
 
 /// Convert MC samples into a discrete PMF on the PLD grid.
-fn samples_to_pmf(
+pub(crate) fn samples_to_pmf(
     samples: &[f64],
     discretization: f64,
     pessimistic_estimate: bool,

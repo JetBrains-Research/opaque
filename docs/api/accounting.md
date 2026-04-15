@@ -312,6 +312,14 @@ proc = acc.cyclic_poisson(
 eps = proc.epsilon_at(1e-5)
 ```
 
+### `b_min_sep(inner, strategy_coefficients, n_steps, participation_rate_p0, *, num_mc_samples=100_000, mc_seed=42) -> DpProcess`
+
+Warm-start **b-min-sep** amplification for BandMF (Dong & Ganesh, arXiv:2602.09338).
+Uses Monte Carlo PLD accounting. `inner` must be `BandMf` or `Jme(BandMf)`.
+`strategy_coefficients` is the first column of the same BandMF strategy matrix
+used for noise. `participation_rate_p0` is the per-iteration per-example rate
+`E[|B|]/|D|` (match the training sampler’s target batch size).
+
 ### `balls_in_bins(inner, num_bins, num_epochs, *, lr_weights=None) -> DpProcess`
 
 Balls-in-Bins (random-partition) amplification. Returns the **total** privacy

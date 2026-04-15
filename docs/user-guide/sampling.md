@@ -6,7 +6,7 @@ Poisson subsampling provides privacy amplification, meaning you need less
 noise for the same epsilon when each example is included independently with
 small probability.
 
-Opaque provides five sampler classes, all designed to work with PyTorch's
+Opaque provides sampler classes designed to work with PyTorch's
 `DataLoader` via the `batch_sampler` parameter.
 
 ## Poisson sampling
@@ -166,6 +166,34 @@ At iteration `i`, the sampler draws from group `i % cycle_length`. With
 
 See [Noise Addition](noise.md#matrix-factorization-noise-dp-ftrl) for how cyclic
 sampling integrates with correlated noise mechanisms.
+
+### `BMinSepSampler`
+
+Warm-start **b-min-sep** subsampling for BandMF (Dong & Ganesh, arXiv:2602.09338).
+Each step includes each *eligible* example independently with probability `p`
+(the paper’s $p$). Eligibility excludes any example that appeared in one of the
+previous `bands - 1` batches. Initial per-example cooldowns are drawn from the
+stationary distribution so expected batch size is roughly stable from step 0.
+
+Use `p = p_0 / (1 - p_0 * (bands - 1))` when matching a target per-example rate
+`p_0 = expected_batch_size / dataset_size` (for `bands == 1`, `p = p_0`).
+Pair with `opaque.accounting.b_min_sep` for privacy accounting.
+
+```python
+from opaque.sampling import BMinSepSampler
+from opaque.random import key
+
+p0 = batch_size / len(dataset)
+bands = 8
+p = p0 / (1.0 - p0 * (bands - 1))
+sampler = BMinSepSampler(
+    dataset,
+    bands=bands,
+    sampling_prob=p,
+    iterations=num_steps,
+    key=key(42),
+)
+```
 
 ## Balls-in-Bins sampling
 

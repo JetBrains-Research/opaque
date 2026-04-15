@@ -13,6 +13,7 @@ from opaque.sampling import distributed
 from opaque.sampling._utils import PartitionType
 from opaque.sampling.balls_in_bins import BallsInBinsSampler
 from opaque.sampling.collate import poisson_collate
+from opaque.sampling.b_min_sep import BMinSepSampler
 from opaque.sampling.cyclic_poisson import CyclicPoissonSampler
 from opaque.sampling.poisson import PoissonSampler
 from opaque.sampling.sequential import SequentialBatchSampler
@@ -23,6 +24,7 @@ __all__ = [
     "PoissonSampler",
     "SequentialBatchSampler",
     "TruncatedPoissonSampler",
+    "BMinSepSampler",
     "CyclicPoissonSampler",
     "PartitionType",
     "distributed",

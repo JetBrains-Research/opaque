@@ -368,6 +368,18 @@ def balls_in_bins_gaussian_pld_epochs(
     """
     ...
 
+def bandmf_b_min_sep_warm_mc_pld(
+    strategy_coef: list[float],
+    n_steps: int,
+    p: float,
+    sigma: float,
+    num_samples: int,
+    seed: int,
+    config: DiscretizationConfig,
+) -> Pld:
+    """Monte Carlo PLD for BandMF + warm-start b-min-sep (arXiv:2602.09338)."""
+    ...
+
 def bnb_mc_pld(
     gram: list[float],
     num_bins: int,

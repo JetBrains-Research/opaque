@@ -9,7 +9,7 @@ Privacy amplification through sampling is a key technique in DP-SGD: training
 on randomly selected subsets provides stronger privacy than training on the
 full dataset.
 
-Opaque provides five sampling strategies:
+Opaque provides these sampling strategies:
 
 1. **Poisson Sampling** (`PoissonSampler`): Each example sampled independently
    with probability `sample_rate`. Variable batch sizes, strong privacy
@@ -33,6 +33,9 @@ Opaque provides five sampling strategies:
    through the dataset in fixed-size contiguous batches with no randomness.
    The dataset should be pre-shuffled once before constructing the sampler.
    Used with the BLT mechanism.
+
+6. **b-min-sep** (`BMinSepSampler`): Warm-start minimum-separation Poisson
+   subsampling for BandMF (arXiv:2602.09338). Use with `acc.b_min_sep`.
 
 **See also**: [Sampling & Microbatching User Guide](../user-guide/sampling.md)
 
@@ -192,6 +195,11 @@ loader = DataLoader(shard, batch_sampler=sampler)
       heading_level: 3
 
 ::: opaque.sampling.cyclic_poisson.CyclicPoissonSampler
+    options:
+      show_source: true
+      heading_level: 3
+
+::: opaque.sampling.b_min_sep.BMinSepSampler
     options:
       show_source: true
       heading_level: 3

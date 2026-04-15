@@ -187,3 +187,37 @@ pub fn py_bnb_mc_pld(
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
     Ok(PyPld::new(pld))
 }
+
+/// Monte Carlo PLD for BandMF with warm-start b-min-sep subsampling (Dong & Ganesh, arXiv:2602.09338).
+///
+/// Args:
+///     strategy_coef: First column of the BandMF strategy matrix C (length = bandwidth).
+///     n_steps: Total training iterations n.
+///     p: Per-iteration Poisson inclusion probability p (Algorithm 2), not the per-example rate p_0.
+///     sigma: Raw noise multiplier σ (same as BandMf noise_multiplier).
+///     num_samples: Monte Carlo sample count.
+///     seed: RNG seed.
+///     config: Discretization configuration.
+#[pyfunction]
+#[pyo3(name = "bandmf_b_min_sep_warm_mc_pld", signature = (strategy_coef, n_steps, p, sigma, num_samples, seed, config))]
+pub fn py_bandmf_b_min_sep_warm_mc_pld(
+    strategy_coef: Vec<f64>,
+    n_steps: usize,
+    p: f64,
+    sigma: f64,
+    num_samples: usize,
+    seed: u64,
+    config: &PyDiscretizationConfig,
+) -> PyResult<PyPld> {
+    let pld = crate::amplification::bandmf_b_min_sep_warm_mc_pld(
+        &strategy_coef,
+        n_steps,
+        p,
+        sigma,
+        num_samples,
+        seed,
+        &config.inner,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}

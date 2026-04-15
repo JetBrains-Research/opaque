@@ -9,7 +9,7 @@ Modules:
 - ``opaque.clipping``: Per-example gradient clipping (clipped_grad, clipped_fun, clip_pytree)
 - ``opaque.noise``: Gaussian noise, truncated Gaussian, matrix-factorization correlated noise
 - ``opaque.accounting``: PLD-based privacy accounting with composition, calibration, and metrics
-- ``opaque.sampling``: Poisson, truncated Poisson, and cyclic Poisson samplers
+- ``opaque.sampling``: Poisson, truncated Poisson, cyclic Poisson, and b-min-sep samplers
 - ``opaque.auditing``: Empirical privacy auditing via membership inference
 - ``opaque.distributed``: DDP utilities (gradient aggregation, state sync)
 - ``opaque.compat``: HuggingFace auto-patching for vmap compatibility
@@ -43,6 +43,7 @@ from opaque.noise import (
 from opaque.noise.per_group_noise import per_group_noise_stddev
 from opaque.sampling import (
     BallsInBinsSampler,
+    BMinSepSampler,
     CyclicPoissonSampler,
     PoissonSampler,
     TruncatedPoissonSampler,
@@ -80,6 +81,7 @@ __all__ = [
     # Sampling
     "sampling",
     "BallsInBinsSampler",
+    "BMinSepSampler",
     "PoissonSampler",
     "TruncatedPoissonSampler",
     "CyclicPoissonSampler",
