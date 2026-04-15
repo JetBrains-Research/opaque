@@ -48,11 +48,15 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_function(wrap_pyfunction!(
-        amplification::py_bandmf_b_min_sep_prepare_transcripts,
+        amplification::py_register_b_min_sep_transcript_corpus,
         m
     )?)?;
     m.add_function(wrap_pyfunction!(
-        amplification::py_bandmf_b_min_sep_pld_from_transcripts,
+        amplification::py_drop_b_min_sep_transcript_corpus,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        amplification::py_bandmf_b_min_sep_pld_from_transcript_handle,
         m
     )?)?;
 

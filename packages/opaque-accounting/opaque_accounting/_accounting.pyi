@@ -380,27 +380,29 @@ def bandmf_b_min_sep_warm_mc_pld(
     """Monte Carlo PLD for BandMF + warm-start b-min-sep (arXiv:2602.09338)."""
     ...
 
-def bandmf_b_min_sep_prepare_transcripts(
+def register_b_min_sep_transcript_corpus(
     strategy_coef: list[float],
     n_steps: int,
     p: float,
     num_samples: int,
     seed: int,
-) -> tuple[list[float], list[float], list[float]]:
-    """Draw MC transcripts (x, ζ) and η for reuse across σ."""
+) -> int:
+    """Allocate MC transcripts in Rust; return handle for reuse across σ."""
     ...
 
-def bandmf_b_min_sep_pld_from_transcripts(
-    remove_x: list[float],
-    remove_zeta: list[float],
-    add_eta: list[float],
+def drop_b_min_sep_transcript_corpus(handle: int) -> None:
+    """Free a corpus allocated by ``register_b_min_sep_transcript_corpus``."""
+    ...
+
+def bandmf_b_min_sep_pld_from_transcript_handle(
+    handle: int,
     strategy_coef: list[float],
     n_steps: int,
     p: float,
     sigma: float,
     config: DiscretizationConfig,
 ) -> Pld:
-    """Build PLD from precomputed transcripts at σ."""
+    """Build PLD from a registered corpus at σ."""
     ...
 
 def bnb_mc_pld(

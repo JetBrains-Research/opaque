@@ -1,4 +1,4 @@
-"""Internal cache of b-min-sep MC transcripts for faster calibration (no public API)."""
+"""Rust-backed transcript corpora for b-min-sep MC (compact memory, reuse across σ)."""
 
 from __future__ import annotations
 
@@ -8,45 +8,47 @@ from collections import OrderedDict
 
 from opaque_accounting import opaque_accounting as _native
 
-# Cap resident transcript RAM: each cache entry holds ~3 * num_samples * n_steps * 8 bytes.
-# Override with OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES (e.g. 3000000000 for large runs).
-def _max_cache_bytes() -> int:
+
+def _max_registry_bytes() -> int:
+    """Upper bound for registering one corpus (raw f64 storage ~3×S×n×8 bytes).
+
+    Default 4 GiB fits realistic calibration (e.g. n=2000, S=50k → ~2.4 GiB).
+    Set ``OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES`` to cap lower on small VMs,
+    or ``0`` to disable transcript reuse (always one-shot MC).
+    """
     raw = os.environ.get("OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES", "")
     if raw.strip():
         try:
             return max(0, int(raw))
         except ValueError:
-            return 512 * 1024 * 1024
-    return 512 * 1024 * 1024
+            return 4 * 1024 * 1024 * 1024
+    return 4 * 1024 * 1024 * 1024
 
 
-_MAX_ENTRIES = 2
+_MAX_ENTRIES = 4
 
 _lock = threading.Lock()
-_cache: OrderedDict[tuple, tuple[list[float], list[float], list[float]]] = OrderedDict()
+# key -> native corpus handle (u64)
+_cache: OrderedDict[tuple, int] = OrderedDict()
 
 
-def _estimate_bytes(
-    rx: list[float], rz: list[float], ae: list[float]
-) -> int:
-    return 8 * (len(rx) + len(rz) + len(ae))
+def _estimate_raw_bytes(num_mc_samples: int, n_steps: int) -> int:
+    return 3 * num_mc_samples * n_steps * 8
 
 
-def get_or_prepare(
+def get_handle_or_none(
     strategy_coef: tuple[float, ...],
     n_steps: int,
     p: float,
     num_mc_samples: int,
     mc_seed: int,
-) -> tuple[list[float], list[float], list[float]] | None:
-    """Return transcripts for PLD-from-transcripts, or None if too large to retain.
-
-    When None, callers should use ``bandmf_b_min_sep_warm_mc_pld`` (one-shot MC)
-    to avoid allocating multi-GB transcript buffers on every calibration probe.
-    """
-    max_b = _max_cache_bytes()
-    nbytes = 3 * num_mc_samples * n_steps * 8
-    if max_b == 0 or nbytes > max_b:
+) -> int | None:
+    """Return a Rust corpus handle for reuse, or None to use one-shot MC."""
+    max_b = _max_registry_bytes()
+    if max_b == 0:
+        return None
+    nbytes = _estimate_raw_bytes(num_mc_samples, n_steps)
+    if nbytes > max_b:
         return None
 
     key = (strategy_coef, n_steps, p, num_mc_samples, mc_seed)
@@ -54,21 +56,23 @@ def get_or_prepare(
         if key in _cache:
             _cache.move_to_end(key)
             return _cache[key]
-        rx, rz, ae = _native.bandmf_b_min_sep_prepare_transcripts(
-            list(strategy_coef),
-            n_steps,
-            p,
-            num_mc_samples,
-            mc_seed,
-        )
-        nbytes = _estimate_bytes(rx, rz, ae)
-        if nbytes > max_b:
+        try:
+            hid = _native.register_b_min_sep_transcript_corpus(
+                list(strategy_coef),
+                n_steps,
+                p,
+                num_mc_samples,
+                mc_seed,
+            )
+        except ValueError:
             return None
         while _cache and (
             len(_cache) >= _MAX_ENTRIES
-            or sum(_estimate_bytes(*v) for v in _cache.values()) + nbytes > max_b
+            or sum(_estimate_raw_bytes(k[3], k[1]) for k in _cache.keys()) + nbytes
+            > max_b
         ):
-            _cache.popitem(last=False)
-        _cache[key] = (rx, rz, ae)
+            _old_key, old_h = _cache.popitem(last=False)
+            _native.drop_b_min_sep_transcript_corpus(old_h)
+        _cache[key] = hid
         _cache.move_to_end(key)
-        return (rx, rz, ae)
+        return hid

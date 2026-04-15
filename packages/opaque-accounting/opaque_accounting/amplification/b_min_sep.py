@@ -21,7 +21,7 @@ from opaque_accounting.discretization import get_discretization
 from opaque_accounting.mechanisms.band_mf import BandMf
 from opaque_accounting.transformations.jme import Jme
 
-from ._b_min_sep_transcript_cache import get_or_prepare
+from ._b_min_sep_transcript_cache import get_handle_or_none
 
 _Inner = BandMf | Jme
 
@@ -68,6 +68,7 @@ class BMinSep(DpProcess):
             pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
         )
+        native_cfg = config.to_native()
         bands = len(self.strategy_coefficients)
         p = _participation_p_from_per_example_rate(self.participation_rate_p0, bands)
 
@@ -81,14 +82,14 @@ class BMinSep(DpProcess):
                     f"b_min_sep requires BandMf or Jme(BandMf), got {type(self.inner).__name__}."
                 )
 
-        corp = get_or_prepare(
+        hid = get_handle_or_none(
             self.strategy_coefficients,
             self.n_steps,
             p,
             self.num_mc_samples,
             self.mc_seed,
         )
-        if corp is None:
+        if hid is None:
             return _native.bandmf_b_min_sep_warm_mc_pld(
                 list(self.strategy_coefficients),
                 self.n_steps,
@@ -96,18 +97,15 @@ class BMinSep(DpProcess):
                 effective_nm,
                 self.num_mc_samples,
                 self.mc_seed,
-                config.to_native(),
+                native_cfg,
             )
-        rx, rz, ae = corp
-        return _native.bandmf_b_min_sep_pld_from_transcripts(
-            rx,
-            rz,
-            ae,
+        return _native.bandmf_b_min_sep_pld_from_transcript_handle(
+            hid,
             list(self.strategy_coefficients),
             self.n_steps,
             p,
             effective_nm,
-            config.to_native(),
+            native_cfg,
         )
 
 

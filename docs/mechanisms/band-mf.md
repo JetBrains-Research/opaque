@@ -128,6 +128,12 @@ Training scripts can select it with `--band-mf-sampling b_min_sep` (see
 |---------------|:---------:|-------|
 | `b_min_sep()` | Yes | MC PLD; default `num_mc_samples=100_000` |
 
+For large `n_steps × num_mc_samples`, the implementation keeps **one copy** of
+the MC random transcripts in **Rust** (compact `f64` arrays) and reuses them
+for every noise-multiplier probe during calibration (no Python list blow-up).
+Optional cap: set `OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES` (default ~4 GiB);
+use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` call.
+
 !!! note "Without amplification"
     You can also use BandMF without subsampling by omitting the
     `cyclic_poisson()` wrapper. This accounts for the full training run

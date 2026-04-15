@@ -223,15 +223,18 @@ pub fn py_bandmf_b_min_sep_warm_mc_pld(
 }
 
 #[pyfunction]
-#[pyo3(name = "bandmf_b_min_sep_prepare_transcripts", signature = (strategy_coef, n_steps, p, num_samples, seed))]
-pub fn py_bandmf_b_min_sep_prepare_transcripts(
+#[pyo3(
+    name = "register_b_min_sep_transcript_corpus",
+    signature = (strategy_coef, n_steps, p, num_samples, seed)
+)]
+pub fn py_register_b_min_sep_transcript_corpus(
     strategy_coef: Vec<f64>,
     n_steps: usize,
     p: f64,
     num_samples: usize,
     seed: u64,
-) -> PyResult<(Vec<f64>, Vec<f64>, Vec<f64>)> {
-    crate::amplification::bandmf_b_min_sep_prepare_transcripts(
+) -> PyResult<u64> {
+    crate::amplification::register_b_min_sep_transcripts(
         &strategy_coef,
         n_steps,
         p,
@@ -242,24 +245,26 @@ pub fn py_bandmf_b_min_sep_prepare_transcripts(
 }
 
 #[pyfunction]
+#[pyo3(name = "drop_b_min_sep_transcript_corpus", signature = (handle))]
+pub fn py_drop_b_min_sep_transcript_corpus(handle: u64) {
+    crate::amplification::drop_b_min_sep_transcript_handle(handle);
+}
+
+#[pyfunction]
 #[pyo3(
-    name = "bandmf_b_min_sep_pld_from_transcripts",
-    signature = (remove_x, remove_zeta, add_eta, strategy_coef, n_steps, p, sigma, config)
+    name = "bandmf_b_min_sep_pld_from_transcript_handle",
+    signature = (handle, strategy_coef, n_steps, p, sigma, config)
 )]
-pub fn py_bandmf_b_min_sep_pld_from_transcripts(
-    remove_x: Vec<f64>,
-    remove_zeta: Vec<f64>,
-    add_eta: Vec<f64>,
+pub fn py_bandmf_b_min_sep_pld_from_transcript_handle(
+    handle: u64,
     strategy_coef: Vec<f64>,
     n_steps: usize,
     p: f64,
     sigma: f64,
     config: &PyDiscretizationConfig,
 ) -> PyResult<PyPld> {
-    let pld = crate::amplification::bandmf_b_min_sep_pld_from_transcripts(
-        &remove_x,
-        &remove_zeta,
-        &add_eta,
+    let pld = crate::amplification::pld_from_transcript_handle(
+        handle,
         &strategy_coef,
         n_steps,
         p,
