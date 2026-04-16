@@ -49,9 +49,7 @@ def test_known_sequence_1d():
 
 def test_state_shape_matches_template():
     template = {"a": torch.zeros(2, 3), "b": torch.ones(4)}
-    denoise, st = disk_denoiser(
-        template, noise_stddev=1.0, process_stddev=0.1**0.5
-    )
+    denoise, st = disk_denoiser(template, noise_stddev=1.0, process_stddev=0.1**0.5)
     assert isinstance(st, DiskDenoiserState)
     assert isinstance(st, DenoiserState)
     assert set(st._estimate.keys()) == {"a", "b"}
@@ -134,9 +132,7 @@ def test_per_group_noise_stddev():
 
 def test_frozen_state():
     template = torch.zeros(1)
-    _, st = disk_denoiser(
-        template, noise_stddev=1.0, process_stddev=0.1**0.5
-    )
+    _, st = disk_denoiser(template, noise_stddev=1.0, process_stddev=0.1**0.5)
     with pytest.raises(dataclasses.FrozenInstanceError):
         st._step_counter = 99  # type: ignore[misc]
 
