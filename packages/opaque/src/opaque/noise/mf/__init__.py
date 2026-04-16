@@ -24,7 +24,6 @@ References:
 from .band_mf import BandMfStrategy, band_mf_strategy
 from .bisr import BisrStrategy, bisr_strategy
 from .bsr import BsrStrategy, bsr_strategy
-from .lr_aware import LrAwareStrategy, lr_aware_strategy
 from .blt import BltStrategy, blt_strategy
 from .dispatcher import MfStrategy, mf_noise
 from .identity import IdentityStrategy, identity_strategy
@@ -51,8 +50,6 @@ __all__ = [
     "bisr_strategy",
     "BsrStrategy",
     "bsr_strategy",
-    "LrAwareStrategy",
-    "lr_aware_strategy",
     "BltStrategy",
     "blt_strategy",
     "IdentityStrategy",

@@ -42,7 +42,6 @@ See [BandMF — Assumptions and limitations](../mechanisms/band-mf.md#assumption
 | [DP-λCGD](../mechanisms/lambda-cgd.md) | PRNG replay, bandwidth 2 | BnB | \(O(1)\) | Minimal memory |
 | [BISR](../mechanisms/bisr.md) | Banded inverse square root | BnB | \(O(p)\) | Analytic inverse coefficients |
 | [BSR](../mechanisms/bsr.md) | Banded square root (closed form) | BnB | \(O(p)\) | Paper `alpha`, `beta` (kw-only); bind `beta` from SGD momentum or Adam \(\beta_1\) |
-| [LR-Aware](../mechanisms/lr-aware.md) | Schedule-aware Toeplitz \(\sqrt{}\) | BnB | \(O(p)\) | Exponential LR decay; `lr_decay_beta` = final/initial ratio |
 | Identity | Independent (DP-SGD style) | Poisson / standard | \(O(1)\) | Baseline via MF API |
 
 ## JME (DP-Adam) and MF
@@ -56,12 +55,6 @@ When adding a new `MfStrategy`, ensure `opaque.noise.mf.jme._derive_second_strat
 [BSR](../mechanisms/bsr.md) ships **closed-form** coefficients for the Kalinin–Lampert workload in \((\alpha,\beta)\). It does **not** accept arbitrary `lr_schedule` inside the closed-form path. For general schedules or optimizers, use **BandMF** (numerical Toeplitz optimization) or **BLT**.
 
 With JME + BSR, the second stream is a second `bsr_strategy(..., alpha=..., beta=β₂)`; require \(\alpha > \beta\) for each stream’s \(\beta\) (see `jme.py`).
-
-## LR-Aware factorization (arXiv:2511.17994)
-
-[LR-Aware](../mechanisms/lr-aware.md) is a **schedule-aware** Toeplitz square root construction for **exponential** LR decay. It uses the same \(r_j\) coefficients as BSR but scaled by \(\alpha^j\) where \(\alpha = \beta^{1/(n-1)}\). The paper shows this achieves **optimal MaxSE rate** for exponential decay.
-
-For non-exponential schedules, use BandMF/BLT with `lr_schedule` (Toeplitz-surrogate optimization, which remains a reasonable heuristic).
 
 ## Further reading
 

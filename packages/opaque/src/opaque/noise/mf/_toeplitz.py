@@ -136,9 +136,6 @@ __all__ = [
     "max_error",
     "mean_error",
     "optimal_max_error_strategy_coefs",
-    "schedule_per_query_error",
-    "schedule_max_error",
-    "schedule_mean_error",
 ]
 
 
@@ -524,64 +521,6 @@ def loss(
 
 mean_loss = functools.partial(loss, error_fn=mean_error)
 max_loss = functools.partial(loss, error_fn=max_error)
-
-
-# ---------------------------------------------------------------------------
-# Schedule workload A_chi = A_1 * D  (Kalinin & Andersson, 2511.17994)
-# ---------------------------------------------------------------------------
-
-
-def schedule_per_query_error(
-    *,
-    strategy_coef: torch.Tensor,
-    n: int | None = None,
-    lr_schedule: torch.Tensor,
-) -> torch.Tensor:
-    r"""Per-query squared error for strategy C against schedule workload :math:`A_\chi`.
-
-    :math:`A_\chi = A_1 \cdot D` where :math:`D = \text{diag}(\chi_1,\ldots,\chi_n)`.
-    :math:`B = A_\chi \cdot C^{-1}` is **not** Toeplitz when :math:`\chi` varies.
-
-    Computes :math:`\|B_{[m,:]}\|^2` for each row :math:`m`. The :math:`C^{-1}` is
-    lower-triangular Toeplitz with coefficients from ``inverse_coef(strategy_coef)``.
-
-    Reference: arXiv:2511.17994, eq. (3)--(4).
-    """
-    strategy_coef, n = _reconcile(strategy_coef, n)
-    lr = torch.as_tensor(lr_schedule, dtype=torch.float64)[:n]
-    if lr.shape[0] != n:
-        raise ValueError(f"lr_schedule length {lr.shape[0]} != n={n}")
-
-    cinv = inverse_coef(strategy_coef, n)
-    C_inv_mat = materialize_lower_triangular(cinv, n)
-
-    A_chi = torch.tril(torch.ones(n, n, dtype=torch.float64)) * lr.unsqueeze(0)
-    B = A_chi @ C_inv_mat
-    return (B * B).sum(dim=1)
-
-
-def schedule_max_error(
-    *,
-    strategy_coef: torch.Tensor,
-    n: int | None = None,
-    lr_schedule: torch.Tensor,
-) -> torch.Tensor:
-    """MaxSE^2 for strategy C against schedule workload A_chi."""
-    return schedule_per_query_error(
-        strategy_coef=strategy_coef, n=n, lr_schedule=lr_schedule
-    ).max()
-
-
-def schedule_mean_error(
-    *,
-    strategy_coef: torch.Tensor,
-    n: int | None = None,
-    lr_schedule: torch.Tensor,
-) -> torch.Tensor:
-    """MeanSE^2 for strategy C against schedule workload A_chi."""
-    return schedule_per_query_error(
-        strategy_coef=strategy_coef, n=n, lr_schedule=lr_schedule
-    ).mean()
 
 
 def optimize(

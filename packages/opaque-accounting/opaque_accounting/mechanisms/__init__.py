@@ -36,10 +36,6 @@ from opaque_accounting.mechanisms.bsr import (
     Bsr,
     bsr,
 )
-from opaque_accounting.mechanisms.lr_aware import (
-    LrAware,
-    lr_aware,
-)
 from opaque_accounting.mechanisms.blt import (
     Blt,
     blt,
@@ -68,7 +64,6 @@ __all__ = [
     "LambdaCgd",
     "Bisr",
     "Bsr",
-    "LrAware",
     # Constructor functions
     "gaussian",
     "eps_delta",
@@ -79,5 +74,4 @@ __all__ = [
     "lambda_cgd",
     "bisr",
     "bsr",
-    "lr_aware",
 ]

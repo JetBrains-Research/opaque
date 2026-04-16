@@ -98,7 +98,6 @@ from opaque_accounting.mechanisms import (
     bisr,
     blt,
     bsr,
-    lr_aware,
     eps_delta,
     gaussian,
     identity,
@@ -133,7 +132,6 @@ __all__ = [
     "lambda_cgd",
     "bisr",
     "bsr",
-    "lr_aware",
     # Amplification
     "balls_in_bins",
     "poisson",
