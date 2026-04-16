@@ -24,10 +24,11 @@ Opaque provides these sampling strategies:
    factorization noise mechanisms (BandMF) where predictable sampling
    structure enables correlated noise.
 
-4. **Balls-in-Bins Sampling** (`BallsInBinsSampler`): Each epoch, the
-   dataset is randomly shuffled and partitioned into equal-sized bins.
-   Deterministic batch sizes with privacy amplification from random
-   assignment. Used with DP-λCGD, BISR, and BLT mechanisms.
+4. **Balls-in-Bins Sampling** (`BallsInBinsSampler`): Each example is
+   independently assigned to a bin once at init; the assignment is **fixed
+   across epochs** (required for BnB accounting). Bin sizes are variable
+   (Binomial); some bins may be empty. Used with DP-λCGD, BISR, BSR, and
+   BLT mechanisms.
 
 5. **Sequential Batch Sampling** (`SequentialBatchSampler`): Iterates
    through the dataset in fixed-size contiguous batches with no randomness.
@@ -112,8 +113,9 @@ loader = DataLoader(dataset, batch_sampler=sampler)
 | `num_epochs` | `int` or `None` | `None` | Number of epochs. `None` = infinite |
 | `key` | `RngKey` | required | RNG key for reproducible sampling |
 
-Batch size is deterministic: `floor(len(dataset) / num_bins)`. Remainder
-examples are dropped each epoch (like `drop_last=True`).
+Bin sizes are variable (Binomial distribution). Assignments are **fixed
+across epochs** (required for BnB dominating-pair accounting). Empty bins
+are skipped.
 
 Account with `acc.balls_in_bins(mechanism, num_bins, num_epochs)` where
 `mechanism` is `acc.lambda_cgd(...)`, `acc.bisr(...)`, `acc.blt(...)`, or

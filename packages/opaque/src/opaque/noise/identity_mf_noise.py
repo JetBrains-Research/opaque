@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from opaque.noise.custom_mf_noise import custom_mf_noise
-from opaque.noise.matrix_factorization.noise import MFNoiseState
-from opaque.noise.matrix_factorization.streaming_matrix import identity
+from opaque.noise.mf._engine import MFNoiseState
+from opaque.noise.mf._streaming_matrix import identity
 from opaque.random import RngKey
 
 
@@ -31,12 +31,7 @@ def identity_strategy() -> IdentityStrategy:
     """Create an identity (DP-SGD) noise strategy.
 
     Returns:
-        An :class:`IdentityStrategy` for use with :func:`mf_noise`.
-
-    Example:
-        >>> from opaque.noise import mf_noise, identity_strategy
-        >>> from opaque.random import key
-        >>> noise_fn, state = mf_noise(template, identity_strategy(), stddev=1.0, key=key(42))
+        An :class:`IdentityStrategy` for use with :func:`~opaque.noise.mf.mf_noise`.
     """
     return IdentityStrategy()
 

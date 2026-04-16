@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import time
 
-import torch
-
 from opaque.noise.mf import band_mf_strategy, bsr_strategy
 
 
@@ -47,7 +45,7 @@ def main() -> None:
     print()
     print(f"  band_mf_strategy: {t_band * 1000:.2f} ms")
     print(f"  bsr_strategy:      {t_bsr * 1000:.2f} ms")
-    if t_band > 0:
+    if t_band > 0 and t_bsr > 0:
         print(f"\n  Speedup (BandMF / BSR): {t_band / t_bsr:.1f}×")
 
 

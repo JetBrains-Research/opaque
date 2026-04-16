@@ -199,9 +199,10 @@ sampler = BMinSepSampler(
 
 ### `BallsInBinsSampler`
 
-Each epoch, randomly shuffles the dataset and partitions it into
-equal-sized bins. Batch sizes are deterministic. Used with DP-λCGD,
-BISR, and BLT mechanisms.
+Each example is independently assigned to one of `num_bins` bins (Binomial
+bin sizes; some bins may be empty). The assignment is **fixed once at init**
+and **reused across all epochs** — this is required by the dominating-pair
+BnB privacy accounting. Used with DP-λCGD, BISR, BSR, and BLT mechanisms.
 
 ```python
 from opaque.sampling import BallsInBinsSampler
