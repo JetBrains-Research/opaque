@@ -277,10 +277,13 @@ def sync(*states: object) -> object | tuple[object, ...]:
     profiling objects.
 
     Args:
-        *states: One or more registered state/aux objects.
+        *states: One or more registered state/aux objects. ``None`` is passed
+            through unchanged (same position in the return value), so callers
+            can write ``sync(noise_state, denoiser_state)`` when the second
+            state is optional.
 
     Returns:
-        - If one argument is provided: synchronized object.
+        - If one argument is provided: synchronized object (or ``None``).
         - If multiple arguments are provided: tuple of synchronized objects
           in the same order.
 
@@ -298,6 +301,8 @@ def sync(*states: object) -> object | tuple[object, ...]:
     """
 
     def _sync_one(single_state: object) -> object:
+        if single_state is None:
+            return None
         state_type = type(single_state)
         if state_type not in _SYNC_REGISTRY:
             import opaque.clipping.distributed  # noqa: F401

@@ -1308,12 +1308,7 @@ def main():
                         noise_stddev=noise_stddev,
                     )
                 if is_ddp:
-                    if denoise is not None:
-                        noise_state, denoiser_state = sync(
-                            noise_state, denoiser_state
-                        )
-                    else:
-                        noise_state = sync(noise_state)
+                    noise_state, denoiser_state = sync(noise_state, denoiser_state)
 
                 updates, opt_state = base_opt.update(
                     noisy_grads, opt_state, params=trainable_params

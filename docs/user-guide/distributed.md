@@ -269,7 +269,7 @@ process group and raise `RuntimeError`.
 | `gather_tensors(tensor, dim)` | Gather variable-size tensors from all ranks and concatenate |
 | `gather_pytree(pytree)` | Gather and concatenate tensor leaves of a PyTree |
 | `assert_pytree_equal(pytree, name)` | Assert a PyTree is identical across ranks (fingerprint check) |
-| `sync(*states)` | Dispatch to the right sync function for one or more state/aux/profiler objects |
+| `sync(*states)` | Dispatch to the right sync function for one or more state/aux/profiler objects; ``None`` arguments are returned unchanged (same positions) |
 | `sync_object(state, field_ops)` | Synchronize scalar fields of a dataclass across ranks |
 | `assert_scalar_equal(v, name)` | Raise `RuntimeError` if a scalar differs across ranks |
 | `barrier()` | Blocking barrier across all ranks |

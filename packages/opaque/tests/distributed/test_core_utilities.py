@@ -101,6 +101,28 @@ class TestAllReduceValidation:
                     assert "not initialized" in str(e)
 
 
+class TestSyncNonePassthrough:
+    """sync() passes None through for optional state slots."""
+
+    def test_sync_single_none(self):
+        assert dist_utils.sync(None) is None
+
+    def test_sync_multiple_with_none(self):
+        out = dist_utils.sync(None, None)
+        assert out == (None, None)
+
+    def test_sync_noise_state_and_none(self):
+        from opaque.noise import gaussian_noise
+        from opaque.random import key
+
+        noise_fn, noise_state = gaussian_noise(stddev=1.0, key=key(0))
+        grads = {"w": torch.zeros(2)}
+        _, noise_state = noise_fn(grads, noise_state)
+        n2, d2 = dist_utils.sync(noise_state, None)
+        assert d2 is None
+        assert n2._step_counter == noise_state._step_counter
+
+
 class TestModuleExports:
     """Tests for module exports."""
 
