@@ -135,6 +135,8 @@ for batch_x, batch_y in dataloader:
 - **Noise injection**: Gaussian, truncated Gaussian, and correlated
   matrix-factorization noise (band-MF, BLT, BSR, BiSR, DP-λCGD), including
   private second-moment streams for adaptive optimizers.
+- **Gradient denoising**: optional DiSK post-processing on noisy
+  gradients via `opaque.denoising`
 - **Privacy accounting**: Rust-based PLD engine with tight composition,
   multiple privacy metrics (ε-δ, f-DP advantage, error rates), and noise
   calibration via binary search.
@@ -150,7 +152,7 @@ for batch_x, batch_y in dataloader:
 ## Documentation
 
 - [Getting Started](docs/getting-started/quickstart.md)
-- [User Guide](docs/user-guide/index.md)
+- [User Guide](docs/user-guide/index.md) (including [gradient denoising](docs/user-guide/denoising.md))
 - [Tutorials](docs/tutorials/README.md)
 - [API Reference](docs/api/index.md)
 - [Examples](examples/)

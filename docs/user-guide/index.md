@@ -99,6 +99,8 @@ understanding, or jump to a specific topic.
   per-group clipping.
 - **[Noise Addition](noise.md)** -- Gaussian noise, bounded Gaussian variants
   (truncated, rectified), and matrix-factorization correlated noise for DP-FTRL.
+- **[Gradient Denoising](denoising.md)** -- Optional post-processing (DiSK /
+  Kalman) on noisy gradients after the DP mechanism.
 - **[Privacy Accounting](accounting.md)** -- Composable `DpProcess` objects,
   privacy metrics, calibration, and the `Accountant` helper.
 - **[Sampling & Microbatching](sampling.md)** -- Poisson, truncated Poisson,

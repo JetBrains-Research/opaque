@@ -43,6 +43,10 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `mf_noise()` - Correlated noise dispatcher (DP-FTRL)
   - Strategy factories: `band_mf_strategy()`, `blt_strategy()`, `lambda_cgd_strategy()`, `bisr_strategy()`, `identity_strategy()`
 
+- **[Denoising](denoising.md)**: Optional post-processing on noisy gradients
+  - `disk_denoiser()` - DiSK-style Kalman denoising (ICLR 2025)
+  - `DenoiserState`, `DiskDenoiserState` - State types
+
 - **[Accounting](accounting.md)**: Privacy budget tracking
   - `gaussian()`, `adaclip()`, `second_moment()` — DP-SGD mechanisms (also via `opaque.dpsgd.accounting`)
   - `poisson()`, `truncated_poisson()`, `parallel_poisson()` — Poisson-family amplification
@@ -138,6 +142,14 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | `lambda_cgd_strategy()`              | DP-λCGD PRNG-replay strategy                 | [Guide](../user-guide/noise.md#lambda_cgd_strategy) |
 | `bisr_strategy()`                    | BISR banded inverse sqrt strategy            | [Guide](../user-guide/noise.md#bisr_strategy) |
 | `identity_strategy()`                | Identity (DP-SGD via MF API)                 | [Guide](../user-guide/noise.md#identity_strategy) |
+
+### Denoising
+
+| Function / type        | Purpose                                      | User Guide                          |
+|------------------------|----------------------------------------------|-------------------------------------|
+| `disk_denoiser()`      | DiSK / Kalman post-processing on noisy grads | [Guide](../user-guide/denoising.md) |
+| `DiskDenoiserState`    | Immutable state for `disk_denoiser`          | [Guide](../user-guide/denoising.md) |
+| `DenoiserState`        | Abstract base for denoiser state             | [Guide](../user-guide/denoising.md) |
 
 ### Accounting (Mechanisms)
 
