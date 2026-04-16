@@ -6,6 +6,7 @@ from typing import cast
 import opaque_accounting as acc
 from opaque_accounting.accountant import Accountant
 from opaque_accounting.base import DpProcess
+from opaque_accounting.amplification.b_min_sep import BMinSep
 from opaque_accounting.amplification.cyclic_poisson import CyclicPoisson
 from opaque_accounting.mechanisms.band_mf import BandMf
 
@@ -110,6 +111,21 @@ def test_cyclic_poisson_state_dict_structure():
     assert inner["noise_multiplier"] == 1.0
     assert inner["sensitivity"] == 2.5
     assert inner["num_groups"] == 200
+
+
+def test_b_min_sep_round_trip():
+    proc = acc.b_min_sep(
+        acc.band_mf(1.0, sensitivity=1.2, num_groups=50),
+        strategy_coefficients=(0.9, 0.1),
+        n_steps=100,
+        participation_rate_p0=0.02,
+        num_mc_samples=1000,
+        mc_seed=7,
+    )
+    state = proc.state_dict()
+    restored = DpProcess.from_state_dict(state)
+    assert isinstance(restored, BMinSep)
+    assert restored == proc
 
 
 def test_cyclic_poisson_round_trip():

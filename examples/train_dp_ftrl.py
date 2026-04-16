@@ -119,6 +119,7 @@ from opaque.profiling import (
 from opaque.random import key, fold_in
 from opaque.sampling import (
     BallsInBinsSampler,
+    BMinSepSampler,
     CyclicPoissonSampler,
     PoissonSampler,
     SequentialBatchSampler,
@@ -368,7 +369,20 @@ def parse_args():
         "--bands",
         type=int,
         default=8,
-        help="Band count for band_mf mechanism and cyclic_poisson sampling.",
+        help="Band count for band_mf mechanism and BandMF subsampling.",
+    )
+    dp_g.add_argument(
+        "--band-mf-sampling",
+        type=str,
+        choices=["cyclic_poisson", "b_min_sep"],
+        default="cyclic_poisson",
+        help="BandMF data subsampling: cyclic_poisson (default) or b_min_sep (Dong & Ganesh 2026).",
+    )
+    dp_g.add_argument(
+        "--band-mf-mc-samples",
+        type=int,
+        default=100_000,
+        help="Monte Carlo samples for b_min_sep privacy accounting (ignored for cyclic_poisson).",
     )
     dp_g.add_argument(
         "--max-buffers",
@@ -671,21 +685,45 @@ def main():
     # Static samplers (BnB, sequential) are created once and reused.
     # Dynamic samplers (CyclicPoisson, Poisson) get a fresh key each epoch.
     if args.mechanism == "band_mf":
-        sampling_prob = args.batch_size * args.bands / global_train_size
-        if sampling_prob > 1.0:
-            raise ValueError(
-                f"cyclic_poisson sampling_prob = {sampling_prob:.4f} > 1.0. "
-                f"Reduce --bands ({args.bands}) or --batch-size ({args.batch_size})."
-            )
+        p0 = sample_rate  # E[batch]/|D| per iteration (same as cyclic Poisson regime)
+        sampling_prob = 0.0
+        p_bms = 0.0
+        if args.band_mf_sampling == "cyclic_poisson":
+            sampling_prob = args.batch_size * args.bands / global_train_size
+            if sampling_prob > 1.0:
+                raise ValueError(
+                    f"cyclic_poisson sampling_prob = {sampling_prob:.4f} > 1.0. "
+                    f"Reduce --bands ({args.bands}) or --batch-size ({args.batch_size})."
+                )
 
-        def make_epoch_sampler(epoch):
-            return CyclicPoissonSampler(
-                train_dataset,
-                sampling_prob=sampling_prob,
-                cycle_length=args.bands,
-                iterations=expected_steps_per_epoch,
-                key=fold_in(key(args.seed), epoch),
-            )
+            def make_epoch_sampler(epoch):
+                return CyclicPoissonSampler(
+                    train_dataset,
+                    sampling_prob=sampling_prob,
+                    cycle_length=args.bands,
+                    iterations=expected_steps_per_epoch,
+                    key=fold_in(key(args.seed), epoch),
+                )
+        else:
+            if args.bands > 1 and p0 * (args.bands - 1) >= 1.0:
+                raise ValueError(
+                    f"b_min_sep requires p_0 < 1/(bands-1); got p_0={p0:.6f}, bands={args.bands}."
+                )
+            denom = 1.0 - p0 * max(0, args.bands - 1)
+            p_bms = p0 / denom if args.bands > 1 else p0
+            if p_bms > 1.0:
+                raise ValueError(
+                    f"b_min_sep per-iteration p = {p_bms:.4f} > 1.0; reduce batch size or bands."
+                )
+
+            def make_epoch_sampler(epoch):
+                return BMinSepSampler(
+                    train_dataset,
+                    bands=args.bands,
+                    sampling_prob=p_bms,
+                    iterations=expected_steps_per_epoch,
+                    key=fold_in(key(args.seed), epoch),
+                )
 
     elif args.mechanism == "blt":
         _blt_sampler = SequentialBatchSampler(
@@ -723,7 +761,14 @@ def main():
     print("\nSampling:")
     print(f"  Mechanism: {args.mechanism}")
     if args.mechanism == "band_mf":
-        print(f"  Sampler: cyclic_poisson (cycle={args.bands}, q={sampling_prob:.6f})")
+        if args.band_mf_sampling == "cyclic_poisson":
+            print(
+                f"  Sampler: cyclic_poisson (cycle={args.bands}, q={sampling_prob:.6f})"
+            )
+        else:
+            print(
+                f"  Sampler: b_min_sep (bands={args.bands}, p_0={p0:.6f}, p={p_bms:.6f})"
+            )
     elif args.mechanism == "blt":
         print("  Sampler: sequential (fixed order, drop_last=True)")
         print(f"  min_sep: {expected_steps_per_epoch} (= steps/epoch)")
@@ -865,7 +910,16 @@ def main():
             if use_adam:
                 mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
                                    max_column_norm=strategy._max_column_norm)
-            return acc.cyclic_poisson(mechanism, sample_rate=sampling_prob)
+            if args.band_mf_sampling == "cyclic_poisson":
+                return acc.cyclic_poisson(mechanism, sample_rate=sampling_prob)
+            return acc.b_min_sep(
+                mechanism,
+                strategy_coefficients=strategy.coefficients,
+                n_steps=total_steps,
+                participation_rate_p0=p0,
+                num_mc_samples=args.band_mf_mc_samples,
+                mc_seed=args.seed,
+            )
     elif args.mechanism == "blt" and strategy is not None:
         def acct_mechanism(nm):
             mechanism = acc.blt(nm, sensitivity=strategy.sensitivity)

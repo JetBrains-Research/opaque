@@ -109,6 +109,31 @@ eps = proc.epsilon_at(delta=1e-5)
 | `truncated_poisson()` | No | Not applicable to MF mechanisms |
 | `cyclic_poisson()` | Yes | Decomposes into $\lceil n/b \rceil$ independent groups |
 
+### b-min-sep subsampling (`b_min_sep`)
+
+[Dong & Ganesh (2026)](https://arxiv.org/abs/2602.09338) introduce **warm-start
+b-min-sep** subsampling: Poisson-style inclusion from the full dataset while
+excluding examples that appeared in any of the previous $b-1$ batches. For
+the same target expected batch size per iteration as cyclic Poisson (per-example
+rate $p_0 = \mathbb{E}[|B|]/|D|$), the paper’s per-iteration inclusion probability
+is $p = p_0 / (1 - p_0(b-1))$ when $b>1$.
+
+Opaque pairs this with **Monte Carlo PLD** accounting (same family as BnB MC
+for matrix mechanisms): pass the BandMF strategy’s first-column coefficients,
+`n_steps`, and `participation_rate_p0` to `opaque.accounting.b_min_sep(...)`.
+Training scripts can select it with `--band-mf-sampling b_min_sep` (see
+`examples/train_dp_ftrl.py`).
+
+| Amplification | Supported | Notes |
+|---------------|:---------:|-------|
+| `b_min_sep()` | Yes | MC PLD; default `num_mc_samples=100_000` |
+
+For large `n_steps × num_mc_samples`, the implementation keeps **one copy** of
+the MC random transcripts in **Rust** (compact `f64` arrays) and reuses them
+for every noise-multiplier probe during calibration (no Python list blow-up).
+Optional cap: set `OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES` (default ~4 GiB);
+use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` call.
+
 !!! note "Without amplification"
     You can also use BandMF without subsampling by omitting the
     `cyclic_poisson()` wrapper. This accounts for the full training run
