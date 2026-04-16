@@ -190,6 +190,7 @@ def _derive_second_strategy(
     from .blt import BltStrategy, blt_strategy
     from .identity import IdentityStrategy, identity_strategy
     from .lambda_cgd import LambdaCgdStrategy
+    from .lr_aware import LrAwareStrategy
 
     match strategy:
         case BandMfStrategy():
@@ -241,6 +242,12 @@ def _derive_second_strategy(
                 max_participations=strategy._max_participations,
                 alpha=strategy._alpha,
                 beta=beta2,
+            )
+        case LrAwareStrategy():
+            raise ValueError(
+                "Auto-deriving JME second-moment strategy is not supported for "
+                "LrAwareStrategy (schedule-aware factorization has no principled "
+                "second-moment mapping). Provide second_moment_strategy explicitly."
             )
         case IdentityStrategy():
             return identity_strategy()

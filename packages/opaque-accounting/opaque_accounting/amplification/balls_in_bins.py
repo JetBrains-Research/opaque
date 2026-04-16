@@ -30,6 +30,7 @@ from opaque_accounting.base import DpProcess, Pld
 from opaque_accounting.mechanisms.gaussian import Gaussian
 from opaque_accounting.mechanisms.bisr import Bisr
 from opaque_accounting.mechanisms.bsr import Bsr
+from opaque_accounting.mechanisms.lr_aware import LrAware
 from opaque_accounting.mechanisms.blt import Blt
 from opaque_accounting.mechanisms.lambda_cgd import LambdaCgd
 from opaque_accounting.mechanisms.nonprivate import NonPrivate
@@ -37,7 +38,7 @@ from opaque_accounting.transformations.adaclip import AdaClip
 from opaque_accounting.transformations.jme import Jme
 
 #: MF types with pre-computed Gram matrix for MC BnB.
-_BnbMf = Blt | LambdaCgd | Bisr | Bsr
+_BnbMf = Blt | LambdaCgd | Bisr | Bsr | LrAware
 
 #: Mechanism types accepted by :func:`balls_in_bins`.
 _Inner = Gaussian | _BnbMf | AdaClip | Jme | NonPrivate
@@ -110,7 +111,7 @@ class BallsInBins(DpProcess):
                 )
             case AdaClip(inner=NonPrivate() | Gaussian(noise_multiplier=0)):
                 return _native.non_private_pld(native_cfg)
-            case Blt() | LambdaCgd() | Bisr() | Bsr() as mg:
+            case Blt() | LambdaCgd() | Bisr() | Bsr() | LrAware() as mg:
                 if not mg.gram_matrix:
                     raise ValueError(
                         f"{type(mg).__name__} requires a non-empty gram_matrix "
@@ -122,7 +123,7 @@ class BallsInBins(DpProcess):
                     mg.noise_multiplier,
                     native_cfg,
                 )
-            case Jme(inner=Blt() | LambdaCgd() | Bisr() | Bsr()) as j:
+            case Jme(inner=Blt() | LambdaCgd() | Bisr() | Bsr() | LrAware()) as j:
                 if not j.gram_matrix:
                     raise ValueError(
                         f"Jme({type(j.inner).__name__}) requires a non-empty "
@@ -136,7 +137,7 @@ class BallsInBins(DpProcess):
                 )
             case _:
                 raise TypeError(
-                    "BallsInBins requires a Gaussian, Blt, LambdaCgd, Bisr, Bsr, "
+                    "BallsInBins requires a Gaussian, Blt, LambdaCgd, Bisr, Bsr, LrAware, "
                     f"AdaClip, or Jme inner mechanism, got {type(self.inner).__name__}."
                 )
 
@@ -177,10 +178,10 @@ def balls_in_bins(
     """
     if not isinstance(
         inner,
-        (Gaussian, Blt, LambdaCgd, Bisr, Bsr, AdaClip, Jme, NonPrivate),
+        (Gaussian, Blt, LambdaCgd, Bisr, Bsr, LrAware, AdaClip, Jme, NonPrivate),
     ):
         raise TypeError(
-            f"balls_in_bins() requires a Gaussian, Blt, LambdaCgd, Bisr, Bsr, "
+            f"balls_in_bins() requires a Gaussian, Blt, LambdaCgd, Bisr, Bsr, LrAware, "
             f"AdaClip, Jme, or NonPrivate inner mechanism, got {type(inner).__name__}. "
             "Example: acc.balls_in_bins(acc.gaussian(nm), num_bins=k, num_epochs=E)"
         )

@@ -34,6 +34,7 @@ For assumptions (workload vs DP correctness, LR schedules, JME caveats), see the
 | [DP-λCGD](lambda-cgd.md) | PRNG replay (exponential decay) | $O(1)$ | Zero extra memory, any run length |
 | [BISR](bisr.md) | Banded inverse square root | $O(p)$ | Asymptotically optimal, generalises λCGD |
 | [BSR](bsr.md) | Banded square root (closed form) | $O(p)$ | Paper `alpha`, `beta` kwargs; no optimizer at init |
+| [LR-Aware](lr-aware.md) | Schedule-aware Toeplitz square root | $O(p)$ | Exponential LR decay; closed-form $C_\alpha$ |
 | Identity | $I$ (no correlation) | $O(1)$ | Baseline / ablation |
 
 ## Which mechanism should I use?
@@ -70,6 +71,7 @@ support all amplification types:
 | DP-λCGD | — | — | — | Yes |
 | BISR | — | — | — | Yes |
 | BSR | — | — | — | Yes |
+| LR-Aware | — | — | — | Yes |
 
 - **`poisson()`**: Standard Poisson subsampling. Each example included
   independently with probability $q$.

@@ -98,6 +98,7 @@ nav:
     - Overview: mechanisms/index.md
     - Gaussian: mechanisms/gaussian.md
     - BSR: mechanisms/bsr.md
+    - LR-Aware: mechanisms/lr-aware.md
     - BandMF: mechanisms/band-mf.md
     - BLT: mechanisms/blt.md
     - DP-λCGD: mechanisms/lambda-cgd.md
