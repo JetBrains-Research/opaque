@@ -17,13 +17,24 @@ def _param_key_from_path(path: tuple[Any, ...]) -> str:
     return ".".join(str(p) for p in path)
 
 
+def _measurement_variance_from_stddev(
+    noise_stddev: float | PerGroup,
+) -> float | PerGroup:
+    if isinstance(noise_stddev, PerGroup):
+        return PerGroup(
+            noise_stddev.groups,
+            {k: v * v for k, v in noise_stddev.values.items()},
+        )
+    return float(noise_stddev) * float(noise_stddev)
+
+
 def _scalar_r_for_path(
     path: tuple[Any, ...],
-    noise_var: float | PerGroup,
+    measurement_var: float | PerGroup,
 ) -> float:
-    if isinstance(noise_var, PerGroup):
-        return noise_var.for_key(_param_key_from_path(path))
-    return float(noise_var)
+    if isinstance(measurement_var, PerGroup):
+        return measurement_var.for_key(_param_key_from_path(path))
+    return float(measurement_var)
 
 
 def _leaf_kalman_step(
@@ -64,10 +75,21 @@ class DiskDenoiserState(DenoiserState):
     _step_counter: int
 
 
+def _validate_noise_stddev(noise_stddev: float | PerGroup) -> None:
+    if isinstance(noise_stddev, PerGroup):
+        for g, v in noise_stddev.values.items():
+            if v <= 0:
+                raise ValueError(
+                    f"noise_stddev must be positive for all groups, got {v} for '{g}'"
+                )
+    elif noise_stddev <= 0:
+        raise ValueError(f"noise_stddev must be positive, got {noise_stddev}")
+
+
 def disk_denoiser(
     grad_template: Any,
     *,
-    noise_var: float | PerGroup,
+    noise_stddev: float | PerGroup,
     process_var: float,
     dtype: torch.dtype | None = None,
 ) -> tuple[
@@ -76,38 +98,31 @@ def disk_denoiser(
 ]:
     """Build a DiSK-style Kalman denoiser for a gradient-shaped PyTree.
 
-    Uses a random-walk state model (process variance ``process_var``) and
-    Gaussian measurement noise with variance ``noise_var`` (R).  Each tensor
+    Uses a random-walk state model (``process_var``) and Gaussian measurement
+    noise at the same scale as the DP mechanism (``noise_stddev``).  Each tensor
     element is filtered independently.
 
     Args:
         grad_template: PyTree with the same structure as noisy gradients; leaves
             must be tensors (shapes and devices define filtering).
-        noise_var: Measurement variance R (scalar) or :class:`~opaque.utils.per_group.PerGroup`
-            of variances keyed like the gradient dict (for per-group noise).
+        noise_stddev: Same units as :func:`~opaque.noise.gaussian_noise` (σ), scalar
+            or :class:`~opaque.utils.per_group.PerGroup` when noise scales per group.
         process_var: Process noise variance Q (scalar random walk per step).
         dtype: Optional dtype for internal Kalman math (defaults to float32 minimum).
 
     Returns:
-        ``(denoise, state)`` where ``denoise(noisy, state, *, noise_var=None)``
-        returns ``(filtered, new_state)``.  Pass ``noise_var`` per call to match
-        adaptive clipping (R is public: it is the mechanism noise variance).
+        ``(denoise, state)`` where ``denoise(noisy, state, *, noise_stddev=None)``
+        returns ``(filtered, new_state)``.  Pass ``noise_stddev`` per call to match
+        adaptive clipping.
 
     Raises:
-        ValueError: If ``noise_var`` or ``process_var`` are not valid variances.
+        ValueError: If ``noise_stddev`` or ``process_var`` are invalid.
     """
     if process_var < 0:
         raise ValueError(f"process_var must be non-negative, got {process_var}")
-    if isinstance(noise_var, PerGroup):
-        for g, v in noise_var.values.items():
-            if v <= 0:
-                raise ValueError(
-                    f"noise_var must be positive for all groups, got {v} for '{g}'"
-                )
-    elif noise_var <= 0:
-        raise ValueError(f"noise_var must be positive, got {noise_var}")
+    _validate_noise_stddev(noise_stddev)
 
-    default_noise_var = noise_var
+    default_measurement_var = _measurement_variance_from_stddev(noise_stddev)
 
     def _compute_dtype(leaf: torch.Tensor) -> torch.dtype:
         if dtype is not None:
@@ -118,7 +133,7 @@ def disk_denoiser(
         path: tuple[Any, ...], leaf: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
         compute_dtype = _compute_dtype(leaf)
-        r_scalar = _scalar_r_for_path(path, default_noise_var)
+        r_scalar = _scalar_r_for_path(path, default_measurement_var)
         r_t = torch.tensor(r_scalar, dtype=compute_dtype, device=leaf.device)
         q_t = torch.tensor(process_var, dtype=compute_dtype, device=leaf.device)
         z = torch.zeros_like(leaf, dtype=compute_dtype)
@@ -143,17 +158,13 @@ def disk_denoiser(
         noisy: Any,
         st: DiskDenoiserState,
         *,
-        noise_var: float | PerGroup | None = None,
+        noise_stddev: float | PerGroup | None = None,
     ) -> tuple[Any, DiskDenoiserState]:
-        r_effective = noise_var if noise_var is not None else default_noise_var
-        if isinstance(r_effective, PerGroup):
-            for g, v in r_effective.values.items():
-                if v <= 0:
-                    raise ValueError(
-                        f"noise_var must be positive for all groups, got {v} for '{g}'"
-                    )
-        elif r_effective <= 0:
-            raise ValueError(f"noise_var must be positive, got {r_effective}")
+        if noise_stddev is not None:
+            _validate_noise_stddev(noise_stddev)
+            r_effective = _measurement_variance_from_stddev(noise_stddev)
+        else:
+            r_effective = default_measurement_var
 
         def _step_leaf(
             path: tuple[Any, ...],
