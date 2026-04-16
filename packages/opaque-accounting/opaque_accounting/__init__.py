@@ -2,7 +2,7 @@
 
 This module provides a compositional API for tracking privacy guarantees:
 
-- **Mechanisms**: gaussian(), lambda_cgd(), bisr(), band_mf(), blt(), etc.
+- **Mechanisms**: gaussian(), lambda_cgd(), bisr(), bsr(), band_mf(), blt(), etc.
 - **Amplification**: balls_in_bins(), poisson(), cyclic_poisson(), etc.
 - **Composition**: Combine processes using ``*`` (repeat) or ``|`` (compose)
 - **Metrics**: Query privacy with epsilon_at(), delta_at(), advantage(), etc.
@@ -97,6 +97,7 @@ from opaque_accounting.mechanisms import (
     band_mf,
     bisr,
     blt,
+    bsr,
     eps_delta,
     gaussian,
     identity,
@@ -130,6 +131,7 @@ __all__ = [
     "blt",
     "lambda_cgd",
     "bisr",
+    "bsr",
     # Amplification
     "balls_in_bins",
     "poisson",

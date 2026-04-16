@@ -15,8 +15,8 @@ KEY DIFFERENCES FROM DP-SGD (train_causal_lm.py):
   2. Clipping: Fixed norm ONLY (adaptive clipping changes sensitivity
      mid-training which invalidates the single-shot MF privacy proof).
 
-  3. LR schedule: Linear warmup → constant, fully predetermined
-     before training starts (the optimizer must be a fixed linear map).
+  3. LR schedule: Constant by default (--warmup-frac 0); optional linear warmup
+     → constant, fully predetermined before training (fixed linear map).
 
   4. Accounting: Single-shot from MF encoder sensitivity. No per-step
      epsilon tracking — privacy is computed once at the end.
@@ -36,6 +36,8 @@ MECHANISMS:
                via PRNG replay. Single hyperparam λ, zero extra memory.
   bisr      — BISR (Kalinin et al., ICLR 2026), generalises λCGD to
                arbitrary bandwidth p. Coefficients from inverse square root.
+  bsr       — BSR (Kalinin & Lampert, NeurIPS 2024), closed-form banded square
+               root for SGD + momentum + weight decay (no L-BFGS). BnB sampling.
   identity  — DP-SGD baseline via MF API (C^{-1} = I, independent noise).
                Same training loop for fair comparison.
 
@@ -56,6 +58,9 @@ USAGE:
   # BISR with bandwidth=4, Balls-in-Bins sampling
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism bisr --bisr-bandwidth 4
 
+  # BSR (closed-form): workload α via --bsr-alpha (paper default 1.0); optimizer WD is separate (--weight-decay, default 0)
+  python examples/train_dp_ftrl.py --preset smoke --mechanism bsr --bsr-bandwidth 8 --bsr-alpha 1.0
+
   # DP-SGD baseline for fair comparison (same loop, independent noise)
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism identity
 
@@ -73,6 +78,7 @@ REFERENCES:
   - BLT: https://arxiv.org/abs/2404.16706
   - DP-λCGD: https://arxiv.org/abs/2601.22334
   - BISR: https://arxiv.org/abs/2505.12128
+  - BSR: https://arxiv.org/abs/2405.13763
   - DP-FTRL: https://arxiv.org/abs/2103.00039
   - JME (DP-Adam): https://arxiv.org/abs/2502.06597
 """
@@ -102,6 +108,7 @@ from opaque.clipping import clipped_grad
 from opaque.noise.mf import (
     band_mf_strategy,
     bisr_strategy,
+    bsr_strategy,
     blt_strategy,
     identity_strategy,
     jme_joint_sensitivity,
@@ -216,14 +223,15 @@ def _load_streaming_subset(
 def make_lr_schedule(
     base_lr: float,
     total_steps: int,
-    warmup_frac: float = 0.15,
+    warmup_frac: float = 0.0,
 ) -> torch.Tensor:
-    """Create a predetermined LR schedule: linear warmup → constant.
+    """Create a predetermined LR schedule: optional linear warmup → constant.
 
     Args:
         base_lr: Peak learning rate.
         total_steps: Total number of training steps.
-        warmup_frac: Fraction of steps for linear warmup (0→base_lr).
+        warmup_frac: Fraction of steps for linear warmup (0→base_lr). Default 0
+            (constant schedule at base_lr).
 
     Returns:
         Tensor of shape [total_steps] with per-step learning rates.
@@ -310,6 +318,13 @@ def parse_args():
         help="Polyak momentum for SGD (default: 0.95 per BandMF paper)",
     )
     train_g.add_argument(
+        "--weight-decay",
+        type=float,
+        default=0.0,
+        help="Optimizer weight decay: torchopt.sgd L2-style coefficient, or "
+        "jme_adamw decoupled WD (default 0; many JME runs omit WD).",
+    )
+    train_g.add_argument(
         "--beta1",
         type=float,
         default=0.9,
@@ -330,8 +345,8 @@ def parse_args():
     train_g.add_argument(
         "--warmup-frac",
         type=float,
-        default=0.15,
-        help="LR warmup fraction (default: 0.15)",
+        default=0.0,
+        help="LR warmup fraction of total steps, 0→peak LR linearly (default: 0 = constant LR)",
     )
     train_g.add_argument("--log-steps", type=int, default=1)
     train_g.add_argument("--eval-steps", type=int, default=10)
@@ -358,8 +373,8 @@ def parse_args():
         "--mechanism",
         type=str,
         default="band_mf",
-        choices=["band_mf", "blt", "lambda_cgd", "bisr", "identity", "none"],
-        help="MF mechanism: band_mf, blt, lambda_cgd, bisr, identity, none (non-DP).",
+        choices=["band_mf", "blt", "lambda_cgd", "bisr", "bsr", "identity", "none"],
+        help="MF mechanism: band_mf, blt, lambda_cgd, bisr, bsr, identity, none (non-DP).",
     )
     dp_g.add_argument(
         "--clipping-norm", type=float, default=0.9, help="Fixed clipping norm"
@@ -401,6 +416,19 @@ def parse_args():
         type=int,
         default=4,
         help="Bandwidth for BISR mechanism (>= 2). Higher = better utility, more PRNG replays.",
+    )
+    dp_g.add_argument(
+        "--bsr-bandwidth",
+        type=int,
+        default=8,
+        help="Bandwidth p for BSR mechanism (>= 1). Closed-form coefficients; no optimizer.",
+    )
+    dp_g.add_argument(
+        "--bsr-alpha",
+        type=float,
+        default=1.0,
+        help="BSR workload α in (0,1] (paper); must satisfy α>β where β comes from "
+        "--momentum (SGD) or --beta1 (Adam). Ignored unless --mechanism bsr.",
     )
 
     # Privacy
@@ -734,7 +762,7 @@ def main():
         def make_epoch_sampler(epoch):
             return _blt_sampler
 
-    elif args.mechanism in ("lambda_cgd", "bisr"):
+    elif args.mechanism in ("lambda_cgd", "bisr", "bsr"):
         # BnB sampler created once — the same fixed partition is reused every
         # epoch (required by BnB privacy accounting, Lemma 3.2 of
         # Choquette-Choo et al. 2024).
@@ -783,6 +811,11 @@ def main():
             f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, random partition/epoch)"
         )
         print(f"  BISR bandwidth: {args.bisr_bandwidth}")
+    elif args.mechanism == "bsr":
+        print(
+            f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, random partition/epoch)"
+        )
+        print(f"  BSR bandwidth: {args.bsr_bandwidth} (closed-form coefficients)")
     else:
         print(f"  Sampler: poisson (q={sample_rate:.6f})")
     print(f"  Expected batch size: {args.batch_size}")
@@ -851,7 +884,10 @@ def main():
         warmup_frac=args.warmup_frac,
     )
 
-    print(f"\nLR schedule: warmup {args.warmup_frac:.0%} → constant")
+    if args.warmup_frac > 0:
+        print(f"\nLR schedule: linear warmup {args.warmup_frac:.0%} of steps → constant {args.learning_rate}")
+    else:
+        print(f"\nLR schedule: constant {args.learning_rate} (no warmup)")
     print(f"  Peak LR: {args.learning_rate}")
     print(f"  Total steps: {total_steps}")
 
@@ -894,6 +930,15 @@ def main():
                 bandwidth=args.bisr_bandwidth, n_steps=total_steps,
                 min_sep=expected_steps_per_epoch,
                 max_participations=args.num_epochs, momentum=mom,
+            )
+        elif args.mechanism == "bsr":
+            return bsr_strategy(
+                bandwidth=args.bsr_bandwidth,
+                n_steps=total_steps,
+                min_sep=expected_steps_per_epoch,
+                max_participations=args.num_epochs,
+                alpha=args.bsr_alpha,
+                beta=mom,
             )
         elif args.mechanism == "identity":
             return identity_strategy()
@@ -945,6 +990,21 @@ def main():
     elif args.mechanism == "bisr" and strategy is not None:
         def acct_mechanism(nm):
             mechanism = acc.bisr(
+                nm,
+                sensitivity=strategy.sensitivity,
+                gram_matrix=strategy.gram_matrix,
+            )
+            if use_adam:
+                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
+                                   max_column_norm=strategy._max_column_norm)
+            return acc.balls_in_bins(
+                mechanism,
+                num_bins=expected_steps_per_epoch,
+                num_epochs=args.num_epochs,
+            )
+    elif args.mechanism == "bsr" and strategy is not None:
+        def acct_mechanism(nm):
+            mechanism = acc.bsr(
                 nm,
                 sensitivity=strategy.sensitivity,
                 gram_matrix=strategy.gram_matrix,
@@ -1044,11 +1104,13 @@ def main():
             lr=lambda step: lr_schedule[min(step, len(lr_schedule) - 1)].item(),
             betas=(args.beta1, args.beta2),
             eps=args.adam_eps,
+            weight_decay=args.weight_decay,
         )
     else:
         optimizer = torchopt.sgd(
             lr=lambda step: lr_schedule[min(step, len(lr_schedule) - 1)].item(),
             momentum=args.momentum,
+            weight_decay=args.weight_decay,
         )
     opt_state = optimizer.init(trainable_params)
 
@@ -1074,13 +1136,33 @@ def main():
     print("\nDP-FTRL setup:")
     print(f"  Mechanism: {args.mechanism}")
     if use_adam:
-        print(f"  Optimizer: Adam via JME (β₁={args.beta1}, β₂={args.beta2}, ε={args.adam_eps})")
+        print(
+            f"  Optimizer: Adam via JME (β₁={args.beta1}, β₂={args.beta2}, "
+            f"ε={args.adam_eps}, weight_decay={args.weight_decay})"
+        )
         print(f"  Workload: EMA β₁={args.beta1} (1st moment), β₂={args.beta2} (2nd moment)")
+        if args.mechanism == "bsr":
+            print(
+                f"  BSR workload (α={args.bsr_alpha}, β=β₁={args.beta1}): "
+                "noise strategy uses paper (α,β); independent of optimizer --weight-decay; require α>β."
+            )
     else:
-        print(f"  Optimizer: SGD + Polyak momentum (β={args.momentum})")
+        print(
+            f"  Optimizer: SGD + Polyak momentum (β={args.momentum}, "
+            f"weight_decay={args.weight_decay})"
+        )
         print(
             f"  Workload: momentum-SGD (β={args.momentum}){' [prefix-sum]' if args.momentum == 1.0 else ''}"
         )
+        if args.mechanism == "bsr":
+            print(
+                f"  BSR workload (α={args.bsr_alpha}, β={args.momentum}): "
+                "paper (α,β) for noise; optimizer --weight-decay is separate."
+            )
+            print(
+                "  Note: BSR coefficients assume constant LR in the paper; "
+                "this script still uses the LR schedule only in the optimizer."
+            )
     print(f"  Clipping norm: {args.clipping_norm} (fixed)")
     print(
         f"  Sensitivity: {zeta:.6f} (= {args.clipping_norm} / {args.batch_size})"
@@ -1115,6 +1197,11 @@ def main():
     elif args.mechanism == "bisr":
         print(f"  BISR bandwidth: {args.bisr_bandwidth}")
         print("  Column normalization: enabled (Appendix A, exact BnB)")
+    elif args.mechanism == "bsr":
+        bsr_beta = args.beta1 if use_adam else args.momentum
+        print(
+            f"  BSR: bandwidth={args.bsr_bandwidth}, workload (α={args.bsr_alpha}, β={bsr_beta})"
+        )
 
     # ===================================================================
     # Training loop

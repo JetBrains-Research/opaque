@@ -11,6 +11,9 @@ All noise functions in Opaque follow the same pattern: they return a
 For mathematical details, privacy analysis, and parameter guidance for
 each mechanism, see the [Mechanisms](../mechanisms/index.md) reference.
 
+For MF-specific assumptions (workload fidelity vs DP correctness, LR schedules,
+JME, BSR scope), see [Matrix factorization (MF)](matrix-factorization.md).
+
 ## Gaussian noise
 
 `gaussian_noise` is the standard noise mechanism for DP-SGD. It adds

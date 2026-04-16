@@ -24,12 +24,16 @@ add *correlated* noise designed to partially cancel over the training run. This
 reduces effective noise on cumulative updates, improving accuracy for the same
 privacy budget — at the cost of knowing the total number of steps in advance.
 
+For assumptions (workload vs DP correctness, LR schedules, JME caveats), see the
+[Matrix factorization user guide](../user-guide/matrix-factorization.md).
+
 | Mechanism | Strategy | Memory | Best for |
 |-----------|----------|--------|----------|
 | [BandMF](band-mf.md) | Banded Toeplitz | $O(\text{bands})$ | General use, moderate runs |
 | [BLT](blt.md) | Buffered Linear Toeplitz | $O(\text{buffers})$ | Long runs ($n > 5000$), multi-epoch |
 | [DP-λCGD](lambda-cgd.md) | PRNG replay (exponential decay) | $O(1)$ | Zero extra memory, any run length |
 | [BISR](bisr.md) | Banded inverse square root | $O(p)$ | Asymptotically optimal, generalises λCGD |
+| [BSR](bsr.md) | Banded square root (closed form) | $O(p)$ | Paper `alpha`, `beta` kwargs; no optimizer at init |
 | Identity | $I$ (no correlation) | $O(1)$ | Baseline / ablation |
 
 ## Which mechanism should I use?
@@ -44,6 +48,7 @@ Need correlated noise across steps (DP-FTRL)?
 └─ Yes ── Constraints?
           ├─ Zero extra memory → DP-λCGD (PRNG replay)
           ├─ Asymptotically optimal → BISR (generalises λCGD)
+          ├─ Closed-form workload (α>β) → BSR (NeurIPS 2024)
           ├─ n < 5000 → BandMF + cyclic Poisson (good default)
           └─ n > 5000, multi-epoch → BLT (memory-efficient)
 ```
@@ -64,6 +69,7 @@ support all amplification types:
 | BLT | *internal* | — | — | Yes |
 | DP-λCGD | — | — | — | Yes |
 | BISR | — | — | — | Yes |
+| BSR | — | — | — | Yes |
 
 - **`poisson()`**: Standard Poisson subsampling. Each example included
   independently with probability $q$.

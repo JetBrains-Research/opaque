@@ -8,6 +8,7 @@ import torch
 from opaque.noise.mf import (
     band_mf_strategy,
     bisr_strategy,
+    bsr_strategy,
     blt_strategy,
     identity_strategy,
     jme_joint_sensitivity,
@@ -203,17 +204,23 @@ class TestJmeNoise:
         assert not torch.allclose(g1["w"], g2["w"])
 
     @pytest.mark.parametrize(
-        "mechanism", ["band_mf", "blt", "lambda_cgd", "bisr", "identity"]
+        "mechanism", ["band_mf", "blt", "bisr", "bsr", "identity"]
     )
     def test_works_with_all_mechanisms(self, grad_template, mechanism):
         if mechanism == "band_mf":
             strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)
         elif mechanism == "blt":
             strategy = blt_strategy(n_steps=50, min_sep=50, momentum=0.9)
-        elif mechanism == "lambda_cgd":
-            strategy = lambda_cgd_strategy(0.9, n_steps=50, min_sep=50)
         elif mechanism == "bisr":
             strategy = bisr_strategy(bandwidth=4, n_steps=50, min_sep=50)
+        elif mechanism == "bsr":
+            strategy = bsr_strategy(
+                bandwidth=4,
+                n_steps=50,
+                min_sep=50,
+                alpha=1.0,
+                beta=0.9,
+            )
         elif mechanism == "identity":
             strategy = identity_strategy()
 
@@ -228,6 +235,33 @@ class TestJmeNoise:
         (noisy_g, noisy_sq), new_state = noise_fn(grads, state)
         assert noisy_g["w"].shape == (4, 3)
         assert noisy_sq["w"].shape == (4, 3)
+
+    def test_band_mf_derives_second_stream_with_same_lr_schedule(self, grad_template):
+        lr = torch.linspace(0.001, 0.01, 50, dtype=torch.float64)
+        strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9, lr_schedule=lr)
+        noise_fn, state = jme_noise(
+            grad_template,
+            strategy,
+            noise_multiplier=1.0,
+            key=key(42),
+            zeta=0.1,
+            beta2=0.99,
+        )
+        grads = {"w": torch.randn(4, 3), "b": torch.randn(4)}
+        (noisy_g, noisy_sq), _ = noise_fn(grads, state)
+        assert noisy_g["w"].shape == (4, 3)
+        assert noisy_sq["w"].shape == (4, 3)
+
+    def test_lambda_cgd_requires_explicit_second_strategy(self, grad_template):
+        strategy = lambda_cgd_strategy(0.9, n_steps=50, min_sep=50)
+        with pytest.raises(ValueError, match="LambdaCgdStrategy"):
+            jme_noise(
+                grad_template,
+                strategy,
+                noise_multiplier=1.0,
+                key=key(42),
+                zeta=0.1,
+            )
 
     def test_squared_grads_are_noised_not_raw(self, grad_template):
         """The noisy squared grads should differ from raw g²."""

@@ -178,38 +178,50 @@ def _derive_second_strategy(
     strategy: MfStrategy,
     beta2: float,
 ) -> MfStrategy:
-    """Same mechanism, ``momentum=beta2`` workload."""
+    """Derive second-moment strategy from first-moment strategy.
+
+    The JME paper assumes two explicit workload/noise-shaping pairs (A1,C1) and
+    (A2,C2). We only auto-derive A2/C2 for mechanism families where this
+    mapping is currently explicit in Opaque.
+    """
     from .band_mf import BandMfStrategy, band_mf_strategy
     from .bisr import BisrStrategy, bisr_strategy
+    from .bsr import BsrStrategy, bsr_strategy
     from .blt import BltStrategy, blt_strategy
     from .identity import IdentityStrategy, identity_strategy
-    from .lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
+    from .lambda_cgd import LambdaCgdStrategy
 
     match strategy:
         case BandMfStrategy():
+            lr_sched = (
+                torch.as_tensor(strategy._lr_schedule, dtype=torch.float64)
+                if strategy._lr_schedule is not None
+                else None
+            )
             return band_mf_strategy(
                 n_steps=strategy._n_steps,
                 bands=strategy._bands,
                 momentum=beta2,
+                lr_schedule=lr_sched,
             )
         case BltStrategy():
+            lr_sched = (
+                torch.as_tensor(strategy._lr_schedule, dtype=torch.float64)
+                if strategy._lr_schedule is not None
+                else None
+            )
             return blt_strategy(
                 n_steps=strategy._n_steps,
                 min_sep=strategy._min_sep,
                 max_participations=strategy._max_participations,
                 max_buffers=strategy._max_buffers,
                 momentum=beta2,
+                lr_schedule=lr_sched,
             )
         case LambdaCgdStrategy():
-            return lambda_cgd_strategy(
-                lambda_=strategy._lambda,
-                n_steps=strategy._n_steps,
-                min_sep=strategy._min_sep
-                if hasattr(strategy, "_min_sep")
-                else strategy._n_steps,
-                max_participations=strategy._max_participations
-                if hasattr(strategy, "_max_participations")
-                else 1,
+            raise ValueError(
+                "Auto-deriving JME second-moment strategy is not supported for "
+                "LambdaCgdStrategy. Provide second_moment_strategy explicitly."
             )
         case BisrStrategy():
             return bisr_strategy(
@@ -221,10 +233,22 @@ def _derive_second_strategy(
                 else 1,
                 momentum=beta2,
             )
+        case BsrStrategy():
+            return bsr_strategy(
+                bandwidth=strategy._bandwidth,
+                n_steps=strategy._n_steps,
+                min_sep=strategy._min_sep,
+                max_participations=strategy._max_participations,
+                alpha=strategy._alpha,
+                beta=beta2,
+            )
         case IdentityStrategy():
             return identity_strategy()
         case _:
-            return identity_strategy()
+            raise TypeError(
+                "Unknown strategy type for JME second-moment auto-derivation: "
+                f"{type(strategy).__name__}. Provide second_moment_strategy explicitly."
+            )
 
 
 # ---------------------------------------------------------------------------

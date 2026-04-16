@@ -80,7 +80,11 @@ from opaque.noise.mf import mf_noise, bisr_strategy
 from opaque.random import key
 
 strategy = bisr_strategy(
-    n_steps=total_steps, bandwidth=4, momentum=0.9,
+    bandwidth=4,
+    n_steps=total_steps,
+    min_sep=steps_per_epoch,
+    max_participations=num_epochs,
+    momentum=0.9,
 )
 noise_fn, state = mf_noise(
     grad_template, strategy,
@@ -91,6 +95,14 @@ noise_fn, state = mf_noise(
 
 The noise function regenerates p-1 previous noise vectors via PRNG replay
 and computes the linear combination defined by the BISR coefficients.
+
+## Assumptions and limitations
+
+- **BnB sampling**: pair with a sampler and accounting consistent with Balls-in-Bins (fixed partition semantics where required).
+- **Momentum** enters the **inverse** coefficient construction (Lemma 1); sensitivity and Gram use the resulting strategy matrix.
+- **No `lr_schedule`**: BISR coefficients are analytically determined from the prefix-sum workload; schedule-aware BISR would require a different construction (see arXiv:2511.17994). Use BandMF/BLT with `lr_schedule` for schedule-shaped workloads.
+- **Not BSR**: BISR bands the **inverse** square root construction (generalised λCGD). [BSR](bsr.md) uses the **forward** square-root closed form for SGD+momentum+weight decay.
+- For a high-level comparison of MF mechanisms, see [Matrix factorization (MF)](../user-guide/matrix-factorization.md).
 
 ## Bandwidth selection
 

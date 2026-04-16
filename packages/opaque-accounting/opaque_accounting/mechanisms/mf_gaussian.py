@@ -10,6 +10,7 @@ Per-method subclasses live in their own modules:
 - :mod:`~opaque_accounting.mechanisms.blt` — :class:`Blt`
 - :mod:`~opaque_accounting.mechanisms.lambda_cgd` — :class:`LambdaCgd`
 - :mod:`~opaque_accounting.mechanisms.bisr` — :class:`Bisr`
+- :mod:`~opaque_accounting.mechanisms.bsr` — :class:`Bsr`
 """
 
 from __future__ import annotations
@@ -42,6 +43,7 @@ class MfGaussian(DpProcess):
     - :func:`~opaque_accounting.mechanisms.blt.blt` → :class:`~opaque_accounting.mechanisms.blt.Blt`
     - :func:`~opaque_accounting.mechanisms.lambda_cgd.lambda_cgd` → :class:`~opaque_accounting.mechanisms.lambda_cgd.LambdaCgd`
     - :func:`~opaque_accounting.mechanisms.bisr.bisr` → :class:`~opaque_accounting.mechanisms.bisr.Bisr`
+    - :func:`~opaque_accounting.mechanisms.bsr.bsr` → :class:`~opaque_accounting.mechanisms.bsr.Bsr`
     """
 
     noise_multiplier: float

@@ -104,6 +104,7 @@ class BandMfStrategy:
     _streaming_matrix: StreamingMatrix | None = None
     _n_steps: int = 0
     _bands: int = 0
+    _lr_schedule: torch.Tensor | None = None
 
     @property
     def _max_column_norm(self) -> float:
@@ -155,4 +156,5 @@ def band_mf_strategy(
         _streaming_matrix=streaming,
         _n_steps=n_steps,
         _bands=bands,
+        _lr_schedule=lr_schedule.clone() if lr_schedule is not None else None,
     )

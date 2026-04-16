@@ -7,7 +7,7 @@ Public API:
 
 Strategy factories:
 
-- :func:`band_mf_strategy`, :func:`blt_strategy`, :func:`bisr_strategy`
+- :func:`band_mf_strategy`, :func:`blt_strategy`, :func:`bisr_strategy`, :func:`bsr_strategy`
 - :func:`lambda_cgd_strategy`, :func:`identity_strategy`
 
 JME calibration helpers:
@@ -23,6 +23,7 @@ References:
 
 from .band_mf import BandMfStrategy, band_mf_strategy
 from .bisr import BisrStrategy, bisr_strategy
+from .bsr import BsrStrategy, bsr_strategy
 from .blt import BltStrategy, blt_strategy
 from .dispatcher import MfStrategy, mf_noise
 from .identity import IdentityStrategy, identity_strategy
@@ -47,6 +48,8 @@ __all__ = [
     "band_mf_strategy",
     "BisrStrategy",
     "bisr_strategy",
+    "BsrStrategy",
+    "bsr_strategy",
     "BltStrategy",
     "blt_strategy",
     "IdentityStrategy",

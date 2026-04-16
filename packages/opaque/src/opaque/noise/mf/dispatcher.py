@@ -6,6 +6,7 @@ Each mechanism file defines its own strategy dataclass and factory:
 - ``blt.py``: :class:`BltStrategy`, :func:`blt_strategy`
 - ``lambda_cgd.py``: :class:`LambdaCgdStrategy`, :func:`lambda_cgd_strategy`
 - ``bisr.py``: :class:`BisrStrategy`, :func:`bisr_strategy`
+- ``bsr.py``: :class:`BsrStrategy`, :func:`bsr_strategy`
 
 The :func:`mf_noise` function dispatches on the strategy type to create
 the appropriate noise mechanism.
@@ -20,6 +21,7 @@ import torch
 
 from .band_mf import BandMfStrategy, band_mf_strategy
 from .bisr import BisrStrategy, bisr_strategy
+from .bsr import BsrStrategy, bsr_strategy
 from .blt import BltStrategy, blt_strategy
 from .identity import IdentityStrategy, identity_strategy
 from .lambda_cgd import (
@@ -37,7 +39,12 @@ from ._streaming_matrix import (
 from opaque.random import RngKey
 
 MfStrategy = (
-    BandMfStrategy | BltStrategy | LambdaCgdStrategy | BisrStrategy | IdentityStrategy
+    BandMfStrategy
+    | BltStrategy
+    | LambdaCgdStrategy
+    | BisrStrategy
+    | BsrStrategy
+    | IdentityStrategy
 )
 
 
@@ -56,7 +63,8 @@ def mf_noise(
 
     Dispatches on the strategy type:
     - :class:`LambdaCgdStrategy`: PRNG replay noise (zero extra memory).
-    - :class:`BandMfStrategy`, :class:`BltStrategy`, :class:`BisrStrategy`:
+    - :class:`BandMfStrategy`, :class:`BltStrategy`, :class:`BisrStrategy`,
+      :class:`BsrStrategy`:
       StreamingMatrix-based noise.
 
     Args:
@@ -86,7 +94,7 @@ def mf_noise(
                 key=key,
                 dtype=dtype,
             )
-        case BandMfStrategy() | BltStrategy() | BisrStrategy():
+        case BandMfStrategy() | BltStrategy() | BisrStrategy() | BsrStrategy():
             if strategy._streaming_matrix is None:
                 raise ValueError(
                     "Strategy must have a _streaming_matrix for noise generation."
@@ -108,11 +116,13 @@ __all__ = [
     "IdentityStrategy",
     "LambdaCgdStrategy",
     "BisrStrategy",
+    "BsrStrategy",
     "MfStrategy",
     "band_mf_strategy",
     "blt_strategy",
     "identity_strategy",
     "lambda_cgd_strategy",
     "bisr_strategy",
+    "bsr_strategy",
     "mf_noise",
 ]

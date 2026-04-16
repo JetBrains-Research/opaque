@@ -55,7 +55,6 @@ eps = training.epsilon_at(1e-5)
 | `min_sep` | Steps per epoch (= bins per epoch) |
 | `max_participations` | Number of epochs |
 | `normalized` | Column-normalize C (default True, gives sensitivity=1 for k=1) |
-| `momentum` | Optimizer momentum (enters coefficient computation) |
 
 ### Accounting parameters
 
@@ -71,6 +70,13 @@ The sensitivity depends only on the strategy matrix C, not on the optimizer
 workload (momentum, LR schedule). This is a fundamental property of the MF
 privacy framework. The sensitivity formula (Theorem 1, eq 15 of the paper)
 has a closed-form expression in terms of λ, min_sep, and max_participations.
+
+## Assumptions and limitations
+
+- Bandwidth is **fixed** (bidiagonal inverse); correlation is controlled by a single \(\lambda\). Does **not** accept `momentum` (use `bisr_strategy` with bandwidth > 2 for momentum-aware coefficients).
+- Uses **Balls-in-Bins** amplification like other epoch-structured MF mechanisms; sampler semantics must match accounting.
+- **JME (DP-Adam)**: auto-deriving the second-moment strategy is **not supported** for λCGD. If using JME, pass `second_moment_strategy` explicitly.
+- Broader MF context: [Matrix factorization (MF)](../user-guide/matrix-factorization.md).
 
 ## Noise generation
 
