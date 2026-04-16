@@ -203,9 +203,7 @@ class TestJmeNoise:
 
         assert not torch.allclose(g1["w"], g2["w"])
 
-    @pytest.mark.parametrize(
-        "mechanism", ["band_mf", "blt", "bisr", "bsr", "identity"]
-    )
+    @pytest.mark.parametrize("mechanism", ["band_mf", "blt", "bisr", "bsr", "identity"])
     def test_works_with_all_mechanisms(self, grad_template, mechanism):
         if mechanism == "band_mf":
             strategy = band_mf_strategy(n_steps=50, bands=5, momentum=0.9)

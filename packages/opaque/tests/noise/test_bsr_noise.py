@@ -1,7 +1,6 @@
 """Tests for BsrStrategy factory and accounting."""
 
 import pytest
-import torch
 
 import opaque_accounting as acc
 from opaque.noise.mf.bsr import BsrStrategy, bsr_strategy
