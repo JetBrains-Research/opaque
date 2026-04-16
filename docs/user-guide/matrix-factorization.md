@@ -48,13 +48,19 @@ See [BandMF — Assumptions and limitations](../mechanisms/band-mf.md#assumption
 
 [JME](https://arxiv.org/abs/2502.06597) uses **two** correlated noise streams (gradients and squared gradients) with a **joint sensitivity**. It is **not** the same workload model as single-stream SGD+momentum mechanisms.
 
-When adding a new `MfStrategy`, ensure `opaque.noise.mf.jme._derive_second_strategy` has an explicit branch for it. Otherwise the second stream can fall back to `identity_strategy()`, which is wrong for production.
+When adding a new `MfStrategy`, ensure `opaque.noise.mf.jme._derive_second_strategy` has an explicit branch for it. Unknown strategy types raise `TypeError`; unsupported ones (e.g. `LambdaCgdStrategy`, which has no principled second-moment mapping) raise `ValueError`. Pass `second_moment_strategy` explicitly to override auto-derivation when needed.
 
-## BSR v1 scope
+## BSR scope
 
 [BSR](../mechanisms/bsr.md) ships **closed-form** coefficients for the Kalinin–Lampert workload in \((\alpha,\beta)\). It does **not** accept arbitrary `lr_schedule` inside the closed-form path. For general schedules or optimizers, use **BandMF** (numerical Toeplitz optimization) or **BLT**.
 
 With JME + BSR, the second stream is a second `bsr_strategy(..., alpha=..., beta=β₂)`; require \(\alpha > \beta\) for each stream’s \(\beta\) (see `jme.py`).
+
+## LR schedule and workload modeling
+
+**No MF mechanism in Opaque currently implements schedule-aware factorizations** from Kalinin & Andersson (arXiv:2511.17994). That paper proposes constructions provably better under non-constant LR for the schedule workload \(A_\chi = A_1 D\), but the closed-form path only covers **exponential decay** and is not generic enough for general schedules (including warmup).
+
+BandMF and BLT accept `lr_schedule` as a **Toeplitz-surrogate** workload optimization input (utility heuristic, not exact schedule-aware construction). BISR, BSR, and λCGD do **not** accept `lr_schedule`.
 
 ## Further reading
 
