@@ -8,6 +8,7 @@ Modules:
 
 - ``opaque.clipping``: Per-example gradient clipping (clipped_grad, clipped_fun, clip_pytree)
 - ``opaque.noise``: Gaussian noise, truncated Gaussian, matrix-factorization correlated noise
+- ``opaque.denoising``: Optional post-processing denoisers (e.g. Kalman) on noisy gradients
 - ``opaque.accounting``: PLD-based privacy accounting with composition, calibration, and metrics
 - ``opaque.sampling``: Poisson, truncated Poisson, and cyclic Poisson samplers
 - ``opaque.auditing``: Empirical privacy auditing via membership inference

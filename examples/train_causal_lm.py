@@ -93,6 +93,16 @@ def _noise_stddev(clip_state, noise_multiplier, *, per_group=True):
     return noise_multiplier * clip_state.sensitivity
 
 
+def _noise_variance(noise_stddev):
+    """Measurement variance R = sigma^2 (scalar or PerGroup, public)."""
+    if isinstance(noise_stddev, PerGroup):
+        return PerGroup(
+            noise_stddev.groups,
+            {k: v * v for k, v in noise_stddev.values.items()},
+        )
+    return noise_stddev * noise_stddev
+
+
 def _select_device(local_rank: int | None = None) -> tuple[torch.device, str]:
     """Select best available device with user-facing label."""
     if torch.cuda.is_available():
@@ -476,6 +486,19 @@ def parse_args():
         "Each trainable param must match exactly one pattern substring. "
         "Use 'fallback=NORM' as catch-all for unmatched params. "
         "Compatible with --adaptive-clipping (each group adapts independently).",
+    )
+    dp_group.add_argument(
+        "--denoiser",
+        type=str,
+        choices=["none", "kalman"],
+        default="none",
+        help="Optional post-processing on noisy gradients after the DP mechanism (default: none).",
+    )
+    dp_group.add_argument(
+        "--denoiser-process-var",
+        type=float,
+        default=1e-3,
+        help="Kalman process variance Q (random-walk state); only used with --denoiser kalman.",
     )
 
     # Model precision
@@ -1059,6 +1082,8 @@ def main():
     print(f"  Noise mechanism: {args.noise_mechanism}")
     if args.noise_mechanism != "gaussian":
         print(f"  Noise radius: {args.noise_radius}σ")
+    if args.denoiser != "none":
+        print(f"  Denoiser: {args.denoiser} (process_var={args.denoiser_process_var})")
     print(f"  Microbatch size: {args.microbatch_size}")
     print(f"  Adaptive clipping: {args.adaptive_clipping}")
     print(f"  Eval steps: {args.eval_steps}")
@@ -1190,6 +1215,18 @@ def main():
         key=key(args.seed),
     )
 
+    denoise = None
+    denoiser_state = None
+    if args.denoiser == "kalman":
+        from opaque.denoising import kalman_denoiser
+
+        init_std = _noise_stddev(clip_state, noise_multiplier)
+        denoise, denoiser_state = kalman_denoiser(
+            trainable_params,
+            noise_var=_noise_variance(init_std),
+            process_var=args.denoiser_process_var,
+        )
+
     # Training loop
     print("\n" + "=" * 80)
     print("Starting training...")
@@ -1275,6 +1312,13 @@ def main():
                 )
                 if is_ddp:
                     noise_state = sync(noise_state)
+
+                if denoise is not None:
+                    noisy_grads, denoiser_state = denoise(
+                        noisy_grads,
+                        denoiser_state,
+                        noise_var=_noise_variance(noise_stddev),
+                    )
 
                 updates, opt_state = base_opt.update(
                     noisy_grads, opt_state, params=trainable_params
