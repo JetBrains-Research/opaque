@@ -27,7 +27,7 @@ If accounting uses the same sensitivity (and compatible amplification) as the no
 
 ### 2. Workload fidelity / utility
 
-Many strategies are **designed or optimized** under a **model** of the optimizer (e.g. Polyak momentum, constant learning rate, weight decay). If the **real** training loop differs (different optimizer, schedule, accumulation pattern), **utility** may be worse than the paper’s ideal, even when DP is still valid for the implemented \(C\).
+Many strategies are **designed or optimized** under a **model** of the optimizer (e.g. Polyak momentum, constant learning rate, workload decay such as BSR’s paper \(\alpha\)). If the **real** training loop differs (different optimizer, schedule, accumulation pattern), **utility** may be worse than the paper’s ideal, even when DP is still valid for the implemented \(C\).
 
 Opaque’s BandMF and BLT pass **workload coefficients** into a Toeplitz optimization problem. For **non-constant** learning rate schedules, the encoded workload is a **Toeplitz surrogate**: it does not exactly match every entry of the time-varying triangular map \(W_{t,s} = \eta_t \beta^{t-s}\) unless \(\eta_t\) is constant. Privacy remains correct for the constructed strategy; the gap is in how tightly the optimization target matches your true discrete-time operator.
 
@@ -41,7 +41,7 @@ See [BandMF — Assumptions and limitations](../mechanisms/band-mf.md#assumption
 | [BLT](../mechanisms/blt.md) | Buffered linear Toeplitz | BnB (+ sequential data order) | \(O(\text{buffers})\) | Long runs / multi-epoch |
 | [DP-λCGD](../mechanisms/lambda-cgd.md) | PRNG replay, bandwidth 2 | BnB | \(O(1)\) | Minimal memory |
 | [BISR](../mechanisms/bisr.md) | Banded inverse square root | BnB | \(O(p)\) | Analytic inverse coefficients |
-| [BSR](../mechanisms/bsr.md) | Banded square root (closed form) | BnB | \(O(p)\) | SGD + momentum + WD (\(\alpha>\beta\)); no optimizer |
+| [BSR](../mechanisms/bsr.md) | Banded square root (closed form) | BnB | \(O(p)\) | Paper \((\alpha,\beta)\) via `alpha=` / `momentum=`; not AdamW `weight_decay` |
 | Identity | Independent (DP-SGD style) | Poisson / standard | \(O(1)\) | Baseline via MF API |
 
 ## JME (DP-Adam) and MF
@@ -50,11 +50,11 @@ See [BandMF — Assumptions and limitations](../mechanisms/band-mf.md#assumption
 
 When adding a new `MfStrategy`, ensure `opaque.noise.mf.jme._derive_second_strategy` has an explicit branch for it. Otherwise the second stream can fall back to `identity_strategy()`, which is wrong for production.
 
-The example script `examples/train_dp_ftrl.py` rejects **BSR + Adam** because the second-moment workload (\(\beta_2\)) is not guaranteed to satisfy the same BSR closed-form regime as the first stream without extra checks.
-
 ## BSR v1 scope
 
-[BSR](../mechanisms/bsr.md) ships **closed-form** coefficients for the Kalinin–Lampert SGD+momentum+weight-decay workload. It does **not** accept arbitrary `lr_schedule` inside the closed-form path. For general schedules or optimizers, use **BandMF** (numerical Toeplitz optimization) or **BLT**.
+[BSR](../mechanisms/bsr.md) ships **closed-form** coefficients for the Kalinin–Lampert workload in \((\alpha,\beta)\). It does **not** accept arbitrary `lr_schedule` inside the closed-form path. For general schedules or optimizers, use **BandMF** (numerical Toeplitz optimization) or **BLT**.
+
+With JME, the second stream uses \(\beta_2\) as momentum in a second `bsr_strategy` call; both streams must satisfy \(\alpha > \beta\) for their respective \(\beta\) (see `jme.py`).
 
 ## Further reading
 

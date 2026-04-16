@@ -33,7 +33,7 @@ For assumptions (workload vs DP correctness, LR schedules, JME caveats), see the
 | [BLT](blt.md) | Buffered Linear Toeplitz | $O(\text{buffers})$ | Long runs ($n > 5000$), multi-epoch |
 | [DP-λCGD](lambda-cgd.md) | PRNG replay (exponential decay) | $O(1)$ | Zero extra memory, any run length |
 | [BISR](bisr.md) | Banded inverse square root | $O(p)$ | Asymptotically optimal, generalises λCGD |
-| [BSR](bsr.md) | Banded square root (closed form) | $O(p)$ | SGD + momentum + WD, no optimizer at init |
+| [BSR](bsr.md) | Banded square root (closed form) | $O(p)$ | Paper $(\alpha,\beta)$ via `alpha` / `momentum`; no optimizer at init |
 | Identity | $I$ (no correlation) | $O(1)$ | Baseline / ablation |
 
 ## Which mechanism should I use?
@@ -48,7 +48,7 @@ Need correlated noise across steps (DP-FTRL)?
 └─ Yes ── Constraints?
           ├─ Zero extra memory → DP-λCGD (PRNG replay)
           ├─ Asymptotically optimal → BISR (generalises λCGD)
-          ├─ Closed-form + WD (α>β) → BSR (NeurIPS 2024)
+          ├─ Closed-form workload (α>β) → BSR (NeurIPS 2024)
           ├─ n < 5000 → BandMF + cyclic Poisson (good default)
           └─ n > 5000, multi-epoch → BLT (memory-efficient)
 ```

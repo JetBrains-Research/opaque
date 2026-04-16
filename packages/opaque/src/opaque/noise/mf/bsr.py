@@ -1,7 +1,9 @@
 """BSR strategy — banded square root MF (Kalinin & Lampert, NeurIPS 2024).
 
 Closed-form lower-triangular Toeplitz coefficients for SGD with Polyak
-momentum and multiplicative weight decay (paper's :math:`\\alpha`, :math:`\\beta`).
+momentum :math:`\\beta` and multiplicative parameter decay :math:`\\alpha`
+in the paper's workload (not PyTorch AdamW ``weight_decay``).
+
 No numerical optimization.
 
 Use ``mf_noise(bsr_strategy(...), ...)`` to create the noise function.
@@ -39,7 +41,7 @@ def _r_sequence(length: int) -> list[float]:
     return r
 
 
-def _bsr_coefficients(bandwidth: int, weight_decay: float, momentum: float) -> list[float]:
+def _bsr_coefficients(bandwidth: int, alpha: float, beta: float) -> list[float]:
     """First-column coefficients of :math:`C^{|p|}_{\\alpha,\\beta}` (Theorem 1).
 
     :math:`c_0 = 1`, :math:`c_j = \\sum_{i=0}^{j} \\alpha^{j-i} r_{j-i} r_i \\beta^i`
@@ -49,8 +51,6 @@ def _bsr_coefficients(bandwidth: int, weight_decay: float, momentum: float) -> l
         raise ValueError(f"bandwidth must be >= 1, got {bandwidth}")
     r = _r_sequence(bandwidth)
     c = [1.0]
-    alpha = weight_decay
-    beta = momentum
     for j in range(1, bandwidth):
         s = 0.0
         for i in range(j + 1):
@@ -62,28 +62,29 @@ def _bsr_coefficients(bandwidth: int, weight_decay: float, momentum: float) -> l
 def _validate_bsr_hyperparams(
     bandwidth: int,
     momentum: float,
-    weight_decay: float,
+    alpha: float,
 ) -> None:
     """Raise ValueError if hyperparameters are outside the supported v1 regime."""
     if bandwidth < 1:
         raise ValueError(f"bandwidth must be >= 1, got {bandwidth}")
-    if not (0.0 <= momentum < 1.0):
+    beta = momentum
+    if not (0.0 <= beta < 1.0):
         raise ValueError(
             f"BSR v1 requires momentum β in [0, 1), got {momentum}. "
             "Use band_mf_strategy for other workloads."
         )
-    if not (0.0 < weight_decay <= 1.0):
+    if not (0.0 < alpha <= 1.0):
         raise ValueError(
-            f"BSR v1 requires weight decay α in (0, 1] (paper), got {weight_decay}. "
+            f"BSR v1 requires workload α in (0, 1] (paper), got {alpha}. "
             "Use band_mf_strategy for other workloads."
         )
-    if weight_decay <= momentum:
+    if alpha <= beta:
         raise ValueError(
-            f"BSR v1 requires α > β (paper regime); got weight_decay α={weight_decay}, "
-            f"momentum β={momentum}. Reduce momentum or increase weight_decay, "
+            f"BSR v1 requires α > β (paper regime); got α={alpha}, "
+            f"β (momentum)={momentum}. Reduce momentum or increase α, "
             "or use band_mf_strategy."
         )
-    coefs = _bsr_coefficients(bandwidth, weight_decay, momentum)
+    coefs = _bsr_coefficients(bandwidth, alpha, beta)
     for i in range(1, len(coefs)):
         if coefs[i] > coefs[i - 1] + 1e-12:
             raise ValueError(
@@ -100,7 +101,7 @@ def _validate_bsr_hyperparams(
 
 @dataclass(frozen=True, slots=True)
 class BsrStrategy:
-    """BSR (banded square root) strategy for SGD + momentum + weight decay."""
+    """BSR (banded square root) strategy for the paper's SGD + momentum + decay workload."""
 
     sensitivity: float
     coefficients: tuple[float, ...]
@@ -111,7 +112,7 @@ class BsrStrategy:
     _n_steps: int = 1
     _min_sep: int = 1
     _max_participations: int | None = 1
-    _weight_decay: float = 1.0
+    _alpha: float = 1.0
     _momentum: float = 0.0
 
 
@@ -122,13 +123,13 @@ def bsr_strategy(
     max_participations: int | None = 1,
     *,
     momentum: float,
-    weight_decay: float,
+    alpha: float,
     normalized: bool = False,
 ) -> BsrStrategy:
     """Create a BSR strategy with closed-form Toeplitz coefficients.
 
     Coefficients follow Theorem 1 of arXiv:2405.13763 (banded square root of the
-    SGD+momentum+weight-decay workload). Sensitivity uses Theorem 2 via
+    workload :math:`A_{\\alpha,\\beta}`). Sensitivity uses Theorem 2 via
     ``toeplitz_minsep_sensitivity_squared``. Gram matrix is for Balls-in-Bins
     accounting (same as BLT/BISR Toeplitz Gram).
 
@@ -137,8 +138,10 @@ def bsr_strategy(
         n_steps: Total training steps (matrix dimension).
         min_sep: Minimum separation between participations (steps per epoch).
         max_participations: Maximum participations per user (epochs).
-        momentum: Polyak momentum β in [0, 1).
-        weight_decay: Multiplicative weight decay α in (0, 1]; must satisfy α > β.
+        momentum: Polyak momentum :math:`\\beta` in [0, 1).
+        alpha: Multiplicative decay :math:`\\alpha` in (0, 1] in the **paper workload**
+            (Kalinin–Lampert), **not** PyTorch ``AdamW(weight_decay=...)`` units.
+            Must satisfy :math:`\\alpha > \\beta`.
         normalized: Reserved for future column-normalized BSR; must be ``False`` in v1.
 
     Returns:
@@ -156,9 +159,9 @@ def bsr_strategy(
     if min_sep < 1:
         raise ValueError(f"min_sep must be >= 1, got {min_sep}")
 
-    _validate_bsr_hyperparams(bandwidth, momentum, weight_decay)
+    _validate_bsr_hyperparams(bandwidth, momentum, alpha)
 
-    band_coefs = _bsr_coefficients(bandwidth, weight_decay, momentum)
+    band_coefs = _bsr_coefficients(bandwidth, alpha, momentum)
     coef_tensor = torch.zeros(n_steps, dtype=torch.float64)
     copy_len = min(bandwidth, n_steps)
     coef_tensor[:copy_len] = torch.tensor(band_coefs[:copy_len], dtype=torch.float64)
@@ -206,6 +209,6 @@ def bsr_strategy(
         _n_steps=n_steps,
         _min_sep=min_sep,
         _max_participations=max_participations,
-        _weight_decay=weight_decay,
+        _alpha=alpha,
         _momentum=momentum,
     )

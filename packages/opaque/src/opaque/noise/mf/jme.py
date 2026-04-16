@@ -229,7 +229,7 @@ def _derive_second_strategy(
                 min_sep=strategy._min_sep,
                 max_participations=strategy._max_participations,
                 momentum=beta2,
-                weight_decay=strategy._weight_decay,
+                alpha=strategy._alpha,
             )
         case IdentityStrategy():
             return identity_strategy()

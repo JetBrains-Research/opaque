@@ -1,6 +1,6 @@
 # BSR (Banded Square Root)
 
-**BSR** (Kalinin & Lampert, NeurIPS 2024) is a matrix factorization mechanism where the **strategy matrix** is a **banded lower-triangular Toeplitz** matrix obtained from the **matrix square root** of the workload for **SGD with Polyak momentum and multiplicative weight decay**.
+**BSR** (Kalinin & Lampert, NeurIPS 2024) is a matrix factorization mechanism where the **strategy matrix** is a **banded lower-triangular Toeplitz** matrix obtained from the **matrix square root** of the workload for **SGD with Polyak momentum** \(\beta\) **and multiplicative parameter decay** \(\alpha\) in the paper’s discrete-time model.
 
 Opaque exposes **closed-form coefficients** (Theorem 1 in the paper): no L-BFGS optimization step at initialization.
 
@@ -8,6 +8,8 @@ Opaque exposes **closed-form coefficients** (Theorem 1 in the paper): no L-BFGS 
 - **Strategy matrix**: Banded lower-triangular Toeplitz \(C^{|p|}_{\alpha,\beta}\)
 - **Sensitivity**: Closed form under min-separation participation (Theorem 2; Rust `toeplitz_minsep_sensitivity_squared`)
 - **Amplification**: Balls-in-Bins with Monte Carlo PLD (same Gram path as BLT/BISR Toeplitz Gram)
+
+**Naming:** `bsr_strategy(..., momentum=β, alpha=α)`. The argument **`alpha`** is the paper’s workload decay \(\alpha \in (0,1]\). It is **not** the same thing as PyTorch **`AdamW(weight_decay=...)`** or `torchopt.sgd(weight_decay=...)` (optimizer regularization in different units). Use **`--bsr-alpha`** in `train_dp_ftrl.py` for the workload; **`--weight-decay`** is only for the optimizer.
 
 ## Accounting
 
@@ -21,7 +23,7 @@ strategy = bsr_strategy(
     min_sep=steps_per_epoch,
     max_participations=num_epochs,
     momentum=0.95,
-    weight_decay=1.0,
+    alpha=1.0,
 )
 
 training = acc.balls_in_bins(
@@ -45,7 +47,7 @@ eps = training.epsilon_at(1e-5)
 | `min_sep` | Minimum separation between participations (typically steps per epoch) |
 | `max_participations` | Maximum participations per user (epochs) |
 | `momentum` | Polyak momentum \(\beta \in [0, 1)\) |
-| `weight_decay` | Multiplicative decay \(\alpha \in (0, 1]\); **must satisfy** \(\alpha > \beta\) (paper regime) |
+| `alpha` | Paper workload decay \(\alpha \in (0, 1]\); **must satisfy** \(\alpha > \beta\) |
 
 ### Accounting parameters
 
@@ -67,7 +69,7 @@ strategy = bsr_strategy(
     min_sep=195,
     max_participations=8,
     momentum=0.95,
-    weight_decay=1.0,
+    alpha=1.0,
 )
 noise_fn, state = mf_noise(
     grad_template=params,
@@ -80,7 +82,7 @@ noise_fn, state = mf_noise(
 ## Assumptions and limitations
 
 - **Closed-form regime only**: \(\beta \in [0,1)\), \(\alpha \in (0,1]\), \(\alpha > \beta\). Other hyperparameters raise `ValueError` with guidance to use `band_mf_strategy`.
-- **`examples/train_dp_ftrl.py`**: workload \(\alpha\) for BSR is **`--bsr-alpha`** (default `1.0`). Optimizer weight decay is **`--weight-decay`** (default `0.0` for both SGD and JME AdamW), so you are not forced to use \(\alpha=1\) in the optimizer when using BSR noise accounting.
+- **`examples/train_dp_ftrl.py`**: workload \(\alpha\) is **`--bsr-alpha`** (default `1.0`), passed as `bsr_strategy(..., alpha=...)`. Optimizer L2/decoupled WD is **`--weight-decay`** (default `0.0`).
 - **No learning-rate schedule in v1**: BSR coefficients assume the paper’s workload; use BandMF/BLT with `lr_schedule` if you need schedule-shaped workloads in the optimizer.
 - **vs BISR**: BISR bands the **inverse** square root of the workload (different coefficient family). BSR bands the **forward** square root factors from Theorem 1.
 - **`normalized=True`**: Not supported in v1.

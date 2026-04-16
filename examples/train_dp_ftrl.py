@@ -934,7 +934,7 @@ def main():
                 min_sep=expected_steps_per_epoch,
                 max_participations=args.num_epochs,
                 momentum=mom,
-                weight_decay=args.bsr_alpha,
+                alpha=args.bsr_alpha,
             )
         elif args.mechanism == "identity":
             return identity_strategy()

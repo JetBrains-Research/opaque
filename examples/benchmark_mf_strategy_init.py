@@ -20,7 +20,7 @@ def main() -> None:
     n_steps = 2000
     bands = 8
     momentum = 0.95
-    weight_decay = 1.0
+    bsr_alpha = 1.0
     min_sep = 100
     max_participations = 5
 
@@ -37,13 +37,13 @@ def main() -> None:
         min_sep=min_sep,
         max_participations=max_participations,
         momentum=momentum,
-        weight_decay=weight_decay,
+        alpha=bsr_alpha,
     )
     t_bsr = time.perf_counter() - t0
 
     print("MF strategy construction benchmark (no training)")
     print(f"  n_steps={n_steps}, bands/bsr_bandwidth={bands}, β={momentum}")
-    print(f"  BSR: min_sep={min_sep}, max_participations={max_participations}, α={weight_decay}")
+    print(f"  BSR: min_sep={min_sep}, max_participations={max_participations}, α={bsr_alpha}")
     print()
     print(f"  band_mf_strategy: {t_band * 1000:.2f} ms")
     print(f"  bsr_strategy:      {t_bsr * 1000:.2f} ms")
