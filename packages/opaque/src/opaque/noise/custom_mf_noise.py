@@ -15,7 +15,7 @@ from typing import Any
 
 import torch
 
-from opaque.noise.matrix_factorization.noise import (
+from opaque.noise.mf._engine import (
     MFNoiseState,
     _matrix_factorization_noise,
 )
@@ -38,36 +38,26 @@ def custom_mf_noise(
     This is the bring-your-own-matrix entry point for DP-FTRL. The
     ``noising`` argument represents C^{-1} in the factorization A = B @ C.
 
-    For pre-built strategies, use :func:`mf_noise` with a strategy factory
-    (e.g. ``band_mf_strategy``, ``identity_strategy``) instead.
-
-    The noise function uses exactly the ``key`` you provide — no auto-detection
-    of distributed state. For synchronized noise in DDP, pass the same key on
-    every rank.
+    For pre-built strategies, use :func:`~opaque.noise.mf.mf_noise` with a
+    strategy factory (e.g. ``band_mf_strategy``, ``identity_strategy``) instead.
 
     Args:
         grad_template: A pytree with the same structure and shapes as the
-            gradients that will be passed to ``noise_fn``. Used to
-            initialize internal state.
+            gradients that will be passed to ``noise_fn``.
         noising: Either a dense 2D tensor (``torch.Tensor``) or a
             ``StreamingMatrix`` representing C^{-1}.
         stddev: Standard deviation for the base noise.
         key: Explicit RNG key for deterministic, functional randomness.
-            Same key on all ranks → same noise (synchronized).
-            ``fold_in(key, rank)`` → independent noise per rank.
         dtype: Optional dtype for intermediate noise computation.
 
     Returns:
-        A tuple ``(noise_fn, state)`` where:
-
-        - ``noise_fn(grads, state) -> (noisy_grads, new_state)``
-        - ``state`` is a :class:`~opaque.noise.matrix_factorization.noise.MFNoiseState`
+        A tuple ``(noise_fn, state)``.
 
     Example:
         >>> import torch
         >>> from opaque.noise import custom_mf_noise
+        >>> from opaque.noise.mf._streaming_matrix import identity
         >>> from opaque.random import key
-        >>> from opaque.noise.matrix_factorization import identity
         >>>
         >>> grad_template = torch.zeros(10)
         >>> noise_fn, state = custom_mf_noise(
