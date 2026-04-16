@@ -27,6 +27,7 @@ from .adaptive import (
     _adaptive_clipping_norm_update,
     _sample_noisy_clipping_rate,
 )
+from .auto import AutoClippedGradAux, AutoClipState
 from .clipped_fun import ClippedFunAux
 from .clipped_grad import ClippedGradAux
 from .types import FixedClipState
@@ -34,9 +35,11 @@ from .types import FixedClipState
 __all__ = [
     "sync_clip_state",
     "sync_adaptive_clip_state",
+    "sync_auto_clip_state",
     "sync_clipped_fun_aux",
     "sync_clipped_grad_aux",
     "sync_adaptive_clipped_grad_aux",
+    "sync_auto_clipped_grad_aux",
     "sync_aux",
 ]
 
@@ -240,10 +243,34 @@ def sync_adaptive_clipped_grad_aux(
     return sync_clipped_grad_aux(aux)
 
 
+def sync_auto_clip_state(state: AutoClipState) -> AutoClipState:
+    """Validate AUTO-S clipping state is identical across ranks.
+
+    AUTO-S state is fixed (no adaptive counts), so sync just validates
+    equality — same as ``sync_clip_state`` for ``FixedClipState``.
+    """
+    if not is_distributed():
+        return state
+    if not isinstance(state, AutoClipState):
+        raise TypeError(f"Expected AutoClipState, got {type(state)}")
+    return sync_object(state, field_ops={"clipping_norm": "assert_equal"})
+
+
+def sync_auto_clipped_grad_aux(
+    aux: AutoClippedGradAux,
+) -> AutoClippedGradAux:
+    """Synchronize ``AutoClippedGradAux`` across distributed ranks."""
+    if not is_distributed():
+        return aux
+    return sync_clipped_grad_aux(aux)
+
+
 def sync_aux(
-    aux: ClippedFunAux | ClippedGradAux | AdaptiveClippedGradAux,
-) -> ClippedFunAux | ClippedGradAux | AdaptiveClippedGradAux:
+    aux: ClippedFunAux | ClippedGradAux | AdaptiveClippedGradAux | AutoClippedGradAux,
+) -> ClippedFunAux | ClippedGradAux | AdaptiveClippedGradAux | AutoClippedGradAux:
     """Synchronize clipping auxiliary outputs across distributed ranks."""
+    if isinstance(aux, AutoClippedGradAux):
+        return sync_auto_clipped_grad_aux(aux)
     if isinstance(aux, AdaptiveClippedGradAux):
         return sync_adaptive_clipped_grad_aux(aux)
     if isinstance(aux, ClippedGradAux):
@@ -256,6 +283,8 @@ def sync_aux(
 # Register all clipping types with the sync dispatcher
 register_sync_type(FixedClipState, sync_clip_state)
 register_sync_type(AdaptiveClipState, sync_adaptive_clip_state)
+register_sync_type(AutoClipState, sync_auto_clip_state)
 register_sync_type(ClippedFunAux, sync_clipped_fun_aux)
 register_sync_type(ClippedGradAux, sync_clipped_grad_aux)
 register_sync_type(AdaptiveClippedGradAux, sync_adaptive_clipped_grad_aux)
+register_sync_type(AutoClippedGradAux, sync_auto_clipped_grad_aux)

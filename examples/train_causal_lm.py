@@ -64,7 +64,7 @@ from transformers import (
 import opaque.accounting as acc
 import opaque.auditing as auditing
 from opaque.accounting import calibration as cal, Accountant
-from opaque.clipping import adaptive_clipped_grad, clipped_grad
+from opaque.clipping import adaptive_clipped_grad, auto_clipped_grad, clipped_grad
 from opaque.compat.transformers import is_kernel_patched
 from opaque.distributed import sum_gradients_, sync
 from opaque.noise import gaussian_noise, per_group_noise_stddev, truncated_gaussian_noise
@@ -414,10 +414,27 @@ def parse_args():
         help="Clipping norm (fixed mode) or starting clipping norm (adaptive mode)",
     )
     dp_group.add_argument(
+        "--clipping-mode",
+        type=str,
+        choices=["fixed", "adaptive", "auto_s"],
+        default="adaptive",
+        help="Clipping mode: fixed (constant C), adaptive (quantile-tuned C_t), "
+             "or auto_s (AUTO-S smooth scaling, Bu et al. NeurIPS 2023). Default: adaptive.",
+    )
+    dp_group.add_argument(
         "--adaptive-clipping",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Use adaptive clipping (default: True)",
+        default=None,
+        help="Deprecated alias: --adaptive-clipping → --clipping-mode adaptive, "
+             "--no-adaptive-clipping → --clipping-mode fixed. "
+             "Prefer --clipping-mode.",
+    )
+    dp_group.add_argument(
+        "--auto-s-gamma",
+        type=float,
+        default=0.01,
+        help="Stability constant for AUTO-S clipping (default: 0.01, paper recommendation). "
+             "Only used when --clipping-mode auto_s.",
     )
     dp_group.add_argument(
         "--target-clipping-rate",
@@ -648,6 +665,10 @@ def parse_args():
     # Needed because argparse type=int can't accept None on CLI to override presets.
     if args.microbatch_size == 0:
         args.microbatch_size = None
+
+    # Resolve deprecated --adaptive-clipping / --no-adaptive-clipping alias.
+    if args.adaptive_clipping is not None and "clipping_mode" not in provided_dests:
+        args.clipping_mode = "adaptive" if args.adaptive_clipping else "fixed"
 
     # Parse --per-group-clipping PATTERN=NORM pairs
     if args.per_group_clipping:
@@ -1060,7 +1081,9 @@ def main():
     if args.noise_mechanism != "gaussian":
         print(f"  Noise radius: {args.noise_radius}σ")
     print(f"  Microbatch size: {args.microbatch_size}")
-    print(f"  Adaptive clipping: {args.adaptive_clipping}")
+    print(f"  Clipping mode: {args.clipping_mode}")
+    if args.clipping_mode == "auto_s":
+        print(f"  AUTO-S gamma: {args.auto_s_gamma}")
     print(f"  Eval steps: {args.eval_steps}")
     print(f"  Epochs: {args.num_epochs}")
     print(f"  Expected total steps: ~{args.num_epochs * expected_steps_per_epoch}")
@@ -1072,8 +1095,8 @@ def main():
     else:
         raise ValueError(f"Unknown optimizer: {args.optimizer}")
 
-    # Create gradient function (adaptive or fixed clipping)
-    if args.adaptive_clipping:
+    # Create gradient function (adaptive, auto_s, or fixed clipping)
+    if args.clipping_mode == "adaptive":
         grad_fn, clip_state = adaptive_clipped_grad(
             per_example_loss_fn,
             argnums=0,
@@ -1086,7 +1109,18 @@ def main():
             key=key(args.seed),
             normalize_by=args.batch_size,
         )
-    else:
+    elif args.clipping_mode == "auto_s":
+        grad_fn, clip_state = auto_clipped_grad(
+            per_example_loss_fn,
+            argnums=0,
+            batch_argnums=(1,),
+            clipping_norm=clip_norm,
+            gamma=args.auto_s_gamma,
+            normalize_by=args.batch_size,
+            microbatch_size=args.microbatch_size,
+            return_aux=True,
+        )
+    else:  # fixed
         grad_fn, clip_state = clipped_grad(
             per_example_loss_fn,
             argnums=0,
@@ -1125,7 +1159,7 @@ def main():
         mechanism = acc.gaussian
         make_noise = gaussian_noise
 
-    if args.adaptive_clipping:
+    if args.clipping_mode == "adaptive":
         _base_mechanism = mechanism
         mechanism = lambda nm, ebs=args.batch_size, ng=_num_groups: acc.adaclip(
             _base_mechanism(nm), expected_batch_size=ebs, num_groups=ng
@@ -1388,7 +1422,7 @@ def main():
     print(f"  Final loss: {losses[-1]:.4f}")
     print(f"  Loss reduction: {((losses[0] - losses[-1]) / losses[0] * 100):.1f}%")
 
-    if args.adaptive_clipping:
+    if args.clipping_mode == "adaptive":
         print("\nAdaptive clipping:")
         final_cn = clip_state.clipping_norm
         if isinstance(final_cn, PerGroup):
@@ -1404,6 +1438,13 @@ def main():
             print(f"  Final clip norm: {final_cn:.3f}")
         print(
             f"  Clip norm range: [{min(clip_norms_history):.3f}, {max(clip_norms_history):.3f}]"
+        )
+    elif args.clipping_mode == "auto_s":
+        print("\nAUTO-S clipping:")
+        print(f"  Clipping norm (R): {_effective(clip_norm):.3f}")
+        print(f"  Gamma: {args.auto_s_gamma}")
+        print(
+            f"  Average clip rate (diagnostic): {sum(clip_rates_history) / len(clip_rates_history):.2%}"
         )
     elif isinstance(clip_norm, PerGroup):
         print("\nPer-group clipping:")
