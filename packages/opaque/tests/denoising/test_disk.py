@@ -31,7 +31,10 @@ def test_known_sequence_1d():
         expected.append(est_f)
 
     denoise, st = disk_denoiser(
-        template, noise_stddev=1.0, process_var=q, dtype=torch.float64
+        template,
+        noise_stddev=1.0,
+        process_stddev=q**0.5,
+        dtype=torch.float64,
     )
     actual = []
     for y in observations:
@@ -46,7 +49,9 @@ def test_known_sequence_1d():
 
 def test_state_shape_matches_template():
     template = {"a": torch.zeros(2, 3), "b": torch.ones(4)}
-    denoise, st = disk_denoiser(template, noise_stddev=1.0, process_var=0.1)
+    denoise, st = disk_denoiser(
+        template, noise_stddev=1.0, process_stddev=0.1**0.5
+    )
     assert isinstance(st, DiskDenoiserState)
     assert isinstance(st, DenoiserState)
     assert set(st._estimate.keys()) == {"a", "b"}
@@ -64,7 +69,10 @@ def test_large_q_passthrough():
     template = torch.zeros(1)
     # R = 1e-6  =>  noise_stddev = 1e-3
     denoise, st = disk_denoiser(
-        template, noise_stddev=1e-3, process_var=1e6, dtype=torch.float64
+        template,
+        noise_stddev=1e-3,
+        process_stddev=(1e6) ** 0.5,
+        dtype=torch.float64,
     )
     y = torch.tensor([3.14], dtype=torch.float64)
     out, _ = denoise(y, st)
@@ -76,7 +84,10 @@ def test_small_q_heavy_smoothing():
     template = torch.zeros(1)
     r, q = 1.0, 1e-6
     denoise, st = disk_denoiser(
-        template, noise_stddev=1.0, process_var=q, dtype=torch.float64
+        template,
+        noise_stddev=1.0,
+        process_stddev=q**0.5,
+        dtype=torch.float64,
     )
     y = torch.tensor([10.0], dtype=torch.float64)
     out, _ = denoise(y, st)
@@ -90,7 +101,7 @@ def test_small_q_heavy_smoothing():
 def test_pytree_independent_leaves():
     template = {"w": torch.zeros(1), "b": torch.zeros(1)}
     denoise, st = disk_denoiser(
-        template, noise_stddev=1.0, process_var=0.01, dtype=torch.float64
+        template, noise_stddev=1.0, process_stddev=0.1, dtype=torch.float64
     )
     noisy = {"w": torch.tensor([1.0]), "b": torch.tensor([2.0])}
     out, _ = denoise(noisy, st)
@@ -100,7 +111,7 @@ def test_pytree_independent_leaves():
 def test_noise_stddev_override_changes_gain():
     template = torch.zeros(1)
     denoise, st = disk_denoiser(
-        template, noise_stddev=1.0, process_var=0.01, dtype=torch.float64
+        template, noise_stddev=1.0, process_stddev=0.1, dtype=torch.float64
     )
     y = torch.tensor([5.0], dtype=torch.float64)
     out1, st1 = denoise(y, st)
@@ -114,7 +125,7 @@ def test_per_group_noise_stddev():
     pg_std = PerGroup(groups=groups, values={"g": 1.0})
     template = {"w": torch.zeros(1), "b": torch.zeros(1)}
     denoise, st = disk_denoiser(
-        template, noise_stddev=pg_std, process_var=0.01, dtype=torch.float64
+        template, noise_stddev=pg_std, process_stddev=0.1, dtype=torch.float64
     )
     noisy = {"w": torch.tensor([1.0]), "b": torch.tensor([1.0])}
     out, _ = denoise(noisy, st)
@@ -123,7 +134,9 @@ def test_per_group_noise_stddev():
 
 def test_frozen_state():
     template = torch.zeros(1)
-    _, st = disk_denoiser(template, noise_stddev=1.0, process_var=0.1)
+    _, st = disk_denoiser(
+        template, noise_stddev=1.0, process_stddev=0.1**0.5
+    )
     with pytest.raises(dataclasses.FrozenInstanceError):
         st._step_counter = 99  # type: ignore[misc]
 
@@ -131,10 +144,10 @@ def test_frozen_state():
 def test_invalid_noise_stddev():
     template = torch.zeros(1)
     with pytest.raises(ValueError, match="positive"):
-        disk_denoiser(template, noise_stddev=0.0, process_var=0.1)
+        disk_denoiser(template, noise_stddev=0.0, process_stddev=0.1)
 
 
-def test_invalid_process_var():
+def test_invalid_process_stddev():
     template = torch.zeros(1)
     with pytest.raises(ValueError, match="non-negative"):
-        disk_denoiser(template, noise_stddev=1.0, process_var=-1.0)
+        disk_denoiser(template, noise_stddev=1.0, process_stddev=-1.0)

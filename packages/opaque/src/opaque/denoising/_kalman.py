@@ -90,7 +90,7 @@ def disk_denoiser(
     grad_template: Any,
     *,
     noise_stddev: float | PerGroup,
-    process_var: float,
+    process_stddev: float,
     dtype: torch.dtype | None = None,
 ) -> tuple[
     Callable[..., tuple[Any, DiskDenoiserState]],
@@ -98,16 +98,17 @@ def disk_denoiser(
 ]:
     """Build a DiSK-style Kalman denoiser for a gradient-shaped PyTree.
 
-    Uses a random-walk state model (``process_var``) and Gaussian measurement
-    noise at the same scale as the DP mechanism (``noise_stddev``).  Each tensor
-    element is filtered independently.
+    Uses a random-walk state model and Gaussian measurement noise at the same
+    scale as the DP mechanism (``noise_stddev``).  Each tensor element is filtered
+    independently.
 
     Args:
         grad_template: PyTree with the same structure as noisy gradients; leaves
             must be tensors (shapes and devices define filtering).
         noise_stddev: Same units as :func:`~opaque.noise.gaussian_noise` (σ), scalar
             or :class:`~opaque.utils.per_group.PerGroup` when noise scales per group.
-        process_var: Process noise variance Q (scalar random walk per step).
+        process_stddev: Process noise scale (same units as ``noise_stddev``); the
+            filter uses process variance ``Q = process_stddev ** 2``.
         dtype: Optional dtype for internal Kalman math (defaults to float32 minimum).
 
     Returns:
@@ -116,12 +117,13 @@ def disk_denoiser(
         adaptive clipping.
 
     Raises:
-        ValueError: If ``noise_stddev`` or ``process_var`` are invalid.
+        ValueError: If ``noise_stddev`` or ``process_stddev`` are invalid.
     """
-    if process_var < 0:
-        raise ValueError(f"process_var must be non-negative, got {process_var}")
+    if process_stddev < 0:
+        raise ValueError(f"process_stddev must be non-negative, got {process_stddev}")
     _validate_noise_stddev(noise_stddev)
 
+    process_q = float(process_stddev) * float(process_stddev)
     default_measurement_var = _measurement_variance_from_stddev(noise_stddev)
 
     def _compute_dtype(leaf: torch.Tensor) -> torch.dtype:
@@ -135,7 +137,7 @@ def disk_denoiser(
         compute_dtype = _compute_dtype(leaf)
         r_scalar = _scalar_r_for_path(path, default_measurement_var)
         r_t = torch.tensor(r_scalar, dtype=compute_dtype, device=leaf.device)
-        q_t = torch.tensor(process_var, dtype=compute_dtype, device=leaf.device)
+        q_t = torch.tensor(process_q, dtype=compute_dtype, device=leaf.device)
         z = torch.zeros_like(leaf, dtype=compute_dtype)
         init_var = r_t + q_t
         init_var = torch.full_like(z, float(init_var.item()))
@@ -175,7 +177,7 @@ def disk_denoiser(
             r_scalar = _scalar_r_for_path(path, r_effective)
             compute_dtype = _compute_dtype(n_leaf)
             r_t = torch.tensor(r_scalar, dtype=compute_dtype, device=n_leaf.device)
-            q_t = torch.tensor(process_var, dtype=compute_dtype, device=n_leaf.device)
+            q_t = torch.tensor(process_q, dtype=compute_dtype, device=n_leaf.device)
             return _leaf_kalman_step(n_leaf, e_leaf, v_leaf, r=r_t, q=q_t)
 
         def _step_by_path(
