@@ -93,16 +93,6 @@ def _noise_stddev(clip_state, noise_multiplier, *, per_group=True):
     return noise_multiplier * clip_state.sensitivity
 
 
-def _noise_variance(noise_stddev):
-    """Measurement variance R = sigma^2 (scalar or PerGroup, public)."""
-    if isinstance(noise_stddev, PerGroup):
-        return PerGroup(
-            noise_stddev.groups,
-            {k: v * v for k, v in noise_stddev.values.items()},
-        )
-    return noise_stddev * noise_stddev
-
-
 def _select_device(local_rank: int | None = None) -> tuple[torch.device, str]:
     """Select best available device with user-facing label."""
     if torch.cuda.is_available():
@@ -1224,7 +1214,7 @@ def main():
         init_std = _noise_stddev(clip_state, noise_multiplier)
         denoise, denoiser_state = disk_denoiser(
             trainable_params,
-            noise_var=_noise_variance(init_std),
+            noise_stddev=init_std,
             process_var=args.denoiser_process_var,
         )
 
@@ -1318,7 +1308,7 @@ def main():
                     noisy_grads, denoiser_state = denoise(
                         noisy_grads,
                         denoiser_state,
-                        noise_var=_noise_variance(noise_stddev),
+                        noise_stddev=noise_stddev,
                     )
 
                 updates, opt_state = base_opt.update(
