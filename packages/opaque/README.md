@@ -29,5 +29,6 @@ Built on:
 
 - `opaque.clipping` – Per-example gradient clipping
 - `opaque.noise` – Gaussian + correlated noise
+- `opaque.denoising` – Optional post-processing (e.g. DiSK) on noisy gradients
 - `opaque.accounting` – Privacy accounting (via opaque-accounting backend)
 - `opaque.sampling` – Batch sampling

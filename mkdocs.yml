@@ -85,6 +85,7 @@ nav:
     - Random Number Generation: user-guide/rng-key.md
     - Per-Example Gradient Clipping: user-guide/clipping.md
     - Noise Addition: user-guide/noise.md
+    - Gradient Denoising: user-guide/denoising.md
     - Privacy Accounting: user-guide/accounting.md
     - Sampling & Microbatching: user-guide/sampling.md
     - Optimizers: user-guide/optimizers.md
@@ -111,6 +112,7 @@ nav:
     - Overview: api/index.md
     - Clipping: api/clipping.md
     - Noise: api/noise.md
+    - Denoising: api/denoising.md
     - Accounting: api/accounting.md
     - Sampling: api/sampling.md
     - Random: api/rng.md

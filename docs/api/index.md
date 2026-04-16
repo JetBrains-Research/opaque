@@ -34,6 +34,10 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `band_mf_noise()`, `blt_mf_noise()`, `dense_mf_noise()` - Correlated noise (DP-FTRL)
   - `identity_mf_noise()`, `custom_mf_noise()` - MF API utilities
 
+- **[Denoising](denoising.md)**: Optional post-processing on noisy gradients
+  - `disk_denoiser()` - DiSK-style Kalman denoising (ICLR 2025)
+  - `DenoiserState`, `DiskDenoiserState` - State types
+
 - **[Accounting](accounting.md)**: Privacy budget tracking
   - `gaussian()`, `poisson()`, `truncated_poisson()`, `parallel_poisson()` - Standard mechanisms
   - `band_mf()`, `blt_mf()`, `dense_mf()`, `cyclic_poisson()` - Matrix factorization mechanisms
@@ -115,6 +119,14 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | `dense_mf_noise()`                  | Dense optimal correlated noise               | [Guide](../user-guide/noise.md) |
 | `identity_mf_noise()`               | Identity noise via MF API                    | [Guide](../user-guide/noise.md) |
 | `custom_mf_noise()`                 | Bring-your-own noising matrix                | [Guide](../user-guide/noise.md) |
+
+### Denoising
+
+| Function / type        | Purpose                                      | User Guide                          |
+|------------------------|----------------------------------------------|-------------------------------------|
+| `disk_denoiser()`      | DiSK / Kalman post-processing on noisy grads | [Guide](../user-guide/denoising.md) |
+| `DiskDenoiserState`    | Immutable state for `disk_denoiser`          | [Guide](../user-guide/denoising.md) |
+| `DenoiserState`        | Abstract base for denoiser state             | [Guide](../user-guide/denoising.md) |
 
 ### Accounting (Mechanisms)
 
