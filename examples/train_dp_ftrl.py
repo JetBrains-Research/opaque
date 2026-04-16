@@ -15,8 +15,8 @@ KEY DIFFERENCES FROM DP-SGD (train_causal_lm.py):
   2. Clipping: Fixed norm ONLY (adaptive clipping changes sensitivity
      mid-training which invalidates the single-shot MF privacy proof).
 
-  3. LR schedule: Linear warmup → constant, fully predetermined
-     before training starts (the optimizer must be a fixed linear map).
+  3. LR schedule: Constant by default (--warmup-frac 0); optional linear warmup
+     → constant, fully predetermined before training (fixed linear map).
 
   4. Accounting: Single-shot from MF encoder sensitivity. No per-step
      epsilon tracking — privacy is computed once at the end.
@@ -223,14 +223,15 @@ def _load_streaming_subset(
 def make_lr_schedule(
     base_lr: float,
     total_steps: int,
-    warmup_frac: float = 0.15,
+    warmup_frac: float = 0.0,
 ) -> torch.Tensor:
-    """Create a predetermined LR schedule: linear warmup → constant.
+    """Create a predetermined LR schedule: optional linear warmup → constant.
 
     Args:
         base_lr: Peak learning rate.
         total_steps: Total number of training steps.
-        warmup_frac: Fraction of steps for linear warmup (0→base_lr).
+        warmup_frac: Fraction of steps for linear warmup (0→base_lr). Default 0
+            (constant schedule at base_lr).
 
     Returns:
         Tensor of shape [total_steps] with per-step learning rates.
@@ -344,8 +345,8 @@ def parse_args():
     train_g.add_argument(
         "--warmup-frac",
         type=float,
-        default=0.15,
-        help="LR warmup fraction (default: 0.15)",
+        default=0.0,
+        help="LR warmup fraction of total steps, 0→peak LR linearly (default: 0 = constant LR)",
     )
     train_g.add_argument("--log-steps", type=int, default=1)
     train_g.add_argument("--eval-steps", type=int, default=10)
@@ -883,7 +884,10 @@ def main():
         warmup_frac=args.warmup_frac,
     )
 
-    print(f"\nLR schedule: warmup {args.warmup_frac:.0%} → constant")
+    if args.warmup_frac > 0:
+        print(f"\nLR schedule: linear warmup {args.warmup_frac:.0%} of steps → constant {args.learning_rate}")
+    else:
+        print(f"\nLR schedule: constant {args.learning_rate} (no warmup)")
     print(f"  Peak LR: {args.learning_rate}")
     print(f"  Total steps: {total_steps}")
 
