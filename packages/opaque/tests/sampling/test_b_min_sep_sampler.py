@@ -10,12 +10,8 @@ from opaque.sampling import BMinSepSampler
 
 def test_reproducibility():
     ds = TensorDataset(torch.randn(200, 3))
-    s1 = BMinSepSampler(
-        ds, bands=4, sampling_prob=0.08, iterations=20, key=key(7)
-    )
-    s2 = BMinSepSampler(
-        ds, bands=4, sampling_prob=0.08, iterations=20, key=key(7)
-    )
+    s1 = BMinSepSampler(ds, bands=4, sampling_prob=0.08, iterations=20, key=key(7))
+    s2 = BMinSepSampler(ds, bands=4, sampling_prob=0.08, iterations=20, key=key(7))
     assert list(s1) == list(s2)
 
 

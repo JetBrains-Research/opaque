@@ -104,9 +104,7 @@ class BMinSepSampler(Sampler):
             if n_elig == 0:
                 batch_indices: list[int] = []
             else:
-                sample_size = self.generator.binomial(
-                    n=n_elig, p=self.sampling_prob
-                )
+                sample_size = self.generator.binomial(n=n_elig, p=self.sampling_prob)
                 if self.truncated_batch_size is not None:
                     sample_size = min(sample_size, self.truncated_batch_size)
                 if sample_size > 0:
