@@ -43,6 +43,7 @@ USAGE:
 import argparse
 import contextlib
 import importlib.util
+import math
 import os
 import sys
 import time
@@ -549,10 +550,10 @@ def parse_args():
         "disk = DiSK-style Kalman denoising (ICLR 2025).",
     )
     dp_group.add_argument(
-        "--denoiser-process-var",
+        "--denoiser-process-std",
         type=float,
-        default=1e-3,
-        help="DiSK process variance Q (random-walk state); only used with --denoiser disk.",
+        default=math.sqrt(1e-3),
+        help="DiSK process noise scale (same units as noise stddev); only used with --denoiser disk.",
     )
 
     # Model precision
@@ -1154,7 +1155,7 @@ def main():
     if args.noise_mechanism != "gaussian":
         print(f"  Noise radius: {args.noise_radius}σ")
     if args.denoiser != "none":
-        print(f"  Denoiser: {args.denoiser} (process_var={args.denoiser_process_var})")
+        print(f"  Denoiser: {args.denoiser} (process_std={args.denoiser_process_std})")
     print(f"  Microbatch size: {args.microbatch_size}")
     print(f"  Clipping mode: {args.clipping_mode}")
     if args.clipping_mode == "auto":
@@ -1441,7 +1442,7 @@ def main():
         denoise, denoiser_state = disk_denoiser(
             trainable_params,
             noise_stddev=init_std,
-            process_var=args.denoiser_process_var,
+            process_stddev=args.denoiser_process_std,
         )
 
     # Training loop
