@@ -22,12 +22,17 @@ denoise, denoiser_state = disk_denoiser(
 )
 
 noisy_grads, noise_state = noise_fn(grads, noise_state, stddev=noise_stddev)
-denoised_grads, denoiser_state = denoise(
-    noisy_grads,
-    denoiser_state,
-    noise_stddev=noise_stddev,   # optional per-step override (e.g. adaptive clip)
-)
-denoiser_state = sync(denoiser_state)  # DDP: assert state matches across ranks
+if denoise is not None:
+    denoised_grads, denoiser_state = denoise(
+        noisy_grads,
+        denoiser_state,
+        noise_stddev=noise_stddev,
+    )
+# Under DDP (example pattern from train_causal_lm.py):
+# if denoise is not None:
+#     noise_state, denoiser_state = sync(noise_state, denoiser_state)
+# else:
+#     noise_state = sync(noise_state)
 ```
 
 - **`grad_template`**: a PyTree with the same structure as gradients (e.g.
