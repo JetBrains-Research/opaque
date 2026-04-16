@@ -12,6 +12,10 @@ For subsampling amplification (Poisson, truncated Poisson, parallel Poisson,
 cyclic Poisson), see :mod:`opaque.accounting.amplification`.
 """
 
+from opaque_accounting.mechanisms.auto_clip_gaussian import (
+    AutoClipGaussian,
+    auto_clip_gaussian,
+)
 from opaque_accounting.mechanisms.band_mf import (
     BandMf,
     band_mf,
@@ -43,6 +47,7 @@ from opaque_accounting.mechanisms.nonprivate import (
 
 __all__ = [
     # Dataclass types
+    "AutoClipGaussian",
     "Gaussian",
     "EpsDelta",
     "Identity",
@@ -51,6 +56,7 @@ __all__ = [
     "BltMf",
     "DenseMf",
     # Constructor functions
+    "auto_clip_gaussian",
     "gaussian",
     "eps_delta",
     "identity",

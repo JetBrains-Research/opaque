@@ -8,6 +8,7 @@
 //! - [`identity`]: Identity (zero privacy loss) mechanism
 //! - [`non_private`]: Non-private mechanism (infinite privacy loss)
 
+mod auto_clip_gaussian;
 mod eps_delta;
 mod gaussian;
 mod identity;
@@ -38,6 +39,7 @@ pub(crate) fn validate_noise_multiplier(nm: f64) -> crate::error::Result<()> {
 // Re-exports
 // ---------------------------------------------------------------------------
 
+pub use auto_clip_gaussian::auto_clip_gaussian_pld;
 pub use eps_delta::eps_delta_pld;
 pub use gaussian::gaussian_pld;
 pub use identity::identity_pld;

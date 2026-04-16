@@ -57,6 +57,33 @@ pub fn py_identity_pld(config: &PyDiscretizationConfig) -> PyResult<PyPld> {
     Ok(PyPld::new(pld))
 }
 
+/// Compute the PLD for an auto-clip Gaussian mechanism.
+///
+/// Models a Gaussian mechanism where the noise variance changes between
+/// neighboring datasets (data-dependent clipping threshold).
+///
+/// Args:
+///     sensitivity (float): ||mu - mu'|| / v', the normalized mean shift.
+///     noise_ratio (float): v(D) / v(D'), ratio of noise stds. Must be in [0.5, 2.0].
+///     dimension (int): Parameter dimension d.
+///     config (DiscretizationConfig): Discretization configuration.
+///
+/// Returns:
+///     Pld: The privacy loss distribution.
+#[pyfunction]
+#[pyo3(name = "auto_clip_gaussian_pld", signature = (sensitivity, noise_ratio, dimension, config))]
+pub fn py_auto_clip_gaussian_pld(
+    sensitivity: f64,
+    noise_ratio: f64,
+    dimension: usize,
+    config: &PyDiscretizationConfig,
+) -> PyResult<PyPld> {
+    let pld =
+        crate::mechanisms::auto_clip_gaussian_pld(sensitivity, noise_ratio, dimension, &config.inner)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}
+
 /// Compute the PLD for a non-private mechanism (ε = ∞, δ = 1).
 ///
 /// Args:

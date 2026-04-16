@@ -84,6 +84,7 @@ from opaque_accounting.discretization import (
 
 # Mechanisms
 from opaque_accounting.mechanisms import (
+    auto_clip_gaussian,
     band_mf,
     blt_mf,
     dense_mf,
@@ -111,6 +112,7 @@ __all__ = [
     "set_discretization",
     "get_discretization",
     # Mechanisms (factories only; classes via subpackage import)
+    "auto_clip_gaussian",
     "gaussian",
     "eps_delta",
     "identity",
