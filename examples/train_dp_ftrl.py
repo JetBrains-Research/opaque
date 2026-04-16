@@ -37,7 +37,7 @@ MECHANISMS:
   bisr      — BISR (Kalinin et al., ICLR 2026), generalises λCGD to
                arbitrary bandwidth p. Coefficients from inverse square root.
   bsr       — BSR (Kalinin & Lampert, NeurIPS 2024), closed-form banded square
-               root for SGD + momentum + weight decay (no L-BFGS). BnB sampling.
+               root for the paper workload (α, β); no L-BFGS. BnB sampling.
   identity  — DP-SGD baseline via MF API (C^{-1} = I, independent noise).
                Same training loop for fair comparison.
 
@@ -803,17 +803,17 @@ def main():
         print(f"  max_participations: {args.num_epochs}")
     elif args.mechanism == "lambda_cgd":
         print(
-            f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, random partition/epoch)"
+            f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, fixed partition, reused across epochs)"
         )
         print(f"  DP-λCGD: λ={args.lambda_}")
     elif args.mechanism == "bisr":
         print(
-            f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, random partition/epoch)"
+            f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, fixed partition, reused across epochs)"
         )
         print(f"  BISR bandwidth: {args.bisr_bandwidth}")
     elif args.mechanism == "bsr":
         print(
-            f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, random partition/epoch)"
+            f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, fixed partition, reused across epochs)"
         )
         print(f"  BSR bandwidth: {args.bsr_bandwidth} (closed-form coefficients)")
     else:

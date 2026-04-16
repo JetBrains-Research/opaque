@@ -156,5 +156,9 @@ def band_mf_strategy(
         _streaming_matrix=streaming,
         _n_steps=n_steps,
         _bands=bands,
-        _lr_schedule=lr_schedule.clone() if lr_schedule is not None else None,
+        _lr_schedule=(
+            torch.as_tensor(lr_schedule, dtype=torch.float64).clone()
+            if lr_schedule is not None
+            else None
+        ),
     )
