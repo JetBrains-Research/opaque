@@ -301,6 +301,7 @@ def sync(*states: object) -> object | tuple[object, ...]:
         state_type = type(single_state)
         if state_type not in _SYNC_REGISTRY:
             import opaque.clipping.distributed  # noqa: F401
+            import opaque.denoising.distributed  # noqa: F401
             import opaque.noise.distributed  # noqa: F401
             import opaque.profiling.distributed  # noqa: F401
         if state_type in _SYNC_REGISTRY:

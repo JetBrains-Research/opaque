@@ -13,6 +13,7 @@ your usual `noise_fn`; denoising runs on the **released** noisy gradients.
 
 ```python
 from opaque.denoising import disk_denoiser
+from opaque.distributed import sync
 
 denoise, denoiser_state = disk_denoiser(
     grad_template,
@@ -26,6 +27,7 @@ denoised_grads, denoiser_state = denoise(
     denoiser_state,
     noise_stddev=noise_stddev,   # optional per-step override (e.g. adaptive clip)
 )
+denoiser_state = sync(denoiser_state)  # DDP: assert state matches across ranks
 ```
 
 - **`grad_template`**: a PyTree with the same structure as gradients (e.g.
