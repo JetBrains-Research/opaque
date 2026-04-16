@@ -1530,17 +1530,14 @@ def main():
                 step_clip_norm = grads_tuple.max_norm
                 noisy_grads, noise_state = noise_fn(grads_tuple, noise_state)
                 noise_stddev = noisy_grads.noise_stddev
-                if is_ddp:
-                    noise_state = sync(noise_state)
-
                 if denoise is not None:
                     noisy_grads, denoiser_state = denoise(
                         noisy_grads,
                         denoiser_state,
                         noise_stddev=noise_stddev,
                     )
-                    if is_ddp:
-                        denoiser_state = sync(denoiser_state)
+                if is_ddp:
+                    noise_state, denoiser_state = sync(noise_state, denoiser_state)
 
                 updates, opt_state = base_opt.update(
                     noisy_grads, opt_state, params=trainable_params
