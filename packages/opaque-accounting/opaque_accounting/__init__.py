@@ -2,8 +2,8 @@
 
 This module provides a compositional API for tracking privacy guarantees:
 
-- **Mechanisms**: gaussian(), band_mf(), blt_mf(), dense_mf(), etc.
-- **Amplification**: poisson(), cyclic_poisson(), truncated_poisson(), etc.
+- **Mechanisms**: gaussian(), lambda_cgd(), bisr(), bsr(), band_mf(), blt(), etc.
+- **Amplification**: balls_in_bins(), poisson(), cyclic_poisson(), etc.
 - **Composition**: Combine processes using ``*`` (repeat) or ``|`` (compose)
 - **Metrics**: Query privacy with epsilon_at(), delta_at(), advantage(), etc.
 
@@ -12,15 +12,23 @@ The underlying implementation uses Google's PLD accounting via the
 
 Example::
 
-    import opaque.accounting as acc
+    import opaque_accounting as acc
 
     # Standard DP-SGD step
     step = acc.poisson(acc.gaussian(1.1), sample_rate=0.01)
     training = step * 1000
     epsilon = training.epsilon_at(1e-5)
 
+    # DP-λCGD with Balls-in-Bins amplification
+    training = acc.balls_in_bins(
+        acc.lambda_cgd(1.0, sensitivity=s.sensitivity,
+                       gram_matrix=s.gram_matrix),
+        num_bins=1875, num_epochs=8,
+    )
+    eps = training.epsilon_at(1e-5)
+
     # BandMF with cyclic Poisson amplification
-    proc = acc.cyclic_poisson(acc.band_mf(1.0, 1000, 10), sample_rate=0.01)
+    proc = acc.cyclic_poisson(acc.band_mf(1.0, sensitivity=1.0, num_groups=100), sample_rate=0.01)
     eps = proc.epsilon_at(1e-5)
 
 For calibration (finding noise for target privacy budget), use the
@@ -54,6 +62,8 @@ from opaque_accounting.accountant import Accountant
 
 # Amplification
 from opaque_accounting.amplification import (
+    balls_in_bins,
+    b_min_sep,
     cyclic_poisson,
     parallel_poisson,
     poisson,
@@ -85,16 +95,18 @@ from opaque_accounting.discretization import (
 # Mechanisms
 from opaque_accounting.mechanisms import (
     band_mf,
-    blt_mf,
-    dense_mf,
+    bisr,
+    blt,
+    bsr,
     eps_delta,
     gaussian,
     identity,
+    lambda_cgd,
     nonprivate,
 )
 
 # Transformations
-from opaque_accounting.transformations import adaclip
+from opaque_accounting.transformations import adaclip, jme
 
 __all__ = [
     # Submodules
@@ -116,15 +128,20 @@ __all__ = [
     "identity",
     "nonprivate",
     "band_mf",
-    "blt_mf",
-    "dense_mf",
+    "blt",
+    "lambda_cgd",
+    "bisr",
+    "bsr",
     # Amplification
+    "balls_in_bins",
     "poisson",
     "truncated_poisson",
     "parallel_poisson",
+    "b_min_sep",
     "cyclic_poisson",
     # Transformations
     "adaclip",
+    "jme",
     # Composition
     "repeat",
     "compose",

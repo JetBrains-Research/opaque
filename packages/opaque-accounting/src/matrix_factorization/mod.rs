@@ -1,10 +1,9 @@
 //! Matrix factorization (MF) privacy accounting.
 //!
 //! This module provides privacy accounting for matrix factorization DP
-//! mechanisms, including BandMF, BLT, and Dense strategies. Unlike standard
-//! DP-SGD which uses i.i.d. Gaussian noise at each step, MF mechanisms
-//! inject *correlated* noise across all training steps via a matrix
-//! factorization A = C⁻¹.
+//! mechanisms: BandMF, BLT, DP-λCGD, and BISR. Unlike standard DP-SGD
+//! which uses i.i.d. Gaussian noise at each step, MF mechanisms inject
+//! *correlated* noise across all training steps via a matrix factorization.
 //!
 //! # Privacy Analysis
 //!
@@ -14,28 +13,50 @@
 //! - S is the L2 sensitivity of the encoder matrix C under the given
 //!   participation pattern
 //!
-//! The sensitivity S captures the correlation structure and depends on
-//! both the MF strategy and the participation pattern:
+//! Sensitivity depends only on C, not on the optimizer workload (momentum,
+//! LR schedule). The workload affects utility optimization, never privacy.
 //!
 //! | Strategy | Participation | Sensitivity function |
 //! |----------|--------------|---------------------|
 //! | BandMF   | Single       | [`single_participation_sensitivity`] |
 //! | BandMF   | Min-sep      | [`banded_sensitivity`] |
 //! | BLT      | Min-sep      | [`banded_sensitivity`] or [`general_sensitivity_upper_bound`] |
-//! | Dense    | Single       | [`single_participation_sensitivity`] |
-//! | Dense    | Fixed-epoch  | [`fixed_epoch_sensitivity`] |
+//! | λCGD     | Min-sep      | [`lambda_cgd_sensitivity_squared`] |
+//! | λCGD     | Normalized   | [`lambda_cgd_normalized_sensitivity_squared`] |
+//! | BISR     | Min-sep      | [`bisr_sensitivity_squared`] |
+//! | BISR     | Normalized   | [`bisr_normalized_sensitivity_squared`] |
 //! | Any      | General      | [`general_sensitivity_upper_bound`] |
+//!
+//! For BnB amplification, Gram matrices are available via:
+//! - [`lambda_cgd_gram_matrix`] — closed-form for λCGD
+//! - [`bisr_gram_matrix`] — numerical for BISR (general bandwidth)
+//! - [`toeplitz_gram_matrix`] — for BandMF/BLT with known strategy coefs
 //!
 //! # References
 //!
 //! - BandMF: Choquette-Choo et al. (2023) <https://arxiv.org/abs/2306.08153>
 //! - BLT: Choquette-Choo et al. (2024) <https://arxiv.org/abs/2404.16706>
-//! - Dense MF: Denisov et al. (2022) <https://arxiv.org/abs/2202.08312>
-//! - Fixed-epoch: Choquette-Choo et al. (2022) <https://arxiv.org/abs/2211.06530>
+//! - DP-λCGD: Kalinin et al. (2026) <https://arxiv.org/abs/2601.22334>
+//! - BISR: Kalinin et al. (2026) <https://arxiv.org/abs/2505.12128>
+//! - MC BnB: Choquette-Choo et al. (2024) <https://arxiv.org/abs/2410.06266>
 
+pub mod bisr;
+pub mod gram_matrix;
+pub mod jme;
+pub mod lambda_cgd;
 mod mf_gaussian;
 pub mod sensitivity;
 
+pub use bisr::{
+    bisr_gram_matrix, bisr_gram_matrix_lr, bisr_normalized_sensitivity_squared,
+    bisr_sensitivity_squared, toeplitz_gram_matrix,
+};
+pub use gram_matrix::{lambda_cgd_gram_matrix, lambda_cgd_gram_matrix_lr};
+pub use jme::{jme_joint_sensitivity, jme_lambda, jme_second_moment_noise_scale};
+pub use lambda_cgd::{
+    lambda_cgd_max_column_norm, lambda_cgd_normalized_sensitivity_squared,
+    lambda_cgd_sensitivity_squared,
+};
 pub use mf_gaussian::mf_gaussian_pld;
 pub use sensitivity::{
     banded_sensitivity, blt_sensitivity_squared, fixed_epoch_sensitivity,

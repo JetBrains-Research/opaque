@@ -1,7 +1,9 @@
-"""BLT (Buffered Linear Toeplitz) correlated noise mechanism.
+"""BLT (Buffered Linear Toeplitz) strategy — multi-epoch MF mechanism.
 
-Convenience wrapper that optimizes BLT parameters and returns
-ready-to-use ``(noise_fn, state)`` for DP-FTRL training.
+Computes optimized BLT parameters, sensitivity under participation
+patterns, and pre-computed BnB Gram matrix.
+
+Use ``mf_noise(blt_strategy(...), ...)`` to create the noise function.
 
 References:
     - BLT: https://arxiv.org/abs/2404.16706
@@ -10,83 +12,122 @@ References:
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from dataclasses import dataclass
 
+import torch
+
+from opaque_accounting import opaque_accounting as _native
+from opaque.noise.band_mf_noise import _momentum_workload_coef
 from opaque.noise.matrix_factorization.buffered_toeplitz import (
     inverse_as_streaming_matrix,
     optimize,
+    sensitivity_squared as _blt_sensitivity_squared,
+    toeplitz_coefs as _blt_toeplitz_coefs,
 )
-from opaque.noise.matrix_factorization.noise import (
-    MFNoiseState,
-    _matrix_factorization_noise,
+from opaque.noise.matrix_factorization.sensitivity import (
+    minsep_true_max_participations,
 )
-from opaque.random import RngKey
+from opaque.noise.matrix_factorization.streaming_matrix import StreamingMatrix
+from opaque.noise.matrix_factorization.toeplitz import (
+    minsep_sensitivity_squared as _toeplitz_minsep_sensitivity_squared,
+)
 
 
-def blt_mf_noise(
-    grad_template: Any,
+__all__ = ["BltStrategy", "blt_strategy"]
+
+
+# ---------------------------------------------------------------------------
+# Strategy dataclass and factory
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class BltStrategy:
+    """BLT (Buffered Linear Toeplitz) strategy."""
+
+    sensitivity: float
+    coefficients: tuple[float, ...]
+    gram_matrix: tuple[float, ...] | None = None
+    _streaming_matrix: StreamingMatrix | None = None
+
+
+def blt_strategy(
     n_steps: int,
-    *,
-    stddev: float,
-    key: RngKey,
-    min_sep: int = 1,
+    min_sep: int,
     max_participations: int | None = 1,
-    error: str = "max",
+    *,
     max_buffers: int = 10,
-) -> tuple[
-    Callable[[Any, MFNoiseState], tuple[Any, MFNoiseState]],
-    MFNoiseState,
-]:
-    """Create a BLT correlated noise mechanism.
+    momentum: float = 1.0,
+    lr_schedule: torch.Tensor | None = None,
+) -> BltStrategy:
+    """Create a BLT strategy by optimizing Buffered Linear Toeplitz parameters.
 
-    Optimizes BLT parameters for ``n_steps`` iterations with the given
-    participation pattern, then wraps the result in the matrix
-    factorization noise API.
-
-    The noise function uses exactly the ``key`` you provide — no auto-detection
-    of distributed state. For synchronized noise in DDP, pass the same key on
-    every rank.
+    Computes sensitivity under the given participation pattern and
+    pre-computes the BnB Gram matrix.
 
     Args:
-        grad_template: A pytree with the same structure and shapes as the
-            gradients that will be passed to ``noise_fn``.
         n_steps: Number of training iterations.
-        stddev: Standard deviation for the base noise.
-        key: Explicit RNG key for deterministic, functional randomness.
-            Same key on all ranks → same noise (synchronized).
-            ``fold_in(key, rank)`` → independent noise per rank.
-        min_sep: Minimum separation between participations (default 1).
+        min_sep: Minimum separation between participations.
         max_participations: Maximum participations per user (default 1).
-        error: Error metric to optimize: ``'max'`` or ``'mean'``.
         max_buffers: Maximum number of BLT buffers to try (default 10).
+        momentum: Polyak momentum coefficient (default 1.0 = prefix-sum).
+        lr_schedule: Optional per-step learning rates, shape [n_steps].
 
     Returns:
-        A tuple ``(noise_fn, state)`` where:
-
-        - ``noise_fn(grads, state) -> (noisy_grads, new_state)``
-        - ``state`` is a :class:`~opaque.noise.matrix_factorization.noise.MFNoiseState`
-
-    Example:
-        >>> from opaque.random import key
-        >>> noise_fn, state = blt_mf_noise(grad_template, 1000, stddev=1.0, key=key(42))
-        >>> for step in range(1000):
-        ...     noisy_grads, state = noise_fn(clipped_grads, state)
+        A :class:`BltStrategy` with optimized parameters and Gram matrix.
     """
+    if n_steps < 1:
+        raise ValueError(f"n_steps must be >= 1, got {n_steps}")
+
+    workload_coef = _momentum_workload_coef(momentum, n_steps, lr_schedule=lr_schedule)
     blt = optimize(
         n=n_steps,
         min_sep=min_sep,
         max_participations=max_participations,
-        error=error,
+        error="max",
         max_buffers=max_buffers,
-    )
-    noising = inverse_as_streaming_matrix(blt)
-    return _matrix_factorization_noise(
-        grad_template,
-        noising,
-        stddev=stddev,
-        key=key,
+        workload_coef=workload_coef,
     )
 
+    # Sensitivity
+    k = minsep_true_max_participations(
+        n=n_steps,
+        min_sep=min_sep,
+        max_participations=max_participations,
+    )
+    if k == 1:
+        sens_sq = _blt_sensitivity_squared(blt, n=n_steps)
+        sensitivity = float(sens_sq.sqrt())
+    else:
+        coefs_tensor = _blt_toeplitz_coefs(blt, n_steps)
+        sens_sq = _toeplitz_minsep_sensitivity_squared(
+            strategy_coef=coefs_tensor,
+            min_sep=min_sep,
+            max_participations=max_participations,
+            skip_checks=True,
+        )
+        sensitivity = float(sens_sq.sqrt())
 
-__all__ = ["blt_mf_noise"]
+    # Coefficients
+    coefs_tensor = _blt_toeplitz_coefs(blt, n_steps)
+    coefficients = tuple(coefs_tensor.tolist())
+
+    # Gram matrix
+    gram = _native.toeplitz_gram_matrix(
+        list(coefficients),
+        n_steps,
+        min_sep,
+        max_participations,
+        True,
+    )
+    gram_matrix = tuple(gram)
+
+    # Streaming matrix
+    streaming = inverse_as_streaming_matrix(blt)
+
+    return BltStrategy(
+        sensitivity=sensitivity,
+        coefficients=coefficients,
+        gram_matrix=gram_matrix,
+        _streaming_matrix=streaming,
+    )

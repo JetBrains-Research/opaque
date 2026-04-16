@@ -14,8 +14,8 @@ from opaque.distributed import (
     sync_object,
 )
 
-from .gaussian_noise import GaussianNoiseState
-from .matrix_factorization.noise import MFNoiseState
+from .gaussian import GaussianNoiseState
+from .mf._engine import MFNoiseState
 from .types import NoiseState
 
 __all__ = [

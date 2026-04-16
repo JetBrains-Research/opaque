@@ -3,10 +3,9 @@
 import pytest
 import torch
 
-from opaque.noise.matrix_factorization.sensitivity import (
+from opaque.noise.mf._sensitivity import (
     banded_lower_triangular_mask,
     banded_symmetric_mask,
-    fixed_epoch_sensitivity,
     get_sensitivity_banded_for_X,
     max_participation_for_linear_fn,
     minsep_true_max_participations,
@@ -109,18 +108,3 @@ class TestBandedSensitivity:
         result = get_sensitivity_banded_for_X(X, min_sep=1, max_participations=2)
         # Identity: diagonal X has x[i]=1, sum of 2 best = 2
         assert result == pytest.approx(torch.sqrt(torch.tensor(2.0)).item())
-
-
-class TestFixedEpochSensitivity:
-    def test_identity_single_epoch(self):
-        C = torch.eye(4, dtype=torch.float64)
-        result = fixed_epoch_sensitivity(C, epochs=1)
-        # Single epoch: sensitivity = max L1 norm of any row
-        assert result == pytest.approx(1.0)
-
-    def test_identity_two_epochs(self):
-        C = torch.eye(4, dtype=torch.float64)
-        result = fixed_epoch_sensitivity(C, epochs=2)
-        # Two epochs: each user participates at iterations {i, i+2}.
-        # For identity C, ||c_i + c_{i+2}|| = sqrt(2).
-        assert result == pytest.approx(2**0.5)

@@ -5,8 +5,8 @@ Tests verify that MF noise mechanisms produce:
 2. Proper noise correlation over multiple training steps
 3. Cross-rank agreement on noise values
 
-Note: BandMF, BLT, and DenseMF have device placement limitations with streaming
-matrices (coefficients kept on CPU). These tests focus on identity_mf_noise which
+Note: BandMF and BLT have device placement limitations with streaming
+matrices (coefficients kept on CPU). These tests focus on identity noise which
 doesn't use streaming matrices and is fully functional on CUDA.
 """
 
@@ -18,7 +18,7 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
-from opaque.noise import identity_mf_noise
+from opaque.noise.mf import mf_noise, identity_strategy
 
 
 def _find_free_port() -> int:
@@ -49,7 +49,7 @@ def _cleanup_ddp() -> None:
 
 
 def _worker_identity_mf_three_steps(rank: int, world_size: int, port: int) -> None:
-    """Worker for identity_mf_noise over 3 training steps.
+    """Worker for identity MF noise over 3 training steps.
 
     Identity MF is equivalent to standard DP-SGD (independent noise at each step).
 
@@ -68,7 +68,9 @@ def _worker_identity_mf_three_steps(rank: int, world_size: int, port: int) -> No
         grad_template = {"weight": torch.zeros(batch_size, param_dim, device=device)}
 
         # Initialize identity MF (standard Gaussian noise)
-        noise_fn, state = identity_mf_noise(grad_template, stddev=1.0, key=None)
+        noise_fn, state = mf_noise(
+            grad_template, identity_strategy(), stddev=1.0, key=None
+        )
 
         # Run 3 training steps
         step_noise_values = []

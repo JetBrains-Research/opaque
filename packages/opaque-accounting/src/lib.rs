@@ -27,7 +27,7 @@
 //!
 //! - [`mechanisms`]: Gaussian, (ε,δ), identity PLD constructors
 //! - [`amplification`]: Poisson, truncated Poisson, accumulated PLDs
-//! - [`matrix_factorization`]: MF-DP accounting (BandMF, BLT, Dense)
+//! - [`matrix_factorization`]: MF-DP accounting (BandMF, BLT)
 //! - [`transformations`]: Adaptive clipping sensitivity formula
 //! - [`pld`]: The `PrivacyLossDistribution` type and metrics
 //! - [`discretization`]: Connect-the-Dots discretization

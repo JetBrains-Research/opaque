@@ -6,10 +6,9 @@ from typing import cast
 import opaque_accounting as acc
 from opaque_accounting.accountant import Accountant
 from opaque_accounting.base import DpProcess
-from opaque_accounting.mechanisms.band_mf_amplified import (
-    BandMfAmplified,
-    band_mf_amplified,
-)
+from opaque_accounting.amplification.b_min_sep import BMinSep
+from opaque_accounting.amplification.cyclic_poisson import CyclicPoisson
+from opaque_accounting.mechanisms.band_mf import BandMf
 
 
 def test_gaussian_state_dict_structure():
@@ -100,21 +99,41 @@ def test_cached_state_dict_structure():
     assert inner["type"] == "Gaussian"
 
 
-def test_band_mf_amplified_state_dict_structure():
-    proc = band_mf_amplified(1.0, 2.5, 0.01, 200)
+def test_cyclic_poisson_state_dict_structure():
+    proc = acc.cyclic_poisson(
+        acc.band_mf(1.0, sensitivity=2.5, num_groups=200), sample_rate=0.01
+    )
     state = cast(dict[str, object], proc.state_dict())
-    assert state["type"] == "BandMfAmplified"
-    assert state["noise_multiplier"] == 1.0
-    assert state["sensitivity"] == 2.5
+    assert state["type"] == "CyclicPoisson"
     assert state["sample_rate"] == 0.01
-    assert state["num_groups"] == 200
+    inner = cast(dict[str, object], state["inner"])
+    assert inner["type"] == "BandMf"
+    assert inner["noise_multiplier"] == 1.0
+    assert inner["sensitivity"] == 2.5
+    assert inner["num_groups"] == 200
 
 
-def test_band_mf_amplified_round_trip():
-    proc = band_mf_amplified(1.0, 2.5, 0.01, 200)
+def test_b_min_sep_round_trip():
+    proc = acc.b_min_sep(
+        acc.band_mf(1.0, sensitivity=1.2, num_groups=50),
+        strategy_coefficients=(0.9, 0.1),
+        n_steps=100,
+        p0=0.02,
+    )
     state = proc.state_dict()
     restored = DpProcess.from_state_dict(state)
-    assert isinstance(restored, BandMfAmplified)
+    assert isinstance(restored, BMinSep)
+    assert restored == proc
+
+
+def test_cyclic_poisson_round_trip():
+    proc = acc.cyclic_poisson(
+        acc.band_mf(1.0, sensitivity=2.5, num_groups=200), sample_rate=0.01
+    )
+    state = proc.state_dict()
+    restored = DpProcess.from_state_dict(state)
+    assert isinstance(restored, CyclicPoisson)
+    assert isinstance(restored.inner, BandMf)
     assert restored == proc
 
 

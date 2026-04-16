@@ -12,18 +12,6 @@ For subsampling amplification (Poisson, truncated Poisson, parallel Poisson,
 cyclic Poisson), see :mod:`opaque.accounting.amplification`.
 """
 
-from opaque_accounting.mechanisms.band_mf import (
-    BandMf,
-    band_mf,
-)
-from opaque_accounting.mechanisms.blt_mf import (
-    BltMf,
-    blt_mf,
-)
-from opaque_accounting.mechanisms.dense_mf import (
-    DenseMf,
-    dense_mf,
-)
 from opaque_accounting.mechanisms.eps_delta import (
     EpsDelta,
     eps_delta,
@@ -36,6 +24,29 @@ from opaque_accounting.mechanisms.identity import (
     Identity,
     identity,
 )
+from opaque_accounting.mechanisms.band_mf import (
+    BandMf,
+    band_mf,
+)
+from opaque_accounting.mechanisms.bisr import (
+    Bisr,
+    bisr,
+)
+from opaque_accounting.mechanisms.bsr import (
+    Bsr,
+    bsr,
+)
+from opaque_accounting.mechanisms.blt import (
+    Blt,
+    blt,
+)
+from opaque_accounting.mechanisms.lambda_cgd import (
+    LambdaCgd,
+    lambda_cgd,
+)
+from opaque_accounting.mechanisms.mf_gaussian import (
+    MfGaussian,
+)
 from opaque_accounting.mechanisms.nonprivate import (
     NonPrivate,
     nonprivate,
@@ -47,15 +58,20 @@ __all__ = [
     "EpsDelta",
     "Identity",
     "NonPrivate",
+    "MfGaussian",
     "BandMf",
-    "BltMf",
-    "DenseMf",
+    "Blt",
+    "LambdaCgd",
+    "Bisr",
+    "Bsr",
     # Constructor functions
     "gaussian",
     "eps_delta",
     "identity",
     "nonprivate",
     "band_mf",
-    "blt_mf",
-    "dense_mf",
+    "blt",
+    "lambda_cgd",
+    "bisr",
+    "bsr",
 ]

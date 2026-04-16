@@ -11,7 +11,7 @@ use super::pld::PyPld;
 /// single Gaussian mechanism with effective noise multiplier σ/S.
 ///
 /// The sensitivity S should be pre-computed based on the MF strategy
-/// (BandMF, BLT, Dense) and participation pattern.
+/// (BandMF, BLT) and participation pattern.
 ///
 /// Args:
 ///     noise_multiplier (float): Raw noise std σ (before MF). Must be positive.
@@ -222,4 +222,430 @@ pub fn py_toeplitz_minsep_sensitivity_squared(
         max_participations,
     )
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// Squared L2 sensitivity of the DP-λCGD strategy matrix.
+///
+/// Uses the closed-form expression from Theorem 1 (eq 15) of
+/// Kalinin et al. (2026) "DP-λCGD". With momentum β > 0, computes
+/// via momentum-aware column inner products.
+///
+/// Args:
+///     lambda_ (float): Correlation coefficient in [0, 1). λ=0 is DP-SGD.
+///     n_steps (int): Total number of training steps.
+///     min_sep (int): Minimum separation between participations (>= 1).
+///     max_participations (int | None): Optional upper bound on participations.
+///     momentum (float): Optimizer momentum β in [0, 1). Default 0.
+///
+/// Returns:
+///     float: The squared L2 sensitivity.
+///
+/// Raises:
+///     ValueError: If parameters are invalid.
+#[pyfunction]
+#[pyo3(name = "lambda_cgd_sensitivity_squared", signature = (lambda_, n_steps, min_sep=1, max_participations=None, momentum=0.0))]
+pub fn py_lambda_cgd_sensitivity_squared(
+    lambda_: f64,
+    n_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+    momentum: f64,
+) -> PyResult<f64> {
+    crate::matrix_factorization::lambda_cgd_sensitivity_squared(
+        lambda_,
+        n_steps,
+        min_sep,
+        max_participations,
+        momentum,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// Squared L2 sensitivity of the column-normalized DP-λCGD.
+///
+/// Column normalization: C̃_λ = C_λ · D⁻¹ where D = diag(‖C_λ[:,j]‖).
+/// For single participation (k=1), always returns 1.0.
+///
+/// Args:
+///     lambda_ (float): Correlation coefficient in [0, 1).
+///     n_steps (int): Total number of training steps.
+///     min_sep (int): Minimum separation between participations (>= 1).
+///     max_participations (int | None): Optional upper bound on participations.
+///     momentum (float): Optimizer momentum β in [0, 1). Default 0.
+///
+/// Returns:
+///     float: The squared L2 sensitivity of the column-normalized matrix.
+///
+/// Raises:
+///     ValueError: If parameters are invalid.
+#[pyfunction]
+#[pyo3(name = "lambda_cgd_normalized_sensitivity_squared", signature = (lambda_, n_steps, min_sep=1, max_participations=None, momentum=0.0))]
+pub fn py_lambda_cgd_normalized_sensitivity_squared(
+    lambda_: f64,
+    n_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+    momentum: f64,
+) -> PyResult<f64> {
+    crate::matrix_factorization::lambda_cgd_normalized_sensitivity_squared(
+        lambda_,
+        n_steps,
+        min_sep,
+        max_participations,
+        momentum,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// Compute the BnB Gram matrix for DP-λCGD.
+///
+/// For the BnB dominating pair, computes G_{ij} = ⟨m_i, m_j⟩ where
+/// m_i = Σ_{epoch} m^β_{b·epoch+i} (momentum-accumulated columns,
+/// or normalized C̃_λ).
+///
+/// Args:
+///     lambda_ (float): Correlation coefficient in [0, 1).
+///     n_steps (int): Total steps (= bins_per_epoch × num_epochs).
+///     min_sep (int): Bins per epoch (= b).
+///     max_participations (int | None): Number of epochs. None infers.
+///     normalized (bool): Whether to use column-normalized matrix.
+///     momentum (float): Optimizer momentum β in [0, 1). Default 0.
+///
+/// Returns:
+///     list[float]: Flattened row-major b×b Gram matrix.
+///
+/// Raises:
+///     ValueError: If parameters are invalid.
+#[pyfunction]
+#[pyo3(name = "lambda_cgd_gram_matrix", signature = (lambda_, n_steps, min_sep=1, max_participations=None, normalized=true, momentum=0.0))]
+pub fn py_lambda_cgd_gram_matrix(
+    lambda_: f64,
+    n_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+    normalized: bool,
+    momentum: f64,
+) -> PyResult<Vec<f64>> {
+    crate::matrix_factorization::lambda_cgd_gram_matrix(
+        lambda_,
+        n_steps,
+        min_sep,
+        max_participations,
+        normalized,
+        momentum,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// Compute the BnB Gram matrix for DP-λCGD with LR-schedule weighting.
+///
+/// Numerical computation: the effective column for bin i is
+///   m_i[t] = η_t · Σ_{epoch} accumulated(C_λ[:,b·epoch+i], β)[t]
+///
+/// Args:
+///     lambda_ (float): Correlation coefficient in [0, 1).
+///     momentum (float): Optimizer momentum β in [0, 1).
+///     n_steps (int): Total steps (= bins_per_epoch × num_epochs).
+///     min_sep (int): Bins per epoch (= b).
+///     max_participations (int | None): Number of epochs. None infers.
+///     normalized (bool): Whether to use column-normalized matrix.
+///     lr_weights (list[float]): Per-step LR weights, length = n_steps.
+///
+/// Returns:
+///     list[float]: Flattened row-major b×b Gram matrix.
+///
+/// Raises:
+///     ValueError: If parameters are invalid.
+#[pyfunction]
+#[pyo3(name = "lambda_cgd_gram_matrix_lr", signature = (lambda_, momentum, n_steps, min_sep, max_participations, normalized, lr_weights))]
+pub fn py_lambda_cgd_gram_matrix_lr(
+    lambda_: f64,
+    momentum: f64,
+    n_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+    normalized: bool,
+    lr_weights: Vec<f64>,
+) -> PyResult<Vec<f64>> {
+    crate::matrix_factorization::lambda_cgd_gram_matrix_lr(
+        lambda_,
+        momentum,
+        n_steps,
+        min_sep,
+        max_participations,
+        normalized,
+        &lr_weights,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// Max column L2 norm of the DP-λCGD strategy matrix.
+///
+/// The first column has the largest norm: sqrt((1 - λ^{2n}) / (1 - λ²)).
+///
+/// Args:
+///     lambda_ (float): Correlation coefficient in [0, 1).
+///     n_steps (int): Total number of steps.
+///
+/// Returns:
+///     float: The max column L2 norm.
+///
+/// Raises:
+///     ValueError: If parameters are invalid.
+#[pyfunction]
+#[pyo3(name = "lambda_cgd_max_column_norm", signature = (lambda_, n_steps))]
+pub fn py_lambda_cgd_max_column_norm(lambda_: f64, n_steps: usize) -> PyResult<f64> {
+    crate::matrix_factorization::lambda_cgd_max_column_norm(lambda_, n_steps)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+// ── BISR (Banded Inverse Square Root) ────────────────────────────
+
+/// Squared L2 sensitivity for BISR under min-sep participation.
+///
+/// Args:
+///     coefficients (list[float]): Banded C^{-1} coefficients [c̃_0, ..., c̃_{p-1}].
+///     n_steps (int): Total number of training steps.
+///     min_sep (int): Minimum separation between participations.
+///     max_participations (int | None): Optional upper bound.
+///     momentum (float): Optimizer momentum β in [0, 1). Default 0.
+///
+/// Returns:
+///     float: The squared L2 sensitivity.
+#[pyfunction]
+#[pyo3(name = "bisr_sensitivity_squared", signature = (coefficients, n_steps, min_sep=1, max_participations=None, momentum=0.0))]
+pub fn py_bisr_sensitivity_squared(
+    coefficients: Vec<f64>,
+    n_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+    momentum: f64,
+) -> PyResult<f64> {
+    crate::matrix_factorization::bisr_sensitivity_squared(
+        &coefficients,
+        n_steps,
+        min_sep,
+        max_participations,
+        momentum,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// Squared L2 sensitivity of column-normalized BISR.
+///
+/// Args:
+///     coefficients (list[float]): Banded C^{-1} coefficients.
+///     n_steps (int): Total number of training steps.
+///     min_sep (int): Minimum separation between participations.
+///     max_participations (int | None): Optional upper bound.
+///     momentum (float): Optimizer momentum β in [0, 1). Default 0.
+///
+/// Returns:
+///     float: The squared L2 sensitivity of the column-normalized matrix.
+#[pyfunction]
+#[pyo3(name = "bisr_normalized_sensitivity_squared", signature = (coefficients, n_steps, min_sep=1, max_participations=None, momentum=0.0))]
+pub fn py_bisr_normalized_sensitivity_squared(
+    coefficients: Vec<f64>,
+    n_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+    momentum: f64,
+) -> PyResult<f64> {
+    crate::matrix_factorization::bisr_normalized_sensitivity_squared(
+        &coefficients,
+        n_steps,
+        min_sep,
+        max_participations,
+        momentum,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// BnB Gram matrix for BISR with optional momentum.
+///
+/// Args:
+///     coefficients (list[float]): Banded C^{-1} coefficients.
+///     n_steps (int): Total steps.
+///     min_sep (int): Bins per epoch (= b).
+///     max_participations (int | None): Number of epochs. None infers.
+///     normalized (bool): Whether to use column-normalized matrix.
+///     momentum (float): Optimizer momentum β in [0, 1). Default 0.
+///
+/// Returns:
+///     list[float]: Flattened row-major b×b Gram matrix.
+#[pyfunction]
+#[pyo3(name = "bisr_gram_matrix", signature = (coefficients, n_steps, min_sep=1, max_participations=None, normalized=true, momentum=0.0))]
+pub fn py_bisr_gram_matrix(
+    coefficients: Vec<f64>,
+    n_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+    normalized: bool,
+    momentum: f64,
+) -> PyResult<Vec<f64>> {
+    crate::matrix_factorization::bisr_gram_matrix(
+        &coefficients,
+        n_steps,
+        min_sep,
+        max_participations,
+        normalized,
+        momentum,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// BnB Gram matrix for BISR with LR-schedule weighting.
+///
+/// Args:
+///     coefficients (list[float]): Banded C^{-1} coefficients.
+///     momentum (float): Optimizer momentum β in [0, 1).
+///     n_steps (int): Total steps.
+///     min_sep (int): Bins per epoch.
+///     max_participations (int | None): Number of epochs.
+///     normalized (bool): Whether to use column-normalized matrix.
+///     lr_weights (list[float]): Per-step LR weights, length = n_steps.
+///
+/// Returns:
+///     list[float]: Flattened row-major b×b Gram matrix.
+#[pyfunction]
+#[pyo3(name = "bisr_gram_matrix_lr", signature = (coefficients, momentum, n_steps, min_sep, max_participations, normalized, lr_weights))]
+pub fn py_bisr_gram_matrix_lr(
+    coefficients: Vec<f64>,
+    momentum: f64,
+    n_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+    normalized: bool,
+    lr_weights: Vec<f64>,
+) -> PyResult<Vec<f64>> {
+    crate::matrix_factorization::bisr_gram_matrix_lr(
+        &coefficients,
+        momentum,
+        n_steps,
+        min_sep,
+        max_participations,
+        normalized,
+        &lr_weights,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// BnB Gram matrix for a banded Toeplitz strategy (known forward coefficients).
+///
+/// For BandMF/BLT where the optimized strategy coefficients are known directly.
+///
+/// Args:
+///     strategy_coef (list[float]): Toeplitz strategy coefficients.
+///     n_steps (int): Total steps.
+///     min_sep (int): Bins per epoch.
+///     max_participations (int | None): Number of epochs.
+///     normalized (bool): Whether to column-normalize.
+///
+/// Returns:
+///     list[float]: Flattened row-major b×b Gram matrix.
+#[pyfunction]
+#[pyo3(name = "toeplitz_gram_matrix", signature = (strategy_coef, n_steps, min_sep=1, max_participations=None, normalized=true))]
+pub fn py_toeplitz_gram_matrix(
+    strategy_coef: Vec<f64>,
+    n_steps: usize,
+    min_sep: usize,
+    max_participations: Option<usize>,
+    normalized: bool,
+) -> PyResult<Vec<f64>> {
+    crate::matrix_factorization::toeplitz_gram_matrix(
+        &strategy_coef,
+        n_steps,
+        min_sep,
+        max_participations,
+        normalized,
+    )
+    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// Compute BISR strategy coefficients from inverse coefficients.
+///
+/// Args:
+///     coefficients (list[float]): Inverse coefficients [c̃_0, ..., c̃_{p-1}].
+///     n (int): Number of entries to compute.
+///
+/// Returns:
+///     list[float]: First n entries of column 0 of the strategy matrix.
+#[pyfunction]
+#[pyo3(name = "bisr_strategy_coefficients", signature = (coefficients, n))]
+pub fn py_bisr_strategy_coefficients(coefficients: Vec<f64>, n: usize) -> Vec<f64> {
+    crate::matrix_factorization::bisr::bisr_column_zero_pub(&coefficients, n)
+}
+
+// ── JME (Joint Moment Estimation) ────────────────────────────────
+
+/// Compute the optimal JME scaling parameter λ.
+///
+/// Sets λ so that the second moment estimation is "free" (Theorem 3.2
+/// of arXiv:2502.06597): the joint sensitivity equals the first-moment-only
+/// sensitivity.
+///
+/// Args:
+///     c1_max_col_norm (float): ‖C₁‖_{1→2}, max column norm of first moment strategy.
+///     c2_max_col_norm (float): ‖C₂‖_{1→2}, max column norm of second moment strategy.
+///     zeta (float): Clipping bound per sample (sensitivity from gradient clipping).
+///     d (int): Parameter dimension (1 for scalar, ≥ 2 for vectors/matrices).
+///
+/// Returns:
+///     float: The optimal scaling parameter λ.
+///
+/// Raises:
+///     ValueError: If inputs are non-positive or d is 0.
+#[pyfunction]
+#[pyo3(name = "jme_lambda", signature = (c1_max_col_norm, c2_max_col_norm, zeta, d=2))]
+pub fn py_jme_lambda(
+    c1_max_col_norm: f64,
+    c2_max_col_norm: f64,
+    zeta: f64,
+    d: usize,
+) -> PyResult<f64> {
+    crate::matrix_factorization::jme_lambda(c1_max_col_norm, c2_max_col_norm, zeta, d)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// Compute the joint sensitivity for JME under add/remove DP.
+///
+/// ``s = ζ · ‖C₁‖_{1→2} · √(1 + 1/c_d)``
+///
+/// For d ≥ 2: ``s = ζ · ‖C₁‖ · √(3/2)`` (≈ 1.22× first-moment-only).
+///
+/// Args:
+///     c1_max_col_norm (float): ‖C₁‖_{1→2}, max column norm of first moment strategy.
+///     zeta (float): Clipping bound per sample.
+///     d (int): Parameter dimension (≥ 2 for neural networks).
+///
+/// Returns:
+///     float: The joint sensitivity under add/remove DP.
+///
+/// Raises:
+///     ValueError: If inputs are non-positive or d is 0.
+#[pyfunction]
+#[pyo3(name = "jme_joint_sensitivity", signature = (c1_max_col_norm, zeta, d=2))]
+pub fn py_jme_joint_sensitivity(c1_max_col_norm: f64, zeta: f64, d: usize) -> PyResult<f64> {
+    crate::matrix_factorization::jme_joint_sensitivity(c1_max_col_norm, zeta, d)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+/// Compute the noise scaling factor for the second moment stream.
+///
+/// The second moment noise is scaled by λ^{-1/2} relative to the
+/// first moment noise.
+///
+/// Args:
+///     lambda_jme (float): The JME scaling parameter λ.
+///
+/// Returns:
+///     float: The scaling factor λ^{-1/2}.
+///
+/// Raises:
+///     ValueError: If λ is non-positive.
+#[pyfunction]
+#[pyo3(name = "jme_second_moment_noise_scale", signature = (lambda_jme,))]
+pub fn py_jme_second_moment_noise_scale(lambda_jme: f64) -> PyResult<f64> {
+    crate::matrix_factorization::jme_second_moment_noise_scale(lambda_jme)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }

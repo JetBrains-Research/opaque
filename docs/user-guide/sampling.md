@@ -6,7 +6,7 @@ Poisson subsampling provides privacy amplification, meaning you need less
 noise for the same epsilon when each example is included independently with
 small probability.
 
-Opaque provides three sampler classes, all designed to work with PyTorch's
+Opaque provides sampler classes designed to work with PyTorch's
 `DataLoader` via the `batch_sampler` parameter.
 
 ## Poisson sampling
@@ -125,7 +125,7 @@ training = step * num_steps
 Partitions the dataset into `cycle_length` groups and cycles through them,
 sampling from each group with probability `sampling_prob`. This sampler
 is required for matrix-factorization correlated noise mechanisms
-(`band_mf_noise`, `blt_mf_noise`) which need a fixed participation pattern.
+(BandMF via `mf_noise`) which need a fixed participation pattern.
 
 ```python
 from opaque.sampling import CyclicPoissonSampler, PartitionType
@@ -167,9 +167,99 @@ At iteration `i`, the sampler draws from group `i % cycle_length`. With
 See [Noise Addition](noise.md#matrix-factorization-noise-dp-ftrl) for how cyclic
 sampling integrates with correlated noise mechanisms.
 
+### `BMinSepSampler`
+
+Warm-start **b-min-sep** subsampling for BandMF (Dong & Ganesh, arXiv:2602.09338).
+Each step includes each *eligible* example independently with probability `p`
+(the paper’s $p$). Eligibility excludes any example that appeared in one of the
+previous `bands - 1` batches. Initial per-example cooldowns are drawn from the
+stationary distribution so expected batch size is roughly stable from step 0.
+
+Use `p = p_0 / (1 - p_0 * (bands - 1))` when matching a target per-example rate
+`p_0 = expected_batch_size / dataset_size` (for `bands == 1`, `p = p_0`).
+Pair with `opaque.accounting.b_min_sep` for privacy accounting.
+
+```python
+from opaque.sampling import BMinSepSampler
+from opaque.random import key
+
+p0 = batch_size / len(dataset)
+bands = 8
+p = p0 / (1.0 - p0 * (bands - 1))
+sampler = BMinSepSampler(
+    dataset,
+    bands=bands,
+    sampling_prob=p,
+    iterations=num_steps,
+    key=key(42),
+)
+```
+
+## Balls-in-Bins sampling
+
+### `BallsInBinsSampler`
+
+Each example is independently assigned to one of `num_bins` bins (Binomial
+bin sizes; some bins may be empty). The assignment is **fixed once at init**
+and **reused across all epochs** — this is required by the dominating-pair
+BnB privacy accounting. Used with DP-λCGD, BISR, BSR, and BLT mechanisms.
+
+```python
+from opaque.sampling import BallsInBinsSampler
+from opaque.random import key
+
+sampler = BallsInBinsSampler(
+    dataset,
+    num_bins=dataset_size // batch_size,
+    num_epochs=8,
+    key=key(42),
+)
+loader = data.DataLoader(dataset, batch_sampler=sampler)
+```
+
+## Sequential batch sampling
+
+### `SequentialBatchSampler`
+
+Iterates through the dataset in fixed-size contiguous batches with no
+randomness. The last incomplete batch is dropped. This is the only
+sampler that does not require an RNG key — it is fully deterministic.
+Pre-shuffle the dataset once before constructing the sampler.
+
+Used by the BLT mechanism, which requires deterministic batch order with
+fixed separation between participations.
+
+```python
+from opaque.sampling import SequentialBatchSampler
+import torch.utils.data as data
+
+sampler = SequentialBatchSampler(
+    dataset,
+    batch_size=256,
+)
+loader = data.DataLoader(dataset, batch_sampler=sampler)
+
+for batch in loader:
+    # batch size is always exactly 256
+    ...
+```
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `data_source` | any with `__len__` | The dataset (must not be empty) |
+| `batch_size` | `int` (≥ 1) | Exact number of examples per batch |
+
+**Properties:**
+
+| Property | Returns | Description |
+|----------|---------|-------------|
+| `expected_batch_size` | `float` | Always equals `batch_size` (exact, not statistical) |
+
 ## DataLoader integration
 
-All three samplers are PyTorch `Sampler` subclasses that yield lists of
+All samplers are PyTorch `Sampler` subclasses that yield lists of
 indices (i.e., they are batch samplers). Pass them to `DataLoader` via the
 `batch_sampler` parameter:
 
@@ -314,12 +404,16 @@ grads_mb, state_mb = grad_fn_mb(params, batch_256, state=state_mb)
 |---------|-----------|---------|----------|
 | `PoissonSampler` | Variable | Standard amplification | Research, general use |
 | `TruncatedPoissonSampler` | Bounded above | Tighter (up to 20%) | Production, memory-constrained |
-| `CyclicPoissonSampler` | Cyclic groups | Depends on mechanism | Matrix-factorization noise |
+| `CyclicPoissonSampler` | Cyclic groups | Depends on mechanism | Matrix-factorization noise (BandMF) |
+| `BallsInBinsSampler` | Fixed (deterministic) | Balls-in-bins amplification | λCGD, BISR, BLT |
+| `SequentialBatchSampler` | Fixed (deterministic) | No amplification | BLT (pre-shuffled dataset) |
 
 For most DP-SGD workloads, `PoissonSampler` is sufficient.
 `TruncatedPoissonSampler` is a reasonable upgrade when you want tighter
 privacy bounds or need predictable batch sizes. `CyclicPoissonSampler` is
-only needed with correlated noise mechanisms.
+only needed with BandMF correlated noise. `BallsInBinsSampler` and
+`SequentialBatchSampler` are used with matrix-factorization mechanisms
+that require fixed batch sizes.
 
 ## API reference
 

@@ -67,7 +67,11 @@ from opaque.accounting import calibration as cal, Accountant
 from opaque.clipping import adaptive_clipped_grad, clipped_grad
 from opaque.compat.transformers import is_kernel_patched
 from opaque.distributed import sum_gradients_, sync
-from opaque.noise import gaussian_noise, per_group_noise_stddev, truncated_gaussian_noise
+from opaque.noise import (
+    gaussian_noise,
+    per_group_noise_stddev,
+    truncated_gaussian_noise,
+)
 from opaque.profiling import (
     StepTimer,
     TrainingProfiler,
@@ -218,7 +222,9 @@ def _print_runtime_mode_report(
     if device.type == "cpu":
         print("  Note: CPU path prioritizes correctness over throughput.")
     elif device.type == "mps":
-        print("  Note: MPS uses compatibility fallbacks when CUDA-only kernels are unavailable.")
+        print(
+            "  Note: MPS uses compatibility fallbacks when CUDA-only kernels are unavailable."
+        )
 
 
 def _load_streaming_subset(
@@ -334,13 +340,13 @@ def parse_args():
         "--batch-size",
         type=int,
         default=16,
-        help="Expected batch size for Poisson sampling (determines sample_rate)"
+        help="Expected batch size for Poisson sampling (determines sample_rate)",
     )
     train_group.add_argument(
         "--eval-batch-size",
         type=int,
         default=None,
-        help="Batch size for evaluation (default: same as batch_size, can be larger since no privacy needed)"
+        help="Batch size for evaluation (default: same as batch_size, can be larger since no privacy needed)",
     )
     train_group.add_argument(
         "--num-epochs", type=int, default=3, help="Number of epochs"
@@ -443,14 +449,14 @@ def parse_args():
         choices=["poisson", "truncated_poisson"],
         default="poisson",
         help="Sampling strategy: poisson (standard, variable batch size) "
-             "or truncated_poisson (batch capped at --max-batch-size for bounded memory)",
+        "or truncated_poisson (batch capped at --max-batch-size for bounded memory)",
     )
     dp_group.add_argument(
         "--max-batch-size",
         type=int,
         default=None,
         help="Max batch size for truncated_poisson sampler (default: same as --batch-size). "
-             "Ignored for standard poisson.",
+        "Ignored for standard poisson.",
     )
     dp_group.add_argument(
         "--noise-mechanism",
@@ -458,7 +464,7 @@ def parse_args():
         choices=["gaussian", "truncated_gaussian"],
         default="gaussian",
         help="Noise mechanism: gaussian (standard, unbounded) "
-             "or truncated_gaussian (renormalized, bounded support)",
+        "or truncated_gaussian (renormalized, bounded support)",
     )
     dp_group.add_argument(
         "--noise-radius",
@@ -583,7 +589,9 @@ def parse_args():
         if not action.option_strings:
             continue
         for opt in action.option_strings:
-            if any(token == opt or token.startswith(f"{opt}=") for token in argv_tokens):
+            if any(
+                token == opt or token.startswith(f"{opt}=") for token in argv_tokens
+            ):
                 provided_dests.add(action.dest)
                 break
 
@@ -629,15 +637,18 @@ def parse_args():
         _set("lora_r", 16)
         _set("lora_alpha", 32)
         _set("max_seq_len", 1024)
-        _set("lora_modules", [
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
-        ])
+        _set(
+            "lora_modules",
+            [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
+        )
         _set("dtype", "bfloat16")
         _set("microbatch_size", 16)
     elif args.preset == "custom":
@@ -693,14 +704,16 @@ def main():
     if use_wandb:
         # Generate default run name from key parameters if not specified
         if args.wandb_run_name is None:
-            model_short = args.model_name.split('/')[-1]
+            model_short = args.model_name.split("/")[-1]
             run_name = f"{model_short}_n{args.num_train_samples}_e{args.num_epochs}_b{args.batch_size}_eps{args.target_epsilon}_lr{args.learning_rate}"
         else:
             run_name = args.wandb_run_name
 
         # Offline by default; set WANDB_MODE=online (or WANDB_API_KEY) to sync
         if not os.environ.get("WANDB_MODE"):
-            os.environ["WANDB_MODE"] = "online" if os.environ.get("WANDB_API_KEY") else "offline"
+            os.environ["WANDB_MODE"] = (
+                "online" if os.environ.get("WANDB_API_KEY") else "offline"
+            )
         wandb.init(
             project=args.wandb_project,
             entity=args.wandb_entity,
@@ -718,7 +731,9 @@ def main():
         else:
             print(f"\nUsing device: {device} ({device_name})")
         if is_ddp:
-            print(f"Distributed mode: rank={rank}/{world_size}, local_rank={local_rank}")
+            print(
+                f"Distributed mode: rank={rank}/{world_size}, local_rank={local_rank}"
+            )
 
     # Set seed
     torch.manual_seed(args.seed)
@@ -760,7 +775,9 @@ def main():
 
     dtype_name, torch_dtype, dtype_warning = _resolve_model_dtype(args.dtype, device)
     args.dtype = dtype_name
-    _print_runtime_mode_report(device, device_name, dtype_name, torch_dtype, dtype_warning)
+    _print_runtime_mode_report(
+        device, device_name, dtype_name, torch_dtype, dtype_warning
+    )
 
     # Load model
     model_kwargs = {
@@ -843,7 +860,9 @@ def main():
         print(f"    Preview: {sample_text[:200]}...")
 
     # Split into eval and train using skip/take
-    print(f"\nPreparing {args.num_eval_samples} eval + {args.num_train_samples} train samples...")
+    print(
+        f"\nPreparing {args.num_eval_samples} eval + {args.num_train_samples} train samples..."
+    )
     eval_dataset = dataset.take(args.num_eval_samples)
     train_dataset = dataset.skip(args.num_eval_samples).take(args.num_train_samples)
 
@@ -864,13 +883,13 @@ def main():
         tokenize_function,
         batched=True,
         remove_columns=eval_cols_to_remove,
-        desc="Tokenizing eval"
+        desc="Tokenizing eval",
     )
     train_dataset = train_dataset.map(
         tokenize_function,
         batched=True,
         remove_columns=train_cols_to_remove,
-        desc="Tokenizing train"
+        desc="Tokenizing train",
     )
 
     print(
@@ -958,7 +977,9 @@ def main():
         else contextlib.nullcontext()
     )
     if args.cpu_offload:
-        print(f"CPU offload: enabled (save_on_cpu, works {'with' if args.gradient_checkpointing else 'without'} checkpointing)")
+        print(
+            f"CPU offload: enabled (save_on_cpu, works {'with' if args.gradient_checkpointing else 'without'} checkpointing)"
+        )
 
     # Convert to functional (only LoRA parameters)
     print("\nConverting to functional form (LoRA parameters only)...")
@@ -1017,7 +1038,9 @@ def main():
             batch_argnums=(1,),
             dataloader=canary_loader,
         )
-        print(f"  Reference scores: mean={audit_ref_scores.mean():.4f}, std={audit_ref_scores.std():.4f}")
+        print(
+            f"  Reference scores: mean={audit_ref_scores.mean():.4f}, std={audit_ref_scores.std():.4f}"
+        )
 
     def eval_loss(trainable):
         """Compute eval loss using DataLoader."""
@@ -1106,7 +1129,7 @@ def main():
     # Compute delta from training set size: δ = 1/n^1.1 (keeps δ below 1/n while
     # being less conservative than the previous 1/n² heuristic on smaller runs).
     if args.target_delta is None:
-        args.target_delta = 1.0 / (global_train_size ** 1.1)
+        args.target_delta = 1.0 / (global_train_size**1.1)
     if use_wandb:
         wandb.config.update({"target_delta": args.target_delta}, allow_val_change=True)
 
@@ -1120,7 +1143,9 @@ def main():
         make_noise = gaussian_noise
     elif args.noise_mechanism == "truncated_gaussian":
         mechanism = acc.gaussian
-        make_noise = functools.partial(truncated_gaussian_noise, radius=args.noise_radius)
+        make_noise = functools.partial(
+            truncated_gaussian_noise, radius=args.noise_radius
+        )
     else:
         mechanism = acc.gaussian
         make_noise = gaussian_noise
@@ -1134,12 +1159,16 @@ def main():
     _unamplified = mechanism
     if use_truncated_poisson:
         mechanism = lambda nm: acc.truncated_poisson(
-            _unamplified(nm), sample_rate=sample_rate,
-            batch_size_cap=max_batch_size, dataset_size=global_train_size,
+            _unamplified(nm),
+            sample_rate=sample_rate,
+            batch_size_cap=max_batch_size,
+            dataset_size=global_train_size,
         )
     elif use_parallel_poisson:
         mechanism = lambda nm: acc.parallel_poisson(
-            _unamplified(nm), sample_rate=sample_rate, num_workers=world_size,
+            _unamplified(nm),
+            sample_rate=sample_rate,
+            num_workers=world_size,
         )
     else:
         mechanism = lambda nm: acc.poisson(_unamplified(nm), sample_rate=sample_rate)
@@ -1147,7 +1176,9 @@ def main():
     # Calibrate noise multiplier from target privacy budget.
     if args.noise_multiplier is not None:
         noise_multiplier = args.noise_multiplier
-        print(f"\nUsing fixed noise multiplier: {noise_multiplier:.4f} (skipping calibration)")
+        print(
+            f"\nUsing fixed noise multiplier: {noise_multiplier:.4f} (skipping calibration)"
+        )
     else:
         print("\nCalibrating privacy parameters...")
         if use_parallel_poisson:
@@ -1211,12 +1242,15 @@ def main():
     initial_noise_std = _noise_stddev(clip_state, noise_multiplier)
     print(f"  → Step 0 eval: loss={initial_eval_loss:.4f}, ε={initial_epsilon:.3f}")
     if use_wandb:
-        wandb.log({
-            "eval/loss": initial_eval_loss,
-            "privacy/epsilon": initial_epsilon,
-            "train/noise_std": _effective(initial_noise_std),
-            "train/clipping_norm": _effective(clip_norm),
-        }, step=0)
+        wandb.log(
+            {
+                "eval/loss": initial_eval_loss,
+                "privacy/epsilon": initial_epsilon,
+                "train/noise_std": _effective(initial_noise_std),
+                "train/clipping_norm": _effective(clip_norm),
+            },
+            step=0,
+        )
 
     for epoch in range(args.num_epochs):
         print(f"\nEpoch {epoch + 1}/{args.num_epochs}")
@@ -1271,7 +1305,9 @@ def main():
 
                 noise_stddev = _noise_stddev(clip_state, noise_multiplier)
                 noisy_grads, noise_state = noise_fn(
-                    grads_tuple, noise_state, stddev=noise_stddev,
+                    grads_tuple,
+                    noise_state,
+                    stddev=noise_stddev,
                 )
                 if is_ddp:
                     noise_state = sync(noise_state)
@@ -1316,20 +1352,29 @@ def main():
                         "train/clipped_grad_norm_mean": aux.clipped_grad_norms.mean().item(),
                         "train/noise_std": _effective(noise_stddev),
                         "perf/step_time_sec": perf["step_time_sec"],
-                        "perf/throughput_samples_per_sec": perf["throughput_samples_sec"],
+                        "perf/throughput_samples_per_sec": perf[
+                            "throughput_samples_sec"
+                        ],
                         "perf/allocated_gb": perf["memory_allocated_gb"],
                         "perf/reserved_gb": perf["memory_reserved_gb"],
                         "perf/peak_gb": perf["memory_peak_gb"],
                     }
                     # Per-group metrics under group/ section
-                    if isinstance(step_clip_norm, PerGroup) and aux.group_norms is not None:
+                    if (
+                        isinstance(step_clip_norm, PerGroup)
+                        and aux.group_norms is not None
+                    ):
                         for gname in step_clip_norm.values:
                             gn_bound = step_clip_norm.values[gname]
                             wb_metrics[f"group/clipping_norm/{gname}"] = gn_bound
                             gnorms = aux.group_norms[gname]
-                            wb_metrics[f"group/grad_norm/{gname}"] = gnorms.mean().item()
+                            wb_metrics[f"group/grad_norm/{gname}"] = (
+                                gnorms.mean().item()
+                            )
                             gn_clipped = float((gnorms > gn_bound).sum().item())
-                            wb_metrics[f"group/clip_rate/{gname}"] = gn_clipped / max(1.0, float(batch_size))
+                            wb_metrics[f"group/clip_rate/{gname}"] = gn_clipped / max(
+                                1.0, float(batch_size)
+                            )
                     wandb.log(wb_metrics, step=global_step)
 
                 print(
@@ -1423,25 +1468,34 @@ def main():
     final_epsilon = accounting.epsilon_at(args.target_delta)
     print("\nPrivacy:")
     if use_truncated_poisson:
-        print(f"  Accounting: truncated_poisson (cap={max_batch_size}, n={global_train_size})")
+        print(
+            f"  Accounting: truncated_poisson (cap={max_batch_size}, n={global_train_size})"
+        )
     elif use_parallel_poisson:
         print(f"  Accounting: parallel_poisson (world_size={world_size})")
-    print(f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e} (n={global_train_size})")
+    print(
+        f"  Target: ε={args.target_epsilon:.3f}, δ={args.target_delta:.2e} (n={global_train_size})"
+    )
     print(f"  Noise multiplier: {noise_multiplier:.4f}")
     print(f"  Final ε (theoretical): {final_epsilon:.4f}")
     if args.audit:
         audit_result = run_audit(trainable_params)
         audit_eps = audit_result.epsilon_at(delta=args.target_delta)
         audit_auc = audit_result.auc()
-        print(f"  Final ε (empirical):  {audit_eps:.4f}  ({audit_result.n_in} in, {audit_result.n_out} out)")
+        print(
+            f"  Final ε (empirical):  {audit_eps:.4f}  ({audit_result.n_in} in, {audit_result.n_out} out)"
+        )
         print(f"  Audit AUC:            {audit_auc:.4f}")
         print(f"  β @ α=0.01:           {audit_result.beta_at(alpha=0.01):.4f}")
         print(f"  β @ α=0.10:           {audit_result.beta_at(alpha=0.1):.4f}")
         if use_wandb:
-            wandb.log({
-                "privacy/epsilon_empirical": audit_eps,
-                "privacy/audit_auc": audit_auc,
-            }, step=global_step)
+            wandb.log(
+                {
+                    "privacy/epsilon_empirical": audit_eps,
+                    "privacy/audit_auc": audit_auc,
+                },
+                step=global_step,
+            )
 
     # Mark training complete and print profiler summary
     profiler, _ = profiler.mark("training_complete")

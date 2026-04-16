@@ -69,6 +69,18 @@ pub struct DiscretizationConfig {
     ///
     /// Default: 1e-15, matching Google dp_accounting's `tail_mass_truncation`.
     pub tail_mass_truncation: f64,
+
+    /// Number of Monte Carlo samples for MC-based PLD computation.
+    ///
+    /// Used by BnB Monte Carlo and b-min-sep accounting.
+    /// Ignored by analytic PLD paths (Gaussian, Poisson).
+    /// Default: 100,000.
+    pub num_mc_samples: usize,
+
+    /// RNG seed for reproducibility of Monte Carlo PLD computation.
+    ///
+    /// Default: 42.
+    pub seed: u64,
 }
 
 impl DiscretizationConfig {
@@ -110,6 +122,8 @@ impl DiscretizationConfig {
             pessimistic_estimate,
             max_grid_size: 10_000_000,
             tail_mass_truncation: 1e-15,
+            num_mc_samples: 100_000,
+            seed: 42,
         })
     }
 
@@ -143,6 +157,8 @@ impl Default for DiscretizationConfig {
             pessimistic_estimate: true,
             max_grid_size: 10_000_000,
             tail_mass_truncation: 1e-15,
+            num_mc_samples: 100_000,
+            seed: 42,
         }
     }
 }

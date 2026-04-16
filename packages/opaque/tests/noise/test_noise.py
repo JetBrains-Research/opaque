@@ -5,7 +5,7 @@ import scipy.stats
 import torch
 
 from opaque.noise import gaussian_noise
-from opaque.noise.gaussian_noise import GaussianNoiseState
+from opaque.noise.gaussian import GaussianNoiseState
 from opaque.random import key
 
 

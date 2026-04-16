@@ -94,8 +94,10 @@ $$\text{PLD}_{\text{total}} = \text{PLD}_{\text{group}}^{\otimes k}$$
 This is computed efficiently with 2 FFTs (self-composition).
 
 ```python
+strategy = band_mf_strategy(n_steps=1000, bands=10)
 proc = acc.cyclic_poisson(
-    acc.band_mf(noise_multiplier=1.0, n_steps=1000, bands=10),
+    acc.band_mf(1.0, sensitivity=strategy.sensitivity,
+                num_groups=strategy.num_groups),
     sample_rate=0.01,
 )
 eps = proc.epsilon_at(delta=1e-5)
@@ -107,26 +109,62 @@ eps = proc.epsilon_at(delta=1e-5)
 | `truncated_poisson()` | No | Not applicable to MF mechanisms |
 | `cyclic_poisson()` | Yes | Decomposes into $\lceil n/b \rceil$ independent groups |
 
+### b-min-sep subsampling (`b_min_sep`)
+
+[Dong & Ganesh (2026)](https://arxiv.org/abs/2602.09338) introduce **warm-start
+b-min-sep** subsampling: Poisson-style inclusion from the full dataset while
+excluding examples that appeared in any of the previous $b-1$ batches. For
+the same target expected batch size per iteration as cyclic Poisson (per-example
+rate $p_0 = \mathbb{E}[|B|]/|D|$), the paper’s per-iteration inclusion probability
+is $p = p_0 / (1 - p_0(b-1))$ when $b>1$.
+
+Opaque pairs this with **Monte Carlo PLD** accounting (same family as BnB MC
+for matrix mechanisms): pass the BandMF strategy’s first-column coefficients,
+`n_steps`, and `p0` to `opaque.accounting.b_min_sep(...)`.
+Training scripts can select it with `--band-mf-sampling b_min_sep` (see
+`examples/train_dp_ftrl.py`).
+
+| Amplification | Supported | Notes |
+|---------------|:---------:|-------|
+| `b_min_sep()` | Yes | MC PLD; default `num_mc_samples=100_000` |
+
+For large `n_steps × num_mc_samples`, the implementation keeps **one copy** of
+the MC random transcripts in **Rust** (compact `f64` arrays) and reuses them
+for every noise-multiplier probe during calibration (no Python list blow-up).
+Optional cap: set `OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES` (default ~4 GiB);
+use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` call.
+
 !!! note "Without amplification"
     You can also use BandMF without subsampling by omitting the
     `cyclic_poisson()` wrapper. This accounts for the full training run
     as a single Gaussian mechanism — useful for comparison or when
     subsampling is not applicable.
 
+!!! note
+    The `acc.band_mf()` API takes pre-computed sensitivity and group count
+    from the noise strategy. For end-to-end usage, `mf_noise()` +
+    `band_mf_strategy()` computes these automatically.
+
+## Assumptions and limitations
+
+- **DP correctness** is for the **implemented** banded Toeplitz matrix \(C\) and the sampler you pair with accounting. If those match, the privacy guarantee stands even when the workload model is approximate.
+- **`lr_schedule` (optional)**: workload coefficients are folded into a **lower-triangular Toeplitz** workload inside optimization. That matches the usual **constant** learning-rate momentum-SGD story. For a **varying** schedule \(\eta_t\), the implied Toeplitz workload can differ from the full map \(W_{t,s}=\eta_t\beta^{t-s}\): privacy is still valid for the constructed \(C\); **utility** alignment is approximate unless \(\eta\) is constant. See the [MF user guide](../user-guide/matrix-factorization.md).
+- **Momentum \(\beta=0\)**: Opaque warns because the workload becomes essentially identity (little benefit over independent noise).
+
 ## Code examples
 
 ### Noise injection
 
 ```python
-from opaque import band_mf_noise
+from opaque.noise.mf import mf_noise, band_mf_strategy
 from opaque.random import key
 
-noise_fn, noise_state = band_mf_noise(
-    grad_template=params,    # pytree with correct shapes/dtypes
-    n_steps=1000,
+strategy = band_mf_strategy(n_steps=1000, bands=10)
+noise_fn, noise_state = mf_noise(
+    grad_template=params,
+    strategy=strategy,
     stddev=noise_multiplier * clip_state.sensitivity,
     key=key(42),
-    bands=10,
 )
 
 for step in range(1000):
@@ -137,38 +175,29 @@ for step in range(1000):
 
 ### Privacy accounting
 
+The accounting constructor receives `sensitivity` and `num_groups` from
+the same `band_mf_strategy` used for noise generation. This keeps both
+components in sync:
+
 ```python
-import opaque.accounting as acc
+import opaque_accounting as acc
+from opaque.noise.mf import band_mf_strategy
+
+strategy = band_mf_strategy(n_steps=1000, bands=10)
 
 # BandMF with cyclic Poisson amplification (recommended)
 proc = acc.cyclic_poisson(
-    acc.band_mf(noise_multiplier=1.0, n_steps=1000, bands=10),
+    acc.band_mf(1.0, sensitivity=strategy.sensitivity,
+                num_groups=strategy.num_groups),
     sample_rate=0.01,
 )
 eps = proc.epsilon_at(delta=1e-5)
-
-# BandMF without amplification (for comparison)
-proc_no_amp = acc.band_mf(noise_multiplier=1.0, n_steps=1000, bands=10)
-eps_no_amp = proc_no_amp.epsilon_at(delta=1e-5)
-
-print(f"With cyclic Poisson: ε={eps:.4f}")
-print(f"Without amplification: ε={eps_no_amp:.4f}")
 ```
 
-### Calibration
-
-```python
-result = acc.calibrate(
-    acc.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: acc.cyclic_poisson(
-        acc.band_mf(nm, n_steps=1000, bands=10),
-        sample_rate=0.01,
-    ),
-    param_min=0.1,
-    param_max=10.0,
-)
-noise_multiplier = result.param
-```
+!!! note
+    Always use `strategy.sensitivity` and `strategy.num_groups` rather than
+    hardcoded values. The strategy computes these from the optimized Toeplitz
+    coefficients.
 
 ### End-to-end with cyclic sampler
 
@@ -177,22 +206,14 @@ sampling pattern that the noise strategy exploits:
 
 ```python
 import torch
-from opaque import band_mf_noise, clipped_grad
+from opaque import clipped_grad
+from opaque.noise.mf import mf_noise, band_mf_strategy
 from opaque.sampling import CyclicPoissonSampler
 from opaque.random import key, split
-import opaque.accounting as acc
+import opaque_accounting as acc
 
 n_steps, bands = 1000, 10
 sample_rate = 0.01
-
-# Calibrate
-result = acc.calibrate(
-    acc.epsilon_budget(3.0, delta=1e-5),
-    lambda nm: acc.cyclic_poisson(
-        acc.band_mf(nm, n_steps, bands), sample_rate,
-    ),
-    param_min=0.1, param_max=10.0,
-)
 
 # Setup
 key_samp, key_noise = split(key(42), num=2)
@@ -200,9 +221,11 @@ grad_fn, clip_state = clipped_grad(
     loss_fn, clipping_norm=1.0, batch_argnums=1,
     normalize_by=batch_size,
 )
-noise_fn, noise_state = band_mf_noise(
-    params, n_steps, stddev=result.param * clip_state.sensitivity,
-    key=key_noise, bands=bands,
+strategy = band_mf_strategy(n_steps, bands)
+noise_fn, noise_state = mf_noise(
+    params, strategy,
+    stddev=result.param * clip_state.sensitivity,
+    key=key_noise,
 )
 sampler = CyclicPoissonSampler(
     dataset, sampling_prob=sample_rate, cycle_length=bands,

@@ -17,11 +17,16 @@ Opaque provides several noise mechanisms:
 
 ### Correlated Noise (DP-FTRL / Matrix Factorization)
 
-- **`band_mf_noise()`** — BandMF banded Toeplitz correlated noise
-- **`blt_mf_noise()`** — Buffered Linear Toeplitz (BLT) correlated noise
-- **`dense_mf_noise()`** — Dense optimal strategy (small n)
-- **`identity_mf_noise()`** — Identity (DP-SGD via MF API, easy to swap)
-- **`custom_mf_noise()`** — Bring-your-own noising matrix
+- **`mf_noise()`** — Unified correlated noise dispatcher. Takes a strategy object and creates the
+  corresponding noise mechanism.
+
+Strategy factories (passed to `mf_noise()`):
+
+- **`band_mf_strategy()`** — BandMF banded Toeplitz correlated noise
+- **`blt_strategy()`** — Buffered Linear Toeplitz (BLT) correlated noise
+- **`lambda_cgd_strategy()`** — DP-λCGD correlated noise (PRNG replay, zero extra memory)
+- **`bisr_strategy()`** — BISR (Banded Inverse Square Root) correlated noise
+- **`identity_strategy()`** — Identity (DP-SGD via MF API, easy to swap)
 
 All noise functions return `(noise_fn, state)` where `noise_fn(grads, state) -> (noisy_grads, new_state)`.
 
@@ -29,7 +34,7 @@ All noise functions return `(noise_fn, state)` where `noise_fn(grads, state) -> 
 
 - **`NoiseState`** — Abstract base class for all noise state types. Defines `_step_counter` and `_rng_key`.
 - **`GaussianNoiseState`** — State for `gaussian_noise()`. Holds step counter and RNG key.
-- **`MFNoiseState`** — State for all MF noise functions. Holds internal correlation state, step counter, and RNG key.
+- **`MFNoiseState`** — State for `mf_noise()`. Holds internal correlation state, step counter, and RNG key.
 
 ### Distributed Sync Helpers
 
@@ -53,15 +58,31 @@ across ranks. It auto-dispatches based on type:
 
 ## Matrix Factorization Noise
 
-::: opaque.noise.band_mf_noise
+### Dispatcher
 
-::: opaque.noise.blt_mf_noise
+::: opaque.noise.mf.mf_noise
 
-::: opaque.noise.dense_mf_noise
+### Strategies
 
-::: opaque.noise.identity_mf_noise
+::: opaque.noise.mf.band_mf_strategy
+    options:
+      heading_level: 4
 
-::: opaque.noise.custom_mf_noise
+::: opaque.noise.mf.blt_strategy
+    options:
+      heading_level: 4
+
+::: opaque.noise.mf.lambda_cgd_strategy
+    options:
+      heading_level: 4
+
+::: opaque.noise.mf.bisr_strategy
+    options:
+      heading_level: 4
+
+::: opaque.noise.mf.identity_strategy
+    options:
+      heading_level: 4
 
 ## State Classes
 
@@ -70,12 +91,12 @@ across ranks. It auto-dispatches based on type:
       show_source: true
       heading_level: 3
 
-::: opaque.noise.gaussian_noise.GaussianNoiseState
+::: opaque.noise.gaussian.GaussianNoiseState
     options:
       show_source: true
       heading_level: 3
 
-::: opaque.noise.matrix_factorization.MFNoiseState
+::: opaque.noise.mf.MFNoiseState
     options:
       show_source: true
       heading_level: 3

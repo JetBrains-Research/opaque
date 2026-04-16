@@ -2,7 +2,7 @@
 
 import torch
 
-from opaque.noise.matrix_factorization.streaming_matrix import (
+from opaque.noise.mf._streaming_matrix import (
     StreamingMatrix,
     diagonal,
     identity,

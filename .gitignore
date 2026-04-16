@@ -98,3 +98,4 @@ Cargo.lock
 
 # Experiment tracking
 wandb/
+papers/

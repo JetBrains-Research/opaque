@@ -75,6 +75,73 @@ optimizer = torchopt.adamw(lr=1e-3, weight_decay=0.01)
 optimizer = torchopt.sgd(lr=0.01, momentum=0.9)
 ```
 
+## JME-AdamW: Adam with MF correlated noise
+
+When using matrix factorization (MF) noise for DP-FTRL, standard Adam
+cannot be used directly — it computes the second moment by squaring the
+noisy gradients, which breaks the MF noise correlation structure.
+
+**JME** (Joint Moment Estimation, [arXiv:2502.06597](https://arxiv.org/abs/2502.06597))
+solves this by privately estimating both moments via two independent MF noise
+streams.  The second moment noise comes at ~22% additional privacy cost
+under add/remove DP.
+
+### Setup
+
+```python
+from opaque.noise.mf import jme_noise, band_mf_strategy
+from opaque.optimizers import jme_adamw
+
+# Strategy: momentum=beta1 (Adam's first moment workload)
+strategy = band_mf_strategy(n_steps=1000, bands=8, momentum=0.9)
+
+# Noise: jme_noise computes g², creates two MF streams, calibrates stddevs
+noise_fn, noise_state = jme_noise(
+    grad_template, strategy,
+    noise_multiplier=sigma,
+    key=key(42),
+    zeta=clip_state.sensitivity,
+    beta2=0.999,
+)
+
+# Optimizer: decoupled weight decay, callable LR schedule
+optimizer = jme_adamw(lr=lr_schedule_fn, betas=(0.9, 0.999), weight_decay=0.01)
+opt_state = optimizer.init(params)
+```
+
+### Training loop
+
+```python
+for batch in dataloader:
+    grads, clip_state = grad_fn(params, batch, state=clip_state)
+    (noisy_grads, noisy_sq), noise_state = noise_fn(grads, noise_state)
+    updates, opt_state = optimizer.update(
+        noisy_grads, opt_state,
+        params=params, noisy_squared_grads=noisy_sq,
+    )
+    params = torchopt.apply_updates(params, updates)
+```
+
+### Accounting
+
+Wrap the base mechanism with `acc.jme()` to account for both moment streams:
+
+```python
+mechanism = acc.band_mf(nm, sensitivity=S, num_groups=k)
+if use_adam:
+    mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
+                        max_column_norm=strategy._max_column_norm)
+process = acc.cyclic_poisson(mechanism, sample_rate=q)
+```
+
+### CLI
+
+```bash
+python examples/train_dp_ftrl.py --preset smoke --optimizer adam --mechanism blt
+```
+
+Works with MF mechanisms supported by `jme_noise` auto-derivation (see [Matrix factorization](matrix-factorization.md)): `band_mf`, `blt`, `bisr`, `bsr`, `identity`. For `lambda_cgd`, pass `second_moment_strategy` explicitly.
+
 ## DP-specific optimizer considerations
 
 ### Why Adam works well with DP

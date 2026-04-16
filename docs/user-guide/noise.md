@@ -11,6 +11,9 @@ All noise functions in Opaque follow the same pattern: they return a
 For mathematical details, privacy analysis, and parameter guidance for
 each mechanism, see the [Mechanisms](../mechanisms/index.md) reference.
 
+For MF-specific assumptions (workload fidelity vs DP correctness, LR schedules,
+JME, BSR scope), see [Matrix factorization (MF)](matrix-factorization.md).
+
 ## Gaussian noise
 
 `gaussian_noise` is the standard noise mechanism for DP-SGD. It adds
@@ -190,29 +193,26 @@ requires knowing the total number of steps in advance.
 
 ### Variants
 
-Opaque provides four MF noise strategies, plus two utility variants:
+Opaque provides five MF strategies, all used through the unified `mf_noise()` dispatcher:
 
-| Function | Memory | Best for |
+| Strategy factory | Memory | Best for |
 |----------|--------|----------|
-| `band_mf_noise` | O(bands) | General use, good default |
-| `blt_mf_noise` | O(buffers) | Long training runs (n > 5000) |
-| `dense_mf_noise` | O(n^2) | Short runs (n < 100), optimal noise |
-| `custom_mf_noise` | varies | Research, custom strategies |
-| `identity_mf_noise` | O(1) | Testing MF infrastructure with standard noise |
+| `band_mf_strategy()` | O(bands) | General use with cyclic Poisson amplification |
+| `blt_strategy()` | O(buffers) | Long training runs (n > 5000), multi-epoch |
+| `lambda_cgd_strategy()` | O(1) | Zero extra memory (PRNG replay) |
+| `bisr_strategy()` | O(bandwidth) | Asymptotically optimal, arbitrary bandwidth |
+| `identity_strategy()` | O(1) | Testing MF infrastructure with standard noise |
 
-### `band_mf_noise`
-
-Banded Toeplitz strategy. Maintains a small buffer of recent noise values
-and combines them using optimized coefficients. The `bands` parameter
-controls the buffer size (default: automatically chosen).
+All strategies are created by factory functions and passed to `mf_noise()`:
 
 ```python
-from opaque import band_mf_noise
+from opaque.noise.mf import mf_noise, band_mf_strategy
 from opaque.random import key
 
-noise_fn, noise_state = band_mf_noise(
-    grad_template=params,   # any pytree with correct shapes/dtypes
-    n_steps=1000,
+strategy = band_mf_strategy(n_steps=1000, bands=10)
+noise_fn, noise_state = mf_noise(
+    grad_template=params,
+    strategy=strategy,
     stddev=noise_multiplier * clip_state.sensitivity,
     key=key(42),
 )
@@ -231,96 +231,131 @@ In distributed training, pass the same `key(seed)` on all ranks to produce
 identical noise. See [Distributed Training](distributed.md) and
 [RNG Key](rng-key.md) for details.
 
-### `blt_mf_noise`
+### `band_mf_strategy`
 
-Buffered Linear Toeplitz strategy. More memory-efficient than band_mf for
-long training runs, using a parametric representation of the Toeplitz
-coefficients.
-
-```python
-from opaque import blt_mf_noise
-from opaque.random import key
-
-noise_fn, noise_state = blt_mf_noise(
-    grad_template=params,
-    n_steps=10000,
-    stddev=noise_multiplier * clip_state.sensitivity,
-    key=key(42),
-    max_buffers=10,
-)
-```
-
-### `dense_mf_noise`
-
-Computes the optimal dense strategy matrix. Materializes the full n*n matrix,
-so memory grows quadratically with n. Best for short training runs.
+Banded Toeplitz strategy. Optimizes banded Toeplitz coefficients for the
+workload. Uses cyclic Poisson amplification for privacy accounting.
 
 ```python
-from opaque import dense_mf_noise
+from opaque.noise.mf import mf_noise, band_mf_strategy
 from opaque.random import key
 
-noise_fn, noise_state = dense_mf_noise(
-    grad_template=params,
-    n_steps=50,
+strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.95)
+noise_fn, noise_state = mf_noise(
+    params, strategy,
     stddev=noise_multiplier * clip_state.sensitivity,
     key=key(42),
 )
 ```
 
-### `custom_mf_noise`
+### `blt_strategy`
 
-Accepts a user-provided noising matrix (dense tensor or `StreamingMatrix`)
-for research and custom strategies.
+Buffered Linear Toeplitz strategy. More memory-efficient than BandMF for
+long training runs, using a parametric representation via exponential decay
+buffers. Supports multi-epoch training via `min_sep` and `max_participations`.
 
 ```python
-from opaque import custom_mf_noise
+from opaque.noise.mf import mf_noise, blt_strategy
 from opaque.random import key
 
-noise_fn, noise_state = custom_mf_noise(
-    grad_template=params,
-    noising=my_custom_matrix,
+strategy = blt_strategy(
+    n_steps=10000, min_sep=100, max_participations=5, max_buffers=10,
+)
+noise_fn, noise_state = mf_noise(
+    params, strategy,
     stddev=noise_multiplier * clip_state.sensitivity,
     key=key(42),
 )
 ```
 
-### `identity_mf_noise`
+### `lambda_cgd_strategy`
+
+DP-λCGD strategy — uses PRNG seed replay instead of storing previous noise
+vectors. Zero extra memory overhead compared to DP-SGD.
+
+```python
+from opaque.noise.mf import mf_noise, lambda_cgd_strategy
+from opaque.random import key
+
+strategy = lambda_cgd_strategy(
+    lambda_=0.9, n_steps=total_steps,
+    min_sep=steps_per_epoch, max_participations=num_epochs,
+)
+noise_fn, noise_state = mf_noise(
+    params, strategy,
+    stddev=noise_multiplier * clip_state.sensitivity,
+    key=key(42),
+)
+```
+
+### `bisr_strategy`
+
+BISR (Banded Inverse Square Root) strategy — generalises λCGD to arbitrary
+bandwidth p ≥ 2. Asymptotically optimal.
+
+```python
+from opaque.noise.mf import mf_noise, bisr_strategy
+from opaque.random import key
+
+strategy = bisr_strategy(
+    n_steps=total_steps, bandwidth=4, momentum=0.95,
+)
+noise_fn, noise_state = mf_noise(
+    params, strategy,
+    stddev=noise_multiplier * clip_state.sensitivity,
+    key=key(42),
+)
+```
+
+### `identity_strategy`
 
 Identity strategy — equivalent to standard DP-SGD (independent noise at each
-step) but using the MF API. Useful for testing the MF infrastructure or as a
-baseline when comparing MF strategies.
+step) but using the MF API. Useful for testing or as a baseline.
 
 ```python
-from opaque import identity_mf_noise
+from opaque.noise.mf import mf_noise, identity_strategy
 from opaque.random import key
 
-noise_fn, noise_state = identity_mf_noise(
-    grad_template=params,
+strategy = identity_strategy()
+noise_fn, noise_state = mf_noise(
+    params, strategy,
     stddev=noise_multiplier * clip_state.sensitivity,
     key=key(42),
 )
 ```
-
-Note that `identity_mf_noise` does not require `n_steps` since the identity
-matrix has no temporal structure.
 
 ### Privacy accounting for MF noise
 
 MF noise has different sensitivity than standard Gaussian noise because
 the correlated strategy matrix amplifies or attenuates individual
-contributions. Opaque provides dedicated accounting mechanisms that
-compute the correct sensitivity internally:
+contributions. The noise **strategy** computes `sensitivity` and
+`gram_matrix` from the mechanism parameters; the accounting constructor
+receives these values rather than recomputing them. This ensures that
+noise generation and privacy accounting always agree on the mechanism.
 
 ```python
 import opaque.accounting as acc
+from opaque.noise.mf import band_mf_strategy, lambda_cgd_strategy
 
-# BandMF (with cyclic Poisson amplification)
-proc = acc.cyclic_poisson(acc.band_mf(1.0, 1000, 10), sample_rate=0.01)
+# BandMF — strategy provides sensitivity and num_groups
+strategy = band_mf_strategy(n_steps=1000, bands=10)
+proc = acc.cyclic_poisson(
+    acc.band_mf(1.0, sensitivity=strategy.sensitivity,
+                num_groups=strategy.num_groups),
+    sample_rate=0.01,
+)
 eps = proc.epsilon_at(1e-5)
 
-# BLT (multi-epoch)
-proc = acc.blt_mf(1.0, 5000, min_sep=100, max_participations=5)
-eps = proc.epsilon_at(1e-5)
+# DP-λCGD / BISR / BLT — strategy provides sensitivity and gram_matrix
+strategy = lambda_cgd_strategy(
+    lambda_=0.9, n_steps=total_steps,
+    min_sep=steps_per_epoch, max_participations=num_epochs,
+)
+proc = acc.balls_in_bins(
+    acc.lambda_cgd(1.0, sensitivity=strategy.sensitivity,
+                   gram_matrix=strategy.gram_matrix),
+    num_bins=steps_per_epoch, num_epochs=num_epochs,
+)
 ```
 
 See [Privacy Accounting — Matrix factorization mechanisms](accounting.md#matrix-factorization-mechanisms)
@@ -329,42 +364,47 @@ for the full API.
 ### Multi-participation (multi-epoch)
 
 When training for multiple epochs, each example participates multiple times.
-The sensitivity computation must account for this:
+Strategies that support multi-epoch patterns (`blt_strategy`, `lambda_cgd_strategy`,
+`bisr_strategy`) accept `min_sep` and `max_participations` to compute tight
+sensitivity bounds:
 
 ```python
-noise_fn, state = blt_mf_noise(
-    grad_template,
+from opaque.noise.mf import mf_noise, blt_strategy
+from opaque.random import key
+
+strategy = blt_strategy(
     n_steps=5000,
-    stddev=noise_multiplier * clipping_norm,
     min_sep=100,            # minimum steps between participations
     max_participations=5,   # 5 epochs
+)
+noise_fn, state = mf_noise(
+    grad_template, strategy,
+    stddev=noise_multiplier * clipping_norm,
     key=key(42),
 )
 ```
 
-### Sensitivity computation
+### Sensitivity
 
-The sensitivity of the strategy matrix C determines noise calibration:
+The sensitivity is computed internally by each strategy factory. You can
+inspect it via the `sensitivity` attribute:
 
 ```python
-from opaque.noise.matrix_factorization.sensitivity import (
-    single_participation_sensitivity,
-    get_sensitivity_banded,
-)
-
-sens = single_participation_sensitivity(C_matrix)
-sens = get_sensitivity_banded(C_matrix, min_sep=100, max_participations=5)
+strategy = band_mf_strategy(n_steps=1000, bands=10)
+print(strategy.sensitivity)  # typically 1.0 for normalized strategies
 ```
 
 ### Comparison: DP-SGD vs MF strategies
 
 For a linear regression with n=1000 steps, epsilon=1.0:
 
-| Method | Mechanism | Relative MSE | Memory |
+| Method | Strategy | Relative MSE | Memory |
 |--------|-----------|-------------|--------|
-| DP-SGD | Independent noise | Baseline | O(1) |
-| BandMF (bands=4) | Banded Toeplitz | ~0.7x | O(bands) |
-| BLT (3 buffers) | Buffered Toeplitz | ~0.6x | O(buffers) |
+| DP-SGD | `identity_strategy()` | Baseline | O(1) |
+| BandMF | `band_mf_strategy(bands=4)` | ~0.7x | O(bands) |
+| BLT | `blt_strategy(max_buffers=3)` | ~0.6x | O(buffers) |
+| λCGD | `lambda_cgd_strategy(lambda_=0.9)` | ~0.7x | O(1) |
+| BISR | `bisr_strategy(bandwidth=4)` | ~0.6x | O(bandwidth) |
 
 Values are illustrative; actual results depend on problem specifics.
 
@@ -418,6 +458,8 @@ noise state type. See [Distributed Training](distributed.md) for details.
 - [Choquette-Choo et al., 2023](https://arxiv.org/abs/2306.08153) -- BandMF
 - [McMahan et al., 2024](https://arxiv.org/abs/2404.16706) -- BLT
 - [Choquette-Choo et al., 2024](https://arxiv.org/abs/2408.08868) -- Multi-epoch BLT
+- [Kalinin et al., 2026](https://arxiv.org/abs/2601.22334) -- DP-λCGD
+- [Kalinin et al., 2026](https://arxiv.org/abs/2505.12128) -- BISR
 - [McMahan et al., 2025](https://arxiv.org/abs/2504.21413) -- Inversion theorem
 - [Kairouz et al., 2021](https://arxiv.org/abs/2103.00039) -- DP-FTRL
 

@@ -208,7 +208,7 @@ def calibrate(
     val_min = budget.evaluate(proc_min)
     val_max = budget.evaluate(proc_max)
 
-    # Validate bounds don't return inf/nan
+    # Validate bounds don't return nan
     if math.isnan(val_min) or math.isnan(val_max):
         raise ValueError(
             f"Budget evaluation returned NaN at bounds: "
@@ -216,9 +216,9 @@ def calibrate(
             f"This usually indicates an issue with the process() function."
         )
 
-    if math.isinf(val_min) or math.isinf(val_max):
+    if math.isinf(val_min) and math.isinf(val_max):
         raise ValueError(
-            f"Budget evaluation returned infinity at bounds: "
+            f"Budget evaluation returned infinity at both bounds: "
             f"at param_min={param_min}: {val_min}, at param_max={param_max}: {val_max}. "
             f"This typically means the privacy target is unreachable with these parameter bounds. "
             f"Try expanding the search range or checking that process() produces valid DpProcess objects."
@@ -233,10 +233,27 @@ def calibrate(
         # metric increases with param: val_min is low, val_max is high
         lo_val, hi_val = val_max, val_min
 
-    if not (hi_val <= budget.value <= lo_val):
+    # Bracketing check: inf on the "high" side is fine (target < inf),
+    # but inf on the "low" side means target is unreachable.
+    if math.isinf(hi_val):
+        raise ValueError(
+            f"Budget evaluation returned infinity on the wrong bound: "
+            f"at param_min={param_min}: {val_min}, at param_max={param_max}: {val_max}. "
+            f"This typically means the privacy target is unreachable with these parameter bounds. "
+            f"Try expanding the search range or checking that process() produces valid DpProcess objects."
+        )
+
+    if not math.isinf(lo_val) and not (hi_val <= budget.value <= lo_val):
         raise ValueError(
             f"Budget {budget.name}={budget.value:.6f} not in range "
             f"[{min(val_min, val_max):.6f}, {max(val_min, val_max):.6f}] "
+            f"for param range [{param_min}, {param_max}]. "
+            f"The target may be unreachable with these bounds."
+        )
+
+    if math.isinf(lo_val) and budget.value < hi_val:
+        raise ValueError(
+            f"Budget {budget.name}={budget.value:.6f} below finite bound {hi_val:.6f} "
             f"for param range [{param_min}, {param_max}]. "
             f"The target may be unreachable with these bounds."
         )

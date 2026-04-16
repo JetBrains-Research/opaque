@@ -27,11 +27,7 @@
 ///
 /// Panics if `noise_multiplier` or `quantile_noise_std` is zero, or if
 /// `num_groups` is zero.
-pub fn adaclip_sensitivity(
-    noise_multiplier: f64,
-    quantile_noise_std: f64,
-    num_groups: u32,
-) -> f64 {
+pub fn adaclip_sensitivity(noise_multiplier: f64, quantile_noise_std: f64, num_groups: u32) -> f64 {
     let z = noise_multiplier;
     let sigma_b = quantile_noise_std;
     let k = num_groups as f64;
@@ -106,7 +102,9 @@ mod tests {
                 let expected = (1.0 / (z * z) + 1.0 / (4.0 * sb * sb)).sqrt();
                 assert!(
                     (result - expected).abs() < 1e-15,
-                    "K=1 mismatch: z={}, sb={}", z, sb
+                    "K=1 mismatch: z={}, sb={}",
+                    z,
+                    sb
                 );
             }
         }

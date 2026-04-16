@@ -34,6 +34,32 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         amplification::py_parallel_poisson_gaussian_pld,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(
+        amplification::py_balls_in_bins_gaussian_pld,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        amplification::py_balls_in_bins_gaussian_pld_epochs,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(amplification::py_bnb_mc_pld, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        amplification::py_bandmf_b_min_sep_warm_mc_pld,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        amplification::py_register_b_min_sep_transcript_corpus,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        amplification::py_drop_b_min_sep_transcript_corpus,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        amplification::py_bandmf_b_min_sep_pld_from_transcript_handle,
+        m
+    )?)?;
+
     // Matrix Factorization
     m.add_function(wrap_pyfunction!(
         matrix_factorization::py_mf_gaussian_pld,
@@ -69,6 +95,65 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(
         matrix_factorization::py_toeplitz_minsep_sensitivity_squared,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_lambda_cgd_sensitivity_squared,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_lambda_cgd_normalized_sensitivity_squared,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_lambda_cgd_max_column_norm,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_lambda_cgd_gram_matrix,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_lambda_cgd_gram_matrix_lr,
+        m
+    )?)?;
+
+    // BISR (Banded Inverse Square Root)
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_bisr_sensitivity_squared,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_bisr_normalized_sensitivity_squared,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_bisr_gram_matrix,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_bisr_gram_matrix_lr,
+        m
+    )?)?;
+
+    // Toeplitz Gram matrix (for BnB with BandMF/BLT strategy coefs)
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_toeplitz_gram_matrix,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_bisr_strategy_coefficients,
+        m
+    )?)?;
+
+    // JME (Joint Moment Estimation)
+    m.add_function(wrap_pyfunction!(matrix_factorization::py_jme_lambda, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_jme_joint_sensitivity,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        matrix_factorization::py_jme_second_moment_noise_scale,
         m
     )?)?;
 
