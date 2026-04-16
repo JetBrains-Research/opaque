@@ -14,8 +14,8 @@ class TestBsrStrategy:
             n_steps=100,
             min_sep=25,
             max_participations=4,
-            momentum=0.5,
             alpha=1.0,
+            beta=0.5,
         )
         assert isinstance(s, BsrStrategy)
 
@@ -25,8 +25,8 @@ class TestBsrStrategy:
             n_steps=100,
             min_sep=25,
             max_participations=4,
-            momentum=0.5,
             alpha=1.0,
+            beta=0.5,
         )
         assert s.sensitivity > 0
 
@@ -36,8 +36,8 @@ class TestBsrStrategy:
             n_steps=100,
             min_sep=25,
             max_participations=4,
-            momentum=0.5,
             alpha=1.0,
+            beta=0.5,
         )
         assert s.gram_matrix is not None
         assert len(s.gram_matrix) == 25 * 25
@@ -48,8 +48,8 @@ class TestBsrStrategy:
             n_steps=100,
             min_sep=25,
             max_participations=4,
-            momentum=0.5,
             alpha=1.0,
+            beta=0.5,
         )
         assert s._streaming_matrix is not None
 
@@ -59,8 +59,8 @@ class TestBsrStrategy:
             n_steps=50,
             min_sep=10,
             max_participations=3,
-            momentum=0.9,
             alpha=1.0,
+            beta=0.9,
         )
         head = list(s.coefficients[:6])
         for i in range(1, len(head)):
@@ -73,8 +73,8 @@ class TestBsrStrategy:
                 n_steps=50,
                 min_sep=10,
                 max_participations=2,
-                momentum=0.95,
                 alpha=0.9,
+                beta=0.95,
             )
 
     def test_rejects_momentum_one(self):
@@ -84,8 +84,8 @@ class TestBsrStrategy:
                 n_steps=50,
                 min_sep=10,
                 max_participations=2,
-                momentum=1.0,
                 alpha=1.0,
+                beta=1.0,
             )
 
     def test_rejects_normalized_flag(self):
@@ -95,8 +95,8 @@ class TestBsrStrategy:
                 n_steps=50,
                 min_sep=10,
                 max_participations=2,
-                momentum=0.5,
                 alpha=1.0,
+                beta=0.5,
                 normalized=True,
             )
 
@@ -110,8 +110,8 @@ class TestBsrPld:
             n_steps=100,
             min_sep=25,
             max_participations=4,
-            momentum=0.5,
             alpha=1.0,
+            beta=0.5,
         )
         eps = acc.bsr(1.0, sensitivity=s.sensitivity).epsilon_at(self.delta)
         assert eps > 0
@@ -122,8 +122,8 @@ class TestBsrPld:
             n_steps=100,
             min_sep=25,
             max_participations=4,
-            momentum=0.5,
             alpha=1.0,
+            beta=0.5,
         )
         eps = acc.balls_in_bins(
             acc.bsr(1.0, sensitivity=s.sensitivity, gram_matrix=s.gram_matrix),

@@ -41,7 +41,7 @@ See [BandMF — Assumptions and limitations](../mechanisms/band-mf.md#assumption
 | [BLT](../mechanisms/blt.md) | Buffered linear Toeplitz | BnB (+ sequential data order) | \(O(\text{buffers})\) | Long runs / multi-epoch |
 | [DP-λCGD](../mechanisms/lambda-cgd.md) | PRNG replay, bandwidth 2 | BnB | \(O(1)\) | Minimal memory |
 | [BISR](../mechanisms/bisr.md) | Banded inverse square root | BnB | \(O(p)\) | Analytic inverse coefficients |
-| [BSR](../mechanisms/bsr.md) | Banded square root (closed form) | BnB | \(O(p)\) | Paper \((\alpha,\beta)\) via `alpha=` / `momentum=`; not AdamW `weight_decay` |
+| [BSR](../mechanisms/bsr.md) | Banded square root (closed form) | BnB | \(O(p)\) | Paper `alpha`, `beta` (kw-only); bind `beta` from SGD momentum or Adam \(\beta_1\) |
 | Identity | Independent (DP-SGD style) | Poisson / standard | \(O(1)\) | Baseline via MF API |
 
 ## JME (DP-Adam) and MF
@@ -54,7 +54,7 @@ When adding a new `MfStrategy`, ensure `opaque.noise.mf.jme._derive_second_strat
 
 [BSR](../mechanisms/bsr.md) ships **closed-form** coefficients for the Kalinin–Lampert workload in \((\alpha,\beta)\). It does **not** accept arbitrary `lr_schedule` inside the closed-form path. For general schedules or optimizers, use **BandMF** (numerical Toeplitz optimization) or **BLT**.
 
-With JME, the second stream uses \(\beta_2\) as momentum in a second `bsr_strategy` call; both streams must satisfy \(\alpha > \beta\) for their respective \(\beta\) (see `jme.py`).
+With JME + BSR, the second stream is a second `bsr_strategy(..., alpha=..., beta=β₂)`; require \(\alpha > \beta\) for each stream’s \(\beta\) (see `jme.py`).
 
 ## Further reading
 

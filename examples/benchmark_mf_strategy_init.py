@@ -36,8 +36,8 @@ def main() -> None:
         n_steps=n_steps,
         min_sep=min_sep,
         max_participations=max_participations,
-        momentum=momentum,
         alpha=bsr_alpha,
+        beta=momentum,
     )
     t_bsr = time.perf_counter() - t0
 

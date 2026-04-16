@@ -426,8 +426,8 @@ def parse_args():
         "--bsr-alpha",
         type=float,
         default=1.0,
-        help="BSR workload multiplicative decay α in (0,1] (paper); must satisfy α>β "
-        "(β is SGD momentum or Adam β₁). Ignored unless --mechanism bsr.",
+        help="BSR workload α in (0,1] (paper); must satisfy α>β where β comes from "
+        "--momentum (SGD) or --beta1 (Adam). Ignored unless --mechanism bsr.",
     )
 
     # Privacy
@@ -933,8 +933,8 @@ def main():
                 n_steps=total_steps,
                 min_sep=expected_steps_per_epoch,
                 max_participations=args.num_epochs,
-                momentum=mom,
                 alpha=args.bsr_alpha,
+                beta=mom,
             )
         elif args.mechanism == "identity":
             return identity_strategy()
@@ -1139,8 +1139,8 @@ def main():
         print(f"  Workload: EMA β₁={args.beta1} (1st moment), β₂={args.beta2} (2nd moment)")
         if args.mechanism == "bsr":
             print(
-                f"  BSR workload α (noise accounting): {args.bsr_alpha} "
-                "(independent of optimizer --weight-decay; set α>β₁)"
+                f"  BSR workload (α={args.bsr_alpha}, β=β₁={args.beta1}): "
+                "noise strategy uses paper (α,β); independent of optimizer --weight-decay; require α>β."
             )
     else:
         print(
@@ -1152,9 +1152,8 @@ def main():
         )
         if args.mechanism == "bsr":
             print(
-                f"  BSR workload α (noise accounting): {args.bsr_alpha} "
-                "(paper multiplicative decay in the workload matrix; "
-                "optimizer --weight-decay is separate unless you align them deliberately)."
+                f"  BSR workload (α={args.bsr_alpha}, β={args.momentum}): "
+                "paper (α,β) for noise; optimizer --weight-decay is separate."
             )
             print(
                 "  Note: BSR coefficients assume constant LR in the paper; "
@@ -1195,8 +1194,10 @@ def main():
         print(f"  BISR bandwidth: {args.bisr_bandwidth}")
         print("  Column normalization: enabled (Appendix A, exact BnB)")
     elif args.mechanism == "bsr":
-        print(f"  BSR bandwidth: {args.bsr_bandwidth}")
-        print(f"  BSR workload α: {args.bsr_alpha}")
+        bsr_beta = args.beta1 if use_adam else args.momentum
+        print(
+            f"  BSR: bandwidth={args.bsr_bandwidth}, workload (α={args.bsr_alpha}, β={bsr_beta})"
+        )
 
     # ===================================================================
     # Training loop
