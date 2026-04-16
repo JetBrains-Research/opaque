@@ -292,6 +292,7 @@ following types are registered:
 | `ClippedFunAux`, `ClippedGradAux`, `AdaptiveClippedGradAux` | Gather aux tensors across ranks |
 | `GaussianNoiseState` | Assert seed and step counter match across ranks |
 | `MFNoiseState` | Assert seed and step counter match for MF noise |
+| `DiskDenoiserState` | Assert step counter and filter state (`_estimate`, `_error_var`) match across ranks |
 | `TrainingProfiler` | Aggregate only unsynchronized step/checkpoint suffix into a global profiler snapshot |
 
 Rectified and truncated Gaussian noise also return `GaussianNoiseState`,

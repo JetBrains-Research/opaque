@@ -1539,6 +1539,8 @@ def main():
                         denoiser_state,
                         noise_stddev=noise_stddev,
                     )
+                    if is_ddp:
+                        denoiser_state = sync(denoiser_state)
 
                 updates, opt_state = base_opt.update(
                     noisy_grads, opt_state, params=trainable_params
