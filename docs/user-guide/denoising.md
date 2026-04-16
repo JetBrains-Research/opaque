@@ -28,11 +28,8 @@ if denoise is not None:
         denoiser_state,
         noise_stddev=noise_stddev,
     )
-# Under DDP (example pattern from train_causal_lm.py):
-# if denoise is not None:
-#     noise_state, denoiser_state = sync(noise_state, denoiser_state)
-# else:
-#     noise_state = sync(noise_state)
+# Under DDP: denoiser_state may be None when denoising is disabled; sync passes None through
+# noise_state, denoiser_state = sync(noise_state, denoiser_state)
 ```
 
 - **`grad_template`**: a PyTree with the same structure as gradients (e.g.

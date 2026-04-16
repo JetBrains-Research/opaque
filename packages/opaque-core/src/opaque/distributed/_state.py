@@ -254,6 +254,8 @@ def sync(*states: Any) -> Any:
     """
 
     def _sync_one(single: Any) -> Any:
+        if single is None:
+            return None
         state_type = type(single)
         if state_type not in _SYNC_REGISTRY:
             _ensure_builtin_sync_types_loaded()
