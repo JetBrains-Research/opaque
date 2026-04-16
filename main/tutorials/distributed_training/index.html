@@ -694,6 +694,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../../user-guide/matrix-factorization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Matrix factorization (MF)
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../user-guide/accounting/" class="md-nav__link">
         
   
@@ -974,6 +997,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../../mechanisms/bsr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BSR
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../mechanisms/band-mf/" class="md-nav__link">
         
   
@@ -1020,12 +1066,35 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/dense-mf/" class="md-nav__link">
+      <a href="../../mechanisms/lambda-cgd/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    Dense MF
+    DP-λCGD
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/bisr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BISR
     
   </span>
   
@@ -2320,8 +2389,7 @@ device.</p>
 
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Rank </span><span class="si">{</span><span class="n">rank</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">world_size</span><span class="si">}</span><span class="s2"> on </span><span class="si">{</span><span class="n">device</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-1">
-import torch
+<div class="clipboard-copy-txt" id="cell-1">import torch
 import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F

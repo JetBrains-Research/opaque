@@ -1038,6 +1038,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../matrix-factorization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Matrix factorization (MF)
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../accounting/" class="md-nav__link">
         
   
@@ -1318,6 +1341,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../../mechanisms/bsr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BSR
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../mechanisms/band-mf/" class="md-nav__link">
         
   
@@ -1364,12 +1410,35 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/dense-mf/" class="md-nav__link">
+      <a href="../../mechanisms/lambda-cgd/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    Dense MF
+    DP-λCGD
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/bisr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BISR
     
   </span>
   
@@ -2554,7 +2623,7 @@ converge to a worse solution or not converge at all.</p>
   provide tighter privacy accounting at the same noise level as standard Gaussian.
   See <a href="../../mechanisms/">Mechanisms</a> for the privacy ordering.</li>
 <li><strong>Use correlated noise (DP-FTRL).</strong> Matrix factorization mechanisms (BandMF,
-  BLT, Dense) inject correlated noise that partially cancels across steps,
+  BLT) inject correlated noise that partially cancels across steps,
   reducing the effective noise on cumulative model updates.</li>
 <li><strong>Use adaptive clipping</strong> to avoid over-clipping gradients.</li>
 <li><strong>Use LoRA</strong> or other parameter-efficient methods to reduce gradient
@@ -2620,11 +2689,6 @@ independent noise would give.</p>
 <td><strong>BLT</strong></td>
 <td><span class="arithmatex">\(O(b)\)</span></td>
 <td>Multi-epoch training</td>
-</tr>
-<tr>
-<td><strong>Dense</strong></td>
-<td><span class="arithmatex">\(O(n^2)\)</span></td>
-<td>Short training, optimal noise</td>
 </tr>
 </tbody>
 </table>

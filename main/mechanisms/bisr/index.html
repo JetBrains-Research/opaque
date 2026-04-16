@@ -12,9 +12,13 @@
         <meta name="author" content="Opaque Contributors">
       
       
-        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/development/parallelism_compatibility/">
+        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/mechanisms/bisr/">
       
       
+        <link rel="prev" href="../lambda-cgd/">
+      
+      
+        <link rel="next" href="../../tutorials/">
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
@@ -22,7 +26,7 @@
     
     
       
-        <title>Parallelism Strategies: vmap Compatibility Investigation - Opaque</title>
+        <title>BISR - Opaque</title>
       
     
     
@@ -76,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#parallelism-strategies-vmap-compatibility-investigation" class="md-skip">
+        <a href="#bisr-banded-inverse-square-root" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Parallelism Strategies: vmap Compatibility Investigation
+              BISR
             
           </span>
         </div>
@@ -284,11 +288,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="../../mechanisms/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
           
   
   
@@ -348,7 +354,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../contributing.md" class="md-tabs__link">
+        <a href="../../development/contributing.md" class="md-tabs__link">
           
   
   
@@ -688,6 +694,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../../user-guide/matrix-factorization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Matrix factorization (MF)
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../user-guide/accounting/" class="md-nav__link">
         
   
@@ -876,26 +905,31 @@
       
   
   
+    
   
   
+  
     
     
     
     
+      
+        
+        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
         
           
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
             
   
   
@@ -908,7 +942,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             Mechanisms
@@ -922,7 +956,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/" class="md-nav__link">
+      <a href="../" class="md-nav__link">
         
   
   
@@ -945,7 +979,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/gaussian/" class="md-nav__link">
+      <a href="../gaussian/" class="md-nav__link">
         
   
   
@@ -968,7 +1002,30 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/band-mf/" class="md-nav__link">
+      <a href="../bsr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BSR
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../band-mf/" class="md-nav__link">
         
   
   
@@ -991,7 +1048,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/blt/" class="md-nav__link">
+      <a href="../blt/" class="md-nav__link">
         
   
   
@@ -1014,17 +1071,151 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/dense-mf/" class="md-nav__link">
+      <a href="../lambda-cgd/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    Dense MF
+    DP-λCGD
     
   </span>
   
 
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    BISR
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    BISR
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#accounting" class="md-nav__link">
+    <span class="md-ellipsis">
+      Accounting
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Accounting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#strategy-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      Strategy parameters
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#accounting-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      Accounting parameters
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bisr-coefficients" class="md-nav__link">
+    <span class="md-ellipsis">
+      BISR coefficients
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#noise-generation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Noise generation
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#assumptions-and-limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      Assumptions and limitations
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bandwidth-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      Bandwidth selection
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1578,7 +1769,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../contributing.md" class="md-nav__link">
+      <a href="../../development/contributing.md" class="md-nav__link">
         
   
   
@@ -1628,55 +1819,37 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#quick-reference" class="md-nav__link">
+  <a href="#accounting" class="md-nav__link">
     <span class="md-ellipsis">
-      Quick Reference
+      Accounting
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#1-data-parallelism-ddp" class="md-nav__link">
-    <span class="md-ellipsis">
-      1. Data Parallelism (DDP)
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="1. Data Parallelism (DDP)">
+    <nav class="md-nav" aria-label="Accounting">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#status-fully-implemented-production-ready" class="md-nav__link">
+  <a href="#strategy-parameters" class="md-nav__link">
     <span class="md-ellipsis">
-      Status: ✅ FULLY IMPLEMENTED &amp; PRODUCTION READY
+      Strategy parameters
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#implementation" class="md-nav__link">
+  <a href="#accounting-parameters" class="md-nav__link">
     <span class="md-ellipsis">
-      Implementation
+      Accounting parameters
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#how-it-works" class="md-nav__link">
+  <a href="#bisr-coefficients" class="md-nav__link">
     <span class="md-ellipsis">
-      How It Works
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#key-finding" class="md-nav__link">
-    <span class="md-ellipsis">
-      Key Finding
+      BISR coefficients
     </span>
   </a>
   
@@ -1688,384 +1861,27 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-fully-compatible-but-not-yet-implemented" class="md-nav__link">
+  <a href="#noise-generation" class="md-nav__link">
     <span class="md-ellipsis">
-      2. Fully ⏳ COMPATIBLE BUT NOT YET IMPLEMENTED
+      Noise generation
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="2. Fully ⏳ COMPATIBLE BUT NOT YET IMPLEMENTED">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#investigation-proof-of-concept" class="md-nav__link">
-    <span class="md-ellipsis">
-      Investigation (Proof of Concept)
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#test-results" class="md-nav__link">
-    <span class="md-ellipsis">
-      Test Results
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#how-it-works_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      How It Works
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#key-insight" class="md-nav__link">
-    <span class="md-ellipsis">
-      Key Insight
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#supported-strategies" class="md-nav__link">
-    <span class="md-ellipsis">
-      Supported Strategies
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#memory-scaling" class="md-nav__link">
-    <span class="md-ellipsis">
-      Memory Scaling
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-tensor-parallelism-tp" class="md-nav__link">
+  <a href="#assumptions-and-limitations" class="md-nav__link">
     <span class="md-ellipsis">
-      3. Tensor Parallelism (TP)
+      Assumptions and limitations
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="3. Tensor Parallelism (TP)">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#status-incompatible" class="md-nav__link">
-    <span class="md-ellipsis">
-      Status: ❌ INCOMPATIBLE
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#investigation" class="md-nav__link">
-    <span class="md-ellipsis">
-      Investigation
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#test-results_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      Test Results
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#root-cause" class="md-nav__link">
-    <span class="md-ellipsis">
-      Root Cause
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-this-matters" class="md-nav__link">
-    <span class="md-ellipsis">
-      Why This Matters
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#workarounds-considered" class="md-nav__link">
-    <span class="md-ellipsis">
-      Workarounds Considered
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#future-outlook" class="md-nav__link">
-    <span class="md-ellipsis">
-      Future Outlook
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-pipeline-parallelism-pp" class="md-nav__link">
+  <a href="#bandwidth-selection" class="md-nav__link">
     <span class="md-ellipsis">
-      4. Pipeline Parallelism (PP)
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="4. Pipeline Parallelism (PP)">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#status-fundamentally-incompatible" class="md-nav__link">
-    <span class="md-ellipsis">
-      Status: ❌ FUNDAMENTALLY INCOMPATIBLE
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#investigation_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      Investigation
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#test-results_2" class="md-nav__link">
-    <span class="md-ellipsis">
-      Test Results
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-incompatible" class="md-nav__link">
-    <span class="md-ellipsis">
-      Why Incompatible
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#technical-error" class="md-nav__link">
-    <span class="md-ellipsis">
-      Technical Error
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#conclusion" class="md-nav__link">
-    <span class="md-ellipsis">
-      Conclusion
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#parallelism-taxonomy" class="md-nav__link">
-    <span class="md-ellipsis">
-      Parallelism Taxonomy
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Parallelism Taxonomy">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#understanding-the-dimensions" class="md-nav__link">
-    <span class="md-ellipsis">
-      Understanding the Dimensions
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#combinations" class="md-nav__link">
-    <span class="md-ellipsis">
-      Combinations
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#implementation-roadmap" class="md-nav__link">
-    <span class="md-ellipsis">
-      Implementation Roadmap
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Implementation Roadmap">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#completed-week-1-2" class="md-nav__link">
-    <span class="md-ellipsis">
-      ✅ Completed (Week 1-2)
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#recommended-next-steps" class="md-nav__link">
-    <span class="md-ellipsis">
-      🎯 Recommended Next Steps
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#dont-pursue-phase-1a" class="md-nav__link">
-    <span class="md-ellipsis">
-      ❌ Don't Pursue (Phase 1A)
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#recommendations" class="md-nav__link">
-    <span class="md-ellipsis">
-      Recommendations
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Recommendations">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#for-end-users" class="md-nav__link">
-    <span class="md-ellipsis">
-      For End Users
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#for-opaque-library" class="md-nav__link">
-    <span class="md-ellipsis">
-      For Opaque Library
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#references" class="md-nav__link">
-    <span class="md-ellipsis">
-      References
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="References">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#investigation-scripts" class="md-nav__link">
-    <span class="md-ellipsis">
-      Investigation Scripts
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#documentation" class="md-nav__link">
-    <span class="md-ellipsis">
-      Documentation
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#pytorch-issues" class="md-nav__link">
-    <span class="md-ellipsis">
-      PyTorch Issues
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#key-insights" class="md-nav__link">
-    <span class="md-ellipsis">
-      Key Insights
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#conclusion_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      Conclusion
+      Bandwidth selection
     </span>
   </a>
   
@@ -2090,319 +1906,175 @@
   
 
 
-<h1 id="parallelism-strategies-vmap-compatibility-investigation">Parallelism Strategies: vmap Compatibility Investigation<a class="headerlink" href="#parallelism-strategies-vmap-compatibility-investigation" title="Permanent link">&para;</a></h1>
-<p><strong>⚠️ RESEARCH DOCUMENT</strong>: This document describes compatibility investigations, not current implementation status.</p>
-<p><strong>Summary</strong>: Investigation of PyTorch parallelism strategies (DDP, FSDP, TP, SP, PP) for compatibility with Opaque's per-example gradient computation via <code>torch.func.vmap</code>.</p>
-<p><strong>Date</strong>: February 15, 2026<br />
-<strong>Hardware</strong>: 4x NVIDIA L4 GPUs (23GB each)<br />
-<strong>PyTorch</strong>: 2.10.0+cu128</p>
-<p><strong>Current Implementation Status (as of Feb 2026):</strong>
-- ✅ <strong>DDP</strong>: Fully implemented and production-ready<br />
-- ❌ <strong>FSDP</strong>: Investigated as compatible, but <strong>NOT YET IMPLEMENTED</strong><br />
-- ❌ <strong>TP/PP</strong>: Blocked by vmap incompatibilities</p>
-<hr />
-<h2 id="quick-reference">Quick Reference<a class="headerlink" href="#quick-reference" title="Permanent link">&para;</a></h2>
+<h1 id="bisr-banded-inverse-square-root">BISR (Banded Inverse Square Root)<a class="headerlink" href="#bisr-banded-inverse-square-root" title="Permanent link">&para;</a></h1>
+<p><strong>BISR</strong> (Kalinin et al., ICLR 2026) generalises <a href="../lambda-cgd/">DP-λCGD</a> from
+bandwidth 2 to arbitrary bandwidth p ≥ 2. The inverse of the strategy matrix
+C^{-1} is a banded Toeplitz matrix whose coefficients are analytically determined
+from the inverse square root of the workload matrix.</p>
+<ul>
+<li><strong>Paper</strong>: <a href="https://arxiv.org/abs/2505.12128">Back to Square Roots: Banded Inverse Square Root for DP Matrix Factorization</a></li>
+<li><strong>Strategy matrix</strong>: Inverse is banded Toeplitz with bandwidth p</li>
+<li><strong>Memory</strong>: p-1 noise vectors (via PRNG replay or small buffer)</li>
+<li><strong>Optimality</strong>: Asymptotically optimal (matches upper and lower bounds)</li>
+<li><strong>Amplification</strong>: Balls-in-Bins (BnB) with MC dominating pair accounting</li>
+</ul>
+<h2 id="accounting">Accounting<a class="headerlink" href="#accounting" title="Permanent link">&para;</a></h2>
+<p>Like all MF mechanisms, the noise <strong>strategy</strong> computes <code>sensitivity</code> and
+<code>gram_matrix</code> from the mechanism parameters; the accounting constructor
+receives only these pre-computed values. This avoids duplicating mechanism
+parameters and keeps the accounting API uniform across all MF mechanisms.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise.mf</span><span class="w"> </span><span class="kn">import</span> <span class="n">bisr_strategy</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque_accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># 1. Create strategy — computes sensitivity and Gram matrix internally</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">bisr_strategy</span><span class="p">(</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">bandwidth</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="n">total_steps</span><span class="p">,</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">min_sep</span><span class="o">=</span><span class="n">steps_per_epoch</span><span class="p">,</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">max_participations</span><span class="o">=</span><span class="n">num_epochs</span><span class="p">,</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">momentum</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="p">)</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="c1"># 2. Build accounting mechanism from strategy-derived quantities</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="n">training</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">balls_in_bins</span><span class="p">(</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">bisr</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">,</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>             <span class="n">sensitivity</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>             <span class="n">gram_matrix</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">gram_matrix</span><span class="p">),</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    <span class="n">num_bins</span><span class="o">=</span><span class="n">steps_per_epoch</span><span class="p">,</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    <span class="n">num_epochs</span><span class="o">=</span><span class="n">num_epochs</span><span class="p">,</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="p">)</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
+</code></pre></div>
+<h3 id="strategy-parameters">Strategy parameters<a class="headerlink" href="#strategy-parameters" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th>Strategy</th>
-<th>vmap Compatible?</th>
-<th>Implementation Status</th>
-<th>Use Case</th>
+<th>Parameter</th>
+<th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>DDP</strong></td>
-<td>✅ Yes</td>
-<td>✅ <strong>Implemented</strong></td>
-<td>Multi-GPU data parallelism</td>
+<td><code>bandwidth</code></td>
+<td>Number of bands p (≥ 2). Higher = better utility, more PRNG replays.</td>
 </tr>
 <tr>
-<td><strong>FSDP</strong></td>
-<td>✅ Yes</td>
-<td>⏳ <strong>Not Implemented</strong> (compatible, planned)</td>
-<td>8B-13B models (parameter sharding)</td>
+<td><code>n_steps</code></td>
+<td>Total training steps</td>
 </tr>
 <tr>
-<td><strong>Tensor Parallelism</strong></td>
-<td>❌ No</td>
-<td>❌ <strong>Blocked</strong></td>
-<td>70B+ models (layer sharding)</td>
+<td><code>min_sep</code></td>
+<td>Steps per epoch</td>
 </tr>
 <tr>
-<td><strong>Pipeline Parallelism</strong></td>
-<td>❌ No</td>
-<td>❌ <strong>Incompatible</strong></td>
-<td>Not applicable to DP-SGD</td>
+<td><code>max_participations</code></td>
+<td>Number of epochs</td>
+</tr>
+<tr>
+<td><code>momentum</code></td>
+<td>Optimizer momentum β. Enters coefficient computation (changes C).</td>
 </tr>
 </tbody>
 </table>
-<hr />
-<h2 id="1-data-parallelism-ddp">1. Data Parallelism (DDP)<a class="headerlink" href="#1-data-parallelism-ddp" title="Permanent link">&para;</a></h2>
-<h3 id="status-fully-implemented-production-ready">Status: ✅ <strong>FULLY IMPLEMENTED &amp; PRODUCTION READY</strong><a class="headerlink" href="#status-fully-implemented-production-ready" title="Permanent link">&para;</a></h3>
-<h3 id="implementation">Implementation<a class="headerlink" href="#implementation" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Module</strong>: <code>src/opaque/distributed/gradients.py</code></li>
-<li><strong>APIs</strong>: <code>sum_gradients()</code> / <code>sum_gradients_()</code>, <code>reduce_pytree()</code> / <code>reduce_pytree_()</code></li>
-<li><strong>Tests</strong>: </li>
-<li><code>tests/distributed/test_ddp_integration.py</code> - DDP primitives</li>
-<li><code>tests/distributed/test_ddp_models.py</code> - Integration with real models</li>
-<li><strong>Examples</strong>:</li>
-<li><code>examples/train_qwen_ddp.py</code> - Complete DDP training script</li>
-</ul>
-<h3 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h3>
-<ol>
-<li>Each GPU has a full copy of the model</li>
-<li>vmap computes per-example gradients locally</li>
-<li>Gradients are aggregated across GPUs via <code>all_reduce</code></li>
-<li>Compatible because vmap doesn't interact with DDP's parameter synchronization</li>
-</ol>
-<h3 id="key-finding">Key Finding<a class="headerlink" href="#key-finding" title="Permanent link">&para;</a></h3>
-<p>Per-example gradients can be computed independently on each GPU, then aggregated. This is the foundation for all other strategies.</p>
-<hr />
-<h2 id="2-fully-compatible-but-not-yet-implemented">2. Fully ⏳ <strong>COMPATIBLE BUT NOT YET IMPLEMENTED</strong><a class="headerlink" href="#2-fully-compatible-but-not-yet-implemented" title="Permanent link">&para;</a></h2>
-<p><strong>Investigation Results:</strong> FSDP is confirmed compatible with vmap (tests passed), but the production implementation in <code>src/opaque/distributed/</code> has not been completed yet.</p>
-<h3 id="investigation-proof-of-concept">Investigation (Proof of Concept)<a class="headerlink" href="#investigation-proof-of-concept" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Script</strong>: <code>examples/fsdp_vmap_compatibility.py</code> (if exists - research only)</li>
-<li><strong>Documentation</strong>: <code>docs/development/fsdp_investigation.md</code> (if exists)</li>
-<li><strong>Script</strong>: <code>examples/fsdp_vmap_compatibility.py</code></li>
-<li><strong>Documentation</strong>: <code>docs/development/fsdp_investigation.md</code></li>
-<li><strong>Implementation</strong>: <code>src/opaque/distributed/fsdp.py</code></li>
-</ul>
-<h3 id="test-results">Test Results<a class="headerlink" href="#test-results" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>✅ Test 1: vmap without FSDP (baseline) - PASS
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>✅ Test 2: vmap with FSDP (FULL_SHARD) - PASS
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>✅ Test 3: vmap with FSDP (NO_SHARD) - PASS
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>✅ Test 4: opaque.clipped_grad with FSDP - PASS
-</code></pre></div>
-<h3 id="how-it-works_1">How It Works<a class="headerlink" href="#how-it-works_1" title="Permanent link">&para;</a></h3>
-<ol>
-<li>FSDP shards parameters across GPUs</li>
-<li>Before forward pass, FSDP gathers parameters using <code>all_gather</code></li>
-<li>vmap sees fully materialized parameters (transparent)</li>
-<li>After forward pass, FSDP discards gathered parameters to save memory</li>
-<li>Same process for backward pass</li>
-</ol>
-<h3 id="key-insight">Key Insight<a class="headerlink" href="#key-insight" title="Permanent link">&para;</a></h3>
-<p>FSDP's <code>all_gather</code> hooks run OUTSIDE vmap, so vmap only sees regular tensors. This is why it works!</p>
-<h3 id="supported-strategies">Supported Strategies<a class="headerlink" href="#supported-strategies" title="Permanent link">&para;</a></h3>
-<ul>
-<li>✅ <code>FULL_SHARD</code> - Shard parameters, gradients, and optimizer states</li>
-<li>✅ <code>SHARD_GRAD_OP</code> - Shard gradients and optimizer states only</li>
-<li>✅ <code>NO_SHARD</code> - No sharding (DDP mode)</li>
-<li>✅ <code>HYBRID_SHARD</code> - Combination of intra-node and inter-node sharding (not tested)</li>
-</ul>
-<h3 id="memory-scaling">Memory Scaling<a class="headerlink" href="#memory-scaling" title="Permanent link">&para;</a></h3>
-<p>For Llama-2-7B on 4x L4 GPUs (23GB each):
-- <strong>Full model</strong>: ~28GB (doesn't fit)
-- <strong>FSDP FULL_SHARD</strong>: ~7GB per GPU (fits!)
-- <strong>Estimated capacity</strong>: Up to 13B parameters</p>
-<hr />
-<h2 id="3-tensor-parallelism-tp">3. Tensor Parallelism (TP)<a class="headerlink" href="#3-tensor-parallelism-tp" title="Permanent link">&para;</a></h2>
-<h3 id="status-incompatible">Status: ❌ <strong>INCOMPATIBLE</strong><a class="headerlink" href="#status-incompatible" title="Permanent link">&para;</a></h3>
-<h3 id="investigation">Investigation<a class="headerlink" href="#investigation" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Script</strong>: <code>examples/tp_vmap_compatibility.py</code></li>
-<li><strong>Date</strong>: February 15, 2026</li>
-</ul>
-<h3 id="test-results_1">Test Results<a class="headerlink" href="#test-results_1" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>✅ Test 1: vmap without TP (baseline) - PASS
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>❌ Test 2: vmap with TP (ColwiseParallel) - FAIL
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>❌ Test 3: vmap with manual DTensor - FAIL
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>❌ Test 4: opaque.clipped_grad with TP - FAIL
-</code></pre></div>
-<h3 id="root-cause">Root Cause<a class="headerlink" href="#root-cause" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="ne">RuntimeError</span><span class="p">:</span> <span class="n">In</span> <span class="n">order</span> <span class="n">to</span> <span class="n">use</span> <span class="n">an</span> <span class="n">autograd</span><span class="o">.</span><span class="n">Function</span> <span class="k">with</span> <span class="n">functorch</span> <span class="n">transforms</span> 
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="p">(</span><span class="n">vmap</span><span class="p">,</span> <span class="n">grad</span><span class="p">,</span> <span class="n">jvp</span><span class="p">,</span> <span class="n">jacrev</span><span class="p">,</span> <span class="o">...</span><span class="p">),</span> <span class="n">it</span> <span class="n">must</span> <span class="n">override</span> <span class="n">the</span> <span class="n">setup_context</span> <span class="nb">staticmethod</span><span class="o">.</span>
-</code></pre></div>
-<p><strong>Problem</strong>: DTensor uses <code>DTensor.from_local()</code> which is implemented as an <code>autograd.Function</code> that doesn't support functorch transforms (vmap, grad, etc.).</p>
-<p><strong>Location</strong>: 
-- <code>torch.distributed.tensor._api.py</code> line 446
-- <code>_FromTorchTensor.apply()</code> - autograd.Function without setup_context</p>
-<h3 id="why-this-matters">Why This Matters<a class="headerlink" href="#why-this-matters" title="Permanent link">&para;</a></h3>
-<p>Tensor Parallelism shards individual layer parameters across GPUs (e.g., split a 4096×4096 weight matrix into 4×(4096×1024) shards). This allows scaling to 70B+ models by fitting each layer across multiple GPUs.</p>
-<h3 id="workarounds-considered">Workarounds Considered<a class="headerlink" href="#workarounds-considered" title="Permanent link">&para;</a></h3>
-<ol>
-<li>❌ <strong>Fix DTensor upstream</strong> - Would require PyTorch core changes</li>
-<li>❌ <strong>Custom TP implementation</strong> - Too complex, would duplicate DTensor logic</li>
-<li>✅ <strong>Use FSDP only</strong> - Covers 8B-13B models (good enough for now)</li>
-<li>⏸️ <strong>Wait for PyTorch fix</strong> - Monitor PyTorch issues/PRs</li>
-</ol>
-<h3 id="future-outlook">Future Outlook<a class="headerlink" href="#future-outlook" title="Permanent link">&para;</a></h3>
-<ul>
-<li>PyTorch team aware of functorch + DTensor issues</li>
-<li>May be fixed in future PyTorch versions</li>
-<li>Worth re-testing with PyTorch 2.5+ or 3.0</li>
-</ul>
-<hr />
-<h2 id="4-pipeline-parallelism-pp">4. Pipeline Parallelism (PP)<a class="headerlink" href="#4-pipeline-parallelism-pp" title="Permanent link">&para;</a></h2>
-<h3 id="status-fundamentally-incompatible">Status: ❌ <strong>FUNDAMENTALLY INCOMPATIBLE</strong><a class="headerlink" href="#status-fundamentally-incompatible" title="Permanent link">&para;</a></h3>
-<h3 id="investigation_1">Investigation<a class="headerlink" href="#investigation_1" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Script</strong>: <code>examples/pipeline_parallel_vmap_compatibility.py</code></li>
-<li><strong>Date</strong>: February 15, 2026</li>
-</ul>
-<h3 id="test-results_2">Test Results<a class="headerlink" href="#test-results_2" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>✅ Test 1: vmap without PP (baseline) - PASS
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>❌ Test 2: vmap with PP (send/recv inside vmap) - FAIL
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>✅ Test 3: PP with microbatches (no vmap) - PASS
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>❌ Test 4: opaque.clipped_grad with PP - FAIL
-</code></pre></div>
-<h3 id="why-incompatible">Why Incompatible<a class="headerlink" href="#why-incompatible" title="Permanent link">&para;</a></h3>
-<p><strong>DP-SGD Requirements</strong>:
-1. Compute forward pass for <strong>all examples in parallel</strong> (vmap)
-2. Compute backward pass for <strong>all examples in parallel</strong>
-3. Access to <strong>full model</strong> (not just one stage)
-4. Clip gradients <strong>per-example</strong> (requires gradient of each example separately)</p>
-<p><strong>Pipeline Parallelism</strong>:
-1. Processes <strong>microbatches sequentially</strong> through pipeline stages
-2. Each GPU owns <strong>part of model</strong> (one stage)
-3. Cannot compute per-example gradients for full model (only for local stage)
-4. send/recv operations don't support vmap</p>
-<h3 id="technical-error">Technical Error<a class="headerlink" href="#technical-error" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="ne">RuntimeError</span><span class="p">:</span> <span class="n">Batching</span> <span class="n">rule</span> <span class="ow">not</span> <span class="n">implemented</span> <span class="k">for</span> <span class="n">c10d</span><span class="p">::</span><span class="n">send</span><span class="o">.</span> 
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">We</span> <span class="n">could</span> <span class="ow">not</span> <span class="n">generate</span> <span class="n">a</span> <span class="n">fallback</span><span class="o">.</span>
-</code></pre></div>
-<h3 id="conclusion">Conclusion<a class="headerlink" href="#conclusion" title="Permanent link">&para;</a></h3>
-<p>Pipeline Parallelism is designed for throughput (process many microbatches concurrently across stages), not for per-example gradient computation. It's orthogonal to DP-SGD's requirements.</p>
-<p><strong>Recommendation</strong>: Do not pursue PP for DP-SGD.</p>
-<hr />
-<h2 id="parallelism-taxonomy">Parallelism Taxonomy<a class="headerlink" href="#parallelism-taxonomy" title="Permanent link">&para;</a></h2>
-<h3 id="understanding-the-dimensions">Understanding the Dimensions<a class="headerlink" href="#understanding-the-dimensions" title="Permanent link">&para;</a></h3>
-<p><strong>Data Parallelism (DP)</strong>: Batch dimension
-- Splits batch across GPUs
-- Each GPU has full model copy
-- Used by: DDP</p>
-<p><strong>Model Parallelism</strong>: Parameter/structure dimension
-- Splits model across GPUs
-- Each GPU has part of model
-- Variants:
-  - <strong>Tensor Parallelism (TP)</strong>: Splits individual tensors (weights) within layers
-  - <strong>Pipeline Parallelism (PP)</strong>: Splits layers across GPUs
-  - <strong>FSDP</strong>: Splits parameters but reconstructs on-demand</p>
-<p><strong>Sequence Parallelism (SP)</strong>: Sequence dimension
-- Splits sequence length across GPUs
-- Often combined with TP
-- Used for very long contexts</p>
-<h3 id="combinations">Combinations<a class="headerlink" href="#combinations" title="Permanent link">&para;</a></h3>
+<h3 id="accounting-parameters">Accounting parameters<a class="headerlink" href="#accounting-parameters" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th>Combination</th>
-<th>Compatible?</th>
-<th>Use Case</th>
+<th>Parameter</th>
+<th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>DDP alone</td>
-<td>✅ Yes</td>
-<td>Small models (&lt;1B), multi-node</td>
+<td><code>noise_multiplier</code></td>
+<td>Raw noise σ</td>
 </tr>
 <tr>
-<td>FSDP alone</td>
-<td>✅ Yes</td>
-<td>8B-13B models</td>
+<td><code>sensitivity</code></td>
+<td>From <code>strategy.sensitivity</code> — L2 sensitivity of the BISR strategy</td>
 </tr>
 <tr>
-<td>TP + FSDP</td>
-<td>❌ Blocked</td>
-<td>Would enable 70B+ models</td>
-</tr>
-<tr>
-<td>PP + FSDP</td>
-<td>❌ Incompatible</td>
-<td>N/A for DP-SGD</td>
+<td><code>gram_matrix</code></td>
+<td>From <code>strategy.gram_matrix</code> — for BnB Monte Carlo accounting</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Best current option</strong>: FSDP alone (covers vast majority of use cases)</p>
-<hr />
-<h2 id="implementation-roadmap">Implementation Roadmap<a class="headerlink" href="#implementation-roadmap" title="Permanent link">&para;</a></h2>
-<h3 id="completed-week-1-2">✅ Completed (Week 1-2)<a class="headerlink" href="#completed-week-1-2" title="Permanent link">&para;</a></h3>
-<ol>
-<li>DDP primitives (<code>aggregate_gradients_across_ranks</code>)</li>
-<li>FSDP wrapper (<code>wrap_model_for_dp_fsdp</code>)</li>
-<li>FSDP unit tests (15 tests passing)</li>
-<li>Compatibility investigations (FSDP, TP, SP, PP)</li>
-</ol>
-<h3 id="recommended-next-steps">🎯 Recommended Next Steps<a class="headerlink" href="#recommended-next-steps" title="Permanent link">&para;</a></h3>
-<p><strong>Short-term (Week 3)</strong>:
-1. Memory profiling (FSDP vs DDP on 4 GPUs)
-2. Integration test with Llama-2-1B or GPT-2-Medium
-3. Documentation for distributed training</p>
-<p><strong>Medium-term (Week 4-8)</strong>:
-1. Hybrid FSDP strategies (inter-node + intra-node)
-2. Multi-node DDP validation</p>
-<p><strong>Long-term (Future)</strong>:
-1. Monitor PyTorch for DTensor + functorch fixes
-2. Re-evaluate Tensor Parallelism when upstream fixes land
-3. Explore alternative TP implementations (not DTensor-based)</p>
-<h3 id="dont-pursue-phase-1a">❌ Don't Pursue (Phase 1A)<a class="headerlink" href="#dont-pursue-phase-1a" title="Permanent link">&para;</a></h3>
-<ol>
-<li>Pipeline Parallelism (fundamentally incompatible with DP)</li>
-<li>Custom DTensor implementation (too complex, wait for upstream)</li>
-<li>Workarounds that break vmap semantics or DP guarantees</li>
-</ol>
-<hr />
-<h2 id="recommendations">Recommendations<a class="headerlink" href="#recommendations" title="Permanent link">&para;</a></h2>
-<h3 id="for-end-users">For End Users<a class="headerlink" href="#for-end-users" title="Permanent link">&para;</a></h3>
-<p><strong>Use FSDP for:</strong>
-- Models 8B-13B parameters on 4x L4 GPUs (23GB each)
-- LoRA fine-tuning (trainable params ~100M, base model 8B)
-- Default choice for distributed DP training</p>
-<p><strong>Use DDP for:</strong>
-- Small models (&lt;1B parameters)
-- Multi-node training with fast interconnect
-- When model fits in single GPU memory</p>
-<p><strong>Avoid:</strong>
-- Tensor Parallelism (currently broken with vmap)
-- Pipeline Parallelism (incompatible with per-example gradients)</p>
-<h3 id="for-opaque-library">For Opaque Library<a class="headerlink" href="#for-opaque-library" title="Permanent link">&para;</a></h3>
-<p><strong>Priority Order</strong>:
-1. ✅ <strong>FSDP</strong> - Implemented, covers 8B-13B models
-2. 📝 <strong>Documentation</strong> - User guide for distributed training
-3. 🧪 <strong>Integration tests</strong> - Real model validation
-4. 💾 <strong>Memory profiling</strong> - Optimize for L4 GPUs
-5. 🔮 <strong>Tensor Parallelism</strong> - Wait for PyTorch upstream fix</p>
-<p><strong>Success Criteria</strong>:
-- ✅ FSDP integration test with 8B model passes
-- ✅ Memory usage documented and optimized
-- ✅ User guide with distributed training examples
-- ✅ No silent correctness bugs in gradient computation</p>
-<hr />
-<h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
-<h3 id="investigation-scripts">Investigation Scripts<a class="headerlink" href="#investigation-scripts" title="Permanent link">&para;</a></h3>
+<h3 id="bisr-coefficients">BISR coefficients<a class="headerlink" href="#bisr-coefficients" title="Permanent link">&para;</a></h3>
+<p>The inverse coefficients c̃_k are computed from the inverse square root
+formula (Lemma 1 of the paper):</p>
 <ul>
-<li><code>examples/fsdp_vmap_compatibility.py</code> - FSDP investigation (✅ passes)</li>
-<li><code>examples/tp_vmap_compatibility.py</code> - TP investigation (❌ fails)</li>
-<li><code>examples/pipeline_parallel_vmap_compatibility.py</code> - PP investigation (❌ incompatible)</li>
+<li>Base sequence: r̃<em j-1="j-1">0 = 1, r̃_j = ((j - 3/2) / j) · r̃</em></li>
+<li>With momentum β: c̃<em j="0">k = Σ</em> r̃}^{k<em k-j="k-j">j · β^j · r̃</em></li>
 </ul>
-<h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
+<p>For β=0 (FTRL): c̃ = [1, -0.5, -0.125, -0.0625, ...]</p>
+<p>Momentum enters the coefficient computation, changing the strategy matrix C
+itself. The privacy analysis then uses raw C columns (momentum does not
+enter sensitivity or Gram matrix computation).</p>
+<h2 id="noise-generation">Noise generation<a class="headerlink" href="#noise-generation" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise.mf</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">bisr_strategy</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">bisr_strategy</span><span class="p">(</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">bandwidth</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="n">total_steps</span><span class="p">,</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">min_sep</span><span class="o">=</span><span class="n">steps_per_epoch</span><span class="p">,</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="n">max_participations</span><span class="o">=</span><span class="n">num_epochs</span><span class="p">,</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="n">momentum</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="p">)</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">state</span> <span class="o">=</span> <span class="n">mf_noise</span><span class="p">(</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    <span class="n">grad_template</span><span class="p">,</span> <span class="n">strategy</span><span class="p">,</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    <span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="n">seed</span><span class="p">),</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="p">)</span>
+</code></pre></div>
+<p>The noise function regenerates p-1 previous noise vectors via PRNG replay
+and computes the linear combination defined by the BISR coefficients.</p>
+<h2 id="assumptions-and-limitations">Assumptions and limitations<a class="headerlink" href="#assumptions-and-limitations" title="Permanent link">&para;</a></h2>
 <ul>
-<li><code>docs/development/fsdp_investigation.md</code> - Detailed FSDP findings</li>
-<li><code>docs/development/fsdp_integration_plan.md</code> - 5-day FSDP roadmap</li>
-<li><code>docs/development/STATUS.md</code> - Overall project status</li>
+<li><strong>BnB sampling</strong>: pair with a sampler and accounting consistent with Balls-in-Bins (fixed partition semantics where required).</li>
+<li><strong>Momentum</strong> enters the <strong>inverse</strong> coefficient construction (Lemma 1); sensitivity and Gram use the resulting strategy matrix.</li>
+<li><strong>No <code>lr_schedule</code></strong>: BISR coefficients are analytically determined from the prefix-sum workload; schedule-aware BISR would require a different construction (see arXiv:2511.17994). Use BandMF/BLT with <code>lr_schedule</code> for schedule-shaped workloads.</li>
+<li><strong>Not BSR</strong>: BISR bands the <strong>inverse</strong> square root construction (generalised λCGD). <a href="../bsr/">BSR</a> uses the <strong>forward</strong> square-root closed form for SGD+momentum+weight decay.</li>
+<li>For a high-level comparison of MF mechanisms, see <a href="../../user-guide/matrix-factorization/">Matrix factorization (MF)</a>.</li>
 </ul>
-<h3 id="pytorch-issues">PyTorch Issues<a class="headerlink" href="#pytorch-issues" title="Permanent link">&para;</a></h3>
-<ul>
-<li>DTensor + functorch compatibility: https://github.com/pytorch/pytorch/issues/search?q=dtensor+functorch</li>
-<li>FSDP documentation: https://pytorch.org/docs/stable/fsdp.html</li>
-<li>TP documentation: https://pytorch.org/docs/stable/distributed.tensor.parallel.html</li>
-</ul>
-<h3 id="key-insights">Key Insights<a class="headerlink" href="#key-insights" title="Permanent link">&para;</a></h3>
-<ol>
-<li><strong>FSDP works because</strong> <code>all_gather</code> hooks run outside vmap</li>
-<li><strong>TP fails because</strong> <code>DTensor.from_local()</code> is an autograd.Function without setup_context</li>
-<li><strong>PP incompatible</strong> because per-example gradients need full model, not pipeline stages</li>
-</ol>
-<hr />
-<h2 id="conclusion_1">Conclusion<a class="headerlink" href="#conclusion_1" title="Permanent link">&para;</a></h2>
-<p><strong>Current Best Practice</strong>: Use FSDP for 8B-13B models with DP-SGD.</p>
-<p>Opaque can successfully scale to production-relevant model sizes (8B+ parameters) using FSDP on 4x NVIDIA L4 GPUs. Tensor Parallelism would enable larger models (70B+) but is currently blocked by PyTorch limitations. Pipeline Parallelism is fundamentally incompatible with DP-SGD's per-example gradient requirements.</p>
-<p>The FSDP implementation provides a solid foundation for Phase 1A (LoRA validation at 8B scale) and covers the vast majority of practical use cases for differential privacy in LLM fine-tuning.</p>
+<h2 id="bandwidth-selection">Bandwidth selection<a class="headerlink" href="#bandwidth-selection" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Bandwidth</th>
+<th>Memory</th>
+<th>Runtime overhead</th>
+<th>Utility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>p=2</td>
+<td>Zero extra</td>
+<td>&lt;1%</td>
+<td>Good (= λCGD)</td>
+</tr>
+<tr>
+<td>p=4</td>
+<td>3 vectors</td>
+<td>~4%</td>
+<td>Better</td>
+</tr>
+<tr>
+<td>p=8</td>
+<td>7 vectors</td>
+<td>~8%</td>
+<td>Near-optimal</td>
+</tr>
+<tr>
+<td>p=16</td>
+<td>15 vectors</td>
+<td>~15%</td>
+<td>Optimal for most tasks</td>
+</tr>
+</tbody>
+</table>
+<p>The paper shows BISR matches BandMF at the same bandwidth while being
+simpler to implement and asymptotically optimal.</p>
 
 
 

@@ -12,13 +12,13 @@
         <meta name="author" content="Opaque Contributors">
       
       
-        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/mechanisms/dense-mf/">
+        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/mechanisms/lambda-cgd/">
       
       
         <link rel="prev" href="../blt/">
       
       
-        <link rel="next" href="../../tutorials/">
+        <link rel="next" href="../bisr/">
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
@@ -26,7 +26,7 @@
     
     
       
-        <title>Dense MF - Opaque</title>
+        <title>DP-λCGD - Opaque</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#dense-mf-mechanism" class="md-skip">
+        <a href="#dp-cgd" class="md-skip">
           Skip to content
         </a>
       
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Dense MF
+              DP-λCGD
             
           </span>
         </div>
@@ -694,6 +694,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../../user-guide/matrix-factorization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Matrix factorization (MF)
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../user-guide/accounting/" class="md-nav__link">
         
   
@@ -979,6 +1002,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../bsr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BSR
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../band-mf/" class="md-nav__link">
         
   
@@ -1039,7 +1085,7 @@
   
   
   <span class="md-ellipsis">
-    Dense MF
+    DP-λCGD
     
   </span>
   
@@ -1052,7 +1098,7 @@
   
   
   <span class="md-ellipsis">
-    Dense MF
+    DP-λCGD
     
   </span>
   
@@ -1075,34 +1121,57 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#idea" class="md-nav__link">
+  <a href="#accounting" class="md-nav__link">
     <span class="md-ellipsis">
-      Idea
+      Accounting
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Accounting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#strategy-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      Strategy parameters
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#accounting-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      Accounting parameters
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sensitivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      Sensitivity
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#assumptions-and-limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      Assumptions and limitations
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#mathematics" class="md-nav__link">
-    <span class="md-ellipsis">
-      Mathematics
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Mathematics">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#strategy-matrix" class="md-nav__link">
-    <span class="md-ellipsis">
-      Strategy matrix
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#noise-generation" class="md-nav__link">
     <span class="md-ellipsis">
       Noise generation
@@ -1110,103 +1179,11 @@
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#sensitivity-under-fixed-epoch-participation" class="md-nav__link">
-    <span class="md-ellipsis">
-      Sensitivity under fixed-epoch participation
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#privacy-analysis" class="md-nav__link">
-    <span class="md-ellipsis">
-      Privacy analysis
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
       
         <li class="md-nav__item">
-  <a href="#supported-amplifications" class="md-nav__link">
+  <a href="#relationship-to-bisr" class="md-nav__link">
     <span class="md-ellipsis">
-      Supported amplifications
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#code-examples" class="md-nav__link">
-    <span class="md-ellipsis">
-      Code examples
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Code examples">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#noise-injection" class="md-nav__link">
-    <span class="md-ellipsis">
-      Noise injection
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#privacy-accounting" class="md-nav__link">
-    <span class="md-ellipsis">
-      Privacy accounting
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#calibration" class="md-nav__link">
-    <span class="md-ellipsis">
-      Calibration
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#comparing-strategies" class="md-nav__link">
-    <span class="md-ellipsis">
-      Comparing strategies
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#parameter-guide" class="md-nav__link">
-    <span class="md-ellipsis">
-      Parameter guide
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#references" class="md-nav__link">
-    <span class="md-ellipsis">
-      References
+      Relationship to BISR
     </span>
   </a>
   
@@ -1216,6 +1193,29 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bisr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BISR
+    
+  </span>
+  
+
+      </a>
     </li>
   
 
@@ -1819,34 +1819,57 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#idea" class="md-nav__link">
+  <a href="#accounting" class="md-nav__link">
     <span class="md-ellipsis">
-      Idea
+      Accounting
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Accounting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#strategy-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      Strategy parameters
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#accounting-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      Accounting parameters
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sensitivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      Sensitivity
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#assumptions-and-limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      Assumptions and limitations
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#mathematics" class="md-nav__link">
-    <span class="md-ellipsis">
-      Mathematics
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Mathematics">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#strategy-matrix" class="md-nav__link">
-    <span class="md-ellipsis">
-      Strategy matrix
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#noise-generation" class="md-nav__link">
     <span class="md-ellipsis">
       Noise generation
@@ -1854,103 +1877,11 @@
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#sensitivity-under-fixed-epoch-participation" class="md-nav__link">
-    <span class="md-ellipsis">
-      Sensitivity under fixed-epoch participation
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#privacy-analysis" class="md-nav__link">
-    <span class="md-ellipsis">
-      Privacy analysis
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
       
         <li class="md-nav__item">
-  <a href="#supported-amplifications" class="md-nav__link">
+  <a href="#relationship-to-bisr" class="md-nav__link">
     <span class="md-ellipsis">
-      Supported amplifications
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#code-examples" class="md-nav__link">
-    <span class="md-ellipsis">
-      Code examples
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Code examples">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#noise-injection" class="md-nav__link">
-    <span class="md-ellipsis">
-      Noise injection
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#privacy-accounting" class="md-nav__link">
-    <span class="md-ellipsis">
-      Privacy accounting
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#calibration" class="md-nav__link">
-    <span class="md-ellipsis">
-      Calibration
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#comparing-strategies" class="md-nav__link">
-    <span class="md-ellipsis">
-      Comparing strategies
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#parameter-guide" class="md-nav__link">
-    <span class="md-ellipsis">
-      Parameter guide
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#references" class="md-nav__link">
-    <span class="md-ellipsis">
-      References
+      Relationship to BISR
     </span>
   </a>
   
@@ -1975,208 +1906,138 @@
   
 
 
-<h1 id="dense-mf-mechanism">Dense MF Mechanism<a class="headerlink" href="#dense-mf-mechanism" title="Permanent link">&para;</a></h1>
-<p>Dense MF computes the <strong>optimal</strong> strategy matrix for correlated noise by
-materializing the full <span class="arithmatex">\(n \times n\)</span> lower-triangular matrix. This gives
-the best possible noise reduction but at <span class="arithmatex">\(O(n^2)\)</span> memory and compute cost,
-making it practical only for short training runs (<span class="arithmatex">\(n &lt; 100\)</span>).</p>
-<h2 id="idea">Idea<a class="headerlink" href="#idea" title="Permanent link">&para;</a></h2>
-<p><a href="../band-mf/">BandMF</a> restricts the strategy to a banded Toeplitz structure
-for efficiency. <a href="../blt/">BLT</a> uses a parametric sum of exponentials. Dense
-MF removes all structural constraints: it optimizes over <strong>all</strong>
-lower-triangular matrices to find the one that minimizes the workload error
-(MSE on prefix sums) subject to a sensitivity bound.</p>
-<p>The result is provably optimal — no other matrix factorization can achieve
-lower error for the same privacy budget. The trade-off is that the full
-<span class="arithmatex">\(n \times n\)</span> matrix must be stored and inverted, so memory grows
-quadratically with the number of steps.</p>
-<p>Dense MF natively supports <strong>fixed-epoch</strong> participation patterns, where
-each user's data appears at regular epoch boundaries.</p>
-<p><strong>When to use</strong>: Short training runs (<span class="arithmatex">\(n &lt; 100\)</span>) where you want the absolute
-best privacy-utility trade-off and are willing to pay the <span class="arithmatex">\(O(n^2)\)</span> cost.
-For longer runs, use <a href="../band-mf/">BandMF</a> or <a href="../blt/">BLT</a>.</p>
-<h2 id="mathematics">Mathematics<a class="headerlink" href="#mathematics" title="Permanent link">&para;</a></h2>
-<h3 id="strategy-matrix">Strategy matrix<a class="headerlink" href="#strategy-matrix" title="Permanent link">&para;</a></h3>
-<p>The strategy matrix <span class="arithmatex">\(C\)</span> is an <span class="arithmatex">\(n \times n\)</span> lower-triangular matrix
-optimized to minimize:</p>
-<div class="arithmatex">\[\text{error}(C) = \|A C^{-1}\|_F^2\]</div>
-<p>where <span class="arithmatex">\(A\)</span> is the workload matrix (prefix sums: <span class="arithmatex">\(A_{t,s} = 1\)</span> if <span class="arithmatex">\(s \leq t\)</span>,
-else 0), subject to a sensitivity constraint.</p>
-<p>The optimization finds <span class="arithmatex">\(C\)</span> using convex optimization over the cone of
-lower-triangular matrices with bounded column norms.</p>
-<h3 id="noise-generation">Noise generation<a class="headerlink" href="#noise-generation" title="Permanent link">&para;</a></h3>
-<p>At each step <span class="arithmatex">\(t\)</span>, the mechanism:</p>
-<ol>
-<li>Draws fresh noise <span class="arithmatex">\(z_t \sim \mathcal{N}(0, \sigma^2 I)\)</span></li>
-<li>Computes <span class="arithmatex">\(n_t = \sum_{s \leq t} C^{-1}_{t,s} \cdot z_s\)</span></li>
-<li>Adds <span class="arithmatex">\(n_t\)</span> to the clipped gradient sum</li>
-</ol>
-<p>Since <span class="arithmatex">\(C^{-1}\)</span> is dense, this requires storing all previous noise vectors —
-<span class="arithmatex">\(O(n \cdot d)\)</span> total memory where <span class="arithmatex">\(d\)</span> is the parameter dimension.</p>
-<h3 id="sensitivity-under-fixed-epoch-participation">Sensitivity under fixed-epoch participation<a class="headerlink" href="#sensitivity-under-fixed-epoch-participation" title="Permanent link">&para;</a></h3>
-<p>For fixed-epoch participation with <span class="arithmatex">\(e\)</span> epochs and <span class="arithmatex">\(n\)</span> steps (where <span class="arithmatex">\(e\)</span>
-divides <span class="arithmatex">\(n\)</span>), each user contributes at steps <span class="arithmatex">\(\{t, t + n/e, t + 2n/e, \ldots\}\)</span>.</p>
-<p>The sensitivity is computed via the Gram matrix <span class="arithmatex">\(X = C^\top C\)</span>:</p>
-<div class="arithmatex">\[S = \max_u \sqrt{u^\top X u}\]</div>
-<p>where the maximization is over valid participation vectors <span class="arithmatex">\(u \in \{0, 1\}^n\)</span>
-with the fixed-epoch structure. This is computed by grouping indices by epoch
-and summing the absolute values of epoch-aligned submatrices.</p>
-<h3 id="privacy-analysis">Privacy analysis<a class="headerlink" href="#privacy-analysis" title="Permanent link">&para;</a></h3>
-<p>As with all MF mechanisms, the training run reduces to a single Gaussian
-with effective noise multiplier:</p>
-<div class="arithmatex">\[\sigma_{\text{eff}} = \frac{\sigma}{S}\]</div>
-<h2 id="supported-amplifications">Supported amplifications<a class="headerlink" href="#supported-amplifications" title="Permanent link">&para;</a></h2>
-<p>Dense MF handles multi-epoch participation <strong>internally</strong> through the
-fixed-epoch sensitivity computation. No external amplification is needed.</p>
-<table>
-<thead>
-<tr>
-<th>Amplification</th>
-<th style="text-align: center;">Supported</th>
-<th>Notes</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>poisson()</code></td>
-<td style="text-align: center;">No</td>
-<td>Not applicable</td>
-</tr>
-<tr>
-<td><code>truncated_poisson()</code></td>
-<td style="text-align: center;">No</td>
-<td>Not applicable</td>
-</tr>
-<tr>
-<td><code>cyclic_poisson()</code></td>
-<td style="text-align: center;">No</td>
-<td>For BandMF only</td>
-</tr>
-</tbody>
-</table>
-<div class="admonition note">
-<p class="admonition-title">No subsampling amplification</p>
-<p>Dense MF does not support external subsampling wrappers. The privacy
-analysis accounts for the full participation pattern through the
-sensitivity computation. If you need subsampling amplification, use
-<a href="../band-mf/">BandMF</a> with <code>cyclic_poisson()</code>.</p>
-</div>
-<h2 id="code-examples">Code examples<a class="headerlink" href="#code-examples" title="Permanent link">&para;</a></h2>
-<h3 id="noise-injection">Noise injection<a class="headerlink" href="#noise-injection" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque</span><span class="w"> </span><span class="kn">import</span> <span class="n">dense_mf_noise</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
+<h1 id="dp-cgd">DP-λCGD<a class="headerlink" href="#dp-cgd" title="Permanent link">&para;</a></h1>
+<p><strong>DP-λCGD</strong> (Kalinin et al., 2026) is a correlated noise mechanism that uses a
+single parameter λ ∈ [0, 1) to control noise correlation across training steps.
+Its key advantage is <strong>zero extra memory</strong> — noise correlation is achieved via
+PRNG seed replay instead of storing previous noise vectors.</p>
+<ul>
+<li><strong>Paper</strong>: <a href="https://arxiv.org/abs/2601.22334">DP-λCGD: Leveraging Correlated Gradients for Improved DP-SGD</a></li>
+<li><strong>Strategy matrix</strong>: Lower-triangular Toeplitz with entries C[i,j] = λ^{i-j}</li>
+<li><strong>Inverse</strong>: Bidiagonal — 1 on diagonal, -λ on subdiagonal (bandwidth 2)</li>
+<li><strong>Memory</strong>: Zero extra (PRNG replay regenerates previous noise from its seed)</li>
+<li><strong>Amplification</strong>: Balls-in-Bins (BnB) with MC dominating pair accounting</li>
+</ul>
+<h2 id="accounting">Accounting<a class="headerlink" href="#accounting" title="Permanent link">&para;</a></h2>
+<p>The noise <strong>strategy</strong> and the privacy <strong>accounting</strong> are connected through two
+values that the strategy computes: <code>sensitivity</code> and <code>gram_matrix</code>. The strategy
+knows the full structure of the mechanism (λ, participation pattern, number of
+steps) and derives these quantities from the strategy matrix C. The accounting
+constructor then takes only these pre-computed values — it does not need to know
+how they were obtained.</p>
+<p>This separation keeps accounting constructors simple and avoids duplicating
+mechanism parameters in two places.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise.mf</span><span class="w"> </span><span class="kn">import</span> <span class="n">lambda_cgd_strategy</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque_accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">dense_mf_noise</span><span class="p">(</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">grad_template</span><span class="o">=</span><span class="n">params</span><span class="p">,</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">epochs</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># 1. Create strategy — computes sensitivity and Gram matrix internally</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">lambda_cgd_strategy</span><span class="p">(</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">lambda_</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="n">total_steps</span><span class="p">,</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">min_sep</span><span class="o">=</span><span class="n">steps_per_epoch</span><span class="p">,</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">max_participations</span><span class="o">=</span><span class="n">num_epochs</span><span class="p">,</span>
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="p">)</span>
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">50</span><span class="p">):</span>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">params</span> <span class="o">-</span> <span class="n">lr</span> <span class="o">*</span> <span class="n">noisy_grads</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="c1"># 2. Build accounting mechanism from strategy-derived quantities</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="n">training</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">balls_in_bins</span><span class="p">(</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">lambda_cgd</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">,</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>                   <span class="n">sensitivity</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>                   <span class="n">gram_matrix</span><span class="o">=</span><span class="n">strategy</span><span class="o">.</span><span class="n">gram_matrix</span><span class="p">),</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    <span class="n">num_bins</span><span class="o">=</span><span class="n">steps_per_epoch</span><span class="p">,</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    <span class="n">num_epochs</span><span class="o">=</span><span class="n">num_epochs</span><span class="p">,</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="p">)</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
-<h3 id="privacy-accounting">Privacy accounting<a class="headerlink" href="#privacy-accounting" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="c1"># Single epoch</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">dense_mf</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">50</span><span class="p">)</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="c1"># Two epochs (each user participates twice)</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="n">proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">dense_mf</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">epochs</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="n">eps</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
-</code></pre></div>
-<h3 id="calibration">Calibration<a class="headerlink" href="#calibration" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">dense_mf</span><span class="p">(</span><span class="n">nm</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">epochs</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">param_min</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">param_max</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="p">)</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="n">noise_multiplier</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">param</span>
-</code></pre></div>
-<h3 id="comparing-strategies">Comparing strategies<a class="headerlink" href="#comparing-strategies" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">n</span> <span class="o">=</span> <span class="mi">50</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">nm</span> <span class="o">=</span> <span class="mf">1.0</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="c1"># Dense (optimal) vs BandMF vs independent</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="n">dense</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">dense_mf</span><span class="p">(</span><span class="n">nm</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="n">n</span><span class="p">,</span> <span class="n">epochs</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="n">band</span>  <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">band_mf</span><span class="p">(</span><span class="n">nm</span><span class="p">,</span> <span class="n">n_steps</span><span class="o">=</span><span class="n">n</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="n">gauss</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">)</span> <span class="o">*</span> <span class="n">n</span>  <span class="c1"># independent noise, n compositions</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">proc</span> <span class="ow">in</span> <span class="p">[(</span><span class="s2">&quot;Dense MF&quot;</span><span class="p">,</span> <span class="n">dense</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;BandMF&quot;</span><span class="p">,</span> <span class="n">band</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;Gaussian×n&quot;</span><span class="p">,</span> <span class="n">gauss</span><span class="p">)]:</span>
-<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">12s</span><span class="si">}</span><span class="s2">  ε = </span><span class="si">{</span><span class="n">proc</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-</code></pre></div>
-<h2 id="parameter-guide">Parameter guide<a class="headerlink" href="#parameter-guide" title="Permanent link">&para;</a></h2>
+<h3 id="strategy-parameters">Strategy parameters<a class="headerlink" href="#strategy-parameters" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
 <th>Parameter</th>
-<th>Range</th>
-<th>Effect</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lambda_</code></td>
+<td>Correlation coefficient in [0, 1). λ=0 is DP-SGD.</td>
+</tr>
+<tr>
+<td><code>n_steps</code></td>
+<td>Total training steps</td>
+</tr>
+<tr>
+<td><code>min_sep</code></td>
+<td>Steps per epoch (= bins per epoch)</td>
+</tr>
+<tr>
+<td><code>max_participations</code></td>
+<td>Number of epochs</td>
+</tr>
+<tr>
+<td><code>normalized</code></td>
+<td>Column-normalize C (default True, gives sensitivity=1 for k=1)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="accounting-parameters">Accounting parameters<a class="headerlink" href="#accounting-parameters" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>noise_multiplier</code></td>
-<td>0.1 – 10.0 (calibrate)</td>
-<td>Higher = more private. Use <code>acc.calibrate()</code>.</td>
+<td>Raw noise σ (calibrated or fixed)</td>
 </tr>
 <tr>
-<td><code>n_steps</code></td>
-<td>1 – ~100 (practical limit)</td>
-<td>Total training iterations. Memory is <span class="arithmatex">\(O(n^2)\)</span>.</td>
+<td><code>sensitivity</code></td>
+<td>From <code>strategy.sensitivity</code> — L2 sensitivity of C</td>
 </tr>
 <tr>
-<td><code>epochs</code></td>
-<td>1 – <code>n_steps</code></td>
-<td>Number of epochs. Must divide <code>n_steps</code>.</td>
-</tr>
-<tr>
-<td><code>bands</code></td>
-<td><code>None</code> or 1 – <code>n_steps</code></td>
-<td>Optional banding constraint on the strategy.</td>
-</tr>
-<tr>
-<td><code>equal_norm</code></td>
-<td><code>False</code> / <code>True</code></td>
-<td>Optimize with equal column norm constraint.</td>
+<td><code>gram_matrix</code></td>
+<td>From <code>strategy.gram_matrix</code> — for BnB Monte Carlo accounting</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Tips</strong>:</p>
+<h3 id="sensitivity">Sensitivity<a class="headerlink" href="#sensitivity" title="Permanent link">&para;</a></h3>
+<p>The sensitivity depends only on the strategy matrix C, not on the optimizer
+workload (momentum, LR schedule). This is a fundamental property of the MF
+privacy framework. The sensitivity formula (Theorem 1, eq 15 of the paper)
+has a closed-form expression in terms of λ, min_sep, and max_participations.</p>
+<h2 id="assumptions-and-limitations">Assumptions and limitations<a class="headerlink" href="#assumptions-and-limitations" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong><span class="arithmatex">\(n \leq 100\)</span></strong> is the practical limit. At <span class="arithmatex">\(n = 100\)</span>, the strategy
-  matrix has 10,000 entries — still manageable. At <span class="arithmatex">\(n = 1000\)</span>, it has
-  1,000,000 entries and optimization becomes slow.</li>
-<li><strong><code>epochs</code> must divide <code>n_steps</code></strong>. For 2 epochs over 50 steps, each
-  epoch has 25 steps.</li>
-<li><strong><code>equal_norm = True</code></strong> adds an extra constraint that all columns of <span class="arithmatex">\(C\)</span>
-  have equal norm. This can improve robustness but slightly increases error.</li>
-<li><strong><code>bands</code></strong> optionally restricts the dense matrix to a banded structure.
-  This combines the optimality of dense optimization with the memory
-  efficiency of banding — useful when <span class="arithmatex">\(n\)</span> is moderate (50–200) and you
-  want better-than-BandMF but less-than-full-dense.</li>
-<li>For <span class="arithmatex">\(n &gt; 100\)</span>, prefer <a href="../band-mf/">BandMF</a> or <a href="../blt/">BLT</a>.</li>
-<li>The dense strategy is the <strong>gold standard</strong> for benchmarking: if BandMF
-  or BLT approach the dense <span class="arithmatex">\(\varepsilon\)</span> on a short run, they are
-  near-optimal.</li>
+<li>Bandwidth is <strong>fixed</strong> (bidiagonal inverse); correlation is controlled by a single <span class="arithmatex">\(\lambda\)</span>. Does <strong>not</strong> accept <code>momentum</code> (use <code>bisr_strategy</code> with bandwidth &gt; 2 for momentum-aware coefficients).</li>
+<li>Uses <strong>Balls-in-Bins</strong> amplification like other epoch-structured MF mechanisms; sampler semantics must match accounting.</li>
+<li><strong>JME (DP-Adam)</strong>: auto-deriving the second-moment strategy is <strong>not supported</strong> for λCGD. If using JME, pass <code>second_moment_strategy</code> explicitly.</li>
+<li>Broader MF context: <a href="../../user-guide/matrix-factorization/">Matrix factorization (MF)</a>.</li>
 </ul>
-<h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
-<ul>
-<li><strong>Denisov et al. (2022)</strong> — <a href="https://arxiv.org/abs/2202.08312">Improved Differential Privacy for SGD via Optimal Private Linear Operators</a>.
-  Dense matrix factorization mechanism and optimality theory.</li>
-<li><strong>Choquette-Choo et al. (2022)</strong> — <a href="https://arxiv.org/abs/2211.06530">Privacy Amplification for Matrix Mechanisms</a>.
-  Fixed-epoch sensitivity analysis for dense strategies.</li>
-<li><strong>Kairouz et al. (2021)</strong> — <a href="https://arxiv.org/abs/2103.00039">Practical and Private (Deep) Learning without Sampling or Shuffling</a>.
-  DP-FTRL framework that Dense MF implements optimally.</li>
-</ul>
+<h2 id="noise-generation">Noise generation<a class="headerlink" href="#noise-generation" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise.mf</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">lambda_cgd_strategy</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">lambda_cgd_strategy</span><span class="p">(</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">lambda_</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="n">total_steps</span><span class="p">,</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">min_sep</span><span class="o">=</span><span class="n">steps_per_epoch</span><span class="p">,</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="n">max_participations</span><span class="o">=</span><span class="n">num_epochs</span><span class="p">,</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="p">)</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">state</span> <span class="o">=</span> <span class="n">mf_noise</span><span class="p">(</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    <span class="n">grad_template</span><span class="p">,</span> <span class="n">strategy</span><span class="p">,</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    <span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="n">seed</span><span class="p">),</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="p">)</span>
+</code></pre></div>
+<p>At each step t, the noise function:
+1. Generates z_t from step t's PRNG seed
+2. Regenerates z_{t-1} from step t-1's PRNG seed (PRNG replay)
+3. Computes correlated noise: n_t = z_t - λ · z_{t-1}
+4. Optionally applies column-norm scaling: n_t *= d_t</p>
+<h2 id="relationship-to-bisr">Relationship to BISR<a class="headerlink" href="#relationship-to-bisr" title="Permanent link">&para;</a></h2>
+<p>DP-λCGD is the bandwidth-2 special case of <a href="../bisr/">BISR</a>. For bandwidth &gt; 2,
+use <code>acc.bisr()</code> which generalises the correlation structure.</p>
 
 
 

@@ -694,6 +694,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../user-guide/matrix-factorization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Matrix factorization (MF)
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../user-guide/accounting/" class="md-nav__link">
         
   
@@ -974,6 +997,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../mechanisms/bsr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BSR
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../mechanisms/band-mf/" class="md-nav__link">
         
   
@@ -1020,12 +1066,35 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/dense-mf/" class="md-nav__link">
+      <a href="../mechanisms/lambda-cgd/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    Dense MF
+    DP-λCGD
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mechanisms/bisr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BISR
     
   </span>
   
@@ -2112,15 +2181,15 @@ classes.</p>
 </li>
 <li><code>gaussian_noise()</code> - Standard Gaussian noise</li>
 <li><code>truncated_gaussian_noise()</code> - Bounded Gaussian noise</li>
-<li><code>band_mf_noise()</code>, <code>blt_mf_noise()</code>, <code>dense_mf_noise()</code> - Correlated noise (DP-FTRL)</li>
+<li><code>mf_noise()</code> - Correlated noise dispatcher (DP-FTRL)</li>
 <li>
-<p><code>identity_mf_noise()</code>, <code>custom_mf_noise()</code> - MF API utilities</p>
+<p>Strategy factories: <code>band_mf_strategy()</code>, <code>blt_strategy()</code>, <code>lambda_cgd_strategy()</code>, <code>bisr_strategy()</code>, <code>identity_strategy()</code></p>
 </li>
 <li>
 <p><strong><a href="accounting/">Accounting</a></strong>: Privacy budget tracking</p>
 </li>
 <li><code>gaussian()</code>, <code>poisson()</code>, <code>truncated_poisson()</code>, <code>parallel_poisson()</code> - Standard mechanisms</li>
-<li><code>band_mf()</code>, <code>blt_mf()</code>, <code>dense_mf()</code>, <code>cyclic_poisson()</code> - Matrix factorization mechanisms</li>
+<li><code>band_mf()</code>, <code>blt()</code>, <code>lambda_cgd()</code>, <code>bisr()</code>, <code>cyclic_poisson()</code>, <code>balls_in_bins()</code> - MF mechanisms</li>
 <li><code>DpProcess</code> operators: <code>*</code> (repeat), <code>|</code> (compose)</li>
 <li><code>.epsilon_at()</code>, <code>.delta_at()</code>, <code>.advantage()</code>, <code>.beta_at()</code>, <code>.risk_at()</code> - Privacy metrics</li>
 <li>
@@ -2132,6 +2201,8 @@ classes.</p>
 <li><code>PoissonSampler</code> - Standard Poisson sampling</li>
 <li><code>TruncatedPoissonSampler</code> - Bounded Poisson sampling</li>
 <li><code>CyclicPoissonSampler</code> - Cyclic Poisson sampling (BandMF)</li>
+<li><code>BallsInBinsSampler</code> - Random-partition sampling (λCGD, BISR, BLT)</li>
+<li><code>SequentialBatchSampler</code> - Deterministic sequential batching (BLT)</li>
 </ul>
 <h3 id="validation-debugging">Validation &amp; Debugging<a class="headerlink" href="#validation-debugging" title="Permanent link">&para;</a></h3>
 <ul>
@@ -2228,29 +2299,34 @@ classes.</p>
 <td><a href="../user-guide/noise/#bounded-gaussian-noise">Guide</a></td>
 </tr>
 <tr>
-<td><code>band_mf_noise()</code></td>
-<td>BandMF correlated noise (DP-FTRL)</td>
-<td><a href="../user-guide/noise/">Guide</a></td>
+<td><code>mf_noise()</code></td>
+<td>Correlated noise dispatcher (DP-FTRL)</td>
+<td><a href="../user-guide/noise/#matrix-factorization-noise-dp-ftrl">Guide</a></td>
 </tr>
 <tr>
-<td><code>blt_mf_noise()</code></td>
-<td>BLT correlated noise (DP-FTRL)</td>
-<td><a href="../user-guide/noise/">Guide</a></td>
+<td><code>band_mf_strategy()</code></td>
+<td>BandMF banded Toeplitz strategy</td>
+<td><a href="../user-guide/noise/#band_mf_strategy">Guide</a></td>
 </tr>
 <tr>
-<td><code>dense_mf_noise()</code></td>
-<td>Dense optimal correlated noise</td>
-<td><a href="../user-guide/noise/">Guide</a></td>
+<td><code>blt_strategy()</code></td>
+<td>BLT buffered Toeplitz strategy</td>
+<td><a href="../user-guide/noise/#blt_strategy">Guide</a></td>
 </tr>
 <tr>
-<td><code>identity_mf_noise()</code></td>
-<td>Identity noise via MF API</td>
-<td><a href="../user-guide/noise/">Guide</a></td>
+<td><code>lambda_cgd_strategy()</code></td>
+<td>DP-λCGD PRNG-replay strategy</td>
+<td><a href="../user-guide/noise/#lambda_cgd_strategy">Guide</a></td>
 </tr>
 <tr>
-<td><code>custom_mf_noise()</code></td>
-<td>Bring-your-own noising matrix</td>
-<td><a href="../user-guide/noise/">Guide</a></td>
+<td><code>bisr_strategy()</code></td>
+<td>BISR banded inverse sqrt strategy</td>
+<td><a href="../user-guide/noise/#bisr_strategy">Guide</a></td>
+</tr>
+<tr>
+<td><code>identity_strategy()</code></td>
+<td>Identity (DP-SGD via MF API)</td>
+<td><a href="../user-guide/noise/#identity_strategy">Guide</a></td>
 </tr>
 </tbody>
 </table>
@@ -2317,13 +2393,23 @@ classes.</p>
 <td><a href="../user-guide/accounting/#matrix-factorization-mechanisms">Guide</a></td>
 </tr>
 <tr>
-<td><code>blt_mf()</code></td>
-<td>BLT mechanism (multi-epoch)</td>
+<td><code>blt()</code></td>
+<td>BLT mechanism</td>
 <td><a href="../user-guide/accounting/#matrix-factorization-mechanisms">Guide</a></td>
 </tr>
 <tr>
-<td><code>dense_mf()</code></td>
-<td>Dense optimal MF mechanism</td>
+<td><code>lambda_cgd()</code></td>
+<td>DP-λCGD mechanism</td>
+<td><a href="../user-guide/accounting/#matrix-factorization-mechanisms">Guide</a></td>
+</tr>
+<tr>
+<td><code>bisr()</code></td>
+<td>BISR mechanism</td>
+<td><a href="../user-guide/accounting/#matrix-factorization-mechanisms">Guide</a></td>
+</tr>
+<tr>
+<td><code>balls_in_bins()</code></td>
+<td>Balls-in-Bins amplification</td>
 <td><a href="../user-guide/accounting/#matrix-factorization-mechanisms">Guide</a></td>
 </tr>
 <tr>
@@ -2446,6 +2532,16 @@ classes.</p>
 <td><code>CyclicPoissonSampler</code></td>
 <td>Cyclic Poisson sampling (BandMF)</td>
 <td><a href="../user-guide/sampling/#poisson-sampling">Guide</a></td>
+</tr>
+<tr>
+<td><code>BallsInBinsSampler</code></td>
+<td>Random-partition sampling</td>
+<td><a href="../user-guide/sampling/#balls-in-bins-sampling">Guide</a></td>
+</tr>
+<tr>
+<td><code>SequentialBatchSampler</code></td>
+<td>Deterministic sequential batching (BLT)</td>
+<td><a href="../user-guide/sampling/#sequential-batch-sampling">Guide</a></td>
 </tr>
 </tbody>
 </table>

@@ -699,6 +699,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../user-guide/matrix-factorization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Matrix factorization (MF)
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../user-guide/accounting/" class="md-nav__link">
         
   
@@ -910,6 +933,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#matrix-factorization-mf-workloads" class="md-nav__link">
+    <span class="md-ellipsis">
+      Matrix factorization (MF) workloads
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#gradient-checkpointing" class="md-nav__link">
     <span class="md-ellipsis">
       Gradient checkpointing
@@ -1075,6 +1107,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../mechanisms/bsr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BSR
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../mechanisms/band-mf/" class="md-nav__link">
         
   
@@ -1121,12 +1176,35 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/dense-mf/" class="md-nav__link">
+      <a href="../mechanisms/lambda-cgd/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    Dense MF
+    DP-λCGD
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mechanisms/bisr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BISR
     
   </span>
   
@@ -1735,6 +1813,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#matrix-factorization-mf-workloads" class="md-nav__link">
+    <span class="md-ellipsis">
+      Matrix factorization (MF) workloads
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#gradient-checkpointing" class="md-nav__link">
     <span class="md-ellipsis">
       Gradient checkpointing
@@ -1808,6 +1895,14 @@
 
 
 <h1 id="known-limitations">Known Limitations<a class="headerlink" href="#known-limitations" title="Permanent link">&para;</a></h1>
+<h2 id="matrix-factorization-mf-workloads">Matrix factorization (MF) workloads<a class="headerlink" href="#matrix-factorization-mf-workloads" title="Permanent link">&para;</a></h2>
+<p>Correlated-noise mechanisms are analyzed for a <strong>specific linear map</strong> (the strategy
+matrix) and optional subsampling model. <strong>DP correctness</strong> requires that accounting,
+noise, and sampling match that map. <strong>Utility</strong> can depend on how closely the
+encoded workload matches your optimizer (for example, BandMF/BLT <code>lr_schedule</code> as a
+Toeplitz surrogate when <span class="arithmatex">\(\eta_t\)</span> varies). JME adds a second MF stream; new strategy
+types must extend <code>_derive_second_strategy</code> explicitly.</p>
+<p>See <a href="../user-guide/matrix-factorization/">Matrix factorization (MF)</a>.</p>
 <h2 id="gradient-checkpointing">Gradient checkpointing<a class="headerlink" href="#gradient-checkpointing" title="Permanent link">&para;</a></h2>
 <p>Supported under <code>vmap(grad(...))</code> via automatic patches. See
 <a href="../user-guide/memory-optimizations/#gradient-checkpointing">Memory Optimizations</a>

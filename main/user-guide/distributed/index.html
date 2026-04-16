@@ -699,6 +699,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../matrix-factorization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Matrix factorization (MF)
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../accounting/" class="md-nav__link">
         
   
@@ -1135,6 +1158,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../../mechanisms/bsr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BSR
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../mechanisms/band-mf/" class="md-nav__link">
         
   
@@ -1181,12 +1227,35 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/dense-mf/" class="md-nav__link">
+      <a href="../../mechanisms/lambda-cgd/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    Dense MF
+    DP-λCGD
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/bisr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BISR
     
   </span>
   
@@ -2121,7 +2190,7 @@ sample rate is the global sample rate across all devices:</p>
 <a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="n">epsilon</span> <span class="o">=</span> <span class="n">training</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="optimizer-state-synchronization">Optimizer state synchronization<a class="headerlink" href="#optimizer-state-synchronization" title="Permanent link">&para;</a></h2>
-<p>For correlated noise mechanisms (<code>band_mf_noise</code>, <code>blt_mf_noise</code>), each
+<p>For correlated noise mechanisms (<code>mf_noise</code> with any MF strategy), each
 device must generate the same correlated noise stream. Pass the same
 <code>key=key(seed)</code> on every rank.</p>
 <p>Functional optimizers (TorchOpt) stay synchronized automatically because:</p>

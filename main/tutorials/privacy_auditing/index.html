@@ -694,6 +694,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../../user-guide/matrix-factorization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Matrix factorization (MF)
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../user-guide/accounting/" class="md-nav__link">
         
   
@@ -974,6 +997,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../../mechanisms/bsr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BSR
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../mechanisms/band-mf/" class="md-nav__link">
         
   
@@ -1020,12 +1066,35 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/dense-mf/" class="md-nav__link">
+      <a href="../../mechanisms/lambda-cgd/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    Dense MF
+    DP-λCGD
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/bisr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BISR
     
   </span>
   
@@ -2475,7 +2544,9 @@ Non-canary examples are always included.</p>
 <span class="n">train_data</span> <span class="o">=</span> <span class="n">cf</span><span class="o">.</span><span class="n">train_subset</span><span class="p">(</span><span class="n">dataset</span><span class="p">)</span>
 
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Dataset:      </span><span class="si">{</span><span class="n">n_samples</span><span class="si">}</span><span class="s2"> examples"</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Canaries:     </span><span class="si">{</span><span class="n">num_canaries</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">cf</span><span class="o">.</span><span class="n">in_indices</span><span class="p">)</span><span class="si">}</span><span class="s2"> in, </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">cf</span><span class="o">.</span><span class="n">out_indices</span><span class="p">)</span><span class="si">}</span><span class="s2"> out)"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span>
+    <span class="sa">f</span><span class="s2">"Canaries:     </span><span class="si">{</span><span class="n">num_canaries</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">cf</span><span class="o">.</span><span class="n">in_indices</span><span class="p">)</span><span class="si">}</span><span class="s2"> in, </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">cf</span><span class="o">.</span><span class="n">out_indices</span><span class="p">)</span><span class="si">}</span><span class="s2"> out)"</span>
+<span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Training set: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">train_data</span><span class="p">)</span><span class="si">}</span><span class="s2"> examples"</span><span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-3">num_canaries = n_samples  # audit every example
@@ -2483,7 +2554,9 @@ cf = auditing.coin_flip(dataset, num_canaries=num_canaries, key=key(42))
 train_data = cf.train_subset(dataset)
 
 print(f"Dataset:      {n_samples} examples")
-print(f"Canaries:     {num_canaries} ({len(cf.in_indices)} in, {len(cf.out_indices)} out)")
+print(
+    f"Canaries:     {num_canaries} ({len(cf.in_indices)} in, {len(cf.out_indices)} out)"
+)
 print(f"Training set: {len(train_data)} examples")</div>
 </div>
 </div>
@@ -2535,15 +2608,21 @@ loss <em>reduction</em> from training (Steinke et al., Algorithm 3).</p>
     <span class="n">clipping_norm</span><span class="o">=</span><span class="n">clipping_norm</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
-    <span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clipping_norm</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
+    <span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clipping_norm</span><span class="p">,</span>
+    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
 <span class="p">)</span>
 
 <span class="c1"># Score canaries on the untrained model</span>
 <span class="n">canary_loader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span>
-    <span class="n">cf</span><span class="o">.</span><span class="n">canary_subset</span><span class="p">(</span><span class="n">dataset</span><span class="p">),</span> <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">cf</span><span class="o">.</span><span class="n">canary_subset</span><span class="p">(</span><span class="n">dataset</span><span class="p">),</span>
+    <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+    <span class="n">shuffle</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="n">ref_scores</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">loss_scores</span><span class="p">(</span>
-    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">params</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">dataloader</span><span class="o">=</span><span class="n">canary_loader</span><span class="p">,</span>
+    <span class="n">loss_fn</span><span class="p">,</span>
+    <span class="n">params</span><span class="p">,</span>
+    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+    <span class="n">dataloader</span><span class="o">=</span><span class="n">canary_loader</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Reference scores: mean=</span><span class="si">{</span><span class="n">ref_scores</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, std=</span><span class="si">{</span><span class="n">ref_scores</span><span class="o">.</span><span class="n">std</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
@@ -2560,15 +2639,21 @@ grad_fn, clip_state = clipped_grad(
     clipping_norm=clipping_norm,
 )
 noise_fn, noise_state = gaussian_noise(
-    stddev=noise_multiplier * clipping_norm, key=key(0),
+    stddev=noise_multiplier * clipping_norm,
+    key=key(0),
 )
 
 # Score canaries on the untrained model
 canary_loader = DataLoader(
-    cf.canary_subset(dataset), batch_size=batch_size, shuffle=False,
+    cf.canary_subset(dataset),
+    batch_size=batch_size,
+    shuffle=False,
 )
 ref_scores = auditing.loss_scores(
-    loss_fn, params, batch_argnums=(1, 2), dataloader=canary_loader,
+    loss_fn,
+    params,
+    batch_argnums=(1, 2),
+    dataloader=canary_loader,
 )
 print(f"Reference scores: mean={ref_scores.mean():.4f}, std={ref_scores.std():.4f}")</div>
 </div>
@@ -2675,7 +2760,8 @@ Steinke et al. (2023) to estimate epsilon.</p>
 </clipboard-copy>
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="n">scores</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">loss_scores</span><span class="p">(</span>
-    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">params</span><span class="p">,</span>
+    <span class="n">loss_fn</span><span class="p">,</span>
+    <span class="n">params</span><span class="p">,</span>
     <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
     <span class="n">dataloader</span><span class="o">=</span><span class="n">canary_loader</span><span class="p">,</span>
     <span class="n">reference_scores</span><span class="o">=</span><span class="n">ref_scores</span><span class="p">,</span>
@@ -2684,7 +2770,8 @@ Steinke et al. (2023) to estimate epsilon.</p>
 <span class="n">estimate</span> <span class="o">=</span> <span class="n">auditing</span><span class="o">.</span><span class="n">one_run</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">coin_flip</span><span class="o">=</span><span class="n">cf</span><span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-6">scores = auditing.loss_scores(
-    loss_fn, params,
+    loss_fn,
+    params,
     batch_argnums=(1, 2),
     dataloader=canary_loader,
     reference_scores=ref_scores,

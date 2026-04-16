@@ -12,11 +12,13 @@
         <meta name="author" content="Opaque Contributors">
       
       
-        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/api/optimizers/">
+        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/user-guide/matrix-factorization/">
       
       
-        <link rel="prev" href="../utilities/">
+        <link rel="prev" href="../noise/">
       
+      
+        <link rel="next" href="../accounting/">
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
@@ -24,7 +26,7 @@
     
     
       
-        <title>Optimizers - Opaque</title>
+        <title>Matrix factorization (MF) - Opaque</title>
       
     
     
@@ -78,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#optimizers" class="md-skip">
+        <a href="#matrix-factorization-mf-noise" class="md-skip">
           Skip to content
         </a>
       
@@ -116,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Optimizers
+              Matrix factorization (MF)
             
           </span>
         </div>
@@ -266,11 +268,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="../../user-guide/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
           
   
   
@@ -326,13 +330,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="../" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../../api/" class="md-tabs__link">
           
   
   
@@ -531,26 +533,31 @@
       
   
   
+    
   
   
+  
     
     
     
     
+      
+        
+        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
             
   
   
@@ -563,7 +570,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             User Guide
@@ -577,7 +584,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/" class="md-nav__link">
+      <a href="../" class="md-nav__link">
         
   
   
@@ -600,7 +607,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/dp-concepts/" class="md-nav__link">
+      <a href="../dp-concepts/" class="md-nav__link">
         
   
   
@@ -623,7 +630,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/rng-key/" class="md-nav__link">
+      <a href="../rng-key/" class="md-nav__link">
         
   
   
@@ -646,7 +653,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/clipping/" class="md-nav__link">
+      <a href="../clipping/" class="md-nav__link">
         
   
   
@@ -669,7 +676,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/noise/" class="md-nav__link">
+      <a href="../noise/" class="md-nav__link">
         
   
   
@@ -689,10 +696,32 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../user-guide/matrix-factorization/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Matrix factorization (MF)
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -703,6 +732,113 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-opaque-implements" class="md-nav__link">
+    <span class="md-ellipsis">
+      What Opaque implements
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#two-notions-of-correct" class="md-nav__link">
+    <span class="md-ellipsis">
+      Two notions of “correct”
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Two notions of “correct”">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-mechanism-dp-correctness" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Mechanism / DP correctness
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-workload-fidelity-utility" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. Workload fidelity / utility
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#choosing-a-mechanism-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      Choosing a mechanism (summary)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#jme-dp-adam-and-mf" class="md-nav__link">
+    <span class="md-ellipsis">
+      JME (DP-Adam) and MF
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bsr-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      BSR scope
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lr-schedule-and-workload-modeling" class="md-nav__link">
+    <span class="md-ellipsis">
+      LR schedule and workload modeling
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#further-reading" class="md-nav__link">
+    <span class="md-ellipsis">
+      Further reading
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -715,7 +851,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/accounting/" class="md-nav__link">
+      <a href="../accounting/" class="md-nav__link">
         
   
   
@@ -738,7 +874,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/sampling/" class="md-nav__link">
+      <a href="../sampling/" class="md-nav__link">
         
   
   
@@ -761,7 +897,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/optimizers/" class="md-nav__link">
+      <a href="../optimizers/" class="md-nav__link">
         
   
   
@@ -784,7 +920,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/distributed/" class="md-nav__link">
+      <a href="../distributed/" class="md-nav__link">
         
   
   
@@ -807,7 +943,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/huggingface/" class="md-nav__link">
+      <a href="../huggingface/" class="md-nav__link">
         
   
   
@@ -830,7 +966,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/memory-optimizations/" class="md-nav__link">
+      <a href="../memory-optimizations/" class="md-nav__link">
         
   
   
@@ -853,7 +989,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/auditing/" class="md-nav__link">
+      <a href="../auditing/" class="md-nav__link">
         
   
   
@@ -1325,31 +1461,26 @@
       
   
   
-    
   
   
-  
     
     
     
     
-      
-        
-        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
         
           
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
             
   
   
@@ -1362,7 +1493,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             API Reference
@@ -1376,7 +1507,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../" class="md-nav__link">
+      <a href="../../api/" class="md-nav__link">
         
   
   
@@ -1399,7 +1530,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../clipping/" class="md-nav__link">
+      <a href="../../api/clipping/" class="md-nav__link">
         
   
   
@@ -1422,7 +1553,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../noise/" class="md-nav__link">
+      <a href="../../api/noise/" class="md-nav__link">
         
   
   
@@ -1445,7 +1576,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../accounting/" class="md-nav__link">
+      <a href="../../api/accounting/" class="md-nav__link">
         
   
   
@@ -1468,7 +1599,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../sampling/" class="md-nav__link">
+      <a href="../../api/sampling/" class="md-nav__link">
         
   
   
@@ -1491,7 +1622,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../rng/" class="md-nav__link">
+      <a href="../../api/rng/" class="md-nav__link">
         
   
   
@@ -1514,7 +1645,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../distributed/" class="md-nav__link">
+      <a href="../../api/distributed/" class="md-nav__link">
         
   
   
@@ -1537,7 +1668,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../auditing/" class="md-nav__link">
+      <a href="../../api/auditing/" class="md-nav__link">
         
   
   
@@ -1560,7 +1691,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../utilities/" class="md-nav__link">
+      <a href="../../api/utilities/" class="md-nav__link">
         
   
   
@@ -1580,32 +1711,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    Optimizers
-    
-  </span>
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../api/optimizers/" class="md-nav__link">
         
   
   
@@ -1616,104 +1725,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#why-torchopt" class="md-nav__link">
-    <span class="md-ellipsis">
-      Why TorchOpt?
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#supported-optimizers" class="md-nav__link">
-    <span class="md-ellipsis">
-      Supported Optimizers
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Supported Optimizers">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#sgd" class="md-nav__link">
-    <span class="md-ellipsis">
-      SGD
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#adam" class="md-nav__link">
-    <span class="md-ellipsis">
-      Adam
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#adamw" class="md-nav__link">
-    <span class="md-ellipsis">
-      AdamW
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#complete-pattern" class="md-nav__link">
-    <span class="md-ellipsis">
-      Complete Pattern
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#ddp-compatibility" class="md-nav__link">
-    <span class="md-ellipsis">
-      DDP Compatibility
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#see-also" class="md-nav__link">
-    <span class="md-ellipsis">
-      See Also
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1826,46 +1837,37 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#why-torchopt" class="md-nav__link">
+  <a href="#what-opaque-implements" class="md-nav__link">
     <span class="md-ellipsis">
-      Why TorchOpt?
+      What Opaque implements
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#supported-optimizers" class="md-nav__link">
+  <a href="#two-notions-of-correct" class="md-nav__link">
     <span class="md-ellipsis">
-      Supported Optimizers
+      Two notions of “correct”
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Supported Optimizers">
+    <nav class="md-nav" aria-label="Two notions of “correct”">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#sgd" class="md-nav__link">
+  <a href="#1-mechanism-dp-correctness" class="md-nav__link">
     <span class="md-ellipsis">
-      SGD
+      1. Mechanism / DP correctness
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#adam" class="md-nav__link">
+  <a href="#2-workload-fidelity-utility" class="md-nav__link">
     <span class="md-ellipsis">
-      Adam
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#adamw" class="md-nav__link">
-    <span class="md-ellipsis">
-      AdamW
+      2. Workload fidelity / utility
     </span>
   </a>
   
@@ -1877,27 +1879,45 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#complete-pattern" class="md-nav__link">
+  <a href="#choosing-a-mechanism-summary" class="md-nav__link">
     <span class="md-ellipsis">
-      Complete Pattern
+      Choosing a mechanism (summary)
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#ddp-compatibility" class="md-nav__link">
+  <a href="#jme-dp-adam-and-mf" class="md-nav__link">
     <span class="md-ellipsis">
-      DDP Compatibility
+      JME (DP-Adam) and MF
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#see-also" class="md-nav__link">
+  <a href="#bsr-scope" class="md-nav__link">
     <span class="md-ellipsis">
-      See Also
+      BSR scope
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lr-schedule-and-workload-modeling" class="md-nav__link">
+    <span class="md-ellipsis">
+      LR schedule and workload modeling
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#further-reading" class="md-nav__link">
+    <span class="md-ellipsis">
+      Further reading
     </span>
   </a>
   
@@ -1922,74 +1942,103 @@
   
 
 
-<h1 id="optimizers">Optimizers<a class="headerlink" href="#optimizers" title="Permanent link">&para;</a></h1>
-<p>Opaque does <strong>not</strong> bundle optimizers. Use <a href="https://torchopt.readthedocs.io/">TorchOpt</a>
-functional optimizers for the parameter-update step.</p>
-<hr />
-<h2 id="why-torchopt">Why TorchOpt?<a class="headerlink" href="#why-torchopt" title="Permanent link">&para;</a></h2>
-<p>TorchOpt provides <strong>functional</strong> optimizers: no hidden mutable state, explicit
-<code>(updates, new_state) = optimizer.update(grads, state)</code> interface.  This matches
-Opaque's functional gradient pipeline (<code>clipped_grad → noise_fn → optimizer</code>).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torchopt</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">adam</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="c1"># Explicit state in, state out</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">updates</span><span class="p">,</span> <span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">params</span><span class="p">)</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">params</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">apply_updates</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">updates</span><span class="p">)</span>
-</code></pre></div>
-<hr />
-<h2 id="supported-optimizers">Supported Optimizers<a class="headerlink" href="#supported-optimizers" title="Permanent link">&para;</a></h2>
-<p>Any TorchOpt functional optimizer works. The most common choices for DP training:</p>
-<h3 id="sgd">SGD<a class="headerlink" href="#sgd" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">sgd</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">momentum</span><span class="o">=</span><span class="mf">0.9</span><span class="p">)</span>
-</code></pre></div>
-<h3 id="adam">Adam<a class="headerlink" href="#adam" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">adam</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
-</code></pre></div>
-<h3 id="adamw">AdamW<a class="headerlink" href="#adamw" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">adamw</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">weight_decay</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
-</code></pre></div>
-<hr />
-<h2 id="complete-pattern">Complete Pattern<a class="headerlink" href="#complete-pattern" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torchopt</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="c1"># Gradient pipeline</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="p">)</span>
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
-<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>
-<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="c1"># Optimizer</span>
-<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">adam</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
-<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
-<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>
-<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_steps</span><span class="p">):</span>
-<a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
-<a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a>    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
-<a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a>    <span class="n">updates</span><span class="p">,</span> <span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">params</span><span class="p">)</span>
-<a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">apply_updates</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">updates</span><span class="p">)</span>
-</code></pre></div>
-<hr />
-<h2 id="ddp-compatibility">DDP Compatibility<a class="headerlink" href="#ddp-compatibility" title="Permanent link">&para;</a></h2>
-<p>When using <code>torch.nn.parallel.DistributedDataParallel</code>, Opaque's functional
-gradient pipeline runs <em>inside</em> each rank.  DDP handles the all-reduce of noisy
-gradients across ranks.  No changes to the clipping, noise, or optimizer API are
-needed.</p>
-<p>Use <code>local_shard()</code> to partition the dataset across ranks and pass a
-per-rank key via <code>fold_in(key, rank)</code> to each <code>PoissonSampler</code>.</p>
-<hr />
-<h2 id="see-also">See Also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
+<h1 id="matrix-factorization-mf-noise">Matrix factorization (MF) noise<a class="headerlink" href="#matrix-factorization-mf-noise" title="Permanent link">&para;</a></h1>
+<p>Matrix factorization mechanisms add <strong>correlated</strong> Gaussian noise across training steps. The goal is lower variance on the <strong>cumulative</strong> updates that the optimizer effectively applies, compared to independent noise at each step (standard DP-SGD), for the same calibrated privacy guarantee.</p>
+<p>This page is the <strong>central reference</strong> for assumptions, limitations, and how MF fits into Opaque. Mechanism-specific math and API details live in <a href="../../mechanisms/">Mechanisms</a>.</p>
+<h2 id="what-opaque-implements">What Opaque implements<a class="headerlink" href="#what-opaque-implements" title="Permanent link">&para;</a></h2>
+<ol>
+<li>A <strong>strategy</strong> object (e.g. <code>band_mf_strategy</code>, <code>bsr_strategy</code>) holds:</li>
+<li>coefficients that define a lower-triangular linear map used for noise,</li>
+<li><strong>sensitivity</strong> (and sometimes a <strong>Gram matrix</strong>) for privacy accounting,</li>
+<li>
+<p>a streaming representation for efficient noise generation.</p>
+</li>
+<li>
+<p><code>mf_noise(grad_template, strategy, stddev=..., key=...)</code> returns <code>(noise_fn, state)</code> that injects noise each step.</p>
+</li>
+<li>
+<p><strong>Privacy accounting</strong> uses the same sensitivity (and Gram matrix when needed) as the strategy passed to <code>mf_noise</code>. Always build the accounting mechanism from <strong>the same</strong> strategy object you use for noise.</p>
+</li>
+</ol>
+<h2 id="two-notions-of-correct">Two notions of “correct”<a class="headerlink" href="#two-notions-of-correct" title="Permanent link">&para;</a></h2>
+<p>Understanding MF in Opaque is easier if you separate:</p>
+<h3 id="1-mechanism-dp-correctness">1. Mechanism / DP correctness<a class="headerlink" href="#1-mechanism-dp-correctness" title="Permanent link">&para;</a></h3>
+<p>The <strong>differential privacy guarantee</strong> applies to the <strong>randomized algorithm you actually run</strong>: the linear map implied by the strategy, the noise scale, and the data collection / subsampling process.</p>
+<p>If accounting uses the same sensitivity (and compatible amplification) as the noise function, and the sampler matches what the analysis assumes, the DP statement is about <strong>that</strong> mechanism—not about whether the strategy was numerically optimal for an idealized workload.</p>
+<h3 id="2-workload-fidelity-utility">2. Workload fidelity / utility<a class="headerlink" href="#2-workload-fidelity-utility" title="Permanent link">&para;</a></h3>
+<p>Many strategies are <strong>designed or optimized</strong> under a <strong>model</strong> of the optimizer (e.g. Polyak momentum, constant learning rate, workload decay such as BSR’s paper <span class="arithmatex">\(\alpha\)</span>). If the <strong>real</strong> training loop differs (different optimizer, schedule, accumulation pattern), <strong>utility</strong> may be worse than the paper’s ideal, even when DP is still valid for the implemented <span class="arithmatex">\(C\)</span>.</p>
+<p>Opaque’s BandMF and BLT pass <strong>workload coefficients</strong> into a Toeplitz optimization problem. For <strong>non-constant</strong> learning rate schedules, the encoded workload is a <strong>Toeplitz surrogate</strong>: it does not exactly match every entry of the time-varying triangular map <span class="arithmatex">\(W_{t,s} = \eta_t \beta^{t-s}\)</span> unless <span class="arithmatex">\(\eta_t\)</span> is constant. Privacy remains correct for the constructed strategy; the gap is in how tightly the optimization target matches your true discrete-time operator.</p>
+<p>See <a href="../../mechanisms/band-mf/#assumptions-and-limitations">BandMF — Assumptions and limitations</a> for a concise statement.</p>
+<h2 id="choosing-a-mechanism-summary">Choosing a mechanism (summary)<a class="headerlink" href="#choosing-a-mechanism-summary" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Mechanism</th>
+<th>Noise pattern</th>
+<th>Typical amplification</th>
+<th>Extra memory</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="../../mechanisms/band-mf/">BandMF</a></td>
+<td>Optimized banded Toeplitz</td>
+<td>Cyclic Poisson or b-min-sep</td>
+<td><span class="arithmatex">\(O(\text{bands})\)</span></td>
+<td>General default; L-BFGS at init</td>
+</tr>
+<tr>
+<td><a href="../../mechanisms/blt/">BLT</a></td>
+<td>Buffered linear Toeplitz</td>
+<td>BnB (+ sequential data order)</td>
+<td><span class="arithmatex">\(O(\text{buffers})\)</span></td>
+<td>Long runs / multi-epoch</td>
+</tr>
+<tr>
+<td><a href="../../mechanisms/lambda-cgd/">DP-λCGD</a></td>
+<td>PRNG replay, bandwidth 2</td>
+<td>BnB</td>
+<td><span class="arithmatex">\(O(1)\)</span></td>
+<td>Minimal memory</td>
+</tr>
+<tr>
+<td><a href="../../mechanisms/bisr/">BISR</a></td>
+<td>Banded inverse square root</td>
+<td>BnB</td>
+<td><span class="arithmatex">\(O(p)\)</span></td>
+<td>Analytic inverse coefficients</td>
+</tr>
+<tr>
+<td><a href="../../mechanisms/bsr/">BSR</a></td>
+<td>Banded square root (closed form)</td>
+<td>BnB</td>
+<td><span class="arithmatex">\(O(p)\)</span></td>
+<td>Paper <code>alpha</code>, <code>beta</code> (kw-only); bind <code>beta</code> from SGD momentum or Adam <span class="arithmatex">\(\beta_1\)</span></td>
+</tr>
+<tr>
+<td>Identity</td>
+<td>Independent (DP-SGD style)</td>
+<td>Poisson / standard</td>
+<td><span class="arithmatex">\(O(1)\)</span></td>
+<td>Baseline via MF API</td>
+</tr>
+</tbody>
+</table>
+<h2 id="jme-dp-adam-and-mf">JME (DP-Adam) and MF<a class="headerlink" href="#jme-dp-adam-and-mf" title="Permanent link">&para;</a></h2>
+<p><a href="https://arxiv.org/abs/2502.06597">JME</a> uses <strong>two</strong> correlated noise streams (gradients and squared gradients) with a <strong>joint sensitivity</strong>. It is <strong>not</strong> the same workload model as single-stream SGD+momentum mechanisms.</p>
+<p>When adding a new <code>MfStrategy</code>, ensure <code>opaque.noise.mf.jme._derive_second_strategy</code> has an explicit branch for it. Unknown strategy types raise <code>TypeError</code>; unsupported ones (e.g. <code>LambdaCgdStrategy</code>, which has no principled second-moment mapping) raise <code>ValueError</code>. Pass <code>second_moment_strategy</code> explicitly to override auto-derivation when needed.</p>
+<h2 id="bsr-scope">BSR scope<a class="headerlink" href="#bsr-scope" title="Permanent link">&para;</a></h2>
+<p><a href="../../mechanisms/bsr/">BSR</a> ships <strong>closed-form</strong> coefficients for the Kalinin–Lampert workload in <span class="arithmatex">\((\alpha,\beta)\)</span>. It does <strong>not</strong> accept arbitrary <code>lr_schedule</code> inside the closed-form path. For general schedules or optimizers, use <strong>BandMF</strong> (numerical Toeplitz optimization) or <strong>BLT</strong>.</p>
+<p>With JME + BSR, the second stream is a second <code>bsr_strategy(..., alpha=..., beta=β₂)</code>; require <span class="arithmatex">\(\alpha &gt; \beta\)</span> for each stream’s <span class="arithmatex">\(\beta\)</span> (see <code>jme.py</code>).</p>
+<h2 id="lr-schedule-and-workload-modeling">LR schedule and workload modeling<a class="headerlink" href="#lr-schedule-and-workload-modeling" title="Permanent link">&para;</a></h2>
+<p><strong>No MF mechanism in Opaque currently implements schedule-aware factorizations</strong> from Kalinin &amp; Andersson (arXiv:2511.17994). That paper proposes constructions provably better under non-constant LR for the schedule workload <span class="arithmatex">\(A_\chi = A_1 D\)</span>, but the closed-form path only covers <strong>exponential decay</strong> and is not generic enough for general schedules (including warmup).</p>
+<p>BandMF and BLT accept <code>lr_schedule</code> as a <strong>Toeplitz-surrogate</strong> workload optimization input (utility heuristic, not exact schedule-aware construction). BISR, BSR, and λCGD do <strong>not</strong> accept <code>lr_schedule</code>.</p>
+<h2 id="further-reading">Further reading<a class="headerlink" href="#further-reading" title="Permanent link">&para;</a></h2>
 <ul>
-<li><a href="../clipping/">Gradient Clipping API</a> — includes <code>adaptive_clipped_grad()</code></li>
-<li><a href="../../user-guide/optimizers/">Optimizers User Guide</a></li>
-<li><a href="../../tutorials/llm_finetuning/">Fine-tuning an LLM Tutorial</a></li>
-<li><a href="https://torchopt.readthedocs.io/">TorchOpt Documentation</a></li>
+<li><a href="../noise/">Noise addition</a> — Gaussian vs MF entry points</li>
+<li><a href="../../mechanisms/">Mechanisms index</a> — per-mechanism docs</li>
+<li><a href="../optimizers/">Optimizers</a> — SGD vs JME-AdamW</li>
 </ul>
 
 

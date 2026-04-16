@@ -699,6 +699,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../matrix-factorization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Matrix factorization (MF)
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../accounting/" class="md-nav__link">
         
   
@@ -812,6 +835,63 @@
   <a href="#cyclicpoissonsampler" class="md-nav__link">
     <span class="md-ellipsis">
       CyclicPoissonSampler
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bminsepsampler" class="md-nav__link">
+    <span class="md-ellipsis">
+      BMinSepSampler
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#balls-in-bins-sampling" class="md-nav__link">
+    <span class="md-ellipsis">
+      Balls-in-Bins sampling
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Balls-in-Bins sampling">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ballsinbinssampler" class="md-nav__link">
+    <span class="md-ellipsis">
+      BallsInBinsSampler
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sequential-batch-sampling" class="md-nav__link">
+    <span class="md-ellipsis">
+      Sequential batch sampling
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Sequential batch sampling">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sequentialbatchsampler" class="md-nav__link">
+    <span class="md-ellipsis">
+      SequentialBatchSampler
     </span>
   </a>
   
@@ -1156,6 +1236,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../../mechanisms/bsr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BSR
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../mechanisms/band-mf/" class="md-nav__link">
         
   
@@ -1202,12 +1305,35 @@
   
   
     <li class="md-nav__item">
-      <a href="../../mechanisms/dense-mf/" class="md-nav__link">
+      <a href="../../mechanisms/lambda-cgd/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    Dense MF
+    DP-λCGD
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mechanisms/bisr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BISR
     
   </span>
   
@@ -1861,6 +1987,63 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#bminsepsampler" class="md-nav__link">
+    <span class="md-ellipsis">
+      BMinSepSampler
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#balls-in-bins-sampling" class="md-nav__link">
+    <span class="md-ellipsis">
+      Balls-in-Bins sampling
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Balls-in-Bins sampling">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ballsinbinssampler" class="md-nav__link">
+    <span class="md-ellipsis">
+      BallsInBinsSampler
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sequential-batch-sampling" class="md-nav__link">
+    <span class="md-ellipsis">
+      Sequential batch sampling
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Sequential batch sampling">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sequentialbatchsampler" class="md-nav__link">
+    <span class="md-ellipsis">
+      SequentialBatchSampler
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1975,7 +2158,7 @@ In DP-SGD, the sampling mechanism directly affects the privacy guarantee:
 Poisson subsampling provides privacy amplification, meaning you need less
 noise for the same epsilon when each example is included independently with
 small probability.</p>
-<p>Opaque provides three sampler classes, all designed to work with PyTorch's
+<p>Opaque provides sampler classes designed to work with PyTorch's
 <code>DataLoader</code> via the <code>batch_sampler</code> parameter.</p>
 <h2 id="poisson-sampling">Poisson sampling<a class="headerlink" href="#poisson-sampling" title="Permanent link">&para;</a></h2>
 <h3 id="why-it-matters-for-privacy">Why it matters for privacy<a class="headerlink" href="#why-it-matters-for-privacy" title="Permanent link">&para;</a></h3>
@@ -2121,7 +2304,7 @@ epsilon) while preventing memory spikes from unusually large batches.</p>
 <p>Partitions the dataset into <code>cycle_length</code> groups and cycles through them,
 sampling from each group with probability <code>sampling_prob</code>. This sampler
 is required for matrix-factorization correlated noise mechanisms
-(<code>band_mf_noise</code>, <code>blt_mf_noise</code>) which need a fixed participation pattern.</p>
+(BandMF via <code>mf_noise</code>) which need a fixed participation pattern.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">CyclicPoissonSampler</span><span class="p">,</span> <span class="n">PartitionType</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
@@ -2201,11 +2384,111 @@ is required for matrix-factorization correlated noise mechanisms
 <code>cycle_length=1</code> it reduces to standard Poisson sampling.</p>
 <p>See <a href="../noise/#matrix-factorization-noise-dp-ftrl">Noise Addition</a> for how cyclic
 sampling integrates with correlated noise mechanisms.</p>
+<h3 id="bminsepsampler"><code>BMinSepSampler</code><a class="headerlink" href="#bminsepsampler" title="Permanent link">&para;</a></h3>
+<p>Warm-start <strong>b-min-sep</strong> subsampling for BandMF (Dong &amp; Ganesh, arXiv:2602.09338).
+Each step includes each <em>eligible</em> example independently with probability <code>p</code>
+(the paper’s <span class="arithmatex">\(p\)</span>). Eligibility excludes any example that appeared in one of the
+previous <code>bands - 1</code> batches. Initial per-example cooldowns are drawn from the
+stationary distribution so expected batch size is roughly stable from step 0.</p>
+<p>Use <code>p = p_0 / (1 - p_0 * (bands - 1))</code> when matching a target per-example rate
+<code>p_0 = expected_batch_size / dataset_size</code> (for <code>bands == 1</code>, <code>p = p_0</code>).
+Pair with <code>opaque.accounting.b_min_sep</code> for privacy accounting.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">BMinSepSampler</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">p0</span> <span class="o">=</span> <span class="n">batch_size</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">dataset</span><span class="p">)</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="n">bands</span> <span class="o">=</span> <span class="mi">8</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="n">p</span> <span class="o">=</span> <span class="n">p0</span> <span class="o">/</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">p0</span> <span class="o">*</span> <span class="p">(</span><span class="n">bands</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">BMinSepSampler</span><span class="p">(</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="n">dataset</span><span class="p">,</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>    <span class="n">bands</span><span class="o">=</span><span class="n">bands</span><span class="p">,</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>    <span class="n">sampling_prob</span><span class="o">=</span><span class="n">p</span><span class="p">,</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>    <span class="n">iterations</span><span class="o">=</span><span class="n">num_steps</span><span class="p">,</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="p">)</span>
+</code></pre></div>
+<h2 id="balls-in-bins-sampling">Balls-in-Bins sampling<a class="headerlink" href="#balls-in-bins-sampling" title="Permanent link">&para;</a></h2>
+<h3 id="ballsinbinssampler"><code>BallsInBinsSampler</code><a class="headerlink" href="#ballsinbinssampler" title="Permanent link">&para;</a></h3>
+<p>Each example is independently assigned to one of <code>num_bins</code> bins (Binomial
+bin sizes; some bins may be empty). The assignment is <strong>fixed once at init</strong>
+and <strong>reused across all epochs</strong> — this is required by the dominating-pair
+BnB privacy accounting. Used with DP-λCGD, BISR, BSR, and BLT mechanisms.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">BallsInBinsSampler</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">BallsInBinsSampler</span><span class="p">(</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="n">dataset</span><span class="p">,</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>    <span class="n">num_bins</span><span class="o">=</span><span class="n">dataset_size</span> <span class="o">//</span> <span class="n">batch_size</span><span class="p">,</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>    <span class="n">num_epochs</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="p">)</span>
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="n">loader</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">batch_sampler</span><span class="o">=</span><span class="n">sampler</span><span class="p">)</span>
+</code></pre></div>
+<h2 id="sequential-batch-sampling">Sequential batch sampling<a class="headerlink" href="#sequential-batch-sampling" title="Permanent link">&para;</a></h2>
+<h3 id="sequentialbatchsampler"><code>SequentialBatchSampler</code><a class="headerlink" href="#sequentialbatchsampler" title="Permanent link">&para;</a></h3>
+<p>Iterates through the dataset in fixed-size contiguous batches with no
+randomness. The last incomplete batch is dropped. This is the only
+sampler that does not require an RNG key — it is fully deterministic.
+Pre-shuffle the dataset once before constructing the sampler.</p>
+<p>Used by the BLT mechanism, which requires deterministic batch order with
+fixed separation between participations.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">SequentialBatchSampler</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torch.utils.data</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">data</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">SequentialBatchSampler</span><span class="p">(</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    <span class="n">dataset</span><span class="p">,</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>    <span class="n">batch_size</span><span class="o">=</span><span class="mi">256</span><span class="p">,</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="p">)</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="n">loader</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">batch_sampler</span><span class="o">=</span><span class="n">sampler</span><span class="p">)</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">loader</span><span class="p">:</span>
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>    <span class="c1"># batch size is always exactly 256</span>
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>    <span class="o">...</span>
+</code></pre></div>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>data_source</code></td>
+<td>any with <code>__len__</code></td>
+<td>The dataset (must not be empty)</td>
+</tr>
+<tr>
+<td><code>batch_size</code></td>
+<td><code>int</code> (≥ 1)</td>
+<td>Exact number of examples per batch</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Properties:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Returns</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>expected_batch_size</code></td>
+<td><code>float</code></td>
+<td>Always equals <code>batch_size</code> (exact, not statistical)</td>
+</tr>
+</tbody>
+</table>
 <h2 id="dataloader-integration">DataLoader integration<a class="headerlink" href="#dataloader-integration" title="Permanent link">&para;</a></h2>
-<p>All three samplers are PyTorch <code>Sampler</code> subclasses that yield lists of
+<p>All samplers are PyTorch <code>Sampler</code> subclasses that yield lists of
 indices (i.e., they are batch samplers). Pass them to <code>DataLoader</code> via the
 <code>batch_sampler</code> parameter:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">loader</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">batch_sampler</span><span class="o">=</span><span class="n">sampler</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">loader</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">batch_sampler</span><span class="o">=</span><span class="n">sampler</span><span class="p">)</span>
 </code></pre></div>
 <p>Do not pass <code>batch_size</code>, <code>shuffle</code>, or <code>sampler</code> when using
 <code>batch_sampler</code> -- PyTorch does not allow combining these parameters.</p>
@@ -2224,20 +2507,20 @@ and derive a per-rank key via <code>fold_in(key, rank)</code>:</p>
 <li>No communication is needed -- each rank samples independently from its
    own partition.</li>
 </ol>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.sampling.distributed</span><span class="w"> </span><span class="kn">import</span> <span class="n">local_shard</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span><span class="p">,</span> <span class="n">fold_in</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torch.distributed</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dist</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="n">rank</span> <span class="o">=</span> <span class="n">dist</span><span class="o">.</span><span class="n">get_rank</span><span class="p">()</span>
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="n">world_size</span> <span class="o">=</span> <span class="n">dist</span><span class="o">.</span><span class="n">get_world_size</span><span class="p">()</span>
-<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>
-<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="n">shard</span> <span class="o">=</span> <span class="n">local_shard</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">rank</span><span class="o">=</span><span class="n">rank</span><span class="p">,</span> <span class="n">world_size</span><span class="o">=</span><span class="n">world_size</span><span class="p">)</span>
-<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">PoissonSampler</span><span class="p">(</span><span class="n">shard</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">fold_in</span><span class="p">(</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span> <span class="n">rank</span><span class="p">))</span>
-<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="n">loader</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">(</span><span class="n">shard</span><span class="p">,</span> <span class="n">batch_sampler</span><span class="o">=</span><span class="n">sampler</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.sampling.distributed</span><span class="w"> </span><span class="kn">import</span> <span class="n">local_shard</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span><span class="p">,</span> <span class="n">fold_in</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torch.distributed</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dist</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="n">rank</span> <span class="o">=</span> <span class="n">dist</span><span class="o">.</span><span class="n">get_rank</span><span class="p">()</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="n">world_size</span> <span class="o">=</span> <span class="n">dist</span><span class="o">.</span><span class="n">get_world_size</span><span class="p">()</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="n">shard</span> <span class="o">=</span> <span class="n">local_shard</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">rank</span><span class="o">=</span><span class="n">rank</span><span class="p">,</span> <span class="n">world_size</span><span class="o">=</span><span class="n">world_size</span><span class="p">)</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">PoissonSampler</span><span class="p">(</span><span class="n">shard</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">fold_in</span><span class="p">(</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span> <span class="n">rank</span><span class="p">))</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="n">loader</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">(</span><span class="n">shard</span><span class="p">,</span> <span class="n">batch_sampler</span><span class="o">=</span><span class="n">sampler</span><span class="p">)</span>
 </code></pre></div>
 <p><strong>Privacy accounting in distributed mode</strong> uses the global sample rate:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">global_sample_rate</span> <span class="o">=</span> <span class="n">batch_size_per_device</span> <span class="o">*</span> <span class="n">world_size</span> <span class="o">/</span> <span class="n">dataset_size</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">),</span> <span class="n">global_sample_rate</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">global_sample_rate</span> <span class="o">=</span> <span class="n">batch_size_per_device</span> <span class="o">*</span> <span class="n">world_size</span> <span class="o">/</span> <span class="n">dataset_size</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="n">step</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">),</span> <span class="n">global_sample_rate</span><span class="p">)</span>
 </code></pre></div>
 <h3 id="distributed-helpers">Distributed helpers<a class="headerlink" href="#distributed-helpers" title="Permanent link">&para;</a></h3>
 <p>The <code>opaque.sampling.distributed</code> submodule provides two utilities used
@@ -2268,14 +2551,14 @@ per-example gradient computation via <code>vmap</code> exceeds GPU memory,
 microbatching processes the batch in smaller chunks and accumulates the
 clipped gradient sums. The result is mathematically identical to processing
 the full batch.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="n">loss_fn</span><span class="p">,</span>
-<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>    <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
-<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
-<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>    <span class="n">microbatch_size</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span>  <span class="c1"># process 16 examples at a time</span>
-<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>    <span class="n">loss_fn</span><span class="p">,</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>    <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>    <span class="n">microbatch_size</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span>  <span class="c1"># process 16 examples at a time</span>
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="p">)</span>
 </code></pre></div>
 <p>Each microbatch of 16 examples is vmapped, per-example gradients are
 clipped, and the clipped gradients are summed. The partial sums are
@@ -2285,46 +2568,46 @@ accumulated in-place, so peak memory is proportional to
 <h3 id="choosing-microbatch-size">Choosing microbatch size<a class="headerlink" href="#choosing-microbatch-size" title="Permanent link">&para;</a></h3>
 <p>Use <code>TrainingProfiler</code> to compare a few candidate microbatch sizes and select
 the largest stable value for your device:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.profiling</span><span class="w"> </span><span class="kn">import</span> <span class="n">StepTimer</span><span class="p">,</span> <span class="n">TrainingProfiler</span><span class="p">,</span> <span class="n">reset_peak_memory</span>
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="n">profiler</span> <span class="o">=</span> <span class="n">TrainingProfiler</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="k">for</span> <span class="n">optimal</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">64</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">]:</span>
-<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>    <span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
-<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>        <span class="n">loss_fn</span><span class="p">,</span>
-<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>        <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
-<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>        <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
-<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>        <span class="n">microbatch_size</span><span class="o">=</span><span class="n">optimal</span><span class="p">,</span>
-<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>    <span class="p">)</span>
-<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>
-<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a>    <span class="n">reset_peak_memory</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>    <span class="n">timer</span> <span class="o">=</span> <span class="n">StepTimer</span><span class="p">(</span><span class="n">device</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">)</span>
-<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a>    <span class="k">with</span> <span class="n">timer</span><span class="p">:</span>
-<a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a>        <span class="n">grads</span><span class="p">,</span> <span class="n">aux</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch_x</span><span class="p">,</span> <span class="n">batch_y</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
-<a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a>    <span class="n">profiler</span> <span class="o">=</span> <span class="n">profiler</span><span class="o">.</span><span class="n">add_step</span><span class="p">(</span><span class="n">timer</span><span class="p">)</span>
-<a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a>
-<a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">optimal</span><span class="p">,</span> <span class="n">profiler</span><span class="o">.</span><span class="n">current_metrics</span><span class="p">()[</span><span class="s2">&quot;memory_peak_gb&quot;</span><span class="p">])</span>
-<a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a>
-<a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
-<a id="__codelineno-10-21" name="__codelineno-10-21" href="#__codelineno-10-21"></a>    <span class="n">loss_fn</span><span class="p">,</span>
-<a id="__codelineno-10-22" name="__codelineno-10-22" href="#__codelineno-10-22"></a>    <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
-<a id="__codelineno-10-23" name="__codelineno-10-23" href="#__codelineno-10-23"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
-<a id="__codelineno-10-24" name="__codelineno-10-24" href="#__codelineno-10-24"></a>    <span class="n">microbatch_size</span><span class="o">=</span><span class="n">optimal</span><span class="p">,</span>
-<a id="__codelineno-10-25" name="__codelineno-10-25" href="#__codelineno-10-25"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.profiling</span><span class="w"> </span><span class="kn">import</span> <span class="n">StepTimer</span><span class="p">,</span> <span class="n">TrainingProfiler</span><span class="p">,</span> <span class="n">reset_peak_memory</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="n">profiler</span> <span class="o">=</span> <span class="n">TrainingProfiler</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="k">for</span> <span class="n">optimal</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">64</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">]:</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>    <span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>        <span class="n">loss_fn</span><span class="p">,</span>
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a>        <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>        <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>        <span class="n">microbatch_size</span><span class="o">=</span><span class="n">optimal</span><span class="p">,</span>
+<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a>    <span class="p">)</span>
+<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>
+<a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a>    <span class="n">reset_peak_memory</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+<a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a>    <span class="n">timer</span> <span class="o">=</span> <span class="n">StepTimer</span><span class="p">(</span><span class="n">device</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">)</span>
+<a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a>    <span class="k">with</span> <span class="n">timer</span><span class="p">:</span>
+<a id="__codelineno-13-15" name="__codelineno-13-15" href="#__codelineno-13-15"></a>        <span class="n">grads</span><span class="p">,</span> <span class="n">aux</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch_x</span><span class="p">,</span> <span class="n">batch_y</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
+<a id="__codelineno-13-16" name="__codelineno-13-16" href="#__codelineno-13-16"></a>    <span class="n">profiler</span> <span class="o">=</span> <span class="n">profiler</span><span class="o">.</span><span class="n">add_step</span><span class="p">(</span><span class="n">timer</span><span class="p">)</span>
+<a id="__codelineno-13-17" name="__codelineno-13-17" href="#__codelineno-13-17"></a>
+<a id="__codelineno-13-18" name="__codelineno-13-18" href="#__codelineno-13-18"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">optimal</span><span class="p">,</span> <span class="n">profiler</span><span class="o">.</span><span class="n">current_metrics</span><span class="p">()[</span><span class="s2">&quot;memory_peak_gb&quot;</span><span class="p">])</span>
+<a id="__codelineno-13-19" name="__codelineno-13-19" href="#__codelineno-13-19"></a>
+<a id="__codelineno-13-20" name="__codelineno-13-20" href="#__codelineno-13-20"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-13-21" name="__codelineno-13-21" href="#__codelineno-13-21"></a>    <span class="n">loss_fn</span><span class="p">,</span>
+<a id="__codelineno-13-22" name="__codelineno-13-22" href="#__codelineno-13-22"></a>    <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-13-23" name="__codelineno-13-23" href="#__codelineno-13-23"></a>    <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+<a id="__codelineno-13-24" name="__codelineno-13-24" href="#__codelineno-13-24"></a>    <span class="n">microbatch_size</span><span class="o">=</span><span class="n">optimal</span><span class="p">,</span>
+<a id="__codelineno-13-25" name="__codelineno-13-25" href="#__codelineno-13-25"></a><span class="p">)</span>
 </code></pre></div>
 <p>See <a href="../memory-optimizations/">Memory Optimizations</a> for more details on memory
 analysis tools.</p>
 <h3 id="privacy-equivalence">Privacy equivalence<a class="headerlink" href="#privacy-equivalence" title="Permanent link">&para;</a></h3>
 <p>Microbatching does not change the privacy guarantee. The clipped gradient
 sum is identical whether the batch is processed in one shot or in chunks:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># These produce the same result:</span>
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="c1"># Full batch: vmap over 256 examples, clip, sum</span>
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="n">grads</span><span class="p">,</span> <span class="n">state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch_256</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">state</span><span class="p">)</span>
-<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>
-<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="c1"># Microbatched: vmap over 16 at a time, clip each, sum partials</span>
-<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="n">grad_fn_mb</span><span class="p">,</span> <span class="n">state_mb</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span><span class="n">loss_fn</span><span class="p">,</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
-<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>                                     <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">microbatch_size</span><span class="o">=</span><span class="mi">16</span><span class="p">)</span>
-<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="n">grads_mb</span><span class="p">,</span> <span class="n">state_mb</span> <span class="o">=</span> <span class="n">grad_fn_mb</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch_256</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">state_mb</span><span class="p">)</span>
-<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="c1"># grads == grads_mb</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># These produce the same result:</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="c1"># Full batch: vmap over 256 examples, clip, sum</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="n">grads</span><span class="p">,</span> <span class="n">state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch_256</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">state</span><span class="p">)</span>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="c1"># Microbatched: vmap over 16 at a time, clip each, sum partials</span>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="n">grad_fn_mb</span><span class="p">,</span> <span class="n">state_mb</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span><span class="n">loss_fn</span><span class="p">,</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a>                                     <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">microbatch_size</span><span class="o">=</span><span class="mi">16</span><span class="p">)</span>
+<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="n">grads_mb</span><span class="p">,</span> <span class="n">state_mb</span> <span class="o">=</span> <span class="n">grad_fn_mb</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch_256</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">state_mb</span><span class="p">)</span>
+<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a><span class="c1"># grads == grads_mb</span>
 </code></pre></div>
 <h2 id="choosing-a-sampler">Choosing a sampler<a class="headerlink" href="#choosing-a-sampler" title="Permanent link">&para;</a></h2>
 <table>
@@ -2353,14 +2636,28 @@ sum is identical whether the batch is processed in one shot or in chunks:</p>
 <td><code>CyclicPoissonSampler</code></td>
 <td>Cyclic groups</td>
 <td>Depends on mechanism</td>
-<td>Matrix-factorization noise</td>
+<td>Matrix-factorization noise (BandMF)</td>
+</tr>
+<tr>
+<td><code>BallsInBinsSampler</code></td>
+<td>Fixed (deterministic)</td>
+<td>Balls-in-bins amplification</td>
+<td>λCGD, BISR, BLT</td>
+</tr>
+<tr>
+<td><code>SequentialBatchSampler</code></td>
+<td>Fixed (deterministic)</td>
+<td>No amplification</td>
+<td>BLT (pre-shuffled dataset)</td>
 </tr>
 </tbody>
 </table>
 <p>For most DP-SGD workloads, <code>PoissonSampler</code> is sufficient.
 <code>TruncatedPoissonSampler</code> is a reasonable upgrade when you want tighter
 privacy bounds or need predictable batch sizes. <code>CyclicPoissonSampler</code> is
-only needed with correlated noise mechanisms.</p>
+only needed with BandMF correlated noise. <code>BallsInBinsSampler</code> and
+<code>SequentialBatchSampler</code> are used with matrix-factorization mechanisms
+that require fixed batch sizes.</p>
 <h2 id="api-reference">API reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
 <p>See <a href="../../api/sampling/">Sampling API Reference</a> for complete function
 signatures and return types.</p>

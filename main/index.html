@@ -806,6 +806,29 @@
   
   
     <li class="md-nav__item">
+      <a href="user-guide/matrix-factorization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Matrix factorization (MF)
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="user-guide/accounting/" class="md-nav__link">
         
   
@@ -1086,6 +1109,29 @@
   
   
     <li class="md-nav__item">
+      <a href="mechanisms/bsr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BSR
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="mechanisms/band-mf/" class="md-nav__link">
         
   
@@ -1132,12 +1178,35 @@
   
   
     <li class="md-nav__item">
-      <a href="mechanisms/dense-mf/" class="md-nav__link">
+      <a href="mechanisms/lambda-cgd/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    Dense MF
+    DP-λCGD
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="mechanisms/bisr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    BISR
     
   </span>
   
@@ -1866,7 +1935,8 @@ functions return <code>(noise_fn, state)</code>. Pass the same key on all ranks 
 <p>Three noise families are available: <strong>standard Gaussian</strong> (<code>gaussian_noise</code>),
 <strong>bounded Gaussian</strong> (<code>truncated_gaussian_noise</code>) for
 bounded support at the same noise level, and <strong>matrix factorization</strong>
-(<code>band_mf_noise</code>, <code>blt_mf_noise</code>, <code>dense_mf_noise</code>) for correlated noise that
+(<code>mf_noise</code> with strategies like <code>band_mf_strategy</code>, <code>blt_strategy</code>,
+<code>lambda_cgd_strategy</code>) for correlated noise that
 reduces effective noise on cumulative updates (DP-FTRL). See the
 <a href="mechanisms/">Mechanisms</a> reference for details.</p>
 <h2 id="privacy-accounting">Privacy accounting<a class="headerlink" href="#privacy-accounting" title="Permanent link">&para;</a></h2>

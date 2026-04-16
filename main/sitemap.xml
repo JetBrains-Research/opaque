@@ -49,14 +49,6 @@
          <lastmod>2026-04-16</lastmod>
     </url>
     <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/development/MEMORY_OPTIMIZATION_PLAN/</loc>
-         <lastmod>2026-04-16</lastmod>
-    </url>
-    <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/development/parallelism_compatibility/</loc>
-         <lastmod>2026-04-16</lastmod>
-    </url>
-    <url>
          <loc>https://jetbrains-research.github.io/opaque/main/getting-started/installation/</loc>
          <lastmod>2026-04-16</lastmod>
     </url>
@@ -73,15 +65,23 @@
          <lastmod>2026-04-16</lastmod>
     </url>
     <url>
+         <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/bisr/</loc>
+         <lastmod>2026-04-16</lastmod>
+    </url>
+    <url>
          <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/blt/</loc>
          <lastmod>2026-04-16</lastmod>
     </url>
     <url>
-         <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/dense-mf/</loc>
+         <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/bsr/</loc>
          <lastmod>2026-04-16</lastmod>
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/gaussian/</loc>
+         <lastmod>2026-04-16</lastmod>
+    </url>
+    <url>
+         <loc>https://jetbrains-research.github.io/opaque/main/mechanisms/lambda-cgd/</loc>
          <lastmod>2026-04-16</lastmod>
     </url>
     <url>
@@ -138,6 +138,10 @@
     </url>
     <url>
          <loc>https://jetbrains-research.github.io/opaque/main/user-guide/huggingface/</loc>
+         <lastmod>2026-04-16</lastmod>
+    </url>
+    <url>
+         <loc>https://jetbrains-research.github.io/opaque/main/user-guide/matrix-factorization/</loc>
          <lastmod>2026-04-16</lastmod>
     </url>
     <url>
