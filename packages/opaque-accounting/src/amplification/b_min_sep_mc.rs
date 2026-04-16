@@ -95,20 +95,28 @@ fn sample_x_under_p(n: usize, bands: usize, p: f64, rng: &mut impl Rng, x_buf: &
         }
     };
 
-    for i in 0..n {
+    for xb in x_buf.iter_mut().take(n) {
         let eligible = barred_remaining == 0;
         let participate = eligible && rng.gen::<f64>() < p;
-        x_buf[i] = if participate { 1.0 } else { 0.0 };
+        *xb = if participate { 1.0 } else { 0.0 };
         if participate {
             barred_remaining = bands.saturating_sub(1);
-        } else if barred_remaining > 0 {
-            barred_remaining -= 1;
+        } else {
+            barred_remaining = barred_remaining.saturating_sub(1);
         }
     }
 }
 
 /// `y = Cx + σ ζ` with standard normal `ζ` (column `i` of `C` applied to `x`).
-fn y_from_x_and_zeta(coef: &[f64], n: usize, x: &[f64], zeta: &[f64], sigma: f64, y_out: &mut [f64]) {
+#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
+fn y_from_x_and_zeta(
+    coef: &[f64],
+    n: usize,
+    x: &[f64],
+    zeta: &[f64],
+    sigma: f64,
+    y_out: &mut [f64],
+) {
     for i in 0..n {
         let mut acc = sigma * zeta[i];
         let j0 = i.saturating_sub(coef.len().saturating_sub(1));
@@ -213,6 +221,7 @@ pub fn bandmf_b_min_sep_prepare_transcripts(
 }
 
 /// Build PLD from precomputed transcripts at noise multiplier `sigma`.
+#[allow(clippy::too_many_arguments)]
 pub fn bandmf_b_min_sep_pld_from_transcripts(
     remove_x: &[f64],
     remove_zeta: &[f64],
@@ -307,10 +316,7 @@ pub fn bandmf_b_min_sep_pld_from_transcripts(
     let pmf_remove = samples_to_pmf(&remove_samples, disc, pessimistic, config.max_grid_size);
     let pmf_add = samples_to_pmf(&add_samples, disc, pessimistic, config.max_grid_size);
 
-    Ok(PrivacyLossDistribution::new_asymmetric(
-        pmf_remove,
-        pmf_add,
-    ))
+    Ok(PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add))
 }
 
 /// Monte Carlo PLD for BandMF + warm-start b-min-sep subsampling (single-example adjacent analysis).
@@ -334,9 +340,7 @@ pub fn bandmf_b_min_sep_warm_mc_pld(
         ));
     }
     if n_steps == 0 {
-        return Err(PldError::InvalidParameter(
-            "n_steps must be > 0".into(),
-        ));
+        return Err(PldError::InvalidParameter("n_steps must be > 0".into()));
     }
     if !(p > 0.0 && p <= 1.0) {
         return Err(PldError::InvalidParameter(format!(
@@ -414,10 +418,7 @@ pub fn bandmf_b_min_sep_warm_mc_pld(
     let pmf_remove = samples_to_pmf(&remove_samples, disc, pessimistic, config.max_grid_size);
     let pmf_add = samples_to_pmf(&add_samples, disc, pessimistic, config.max_grid_size);
 
-    Ok(PrivacyLossDistribution::new_asymmetric(
-        pmf_remove,
-        pmf_add,
-    ))
+    Ok(PrivacyLossDistribution::new_asymmetric(pmf_remove, pmf_add))
 }
 
 #[cfg(test)]
@@ -455,12 +456,10 @@ mod tests {
         let n = 40;
         let p = 0.06;
         let s = 4000usize;
-        let (rx, rz, ae) =
-            bandmf_b_min_sep_prepare_transcripts(&coef, n, p, s, 99).unwrap();
+        let (rx, rz, ae) = bandmf_b_min_sep_prepare_transcripts(&coef, n, p, s, 99).unwrap();
         let pld_t =
             bandmf_b_min_sep_pld_from_transcripts(&rx, &rz, &ae, &coef, n, p, sigma, &cfg).unwrap();
-        let pld_1 =
-            bandmf_b_min_sep_warm_mc_pld(&coef, n, p, sigma, s, 99, &cfg).unwrap();
+        let pld_1 = bandmf_b_min_sep_warm_mc_pld(&coef, n, p, sigma, s, 99, &cfg).unwrap();
         let d = 1e-4;
         let e1 = pld_1.epsilon_at(d);
         let e2 = pld_t.epsilon_at(d);

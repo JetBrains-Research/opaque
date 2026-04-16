@@ -73,12 +73,7 @@ fn c_d_constant(d: usize) -> Result<f64> {
 /// # Errors
 ///
 /// Returns `InvalidParameter` if inputs are non-positive or d is 0.
-pub fn jme_lambda(
-    c1_max_col_norm: f64,
-    c2_max_col_norm: f64,
-    zeta: f64,
-    d: usize,
-) -> Result<f64> {
+pub fn jme_lambda(c1_max_col_norm: f64, c2_max_col_norm: f64, zeta: f64, d: usize) -> Result<f64> {
     if c1_max_col_norm <= 0.0 {
         return Err(PldError::InvalidParameter(format!(
             "c1_max_col_norm must be positive, got {}",

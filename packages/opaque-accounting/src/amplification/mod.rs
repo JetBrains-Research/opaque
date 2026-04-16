@@ -8,21 +8,22 @@
 //! - [`balls_in_bins_gaussian_pld`] — Balls-in-Bins Gaussian (epoch-level composition)
 //! - [`bnb_mc_pld`] — Balls-in-Bins Monte Carlo for matrix mechanisms
 
-pub mod balls_in_bins;
 mod b_min_sep_mc;
 mod b_min_sep_registry;
+pub mod balls_in_bins;
 mod parallel_poisson;
 pub(crate) mod poisson;
 mod truncated_poisson;
 
-pub use balls_in_bins::{balls_in_bins_gaussian_pld, balls_in_bins_gaussian_pld_epochs, bnb_mc_pld};
 pub use b_min_sep_mc::{
     bandmf_b_min_sep_pld_from_transcripts, bandmf_b_min_sep_prepare_transcripts,
     bandmf_b_min_sep_warm_mc_pld,
 };
 pub use b_min_sep_registry::{
-    drop_b_min_sep_transcript_handle, pld_from_transcript_handle,
-    register_b_min_sep_transcripts,
+    drop_b_min_sep_transcript_handle, pld_from_transcript_handle, register_b_min_sep_transcripts,
+};
+pub use balls_in_bins::{
+    balls_in_bins_gaussian_pld, balls_in_bins_gaussian_pld_epochs, bnb_mc_pld,
 };
 pub use parallel_poisson::parallel_poisson_gaussian_pld;
 pub use poisson::poisson_gaussian_pld;
