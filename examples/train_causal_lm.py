@@ -422,14 +422,6 @@ def parse_args():
              "or auto_s (AUTO-S smooth scaling, Bu et al. NeurIPS 2023). Default: adaptive.",
     )
     dp_group.add_argument(
-        "--adaptive-clipping",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Deprecated alias: --adaptive-clipping → --clipping-mode adaptive, "
-             "--no-adaptive-clipping → --clipping-mode fixed. "
-             "Prefer --clipping-mode.",
-    )
-    dp_group.add_argument(
         "--auto-s-gamma",
         type=float,
         default=0.01,
@@ -665,10 +657,6 @@ def parse_args():
     # Needed because argparse type=int can't accept None on CLI to override presets.
     if args.microbatch_size == 0:
         args.microbatch_size = None
-
-    # Resolve deprecated --adaptive-clipping / --no-adaptive-clipping alias.
-    if args.adaptive_clipping is not None and "clipping_mode" not in provided_dests:
-        args.clipping_mode = "adaptive" if args.adaptive_clipping else "fixed"
 
     # Parse --per-group-clipping PATTERN=NORM pairs
     if args.per_group_clipping:
