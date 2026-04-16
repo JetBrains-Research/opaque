@@ -168,7 +168,10 @@ step = acc.parallel_poisson(
 
 Accounts for the extra privacy cost of adaptive clipping's noisy
 fraction query. Returns an `AdaClip` process composable with
-`poisson()` or `truncated_poisson()`.
+`poisson()` or `truncated_poisson()`. Use this **only** with
+`adaptive_clipped_grad`. Fixed clipping (`clipped_grad`) and AUTO-S
+(`auto_clipped_grad`) do not need this wrapper — use
+`acc.gaussian(nm)` directly.
 
 - `inner` (Gaussian): Base mechanism (from `gaussian()`)
 - `fraction_noise_std` (float): Noise std on the clipping fraction. Default: 0.05.

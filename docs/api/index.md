@@ -27,6 +27,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `clipped_fun()` - Clip and sum function outputs
   - `clip_pytree()` - Low-level PyTree clipping
   - `adaptive_clipped_grad()` - Clipped gradients with auto-tuned clip norm
+  - `auto_clipped_grad()` - AUTO-S smooth scaling (no hard clip threshold)
 
 - **[Noise](noise.md)**: Noise injection for DP
   - `gaussian_noise()` - Standard Gaussian noise
@@ -102,6 +103,8 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 |------------------|-------------------------------------|-------------------------------------------------------------------|
 | `clipped_grad()` | Differentiate loss with DP clipping | [Guide](../user-guide/clipping.md#clipped_grad-recommended-api) |
 | `clipped_fun()`  | Clip and sum function outputs       | [Guide](../user-guide/clipping.md#clipped_fun-general-purpose-clipping) |
+| `adaptive_clipped_grad()` | Auto-tuned clip norm (quantile) | [Guide](../user-guide/clipping.md#adaptive-clipping) |
+| `auto_clipped_grad()` | AUTO-S smooth scaling          | [Guide](../user-guide/clipping.md#auto-s-clipping) |
 | `clip_pytree()`  | Clip PyTree to max norm             | [Guide](../user-guide/clipping.md#clip_pytree-low-level-clipping) |
 
 ### Noise

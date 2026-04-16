@@ -309,9 +309,15 @@ The clip norm C controls the sensitivity-noise trade-off:
 - Lower C: more clipping distortion, but less noise needed
 
 A common heuristic is to set C to the median gradient norm observed during
-non-private training. Opaque's `adaptive_clipped_grad` automates this by
-adjusting C to maintain a target fraction of clipped gradients (typically the
-median, i.e., 50%).
+non-private training. Opaque offers two approaches to reduce sensitivity to
+this hyperparameter:
+
+- **Adaptive clipping** (`adaptive_clipped_grad`): adjusts C each step to
+  maintain a target fraction of clipped gradients (typically 50%).
+- **AUTO-S clipping** (`auto_clipped_grad`): replaces the hard clip entirely
+  with smooth scaling $R / (\lVert g \rVert + \gamma)$, preserving relative
+  gradient magnitudes while bounding sensitivity at R
+  ([Bu et al., NeurIPS 2023](https://openreview.net/forum?id=e8i7OaPj0q)).
 
 ### Number of steps
 
@@ -379,5 +385,6 @@ semantics, double it when calibrating noise ($\sigma = \text{noise\_multiplier} 
 - [Kairouz et al. 2015 - The Composition Theorem for Differential Privacy](https://arxiv.org/abs/1311.0776)
 - [Balle et al. 2020 - Hypothesis Testing Interpretations and the Laplace Mechanism](https://arxiv.org/abs/1905.10731)
 - [Andrew et al. 2021 - Differentially Private Learning with Adaptive Clipping](https://arxiv.org/abs/1905.03871)
+- [Bu et al. 2023 - Automatic Clipping: Differentially Private Deep Learning Made Easier and Stronger](https://openreview.net/forum?id=e8i7OaPj0q)
 - [Koskela et al. 2020 - Computing Tight DP Guarantees Using FFT](https://arxiv.org/abs/1906.03049)
 - [Denisov et al. 2022 - Improved DP for SGD via Optimal Accounting](https://arxiv.org/abs/2210.00597)

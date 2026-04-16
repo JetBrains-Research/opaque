@@ -114,7 +114,7 @@ step = acc.parallel_poisson(
 ### `acc.adaclip(inner, *, fraction_noise_std, expected_batch_size)`
 
 Accounts for the additional privacy cost of adaptive clipping (the noisy
-quantile query). Use this when using `adaptive_clipped_grad`.
+quantile query). Use this **only** when using `adaptive_clipped_grad`.
 
 ```python
 expected_batch_size = sample_rate * dataset_size
@@ -125,6 +125,11 @@ step = acc.poisson(
     sample_rate=0.01,
 )
 ```
+
+!!! note "AUTO-S does not need `adaclip`"
+    `auto_clipped_grad` (AUTO-S) has no noisy quantile query and no additional
+    privacy cost. Use `acc.poisson(acc.gaussian(nm), sample_rate)` directly —
+    the same accounting as fixed clipping with `clipped_grad`.
 
 ### `acc.eps_delta(epsilon, delta=0.0)`
 

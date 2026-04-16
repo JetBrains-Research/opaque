@@ -5,7 +5,16 @@ the model update. This is the core operation that makes DP-SGD possible:
 clipping establishes a known sensitivity, which determines how much noise is
 needed for a given privacy guarantee.
 
-Opaque provides three clipping APIs at different levels of abstraction.
+Opaque provides three clipping modes and several API levels:
+
+| Mode | Function | Clip norm | State |
+|------|----------|-----------|-------|
+| **Fixed** | `clipped_grad` | Constant `C` set by the user | `FixedClipState` (immutable) |
+| **Adaptive** | `adaptive_clipped_grad` | Auto-tuned via target quantile | `AdaptiveClipState` (updates each step) |
+| **AUTO-S** | `auto_clipped_grad` | Fixed `R`, smooth scaling replaces hard clip | `AutoClipState` (immutable) |
+
+All three produce the same `clip_state.sensitivity` contract (`R / normalize_by`),
+so noise calibration and privacy accounting are interchangeable.
 
 ## `clipped_grad` -- recommended API
 
@@ -288,6 +297,100 @@ grads = dist_utils.sum_gradients(grads)
 counts across ranks, recomputes the global clipping rate,
 and updates `next_clipping_norm` to be identical on every device.
 
+## AUTO-S clipping
+
+`auto_clipped_grad` uses the AUTO-S algorithm
+([Bu et al., NeurIPS 2023](https://openreview.net/forum?id=e8i7OaPj0q)) which
+replaces hard per-example clipping with smooth scaling. Instead of
+`min(1, R/||g||)`, each per-example gradient is scaled by `R / (||g|| + gamma)`,
+where `gamma > 0` is a small stability constant.
+
+```python
+from opaque import auto_clipped_grad
+
+grad_fn, clip_state = auto_clipped_grad(
+    loss_fn,
+    batch_argnums=1,
+    clipping_norm=1.0,
+    gamma=0.01,             # stability constant (paper default)
+    normalize_by=batch_size,
+)
+
+grads, clip_state = grad_fn(params, batch, state=clip_state)
+```
+
+### How AUTO-S works
+
+For each per-example gradient $g_i$:
+
+$$\hat{g}_i = g_i \cdot \frac{R}{\lVert g_i \rVert + \gamma}$$
+
+Key properties:
+
+- **No information loss from hard clipping.** Standard clipping maps all
+  gradients with norm > C to the same norm C. AUTO-S preserves relative
+  magnitude: larger gradients still produce larger scaled outputs.
+- **Output norm is strictly below R** for all finite inputs (guaranteed by
+  $\gamma > 0$).
+- **Sensitivity is unchanged**: the L2 sensitivity remains `R / normalize_by`,
+  identical to fixed clipping.
+- **Near-zero gradients vanish** rather than being normalized to norm R (which
+  is what would happen with `gamma = 0`). This improves convergence behavior.
+
+### When to use AUTO-S
+
+AUTO-S is a good choice when:
+
+- You want to **eliminate the clipping threshold as a hyperparameter** — set
+  `clipping_norm` to any reasonable value (e.g., 1.0) and AUTO-S will
+  smoothly scale all gradients rather than discarding information above a
+  hard threshold.
+- You observe **accuracy degradation from aggressive clipping** in standard
+  DP-SGD, particularly when gradient norms vary widely across examples.
+
+Use `adaptive_clipped_grad` instead when you want the clip norm itself to
+adapt to the data distribution (quantile tracking). Use `clipped_grad` when
+you want standard DP-SGD with a fixed threshold.
+
+### State and accounting
+
+`AutoClipState` is immutable like `FixedClipState` — the state never changes
+between calls. No RNG key is required (no noisy statistics).
+
+Privacy accounting is identical to fixed clipping: use
+`acc.poisson(acc.gaussian(nm), sample_rate)`. **Do not** use `acc.adaclip()` —
+AUTO-S has no quantile query and no additional privacy cost beyond the gradient
+mechanism itself.
+
+```python
+import opaque.accounting as acc
+
+# Same accounting as fixed clipping — no acc.adaclip() wrapper
+step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
+training = step * num_steps
+eps = training.epsilon_at(delta=1e-5)
+```
+
+### Distributed
+
+`AutoClipState` is deterministic and does not need synchronization across
+ranks. `sync(clip_state)` validates that `clipping_norm` matches (same
+behavior as `FixedClipState`).
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `loss_fn` | `Callable` | required | Per-example loss function. |
+| `argnums` | `int \| tuple[int, ...]` | `0` | Which arguments to differentiate. |
+| `has_aux` | `bool` | `False` | If True, `loss_fn` returns `(loss, aux)`. |
+| `clipping_norm` | `float \| PerGroup` | required | Reference norm R (formal sensitivity bound). |
+| `gamma` | `float` | `0.01` | Stability constant (must be > 0). Paper default 0.01. |
+| `normalize_by` | `float` | `1.0` | Divide scaled sum by this constant. |
+| `batch_argnums` | `int \| tuple[int, ...]` | `1` | Which arguments have a batch dimension. |
+| `microbatch_size` | `int \| None` | `None` | Process batch in chunks to reduce memory. |
+| `return_aux` | `bool` | `False` | Return per-example diagnostics. |
+
 ## Loss function requirements
 
 The loss function passed to `clipped_grad` must:
@@ -430,6 +533,25 @@ grad_fn, clip_state = clipped_grad(
 # aux.group_norms: dict mapping group name → per-example norms tensor
 for name, norms in aux.group_norms.items():
     print(f"{name}: mean_norm={norms.mean():.3f}")
+```
+
+### AUTO-S per-group clipping
+
+Per-group clipping works with `auto_clipped_grad`. Each group is scaled
+independently by `R_k / (||g||_k + gamma)`:
+
+```python
+from opaque import auto_clipped_grad
+
+pg = per_group(params, self_attn=1.0, mlp=2.0)
+
+grad_fn, clip_state = auto_clipped_grad(
+    loss_fn,
+    clipping_norm=pg,
+    gamma=0.01,
+    batch_argnums=(1, 2),
+    normalize_by=batch_size,
+)
 ```
 
 ### Adaptive per-group clipping

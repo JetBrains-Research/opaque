@@ -189,10 +189,11 @@ noise_state = sync(noise_state)
 (sum), recomputes the global clipping rate, and updates `clipping_norm`. After
 the call, `clip_state.sensitivity` is identical on every device.
 
-For fixed clipping (`clipped_grad`), the state is deterministic and does
-not need synchronization. You can optionally validate with
-`sync(clip_state)`, which asserts that `clipping_norm` matches across
-ranks and raises `RuntimeError` if it does not.
+For fixed clipping (`clipped_grad`) and AUTO-S clipping
+(`auto_clipped_grad`), the state is deterministic and does not need
+synchronization. You can optionally validate with `sync(clip_state)`,
+which asserts that `clipping_norm` matches across ranks and raises
+`RuntimeError` if it does not.
 
 ## Poisson sampling
 
@@ -283,7 +284,8 @@ following types are registered:
 |------|----------|
 | `FixedClipState` | Assert `clipping_norm` matches across ranks |
 | `AdaptiveClipState` | Aggregate counts, recompute global clipping rate, update `clipping_norm` |
-| `ClippedFunAux`, `ClippedGradAux`, `AdaptiveClippedGradAux` | Gather aux tensors across ranks |
+| `AutoClipState` | Assert `clipping_norm` matches across ranks (same as `FixedClipState`) |
+| `ClippedFunAux`, `ClippedGradAux`, `AdaptiveClippedGradAux`, `AutoClippedGradAux` | Gather aux tensors across ranks |
 | `GaussianNoiseState` | Assert seed and step counter match across ranks |
 | `MFNoiseState` | Assert seed and step counter match for MF noise |
 | `TrainingProfiler` | Aggregate only unsynchronized step/checkpoint suffix into a global profiler snapshot |

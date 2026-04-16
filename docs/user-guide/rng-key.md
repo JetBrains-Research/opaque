@@ -171,6 +171,10 @@ grad_fn, clip_state = adaptive_clipped_grad(
 )
 ```
 
+!!! note "AUTO-S does not need a key"
+    `auto_clipped_grad` is deterministic and does not require an RNG key.
+    Only `adaptive_clipped_grad` needs a key (for the noisy quantile query).
+
 ### Auditing
 
 ```python
