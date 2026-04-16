@@ -81,6 +81,13 @@ $$\sigma_{\text{eff}} = \frac{\sigma}{S}$$
 
 where $S$ is the sensitivity. The PLD is a single Gaussian PLD.
 
+## Assumptions and limitations
+
+- BLT targets long runs via a **buffered** Toeplitz parameterization; privacy is for the optimized strategy you instantiate.
+- Optional **`lr_schedule`** is encoded like BandMF into a Toeplitz workload for the optimizer; see [BandMF — Assumptions](band-mf.md#assumptions-and-limitations) for the constant- versus variable-\(\eta\) caveat.
+- **Subsampling**: BLT does not use `cyclic_poisson` the way BandMF does; combine with Balls-in-Bins when using correlated MF + epoch structure (see examples).
+- Overview: [Matrix factorization (MF)](../user-guide/matrix-factorization.md).
+
 ## Supported amplifications
 
 BLT handles multi-participation patterns **internally** via the

@@ -140,7 +140,7 @@ process = acc.cyclic_poisson(mechanism, sample_rate=q)
 python examples/train_dp_ftrl.py --preset smoke --optimizer adam --mechanism blt
 ```
 
-Works with all MF mechanisms: `band_mf`, `blt`, `lambda_cgd`, `bisr`, `identity`.
+Works with MF mechanisms supported by `jme_noise` (see [Matrix factorization](matrix-factorization.md)): `band_mf`, `blt`, `lambda_cgd`, `bisr`, `bsr`, `identity`.
 
 ## DP-specific optimizer considerations
 

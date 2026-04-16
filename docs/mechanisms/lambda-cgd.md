@@ -72,6 +72,13 @@ workload (momentum, LR schedule). This is a fundamental property of the MF
 privacy framework. The sensitivity formula (Theorem 1, eq 15 of the paper)
 has a closed-form expression in terms of λ, min_sep, and max_participations.
 
+## Assumptions and limitations
+
+- Bandwidth is **fixed** (bidiagonal inverse); correlation is controlled by a single \(\lambda\) (and optional momentum in the factory).
+- Uses **Balls-in-Bins** amplification like other epoch-structured MF mechanisms; sampler semantics must match accounting.
+- **Momentum** changes the constructed strategy; sensitivity is still computed from the resulting matrix (not from “ignoring” momentum).
+- Broader MF context: [Matrix factorization (MF)](../user-guide/matrix-factorization.md).
+
 ## Noise generation
 
 ```python

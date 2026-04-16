@@ -181,6 +181,7 @@ def _derive_second_strategy(
     """Same mechanism, ``momentum=beta2`` workload."""
     from .band_mf import BandMfStrategy, band_mf_strategy
     from .bisr import BisrStrategy, bisr_strategy
+    from .bsr import BsrStrategy, bsr_strategy
     from .blt import BltStrategy, blt_strategy
     from .identity import IdentityStrategy, identity_strategy
     from .lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
@@ -220,6 +221,15 @@ def _derive_second_strategy(
                 if hasattr(strategy, "_max_participations")
                 else 1,
                 momentum=beta2,
+            )
+        case BsrStrategy():
+            return bsr_strategy(
+                bandwidth=strategy._bandwidth,
+                n_steps=strategy._n_steps,
+                min_sep=strategy._min_sep,
+                max_participations=strategy._max_participations,
+                momentum=beta2,
+                weight_decay=strategy._weight_decay,
             )
         case IdentityStrategy():
             return identity_strategy()

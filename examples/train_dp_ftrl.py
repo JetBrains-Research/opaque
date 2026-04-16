@@ -36,6 +36,8 @@ MECHANISMS:
                via PRNG replay. Single hyperparam λ, zero extra memory.
   bisr      — BISR (Kalinin et al., ICLR 2026), generalises λCGD to
                arbitrary bandwidth p. Coefficients from inverse square root.
+  bsr       — BSR (Kalinin & Lampert, NeurIPS 2024), closed-form banded square
+               root for SGD + momentum + weight decay (no L-BFGS). BnB sampling.
   identity  — DP-SGD baseline via MF API (C^{-1} = I, independent noise).
                Same training loop for fair comparison.
 
@@ -56,6 +58,9 @@ USAGE:
   # BISR with bandwidth=4, Balls-in-Bins sampling
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism bisr --bisr-bandwidth 4
 
+  # BSR (closed-form) with bandwidth 8; use --weight-decay α > β (paper regime)
+  python examples/train_dp_ftrl.py --preset smoke --mechanism bsr --bsr-bandwidth 8 --weight-decay 1.0
+
   # DP-SGD baseline for fair comparison (same loop, independent noise)
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism identity
 
@@ -73,6 +78,7 @@ REFERENCES:
   - BLT: https://arxiv.org/abs/2404.16706
   - DP-λCGD: https://arxiv.org/abs/2601.22334
   - BISR: https://arxiv.org/abs/2505.12128
+  - BSR: https://arxiv.org/abs/2405.13763
   - DP-FTRL: https://arxiv.org/abs/2103.00039
   - JME (DP-Adam): https://arxiv.org/abs/2502.06597
 """
@@ -102,6 +108,7 @@ from opaque.clipping import clipped_grad
 from opaque.noise.mf import (
     band_mf_strategy,
     bisr_strategy,
+    bsr_strategy,
     blt_strategy,
     identity_strategy,
     jme_joint_sensitivity,
@@ -310,6 +317,12 @@ def parse_args():
         help="Polyak momentum for SGD (default: 0.95 per BandMF paper)",
     )
     train_g.add_argument(
+        "--weight-decay",
+        type=float,
+        default=1.0,
+        help="Multiplicative weight decay α in (0,1] for torchopt SGD (BSR workload; default 1.0).",
+    )
+    train_g.add_argument(
         "--beta1",
         type=float,
         default=0.9,
@@ -358,8 +371,8 @@ def parse_args():
         "--mechanism",
         type=str,
         default="band_mf",
-        choices=["band_mf", "blt", "lambda_cgd", "bisr", "identity", "none"],
-        help="MF mechanism: band_mf, blt, lambda_cgd, bisr, identity, none (non-DP).",
+        choices=["band_mf", "blt", "lambda_cgd", "bisr", "bsr", "identity", "none"],
+        help="MF mechanism: band_mf, blt, lambda_cgd, bisr, bsr, identity, none (non-DP).",
     )
     dp_g.add_argument(
         "--clipping-norm", type=float, default=0.9, help="Fixed clipping norm"
@@ -401,6 +414,12 @@ def parse_args():
         type=int,
         default=4,
         help="Bandwidth for BISR mechanism (>= 2). Higher = better utility, more PRNG replays.",
+    )
+    dp_g.add_argument(
+        "--bsr-bandwidth",
+        type=int,
+        default=8,
+        help="Bandwidth p for BSR mechanism (>= 1). Closed-form coefficients; no optimizer.",
     )
 
     # Privacy
@@ -734,7 +753,7 @@ def main():
         def make_epoch_sampler(epoch):
             return _blt_sampler
 
-    elif args.mechanism in ("lambda_cgd", "bisr"):
+    elif args.mechanism in ("lambda_cgd", "bisr", "bsr"):
         # BnB sampler created once — the same fixed partition is reused every
         # epoch (required by BnB privacy accounting, Lemma 3.2 of
         # Choquette-Choo et al. 2024).
@@ -783,6 +802,11 @@ def main():
             f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, random partition/epoch)"
         )
         print(f"  BISR bandwidth: {args.bisr_bandwidth}")
+    elif args.mechanism == "bsr":
+        print(
+            f"  Sampler: balls-in-bins (k={expected_steps_per_epoch}, random partition/epoch)"
+        )
+        print(f"  BSR bandwidth: {args.bsr_bandwidth} (closed-form coefficients)")
     else:
         print(f"  Sampler: poisson (q={sample_rate:.6f})")
     print(f"  Expected batch size: {args.batch_size}")
@@ -864,6 +888,11 @@ def main():
     # momentum and the second-moment strategy uses β₂.  For SGD, a single
     # strategy uses the Polyak momentum.
     use_adam = args.optimizer == "adam"
+    if args.mechanism == "bsr" and use_adam:
+        raise ValueError(
+            "Mechanism 'bsr' is only supported with SGD in this example (JME + BSR second stream). "
+            "Use --optimizer sgd or choose band_mf, blt, or bisr for Adam."
+        )
 
     def _workload_momentum() -> float:
         """Workload momentum for the primary (first moment) strategy."""
@@ -894,6 +923,15 @@ def main():
                 bandwidth=args.bisr_bandwidth, n_steps=total_steps,
                 min_sep=expected_steps_per_epoch,
                 max_participations=args.num_epochs, momentum=mom,
+            )
+        elif args.mechanism == "bsr":
+            return bsr_strategy(
+                bandwidth=args.bsr_bandwidth,
+                n_steps=total_steps,
+                min_sep=expected_steps_per_epoch,
+                max_participations=args.num_epochs,
+                momentum=mom,
+                weight_decay=args.weight_decay,
             )
         elif args.mechanism == "identity":
             return identity_strategy()
@@ -945,6 +983,21 @@ def main():
     elif args.mechanism == "bisr" and strategy is not None:
         def acct_mechanism(nm):
             mechanism = acc.bisr(
+                nm,
+                sensitivity=strategy.sensitivity,
+                gram_matrix=strategy.gram_matrix,
+            )
+            if use_adam:
+                mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
+                                   max_column_norm=strategy._max_column_norm)
+            return acc.balls_in_bins(
+                mechanism,
+                num_bins=expected_steps_per_epoch,
+                num_epochs=args.num_epochs,
+            )
+    elif args.mechanism == "bsr" and strategy is not None:
+        def acct_mechanism(nm):
+            mechanism = acc.bsr(
                 nm,
                 sensitivity=strategy.sensitivity,
                 gram_matrix=strategy.gram_matrix,
@@ -1049,6 +1102,7 @@ def main():
         optimizer = torchopt.sgd(
             lr=lambda step: lr_schedule[min(step, len(lr_schedule) - 1)].item(),
             momentum=args.momentum,
+            weight_decay=args.weight_decay,
         )
     opt_state = optimizer.init(trainable_params)
 
@@ -1077,10 +1131,18 @@ def main():
         print(f"  Optimizer: Adam via JME (β₁={args.beta1}, β₂={args.beta2}, ε={args.adam_eps})")
         print(f"  Workload: EMA β₁={args.beta1} (1st moment), β₂={args.beta2} (2nd moment)")
     else:
-        print(f"  Optimizer: SGD + Polyak momentum (β={args.momentum})")
+        print(
+            f"  Optimizer: SGD + Polyak momentum (β={args.momentum}, "
+            f"weight_decay α={args.weight_decay})"
+        )
         print(
             f"  Workload: momentum-SGD (β={args.momentum}){' [prefix-sum]' if args.momentum == 1.0 else ''}"
         )
+        if args.mechanism == "bsr":
+            print(
+                "  Note: BSR coefficients assume constant LR in the paper; "
+                "this script still uses the LR schedule only in the optimizer."
+            )
     print(f"  Clipping norm: {args.clipping_norm} (fixed)")
     print(
         f"  Sensitivity: {zeta:.6f} (= {args.clipping_norm} / {args.batch_size})"
@@ -1115,6 +1177,9 @@ def main():
     elif args.mechanism == "bisr":
         print(f"  BISR bandwidth: {args.bisr_bandwidth}")
         print("  Column normalization: enabled (Appendix A, exact BnB)")
+    elif args.mechanism == "bsr":
+        print(f"  BSR bandwidth: {args.bsr_bandwidth}")
+        print(f"  Weight decay (workload α): {args.weight_decay}")
 
     # ===================================================================
     # Training loop
