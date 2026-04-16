@@ -54,6 +54,7 @@ class BltStrategy:
     _min_sep: int = 1
     _max_participations: int | None = 1
     _max_buffers: int = 10
+    _lr_schedule: torch.Tensor | None = None
 
 
 def blt_strategy(
@@ -143,4 +144,9 @@ def blt_strategy(
         _min_sep=min_sep,
         _max_participations=max_participations,
         _max_buffers=max_buffers,
+        _lr_schedule=(
+            torch.as_tensor(lr_schedule, dtype=torch.float64).clone()
+            if lr_schedule is not None
+            else None
+        ),
     )
