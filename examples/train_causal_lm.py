@@ -43,7 +43,6 @@ USAGE:
 import argparse
 import contextlib
 import importlib.util
-import math
 import os
 import sys
 import time
@@ -552,7 +551,7 @@ def parse_args():
     dp_group.add_argument(
         "--denoiser-process-std",
         type=float,
-        default=math.sqrt(1e-3),
+        default=1e-3,
         help="DiSK process noise scale (same units as noise stddev); only used with --denoiser disk.",
     )
 
