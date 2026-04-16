@@ -1,12 +1,4 @@
-"""Scalar Kalman filtering on gradient-shaped PyTrees (DiSK-style denoising).
-
-Applies an independent random-walk Kalman filter per tensor element.  This is
-post-processing on noisy gradients: it does not change the DP mechanism or
-privacy budget when applied only to the released noisy signal.
-
-``noise_var`` (measurement variance R) may be a scalar or :class:`~opaque.utils.per_group.PerGroup`
-when noise scales differ per parameter group (e.g. MSE-optimal per-group noise).
-"""
+"""Internal Kalman / DiSK implementation (random-walk filter per tensor element)."""
 
 from __future__ import annotations
 
@@ -16,6 +8,7 @@ from typing import Any
 
 import torch
 
+from opaque.denoising.types import DenoiserState
 from opaque.utils.per_group import PerGroup
 from opaque.utils.pytree import tree_map_with_path
 
@@ -63,29 +56,25 @@ def _leaf_kalman_step(
 
 
 @dataclasses.dataclass(frozen=True)
-class KalmanDenoiserState:
-    """Immutable state for :func:`kalman_denoiser`."""
+class DiskDenoiserState(DenoiserState):
+    """Immutable state for :func:`~opaque.denoising.disk_denoiser` (DiSK / Kalman)."""
 
     _estimate: Any
     _error_var: Any
     _step_counter: int
 
 
-# Alias for API stability until multiple denoiser state types exist.
-DenoiserState = KalmanDenoiserState
-
-
-def kalman_denoiser(
+def disk_denoiser(
     grad_template: Any,
     *,
     noise_var: float | PerGroup,
     process_var: float,
     dtype: torch.dtype | None = None,
 ) -> tuple[
-    Callable[..., tuple[Any, KalmanDenoiserState]],
-    KalmanDenoiserState,
+    Callable[..., tuple[Any, DiskDenoiserState]],
+    DiskDenoiserState,
 ]:
-    """Build a Kalman denoiser for a gradient-shaped PyTree.
+    """Build a DiSK-style Kalman denoiser for a gradient-shaped PyTree.
 
     Uses a random-walk state model (process variance ``process_var``) and
     Gaussian measurement noise with variance ``noise_var`` (R).  Each tensor
@@ -144,7 +133,7 @@ def kalman_denoiser(
         lambda path, leaf: _init_leaf(path, leaf)[1], grad_template
     )
 
-    state0 = KalmanDenoiserState(
+    state0 = DiskDenoiserState(
         _estimate=estimate,
         _error_var=error_var,
         _step_counter=0,
@@ -152,10 +141,10 @@ def kalman_denoiser(
 
     def denoise(
         noisy: Any,
-        st: KalmanDenoiserState,
+        st: DiskDenoiserState,
         *,
         noise_var: float | PerGroup | None = None,
-    ) -> tuple[Any, KalmanDenoiserState]:
+    ) -> tuple[Any, DiskDenoiserState]:
         r_effective = noise_var if noise_var is not None else default_noise_var
         if isinstance(r_effective, PerGroup):
             for g, v in r_effective.values.items():
@@ -225,7 +214,7 @@ def kalman_denoiser(
         new_estimate = _unzip_est(pairs)
         new_error_var = _unzip_var(pairs)
 
-        new_state = KalmanDenoiserState(
+        new_state = DiskDenoiserState(
             _estimate=new_estimate,
             _error_var=new_error_var,
             _step_counter=st._step_counter + 1,

@@ -553,15 +553,16 @@ def parse_args():
     dp_group.add_argument(
         "--denoiser",
         type=str,
-        choices=["none", "kalman"],
+        choices=["none", "disk"],
         default="none",
-        help="Optional post-processing on noisy gradients after the DP mechanism (default: none).",
+        help="Optional post-processing on noisy gradients after the DP mechanism (default: none). "
+        "disk = DiSK-style Kalman denoising (ICLR 2025).",
     )
     dp_group.add_argument(
         "--denoiser-process-var",
         type=float,
         default=1e-3,
-        help="Kalman process variance Q (random-walk state); only used with --denoiser kalman.",
+        help="DiSK process variance Q (random-walk state); only used with --denoiser disk.",
     )
 
     # Model precision
@@ -1443,11 +1444,11 @@ def main():
 
     denoise = None
     denoiser_state = None
-    if args.denoiser == "kalman":
-        from opaque.denoising import kalman_denoiser
+    if args.denoiser == "disk":
+        from opaque.denoising import disk_denoiser
 
         init_std = _noise_stddev(clip_state, noise_multiplier)
-        denoise, denoiser_state = kalman_denoiser(
+        denoise, denoiser_state = disk_denoiser(
             trainable_params,
             noise_var=_noise_variance(init_std),
             process_var=args.denoiser_process_var,
