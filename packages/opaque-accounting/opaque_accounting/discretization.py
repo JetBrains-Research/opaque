@@ -16,12 +16,16 @@ class DiscretizationConfig:
         log_x_mass_truncation_bound: Log tail mass cutoff in x-space. Tails below exp(bound) are truncated.
         pessimistic_estimate: Round upward for safe upper bounds (True) or downward (False).
         max_grid_size: Maximum grid bins before automatic coarsening.
+        num_mc_samples: Number of Monte Carlo samples for MC-based accounting.
+        seed: RNG seed for Monte Carlo reproducibility.
     """
 
     discretization: float = 1e-4
     log_x_mass_truncation_bound: float = -50.0
     pessimistic_estimate: bool = True
     max_grid_size: int = 10_000_000
+    num_mc_samples: int = 100_000
+    seed: int = 42
 
     def to_native(self) -> _native.DiscretizationConfig:
         """Convert to Rust DiscretizationConfig for FFI calls."""
@@ -30,6 +34,8 @@ class DiscretizationConfig:
             log_mass_truncation_bound=self.log_x_mass_truncation_bound,
             pessimistic_estimate=self.pessimistic_estimate,
             max_grid_size=self.max_grid_size,
+            num_mc_samples=self.num_mc_samples,
+            seed=self.seed,
         )
 
 
@@ -48,6 +54,8 @@ def set_discretization(
     log_x_mass_truncation_bound: float = -50.0,
     pessimistic_estimate: bool = True,
     max_grid_size: int = 10_000_000,
+    num_mc_samples: int = 100_000,
+    seed: int = 42,
 ) -> None:
     """Set module-level default discretization parameters.
 
@@ -64,6 +72,8 @@ def set_discretization(
             False, round downward (optimistic estimate, useful for debugging only).
         max_grid_size: If grid exceeds this many bins, coarsen discretization
             automatically. Default: 10,000,000.
+        num_mc_samples: Number of Monte Carlo samples for MC-based accounting. Default: 100,000.
+        seed: RNG seed for Monte Carlo reproducibility. Default: 42.
 
     Example::
 
@@ -79,6 +89,8 @@ def set_discretization(
         log_x_mass_truncation_bound=log_x_mass_truncation_bound,
         pessimistic_estimate=pessimistic_estimate,
         max_grid_size=max_grid_size,
+        num_mc_samples=num_mc_samples,
+        seed=seed,
     )
 
 
@@ -88,6 +100,8 @@ def get_discretization(
     log_x_mass_truncation_bound: float | None = None,
     pessimistic_estimate: bool | None = None,
     max_grid_size: int | None = None,
+    num_mc_samples: int | None = None,
+    seed: int | None = None,
 ) -> DiscretizationConfig:
     """Get discretization config with hierarchical resolution.
 
@@ -103,6 +117,8 @@ def get_discretization(
         log_x_mass_truncation_bound: Log tail mass cutoff in x-space (query-time override).
         pessimistic_estimate: Whether to use pessimistic rounding (query-time override).
         max_grid_size: Maximum grid size before coarsening (query-time override).
+        num_mc_samples: Number of Monte Carlo samples (query-time override).
+        seed: RNG seed for Monte Carlo (query-time override).
 
     Returns:
         Resolved DiscretizationConfig (always concrete, never None).
@@ -124,6 +140,8 @@ def get_discretization(
         and log_x_mass_truncation_bound is None
         and pessimistic_estimate is None
         and max_grid_size is None
+        and num_mc_samples is None
+        and seed is None
     ):
         return base
 
@@ -145,4 +163,8 @@ def get_discretization(
         max_grid_size=max_grid_size
         if max_grid_size is not None
         else base.max_grid_size,
+        num_mc_samples=num_mc_samples
+        if num_mc_samples is not None
+        else base.num_mc_samples,
+        seed=seed if seed is not None else base.seed,
     )

@@ -163,9 +163,7 @@ pub fn py_balls_in_bins_gaussian_pld_epochs(
 ///     gram (list[float]): Flattened row-major b×b Gram matrix.
 ///     num_bins (int): Number of bins b.
 ///     sigma (float): Noise multiplier σ, must be > 0.
-///     num_samples (int): Number of Monte Carlo samples.
-///     seed (int): RNG seed for reproducibility.
-///     config (DiscretizationConfig): Discretization configuration.
+///     config (DiscretizationConfig): Discretization configuration (includes num_mc_samples and seed).
 ///
 /// Returns:
 ///     Pld: The privacy loss distribution (asymmetric, remove + add).
@@ -173,17 +171,15 @@ pub fn py_balls_in_bins_gaussian_pld_epochs(
 /// Raises:
 ///     ValueError: If parameters are invalid.
 #[pyfunction]
-#[pyo3(name = "bnb_mc_pld", signature = (gram, num_bins, sigma, num_samples, seed, config))]
+#[pyo3(name = "bnb_mc_pld", signature = (gram, num_bins, sigma, config))]
 pub fn py_bnb_mc_pld(
     gram: Vec<f64>,
     num_bins: usize,
     sigma: f64,
-    num_samples: usize,
-    seed: u64,
     config: &PyDiscretizationConfig,
 ) -> PyResult<PyPld> {
     let pld =
-        crate::amplification::bnb_mc_pld(&gram, num_bins, sigma, num_samples, seed, &config.inner)
+        crate::amplification::bnb_mc_pld(&gram, num_bins, sigma, &config.inner)
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
     Ok(PyPld::new(pld))
 }
@@ -195,18 +191,14 @@ pub fn py_bnb_mc_pld(
 ///     n_steps: Total training iterations n.
 ///     p: Per-iteration Poisson inclusion probability p (Algorithm 2), not the per-example rate p_0.
 ///     sigma: Raw noise multiplier σ (same as BandMf noise_multiplier).
-///     num_samples: Monte Carlo sample count.
-///     seed: RNG seed.
-///     config: Discretization configuration.
+///     config: Discretization configuration (includes num_mc_samples and seed).
 #[pyfunction]
-#[pyo3(name = "bandmf_b_min_sep_warm_mc_pld", signature = (strategy_coef, n_steps, p, sigma, num_samples, seed, config))]
+#[pyo3(name = "bandmf_b_min_sep_warm_mc_pld", signature = (strategy_coef, n_steps, p, sigma, config))]
 pub fn py_bandmf_b_min_sep_warm_mc_pld(
     strategy_coef: Vec<f64>,
     n_steps: usize,
     p: f64,
     sigma: f64,
-    num_samples: usize,
-    seed: u64,
     config: &PyDiscretizationConfig,
 ) -> PyResult<PyPld> {
     let pld = crate::amplification::bandmf_b_min_sep_warm_mc_pld(
@@ -214,8 +206,6 @@ pub fn py_bandmf_b_min_sep_warm_mc_pld(
         n_steps,
         p,
         sigma,
-        num_samples,
-        seed,
         &config.inner,
     )
     .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;

@@ -28,20 +28,24 @@ pub struct PyDiscretizationConfig {
 #[pymethods]
 impl PyDiscretizationConfig {
     #[new]
-    #[pyo3(signature = (discretization=1e-4, log_mass_truncation_bound=-50.0, pessimistic_estimate=true, max_grid_size=10_000_000))]
+    #[pyo3(signature = (discretization=1e-4, log_mass_truncation_bound=-50.0, pessimistic_estimate=true, max_grid_size=10_000_000, num_mc_samples=100_000, seed=42))]
     fn new(
         discretization: f64,
         log_mass_truncation_bound: f64,
         pessimistic_estimate: bool,
         max_grid_size: usize,
+        num_mc_samples: usize,
+        seed: u64,
     ) -> PyResult<Self> {
-        let inner = DiscretizationConfig::with_estimate(
+        let mut inner = DiscretizationConfig::with_estimate(
             discretization,
             log_mass_truncation_bound,
             pessimistic_estimate,
         )
         .map_err(to_py_err)?
         .with_max_grid_size(max_grid_size);
+        inner.num_mc_samples = num_mc_samples;
+        inner.seed = seed;
         Ok(Self { inner })
     }
 
@@ -65,11 +69,22 @@ impl PyDiscretizationConfig {
         self.inner.max_grid_size
     }
 
+    #[getter]
+    fn num_mc_samples(&self) -> usize {
+        self.inner.num_mc_samples
+    }
+
+    #[getter]
+    fn seed(&self) -> u64 {
+        self.inner.seed
+    }
+
     fn __repr__(&self) -> String {
         format!(
-            "DiscretizationConfig(discretization={}, log_mass_truncation_bound={}, pessimistic_estimate={}, max_grid_size={})",
+            "DiscretizationConfig(discretization={}, log_mass_truncation_bound={}, pessimistic_estimate={}, max_grid_size={}, num_mc_samples={}, seed={})",
             self.inner.discretization, self.inner.log_mass_truncation_bound,
             self.inner.pessimistic_estimate, self.inner.max_grid_size,
+            self.inner.num_mc_samples, self.inner.seed,
         )
     }
 
@@ -78,6 +93,8 @@ impl PyDiscretizationConfig {
             && self.inner.log_mass_truncation_bound == other.inner.log_mass_truncation_bound
             && self.inner.pessimistic_estimate == other.inner.pessimistic_estimate
             && self.inner.max_grid_size == other.inner.max_grid_size
+            && self.inner.num_mc_samples == other.inner.num_mc_samples
+            && self.inner.seed == other.inner.seed
     }
 
     fn __hash__(&self) -> u64 {
@@ -90,6 +107,8 @@ impl PyDiscretizationConfig {
             .hash(&mut hasher);
         self.inner.pessimistic_estimate.hash(&mut hasher);
         self.inner.max_grid_size.hash(&mut hasher);
+        self.inner.num_mc_samples.hash(&mut hasher);
+        self.inner.seed.hash(&mut hasher);
         hasher.finish()
     }
 }

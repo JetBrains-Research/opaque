@@ -21,11 +21,9 @@ def test_b_min_sep_smoke_pld():
         inner,
         strategy_coefficients=coef,
         n_steps=40,
-        participation_rate_p0=0.02,
-        num_mc_samples=5000,
-        mc_seed=123,
+        p0=0.02,
     )
-    eps = proc.epsilon_at(1e-3)
+    eps = proc.pld(num_mc_samples=5000, seed=123).epsilon_at(1e-3)
     assert eps > 0.0 and eps < 500.0
 
 
@@ -52,12 +50,10 @@ def test_b_min_sep_stricter_than_mf_only():
         inner,
         strategy_coefficients=coef,
         n_steps=20,
-        participation_rate_p0=0.1,
-        num_mc_samples=8000,
-        mc_seed=1,
+        p0=0.1,
     )
     cfg = get_discretization()
     pld_mf = native.mf_gaussian_pld(1.0, 0.7, cfg.to_native())
     eps_mf = pld_mf.epsilon_at(1e-3)
-    eps_bms = bms.epsilon_at(1e-3)
+    eps_bms = bms.pld(num_mc_samples=8000, seed=1).epsilon_at(1e-3)
     assert eps_bms < eps_mf

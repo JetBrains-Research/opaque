@@ -325,15 +325,17 @@ pub fn bandmf_b_min_sep_pld_from_transcripts(
 /// * `n_steps` — number of iterations `n`.
 /// * `p` — per-iteration inclusion probability `p` in Algorithm 2 (not `p_0`).
 /// * `sigma` — raw noise multiplier σ (same units as [`super::bnb_mc_pld`]).
+/// * `config` — discretization configuration (includes `num_mc_samples` and `seed`).
 pub fn bandmf_b_min_sep_warm_mc_pld(
     strategy_coef: &[f64],
     n_steps: usize,
     p: f64,
     sigma: f64,
-    num_samples: usize,
-    seed: u64,
     config: &DiscretizationConfig,
 ) -> Result<PrivacyLossDistribution> {
+    let num_samples = config.num_mc_samples;
+    let seed = config.seed;
+
     if strategy_coef.is_empty() {
         return Err(PldError::InvalidParameter(
             "strategy_coef must be non-empty".into(),
@@ -442,8 +444,9 @@ mod tests {
     #[test]
     fn mc_pld_smoke() {
         let coef = vec![0.7_f64.sqrt(), 0.3_f64.sqrt()];
-        let cfg = default_config();
-        let pld = bandmf_b_min_sep_warm_mc_pld(&coef, 50, 0.05, 1.0, 5000, 42, &cfg).unwrap();
+        let mut cfg = default_config();
+        cfg.num_mc_samples = 5000;
+        let pld = bandmf_b_min_sep_warm_mc_pld(&coef, 50, 0.05, 1.0, &cfg).unwrap();
         let eps = pld.epsilon_at(1e-3);
         assert!(eps > 0.0 && eps.is_finite());
     }
@@ -451,15 +454,17 @@ mod tests {
     #[test]
     fn transcripts_match_one_shot_epsilon() {
         let coef = vec![0.8_f64.sqrt(), 0.2_f64.sqrt(), 0.0];
-        let cfg = default_config();
+        let mut cfg = default_config();
+        cfg.num_mc_samples = 4000;
+        cfg.seed = 99;
         let sigma = 1.15;
         let n = 40;
         let p = 0.06;
-        let s = 4000usize;
-        let (rx, rz, ae) = bandmf_b_min_sep_prepare_transcripts(&coef, n, p, s, 99).unwrap();
+        let s = cfg.num_mc_samples;
+        let (rx, rz, ae) = bandmf_b_min_sep_prepare_transcripts(&coef, n, p, s, cfg.seed).unwrap();
         let pld_t =
             bandmf_b_min_sep_pld_from_transcripts(&rx, &rz, &ae, &coef, n, p, sigma, &cfg).unwrap();
-        let pld_1 = bandmf_b_min_sep_warm_mc_pld(&coef, n, p, sigma, s, 99, &cfg).unwrap();
+        let pld_1 = bandmf_b_min_sep_warm_mc_pld(&coef, n, p, sigma, &cfg).unwrap();
         let d = 1e-4;
         let e1 = pld_1.epsilon_at(d);
         let e2 = pld_t.epsilon_at(d);

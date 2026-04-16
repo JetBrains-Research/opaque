@@ -157,6 +157,8 @@ class DiscretizationConfig:
         log_mass_truncation_bound: float = -50.0,
         pessimistic_estimate: bool = True,
         max_grid_size: int = 10_000_000,
+        num_mc_samples: int = 100_000,
+        seed: int = 42,
     ) -> None: ...
     @property
     def discretization(self) -> float:
@@ -176,6 +178,16 @@ class DiscretizationConfig:
     @property
     def max_grid_size(self) -> int:
         """Maximum bins before automatic coarsening."""
+        ...
+
+    @property
+    def num_mc_samples(self) -> int:
+        """Number of Monte Carlo samples."""
+        ...
+
+    @property
+    def seed(self) -> int:
+        """RNG seed for Monte Carlo."""
         ...
 
     def __repr__(self) -> str: ...
@@ -373,8 +385,6 @@ def bandmf_b_min_sep_warm_mc_pld(
     n_steps: int,
     p: float,
     sigma: float,
-    num_samples: int,
-    seed: int,
     config: DiscretizationConfig,
 ) -> Pld:
     """Monte Carlo PLD for BandMF + warm-start b-min-sep (arXiv:2602.09338)."""
@@ -409,8 +419,6 @@ def bnb_mc_pld(
     gram: list[float],
     num_bins: int,
     sigma: float,
-    num_samples: int,
-    seed: int,
     config: DiscretizationConfig,
 ) -> Pld:
     """Compute the BnB PLD via Monte Carlo sampling of the dominating pair.
@@ -422,9 +430,7 @@ def bnb_mc_pld(
         gram: Flattened row-major b×b Gram matrix.
         num_bins: Number of bins b.
         sigma: Noise multiplier.
-        num_samples: Number of Monte Carlo samples.
-        seed: RNG seed for reproducibility.
-        config: PLD discretization configuration.
+        config: PLD discretization configuration (includes num_mc_samples and seed).
 
     Returns:
         The privacy loss distribution (asymmetric).

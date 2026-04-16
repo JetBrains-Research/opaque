@@ -118,9 +118,7 @@ def test_b_min_sep_round_trip():
         acc.band_mf(1.0, sensitivity=1.2, num_groups=50),
         strategy_coefficients=(0.9, 0.1),
         n_steps=100,
-        participation_rate_p0=0.02,
-        num_mc_samples=1000,
-        mc_seed=7,
+        p0=0.02,
     )
     state = proc.state_dict()
     restored = DpProcess.from_state_dict(state)

@@ -234,18 +234,16 @@ fn sample_privacy_loss_add(
 /// * `gram` — b×b Gram matrix (row-major, symmetric positive definite)
 /// * `num_bins` — Number of bins b
 /// * `sigma` — Noise multiplier
-/// * `num_samples` — Number of MC samples (e.g., 100_000)
-/// * `seed` — RNG seed for reproducibility
-/// * `config` — Discretization configuration
+/// * `config` — Discretization configuration (includes `num_mc_samples` and `seed`)
 pub fn bnb_mc_pld(
     gram: &[f64],
     num_bins: usize,
     sigma: f64,
-    num_samples: usize,
-    seed: u64,
     config: &DiscretizationConfig,
 ) -> Result<PrivacyLossDistribution> {
     let b = num_bins;
+    let num_samples = config.num_mc_samples;
+    let seed = config.seed;
 
     if gram.len() != b * b {
         return Err(PldError::InvalidParameter(format!(
@@ -462,7 +460,7 @@ mod tests {
             gram[i * b + i] = 1.0;
         }
         let config = default_config();
-        let pld = bnb_mc_pld(&gram, b, 1.0, 100_000, 42, &config).unwrap();
+        let pld = bnb_mc_pld(&gram, b, 1.0, &config).unwrap();
         let eps = pld.epsilon_at(1e-5);
         assert!(eps > 0.0 && eps.is_finite(), "eps = {}", eps);
     }
@@ -476,10 +474,10 @@ mod tests {
         }
         let config = default_config();
 
-        let eps_low = bnb_mc_pld(&gram, b, 0.5, 100_000, 42, &config)
+        let eps_low = bnb_mc_pld(&gram, b, 0.5, &config)
             .unwrap()
             .epsilon_at(1e-5);
-        let eps_high = bnb_mc_pld(&gram, b, 2.0, 100_000, 42, &config)
+        let eps_high = bnb_mc_pld(&gram, b, 2.0, &config)
             .unwrap()
             .epsilon_at(1e-5);
         assert!(
@@ -493,9 +491,11 @@ mod tests {
     #[test]
     fn test_bnb_mc_pld_rejects_bad_params() {
         let config = default_config();
-        assert!(bnb_mc_pld(&[1.0], 2, 1.0, 1000, 42, &config).is_err());
-        assert!(bnb_mc_pld(&[1.0, 0.0, 0.0, 1.0], 2, 0.0, 1000, 42, &config).is_err());
-        assert!(bnb_mc_pld(&[1.0, 0.0, 0.0, 1.0], 2, 1.0, 0, 42, &config).is_err());
+        assert!(bnb_mc_pld(&[1.0], 2, 1.0, &config).is_err());
+        assert!(bnb_mc_pld(&[1.0, 0.0, 0.0, 1.0], 2, 0.0, &config).is_err());
+        let mut zero_mc = default_config();
+        zero_mc.num_mc_samples = 0;
+        assert!(bnb_mc_pld(&[1.0, 0.0, 0.0, 1.0], 2, 1.0, &zero_mc).is_err());
     }
 
     #[test]
@@ -511,7 +511,7 @@ mod tests {
             }
         }
         let config = default_config();
-        let pld = bnb_mc_pld(&gram, b, 1.0, 100_000, 42, &config).unwrap();
+        let pld = bnb_mc_pld(&gram, b, 1.0, &config).unwrap();
         let eps = pld.epsilon_at(1e-5);
         assert!(eps > 0.0 && eps.is_finite());
     }

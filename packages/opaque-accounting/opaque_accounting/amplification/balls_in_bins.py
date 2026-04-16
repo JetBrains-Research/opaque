@@ -77,6 +77,8 @@ class BallsInBins(DpProcess):
         log_x_mass_truncation_bound: float | None = None,
         pessimistic_estimate: bool | None = None,
         max_grid_size: int | None = None,
+        num_mc_samples: int | None = None,
+        seed: int | None = None,
     ) -> Pld:
         from opaque_accounting.discretization import get_discretization
 
@@ -85,6 +87,8 @@ class BallsInBins(DpProcess):
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
+            num_mc_samples=num_mc_samples,
+            seed=seed,
         )
 
         native_cfg = config.to_native()
@@ -115,8 +119,6 @@ class BallsInBins(DpProcess):
                     list(mg.gram_matrix),
                     self.num_bins,
                     mg.noise_multiplier,
-                    100_000,  # MC samples
-                    42,  # seed
                     native_cfg,
                 )
             case Jme(inner=Blt() | LambdaCgd() | Bisr()) as j:
@@ -129,8 +131,6 @@ class BallsInBins(DpProcess):
                     list(j.gram_matrix),
                     self.num_bins,
                     j.noise_multiplier,
-                    100_000,  # MC samples
-                    42,  # seed
                     native_cfg,
                 )
             case _:

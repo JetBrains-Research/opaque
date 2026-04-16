@@ -49,9 +49,7 @@ class BMinSep(DpProcess):
     inner: _Inner
     strategy_coefficients: tuple[float, ...]
     n_steps: int
-    participation_rate_p0: float
-    num_mc_samples: int = 100_000
-    mc_seed: int = 42
+    p0: float
 
     @functools.lru_cache(maxsize=8)
     def pld(
@@ -61,16 +59,20 @@ class BMinSep(DpProcess):
         log_x_mass_truncation_bound: float | None = None,
         pessimistic_estimate: bool | None = None,
         max_grid_size: int | None = None,
+        num_mc_samples: int | None = None,
+        seed: int | None = None,
     ) -> Pld:
         config = get_discretization(
             discretization=discretization,
             log_x_mass_truncation_bound=log_x_mass_truncation_bound,
             pessimistic_estimate=pessimistic_estimate,
             max_grid_size=max_grid_size,
+            num_mc_samples=num_mc_samples,
+            seed=seed,
         )
         native_cfg = config.to_native()
         bands = len(self.strategy_coefficients)
-        p = _participation_p_from_per_example_rate(self.participation_rate_p0, bands)
+        p = _participation_p_from_per_example_rate(self.p0, bands)
 
         match self.inner:
             case Jme(inner=BandMf()) as j:
@@ -86,8 +88,8 @@ class BMinSep(DpProcess):
             self.strategy_coefficients,
             self.n_steps,
             p,
-            self.num_mc_samples,
-            self.mc_seed,
+            config.num_mc_samples,
+            config.seed,
         )
         if hid is None:
             return _native.bandmf_b_min_sep_warm_mc_pld(
@@ -95,8 +97,6 @@ class BMinSep(DpProcess):
                 self.n_steps,
                 p,
                 effective_nm,
-                self.num_mc_samples,
-                self.mc_seed,
                 native_cfg,
             )
         return _native.bandmf_b_min_sep_pld_from_transcript_handle(
@@ -113,10 +113,7 @@ def b_min_sep(
     inner: _Inner,
     strategy_coefficients: tuple[float, ...] | list[float],
     n_steps: int,
-    participation_rate_p0: float,
-    *,
-    num_mc_samples: int = 100_000,
-    mc_seed: int = 42,
+    p0: float,
 ) -> BMinSep:
     """BandMF privacy accounting under warm-start b-min-sep subsampling.
 
@@ -125,11 +122,9 @@ def b_min_sep(
         strategy_coefficients: First column of the BandMF strategy matrix ``C``
             (length equals ``bands``). Must match the training strategy.
         n_steps: Total number of training iterations ``n``.
-        participation_rate_p0: Target per-example participation rate per
-            iteration (``E[batch] / |D|``), i.e. the ``p_0`` used with cyclic
-            Poisson / batch-size accounting.
-        num_mc_samples: Monte Carlo samples for the PLD histogram.
-        mc_seed: RNG seed for reproducibility.
+        p0: Per-example participation rate per iteration
+            (``E[batch] / |D|``). Same ``p_0`` as cyclic Poisson /
+            batch-size accounting.
 
     Returns:
         A :class:`BMinSep` process (asymmetric PLD from Monte Carlo).
@@ -145,14 +140,10 @@ def b_min_sep(
         raise ValueError("strategy_coefficients must be non-empty")
     if n_steps < 1:
         raise ValueError(f"n_steps must be >= 1, got {n_steps}")
-    if num_mc_samples < 1:
-        raise ValueError(f"num_mc_samples must be >= 1, got {num_mc_samples}")
 
     return BMinSep(
         inner=inner,
         strategy_coefficients=coef,
         n_steps=n_steps,
-        participation_rate_p0=float(participation_rate_p0),
-        num_mc_samples=num_mc_samples,
-        mc_seed=mc_seed,
+        p0=float(p0),
     )

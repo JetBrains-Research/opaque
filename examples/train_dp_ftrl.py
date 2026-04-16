@@ -379,10 +379,10 @@ def parse_args():
         help="BandMF data subsampling: cyclic_poisson (default) or b_min_sep (Dong & Ganesh 2026).",
     )
     dp_g.add_argument(
-        "--band-mf-mc-samples",
+        "--mc-samples",
         type=int,
         default=100_000,
-        help="Monte Carlo samples for b_min_sep privacy accounting (ignored for cyclic_poisson).",
+        help="Monte Carlo samples for MC-based privacy accounting (b_min_sep, BnB).",
     )
     dp_g.add_argument(
         "--max-buffers",
@@ -902,6 +902,8 @@ def main():
 
     strategy = _make_strategy(lr_sched=lr_schedule)
 
+    acc.set_discretization(num_mc_samples=args.mc_samples, seed=args.seed)
+
     if args.mechanism == "band_mf" and strategy is not None:
         def acct_mechanism(nm):
             mechanism = acc.band_mf(
@@ -916,9 +918,7 @@ def main():
                 mechanism,
                 strategy_coefficients=strategy.coefficients,
                 n_steps=total_steps,
-                participation_rate_p0=p0,
-                num_mc_samples=args.band_mf_mc_samples,
-                mc_seed=args.seed,
+                p0=p0,
             )
     elif args.mechanism == "blt" and strategy is not None:
         def acct_mechanism(nm):

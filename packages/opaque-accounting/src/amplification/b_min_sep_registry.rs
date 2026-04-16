@@ -139,10 +139,12 @@ mod tests {
         let p = 0.07;
         let s = 3000usize;
         let sigma = 1.05;
-        let cfg = DiscretizationConfig::default();
+        let mut cfg = DiscretizationConfig::default();
+        cfg.num_mc_samples = s;
+        cfg.seed = 55;
         let h = register_b_min_sep_transcripts(&coef, n, p, s, 55).unwrap();
         let p1 = pld_from_transcript_handle(h, &coef, n, p, sigma, &cfg).unwrap();
-        let p2 = bandmf_b_min_sep_warm_mc_pld(&coef, n, p, sigma, s, 55, &cfg).unwrap();
+        let p2 = bandmf_b_min_sep_warm_mc_pld(&coef, n, p, sigma, &cfg).unwrap();
         let d = 1e-4;
         assert!((p1.epsilon_at(d) - p2.epsilon_at(d)).abs() < 0.06);
         drop_b_min_sep_transcript_handle(h);
