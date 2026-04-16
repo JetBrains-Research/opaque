@@ -58,8 +58,8 @@ USAGE:
   # BISR with bandwidth=4, Balls-in-Bins sampling
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism bisr --bisr-bandwidth 4
 
-  # BSR (closed-form) with bandwidth 8; use --weight-decay α > β (paper regime)
-  python examples/train_dp_ftrl.py --preset smoke --mechanism bsr --bsr-bandwidth 8 --weight-decay 1.0
+  # BSR (closed-form): workload α via --bsr-alpha (paper default 1.0); optimizer WD is separate (--weight-decay, default 0)
+  python examples/train_dp_ftrl.py --preset smoke --mechanism bsr --bsr-bandwidth 8 --bsr-alpha 1.0
 
   # DP-SGD baseline for fair comparison (same loop, independent noise)
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism identity
@@ -319,8 +319,9 @@ def parse_args():
     train_g.add_argument(
         "--weight-decay",
         type=float,
-        default=1.0,
-        help="Multiplicative weight decay α in (0,1] for torchopt SGD (BSR workload; default 1.0).",
+        default=0.0,
+        help="Optimizer weight decay: torchopt.sgd L2-style coefficient, or "
+        "jme_adamw decoupled WD (default 0; many JME runs omit WD).",
     )
     train_g.add_argument(
         "--beta1",
@@ -420,6 +421,13 @@ def parse_args():
         type=int,
         default=8,
         help="Bandwidth p for BSR mechanism (>= 1). Closed-form coefficients; no optimizer.",
+    )
+    dp_g.add_argument(
+        "--bsr-alpha",
+        type=float,
+        default=1.0,
+        help="BSR workload multiplicative decay α in (0,1] (paper); must satisfy α>β "
+        "(β is SGD momentum or Adam β₁). Ignored unless --mechanism bsr.",
     )
 
     # Privacy
@@ -888,11 +896,6 @@ def main():
     # momentum and the second-moment strategy uses β₂.  For SGD, a single
     # strategy uses the Polyak momentum.
     use_adam = args.optimizer == "adam"
-    if args.mechanism == "bsr" and use_adam:
-        raise ValueError(
-            "Mechanism 'bsr' is only supported with SGD in this example (JME + BSR second stream). "
-            "Use --optimizer sgd or choose band_mf, blt, or bisr for Adam."
-        )
 
     def _workload_momentum() -> float:
         """Workload momentum for the primary (first moment) strategy."""
@@ -931,7 +934,7 @@ def main():
                 min_sep=expected_steps_per_epoch,
                 max_participations=args.num_epochs,
                 momentum=mom,
-                weight_decay=args.weight_decay,
+                weight_decay=args.bsr_alpha,
             )
         elif args.mechanism == "identity":
             return identity_strategy()
@@ -1097,6 +1100,7 @@ def main():
             lr=lambda step: lr_schedule[min(step, len(lr_schedule) - 1)].item(),
             betas=(args.beta1, args.beta2),
             eps=args.adam_eps,
+            weight_decay=args.weight_decay,
         )
     else:
         optimizer = torchopt.sgd(
@@ -1128,17 +1132,30 @@ def main():
     print("\nDP-FTRL setup:")
     print(f"  Mechanism: {args.mechanism}")
     if use_adam:
-        print(f"  Optimizer: Adam via JME (β₁={args.beta1}, β₂={args.beta2}, ε={args.adam_eps})")
+        print(
+            f"  Optimizer: Adam via JME (β₁={args.beta1}, β₂={args.beta2}, "
+            f"ε={args.adam_eps}, weight_decay={args.weight_decay})"
+        )
         print(f"  Workload: EMA β₁={args.beta1} (1st moment), β₂={args.beta2} (2nd moment)")
+        if args.mechanism == "bsr":
+            print(
+                f"  BSR workload α (noise accounting): {args.bsr_alpha} "
+                "(independent of optimizer --weight-decay; set α>β₁)"
+            )
     else:
         print(
             f"  Optimizer: SGD + Polyak momentum (β={args.momentum}, "
-            f"weight_decay α={args.weight_decay})"
+            f"weight_decay={args.weight_decay})"
         )
         print(
             f"  Workload: momentum-SGD (β={args.momentum}){' [prefix-sum]' if args.momentum == 1.0 else ''}"
         )
         if args.mechanism == "bsr":
+            print(
+                f"  BSR workload α (noise accounting): {args.bsr_alpha} "
+                "(paper multiplicative decay in the workload matrix; "
+                "optimizer --weight-decay is separate unless you align them deliberately)."
+            )
             print(
                 "  Note: BSR coefficients assume constant LR in the paper; "
                 "this script still uses the LR schedule only in the optimizer."
@@ -1179,7 +1196,7 @@ def main():
         print("  Column normalization: enabled (Appendix A, exact BnB)")
     elif args.mechanism == "bsr":
         print(f"  BSR bandwidth: {args.bsr_bandwidth}")
-        print(f"  Weight decay (workload α): {args.weight_decay}")
+        print(f"  BSR workload α: {args.bsr_alpha}")
 
     # ===================================================================
     # Training loop

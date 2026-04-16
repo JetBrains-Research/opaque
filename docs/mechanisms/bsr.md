@@ -80,6 +80,7 @@ noise_fn, state = mf_noise(
 ## Assumptions and limitations
 
 - **Closed-form regime only**: \(\beta \in [0,1)\), \(\alpha \in (0,1]\), \(\alpha > \beta\). Other hyperparameters raise `ValueError` with guidance to use `band_mf_strategy`.
+- **`examples/train_dp_ftrl.py`**: workload \(\alpha\) for BSR is **`--bsr-alpha`** (default `1.0`). Optimizer weight decay is **`--weight-decay`** (default `0.0` for both SGD and JME AdamW), so you are not forced to use \(\alpha=1\) in the optimizer when using BSR noise accounting.
 - **No learning-rate schedule in v1**: BSR coefficients assume the paper’s workload; use BandMF/BLT with `lr_schedule` if you need schedule-shaped workloads in the optimizer.
 - **vs BISR**: BISR bands the **inverse** square root of the workload (different coefficient family). BSR bands the **forward** square root factors from Theorem 1.
 - **`normalized=True`**: Not supported in v1.
