@@ -13,7 +13,8 @@ differential privacy.
 2. **`clipped_fun()`** — Clip and sum arbitrary function outputs (PyTrees).
 3. **`adaptive_clipped_grad()`** — Adaptive clipping (Andrew et al. 2021) with automatic threshold tuning.
 4. **`auto_clipped_grad()`** — AUTO-S smooth scaling (Bu et al. NeurIPS 2023) — replaces hard clipping with `R / (||g|| + gamma)`.
-5. **`clip_pytree()`** — Low-level: clip an existing PyTree of gradients.
+5. **`data_dependent_auto_clipped_grad()`** — AUTO-S with data-dependent threshold from batch gradient norm (Auto DP-SGD).
+6. **`clip_pytree()`** — Low-level: clip an existing PyTree of gradients.
 
 ### State Types
 
@@ -21,6 +22,7 @@ differential privacy.
 - **`FixedClipState`** — State for `clipped_grad` / `clipped_fun` (fixed threshold).
 - **`AdaptiveClipState`** — State for `adaptive_clipped_grad` (adapting threshold).
 - **`AutoClipState`** — State for `auto_clipped_grad` (fixed R + gamma, immutable).
+- **`DataDependentAutoClipState`** — State for `data_dependent_auto_clipped_grad` (safety clip + data-dependent threshold).
 
 ### Auxiliary Output Types
 
@@ -37,6 +39,7 @@ object. It auto-dispatches to the right function based on type:
 - **`sync(FixedClipState)`** → asserts `clipping_norm` matches across ranks.
 - **`sync(AdaptiveClipState)`** → aggregates counts and recomputes global adaptive clip norm.
 - **`sync(AutoClipState)`** → asserts `clipping_norm` matches across ranks (same as `FixedClipState`).
+- **`sync(DataDependentAutoClipState)`** → asserts `clipping_norm` (safety clip) matches across ranks.
 - **`sync(ClippedFunAux | ClippedGradAux | AdaptiveClippedGradAux | AutoClippedGradAux)`** → gathers aux across ranks.
 
 **See also**: [Per-Sample Gradient Clipping User Guide](../user-guide/clipping.md)

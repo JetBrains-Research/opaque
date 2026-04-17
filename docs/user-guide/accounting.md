@@ -131,6 +131,33 @@ step = acc.poisson(
     privacy cost. Use `acc.poisson(acc.gaussian(nm), sample_rate)` directly —
     the same accounting as fixed clipping with `clipped_grad`.
 
+### `acc.auto_clip_gaussian(sensitivity, noise_ratio, dimension)`
+
+PLD for a Gaussian mechanism with data-dependent noise variance. Use
+this when the clipping threshold (and hence noise std) depends on the
+batch, as in `data_dependent_auto_clipped_grad`.
+
+When the noise ratio is 1.0, the PLD is identical to the standard
+Gaussian mechanism. For `noise_ratio != 1.0`, the PLD includes a
+chi-squared component from the variance change — this is tighter than
+inflating the sensitivity to absorb the variance shift.
+
+```python
+num_params = sum(p.numel() for p in params.values())
+step = acc.auto_clip_gaussian(
+    sensitivity=1.0 / noise_multiplier,     # ||delta_mu|| / v'
+    noise_ratio=1.0 + 1.0 / batch_size,    # v(D) / v(D')
+    dimension=num_params,
+)
+training = step * num_steps
+eps = training.epsilon_at(delta=1e-5)
+```
+
+!!! note "No Poisson wrapper"
+    `auto_clip_gaussian` is composed directly (``step * num_steps``),
+    not wrapped in ``acc.poisson()``. Its PLD already accounts for the
+    full mechanism including the data-dependent threshold.
+
 ### `acc.eps_delta(epsilon, delta=0.0)`
 
 A fixed (epsilon, delta)-DP mechanism. Useful for composing external privacy

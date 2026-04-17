@@ -181,6 +181,23 @@ fraction query. Returns an `AdaClip` process composable with
 step = acc.poisson(acc.adaclip(acc.gaussian(0.5), fraction_noise_std=0.05, expected_batch_size=256), 0.01)
 ```
 
+### `auto_clip_gaussian(sensitivity, noise_ratio, dimension) -> DpProcess`
+
+Non-Gaussian PLD for a mechanism with data-dependent noise variance.
+Use with `data_dependent_auto_clipped_grad` — the privacy loss includes
+a chi-squared component from the variance change between neighboring
+datasets.
+
+- `sensitivity` (float): Worst-case `||mu(D) - mu(D')|| / v'`. Analogous to `1/noise_multiplier`.
+- `noise_ratio` (float): `v(D) / v(D')`, ratio of noise stds. Must be in [0.5, 2.0].
+- `dimension` (int): Parameter dimension `d`.
+
+```python
+step = acc.auto_clip_gaussian(sensitivity=1.25, noise_ratio=1.02, dimension=100_000)
+training = step * 1000
+eps = training.epsilon_at(1e-5)
+```
+
 ### `eps_delta(epsilon, delta=0.0) -> DpProcess`
 
 Fixed (epsilon, delta)-DP guarantee. Useful for composing an external mechanism

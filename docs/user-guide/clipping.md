@@ -391,6 +391,82 @@ behavior as `FixedClipState`).
 | `microbatch_size` | `int \| None` | `None` | Process batch in chunks to reduce memory. |
 | `return_aux` | `bool` | `False` | Return per-example diagnostics. |
 
+## Data-dependent AUTO-S clipping
+
+`data_dependent_auto_clipped_grad` extends AUTO-S with a **data-dependent
+clipping threshold** computed from each batch's aggregate gradient norm.
+This implements the core idea from Auto DP-SGD (arXiv:2312.02400): the
+clipping threshold adapts to the gradient distribution without a tunable
+hyperparameter.
+
+```python
+from opaque import data_dependent_auto_clipped_grad
+
+grad_fn, clip_state = data_dependent_auto_clipped_grad(
+    loss_fn,
+    batch_argnums=1,
+    safety_clip_norm=10.0,     # hard cap for formal DP bound
+    threshold_scale=1.0,       # W: C_t = W * ||mean_grad||
+    gamma=0.01,
+    normalize_by=batch_size,
+)
+
+grads, clip_state = grad_fn(params, batch, state=clip_state)
+# clip_state.last_threshold contains the data-dependent C_t
+```
+
+### How it works
+
+Two-pass algorithm per batch:
+
+1. Compute per-example gradients and **safety-clip** each to `safety_clip_norm`.
+2. Derive $C_t = \min(W \cdot \lVert\bar{g}\rVert, \text{safety\_clip\_norm})$ from
+   the batch mean gradient.
+3. AUTO-S scale each gradient by $C_t / (\lVert g_i \rVert + \gamma)$.
+4. Sum and divide by `normalize_by`.
+
+The `safety_clip_norm` provides the formal L2 sensitivity bound — it acts as
+a hard cap that is rarely active in practice (set it to e.g., 10--50× the
+typical gradient norm). The data-dependent $C_t \leq \text{safety\_clip\_norm}$
+adapts to each batch.
+
+### Accounting
+
+Because the noise standard deviation (calibrated to $C_t$) changes between
+neighboring datasets, accounting must use `acc.auto_clip_gaussian()` — the
+non-Gaussian PLD mechanism that correctly handles the variance change:
+
+```python
+import opaque.accounting as acc
+
+# Worst-case parameters from safety-clip analysis:
+# sensitivity = 1/nm, noise_ratio ≈ 1 + O(1/batch_size)
+num_params = sum(p.numel() for p in params.values())
+step = acc.auto_clip_gaussian(
+    sensitivity=1.0 / noise_multiplier,
+    noise_ratio=1.0 + 1.0 / batch_size,
+    dimension=num_params,
+)
+training = step * num_steps
+eps = training.epsilon_at(delta=1e-5)
+```
+
+The `noise_ratio` parameter captures how much the noise variance changes
+when one record is added or removed. For typical batch sizes (100+), this
+is close to 1.0 and the privacy cost is only slightly higher than standard
+Gaussian.
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `safety_clip_norm` | `float` | required | Hard L2 norm bound (formal sensitivity). |
+| `threshold_scale` | `float` | `1.0` | Scale factor $W$ for $C_t = W \cdot \lVert\bar{g}\rVert$. |
+| `gamma` | `float` | `0.01` | Stability constant for AUTO-S. |
+| `normalize_by` | `float` | `1.0` | Divide scaled sum by this constant. |
+| `batch_argnums` | `int \| tuple[int, ...]` | `1` | Which arguments have a batch dimension. |
+| `return_aux` | `bool` | `False` | Return per-example diagnostics. |
+
 ## Loss function requirements
 
 The loss function passed to `clipped_grad` must:

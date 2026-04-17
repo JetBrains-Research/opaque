@@ -285,6 +285,7 @@ following types are registered:
 | `FixedClipState` | Assert `clipping_norm` matches across ranks |
 | `AdaptiveClipState` | Aggregate counts, recompute global clipping rate, update `clipping_norm` |
 | `AutoClipState` | Assert `clipping_norm` matches across ranks (same as `FixedClipState`) |
+| `DataDependentAutoClipState` | Assert `clipping_norm` (safety clip) matches across ranks |
 | `ClippedFunAux`, `ClippedGradAux`, `AdaptiveClippedGradAux`, `AutoClippedGradAux` | Gather aux tensors across ranks |
 | `GaussianNoiseState` | Assert seed and step counter match across ranks |
 | `MFNoiseState` | Assert seed and step counter match for MF noise |

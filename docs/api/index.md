@@ -28,6 +28,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `clip_pytree()` - Low-level PyTree clipping
   - `adaptive_clipped_grad()` - Clipped gradients with auto-tuned clip norm
   - `auto_clipped_grad()` - AUTO-S smooth scaling (no hard clip threshold)
+  - `data_dependent_auto_clipped_grad()` - AUTO-S with data-dependent batch threshold
 
 - **[Noise](noise.md)**: Noise injection for DP
   - `gaussian_noise()` - Standard Gaussian noise
@@ -105,6 +106,7 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | `clipped_fun()`  | Clip and sum function outputs       | [Guide](../user-guide/clipping.md#clipped_fun-general-purpose-clipping) |
 | `adaptive_clipped_grad()` | Auto-tuned clip norm (quantile) | [Guide](../user-guide/clipping.md#adaptive-clipping) |
 | `auto_clipped_grad()` | AUTO-S smooth scaling          | [Guide](../user-guide/clipping.md#auto-s-clipping) |
+| `data_dependent_auto_clipped_grad()` | AUTO-S with data-dependent threshold | [Guide](../user-guide/clipping.md#data-dependent-auto-s-clipping) |
 | `clip_pytree()`  | Clip PyTree to max norm             | [Guide](../user-guide/clipping.md#clip_pytree-low-level-clipping) |
 
 ### Noise
@@ -128,6 +130,7 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | `truncated_poisson()`     | Truncated Poisson subsampling     | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `parallel_poisson()`      | Parallel Poisson subsampling      | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `adaclip()`               | Adaptive clipping mechanism       | [Guide](../user-guide/accounting.md#mechanisms)                         |
+| `auto_clip_gaussian()`    | Data-dependent threshold mechanism | [Guide](../user-guide/accounting.md#mechanisms)                        |
 | `eps_delta()`             | Fixed (ε, δ) guarantee            | [Guide](../user-guide/accounting.md#mechanisms)                         |
 | `identity()`              | Zero privacy loss                 | [Guide](../user-guide/accounting.md#mechanisms)                         |
 
