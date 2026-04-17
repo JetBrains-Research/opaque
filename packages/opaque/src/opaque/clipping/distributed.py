@@ -28,6 +28,7 @@ from .adaptive import (
     _sample_noisy_clipping_rate,
 )
 from .auto import AutoClippedGradAux, AutoClipState
+from .auto_data import DataDependentAutoClipState
 from .clipped_fun import ClippedFunAux
 from .clipped_grad import ClippedGradAux
 from .types import FixedClipState
@@ -243,6 +244,24 @@ def sync_adaptive_clipped_grad_aux(
     return sync_clipped_grad_aux(aux)
 
 
+def sync_data_dependent_auto_clip_state(
+    state: DataDependentAutoClipState,
+) -> DataDependentAutoClipState:
+    """Validate data-dependent AUTO-S state across ranks.
+
+    Asserts ``clipping_norm`` (the safety clip) matches. The
+    ``last_threshold`` may differ across ranks (each rank has a
+    different local batch).
+    """
+    if not is_distributed():
+        return state
+    if not isinstance(state, DataDependentAutoClipState):
+        raise TypeError(
+            f"Expected DataDependentAutoClipState, got {type(state)}"
+        )
+    return sync_object(state, field_ops={"clipping_norm": "assert_equal"})
+
+
 def sync_auto_clip_state(state: AutoClipState) -> AutoClipState:
     """Validate AUTO-S clipping state is identical across ranks.
 
@@ -284,6 +303,7 @@ def sync_aux(
 register_sync_type(FixedClipState, sync_clip_state)
 register_sync_type(AdaptiveClipState, sync_adaptive_clip_state)
 register_sync_type(AutoClipState, sync_auto_clip_state)
+register_sync_type(DataDependentAutoClipState, sync_data_dependent_auto_clip_state)
 register_sync_type(ClippedFunAux, sync_clipped_fun_aux)
 register_sync_type(ClippedGradAux, sync_clipped_grad_aux)
 register_sync_type(AdaptiveClippedGradAux, sync_adaptive_clipped_grad_aux)

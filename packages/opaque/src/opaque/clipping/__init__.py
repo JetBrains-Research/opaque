@@ -15,6 +15,10 @@ from opaque.clipping.auto import (
     AutoClipState,
     auto_clipped_grad,
 )
+from opaque.clipping.auto_data import (
+    DataDependentAutoClipState,
+    data_dependent_auto_clipped_grad,
+)
 from opaque.clipping.clipped_fun import ClippedFunAux, clipped_fun
 from opaque.clipping.clipped_grad import ClippedGradAux, clipped_grad
 from opaque.clipping.distributed import (
@@ -32,11 +36,13 @@ __all__ = [
     "clipped_grad",
     "adaptive_clipped_grad",
     "auto_clipped_grad",
+    "data_dependent_auto_clipped_grad",
     # State types
     "ClipState",
     "FixedClipState",
     "AdaptiveClipState",
     "AutoClipState",
+    "DataDependentAutoClipState",
     # Auxiliary outputs
     "ClippedFunAux",
     "ClippedGradAux",
