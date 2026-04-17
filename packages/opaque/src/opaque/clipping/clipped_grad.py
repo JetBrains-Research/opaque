@@ -83,6 +83,7 @@ def clipped_grad(
     microbatch_size: int | None = None,
     dtype: torch.dtype | None = None,
     _force_grad_norms: bool = False,
+    _scale_fn: Callable | None = None,
 ) -> tuple[Callable, FixedClipState]:
     """Create a function to compute the sum of clipped gradients of loss_fn.
 
@@ -225,6 +226,7 @@ def clipped_grad(
         return_aux=return_aux or _force_grad_norms,
         microbatch_size=microbatch_size,
         dtype=dtype,
+        _scale_fn=_scale_fn,
     )
 
     # clipped_grad_fn is now a callable, clip_state is a FixedClipState

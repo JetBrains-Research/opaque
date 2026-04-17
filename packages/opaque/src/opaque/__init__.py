@@ -27,9 +27,13 @@ except ImportError:
 
 from opaque.clipping import (
     AdaptiveClipState,
+    AutoClipState,
     ClipState,
     FixedClipState,
     adaptive_clipped_grad,
+    auto_clipped_fun,
+    auto_clipped_grad,
+    auto_scale_pytree,
     clip_pytree,
     clipped_fun,
     clipped_grad,
@@ -72,12 +76,16 @@ if "all" not in _opaque_skip_compat:
 __all__ = [
     # Clipping
     "clip_pytree",
+    "auto_scale_pytree",
     "clipped_fun",
     "clipped_grad",
     "adaptive_clipped_grad",
+    "auto_clipped_fun",
+    "auto_clipped_grad",
     "ClipState",
     "FixedClipState",
     "AdaptiveClipState",
+    "AutoClipState",
     # Sampling
     "sampling",
     "BallsInBinsSampler",

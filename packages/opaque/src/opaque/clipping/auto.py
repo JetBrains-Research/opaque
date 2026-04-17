@@ -1,0 +1,341 @@
+"""AUTO-S automatic clipping for differential privacy.
+
+Implements the automatic clipping scheme of Bu et al., "Automatic Clipping:
+Differentially Private Deep Learning Made Easier and Stronger" (NeurIPS
+2023), which replaces the standard clip threshold with a per-example scaling
+
+.. math::
+
+    \\tilde g_i = R \\cdot g_i / (\\lVert g_i \\rVert + \\gamma)
+
+where ``R`` is a fixed sensitivity bound and ``\\gamma`` is a small
+stability constant. The output has L2 norm at most ``R`` by construction,
+so the clipping threshold is no longer a tunable hyperparameter — it is
+absorbed into the learning rate.
+
+Privacy accounting is standard Gaussian DP-SGD: the scaling is
+fully per-example (depends only on the sample's own gradient), so there
+is no additional privacy cost beyond ``gaussian(noise_multiplier)`` with
+``sensitivity = R / normalize_by``.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
+
+from opaque.clipping.clipped_fun import ClippedFunAux, clipped_fun
+from opaque.clipping.clipped_grad import ClippedGradAux, clipped_grad
+from opaque.clipping.pytree import auto_scale_pytree
+from opaque.clipping.types import ClipState
+from opaque.utils.per_group import PerGroup
+
+_DEFAULT_STABILITY = 0.01
+
+
+@dataclass(frozen=True)
+class AutoClippedFunAux(ClippedFunAux):
+    """Diagnostic outputs from ``auto_clipped_fun``.
+
+    Inherits all fields from :class:`ClippedFunAux`.  In AUTO-S mode,
+    ``clipping_rate`` reports the fraction of per-example outputs whose
+    pre-scaling L2 norm exceeded ``R`` (i.e. where the scaling factor was
+    less than one).
+    """
+
+
+@dataclass(frozen=True)
+class AutoClippedGradAux(ClippedGradAux):
+    """Diagnostic outputs from ``auto_clipped_grad``.
+
+    Inherits all fields from :class:`ClippedGradAux`.  In AUTO-S mode,
+    ``clipping_rate`` reports the fraction of per-example gradients whose
+    pre-scaling L2 norm exceeded ``R``.
+    """
+
+
+@dataclass(frozen=True)
+class AutoClipState(ClipState):
+    """Clipping state for AUTO-S automatic clipping.
+
+    AUTO-S has no data-dependent threshold, so the state is fixed
+    throughout training (like :class:`FixedClipState`).  The raw L2
+    sensitivity bound is ``R`` (stored in ``clipping_norm``) and the
+    sensitivity of the aggregated query is
+    ``sensitivity = R / normalize_by``.
+
+    Attributes:
+        clipping_norm: Sensitivity bound ``R``.  When ``PerGroup``, each
+            parameter group has its own bound and the scalar
+            ``sensitivity`` property returns ``\\sqrt{\\sum_k R_k^2} /
+            normalize_by``.
+        normalize_by: Divisor applied to the scaled sum (``1.0`` = no
+            averaging).
+        stability: Denominator stabilizer :math:`\\gamma` used during
+            training.  Does not affect sensitivity but is exposed for
+            inspection and distributed-sync consistency.
+    """
+
+    clipping_norm: float | PerGroup
+    normalize_by: float = 1.0
+    stability: float = _DEFAULT_STABILITY
+
+    def __post_init__(self) -> None:
+        if isinstance(self.clipping_norm, PerGroup):
+            for gname, val in self.clipping_norm.values.items():
+                if val <= 0:
+                    raise ValueError(
+                        f"clipping_norm (R) must be positive for all groups, "
+                        f"got {val} for group '{gname}'"
+                    )
+        elif self.clipping_norm <= 0:
+            raise ValueError(
+                f"clipping_norm (R) must be positive, got {self.clipping_norm}"
+            )
+        if self.normalize_by <= 0:
+            raise ValueError(f"normalize_by must be positive, got {self.normalize_by}")
+        if self.stability <= 0:
+            raise ValueError(f"stability must be positive, got {self.stability}")
+
+
+def _make_auto_scale_fn(R: float | PerGroup, stability: float) -> Callable:
+    """Build a vmap-compatible per-example AUTO-S scaling closure."""
+
+    def scale(value):
+        return auto_scale_pytree(value, R=R, stability=stability)
+
+    return scale
+
+
+def _validate_auto_params(R: float | PerGroup, stability: float) -> None:
+    if isinstance(R, PerGroup):
+        for gname, val in R.values.items():
+            if val <= 0:
+                raise ValueError(
+                    f"R must be positive for all groups, got {val} for group '{gname}'"
+                )
+    elif R <= 0:
+        raise ValueError(f"R must be positive, got {R}")
+    if stability <= 0:
+        raise ValueError(f"stability must be positive, got {stability}")
+
+
+def auto_clipped_fun(
+    fun: Callable,
+    has_aux: bool = False,
+    *,
+    batch_argnums: int | tuple[int, ...] = 0,
+    R: float | PerGroup = 1.0,
+    stability: float = _DEFAULT_STABILITY,
+    normalize_by: float = 1.0,
+    return_aux: bool = False,
+    microbatch_size: int | None = None,
+    dtype: Any = None,
+) -> tuple[Callable, AutoClipState]:
+    r"""Transform a function so each per-example output is scaled to bounded norm via AUTO-S.
+
+    Mirrors :func:`clipped_fun` but replaces threshold-based clipping with
+    AUTO-S automatic scaling ``R \cdot v / (\|v\| + \gamma)``.  The output of
+    the returned function is the sum of the scaled per-example outputs.
+
+    Args:
+        fun: The per-example function to be transformed.
+        has_aux: If True, ``fun`` returns ``(value, aux)``; only ``value``
+            is scaled and aggregated.
+        batch_argnums: Which arguments have a batch dimension.
+        R: Sensitivity bound for the scaled output.  When ``PerGroup``,
+            each group is scaled independently.
+        stability: Stability constant :math:`\gamma` (default 0.01).
+        normalize_by: Divisor applied to the scaled sum.
+        return_aux: If True, the returned callable returns an
+            :class:`AutoClippedFunAux` alongside the summed value.
+        microbatch_size: Process the batch in chunks of this size.
+        dtype: Optional accumulation dtype for the sum.
+
+    Returns:
+        ``(auto_fn, state)``.  ``auto_fn`` has the signature
+        ``(*args, state, **kwargs) -> (value, state)`` or
+        ``(*args, state, **kwargs) -> ((value, aux), state)`` when
+        ``return_aux=True``.
+
+    Formal guarantee:
+        Under add/remove or zero-out DP, the L2 sensitivity of the first
+        output with respect to the batch arguments equals
+        ``state.sensitivity = R / normalize_by`` (scalar ``R``) or
+        ``\|R\|_2 / normalize_by`` (per-group).
+    """
+    _validate_auto_params(R, stability)
+
+    scale_fn = _make_auto_scale_fn(R, stability)
+    inner_fn, _ = clipped_fun(
+        fun,
+        has_aux=has_aux,
+        batch_argnums=batch_argnums,
+        clipping_norm=R,
+        normalize_by=normalize_by,
+        return_aux=return_aux,
+        microbatch_size=microbatch_size,
+        dtype=dtype,
+        _scale_fn=scale_fn,
+    )
+
+    state = AutoClipState(
+        clipping_norm=R,
+        normalize_by=normalize_by,
+        stability=stability,
+    )
+
+    if not return_aux:
+        def auto_fn(*args, state, **kwargs):
+            result, _ = inner_fn(*args, state=None, **kwargs)
+            return result, state
+
+        return auto_fn, state
+
+    def auto_fn(*args, state, **kwargs):
+        (result, fun_aux), _ = inner_fn(*args, state=None, **kwargs)
+        aux = AutoClippedFunAux(
+            values=fun_aux.values,
+            norms=fun_aux.norms,
+            clipped_norms=fun_aux.clipped_norms,
+            value_aux=fun_aux.value_aux,
+            clipping_rate=fun_aux.clipping_rate,
+            batch_size=fun_aux.batch_size,
+            group_norms=fun_aux.group_norms,
+        )
+        return (result, aux), state
+
+    return auto_fn, state
+
+
+def auto_clipped_grad(
+    loss_fn: Callable,
+    argnums: int | tuple[int, ...] = 0,
+    has_aux: bool = False,
+    *,
+    R: float | PerGroup = 1.0,
+    stability: float = _DEFAULT_STABILITY,
+    normalize_by: float = 1.0,
+    batch_argnums: int | tuple[int, ...] = 1,
+    return_aux: bool = False,
+    pre_clipping_transform: Callable = lambda x: x,
+    microbatch_size: int | None = None,
+    dtype: Any = None,
+) -> tuple[Callable, AutoClipState]:
+    r"""Create a function that computes the sum of AUTO-S scaled per-example gradients.
+
+    AUTO-S (Bu et al., 2023) replaces the standard clipping threshold with
+    a per-example scaling
+
+    .. math::
+
+        \tilde g_i = R \cdot g_i / (\lVert g_i \rVert + \gamma)
+
+    so every per-example gradient has L2 norm at most ``R`` by
+    construction.  There is no threshold to tune; the effective step size
+    is absorbed into the optimizer learning rate.
+
+    Args:
+        loss_fn: Scalar loss function.  If ``has_aux``, returns
+            ``(scalar, loss_aux)``.
+        argnums: Which argument(s) to differentiate w.r.t.
+        has_aux: If True, ``loss_fn`` returns ``(scalar, loss_aux)``.
+        R: Sensitivity bound (default 1.0).  When ``PerGroup``, each
+            parameter group is scaled independently to its own ``R_k``.
+        stability: Stability constant :math:`\gamma` in the denominator
+            (default 0.01, strictly positive).
+        normalize_by: Divisor applied to the summed gradients (set to
+            expected batch size for averaged gradients).
+        batch_argnums: Which arguments have a batch dimension.
+        return_aux: If True, returns per-example diagnostics as
+            :class:`AutoClippedGradAux`.
+        pre_clipping_transform: Optional per-example gradient transform
+            applied before AUTO-S scaling.
+        microbatch_size: Process the batch in chunks of this size.
+        dtype: Optional accumulation dtype for the summed gradient.
+
+    Returns:
+        ``(grad_fn, state)``.  ``grad_fn`` has the signature
+        ``(*args, state, **kwargs) -> (grad, state)``, or
+        ``(*args, state, **kwargs) -> ((grad, aux), state)`` when
+        ``return_aux=True``.
+
+    Formal guarantee:
+        Under add/remove or zero-out DP, the L2 sensitivity of the
+        summed gradients equals ``state.sensitivity = R / normalize_by``
+        (scalar ``R``) or ``\|R\|_2 / normalize_by`` (per-group).  Privacy
+        accounting is plain ``gaussian(noise_multiplier)`` — AUTO-S
+        scaling is per-example and adds no additional privacy cost.
+
+    Example:
+        >>> import torch
+        >>> from opaque.clipping import auto_clipped_grad
+        >>> def loss_fn(params, x, y):
+        ...     return ((x @ params - y) ** 2).mean()
+        >>> grad_fn, state = auto_clipped_grad(
+        ...     loss_fn, argnums=0, batch_argnums=(1, 2),
+        ...     R=1.0, normalize_by=32,
+        ... )
+        >>> params = torch.randn(10)
+        >>> batch_x = torch.randn(32, 10)
+        >>> batch_y = torch.randn(32)
+        >>> grads, state = grad_fn(params, batch_x, batch_y, state=state)
+
+    References:
+        Bu, Wang, Zha, Karypis.  "Automatic Clipping: Differentially
+        Private Deep Learning Made Easier and Stronger."  NeurIPS 2023.
+    """
+    _validate_auto_params(R, stability)
+
+    scale_fn = _make_auto_scale_fn(R, stability)
+    inner_fn, _ = clipped_grad(
+        loss_fn,
+        argnums=argnums,
+        has_aux=has_aux,
+        clipping_norm=R,
+        normalize_by=normalize_by,
+        batch_argnums=batch_argnums,
+        return_aux=return_aux,
+        pre_clipping_transform=pre_clipping_transform,
+        microbatch_size=microbatch_size,
+        dtype=dtype,
+        _scale_fn=scale_fn,
+    )
+
+    state = AutoClipState(
+        clipping_norm=R,
+        normalize_by=normalize_by,
+        stability=stability,
+    )
+
+    if not return_aux:
+        def grad_fn(*args, state, **kwargs):
+            result, _ = inner_fn(*args, state=None, **kwargs)
+            return result, state
+
+        return grad_fn, state
+
+    def grad_fn(*args, state, **kwargs):
+        (grads, grad_aux), _ = inner_fn(*args, state=None, **kwargs)
+        auto_aux = AutoClippedGradAux(
+            loss_values=grad_aux.loss_values,
+            grad_norms=grad_aux.grad_norms,
+            clipped_grad_norms=grad_aux.clipped_grad_norms,
+            loss_aux=grad_aux.loss_aux,
+            clipping_rate=grad_aux.clipping_rate,
+            batch_size=grad_aux.batch_size,
+            group_norms=grad_aux.group_norms,
+        )
+        return (grads, auto_aux), state
+
+    return grad_fn, state
+
+
+__all__ = [
+    "auto_clipped_fun",
+    "auto_clipped_grad",
+    "AutoClipState",
+    "AutoClippedFunAux",
+    "AutoClippedGradAux",
+]

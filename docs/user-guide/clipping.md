@@ -453,6 +453,85 @@ grad_fn, clip_state = adaptive_clipped_grad(
 )
 ```
 
+## Automatic clipping (AUTO-S)
+
+`auto_clipped_grad` implements the automatic clipping scheme of Bu et al.
+(NeurIPS 2023). Instead of a hard threshold, each per-example gradient is
+scaled by
+
+    g̃_i = R * g_i / (||g_i|| + gamma)
+
+so the output has L2 norm at most `R` by construction. There is no clip
+threshold to tune; the effective step size is absorbed into the learning
+rate.
+
+```python
+from opaque import auto_clipped_grad
+
+grad_fn, clip_state = auto_clipped_grad(
+    loss_fn,
+    argnums=0,
+    batch_argnums=(1, 2),
+    R=1.0,              # sensitivity bound (default 1.0)
+    stability=0.01,     # denominator stabilizer gamma (default 0.01)
+    normalize_by=batch_size,
+)
+
+grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+```
+
+### Why it's "automatic"
+
+The scaling `R / (||g|| + gamma)` depends only on the example's own
+gradient, so the sensitivity `R / normalize_by` is guaranteed without any
+adaptation or tuning. AUTO-S removes the clip-threshold hyperparameter
+from the DP-SGD hyperparameter search.
+
+### State and privacy accounting
+
+The returned `AutoClipState` is fixed (no adaptation) and carries
+`clipping_norm=R`, `normalize_by`, `stability`, and the standard
+`sensitivity` property. Privacy accounting is plain Gaussian DP-SGD —
+AUTO-S introduces no extra data-dependent query:
+
+```python
+import opaque.accounting as acc
+from opaque import gaussian_noise
+from opaque.random import key
+
+stddev = noise_multiplier * clip_state.sensitivity
+noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
+
+step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
+training = step * num_steps
+eps = training.epsilon_at(1e-5)
+```
+
+### Per-group AUTO-S
+
+Pass a `PerGroup` as `R` to scale each group independently:
+
+```python
+from opaque import per_group, auto_clipped_grad
+
+pg = per_group(params, self_attn=1.0, mlp=2.0)
+
+grad_fn, clip_state = auto_clipped_grad(
+    loss_fn, argnums=0, batch_argnums=(1, 2),
+    R=pg, normalize_by=batch_size,
+)
+# clip_state.sensitivity = sqrt(sum R_k^2) / normalize_by
+```
+
+### When to choose AUTO-S vs. fixed or adaptive clipping
+
+- Fixed (`clipped_grad`): best when you have a tuned clip norm already.
+- AUTO-S (`auto_clipped_grad`): zero hyperparameter tuning; competitive
+  accuracy on standard benchmarks and no extra privacy cost.
+- Adaptive (`adaptive_clipped_grad`): when you want the clip threshold to
+  track a target quantile of gradient norms, at a small additional
+  privacy cost for the quantile query.
+
 ## API reference
 
 See [Clipping API Reference](../api/clipping.md) for complete function

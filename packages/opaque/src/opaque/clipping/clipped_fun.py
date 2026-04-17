@@ -231,6 +231,7 @@ def clipped_fun(
     return_aux: bool = False,
     microbatch_size: int | None = None,
     dtype: torch.dtype | None = None,
+    _scale_fn: Callable | None = None,
 ) -> tuple[Callable, FixedClipState]:
     """Transform a function to clip its output and sum across a batch.
 
@@ -302,13 +303,17 @@ def clipped_fun(
         # Determine in_dims for vmap
         in_dims = tuple(0 if i in batch_argnums else None for i in range(len(args)))
 
+        # Resolve scale function: default is fixed-norm clipping.
+        # _scale_fn enables alternate bounding schemes (e.g. AUTO-S) while
+        # reusing the vmap / microbatching / aux machinery below.
+        scale_fn = _scale_fn if _scale_fn is not None else (
+            lambda v: clip_pytree(v, clipping_norm=clipping_norm)
+        )
+
         # Define per-example function
         def per_example_fn(*args_single):
             value, aux = fun_with_aux(*args_single, **kwargs)
-            clipped_value, norm = clip_pytree(
-                value,
-                clipping_norm=clipping_norm,
-            )
+            clipped_value, norm = scale_fn(value)
             if return_aux:
                 # Build aux dict with clipping metadata
                 # IMPORTANT: Detach all tensors to prevent memory leaks from retaining

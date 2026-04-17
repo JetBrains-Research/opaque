@@ -19,6 +19,118 @@ Fields:
 """
 
 
+def _auto_scale_per_group(
+    pytree: dict[str, torch.Tensor],
+    pg: PerGroup,
+    stability: float,
+) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
+    """Per-group AUTO-S scaling: each group is scaled to sensitivity R_k."""
+    group_sq_norms: dict[str, torch.Tensor] = {}
+    for key, tensor in pytree.items():
+        if not isinstance(tensor, torch.Tensor):
+            continue
+        group_name = pg.groups[key]
+        sq = (tensor.to(torch.float32) ** 2).sum()
+        if group_name in group_sq_norms:
+            group_sq_norms[group_name] = group_sq_norms[group_name] + sq
+        else:
+            group_sq_norms[group_name] = sq
+
+    group_scales: dict[str, torch.Tensor] = {}
+    for group_name, sq_norm in group_sq_norms.items():
+        norm = torch.sqrt(sq_norm)
+        R = torch.tensor(pg.values[group_name], dtype=norm.dtype, device=norm.device)
+        R = torch.clamp(R, min=0.0)
+        gamma = torch.tensor(stability, dtype=norm.dtype, device=norm.device)
+        scale = R / (norm + gamma)
+        zero = torch.tensor(0.0, device=norm.device)
+        scale = torch.where(torch.isfinite(scale), scale, zero)
+        group_scales[group_name] = scale
+
+    scaled: dict[str, torch.Tensor] = {}
+    for key, val in pytree.items():
+        if isinstance(val, torch.Tensor):
+            group_name = pg.groups[key]
+            scale = group_scales[group_name]
+            scaled[key] = scale.to(dtype=val.dtype) * val
+        else:
+            scaled[key] = val
+
+    orig_norm = global_norm(pytree)
+    group_norms = {name: torch.sqrt(sq) for name, sq in group_sq_norms.items()}
+    return scaled, ClipPytreeAux(norm=orig_norm, group_norms=group_norms)
+
+
+def auto_scale_pytree(
+    pytree: dict[str, torch.Tensor],
+    R: float | PerGroup = 1.0,
+    stability: float = 0.01,
+) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
+    r"""AUTO-S automatic scaling of a PyTree (Bu et al., NeurIPS 2023).
+
+    Scales the PyTree by ``R / (\|pytree\| + stability)`` so the output L2
+    norm is bounded by ``R`` for any input. Unlike :func:`clip_pytree`, there
+    is no threshold to tune — every example contributes an approximately
+    unit-length update, with the effective step size absorbed into the
+    learning rate.
+
+    Args:
+        pytree: Dictionary of tensors to scale.
+        R: Output sensitivity bound (non-negative). When ``PerGroup``, each
+            group is scaled independently to its own bound.
+        stability: Small positive constant :math:`\gamma` in the denominator
+            (default 0.01). Must be strictly positive; at ``stability=0`` this
+            reduces to AUTO-V (undefined at zero gradient).
+
+    Returns:
+        Tuple of (scaled_pytree, aux) where ``aux.norm`` is the original L2
+        norm and ``aux.group_norms`` carries per-group norms in per-group
+        mode.
+
+    Formal guarantee:
+        For every input, the output has L2 norm at most ``R`` (scalar case)
+        or :math:`\sqrt{\sum_k R_k^2}` (per-group case).
+
+    NaN/Inf values are sanitized to zero before scaling, matching the
+    behavior of :func:`clip_pytree`.
+    """
+    if stability <= 0:
+        raise ValueError(f"stability must be positive, got {stability}")
+
+    pytree = tree_map(
+        lambda t: (
+            torch.nan_to_num(t, nan=0.0, posinf=0.0, neginf=0.0)
+            if isinstance(t, torch.Tensor)
+            else t
+        ),
+        pytree,
+    )
+
+    if isinstance(R, PerGroup):
+        return _auto_scale_per_group(pytree, R, stability)
+
+    orig_norm = global_norm(pytree)
+    R_tensor = torch.tensor(R, dtype=orig_norm.dtype, device=orig_norm.device)
+    R_tensor = torch.clamp(R_tensor, min=0.0)
+    gamma_tensor = torch.tensor(
+        stability, dtype=orig_norm.dtype, device=orig_norm.device
+    )
+
+    scale = R_tensor / (orig_norm + gamma_tensor)
+    scale = torch.where(torch.isfinite(scale), scale, torch.tensor(0.0))
+
+    def scale_leaf(t):
+        if not isinstance(t, torch.Tensor):
+            return t
+        return scale.to(dtype=t.dtype) * t
+
+    scaled = tree_map(
+        lambda t: scale_leaf(t) if isinstance(t, torch.Tensor) else t, pytree
+    )
+
+    return scaled, ClipPytreeAux(norm=orig_norm, group_norms=None)
+
+
 def _clip_pytree_per_group(
     pytree: dict[str, torch.Tensor],
     pg: PerGroup,
@@ -152,4 +264,4 @@ def clip_pytree(
     return clipped, ClipPytreeAux(norm=orig_norm, group_norms=None)
 
 
-__all__ = ["clip_pytree", "ClipPytreeAux"]
+__all__ = ["clip_pytree", "auto_scale_pytree", "ClipPytreeAux"]
