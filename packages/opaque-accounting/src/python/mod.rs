@@ -27,6 +27,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Amplification
     m.add_function(wrap_pyfunction!(amplification::py_poisson_gaussian_pld, m)?)?;
+    m.add_function(wrap_pyfunction!(amplification::py_poisson_amplify_pld, m)?)?;
     m.add_function(wrap_pyfunction!(
         amplification::py_truncated_poisson_gaussian_pld,
         m

@@ -155,6 +155,11 @@ impl Pmf {
         (self.lower_loss_index + index) as f64 * self.discretization
     }
 
+    /// The privacy loss at the upper end of the grid.
+    pub(crate) fn upper_loss(&self) -> f64 {
+        self.loss_at_index(self.probs.len() as i64 - 1)
+    }
+
     /// Validate that two PMFs can be composed, detecting any coarsening needed.
     ///
     /// Returns `Ok(None)` if discretizations match exactly. Returns

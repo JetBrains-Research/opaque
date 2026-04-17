@@ -26,6 +26,31 @@ pub fn py_poisson_gaussian_pld(
     Ok(PyPld::new(pld))
 }
 
+/// Apply Poisson subsampling amplification to an arbitrary base PLD.
+///
+/// This is a generic amplification that works with any base mechanism PLD,
+/// including non-Gaussian PLDs like auto_clip_gaussian.
+///
+/// Args:
+///     base_pld (Pld): The base mechanism's PLD.
+///     rate (float): Poisson sampling probability, in (0, 1).
+///     config (DiscretizationConfig): Discretization configuration.
+///
+/// Returns:
+///     Pld: The amplified privacy loss distribution.
+#[pyfunction]
+#[pyo3(name = "poisson_amplify_pld", signature = (base_pld, rate, config))]
+pub fn py_poisson_amplify_pld(
+    base_pld: &PyPld,
+    rate: f64,
+    config: &PyDiscretizationConfig,
+) -> PyResult<PyPld> {
+    let pld =
+        crate::amplification::poisson_amplify_pld(&base_pld.inner(), rate, &config.inner)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(PyPld::new(pld))
+}
+
 /// Compute the PLD for a truncated Poisson-subsampled Gaussian mechanism.
 ///
 /// This is the actual sampling used in production DP-SGD. Unlike standard

@@ -33,6 +33,10 @@ impl PyPld {
     pub(super) fn new(inner: PrivacyLossDistribution) -> Self {
         Self { inner }
     }
+
+    pub(super) fn inner(&self) -> &PrivacyLossDistribution {
+        &self.inner
+    }
 }
 
 #[pymethods]
