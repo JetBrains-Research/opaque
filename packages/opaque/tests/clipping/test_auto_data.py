@@ -180,7 +180,6 @@ class TestDataDependentWithAccounting:
         _, new_state = grad_fn(param, data, state=clip_state)
 
         nm = 1.1
-        noise_std = nm * clip_state.sensitivity
 
         # Compute worst-case accounting parameters
         sensitivity = 1.0 / nm
