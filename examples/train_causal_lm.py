@@ -64,7 +64,12 @@ from transformers import (
 import opaque.accounting as acc
 import opaque.auditing as auditing
 from opaque.accounting import calibration as cal, Accountant
-from opaque.clipping import adaptive_clipped_grad, auto_clipped_grad, clipped_grad
+from opaque.clipping import (
+    adaptive_clipped_grad,
+    auto_clipped_grad,
+    clipped_grad,
+    data_dependent_auto_clipped_grad,
+)
 from opaque.compat.transformers import is_kernel_patched
 from opaque.distributed import sum_gradients_, sync
 from opaque.noise import gaussian_noise, per_group_noise_stddev, truncated_gaussian_noise
@@ -416,17 +421,25 @@ def parse_args():
     dp_group.add_argument(
         "--clipping-mode",
         type=str,
-        choices=["fixed", "adaptive", "auto_s"],
+        choices=["fixed", "adaptive", "auto_s", "auto_s_data"],
         default="adaptive",
         help="Clipping mode: fixed (constant C), adaptive (quantile-tuned C_t), "
-             "or auto_s (AUTO-S smooth scaling, Bu et al. NeurIPS 2023). Default: adaptive.",
+             "auto_s (AUTO-S smooth scaling), or auto_s_data (AUTO-S with "
+             "data-dependent threshold). Default: adaptive.",
     )
     dp_group.add_argument(
         "--auto-s-gamma",
         type=float,
         default=0.01,
-        help="Stability constant for AUTO-S clipping (default: 0.01, paper recommendation). "
-             "Only used when --clipping-mode auto_s.",
+        help="Stability constant for AUTO-S clipping (default: 0.01). "
+             "Used when --clipping-mode is auto_s or auto_s_data.",
+    )
+    dp_group.add_argument(
+        "--threshold-scale",
+        type=float,
+        default=1.0,
+        help="Scale factor W for data-dependent threshold: C_t = W * ||mean_grad||. "
+             "Only used when --clipping-mode auto_s_data.",
     )
     dp_group.add_argument(
         "--target-clipping-rate",
@@ -1083,7 +1096,7 @@ def main():
     else:
         raise ValueError(f"Unknown optimizer: {args.optimizer}")
 
-    # Create gradient function (adaptive, auto_s, or fixed clipping)
+    # Create gradient function (adaptive, auto_s, auto_s_data, or fixed clipping)
     if args.clipping_mode == "adaptive":
         grad_fn, clip_state = adaptive_clipped_grad(
             per_example_loss_fn,
@@ -1106,6 +1119,22 @@ def main():
             gamma=args.auto_s_gamma,
             normalize_by=args.batch_size,
             microbatch_size=args.microbatch_size,
+            return_aux=True,
+        )
+    elif args.clipping_mode == "auto_s_data":
+        if isinstance(clip_norm, PerGroup):
+            raise ValueError(
+                "--clipping-mode auto_s_data does not support per-group clipping. "
+                "Use a scalar --clipping-norm as the safety clip."
+            )
+        grad_fn, clip_state = data_dependent_auto_clipped_grad(
+            per_example_loss_fn,
+            argnums=0,
+            batch_argnums=(1,),
+            safety_clip_norm=clip_norm,
+            threshold_scale=args.threshold_scale,
+            gamma=args.auto_s_gamma,
+            normalize_by=args.batch_size,
             return_aux=True,
         )
     else:  # fixed
@@ -1152,19 +1181,29 @@ def main():
         mechanism = lambda nm, ebs=args.batch_size, ng=_num_groups: acc.adaclip(
             _base_mechanism(nm), expected_batch_size=ebs, num_groups=ng
         )
+    elif args.clipping_mode == "auto_s_data":
+        _num_params = sum(p.numel() for p in trainable_params.values())
+        mechanism = lambda nm, d=_num_params: acc.auto_clip_gaussian(
+            sensitivity=1.0 / nm,
+            noise_ratio=1.0 + 1.0 / max(1, args.batch_size),
+            dimension=d,
+        )
 
     _unamplified = mechanism
-    if use_truncated_poisson:
-        mechanism = lambda nm: acc.truncated_poisson(
-            _unamplified(nm), sample_rate=sample_rate,
-            batch_size_cap=max_batch_size, dataset_size=global_train_size,
-        )
-    elif use_parallel_poisson:
-        mechanism = lambda nm: acc.parallel_poisson(
-            _unamplified(nm), sample_rate=sample_rate, num_workers=world_size,
-        )
-    else:
-        mechanism = lambda nm: acc.poisson(_unamplified(nm), sample_rate=sample_rate)
+    # auto_s_data uses acc.auto_clip_gaussian which is not wrapped by
+    # Poisson amplification — its PLD already accounts for the full mechanism.
+    if args.clipping_mode != "auto_s_data":
+        if use_truncated_poisson:
+            mechanism = lambda nm: acc.truncated_poisson(
+                _unamplified(nm), sample_rate=sample_rate,
+                batch_size_cap=max_batch_size, dataset_size=global_train_size,
+            )
+        elif use_parallel_poisson:
+            mechanism = lambda nm: acc.parallel_poisson(
+                _unamplified(nm), sample_rate=sample_rate, num_workers=world_size,
+            )
+        else:
+            mechanism = lambda nm: acc.poisson(_unamplified(nm), sample_rate=sample_rate)
 
     # Calibrate noise multiplier from target privacy budget.
     if args.noise_multiplier is not None:
@@ -1431,6 +1470,15 @@ def main():
         print("\nAUTO-S clipping:")
         print(f"  Clipping norm (R): {_effective(clip_norm):.3f}")
         print(f"  Gamma: {args.auto_s_gamma}")
+        print(
+            f"  Average clip rate (diagnostic): {sum(clip_rates_history) / len(clip_rates_history):.2%}"
+        )
+    elif args.clipping_mode == "auto_s_data":
+        print("\nAUTO-S clipping (data-dependent threshold):")
+        print(f"  Safety clip norm: {_effective(clip_norm):.3f}")
+        print(f"  Threshold scale (W): {args.threshold_scale}")
+        print(f"  Gamma: {args.auto_s_gamma}")
+        print(f"  Final C_t: {clip_state.last_threshold:.3f}")
         print(
             f"  Average clip rate (diagnostic): {sum(clip_rates_history) / len(clip_rates_history):.2%}"
         )
