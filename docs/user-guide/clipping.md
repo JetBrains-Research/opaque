@@ -473,7 +473,7 @@ grad_fn, clip_state = auto_clipped_grad(
     argnums=0,
     batch_argnums=(1, 2),
     R=1.0,              # sensitivity bound (default 1.0)
-    stability=0.01,     # denominator stabilizer gamma (default 0.01)
+    gamma=0.01,         # denominator stabilizer γ (default 0.01)
     normalize_by=batch_size,
 )
 
@@ -490,7 +490,7 @@ from the DP-SGD hyperparameter search.
 ### State and privacy accounting
 
 The returned `AutoClipState` is fixed (no adaptation) and carries
-`clipping_norm=R`, `normalize_by`, `stability`, and the standard
+`clipping_norm=R`, `normalize_by`, `gamma`, and the standard
 `sensitivity` property. Privacy accounting is plain Gaussian DP-SGD —
 AUTO-S introduces no extra data-dependent query:
 
@@ -522,6 +522,25 @@ grad_fn, clip_state = auto_clipped_grad(
 )
 # clip_state.sensitivity = sqrt(sum R_k^2) / normalize_by
 ```
+
+### CLI usage in `train_causal_lm.py`
+
+The training script exposes clipping mode through `--clipping-mode`:
+
+```bash
+# Flat AUTO-S (default R=1, γ=0.01)
+python examples/train_causal_lm.py --clipping-mode auto --clipping-norm 1.0
+
+# Per-layer AUTO-S: smaller R for q_proj (naturally smaller gradients)
+python examples/train_causal_lm.py \
+    --clipping-mode auto \
+    --per-group-clipping q_proj=0.1 fallback=0.9 \
+    --auto-clipping-gamma 0.01
+```
+
+Mode choices: `fixed`, `adaptive` (Andrew et al.), `auto` (AUTO-S). The
+`--clipping-norm` flag is reinterpreted by mode: threshold `C` for fixed,
+starting threshold for adaptive, sensitivity bound `R` for auto.
 
 ### When to choose AUTO-S vs. fixed or adaptive clipping
 

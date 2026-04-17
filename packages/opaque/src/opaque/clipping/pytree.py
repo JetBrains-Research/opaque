@@ -22,7 +22,7 @@ Fields:
 def _auto_scale_per_group(
     pytree: dict[str, torch.Tensor],
     pg: PerGroup,
-    stability: float,
+    gamma: float,
 ) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
     """Per-group AUTO-S scaling: each group is scaled to sensitivity R_k."""
     group_sq_norms: dict[str, torch.Tensor] = {}
@@ -41,8 +41,8 @@ def _auto_scale_per_group(
         norm = torch.sqrt(sq_norm)
         R = torch.tensor(pg.values[group_name], dtype=norm.dtype, device=norm.device)
         R = torch.clamp(R, min=0.0)
-        gamma = torch.tensor(stability, dtype=norm.dtype, device=norm.device)
-        scale = R / (norm + gamma)
+        gamma_tensor = torch.tensor(gamma, dtype=norm.dtype, device=norm.device)
+        scale = R / (norm + gamma_tensor)
         zero = torch.tensor(0.0, device=norm.device)
         scale = torch.where(torch.isfinite(scale), scale, zero)
         group_scales[group_name] = scale
@@ -64,11 +64,11 @@ def _auto_scale_per_group(
 def auto_scale_pytree(
     pytree: dict[str, torch.Tensor],
     R: float | PerGroup = 1.0,
-    stability: float = 0.01,
+    gamma: float = 0.01,
 ) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
     r"""AUTO-S automatic scaling of a PyTree (Bu et al., NeurIPS 2023).
 
-    Scales the PyTree by ``R / (\|pytree\| + stability)`` so the output L2
+    Scales the PyTree by ``R / (\|pytree\| + gamma)`` so the output L2
     norm is bounded by ``R`` for any input. Unlike :func:`clip_pytree`, there
     is no threshold to tune — every example contributes an approximately
     unit-length update, with the effective step size absorbed into the
@@ -78,9 +78,9 @@ def auto_scale_pytree(
         pytree: Dictionary of tensors to scale.
         R: Output sensitivity bound (non-negative). When ``PerGroup``, each
             group is scaled independently to its own bound.
-        stability: Small positive constant :math:`\gamma` in the denominator
-            (default 0.01). Must be strictly positive; at ``stability=0`` this
-            reduces to AUTO-V (undefined at zero gradient).
+        gamma: Small positive denominator stabilizer :math:`\gamma` (default
+            0.01). Must be strictly positive; at ``gamma=0`` this reduces to
+            AUTO-V (undefined at zero gradient).
 
     Returns:
         Tuple of (scaled_pytree, aux) where ``aux.norm`` is the original L2
@@ -94,8 +94,8 @@ def auto_scale_pytree(
     NaN/Inf values are sanitized to zero before scaling, matching the
     behavior of :func:`clip_pytree`.
     """
-    if stability <= 0:
-        raise ValueError(f"stability must be positive, got {stability}")
+    if gamma <= 0:
+        raise ValueError(f"gamma must be positive, got {gamma}")
 
     pytree = tree_map(
         lambda t: (
@@ -107,14 +107,12 @@ def auto_scale_pytree(
     )
 
     if isinstance(R, PerGroup):
-        return _auto_scale_per_group(pytree, R, stability)
+        return _auto_scale_per_group(pytree, R, gamma)
 
     orig_norm = global_norm(pytree)
     R_tensor = torch.tensor(R, dtype=orig_norm.dtype, device=orig_norm.device)
     R_tensor = torch.clamp(R_tensor, min=0.0)
-    gamma_tensor = torch.tensor(
-        stability, dtype=orig_norm.dtype, device=orig_norm.device
-    )
+    gamma_tensor = torch.tensor(gamma, dtype=orig_norm.dtype, device=orig_norm.device)
 
     scale = R_tensor / (orig_norm + gamma_tensor)
     scale = torch.where(torch.isfinite(scale), scale, torch.tensor(0.0))

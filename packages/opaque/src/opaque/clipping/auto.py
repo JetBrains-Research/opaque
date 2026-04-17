@@ -9,9 +9,9 @@ Differentially Private Deep Learning Made Easier and Stronger" (NeurIPS
     \\tilde g_i = R \\cdot g_i / (\\lVert g_i \\rVert + \\gamma)
 
 where ``R`` is a fixed sensitivity bound and ``\\gamma`` is a small
-stability constant. The output has L2 norm at most ``R`` by construction,
-so the clipping threshold is no longer a tunable hyperparameter — it is
-absorbed into the learning rate.
+denominator stabilizer. The output has L2 norm at most ``R`` by
+construction, so the clipping threshold is no longer a tunable
+hyperparameter — it is absorbed into the learning rate.
 
 Privacy accounting is standard Gaussian DP-SGD: the scaling is
 fully per-example (depends only on the sample's own gradient), so there
@@ -31,7 +31,7 @@ from opaque.clipping.pytree import auto_scale_pytree
 from opaque.clipping.types import ClipState
 from opaque.utils.per_group import PerGroup
 
-_DEFAULT_STABILITY = 0.01
+_DEFAULT_GAMMA = 0.01
 
 
 @dataclass(frozen=True)
@@ -72,14 +72,14 @@ class AutoClipState(ClipState):
             normalize_by``.
         normalize_by: Divisor applied to the scaled sum (``1.0`` = no
             averaging).
-        stability: Denominator stabilizer :math:`\\gamma` used during
+        gamma: Denominator stabilizer :math:`\\gamma` used during
             training.  Does not affect sensitivity but is exposed for
             inspection and distributed-sync consistency.
     """
 
     clipping_norm: float | PerGroup
     normalize_by: float = 1.0
-    stability: float = _DEFAULT_STABILITY
+    gamma: float = _DEFAULT_GAMMA
 
     def __post_init__(self) -> None:
         if isinstance(self.clipping_norm, PerGroup):
@@ -95,20 +95,20 @@ class AutoClipState(ClipState):
             )
         if self.normalize_by <= 0:
             raise ValueError(f"normalize_by must be positive, got {self.normalize_by}")
-        if self.stability <= 0:
-            raise ValueError(f"stability must be positive, got {self.stability}")
+        if self.gamma <= 0:
+            raise ValueError(f"gamma must be positive, got {self.gamma}")
 
 
-def _make_auto_scale_fn(R: float | PerGroup, stability: float) -> Callable:
+def _make_auto_scale_fn(R: float | PerGroup, gamma: float) -> Callable:
     """Build a vmap-compatible per-example AUTO-S scaling closure."""
 
     def scale(value):
-        return auto_scale_pytree(value, R=R, stability=stability)
+        return auto_scale_pytree(value, R=R, gamma=gamma)
 
     return scale
 
 
-def _validate_auto_params(R: float | PerGroup, stability: float) -> None:
+def _validate_auto_params(R: float | PerGroup, gamma: float) -> None:
     if isinstance(R, PerGroup):
         for gname, val in R.values.items():
             if val <= 0:
@@ -117,8 +117,8 @@ def _validate_auto_params(R: float | PerGroup, stability: float) -> None:
                 )
     elif R <= 0:
         raise ValueError(f"R must be positive, got {R}")
-    if stability <= 0:
-        raise ValueError(f"stability must be positive, got {stability}")
+    if gamma <= 0:
+        raise ValueError(f"gamma must be positive, got {gamma}")
 
 
 def auto_clipped_fun(
@@ -127,7 +127,7 @@ def auto_clipped_fun(
     *,
     batch_argnums: int | tuple[int, ...] = 0,
     R: float | PerGroup = 1.0,
-    stability: float = _DEFAULT_STABILITY,
+    gamma: float = _DEFAULT_GAMMA,
     normalize_by: float = 1.0,
     return_aux: bool = False,
     microbatch_size: int | None = None,
@@ -146,7 +146,7 @@ def auto_clipped_fun(
         batch_argnums: Which arguments have a batch dimension.
         R: Sensitivity bound for the scaled output.  When ``PerGroup``,
             each group is scaled independently.
-        stability: Stability constant :math:`\gamma` (default 0.01).
+        gamma: Denominator stabilizer :math:`\gamma` (default 0.01).
         normalize_by: Divisor applied to the scaled sum.
         return_aux: If True, the returned callable returns an
             :class:`AutoClippedFunAux` alongside the summed value.
@@ -165,9 +165,9 @@ def auto_clipped_fun(
         ``state.sensitivity = R / normalize_by`` (scalar ``R``) or
         ``\|R\|_2 / normalize_by`` (per-group).
     """
-    _validate_auto_params(R, stability)
+    _validate_auto_params(R, gamma)
 
-    scale_fn = _make_auto_scale_fn(R, stability)
+    scale_fn = _make_auto_scale_fn(R, gamma)
     inner_fn, _ = clipped_fun(
         fun,
         has_aux=has_aux,
@@ -183,7 +183,7 @@ def auto_clipped_fun(
     state = AutoClipState(
         clipping_norm=R,
         normalize_by=normalize_by,
-        stability=stability,
+        gamma=gamma,
     )
 
     if not return_aux:
@@ -215,7 +215,7 @@ def auto_clipped_grad(
     has_aux: bool = False,
     *,
     R: float | PerGroup = 1.0,
-    stability: float = _DEFAULT_STABILITY,
+    gamma: float = _DEFAULT_GAMMA,
     normalize_by: float = 1.0,
     batch_argnums: int | tuple[int, ...] = 1,
     return_aux: bool = False,
@@ -243,8 +243,8 @@ def auto_clipped_grad(
         has_aux: If True, ``loss_fn`` returns ``(scalar, loss_aux)``.
         R: Sensitivity bound (default 1.0).  When ``PerGroup``, each
             parameter group is scaled independently to its own ``R_k``.
-        stability: Stability constant :math:`\gamma` in the denominator
-            (default 0.01, strictly positive).
+        gamma: Denominator stabilizer :math:`\gamma` (default 0.01,
+            strictly positive).
         normalize_by: Divisor applied to the summed gradients (set to
             expected batch size for averaged gradients).
         batch_argnums: Which arguments have a batch dimension.
@@ -286,9 +286,9 @@ def auto_clipped_grad(
         Bu, Wang, Zha, Karypis.  "Automatic Clipping: Differentially
         Private Deep Learning Made Easier and Stronger."  NeurIPS 2023.
     """
-    _validate_auto_params(R, stability)
+    _validate_auto_params(R, gamma)
 
-    scale_fn = _make_auto_scale_fn(R, stability)
+    scale_fn = _make_auto_scale_fn(R, gamma)
     inner_fn, _ = clipped_grad(
         loss_fn,
         argnums=argnums,
@@ -306,7 +306,7 @@ def auto_clipped_grad(
     state = AutoClipState(
         clipping_norm=R,
         normalize_by=normalize_by,
-        stability=stability,
+        gamma=gamma,
     )
 
     if not return_aux:

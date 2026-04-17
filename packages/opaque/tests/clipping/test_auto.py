@@ -22,7 +22,7 @@ class TestAutoScalePytree:
     def test_formula_scalar(self):
         """Output should equal R * g / (||g|| + gamma)."""
         pytree = {"a": torch.tensor([3.0, 4.0])}  # norm = 5
-        scaled, aux = auto_scale_pytree(pytree, R=1.0, stability=0.01)
+        scaled, aux = auto_scale_pytree(pytree, R=1.0, gamma=0.01)
 
         expected_scale = 1.0 / (5.0 + 0.01)
         torch.testing.assert_close(scaled["a"], pytree["a"] * expected_scale)
@@ -38,7 +38,7 @@ class TestAutoScalePytree:
                 "a": torch.randn(5, generator=generator) * 100,
                 "b": torch.randn(3, generator=generator),
             }
-            scaled, _ = auto_scale_pytree(pytree, R=R, stability=0.01)
+            scaled, _ = auto_scale_pytree(pytree, R=R, gamma=0.01)
             total = torch.cat([scaled["a"], scaled["b"]])
             norm = float(torch.linalg.vector_norm(total))
             assert norm <= R + 1e-6, f"norm {norm} exceeds R={R}"
@@ -46,7 +46,7 @@ class TestAutoScalePytree:
     def test_approaches_unit_projection_for_large_norms(self):
         """When ||g|| >> gamma, output approaches unit-norm projection."""
         pytree = {"a": torch.tensor([300.0, 400.0])}  # norm = 500
-        scaled, _ = auto_scale_pytree(pytree, R=1.0, stability=0.01)
+        scaled, _ = auto_scale_pytree(pytree, R=1.0, gamma=0.01)
         # Expected norm ≈ 500 / (500 + 0.01) ≈ 0.99998
         norm = float(torch.linalg.vector_norm(scaled["a"]))
         assert norm == pytest.approx(1.0, rel=1e-4)
@@ -54,21 +54,21 @@ class TestAutoScalePytree:
     def test_zero_gradient_maps_to_zero(self):
         """g = 0 should yield output 0 (finite, no NaN)."""
         pytree = {"a": torch.zeros(4)}
-        scaled, aux = auto_scale_pytree(pytree, R=1.0, stability=0.01)
+        scaled, aux = auto_scale_pytree(pytree, R=1.0, gamma=0.01)
         torch.testing.assert_close(scaled["a"], torch.zeros(4))
         assert aux.norm.item() == 0.0
 
     def test_nan_sanitization(self):
         """NaN/Inf values should be replaced with 0 before scaling."""
         pytree = {"a": torch.tensor([float("nan"), float("inf"), 1.0])}
-        scaled, _ = auto_scale_pytree(pytree, R=1.0, stability=0.01)
+        scaled, _ = auto_scale_pytree(pytree, R=1.0, gamma=0.01)
         assert not torch.isnan(scaled["a"]).any()
         assert not torch.isinf(scaled["a"]).any()
 
-    def test_rejects_zero_stability(self):
-        """stability=0 is rejected (AUTO-V, undefined at zero gradient)."""
-        with pytest.raises(ValueError, match="stability must be positive"):
-            auto_scale_pytree({"a": torch.tensor([1.0])}, R=1.0, stability=0.0)
+    def test_rejects_zero_gamma(self):
+        """gamma=0 is rejected (AUTO-V, undefined at zero gradient)."""
+        with pytest.raises(ValueError, match="gamma must be positive"):
+            auto_scale_pytree({"a": torch.tensor([1.0])}, R=1.0, gamma=0.0)
 
     def test_per_group_formula(self):
         """Per-group AUTO-S applies the formula within each group."""
@@ -81,7 +81,7 @@ class TestAutoScalePytree:
             groups={"attn.q": "attn", "attn.k": "attn", "mlp.w": "mlp"},
             values={"attn": 2.0, "mlp": 3.0},
         )
-        scaled, aux = auto_scale_pytree(pytree, R=pg, stability=0.01)
+        scaled, aux = auto_scale_pytree(pytree, R=pg, gamma=0.01)
 
         # attn: scale = 2 / (5 + 0.01)
         attn_scale = 2.0 / (5.0 + 0.01)
@@ -106,7 +106,7 @@ class TestAutoScalePytree:
             groups={"a": "g1", "b": "g2"},
             values={"g1": 0.5, "g2": 1.5},
         )
-        scaled, _ = auto_scale_pytree(pytree, R=pg, stability=0.01)
+        scaled, _ = auto_scale_pytree(pytree, R=pg, gamma=0.01)
         total_norm = float(
             torch.linalg.vector_norm(torch.cat([scaled["a"], scaled["b"]]))
         )
@@ -118,7 +118,7 @@ class TestAutoClipState:
     """Tests for AutoClipState validation and sensitivity."""
 
     def test_scalar_sensitivity(self):
-        state = AutoClipState(clipping_norm=2.0, normalize_by=4.0, stability=0.01)
+        state = AutoClipState(clipping_norm=2.0, normalize_by=4.0, gamma=0.01)
         assert state.sensitivity == pytest.approx(0.5)
 
     def test_per_group_sensitivity(self):
@@ -131,9 +131,9 @@ class TestAutoClipState:
         with pytest.raises(ValueError, match="positive"):
             AutoClipState(clipping_norm=0.0, normalize_by=1.0)
 
-    def test_rejects_non_positive_stability(self):
-        with pytest.raises(ValueError, match="stability"):
-            AutoClipState(clipping_norm=1.0, normalize_by=1.0, stability=0.0)
+    def test_rejects_non_positive_gamma(self):
+        with pytest.raises(ValueError, match="gamma"):
+            AutoClipState(clipping_norm=1.0, normalize_by=1.0, gamma=0.0)
 
 
 class TestAutoClippedGrad:
@@ -275,9 +275,9 @@ class TestAutoClippedGrad:
         with pytest.raises(ValueError, match="R must be positive"):
             auto_clipped_grad(self._loss, R=0.0, batch_argnums=(1, 2))
 
-    def test_rejects_non_positive_stability(self):
-        with pytest.raises(ValueError, match="stability"):
-            auto_clipped_grad(self._loss, stability=0.0, batch_argnums=(1, 2))
+    def test_rejects_non_positive_gamma(self):
+        with pytest.raises(ValueError, match="gamma"):
+            auto_clipped_grad(self._loss, gamma=0.0, batch_argnums=(1, 2))
 
     def test_differs_from_fixed_clipping_at_small_norms(self):
         """At small ||g||, AUTO-S shrinks gradients whereas fixed clipping doesn't.
@@ -297,7 +297,7 @@ class TestAutoClippedGrad:
         batch_y = torch.randn(4) * 0.01
 
         fn_auto, s_auto = auto_clipped_grad(
-            tiny_loss, argnums=0, batch_argnums=(1, 2), R=1.0, stability=0.01
+            tiny_loss, argnums=0, batch_argnums=(1, 2), R=1.0, gamma=0.01
         )
         fn_fixed, s_fixed = clipped_grad(
             tiny_loss, argnums=0, batch_argnums=(1, 2), clipping_norm=1.0
