@@ -280,10 +280,11 @@ class TestAutoClippedGrad:
             auto_clipped_grad(self._loss, gamma=0.0, batch_argnums=(1, 2))
 
     def test_differs_from_fixed_clipping_at_small_norms(self):
-        """At small ||g||, AUTO-S shrinks gradients whereas fixed clipping doesn't.
+        """At small ||g||, AUTO-S can differ from fixed clipping.
 
-        This is the defining behavioral difference: AUTO-S always scales by
-        R / (||g|| + gamma) even when ||g|| < R, unlike min(1, R/||g||).
+        This is the defining behavioral difference: AUTO-S continuously scales by
+        R / (||g|| + gamma) even when ||g|| < R, unlike fixed clipping's
+        min(1, R/||g||).
         """
         # Construct a batch where per-example gradients will be small.
         torch.manual_seed(0)

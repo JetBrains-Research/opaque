@@ -38,10 +38,16 @@ _DEFAULT_GAMMA = 0.01
 class AutoClippedFunAux(ClippedFunAux):
     """Diagnostic outputs from ``auto_clipped_fun``.
 
-    Inherits all fields from :class:`ClippedFunAux`.  In AUTO-S mode,
-    ``clipping_rate`` reports the fraction of per-example outputs whose
-    pre-scaling L2 norm exceeded ``R`` (i.e. where the scaling factor was
-    less than one).
+    Inherits all fields from :class:`ClippedFunAux` with AUTO-S
+    semantics:
+
+    - ``norms``: per-example L2 norms before scaling (i.e. ``||v||``).
+    - ``clipped_norms``: per-example L2 norms after AUTO-S scaling
+      (``R * ||v|| / (||v|| + gamma)``), bounded by ``R``.
+    - ``clipping_rate``: fraction of examples with ``||v|| > R``
+      (approximately the fraction where the scale factor was < 1).
+    - ``values``, ``value_aux``, ``batch_size``, ``group_norms``:
+      unchanged from :class:`ClippedFunAux`.
     """
 
 
@@ -49,9 +55,16 @@ class AutoClippedFunAux(ClippedFunAux):
 class AutoClippedGradAux(ClippedGradAux):
     """Diagnostic outputs from ``auto_clipped_grad``.
 
-    Inherits all fields from :class:`ClippedGradAux`.  In AUTO-S mode,
-    ``clipping_rate`` reports the fraction of per-example gradients whose
-    pre-scaling L2 norm exceeded ``R``.
+    Inherits all fields from :class:`ClippedGradAux` with AUTO-S
+    semantics:
+
+    - ``grad_norms``: per-example gradient L2 norms before scaling.
+    - ``clipped_grad_norms``: per-example gradient L2 norms after
+      AUTO-S scaling (``R * ||g|| / (||g|| + gamma)``), bounded by ``R``.
+    - ``clipping_rate``: fraction of examples with ``||g|| > R``
+      (approximately the fraction where the scale factor was < 1).
+    - ``loss_values``, ``loss_aux``, ``batch_size``, ``group_norms``:
+      unchanged from :class:`ClippedGradAux`.
     """
 
 

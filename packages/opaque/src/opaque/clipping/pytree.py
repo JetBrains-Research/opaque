@@ -115,7 +115,7 @@ def auto_scale_pytree(
     gamma_tensor = torch.tensor(gamma, dtype=orig_norm.dtype, device=orig_norm.device)
 
     scale = R_tensor / (orig_norm + gamma_tensor)
-    scale = torch.where(torch.isfinite(scale), scale, torch.tensor(0.0))
+    scale = torch.where(torch.isfinite(scale), scale, torch.zeros_like(scale))
 
     def scale_leaf(t):
         if not isinstance(t, torch.Tensor):
