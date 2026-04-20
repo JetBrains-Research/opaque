@@ -1,4 +1,4 @@
-"""Tests for DP-AdamW optimizer (Algorithms 1 and 2)."""
+"""Tests for AdamW-BC optimizer (Algorithms 1 and 2)."""
 
 import pytest
 import torch
@@ -7,7 +7,7 @@ torchopt = pytest.importorskip(
     "torchopt", reason="torchopt required for optimizer tests"
 )
 
-from opaque.optimizers import DPAdamWState, dp_adamw  # noqa: E402
+from opaque.optimizers import AdamWBCState, adamw_bc  # noqa: E402
 from opaque.utils.per_group import PerGroup  # noqa: E402
 
 
@@ -43,15 +43,15 @@ def nested_params():
 
 
 class TestStandardMode:
-    """When noise_variance=0, dp_adamw is numerically identical to torchopt.adamw."""
+    """When noise_variance=0, adamw_bc is numerically identical to torchopt.adamw."""
 
     def test_returns_gradient_transformation(self):
-        opt = dp_adamw(lr=1e-3)
+        opt = adamw_bc(lr=1e-3)
         assert hasattr(opt, "init")
         assert hasattr(opt, "update")
 
     def test_init_and_update(self, params, grads):
-        opt = dp_adamw(lr=1e-3, weight_decay=0.01)
+        opt = adamw_bc(lr=1e-3, weight_decay=0.01)
         state = opt.init(params)
 
         updates, new_state = opt.update(grads, state, params=params)
@@ -62,14 +62,14 @@ class TestStandardMode:
             assert updates[k].shape == params[k].shape
 
     def test_state_is_chain_tuple(self, params):
-        opt = dp_adamw(lr=1e-3)
+        opt = adamw_bc(lr=1e-3)
         state = opt.init(params)
-        # Chain state: (DPAdamWState, wd_state, lr_state).
+        # Chain state: (AdamWBCState, wd_state, lr_state).
         assert isinstance(state, tuple)
-        assert isinstance(state[0], DPAdamWState)
+        assert isinstance(state[0], AdamWBCState)
 
     def test_params_change_after_apply(self, params, grads):
-        opt = dp_adamw(lr=1e-2)
+        opt = adamw_bc(lr=1e-2)
         state = opt.init(params)
         # Save original values — apply_updates is in-place.
         orig = {k: v.clone() for k, v in params.items()}
@@ -90,9 +90,9 @@ class TestStandardMode:
         ids=["default", "high_lr_no_wd", "heavy_wd"],
     )
     def test_matches_torchopt_adamw(self, params, kwargs):
-        """dp_adamw(noise_variance=0) must produce identical updates to
+        """adamw_bc(noise_variance=0) must produce identical updates to
         torchopt.adamw at every step, across hyperparameter configs."""
-        opt_dp = dp_adamw(**kwargs)
+        opt_dp = adamw_bc(**kwargs)
         opt_ref = torchopt.adamw(**kwargs)
 
         state_dp = opt_dp.init(params)
@@ -120,24 +120,24 @@ class TestStandardMode:
 
 
 def _bc_state(chain_state):
-    """Extract DPAdamWState from the chain state tuple."""
+    """Extract AdamWBCState from the chain state tuple."""
     return chain_state[0]
 
 
 class TestBCMode:
-    """DP-AdamW-BC: bias-corrected second moment."""
+    """AdamW-BC-BC: bias-corrected second moment."""
 
     def test_returns_gradient_transformation(self):
-        opt = dp_adamw(lr=1e-3, noise_variance=0.5)
+        opt = adamw_bc(lr=1e-3, noise_variance=0.5)
         assert hasattr(opt, "init")
         assert hasattr(opt, "update")
 
     def test_init_returns_dp_state(self, params):
-        opt = dp_adamw(lr=1e-3, noise_variance=0.5)
+        opt = adamw_bc(lr=1e-3, noise_variance=0.5)
         state = opt.init(params)
         bc = _bc_state(state)
 
-        assert isinstance(bc, DPAdamWState)
+        assert isinstance(bc, AdamWBCState)
         assert bc.step == 0
         assert bc.phi == 0.0
         # Moments initialised to zeros.
@@ -146,7 +146,7 @@ class TestBCMode:
             assert torch.equal(bc.nu[k], torch.zeros_like(params[k]))
 
     def test_update_advances_step(self, params, grads):
-        opt = dp_adamw(lr=1e-3, noise_variance=0.5)
+        opt = adamw_bc(lr=1e-3, noise_variance=0.5)
         state = opt.init(params)
         _, state2 = opt.update(grads, state, params=params)
         assert _bc_state(state2).step == 1
@@ -154,7 +154,7 @@ class TestBCMode:
         assert _bc_state(state3).step == 2
 
     def test_moments_updated(self, params, grads):
-        opt = dp_adamw(lr=1e-3, noise_variance=0.5)
+        opt = adamw_bc(lr=1e-3, noise_variance=0.5)
         state = opt.init(params)
         _, state2 = opt.update(grads, state, params=params)
 
@@ -168,8 +168,8 @@ class TestBCMode:
 
     def test_bc_differs_from_standard(self, params, grads):
         """BC mode must produce different updates than standard mode."""
-        opt_std = dp_adamw(lr=1e-3)
-        opt_bc = dp_adamw(lr=1e-3, noise_variance=0.5)
+        opt_std = adamw_bc(lr=1e-3)
+        opt_bc = adamw_bc(lr=1e-3, noise_variance=0.5)
 
         state_std = opt_std.init(params)
         state_bc = opt_bc.init(params)
@@ -189,8 +189,8 @@ class TestBCMode:
         # Use large grads so v_hat >> Phi and the effect is measurable.
         big_grads = {k: v * 10 for k, v in grads.items()}
 
-        opt_std = dp_adamw(lr=1e-3, noise_variance=0.0)
-        opt_bc = dp_adamw(lr=1e-3, noise_variance=0.01)
+        opt_std = adamw_bc(lr=1e-3, noise_variance=0.0)
+        opt_bc = adamw_bc(lr=1e-3, noise_variance=0.01)
 
         s_std = opt_std.init(params)
         s_bc = opt_bc.init(params)
@@ -210,7 +210,7 @@ class TestBCMode:
         params = {"w": torch.ones(3)}
         grads = {"w": torch.ones(3) * 0.01}
 
-        opt = dp_adamw(lr=1e-3, noise_variance=1e6, bc_floor=1e-8)
+        opt = adamw_bc(lr=1e-3, noise_variance=1e6, bc_floor=1e-8)
         state = opt.init(params)
         updates, _ = opt.update(grads, state, params=params)
 
@@ -226,7 +226,7 @@ class TestBCMode:
             for k, v in nested_params.items()
         }
 
-        opt = dp_adamw(lr=1e-3, noise_variance=0.1)
+        opt = adamw_bc(lr=1e-3, noise_variance=0.1)
         state = opt.init(nested_params)
         updates, state2 = opt.update(grads, state, params=nested_params)
 
@@ -250,7 +250,7 @@ class TestNoiseVarianceEMA:
         should equal the manual recurrence: phi_t = b2*phi_{t-1} + (1-b2)*nv."""
         b2 = 0.999
         nv = 0.5
-        opt = dp_adamw(lr=1e-3, betas=(0.9, b2), noise_variance=nv)
+        opt = adamw_bc(lr=1e-3, betas=(0.9, b2), noise_variance=nv)
         state = opt.init(params)
 
         expected_phi = 0.0
@@ -264,7 +264,7 @@ class TestNoiseVarianceEMA:
         """With constant noise_variance, phi_hat = phi/(1-b2^t) → nv."""
         b2 = 0.999
         nv = 0.25
-        opt = dp_adamw(lr=1e-3, betas=(0.9, b2), noise_variance=nv)
+        opt = adamw_bc(lr=1e-3, betas=(0.9, b2), noise_variance=nv)
         state = opt.init(params)
 
         for _ in range(5000):
@@ -278,7 +278,7 @@ class TestNoiseVarianceEMA:
         """Per-step noise_variance override should produce different phi
         than using the constructor default."""
         b2 = 0.999
-        opt = dp_adamw(lr=1e-3, betas=(0.9, b2), noise_variance=0.1)
+        opt = adamw_bc(lr=1e-3, betas=(0.9, b2), noise_variance=0.1)
         state_default = opt.init(params)
         state_override = opt.init(params)
 
@@ -300,7 +300,7 @@ class TestNoiseVarianceEMA:
     def test_per_step_override_ema_manual(self, params, grads):
         """Verify the EMA recurrence with per-step overrides."""
         b2 = 0.999
-        opt = dp_adamw(lr=1e-3, betas=(0.9, b2), noise_variance=0.0)
+        opt = adamw_bc(lr=1e-3, betas=(0.9, b2), noise_variance=0.0)
         state = opt.init(params)
 
         expected_phi = 0.0
@@ -314,7 +314,7 @@ class TestNoiseVarianceEMA:
     def test_zero_override_disables_bc_for_step(self, params, grads):
         """Passing noise_variance=0 per-step should contribute 0 to the EMA."""
         b2 = 0.999
-        opt = dp_adamw(lr=1e-3, betas=(0.9, b2), noise_variance=0.5)
+        opt = adamw_bc(lr=1e-3, betas=(0.9, b2), noise_variance=0.5)
         state = opt.init(params)
 
         # 5 steps with default nv=0.5, then 5 with override nv=0.
@@ -331,7 +331,7 @@ class TestNoiseVarianceEMA:
 
     def test_standard_mode_phi_stays_zero(self, params, grads):
         """With noise_variance=0 and no override, phi remains 0."""
-        opt = dp_adamw(lr=1e-3, noise_variance=0.0)
+        opt = adamw_bc(lr=1e-3, noise_variance=0.0)
         state = opt.init(params)
 
         for _ in range(10):
@@ -346,7 +346,7 @@ class TestNoiseVarianceEMA:
 
 
 class TestPerGroupBC:
-    """DP-AdamW-BC with per-group noise variance (MSE-optimal allocation)."""
+    """AdamW-BC-BC with per-group noise variance (MSE-optimal allocation)."""
 
     @pytest.fixture
     def pg_params(self):
@@ -368,10 +368,10 @@ class TestPerGroupBC:
         self, pg_params, pg_grads, pg_stddev
     ):
         """Each param group should get its own BC correction."""
-        opt_pg = dp_adamw(lr=1e-3, noise_variance=pg_stddev)
+        opt_pg = adamw_bc(lr=1e-3, noise_variance=pg_stddev)
         # Use scalar variance matching the "attn" group — updates differ
         # for the "mlp" key because its variance is different.
-        opt_scalar = dp_adamw(lr=1e-3, noise_variance=0.3**2)
+        opt_scalar = adamw_bc(lr=1e-3, noise_variance=0.3**2)
 
         s_pg = opt_pg.init(pg_params)
         s_sc = opt_scalar.init(pg_params)
@@ -389,8 +389,8 @@ class TestPerGroupBC:
         """Per-group BC should produce larger updates than standard mode."""
         big_grads = {k: v * 10 for k, v in pg_grads.items()}
 
-        opt_std = dp_adamw(lr=1e-3, noise_variance=0.0)
-        opt_pg = dp_adamw(lr=1e-3, noise_variance=pg_stddev)
+        opt_std = adamw_bc(lr=1e-3, noise_variance=0.0)
+        opt_pg = adamw_bc(lr=1e-3, noise_variance=pg_stddev)
 
         s_std = opt_std.init(pg_params)
         s_pg = opt_pg.init(pg_params)
@@ -409,8 +409,8 @@ class TestPerGroupBC:
             groups={"q_proj.weight": "attn", "mlp.weight": "mlp"},
             values={"attn": 0.0, "mlp": 0.5},
         )
-        opt = dp_adamw(lr=1e-3, noise_variance=pg_mixed)
-        opt_std = dp_adamw(lr=1e-3, noise_variance=0.0)
+        opt = adamw_bc(lr=1e-3, noise_variance=pg_mixed)
+        opt_std = adamw_bc(lr=1e-3, noise_variance=0.0)
 
         s = opt.init(pg_params)
         s_std = opt_std.init(pg_params)
@@ -430,7 +430,7 @@ class TestPerGroupBC:
             groups={"q_proj.weight": "attn", "mlp.weight": "mlp"},
             values={"attn": 1000.0, "mlp": 1000.0},
         )
-        opt = dp_adamw(lr=1e-3, noise_variance=huge, bc_floor=1e-8)
+        opt = adamw_bc(lr=1e-3, noise_variance=huge, bc_floor=1e-8)
         state = opt.init(pg_params)
         updates, _ = opt.update(pg_grads, state, params=pg_params)
 
@@ -450,7 +450,7 @@ class TestWeightDecay:
         params = {"w": torch.ones(4) * 2.0}
         grads = {"w": torch.zeros(4)}
 
-        opt = dp_adamw(lr=0.1, weight_decay=0.1, noise_variance=0.01, bc_floor=1e-30)
+        opt = adamw_bc(lr=0.1, weight_decay=0.1, noise_variance=0.01, bc_floor=1e-30)
         state = opt.init(params)
         updates, _ = opt.update(grads, state, params=params)
 
@@ -463,7 +463,7 @@ class TestWeightDecay:
         params = {"w": torch.randn(3)}
         grads = {"w": torch.randn(3)}
 
-        opt = dp_adamw(lr=1e-3, weight_decay=0.0, noise_variance=0.1)
+        opt = adamw_bc(lr=1e-3, weight_decay=0.0, noise_variance=0.1)
         state = opt.init(params)
         # Should work without passing params.
         updates, _ = opt.update(grads, state)
@@ -481,7 +481,7 @@ class TestConvergence:
         target = torch.tensor([1.0, 2.0, 3.0])
         params = {"x": torch.zeros(3)}
 
-        opt = dp_adamw(lr=0.05, weight_decay=0.0, noise_variance=0.0)
+        opt = adamw_bc(lr=0.05, weight_decay=0.0, noise_variance=0.0)
         state = opt.init(params)
 
         for _ in range(200):
@@ -496,7 +496,7 @@ class TestConvergence:
         target = torch.tensor([1.0, 2.0, 3.0])
         params = {"x": torch.zeros(3)}
 
-        opt = dp_adamw(lr=0.05, weight_decay=0.0, noise_variance=0.01)
+        opt = adamw_bc(lr=0.05, weight_decay=0.0, noise_variance=0.01)
         state = opt.init(params)
 
         for _ in range(200):
@@ -515,11 +515,11 @@ class TestConvergence:
 class TestValidation:
     def test_negative_noise_variance_raises(self):
         with pytest.raises(ValueError, match="non-negative"):
-            dp_adamw(noise_variance=-1.0)
+            adamw_bc(noise_variance=-1.0)
 
     def test_apply_updates_compatible(self, params, grads):
         """Updates from BC mode work with torchopt.apply_updates."""
-        opt = dp_adamw(lr=1e-3, noise_variance=0.1)
+        opt = adamw_bc(lr=1e-3, noise_variance=0.1)
         state = opt.init(params)
         updates, _ = opt.update(grads, state, params=params)
 
@@ -537,7 +537,7 @@ class TestValidation:
 class TestDeterminism:
     def test_same_input_same_output(self, params, grads):
         """Identical inputs must produce identical outputs (no hidden RNG)."""
-        opt = dp_adamw(lr=1e-3, noise_variance=0.1)
+        opt = adamw_bc(lr=1e-3, noise_variance=0.1)
 
         state_a = opt.init(params)
         state_b = opt.init(params)

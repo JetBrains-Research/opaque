@@ -88,12 +88,24 @@ per-rank key via `fold_in(key, rank)` to each `PoissonSampler`.
 
 ---
 
-## JME-AdamW (DP-FTRL with Adam)
+## DP-Aware Optimizers
 
-Opaque provides `jme_adamw` for DP-FTRL training with Adam-style updates
-and matrix-factorization correlated noise. See the
-[Optimizers User Guide](../user-guide/optimizers.md#jme-adamw-adam-with-mf-correlated-noise)
-for setup and usage.
+Standard Adam's second moment is biased upward in DP training because it
+squares noised gradients ($\tilde{g}^2 = g^2 + 2gz + z^2$).  Opaque provides
+two independent corrections — see the
+[Optimizers User Guide](../user-guide/optimizers.md#the-second-moment-problem-in-dp-training)
+for details:
+
+- **`adamw_bc`** — subtracts the known noise variance from $\hat{v}_t$
+  (Chooi et al., [arXiv:2511.07843](https://arxiv.org/abs/2511.07843)).
+  Works with any Gaussian noise source.  With `noise_variance=0` (default),
+  identical to `torchopt.adamw`.
+- **`adamw_jme`** — uses a separately privatized $g^2$ estimate from JME
+  (Kalinin et al., [arXiv:2502.06597](https://arxiv.org/abs/2502.06597)).
+  Requires MF correlated noise (`jme_noise`).
+
+These address the same problem from different angles and **must not be
+combined**.
 
 ::: opaque.optimizers
     options:

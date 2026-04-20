@@ -116,7 +116,7 @@ from opaque.noise.mf import (
     mf_noise,
     jme_noise,
 )
-from opaque.optimizers import jme_adamw
+from opaque.optimizers import adamw_jme
 from opaque.profiling import (
     StepTimer,
     TrainingProfiler,
@@ -322,7 +322,7 @@ def parse_args():
         type=float,
         default=0.0,
         help="Optimizer weight decay: torchopt.sgd L2-style coefficient, or "
-        "jme_adamw decoupled WD (default 0; many JME runs omit WD).",
+        "adamw_jme decoupled WD (default 0; many JME runs omit WD).",
     )
     train_g.add_argument(
         "--beta1",
@@ -1100,7 +1100,7 @@ def main():
     print(f"  Noise function created in {time.time() - t0:.1f}s")
 
     if use_adam:
-        optimizer = jme_adamw(
+        optimizer = adamw_jme(
             lr=lambda step: lr_schedule[min(step, len(lr_schedule) - 1)].item(),
             betas=(args.beta1, args.beta2),
             eps=args.adam_eps,

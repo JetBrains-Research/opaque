@@ -28,6 +28,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=4.0.0" },
     { name = "ruff", specifier = ">=0.1.0" },
     { name = "scipy", specifier = ">=1.11.0" },
+    { name = "torchopt", specifier = ">=0.7.3" },
 ]
 docs = [
     { name = "mike", specifier = ">=2.1.3" },
@@ -48,6 +49,7 @@ examples = [
     { name = "transformers", specifier = ">=4.57.0" },
     { name = "wandb", specifier = ">=0.16.0" },
 ]
+optimizers = [{ name = "torchopt", specifier = ">=0.7.3" }]
 
 [[package]]
 name = "absl-py"
