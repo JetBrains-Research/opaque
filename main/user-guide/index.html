@@ -1967,7 +1967,8 @@ understanding, or jump to a specific topic.</p>
 <h3 id="core-pipeline">Core pipeline<a class="headerlink" href="#core-pipeline" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><a href="clipping/">Per-Example Gradient Clipping</a></strong> -- <code>clipped_grad</code>,
-  <code>clipped_fun</code>, <code>clip_pytree</code>, microbatching, and adaptive clipping.</li>
+  <code>adaptive_clipped_grad</code>, <code>auto_clipped_grad</code>, microbatching, and
+  per-group clipping.</li>
 <li><strong><a href="noise/">Noise Addition</a></strong> -- Gaussian noise, bounded Gaussian variants
   (truncated, rectified), and matrix-factorization correlated noise for DP-FTRL.</li>
 <li><strong><a href="accounting/">Privacy Accounting</a></strong> -- Composable <code>DpProcess</code> objects,

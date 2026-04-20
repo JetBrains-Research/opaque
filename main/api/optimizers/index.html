@@ -1702,6 +1702,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#jme-adamw-dp-ftrl-with-adam" class="md-nav__link">
+    <span class="md-ellipsis">
+      JME-AdamW (DP-FTRL with Adam)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="JME-AdamW (DP-FTRL with Adam)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#opaque.optimizers" class="md-nav__link">
+    <span class="md-ellipsis">
+      optimizers
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="optimizers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#opaque.optimizers.JmeAdamWState" class="md-nav__link">
+    <span class="md-ellipsis">
+      JmeAdamWState
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       See Also
@@ -1895,6 +1934,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#jme-adamw-dp-ftrl-with-adam" class="md-nav__link">
+    <span class="md-ellipsis">
+      JME-AdamW (DP-FTRL with Adam)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="JME-AdamW (DP-FTRL with Adam)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#opaque.optimizers" class="md-nav__link">
+    <span class="md-ellipsis">
+      optimizers
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="optimizers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#opaque.optimizers.JmeAdamWState" class="md-nav__link">
+    <span class="md-ellipsis">
+      JmeAdamWState
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       See Also
@@ -1984,9 +2062,192 @@ needed.</p>
 <p>Use <code>local_shard()</code> to partition the dataset across ranks and pass a
 per-rank key via <code>fold_in(key, rank)</code> to each <code>PoissonSampler</code>.</p>
 <hr />
-<h2 id="see-also">See Also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
+<h2 id="jme-adamw-dp-ftrl-with-adam">JME-AdamW (DP-FTRL with Adam)<a class="headerlink" href="#jme-adamw-dp-ftrl-with-adam" title="Permanent link">&para;</a></h2>
+<p>Opaque provides <code>jme_adamw</code> for DP-FTRL training with Adam-style updates
+and matrix-factorization correlated noise. See the
+<a href="../../user-guide/optimizers/#jme-adamw-adam-with-mf-correlated-noise">Optimizers User Guide</a>
+for setup and usage.</p>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+<h3 id="opaque.optimizers" class="doc doc-heading">
+            <code>optimizers</code>
+
+
+<a href="#opaque.optimizers" class="headerlink" title="Permanent link">&para;</a></h3>
+
+    <div class="doc doc-contents first">
+
+        <p>DP optimizers built on TorchOpt.</p>
+<p>Provides DP-aware optimizer variants that follow TorchOpt's
+<code>GradientTransformation</code> protocol::</p>
+<div class="codehilite"><pre><span></span><code>state = opt.init(params)
+updates, state = opt.update(grads, state, params=params)
+params = torchopt.apply_updates(params, updates)
+</code></pre></div>
+
+
+
+
+
+
+
+
+
+
+  <div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h4 id="opaque.optimizers.JmeAdamWState" class="doc doc-heading">
+            <code>JmeAdamWState</code>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#opaque.optimizers.JmeAdamWState" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+
+        <p>State for the JME moment-scaling transform.</p>
+<p>First element of the chain state returned by :func:<code>jme_adamw</code>.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="opaque.optimizers.JmeAdamWState.mu">mu</span></code></td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>First-moment EMA (pytree matching params).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="opaque.optimizers.JmeAdamWState.nu">nu</span></code></td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Second-moment EMA.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="opaque.optimizers.JmeAdamWState.step">step</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Update count (1-indexed after first call).</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+
+              <details class="quote">
+                <summary>Source code in <code>packages/opaque/src/opaque/optimizers/jme_adamw.py</code></summary>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-55">55</a></span>
+<span class="normal"><a href="#__codelineno-0-56">56</a></span>
+<span class="normal"><a href="#__codelineno-0-57">57</a></span>
+<span class="normal"><a href="#__codelineno-0-58">58</a></span>
+<span class="normal"><a href="#__codelineno-0-59">59</a></span>
+<span class="normal"><a href="#__codelineno-0-60">60</a></span>
+<span class="normal"><a href="#__codelineno-0-61">61</a></span>
+<span class="normal"><a href="#__codelineno-0-62">62</a></span>
+<span class="normal"><a href="#__codelineno-0-63">63</a></span>
+<span class="normal"><a href="#__codelineno-0-64">64</a></span>
+<span class="normal"><a href="#__codelineno-0-65">65</a></span>
+<span class="normal"><a href="#__codelineno-0-66">66</a></span>
+<span class="normal"><a href="#__codelineno-0-67">67</a></span>
+<span class="normal"><a href="#__codelineno-0-68">68</a></span>
+<span class="normal"><a href="#__codelineno-0-69">69</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-55" name="__codelineno-0-55"></a><span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-0-56" name="__codelineno-0-56"></a><span class="k">class</span><span class="w"> </span><span class="nc">JmeAdamWState</span><span class="p">:</span>
+<a id="__codelineno-0-57" name="__codelineno-0-57"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;State for the JME moment-scaling transform.</span>
+<a id="__codelineno-0-58" name="__codelineno-0-58"></a>
+<a id="__codelineno-0-59" name="__codelineno-0-59"></a><span class="sd">    First element of the chain state returned by :func:`jme_adamw`.</span>
+<a id="__codelineno-0-60" name="__codelineno-0-60"></a>
+<a id="__codelineno-0-61" name="__codelineno-0-61"></a><span class="sd">    Attributes:</span>
+<a id="__codelineno-0-62" name="__codelineno-0-62"></a><span class="sd">        mu: First-moment EMA (pytree matching params).</span>
+<a id="__codelineno-0-63" name="__codelineno-0-63"></a><span class="sd">        nu: Second-moment EMA.</span>
+<a id="__codelineno-0-64" name="__codelineno-0-64"></a><span class="sd">        step: Update count (1-indexed after first call).</span>
+<a id="__codelineno-0-65" name="__codelineno-0-65"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-66" name="__codelineno-0-66"></a>
+<a id="__codelineno-0-67" name="__codelineno-0-67"></a>    <span class="n">mu</span><span class="p">:</span> <span class="n">Any</span>
+<a id="__codelineno-0-68" name="__codelineno-0-68"></a>    <span class="n">nu</span><span class="p">:</span> <span class="n">Any</span>
+<a id="__codelineno-0-69" name="__codelineno-0-69"></a>    <span class="n">step</span><span class="p">:</span> <span class="nb">int</span>
+</code></pre></div></td></tr></table></div>
+              </details>
+
+
+
+  <div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="see-also">See Also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
-<li><a href="../clipping/">Gradient Clipping API</a> — includes <code>adaptive_clipped_grad()</code></li>
+<li><a href="../clipping/">Gradient Clipping API</a> — includes <code>adaptive_clipped_grad()</code> and <code>auto_clipped_grad()</code></li>
 <li><a href="../../user-guide/optimizers/">Optimizers User Guide</a></li>
 <li><a href="../../tutorials/llm_finetuning/">Fine-tuning an LLM Tutorial</a></li>
 <li><a href="https://torchopt.readthedocs.io/">TorchOpt Documentation</a></li>
