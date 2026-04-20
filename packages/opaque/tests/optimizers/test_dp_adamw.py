@@ -75,7 +75,7 @@ class TestStandardMode:
         orig = {k: v.clone() for k, v in params.items()}
 
         updates, _ = opt.update(grads, state, params=params)
-        torchopt.apply_updates(params, updates)
+        params = torchopt.apply_updates(params, updates)
 
         changed = any(not torch.equal(params[k], orig[k]) for k in params)
         assert changed

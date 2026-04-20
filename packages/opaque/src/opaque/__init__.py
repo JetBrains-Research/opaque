@@ -27,7 +27,7 @@ except ImportError:
 
 try:
     from opaque import optimizers
-except ImportError:
+except ModuleNotFoundError:
     # torchopt not installed - optimizers module unavailable
     optimizers = None
 
@@ -112,6 +112,8 @@ __all__ = [
     "auditing",
     # Distributed
     "distributed",
+    # Optimizers
+    "optimizers",
     # Utils
     "make_functional",
     "with_batch_dim",

@@ -292,6 +292,17 @@ def dp_adamw(
         Chooi et al., "DP-AdamW: Investigating Decoupled Weight Decay and
         Bias Correction in Private Deep Learning", arXiv:2511.07843 (2025).
     """
+    if eps <= 0:
+        raise ValueError(f"eps must be positive, got {eps}")
+    if bc_floor <= 0:
+        raise ValueError(f"bc_floor must be positive, got {bc_floor}")
+    if len(betas) != 2:
+        raise ValueError(f"betas must contain exactly two values, got {betas}")
+    b1, b2 = betas
+    if not 0 <= b1 < 1:
+        raise ValueError(f"beta_1 must satisfy 0 <= beta_1 < 1, got {b1}")
+    if not 0 <= b2 < 1:
+        raise ValueError(f"beta_2 must satisfy 0 <= beta_2 < 1, got {b2}")
     if isinstance(noise_variance, PerGroup):
         for gname, val in noise_variance.values.items():
             if val < 0:
