@@ -1702,13 +1702,13 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#jme-adamw-dp-ftrl-with-adam" class="md-nav__link">
+  <a href="#dp-aware-optimizers" class="md-nav__link">
     <span class="md-ellipsis">
-      JME-AdamW (DP-FTRL with Adam)
+      DP-Aware Optimizers
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="JME-AdamW (DP-FTRL with Adam)">
+    <nav class="md-nav" aria-label="DP-Aware Optimizers">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1722,9 +1722,18 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#opaque.optimizers.JmeAdamWState" class="md-nav__link">
+  <a href="#opaque.optimizers.AdamWBCState" class="md-nav__link">
     <span class="md-ellipsis">
-      JmeAdamWState
+      AdamWBCState
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#opaque.optimizers.AdamWJMEState" class="md-nav__link">
+    <span class="md-ellipsis">
+      AdamWJMEState
     </span>
   </a>
   
@@ -1934,13 +1943,13 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#jme-adamw-dp-ftrl-with-adam" class="md-nav__link">
+  <a href="#dp-aware-optimizers" class="md-nav__link">
     <span class="md-ellipsis">
-      JME-AdamW (DP-FTRL with Adam)
+      DP-Aware Optimizers
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="JME-AdamW (DP-FTRL with Adam)">
+    <nav class="md-nav" aria-label="DP-Aware Optimizers">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1954,9 +1963,18 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#opaque.optimizers.JmeAdamWState" class="md-nav__link">
+  <a href="#opaque.optimizers.AdamWBCState" class="md-nav__link">
     <span class="md-ellipsis">
-      JmeAdamWState
+      AdamWBCState
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#opaque.optimizers.AdamWJMEState" class="md-nav__link">
+    <span class="md-ellipsis">
+      AdamWJMEState
     </span>
   </a>
   
@@ -2062,11 +2080,23 @@ needed.</p>
 <p>Use <code>local_shard()</code> to partition the dataset across ranks and pass a
 per-rank key via <code>fold_in(key, rank)</code> to each <code>PoissonSampler</code>.</p>
 <hr />
-<h2 id="jme-adamw-dp-ftrl-with-adam">JME-AdamW (DP-FTRL with Adam)<a class="headerlink" href="#jme-adamw-dp-ftrl-with-adam" title="Permanent link">&para;</a></h2>
-<p>Opaque provides <code>jme_adamw</code> for DP-FTRL training with Adam-style updates
-and matrix-factorization correlated noise. See the
-<a href="../../user-guide/optimizers/#jme-adamw-adam-with-mf-correlated-noise">Optimizers User Guide</a>
-for setup and usage.</p>
+<h2 id="dp-aware-optimizers">DP-Aware Optimizers<a class="headerlink" href="#dp-aware-optimizers" title="Permanent link">&para;</a></h2>
+<p>Standard Adam's second moment is biased upward in DP training because it
+squares noised gradients (<span class="arithmatex">\(\tilde{g}^2 = g^2 + 2gz + z^2\)</span>).  Opaque provides
+two independent corrections — see the
+<a href="../../user-guide/optimizers/#the-second-moment-problem-in-dp-training">Optimizers User Guide</a>
+for details:</p>
+<ul>
+<li><strong><code>adamw_bc</code></strong> — subtracts the known noise variance from <span class="arithmatex">\(\hat{v}_t\)</span>
+  (Chooi et al., <a href="https://arxiv.org/abs/2511.07843">arXiv:2511.07843</a>).
+  Works with any Gaussian noise source.  With <code>noise_stddev=0</code> (default),
+  identical to <code>torchopt.adamw</code>.</li>
+<li><strong><code>adamw_jme</code></strong> — uses a separately privatized <span class="arithmatex">\(g^2\)</span> estimate from JME
+  (Kalinin et al., <a href="https://arxiv.org/abs/2502.06597">arXiv:2502.06597</a>).
+  Requires MF correlated noise (<code>jme_noise</code>).</li>
+</ul>
+<p>These address the same problem from different angles and <strong>must not be
+combined</strong>.</p>
 
 
 <div class="doc doc-object doc-module">
@@ -2112,22 +2142,24 @@ params = torchopt.apply_updates(params, updates)
 
 
 
-<h4 id="opaque.optimizers.JmeAdamWState" class="doc doc-heading">
-            <code>JmeAdamWState</code>
+<h4 id="opaque.optimizers.AdamWBCState" class="doc doc-heading">
+            <code>AdamWBCState</code>
 
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
   </span>
 
-<a href="#opaque.optimizers.JmeAdamWState" class="headerlink" title="Permanent link">&para;</a></h4>
+<a href="#opaque.optimizers.AdamWBCState" class="headerlink" title="Permanent link">&para;</a></h4>
 
 
     <div class="doc doc-contents ">
 
 
-        <p>State for the JME moment-scaling transform.</p>
-<p>First element of the chain state returned by :func:<code>jme_adamw</code>.</p>
+        <p>Immutable state for the bias-corrected moment scaling (Algorithm 2).</p>
+<p>This is the first element of the chain state returned by
+:func:<code>adamw_bc</code>.  The full optimizer state is a tuple
+<code>(AdamWBCState, wd_state, lr_state)</code>.</p>
 
 
 <p><span class="doc-section-title">Attributes:</span></p>
@@ -2141,7 +2173,165 @@ params = torchopt.apply_updates(params, updates)
       </thead>
       <tbody>
           <tr class="doc-section-item">
-            <td><code><span title="opaque.optimizers.JmeAdamWState.mu">mu</span></code></td>
+            <td><code><span title="opaque.optimizers.AdamWBCState.mu">mu</span></code></td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>First moment estimates (pytree matching params).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="opaque.optimizers.AdamWBCState.nu">nu</span></code></td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Second moment estimates (pytree matching params).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="opaque.optimizers.AdamWBCState.phi">phi</span></code></td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Noise variance EMA.  A <code>float</code> for scalar noise_stddev,
+or <code>dict[str, float]</code> for per-group noise_stddev.  Tracks
+the beta_2-weighted running average of the per-step noise
+variance Phi_t injected into gradients.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="opaque.optimizers.AdamWBCState.step">step</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Number of update steps completed.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+
+              <details class="quote">
+                <summary>Source code in <code>packages/opaque/src/opaque/optimizers/adamw_bc.py</code></summary>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-56">56</a></span>
+<span class="normal"><a href="#__codelineno-0-57">57</a></span>
+<span class="normal"><a href="#__codelineno-0-58">58</a></span>
+<span class="normal"><a href="#__codelineno-0-59">59</a></span>
+<span class="normal"><a href="#__codelineno-0-60">60</a></span>
+<span class="normal"><a href="#__codelineno-0-61">61</a></span>
+<span class="normal"><a href="#__codelineno-0-62">62</a></span>
+<span class="normal"><a href="#__codelineno-0-63">63</a></span>
+<span class="normal"><a href="#__codelineno-0-64">64</a></span>
+<span class="normal"><a href="#__codelineno-0-65">65</a></span>
+<span class="normal"><a href="#__codelineno-0-66">66</a></span>
+<span class="normal"><a href="#__codelineno-0-67">67</a></span>
+<span class="normal"><a href="#__codelineno-0-68">68</a></span>
+<span class="normal"><a href="#__codelineno-0-69">69</a></span>
+<span class="normal"><a href="#__codelineno-0-70">70</a></span>
+<span class="normal"><a href="#__codelineno-0-71">71</a></span>
+<span class="normal"><a href="#__codelineno-0-72">72</a></span>
+<span class="normal"><a href="#__codelineno-0-73">73</a></span>
+<span class="normal"><a href="#__codelineno-0-74">74</a></span>
+<span class="normal"><a href="#__codelineno-0-75">75</a></span>
+<span class="normal"><a href="#__codelineno-0-76">76</a></span>
+<span class="normal"><a href="#__codelineno-0-77">77</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-56" name="__codelineno-0-56"></a><span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-0-57" name="__codelineno-0-57"></a><span class="k">class</span><span class="w"> </span><span class="nc">AdamWBCState</span><span class="p">:</span>
+<a id="__codelineno-0-58" name="__codelineno-0-58"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Immutable state for the bias-corrected moment scaling (Algorithm 2).</span>
+<a id="__codelineno-0-59" name="__codelineno-0-59"></a>
+<a id="__codelineno-0-60" name="__codelineno-0-60"></a><span class="sd">    This is the first element of the chain state returned by</span>
+<a id="__codelineno-0-61" name="__codelineno-0-61"></a><span class="sd">    :func:`adamw_bc`.  The full optimizer state is a tuple</span>
+<a id="__codelineno-0-62" name="__codelineno-0-62"></a><span class="sd">    ``(AdamWBCState, wd_state, lr_state)``.</span>
+<a id="__codelineno-0-63" name="__codelineno-0-63"></a>
+<a id="__codelineno-0-64" name="__codelineno-0-64"></a><span class="sd">    Attributes:</span>
+<a id="__codelineno-0-65" name="__codelineno-0-65"></a><span class="sd">        mu: First moment estimates (pytree matching params).</span>
+<a id="__codelineno-0-66" name="__codelineno-0-66"></a><span class="sd">        nu: Second moment estimates (pytree matching params).</span>
+<a id="__codelineno-0-67" name="__codelineno-0-67"></a><span class="sd">        phi: Noise variance EMA.  A ``float`` for scalar noise_stddev,</span>
+<a id="__codelineno-0-68" name="__codelineno-0-68"></a><span class="sd">            or ``dict[str, float]`` for per-group noise_stddev.  Tracks</span>
+<a id="__codelineno-0-69" name="__codelineno-0-69"></a><span class="sd">            the beta_2-weighted running average of the per-step noise</span>
+<a id="__codelineno-0-70" name="__codelineno-0-70"></a><span class="sd">            variance Phi_t injected into gradients.</span>
+<a id="__codelineno-0-71" name="__codelineno-0-71"></a><span class="sd">        step: Number of update steps completed.</span>
+<a id="__codelineno-0-72" name="__codelineno-0-72"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-73" name="__codelineno-0-73"></a>
+<a id="__codelineno-0-74" name="__codelineno-0-74"></a>    <span class="n">mu</span><span class="p">:</span> <span class="n">Any</span>
+<a id="__codelineno-0-75" name="__codelineno-0-75"></a>    <span class="n">nu</span><span class="p">:</span> <span class="n">Any</span>
+<a id="__codelineno-0-76" name="__codelineno-0-76"></a>    <span class="n">phi</span><span class="p">:</span> <span class="n">Any</span>
+<a id="__codelineno-0-77" name="__codelineno-0-77"></a>    <span class="n">step</span><span class="p">:</span> <span class="nb">int</span>
+</code></pre></div></td></tr></table></div>
+              </details>
+
+
+
+  <div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h4 id="opaque.optimizers.AdamWJMEState" class="doc doc-heading">
+            <code>AdamWJMEState</code>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#opaque.optimizers.AdamWJMEState" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+
+        <p>Immutable state for the JME moment-scaling transform.</p>
+<p>First element of the chain state returned by :func:<code>adamw_jme</code>.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="opaque.optimizers.AdamWJMEState.mu">mu</span></code></td>
             <td>
                   <code><span title="typing.Any">Any</span></code>
             </td>
@@ -2152,18 +2342,18 @@ params = torchopt.apply_updates(params, updates)
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><span title="opaque.optimizers.JmeAdamWState.nu">nu</span></code></td>
+            <td><code><span title="opaque.optimizers.AdamWJMEState.nu">nu</span></code></td>
             <td>
                   <code><span title="typing.Any">Any</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Second-moment EMA.</p>
+                <p>Second-moment EMA (pytree matching params).</p>
               </div>
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><span title="opaque.optimizers.JmeAdamWState.step">step</span></code></td>
+            <td><code><span title="opaque.optimizers.AdamWJMEState.step">step</span></code></td>
             <td>
                   <code><span title="int">int</span></code>
             </td>
@@ -2184,36 +2374,36 @@ params = torchopt.apply_updates(params, updates)
 
 
               <details class="quote">
-                <summary>Source code in <code>packages/opaque/src/opaque/optimizers/jme_adamw.py</code></summary>
-                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-55">55</a></span>
+                <summary>Source code in <code>packages/opaque/src/opaque/optimizers/adamw_jme.py</code></summary>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-46">46</a></span>
+<span class="normal"><a href="#__codelineno-0-47">47</a></span>
+<span class="normal"><a href="#__codelineno-0-48">48</a></span>
+<span class="normal"><a href="#__codelineno-0-49">49</a></span>
+<span class="normal"><a href="#__codelineno-0-50">50</a></span>
+<span class="normal"><a href="#__codelineno-0-51">51</a></span>
+<span class="normal"><a href="#__codelineno-0-52">52</a></span>
+<span class="normal"><a href="#__codelineno-0-53">53</a></span>
+<span class="normal"><a href="#__codelineno-0-54">54</a></span>
+<span class="normal"><a href="#__codelineno-0-55">55</a></span>
 <span class="normal"><a href="#__codelineno-0-56">56</a></span>
 <span class="normal"><a href="#__codelineno-0-57">57</a></span>
 <span class="normal"><a href="#__codelineno-0-58">58</a></span>
 <span class="normal"><a href="#__codelineno-0-59">59</a></span>
-<span class="normal"><a href="#__codelineno-0-60">60</a></span>
-<span class="normal"><a href="#__codelineno-0-61">61</a></span>
-<span class="normal"><a href="#__codelineno-0-62">62</a></span>
-<span class="normal"><a href="#__codelineno-0-63">63</a></span>
-<span class="normal"><a href="#__codelineno-0-64">64</a></span>
-<span class="normal"><a href="#__codelineno-0-65">65</a></span>
-<span class="normal"><a href="#__codelineno-0-66">66</a></span>
-<span class="normal"><a href="#__codelineno-0-67">67</a></span>
-<span class="normal"><a href="#__codelineno-0-68">68</a></span>
-<span class="normal"><a href="#__codelineno-0-69">69</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-55" name="__codelineno-0-55"></a><span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<a id="__codelineno-0-56" name="__codelineno-0-56"></a><span class="k">class</span><span class="w"> </span><span class="nc">JmeAdamWState</span><span class="p">:</span>
-<a id="__codelineno-0-57" name="__codelineno-0-57"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;State for the JME moment-scaling transform.</span>
-<a id="__codelineno-0-58" name="__codelineno-0-58"></a>
-<a id="__codelineno-0-59" name="__codelineno-0-59"></a><span class="sd">    First element of the chain state returned by :func:`jme_adamw`.</span>
-<a id="__codelineno-0-60" name="__codelineno-0-60"></a>
-<a id="__codelineno-0-61" name="__codelineno-0-61"></a><span class="sd">    Attributes:</span>
-<a id="__codelineno-0-62" name="__codelineno-0-62"></a><span class="sd">        mu: First-moment EMA (pytree matching params).</span>
-<a id="__codelineno-0-63" name="__codelineno-0-63"></a><span class="sd">        nu: Second-moment EMA.</span>
-<a id="__codelineno-0-64" name="__codelineno-0-64"></a><span class="sd">        step: Update count (1-indexed after first call).</span>
-<a id="__codelineno-0-65" name="__codelineno-0-65"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-0-66" name="__codelineno-0-66"></a>
-<a id="__codelineno-0-67" name="__codelineno-0-67"></a>    <span class="n">mu</span><span class="p">:</span> <span class="n">Any</span>
-<a id="__codelineno-0-68" name="__codelineno-0-68"></a>    <span class="n">nu</span><span class="p">:</span> <span class="n">Any</span>
-<a id="__codelineno-0-69" name="__codelineno-0-69"></a>    <span class="n">step</span><span class="p">:</span> <span class="nb">int</span>
+<span class="normal"><a href="#__codelineno-0-60">60</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-46" name="__codelineno-0-46"></a><span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-0-47" name="__codelineno-0-47"></a><span class="k">class</span><span class="w"> </span><span class="nc">AdamWJMEState</span><span class="p">:</span>
+<a id="__codelineno-0-48" name="__codelineno-0-48"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Immutable state for the JME moment-scaling transform.</span>
+<a id="__codelineno-0-49" name="__codelineno-0-49"></a>
+<a id="__codelineno-0-50" name="__codelineno-0-50"></a><span class="sd">    First element of the chain state returned by :func:`adamw_jme`.</span>
+<a id="__codelineno-0-51" name="__codelineno-0-51"></a>
+<a id="__codelineno-0-52" name="__codelineno-0-52"></a><span class="sd">    Attributes:</span>
+<a id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="sd">        mu: First-moment EMA (pytree matching params).</span>
+<a id="__codelineno-0-54" name="__codelineno-0-54"></a><span class="sd">        nu: Second-moment EMA (pytree matching params).</span>
+<a id="__codelineno-0-55" name="__codelineno-0-55"></a><span class="sd">        step: Update count (1-indexed after first call).</span>
+<a id="__codelineno-0-56" name="__codelineno-0-56"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-57" name="__codelineno-0-57"></a>
+<a id="__codelineno-0-58" name="__codelineno-0-58"></a>    <span class="n">mu</span><span class="p">:</span> <span class="n">Any</span>
+<a id="__codelineno-0-59" name="__codelineno-0-59"></a>    <span class="n">nu</span><span class="p">:</span> <span class="n">Any</span>
+<a id="__codelineno-0-60" name="__codelineno-0-60"></a>    <span class="n">step</span><span class="p">:</span> <span class="nb">int</span>
 </code></pre></div></td></tr></table></div>
               </details>
 
