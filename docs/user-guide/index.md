@@ -85,7 +85,8 @@ understanding, or jump to a specific topic.
 ### Core pipeline
 
 - **[Per-Example Gradient Clipping](clipping.md)** -- `clipped_grad`,
-  `clipped_fun`, `clip_pytree`, microbatching, and adaptive clipping.
+  `adaptive_clipped_grad`, `auto_clipped_grad`, microbatching, and
+  per-group clipping.
 - **[Noise Addition](noise.md)** -- Gaussian noise, bounded Gaussian variants
   (truncated, rectified), and matrix-factorization correlated noise for DP-FTRL.
 - **[Privacy Accounting](accounting.md)** -- Composable `DpProcess` objects,

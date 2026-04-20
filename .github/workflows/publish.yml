@@ -30,9 +30,7 @@ jobs:
         with:
           fetch-depth: 0  # Full history for release notes
 
-      - uses: astral-sh/setup-uv@v3
-        with:
-          version: "latest"
+      - uses: astral-sh/setup-uv@v8.1.0
 
       - uses: actions/setup-python@v5
         with:
@@ -45,13 +43,13 @@ jobs:
             # Release PR path: release/vX.Y.Z → X.Y.Z
             BRANCH="${{ github.event.pull_request.head.ref }}"
             FULL_VERSION=$(echo "$BRANCH" | sed -n 's/^release\/v\(.*\)$/\1/p')
-            
+
             if [ -z "$FULL_VERSION" ]; then
               echo "❌ Could not extract version from branch name: $BRANCH"
               echo "Expected format: release/vX.Y.Z or release/vX.Y.Z-pre-release"
               exit 1
             fi
-            
+
             if [ "${{ github.event.pull_request.merged }}" = "true" ]; then
               IS_DRY_RUN="false"
             else
@@ -62,12 +60,12 @@ jobs:
             # Tag push path: v X.Y.Z → X.Y.Z (always publish, not dry-run)
             TAG="${{ github.ref_name }}"
             FULL_VERSION=$(echo "$TAG" | sed -n 's/^v\(.*\)$/\1/p')
-            
+
             if [ -z "$FULL_VERSION" ]; then
               echo "❌ Could not extract version from tag: $TAG"
               exit 1
             fi
-            
+
             IS_DRY_RUN="false"
           fi
 
@@ -123,9 +121,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: astral-sh/setup-uv@v3
-        with:
-          version: "latest"
+      - uses: astral-sh/setup-uv@v8.1.0
 
       - uses: actions/setup-python@v5
         with:
@@ -187,9 +183,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: astral-sh/setup-uv@v3
-        with:
-          version: "latest"
+      - uses: astral-sh/setup-uv@v8.1.0
 
       - uses: actions/setup-python@v5
         with:
@@ -220,9 +214,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: astral-sh/setup-uv@v3
-        with:
-          version: "latest"
+      - uses: astral-sh/setup-uv@v8.1.0
 
       - uses: actions/setup-python@v5
         with:

@@ -88,9 +88,21 @@ per-rank key via `fold_in(key, rank)` to each `PoissonSampler`.
 
 ---
 
+## JME-AdamW (DP-FTRL with Adam)
+
+Opaque provides `jme_adamw` for DP-FTRL training with Adam-style updates
+and matrix-factorization correlated noise. See the
+[Optimizers User Guide](../user-guide/optimizers.md#jme-adamw-adam-with-mf-correlated-noise)
+for setup and usage.
+
+::: opaque.optimizers
+    options:
+      show_source: true
+      heading_level: 3
+
 ## See Also
 
-- [Gradient Clipping API](clipping.md) — includes `adaptive_clipped_grad()`
+- [Gradient Clipping API](clipping.md) — includes `adaptive_clipped_grad()` and `auto_clipped_grad()`
 - [Optimizers User Guide](../user-guide/optimizers.md)
 - [Fine-tuning an LLM Tutorial](../tutorials/llm_finetuning.ipynb)
 - [TorchOpt Documentation](https://torchopt.readthedocs.io/)

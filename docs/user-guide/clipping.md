@@ -5,7 +5,14 @@ the model update. This is the core operation that makes DP-SGD possible:
 clipping establishes a known sensitivity, which determines how much noise is
 needed for a given privacy guarantee.
 
-Opaque provides three clipping APIs at different levels of abstraction.
+Opaque provides three high-level clipping functions:
+
+- **`clipped_grad`** — Fixed-threshold clipping (recommended default).
+- **`adaptive_clipped_grad`** — Auto-tuned threshold via quantile tracking (Andrew et al. 2021).
+- **`auto_clipped_grad`** — AUTO-S automatic scaling, no threshold to tune (Bu et al. NeurIPS 2023).
+
+Lower-level building blocks (`clipped_fun`, `clip_pytree`, `auto_scale_pytree`)
+are documented in the [Clipping API Reference](../api/clipping.md).
 
 ## `clipped_grad` -- recommended API
 
@@ -108,47 +115,6 @@ grad_fn, clip_state = clipped_grad(
 
 `adaptive_clipped_grad` returns `AdaptiveClippedGradAux` instead, which adds
 a `clipping_rate` field (fraction of gradients clipped).
-
-## `clipped_fun` -- general-purpose clipping
-
-`clipped_fun` clips and sums the outputs of any function, not just gradients.
-`clipped_grad` is built on top of `clipped_fun`.
-
-```python
-from opaque import clipped_fun
-
-def per_example_fn(params, example):
-    return compute_something(params, example)
-
-clipped_fn, clip_state = clipped_fun(
-    per_example_fn,
-    batch_argnums=1,
-    clipping_norm=1.0,
-)
-
-summed_result, clip_state = clipped_fn(params, batch, state=clip_state)
-```
-
-Use `clipped_fun` when you already have per-example outputs (not necessarily
-gradients) and want to clip-and-sum them.
-
-## `clip_pytree` -- low-level clipping
-
-`clip_pytree` clips a single PyTree of tensors to a maximum L2 norm. It does
-not handle batching or summation.
-
-```python
-from opaque import clip_pytree
-
-grads = {"weight": torch.tensor([3.0, 4.0]), "bias": torch.tensor([1.0])}
-clipped_grads, aux = clip_pytree(grads, clipping_norm=1.0)
-# aux.norm = 5.099 (original L2 norm)
-# clipped_grads: scaled so global L2 norm <= 1.0
-```
-
-Use `clip_pytree` when you have pre-computed per-example outputs and want
-fine-grained control over clipping. Most users should use `clipped_grad`
-instead.
 
 ## Microbatching
 
@@ -452,6 +418,104 @@ grad_fn, clip_state = adaptive_clipped_grad(
     key=key(7),
 )
 ```
+
+## Automatic clipping (AUTO-S)
+
+`auto_clipped_grad` implements the automatic clipping scheme of Bu et al.
+(NeurIPS 2023). Instead of a hard threshold, each per-example gradient is
+scaled by
+
+    g̃_i = R * g_i / (||g_i|| + gamma)
+
+so the output has L2 norm at most `R` by construction. There is no clip
+threshold to tune; the effective step size is absorbed into the learning
+rate.
+
+```python
+from opaque import auto_clipped_grad
+
+grad_fn, clip_state = auto_clipped_grad(
+    loss_fn,
+    argnums=0,
+    batch_argnums=(1, 2),
+    R=1.0,              # sensitivity bound (default 1.0)
+    gamma=0.01,         # denominator stabilizer γ (default 0.01)
+    normalize_by=batch_size,
+)
+
+grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
+```
+
+### Why it's "automatic"
+
+The scaling `R / (||g|| + gamma)` depends only on the example's own
+gradient, so the sensitivity `R / normalize_by` is guaranteed without any
+adaptation or tuning. AUTO-S removes the clip-threshold hyperparameter
+from the DP-SGD hyperparameter search.
+
+### State and privacy accounting
+
+The returned `AutoClipState` is fixed (no adaptation) and carries
+`clipping_norm=R`, `normalize_by`, `gamma`, and the standard
+`sensitivity` property. Privacy accounting is plain Gaussian DP-SGD —
+AUTO-S introduces no extra data-dependent query:
+
+```python
+import opaque.accounting as acc
+from opaque import gaussian_noise
+from opaque.random import key
+
+stddev = noise_multiplier * clip_state.sensitivity
+noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
+
+step = acc.poisson(acc.gaussian(noise_multiplier), sample_rate)
+training = step * num_steps
+eps = training.epsilon_at(1e-5)
+```
+
+### Per-group AUTO-S
+
+Pass a `PerGroup` as `R` to scale each group independently:
+
+```python
+from opaque import per_group, auto_clipped_grad
+
+pg = per_group(params, self_attn=1.0, mlp=2.0)
+
+grad_fn, clip_state = auto_clipped_grad(
+    loss_fn, argnums=0, batch_argnums=(1, 2),
+    R=pg, normalize_by=batch_size,
+)
+# clip_state.sensitivity = sqrt(sum R_k^2) / normalize_by
+```
+
+### CLI usage in `train_causal_lm.py`
+
+The training script exposes clipping mode through `--clipping-mode`:
+
+```bash
+# Flat AUTO-S (default R=1, γ=0.01)
+python examples/train_causal_lm.py --clipping-mode auto --clipping-norm 1.0
+
+# Per-layer AUTO-S: smaller R for q_proj (naturally smaller gradients)
+python examples/train_causal_lm.py \
+    --clipping-mode auto \
+    --per-group-clipping q_proj=0.1 fallback=0.9 \
+    --auto-clipping-gamma 0.01
+```
+
+Mode choices: `fixed`, `adaptive` (Andrew et al.), `auto` (AUTO-S). The
+`--clipping-norm` flag is reinterpreted by mode: threshold `C` for fixed,
+starting threshold for adaptive, sensitivity bound `R` for auto.
+
+### When to choose AUTO-S vs. fixed or adaptive clipping
+
+- Fixed (`clipped_grad`): best when you have a tuned clip norm already.
+- AUTO-S (`auto_clipped_grad`): zero hyperparameter tuning; competitive
+  accuracy on standard benchmarks and no extra privacy cost.
+- Adaptive (`adaptive_clipped_grad`): when you want the clip threshold to
+  track a target quantile of gradient norms, at a small additional
+  privacy cost for the quantile query.
 
 ## API reference
 
