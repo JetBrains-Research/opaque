@@ -1,8 +1,23 @@
 [tool.uv]
-workspace.members = ["packages/opaque", "packages/opaque-accounting"]
+workspace.members = [
+    "packages/opaque",
+    "packages/opaque-core",
+    "packages/opaque-dpsgd",
+    "packages/opaque-mf",
+    "packages/opaque-auditing",
+    "packages/opaque-performance",
+    "packages/opaque-huggingface",
+    "packages/opaque-accounting",
+]
 
 [tool.uv.sources]
 opaque = { workspace = true }
+opaque-core = { workspace = true }
+opaque-dpsgd = { workspace = true }
+opaque-mf = { workspace = true }
+opaque-auditing = { workspace = true }
+opaque-performance = { workspace = true }
+opaque-huggingface = { workspace = true }
 opaque-accounting = { workspace = true }
 
 [dependency-groups]
@@ -62,6 +77,10 @@ docs = [
 ]
 
 [tool.pytest.ini_options]
+# importlib mode gives each test file a unique module name based on its path,
+# avoiding collisions when multiple packages share directory names (e.g.
+# tests/noise/ in both opaque-dpsgd and opaque-mf).
+addopts = "--import-mode=importlib"
 markers = [
   "gpu: GPU sweep test (runs when CUDA is available; only mps_compatible subset runs on MPS)",
   "mps_compatible: GPU-marked test is explicitly safe to run on MPS",

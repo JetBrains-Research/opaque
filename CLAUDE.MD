@@ -23,72 +23,45 @@ models with LoRA.
 
 ## Repository Structure
 
+The library uses PEP 420 implicit namespace packages. `opaque`, `opaque.noise`,
+`opaque.optimizers`, and `opaque.compat` are namespace packages (no `__init__.py`)
+contributed to by multiple distributions.
+
 ```
-packages/opaque/
-├── src/opaque/
-│   ├── __init__.py              # Public API, auto-patching on import
-│   ├── accounting.py            # PLD-based privacy accounting (Rust engine)
-│   ├── kernels/                 # Fused Triton kernels (4800+ LOC)
-│   │   ├── swiglu.py            # SwiGLU activation
-│   │   ├── geglu.py             # GeGLU Exact + Approx
-│   │   ├── rope_embedding.py    # Rotary position embeddings
-│   │   ├── cross_entropy.py     # Chunked cross-entropy
-│   │   ├── linear_cross_entropy.py  # Fused linear + CE (from Apple CCE)
-│   │   ├── lora.py              # Fused LoRA W/QKV/MLP
-│   │   └── utils.py             # Triton helpers
-│   ├── compat/transformers/     # HuggingFace model patching
-│   │   ├── __init__.py          # Transformers patch orchestration
-│   │   ├── _kernel_patches.py   # Triton kernel optimization patches
-│   │   ├── _vmap_patches.py     # Vmap compatibility patch orchestration
-│   │   ├── _shared.py           # Shared attention patches
-│   │   └── _standard_models.py  # Model-specific patches
-│   ├── clipping/                # Per-example gradient clipping
-│   ├── noise/                   # Gaussian + correlated noise (MF)
-│   ├── auditing/                # Empirical privacy auditing
-│   │   ├── __init__.py          # Re-exports: coin_flip, one_run, loss_scores
-│   │   ├── coin_flip.py         # CoinFlip class + coin_flip() factory
-│   │   ├── one_run/             # One-run estimator (Steinke et al. 2023)
-│   │   │   ├── estimate.py      # one_run() + OneRunEstimate
-│   │   │   ├── roc.py           # Pareto frontier, TN/FN counts, TPR@FPR
-│   │   │   └── stats.py         # p-value, epsilon binary search
-│   │   └── attacks/             # Membership inference attacks
-│   │       └── loss.py          # loss_scores() via vmap
-│   ├── distributed/             # DDP utilities
-│   ├── sampling/                # Poisson samplers
-│   ├── profiling/               # Memory profiling
-│   ├── random/                  # RNG key utilities
-│   └── utils/                   # PyTree ops, make_functional
-├── tests/                       # ~766 tests
-│   ├── kernels/                 # Kernel tests (forward, backward, vmap, perf)
-│   ├── compat/                  # HuggingFace compatibility tests
-│   ├── clipping/                # Clipping tests
-│   ├── noise/                   # Noise tests
-│   ├── accounting/              # Privacy accounting tests
-│   ├── auditing/                # Auditing tests
-│   ├── distributed/             # DDP tests
-│   ├── sampling/                # Sampler tests
-│   ├── matrix_factorization/    # MF noise tests
-│   ├── validation/              # End-to-end DP training validation
-│   └── profiling/               # Profiling tests
-└── README.md
+packages/
+├── opaque/                      # Meta-package (deps + accounting shim)
+│   ├── src/opaque/accounting.py # Convenience re-export of opaque_accounting
+│   └── tests/                   # Cross-mechanism + validation tests
+├── opaque-core/                 # Shared primitives
+│   └── src/opaque/
+│       ├── _env.py, random/, utils/, clipping/, sampling/,
+│       │   distributed/, profiling/
+│       └── noise/types.py       # NoiseState base
+├── opaque-dpsgd/                # DP-SGD mechanism
+│   └── src/opaque/
+│       ├── noise/gaussian.py, truncated_gaussian.py, per_group_noise.py
+│       └── optimizers/adamw_bc.py
+├── opaque-mf/                   # Matrix-factorization (DP-FTRL) mechanisms
+│   └── src/opaque/
+│       ├── noise/mf/            # BLT, BSR, BISR, JME, lambda-CGD, etc.
+│       └── optimizers/adamw_jme.py
+├── opaque-auditing/             # Empirical privacy auditing
+│   └── src/opaque/auditing/     # one_run, coin_flip, attacks
+├── opaque-performance/          # Fused Triton kernels + checkpoint patches
+│   └── src/opaque/compat/       # kernels/, pytorch/
+├── opaque-huggingface/          # HuggingFace Transformers patches
+│   └── src/opaque/compat/transformers/
+└── opaque-accounting/           # Rust-backed PLD accounting (maturin)
 
 docs/
 ├── index.md                     # Main documentation entry
-├── getting-started/             # Installation, quickstart
 ├── user-guide/                  # Per-component guides
-│   ├── clipping.md, noise.md, accounting.md, sampling.md
-│   ├── huggingface.md           # HF model integration
-│   ├── kernel-optimizations.md  # Triton kernel documentation
-│   ├── memory-profiling.md      # Memory profiling guide
-│   └── distributed.md, auditing.md, optimizers.md
 ├── api/                         # API reference
-├── mechanisms/                  # Privacy mechanism details
-├── development/                 # Internal docs
-│   └── MEMORY_OPTIMIZATION_PLAN.md  # Kernel optimization plan
-└── tutorials/                   # Jupyter notebooks
+└── development/                 # Internal docs
 
 examples/
-└── train_causal_lm.py           # End-to-end DP-SGD LoRA training script
+├── train_causal_lm.py           # End-to-end DP-SGD LoRA training
+└── train_dp_ftrl.py             # DP-FTRL training with MF mechanisms
 ```
 
 ---
@@ -104,13 +77,34 @@ All Triton kernels use a two-level `autograd.Function` pattern for `vmap(grad())
 
 When `vmap(grad(fn))` runs, functorch intercepts `.apply()` and routes to `vmap()` methods where tensors are regular and Triton kernels work directly.
 
-### Auto-Patching
+### Auto-Patching (now opt-in)
 
-On `import opaque`, patches are applied to HuggingFace Transformers models automatically. Control with env vars (each accepts `all` or comma-separated names):
-- `OPAQUE_SKIP_COMPAT_PATCHES=all` — disable all patching
+Patches are **no longer applied on import**. Call them explicitly:
+
+```python
+from opaque.compat.pytorch import apply_pytorch_patches
+from opaque.compat.transformers import apply_transformers_patches
+
+apply_pytorch_patches()        # gradient-checkpointing under vmap
+apply_transformers_patches()   # vmap + kernel + KV-cache patches for HF models
+```
+
+Control with env vars (each accepts `all` or comma-separated names):
 - `OPAQUE_SKIP_TRANSFORMERS_PATCHES=all` or `=vmap,kernels`
 - `OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES=all` or `=shared,standard,gemma2,phi3`
 - `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all` or `=swiglu,rope,ce,fused_ce,lora`
+
+### Namespace Packages (PEP 420)
+
+`opaque`, `opaque.noise`, `opaque.optimizers`, `opaque.compat` are namespace
+packages — no top-level `opaque/__init__.py`. Always import from the specific
+submodule:
+
+```python
+from opaque.clipping import clipped_grad       # not "from opaque import clipped_grad"
+from opaque.noise.gaussian import gaussian_noise  # not "from opaque.noise import gaussian_noise"
+from opaque.optimizers.adamw_bc import adamw_bc   # not "from opaque.optimizers import adamw_bc"
+```
 
 ### Supported Models
 
@@ -125,11 +119,19 @@ All `autograd.Function` classes use the new-style API with `setup_context()` ins
 ## Common Commands
 
 ```bash
-# Run all tests
-uv run pytest packages/opaque/tests/ -v
+# Run ALL tests (every package)
+uv run pytest packages/
 
-# Run kernel tests only
-uv run pytest packages/opaque/tests/kernels/ -v
+# Run one package's tests
+uv run pytest packages/opaque-core/tests/ -v
+uv run pytest packages/opaque-dpsgd/tests/ -v
+uv run pytest packages/opaque-mf/tests/ -v
+uv run pytest packages/opaque-auditing/tests/ -v
+uv run pytest packages/opaque-performance/tests/ -v
+uv run pytest packages/opaque-huggingface/tests/ -v
+
+# Cross-mechanism / validation tests (meta package)
+uv run pytest packages/opaque/tests/ -v
 
 # Lint and format
 uv run ruff check packages/

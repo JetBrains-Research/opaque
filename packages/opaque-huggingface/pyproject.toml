@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opaque-huggingface"
+version = "0.0.0.dev0"
+description = "Opaque HuggingFace Transformers patches: vmap compatibility + fused kernel integration"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Opaque Contributors" }]
+requires-python = ">=3.11,<3.13"
+keywords = ["differential-privacy", "huggingface", "transformers", "lora", "vmap"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "torch>=2.10.0",
+    "transformers>=4.57.0",
+    "opaque-core>=0.0.0.dev0",
+    "opaque-performance>=0.0.0.dev0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["opaque*"]
+namespaces = true
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+opaque-core = { workspace = true }
+opaque-performance = { workspace = true }

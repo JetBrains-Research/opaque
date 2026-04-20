@@ -71,11 +71,9 @@ from opaque.clipping import (
 )
 from opaque.compat.transformers import is_kernel_patched
 from opaque.distributed import sum_gradients_, sync
-from opaque.noise import (
-    gaussian_noise,
-    per_group_noise_stddev,
-    truncated_gaussian_noise,
-)
+from opaque.noise.gaussian import gaussian_noise
+from opaque.noise.per_group_noise import per_group_noise_stddev
+from opaque.noise.truncated_gaussian import truncated_gaussian_noise
 from opaque.profiling import (
     StepTimer,
     TrainingProfiler,

@@ -116,7 +116,7 @@ from opaque.noise.mf import (
     mf_noise,
     jme_noise,
 )
-from opaque.optimizers import adamw_jme
+from opaque.optimizers.adamw_jme import adamw_jme
 from opaque.profiling import (
     StepTimer,
     TrainingProfiler,

@@ -1,17 +1,25 @@
 # opaque
 
-Functional DP-SGD library for PyTorch fine-tuning.
+Meta-package for the Opaque functional DP-SGD library for PyTorch.
 
-## Installation
+Installing `opaque` pulls in the default bundle:
 
-First configure installation from the JetBrains Artifact Registry as described in the
-[root installation docs](../../README.md#installation).
+- `opaque-core` — RNG, pytree, clipping, sampling, distributed, profiling
+- `opaque-dpsgd` — Gaussian / truncated Gaussian noise, per-group, AdamW-BC
+- `opaque-auditing` — empirical privacy auditing (one-run, coin-flip, loss attacks)
+- `opaque-accounting` — PLD-based privacy accounting (Rust-backed)
+
+Plus the `opaque.accounting` convenience shim (re-exports `opaque_accounting`).
+
+## Extras
 
 ```bash
-pip install opaque-dp
+pip install "opaque[mf]"            # + opaque-mf (correlated-noise mechanisms, AdamW-JME)
+pip install "opaque[performance]"   # + opaque-performance (fused Triton kernels, checkpoint patches)
+pip install "opaque[huggingface]"   # + opaque-huggingface (transformers patches) + performance
+pip install "opaque[optimizers]"    # + torchopt wiring for AdamW-BC / AdamW-JME
+pip install "opaque[all]"           # everything above
 ```
-
-This automatically installs `opaque-accounting` as a dependency.
 
 ## Development
 
@@ -19,15 +27,49 @@ From monorepo root:
 
 ```bash
 uv sync
-cd packages/opaque
-uv run pytest tests/
+uv run pytest
 ```
 
-## Architecture
+Each subpackage can be tested in isolation:
 
-Built on:
+```bash
+uv run pytest packages/opaque-core/tests/
+uv run pytest packages/opaque-dpsgd/tests/
+uv run pytest packages/opaque-mf/tests/
+# etc.
+```
 
-- `opaque.clipping` – Per-example gradient clipping
-- `opaque.noise` – Gaussian + correlated noise
-- `opaque.accounting` – Privacy accounting (via opaque-accounting backend)
-- `opaque.sampling` – Batch sampling
+## Import layout
+
+```
+opaque.clipping, opaque.sampling, opaque.random, opaque.utils,
+opaque.distributed, opaque.profiling        <- opaque-core
+opaque.noise.types                           <- opaque-core
+opaque.noise.gaussian, opaque.noise.truncated_gaussian,
+opaque.noise.per_group_noise                 <- opaque-dpsgd
+opaque.noise.mf.*                            <- opaque-mf
+opaque.optimizers.adamw_bc                   <- opaque-dpsgd
+opaque.optimizers.adamw_jme                  <- opaque-mf
+opaque.auditing.*                            <- opaque-auditing
+opaque.compat.kernels, opaque.compat.pytorch <- opaque-performance
+opaque.compat.transformers                   <- opaque-huggingface
+opaque.accounting                            <- opaque (meta, shim to opaque_accounting)
+```
+
+`opaque`, `opaque.noise`, `opaque.optimizers`, `opaque.compat` are
+[PEP 420](https://peps.python.org/pep-0420/) namespace packages contributed
+to by multiple distributions — there is no top-level `opaque/__init__.py`,
+so `from opaque import X` no longer works. Always import from the relevant
+submodule (`from opaque.clipping import clipped_grad`).
+
+## HuggingFace auto-patching
+
+Patches used to run on `import opaque`. They are now opt-in:
+
+```python
+from opaque.compat.pytorch import apply_pytorch_patches
+from opaque.compat.transformers import apply_transformers_patches
+
+apply_pytorch_patches()        # checkpoint patches for vmap
+apply_transformers_patches()   # vmap + kernel + KV-cache patches for HF models
+```

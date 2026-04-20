@@ -3,12 +3,12 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "opaque-dp"
+name = "opaque"
 version = "0.0.0.dev0"
-description = "Functional Differential Privacy for LoRA Fine-tuning"
+description = "Functional Differential Privacy for LoRA Fine-tuning (meta-package)"
 readme = "README.md"
 license = { text = "Apache-2.0" }
-authors = [{name = "Opaque Contributors"}]
+authors = [{ name = "Opaque Contributors" }]
 requires-python = ">=3.11,<3.13"
 keywords = [
     "differential-privacy",
@@ -33,14 +33,44 @@ classifiers = [
     "Topic :: Security",
 ]
 dependencies = [
-    "torch>=2.10.0",
-    "optree>=0.17.0",
-    "scipy>=1.11.0",
-    "opaque-accounting>=0.1.0",
+    "opaque-core>=0.0.0.dev0",
+    "opaque-dpsgd>=0.0.0.dev0",
+    "opaque-auditing>=0.0.0.dev0",
+    "opaque-accounting>=0.0.0.dev0",
+]
+
+[project.optional-dependencies]
+mf = ["opaque-mf>=0.0.0.dev0"]
+performance = ["opaque-performance>=0.0.0.dev0"]
+huggingface = [
+    "opaque-huggingface>=0.0.0.dev0",
+    "opaque-performance>=0.0.0.dev0",
+]
+optimizers = [
+    "opaque-dpsgd[optimizers]",
+    "opaque-mf[optimizers]",
+]
+all = [
+    "opaque-mf>=0.0.0.dev0",
+    "opaque-performance>=0.0.0.dev0",
+    "opaque-huggingface>=0.0.0.dev0",
+    "opaque-dpsgd[optimizers]",
+    "opaque-mf[optimizers]",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["opaque*"]
+namespaces = true
 
 [tool.uv]
 package = true
+
+[tool.uv.sources]
+opaque-core = { workspace = true }
+opaque-dpsgd = { workspace = true }
+opaque-mf = { workspace = true }
+opaque-auditing = { workspace = true }
+opaque-performance = { workspace = true }
+opaque-huggingface = { workspace = true }
+opaque-accounting = { workspace = true }

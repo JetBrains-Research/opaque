@@ -23,7 +23,8 @@ from tests.conftest import (
     has_min_gpu_memory,
 )
 
-from opaque import clipped_grad, gaussian_noise
+from opaque.clipping import clipped_grad
+from opaque.noise.gaussian import gaussian_noise
 from opaque.random import key
 from opaque.utils import make_functional
 
