@@ -139,9 +139,7 @@ def _scale_by_adam_bc(
                 noisy_squared_grads,
             )
         else:
-            new_nu = tree_map(
-                lambda v, g: b2 * v + (1 - b2) * g * g, state.nu, updates
-            )
+            new_nu = tree_map(lambda v, g: b2 * v + (1 - b2) * g * g, state.nu, updates)
 
         # Bias correction denominators.
         bc1 = 1 - b1**t
