@@ -98,7 +98,7 @@ for details:
 
 - **`adamw_bc`** — subtracts the known noise variance from $\hat{v}_t$
   (Chooi et al., [arXiv:2511.07843](https://arxiv.org/abs/2511.07843)).
-  Works with any Gaussian noise source.  With `noise_variance=0` (default),
+  Works with any Gaussian noise source.  With `noise_stddev=0` (default),
   identical to `torchopt.adamw`.
 - **`adamw_jme`** — uses a separately privatized $g^2$ estimate from JME
   (Kalinin et al., [arXiv:2502.06597](https://arxiv.org/abs/2502.06597)).

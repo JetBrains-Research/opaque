@@ -1239,7 +1239,7 @@ def main():
             f"(iterations={calibration.iterations}, converged={calibration.converged})"
         )
 
-    # Setup optimizer (after calibration so adamw-bc can compute noise_variance)
+    # Setup optimizer (after calibration so adamw-bc can compute noise_stddev)
     if args.optimizer == "adam":
         base_opt = torchopt.adam(lr=args.learning_rate)
     elif args.optimizer == "sgd":
@@ -1247,22 +1247,21 @@ def main():
     elif args.optimizer in ("adamw", "adamw-bc"):
         from opaque.optimizers import adamw_bc
 
-        nv = 0.0
+        ns = 0.0
         if args.optimizer == "adamw-bc":
             # Pass noise stddev to adamw_bc for BC correction.
-            # PerGroup stddev → per-group correction (squared internally).
-            # Scalar stddev → uniform correction.
+            # PerGroup stddev and scalar stddev are both squared internally.
             initial_stddev = _noise_stddev(clip_state, noise_multiplier)
             if isinstance(initial_stddev, PerGroup):
-                nv = initial_stddev
-                print(f"  AdamW-BC noise_variance: per-group (effective σ={_effective(initial_stddev):.6f})")
+                ns = initial_stddev
+                print(f"  AdamW-BC noise_stddev: per-group (effective σ={_effective(initial_stddev):.6f})")
             else:
-                nv = initial_stddev ** 2
-                print(f"  AdamW-BC noise_variance: {nv:.6f}")
+                ns = initial_stddev
+                print(f"  AdamW-BC noise_stddev: {ns:.6f}")
         base_opt = adamw_bc(
             lr=args.learning_rate,
             weight_decay=args.weight_decay,
-            noise_variance=nv,
+            noise_stddev=ns,
         )
     else:
         raise ValueError(f"Unknown optimizer: {args.optimizer}")
@@ -1367,15 +1366,12 @@ def main():
                 if is_ddp:
                     noise_state = sync(noise_state)
 
-                # For adamw-bc: pass current noise variance so the EMA
+                # For adamw-bc: pass current noise stddev so the EMA
                 # tracks adaptive clipping changes.  For other optimizers
                 # the extra kwarg is harmless (torchopt ignores it).
                 opt_kwargs = {}
                 if args.optimizer == "adamw-bc":
-                    if isinstance(noise_stddev, PerGroup):
-                        opt_kwargs["noise_variance"] = noise_stddev
-                    else:
-                        opt_kwargs["noise_variance"] = noise_stddev**2
+                    opt_kwargs["noise_stddev"] = noise_stddev
                 updates, opt_state = base_opt.update(
                     noisy_grads, opt_state, params=trainable_params, **opt_kwargs
                 )

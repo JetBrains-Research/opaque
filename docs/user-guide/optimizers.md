@@ -107,7 +107,7 @@ This is Algorithm 2 from
 cheap (one extra scalar EMA), requires no changes to the noise mechanism,
 and works with any i.i.d. Gaussian noise source.
 
-When `noise_variance=0` (default), `adamw_bc` is numerically identical to
+When `noise_stddev=0` (default), `adamw_bc` is numerically identical to
 `torchopt.adamw` — use it as a drop-in replacement even without BC.
 
 ```python
@@ -116,9 +116,9 @@ from opaque.optimizers import adamw_bc
 # Without BC — identical to torchopt.adamw
 optimizer = adamw_bc(lr=1e-3, weight_decay=0.01)
 
-# With BC — pass sigma^2
-nv = (noise_multiplier * clip_state.sensitivity) ** 2
-optimizer = adamw_bc(lr=1e-3, weight_decay=0.01, noise_variance=nv)
+# With BC — pass sigma
+noise_stddev = noise_multiplier * clip_state.sensitivity
+optimizer = adamw_bc(lr=1e-3, weight_decay=0.01, noise_stddev=noise_stddev)
 ```
 
 With adaptive clipping (where sensitivity changes each step), override
@@ -127,7 +127,7 @@ per step:
 ```python
 updates, opt_state = optimizer.update(
     noisy_grads, opt_state, params=params,
-    noise_variance=(noise_multiplier * clip_state.sensitivity) ** 2,
+    noise_stddev=noise_multiplier * clip_state.sensitivity,
 )
 ```
 

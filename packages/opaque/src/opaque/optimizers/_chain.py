@@ -25,7 +25,7 @@ def _adamw_chain(
     Both :func:`~opaque.optimizers.adamw_bc` and
     :func:`~opaque.optimizers.adamw_jme` share this identical three-stage
     AdamW composition.  The only difference is the moment scaler (which
-    may accept custom kwargs like ``noise_variance`` or
+    may accept custom kwargs like ``noise_stddev`` or
     ``noisy_squared_grads``).  Extra ``**kwargs`` on ``update()`` are
     forwarded to the moment scaler.
     """

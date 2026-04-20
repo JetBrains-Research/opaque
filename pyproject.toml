@@ -30,7 +30,7 @@ cross-validation = [
   "riskcal>=1.2.0",
 ]
 
-# TorchOpt-based optimizers (dp_adamw, etc.)
+# TorchOpt-based optimizers
 # Install with: uv sync --group optimizers
 optimizers = [
   "torchopt>=0.7.3",
