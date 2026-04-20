@@ -38,9 +38,7 @@ jobs:
       - name: Run Rust tests
         run: cargo test --lib --manifest-path packages/opaque-accounting/Cargo.toml
 
-      - uses: astral-sh/setup-uv@v3
-        with:
-          version: "latest"
+      - uses: astral-sh/setup-uv@v8.1.0
 
       - uses: actions/setup-python@v5
         with:
@@ -77,9 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: astral-sh/setup-uv@v3
-        with:
-          version: "latest"
+      - uses: astral-sh/setup-uv@v8.1.0
 
       - uses: actions/setup-python@v5
         with:
@@ -111,9 +107,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: astral-sh/setup-uv@v3
-        with:
-          version: "latest"
+      - uses: astral-sh/setup-uv@v8.1.0
 
       - uses: actions/setup-python@v5
         with:
@@ -160,9 +154,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: astral-sh/setup-uv@v3
-        with:
-          version: "latest"
+      - uses: astral-sh/setup-uv@v8.1.0
 
       - uses: actions/setup-python@v5
         with:
@@ -233,10 +225,8 @@ jobs:
           token_format: access_token
           access_token_lifetime: 3600s
 
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v8.1.0
         if: steps.check_release.outputs.is_release == 'false'
-        with:
-          version: "latest"
 
       - name: Publish dev builds to GCP
         if: steps.check_release.outputs.is_release == 'false'
