@@ -27,6 +27,7 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `clipped_fun()` - Clip and sum function outputs
   - `clip_pytree()` - Low-level PyTree clipping
   - `adaptive_clipped_grad()` - Clipped gradients with auto-tuned clip norm
+  - `auto_clipped_grad()` - AUTO-S automatic per-example gradient scaling (Bu et al. 2023)
 
 - **[Noise](noise.md)**: Noise injection for DP
   - `gaussian_noise()` - Standard Gaussian noise

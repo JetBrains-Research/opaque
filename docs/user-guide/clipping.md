@@ -5,7 +5,14 @@ the model update. This is the core operation that makes DP-SGD possible:
 clipping establishes a known sensitivity, which determines how much noise is
 needed for a given privacy guarantee.
 
-Opaque provides three clipping APIs at different levels of abstraction.
+Opaque provides three high-level clipping functions:
+
+- **`clipped_grad`** — Fixed-threshold clipping (recommended default).
+- **`adaptive_clipped_grad`** — Auto-tuned threshold via quantile tracking (Andrew et al. 2021).
+- **`auto_clipped_grad`** — AUTO-S automatic scaling, no threshold to tune (Bu et al. NeurIPS 2023).
+
+Lower-level building blocks (`clipped_fun`, `clip_pytree`, `auto_scale_pytree`)
+are documented in the [Clipping API Reference](../api/clipping.md).
 
 ## `clipped_grad` -- recommended API
 
@@ -108,47 +115,6 @@ grad_fn, clip_state = clipped_grad(
 
 `adaptive_clipped_grad` returns `AdaptiveClippedGradAux` instead, which adds
 a `clipping_rate` field (fraction of gradients clipped).
-
-## `clipped_fun` -- general-purpose clipping
-
-`clipped_fun` clips and sums the outputs of any function, not just gradients.
-`clipped_grad` is built on top of `clipped_fun`.
-
-```python
-from opaque import clipped_fun
-
-def per_example_fn(params, example):
-    return compute_something(params, example)
-
-clipped_fn, clip_state = clipped_fun(
-    per_example_fn,
-    batch_argnums=1,
-    clipping_norm=1.0,
-)
-
-summed_result, clip_state = clipped_fn(params, batch, state=clip_state)
-```
-
-Use `clipped_fun` when you already have per-example outputs (not necessarily
-gradients) and want to clip-and-sum them.
-
-## `clip_pytree` -- low-level clipping
-
-`clip_pytree` clips a single PyTree of tensors to a maximum L2 norm. It does
-not handle batching or summation.
-
-```python
-from opaque import clip_pytree
-
-grads = {"weight": torch.tensor([3.0, 4.0]), "bias": torch.tensor([1.0])}
-clipped_grads, aux = clip_pytree(grads, clipping_norm=1.0)
-# aux.norm = 5.099 (original L2 norm)
-# clipped_grads: scaled so global L2 norm <= 1.0
-```
-
-Use `clip_pytree` when you have pre-computed per-example outputs and want
-fine-grained control over clipping. Most users should use `clipped_grad`
-instead.
 
 ## Microbatching
 
