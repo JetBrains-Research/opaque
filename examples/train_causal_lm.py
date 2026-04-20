@@ -362,8 +362,14 @@ def parse_args():
         "--optimizer",
         type=str,
         default="adam",
-        choices=["sgd", "adam"],
-        help="Optimizer",
+        choices=["sgd", "adam", "adamw", "adamw-bc"],
+        help="Optimizer (adamw/adamw-bc use opaque.optimizers.adamw_bc)",
+    )
+    train_group.add_argument(
+        "--weight-decay",
+        type=float,
+        default=0.01,
+        help="Weight decay for adamw/adamw-bc optimizers (default: 0.01)",
     )
     train_group.add_argument(
         "--log-steps",
@@ -1106,13 +1112,6 @@ def main():
     print(f"  Epochs: {args.num_epochs}")
     print(f"  Expected total steps: ~{args.num_epochs * expected_steps_per_epoch}")
 
-    if args.optimizer == "adam":
-        base_opt = torchopt.adam(lr=args.learning_rate)
-    elif args.optimizer == "sgd":
-        base_opt = torchopt.sgd(lr=args.learning_rate)
-    else:
-        raise ValueError(f"Unknown optimizer: {args.optimizer}")
-
     # Create gradient function based on clipping mode.
     if args.clipping_mode == "adaptive":
         grad_fn, clip_state = adaptive_clipped_grad(
@@ -1148,8 +1147,6 @@ def main():
             microbatch_size=args.microbatch_size,
             return_aux=True,
         )
-
-    opt_state = base_opt.init(trainable_params)
 
     # Calibrate noise multiplier from target privacy budget
     # sample_rate already computed above
@@ -1242,6 +1239,34 @@ def main():
             f"(iterations={calibration.iterations}, converged={calibration.converged})"
         )
 
+    # Setup optimizer (after calibration so adamw-bc can compute noise_stddev)
+    if args.optimizer == "adam":
+        base_opt = torchopt.adam(lr=args.learning_rate)
+    elif args.optimizer == "sgd":
+        base_opt = torchopt.sgd(lr=args.learning_rate)
+    elif args.optimizer in ("adamw", "adamw-bc"):
+        from opaque.optimizers import adamw_bc
+
+        ns = 0.0
+        if args.optimizer == "adamw-bc":
+            # Pass noise stddev to adamw_bc for BC correction.
+            # PerGroup stddev and scalar stddev are both squared internally.
+            initial_stddev = _noise_stddev(clip_state, noise_multiplier)
+            if isinstance(initial_stddev, PerGroup):
+                ns = initial_stddev
+                print(f"  AdamW-BC noise_stddev: per-group (effective σ={_effective(initial_stddev):.6f})")
+            else:
+                ns = initial_stddev
+                print(f"  AdamW-BC noise_stddev: {ns:.6f}")
+        base_opt = adamw_bc(
+            lr=args.learning_rate,
+            weight_decay=args.weight_decay,
+            noise_stddev=ns,
+        )
+    else:
+        raise ValueError(f"Unknown optimizer: {args.optimizer}")
+
+    opt_state = base_opt.init(trainable_params)
     accounting = Accountant()
 
     # Noise function — created once; per-call stddev override tracks adaptive clipping_norm.
@@ -1341,8 +1366,14 @@ def main():
                 if is_ddp:
                     noise_state = sync(noise_state)
 
+                # For adamw-bc: pass current noise stddev so the EMA
+                # tracks adaptive clipping changes.  For other optimizers
+                # the extra kwarg is harmless (torchopt ignores it).
+                opt_kwargs = {}
+                if args.optimizer == "adamw-bc":
+                    opt_kwargs["noise_stddev"] = noise_stddev
                 updates, opt_state = base_opt.update(
-                    noisy_grads, opt_state, params=trainable_params
+                    noisy_grads, opt_state, params=trainable_params, **opt_kwargs
                 )
                 trainable_params = torchopt.apply_updates(trainable_params, updates)
 

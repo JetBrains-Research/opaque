@@ -56,7 +56,9 @@ for batch in dataloader:
 adaptive learning rates help compensate for DP noise, since different
 parameters receive different signal-to-noise ratios. Adam typically
 converges faster and is more robust to hyperparameter choices than SGD in
-DP training.
+DP training.  For an improved version that corrects the second-moment bias
+introduced by DP noise, see
+[the second-moment problem](#the-second-moment-problem-in-dp-training) below.
 
 ```python
 optimizer = torchopt.adam(lr=1e-3)
@@ -75,22 +77,96 @@ optimizer = torchopt.adamw(lr=1e-3, weight_decay=0.01)
 optimizer = torchopt.sgd(lr=0.01, momentum=0.9)
 ```
 
-## JME-AdamW: Adam with MF correlated noise
+## The second-moment problem in DP training
 
-When using matrix factorization (MF) noise for DP-FTRL, standard Adam
-cannot be used directly — it computes the second moment by squaring the
-noisy gradients, which breaks the MF noise correlation structure.
+Standard Adam computes its second moment as $v_t = \beta_2 v_{t-1} + (1-\beta_2) g_t^2$.
+In DP training, the optimizer receives *noised* gradients $\tilde{g}_t = g_t + z_t$, so
+the second moment becomes:
 
-**JME** (Joint Moment Estimation, [arXiv:2502.06597](https://arxiv.org/abs/2502.06597))
-solves this by privately estimating both moments via two independent MF noise
-streams.  The second moment noise comes at ~22% additional privacy cost
-under add/remove DP.
+$$v_t = \beta_2 v_{t-1} + (1-\beta_2) \tilde{g}_t^2 = \beta_2 v_{t-1} + (1-\beta_2)(g_t^2 + 2g_t z_t + z_t^2)$$
 
-### Setup
+The $z_t^2$ term inflates the denominator, shrinking effective learning rates.
+The $2g_t z_t$ cross term averages out but adds variance.  This is a known
+problem: Gaussian noise with variance $\sigma^2$ adds an expected bias of
+$\sigma^2$ to every component of $\hat{v}_t$.
+
+Opaque provides two independent solutions.  They address the *same* problem
+from different angles and **must not be combined** — using both would
+double-correct the second moment.
+
+### AdamW-BC: bias correction by noise variance subtraction
+
+**Idea:** The noise variance $\Phi_t = \sigma_t^2$ is *known* (we chose it),
+so we can subtract it from the biased $\hat{v}_t$.
+
+$$\phi_t = \beta_2 \phi_{t-1} + (1-\beta_2) \Phi_t, \qquad
+\hat{v}^{\text{corrected}}_t = \max\!\bigl(\hat{v}_t - \hat{\phi}_t,\; \gamma\bigr)$$
+
+This is Algorithm 2 from
+[Chooi et al. (arXiv:2511.07843)](https://arxiv.org/abs/2511.07843).  It is
+cheap (one extra scalar EMA), requires no changes to the noise mechanism,
+and works with any i.i.d. Gaussian noise source.
+
+When `noise_stddev=0` (default), `adamw_bc` is numerically identical to
+`torchopt.adamw` — use it as a drop-in replacement even without BC.
+
+```python
+from opaque.optimizers import adamw_bc
+
+# Without BC — identical to torchopt.adamw
+optimizer = adamw_bc(lr=1e-3, weight_decay=0.01)
+
+# With BC — pass sigma
+noise_stddev = noise_multiplier * clip_state.sensitivity
+optimizer = adamw_bc(lr=1e-3, weight_decay=0.01, noise_stddev=noise_stddev)
+```
+
+With adaptive clipping (where sensitivity changes each step), override
+per step:
+
+```python
+updates, opt_state = optimizer.update(
+    noisy_grads, opt_state, params=params,
+    noise_stddev=noise_multiplier * clip_state.sensitivity,
+)
+```
+
+### AdamW-JME: privately-estimated second moments
+
+**Idea:** Instead of squaring the noisy gradient (which amplifies noise),
+use a *separately privatized* estimate of $g_t^2$ from a second noise
+stream.
+
+**JME** (Joint Moment Estimation,
+[Kalinin et al., arXiv:2502.06597](https://arxiv.org/abs/2502.06597))
+maintains two independent matrix-factorization correlated noise streams —
+one for $g_t$ (first moment) and one for $g_t^2$ (second moment).  The
+optimizer receives both and uses each for its respective EMA:
+
+$$\mu_t = \beta_1 \mu_{t-1} + (1-\beta_1) \tilde{g}_t, \qquad
+v_t = \beta_2 v_{t-1} + (1-\beta_2) \widetilde{g^2}_t$$
+
+The additional second-moment stream costs ~22% extra privacy budget under
+add/remove DP.
+
+JME requires a compatible MF noise mechanism (`jme_noise`), so it only
+applies to DP-FTRL training — not to standard DP-SGD with i.i.d.
+Gaussian noise.
+
+### When to use which
+
+| Scenario | Recommended | Why |
+|---|---|---|
+| DP-SGD with Gaussian noise | `adamw_bc` | No MF streams available for JME |
+| DP-FTRL without Adam | `torchopt.sgd` | No second moment to correct |
+| DP-FTRL with Adam | `adamw_jme` | Better v estimate; JME streams available |
+| DP-FTRL with Adam, no extra budget | `adamw_bc` | BC is free; JME costs ~22% ε |
+
+## AdamW-JME: setup and usage
 
 ```python
 from opaque.noise.mf import jme_noise, band_mf_strategy
-from opaque.optimizers import jme_adamw
+from opaque.optimizers import adamw_jme
 
 # Strategy: momentum=beta1 (Adam's first moment workload)
 strategy = band_mf_strategy(n_steps=1000, bands=8, momentum=0.9)
@@ -105,7 +181,7 @@ noise_fn, noise_state = jme_noise(
 )
 
 # Optimizer: decoupled weight decay, callable LR schedule
-optimizer = jme_adamw(lr=lr_schedule_fn, betas=(0.9, 0.999), weight_decay=0.01)
+optimizer = adamw_jme(lr=lr_schedule_fn, betas=(0.9, 0.999), weight_decay=0.01)
 opt_state = optimizer.init(params)
 ```
 

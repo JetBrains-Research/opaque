@@ -25,6 +25,12 @@ except ImportError:
     distributed = None
     sampling = None
 
+try:
+    from opaque import optimizers
+except ModuleNotFoundError:
+    # torchopt not installed - optimizers module unavailable
+    optimizers = None
+
 from opaque.clipping import (
     AdaptiveClipState,
     AutoClipState,
@@ -106,6 +112,8 @@ __all__ = [
     "auditing",
     # Distributed
     "distributed",
+    # Optimizers
+    "optimizers",
     # Utils
     "make_functional",
     "with_batch_dim",
