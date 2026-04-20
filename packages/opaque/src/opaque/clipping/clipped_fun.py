@@ -306,8 +306,10 @@ def clipped_fun(
         # Resolve scale function: default is fixed-norm clipping.
         # _scale_fn enables alternate bounding schemes (e.g. AUTO-S) while
         # reusing the vmap / microbatching / aux machinery below.
-        scale_fn = _scale_fn if _scale_fn is not None else (
-            lambda v: clip_pytree(v, clipping_norm=clipping_norm)
+        scale_fn = (
+            _scale_fn
+            if _scale_fn is not None
+            else (lambda v: clip_pytree(v, clipping_norm=clipping_norm))
         )
 
         # Define per-example function

@@ -187,6 +187,7 @@ def auto_clipped_fun(
     )
 
     if not return_aux:
+
         def auto_fn(*args, state, **kwargs):
             result, _ = inner_fn(*args, state=None, **kwargs)
             return result, state
@@ -310,6 +311,7 @@ def auto_clipped_grad(
     )
 
     if not return_aux:
+
         def grad_fn(*args, state, **kwargs):
             result, _ = inner_fn(*args, state=None, **kwargs)
             return result, state

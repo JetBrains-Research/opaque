@@ -348,6 +348,7 @@ class TestAutoClippedGradPerGroup:
 
     def test_per_group_applies_correct_scales(self):
         """Per-group AUTO-S scales each group by its own R_k."""
+
         # Two-parameter model: dict form needed for per-group.
         def loss_fn(params, x, y):
             pred = x @ params["w"] + params["b"]
