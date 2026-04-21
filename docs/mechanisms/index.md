@@ -25,7 +25,7 @@ reduces effective noise on cumulative updates, improving accuracy for the same
 privacy budget — at the cost of knowing the total number of steps in advance.
 
 For assumptions (workload vs DP correctness, LR schedules, JME caveats), see the
-[Matrix factorization user guide](../user-guide/matrix-factorization.md).
+[DP-FTRL user guide](../user-guide/dp-ftrl.md).
 
 | Mechanism | Strategy | Memory | Best for |
 |-----------|----------|--------|----------|

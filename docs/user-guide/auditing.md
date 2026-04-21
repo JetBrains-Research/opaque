@@ -26,7 +26,7 @@ Only one training run is needed, unlike shadow-model approaches.
 
 ```python
 import opaque.auditing as auditing
-from opaque.random import key
+from opaque.core.random import key
 from torch.utils.data import DataLoader, Subset
 
 # 1. Partition: designate canaries and flip coins

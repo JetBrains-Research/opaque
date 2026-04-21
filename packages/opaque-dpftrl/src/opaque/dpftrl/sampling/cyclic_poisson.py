@@ -81,7 +81,7 @@ class CyclicPoissonSampler(Sampler):
 
     def __init__(
         self,
-        data_source,
+        data_source: object,
         sampling_prob: float,
         cycle_length: int = 1,
         iterations: int | None = None,

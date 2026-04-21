@@ -1,8 +1,13 @@
-# Matrix factorization (MF) noise
+# Correlated noise (DP-FTRL)
 
-Matrix factorization mechanisms add **correlated** Gaussian noise across training steps. The goal is lower variance on the **cumulative** updates that the optimizer effectively applies, compared to independent noise at each step (standard DP-SGD), for the same calibrated privacy guarantee.
+Opaque's DP-FTRL mechanisms add **correlated** Gaussian noise across
+training steps via matrix factorization. Compared to independent noise at
+each step (standard DP-SGD), correlated noise reduces variance on the
+**cumulative** updates that the optimizer effectively applies, for the same
+calibrated privacy guarantee.
 
-This page is the **central reference** for assumptions, limitations, and how MF fits into Opaque. Mechanism-specific math and API details live in [Mechanisms](../mechanisms/index.md).
+The mechanisms live in `opaque.dpftrl`. Mechanism-specific math and API
+details live in [Mechanisms](../mechanisms/index.md).
 
 ## What Opaque implements
 

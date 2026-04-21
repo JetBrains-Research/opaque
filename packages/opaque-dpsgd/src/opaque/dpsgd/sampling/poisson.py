@@ -58,7 +58,7 @@ class PoissonSampler(Sampler):
 
     def __init__(
         self,
-        data_source,
+        data_source: object,
         sample_rate: float,
         num_iterations: int | None = None,
         *,

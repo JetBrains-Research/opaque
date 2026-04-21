@@ -45,7 +45,7 @@ class BMinSepSampler(Sampler):
 
     def __init__(
         self,
-        data_source,
+        data_source: object,
         bands: int,
         sampling_prob: float,
         iterations: int,

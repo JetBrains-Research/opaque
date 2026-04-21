@@ -34,7 +34,7 @@ class SequentialBatchSampler(Sampler):
         >>> loader = DataLoader(dataset, batch_sampler=sampler)
     """
 
-    def __init__(self, data_source, batch_size: int):
+    def __init__(self, data_source: object, batch_size: int):
         super().__init__()
 
         if len(data_source) == 0:

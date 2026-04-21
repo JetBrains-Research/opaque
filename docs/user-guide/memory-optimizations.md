@@ -62,7 +62,7 @@ GPU utilization. Below that, the overhead of launching kernels dominates.
 Use a short manual sweep with `TrainingProfiler`:
 
 ```python
-from opaque import clipped_grad
+from opaque.core.clipping import clipped_grad
 from opaque.profiling import StepTimer, TrainingProfiler, reset_peak_memory
 
 def try_microbatch(candidate_mb: int) -> float:

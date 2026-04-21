@@ -49,7 +49,7 @@ class TruncatedPoissonSampler(PoissonSampler):
 
     def __init__(
         self,
-        data_source,
+        data_source: object,
         sample_rate: float,
         max_batch_size: int,
         num_iterations: int | None = None,

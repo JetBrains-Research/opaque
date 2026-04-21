@@ -59,7 +59,7 @@ class BallsInBinsSampler(Sampler):
 
     def __init__(
         self,
-        data_source,
+        data_source: object,
         num_bins: int,
         num_epochs: int | None = None,
         *,

@@ -9,7 +9,7 @@ encoded workload matches your optimizer (for example, BandMF/BLT `lr_schedule` a
 Toeplitz surrogate when \(\eta_t\) varies). JME adds a second MF stream; new strategy
 types must extend `_derive_second_strategy` explicitly.
 
-See [Matrix factorization (MF)](user-guide/matrix-factorization.md).
+See [Matrix factorization (MF)](user-guide/dp-ftrl.md).
 
 ## Gradient checkpointing
 

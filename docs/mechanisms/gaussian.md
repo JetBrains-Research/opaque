@@ -104,8 +104,8 @@ step = acc.parallel_poisson(
 ### Noise injection
 
 ```python
-from opaque import gaussian_noise
-from opaque.random import key
+from opaque.dpsgd.noise import gaussian_noise
+from opaque.core.random import key
 
 noise_fn, noise_state = gaussian_noise(
     stddev=noise_multiplier * clip_state.sensitivity,
@@ -173,8 +173,8 @@ tasks like model training, the truncated Gaussian converges to the standard
 Gaussian, so use `acc.gaussian()` for accounting.
 
 ```python
-from opaque import truncated_gaussian_noise
-from opaque.random import key
+from opaque.dpsgd.noise import truncated_gaussian_noise
+from opaque.core.random import key
 import opaque.accounting as acc
 
 # Noise injection: bounded support

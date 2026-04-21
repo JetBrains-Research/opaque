@@ -12,7 +12,7 @@ hooks, no subclassing, no hidden mutation.
 to a maximum L2 norm, and sums the result.
 
 ```python
-from opaque import clipped_grad
+from opaque.core.clipping import clipped_grad
 
 grad_fn, clip_state = clipped_grad(
     loss_fn, clipping_norm=1.0, argnums=0, batch_argnums=1,
@@ -27,8 +27,8 @@ Add calibrated Gaussian noise scaled to the clipping sensitivity. All noise
 functions return `(noise_fn, state)`. Pass the same key on all ranks for synchronized distributed noise.
 
 ```python
-from opaque import gaussian_noise
-from opaque.random import key
+from opaque.dpsgd.noise import gaussian_noise
+from opaque.core.random import key
 
 noise_fn, noise_state = gaussian_noise(
     stddev=noise_multiplier * clip_state.sensitivity, key=key(42),
@@ -82,8 +82,8 @@ probability `sample_rate`, producing variable-size batches. Distributed mode is
 detected and sharded automatically.
 
 ```python
-from opaque.sampling import PoissonSampler
-from opaque.random import key
+from opaque.dpsgd.sampling import PoissonSampler
+from opaque.core.random import key
 
 sampler = PoissonSampler(dataset, sample_rate=0.01, num_iterations=10, key=key(0))
 loader = DataLoader(dataset, batch_sampler=sampler)
@@ -110,7 +110,7 @@ Empirical privacy validation via one-run membership inference
 
 ```python
 import opaque.auditing as auditing
-from opaque.random import key
+from opaque.core.random import key
 
 cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
 train_data = dataset.select(cf.train_indices(len(dataset)))

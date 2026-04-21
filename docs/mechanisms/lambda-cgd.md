@@ -76,13 +76,13 @@ has a closed-form expression in terms of λ, min_sep, and max_participations.
 - Bandwidth is **fixed** (bidiagonal inverse); correlation is controlled by a single \(\lambda\). Does **not** accept `momentum` (use `bisr_strategy` with bandwidth > 2 for momentum-aware coefficients).
 - Uses **Balls-in-Bins** amplification like other epoch-structured MF mechanisms; sampler semantics must match accounting.
 - **JME (DP-Adam)**: auto-deriving the second-moment strategy is **not supported** for λCGD. If using JME, pass `second_moment_strategy` explicitly.
-- Broader MF context: [Matrix factorization (MF)](../user-guide/matrix-factorization.md).
+- Broader MF context: [Correlated noise (DP-FTRL)](../user-guide/dp-ftrl.md).
 
 ## Noise generation
 
 ```python
 from opaque.dpftrl.noise import mf_noise, lambda_cgd_strategy
-from opaque.random import key
+from opaque.core.random import key
 
 strategy = lambda_cgd_strategy(
     lambda_=0.9,

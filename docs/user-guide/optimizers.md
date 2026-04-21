@@ -27,8 +27,9 @@ No hidden mutable state. Every piece of the training loop is explicit.
 
 ```python
 import torchopt
-from opaque import clipped_grad, gaussian_noise
-from opaque.random import key
+from opaque.core.clipping import clipped_grad
+from opaque.dpsgd.noise import gaussian_noise
+from opaque.core.random import key
 
 # Gradient pipeline
 grad_fn, clip_state = clipped_grad(
@@ -216,7 +217,7 @@ process = acc.cyclic_poisson(mechanism, sample_rate=q)
 python examples/train_dp_ftrl.py --preset smoke --optimizer adam --mechanism blt
 ```
 
-Works with MF mechanisms supported by `jme_noise` auto-derivation (see [Matrix factorization](matrix-factorization.md)): `band_mf`, `blt`, `bisr`, `bsr`, `identity`. For `lambda_cgd`, pass `second_moment_strategy` explicitly.
+Works with MF mechanisms supported by `jme_noise` auto-derivation (see [DP-FTRL](dp-ftrl.md)): `band_mf`, `blt`, `bisr`, `bsr`, `identity`. For `lambda_cgd`, pass `second_moment_strategy` explicitly.
 
 ## DP-specific optimizer considerations
 

@@ -69,8 +69,9 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 ```python
 import opaque.accounting as acc
-from opaque import clipped_grad, gaussian_noise
-from opaque.random import key
+from opaque.core.clipping import clipped_grad
+from opaque.dpsgd.noise import gaussian_noise
+from opaque.core.random import key
 
 # Calibrate noise multiplier
 result = acc.calibrate(
@@ -104,8 +105,8 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | Function         | Purpose                             | User Guide                                                        |
 |------------------|-------------------------------------|-------------------------------------------------------------------|
 | `clipped_grad()` | Differentiate loss with DP clipping | [Guide](../user-guide/clipping.md#clipped_grad-recommended-api) |
-| `clipped_fun()`  | Clip and sum function outputs       | [Guide](../user-guide/clipping.md#clipped_fun-general-purpose-clipping) |
-| `clip_pytree()`  | Clip PyTree to max norm             | [Guide](../user-guide/clipping.md#clip_pytree-low-level-clipping) |
+| `clipped_fun()`  | Clip and sum function outputs       | [API](clipping.md) |
+| `clip_pytree()`  | Clip PyTree to max norm             | [API](clipping.md) |
 
 ### Noise
 

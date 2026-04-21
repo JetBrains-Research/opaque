@@ -122,7 +122,8 @@ PyTorch models store parameters internally. To use them with
 `clipped_grad`, convert to functional form with `make_functional`:
 
 ```python
-from opaque import make_functional, clipped_grad
+from opaque.core.clipping import clipped_grad
+from opaque.functional import make_functional
 
 model = AutoModelForCausalLM.from_pretrained("gpt2")
 fmodel, params = make_functional(model)
@@ -177,8 +178,10 @@ model, making per-example gradients feasible.
 ```python
 from transformers import AutoModelForCausalLM
 from peft import get_peft_model, LoraConfig
-from opaque import make_functional, clipped_grad, gaussian_noise
-from opaque.random import key
+from opaque.core.clipping import clipped_grad
+from opaque.dpsgd.noise import gaussian_noise
+from opaque.functional import make_functional
+from opaque.core.random import key
 
 # Load model with LoRA adapters
 model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.1-8B")
@@ -369,7 +372,7 @@ import opaque.performance     # performance/kernel patches still active
 ```python
 import os
 os.environ["OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES"] = "all"
-import opaque
+import opaque.performance  # reads the env var at import time
 ```
 
 This disables all kernel optimizations. The library still works — models use
@@ -415,7 +418,7 @@ Use `with_batch_dim` to add a leading batch dimension to the arguments
 that `vmap` unbatches:
 
 ```python
-from opaque.utils.functional import with_batch_dim
+from opaque.functional import with_batch_dim
 
 def loss_fn(params, input_ids, labels):
     out = fmodel(params, input_ids=input_ids, labels=labels)
