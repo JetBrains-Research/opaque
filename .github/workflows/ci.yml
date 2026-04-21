@@ -135,11 +135,22 @@ jobs:
           flags: cuda
           fail_ci_if_error: false
 
-  build-opaque-dp:
-    name: Build opaque-dp
+  build-python-wheel:
+    name: Build ${{ matrix.package }}
     if: github.ref == 'refs/heads/main'
     needs: [test]
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - opaque
+          - opaque-core
+          - opaque-dpsgd
+          - opaque-dpftrl
+          - opaque-auditing
+          - opaque-performance
+          - opaque-huggingface
 
     steps:
       - uses: actions/checkout@v4
@@ -153,17 +164,17 @@ jobs:
       - name: Set dev version
         run: |
           DEV_VERSION="0.0.0.dev0+${{ github.run_number }}"
-          cd packages/opaque && uv version $DEV_VERSION
+          cd packages/${{ matrix.package }} && uv version $DEV_VERSION
 
       - name: Build wheel
         run: |
-          cd packages/opaque && uv build --wheel
+          cd packages/${{ matrix.package }} && uv build --wheel --out-dir ../../dist
 
       - name: Upload wheel to artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-opaque-dp
-          path: dist/*opaque_dp*.whl
+          name: wheels-${{ matrix.package }}
+          path: dist/*.whl
           retention-days: 30
 
   # Native extension — build per platform
@@ -216,7 +227,7 @@ jobs:
   # Publish all wheels to GCP (main branch only)
   publish-to-gcp:
     name: Publish dev builds to GCP
-    needs: [build-opaque-dp, build-opaque-accounting]
+    needs: [build-python-wheel, build-opaque-accounting]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
