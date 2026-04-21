@@ -7,7 +7,7 @@ torchopt = pytest.importorskip(
     "torchopt", reason="torchopt required for optimizer tests"
 )
 
-from opaque.optimizers.adamw_bc import AdamWBCState, adamw_bc  # noqa: E402
+from opaque.dpsgd.optimizers.adamw_bc import AdamWBCState, adamw_bc  # noqa: E402
 from opaque.core.utils.per_group import PerGroup  # noqa: E402
 
 

@@ -3,8 +3,8 @@
 import pytest
 import torch
 
-from opaque.noise.gaussian import gaussian_noise
-from opaque.noise.gaussian import GaussianNoiseState
+from opaque.dpsgd.noise.gaussian import gaussian_noise
+from opaque.dpsgd.noise.gaussian import GaussianNoiseState
 from opaque.core.random import key
 from opaque.core.utils.per_group import PerGroup
 
@@ -190,7 +190,7 @@ class TestEndToEndPerGroup:
     def test_full_pipeline_per_group_noise(self):
         """Per-group clipping with per-group noise via per_group_noise_stddev."""
         from opaque.core.clipping import clipped_grad
-        from opaque.noise.per_group_noise import per_group_noise_stddev
+        from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev
         from opaque.core.utils.per_group import per_group
 
         def loss(params, data):

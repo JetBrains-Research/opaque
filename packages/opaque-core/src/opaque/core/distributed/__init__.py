@@ -17,7 +17,7 @@ Example - Standard DP-SGD with Poisson Sampling:
     >>> import opaque.core.distributed as dist_utils
     >>> import torch.distributed as dist
     >>> from opaque.core.clipping import clipped_grad
-    >>> from opaque.core.noise.gaussian import gaussian_noise
+    >>> from opaque.dpsgd.noise.gaussian import gaussian_noise
     >>>
     >>> # Initialize distributed
     >>> dist.init_process_group(backend='nccl')
@@ -34,7 +34,7 @@ Example - Standard DP-SGD with Poisson Sampling:
     >>> noisy_grads, noise_state = noise_fn(grads, noise_state)
 
 Example - Adaptive Clipping (Automatic Distributed Detection):
-    >>> from opaque.core.clipping import adaptive_clipped_grad
+    >>> from opaque.dpsgd.clipping import adaptive_clipped_grad
     >>>
     >>> # Adaptive clipping automatically detects distributed mode!
     >>> grad_fn, clip_state = adaptive_clipped_grad(
@@ -300,10 +300,11 @@ def sync(*states: object) -> object | tuple[object, ...]:
     def _sync_one(single_state: object) -> object:
         state_type = type(single_state)
         if state_type not in _SYNC_REGISTRY:
-            # Ensure intra-core sync implementations are loaded.  Noise-state
-            # sync functions register themselves when the mechanism module is
-            # imported (opaque.noise.gaussian, opaque.noise.mf._engine), so no
-            # lazy import for them here — constructing the state already did it.
+            # Ensure intra-core sync implementations are loaded. Noise-state
+            # and dpsgd/mf-specific clipping sync functions register
+            # themselves when their mechanism module is imported — so the
+            # state's constructor already triggered the registration in
+            # normal use. Here we only force the core implementations.
             import opaque.core.clipping.distributed  # noqa: F401
             import opaque.core.profiling.distributed  # noqa: F401
         if state_type in _SYNC_REGISTRY:

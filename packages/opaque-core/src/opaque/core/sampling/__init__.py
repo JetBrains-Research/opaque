@@ -17,13 +17,11 @@ from opaque.core.sampling.b_min_sep import BMinSepSampler
 from opaque.core.sampling.cyclic_poisson import CyclicPoissonSampler
 from opaque.core.sampling.poisson import PoissonSampler
 from opaque.core.sampling.sequential import SequentialBatchSampler
-from opaque.core.sampling.truncated_poisson import TruncatedPoissonSampler
 
 __all__ = [
     "BallsInBinsSampler",
     "PoissonSampler",
     "SequentialBatchSampler",
-    "TruncatedPoissonSampler",
     "BMinSepSampler",
     "CyclicPoissonSampler",
     "PartitionType",

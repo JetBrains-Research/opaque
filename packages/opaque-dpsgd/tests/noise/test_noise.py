@@ -4,8 +4,8 @@ import pytest
 import scipy.stats
 import torch
 
-from opaque.noise.gaussian import gaussian_noise
-from opaque.noise.gaussian import GaussianNoiseState
+from opaque.dpsgd.noise.gaussian import gaussian_noise
+from opaque.dpsgd.noise.gaussian import GaussianNoiseState
 from opaque.core.random import key
 
 

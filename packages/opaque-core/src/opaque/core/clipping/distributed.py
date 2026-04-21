@@ -1,16 +1,14 @@
-"""Distributed synchronization helpers for clipping components.
+"""Distributed synchronization helpers for core clipping components.
 
-Implements all-reduce/all-gather patterns that transform rank-local
-clipping state and auxiliary outputs into globally-consistent results.
-Implementations rely on :func:`opaque.core.distributed.sync_object`
-(pytree-aware ``assert_equal`` / ``mean`` / ``sum``) and raw collectives
-in :mod:`opaque.core.distributed`.
+Implements all-reduce/all-gather patterns for the algorithm-agnostic
+fixed clipping state and clipping auxiliary outputs. DP-SGD-specific
+adaptive clipping sync lives in :mod:`opaque.dpsgd.clipping.distributed`
+and self-registers via :func:`opaque.core.distributed.register_sync_type`.
 """
 
 from __future__ import annotations
 
 import dataclasses
-from dataclasses import replace
 
 import torch
 
@@ -21,25 +19,15 @@ from opaque.core.distributed import (
     register_sync_type,
     sync_object,
 )
-from opaque.core.random import fold_in, generator_from_key
-from opaque.core.utils.per_group import PerGroup
 
-from .adaptive import (
-    AdaptiveClippedGradAux,
-    AdaptiveClipState,
-    _adaptive_clipping_norm_update,
-    _sample_noisy_clipping_rate,
-)
 from .clipped_fun import ClippedFunAux
 from .clipped_grad import ClippedGradAux
 from .types import FixedClipState
 
 __all__ = [
     "sync_clip_state",
-    "sync_adaptive_clip_state",
     "sync_clipped_fun_aux",
     "sync_clipped_grad_aux",
-    "sync_adaptive_clipped_grad_aux",
     "sync_aux",
 ]
 
@@ -52,91 +40,6 @@ def sync_clip_state(state: FixedClipState) -> FixedClipState:
         raise TypeError(f"Expected FixedClipState, got {type(state)}")
 
     return sync_object(state, field_ops={"clipping_norm": "assert_equal"})
-
-
-def sync_adaptive_clip_state(state: AdaptiveClipState) -> AdaptiveClipState:
-    """Recompute adaptive clipping state from globally aggregated local counts."""
-    if not is_distributed():
-        return state
-
-    is_per_group = isinstance(state._num_clipped, dict)
-
-    if is_per_group:
-        global_batch_size = reduce_scalar(float(state._batch_size), op="sum")
-
-        global_num_clipped: dict[str, float] = {}
-        for gname, local_count in state._num_clipped.items():
-            global_num_clipped[gname] = reduce_scalar(local_count, op="sum")
-
-        reduce_scalar(float(state.normalize_by), op="mean")  # validation
-
-        if global_batch_size == 0:
-            return replace(state, _batch_size=global_batch_size)
-
-        current_pg = state.clipping_norm
-        step_for_noise = max(0, state.step - 1)
-        new_values: dict[str, float] = {}
-        for i, gname in enumerate(sorted(current_pg.values.keys())):
-            global_rate = global_num_clipped[gname] / max(1.0, global_batch_size)
-            group_key = fold_in(fold_in(state._rng_key, step_for_noise), i)
-            generator = generator_from_key(group_key)
-            noise = (
-                torch.randn(1, generator=generator).item() * state._fraction_noise_std
-            )
-            noisy_rate = global_rate + noise
-
-            new_values[gname] = _adaptive_clipping_norm_update(
-                base_clipping_norm=current_pg.values[gname],
-                noisy_clipping_rate=noisy_rate,
-                target_quantile=state._target_quantile,
-                learning_rate=state._learning_rate,
-                clipping_norm_min=state._clipping_norm_min,
-                clipping_norm_max=state._clipping_norm_max,
-            )
-
-        new_clipping_norm = PerGroup(groups=current_pg.groups, values=new_values)
-        return replace(
-            state,
-            next_clipping_norm=new_clipping_norm,
-            _num_clipped=global_num_clipped,
-            _batch_size=global_batch_size,
-        )
-
-    synced = sync_object(
-        state,
-        field_ops={
-            "_num_clipped": "sum",
-            "_batch_size": "sum",
-            "normalize_by": "assert_equal",
-        },
-    )
-
-    if synced._batch_size == 0:
-        return synced
-
-    global_rate = synced._num_clipped / max(1.0, synced._batch_size)
-
-    step_for_noise = max(0, synced.step - 1)
-    noisy_global_rate = _sample_noisy_clipping_rate(
-        global_rate,
-        key=synced._rng_key,
-        step=step_for_noise,
-        fraction_noise_std=synced._fraction_noise_std,
-    )
-
-    new_clipping_norm = _adaptive_clipping_norm_update(
-        base_clipping_norm=synced.clipping_norm,
-        noisy_clipping_rate=noisy_global_rate,
-        target_quantile=synced._target_quantile,
-        learning_rate=synced._learning_rate,
-        clipping_norm_min=synced._clipping_norm_min,
-        clipping_norm_max=synced._clipping_norm_max,
-    )
-
-    return replace(
-        synced,
-        next_clipping_norm=float(new_clipping_norm),
-    )
 
 
 def _split_aux_fields(aux) -> tuple[dict[str, object], dict[str, object]]:
@@ -152,20 +55,6 @@ def _split_aux_fields(aux) -> tuple[dict[str, object], dict[str, object]]:
             tensor_fields[f.name] = value
 
     return tensor_fields, scalar_fields
-
-
-def sync_clipped_fun_aux(aux: ClippedFunAux) -> ClippedFunAux:
-    """Synchronize ``ClippedFunAux`` by gathering per-example tensor fields."""
-    if not is_distributed():
-        return aux
-
-    tensor_fields, scalar_fields = _split_aux_fields(aux)
-    gathered = gather_pytree(tensor_fields) if tensor_fields else {}
-
-    scalar_fields["clipping_rate"] = _sync_clipping_rate(aux.clipping_rate, aux.norms)
-    scalar_fields["batch_size"] = _sync_batch_size(aux.batch_size)
-
-    return type(aux)(**{**gathered, **scalar_fields})
 
 
 def _sync_clipping_rate(
@@ -194,8 +83,27 @@ def _sync_batch_size(batch_size: int) -> int:
     return int(reduce_scalar(float(batch_size), op="sum"))
 
 
+def sync_clipped_fun_aux(aux: ClippedFunAux) -> ClippedFunAux:
+    """Synchronize ``ClippedFunAux`` by gathering per-example tensor fields."""
+    if not is_distributed():
+        return aux
+
+    tensor_fields, scalar_fields = _split_aux_fields(aux)
+    gathered = gather_pytree(tensor_fields) if tensor_fields else {}
+
+    scalar_fields["clipping_rate"] = _sync_clipping_rate(aux.clipping_rate, aux.norms)
+    scalar_fields["batch_size"] = _sync_batch_size(aux.batch_size)
+
+    return type(aux)(**{**gathered, **scalar_fields})
+
+
 def sync_clipped_grad_aux(aux: ClippedGradAux) -> ClippedGradAux:
-    """Synchronize ``ClippedGradAux`` across distributed ranks."""
+    """Synchronize ``ClippedGradAux`` across distributed ranks.
+
+    Handles any subclass of :class:`ClippedGradAux` (e.g. the DP-SGD
+    ``AdaptiveClippedGradAux``) — the constructor of ``type(aux)`` is
+    used to rebuild the synced instance.
+    """
     if not is_distributed():
         return aux
 
@@ -210,21 +118,10 @@ def sync_clipped_grad_aux(aux: ClippedGradAux) -> ClippedGradAux:
     return type(aux)(**{**gathered, **scalar_fields})
 
 
-def sync_adaptive_clipped_grad_aux(
-    aux: AdaptiveClippedGradAux,
-) -> AdaptiveClippedGradAux:
-    """Synchronize ``AdaptiveClippedGradAux`` across distributed ranks."""
-    if not is_distributed():
-        return aux
-    return sync_clipped_grad_aux(aux)
-
-
 def sync_aux(
-    aux: ClippedFunAux | ClippedGradAux | AdaptiveClippedGradAux,
-) -> ClippedFunAux | ClippedGradAux | AdaptiveClippedGradAux:
+    aux: ClippedFunAux | ClippedGradAux,
+) -> ClippedFunAux | ClippedGradAux:
     """Synchronize clipping auxiliary outputs across distributed ranks."""
-    if isinstance(aux, AdaptiveClippedGradAux):
-        return sync_adaptive_clipped_grad_aux(aux)
     if isinstance(aux, ClippedGradAux):
         return sync_clipped_grad_aux(aux)
     if isinstance(aux, ClippedFunAux):
@@ -233,7 +130,5 @@ def sync_aux(
 
 
 register_sync_type(FixedClipState, sync_clip_state)
-register_sync_type(AdaptiveClipState, sync_adaptive_clip_state)
 register_sync_type(ClippedFunAux, sync_clipped_fun_aux)
 register_sync_type(ClippedGradAux, sync_clipped_grad_aux)
-register_sync_type(AdaptiveClippedGradAux, sync_adaptive_clipped_grad_aux)

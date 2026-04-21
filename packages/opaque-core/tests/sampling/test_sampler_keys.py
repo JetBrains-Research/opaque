@@ -9,8 +9,8 @@ from opaque.core.random import fold_in, key
 from opaque.core.sampling import (
     CyclicPoissonSampler,
     PoissonSampler,
-    TruncatedPoissonSampler,
 )
+from opaque.dpsgd.sampling import TruncatedPoissonSampler
 
 
 class TestPoissonSamplerKeys:

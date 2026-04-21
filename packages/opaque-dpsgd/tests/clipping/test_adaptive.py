@@ -5,7 +5,7 @@ import math
 import pytest
 import torch
 
-from opaque.core.clipping.adaptive import adaptive_clipped_grad
+from opaque.dpsgd.clipping.adaptive import adaptive_clipped_grad
 from opaque.core.random import key
 
 
@@ -102,7 +102,7 @@ class TestAdaptiveClippedGrad:
 
     def test_geometric_update_formula(self):
         """Test proportional update: C_{t+1} = C_t * exp(η * (ρ̃ - γ))."""
-        from opaque.core.clipping.adaptive import (
+        from opaque.dpsgd.clipping.adaptive import (
             _adaptive_clipping_norm_update,
         )
 
@@ -148,7 +148,7 @@ class TestAdaptiveClippedGrad:
 
     def test_proportional_update_step_size(self):
         """Test that step size is proportional to deviation from target."""
-        from opaque.core.clipping.adaptive import _adaptive_clipping_norm_update
+        from opaque.dpsgd.clipping.adaptive import _adaptive_clipping_norm_update
 
         base = 1.0
         lr = 0.2
@@ -377,7 +377,7 @@ class TestAdaptiveClippedGrad:
 
     def test_composition_with_noise(self):
         """Test that adaptive clipping composes naturally with noise."""
-        from opaque.noise.gaussian import gaussian_noise
+        from opaque.dpsgd.noise.gaussian import gaussian_noise
 
         def loss_fn(params, x, y):
             pred = x @ params

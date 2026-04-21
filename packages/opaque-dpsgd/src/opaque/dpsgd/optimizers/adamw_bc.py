@@ -41,7 +41,7 @@ try:
     from torchopt.base import GradientTransformation
 except ImportError as exc:
     raise ImportError(
-        "torchopt is required for opaque.optimizers. "
+        "torchopt is required for opaque.dpsgd.optimizers. "
         "Install it with: pip install 'torchopt>=0.7.3'"
     ) from exc
 
@@ -281,7 +281,7 @@ def adamw_bc(
             The optimizer squares it internally to build Phi.
             A :class:`~opaque.utils.per_group.PerGroup` of **stddevs**
             (as returned by
-            :func:`~opaque.noise.per_group_noise_stddev`) applies
+            :func:`~opaque.dpsgd.noise.per_group_noise_stddev`) applies
             per-group correction (each group's stddev is squared
             internally).
             When ``0``, moment scaling matches standard AdamW exactly.
@@ -319,7 +319,7 @@ def adamw_bc(
 
     Example (AdamW-BC, per-group noise)::
 
-        >>> from opaque.noise.per_group_noise import per_group_noise_stddev
+        >>> from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev
         >>> stddev = per_group_noise_stddev(clip_state, noise_multiplier)
         >>> opt = adamw_bc(lr=1e-4, noise_stddev=stddev)
 

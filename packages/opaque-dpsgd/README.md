@@ -1,10 +1,35 @@
 # opaque-dpsgd
 
-Standard DP-SGD primitives:
+Differentially Private SGD mechanisms for Opaque: Gaussian /
+truncated-Gaussian noise, adaptive and AUTO-S clipping, truncated
+Poisson sampling, and the AdamW-BC optimizer.
 
-- `opaque.noise.gaussian` — Gaussian noise injection
-- `opaque.noise.truncated_gaussian` — truncated Gaussian for bounded-norm releases
-- `opaque.noise.per_group_noise` — per-group stddev calibration
-- `opaque.optimizers.adamw_bc` — AdamW with DP bias correction (requires `torchopt`)
+## Install
 
-Depends on `opaque-core`. Install with `pip install opaque-dpsgd[optimizers]` for AdamW-BC.
+```bash
+pip install opaque-dpsgd                 # core DP-SGD
+pip install "opaque-dpsgd[optimizers]"   # + AdamW-BC (torchopt)
+```
+
+`opaque-dpsgd` depends on `opaque-core`; both install automatically.
+
+## Quick start
+
+```python
+from opaque.core.clipping import clipped_grad
+from opaque.core.random import key
+from opaque.dpsgd.clipping import adaptive_clipped_grad
+from opaque.dpsgd.noise import gaussian_noise
+from opaque.dpsgd.sampling import TruncatedPoissonSampler
+```
+
+## Layout
+
+- `opaque.dpsgd.noise` — `gaussian_noise`, `truncated_gaussian_noise`, `per_group_noise_stddev`
+- `opaque.dpsgd.clipping` — `adaptive_clipped_grad`, `auto_clipped_grad`, `auto_clipped_fun`
+- `opaque.dpsgd.sampling` — `TruncatedPoissonSampler`
+- `opaque.dpsgd.optimizers` — `adamw_bc` (requires the `optimizers` extra)
+
+All algorithm-agnostic primitives (fixed clipping, Poisson sampling,
+RNG keys, pytree / distributed / profiling helpers) live in
+[`opaque.core`](../opaque-core/README.md).

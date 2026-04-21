@@ -6,6 +6,7 @@ to gradients in DP-SGD (Differentially Private Stochastic Gradient Descent).
 The API returns ``(noise_fn, state)`` where state is always immutable:
 
     >>> from opaque.core.random import key
+    >>> from opaque.dpsgd.noise.gaussian import gaussian_noise
     >>> noise_fn, state = gaussian_noise(stddev=1.0, key=key(42))
     >>> noisy_grads, state = noise_fn(grads, state)
 
@@ -118,7 +119,7 @@ def gaussian_noise(
 
     Example:
         >>> import torch
-        >>> from opaque.noise.gaussian import gaussian_noise
+        >>> from opaque.dpsgd.noise.gaussian import gaussian_noise
         >>> from opaque.core.random import key
         >>>
         >>> noise_fn, state = gaussian_noise(stddev=1.1, key=key(42))

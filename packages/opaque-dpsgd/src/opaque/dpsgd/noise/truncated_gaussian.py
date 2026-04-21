@@ -35,7 +35,7 @@ from typing import Any
 
 import torch
 
-from opaque.noise.gaussian import GaussianNoiseState
+from opaque.dpsgd.noise.gaussian import GaussianNoiseState
 from opaque.core.random import RngKey, generator_from_key
 from opaque.core.random import fold_in as rng_fold_in
 from opaque.core.utils.per_group import PerGroup
@@ -159,14 +159,14 @@ def truncated_gaussian_noise(
         A tuple ``(noise_fn, state)`` where:
 
         - ``noise_fn(grads, state, *, stddev=None) -> (noisy_grads, new_state)``
-        - ``state`` is a :class:`~opaque.noise.gaussian.GaussianNoiseState`
+        - ``state`` is a :class:`~opaque.dpsgd.noise.gaussian.GaussianNoiseState`
 
     Raises:
         ValueError: If ``stddev`` is negative, or ``radius`` is not positive.
 
     Example:
         >>> import torch
-        >>> from opaque.noise.truncated_gaussian import truncated_gaussian_noise
+        >>> from opaque.dpsgd.noise.truncated_gaussian import truncated_gaussian_noise
         >>> from opaque.core.random import key
         >>>
         >>> noise_fn, state = truncated_gaussian_noise(

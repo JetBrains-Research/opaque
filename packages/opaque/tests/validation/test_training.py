@@ -24,7 +24,7 @@ from tests.conftest import (
 )
 
 from opaque.core.clipping import clipped_grad
-from opaque.noise.gaussian import gaussian_noise
+from opaque.dpsgd.noise.gaussian import gaussian_noise
 from opaque.core.random import key
 from opaque.core.utils import make_functional
 

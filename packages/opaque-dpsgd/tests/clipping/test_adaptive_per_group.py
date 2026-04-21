@@ -5,7 +5,7 @@ import math
 import pytest
 import torch
 
-from opaque.core.clipping.adaptive import AdaptiveClipState, adaptive_clipped_grad
+from opaque.dpsgd.clipping.adaptive import AdaptiveClipState, adaptive_clipped_grad
 from opaque.core.random import key
 from opaque.core.utils.per_group import PerGroup, per_group
 

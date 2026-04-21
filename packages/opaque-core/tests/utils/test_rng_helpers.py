@@ -40,7 +40,7 @@ class TestHelperIntegration:
 
     def test_random_key_with_gaussian_noise(self):
         """random_key() should work with gaussian_noise()."""
-        from opaque.noise.gaussian import gaussian_noise
+        from opaque.dpsgd.noise.gaussian import gaussian_noise
 
         k = random_key()
         noise_fn, state = gaussian_noise(
@@ -51,7 +51,7 @@ class TestHelperIntegration:
 
     def test_fold_in_with_gaussian_noise(self):
         """fold_in() derived key should work with gaussian_noise()."""
-        from opaque.noise.gaussian import gaussian_noise
+        from opaque.dpsgd.noise.gaussian import gaussian_noise
         from opaque.core.random import fold_in
 
         k = fold_in(key(42), 10)
@@ -63,7 +63,7 @@ class TestHelperIntegration:
 
     def test_training_loop_pattern(self):
         """Should demonstrate typical training loop usage with fold_in."""
-        from opaque.noise.gaussian import gaussian_noise
+        from opaque.dpsgd.noise.gaussian import gaussian_noise
         from opaque.core.random import fold_in
 
         base = key(42)

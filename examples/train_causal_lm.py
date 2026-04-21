@@ -64,16 +64,13 @@ from transformers import (
 import opaque.accounting as acc
 import opaque.auditing as auditing
 from opaque.accounting import calibration as cal, Accountant
-from opaque.core.clipping import (
-    adaptive_clipped_grad,
-    auto_clipped_grad,
-    clipped_grad,
-)
+from opaque.core.clipping import clipped_grad
+from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
 from opaque.compat.transformers import is_kernel_patched
 from opaque.core.distributed import sum_gradients_, sync
-from opaque.noise.gaussian import gaussian_noise
-from opaque.noise.per_group_noise import per_group_noise_stddev
-from opaque.noise.truncated_gaussian import truncated_gaussian_noise
+from opaque.dpsgd.noise.gaussian import gaussian_noise
+from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev
+from opaque.dpsgd.noise.truncated_gaussian import truncated_gaussian_noise
 from opaque.core.profiling import (
     StepTimer,
     TrainingProfiler,
@@ -81,7 +78,8 @@ from opaque.core.profiling import (
     reset_peak_memory,
 )
 from opaque.core.random import key, fold_in
-from opaque.core.sampling import PoissonSampler, TruncatedPoissonSampler
+from opaque.core.sampling import PoissonSampler
+from opaque.dpsgd.sampling import TruncatedPoissonSampler
 from opaque.core.sampling.distributed import local_shard
 from opaque.core.utils import PerGroup, make_functional, per_group
 import wandb
@@ -1243,7 +1241,7 @@ def main():
     elif args.optimizer == "sgd":
         base_opt = torchopt.sgd(lr=args.learning_rate)
     elif args.optimizer in ("adamw", "adamw-bc"):
-        from opaque.optimizers import adamw_bc
+        from opaque.dpsgd.optimizers import adamw_bc
 
         ns = 0.0
         if args.optimizer == "adamw-bc":

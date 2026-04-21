@@ -6,7 +6,8 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from opaque.core.random import key
-from opaque.core.sampling import PoissonSampler, TruncatedPoissonSampler
+from opaque.core.sampling import PoissonSampler
+from opaque.dpsgd.sampling import TruncatedPoissonSampler
 
 
 class TestPoissonSampler:

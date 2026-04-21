@@ -67,8 +67,9 @@ def per_group_noise_stddev(clip_state: ClipState, noise_multiplier: float) -> Pe
 
     Example::
 
-        from opaque.core.clipping import clipped_grad, gaussian_noise
-        from opaque.noise.per_group_noise import per_group_noise_stddev
+        from opaque.core.clipping import clipped_grad
+        from opaque.dpsgd.noise.gaussian import gaussian_noise
+        from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev
 
         grad_fn, clip_state = clipped_grad(loss_fn, clipping_norm=pg, ...)
         stddev = per_group_noise_stddev(clip_state, nm)
