@@ -40,8 +40,8 @@ def assert_rng_key_equal(state: NoiseState, state_name: str) -> None:
     """Assert that a ``NoiseState``'s RNG key seed matches across ranks.
 
     Shared across ``sync_gaussian_noise_state`` (opaque-dpsgd) and
-    ``sync_mf_noise_state`` (opaque-mf).
+    ``sync_mf_noise_state`` (opaque-dpftrl).
     """
-    from opaque.core.distributed import assert_scalar_equal
+    from opaque.distributed import assert_scalar_equal
 
     assert_scalar_equal(int(state._rng_key.seed), name=f"{state_name}.seed")

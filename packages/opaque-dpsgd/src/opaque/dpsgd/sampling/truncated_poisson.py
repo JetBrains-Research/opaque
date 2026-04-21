@@ -11,7 +11,7 @@ from collections.abc import Iterator
 import numpy as np
 
 from opaque.core.random import RngKey
-from opaque.core.sampling.poisson import PoissonSampler
+from opaque.dpsgd.sampling.poisson import PoissonSampler
 
 
 class TruncatedPoissonSampler(PoissonSampler):

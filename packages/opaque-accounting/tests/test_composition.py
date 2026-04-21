@@ -314,4 +314,3 @@ class TestCompositionProperties:
         # After identity elision + merge, should be Repeated(step, 100)
         assert isinstance(training, Repeated)
         assert training.count == 100
-

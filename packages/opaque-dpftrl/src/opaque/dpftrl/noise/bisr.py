@@ -18,9 +18,13 @@ from dataclasses import dataclass
 
 import torch
 
+
 def _native():
     from opaque.accounting import _native as _n
+
     return _n
+
+
 from ._streaming_matrix import StreamingMatrix
 from ._toeplitz import (
     inverse_as_streaming_matrix,

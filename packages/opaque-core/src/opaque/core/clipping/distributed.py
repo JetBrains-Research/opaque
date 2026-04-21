@@ -3,7 +3,7 @@
 Implements all-reduce/all-gather patterns for the algorithm-agnostic
 fixed clipping state and clipping auxiliary outputs. DP-SGD-specific
 adaptive clipping sync lives in :mod:`opaque.dpsgd.clipping.distributed`
-and self-registers via :func:`opaque.core.distributed.register_sync_type`.
+and self-registers via :func:`opaque.distributed.register_sync_type`.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import dataclasses
 
 import torch
 
-from opaque.core.distributed import (
+from opaque.distributed import (
     gather_pytree,
     is_distributed,
     reduce_scalar,

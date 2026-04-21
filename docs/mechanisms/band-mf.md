@@ -156,7 +156,7 @@ use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` cal
 ### Noise injection
 
 ```python
-from opaque.mf.noise import mf_noise, band_mf_strategy
+from opaque.dpftrl.noise import mf_noise, band_mf_strategy
 from opaque.random import key
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
@@ -181,7 +181,7 @@ components in sync:
 
 ```python
 import opaque.accounting as acc
-from opaque.mf.noise import band_mf_strategy
+from opaque.dpftrl.noise import band_mf_strategy
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
 
@@ -207,7 +207,7 @@ sampling pattern that the noise strategy exploits:
 ```python
 import torch
 from opaque import clipped_grad
-from opaque.mf.noise import mf_noise, band_mf_strategy
+from opaque.dpftrl.noise import mf_noise, band_mf_strategy
 from opaque.sampling import CyclicPoissonSampler
 from opaque.random import key, split
 import opaque.accounting as acc

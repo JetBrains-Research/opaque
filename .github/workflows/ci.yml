@@ -58,15 +58,14 @@ jobs:
 
       - name: No stray src/opaque/__init__.py in sub-packages
         run: |
-          stray=$(find packages -path 'packages/opaque/*' -prune \
-            -o -path '*/src/opaque/__init__.py' -print)
+          stray=$(find packages -path '*/src/opaque/__init__.py' -print)
           if [ -n "$stray" ]; then
             echo "ERROR: stray src/opaque/__init__.py: $stray"; exit 1
           fi
 
       - name: Cross-package import smoke test
         run: |
-          uv run python -c "import opaque.core, opaque.dpsgd, opaque.mf, opaque.auditing, opaque.performance, opaque.performance.kernels, opaque.performance.torch.checkpoint, opaque.huggingface, opaque.huggingface.patches, opaque.accounting; print('OK')"
+          uv run python -c "import opaque.core, opaque.distributed, opaque.functional, opaque.dpsgd, opaque.dpsgd.sampling, opaque.dpftrl, opaque.auditing, opaque.performance, opaque.performance.profiling, opaque.performance.kernels, opaque.performance.torch.checkpoint, opaque.performance.huggingface, opaque.huggingface, opaque.huggingface.patches, opaque.accounting; print('OK')"
 
       - name: Compute marker expression
         id: marker
@@ -85,11 +84,10 @@ jobs:
           uv run pytest \
             packages/opaque-core/tests \
             packages/opaque-dpsgd/tests \
-            packages/opaque-mf/tests \
+            packages/opaque-dpftrl/tests \
             packages/opaque-auditing/tests \
             packages/opaque-performance/tests \
             packages/opaque-huggingface/tests \
-            packages/opaque/tests \
             -m "${{ steps.marker.outputs.expression }}" \
             --cov=opaque \
             --cov-report=xml:coverage-core${{ matrix.coverage-suffix }}.xml \
@@ -119,7 +117,13 @@ jobs:
 
       - name: Run CUDA tests
         run: |
-          uv run pytest packages/opaque/tests \
+          uv run pytest \
+            packages/opaque-core/tests \
+            packages/opaque-dpsgd/tests \
+            packages/opaque-dpftrl/tests \
+            packages/opaque-auditing/tests \
+            packages/opaque-performance/tests \
+            packages/opaque-huggingface/tests \
             -m "cuda" \
             --cov=opaque \
             --cov-report=xml \

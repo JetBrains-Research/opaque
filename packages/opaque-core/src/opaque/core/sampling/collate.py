@@ -1,6 +1,12 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Collate utilities for Poisson sampling."""
+"""Collate utilities for variable-size / empty batches.
+
+The :func:`empty_collate` wrapper handles the empty-batch case that arises
+from any Poisson-style sampler (``opaque.dpsgd.sampling.PoissonSampler``,
+``opaque.dpftrl.sampling.CyclicPoissonSampler``, ...) without knowing which
+mechanism produced the empty list.
+"""
 
 from __future__ import annotations
 
@@ -41,11 +47,11 @@ def _empty_like(template: T) -> T:
     return template
 
 
-def poisson_collate(collate_fn: Callable[..., T]) -> Callable[..., T]:
-    """Wrap a collate function to handle empty batches from Poisson sampling.
+def empty_collate(collate_fn: Callable[..., T]) -> Callable[..., T]:
+    """Wrap a collate function so empty example lists yield zero-batch outputs.
 
-    ``PoissonSampler`` can yield empty index lists, producing batches with
-    zero examples.  Standard collators (e.g., HuggingFace
+    Poisson-style samplers can yield empty index lists, producing batches with
+    zero examples. Standard collators (e.g., HuggingFace
     ``DataCollatorForLanguageModeling``) crash on empty input because they
     unconditionally index ``examples[0]``.
 
@@ -53,7 +59,7 @@ def poisson_collate(collate_fn: Callable[..., T]) -> Callable[..., T]:
     and returns a properly-shaped empty batch (batch dim = 0) when the
     example list is empty::
 
-        collate = poisson_collate(my_collate_fn)
+        collate = empty_collate(my_collate_fn)
         loader = DataLoader(dataset, batch_sampler=sampler, collate_fn=collate)
 
         for batch in loader:

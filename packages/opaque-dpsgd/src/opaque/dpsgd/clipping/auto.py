@@ -29,7 +29,7 @@ from opaque.core.clipping.clipped_fun import ClippedFunAux, clipped_fun
 from opaque.core.clipping.clipped_grad import ClippedGradAux, clipped_grad
 from opaque.core.clipping.pytree import auto_scale_pytree
 from opaque.core.clipping.types import ClipState
-from opaque.core.utils.per_group import PerGroup
+from opaque.core.clipping.per_group import PerGroup
 
 _DEFAULT_GAMMA = 0.01
 

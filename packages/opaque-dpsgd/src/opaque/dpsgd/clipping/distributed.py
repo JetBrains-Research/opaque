@@ -2,7 +2,7 @@
 
 Handles the adaptive clipping state (:class:`AdaptiveClipState`) and
 its auxiliary output (:class:`AdaptiveClippedGradAux`). Registers the
-sync handlers at import time so that :func:`opaque.core.distributed.sync`
+sync handlers at import time so that :func:`opaque.distributed.sync`
 dispatches correctly once this module is loaded (which happens via
 ``import opaque.dpsgd`` or via constructing an :class:`AdaptiveClipState`).
 """
@@ -14,14 +14,14 @@ from dataclasses import replace
 import torch
 
 from opaque.core.clipping.distributed import sync_clipped_grad_aux
-from opaque.core.distributed import (
+from opaque.distributed import (
     is_distributed,
     reduce_scalar,
     register_sync_type,
     sync_object,
 )
 from opaque.core.random import fold_in, generator_from_key
-from opaque.core.utils.per_group import PerGroup
+from opaque.core.clipping.per_group import PerGroup
 
 from .adaptive import (
     AdaptiveClippedGradAux,

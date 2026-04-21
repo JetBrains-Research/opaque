@@ -23,7 +23,7 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer  # noqa
 from peft import LoraConfig, get_peft_model  # noqa: E402
 
 from opaque.core.clipping import clipped_grad  # noqa: E402
-from opaque.core.utils import make_functional  # noqa: E402
+from opaque.functional import make_functional  # noqa: E402
 
 
 RTOL = 1e-4
@@ -258,7 +258,7 @@ class TestConfiguration:
 
     def test_kernel_patched_flag(self):
         """is_kernel_patched() should return True after import opaque."""
-        from opaque.huggingface.patches import is_kernel_patched
+        from opaque.performance.huggingface import is_kernel_patched
 
         # After import opaque, patches should be applied (or skipped if no CUDA)
         assert isinstance(is_kernel_patched(), bool)
@@ -893,7 +893,7 @@ class TestFusedLoRAMLP:
     @requires_hf_auth
     def test_patch_lora_model_manual(self, device):
         """patch_lora_model() should work for manually loaded PEFT models."""
-        from opaque.huggingface.patches import patch_lora_model
+        from opaque.performance.huggingface import patch_lora_model
 
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2
@@ -1134,7 +1134,7 @@ class TestFusedLoRAQKV:
     @requires_hf_auth
     def test_patch_lora_model_manual_qkv(self, device):
         """patch_lora_model() should fuse QKV for manually loaded PEFT models."""
-        from opaque.huggingface.patches import patch_lora_model
+        from opaque.performance.huggingface import patch_lora_model
 
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2

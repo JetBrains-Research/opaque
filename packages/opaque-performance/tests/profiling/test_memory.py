@@ -201,7 +201,9 @@ class TestTrainingProfiler:
             peak = next(peaks)
             return MemoryStats(peak_gb=peak)
 
-        monkeypatch.setattr("opaque.performance.profiling.memory.get_memory_stats", fake_stats)
+        monkeypatch.setattr(
+            "opaque.performance.profiling.memory.get_memory_stats", fake_stats
+        )
 
         profiler, _ = profiler.mark("a")
         profiler, _ = profiler.mark("b")

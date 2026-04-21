@@ -29,7 +29,7 @@ from __future__ import annotations
 import math
 
 from opaque.core.clipping.types import ClipState
-from opaque.core.utils.per_group import PerGroup
+from opaque.core.clipping.per_group import PerGroup
 
 
 def per_group_noise_stddev(clip_state: ClipState, noise_multiplier: float) -> PerGroup:

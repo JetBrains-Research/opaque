@@ -1,11 +1,11 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for poisson_collate wrapper and DataCollator compat patch."""
+"""Tests for the empty_collate wrapper."""
 
 import pytest
 import torch
 
-from opaque.core.sampling.collate import _empty_like, poisson_collate
+from opaque.core.sampling.collate import _empty_like, empty_collate
 
 
 class TestEmptyLike:
@@ -60,20 +60,20 @@ class TestEmptyLike:
 
 
 class TestPoissonCollate:
-    """Tests for the poisson_collate wrapper."""
+    """Tests for the empty_collate wrapper."""
 
     def test_nonempty_passes_through(self):
         def collate(examples):
             return torch.stack(examples)
 
-        wrapped = poisson_collate(collate)
+        wrapped = empty_collate(collate)
         tensors = [torch.tensor([1, 2]), torch.tensor([3, 4])]
         result = wrapped(tensors)
         assert torch.equal(result, torch.stack(tensors))
 
     def test_empty_before_nonempty_falls_through(self):
         """Before any template is learned, empty batch falls through to collate_fn."""
-        wrapped = poisson_collate(lambda ex: (_ for _ in ()).throw(IndexError))
+        wrapped = empty_collate(lambda ex: (_ for _ in ()).throw(IndexError))
         with pytest.raises(IndexError):
             wrapped([])
 
@@ -83,7 +83,7 @@ class TestPoissonCollate:
         def collate(examples):
             return {"x": torch.stack(examples), "y": torch.ones(len(examples), 5)}
 
-        wrapped = poisson_collate(collate)
+        wrapped = empty_collate(collate)
 
         # First call: non-empty, learns template
         wrapped([torch.tensor([1, 2]), torch.tensor([3, 4])])
@@ -98,7 +98,7 @@ class TestPoissonCollate:
         def collate(examples):
             return (torch.tensor(examples, dtype=torch.float16),)
 
-        wrapped = poisson_collate(collate)
+        wrapped = empty_collate(collate)
         wrapped([[1.0, 2.0]])
         result = wrapped([])
         assert result[0].dtype == torch.float16
@@ -107,7 +107,7 @@ class TestPoissonCollate:
         def my_collate(examples):
             return examples
 
-        wrapped = poisson_collate(my_collate)
+        wrapped = empty_collate(my_collate)
         assert wrapped.__name__ == "my_collate"
 
     def test_template_captured_once(self):
@@ -118,7 +118,7 @@ class TestPoissonCollate:
             call_count[0] += 1
             return {"ids": torch.randn(len(examples), call_count[0])}
 
-        wrapped = poisson_collate(collate)
+        wrapped = empty_collate(collate)
         wrapped([1])  # first: feature dim 1
         wrapped([1, 2])  # second: feature dim 2 (template unchanged)
         result = wrapped([])  # empty: uses template from first call
@@ -130,7 +130,7 @@ class TestPoissonCollate:
         def collate(examples):
             return (torch.stack(examples),)
 
-        wrapped = poisson_collate(collate)
+        wrapped = empty_collate(collate)
         wrapped([torch.randn(5)])
         result = wrapped([])
         assert isinstance(result, tuple)
@@ -139,7 +139,7 @@ class TestPoissonCollate:
     def test_decorator_usage(self):
         """Can be used as a decorator."""
 
-        @poisson_collate
+        @empty_collate
         def collate(examples):
             return (torch.stack(examples),)
 
@@ -147,44 +147,3 @@ class TestPoissonCollate:
         result = collate([])
         assert isinstance(result, tuple)
         assert result[0].shape == (0, 3)
-
-
-class TestDataCollatorPatch:
-    """Tests for the DataCollatorForLanguageModeling compat patch."""
-
-    def test_empty_after_nonempty_returns_learned_structure(self):
-        transformers = pytest.importorskip("transformers")
-        DataCollatorForLanguageModeling = transformers.DataCollatorForLanguageModeling
-        AutoTokenizer = transformers.AutoTokenizer
-
-        tokenizer = AutoTokenizer.from_pretrained("gpt2")
-        tokenizer.pad_token = tokenizer.eos_token
-        collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
-
-        # First call: non-empty, learns template
-        examples = [{"input_ids": [1, 2, 3]}, {"input_ids": [4, 5, 6]}]
-        nonempty_result = collator(examples)
-
-        # Second call: empty, returns learned structure
-        result = collator([])
-        assert "input_ids" in result
-        assert "labels" in result
-        assert result["input_ids"].shape[0] == 0
-        assert result["labels"].shape[0] == 0
-        assert result["input_ids"].dtype == nonempty_result["input_ids"].dtype
-        assert result["input_ids"].shape[1:] == nonempty_result["input_ids"].shape[1:]
-
-    def test_nonempty_examples_unchanged(self):
-        transformers = pytest.importorskip("transformers")
-        DataCollatorForLanguageModeling = transformers.DataCollatorForLanguageModeling
-        AutoTokenizer = transformers.AutoTokenizer
-
-        tokenizer = AutoTokenizer.from_pretrained("gpt2")
-        tokenizer.pad_token = tokenizer.eos_token
-        collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
-
-        examples = [{"input_ids": [1, 2, 3]}, {"input_ids": [4, 5, 6]}]
-        result = collator(examples)
-
-        assert result["input_ids"].shape[0] == 2
-        assert result["labels"].shape[0] == 2

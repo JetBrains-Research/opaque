@@ -9,7 +9,7 @@
       <module fileurl="file://$PROJECT_DIR$/.idea/opaque-core.iml" filepath="$PROJECT_DIR$/.idea/opaque-core.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/opaque-dpsgd.iml" filepath="$PROJECT_DIR$/.idea/opaque-dpsgd.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/opaque-huggingface.iml" filepath="$PROJECT_DIR$/.idea/opaque-huggingface.iml" />
-      <module fileurl="file://$PROJECT_DIR$/.idea/opaque-mf.iml" filepath="$PROJECT_DIR$/.idea/opaque-mf.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/opaque-dpftrl.iml" filepath="$PROJECT_DIR$/.idea/opaque-dpftrl.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/opaque-performance.iml" filepath="$PROJECT_DIR$/.idea/opaque-performance.iml" />
     </modules>
   </component>

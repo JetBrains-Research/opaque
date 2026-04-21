@@ -5,7 +5,7 @@
 Poisson sampling (used for privacy amplification in DP-SGD) can yield empty
 batches.  HuggingFace data collators crash on empty input lists because they
 index ``examples[0]`` unconditionally.  These patches wrap the collator with
-:func:`poisson_collate` which learns the output structure from the first
+:func:`empty_collate` which learns the output structure from the first
 non-empty call.
 
 Controlled by:
@@ -15,7 +15,7 @@ Controlled by:
 import functools
 
 from opaque.core._env import parse_skip_env
-from opaque.core.sampling.collate import poisson_collate
+from opaque.core.sampling.collate import empty_collate
 
 _WRAPPER_ATTR = "_opaque_collate"
 
@@ -44,7 +44,7 @@ def apply_data_patches() -> None:
     def _patched_torch_call(self, examples):
         wrapper = getattr(self, _WRAPPER_ATTR, None)
         if wrapper is None:
-            wrapper = poisson_collate(functools.partial(_original_torch_call, self))
+            wrapper = empty_collate(functools.partial(_original_torch_call, self))
             setattr(self, _WRAPPER_ATTR, wrapper)
         return wrapper(examples)
 

@@ -1,25 +1,22 @@
-"""Sampling primitives (algorithm-agnostic).
+"""Sampling helpers shared across DP mechanisms.
 
-Core exposes Poisson sampling, collation helpers, and distributed shard
-helpers. Algorithm-specific samplers live with their mechanism:
+Core exposes only the mechanism-agnostic collate wrapper :func:`empty_collate`
+that handles empty/variable-size batches from any Poisson-style sampler. The
+samplers themselves live next to their mechanism:
 
-- ``opaque.dpsgd.sampling.TruncatedPoissonSampler`` (fixed-batch DP-SGD)
-- ``opaque.mf.sampling.{BMinSepSampler, CyclicPoissonSampler,
-  BallsInBinsSampler, SequentialBatchSampler}`` (matrix factorization)
+- :class:`opaque.dpsgd.sampling.PoissonSampler` — generic Poisson batch sampler.
+- :class:`opaque.dpsgd.sampling.TruncatedPoissonSampler` — fixed-batch DP-SGD.
+- :class:`opaque.dpftrl.sampling.CyclicPoissonSampler`,
+  :class:`~opaque.dpftrl.sampling.BMinSepSampler`,
+  :class:`~opaque.dpftrl.sampling.BallsInBinsSampler`,
+  :class:`~opaque.dpftrl.sampling.SequentialBatchSampler` — DP-FTRL.
 
-For distributed training, shard the dataset externally using
-``sampling.distributed.local_shard()`` and pass a per-rank key
-via ``fold_in(key, rank)``.
+For dataset sharding across distributed ranks, use
+:func:`opaque.distributed.local_shard`.
 """
 
-from opaque.core.sampling import distributed
-from opaque.core.sampling._utils import PartitionType
-from opaque.core.sampling.collate import poisson_collate
-from opaque.core.sampling.poisson import PoissonSampler
+from opaque.core.sampling.collate import empty_collate
 
 __all__ = [
-    "PoissonSampler",
-    "PartitionType",
-    "distributed",
-    "poisson_collate",
+    "empty_collate",
 ]

@@ -7,7 +7,7 @@ import torch
 
 from opaque.dpsgd.clipping.adaptive import AdaptiveClipState, adaptive_clipped_grad
 from opaque.core.random import key
-from opaque.core.utils.per_group import PerGroup, per_group
+from opaque.core.clipping.per_group import PerGroup, per_group
 
 
 def _make_loss_fn():

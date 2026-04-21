@@ -1,9 +1,9 @@
 """Conftest for opaque-huggingface tests.
 
-Applies ``opaque.patch_all()`` once per session so HF/vmap/kernel patches are
-in effect for the whole ``packages/opaque-huggingface/tests`` tree (validation,
-distributed, huggingface subpackages). Patching is opt-in in production; tests
-opt in via this conftest.
+Importing ``opaque.performance`` and ``opaque.huggingface`` auto-applies
+their respective patches. We import them here at module load so the patches
+are live for the whole ``packages/opaque-huggingface/tests`` tree (validation,
+distributed, huggingface subpackages).
 
 Shared LoRA/DP-SGD helpers and ``MODEL_CONFIGS`` live in
 ``opaque-huggingface/tests/_shared.py`` — tests import them directly from that
@@ -24,19 +24,16 @@ sys.path.append(str(Path(__file__).parent))
 
 from _hf_shared import MODEL_CONFIGS, STANDARD_LORA_CONFIG  # noqa: E402
 
-
-@pytest.fixture(scope="session", autouse=True)
-def _apply_opaque_patches():
-    """Opt into performance + HF patches for HF-backed tests."""
-    import opaque
-
-    try:
-        opaque.patch_all()
-    except Exception:
-        # If a sub-package is missing, patch_all still works (hook is None);
-        # any unexpected error must not break test collection.
-        pass
-    yield
+# Touch both sub-packages so their on-import patching runs before any test
+# module is collected. Guarded: missing sub-packages must not break collection.
+try:
+    import opaque.performance  # noqa: F401
+except ImportError:
+    pass
+try:
+    import opaque.huggingface  # noqa: F401
+except ImportError:
+    pass
 
 
 @pytest.fixture(scope="session")

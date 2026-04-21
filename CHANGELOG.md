@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking — namespace reshape (user-facing primitives at root)
+
+Following feedback that `opaque.core.*` should only contain internal
+primitives, user-facing modules now live at the namespace root. The umbrella
+`opaque` distribution is reduced to metadata, and each patching layer owns
+its own `patch_all()` applied automatically on import. No backward shims.
+
+Migration table:
+
+| Old path | New path |
+|----------|----------|
+| `opaque.core.utils.functional.*` | `opaque.functional.*` |
+| `opaque.core.utils.pytree.*` | `opaque.core.pytree.*` |
+| `opaque.core.utils.per_group.*` | `opaque.core.clipping.per_group.*` (re-exported from `opaque.core`) |
+| `opaque.core.distributed.*` | `opaque.distributed.*` (split into `collectives`, `gradients`, `state`, `shard`) |
+| `opaque.core.sampling.PoissonSampler` | `opaque.dpsgd.sampling.PoissonSampler` |
+| `opaque.core.sampling.PartitionType` | `opaque.dpftrl.sampling._partitions.PartitionType` (private) |
+| `opaque.core.sampling.poisson_collate` | `opaque.core.sampling.empty_collate` (renamed) |
+| `opaque.core.sampling.distributed.local_shard` | `opaque.distributed.local_shard` |
+| `opaque.core.profiling.*` | `opaque.performance.profiling.*` |
+| `opaque.huggingface.patches._kernel_patches` | `opaque.performance.huggingface.kernel_patches` |
+| `opaque.mf.*` (package `opaque-mf`) | `opaque.dpftrl.*` (package `opaque-dpftrl`) |
+| `opaque.patch_all()` | **removed** — each sub-package auto-patches on import |
+| `OPAQUE_SKIP_COMPAT_PATCHES` env var | **removed** — use sub-package-specific `OPAQUE_SKIP_*` |
+
+Patching model: importing `opaque.performance` or `opaque.huggingface`
+applies their patches automatically, gated by `OPAQUE_SKIP_PYTORCH_PATCHES`
+and `OPAQUE_SKIP_TRANSFORMERS_PATCHES` respectively. The kernel patches
+that wire Triton kernels into HF model classes now live in
+`opaque.performance.huggingface` (still gated by
+`OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES`). `opaque.huggingface` keeps only
+the compatibility patches (vmap-safe attention, KV cache, Poisson collator).
+
 ### Breaking — modularization (Option B namespace layout)
 
 The monorepo has been split into first-class, standalone distributions,
@@ -23,7 +56,7 @@ removed; downstream code must migrate in one pass.
   utils
 - `opaque.dpsgd` — Gaussian / truncated-Gaussian / per-group noise,
   AdamW-BC, `TruncatedPoissonSampler`, adaptive + auto clipping
-- `opaque.mf` — BLT / BSR / BiSR / band-MF / JME / λ-CGD mechanisms,
+- `opaque.dpftrl` — BLT / BSR / BiSR / band-MF / JME / λ-CGD mechanisms,
   AdamW-JME, b-min-sep / cyclic-Poisson / balls-in-bins / sequential
   samplers
 - `opaque.auditing` — curated facade for empirical privacy auditing
@@ -34,9 +67,6 @@ removed; downstream code must migrate in one pass.
   `models/` subpackages
 - `opaque.accounting` — Python facade over the native PyO3 extension
   (mounted at `opaque.accounting._native`)
-- `opaque.patch_all()` curated umbrella facade honoring
-  `OPAQUE_SKIP_COMPAT_PATCHES` (`all`, `huggingface`, `performance`,
-  comma-combo)
 - Inline CI step in `.github/workflows/ci.yml` enforcing the PEP 420
   invariant (no stray `src/opaque/__init__.py` in sub-packages).
   Replaces earlier `scripts/check_namespaces.py` (legacy-token and
@@ -49,15 +79,16 @@ removed; downstream code must migrate in one pass.
   `opaque.performance.torch.checkpoint`, and `opaque.huggingface.patches`
 - `opaque.sampling.truncated_poisson` — use `opaque.dpsgd.sampling.truncated_poisson`
 - `opaque.sampling.b_min_sep` / `.cyclic_poisson` / `.balls_in_bins` /
-  `.sequential` — use `opaque.mf.sampling.*`
+  `.sequential` — use `opaque.dpftrl.sampling.*`
 - `opaque.clipping.adaptive` / `opaque.clipping.auto` — use
   `opaque.dpsgd.clipping.*`
 - `opaque.noise.<dp-sgd-mechanism>` — use `opaque.dpsgd.noise.*`
-- `opaque.noise.mf.*` — use `opaque.mf.noise.*`
+- `opaque.noise.mf.*` — use `opaque.dpftrl.noise.*`
 - `opaque.optimizers.adamw_bc` / `.adamw_jme` — use
-  `opaque.dpsgd.optimizers.adamw_bc` / `opaque.mf.optimizers.adamw_jme`
-- Auto-import-time patching of HuggingFace models — patching is now
-  opt-in via `opaque.patch_all()` (or `opaque.huggingface.patch_all()`)
+  `opaque.dpsgd.optimizers.adamw_bc` / `opaque.dpftrl.optimizers.adamw_jme`
+- Auto-import-time patching of HuggingFace models at the `opaque` level —
+  importing `opaque.huggingface` or `opaque.performance` now applies their
+  respective patches; the umbrella facade is gone.
 
 #### Changed
 

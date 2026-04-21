@@ -48,7 +48,7 @@ See [BandMF — Assumptions and limitations](../mechanisms/band-mf.md#assumption
 
 [JME](https://arxiv.org/abs/2502.06597) uses **two** correlated noise streams (gradients and squared gradients) with a **joint sensitivity**. It is **not** the same workload model as single-stream SGD+momentum mechanisms.
 
-When adding a new `MfStrategy`, ensure `opaque.mf.noise.jme._derive_second_strategy` has an explicit branch for it. Unknown strategy types raise `TypeError`; unsupported ones (e.g. `LambdaCgdStrategy`, which has no principled second-moment mapping) raise `ValueError`. Pass `second_moment_strategy` explicitly to override auto-derivation when needed.
+When adding a new `MfStrategy`, ensure `opaque.dpftrl.noise.jme._derive_second_strategy` has an explicit branch for it. Unknown strategy types raise `TypeError`; unsupported ones (e.g. `LambdaCgdStrategy`, which has no principled second-moment mapping) raise `ValueError`. Pass `second_moment_strategy` explicitly to override auto-derivation when needed.
 
 ## BSR scope
 

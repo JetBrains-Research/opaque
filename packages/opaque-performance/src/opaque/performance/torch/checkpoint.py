@@ -99,7 +99,7 @@ def patch_checkpoint() -> None:
 
     # Shared imports and thread-local for the functional_call ↔ _autograd_grad
     # protocol (Patches 4, 7, 8).
-    from opaque.core.utils.functional import _set_module_params
+    from opaque.functional import _set_module_params
 
     _param_ctx = threading.local()
 

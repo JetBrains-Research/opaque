@@ -38,8 +38,8 @@ import torch
 from opaque.dpsgd.noise.gaussian import GaussianNoiseState
 from opaque.core.random import RngKey, generator_from_key
 from opaque.core.random import fold_in as rng_fold_in
-from opaque.core.utils.per_group import PerGroup
-from opaque.core.utils.pytree import tree_map
+from opaque.core.clipping.per_group import PerGroup
+from opaque.core.pytree import tree_map
 
 _SQRT2 = math.sqrt(2.0)
 

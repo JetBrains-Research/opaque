@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 import torch
 
-from opaque.core.utils.pytree import tree_map
+from opaque.core.pytree import tree_map
 
 
 def normalize_to_tuple(value: int | tuple[int, ...]) -> tuple[int, ...]:

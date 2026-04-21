@@ -42,7 +42,7 @@ def test_clip_rescales_to_threshold_when_above(device):
     """When norm > clipping_norm, should scale down to clipping_norm."""
     pytree = {"w": torch.tensor([3.0, 4.0], device=device)}  # norm=5
     clipped, _ = clip_pytree(pytree, clipping_norm=1.0)
-    from opaque.core.utils.pytree import global_norm
+    from opaque.core.pytree import global_norm
 
     assert global_norm(clipped).item() == pytest.approx(1.0)
 
@@ -136,7 +136,7 @@ def test_clipped_fun_return_norms():
 
 def test_clipped_fun_with_batch_dim():
     """Test with_batch_dim utility adds size-1 batch dim to loss args."""
-    from opaque.core.utils import with_batch_dim
+    from opaque.functional import with_batch_dim
 
     def loss_fn(param, data):
         # Expect data to have shape (1,) thanks to with_batch_dim wrapper

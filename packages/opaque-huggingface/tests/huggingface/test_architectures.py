@@ -10,7 +10,7 @@ from peft import LoraConfig, get_peft_model
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 from opaque.core.clipping import clipped_grad
-from opaque.core.utils import make_functional
+from opaque.functional import make_functional
 from ._helpers import (
     has_hf_token,
     prepare_lora_model,

@@ -8,7 +8,7 @@ torchopt = pytest.importorskip(
 )
 
 from opaque.dpsgd.optimizers.adamw_bc import AdamWBCState, adamw_bc  # noqa: E402
-from opaque.core.utils.per_group import PerGroup  # noqa: E402
+from opaque.core.clipping.per_group import PerGroup  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

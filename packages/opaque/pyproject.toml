@@ -13,6 +13,7 @@ requires-python = ">=3.11,<3.13"
 keywords = [
     "differential-privacy",
     "dp-sgd",
+    "dp-ftrl",
     "pytorch",
     "lora",
     "fine-tuning",
@@ -40,7 +41,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-mf = ["opaque-mf==0.0.0.dev0"]
+dpftrl = ["opaque-dpftrl==0.0.0.dev0"]
 performance = ["opaque-performance==0.0.0.dev0"]
 huggingface = [
     "opaque-huggingface==0.0.0.dev0",
@@ -48,18 +49,17 @@ huggingface = [
 ]
 auditing = ["opaque-auditing==0.0.0.dev0"]
 all = [
-    "opaque-mf==0.0.0.dev0",
+    "opaque-dpftrl==0.0.0.dev0",
     "opaque-performance==0.0.0.dev0",
     "opaque-huggingface==0.0.0.dev0",
     "opaque-auditing==0.0.0.dev0",
     "opaque-dpsgd[optimizers]==0.0.0.dev0",
-    "opaque-mf[optimizers]==0.0.0.dev0",
+    "opaque-dpftrl[optimizers]==0.0.0.dev0",
 ]
 
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["opaque*"]
-namespaces = true
+# Metadata-only meta-package: no src/, no tests/, no code shipped.
+# The ``opaque`` namespace is pure PEP 420 and is composed by whichever
+# ``opaque-*`` sub-packages are installed alongside.
 
 [tool.uv]
 package = true
@@ -67,7 +67,7 @@ package = true
 [tool.uv.sources]
 opaque-core = { workspace = true }
 opaque-dpsgd = { workspace = true }
-opaque-mf = { workspace = true }
+opaque-dpftrl = { workspace = true }
 opaque-auditing = { workspace = true }
 opaque-performance = { workspace = true }
 opaque-huggingface = { workspace = true }

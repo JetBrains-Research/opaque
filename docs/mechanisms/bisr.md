@@ -19,7 +19,7 @@ receives only these pre-computed values. This avoids duplicating mechanism
 parameters and keeps the accounting API uniform across all MF mechanisms.
 
 ```python
-from opaque.mf.noise import bisr_strategy
+from opaque.dpftrl.noise import bisr_strategy
 import opaque.accounting as acc
 
 # 1. Create strategy — computes sensitivity and Gram matrix internally
@@ -76,7 +76,7 @@ enter sensitivity or Gram matrix computation).
 ## Noise generation
 
 ```python
-from opaque.mf.noise import mf_noise, bisr_strategy
+from opaque.dpftrl.noise import mf_noise, bisr_strategy
 from opaque.random import key
 
 strategy = bisr_strategy(

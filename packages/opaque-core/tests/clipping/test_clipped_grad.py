@@ -329,7 +329,7 @@ def test_clipped_grad_zero_gradients():
 
 def test_clipped_grad_with_batch_dim():
     """Test with_batch_dim utility works with clipped_grad."""
-    from opaque.core.utils import with_batch_dim
+    from opaque.functional import with_batch_dim
 
     def loss_with_batch(param, data):
         # Expects data with batch dim of size 1

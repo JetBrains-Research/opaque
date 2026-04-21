@@ -17,7 +17,7 @@ from opaque.core.clipping._helpers import (
 )
 from opaque.core.clipping.clipped_fun import clipped_fun
 from opaque.core.clipping.types import FixedClipState
-from opaque.core.utils.per_group import PerGroup
+from opaque.core.clipping.per_group import PerGroup
 
 
 @dataclass(frozen=True)

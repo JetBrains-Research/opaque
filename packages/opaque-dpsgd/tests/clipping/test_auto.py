@@ -12,7 +12,7 @@ from opaque.dpsgd.clipping import (
     auto_clipped_fun,
     auto_clipped_grad,
 )
-from opaque.core.utils.per_group import PerGroup
+from opaque.core.clipping.per_group import PerGroup
 
 
 class TestAutoScalePytree:

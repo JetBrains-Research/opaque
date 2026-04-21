@@ -29,9 +29,13 @@ from typing import Any
 
 import torch
 
+
 def _native():
     from opaque.accounting import _native as _n
+
     return _n
+
+
 from ._engine import (
     MFNoiseState,
     _iid_normal_noise,

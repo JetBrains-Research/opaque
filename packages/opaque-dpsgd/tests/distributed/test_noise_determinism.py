@@ -13,7 +13,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 
 from opaque.dpsgd.noise.gaussian import gaussian_noise
-from opaque.mf.noise import mf_noise, identity_strategy
+from opaque.dpftrl.noise import mf_noise, identity_strategy
 from opaque.core.random import key
 
 

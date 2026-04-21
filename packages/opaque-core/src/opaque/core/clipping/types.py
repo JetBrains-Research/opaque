@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC
 from dataclasses import dataclass
 
-from opaque.core.utils.per_group import PerGroup
+from opaque.core.clipping.per_group import PerGroup
 
 
 class ClipState(ABC):

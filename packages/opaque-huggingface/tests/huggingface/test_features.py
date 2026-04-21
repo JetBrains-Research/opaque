@@ -11,7 +11,7 @@ from peft import LoraConfig, get_peft_model
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 from opaque.core.clipping import clipped_grad
-from opaque.core.utils import make_functional
+from opaque.functional import make_functional
 
 
 class TestMixedPrecision:
@@ -72,7 +72,7 @@ class TestTorchCompile:
 
         # Compile the per-example loss function
         def per_example_loss(params, input_ids, mask, labels):
-            from opaque.core.utils import make_functional
+            from opaque.functional import make_functional
 
             fmodel, _ = make_functional(model, disable_autograd_tracking=True)
             outputs = fmodel(params, input_ids, attention_mask=mask, labels=labels)

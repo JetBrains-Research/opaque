@@ -231,7 +231,7 @@ def _batchify_forward(original_forward):
 
     Delegates to :func:`opaque.utils.functional.with_batch_dim`.
     """
-    from opaque.core.utils.functional import with_batch_dim
+    from opaque.functional import with_batch_dim
 
     return with_batch_dim(
         original_forward,

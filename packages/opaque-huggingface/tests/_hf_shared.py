@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import torch
 
+
 def get_default_gpu_device():
     """CUDA > MPS > None. Inlined to avoid conftest circular import."""
     if torch.cuda.is_available():
@@ -18,6 +19,7 @@ def get_default_gpu_device():
     if torch.backends.mps.is_available():
         return torch.device("mps")
     return None
+
 
 # =============================================================================
 # Model Testing Utilities
@@ -241,8 +243,8 @@ def run_dp_training_step(
 ):
     """Run DP-SGD training with clipped gradients and gradient accumulation."""
     from opaque.core.clipping import clipped_grad
-    from opaque.core.utils import make_functional
-    from opaque.core.utils.pytree import tree_map
+    from opaque.functional import make_functional
+    from opaque.core.pytree import tree_map
 
     device = next(model.parameters()).device
 
@@ -314,5 +316,3 @@ def run_dp_training_step(
         last_accumulated = accumulated
 
     return last_accumulated, state
-
-

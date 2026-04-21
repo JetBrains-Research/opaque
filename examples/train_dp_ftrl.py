@@ -105,7 +105,7 @@ import torchopt
 import opaque.accounting as acc
 from opaque.accounting import calibration as cal
 from opaque.core.clipping import clipped_grad
-from opaque.mf.noise import (
+from opaque.dpftrl.noise import (
     band_mf_strategy,
     bisr_strategy,
     bsr_strategy,
@@ -116,23 +116,23 @@ from opaque.mf.noise import (
     mf_noise,
     jme_noise,
 )
-from opaque.mf.optimizers.adamw_jme import adamw_jme
-from opaque.core.profiling import (
+from opaque.dpftrl.optimizers.adamw_jme import adamw_jme
+from opaque.performance.profiling import (
     StepTimer,
     TrainingProfiler,
     print_memory,
     reset_peak_memory,
 )
 from opaque.core.random import key, fold_in
-from opaque.core.sampling import (
+from opaque.core.sampling import empty_collate
+from opaque.dpsgd.sampling import PoissonSampler
+from opaque.dpftrl.sampling import (
     BallsInBinsSampler,
     BMinSepSampler,
     CyclicPoissonSampler,
-    PoissonSampler,
     SequentialBatchSampler,
-    poisson_collate,
 )
-from opaque.core.utils import make_functional
+from opaque.functional import make_functional
 
 try:
     import wandb
@@ -684,7 +684,7 @@ def main():
 
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
-    @poisson_collate
+    @empty_collate
     def collate(examples):
         batch = data_collator(examples)
         return (batch["input_ids"].to(device),)

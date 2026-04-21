@@ -45,8 +45,8 @@ except ImportError as exc:
         "Install it with: pip install 'torchopt>=0.7.3'"
     ) from exc
 
-from opaque.core.utils.per_group import PerGroup
-from opaque.core.utils.pytree import tree_map
+from opaque.core.clipping.per_group import PerGroup
+from opaque.core.pytree import tree_map
 
 
 # ---------------------------------------------------------------------------

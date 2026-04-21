@@ -26,7 +26,7 @@ from _hf_shared import (
 from opaque.core.clipping import clipped_grad
 from opaque.dpsgd.noise.gaussian import gaussian_noise
 from opaque.core.random import key
-from opaque.core.utils import make_functional
+from opaque.functional import make_functional
 
 # Skip all tests if transformers not available
 transformers = pytest.importorskip("transformers")

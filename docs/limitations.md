@@ -52,8 +52,9 @@ internal implementation details and should not be imported directly in user
 code.
 
 On CPU/MPS (or without Triton), Opaque falls back to non-kernel compatibility
-paths. To control patching behavior, use the `OPAQUE_SKIP_COMPAT_PATCHES` and
-`OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES` environment variables. See
+paths. To control patching behavior, use the `OPAQUE_SKIP_PYTORCH_PATCHES`,
+`OPAQUE_SKIP_TRANSFORMERS_PATCHES`, and `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES`
+environment variables. See
 [HuggingFace Compatibility](user-guide/huggingface.md#configuration).
 
 Advanced users can still call kernel wrappers directly via

@@ -110,7 +110,7 @@ uv sync --group docs                           # + mkdocs stack
 #   opaque-huggingface[kernels]     — + Triton kernels
 #   opaque-performance[kernels]     — Triton kernels
 #   opaque-dpsgd[optimizers]        — torchopt bindings
-#   opaque-mf[optimizers]           — torchopt bindings
+#   opaque-dpftrl[optimizers]           — torchopt bindings
 #   opaque-accounting[cross-validation] — dp-accounting, riskcal
 uv sync --group dev --all-packages --extra peft --extra kernels
 ```

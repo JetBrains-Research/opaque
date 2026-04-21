@@ -165,8 +165,8 @@ Gaussian noise.
 ## AdamW-JME: setup and usage
 
 ```python
-from opaque.mf.noise import jme_noise, band_mf_strategy
-from opaque.mf.optimizers import adamw_jme
+from opaque.dpftrl.noise import jme_noise, band_mf_strategy
+from opaque.dpftrl.optimizers import adamw_jme
 
 # Strategy: momentum=beta1 (Adam's first moment workload)
 strategy = band_mf_strategy(n_steps=1000, bands=8, momentum=0.9)

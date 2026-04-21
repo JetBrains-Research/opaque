@@ -5,7 +5,7 @@ import torch
 
 from opaque.core.clipping import clip_pytree, clipped_grad
 from opaque.core.clipping.types import FixedClipState
-from opaque.core.utils.per_group import PerGroup, per_group
+from opaque.core.clipping.per_group import PerGroup, per_group
 
 
 class TestClipPytreePerGroup:

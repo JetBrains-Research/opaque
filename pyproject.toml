@@ -3,7 +3,7 @@ workspace.members = [
     "packages/opaque",
     "packages/opaque-core",
     "packages/opaque-dpsgd",
-    "packages/opaque-mf",
+    "packages/opaque-dpftrl",
     "packages/opaque-auditing",
     "packages/opaque-performance",
     "packages/opaque-huggingface",
@@ -14,7 +14,7 @@ workspace.members = [
 opaque = { workspace = true }
 opaque-core = { workspace = true }
 opaque-dpsgd = { workspace = true }
-opaque-mf = { workspace = true }
+opaque-dpftrl = { workspace = true }
 opaque-auditing = { workspace = true }
 opaque-performance = { workspace = true }
 opaque-huggingface = { workspace = true }
@@ -61,7 +61,7 @@ docs = [
 [tool.pytest.ini_options]
 # importlib mode gives each test file a unique module name based on its path,
 # avoiding collisions when multiple packages share directory names (e.g.
-# tests/noise/ in both opaque-dpsgd and opaque-mf).
+# tests/noise/ in both opaque-dpsgd and opaque-dpftrl).
 addopts = "--import-mode=importlib"
 markers = [
   "cuda: Test requires CUDA; auto-skipped on non-CUDA hosts.",
