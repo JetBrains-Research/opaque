@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=68.0", "setuptools-scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "opaque-dpftrl"
-version = "0.0.0.dev0"
+dynamic = ["version"]
 description = "Opaque DP-FTRL mechanisms: matrix-factorization noise (BLT, BSR, BISR, JME, lambda-CGD) and AdamW-JME"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -36,6 +36,10 @@ optimizers = ["torchopt>=0.7.3"]
 where = ["src"]
 include = ["opaque.dpftrl*"]
 namespaces = true
+
+[tool.setuptools_scm]
+root = "../.."
+fallback_version = "0.0.0"
 
 [tool.uv]
 package = true
