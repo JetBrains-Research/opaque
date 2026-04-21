@@ -231,7 +231,17 @@ uv run ruff check --fix packages/
 <body>
 ```
 
-**Types**: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `chore`
+**Types**: `feat` / `add`, `fix`, `refactor` / `change` / `perf`,
+`docs`, `test`, `ci` / `build`, `chore` / `style`, `delete`. Append `!`
+to mark a breaking change (e.g. `feat!:`). See [Changelog
+conventions](#changelog-conventions) for how each type maps to a
+release-notes section.
+
+Since the repo squash-merges, the PR title is the commit message on
+`main`. The PR gate runs [`action-semantic-pull-request`] to enforce
+the above shape — no merge if the title doesn't parse.
+
+[`action-semantic-pull-request`]: https://github.com/amannn/action-semantic-pull-request
 
 **Example**:
 ```
@@ -383,7 +393,7 @@ git checkout -- packages/opaque/pyproject.toml \
 
 We lean on [Conventional Commits](https://www.conventionalcommits.org/):
 
-- `feat:` → **Added**
+- `feat:` / `add:` → **Added**
 - `fix:` → **Fixed**
 - `refactor:` / `change:` / `perf:` → **Changed**
 - `docs:` → **Documentation**
