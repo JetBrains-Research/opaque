@@ -32,8 +32,7 @@ def _run(script: str, env_overrides: dict[str, str]) -> str:
 def test_default_import_applies_compat_patches():
     """Without any OPAQUE_SKIP_* env var, compat patches fire on import."""
     out = _run(
-        "import opaque.huggingface\n"
-        "print(opaque.huggingface.is_patched())",
+        "import opaque.huggingface\nprint(opaque.huggingface.is_patched())",
         env_overrides={},
     )
     assert out == "True"
@@ -49,8 +48,7 @@ def test_skip_transformers_patches_all_short_circuits_patch_all():
     wasn't actually applied.
     """
     out = _run(
-        "import opaque.huggingface\n"
-        "print(opaque.huggingface.is_vmap_patched())",
+        "import opaque.huggingface\nprint(opaque.huggingface.is_vmap_patched())",
         env_overrides={"OPAQUE_SKIP_TRANSFORMERS_PATCHES": "all"},
     )
     assert out == "False"
@@ -59,8 +57,7 @@ def test_skip_transformers_patches_all_short_circuits_patch_all():
 def test_skip_only_vmap_leaves_other_patches():
     """``OPAQUE_SKIP_TRANSFORMERS_PATCHES=vmap`` skips only the vmap layer."""
     out = _run(
-        "import opaque.huggingface\n"
-        "print(opaque.huggingface.is_vmap_patched())",
+        "import opaque.huggingface\nprint(opaque.huggingface.is_vmap_patched())",
         env_overrides={"OPAQUE_SKIP_TRANSFORMERS_PATCHES": "vmap"},
     )
     assert out == "False"
