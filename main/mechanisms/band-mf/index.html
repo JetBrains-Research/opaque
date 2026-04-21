@@ -346,26 +346,6 @@
   
 
       
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../development/contributing.md" class="md-tabs__link">
-          
-  
-  
-  Development
-
-        </a>
-      </li>
-    
-  
-
-      
     </ul>
   </div>
 </nav>
@@ -694,12 +674,12 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/matrix-factorization/" class="md-nav__link">
+      <a href="../../user-guide/dp-ftrl/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    Matrix factorization (MF)
+    Correlated noise (DP-FTRL)
     
   </span>
   
@@ -1812,79 +1792,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    Development
-    
-  </span>
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            Development
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../development/contributing.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Contributing
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -2243,12 +2150,12 @@ from the noise strategy. For end-to-end usage, <code>mf_noise()</code> +
 <h2 id="assumptions-and-limitations">Assumptions and limitations<a class="headerlink" href="#assumptions-and-limitations" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>DP correctness</strong> is for the <strong>implemented</strong> banded Toeplitz matrix <span class="arithmatex">\(C\)</span> and the sampler you pair with accounting. If those match, the privacy guarantee stands even when the workload model is approximate.</li>
-<li><strong><code>lr_schedule</code> (optional)</strong>: workload coefficients are folded into a <strong>lower-triangular Toeplitz</strong> workload inside optimization. That matches the usual <strong>constant</strong> learning-rate momentum-SGD story. For a <strong>varying</strong> schedule <span class="arithmatex">\(\eta_t\)</span>, the implied Toeplitz workload can differ from the full map <span class="arithmatex">\(W_{t,s}=\eta_t\beta^{t-s}\)</span>: privacy is still valid for the constructed <span class="arithmatex">\(C\)</span>; <strong>utility</strong> alignment is approximate unless <span class="arithmatex">\(\eta\)</span> is constant. See the <a href="../../user-guide/matrix-factorization/">MF user guide</a>.</li>
+<li><strong><code>lr_schedule</code> (optional)</strong>: workload coefficients are folded into a <strong>lower-triangular Toeplitz</strong> workload inside optimization. That matches the usual <strong>constant</strong> learning-rate momentum-SGD story. For a <strong>varying</strong> schedule <span class="arithmatex">\(\eta_t\)</span>, the implied Toeplitz workload can differ from the full map <span class="arithmatex">\(W_{t,s}=\eta_t\beta^{t-s}\)</span>: privacy is still valid for the constructed <span class="arithmatex">\(C\)</span>; <strong>utility</strong> alignment is approximate unless <span class="arithmatex">\(\eta\)</span> is constant. See the <a href="../../user-guide/dp-ftrl/">DP-FTRL user guide</a>.</li>
 <li><strong>Momentum <span class="arithmatex">\(\beta=0\)</span></strong>: Opaque warns because the workload becomes essentially identity (little benefit over independent noise).</li>
 </ul>
 <h2 id="code-examples">Code examples<a class="headerlink" href="#code-examples" title="Permanent link">&para;</a></h2>
 <h3 id="noise-injection">Noise injection<a class="headerlink" href="#noise-injection" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise.mf</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">band_mf_strategy</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">band_mf_strategy</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">band_mf_strategy</span><span class="p">(</span><span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
@@ -2268,8 +2175,8 @@ from the noise strategy. For end-to-end usage, <code>mf_noise()</code> +
 <p>The accounting constructor receives <code>sensitivity</code> and <code>num_groups</code> from
 the same <code>band_mf_strategy</code> used for noise generation. This keeps both
 components in sync:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque_accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise.mf</span><span class="w"> </span><span class="kn">import</span> <span class="n">band_mf_strategy</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">band_mf_strategy</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">band_mf_strategy</span><span class="p">(</span><span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
@@ -2291,11 +2198,11 @@ coefficients.</p>
 <p>BandMF works best with <code>CyclicPoissonSampler</code>, which creates a predictable
 sampling pattern that the noise strategy exploits:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise.mf</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">band_mf_strategy</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">CyclicPoissonSampler</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">band_mf_strategy</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">CyclicPoissonSampler</span>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span><span class="p">,</span> <span class="n">split</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque_accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>
 <a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="n">n_steps</span><span class="p">,</span> <span class="n">bands</span> <span class="o">=</span> <span class="mi">1000</span><span class="p">,</span> <span class="mi">10</span>
 <a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="n">sample_rate</span> <span class="o">=</span> <span class="mf">0.01</span>

@@ -346,26 +346,6 @@
   
 
       
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../development/contributing.md" class="md-tabs__link">
-          
-  
-  
-  Development
-
-        </a>
-      </li>
-    
-  
-
-      
     </ul>
   </div>
 </nav>
@@ -694,12 +674,12 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/matrix-factorization/" class="md-nav__link">
+      <a href="../user-guide/dp-ftrl/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    Matrix factorization (MF)
+    Correlated noise (DP-FTRL)
     
   </span>
   
@@ -1668,79 +1648,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    Development
-    
-  </span>
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            Development
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../development/contributing.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Contributing
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -1859,10 +1766,12 @@ The distributed training tutorial requires multiple GPUs and <code>torchrun</cod
 <p>Install Opaque and its tutorial dependencies from a repository checkout:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/JetBrains-Research/opaque.git
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">cd</span><span class="w"> </span>opaque
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>uv<span class="w"> </span>sync<span class="w"> </span>--group<span class="w"> </span>examples
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>uv<span class="w"> </span>sync<span class="w"> </span>--group<span class="w"> </span>examples<span class="w"> </span>--all-packages<span class="w"> </span>--extra<span class="w"> </span>huggingface<span class="w"> </span>--extra<span class="w"> </span>peft
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>jupyter<span class="w"> </span>lab<span class="w"> </span>docs/tutorials/
 </code></pre></div>
-<p>The notebooks rely on the <code>examples</code> dependency group; there is no published <code>tutorials</code> extra.</p>
+<p>The <code>examples</code> group ships Jupyter, matplotlib, torchvision, torchopt,
+datasets, and wandb; HuggingFace + PEFT come via the <code>opaque-huggingface[peft]</code>
+extra. There is no separate <code>tutorials</code> group.</p>
 
 
 

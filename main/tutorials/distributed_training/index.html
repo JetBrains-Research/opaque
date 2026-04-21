@@ -346,26 +346,6 @@
   
 
       
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../development/contributing.md" class="md-tabs__link">
-          
-  
-  
-  Development
-
-        </a>
-      </li>
-    
-  
-
-      
     </ul>
   </div>
 </nav>
@@ -694,12 +674,12 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/matrix-factorization/" class="md-nav__link">
+      <a href="../../user-guide/dp-ftrl/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    Matrix factorization (MF)
+    Correlated noise (DP-FTRL)
     
   </span>
   
@@ -1704,79 +1684,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    Development
-    
-  </span>
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            Development
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../development/contributing.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Contributing
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -2375,10 +2282,13 @@ device.</p>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torch.utils.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">DataLoader</span><span class="p">,</span> <span class="n">TensorDataset</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">opaque</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSampler</span><span class="p">,</span> <span class="n">clipped_grad</span><span class="p">,</span> <span class="n">gaussian_noise</span><span class="p">,</span> <span class="n">make_functional</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSampler</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.functional</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_functional</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.distributed</span><span class="w"> </span><span class="kn">import</span> <span class="n">sum_gradients</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span><span class="p">,</span> <span class="n">fold_in</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.sampling.distributed</span><span class="w"> </span><span class="kn">import</span> <span class="n">local_shard</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">opaque.distributed</span><span class="w"> </span><span class="kn">import</span> <span class="n">local_shard</span>
 
 <span class="c1"># Initialize distributed (set by torchrun)</span>
 <span class="n">dist</span><span class="o">.</span><span class="n">init_process_group</span><span class="p">(</span><span class="n">backend</span><span class="o">=</span><span class="s2">"nccl"</span><span class="p">)</span>
@@ -2396,10 +2306,13 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
 import opaque.accounting as acc
-from opaque import PoissonSampler, clipped_grad, gaussian_noise, make_functional
+from opaque.clipping import clipped_grad
+from opaque.dpsgd.noise import gaussian_noise
+from opaque.dpsgd.sampling import PoissonSampler
+from opaque.functional import make_functional
 from opaque.distributed import sum_gradients
 from opaque.random import key, fold_in
-from opaque.sampling.distributed import local_shard
+from opaque.distributed import local_shard
 
 # Initialize distributed (set by torchrun)
 dist.init_process_group(backend="nccl")

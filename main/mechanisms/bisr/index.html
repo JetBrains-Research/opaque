@@ -346,26 +346,6 @@
   
 
       
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../development/contributing.md" class="md-tabs__link">
-          
-  
-  
-  Development
-
-        </a>
-      </li>
-    
-  
-
-      
     </ul>
   </div>
 </nav>
@@ -694,12 +674,12 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/matrix-factorization/" class="md-nav__link">
+      <a href="../../user-guide/dp-ftrl/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    Matrix factorization (MF)
+    Correlated noise (DP-FTRL)
     
   </span>
   
@@ -1719,79 +1699,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    Development
-    
-  </span>
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            Development
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../development/contributing.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Contributing
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -1923,8 +1830,8 @@ from the inverse square root of the workload matrix.</p>
 <code>gram_matrix</code> from the mechanism parameters; the accounting constructor
 receives only these pre-computed values. This avoids duplicating mechanism
 parameters and keeps the accounting API uniform across all MF mechanisms.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise.mf</span><span class="w"> </span><span class="kn">import</span> <span class="n">bisr_strategy</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque_accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">bisr_strategy</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># 1. Create strategy — computes sensitivity and Gram matrix internally</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">bisr_strategy</span><span class="p">(</span>
@@ -2010,7 +1917,7 @@ formula (Lemma 1 of the paper):</p>
 itself. The privacy analysis then uses raw C columns (momentum does not
 enter sensitivity or Gram matrix computation).</p>
 <h2 id="noise-generation">Noise generation<a class="headerlink" href="#noise-generation" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise.mf</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">bisr_strategy</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">bisr_strategy</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">bisr_strategy</span><span class="p">(</span>
@@ -2034,7 +1941,7 @@ and computes the linear combination defined by the BISR coefficients.</p>
 <li><strong>Momentum</strong> enters the <strong>inverse</strong> coefficient construction (Lemma 1); sensitivity and Gram use the resulting strategy matrix.</li>
 <li><strong>No <code>lr_schedule</code></strong>: BISR coefficients are analytically determined from the prefix-sum workload; schedule-aware BISR would require a different construction (see arXiv:2511.17994). Use BandMF/BLT with <code>lr_schedule</code> for schedule-shaped workloads.</li>
 <li><strong>Not BSR</strong>: BISR bands the <strong>inverse</strong> square root construction (generalised λCGD). <a href="../bsr/">BSR</a> uses the <strong>forward</strong> square-root closed form for SGD+momentum+weight decay.</li>
-<li>For a high-level comparison of MF mechanisms, see <a href="../../user-guide/matrix-factorization/">Matrix factorization (MF)</a>.</li>
+<li>For a high-level comparison of MF mechanisms, see <a href="../../user-guide/dp-ftrl/">Matrix factorization (MF)</a>.</li>
 </ul>
 <h2 id="bandwidth-selection">Bandwidth selection<a class="headerlink" href="#bandwidth-selection" title="Permanent link">&para;</a></h2>
 <table>

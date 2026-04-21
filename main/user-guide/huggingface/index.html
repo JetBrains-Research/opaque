@@ -346,26 +346,6 @@
   
 
       
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../development/contributing.md" class="md-tabs__link">
-          
-  
-  
-  Development
-
-        </a>
-      </li>
-    
-  
-
-      
     </ul>
   </div>
 </nav>
@@ -699,12 +679,12 @@
   
   
     <li class="md-nav__item">
-      <a href="../matrix-factorization/" class="md-nav__link">
+      <a href="../dp-ftrl/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    Matrix factorization (MF)
+    Correlated noise (DP-FTRL)
     
   </span>
   
@@ -1054,6 +1034,15 @@
   <a href="#disabling-all-patching" class="md-nav__link">
     <span class="md-ellipsis">
       Disabling all patching
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skipping-only-huggingface-compat-patches" class="md-nav__link">
+    <span class="md-ellipsis">
+      Skipping only HuggingFace compat patches
     </span>
   </a>
   
@@ -1938,79 +1927,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    Development
-    
-  </span>
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            Development
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../development/contributing.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Contributing
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -2234,6 +2150,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#skipping-only-huggingface-compat-patches" class="md-nav__link">
+    <span class="md-ellipsis">
+      Skipping only HuggingFace compat patches
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#disabling-kernel-optimizations" class="md-nav__link">
     <span class="md-ellipsis">
       Disabling kernel optimizations
@@ -2345,10 +2270,22 @@
 
 
 <h1 id="huggingface-compatibility">HuggingFace Compatibility<a class="headerlink" href="#huggingface-compatibility" title="Permanent link">&para;</a></h1>
-<p>Opaque works with HuggingFace Transformers models out of the box. When you
-<code>import opaque</code>, it automatically patches core Transformers functions to be
-compatible with <code>torch.func.vmap</code>, which is required for per-example
-gradient computation. No manual patching is needed.</p>
+<p>Opaque works with HuggingFace Transformers models. Patches are split across
+two sub-packages:</p>
+<ul>
+<li><code>opaque.huggingface</code> — compatibility patches (vmap-safe attention,
+  KV-cache workarounds, Poisson-collator compat) that make Transformers
+  models run correctly under <code>vmap(grad(...))</code>.</li>
+<li><code>opaque.performance.huggingface</code> — fused Triton kernel patches (SwiGLU,
+  GeGLU, RoPE, fused cross-entropy, LoRA) that wire Opaque's kernels into
+  the corresponding Transformers model classes. Pure performance.</li>
+</ul>
+<p>Patches apply automatically on import:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.huggingface</span>          <span class="c1"># compat patches live</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.performance</span>          <span class="c1"># torch + HF kernel patches live</span>
+</code></pre></div>
+<p>Disable selectively via the <code>OPAQUE_SKIP_*</code> env vars (see
+<a href="#configuration">Configuration</a>).</p>
 <h2 id="auto-patching">Auto-patching<a class="headerlink" href="#auto-patching" title="Permanent link">&para;</a></h2>
 <p>On import, Opaque applies patches to the following HuggingFace Transformers
 components:</p>
@@ -2453,10 +2390,10 @@ at Qwen2-0.5B scale with LoRA:</p>
 </tbody>
 </table>
 <p>If your model defaults to Flash Attention 2, override to SDPA when loading:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="s2">&quot;meta-llama/Llama-3.1-8B&quot;</span><span class="p">,</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">attn_implementation</span><span class="o">=</span><span class="s2">&quot;sdpa&quot;</span><span class="p">,</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="s2">&quot;meta-llama/Llama-3.1-8B&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">attn_implementation</span><span class="o">=</span><span class="s2">&quot;sdpa&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="p">)</span>
 </code></pre></div>
 <h2 id="model-compatibility">Model compatibility<a class="headerlink" href="#model-compatibility" title="Permanent link">&para;</a></h2>
 <p>Opaque's auto-patching covers these model families. The table shows both
@@ -2587,18 +2524,19 @@ or reduce the microbatch size.</p>
 <h2 id="functional-model-conversion">Functional model conversion<a class="headerlink" href="#functional-model-conversion" title="Permanent link">&para;</a></h2>
 <p>PyTorch models store parameters internally. To use them with
 <code>clipped_grad</code>, convert to functional form with <code>make_functional</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_functional</span><span class="p">,</span> <span class="n">clipped_grad</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;gpt2&quot;</span><span class="p">)</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">fmodel</span><span class="p">,</span> <span class="n">params</span> <span class="o">=</span> <span class="n">make_functional</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="k">def</span><span class="w"> </span><span class="nf">loss_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span><span class="p">):</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">out</span> <span class="o">=</span> <span class="n">fmodel</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">input_ids</span><span class="o">=</span><span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="n">labels</span><span class="p">)</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="k">return</span> <span class="n">out</span><span class="o">.</span><span class="n">loss</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.functional</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_functional</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;gpt2&quot;</span><span class="p">)</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">fmodel</span><span class="p">,</span> <span class="n">params</span> <span class="o">=</span> <span class="n">make_functional</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="k">def</span><span class="w"> </span><span class="nf">loss_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span><span class="p">):</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">out</span> <span class="o">=</span> <span class="n">fmodel</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">input_ids</span><span class="o">=</span><span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="n">labels</span><span class="p">)</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="k">return</span> <span class="n">out</span><span class="o">.</span><span class="n">loss</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="p">)</span>
 </code></pre></div>
 <p><code>make_functional</code> returns:</p>
 <ul>
@@ -2611,16 +2549,16 @@ or reduce the microbatch size.</p>
 <p>For parameter-efficient fine-tuning (LoRA, adapters), use
 <code>partition_trainable=True</code> to separate parameters by their
 <code>requires_grad</code> attribute:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">fmodel</span><span class="p">,</span> <span class="n">trainable</span><span class="p">,</span> <span class="n">frozen</span> <span class="o">=</span> <span class="n">make_functional</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">partition_trainable</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">loss_fn</span><span class="p">(</span><span class="n">trainable_params</span><span class="p">,</span> <span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span><span class="p">):</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">all_params</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">frozen</span><span class="p">,</span> <span class="o">**</span><span class="n">trainable_params</span><span class="p">}</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">out</span> <span class="o">=</span> <span class="n">fmodel</span><span class="p">(</span><span class="n">all_params</span><span class="p">,</span> <span class="n">input_ids</span><span class="o">=</span><span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="n">labels</span><span class="p">)</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="k">return</span> <span class="n">out</span><span class="o">.</span><span class="n">loss</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">fmodel</span><span class="p">,</span> <span class="n">trainable</span><span class="p">,</span> <span class="n">frozen</span> <span class="o">=</span> <span class="n">make_functional</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">partition_trainable</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">loss_fn</span><span class="p">(</span><span class="n">trainable_params</span><span class="p">,</span> <span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span><span class="p">):</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">all_params</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">frozen</span><span class="p">,</span> <span class="o">**</span><span class="n">trainable_params</span><span class="p">}</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">out</span> <span class="o">=</span> <span class="n">fmodel</span><span class="p">(</span><span class="n">all_params</span><span class="p">,</span> <span class="n">input_ids</span><span class="o">=</span><span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="n">labels</span><span class="p">)</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="k">return</span> <span class="n">out</span><span class="o">.</span><span class="n">loss</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="p">)</span>
 </code></pre></div>
 <p>Only <code>trainable_params</code> receives per-example gradients. Frozen parameters
 are treated as constants by <code>vmap</code>, which drastically reduces memory usage
@@ -2631,43 +2569,45 @@ gradient computation via <code>vmap</code> requires memory proportional to
 <code>batch_size * trainable_parameters</code>. With full fine-tuning of a 7B model,
 this is prohibitive. LoRA reduces trainable parameters to ~0.1% of the
 model, making per-example gradients feasible.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">transformers</span><span class="w"> </span><span class="kn">import</span> <span class="n">AutoModelForCausalLM</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">peft</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_peft_model</span><span class="p">,</span> <span class="n">LoraConfig</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_functional</span><span class="p">,</span> <span class="n">clipped_grad</span><span class="p">,</span> <span class="n">gaussian_noise</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="c1"># Load model with LoRA adapters</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;meta-llama/Llama-3.1-8B&quot;</span><span class="p">)</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="n">lora_config</span> <span class="o">=</span> <span class="n">LoraConfig</span><span class="p">(</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="n">r</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    <span class="n">lora_alpha</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span>
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>    <span class="n">target_modules</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;q_proj&quot;</span><span class="p">,</span> <span class="s2">&quot;v_proj&quot;</span><span class="p">],</span>
-<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="p">)</span>
-<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="n">model</span> <span class="o">=</span> <span class="n">get_peft_model</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">lora_config</span><span class="p">)</span>
-<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>
-<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="c1"># Functional form: only LoRA params are trainable</span>
-<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="n">fmodel</span><span class="p">,</span> <span class="n">trainable</span><span class="p">,</span> <span class="n">frozen</span> <span class="o">=</span> <span class="n">make_functional</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">partition_trainable</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>
-<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="k">def</span><span class="w"> </span><span class="nf">loss_fn</span><span class="p">(</span><span class="n">trainable_params</span><span class="p">,</span> <span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span><span class="p">):</span>
-<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a>    <span class="n">out</span> <span class="o">=</span> <span class="n">fmodel</span><span class="p">(</span><span class="n">trainable_params</span><span class="p">,</span> <span class="n">frozen</span><span class="p">,</span>
-<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>                 <span class="n">input_ids</span><span class="o">=</span><span class="n">input_ids</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
-<a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a>                 <span class="n">labels</span><span class="o">=</span><span class="n">labels</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
-<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a>    <span class="k">return</span> <span class="n">out</span><span class="o">.</span><span class="n">loss</span>
-<a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a>
-<a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a><span class="c1"># DP components</span>
-<a id="__codelineno-3-25" name="__codelineno-3-25" href="#__codelineno-3-25"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
-<a id="__codelineno-3-26" name="__codelineno-3-26" href="#__codelineno-3-26"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
-<a id="__codelineno-3-27" name="__codelineno-3-27" href="#__codelineno-3-27"></a>    <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
-<a id="__codelineno-3-28" name="__codelineno-3-28" href="#__codelineno-3-28"></a><span class="p">)</span>
-<a id="__codelineno-3-29" name="__codelineno-3-29" href="#__codelineno-3-29"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
-<a id="__codelineno-3-30" name="__codelineno-3-30" href="#__codelineno-3-30"></a>    <span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
-<a id="__codelineno-3-31" name="__codelineno-3-31" href="#__codelineno-3-31"></a><span class="p">)</span>
-<a id="__codelineno-3-32" name="__codelineno-3-32" href="#__codelineno-3-32"></a>
-<a id="__codelineno-3-33" name="__codelineno-3-33" href="#__codelineno-3-33"></a><span class="c1"># Training loop</span>
-<a id="__codelineno-3-34" name="__codelineno-3-34" href="#__codelineno-3-34"></a><span class="k">for</span> <span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span> <span class="ow">in</span> <span class="n">dataloader</span><span class="p">:</span>
-<a id="__codelineno-3-35" name="__codelineno-3-35" href="#__codelineno-3-35"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">trainable</span><span class="p">,</span> <span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
-<a id="__codelineno-3-36" name="__codelineno-3-36" href="#__codelineno-3-36"></a>    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
-<a id="__codelineno-3-37" name="__codelineno-3-37" href="#__codelineno-3-37"></a>    <span class="n">trainable</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">trainable</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">-</span> <span class="n">lr</span> <span class="o">*</span> <span class="n">noisy_grads</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">trainable</span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">transformers</span><span class="w"> </span><span class="kn">import</span> <span class="n">AutoModelForCausalLM</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">peft</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_peft_model</span><span class="p">,</span> <span class="n">LoraConfig</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.functional</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_functional</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="c1"># Load model with LoRA adapters</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;meta-llama/Llama-3.1-8B&quot;</span><span class="p">)</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="n">lora_config</span> <span class="o">=</span> <span class="n">LoraConfig</span><span class="p">(</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>    <span class="n">r</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>    <span class="n">lora_alpha</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>    <span class="n">target_modules</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;q_proj&quot;</span><span class="p">,</span> <span class="s2">&quot;v_proj&quot;</span><span class="p">],</span>
+<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="p">)</span>
+<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="n">model</span> <span class="o">=</span> <span class="n">get_peft_model</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">lora_config</span><span class="p">)</span>
+<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>
+<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="c1"># Functional form: only LoRA params are trainable</span>
+<a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="n">fmodel</span><span class="p">,</span> <span class="n">trainable</span><span class="p">,</span> <span class="n">frozen</span> <span class="o">=</span> <span class="n">make_functional</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">partition_trainable</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a>
+<a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="k">def</span><span class="w"> </span><span class="nf">loss_fn</span><span class="p">(</span><span class="n">trainable_params</span><span class="p">,</span> <span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span><span class="p">):</span>
+<a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a>    <span class="n">out</span> <span class="o">=</span> <span class="n">fmodel</span><span class="p">(</span><span class="n">trainable_params</span><span class="p">,</span> <span class="n">frozen</span><span class="p">,</span>
+<a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a>                 <span class="n">input_ids</span><span class="o">=</span><span class="n">input_ids</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
+<a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a>                 <span class="n">labels</span><span class="o">=</span><span class="n">labels</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+<a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a>    <span class="k">return</span> <span class="n">out</span><span class="o">.</span><span class="n">loss</span>
+<a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a>
+<a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a><span class="c1"># DP components</span>
+<a id="__codelineno-4-27" name="__codelineno-4-27" href="#__codelineno-4-27"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-4-28" name="__codelineno-4-28" href="#__codelineno-4-28"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-4-29" name="__codelineno-4-29" href="#__codelineno-4-29"></a>    <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+<a id="__codelineno-4-30" name="__codelineno-4-30" href="#__codelineno-4-30"></a><span class="p">)</span>
+<a id="__codelineno-4-31" name="__codelineno-4-31" href="#__codelineno-4-31"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
+<a id="__codelineno-4-32" name="__codelineno-4-32" href="#__codelineno-4-32"></a>    <span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
+<a id="__codelineno-4-33" name="__codelineno-4-33" href="#__codelineno-4-33"></a><span class="p">)</span>
+<a id="__codelineno-4-34" name="__codelineno-4-34" href="#__codelineno-4-34"></a>
+<a id="__codelineno-4-35" name="__codelineno-4-35" href="#__codelineno-4-35"></a><span class="c1"># Training loop</span>
+<a id="__codelineno-4-36" name="__codelineno-4-36" href="#__codelineno-4-36"></a><span class="k">for</span> <span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span> <span class="ow">in</span> <span class="n">dataloader</span><span class="p">:</span>
+<a id="__codelineno-4-37" name="__codelineno-4-37" href="#__codelineno-4-37"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">trainable</span><span class="p">,</span> <span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
+<a id="__codelineno-4-38" name="__codelineno-4-38" href="#__codelineno-4-38"></a>    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
+<a id="__codelineno-4-39" name="__codelineno-4-39" href="#__codelineno-4-39"></a>    <span class="n">trainable</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">trainable</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">-</span> <span class="n">lr</span> <span class="o">*</span> <span class="n">noisy_grads</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">trainable</span><span class="p">}</span>
 </code></pre></div>
 <h3 id="other-peft-methods">Other PEFT methods<a class="headerlink" href="#other-peft-methods" title="Permanent link">&para;</a></h3>
 <p>Any parameter-efficient method that uses standard <code>requires_grad</code> flags works
@@ -2828,10 +2768,10 @@ Excluded: Qwen2 (bias on Q/K/V), Qwen3 (q_norm/k_norm), Phi3 (combined
 qkv_proj), Cohere (no transpose).</p>
 <h3 id="using-kernels-directly">Using kernels directly<a class="headerlink" href="#using-kernels-directly" title="Permanent link">&para;</a></h3>
 <p>All kernels are available as standalone functions without patching:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.compat.kernels</span><span class="w"> </span><span class="kn">import</span> <span class="n">opaque_swiglu</span><span class="p">,</span> <span class="n">opaque_cross_entropy_loss</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">h</span> <span class="o">=</span> <span class="n">opaque_swiglu</span><span class="p">(</span><span class="n">gate</span><span class="p">,</span> <span class="n">up</span><span class="p">)</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">loss</span> <span class="o">=</span> <span class="n">opaque_cross_entropy_loss</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">labels</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.performance.kernels</span><span class="w"> </span><span class="kn">import</span> <span class="n">opaque_swiglu</span><span class="p">,</span> <span class="n">opaque_cross_entropy_loss</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">h</span> <span class="o">=</span> <span class="n">opaque_swiglu</span><span class="p">(</span><span class="n">gate</span><span class="p">,</span> <span class="n">up</span><span class="p">)</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">loss</span> <span class="o">=</span> <span class="n">opaque_cross_entropy_loss</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">labels</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="feature-compatibility">Feature compatibility<a class="headerlink" href="#feature-compatibility" title="Permanent link">&para;</a></h2>
 <table>
@@ -2881,8 +2821,8 @@ qkv_proj), Cohere (no transpose).</p>
 </tbody>
 </table>
 <h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
-<p>Opaque patches are controlled by environment variables. Each accepts <code>all</code>
-to skip everything in that group, or a comma-separated list for selective skip.</p>
+<p>Patches apply on import. Disable selectively via sub-package-specific env
+vars, set <strong>before</strong> the matching import:</p>
 <table>
 <thead>
 <tr>
@@ -2893,19 +2833,14 @@ to skip everything in that group, or a comma-separated list for selective skip.<
 </thead>
 <tbody>
 <tr>
-<td><code>OPAQUE_SKIP_COMPAT_PATCHES</code></td>
-<td>All patching</td>
-<td><code>all</code></td>
-</tr>
-<tr>
-<td><code>OPAQUE_SKIP_PYTORCH_CHECKPOINT_PATCHES</code></td>
-<td>Checkpoint compat</td>
-<td><code>all</code></td>
+<td><code>OPAQUE_SKIP_PYTORCH_PATCHES</code></td>
+<td><code>opaque.performance</code></td>
+<td><code>all</code>, <code>checkpoint</code></td>
 </tr>
 <tr>
 <td><code>OPAQUE_SKIP_TRANSFORMERS_PATCHES</code></td>
-<td>HF Transformers</td>
-<td><code>all</code>, or <code>vmap,kernels</code></td>
+<td><code>opaque.huggingface</code> compat</td>
+<td><code>all</code>, or <code>vmap,kv_cache,batchify,data</code></td>
 </tr>
 <tr>
 <td><code>OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES</code></td>
@@ -2914,39 +2849,52 @@ to skip everything in that group, or a comma-separated list for selective skip.<
 </tr>
 <tr>
 <td><code>OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES</code></td>
-<td>Triton kernels</td>
+<td>HF Triton kernels (performance)</td>
 <td><code>all</code>, or <code>swiglu,rope,ce,fused_ce,lora</code></td>
+</tr>
+<tr>
+<td><code>OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES</code></td>
+<td>Poisson-collator compat</td>
+<td><code>all</code> or <code>collator</code></td>
 </tr>
 </tbody>
 </table>
 <h3 id="disabling-all-patching">Disabling all patching<a class="headerlink" href="#disabling-all-patching" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;OPAQUE_SKIP_COMPAT_PATCHES&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;OPAQUE_SKIP_PYTORCH_PATCHES&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;OPAQUE_SKIP_TRANSFORMERS_PATCHES&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># ... then do your imports.</span>
+</code></pre></div>
+<h3 id="skipping-only-huggingface-compat-patches">Skipping only HuggingFace compat patches<a class="headerlink" href="#skipping-only-huggingface-compat-patches" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;OPAQUE_SKIP_TRANSFORMERS_PATCHES&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.huggingface</span>     <span class="c1"># no-op compat patch</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.performance</span>     <span class="c1"># performance/kernel patches still active</span>
 </code></pre></div>
 <h3 id="disabling-kernel-optimizations">Disabling kernel optimizations<a class="headerlink" href="#disabling-kernel-optimizations" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.performance</span>  <span class="c1"># reads the env var at import time</span>
 </code></pre></div>
 <p>This disables all kernel optimizations. The library still works — models use
 standard PyTorch operations with vmap patches still applied.</p>
 <h3 id="selectively-skipping-kernels">Selectively skipping kernels<a class="headerlink" href="#selectively-skipping-kernels" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Skip only fused linear CE</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nv">OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES</span><span class="o">=</span>fused_ce<span class="w"> </span>python<span class="w"> </span>train.py
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Skip multiple</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="nv">OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES</span><span class="o">=</span>swiglu,rope,fused_ce<span class="w"> </span>python<span class="w"> </span>train.py
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Skip only fused linear CE</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nv">OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES</span><span class="o">=</span>fused_ce<span class="w"> </span>python<span class="w"> </span>train.py
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1"># Skip multiple</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="nv">OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES</span><span class="o">=</span>swiglu,rope,fused_ce<span class="w"> </span>python<span class="w"> </span>train.py
 </code></pre></div>
 <p>Available kernel names: <code>swiglu</code>, <code>rope</code>, <code>ce</code>, <code>fused_ce</code>, <code>lora</code>.</p>
 <h3 id="disabling-vmap-patches">Disabling vmap patches<a class="headerlink" href="#disabling-vmap-patches" title="Permanent link">&para;</a></h3>
 <p>Vmap patches make HuggingFace models compatible with <code>vmap(grad())</code>. These
 are required for DP-SGD training but can be skipped for debugging:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Skip all vmap patches (models will NOT work with vmap)</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nv">OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES</span><span class="o">=</span>all<span class="w"> </span>python<span class="w"> </span>train.py
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># Skip only Gemma2-specific patches</span>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="nv">OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES</span><span class="o">=</span>gemma2<span class="w"> </span>python<span class="w"> </span>train.py
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Skip all vmap patches (models will NOT work with vmap)</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nv">OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES</span><span class="o">=</span>all<span class="w"> </span>python<span class="w"> </span>train.py
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="c1"># Skip only Gemma2-specific patches</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="nv">OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES</span><span class="o">=</span>gemma2<span class="w"> </span>python<span class="w"> </span>train.py
 </code></pre></div>
 <p>Available vmap groups: <code>shared</code>, <code>standard</code>, <code>gemma2</code>, <code>phi3</code>.</p>
 <h2 id="other-models">Other models<a class="headerlink" href="#other-models" title="Permanent link">&para;</a></h2>
@@ -2957,17 +2905,17 @@ common cause is that its <code>forward</code> method assumes a batch dimension t
 <h3 id="wrapping-the-loss-function">Wrapping the loss function<a class="headerlink" href="#wrapping-the-loss-function" title="Permanent link">&para;</a></h3>
 <p>Use <code>with_batch_dim</code> to add a leading batch dimension to the arguments
 that <code>vmap</code> unbatches:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.utils.functional</span><span class="w"> </span><span class="kn">import</span> <span class="n">with_batch_dim</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">loss_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span><span class="p">):</span>
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="n">out</span> <span class="o">=</span> <span class="n">fmodel</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">input_ids</span><span class="o">=</span><span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="n">labels</span><span class="p">)</span>
-<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>    <span class="k">return</span> <span class="n">out</span><span class="o">.</span><span class="n">loss</span>
-<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>
-<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="n">loss_fn</span> <span class="o">=</span> <span class="n">with_batch_dim</span><span class="p">(</span><span class="n">loss_fn</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
-<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>
-<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
-<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
-<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.functional</span><span class="w"> </span><span class="kn">import</span> <span class="n">with_batch_dim</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">loss_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span><span class="p">):</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>    <span class="n">out</span> <span class="o">=</span> <span class="n">fmodel</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">input_ids</span><span class="o">=</span><span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="n">labels</span><span class="p">)</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>    <span class="k">return</span> <span class="n">out</span><span class="o">.</span><span class="n">loss</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="n">loss_fn</span> <span class="o">=</span> <span class="n">with_batch_dim</span><span class="p">(</span><span class="n">loss_fn</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="p">)</span>
 </code></pre></div>
 <p><code>batch_argnums</code> specifies which positional arguments get <code>unsqueeze(0)</code>.
 Under <code>vmap</code>, <code>input_ids</code> arrives as <code>(seq,)</code>; the wrapper makes it
@@ -2975,11 +2923,11 @@ Under <code>vmap</code>, <code>input_ids</code> arrives as <code>(seq,)</code>; 
 <h3 id="wrapping-the-model-forward">Wrapping the model forward<a class="headerlink" href="#wrapping-the-model-forward" title="Permanent link">&para;</a></h3>
 <p>Alternatively, patch the model's forward method once. This is what Opaque
 does internally for supported HuggingFace models:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">model</span><span class="o">.</span><span class="n">forward</span> <span class="o">=</span> <span class="n">with_batch_dim</span><span class="p">(</span>
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>    <span class="n">model</span><span class="o">.</span><span class="n">forward</span><span class="p">,</span>
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>    <span class="n">batch_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;input_ids&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;attention_mask&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;labels&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;inputs_embeds&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">},</span>
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>    <span class="n">min_ndim</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">model</span><span class="o">.</span><span class="n">forward</span> <span class="o">=</span> <span class="n">with_batch_dim</span><span class="p">(</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>    <span class="n">model</span><span class="o">.</span><span class="n">forward</span><span class="p">,</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>    <span class="n">batch_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;input_ids&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;attention_mask&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;labels&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;inputs_embeds&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">},</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>    <span class="n">min_ndim</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="p">)</span>
 </code></pre></div>
 <p><code>batch_kwargs</code> maps keyword argument names to their expected minimum
 number of dimensions. When a tensor has fewer dimensions than the
@@ -2988,13 +2936,13 @@ output. When the tensor already has the expected shape, it is a no-op.</p>
 <h2 id="distributed-huggingface-models">Distributed HuggingFace models<a class="headerlink" href="#distributed-huggingface-models" title="Permanent link">&para;</a></h2>
 <p>DDP works with patched HuggingFace models. The patches are applied once
 on import and affect all ranks identically.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torch.distributed</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dist</span>
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">torch.nn.parallel</span><span class="w"> </span><span class="kn">import</span> <span class="n">DistributedDataParallel</span>
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
-<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="n">dist</span><span class="o">.</span><span class="n">init_process_group</span><span class="p">(</span><span class="s2">&quot;nccl&quot;</span><span class="p">)</span>
-<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;meta-llama/Llama-3.1-8B&quot;</span><span class="p">)</span>
-<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="c1"># DDP wraps the model; make_functional unwraps it</span>
-<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="n">fmodel</span><span class="p">,</span> <span class="n">trainable</span><span class="p">,</span> <span class="n">frozen</span> <span class="o">=</span> <span class="n">make_functional</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">partition_trainable</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torch.distributed</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dist</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">torch.nn.parallel</span><span class="w"> </span><span class="kn">import</span> <span class="n">DistributedDataParallel</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="n">dist</span><span class="o">.</span><span class="n">init_process_group</span><span class="p">(</span><span class="s2">&quot;nccl&quot;</span><span class="p">)</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;meta-llama/Llama-3.1-8B&quot;</span><span class="p">)</span>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="c1"># DDP wraps the model; make_functional unwraps it</span>
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="n">fmodel</span><span class="p">,</span> <span class="n">trainable</span><span class="p">,</span> <span class="n">frozen</span> <span class="o">=</span> <span class="n">make_functional</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">partition_trainable</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </code></pre></div>
 <p>The noise key must be identical across ranks so that each rank adds the same
 noise after <code>sum_gradients</code>. See <a href="../distributed/">Distributed Training</a>.</p>

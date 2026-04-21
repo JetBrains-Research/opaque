@@ -346,26 +346,6 @@
   
 
       
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../development/contributing.md" class="md-tabs__link">
-          
-  
-  
-  Development
-
-        </a>
-      </li>
-    
-  
-
-      
     </ul>
   </div>
 </nav>
@@ -694,12 +674,12 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/matrix-factorization/" class="md-nav__link">
+      <a href="../../user-guide/dp-ftrl/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    Matrix factorization (MF)
+    Correlated noise (DP-FTRL)
     
   </span>
   
@@ -1719,79 +1699,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    Development
-    
-  </span>
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            Development
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../development/contributing.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Contributing
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -1927,8 +1834,8 @@ constructor then takes only these pre-computed values — it does not need to kn
 how they were obtained.</p>
 <p>This separation keeps accounting constructors simple and avoids duplicating
 mechanism parameters in two places.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise.mf</span><span class="w"> </span><span class="kn">import</span> <span class="n">lambda_cgd_strategy</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque_accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">lambda_cgd_strategy</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># 1. Create strategy — computes sensitivity and Gram matrix internally</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">lambda_cgd_strategy</span><span class="p">(</span>
@@ -2012,10 +1919,10 @@ has a closed-form expression in terms of λ, min_sep, and max_participations.</p
 <li>Bandwidth is <strong>fixed</strong> (bidiagonal inverse); correlation is controlled by a single <span class="arithmatex">\(\lambda\)</span>. Does <strong>not</strong> accept <code>momentum</code> (use <code>bisr_strategy</code> with bandwidth &gt; 2 for momentum-aware coefficients).</li>
 <li>Uses <strong>Balls-in-Bins</strong> amplification like other epoch-structured MF mechanisms; sampler semantics must match accounting.</li>
 <li><strong>JME (DP-Adam)</strong>: auto-deriving the second-moment strategy is <strong>not supported</strong> for λCGD. If using JME, pass <code>second_moment_strategy</code> explicitly.</li>
-<li>Broader MF context: <a href="../../user-guide/matrix-factorization/">Matrix factorization (MF)</a>.</li>
+<li>Broader MF context: <a href="../../user-guide/dp-ftrl/">Correlated noise (DP-FTRL)</a>.</li>
 </ul>
 <h2 id="noise-generation">Noise generation<a class="headerlink" href="#noise-generation" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise.mf</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">lambda_cgd_strategy</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">lambda_cgd_strategy</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">lambda_cgd_strategy</span><span class="p">(</span>

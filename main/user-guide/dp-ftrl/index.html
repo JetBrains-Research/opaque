@@ -12,7 +12,7 @@
         <meta name="author" content="Opaque Contributors">
       
       
-        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/user-guide/matrix-factorization/">
+        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/user-guide/dp-ftrl/">
       
       
         <link rel="prev" href="../noise/">
@@ -26,7 +26,7 @@
     
     
       
-        <title>Matrix factorization (MF) - Opaque</title>
+        <title>Correlated noise (DP-FTRL) - Opaque</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#matrix-factorization-mf-noise" class="md-skip">
+        <a href="#correlated-noise-dp-ftrl" class="md-skip">
           Skip to content
         </a>
       
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Matrix factorization (MF)
+              Correlated noise (DP-FTRL)
             
           </span>
         </div>
@@ -339,26 +339,6 @@
   
   
   API Reference
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../development/contributing.md" class="md-tabs__link">
-          
-  
-  
-  Development
 
         </a>
       </li>
@@ -713,7 +693,7 @@
   
   
   <span class="md-ellipsis">
-    Matrix factorization (MF)
+    Correlated noise (DP-FTRL)
     
   </span>
   
@@ -726,7 +706,7 @@
   
   
   <span class="md-ellipsis">
-    Matrix factorization (MF)
+    Correlated noise (DP-FTRL)
     
   </span>
   
@@ -1737,79 +1717,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    Development
-    
-  </span>
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            Development
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../development/contributing.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Contributing
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -1942,9 +1849,14 @@
   
 
 
-<h1 id="matrix-factorization-mf-noise">Matrix factorization (MF) noise<a class="headerlink" href="#matrix-factorization-mf-noise" title="Permanent link">&para;</a></h1>
-<p>Matrix factorization mechanisms add <strong>correlated</strong> Gaussian noise across training steps. The goal is lower variance on the <strong>cumulative</strong> updates that the optimizer effectively applies, compared to independent noise at each step (standard DP-SGD), for the same calibrated privacy guarantee.</p>
-<p>This page is the <strong>central reference</strong> for assumptions, limitations, and how MF fits into Opaque. Mechanism-specific math and API details live in <a href="../../mechanisms/">Mechanisms</a>.</p>
+<h1 id="correlated-noise-dp-ftrl">Correlated noise (DP-FTRL)<a class="headerlink" href="#correlated-noise-dp-ftrl" title="Permanent link">&para;</a></h1>
+<p>Opaque's DP-FTRL mechanisms add <strong>correlated</strong> Gaussian noise across
+training steps via matrix factorization. Compared to independent noise at
+each step (standard DP-SGD), correlated noise reduces variance on the
+<strong>cumulative</strong> updates that the optimizer effectively applies, for the same
+calibrated privacy guarantee.</p>
+<p>The mechanisms live in <code>opaque.dpftrl</code>. Mechanism-specific math and API
+details live in <a href="../../mechanisms/">Mechanisms</a>.</p>
 <h2 id="what-opaque-implements">What Opaque implements<a class="headerlink" href="#what-opaque-implements" title="Permanent link">&para;</a></h2>
 <ol>
 <li>A <strong>strategy</strong> object (e.g. <code>band_mf_strategy</code>, <code>bsr_strategy</code>) holds:</li>
@@ -2027,7 +1939,7 @@
 </table>
 <h2 id="jme-dp-adam-and-mf">JME (DP-Adam) and MF<a class="headerlink" href="#jme-dp-adam-and-mf" title="Permanent link">&para;</a></h2>
 <p><a href="https://arxiv.org/abs/2502.06597">JME</a> uses <strong>two</strong> correlated noise streams (gradients and squared gradients) with a <strong>joint sensitivity</strong>. It is <strong>not</strong> the same workload model as single-stream SGD+momentum mechanisms.</p>
-<p>When adding a new <code>MfStrategy</code>, ensure <code>opaque.noise.mf.jme._derive_second_strategy</code> has an explicit branch for it. Unknown strategy types raise <code>TypeError</code>; unsupported ones (e.g. <code>LambdaCgdStrategy</code>, which has no principled second-moment mapping) raise <code>ValueError</code>. Pass <code>second_moment_strategy</code> explicitly to override auto-derivation when needed.</p>
+<p>When adding a new <code>MfStrategy</code>, ensure <code>opaque.dpftrl.noise.jme._derive_second_strategy</code> has an explicit branch for it. Unknown strategy types raise <code>TypeError</code>; unsupported ones (e.g. <code>LambdaCgdStrategy</code>, which has no principled second-moment mapping) raise <code>ValueError</code>. Pass <code>second_moment_strategy</code> explicitly to override auto-derivation when needed.</p>
 <h2 id="bsr-scope">BSR scope<a class="headerlink" href="#bsr-scope" title="Permanent link">&para;</a></h2>
 <p><a href="../../mechanisms/bsr/">BSR</a> ships <strong>closed-form</strong> coefficients for the Kalinin–Lampert workload in <span class="arithmatex">\((\alpha,\beta)\)</span>. It does <strong>not</strong> accept arbitrary <code>lr_schedule</code> inside the closed-form path. For general schedules or optimizers, use <strong>BandMF</strong> (numerical Toeplitz optimization) or <strong>BLT</strong>.</p>
 <p>With JME + BSR, the second stream is a second <code>bsr_strategy(..., alpha=..., beta=β₂)</code>; require <span class="arithmatex">\(\alpha &gt; \beta\)</span> for each stream’s <span class="arithmatex">\(\beta\)</span> (see <code>jme.py</code>).</p>

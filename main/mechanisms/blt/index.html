@@ -346,26 +346,6 @@
   
 
       
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../development/contributing.md" class="md-tabs__link">
-          
-  
-  
-  Development
-
-        </a>
-      </li>
-    
-  
-
-      
     </ul>
   </div>
 </nav>
@@ -694,12 +674,12 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/matrix-factorization/" class="md-nav__link">
+      <a href="../../user-guide/dp-ftrl/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    Matrix factorization (MF)
+    Correlated noise (DP-FTRL)
     
   </span>
   
@@ -1770,79 +1750,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    Development
-    
-  </span>
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            Development
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../development/contributing.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Contributing
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -2068,7 +1975,7 @@ effective noise multiplier:</p>
 <li>BLT targets long runs via a <strong>buffered</strong> Toeplitz parameterization; privacy is for the optimized strategy you instantiate.</li>
 <li>Optional <strong><code>lr_schedule</code></strong> is encoded like BandMF into a Toeplitz workload for the optimizer; see <a href="../band-mf/#assumptions-and-limitations">BandMF — Assumptions</a> for the constant- versus variable-<span class="arithmatex">\(\eta\)</span> caveat.</li>
 <li><strong>Subsampling</strong>: BLT does not use <code>cyclic_poisson</code> the way BandMF does; combine with Balls-in-Bins when using correlated MF + epoch structure (see examples).</li>
-<li>Overview: <a href="../../user-guide/matrix-factorization/">Matrix factorization (MF)</a>.</li>
+<li>Overview: <a href="../../user-guide/dp-ftrl/">Correlated noise (DP-FTRL)</a>.</li>
 </ul>
 <h2 id="supported-amplifications">Supported amplifications<a class="headerlink" href="#supported-amplifications" title="Permanent link">&para;</a></h2>
 <p>BLT handles multi-participation patterns <strong>internally</strong> via the
@@ -2113,7 +2020,7 @@ use <a href="../band-mf/">BandMF</a> with <code>cyclic_poisson()</code> instead.
 </div>
 <h2 id="code-examples">Code examples<a class="headerlink" href="#code-examples" title="Permanent link">&para;</a></h2>
 <h3 id="noise-injection">Noise injection<a class="headerlink" href="#noise-injection" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise.mf</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">blt_strategy</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">blt_strategy</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Single participation</span>
@@ -2144,8 +2051,8 @@ use <a href="../band-mf/">BandMF</a> with <code>cyclic_poisson()</code> instead.
 <h3 id="privacy-accounting">Privacy accounting<a class="headerlink" href="#privacy-accounting" title="Permanent link">&para;</a></h3>
 <p>The accounting constructor receives <code>sensitivity</code> and <code>gram_matrix</code> from the
 same <code>blt_strategy</code> used for noise generation:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque_accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise.mf</span><span class="w"> </span><span class="kn">import</span> <span class="n">blt_strategy</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">blt_strategy</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">blt_strategy</span><span class="p">(</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="mi">5000</span><span class="p">,</span> <span class="n">min_sep</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">max_participations</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>

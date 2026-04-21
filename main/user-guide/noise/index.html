@@ -18,7 +18,7 @@
         <link rel="prev" href="../clipping/">
       
       
-        <link rel="next" href="../matrix-factorization/">
+        <link rel="next" href="../dp-ftrl/">
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
@@ -339,26 +339,6 @@
   
   
   API Reference
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../../development/contributing.md" class="md-tabs__link">
-          
-  
-  
-  Development
 
         </a>
       </li>
@@ -984,12 +964,12 @@
   
   
     <li class="md-nav__item">
-      <a href="../matrix-factorization/" class="md-nav__link">
+      <a href="../dp-ftrl/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    Matrix factorization (MF)
+    Correlated noise (DP-FTRL)
     
   </span>
   
@@ -1893,79 +1873,6 @@
   
 
     
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    Development
-    
-  </span>
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            Development
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../development/contributing.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    Contributing
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
   </ul>
 </nav>
                   </div>
@@ -2264,11 +2171,11 @@ proportional to the sensitivity (from clipping) and the desired privacy level.</
 <p>For mathematical details, privacy analysis, and parameter guidance for
 each mechanism, see the <a href="../../mechanisms/">Mechanisms</a> reference.</p>
 <p>For MF-specific assumptions (workload fidelity vs DP correctness, LR schedules,
-JME, BSR scope), see <a href="../matrix-factorization/">Matrix factorization (MF)</a>.</p>
+JME, BSR scope), see <a href="../dp-ftrl/">Correlated noise (DP-FTRL)</a>.</p>
 <h2 id="gaussian-noise">Gaussian noise<a class="headerlink" href="#gaussian-noise" title="Permanent link">&para;</a></h2>
 <p><code>gaussian_noise</code> is the standard noise mechanism for DP-SGD. It adds
 independent Gaussian noise to each gradient tensor.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
@@ -2341,7 +2248,7 @@ without changing the training loop.</p>
 <p>When using <a href="../clipping/#per-group-clipping">per-group clipping</a>, the
 recommended approach is MSE-optimal allocation via <code>per_group_noise_stddev</code>,
 which varies σ across groups — putting less noise on smaller-norm groups:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">per_group_noise_stddev</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">per_group_noise_stddev</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">stddev</span> <span class="o">=</span> <span class="n">per_group_noise_stddev</span><span class="p">(</span><span class="n">clip_state</span><span class="p">,</span> <span class="n">noise_multiplier</span><span class="p">)</span>
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span><span class="n">stddev</span><span class="o">=</span><span class="n">stddev</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">))</span>
@@ -2349,7 +2256,7 @@ which varies σ across groups — putting less noise on smaller-norm groups:</p>
 <p>This returns a <code>PerGroup</code> of per-group standard deviations with
 <span class="arithmatex">\(\sigma_i \propto \sqrt{C_i}\)</span>. Privacy accounting is identical to the
 isotropic case — just <code>gaussian(nm)</code>.</p>
-<p>The <a href="../../examples/train_causal_lm.py">training script</a> uses this by default
+<p>The <a href="https://github.com/JetBrains-Research/opaque/blob/main/examples/train_causal_lm.py">training script</a> uses this by default
 when per-group clipping is active.</p>
 <p>Alternatively, isotropic noise (same σ everywhere) also works:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">stddev</span> <span class="o">=</span> <span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span>
@@ -2368,7 +2275,7 @@ that falls outside the bounds:</p>
 <p><code>truncated_gaussian_noise</code> draws from a Gaussian renormalized over the bounded
 interval. No probability mass sits at the boundaries — the density is smooth
 but slightly taller than the original Gaussian.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque</span><span class="w"> </span><span class="kn">import</span> <span class="n">truncated_gaussian_noise</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">truncated_gaussian_noise</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">truncated_gaussian_noise</span><span class="p">(</span>
@@ -2454,7 +2361,7 @@ requires knowing the total number of steps in advance.</p>
 </tbody>
 </table>
 <p>All strategies are created by factory functions and passed to <code>mf_noise()</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise.mf</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">band_mf_strategy</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">band_mf_strategy</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
 <a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">band_mf_strategy</span><span class="p">(</span><span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
@@ -2479,7 +2386,7 @@ identical noise. See <a href="../distributed/">Distributed Training</a> and
 <h3 id="band_mf_strategy"><code>band_mf_strategy</code><a class="headerlink" href="#band_mf_strategy" title="Permanent link">&para;</a></h3>
 <p>Banded Toeplitz strategy. Optimizes banded Toeplitz coefficients for the
 workload. Uses cyclic Poisson amplification for privacy accounting.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise.mf</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">band_mf_strategy</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">band_mf_strategy</span>
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
 <a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">band_mf_strategy</span><span class="p">(</span><span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">momentum</span><span class="o">=</span><span class="mf">0.95</span><span class="p">)</span>
@@ -2493,7 +2400,7 @@ workload. Uses cyclic Poisson amplification for privacy accounting.</p>
 <p>Buffered Linear Toeplitz strategy. More memory-efficient than BandMF for
 long training runs, using a parametric representation via exponential decay
 buffers. Supports multi-epoch training via <code>min_sep</code> and <code>max_participations</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise.mf</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">blt_strategy</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">blt_strategy</span>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
 <a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">blt_strategy</span><span class="p">(</span>
@@ -2508,7 +2415,7 @@ buffers. Supports multi-epoch training via <code>min_sep</code> and <code>max_pa
 <h3 id="lambda_cgd_strategy"><code>lambda_cgd_strategy</code><a class="headerlink" href="#lambda_cgd_strategy" title="Permanent link">&para;</a></h3>
 <p>DP-λCGD strategy — uses PRNG seed replay instead of storing previous noise
 vectors. Zero extra memory overhead compared to DP-SGD.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise.mf</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">lambda_cgd_strategy</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">lambda_cgd_strategy</span>
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
 <a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">lambda_cgd_strategy</span><span class="p">(</span>
@@ -2524,7 +2431,7 @@ vectors. Zero extra memory overhead compared to DP-SGD.</p>
 <h3 id="bisr_strategy"><code>bisr_strategy</code><a class="headerlink" href="#bisr_strategy" title="Permanent link">&para;</a></h3>
 <p>BISR (Banded Inverse Square Root) strategy — generalises λCGD to arbitrary
 bandwidth p ≥ 2. Asymptotically optimal.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise.mf</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">bisr_strategy</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">bisr_strategy</span>
 <a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
 <a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">bisr_strategy</span><span class="p">(</span>
@@ -2539,7 +2446,7 @@ bandwidth p ≥ 2. Asymptotically optimal.</p>
 <h3 id="identity_strategy"><code>identity_strategy</code><a class="headerlink" href="#identity_strategy" title="Permanent link">&para;</a></h3>
 <p>Identity strategy — equivalent to standard DP-SGD (independent noise at each
 step) but using the MF API. Useful for testing or as a baseline.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise.mf</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">identity_strategy</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">identity_strategy</span>
 <a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
 <a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">identity_strategy</span><span class="p">()</span>
@@ -2557,7 +2464,7 @@ contributions. The noise <strong>strategy</strong> computes <code>sensitivity</c
 receives these values rather than recomputing them. This ensures that
 noise generation and privacy accounting always agree on the mechanism.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise.mf</span><span class="w"> </span><span class="kn">import</span> <span class="n">band_mf_strategy</span><span class="p">,</span> <span class="n">lambda_cgd_strategy</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">band_mf_strategy</span><span class="p">,</span> <span class="n">lambda_cgd_strategy</span>
 <a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>
 <a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="c1"># BandMF — strategy provides sensitivity and num_groups</span>
 <a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">band_mf_strategy</span><span class="p">(</span><span class="n">n_steps</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">bands</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
@@ -2586,7 +2493,7 @@ for the full API.</p>
 Strategies that support multi-epoch patterns (<code>blt_strategy</code>, <code>lambda_cgd_strategy</code>,
 <code>bisr_strategy</code>) accept <code>min_sep</code> and <code>max_participations</code> to compute tight
 sensitivity bounds:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.noise.mf</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">blt_strategy</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">mf_noise</span><span class="p">,</span> <span class="n">blt_strategy</span>
 <a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>
 <a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="n">strategy</span> <span class="o">=</span> <span class="n">blt_strategy</span><span class="p">(</span>
@@ -2654,7 +2561,7 @@ inspect it via the <code>sensitivity</code> attribute:</p>
 <h3 id="mf-noise-with-cyclic-sampling">MF noise with cyclic sampling<a class="headerlink" href="#mf-noise-with-cyclic-sampling" title="Permanent link">&para;</a></h3>
 <p>MF noise works best with <code>CyclicPoissonSampler</code>, which creates a predictable
 sampling pattern that the noise strategy can exploit:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">CyclicPoissonSampler</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpftrl.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">CyclicPoissonSampler</span>
 <a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span>
 <a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>
 <a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">CyclicPoissonSampler</span><span class="p">(</span>
