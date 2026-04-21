@@ -122,16 +122,8 @@ jobs:
       - name: mkdocs build --strict
         run: uv run mkdocs build --strict
 
-  lint:
-    name: Lint & format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v8.1.0
-
-      - name: ruff check
-        run: uvx ruff check packages/
-
-      - name: ruff format --check
-        run: uvx ruff format --check packages/
+# Lint & format live in `autoformat.yml`. That workflow auto-applies
+# ruff format / ruff check --fix, commits any changes to the PR branch,
+# and then verifies the tree is clean. If it pushes a fix, this pr.yml
+# re-runs against the amended tip — making lint self-gating without
+# duplicating the check here.
