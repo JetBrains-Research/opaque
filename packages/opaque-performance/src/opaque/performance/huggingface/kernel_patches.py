@@ -531,9 +531,7 @@ def _patch_rope_functions(patched: list) -> None:
                 module.apply_rotary_pos_emb = _opaque_apply_rotary_pos_emb
                 patched.append(f"{module_path.split('.')[-1]}.apply_rotary_pos_emb")
         except (ImportError, RuntimeError) as e:
-            logger.warning(
-                f"opaque: RoPE patch {module_path} skipped: {e!r}"
-            )
+            logger.warning(f"opaque: RoPE patch {module_path} skipped: {e!r}")
 
 
 def _patch_cross_entropy_loss(patched: list) -> None:
@@ -547,9 +545,7 @@ def _patch_cross_entropy_loss(patched: list) -> None:
                 patched.append(f"LOSS_MAPPING[{key}]")
 
     except (ImportError, RuntimeError) as e:
-        logger.warning(
-            f"opaque: LOSS_MAPPING cross-entropy patch skipped: {e!r}"
-        )
+        logger.warning(f"opaque: LOSS_MAPPING cross-entropy patch skipped: {e!r}")
 
 
 def _patch_fused_ce(patched: list) -> None:
@@ -568,9 +564,7 @@ def _patch_lora_forward(patched: list) -> None:
         patched.append("peft.LoRA.Linear")
 
     except (ImportError, RuntimeError) as e:
-        logger.warning(
-            f"opaque: peft.LoRA.Linear forward patch skipped: {e!r}"
-        )
+        logger.warning(f"opaque: peft.LoRA.Linear forward patch skipped: {e!r}")
 
     # Hook get_peft_model for automatic fused LoRA MLP patching
     try:
@@ -583,18 +577,14 @@ def _patch_lora_forward(patched: list) -> None:
             try:
                 _auto_fuse_lora(result)
             except Exception as e:
-                logger.warning(
-                    f"opaque: Fused LoRA MLP auto-patch skipped: {e!r}"
-                )
+                logger.warning(f"opaque: Fused LoRA MLP auto-patch skipped: {e!r}")
             return result
 
         peft.get_peft_model = _patched_get_peft_model
         patched.append("peft.get_peft_model(auto-fuse)")
 
     except (ImportError, RuntimeError) as e:
-        logger.warning(
-            f"opaque: peft.get_peft_model auto-fuse hook skipped: {e!r}"
-        )
+        logger.warning(f"opaque: peft.get_peft_model auto-fuse hook skipped: {e!r}")
 
 
 # =============================================================================
