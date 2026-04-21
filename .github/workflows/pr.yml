@@ -1,0 +1,137 @@
+name: PR gate
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-tests:
+    name: Rust tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo test
+        run: cargo test --lib --manifest-path packages/opaque-accounting/Cargo.toml
+
+  python-tests:
+    name: Python tests — ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: CPU
+            os: ubuntu-latest
+            python-version: "3.11"
+            # PR gate excludes `slow`. Full main CI runs slow too.
+            marker-expression: "not cuda and not mps and not slow"
+            coverage-suffix: ""
+          - name: MPS
+            os: macos-latest
+            python-version: "3.11"
+            # MPS runner keeps mps-marked tests; cuda-marked auto-skip.
+            marker-expression: "not cuda and not slow"
+            coverage-suffix: "-mps"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # setuptools-scm needs tag history for editable installs
+
+      - uses: dtolnay/rust-toolchain@stable  # needed to build opaque-accounting during uv sync
+
+      - uses: astral-sh/setup-uv@v8.1.0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: uv sync
+        run: uv sync --group dev --all-packages --extra all
+
+      - name: pytest
+        # `testpaths = ["packages"]` in pyproject.toml makes this the whole
+        # suite — no per-package enumeration.
+        run: |
+          uv run pytest \
+            -m "${{ matrix.marker-expression }}" \
+            --cov=opaque \
+            --cov-report=xml:coverage${{ matrix.coverage-suffix }}.xml \
+            -v
+
+      - uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage${{ matrix.coverage-suffix }}.xml
+          fail_ci_if_error: false
+
+  smoke-imports:
+    name: Cross-package import smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: astral-sh/setup-uv@v8.1.0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: uv sync
+        run: uv sync --group dev --all-packages --extra all
+
+      - name: No stray src/opaque/__init__.py in sub-packages
+        run: |
+          stray=$(find packages -path '*/src/opaque/__init__.py' -print)
+          if [ -n "$stray" ]; then
+            echo "ERROR: stray src/opaque/__init__.py: $stray"; exit 1
+          fi
+
+      - name: Import all public namespaces
+        run: |
+          uv run python -c "import opaque.core, opaque.distributed, opaque.functional, opaque.dpsgd, opaque.dpsgd.sampling, opaque.dpftrl, opaque.auditing, opaque.performance, opaque.performance.profiling, opaque.performance.kernels, opaque.performance.torch.checkpoint, opaque.performance.huggingface, opaque.huggingface, opaque.huggingface.patches, opaque.accounting; print('OK')"
+
+  docs:
+    name: Build documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: astral-sh/setup-uv@v8.1.0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: uv sync
+        run: uv sync --group docs --all-packages
+
+      - name: mkdocs build --strict
+        run: uv run mkdocs build --strict
+
+  lint:
+    name: Lint & format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v8.1.0
+
+      - name: ruff check
+        run: uvx ruff check packages/
+
+      - name: ruff format --check
+        run: uvx ruff format --check packages/

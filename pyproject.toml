@@ -68,8 +68,16 @@ docs = [
 # avoiding collisions when multiple packages share directory names (e.g.
 # tests/noise/ in both opaque-dpsgd and opaque-dpftrl).
 addopts = "--import-mode=importlib"
+
+# Test discovery walks the whole `packages/` tree — any package with a
+# `tests/` dir is picked up automatically. New packages, renames, and
+# deletes don't need matching edits in CI. Non-test directories are
+# skipped by pytest's `test_*.py` convention. Identical behavior locally
+# (`pytest` from repo root) and in CI.
+testpaths = ["packages"]
+
 markers = [
   "cuda: Test requires CUDA; auto-skipped on non-CUDA hosts.",
   "mps: Test requires Apple Metal (MPS); auto-skipped on non-MPS hosts.",
-  "slow: Test takes >5 s on CPU; opted out in PR CI via `and not slow`, run on push to main.",
+  "slow: Test takes >5 s on CPU; opted out in PR gate via `and not slow`, run on push to main.",
 ]
