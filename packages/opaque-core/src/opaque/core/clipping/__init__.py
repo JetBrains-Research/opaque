@@ -5,10 +5,9 @@ Core exposes the generic clipping building blocks (pytree clip, fixed
 :class:`~opaque.core.clipping.per_group.PerGroup` type). DP-SGD-specific
 variants (``adaptive_*``, ``auto_*``) live in :mod:`opaque.dpsgd.clipping`.
 
-Distributed sync for clipping states is available via
-:mod:`opaque.core.clipping.distributed` (``sync_aux``, ``sync_clip_state``)
-but reached through the auto-dispatching :func:`opaque.distributed.sync` in
-normal use.
+To synchronize a clipping state or aux object across distributed ranks,
+call :func:`opaque.distributed.sync` with the object — it dispatches on
+type to the right handler without you having to import it by name.
 """
 
 from opaque.core.clipping.clipped_fun import ClippedFunAux, clipped_fun
