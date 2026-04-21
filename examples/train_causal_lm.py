@@ -66,7 +66,7 @@ import opaque.auditing as auditing
 from opaque.accounting import calibration as cal, Accountant
 from opaque.core.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
-from opaque.compat.transformers import is_kernel_patched
+from opaque.huggingface import is_kernel_patched
 from opaque.core.distributed import sum_gradients_, sync
 from opaque.dpsgd.noise.gaussian import gaussian_noise
 from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev

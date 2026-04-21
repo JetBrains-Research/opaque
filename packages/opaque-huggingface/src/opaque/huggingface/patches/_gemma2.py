@@ -9,7 +9,7 @@ import importlib
 
 import torch
 
-from opaque.compat.transformers._shared import vmap_repeat_kv
+from opaque.huggingface.patches._shared import vmap_repeat_kv
 
 _GEMMA2_MODULE = "transformers.models.gemma2.modeling_gemma2"
 

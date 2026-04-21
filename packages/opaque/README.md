@@ -52,7 +52,7 @@ opaque.optimizers.adamw_bc                   <- opaque-dpsgd
 opaque.mf.optimizers.adamw_jme                  <- opaque-mf
 opaque.auditing.*                            <- opaque-auditing
 opaque.performance.kernels, opaque.performance.torch <- opaque-performance
-opaque.compat.transformers                   <- opaque-huggingface
+opaque.huggingface.patches                   <- opaque-huggingface
 opaque.accounting                            <- opaque (meta, shim to opaque_accounting)
 ```
 
@@ -68,7 +68,7 @@ Patches used to run on `import opaque`. They are now opt-in:
 
 ```python
 from opaque.performance import patch_all as _perf_patch_all
-from opaque.compat.transformers import apply_transformers_patches
+from opaque.huggingface.patches import apply_transformers_patches
 
 apply_pytorch_patches()        # checkpoint patches for vmap
 apply_transformers_patches()   # vmap + kernel + KV-cache patches for HF models

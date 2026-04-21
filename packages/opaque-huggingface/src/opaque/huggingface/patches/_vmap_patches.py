@@ -50,13 +50,13 @@ def apply_vmap_patches() -> None:
     patched = []
 
     if "shared" not in skip:
-        from opaque.compat.transformers._shared import apply_shared_patches
+        from opaque.huggingface.patches._shared import apply_shared_patches
 
         apply_shared_patches()
         patched.append("shared")
 
     if "standard" not in skip:
-        from opaque.compat.transformers._standard_models import (
+        from opaque.huggingface.patches._standard_models import (
             apply_standard_model_patches,
         )
 
@@ -64,13 +64,13 @@ def apply_vmap_patches() -> None:
         patched.append("standard")
 
     if "gemma2" not in skip:
-        from opaque.compat.transformers._gemma2 import apply_gemma2_patches
+        from opaque.huggingface.patches._gemma2 import apply_gemma2_patches
 
         apply_gemma2_patches()
         patched.append("gemma2")
 
     if "phi3" not in skip:
-        from opaque.compat.transformers._phi3 import apply_phi3_patches
+        from opaque.huggingface.patches._phi3 import apply_phi3_patches
 
         apply_phi3_patches()
         patched.append("phi3")

@@ -12,7 +12,7 @@ shared patches, so no attention patching is needed.
 
 import importlib
 
-from opaque.compat.transformers._shared import vmap_repeat_kv
+from opaque.huggingface.patches._shared import vmap_repeat_kv
 
 _PHI3_MODULE = "transformers.models.phi3.modeling_phi3"
 

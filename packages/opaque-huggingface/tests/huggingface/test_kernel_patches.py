@@ -256,7 +256,7 @@ class TestConfiguration:
 
     def test_kernel_patched_flag(self):
         """is_kernel_patched() should return True after import opaque."""
-        from opaque.compat.transformers import is_kernel_patched
+        from opaque.huggingface.patches import is_kernel_patched
 
         # After import opaque, patches should be applied (or skipped if no CUDA)
         assert isinstance(is_kernel_patched(), bool)
@@ -272,7 +272,7 @@ class TestBatchifyForward:
 
     def test_batchify_1d_input_ids(self):
         """1D input_ids should be unsqueezed, output logits squeezed back."""
-        from opaque.compat.transformers._shared import _batchify_forward
+        from opaque.huggingface.patches._shared import _batchify_forward
 
         config = AutoConfig.from_pretrained("openai-community/gpt2")
         config.num_hidden_layers = 1
@@ -298,7 +298,7 @@ class TestBatchifyForward:
 
     def test_batchify_2d_input_ids_is_noop(self):
         """2D input_ids (already batched) should pass through unchanged."""
-        from opaque.compat.transformers._shared import _batchify_forward
+        from opaque.huggingface.patches._shared import _batchify_forward
 
         config = AutoConfig.from_pretrained("openai-community/gpt2")
         config.num_hidden_layers = 1
@@ -318,7 +318,7 @@ class TestBatchifyForward:
 
     def test_batchify_positional_input_ids(self):
         """input_ids passed positionally should also be batchified."""
-        from opaque.compat.transformers._shared import _batchify_forward
+        from opaque.huggingface.patches._shared import _batchify_forward
 
         config = AutoConfig.from_pretrained("openai-community/gpt2")
         config.num_hidden_layers = 1
@@ -390,7 +390,7 @@ class TestCPUFallback:
 
     def test_cross_entropy_loss_cpu(self):
         """Patched CE loss should produce correct output on CPU."""
-        from opaque.compat.transformers._kernel_patches import _opaque_causal_lm_loss
+        from opaque.huggingface.patches._kernel_patches import _opaque_causal_lm_loss
 
         batch, seq_len, vocab_size = 2, 16, 1000
         logits = torch.randn(batch, seq_len, vocab_size)
@@ -471,7 +471,7 @@ class TestCrossEntropyPatches:
 
     def test_causal_lm_loss_matches_pytorch(self, device):
         """Patched ForCausalLMLoss should match F.cross_entropy reference."""
-        from opaque.compat.transformers._kernel_patches import _opaque_causal_lm_loss
+        from opaque.huggingface.patches._kernel_patches import _opaque_causal_lm_loss
 
         batch, seq_len, vocab_size = 2, 16, 1000
         logits = torch.randn(batch, seq_len, vocab_size, device=device)
@@ -496,7 +496,7 @@ class TestCrossEntropyPatches:
 
     def test_causal_lm_loss_with_num_items_in_batch(self, device):
         """Loss with num_items_in_batch should use sum reduction."""
-        from opaque.compat.transformers._kernel_patches import _opaque_causal_lm_loss
+        from opaque.huggingface.patches._kernel_patches import _opaque_causal_lm_loss
 
         batch, seq_len, vocab_size = 2, 16, 1000
         logits = torch.randn(batch, seq_len, vocab_size, device=device)
@@ -529,7 +529,7 @@ class TestCrossEntropyPatches:
 
     def test_backward_through_patched_loss(self, device):
         """Gradients should flow through patched cross-entropy loss."""
-        from opaque.compat.transformers._kernel_patches import _opaque_causal_lm_loss
+        from opaque.huggingface.patches._kernel_patches import _opaque_causal_lm_loss
 
         batch, seq_len, vocab_size = 2, 16, 1000
         logits = torch.randn(
@@ -546,7 +546,7 @@ class TestCrossEntropyPatches:
 
     def test_loss_mapping_patched(self):
         """LOSS_MAPPING should point to Opaque loss function after patching."""
-        from opaque.compat.transformers._kernel_patches import _opaque_causal_lm_loss
+        from opaque.huggingface.patches._kernel_patches import _opaque_causal_lm_loss
 
         try:
             from transformers.loss.loss_utils import LOSS_MAPPING
@@ -891,7 +891,7 @@ class TestFusedLoRAMLP:
     @pytest.mark.hf_auth_required
     def test_patch_lora_model_manual(self, device):
         """patch_lora_model() should work for manually loaded PEFT models."""
-        from opaque.compat.transformers import patch_lora_model
+        from opaque.huggingface.patches import patch_lora_model
 
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2
@@ -1132,7 +1132,7 @@ class TestFusedLoRAQKV:
     @pytest.mark.hf_auth_required
     def test_patch_lora_model_manual_qkv(self, device):
         """patch_lora_model() should fuse QKV for manually loaded PEFT models."""
-        from opaque.compat.transformers import patch_lora_model
+        from opaque.huggingface.patches import patch_lora_model
 
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2

@@ -28,9 +28,13 @@ dependencies = [
     "opaque-performance>=0.0.0.dev0",
 ]
 
+[project.optional-dependencies]
+kernels = ["opaque-performance[kernels]>=0.0.0.dev0"]
+peft = ["peft>=0.13.0"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["opaque*"]
+include = ["opaque.huggingface*"]
 namespaces = true
 
 [tool.uv]

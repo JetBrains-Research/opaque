@@ -10,7 +10,7 @@ import importlib
 
 import torch
 
-from opaque.compat.transformers._shared import vmap_repeat_kv
+from opaque.huggingface.patches._shared import vmap_repeat_kv
 
 # Standard models that use these patches
 _STANDARD_MODEL_MODULES = [
