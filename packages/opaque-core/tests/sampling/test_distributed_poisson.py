@@ -10,9 +10,9 @@ import pytest
 import torch
 from torch.utils.data import TensorDataset
 
-from opaque.random import fold_in, key
-from opaque.sampling import PoissonSampler, TruncatedPoissonSampler
-from opaque.sampling.distributed import _local_shard_bounds, local_shard
+from opaque.core.random import fold_in, key
+from opaque.core.sampling import PoissonSampler, TruncatedPoissonSampler
+from opaque.core.sampling.distributed import _local_shard_bounds, local_shard
 
 
 class TestLocalShard:

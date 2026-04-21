@@ -4,8 +4,8 @@ import pytest
 import torch
 from torch.func import grad
 
-from opaque.clipping.clipped_fun import clipped_fun
-from opaque.clipping.pytree import clip_pytree
+from opaque.core.clipping.clipped_fun import clipped_fun
+from opaque.core.clipping.pytree import clip_pytree
 
 
 @pytest.fixture(params=["cpu", "cuda", "mps"])
@@ -42,7 +42,7 @@ def test_clip_rescales_to_threshold_when_above(device):
     """When norm > clipping_norm, should scale down to clipping_norm."""
     pytree = {"w": torch.tensor([3.0, 4.0], device=device)}  # norm=5
     clipped, _ = clip_pytree(pytree, clipping_norm=1.0)
-    from opaque.utils.pytree import global_norm
+    from opaque.core.utils.pytree import global_norm
 
     assert global_norm(clipped).item() == pytest.approx(1.0)
 
@@ -136,7 +136,7 @@ def test_clipped_fun_return_norms():
 
 def test_clipped_fun_with_batch_dim():
     """Test with_batch_dim utility adds size-1 batch dim to loss args."""
-    from opaque.utils import with_batch_dim
+    from opaque.core.utils import with_batch_dim
 
     def loss_fn(param, data):
         # Expect data to have shape (1,) thanks to with_batch_dim wrapper
@@ -410,7 +410,7 @@ def test_clipped_fun_microbatching_with_pytree():
     x = torch.randn(batch_size, 10, 1)
 
     # Create clipped gradient functions
-    from opaque.clipping import clipped_grad
+    from opaque.core.clipping import clipped_grad
 
     clipped_grad_fn_no_mb, clip_state_no_mb = clipped_grad(
         loss_fn, argnums=0, batch_argnums=1, clipping_norm=1.0, microbatch_size=None

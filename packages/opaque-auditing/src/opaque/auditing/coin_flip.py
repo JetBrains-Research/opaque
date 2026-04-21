@@ -17,7 +17,7 @@ from typing import Any
 import numpy as np
 from torch.utils.data import Subset
 
-from opaque.random import RngKey, fold_in
+from opaque.core.random import RngKey, fold_in
 
 __all__ = ["CoinFlip", "coin_flip"]
 

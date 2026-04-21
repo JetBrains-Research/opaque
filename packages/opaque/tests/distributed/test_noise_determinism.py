@@ -14,7 +14,7 @@ import torch.multiprocessing as mp
 
 from opaque.noise.gaussian import gaussian_noise
 from opaque.noise.mf import mf_noise, identity_strategy
-from opaque.random import key
+from opaque.core.random import key
 
 
 class TestDistributedNoise:
@@ -40,7 +40,7 @@ class TestDistributedNoise:
 
     def test_rank_fold_in_produces_distinct_streams(self):
         """Folding rank into key produces distinct but deterministic streams."""
-        from opaque.random import fold_in
+        from opaque.core.random import fold_in
 
         # Simulate two ranks by folding different ranks into the same base key
         noise_fn1, state1 = gaussian_noise(1.0, key=fold_in(key(42), 0))

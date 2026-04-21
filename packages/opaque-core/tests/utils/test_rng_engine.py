@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from opaque.random import fold_in, generator_from_key, key, split
+from opaque.core.random import fold_in, generator_from_key, key, split
 
 
 def test_key_requires_int_seed():

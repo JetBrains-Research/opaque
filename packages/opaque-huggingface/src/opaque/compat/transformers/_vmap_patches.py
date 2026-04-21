@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 
-from opaque._env import parse_skip_env
+from opaque.core._env import parse_skip_env
 
 logger = logging.getLogger(__name__)
 

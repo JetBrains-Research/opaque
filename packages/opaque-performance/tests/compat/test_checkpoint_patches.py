@@ -161,7 +161,7 @@ class TestCheckpointWithClippedGrad:
         transformers = pytest.importorskip("transformers")
         peft = pytest.importorskip("peft")
 
-        from opaque.clipping import clipped_grad; from opaque.utils import make_functional
+        from opaque.core.clipping import clipped_grad; from opaque.core.utils import make_functional
 
         config = transformers.AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
         config.num_hidden_layers = 2
@@ -209,7 +209,7 @@ class TestCheckpointWithClippedGrad:
         transformers = pytest.importorskip("transformers")
         peft = pytest.importorskip("peft")
 
-        from opaque.clipping import clipped_grad; from opaque.utils import make_functional
+        from opaque.core.clipping import clipped_grad; from opaque.core.utils import make_functional
 
         config = transformers.AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
         config.num_hidden_layers = 2

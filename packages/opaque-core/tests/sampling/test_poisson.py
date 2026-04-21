@@ -5,8 +5,8 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from opaque.random import key
-from opaque.sampling import PoissonSampler, TruncatedPoissonSampler
+from opaque.core.random import key
+from opaque.core.sampling import PoissonSampler, TruncatedPoissonSampler
 
 
 class TestPoissonSampler:

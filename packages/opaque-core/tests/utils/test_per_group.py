@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from opaque.utils.per_group import PerGroup, per_group
+from opaque.core.utils.per_group import PerGroup, per_group
 
 
 class TestPerGroup:

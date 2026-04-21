@@ -20,8 +20,8 @@ pytestmark = pytest.mark.skipif(
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 from peft import LoraConfig, get_peft_model  # noqa: E402
 
-from opaque.clipping import clipped_grad  # noqa: E402
-from opaque.utils import make_functional  # noqa: E402
+from opaque.core.clipping import clipped_grad  # noqa: E402
+from opaque.core.utils import make_functional  # noqa: E402
 
 
 RTOL = 1e-4

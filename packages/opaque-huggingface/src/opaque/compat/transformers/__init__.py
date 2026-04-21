@@ -35,7 +35,7 @@ Training features:
 - CUDA: Fully supported
 """
 
-from opaque._env import parse_skip_env
+from opaque.core._env import parse_skip_env
 from opaque.compat.transformers._data_patches import apply_data_patches
 from opaque.compat.transformers._kernel_patches import (
     apply_kernel_patches,

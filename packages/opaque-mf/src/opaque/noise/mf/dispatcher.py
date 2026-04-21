@@ -36,7 +36,7 @@ from ._engine import (
 from ._streaming_matrix import (
     identity,
 )
-from opaque.random import RngKey
+from opaque.core.random import RngKey
 
 MfStrategy = (
     BandMfStrategy

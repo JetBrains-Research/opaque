@@ -14,8 +14,8 @@ pytest.importorskip("peft")
 from peft import LoraConfig, get_peft_model  # noqa: E402
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 
-from opaque.clipping import clipped_grad
-from opaque.utils import make_functional
+from opaque.core.clipping import clipped_grad
+from opaque.core.utils import make_functional
 
 
 # NOTE: GPU auto-skip is handled by the top-level conftest.py pytest_runtest_setup hook.

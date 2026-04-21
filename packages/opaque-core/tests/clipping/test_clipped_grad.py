@@ -7,7 +7,7 @@ For comprehensive validation against JAX-Privacy, see tests/jax_validation/test_
 import pytest
 import torch
 
-from opaque.clipping import clipped_grad
+from opaque.core.clipping import clipped_grad
 
 
 def test_clipped_grad_validate_args_overlap():
@@ -329,7 +329,7 @@ def test_clipped_grad_zero_gradients():
 
 def test_clipped_grad_with_batch_dim():
     """Test with_batch_dim utility works with clipped_grad."""
-    from opaque.utils import with_batch_dim
+    from opaque.core.utils import with_batch_dim
 
     def loss_with_batch(param, data):
         # Expects data with batch dim of size 1

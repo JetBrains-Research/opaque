@@ -15,7 +15,7 @@ mechanism confines noise to a bounded region from the start.
 
 The API returns ``(noise_fn, state)`` where state is always immutable:
 
-    >>> from opaque.random import key
+    >>> from opaque.core.random import key
     >>> noise_fn, state = truncated_gaussian_noise(stddev=1.0, radius=5.0, key=key(42))
     >>> noisy_grads, state = noise_fn(grads, state)
 
@@ -36,10 +36,10 @@ from typing import Any
 import torch
 
 from opaque.noise.gaussian import GaussianNoiseState
-from opaque.random import RngKey, generator_from_key
-from opaque.random import fold_in as rng_fold_in
-from opaque.utils.per_group import PerGroup
-from opaque.utils.pytree import tree_map
+from opaque.core.random import RngKey, generator_from_key
+from opaque.core.random import fold_in as rng_fold_in
+from opaque.core.utils.per_group import PerGroup
+from opaque.core.utils.pytree import tree_map
 
 _SQRT2 = math.sqrt(2.0)
 
@@ -167,7 +167,7 @@ def truncated_gaussian_noise(
     Example:
         >>> import torch
         >>> from opaque.noise.truncated_gaussian import truncated_gaussian_noise
-        >>> from opaque.random import key
+        >>> from opaque.core.random import key
         >>>
         >>> noise_fn, state = truncated_gaussian_noise(
         ...     stddev=1.0, radius=3.0, key=key(42),

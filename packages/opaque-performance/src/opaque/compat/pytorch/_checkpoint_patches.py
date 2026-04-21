@@ -31,7 +31,7 @@ from __future__ import annotations
 import logging
 import threading
 
-from opaque._env import parse_skip_env
+from opaque.core._env import parse_skip_env
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ def apply_checkpoint_patches() -> None:
 
     # Shared imports and thread-local for the functional_call ↔ _autograd_grad
     # protocol (Patches 4, 7, 8).
-    from opaque.utils.functional import _set_module_params
+    from opaque.core.utils.functional import _set_module_params
 
     _param_ctx = threading.local()
 

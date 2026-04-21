@@ -5,7 +5,7 @@
 import pytest
 import torch
 
-from opaque.sampling.collate import _empty_like, poisson_collate
+from opaque.core.sampling.collate import _empty_like, poisson_collate
 
 
 class TestEmptyLike:

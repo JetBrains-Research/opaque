@@ -14,8 +14,8 @@ Controlled by:
 
 import functools
 
-from opaque._env import parse_skip_env
-from opaque.sampling.collate import poisson_collate
+from opaque.core._env import parse_skip_env
+from opaque.core.sampling.collate import poisson_collate
 
 _WRAPPER_ATTR = "_opaque_collate"
 

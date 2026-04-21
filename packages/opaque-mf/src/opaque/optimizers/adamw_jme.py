@@ -36,7 +36,7 @@ except ImportError as exc:
         "Install it with: pip install 'torchopt>=0.7.3'"
     ) from exc
 
-from opaque.utils.pytree import tree_map
+from opaque.core.utils.pytree import tree_map
 
 
 # ---------------------------------------------------------------------------

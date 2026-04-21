@@ -5,7 +5,7 @@ import math
 import pytest
 import torch
 
-from opaque.clipping import (
+from opaque.core.clipping import (
     AutoClippedGradAux,
     AutoClipState,
     auto_clipped_fun,
@@ -13,7 +13,7 @@ from opaque.clipping import (
     auto_scale_pytree,
     clipped_grad,
 )
-from opaque.utils.per_group import PerGroup
+from opaque.core.utils.per_group import PerGroup
 
 
 class TestAutoScalePytree:

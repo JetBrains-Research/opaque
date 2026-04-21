@@ -32,7 +32,7 @@ optimizers = ["torchopt>=0.7.3"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["opaque*"]
+include = ["opaque.dpsgd*"]
 namespaces = true
 
 [tool.uv]

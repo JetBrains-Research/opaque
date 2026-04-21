@@ -26,9 +26,9 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
-from opaque.clipping import clipped_grad
-from opaque.utils import make_functional, with_batch_dim
-from opaque.utils.pytree import tree_map
+from opaque.core.clipping import clipped_grad
+from opaque.core.utils import make_functional, with_batch_dim
+from opaque.core.utils.pytree import tree_map
 from tests.conftest import (
     MODEL_CONFIGS,
     build_text_batch,

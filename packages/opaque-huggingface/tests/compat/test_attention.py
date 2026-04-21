@@ -12,8 +12,8 @@ Known incompatibilities (not tested):
 
 import torch
 
-from opaque.clipping import clipped_grad
-from opaque.utils import make_functional
+from opaque.core.clipping import clipped_grad
+from opaque.core.utils import make_functional
 
 from ._helpers import prepare_lora_model, run_clipped_grad_test
 

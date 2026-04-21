@@ -18,8 +18,8 @@ import torch.multiprocessing as mp
 import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
 
-from opaque.clipping import adaptive_clipped_grad, clipped_grad
-from opaque.distributed import (
+from opaque.core.clipping import adaptive_clipped_grad, clipped_grad
+from opaque.core.distributed import (
     get_rank,
     get_world_size,
     reduce_scalar,
@@ -29,10 +29,10 @@ from opaque.distributed import (
 )
 from opaque.noise.gaussian import gaussian_noise
 from opaque.noise.mf import mf_noise, identity_strategy
-from opaque.profiling import StepTimer, TrainingProfiler
-from opaque.random import key
-from opaque.utils import make_functional
-from opaque.utils.pytree import tree_leaves
+from opaque.core.profiling import StepTimer, TrainingProfiler
+from opaque.core.random import key
+from opaque.core.utils import make_functional
+from opaque.core.utils.pytree import tree_leaves
 
 # Mark all tests in this file as requiring GPU
 pytestmark = pytest.mark.gpu
@@ -98,7 +98,7 @@ def _spawn(world_size: int, fn, *args) -> None:
 
 
 def _worker_distributed_detection(rank: int, world_size: int, port: int) -> None:
-    from opaque.distributed import is_distributed as opaque_is_distributed
+    from opaque.core.distributed import is_distributed as opaque_is_distributed
 
     _setup_ddp(rank, world_size, port)
     try:
@@ -131,7 +131,7 @@ def _worker_reduce_scalar(rank: int, world_size: int, port: int) -> None:
 
 
 def _worker_all_reduce_values(rank: int, world_size: int, port: int) -> None:
-    from opaque.distributed import all_reduce, all_reduce_
+    from opaque.core.distributed import all_reduce, all_reduce_
 
     _setup_ddp(rank, world_size, port)
     try:
@@ -162,7 +162,7 @@ def _worker_all_reduce_values(rank: int, world_size: int, port: int) -> None:
 
 
 def _worker_reduce_pytree(rank: int, world_size: int, port: int) -> None:
-    from opaque.distributed import reduce_pytree, reduce_pytree_
+    from opaque.core.distributed import reduce_pytree, reduce_pytree_
 
     _setup_ddp(rank, world_size, port)
     try:
@@ -192,7 +192,7 @@ def _worker_reduce_pytree(rank: int, world_size: int, port: int) -> None:
 
 
 def _worker_reduce_pytree_nested(rank: int, world_size: int, port: int) -> None:
-    from opaque.distributed import reduce_pytree
+    from opaque.core.distributed import reduce_pytree
 
     _setup_ddp(rank, world_size, port)
     try:
@@ -232,9 +232,9 @@ def _worker_reduce_pytree_nested(rank: int, world_size: int, port: int) -> None:
 
 
 def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> None:
-    from opaque.clipping.adaptive import AdaptiveClipState
-    from opaque.distributed import sync
-    from opaque.random import key as rng_key
+    from opaque.core.clipping.adaptive import AdaptiveClipState
+    from opaque.core.distributed import sync
+    from opaque.core.random import key as rng_key
 
     _setup_ddp(rank, world_size, port)
     try:
@@ -410,7 +410,7 @@ def _worker_adaptive_clipping(rank: int, world_size: int, port: int) -> None:
         y = torch.randn(batch_size, 1, device=device)
 
         grads, new_state = grad_fn(params, x, y, state=clip_state)
-        from opaque.distributed import sync
+        from opaque.core.distributed import sync
 
         new_state = sync(new_state)
 
@@ -446,7 +446,7 @@ def _worker_adaptive_clipping_uneven_batches(
         y = torch.randn(local_batch_size, 1, device=device)
 
         _grads, new_state = grad_fn(params, x, y, state=clip_state)
-        from opaque.distributed import sync
+        from opaque.core.distributed import sync
 
         synced = sync(new_state)
 

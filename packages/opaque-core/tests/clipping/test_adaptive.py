@@ -5,8 +5,8 @@ import math
 import pytest
 import torch
 
-from opaque.clipping.adaptive import adaptive_clipped_grad
-from opaque.random import key
+from opaque.core.clipping.adaptive import adaptive_clipped_grad
+from opaque.core.random import key
 
 
 class TestAdaptiveClippedGrad:
@@ -102,7 +102,7 @@ class TestAdaptiveClippedGrad:
 
     def test_geometric_update_formula(self):
         """Test proportional update: C_{t+1} = C_t * exp(η * (ρ̃ - γ))."""
-        from opaque.clipping.adaptive import (
+        from opaque.core.clipping.adaptive import (
             _adaptive_clipping_norm_update,
         )
 
@@ -148,7 +148,7 @@ class TestAdaptiveClippedGrad:
 
     def test_proportional_update_step_size(self):
         """Test that step size is proportional to deviation from target."""
-        from opaque.clipping.adaptive import _adaptive_clipping_norm_update
+        from opaque.core.clipping.adaptive import _adaptive_clipping_norm_update
 
         base = 1.0
         lr = 0.2

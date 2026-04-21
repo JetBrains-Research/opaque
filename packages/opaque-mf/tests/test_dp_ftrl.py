@@ -18,8 +18,8 @@ from opaque.noise.mf._toeplitz import (
     inverse_as_streaming_matrix,
     optimal_max_error_strategy_coefs,
 )
-from opaque.random import key
-from opaque.sampling import BallsInBinsSampler
+from opaque.core.random import key
+from opaque.core.sampling import BallsInBinsSampler
 
 
 def _train_loop(model, optimizer, noise_fn, state, x_data, y_data, steps):

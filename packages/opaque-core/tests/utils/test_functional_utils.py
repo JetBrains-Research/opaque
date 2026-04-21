@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F  # noqa: N812
 from torch.func import grad, vmap
 
-from opaque.utils.functional import make_functional, with_batch_dim
+from opaque.core.utils.functional import make_functional, with_batch_dim
 
 
 def test_make_functional_basic():

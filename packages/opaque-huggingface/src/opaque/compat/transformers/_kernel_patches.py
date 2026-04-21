@@ -26,7 +26,7 @@ import types
 import torch
 import torch.nn as nn
 
-from opaque._env import parse_skip_env
+from opaque.core._env import parse_skip_env
 
 logger = logging.getLogger(__name__)
 

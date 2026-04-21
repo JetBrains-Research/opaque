@@ -9,7 +9,7 @@ from opaque.noise.mf._toeplitz import (
     inverse_as_streaming_matrix,
     optimal_max_error_strategy_coefs,
 )
-from opaque.random import key
+from opaque.core.random import key
 
 
 class TestDenseMatrixFactorizationNoise:

@@ -64,26 +64,26 @@ from transformers import (
 import opaque.accounting as acc
 import opaque.auditing as auditing
 from opaque.accounting import calibration as cal, Accountant
-from opaque.clipping import (
+from opaque.core.clipping import (
     adaptive_clipped_grad,
     auto_clipped_grad,
     clipped_grad,
 )
 from opaque.compat.transformers import is_kernel_patched
-from opaque.distributed import sum_gradients_, sync
+from opaque.core.distributed import sum_gradients_, sync
 from opaque.noise.gaussian import gaussian_noise
 from opaque.noise.per_group_noise import per_group_noise_stddev
 from opaque.noise.truncated_gaussian import truncated_gaussian_noise
-from opaque.profiling import (
+from opaque.core.profiling import (
     StepTimer,
     TrainingProfiler,
     print_memory,
     reset_peak_memory,
 )
-from opaque.random import key, fold_in
-from opaque.sampling import PoissonSampler, TruncatedPoissonSampler
-from opaque.sampling.distributed import local_shard
-from opaque.utils import PerGroup, make_functional, per_group
+from opaque.core.random import key, fold_in
+from opaque.core.sampling import PoissonSampler, TruncatedPoissonSampler
+from opaque.core.sampling.distributed import local_shard
+from opaque.core.utils import PerGroup, make_functional, per_group
 import wandb
 
 

@@ -23,19 +23,19 @@ from typing import Any
 
 import torch
 
-from opaque.distributed import (
+from opaque.core.distributed import (
     is_distributed,
     register_sync_type,
     sync_object,
 )
-from opaque.noise.types import (
+from opaque.core.noise.types import (
     NOISE_STATE_FIELD_OPS,
     NoiseState,
     assert_rng_key_equal,
 )
-from opaque.random import RngKey, generator_from_key
-from opaque.random import fold_in as rng_fold_in
-from opaque.utils.pytree import tree_map
+from opaque.core.random import RngKey, generator_from_key
+from opaque.core.random import fold_in as rng_fold_in
+from opaque.core.utils.pytree import tree_map
 
 from . import _streaming_matrix as streaming_matrix
 

@@ -28,7 +28,7 @@ def identity_strategy() -> IdentityStrategy:
 
     Example:
         >>> from opaque.noise.mf import mf_noise, identity_strategy
-        >>> from opaque.random import key
+        >>> from opaque.core.random import key
         >>> noise_fn, state = mf_noise(template, identity_strategy(), stddev=1.0, key=key(42))
     """
     return IdentityStrategy()

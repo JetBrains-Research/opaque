@@ -104,7 +104,7 @@ import torchopt
 
 import opaque.accounting as acc
 from opaque.accounting import calibration as cal
-from opaque.clipping import clipped_grad
+from opaque.core.clipping import clipped_grad
 from opaque.noise.mf import (
     band_mf_strategy,
     bisr_strategy,
@@ -117,14 +117,14 @@ from opaque.noise.mf import (
     jme_noise,
 )
 from opaque.optimizers.adamw_jme import adamw_jme
-from opaque.profiling import (
+from opaque.core.profiling import (
     StepTimer,
     TrainingProfiler,
     print_memory,
     reset_peak_memory,
 )
-from opaque.random import key, fold_in
-from opaque.sampling import (
+from opaque.core.random import key, fold_in
+from opaque.core.sampling import (
     BallsInBinsSampler,
     BMinSepSampler,
     CyclicPoissonSampler,
@@ -132,7 +132,7 @@ from opaque.sampling import (
     SequentialBatchSampler,
     poisson_collate,
 )
-from opaque.utils import make_functional
+from opaque.core.utils import make_functional
 
 try:
     import wandb

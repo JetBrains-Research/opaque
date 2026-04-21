@@ -23,10 +23,10 @@ from tests.conftest import (
     has_min_gpu_memory,
 )
 
-from opaque.clipping import clipped_grad
+from opaque.core.clipping import clipped_grad
 from opaque.noise.gaussian import gaussian_noise
-from opaque.random import key
-from opaque.utils import make_functional
+from opaque.core.random import key
+from opaque.core.utils import make_functional
 
 # Skip all tests if transformers not available
 transformers = pytest.importorskip("transformers")

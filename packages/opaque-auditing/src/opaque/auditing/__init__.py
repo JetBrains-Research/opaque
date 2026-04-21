@@ -5,7 +5,7 @@ Canary-based auditing with pluggable attacks and estimation methods.
 Quick start (one-run auditing, Steinke et al. 2023)::
 
     import opaque.auditing as auditing
-    from opaque.random import key
+    from opaque.core.random import key
     from torch.utils.data import DataLoader, Subset
 
     cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))

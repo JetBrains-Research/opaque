@@ -7,7 +7,7 @@ For actual multi-device distributed tests, see test_ddp_integration.py.
 import pytest
 import torch
 
-import opaque.distributed as dist_utils
+import opaque.core.distributed as dist_utils
 
 
 class TestNonDistributed:

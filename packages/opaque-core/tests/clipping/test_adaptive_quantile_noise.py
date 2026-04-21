@@ -3,8 +3,8 @@
 import pytest
 import torch
 
-from opaque.clipping.adaptive import adaptive_clipped_grad
-from opaque.random import key
+from opaque.core.clipping.adaptive import adaptive_clipped_grad
+from opaque.core.random import key
 
 
 class TestQuantileNoise:

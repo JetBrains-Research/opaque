@@ -4,7 +4,7 @@ from typing import Any
 import pytest
 import torch
 
-from opaque.utils import pytree as pu
+from opaque.core.utils import pytree as pu
 
 
 def _to_device(tree: Any, device: torch.device) -> Any:

@@ -6,7 +6,7 @@ These tests are intentionally tiny and safe to run on MPS in default test runs.
 import pytest
 import torch
 
-from opaque.clipping import clipped_grad
+from opaque.core.clipping import clipped_grad
 
 
 @pytest.mark.gpu

@@ -8,14 +8,14 @@ tensors, preserving adaptive clipping_norm, and avoiding DDP deadlocks.
 import torch
 import pytest
 
-from opaque.clipping import clipped_grad, adaptive_clipped_grad
-from opaque.clipping.adaptive import (
+from opaque.core.clipping import clipped_grad, adaptive_clipped_grad
+from opaque.core.clipping.adaptive import (
     AdaptiveClipState,
     AdaptiveClippedGradAux,
     _compute_clipping_stats,
 )
-from opaque.clipping.clipped_grad import ClippedGradAux
-from opaque.random import key
+from opaque.core.clipping.clipped_grad import ClippedGradAux
+from opaque.core.random import key
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +245,7 @@ class TestSyncAdaptiveClipStateAllEmpty:
     """Unit-test the all-empty-ranks guard without spawning processes."""
 
     def test_total_zero_preserves_clipping_norm(self):
-        from opaque.clipping.distributed import sync_adaptive_clip_state
+        from opaque.core.clipping.distributed import sync_adaptive_clip_state
 
         state = AdaptiveClipState(
             clipping_norm=1.5,
@@ -274,7 +274,7 @@ class TestSyncAdaptiveClipStateAllEmpty:
 
 class TestSyncAdaptiveClippedGradAux:
     def test_empty_grad_norms_passthrough(self):
-        from opaque.clipping.distributed import sync_adaptive_clipped_grad_aux
+        from opaque.core.clipping.distributed import sync_adaptive_clipped_grad_aux
 
         aux = AdaptiveClippedGradAux(
             loss_values=torch.empty(0),

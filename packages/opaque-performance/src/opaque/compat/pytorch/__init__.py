@@ -10,7 +10,7 @@ Environment variables:
   OPAQUE_SKIP_PYTORCH_CHECKPOINT_PATCHES=all
 """
 
-from opaque._env import parse_skip_env
+from opaque.core._env import parse_skip_env
 from opaque.compat.pytorch._checkpoint_patches import (
     apply_checkpoint_patches,
     is_checkpoint_patched,

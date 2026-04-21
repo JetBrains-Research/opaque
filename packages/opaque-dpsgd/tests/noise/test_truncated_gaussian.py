@@ -6,8 +6,8 @@ import torch
 
 from opaque.noise.truncated_gaussian import truncated_gaussian_noise
 from opaque.noise.gaussian import GaussianNoiseState
-from opaque.random import key
-from opaque.utils.per_group import PerGroup
+from opaque.core.random import key
+from opaque.core.utils.per_group import PerGroup
 
 
 class TestBoundedGaussian:
