@@ -33,29 +33,31 @@ classifiers = [
     "Topic :: Security",
 ]
 dependencies = [
-    "opaque-core>=0.0.0.dev0",
-    "opaque-dpsgd>=0.0.0.dev0",
-    "opaque-auditing>=0.0.0.dev0",
-    "opaque-accounting>=0.0.0.dev0",
+    "opaque-core==0.0.0.dev0",
+    "opaque-dpsgd==0.0.0.dev0",
+    "opaque-auditing==0.0.0.dev0",
+    "opaque-accounting==0.0.0.dev0",
 ]
 
 [project.optional-dependencies]
-mf = ["opaque-mf>=0.0.0.dev0"]
-performance = ["opaque-performance>=0.0.0.dev0"]
+mf = ["opaque-mf==0.0.0.dev0"]
+performance = ["opaque-performance==0.0.0.dev0"]
 huggingface = [
-    "opaque-huggingface>=0.0.0.dev0",
-    "opaque-performance>=0.0.0.dev0",
+    "opaque-huggingface==0.0.0.dev0",
+    "opaque-performance==0.0.0.dev0",
 ]
+auditing = ["opaque-auditing==0.0.0.dev0"]
 optimizers = [
-    "opaque-dpsgd[optimizers]",
-    "opaque-mf[optimizers]",
+    "opaque-dpsgd[optimizers]==0.0.0.dev0",
+    "opaque-mf[optimizers]==0.0.0.dev0",
 ]
 all = [
-    "opaque-mf>=0.0.0.dev0",
-    "opaque-performance>=0.0.0.dev0",
-    "opaque-huggingface>=0.0.0.dev0",
-    "opaque-dpsgd[optimizers]",
-    "opaque-mf[optimizers]",
+    "opaque-mf==0.0.0.dev0",
+    "opaque-performance==0.0.0.dev0",
+    "opaque-huggingface==0.0.0.dev0",
+    "opaque-auditing==0.0.0.dev0",
+    "opaque-dpsgd[optimizers]==0.0.0.dev0",
+    "opaque-mf[optimizers]==0.0.0.dev0",
 ]
 
 [tool.setuptools.packages.find]

@@ -55,7 +55,6 @@ examples = [
     { name = "transformers", specifier = ">=4.57.0" },
     { name = "wandb", specifier = ">=0.16.0" },
 ]
-optimizers = [{ name = "torchopt", specifier = ">=0.7.3" }]
 
 [[package]]
 name = "absl-py"
@@ -2199,10 +2198,14 @@ dependencies = [
 
 [package.optional-dependencies]
 all = [
+    { name = "opaque-auditing" },
     { name = "opaque-dpsgd", extra = ["optimizers"] },
     { name = "opaque-huggingface" },
     { name = "opaque-mf", extra = ["optimizers"] },
     { name = "opaque-performance" },
+]
+auditing = [
+    { name = "opaque-auditing" },
 ]
 huggingface = [
     { name = "opaque-huggingface" },
@@ -2223,6 +2226,8 @@ performance = [
 requires-dist = [
     { name = "opaque-accounting", editable = "packages/opaque-accounting" },
     { name = "opaque-auditing", editable = "packages/opaque-auditing" },
+    { name = "opaque-auditing", marker = "extra == 'all'", editable = "packages/opaque-auditing" },
+    { name = "opaque-auditing", marker = "extra == 'auditing'", editable = "packages/opaque-auditing" },
     { name = "opaque-core", editable = "packages/opaque-core" },
     { name = "opaque-dpsgd", editable = "packages/opaque-dpsgd" },
     { name = "opaque-dpsgd", extras = ["optimizers"], marker = "extra == 'all'", editable = "packages/opaque-dpsgd" },
@@ -2237,12 +2242,25 @@ requires-dist = [
     { name = "opaque-performance", marker = "extra == 'huggingface'", editable = "packages/opaque-performance" },
     { name = "opaque-performance", marker = "extra == 'performance'", editable = "packages/opaque-performance" },
 ]
-provides-extras = ["mf", "performance", "huggingface", "optimizers", "all"]
+provides-extras = ["mf", "performance", "huggingface", "auditing", "optimizers", "all"]
 
 [[package]]
 name = "opaque-accounting"
 version = "0.0.0.dev0"
 source = { editable = "packages/opaque-accounting" }
+
+[package.optional-dependencies]
+cross-validation = [
+    { name = "dp-accounting" },
+    { name = "riskcal" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "dp-accounting", marker = "extra == 'cross-validation'", specifier = ">=0.4.4" },
+    { name = "riskcal", marker = "extra == 'cross-validation'", specifier = ">=1.2.0" },
+]
+provides-extras = ["cross-validation"]
 
 [[package]]
 name = "opaque-auditing"

@@ -10,6 +10,7 @@ license = { text = "Apache-2.0" }
 requires-python = ">=3.11,<3.13"
 authors = [{name = "Opaque Contributors"}]
 dependencies = []
+
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -21,6 +22,12 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Security",
+]
+
+[project.optional-dependencies]
+cross-validation = [
+    "dp-accounting>=0.4.4",
+    "riskcal>=1.2.0",
 ]
 
 [tool.uv]
