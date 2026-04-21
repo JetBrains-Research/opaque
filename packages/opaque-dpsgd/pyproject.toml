@@ -24,11 +24,9 @@ classifiers = [
 ]
 dependencies = [
     "torch>=2.10.0",
+    "torchopt>=0.7.3",
     "opaque-core>=0.0.0.dev0",
 ]
-
-[project.optional-dependencies]
-optimizers = ["torchopt>=0.7.3"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

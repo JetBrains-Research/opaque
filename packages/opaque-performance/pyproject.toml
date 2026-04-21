@@ -24,10 +24,12 @@ classifiers = [
 dependencies = [
     "torch>=2.10.0",
     "opaque-core>=0.0.0.dev0",
+    # Triton kernels are the main reason opaque-performance exists; the Linux
+    # marker matches Triton's own wheel availability (no macOS / Windows
+    # wheels upstream). On non-Linux platforms the package still installs
+    # cleanly — the kernel patches soft-fail at import time.
+    "triton>=3.0.0; sys_platform == 'linux'",
 ]
-
-[project.optional-dependencies]
-kernels = ["triton>=3.0.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

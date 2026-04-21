@@ -36,25 +36,26 @@ classifiers = [
 dependencies = [
     "opaque-core==0.0.0.dev0",
     "opaque-dpsgd==0.0.0.dev0",
-    "opaque-auditing==0.0.0.dev0",
     "opaque-accounting==0.0.0.dev0",
 ]
 
 [project.optional-dependencies]
+auditing = ["opaque-auditing==0.0.0.dev0"]
 dpftrl = ["opaque-dpftrl==0.0.0.dev0"]
 performance = ["opaque-performance==0.0.0.dev0"]
 huggingface = [
     "opaque-huggingface==0.0.0.dev0",
     "opaque-performance==0.0.0.dev0",
 ]
-auditing = ["opaque-auditing==0.0.0.dev0"]
+peft = [
+    "opaque-huggingface[peft]==0.0.0.dev0",
+    "opaque-performance==0.0.0.dev0",
+]
 all = [
+    "opaque-auditing==0.0.0.dev0",
     "opaque-dpftrl==0.0.0.dev0",
     "opaque-performance==0.0.0.dev0",
-    "opaque-huggingface==0.0.0.dev0",
-    "opaque-auditing==0.0.0.dev0",
-    "opaque-dpsgd[optimizers]==0.0.0.dev0",
-    "opaque-dpftrl[optimizers]==0.0.0.dev0",
+    "opaque-huggingface[peft]==0.0.0.dev0",
 ]
 
 # Metadata-only meta-package: no src/, no tests/, no code shipped.

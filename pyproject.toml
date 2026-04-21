@@ -21,15 +21,20 @@ opaque-huggingface = { workspace = true }
 opaque-accounting = { workspace = true }
 
 [dependency-groups]
-# Developer tooling (test runner, linter, stats helpers). Package runtime
-# dependencies (HF, PEFT, Triton, torchopt, cross-validation) live in the
-# relevant package's [project.optional-dependencies] and compose via `--extra`.
+# Developer tooling (test runner, linter, stats helpers, cross-validation
+# against reference DP libs). Package runtime dependencies (Triton, torchopt,
+# transformers, peft) live in each package's [dependencies] or
+# [project.optional-dependencies] and compose via `--extra`.
 # Install with: `uv sync --group dev --all-packages --extra all`
 dev = [
   "pytest>=7.0.0",
   "pytest-cov>=4.0.0",
   "ruff>=0.1.0",
   "scipy>=1.11.0",         # Statistical tests
+  # Cross-validation against reference DP accounting libraries. Imported by
+  # packages/opaque-accounting/tests/* — not a runtime dependency of opaque.
+  "dp-accounting>=0.4.4",
+  "riskcal>=1.2.0",
 ]
 
 # Everything the scripts under examples/ and docs/tutorials/ need on top of

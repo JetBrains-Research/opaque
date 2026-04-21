@@ -24,12 +24,6 @@ classifiers = [
     "Topic :: Security",
 ]
 
-[project.optional-dependencies]
-cross-validation = [
-    "dp-accounting>=0.4.4",
-    "riskcal>=1.2.0",
-]
-
 [tool.uv]
 package = true
 

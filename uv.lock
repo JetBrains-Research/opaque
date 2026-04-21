@@ -26,8 +26,10 @@ members = [
 
 [manifest.dependency-groups]
 dev = [
+    { name = "dp-accounting", specifier = ">=0.4.4" },
     { name = "pytest", specifier = ">=7.0.0" },
     { name = "pytest-cov", specifier = ">=4.0.0" },
+    { name = "riskcal", specifier = ">=1.2.0" },
     { name = "ruff", specifier = ">=0.1.0" },
     { name = "scipy", specifier = ">=1.11.0" },
 ]
@@ -2252,7 +2254,6 @@ name = "opaque"
 source = { editable = "packages/opaque" }
 dependencies = [
     { name = "opaque-accounting" },
-    { name = "opaque-auditing" },
     { name = "opaque-core" },
     { name = "opaque-dpsgd" },
 ]
@@ -2260,9 +2261,8 @@ dependencies = [
 [package.optional-dependencies]
 all = [
     { name = "opaque-auditing" },
-    { name = "opaque-dpftrl", extra = ["optimizers"] },
-    { name = "opaque-dpsgd", extra = ["optimizers"] },
-    { name = "opaque-huggingface" },
+    { name = "opaque-dpftrl" },
+    { name = "opaque-huggingface", extra = ["peft"] },
     { name = "opaque-performance" },
 ]
 auditing = [
@@ -2275,6 +2275,10 @@ huggingface = [
     { name = "opaque-huggingface" },
     { name = "opaque-performance" },
 ]
+peft = [
+    { name = "opaque-huggingface", extra = ["peft"] },
+    { name = "opaque-performance" },
+]
 performance = [
     { name = "opaque-performance" },
 ]
@@ -2282,40 +2286,26 @@ performance = [
 [package.metadata]
 requires-dist = [
     { name = "opaque-accounting", editable = "packages/opaque-accounting" },
-    { name = "opaque-auditing", editable = "packages/opaque-auditing" },
     { name = "opaque-auditing", marker = "extra == 'all'", editable = "packages/opaque-auditing" },
     { name = "opaque-auditing", marker = "extra == 'auditing'", editable = "packages/opaque-auditing" },
     { name = "opaque-core", editable = "packages/opaque-core" },
     { name = "opaque-dpftrl", marker = "extra == 'all'", editable = "packages/opaque-dpftrl" },
     { name = "opaque-dpftrl", marker = "extra == 'dpftrl'", editable = "packages/opaque-dpftrl" },
-    { name = "opaque-dpftrl", extras = ["optimizers"], marker = "extra == 'all'", editable = "packages/opaque-dpftrl" },
     { name = "opaque-dpsgd", editable = "packages/opaque-dpsgd" },
-    { name = "opaque-dpsgd", extras = ["optimizers"], marker = "extra == 'all'", editable = "packages/opaque-dpsgd" },
-    { name = "opaque-huggingface", marker = "extra == 'all'", editable = "packages/opaque-huggingface" },
     { name = "opaque-huggingface", marker = "extra == 'huggingface'", editable = "packages/opaque-huggingface" },
+    { name = "opaque-huggingface", extras = ["peft"], marker = "extra == 'all'", editable = "packages/opaque-huggingface" },
+    { name = "opaque-huggingface", extras = ["peft"], marker = "extra == 'peft'", editable = "packages/opaque-huggingface" },
     { name = "opaque-performance", marker = "extra == 'all'", editable = "packages/opaque-performance" },
     { name = "opaque-performance", marker = "extra == 'huggingface'", editable = "packages/opaque-performance" },
+    { name = "opaque-performance", marker = "extra == 'peft'", editable = "packages/opaque-performance" },
     { name = "opaque-performance", marker = "extra == 'performance'", editable = "packages/opaque-performance" },
 ]
-provides-extras = ["dpftrl", "performance", "huggingface", "auditing", "all"]
+provides-extras = ["auditing", "dpftrl", "performance", "huggingface", "peft", "all"]
 
 [[package]]
 name = "opaque-accounting"
 version = "0.0.0.dev0"
 source = { editable = "packages/opaque-accounting" }
-
-[package.optional-dependencies]
-cross-validation = [
-    { name = "dp-accounting" },
-    { name = "riskcal" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "dp-accounting", marker = "extra == 'cross-validation'", specifier = ">=0.4.4" },
-    { name = "riskcal", marker = "extra == 'cross-validation'", specifier = ">=1.2.0" },
-]
-provides-extras = ["cross-validation"]
 
 [[package]]
 name = "opaque-auditing"
@@ -2355,10 +2345,6 @@ dependencies = [
     { name = "opaque-core" },
     { name = "scipy" },
     { name = "torch" },
-]
-
-[package.optional-dependencies]
-optimizers = [
     { name = "torchopt" },
 ]
 
@@ -2368,9 +2354,8 @@ requires-dist = [
     { name = "opaque-core", editable = "packages/opaque-core" },
     { name = "scipy", specifier = ">=1.11.0" },
     { name = "torch", specifier = ">=2.10.0" },
-    { name = "torchopt", marker = "extra == 'optimizers'", specifier = ">=0.7.3" },
+    { name = "torchopt", specifier = ">=0.7.3" },
 ]
-provides-extras = ["optimizers"]
 
 [[package]]
 name = "opaque-dpsgd"
@@ -2378,10 +2363,6 @@ source = { editable = "packages/opaque-dpsgd" }
 dependencies = [
     { name = "opaque-core" },
     { name = "torch" },
-]
-
-[package.optional-dependencies]
-optimizers = [
     { name = "torchopt" },
 ]
 
@@ -2389,9 +2370,8 @@ optimizers = [
 requires-dist = [
     { name = "opaque-core", editable = "packages/opaque-core" },
     { name = "torch", specifier = ">=2.10.0" },
-    { name = "torchopt", marker = "extra == 'optimizers'", specifier = ">=0.7.3" },
+    { name = "torchopt", specifier = ">=0.7.3" },
 ]
-provides-extras = ["optimizers"]
 
 [[package]]
 name = "opaque-huggingface"
@@ -2404,9 +2384,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-kernels = [
-    { name = "opaque-performance", extra = ["kernels"] },
-]
 peft = [
     { name = "peft" },
 ]
@@ -2415,12 +2392,11 @@ peft = [
 requires-dist = [
     { name = "opaque-core", editable = "packages/opaque-core" },
     { name = "opaque-performance", editable = "packages/opaque-performance" },
-    { name = "opaque-performance", extras = ["kernels"], marker = "extra == 'kernels'", editable = "packages/opaque-performance" },
     { name = "peft", marker = "extra == 'peft'", specifier = ">=0.13.0" },
     { name = "torch", specifier = ">=2.10.0" },
     { name = "transformers", specifier = ">=4.57.0" },
 ]
-provides-extras = ["kernels", "peft"]
+provides-extras = ["peft"]
 
 [[package]]
 name = "opaque-performance"
@@ -2428,20 +2404,15 @@ source = { editable = "packages/opaque-performance" }
 dependencies = [
     { name = "opaque-core" },
     { name = "torch" },
-]
-
-[package.optional-dependencies]
-kernels = [
-    { name = "triton" },
+    { name = "triton", marker = "sys_platform == 'linux'" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "opaque-core", editable = "packages/opaque-core" },
     { name = "torch", specifier = ">=2.10.0" },
-    { name = "triton", marker = "extra == 'kernels'", specifier = ">=3.0.0" },
+    { name = "triton", marker = "sys_platform == 'linux'", specifier = ">=3.0.0" },
 ]
-provides-extras = ["kernels"]
 
 [[package]]
 name = "optree"
