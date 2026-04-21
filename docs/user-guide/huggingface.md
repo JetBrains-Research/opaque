@@ -1,14 +1,22 @@
 # HuggingFace Compatibility
 
-Opaque works with HuggingFace Transformers models out of the box. When you
-`import opaque`, it automatically patches core Transformers functions to be
-compatible with `torch.func.vmap`, which is required for per-example
-gradient computation. No manual patching is needed.
+Opaque works with HuggingFace Transformers models. The HF-specific patches
+live in the `opaque-huggingface` sub-package and are **opt-in**: call
+`opaque.patch_all()` (umbrella facade) or `opaque.huggingface.patch_all()`
+once at startup before loading any model. Module import alone no longer
+touches `transformers`.
+
+```python
+import opaque
+opaque.patch_all()                 # applies performance + HF patches
+# or, for finer control:
+# import opaque.huggingface as hf; hf.patch_all()
+```
 
 ## Auto-patching
 
-On import, Opaque applies patches to the following HuggingFace Transformers
-components:
+When `patch_all()` is called, Opaque applies patches to the following
+HuggingFace Transformers components:
 
 - **Causal mask creation** (`create_causal_mask`, `_ignore_causal_mask_sdpa`)
   -- handles arbitrary batch dimensions under vmap, including sliding-window
@@ -319,13 +327,15 @@ loss = opaque_cross_entropy_loss(logits, labels)
 
 ## Configuration
 
-Opaque patches are controlled by environment variables. Each accepts `all`
-to skip everything in that group, or a comma-separated list for selective skip.
+Patching is opt-in: it only happens when `opaque.patch_all()` (or a
+subsystem-level equivalent) is invoked. The umbrella facade honors
+`OPAQUE_SKIP_COMPAT_PATCHES` to gate subsystems; finer-grained sub-system
+variables still apply.
 
 | Variable | Scope | Values |
 |----------|-------|--------|
-| `OPAQUE_SKIP_COMPAT_PATCHES` | All patching | `all` |
-| `OPAQUE_SKIP_PYTORCH_CHECKPOINT_PATCHES` | Checkpoint compat | `all` |
+| `OPAQUE_SKIP_COMPAT_PATCHES` | Umbrella `opaque.patch_all()` | `all`, `huggingface`, `performance`, comma-combo |
+| `OPAQUE_SKIP_PYTORCH_PATCHES` | `opaque.performance.patch_all()` | `all` |
 | `OPAQUE_SKIP_TRANSFORMERS_PATCHES` | HF Transformers | `all`, or `vmap,kernels` |
 | `OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES` | vmap compat | `all`, or `shared,standard,gemma2,phi3` |
 | `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES` | Triton kernels | `all`, or `swiglu,rope,ce,fused_ce,lora` |
@@ -336,6 +346,15 @@ to skip everything in that group, or a comma-separated list for selective skip.
 import os
 os.environ["OPAQUE_SKIP_COMPAT_PATCHES"] = "all"
 import opaque
+opaque.patch_all()  # no-op under OPAQUE_SKIP_COMPAT_PATCHES=all
+```
+
+### Skipping only HuggingFace patches
+
+```python
+import opaque
+opaque.patch_all(skip={"huggingface"})   # apply performance, skip HF
+# or:  OPAQUE_SKIP_COMPAT_PATCHES=huggingface python train.py
 ```
 
 ### Disabling kernel optimizations

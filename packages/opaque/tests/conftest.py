@@ -12,6 +12,24 @@ import torch
 from conftest import get_default_gpu_device
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _apply_opaque_patches():
+    """Opt into performance + HF patches for validation tests.
+
+    Patching is opt-in in production; validation tests that exercise HF
+    models under ``vmap(grad(...))`` require the HF and PyTorch patches.
+    """
+    import opaque
+
+    try:
+        opaque.patch_all()
+    except Exception:
+        # If opaque-huggingface isn't installed, patch_all still succeeds
+        # (HF hook is None). Any unexpected error should not break collection.
+        pass
+    yield
+
+
 # =============================================================================
 # Model Testing Utilities
 # =============================================================================

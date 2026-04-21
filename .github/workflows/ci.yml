@@ -50,13 +50,30 @@ jobs:
       - name: Run accounting tests
         run: |
           uv run pytest packages/opaque-accounting/tests \
-            --cov=opaque_accounting \
+            --cov=opaque.accounting \
             --cov-report=xml:coverage-accounting${{ matrix.coverage-suffix }}.xml \
             -v
 
-      - name: Run core tests
+      - name: Run namespace + legacy-token lint
+        run: uv run python scripts/check_namespaces.py
+
+      - name: Negative-import checks
+        run: uv run python scripts/check_negative_imports.py
+
+      - name: Cross-package import smoke test
         run: |
-          uv run pytest packages/opaque/tests \
+          uv run python -c "import opaque.core, opaque.dpsgd, opaque.mf, opaque.auditing, opaque.performance, opaque.performance.kernels, opaque.performance.torch.checkpoint, opaque.huggingface, opaque.huggingface.patches, opaque.accounting; print('OK')"
+
+      - name: Run full non-GPU test suite
+        run: |
+          uv run pytest \
+            packages/opaque-core/tests \
+            packages/opaque-dpsgd/tests \
+            packages/opaque-mf/tests \
+            packages/opaque-auditing/tests \
+            packages/opaque-performance/tests \
+            packages/opaque-huggingface/tests \
+            packages/opaque/tests \
             -m "${{ matrix.marker-expression }}" \
             --cov=opaque \
             --cov-report=xml:coverage-core${{ matrix.coverage-suffix }}.xml \

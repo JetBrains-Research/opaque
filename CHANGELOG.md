@@ -9,6 +9,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking — modularization (Option B namespace layout)
+
+The monorepo has been split into first-class, standalone distributions,
+each with its own real `__init__.py` under a dedicated namespace root.
+There are **no backward-compatibility shims**. Every old import path is
+removed; downstream code must migrate in one pass.
+
+#### Added
+
+- `opaque.core` (was top-level `opaque.*` primitives) — RNG, pytree
+  helpers, clipping primitives, Poisson sampling, distributed, profiling,
+  utils
+- `opaque.dpsgd` — Gaussian / truncated-Gaussian / per-group noise,
+  AdamW-BC, `TruncatedPoissonSampler`, adaptive + auto clipping
+- `opaque.mf` — BLT / BSR / BiSR / band-MF / JME / λ-CGD mechanisms,
+  AdamW-JME, b-min-sep / cyclic-Poisson / balls-in-bins / sequential
+  samplers
+- `opaque.auditing` — curated facade for empirical privacy auditing
+- `opaque.performance` — fused Triton kernels (`opaque.performance.kernels`)
+  and PyTorch-version patches (`opaque.performance.torch.checkpoint`)
+- `opaque.huggingface` — HF Transformers patches (`opaque.huggingface.patches`)
+  plus scaffolded `trainer/`, `callbacks/`, `integrations/`, `data/`,
+  `models/` subpackages
+- `opaque.accounting` — Python facade over the native PyO3 extension
+  (mounted at `opaque.accounting._native`)
+- `opaque.patch_all()` curated umbrella facade honoring
+  `OPAQUE_SKIP_COMPAT_PATCHES` (`all`, `huggingface`, `performance`,
+  comma-combo)
+- `scripts/check_namespaces.py` and `scripts/check_negative_imports.py`
+  as CI guardrails enforcing the new layout
+
+#### Removed (no replacement with compatibility layer)
+
+- `opaque_accounting` top-level module — use `opaque.accounting`
+- `opaque.compat` namespace — split into `opaque.performance.kernels`,
+  `opaque.performance.torch.checkpoint`, and `opaque.huggingface.patches`
+- `opaque.sampling.truncated_poisson` — use `opaque.dpsgd.sampling.truncated_poisson`
+- `opaque.sampling.b_min_sep` / `.cyclic_poisson` / `.balls_in_bins` /
+  `.sequential` — use `opaque.mf.sampling.*`
+- `opaque.clipping.adaptive` / `opaque.clipping.auto` — use
+  `opaque.dpsgd.clipping.*`
+- `opaque.noise.<dp-sgd-mechanism>` — use `opaque.dpsgd.noise.*`
+- `opaque.noise.mf.*` — use `opaque.mf.noise.*`
+- `opaque.optimizers.adamw_bc` / `.adamw_jme` — use
+  `opaque.dpsgd.optimizers.adamw_bc` / `opaque.mf.optimizers.adamw_jme`
+- Auto-import-time patching of HuggingFace models — patching is now
+  opt-in via `opaque.patch_all()` (or `opaque.huggingface.patch_all()`)
+
+#### Changed
+
+- Umbrella `opaque` distribution pins sub-packages with `==` instead of
+  `>=` to prevent skew
+- Per-package `[project.optional-dependencies]` now cover
+  `opaque-performance[kernels]`, `opaque-huggingface[peft,kernels]`,
+  `opaque-accounting[cross-validation]`, and similar
+- The PyO3 native module is installed at `opaque.accounting._native` via
+  maturin's `module-name`; Rust crate/identifier name is unchanged
+
 ## [0.1.0] - 2026-03-11
 
 **First public release of Opaque's functional DP-SGD stack for PyTorch.**

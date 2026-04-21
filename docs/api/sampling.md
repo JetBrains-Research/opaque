@@ -1,7 +1,9 @@
 # Sampling
 
-The `opaque.sampling` module provides privacy-amplifying sampling mechanisms
-for DP-SGD training.
+Sampling primitives are split across `opaque.core.sampling` (Poisson and
+distributed helpers), `opaque.dpsgd.sampling` (truncated Poisson), and
+`opaque.mf.sampling` (cyclic Poisson, b-min-sep, balls-in-bins, sequential).
+They provide privacy-amplifying sampling mechanisms for DP-SGD and DP-FTRL.
 
 ## Overview
 
@@ -43,8 +45,8 @@ Opaque provides these sampling strategies:
 ## PoissonSampler
 
 ```python
-from opaque import PoissonSampler
-from opaque.random import key
+from opaque.core.sampling import PoissonSampler
+from opaque.core.random import key
 
 sampler = PoissonSampler(
     data_source,
@@ -67,8 +69,8 @@ Account with `acc.poisson(acc.gaussian(nm), sample_rate)`.
 ## TruncatedPoissonSampler
 
 ```python
-from opaque import TruncatedPoissonSampler
-from opaque.random import key
+from opaque.dpsgd.sampling import TruncatedPoissonSampler
+from opaque.core.random import key
 
 sampler = TruncatedPoissonSampler(
     data_source,
@@ -94,8 +96,8 @@ batch_size_cap, dataset_size)`.
 ## BallsInBinsSampler
 
 ```python
-from opaque import BallsInBinsSampler
-from opaque.random import key
+from opaque.mf.sampling import BallsInBinsSampler
+from opaque.core.random import key
 
 sampler = BallsInBinsSampler(
     data_source,
@@ -124,8 +126,8 @@ Account with `acc.balls_in_bins(mechanism, num_bins, num_epochs)` where
 ## CyclicPoissonSampler
 
 ```python
-from opaque import CyclicPoissonSampler
-from opaque.random import key
+from opaque.mf.sampling import CyclicPoissonSampler
+from opaque.core.random import key
 
 sampler = CyclicPoissonSampler(
     data_source,
@@ -159,7 +161,7 @@ Partition a dataset for DDP training. Returns a `Subset` containing the
 contiguous shard for the given rank.
 
 ```python
-from opaque.sampling.distributed import local_shard
+from opaque.core.sampling.distributed import local_shard
 import torch.distributed as dist
 
 shard = local_shard(
@@ -179,34 +181,34 @@ loader = DataLoader(shard, batch_sampler=sampler)
 
 **Returns:** `torch.utils.data.Subset` containing the local shard.
 
-::: opaque.sampling.distributed.local_shard
+::: opaque.core.sampling.distributed.local_shard
     options:
       show_source: true
       heading_level: 3
 
 ## API Documentation
 
-::: opaque.sampling.poisson.PoissonSampler
+::: opaque.core.sampling.poisson.PoissonSampler
     options:
       show_source: true
       heading_level: 3
 
-::: opaque.sampling.truncated_poisson.TruncatedPoissonSampler
+::: opaque.dpsgd.sampling.truncated_poisson.TruncatedPoissonSampler
     options:
       show_source: true
       heading_level: 3
 
-::: opaque.sampling.cyclic_poisson.CyclicPoissonSampler
+::: opaque.mf.sampling.cyclic_poisson.CyclicPoissonSampler
     options:
       show_source: true
       heading_level: 3
 
-::: opaque.sampling.b_min_sep.BMinSepSampler
+::: opaque.mf.sampling.b_min_sep.BMinSepSampler
     options:
       show_source: true
       heading_level: 3
 
-::: opaque.sampling.balls_in_bins.BallsInBinsSampler
+::: opaque.mf.sampling.balls_in_bins.BallsInBinsSampler
     options:
       show_source: true
       heading_level: 3
@@ -214,7 +216,7 @@ loader = DataLoader(shard, batch_sampler=sampler)
 ## SequentialBatchSampler
 
 ```python
-from opaque import SequentialBatchSampler
+from opaque.mf.sampling import SequentialBatchSampler
 
 sampler = SequentialBatchSampler(
     data_source,
@@ -236,7 +238,7 @@ sampler.
 Used with the BLT mechanism, which requires deterministic batch order
 with fixed separation between participations.
 
-::: opaque.sampling.sequential.SequentialBatchSampler
+::: opaque.mf.sampling.sequential.SequentialBatchSampler
     options:
       show_source: true
       heading_level: 3
