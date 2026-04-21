@@ -18,7 +18,7 @@ from torch.func import vmap, grad
 
 pytest.importorskip("triton")
 
-from opaque.compat.kernels.cross_entropy import Opaque_CrossEntropyLoss
+from opaque.performance.kernels.cross_entropy import Opaque_CrossEntropyLoss
 
 pytestmark = [
     pytest.mark.cuda,

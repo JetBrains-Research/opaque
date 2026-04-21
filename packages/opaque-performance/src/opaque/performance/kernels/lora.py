@@ -20,7 +20,7 @@ For DP-SGD:
 import torch
 import torch.nn.functional as F
 
-from .utils import ensure_cuda_tensors
+from ._utils import ensure_cuda_tensors
 
 from .swiglu import _triton_swiglu_forward, _triton_swiglu_backward_fused
 from .geglu import (

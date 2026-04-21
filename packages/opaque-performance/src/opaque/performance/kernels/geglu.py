@@ -5,7 +5,7 @@ import math
 import triton
 import triton.language as tl
 import torch
-from .utils import (
+from ._utils import (
     ensure_cuda_tensors,
     triton_tanh,
     torch_gpu_device,

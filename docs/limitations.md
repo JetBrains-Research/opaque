@@ -57,7 +57,7 @@ paths. To control patching behavior, use the `OPAQUE_SKIP_COMPAT_PATCHES` and
 [HuggingFace Compatibility](user-guide/huggingface.md#configuration).
 
 Advanced users can still call kernel wrappers directly via
-`opaque.compat.kernels`.
+`opaque.performance.kernels`.
 
 ## In-place operations under vmap
 

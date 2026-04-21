@@ -1,1 +1,1 @@
-# Tests for opaque.compat.kernels
+# Tests for opaque.performance.kernels

@@ -12,7 +12,7 @@ import torch.nn.functional as F
 from torch.func import grad, vmap
 from torch.utils.checkpoint import checkpoint
 
-from opaque.compat.pytorch import is_checkpoint_patched
+from opaque.performance import is_checkpoint_patched
 
 pytestmark = [
     pytest.mark.gpu,

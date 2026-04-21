@@ -88,7 +88,7 @@ def _make_swiglu_mlp_forward(original):
     def forward(self, x):
         if not x.is_cuda:
             return original(self, x)
-        from opaque.compat.kernels.swiglu import Opaque_SwiGLU
+        from opaque.performance.kernels.swiglu import Opaque_SwiGLU
 
         return self.down_proj(Opaque_SwiGLU.apply(self.gate_proj(x), self.up_proj(x)))
 
@@ -101,7 +101,7 @@ def _make_phi3_mlp_forward(original):
     def forward(self, hidden_states):
         if not hidden_states.is_cuda:
             return original(self, hidden_states)
-        from opaque.compat.kernels.swiglu import Opaque_SwiGLU
+        from opaque.performance.kernels.swiglu import Opaque_SwiGLU
 
         gate, up = self.gate_up_proj(hidden_states).chunk(2, dim=-1)
         return self.down_proj(Opaque_SwiGLU.apply(gate, up))
@@ -115,7 +115,7 @@ def _make_geglu_exact_mlp_forward(original):
     def forward(self, x):
         if not x.is_cuda:
             return original(self, x)
-        from opaque.compat.kernels.geglu import Opaque_GeGLU_Exact
+        from opaque.performance.kernels.geglu import Opaque_GeGLU_Exact
 
         return self.down_proj(
             Opaque_GeGLU_Exact.apply(self.gate_proj(x), self.up_proj(x))
@@ -130,7 +130,7 @@ def _make_geglu_approx_mlp_forward(original):
     def forward(self, x):
         if not x.is_cuda:
             return original(self, x)
-        from opaque.compat.kernels.geglu import Opaque_GeGLU_Approx
+        from opaque.performance.kernels.geglu import Opaque_GeGLU_Approx
 
         return self.down_proj(
             Opaque_GeGLU_Approx.apply(self.gate_proj(x), self.up_proj(x))
@@ -164,7 +164,7 @@ def _opaque_apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_di
         k_embed = (k * cos_u) + (_rotate_half(k) * sin_u)
         return q_embed, k_embed
 
-    from opaque.compat.kernels.rope_embedding import Opaque_RoPE_QK
+    from opaque.performance.kernels.rope_embedding import Opaque_RoPE_QK
 
     # HF provides cos/sin as (batch, seq_len, head_dim) or (seq_len, head_dim).
     # The kernel needs 2D (seq_len, head_dim) after squeeze.
@@ -245,7 +245,7 @@ def _opaque_causal_lm_loss(
             **kwargs,
         )
 
-    from opaque.compat.kernels.cross_entropy import Opaque_CrossEntropyLoss
+    from opaque.performance.kernels.cross_entropy import Opaque_CrossEntropyLoss
 
     logits = logits.float()
 
@@ -368,7 +368,7 @@ def _make_fused_ce_causal_lm_forward(original):
             torch.bfloat16,
             torch.float16,
         ):
-            from opaque.compat.kernels.linear_cross_entropy import (
+            from opaque.performance.kernels.linear_cross_entropy import (
                 Opaque_LinearCrossEntropyLoss,
             )
 
@@ -443,7 +443,7 @@ def _make_lora_linear_forward(original):
         if not x.is_cuda:
             return original(self, x, *args, **kwargs)
 
-        from opaque.compat.kernels.lora import Opaque_LoRA_W
+        from opaque.performance.kernels.lora import Opaque_LoRA_W
 
         if self.disable_adapters or not self.active_adapters:
             return self.base_layer(x)
@@ -657,7 +657,7 @@ def _make_fused_lora_mlp_forward(original_forward, activation_type):
     def forward(self, x):
         if not x.is_cuda:
             return original_forward(x)
-        from opaque.compat.kernels.lora import Opaque_LoRA_MLP
+        from opaque.performance.kernels.lora import Opaque_LoRA_MLP
 
         dtype = x.dtype
 
@@ -724,7 +724,7 @@ def _opaque_fused_lora_qkv(self, hidden_states):
     Replaces 3 separate q_proj/k_proj/v_proj LoRA calls with a single
     fused kernel call that shares X computation across all three projections.
     """
-    from opaque.compat.kernels.lora import Opaque_LoRA_QKV
+    from opaque.performance.kernels.lora import Opaque_LoRA_QKV
 
     dtype = hidden_states.dtype
 

@@ -174,7 +174,7 @@ def make_functional(
 
     Note:
         Gradient checkpointing compatibility is handled by Patches 7-8 in
-        ``opaque.compat.pytorch._checkpoint_patches``.  Those patches make
+        ``opaque.performance.torch.checkpoint``.  Those patches make
         ``functional_call`` record its (module, params) on a thread-local
         stack, and make ``checkpoint`` replay that context before
         recomputation.  This wrapper is purely functional — it delegates

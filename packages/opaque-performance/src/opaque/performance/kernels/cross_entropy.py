@@ -3,7 +3,7 @@
 import triton
 import triton.language as tl
 import torch
-from .utils import (
+from ._utils import (
     MAX_FUSED_SIZE,
     calculate_settings,
     ensure_cuda_tensors,

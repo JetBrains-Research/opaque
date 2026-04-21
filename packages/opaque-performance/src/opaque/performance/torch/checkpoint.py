@@ -24,6 +24,11 @@ After applying these patches, HuggingFace models can use
 model.gradient_checkpointing_enable() with vmap(grad(...)).
 
 Skip with: OPAQUE_SKIP_PYTORCH_CHECKPOINT_PATCHES=all
+
+Public API:
+    patch_checkpoint()        — apply all patches (idempotent)
+    unpatch_checkpoint()      — not supported (raises NotImplementedError)
+    is_checkpoint_patched()   — query state
 """
 
 from __future__ import annotations
@@ -38,7 +43,7 @@ logger = logging.getLogger(__name__)
 _is_checkpoint_patched = False
 
 
-def apply_checkpoint_patches() -> None:
+def patch_checkpoint() -> None:
     """Patch PyTorch to allow gradient checkpointing under vmap(grad(...)).
 
     Applies eight patches:
@@ -311,6 +316,18 @@ def apply_checkpoint_patches() -> None:
 
     logger.debug("opaque: Applied checkpoint compatibility patches")
     _is_checkpoint_patched = True
+
+
+def unpatch_checkpoint() -> None:
+    """Revert checkpoint patches.
+
+    Not currently supported: the patches mutate PyTorch internals without
+    capturing originals in a recoverable way. Restart the Python process
+    to run unpatched code.
+    """
+    raise NotImplementedError(
+        "unpatch_checkpoint() is not supported; restart the Python process instead."
+    )
 
 
 def is_checkpoint_patched() -> bool:

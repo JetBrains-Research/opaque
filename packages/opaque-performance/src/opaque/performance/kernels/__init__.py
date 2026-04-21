@@ -1,12 +1,12 @@
-"""Kernel function API for compatibility patching.
+"""Fused Triton kernels (with PyTorch fallbacks) for Opaque.
 
-This module powers ``opaque.compat.transformers`` kernel patching and is
-primarily a compatibility implementation detail. Advanced users may call these
-function wrappers directly via ``opaque.compat.kernels`` when needed.
+Power the HuggingFace kernel-patching layer (``opaque.huggingface.patches``)
+and are usable directly as fast drop-in ops. When Triton is unavailable,
+pure-PyTorch implementations are used as fallbacks so the public API works
+everywhere.
 
-Low-level ``Opaque_*`` autograd classes remain internal implementation details
-and should be imported from concrete submodules only when patch internals need
-them.
+Low-level ``Opaque_*`` autograd classes are internal implementation details;
+import them from concrete submodules only when patch internals need them.
 """
 
 import torch

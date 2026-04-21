@@ -92,7 +92,7 @@ def try_microbatch(candidate_mb: int) -> float:
 
 PyTorch's `torch.utils.checkpoint.checkpoint` is supported under
 `vmap(grad(...))`. Patches are applied automatically at `import opaque`
-time via `opaque.compat.pytorch`.
+time via `opaque.performance.torch`.
 
 **With PyTorch directly** (non-reentrant checkpoint only):
 

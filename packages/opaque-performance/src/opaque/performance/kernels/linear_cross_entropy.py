@@ -27,7 +27,7 @@ import triton
 import triton.language as tl
 from triton import Config
 
-from .utils import (
+from ._utils import (
     _build_flat_valids,
     b_bin_fn,
     ensure_cuda_tensors,

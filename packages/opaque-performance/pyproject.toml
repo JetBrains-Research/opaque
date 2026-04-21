@@ -23,12 +23,19 @@ classifiers = [
 ]
 dependencies = [
     "torch>=2.10.0",
+    "opaque-core>=0.0.0.dev0",
 ]
+
+[project.optional-dependencies]
+kernels = ["triton>=3.0.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["opaque*"]
+include = ["opaque.performance*"]
 namespaces = true
 
 [tool.uv]
 package = true
+
+[tool.uv.sources]
+opaque-core = { workspace = true }

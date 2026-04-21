@@ -3,7 +3,7 @@
 import triton
 import triton.language as tl
 import torch
-from .utils import ensure_cuda_tensors, torch_gpu_device, INT32_SAFETY_BUFFER
+from ._utils import ensure_cuda_tensors, torch_gpu_device, INT32_SAFETY_BUFFER
 
 BLOCK_SIZE = 1024
 

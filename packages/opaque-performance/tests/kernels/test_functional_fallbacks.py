@@ -1,6 +1,6 @@
 """Tests for functional kernel fallbacks when Triton is unavailable.
 
-These tests validate function APIs from opaque.compat.kernels on CPU/MPS
+These tests validate function APIs from opaque.performance.kernels on CPU/MPS
 in environments where Triton is not installed.
 """
 
@@ -18,7 +18,7 @@ import torch.nn.functional as F
     reason="Fallback tests only apply when Triton is unavailable",
 )
 def test_opaque_swiglu_fallback_matches_torch():
-    from opaque.compat.kernels import opaque_swiglu
+    from opaque.performance.kernels import opaque_swiglu
 
     gate = torch.randn(4, 8)
     up = torch.randn(4, 8)
@@ -34,7 +34,7 @@ def test_opaque_swiglu_fallback_matches_torch():
     reason="Fallback tests only apply when Triton is unavailable",
 )
 def test_opaque_cross_entropy_loss_fallback_shape_and_values():
-    from opaque.compat.kernels import opaque_cross_entropy_loss
+    from opaque.performance.kernels import opaque_cross_entropy_loss
 
     logits = torch.randn(2, 3, 7)
     labels = torch.randint(0, 7, (2, 3))
@@ -55,7 +55,7 @@ def test_opaque_cross_entropy_loss_fallback_shape_and_values():
     reason="Fallback tests only apply when Triton is unavailable",
 )
 def test_opaque_lora_w_fallback_matches_reference():
-    from opaque.compat.kernels import opaque_lora_w
+    from opaque.performance.kernels import opaque_lora_w
 
     x = torch.randn(2, 5, 6)
     w = torch.randn(4, 6)

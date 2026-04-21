@@ -16,7 +16,7 @@ from torch.func import vmap, grad
 
 pytest.importorskip("triton")
 
-from opaque.compat.kernels.rope_embedding import Opaque_RoPE
+from opaque.performance.kernels.rope_embedding import Opaque_RoPE
 
 pytestmark = [
     pytest.mark.cuda,
