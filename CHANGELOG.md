@@ -9,14 +9,125 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Breaking — namespace reshape (user-facing primitives at root)
+## [0.2.0] - 2026-04-21
 
-Following feedback that `opaque.core.*` should only contain internal
-primitives, user-facing modules now live at the namespace root. The umbrella
-`opaque` distribution is reduced to metadata, and each patching layer owns
-its own `patch_all()` applied automatically on import. No backward shims.
+**Major restructure.** The monorepo is split into seven first-class
+PEP 420 namespace distributions, the user-facing API is promoted to the
+`opaque.*` root, and a new tag-triggered release pipeline drives the
+release process. Alongside the reshape, 0.2.0 ships new optimizers,
+clipping strategies, noise types, samplers, and accounting mechanisms.
+**No backwards-compatibility shims** for the pre-0.2 import layout —
+downstream code must migrate in one pass.
 
-Migration table:
+### Added
+
+#### Features
+
+New functionality introduced since v0.1.0, independent of the reshape:
+
+- **Optimizers** — `AdamW-BC` (bias-corrected AdamW for DP-SGD) at
+  `opaque.dpsgd.optimizers.adamw_bc`; `AdamW-JME` (AdamW with JME
+  dual-stream noise for DP-FTRL, following Kalinin et al.,
+  arXiv:2502.06597) at `opaque.dpftrl.optimizers.adamw_jme`; internal
+  optimizer-chaining helper.
+- **Clipping** — `auto` clipping strategy as a heuristic alternative to
+  the quantile-based `adaptive` clipping
+  (`opaque.dpsgd.clipping.auto`); per-group clipping helper
+  (`opaque.core.clipping.per_group`, re-exported from `opaque.core`).
+- **Noise** — per-group Gaussian noise
+  (`opaque.dpsgd.noise.per_group_noise`); JME noise and a unified
+  MF-noise dispatcher for DP-FTRL
+  (`opaque.dpftrl.noise.{jme,dispatcher}`).
+- **Samplers** — `BMinSepSampler` (b-min-separation, with transcript
+  cache), `BallsInBinsSampler`, and the sequential sampler, all at
+  `opaque.dpftrl.sampling.*`.
+- **Accounting mechanisms** — `BiSR`, `BSR`, `λ-CGD`, `nonprivate`
+  baseline, and `JME` transformation.
+- **Amplification** — b-min-sep and balls-in-bins analyses in
+  `opaque.accounting.amplification`.
+- **Distributed** — `opaque.distributed.collectives` (collective-ops
+  helpers) and `opaque.distributed.shard` (shard utilities broken out
+  from `sampling.distributed`).
+
+#### Package layout
+
+- Seven first-class distributions under the `opaque` namespace
+  (PEP 420, no shared `__init__.py`):
+  - `opaque-core` — RNG, functional helpers, pytree, clipping
+    primitives, Poisson sampling core, distributed, profiling hooks.
+  - `opaque-dpsgd` — Gaussian / truncated-Gaussian / per-group noise,
+    `AdamW-BC`, `TruncatedPoissonSampler`, `adaptive` + `auto` clipping.
+  - `opaque-dpftrl` — BLT / BSR / BiSR / band-MF / JME / λ-CGD
+    mechanisms, `AdamW-JME`, b-min-sep / cyclic-Poisson /
+    balls-in-bins / sequential samplers.
+  - `opaque-auditing` — curated facade for empirical privacy auditing.
+  - `opaque-performance` — fused Triton kernels
+    (`opaque.performance.kernels`) and PyTorch-version patches
+    (`opaque.performance.torch.checkpoint`).
+  - `opaque-huggingface` — HF Transformers compatibility patches plus
+    scaffolded `trainer/`, `callbacks/`, `integrations/`, `data/`,
+    `models/` subpackages.
+  - `opaque-accounting` — Python facade over the PyO3 native extension
+    (mounted at `opaque.accounting._native`).
+- Umbrella `opaque` distribution reduced to metadata that `==`-pins
+  sub-packages.
+- Per-package `README.md` files and per-package
+  `[project.optional-dependencies]` extras
+  (`opaque-performance[kernels]`, `opaque-huggingface[peft,kernels]`,
+  `opaque-accounting[cross-validation]`, …).
+
+### Changed
+
+- **Patching model** is per-sub-package and on-import: importing
+  `opaque.performance` or `opaque.huggingface` applies their patches
+  automatically, gated by `OPAQUE_SKIP_PYTORCH_PATCHES` and
+  `OPAQUE_SKIP_TRANSFORMERS_PATCHES` respectively. Kernel patches that
+  wire Triton kernels into HF model classes now live in
+  `opaque.performance.huggingface`, gated by
+  `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES`. `opaque.huggingface`
+  keeps only the compatibility patches (vmap-safe attention, KV cache,
+  Poisson collator). Umbrella `opaque.patch_all()` is gone.
+- **Test markers** collapsed from 6 to 3: `cuda`, `mps`, `slow`. The
+  legacy `gpu` marker (and its `mps_compatible` modifier) is replaced
+  by the orthogonal `cuda` / `mps` pair; `hf_auth_required` is
+  replaced by a runtime `@requires_hf_auth` skipif helper keyed on
+  `HF_TOKEN` / `HUGGINGFACEHUB_API_TOKEN` / `HUGGINGFACE_TOKEN`.
+  CI lane expressions updated accordingly; `slow` runs on push to
+  `main` only.
+- **PyO3 native module** is installed at `opaque.accounting._native`
+  via maturin's `module-name`; Rust crate/identifier name is unchanged.
+- **PEP 420 invariant** enforced inline in
+  `.github/workflows/ci.yml` (no stray `src/opaque/__init__.py` in
+  sub-packages). Replaces `scripts/check_namespaces.py`
+  (legacy-token and refactor-diary checks dropped post-migration).
+
+### Removed
+
+- **Accounting mechanisms**: `band_mf_amplified` (folded into
+  `band_mf`), `dense_mf` (use `band_mf` / `blt`), `rectified_gaussian`,
+  and `truncated_gaussian` as an accounting mechanism. The
+  truncated-Gaussian *noise* mechanism still ships as
+  `opaque.dpsgd.noise.truncated_gaussian`. `blt_mf` renamed to `blt`.
+- `opaque_accounting` top-level module — use `opaque.accounting`.
+- `opaque.compat.*` — split into `opaque.performance.kernels`,
+  `opaque.performance.torch.checkpoint`, and
+  `opaque.huggingface.patches`.
+- `opaque.patch_all()` and `OPAQUE_SKIP_COMPAT_PATCHES` — use the
+  per-sub-package auto-patching and the specific `OPAQUE_SKIP_*`
+  variants.
+- Auto-import-time patching of HuggingFace models at the umbrella
+  `opaque` level — patch application is now tied to importing
+  `opaque.huggingface` / `opaque.performance` explicitly.
+- Legacy workflows: `publish.yml`, `release.lock.yml`, `release.md`,
+  `docs-check.yml`.
+
+### Breaking — migration map
+
+No backward-compatibility shims. Every old import path must be
+rewritten.
+
+**Relocations inside the namespace reshape** (what used to sit under
+`opaque.core.*` or `opaque.mf.*`):
 
 | Old path | New path |
 |----------|----------|
@@ -31,80 +142,52 @@ Migration table:
 | `opaque.core.profiling.*` | `opaque.performance.profiling.*` |
 | `opaque.huggingface.patches._kernel_patches` | `opaque.performance.huggingface.kernel_patches` |
 | `opaque.mf.*` (package `opaque-mf`) | `opaque.dpftrl.*` (package `opaque-dpftrl`) |
-| `opaque.patch_all()` | **removed** — each sub-package auto-patches on import |
-| `OPAQUE_SKIP_COMPAT_PATCHES` env var | **removed** — use sub-package-specific `OPAQUE_SKIP_*` |
 
-Patching model: importing `opaque.performance` or `opaque.huggingface`
-applies their patches automatically, gated by `OPAQUE_SKIP_PYTORCH_PATCHES`
-and `OPAQUE_SKIP_TRANSFORMERS_PATCHES` respectively. The kernel patches
-that wire Triton kernels into HF model classes now live in
-`opaque.performance.huggingface` (still gated by
-`OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES`). `opaque.huggingface` keeps only
-the compatibility patches (vmap-safe attention, KV cache, Poisson collator).
+**Sub-package splits from the old monolithic `opaque.*`**:
 
-### Breaking — modularization (Option B namespace layout)
+| Old path | New path |
+|----------|----------|
+| `opaque_accounting.*` | `opaque.accounting.*` |
+| `opaque.sampling.truncated_poisson` | `opaque.dpsgd.sampling.truncated_poisson` |
+| `opaque.sampling.{b_min_sep,cyclic_poisson,balls_in_bins,sequential}` | `opaque.dpftrl.sampling.*` |
+| `opaque.clipping.{adaptive,auto}` | `opaque.dpsgd.clipping.*` |
+| `opaque.noise.<dp-sgd-mechanism>` | `opaque.dpsgd.noise.*` |
+| `opaque.noise.mf.*` | `opaque.dpftrl.noise.*` |
+| `opaque.optimizers.adamw_bc` | `opaque.dpsgd.optimizers.adamw_bc` |
+| `opaque.optimizers.adamw_jme` | `opaque.dpftrl.optimizers.adamw_jme` |
+| `opaque.compat.*` | `opaque.performance.*` / `opaque.huggingface.patches` |
+| `opaque.patch_all()` | **removed** — per-sub-package auto-patching |
+| `OPAQUE_SKIP_COMPAT_PATCHES` | **removed** — use `OPAQUE_SKIP_PYTORCH_PATCHES`, `OPAQUE_SKIP_TRANSFORMERS_PATCHES`, `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES` |
 
-The monorepo has been split into first-class, standalone distributions,
-each with its own real `__init__.py` under a dedicated namespace root.
-There are **no backward-compatibility shims**. Every old import path is
-removed; downstream code must migrate in one pass.
+### Release infrastructure
 
-#### Added
+- New tag-triggered release workflow (`.github/workflows/release.yml`):
+  pushing a `v*.*.*` tag builds wheels for all seven Python
+  distributions in parallel plus a matrix of native `opaque-accounting`
+  wheels (`linux/amd64`, `linux/arm64`, `macos/arm64`), publishes to
+  GCP Artifact Registry via workload identity federation, and cuts a
+  GitHub Release with notes generated from the Conventional Commit log
+  by git-cliff.
+- Split CI: `pr.yml` runs a lighter PR gate; `ci.yml` runs the full
+  suite (including `slow`) on pushes to `main`.
+- Versioning: Python sub-packages use setuptools-scm for dynamic
+  versioning from the git tag. `.github/scripts/set_build_versions.sh`
+  preflights the build by rewriting `opaque-accounting/pyproject.toml`,
+  the workspace `Cargo.toml`, and the umbrella's `opaque-*==X` pins so
+  maturin and Cargo agree on the tag version. PEP 440 → SemVer mapping
+  applied for the Rust crate.
+- `cliff.toml` at the repo root drives both CHANGELOG and release-note
+  generation.
 
-- `opaque.core` (was top-level `opaque.*` primitives) — RNG, pytree
-  helpers, clipping primitives, Poisson sampling, distributed, profiling,
-  utils
-- `opaque.dpsgd` — Gaussian / truncated-Gaussian / per-group noise,
-  AdamW-BC, `TruncatedPoissonSampler`, adaptive + auto clipping
-- `opaque.dpftrl` — BLT / BSR / BiSR / band-MF / JME / λ-CGD mechanisms,
-  AdamW-JME, b-min-sep / cyclic-Poisson / balls-in-bins / sequential
-  samplers
-- `opaque.auditing` — curated facade for empirical privacy auditing
-- `opaque.performance` — fused Triton kernels (`opaque.performance.kernels`)
-  and PyTorch-version patches (`opaque.performance.torch.checkpoint`)
-- `opaque.huggingface` — HF Transformers patches (`opaque.huggingface.patches`)
-  plus scaffolded `trainer/`, `callbacks/`, `integrations/`, `data/`,
-  `models/` subpackages
-- `opaque.accounting` — Python facade over the native PyO3 extension
-  (mounted at `opaque.accounting._native`)
-- Inline CI step in `.github/workflows/ci.yml` enforcing the PEP 420
-  invariant (no stray `src/opaque/__init__.py` in sub-packages).
-  Replaces earlier `scripts/check_namespaces.py` (legacy-token and
-  negative-import refactor-diary checks removed post-migration).
+### Documentation
 
-#### Removed (no replacement with compatibility layer)
-
-- `opaque_accounting` top-level module — use `opaque.accounting`
-- `opaque.compat` namespace — split into `opaque.performance.kernels`,
-  `opaque.performance.torch.checkpoint`, and `opaque.huggingface.patches`
-- `opaque.sampling.truncated_poisson` — use `opaque.dpsgd.sampling.truncated_poisson`
-- `opaque.sampling.b_min_sep` / `.cyclic_poisson` / `.balls_in_bins` /
-  `.sequential` — use `opaque.dpftrl.sampling.*`
-- `opaque.clipping.adaptive` / `opaque.clipping.auto` — use
-  `opaque.dpsgd.clipping.*`
-- `opaque.noise.<dp-sgd-mechanism>` — use `opaque.dpsgd.noise.*`
-- `opaque.noise.mf.*` — use `opaque.dpftrl.noise.*`
-- `opaque.optimizers.adamw_bc` / `.adamw_jme` — use
-  `opaque.dpsgd.optimizers.adamw_bc` / `opaque.dpftrl.optimizers.adamw_jme`
-- Auto-import-time patching of HuggingFace models at the `opaque` level —
-  importing `opaque.huggingface` or `opaque.performance` now applies their
-  respective patches; the umbrella facade is gone.
-
-#### Changed
-
-- Test markers collapsed from 6 to 3: `cuda`, `mps`, `slow`. The legacy
-  `gpu` marker (and its `mps_compatible` modifier) is replaced by the
-  orthogonal `cuda`/`mps` pair; `hf_auth_required` is replaced by a
-  runtime `@requires_hf_auth` skipif helper keyed on `HF_TOKEN` /
-  `HUGGINGFACEHUB_API_TOKEN` / `HUGGINGFACE_TOKEN`. CI lane expressions
-  updated accordingly; `slow` runs on push to `main` only.
-- Umbrella `opaque` distribution pins sub-packages with `==` instead of
-  `>=` to prevent skew
-- Per-package `[project.optional-dependencies]` now cover
-  `opaque-performance[kernels]`, `opaque-huggingface[peft,kernels]`,
-  `opaque-accounting[cross-validation]`, and similar
-- The PyO3 native module is installed at `opaque.accounting._native` via
-  maturin's `module-name`; Rust crate/identifier name is unchanged
+- Full rewrite of every page under `docs/` for the new `opaque.*`
+  namespace — landing pages, user guides, API reference, mechanisms
+  reference, tutorials, release instructions.
+- Root `README.md` rewritten for the post-refactor structure.
+- Per-package `README.md` files added for `opaque-core`, `opaque-dpsgd`,
+  `opaque-dpftrl`, `opaque-auditing`, `opaque-performance`,
+  `opaque-huggingface`.
 
 ## [0.1.0] - 2026-03-11
 
