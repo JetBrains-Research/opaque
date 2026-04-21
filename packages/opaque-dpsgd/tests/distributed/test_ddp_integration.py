@@ -36,7 +36,7 @@ from opaque.core.utils import make_functional
 from opaque.core.utils.pytree import tree_leaves
 
 # Mark all tests in this file as requiring GPU
-pytestmark = pytest.mark.gpu
+pytestmark = pytest.mark.cuda
 
 
 class SimpleModel(nn.Module):

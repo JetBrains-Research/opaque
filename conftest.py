@@ -16,25 +16,7 @@ import torch
 
 
 def pytest_runtest_setup(item):
-    """Auto-skip tests based on markers and environment capabilities."""
-    requested_device = os.environ.get("OPAQUE_TEST_DEVICE", "").strip().lower()
-    running_on_mps = requested_device == "mps" or (
-        requested_device == ""
-        and torch.backends.mps.is_available()
-        and not torch.cuda.is_available()
-    )
-
-    if "gpu" in item.keywords:
-        if not (torch.cuda.is_available() or torch.backends.mps.is_available()):
-            pytest.skip("No GPU available (CUDA or MPS)")
-        is_mps_compatible = "mps_compatible" in item.keywords
-        if running_on_mps and not is_mps_compatible:
-            pytest.skip(
-                "gpu-marked test is disabled on MPS unless marked mps_compatible"
-            )
-        if not running_on_mps and not torch.cuda.is_available():
-            pytest.skip("gpu-marked tests require CUDA")
-
+    """Auto-skip tests based on the three orthogonal markers (cuda/mps/slow)."""
     if "cuda" in item.keywords and not torch.cuda.is_available():
         pytest.skip("CUDA not available")
 

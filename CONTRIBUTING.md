@@ -101,7 +101,8 @@ Opaque keeps only two root `uv` dependency groups; everything else lives in
 per-package `[project.optional-dependencies]`:
 
 ```bash
-uv sync --group dev --all-packages            # Core dev: pytest, ruff, scipy, all workspace packages
+uv sync --group dev --all-packages          # Tests + lint: pytest, ruff, scipy, all workspace packages
+uv sync --group examples --all-packages        # Examples runtime: torchopt, datasets, wandb (plus opaque packages)
 uv sync --group docs                           # + mkdocs stack
 
 # Package extras (compose with --extra):
@@ -129,18 +130,31 @@ uv run pytest packages/opaque/tests/clipping/test_clipped_fun.py -v
 
 ### Test Markers and Filtering
 
-Tests use pytest markers for filtering:
+Three orthogonal markers are declared in the root `pyproject.toml`:
+
+- `cuda` — requires CUDA; auto-skipped on non-CUDA hosts.
+- `mps` — requires Apple Metal (MPS); auto-skipped on non-MPS hosts.
+- `slow` — takes >5 s on CPU; excluded from PR CI, run on pushes to
+  `main`.
 
 ```bash
-# GPU tests (runs when CUDA is available)
-uv run pytest -m gpu
+# PR-equivalent lane (matches CPU CI)
+uv run pytest -m "not cuda and not mps and not slow"
 
-# MPS-compatible GPU subset (lightweight compatibility checks)
-uv run pytest -m mps_compatible
+# CUDA tests only (requires a GPU)
+uv run pytest -m cuda
 
-# Non-GPU tests only
-uv run pytest -m "not gpu"
+# MPS tests only (requires Apple Metal)
+uv run pytest -m mps
+
+# Slow tests (run on push to main)
+uv run pytest -m slow
 ```
+
+Gated HuggingFace models use the `@requires_hf_auth` skipif helper from
+`packages/opaque-huggingface/tests/huggingface/_helpers.py`. Set
+`HF_TOKEN` / `HUGGINGFACEHUB_API_TOKEN` / `HUGGINGFACE_TOKEN` to run
+those tests; otherwise they skip automatically.
 
 Other tests use `pytest.importorskip()` for automatic dependency handling:
 - HuggingFace tests: Skip if `transformers` not installed (install via `--extra huggingface` on the umbrella or `opaque-huggingface[peft]`)
@@ -150,19 +164,22 @@ No manual marker exclusion needed - tests skip automatically when dependencies a
 
 ### GPU and Multi-GPU Tests
 
-Some tests require a CUDA GPU. These are located in `packages/opaque/tests/distributed/` and
-use `torch.distributed` with NCCL backend:
+Some tests require a CUDA GPU. They live under each package's
+`tests/distributed/` directory (e.g. `packages/opaque-dpsgd/tests/distributed/`,
+`packages/opaque-huggingface/tests/distributed/`) and use `torch.distributed`
+with the NCCL backend:
 
 ```bash
-# Run GPU tests (requires CUDA)
-uv run pytest -m gpu -v
+# Run CUDA tests (requires CUDA)
+uv run pytest -m cuda -v
 
 # Run distributed tests (requires 2+ GPUs)
-uv run pytest packages/opaque/tests/distributed/ -v
+uv run pytest packages/opaque-dpsgd/tests/distributed/ \
+              packages/opaque-huggingface/tests/distributed/ -v
 ```
 
-`@pytest.mark.gpu` tests run when CUDA is available. On MPS, only tests marked
-`@pytest.mark.mps_compatible` are allowed to run.
+`@pytest.mark.cuda` tests auto-skip on hosts without CUDA; `@pytest.mark.mps`
+tests auto-skip on hosts without Apple Metal.
 
 ---
 

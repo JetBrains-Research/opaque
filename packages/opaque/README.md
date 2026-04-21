@@ -65,8 +65,8 @@ their own (`pip install opaque-dpsgd` → `import opaque.dpsgd` works).
 From monorepo root:
 
 ```bash
-uv sync --group dev --group compat
-uv run pytest -m "not gpu"
+uv sync --group dev --all-packages --extra all
+uv run pytest -m "not cuda and not mps and not slow"
 ```
 
 Each subpackage can be tested in isolation:

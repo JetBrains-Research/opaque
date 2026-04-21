@@ -17,7 +17,7 @@ Key validations:
 
 import pytest
 import torch
-from .._shared import (
+from _hf_shared import (
     get_default_gpu_device,
     gpu_memory_gate_reason,
     has_min_gpu_memory,
@@ -473,7 +473,7 @@ def _mellum_gate_reason() -> str:
     return gpu_memory_gate_reason(16, device=device)
 
 
-@pytest.mark.gpu
+@pytest.mark.cuda
 @pytest.mark.slow
 @pytest.mark.skipif(
     not _has_sufficient_gpu_memory(),
@@ -911,7 +911,7 @@ class TestEndToEndDPTraining:
 
 
 @pytest.mark.slow
-@pytest.mark.gpu
+@pytest.mark.cuda
 class TestMultiArchitectureModels:
     """Test DP training compatibility with various HuggingFace model architectures.
 

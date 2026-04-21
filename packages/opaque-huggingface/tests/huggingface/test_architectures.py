@@ -14,11 +14,12 @@ from opaque.core.utils import make_functional
 from ._helpers import (
     has_hf_token,
     prepare_lora_model,
+    requires_hf_auth,
     run_clipped_grad_test,
 )
 
 
-@pytest.mark.gpu
+@pytest.mark.cuda
 class TestMultiArchitectureCompatibility:
     """Test different model architectures."""
 
@@ -62,7 +63,7 @@ class TestMultiArchitectureCompatibility:
         )
         assert len(grads) > 0
 
-    @pytest.mark.hf_auth_required
+    @requires_hf_auth
     def test_gemma2_architecture(self, device):
         """Test Gemma2 architecture (custom sliding window attention).
 

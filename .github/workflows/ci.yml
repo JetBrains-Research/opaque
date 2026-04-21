@@ -22,12 +22,14 @@ jobs:
           - name: CPU
             os: ubuntu-latest
             python-version: "3.11"
-            marker-expression: "not gpu"
+            # slow tests run only on push to main; PRs exclude them via `and not slow`.
+            marker-expression: "not cuda and not mps and not slow"
             coverage-suffix: ""
           - name: MPS
             os: macos-latest
             python-version: "3.11"
-            marker-expression: "not gpu or mps_compatible"
+            # MPS runner picks up mps-marked tests; cuda-marked auto-skip.
+            marker-expression: "not cuda and not slow"
             coverage-suffix: "-mps"
 
     steps:
@@ -54,12 +56,29 @@ jobs:
             --cov-report=xml:coverage-accounting${{ matrix.coverage-suffix }}.xml \
             -v
 
-      - name: Run namespace + legacy-token lint
-        run: uv run python scripts/check_namespaces.py
+      - name: No stray src/opaque/__init__.py in sub-packages
+        run: |
+          stray=$(find packages -path 'packages/opaque/*' -prune \
+            -o -path '*/src/opaque/__init__.py' -print)
+          if [ -n "$stray" ]; then
+            echo "ERROR: stray src/opaque/__init__.py: $stray"; exit 1
+          fi
 
       - name: Cross-package import smoke test
         run: |
           uv run python -c "import opaque.core, opaque.dpsgd, opaque.mf, opaque.auditing, opaque.performance, opaque.performance.kernels, opaque.performance.torch.checkpoint, opaque.huggingface, opaque.huggingface.patches, opaque.accounting; print('OK')"
+
+      - name: Compute marker expression
+        id: marker
+        shell: bash
+        run: |
+          # On push to main, drop the `and not slow` guard so slow tests run.
+          # On PRs, use the matrix expression unchanged.
+          expr='${{ matrix.marker-expression }}'
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            expr="${expr// and not slow/}"
+          fi
+          echo "expression=$expr" >> "$GITHUB_OUTPUT"
 
       - name: Run full non-GPU test suite
         run: |
@@ -71,7 +90,7 @@ jobs:
             packages/opaque-performance/tests \
             packages/opaque-huggingface/tests \
             packages/opaque/tests \
-            -m "${{ matrix.marker-expression }}" \
+            -m "${{ steps.marker.outputs.expression }}" \
             --cov=opaque \
             --cov-report=xml:coverage-core${{ matrix.coverage-suffix }}.xml \
             -v
@@ -101,7 +120,7 @@ jobs:
       - name: Run CUDA tests
         run: |
           uv run pytest packages/opaque/tests \
-            -m "(gpu or cuda) and not hf_auth_required" \
+            -m "cuda" \
             --cov=opaque \
             --cov-report=xml \
             -v

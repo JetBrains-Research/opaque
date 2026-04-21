@@ -1,5 +1,6 @@
 """End-to-end tests for DP-FTRL noise in training loops."""
 
+import pytest
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset
@@ -409,30 +410,31 @@ class TestMfNoiseStrategies:
         y = x @ torch.randn(5, 1)
         return model, opt, template, x, y
 
-    def test_identity_strategy_trains(self):
+    @pytest.mark.parametrize(
+        "strategy_factory",
+        [
+            pytest.param(lambda: identity_strategy(), id="identity"),
+            pytest.param(
+                lambda: band_mf_strategy(n_steps=50, bands=10, momentum=0.0),
+                id="band_mf",
+            ),
+            pytest.param(
+                lambda: lambda_cgd_strategy(
+                    0.9, n_steps=50, min_sep=1, max_participations=1
+                ),
+                id="lambda_cgd",
+            ),
+            pytest.param(
+                lambda: bisr_strategy(
+                    bandwidth=4, n_steps=50, min_sep=10, max_participations=5
+                ),
+                id="bisr",
+            ),
+        ],
+    )
+    def test_strategy_trains(self, strategy_factory):
         model, opt, tmpl, x, y = self._setup()
-        nf, ns = mf_noise(tmpl, identity_strategy(), stddev=0.1, key=key(42))
-        losses = _train_loop(model, opt, nf, ns, x, y, steps=50)
-        assert losses[-1] < losses[0]
-
-    def test_band_mf_strategy_trains(self):
-        model, opt, tmpl, x, y = self._setup()
-        s = band_mf_strategy(n_steps=50, bands=10, momentum=0.0)
-        nf, ns = mf_noise(tmpl, s, stddev=0.1, key=key(42))
-        losses = _train_loop(model, opt, nf, ns, x, y, steps=50)
-        assert losses[-1] < losses[0]
-
-    def test_lambda_cgd_strategy_trains(self):
-        model, opt, tmpl, x, y = self._setup()
-        s = lambda_cgd_strategy(0.9, n_steps=50, min_sep=1, max_participations=1)
-        nf, ns = mf_noise(tmpl, s, stddev=0.1, key=key(42))
-        losses = _train_loop(model, opt, nf, ns, x, y, steps=50)
-        assert losses[-1] < losses[0]
-
-    def test_bisr_strategy_trains(self):
-        model, opt, tmpl, x, y = self._setup()
-        s = bisr_strategy(bandwidth=4, n_steps=50, min_sep=10, max_participations=5)
-        nf, ns = mf_noise(tmpl, s, stddev=0.1, key=key(42))
+        nf, ns = mf_noise(tmpl, strategy_factory(), stddev=0.1, key=key(42))
         losses = _train_loop(model, opt, nf, ns, x, y, steps=50)
         assert losses[-1] < losses[0]
 

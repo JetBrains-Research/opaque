@@ -88,6 +88,6 @@ pytest tests/distributed/test_ddp_models.py::TestDDPMultiGPUScaling::test_qwen2_
 ## Notes
 
 - Tests automatically skip when requirements are not met (e.g., no GPU, no distributed)
-- Use `-m "not gpu"` to skip GPU tests: `pytest tests/distributed/ -m "not gpu"`
+- Use `-m "not cuda"` to skip CUDA tests: `pytest tests/distributed/ -m "not cuda"`
 - DDP tests validate actual cross-device communication and synchronization
 - All tests pass in both single-device and multi-device modes

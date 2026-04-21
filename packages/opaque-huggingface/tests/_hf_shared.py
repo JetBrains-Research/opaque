@@ -11,7 +11,13 @@ from __future__ import annotations
 
 import torch
 
-from conftest import get_default_gpu_device  # workspace-root conftest
+def get_default_gpu_device():
+    """CUDA > MPS > None. Inlined to avoid conftest circular import."""
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return None
 
 # =============================================================================
 # Model Testing Utilities

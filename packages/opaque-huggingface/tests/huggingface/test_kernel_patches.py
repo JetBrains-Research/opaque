@@ -7,6 +7,8 @@ and remain vmap-compatible for DP-SGD.
 """
 
 import pytest
+
+from ._helpers import requires_hf_auth
 import torch
 import torch.nn.functional as F
 
@@ -50,11 +52,11 @@ def _get_tokenizer(model_name):
 # =============================================================================
 
 
-@pytest.mark.gpu
+@pytest.mark.cuda
 class TestMLPPatches:
     """Test that patched MLP forward produces correct outputs."""
 
-    @pytest.mark.hf_auth_required
+    @requires_hf_auth
     def test_swiglu_mlp_matches(self, device):
         """Patched LlamaMLP should match PyTorch reference."""
         from transformers.models.llama.modeling_llama import LlamaMLP
@@ -77,7 +79,7 @@ class TestMLPPatches:
             f"LlamaMLP output mismatch: max diff {(out - ref).abs().max():.2e}"
         )
 
-    @pytest.mark.hf_auth_required
+    @requires_hf_auth
     def test_geglu_exact_mlp_matches(self, device):
         """Patched GemmaMLP should match PyTorch reference."""
         try:
@@ -103,7 +105,7 @@ class TestMLPPatches:
             f"GemmaMLP output mismatch: max diff {(out - ref).abs().max():.2e}"
         )
 
-    @pytest.mark.hf_auth_required
+    @requires_hf_auth
     def test_geglu_approx_mlp_matches(self, device):
         """Patched Gemma2MLP should match PyTorch reference."""
         try:
@@ -135,11 +137,11 @@ class TestMLPPatches:
 # =============================================================================
 
 
-@pytest.mark.gpu
+@pytest.mark.cuda
 class TestGradients:
     """Test that gradients through patched modules are correct."""
 
-    @pytest.mark.hf_auth_required
+    @requires_hf_auth
     def test_backward_through_patched_mlp(self, device):
         """Gradients should flow correctly through patched MLP."""
         from transformers.models.llama.modeling_llama import LlamaMLP
@@ -164,11 +166,11 @@ class TestGradients:
 # =============================================================================
 
 
-@pytest.mark.gpu
+@pytest.mark.cuda
 class TestVmapCompatibility:
     """Test that patched modules work under vmap for DP-SGD."""
 
-    @pytest.mark.hf_auth_required
+    @requires_hf_auth
     def test_vmap_patched_mlp(self, device):
         """Patched MLP should produce correct output under vmap."""
         from transformers.models.llama.modeling_llama import LlamaMLP
@@ -197,7 +199,7 @@ class TestVmapCompatibility:
 # =============================================================================
 
 
-@pytest.mark.gpu
+@pytest.mark.cuda
 class TestEndToEnd:
     """End-to-end test with full model + LoRA + clipped_grad."""
 
@@ -345,7 +347,7 @@ class TestBatchifyForward:
 class TestCPUFallback:
     """Test that patched kernels fall back to original on CPU."""
 
-    @pytest.mark.hf_auth_required
+    @requires_hf_auth
     def test_swiglu_mlp_cpu(self):
         """Patched LlamaMLP should produce correct output on CPU."""
         from transformers.models.llama.modeling_llama import LlamaMLP
@@ -365,7 +367,7 @@ class TestCPUFallback:
             f"CPU SwiGLU mismatch: max diff {(out - ref).abs().max():.2e}"
         )
 
-    @pytest.mark.hf_auth_required
+    @requires_hf_auth
     def test_geglu_exact_mlp_cpu(self):
         """Patched GemmaMLP should produce correct output on CPU."""
         try:
@@ -436,7 +438,7 @@ class TestCPUFallback:
             f"CPU LoRA mismatch: max diff {(out - ref).abs().max():.2e}"
         )
 
-    @pytest.mark.hf_auth_required
+    @requires_hf_auth
     def test_full_model_cpu_forward_backward(self):
         """Full Llama model with LoRA should forward+backward correctly on CPU."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
@@ -465,7 +467,7 @@ class TestCPUFallback:
 # =============================================================================
 
 
-@pytest.mark.gpu
+@pytest.mark.cuda
 class TestCrossEntropyPatches:
     """Test that patched cross-entropy loss produces correct outputs."""
 
@@ -562,7 +564,7 @@ class TestCrossEntropyPatches:
 # =============================================================================
 
 
-@pytest.mark.gpu
+@pytest.mark.cuda
 class TestLoRAPatches:
     """Test that patched LoRA linear produces correct outputs."""
 
@@ -661,7 +663,7 @@ class TestLoRAPatches:
 # =============================================================================
 
 
-@pytest.mark.gpu
+@pytest.mark.cuda
 class TestQwen3Patches:
     """Test kernel patches for Qwen3 models."""
 
@@ -689,7 +691,7 @@ class TestQwen3Patches:
         )
 
 
-@pytest.mark.gpu
+@pytest.mark.cuda
 class TestGranitePatches:
     """Test kernel patches for Granite models."""
 
@@ -722,7 +724,7 @@ class TestGranitePatches:
 # =============================================================================
 
 
-@pytest.mark.gpu
+@pytest.mark.cuda
 class TestCoherePatches:
     """Test kernel patches for Cohere models (SwiGLU).
 
@@ -765,7 +767,7 @@ class TestCoherePatches:
 # =============================================================================
 
 
-@pytest.mark.gpu
+@pytest.mark.cuda
 class TestFusedLoRAMLP:
     """Test fused LoRA MLP patching via Opaque_LoRA_MLP kernel."""
 
@@ -835,7 +837,7 @@ class TestFusedLoRAMLP:
         assert Ag.grad is not None, "No gradient for gate LoRA A"
         assert Bd.grad is not None, "No gradient for down LoRA B"
 
-    @pytest.mark.hf_auth_required
+    @requires_hf_auth
     def test_auto_fuse_on_get_peft_model(self, device):
         """get_peft_model should auto-fuse MLP layers with LoRA on gate/up/down."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
@@ -856,7 +858,7 @@ class TestFusedLoRAMLP:
             mlp = layer.mlp
             assert "forward" in vars(mlp), "MLP forward should be fused"
 
-    @pytest.mark.hf_auth_required
+    @requires_hf_auth
     def test_fused_lora_mlp_model_forward_backward(self, device):
         """Full model with fused LoRA MLP should produce valid forward+backward."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
@@ -888,7 +890,7 @@ class TestFusedLoRAMLP:
                 assert not torch.isnan(p.grad).any(), f"NaN in gradient for {name}"
         assert has_grad, "No gradients computed"
 
-    @pytest.mark.hf_auth_required
+    @requires_hf_auth
     def test_patch_lora_model_manual(self, device):
         """patch_lora_model() should work for manually loaded PEFT models."""
         from opaque.huggingface.patches import patch_lora_model
@@ -929,7 +931,7 @@ class TestFusedLoRAMLP:
 # =============================================================================
 
 
-@pytest.mark.gpu
+@pytest.mark.cuda
 class TestFusedLoRAQKV:
     """Test fused LoRA QKV patching via Opaque_LoRA_QKV kernel."""
 
@@ -1028,7 +1030,7 @@ class TestFusedLoRAQKV:
         assert Ak.grad is not None, "No gradient for K LoRA A"
         assert Bv.grad is not None, "No gradient for V LoRA B"
 
-    @pytest.mark.hf_auth_required
+    @requires_hf_auth
     def test_auto_fuse_qkv_on_get_peft_model(self, device):
         """get_peft_model should auto-fuse QKV layers with LoRA on q/k/v."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
@@ -1051,7 +1053,7 @@ class TestFusedLoRAQKV:
                 "Attention should have _opaque_fused_qkv after auto-fuse"
             )
 
-    @pytest.mark.hf_auth_required
+    @requires_hf_auth
     def test_fused_lora_qkv_model_forward_backward(self, device):
         """Full model with fused LoRA QKV should produce valid forward+backward."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
@@ -1129,7 +1131,7 @@ class TestFusedLoRAQKV:
                 "Qwen3 attention should NOT have fused QKV (q_norm/k_norm)"
             )
 
-    @pytest.mark.hf_auth_required
+    @requires_hf_auth
     def test_patch_lora_model_manual_qkv(self, device):
         """patch_lora_model() should fuse QKV for manually loaded PEFT models."""
         from opaque.huggingface.patches import patch_lora_model
@@ -1164,7 +1166,7 @@ class TestFusedLoRAQKV:
             "QKV should be fused after patch_lora_model()"
         )
 
-    @pytest.mark.hf_auth_required
+    @requires_hf_auth
     def test_fused_qkv_clipped_grad(self, device):
         """Fused QKV should work end-to-end with clipped_grad (DP-SGD)."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")

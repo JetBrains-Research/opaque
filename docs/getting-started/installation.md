@@ -43,7 +43,7 @@ For development, install with dev dependencies:
 
 ```bash
 # Install dev dependencies
-uv sync --group dev
+uv sync --group dev --all-packages
 
 # Verify installation
 uv run pytest

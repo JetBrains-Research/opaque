@@ -10,7 +10,7 @@ import pytest
 import torch
 
 pytestmark = [
-    pytest.mark.gpu,
+    pytest.mark.cuda,
     pytest.mark.skipif(
         not torch.cuda.is_available(), reason="save_on_cpu requires CUDA"
     ),

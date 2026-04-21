@@ -9,8 +9,6 @@ import torch
 from opaque.core.clipping import clipped_grad
 
 
-@pytest.mark.gpu
-@pytest.mark.mps_compatible
 @pytest.mark.mps
 def test_mps_tiny_clipped_grad_smoke():
     """Run clipped_grad on a tiny tensor workload on MPS."""
@@ -35,8 +33,6 @@ def test_mps_tiny_clipped_grad_smoke():
     assert torch.isfinite(grads).all()
 
 
-@pytest.mark.gpu
-@pytest.mark.mps_compatible
 @pytest.mark.mps
 def test_mps_tiny_matmul_smoke():
     """Run a tiny native torch op on MPS to exercise basic backend path."""

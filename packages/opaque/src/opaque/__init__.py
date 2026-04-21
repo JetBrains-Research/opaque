@@ -38,7 +38,7 @@ from typing import Iterable
 #     from sibling sub-packages that do NOT live in this directory.
 #
 # See PEP 420 (implicit namespace packages) and ``pkgutil.extend_path`` for
-# background. A CI lint (``scripts/check_namespaces.py``) enforces that no
+# background. A CI step in ``.github/workflows/ci.yml`` enforces that no
 # other package accidentally commits ``src/opaque/__init__.py``, which would
 # shadow everything else.
 __path__ = pkgutil.extend_path(__path__, __name__)

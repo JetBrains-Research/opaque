@@ -15,7 +15,7 @@ from torch.utils.checkpoint import checkpoint
 from opaque.performance import is_checkpoint_patched
 
 pytestmark = [
-    pytest.mark.gpu,
+    pytest.mark.cuda,
     pytest.mark.skipif(
         not torch.cuda.is_available(),
         reason="Checkpoint patch tests require CUDA",
@@ -128,7 +128,7 @@ class TestCheckpointPatches:
         )
 
 
-@pytest.mark.gpu
+@pytest.mark.cuda
 class TestCheckpointWithClippedGrad:
     """Test checkpoint with the full clipped_grad pipeline."""
 

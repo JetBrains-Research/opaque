@@ -105,9 +105,9 @@ for batch_x, batch_y in dataloader:
 ## Development
 
 ```bash
-uv sync --group dev --group compat                                  # Install dev + HuggingFace dependencies
+uv sync --group dev --all-packages --extra all                   # Install test deps + all workspace packages
 uv run pytest packages/opaque/tests packages/opaque-accounting/tests # Run all tests
-uv run pytest -m "not gpu"                                         # Skip GPU tests
+uv run pytest -m "not cuda and not mps and not slow"               # PR-equivalent suite
 uv run ruff format packages/                                        # Format
 uv run ruff check packages/                                         # Lint
 cargo test --workspace                                              # Run Rust tests

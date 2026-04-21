@@ -12,9 +12,17 @@ module. Session-scoped fixture wrappers are re-exported here for convenience.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import pytest
 
-from ._shared import MODEL_CONFIGS, STANDARD_LORA_CONFIG
+# Make sibling `_shared.py` importable without relying on package-relative
+# imports (pytest runs under --import-mode=importlib; adding a `tests/__init__.py`
+# at multiple package roots collides, so tests/* are treated as plain dirs).
+sys.path.append(str(Path(__file__).parent))
+
+from _hf_shared import MODEL_CONFIGS, STANDARD_LORA_CONFIG  # noqa: E402
 
 
 @pytest.fixture(scope="session", autouse=True)

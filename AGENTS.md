@@ -36,7 +36,7 @@ gives a working `import opaque.dpsgd` without pulling the umbrella.
 
 ## Umbrella contract
 
-Three rules the umbrella upholds, enforced by `scripts/check_namespaces.py`:
+Three rules the umbrella upholds (rule 1 enforced in CI; rules 2 and 3 are design invariants):
 
 1. **Only `packages/opaque` ships `src/opaque/__init__.py`.** Every other
    distribution leaves `opaque/` as a PEP 420 namespace. The umbrella uses
@@ -59,12 +59,13 @@ Three rules the umbrella upholds, enforced by `scripts/check_namespaces.py`:
 ## Key commands
 
 ```bash
-uv sync --group dev --all-packages --extra all   # full workspace + all package extras
-uv run pytest -m "not gpu"                       # non-GPU Python tests
+uv sync --group dev --all-packages --extra all     # test suite: pytest, ruff, scipy + all package extras
+uv sync --group examples --all-packages --extra all  # examples/: torchopt, datasets, wandb + all package extras
+uv run pytest -m "not cuda and not mps and not slow"   # PR-equivalent suite
+uv run pytest -m "slow"                           # slow tests (run on push to main)
 uv run ruff check packages/                      # lint
 uv run ruff format --check packages/             # format check
 cargo test --workspace                           # Rust tests
-uv run python scripts/check_namespaces.py        # CI: stray inits, legacy tokens, negative imports
 ```
 
 Per-package tests:
@@ -159,6 +160,29 @@ algorithm would construct (DP-SGD adaptive/auto clipping, truncated
 Poisson; MF b-min-sep / cyclic / balls-in-bins / sequential sampling,
 BLT/BSR/BiSR/band-MF/JME/λ-CGD noise) lives with that algorithm.
 
+### Test markers
+
+Three orthogonal markers, declared in the root `pyproject.toml`:
+
+- `cuda` — test needs CUDA; auto-skipped on non-CUDA hosts.
+- `mps` — test needs Apple Metal; auto-skipped on non-MPS hosts.
+- `slow` — test takes >5 s on CPU; excluded from PR CI (`and not slow`)
+  and run on pushes to `main` (the CI job strips the `and not slow`
+  clause conditionally).
+
+Gated HuggingFace models use `@requires_hf_auth` imported from
+`packages/opaque-huggingface/tests/huggingface/_helpers.py`. It is a
+`skipif(not has_hf_token())` mark, not a pytest marker. Set `HF_TOKEN`
+(or `HUGGINGFACEHUB_API_TOKEN` / `HUGGINGFACE_TOKEN`) to run them.
+
+CI lane marker expressions:
+
+- CPU (Ubuntu): `-m "not cuda and not mps and not slow"`.
+- MPS (macOS): `-m "not cuda and not slow"`.
+- CUDA (self-hosted): `-m "cuda"`.
+- On push to `main` the CPU/MPS jobs drop `and not slow` so `slow` tests
+  run there.
+
 ### Supported HF model families
 
 LLaMA / Mistral / Qwen2 / Qwen3 / Phi-3 / Gemma / Gemma2 / Granite /
@@ -171,15 +195,14 @@ Cohere / Cohere2 / DeepSeek (inherits LLaMA). See
   (first run ~30s; cached afterwards).
 - Pure library — no application server or database; testing is entirely
   `pytest` + `cargo test`.
-- GPU tests marked `@pytest.mark.gpu` and auto-skip without a GPU; use
-  `-m "not gpu"` to exclude.
-- HuggingFace compat tests skip via `pytest.importorskip()` when
-  `transformers` / `peft` aren't installed.
-- `test_deep_heterogeneous_tree_no_recursion_error` in accounting is slow
-  (~2 min on CPU).
-- CI guardrail: `scripts/check_namespaces.py` combines stray-init,
-  legacy-token, and negative-import checks in a single script (no
-  standalone `check_negative_imports.py` anymore).
+- CUDA/MPS tests auto-skip when the accelerator is unavailable (marker-
+  driven). HuggingFace compat tests also skip via `pytest.importorskip()`
+  when `transformers` / `peft` aren't installed.
+- CI guardrail: a single shell step in `.github/workflows/ci.yml`
+  enforces that no sub-package ships `src/opaque/__init__.py` (the
+  PEP 420 invariant). Legacy-token and negative-import checks were
+  refactor-diary guards and have been removed now that the migration
+  is complete.
 
 ## Experiment tracking (W&B)
 

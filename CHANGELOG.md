@@ -37,8 +37,10 @@ removed; downstream code must migrate in one pass.
 - `opaque.patch_all()` curated umbrella facade honoring
   `OPAQUE_SKIP_COMPAT_PATCHES` (`all`, `huggingface`, `performance`,
   comma-combo)
-- `scripts/check_namespaces.py` and `scripts/check_negative_imports.py`
-  as CI guardrails enforcing the new layout
+- Inline CI step in `.github/workflows/ci.yml` enforcing the PEP 420
+  invariant (no stray `src/opaque/__init__.py` in sub-packages).
+  Replaces earlier `scripts/check_namespaces.py` (legacy-token and
+  negative-import refactor-diary checks removed post-migration).
 
 #### Removed (no replacement with compatibility layer)
 
@@ -59,6 +61,12 @@ removed; downstream code must migrate in one pass.
 
 #### Changed
 
+- Test markers collapsed from 6 to 3: `cuda`, `mps`, `slow`. The legacy
+  `gpu` marker (and its `mps_compatible` modifier) is replaced by the
+  orthogonal `cuda`/`mps` pair; `hf_auth_required` is replaced by a
+  runtime `@requires_hf_auth` skipif helper keyed on `HF_TOKEN` /
+  `HUGGINGFACEHUB_API_TOKEN` / `HUGGINGFACE_TOKEN`. CI lane expressions
+  updated accordingly; `slow` runs on push to `main` only.
 - Umbrella `opaque` distribution pins sub-packages with `==` instead of
   `>=` to prevent skew
 - Per-package `[project.optional-dependencies]` now cover

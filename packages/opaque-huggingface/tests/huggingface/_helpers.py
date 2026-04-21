@@ -29,6 +29,15 @@ def has_hf_token() -> bool:
     )
 
 
+# Runtime skip for tests that load gated HF models. Not a pytest marker:
+# just a skipif mark instance. Set HF_TOKEN (or HUGGINGFACEHUB_API_TOKEN /
+# HUGGINGFACE_TOKEN) in the environment to run these tests.
+requires_hf_auth = pytest.mark.skipif(
+    not has_hf_token(),
+    reason="HF token not set (test loads a gated HuggingFace model)",
+)
+
+
 @pytest.fixture(scope="module")
 def qwen2_config():
     """Small Qwen2 config for fast testing."""

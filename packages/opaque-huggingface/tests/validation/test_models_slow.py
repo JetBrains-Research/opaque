@@ -7,7 +7,7 @@ Tests use shared model configs and utilities from tests/conftest.py to avoid dup
 
 import pytest
 
-from .._shared import (
+from _hf_shared import (
     MODEL_CONFIGS,
     get_default_gpu_device,
     gpu_memory_gate_reason,
@@ -21,7 +21,7 @@ peft = pytest.importorskip("peft")
 
 
 @pytest.mark.slow
-@pytest.mark.gpu
+@pytest.mark.cuda
 class TestRealModelsSingleGPU:
     """Single-GPU validation with real pretrained weights using shared utilities."""
 

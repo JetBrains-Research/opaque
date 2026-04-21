@@ -29,7 +29,7 @@ import torch.multiprocessing as mp
 from opaque.core.clipping import clipped_grad
 from opaque.core.utils import make_functional, with_batch_dim
 from opaque.core.utils.pytree import tree_map
-from .._shared import (
+from _hf_shared import (
     MODEL_CONFIGS,
     build_text_batch,
     has_min_gpu_memory,
@@ -342,7 +342,7 @@ def _run_multi_gpu_wrapper(
 
 
 @pytest.mark.slow
-@pytest.mark.gpu
+@pytest.mark.cuda
 @pytest.mark.skipif(
     not HAS_HF,
     reason="transformers/peft libraries not installed",
@@ -363,7 +363,7 @@ class TestDDPQuickSanity:
 
 
 @pytest.mark.slow
-@pytest.mark.gpu
+@pytest.mark.cuda
 @pytest.mark.skipif(
     torch.cuda.device_count() < 2,
     reason="Need at least 2 GPUs for DDP scaling tests",
