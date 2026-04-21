@@ -27,7 +27,7 @@ def random_key() -> RngKey:
 
     Example:
         >>> from opaque.random import random_key
-        >>> from opaque.core.noise.gaussian import gaussian_noise
+        >>> from opaque.dpsgd.noise import gaussian_noise
         >>> k = random_key()
         >>> noise_fn, state = gaussian_noise(stddev=1.1, key=k)
     """
@@ -57,7 +57,7 @@ def set_reproducible_pytorch_seed(key_val: RngKey) -> None:
         ``fold_in()`` for per-step DP operations:
 
         >>> from opaque.random import key, fold_in, set_reproducible_pytorch_seed
-        >>> from opaque.core.noise.gaussian import gaussian_noise
+        >>> from opaque.dpsgd.noise import gaussian_noise
         >>>
         >>> # At start of training - configure all PyTorch/CUDNN RNG sources
         >>> set_reproducible_pytorch_seed(key(42))

@@ -190,8 +190,8 @@ def adaptive_clipped_grad(
 
     Example (single-device or distributed):
         >>> import torch
-        >>> from opaque.clipping import adaptive_clipped_grad
-        >>> from opaque.core.noise.gaussian import gaussian_noise
+        >>> from opaque.dpsgd.clipping import adaptive_clipped_grad
+        >>> from opaque.dpsgd.noise import gaussian_noise
         >>> from opaque.random import key
         >>> import torchopt
         >>>

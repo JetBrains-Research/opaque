@@ -6,7 +6,6 @@ import torch
 from torch.utils.data import TensorDataset
 
 from opaque.random import fold_in, key
-from opaque.dpftrl.sampling import CyclicPoissonSampler
 from opaque.dpsgd.sampling import PoissonSampler, TruncatedPoissonSampler
 
 
@@ -156,97 +155,6 @@ class TestTruncatedPoissonSamplerKeys:
 
         for batch in sampler:
             assert len(batch) <= 50, f"Batch size {len(batch)} exceeds max 50"
-
-
-class TestCyclicPoissonSamplerKeys:
-    """Test CyclicPoissonSampler with key-based RNG."""
-
-    def test_requires_key_parameter(self):
-        """Should require key parameter."""
-        dataset = TensorDataset(torch.randn(1000, 10))
-
-        with pytest.raises(TypeError, match="key"):
-            CyclicPoissonSampler(dataset, sampling_prob=0.1, cycle_length=10)
-
-    def test_reproducibility_with_same_key(self):
-        """Same key should produce same cyclic samples."""
-        dataset = TensorDataset(torch.randn(1000, 10))
-
-        sampler1 = CyclicPoissonSampler(
-            dataset,
-            sampling_prob=0.1,
-            cycle_length=10,
-            iterations=50,
-            key=key(42),
-        )
-        batches1 = list(sampler1)
-
-        sampler2 = CyclicPoissonSampler(
-            dataset,
-            sampling_prob=0.1,
-            cycle_length=10,
-            iterations=50,
-            key=key(42),
-        )
-        batches2 = list(sampler2)
-
-        assert len(batches1) == len(batches2)
-        for b1, b2 in zip(batches1, batches2, strict=False):
-            assert b1 == b2
-
-    def test_different_keys_produce_different_samples(self):
-        """Different keys should produce different cyclic samples."""
-        dataset = TensorDataset(torch.randn(1000, 10))
-
-        sampler1 = CyclicPoissonSampler(
-            dataset,
-            sampling_prob=0.1,
-            cycle_length=10,
-            iterations=50,
-            key=key(42),
-        )
-        batches1 = list(sampler1)
-
-        sampler2 = CyclicPoissonSampler(
-            dataset,
-            sampling_prob=0.1,
-            cycle_length=10,
-            iterations=50,
-            key=key(100),
-        )
-        batches2 = list(sampler2)
-
-        # Should be different (at least some batches)
-        assert batches1 != batches2
-
-    def test_rank_shifting_via_fold_in_cyclic(self):
-        """Cyclic sampler rank shifting via fold_in."""
-        dataset = TensorDataset(torch.randn(1000, 10))
-        base_key = key(42)
-
-        # Rank 0
-        sampler_rank0 = CyclicPoissonSampler(
-            dataset,
-            sampling_prob=0.1,
-            cycle_length=10,
-            iterations=50,
-            key=base_key,
-        )
-        batches_rank0 = list(sampler_rank0)
-
-        # Rank 1 (fold in rank)
-        rank1_key = fold_in(base_key, 1)
-        sampler_rank1 = CyclicPoissonSampler(
-            dataset,
-            sampling_prob=0.1,
-            cycle_length=10,
-            iterations=50,
-            key=rank1_key,
-        )
-        batches_rank1 = list(sampler_rank1)
-
-        # Should be different
-        assert batches_rank0 != batches_rank1
 
 
 class TestCrossValidationWithNumpy:

@@ -1,9 +1,10 @@
 # Sampling
 
-Sampling primitives are split across `opaque.functional` (Poisson and
-distributed helpers), `opaque.dpsgd.sampling` (truncated Poisson), and
-`opaque.dpftrl.sampling` (cyclic Poisson, b-min-sep, balls-in-bins, sequential).
-They provide privacy-amplifying sampling mechanisms for DP-SGD and DP-FTRL.
+Sampling primitives are split across `opaque.dpsgd.sampling` (Poisson and
+truncated Poisson) and `opaque.dpftrl.sampling` (cyclic Poisson, b-min-sep,
+balls-in-bins, sequential). Distributed shard helpers live in
+`opaque.distributed.shard`. They provide privacy-amplifying sampling
+mechanisms for DP-SGD and DP-FTRL.
 
 ## Overview
 
@@ -45,7 +46,7 @@ Opaque provides these sampling strategies:
 ## PoissonSampler
 
 ```python
-from opaque.functional import PoissonSampler
+from opaque.dpsgd.sampling import PoissonSampler
 from opaque.random import key
 
 sampler = PoissonSampler(

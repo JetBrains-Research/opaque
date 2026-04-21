@@ -16,14 +16,15 @@ Depends on `opaque-core`, `opaque-performance`, and `transformers>=4.57`.
 
 ## Quick start
 
-Patching is **opt-in** — `import opaque.huggingface` does **not** touch
-`transformers` until you call `patch_all()`:
+Patches are applied **automatically on import**. To opt out, set
+`OPAQUE_SKIP_TRANSFORMERS_PATCHES=all` (or a comma-separated subset; see
+`opaque.huggingface.patches`) before importing `transformers`:
 
 ```python
-import opaque.huggingface as hf
+import opaque.huggingface as hf    # patches applied here
 
-hf.patch_all()                 # apply vmap/kernel/kv-cache/data patches
 assert hf.is_patched()
+hf.patch_all()                     # idempotent — safe to call again
 ```
 
 ## Layout

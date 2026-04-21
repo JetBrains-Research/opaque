@@ -25,7 +25,7 @@ class ClipState(ABC):
         >>> grads, clip_state = grad_fn(params, batch_x, batch_y, state=clip_state)
         >>>
         >>> # Use sensitivity for noise calibration
-        >>> from opaque import gaussian_noise
+        >>> from opaque.dpsgd.noise import gaussian_noise
         >>> noise_fn, noise_state = gaussian_noise(stddev=1.1 * clip_state.sensitivity)
         >>> noisy_grads, noise_state = noise_fn(grads, noise_state)
     """

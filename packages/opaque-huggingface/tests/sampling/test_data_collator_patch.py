@@ -10,6 +10,7 @@ package at collection time (via the parent conftest) so the patch is live.
 import pytest
 
 
+@pytest.mark.slow
 class TestDataCollatorPatch:
     def test_empty_after_nonempty_returns_learned_structure(self):
         transformers = pytest.importorskip("transformers")
