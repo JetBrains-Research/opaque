@@ -8,7 +8,7 @@ library for PyTorch. See `README.md` and `CONTRIBUTING.md` for user docs.
 - **Language**: Python 3.11+ (< 3.13) + Rust stable (≥ 1.70)
 - **Package manager**: `uv`
 - **Hardware**: H200 80GB GPU for training runs; CPU/MPS for most tests
-- **Testing**: `pytest` (Python, ~900+ tests) + `cargo test` (Rust, ~255 tests)
+- **Testing**: `pytest` (Python, ~1200 tests) + `cargo test` (Rust)
 
 Opaque provides composable primitives for differentially private model
 training in PyTorch. Built on `torch.func` (vmap, grad), every component
@@ -21,7 +21,7 @@ Each sub-package owns its own namespace root under `opaque.*` with a real
 `pkgutil.extend_path` in the umbrella.
 
 | Distribution | Import root | Purpose | Build |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `opaque` (umbrella) | `opaque` | curated facade (`patch_all`, `__version__`) | setuptools |
 | `opaque-core` | `opaque.core` | RNG, pytree, clipping, sampling, distributed, profiling, utils | setuptools |
 | `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated-Gaussian / per-group noise, AdamW-BC, truncated Poisson, adaptive + auto clipping | setuptools |
@@ -29,21 +29,42 @@ Each sub-package owns its own namespace root under `opaque.*` with a real
 | `opaque-auditing` | `opaque.auditing` | empirical privacy auditing (one-run, coin-flip, loss attacks) | setuptools |
 | `opaque-performance` | `opaque.performance` | fused Triton kernels (`.kernels`) + PyTorch patches (`.torch.checkpoint`) | setuptools |
 | `opaque-huggingface` | `opaque.huggingface` | HF Transformers patches (`.patches`), future `trainer/callbacks/integrations` | setuptools |
-| `opaque-accounting` | `opaque.accounting` | PLD privacy accounting (PyO3 extension mounted at `opaque.accounting._native`) | maturin |
+| `opaque-accounting` | `opaque.accounting` | PLD privacy accounting (PyO3 extension at `opaque.accounting.opaque_accounting`, aliased as `_native`) | maturin |
 
 Sub-packages are independently installable; `pip install opaque-dpsgd`
 gives a working `import opaque.dpsgd` without pulling the umbrella.
 
+## Umbrella contract
+
+Three rules the umbrella upholds, enforced by `scripts/check_namespaces.py`:
+
+1. **Only `packages/opaque` ships `src/opaque/__init__.py`.** Every other
+   distribution leaves `opaque/` as a PEP 420 namespace. The umbrella uses
+   `pkgutil.extend_path(__path__, __name__)` so it composes with sub-packages
+   installed elsewhere on `sys.path` — `import opaque` works whether or not
+   the umbrella is installed, and all sub-namespaces remain reachable.
+2. **The umbrella is a facade, not a re-export.** It exposes exactly two
+   names: `opaque.__version__` and `opaque.patch_all()`. It does not
+   re-export `opaque.clip`, `opaque.noise`, `opaque.sampling`, etc. — each
+   algorithm owns its own dotted path (`opaque.dpsgd.noise.gaussian`,
+   `opaque.mf.sampling.b_min_sep`, …) and that's intentional. This matches
+   the convention of `zope.*`, `google.cloud.*`, `azure.*`, `sphinxcontrib.*`.
+3. **`opaque.accounting` stays a standalone package.** It is not split into
+   `opaque.dpsgd.accounting` / `opaque.mf.accounting`: the PLD library is a
+   general-purpose primitive consumed by (but not exclusive to) MF. The
+   Rust/PyO3 extension is mounted at `opaque.accounting.opaque_accounting`
+   (the `.so` filename matches the Rust crate) and aliased as `_native` in
+   the package's `__init__.py` so internal code can keep using the short name.
+
 ## Key commands
 
 ```bash
-uv sync --group dev --group compat      # install full workspace + HF compat extras
-uv run pytest -m "not gpu"              # non-GPU Python tests (~900+ tests, ~13 min on CPU)
-uv run ruff check packages/             # lint
-uv run ruff format --check packages/    # format check
-cargo test --workspace                  # Rust tests (~255 tests, ~3 min)
-python scripts/check_namespaces.py      # CI: no stray opaque/__init__.py, no legacy tokens
-python scripts/check_negative_imports.py  # CI: opaque_accounting / opaque.compat must be gone
+uv sync --group dev --all-packages --extra all   # full workspace + all package extras
+uv run pytest -m "not gpu"                       # non-GPU Python tests
+uv run ruff check packages/                      # lint
+uv run ruff format --check packages/             # format check
+cargo test --workspace                           # Rust tests
+uv run python scripts/check_namespaces.py        # CI: stray inits, legacy tokens, negative imports
 ```
 
 Per-package tests:
@@ -71,9 +92,29 @@ pip install opaque-huggingface[peft]     # + HF patches + PEFT extras
 pip install "opaque[all]"                # everything via umbrella
 ```
 
+### Dependency groups
+
+The root `pyproject.toml` keeps only two dev-facing dependency groups:
+
+- `dev` — pytest, pytest-cov, ruff, scipy (statistical tests).
+- `docs` — mkdocs stack.
+
+Everything else lives in the relevant package's
+`[project.optional-dependencies]`:
+
+| Extra | Pulls in |
+| --- | --- |
+| `opaque-huggingface[peft]` | `peft`, `transformers`, `datasets` |
+| `opaque-huggingface[kernels]` | HF + `opaque-performance[kernels]` |
+| `opaque-performance[kernels]` | `triton` |
+| `opaque-dpsgd[optimizers]` | `torchopt` |
+| `opaque-mf[optimizers]` | `torchopt` |
+| `opaque-accounting[cross-validation]` | `dp-accounting`, `riskcal` |
+| `opaque[all]` | everything |
+
 ## Patching model (opt-in)
 
-Patches are no longer applied on import. Call `opaque.patch_all()` once at
+Patches are not applied on import. Call `opaque.patch_all()` once at
 startup (or sub-system equivalents):
 
 ```python
@@ -100,10 +141,16 @@ under caller's autocast, backward has autocast OFF.
 
 ### Accounting native module
 
-The Rust/PyO3 extension is mounted at `opaque.accounting._native` via
-maturin's `module-name = "opaque.accounting._native"`. The Python facade
-at `opaque.accounting/__init__.py` re-exports an explicit `__all__`. No
-top-level `opaque_accounting` module exists anywhere.
+- Rust crate name: `opaque_accounting` (Cargo `[lib].name`, valid Rust
+  identifier; used by doctests via `use opaque_accounting::...`).
+- PyO3 `#[pymodule]` function: `opaque_accounting` → compiled artifact is
+  `opaque/accounting/opaque_accounting.abi3.so`.
+- maturin `module-name = "opaque.accounting.opaque_accounting"`,
+  `python-packages = ["opaque.accounting"]`.
+- The Python facade at `opaque.accounting/__init__.py` does
+  `from . import opaque_accounting as _native`; all submodules continue to
+  use `_native` as the private-impl alias. No top-level `opaque_accounting`
+  Python module exists anywhere.
 
 ### Partition policy
 
@@ -130,9 +177,9 @@ Cohere / Cohere2 / DeepSeek (inherits LLaMA). See
   `transformers` / `peft` aren't installed.
 - `test_deep_heterogeneous_tree_no_recursion_error` in accounting is slow
   (~2 min on CPU).
-- CI guardrails: `scripts/check_namespaces.py` (no stray inits, no legacy
-  tokens) + `scripts/check_negative_imports.py` (`opaque_accounting` and
-  `opaque.compat` must be gone).
+- CI guardrail: `scripts/check_namespaces.py` combines stray-init,
+  legacy-token, and negative-import checks in a single script (no
+  standalone `check_negative_imports.py` anymore).
 
 ## Experiment tracking (W&B)
 

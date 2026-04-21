@@ -24,7 +24,23 @@ import os
 import pkgutil
 from typing import Iterable
 
-# Compose with PEP 420 sub-packages installed elsewhere.
+# ---------------------------------------------------------------------------
+# PEP 420 composition contract
+# ---------------------------------------------------------------------------
+# The umbrella is the ONLY distribution that ships ``src/opaque/__init__.py``.
+# Every other ``opaque-*`` distribution installs its modules under the
+# ``opaque`` namespace WITHOUT an ``__init__.py`` (a PEP 420 namespace
+# package). ``pkgutil.extend_path`` below extends ``__path__`` with every
+# other directory named ``opaque/`` found on ``sys.path`` so that:
+#
+#   * ``import opaque.dpsgd`` works whether or not the umbrella is installed;
+#   * ``import opaque`` (with the umbrella installed) still exposes modules
+#     from sibling sub-packages that do NOT live in this directory.
+#
+# See PEP 420 (implicit namespace packages) and ``pkgutil.extend_path`` for
+# background. A CI lint (``scripts/check_namespaces.py``) enforces that no
+# other package accidentally commits ``src/opaque/__init__.py``, which would
+# shadow everything else.
 __path__ = pkgutil.extend_path(__path__, __name__)
 
 # ---------------------------------------------------------------------------

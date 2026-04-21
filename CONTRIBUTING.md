@@ -95,18 +95,23 @@ Opaque follows a Test-Driven Development workflow:
 
 ## Testing
 
-### Dependency Groups
+### Dependency Groups and Extras
 
-Opaque uses `uv` dependency groups to separate test dependencies:
+Opaque keeps only two root `uv` dependency groups; everything else lives in
+per-package `[project.optional-dependencies]`:
 
 ```bash
-uv sync                          # Core only (clipping, noise, accounting)
-uv sync --group dev              # + pytest, ruff, scipy
-uv sync --group compat           # + transformers, peft (HuggingFace tests)
-uv sync --group cross-validation # + dp-accounting, riskcal (reference comparison)
-uv sync --group examples         # + datasets, torchopt, jupyter, matplotlib
-uv sync --group docs             # + mkdocs
-uv sync --all-groups             # Everything
+uv sync --group dev --all-packages            # Core dev: pytest, ruff, scipy, all workspace packages
+uv sync --group docs                           # + mkdocs stack
+
+# Package extras (compose with --extra):
+#   opaque-huggingface[peft]        — HuggingFace + PEFT
+#   opaque-huggingface[kernels]     — + Triton kernels
+#   opaque-performance[kernels]     — Triton kernels
+#   opaque-dpsgd[optimizers]        — torchopt bindings
+#   opaque-mf[optimizers]           — torchopt bindings
+#   opaque-accounting[cross-validation] — dp-accounting, riskcal
+uv sync --group dev --all-packages --extra peft --extra kernels
 ```
 
 ### Running Tests
@@ -138,8 +143,8 @@ uv run pytest -m "not gpu"
 ```
 
 Other tests use `pytest.importorskip()` for automatic dependency handling:
-- HuggingFace tests: Skip if `transformers` not installed (requires `--group compat`)
-- Cross-validation: Skip if `dp-accounting` not installed (requires `--group cross-validation`)
+- HuggingFace tests: Skip if `transformers` not installed (install via `--extra huggingface` on the umbrella or `opaque-huggingface[peft]`)
+- Cross-validation: Skip if `dp-accounting` not installed (install via `opaque-accounting[cross-validation]`)
 
 No manual marker exclusion needed - tests skip automatically when dependencies are missing.
 

@@ -62,7 +62,7 @@ use pyo3::prelude::*;
 
 #[cfg(feature = "python-extension")]
 #[pymodule]
-fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn opaque_accounting(m: &Bound<'_, PyModule>) -> PyResult<()> {
     python::register(m)?;
     Ok(())
 }

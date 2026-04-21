@@ -7,14 +7,18 @@ Rules enforced:
    ``src/opaque/__init__.py``. Every other sub-package must leave
    ``opaque/`` as a PEP 420 namespace.
 2. Forbidden tokens must not appear in the repo (excluding CHANGELOG.md
-   and this script itself): ``opaque_accounting``, ``opaque.compat``,
-   ``opaque.sampling.b_min_sep``, ``opaque.sampling.truncated_poisson``,
-   ``opaque.clipping.adaptive``, ``opaque.clipping.auto``.
+   and this script itself): ``opaque_accounting`` (as a top-level Python
+   import), ``opaque.compat``, ``opaque.sampling.b_min_sep``,
+   ``opaque.sampling.truncated_poisson``, ``opaque.clipping.adaptive``,
+   ``opaque.clipping.auto``.
+3. Legacy Python modules must not be importable at runtime:
+   ``opaque_accounting``, ``opaque.compat``.
 
 Exit code 0 on success, 1 on failure.
 """
 from __future__ import annotations
 
+import importlib
 import re
 import sys
 from pathlib import Path
@@ -60,6 +64,13 @@ ALLOWED_FILES = {
     # Rust crate is still named `opaque_accounting` (valid Rust identifier);
     # the README documents Rust-side usage.
     PACKAGES_DIR / "opaque-accounting" / "README.md",
+    # The PyO3 extension is mounted at ``opaque.accounting.opaque_accounting``
+    # (the ``.so`` file name matches the Rust crate); the package's
+    # ``__init__`` aliases it as ``_native`` for internal use. The stub
+    # alongside it is documentation for that same module.
+    PACKAGES_DIR / "opaque-accounting" / "src" / "opaque" / "accounting" / "__init__.py",
+    PACKAGES_DIR / "opaque-accounting" / "src" / "opaque" / "accounting" / "opaque_accounting.pyi",
+    PACKAGES_DIR / "opaque-accounting" / "pyproject.toml",
 }
 # Directories that host the Rust/PyO3 internals where the legacy crate name
 # is still a Rust identifier (not a Python import path).
@@ -118,6 +129,16 @@ for root in SCAN_ROOTS:
             if m:
                 violations.append((path, lineno, m.group(0)))
 
+# --- Rule 3: Legacy modules must not be importable at runtime -------------
+FORBIDDEN_IMPORTS = ["opaque_accounting", "opaque.compat"]
+importable: list[str] = []
+for name in FORBIDDEN_IMPORTS:
+    try:
+        importlib.import_module(name)
+    except (ModuleNotFoundError, ImportError):
+        continue
+    importable.append(name)
+
 exit_code = 0
 if STRAY_INITS:
     exit_code = 1
@@ -131,7 +152,13 @@ if violations:
     for path, lineno, token in violations:
         print(f"  {path.relative_to(REPO_ROOT)}:{lineno}: {token}")
 
+if importable:
+    exit_code = 1
+    print("ERROR: legacy modules are still importable at runtime:")
+    for name in importable:
+        print(f"  {name}")
+
 if exit_code == 0:
-    print("OK: namespace layout and legacy tokens check passed.")
+    print("OK: namespace layout, legacy tokens, and runtime imports all clean.")
 
 sys.exit(exit_code)

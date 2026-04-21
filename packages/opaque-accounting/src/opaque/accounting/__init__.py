@@ -35,12 +35,16 @@ For calibration (finding noise for target privacy budget), use the
 :mod:`opaque.accounting.calibration` submodule.
 """
 
-# Import native module (PyO3 extension)
+# Import native module (PyO3 extension).
+# The compiled artifact lives at `opaque/accounting/opaque_accounting.abi3.so`
+# (the file name matches the Rust crate for a sensible-looking .so), but inside
+# Python we alias it to ``_native`` so submodules can keep a short, conventional
+# private-impl name.
 try:
-    from . import _native  # noqa: F401
+    from . import opaque_accounting as _native  # noqa: F401
 except ImportError as e:
     raise ImportError(
-        "opaque.accounting._native extension not found. "
+        "opaque.accounting native extension not found. "
         "Build with: uv run maturin develop --release "
         "-m packages/opaque-accounting/Cargo.toml"
     ) from e

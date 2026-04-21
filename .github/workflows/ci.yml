@@ -45,7 +45,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --group dev --group compat --all-packages
+        run: uv sync --group dev --all-packages --extra all
 
       - name: Run accounting tests
         run: |
@@ -56,9 +56,6 @@ jobs:
 
       - name: Run namespace + legacy-token lint
         run: uv run python scripts/check_namespaces.py
-
-      - name: Negative-import checks
-        run: uv run python scripts/check_negative_imports.py
 
       - name: Cross-package import smoke test
         run: |
@@ -99,7 +96,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: uv sync --group dev --group compat --all-packages
+        run: uv sync --group dev --all-packages --extra all
 
       - name: Run CUDA tests
         run: |

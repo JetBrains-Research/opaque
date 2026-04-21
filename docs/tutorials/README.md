@@ -29,8 +29,11 @@ Install Opaque and its tutorial dependencies from a repository checkout:
 ```bash
 git clone https://github.com/JetBrains-Research/opaque.git
 cd opaque
-uv sync --group examples
+uv sync --group dev --all-packages --extra huggingface --extra peft
+uv pip install jupyter matplotlib datasets torchopt torchvision
 jupyter lab docs/tutorials/
 ```
 
-The notebooks rely on the `examples` dependency group; there is no published `tutorials` extra.
+The notebooks rely on HuggingFace + PEFT (via the `opaque-huggingface[peft]`
+extra) plus a small set of notebook-specific packages installed directly with
+`uv pip install`. There is no published `tutorials` extra.

@@ -35,7 +35,7 @@ def test_mf_leaves_importable():
     )
 
 
-def test_mf_import_does_not_load_native_accounting():
+def test_mf_import_does_not_load_native_native():
     """``import opaque.mf`` must not pull the accounting native extension."""
     # Force a clean state for this assertion
     for m in [

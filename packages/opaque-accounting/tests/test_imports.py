@@ -7,7 +7,7 @@ import pathlib
 import pytest
 
 
-def test_import_accounting():
+def test_import_native():
     import opaque.accounting as acc
 
     assert acc.__version__
@@ -19,17 +19,24 @@ def test_import_accounting():
 
 
 def test_native_extension_location():
-    """The PyO3 extension must install under ``opaque.accounting._native``."""
+    """The PyO3 extension must install under ``opaque.accounting``.
+
+    The compiled ``.so`` is named after the Rust crate (``opaque_accounting``),
+    but Python code accesses it through the :data:`opaque.accounting._native`
+    alias defined in the package's ``__init__``.
+    """
     from opaque.accounting import _native
 
     path = pathlib.Path(_native.__file__)
-    assert path.name.startswith("_native"), f"unexpected native filename: {path.name}"
+    assert path.name.startswith("opaque_accounting"), (
+        f"unexpected native filename: {path.name}"
+    )
     # Must live inside the opaque/accounting package directory
     assert path.parent.name == "accounting", (
-        f"expected _native under opaque/accounting/, got {path}"
+        f"expected native extension under opaque/accounting/, got {path}"
     )
     assert path.parent.parent.name == "opaque", (
-        f"expected _native under opaque/accounting/, got {path}"
+        f"expected native extension under opaque/accounting/, got {path}"
     )
 
 

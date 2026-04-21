@@ -21,45 +21,17 @@ opaque-huggingface = { workspace = true }
 opaque-accounting = { workspace = true }
 
 [dependency-groups]
-# Core development - linting, formatting, testing
-# Install with: uv sync --group dev
+# Core development - linting, formatting, testing.
+# Everything else (HuggingFace compat, cross-validation, optimizer bindings,
+# example-script deps) lives in the relevant package's
+# [project.optional-dependencies]. Run `uv sync --group dev --all-packages`
+# followed by `--extra <name>` for the package extras you need, e.g.
+#   uv sync --group dev --all-packages --extra huggingface --extra peft
 dev = [
   "pytest>=7.0.0",
   "pytest-cov>=4.0.0",
   "ruff>=0.1.0",
   "scipy>=1.11.0",         # Statistical tests
-  "torchopt>=0.7.3",       # DP-SGD/MF optimizer extras
-]
-
-# Compatibility testing with HuggingFace ecosystem.
-# Delegates to opaque-huggingface[peft] so the deps live with the package.
-# Install with: uv sync --group compat
-compat = [
-  "transformers>=4.57.0",
-  "peft>=0.18.0",
-]
-
-# Cross-validation against other DP implementations.
-# Delegates to opaque-accounting[cross-validation].
-# Install with: uv sync --group cross-validation
-cross-validation = [
-  "dp-accounting>=0.4.4",
-  "riskcal>=1.2.0",
-]
-
-# Examples and tutorials
-# Install with: uv sync --group examples
-examples = [
-  "transformers>=4.57.0",
-  "peft>=0.18.0",
-  "datasets>=2.0.0",
-  "torchopt>=0.7.3",
-  "jupyter>=1.0.0",
-  "matplotlib>=3.10.7",
-  "torchvision>=0.25.0",
-  "wandb>=0.16.0",
-  "jetbrains-cadence",
-  "keyrings-alt>=5.0.0",   # Keyring backend for headless environments (cadence login)
 ]
 
 # Documentation building
