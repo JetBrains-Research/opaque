@@ -41,7 +41,13 @@ jobs:
         run: bash .github/scripts/set_build_versions.sh
 
       - name: Build wheel
+        # The preflight rewrites pyproject/Cargo pins, leaving the worktree
+        # dirty. setuptools-scm's dirty-tree heuristic would then bump the
+        # patch version and append `.dev0+g<sha>.d<date>` for every sub-package
+        # that uses dynamic versioning. Pin the version to the tag explicitly
+        # so every wheel carries the release version.
         run: |
+          export SETUPTOOLS_SCM_PRETEND_VERSION="${GITHUB_REF_NAME#v}"
           cd packages/${{ matrix.package }} && uv build --wheel --out-dir ../../dist
 
       - name: Upload wheel to artifacts
@@ -103,6 +109,7 @@ jobs:
     name: Publish to GCP + GitHub Release
     needs: [build-python-wheel, build-opaque-accounting]
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write
       id-token: write
@@ -149,7 +156,7 @@ jobs:
           UV_PUBLISH_PASSWORD: ${{ steps.gcp-auth.outputs.access_token }}
         run: |
           uv publish \
-            --publish-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/ \
+            --publish-url "${{ vars.PYTHON_REPOSITORY_URL }}" \
             dist/*.whl
 
       - name: Create GitHub Release
