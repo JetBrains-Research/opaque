@@ -281,40 +281,26 @@ This keeps release docs stable while allowing continuous docs updates on `main`.
 
 ## Creating a Release
 
-When you're ready to release a new version:
+Releases are cut from git tags. The version comes from
+[`setuptools-scm`](https://setuptools-scm.readthedocs.io/) — no literal
+`version = ...` to bump. Lockstep versioning: all eight packages ship at
+the same version.
 
-### Step 1: Trigger Release Preparation
+The full runbook lives at
+[`docs/development/releasing.md`](docs/development/releasing.md). Short
+summary:
 
 ```bash
-# Via GitHub CLI
-gh workflow run release.md --field version=0.1.0
+# From main, prepare the changelog on a release branch.
+git checkout main && git pull
+git checkout -b release/0.2.0
+uvx git-cliff --tag v0.2.0 --unreleased --config cliff.toml --prepend CHANGELOG.md
+# Review / edit CHANGELOG.md, commit, open a PR, merge.
 
-# Or via GitHub UI: Actions → "Automated Release" → Run workflow
-```
-
-The workflow will:
-- Analyze commits since the last release
-- Generate release notes with AI assistance
-- Update version numbers in `pyproject.toml` and documentation
-- Create a Pull Request with all changes
-
-### Step 2: Review and Merge
-
-- Review the PR for accuracy
-- Verify the AI-generated release notes
-- Make any edits if needed
-- Merge the PR when ready
-
-### Step 3: Automatic Publishing
-
-After the PR is merged, the release pipeline automatically continues:
-- Builds wheels for both `opaque-dp` and `opaque-accounting`
-- Publishes to GCP Artifact Registry
-- Creates a GitHub Release with notes and artifacts
-
-**Monitor the release:**
-```bash
-gh run watch
+# Tag and push — release.yml handles the build + publish.
+git checkout main && git pull
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 ---
