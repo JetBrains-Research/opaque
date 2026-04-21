@@ -32,38 +32,49 @@ from opaque.huggingface.patches._vmap_patches import (
     is_vmap_patched,
 )
 
+# `_dispatched` guards idempotency of apply_transformers_patches() — it
+# flips True on the first call regardless of outcome. `_is_transformers_patched`
+# is the user-visible status and reflects whether at least one sub-patch
+# actually ran, so banner/monitoring code can trust it.
+_dispatched = False
 _is_transformers_patched = False
 
 
 def apply_transformers_patches() -> None:
     """Apply all compatibility patches (idempotent)."""
-    global _is_transformers_patched
+    global _dispatched, _is_transformers_patched
 
-    if _is_transformers_patched:
+    if _dispatched:
         return
+    _dispatched = True
 
     skip = parse_skip_env("OPAQUE_SKIP_TRANSFORMERS_PATCHES")
     if "all" in skip:
-        _is_transformers_patched = True
         return
+
+    applied = False
 
     if "vmap" not in skip:
         apply_vmap_patches()
+        applied = True
 
     if "kv_cache" not in skip:
         apply_kv_cache_patches()
+        applied = True
 
     if "vmap" not in skip and "batchify" not in skip:
         apply_batchify_patches()
+        applied = True
 
     if "data" not in skip:
         apply_data_patches()
+        applied = True
 
-    _is_transformers_patched = True
+    _is_transformers_patched = applied
 
 
 def is_transformers_patched() -> bool:
-    """Check if compatibility patches have been applied."""
+    """Check if at least one compatibility sub-patch has been applied."""
     return _is_transformers_patched
 
 

@@ -30,7 +30,12 @@ from opaque.core._env import parse_skip_env
 
 logger = logging.getLogger(__name__)
 
-# Track patching state
+# `_kernel_dispatched` guards idempotency of apply_kernel_patches() — flips
+# True on the first call regardless of outcome. `_is_kernel_patched` is the
+# user-visible status and is True only when at least one target was actually
+# patched (so no-CUDA, no-Triton, =all, and empty-patched-list runs all
+# leave it False).
+_kernel_dispatched = False
 _is_kernel_patched = False
 
 
@@ -510,7 +515,10 @@ def _patch_forward(module_path: str, class_name: str, forward_factory) -> bool:
         cls.forward = forward_factory(cls.forward)
         return True
 
-    except (ImportError, RuntimeError):
+    except (ImportError, RuntimeError) as e:
+        logger.warning(
+            f"opaque: kernel patch {module_path}.{class_name} skipped: {e!r}"
+        )
         return False
 
 
@@ -522,8 +530,10 @@ def _patch_rope_functions(patched: list) -> None:
             if hasattr(module, "apply_rotary_pos_emb"):
                 module.apply_rotary_pos_emb = _opaque_apply_rotary_pos_emb
                 patched.append(f"{module_path.split('.')[-1]}.apply_rotary_pos_emb")
-        except (ImportError, RuntimeError):
-            pass
+        except (ImportError, RuntimeError) as e:
+            logger.warning(
+                f"opaque: RoPE patch {module_path} skipped: {e!r}"
+            )
 
 
 def _patch_cross_entropy_loss(patched: list) -> None:
@@ -536,8 +546,10 @@ def _patch_cross_entropy_loss(patched: list) -> None:
                 LOSS_MAPPING[key] = _opaque_causal_lm_loss
                 patched.append(f"LOSS_MAPPING[{key}]")
 
-    except (ImportError, RuntimeError):
-        pass
+    except (ImportError, RuntimeError) as e:
+        logger.warning(
+            f"opaque: LOSS_MAPPING cross-entropy patch skipped: {e!r}"
+        )
 
 
 def _patch_fused_ce(patched: list) -> None:
@@ -555,8 +567,10 @@ def _patch_lora_forward(patched: list) -> None:
         PeftLoRALinear.forward = _make_lora_linear_forward(PeftLoRALinear.forward)
         patched.append("peft.LoRA.Linear")
 
-    except (ImportError, RuntimeError):
-        pass
+    except (ImportError, RuntimeError) as e:
+        logger.warning(
+            f"opaque: peft.LoRA.Linear forward patch skipped: {e!r}"
+        )
 
     # Hook get_peft_model for automatic fused LoRA MLP patching
     try:
@@ -569,14 +583,18 @@ def _patch_lora_forward(patched: list) -> None:
             try:
                 _auto_fuse_lora(result)
             except Exception as e:
-                logger.debug(f"opaque: Fused LoRA MLP auto-patch skipped: {e}")
+                logger.warning(
+                    f"opaque: Fused LoRA MLP auto-patch skipped: {e!r}"
+                )
             return result
 
         peft.get_peft_model = _patched_get_peft_model
         patched.append("peft.get_peft_model(auto-fuse)")
 
-    except (ImportError, RuntimeError):
-        pass
+    except (ImportError, RuntimeError) as e:
+        logger.warning(
+            f"opaque: peft.get_peft_model auto-fuse hook skipped: {e!r}"
+        )
 
 
 # =============================================================================
@@ -979,26 +997,25 @@ def apply_kernel_patches() -> None:
 
     No-op when CUDA/Triton unavailable or OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all.
     """
-    global _is_kernel_patched
+    global _kernel_dispatched, _is_kernel_patched
 
-    if _is_kernel_patched:
+    if _kernel_dispatched:
         return
+    _kernel_dispatched = True
 
     if not torch.cuda.is_available():
-        _is_kernel_patched = True
         return
 
     try:
         import triton  # noqa: F401
     except ImportError:
-        _is_kernel_patched = True
         return
 
-    patched = []
     skip = parse_skip_env("OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES")
     if "all" in skip:
-        _is_kernel_patched = True
         return
+
+    patched: list[str] = []
 
     # SwiGLU MLP
     if "swiglu" not in skip:
@@ -1040,9 +1057,9 @@ def apply_kernel_patches() -> None:
     if patched:
         logger.debug(f"opaque: Applied Triton kernel patches to: {', '.join(patched)}")
 
-    _is_kernel_patched = True
+    _is_kernel_patched = bool(patched)
 
 
 def is_kernel_patched() -> bool:
-    """Check if Triton kernel patches have been applied."""
+    """Check if at least one Triton kernel patch has actually been applied."""
     return _is_kernel_patched

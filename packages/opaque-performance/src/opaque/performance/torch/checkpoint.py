@@ -312,7 +312,11 @@ def patch_checkpoint() -> None:
             _gradient_checkpointing_enable_nonreentrant
         )
     except ImportError:
-        pass
+        logger.info(
+            "opaque: transformers not importable; HF-side checkpoint wiring "
+            "(_hf_modeling.checkpoint override + non-reentrant default) skipped. "
+            "torch.utils.checkpoint is still patched."
+        )
 
     logger.debug("opaque: Applied checkpoint compatibility patches")
     _is_checkpoint_patched = True

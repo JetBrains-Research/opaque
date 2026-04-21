@@ -252,6 +252,16 @@ class TestCyclicPoissonSamplerProperties:
 class TestCyclicPoissonSamplerEdgeCases:
     """Test edge cases and error handling."""
 
+    def test_requires_key_parameter(self):
+        """`key=` is a required kwarg — guard against silent default-seeding.
+
+        A missing explicit RNG key is a DP correctness hazard (it would
+        silently re-seed across ranks / runs), so the constructor must
+        raise rather than pick a default.
+        """
+        with pytest.raises(TypeError, match="key"):
+            CyclicPoissonSampler(range(100), sampling_prob=0.1, cycle_length=10)
+
     def test_empty_dataset_raises(self):
         """Empty dataset raises error."""
         with pytest.raises(ValueError):
