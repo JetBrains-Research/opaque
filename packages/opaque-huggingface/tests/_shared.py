@@ -1,34 +1,17 @@
-"""Conftest for the opaque meta-package tests (validation + cross-mechanism).
+"""Shared helpers for opaque-huggingface validation + distributed tests.
 
-Shared GPU/device fixtures come from the workspace-root conftest.py.
-This file adds HF model loading helpers used by validation tests.
+Contains pure-Python utilities (``MODEL_CONFIGS``, ``STANDARD_LORA_CONFIG``,
+``build_text_batch``, ``has_min_gpu_memory``, ``gpu_memory_gate_reason``,
+``load_model_with_lora``, ``run_dp_training_step``) used by tests under
+``validation/`` and ``distributed/``. Fixtures and the autouse ``patch_all``
+invocation live in the sibling ``conftest.py``.
 """
 
-import os
+from __future__ import annotations
 
-import pytest
 import torch
 
-from conftest import get_default_gpu_device
-
-
-@pytest.fixture(scope="session", autouse=True)
-def _apply_opaque_patches():
-    """Opt into performance + HF patches for validation tests.
-
-    Patching is opt-in in production; validation tests that exercise HF
-    models under ``vmap(grad(...))`` require the HF and PyTorch patches.
-    """
-    import opaque
-
-    try:
-        opaque.patch_all()
-    except Exception:
-        # If opaque-huggingface isn't installed, patch_all still succeeds
-        # (HF hook is None). Any unexpected error should not break collection.
-        pass
-    yield
-
+from conftest import get_default_gpu_device  # workspace-root conftest
 
 # =============================================================================
 # Model Testing Utilities
@@ -327,13 +310,3 @@ def run_dp_training_step(
     return last_accumulated, state
 
 
-@pytest.fixture(scope="session")
-def model_configs():
-    """Provide model configurations to tests."""
-    return MODEL_CONFIGS
-
-
-@pytest.fixture(scope="session")
-def standard_lora_config():
-    """Provide standard LoRA configuration."""
-    return STANDARD_LORA_CONFIG

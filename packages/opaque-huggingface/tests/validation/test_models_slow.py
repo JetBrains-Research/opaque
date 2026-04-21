@@ -7,7 +7,7 @@ Tests use shared model configs and utilities from tests/conftest.py to avoid dup
 
 import pytest
 
-from tests.conftest import (
+from .._shared import (
     MODEL_CONFIGS,
     get_default_gpu_device,
     gpu_memory_gate_reason,

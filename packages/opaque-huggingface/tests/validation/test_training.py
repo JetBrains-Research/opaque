@@ -17,7 +17,7 @@ Key validations:
 
 import pytest
 import torch
-from tests.conftest import (
+from .._shared import (
     get_default_gpu_device,
     gpu_memory_gate_reason,
     has_min_gpu_memory,

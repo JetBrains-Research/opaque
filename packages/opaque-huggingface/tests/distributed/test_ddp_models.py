@@ -29,7 +29,7 @@ import torch.multiprocessing as mp
 from opaque.core.clipping import clipped_grad
 from opaque.core.utils import make_functional, with_batch_dim
 from opaque.core.utils.pytree import tree_map
-from tests.conftest import (
+from .._shared import (
     MODEL_CONFIGS,
     build_text_batch,
     has_min_gpu_memory,

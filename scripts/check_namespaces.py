@@ -56,11 +56,6 @@ ALLOWED_FILES = {
     REPO_ROOT / "CHANGELOG.md",
     Path(__file__).resolve(),
     REPO_ROOT / ".junie" / "plans" / "modularize-opaque-option-b.md",
-    # Negative-import smoke tests intentionally reference the old names.
-    PACKAGES_DIR / "opaque-huggingface" / "tests" / "test_imports.py",
-    PACKAGES_DIR / "opaque-performance" / "tests" / "test_imports.py",
-    PACKAGES_DIR / "opaque-accounting" / "tests" / "test_imports.py",
-    PACKAGES_DIR / "opaque-mf" / "tests" / "test_imports.py",
     # Rust crate is still named `opaque_accounting` (valid Rust identifier);
     # the README documents Rust-side usage.
     PACKAGES_DIR / "opaque-accounting" / "README.md",
