@@ -3,9 +3,10 @@
 import pytest
 import torch
 
-from opaque.core.clipping import clip_pytree, clipped_grad
-from opaque.core.clipping.types import FixedClipState
-from opaque.core.clipping.per_group import PerGroup, per_group
+from opaque.clipping import clipped_grad
+from opaque.clipping.pytree import clip_pytree
+from opaque.clipping.types import FixedClipState
+from opaque.clipping.per_group import PerGroup, per_group
 
 
 class TestClipPytreePerGroup:

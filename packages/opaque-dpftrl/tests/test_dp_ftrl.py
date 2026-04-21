@@ -19,7 +19,7 @@ from opaque.dpftrl.noise._toeplitz import (
     inverse_as_streaming_matrix,
     optimal_max_error_strategy_coefs,
 )
-from opaque.core.random import key
+from opaque.random import key
 from opaque.dpftrl.sampling import BallsInBinsSampler
 
 

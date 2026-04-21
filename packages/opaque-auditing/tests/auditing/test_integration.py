@@ -3,7 +3,7 @@
 import numpy as np
 
 from opaque.auditing import CoinFlip, one_run
-from opaque.core.random import key
+from opaque.random import key
 
 
 def _make_estimate(in_scores, out_scores):

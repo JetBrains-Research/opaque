@@ -27,9 +27,9 @@ No hidden mutable state. Every piece of the training loop is explicit.
 
 ```python
 import torchopt
-from opaque.core.clipping import clipped_grad
+from opaque.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.core.random import key
+from opaque.random import key
 
 # Gradient pipeline
 grad_fn, clip_state = clipped_grad(

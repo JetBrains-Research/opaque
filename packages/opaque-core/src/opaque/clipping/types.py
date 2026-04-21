@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC
 from dataclasses import dataclass
 
-from opaque.core.clipping.per_group import PerGroup
+from opaque.clipping.per_group import PerGroup
 
 
 class ClipState(ABC):
@@ -17,7 +17,7 @@ class ClipState(ABC):
     ``sensitivity`` property (the L2 sensitivity of the query).
 
     Example:
-        >>> from opaque.core.clipping import clipped_grad
+        >>> from opaque.clipping import clipped_grad
         >>> loss_fn = lambda params, x, y: ((x @ params - y) ** 2).mean()
         >>>
         >>> # Fixed clipping returns (callable, ClipState)
@@ -96,7 +96,7 @@ class FixedClipState(ClipState):
         normalize_by: Divisor applied to the clipped sum (1.0 = no averaging).
 
     Example:
-        >>> from opaque.core.clipping import clipped_grad
+        >>> from opaque.clipping import clipped_grad
         >>> loss_fn = lambda params, x, y: ((x @ params - y) ** 2).mean()
         >>> grad_fn, clip_state = clipped_grad(loss_fn, clipping_norm=1.5, batch_argnums=(1, 2))
         >>>

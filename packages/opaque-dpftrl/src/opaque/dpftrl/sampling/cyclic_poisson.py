@@ -17,7 +17,7 @@ from collections.abc import Iterator
 import numpy as np
 from torch.utils.data import Sampler
 
-from opaque.core.random import RngKey
+from opaque.random import RngKey
 from opaque.dpftrl.sampling._partitions import (
     PartitionType,
     _equal_split_partition,
@@ -62,7 +62,7 @@ class CyclicPoissonSampler(Sampler):
         key: RNG key for reproducibility.
 
     Example:
-        >>> from opaque.core.random import key
+        >>> from opaque.random import key
         >>> dataset = MyDataset(size=1000)
         >>> sampler = CyclicPoissonSampler(
         ...     dataset,

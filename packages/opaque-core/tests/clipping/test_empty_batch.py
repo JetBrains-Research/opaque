@@ -8,15 +8,15 @@ tensors, preserving adaptive clipping_norm, and avoiding DDP deadlocks.
 import torch
 import pytest
 
-from opaque.core.clipping import clipped_grad
+from opaque.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.dpsgd.clipping.adaptive import (
     AdaptiveClipState,
     AdaptiveClippedGradAux,
     _compute_clipping_stats,
 )
-from opaque.core.clipping.clipped_grad import ClippedGradAux
-from opaque.core.random import key
+from opaque.clipping.clipped_grad import ClippedGradAux
+from opaque.random import key
 
 
 # ---------------------------------------------------------------------------

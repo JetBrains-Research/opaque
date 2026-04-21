@@ -9,10 +9,10 @@ from typing import Any
 import torch
 from torch.func import vmap as _vmap
 
-from opaque.core.clipping._helpers import normalize_to_tuple
-from opaque.core.clipping.pytree import clip_pytree
-from opaque.core.clipping.types import FixedClipState
-from opaque.core.clipping.per_group import PerGroup
+from opaque.clipping._helpers import normalize_to_tuple
+from opaque.clipping.pytree import clip_pytree
+from opaque.clipping.types import FixedClipState
+from opaque.clipping.per_group import PerGroup
 from opaque.core.pytree import global_norm, tree_map
 
 

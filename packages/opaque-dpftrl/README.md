@@ -20,7 +20,7 @@ calibration helper (e.g. `bisr_strategy`) is called.
 ## Quick start
 
 ```python
-from opaque.core.random import key
+from opaque.random import key
 from opaque.dpftrl.noise import mf_noise, blt_strategy
 from opaque.dpftrl.sampling import BMinSepSampler
 ```

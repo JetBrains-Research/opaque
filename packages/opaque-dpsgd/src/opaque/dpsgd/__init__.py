@@ -1,27 +1,31 @@
 """Opaque DP-SGD: Differentially Private SGD mechanisms.
 
-Gaussian / truncated-Gaussian noise, adaptive and AUTO-S clipping,
-truncated Poisson sampling, and the AdamW-BC optimizer. All depend on
-primitives in :mod:`opaque.core`.
+Gaussian / truncated-Gaussian noise, per-group noise allocation, adaptive
+and AUTO-S clipping, the standard + truncated Poisson samplers, and the
+AdamW-BC optimizer. Fixed-clipping primitives used by this package live in
+:mod:`opaque.clipping`.
+
+Data classes (``AdaptiveClipState``, ``AdaptiveClippedGradAux``,
+``AutoClipState``, ``AutoClippedGradAux``) are importable from this module
+for type annotations but are not part of ``__all__`` — the public surface
+is functional.
 """
+
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
 from opaque.dpsgd import clipping, noise, optimizers, sampling
 from opaque.dpsgd.clipping.adaptive import (
-    AdaptiveClippedGradAux,
-    AdaptiveClipState,
-    adaptive_clipped_grad,
+    AdaptiveClippedGradAux as AdaptiveClippedGradAux,
 )
-from opaque.dpsgd.clipping.auto import (
-    AutoClippedFunAux,
-    AutoClippedGradAux,
-    AutoClipState,
-    auto_clipped_fun,
-    auto_clipped_grad,
-)
+from opaque.dpsgd.clipping.adaptive import AdaptiveClipState as AdaptiveClipState
+from opaque.dpsgd.clipping.adaptive import adaptive_clipped_grad
+from opaque.dpsgd.clipping.auto import AutoClippedGradAux as AutoClippedGradAux
+from opaque.dpsgd.clipping.auto import AutoClipState as AutoClipState
+from opaque.dpsgd.clipping.auto import auto_clipped_grad
 
-# Import for side effect: registers AdaptiveClipState / AdaptiveClippedGradAux
-# with opaque.distributed.sync(). Reach the sync functions directly via
-# opaque.dpsgd.clipping.distributed if explicit dispatch is needed.
+# Side-effect import: registers DP-SGD-specific sync handlers (AdaptiveClipState /
+# AdaptiveClippedGradAux) with opaque.distributed.sync(). Reach the helpers
+# directly via opaque.dpsgd.clipping.distributed if needed.
 from opaque.dpsgd.clipping import distributed as _clipping_distributed  # noqa: F401
 from opaque.dpsgd.noise.gaussian import gaussian_noise
 from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev
@@ -30,7 +34,10 @@ from opaque.dpsgd.optimizers.adamw_bc import adamw_bc
 from opaque.dpsgd.sampling.poisson import PoissonSampler
 from opaque.dpsgd.sampling.truncated_poisson import TruncatedPoissonSampler
 
-__version__ = "0.0.0.dev0"
+try:
+    __version__ = _pkg_version("opaque-dpsgd")
+except PackageNotFoundError:
+    __version__ = "0.0.0"
 
 __all__ = [
     "__version__",
@@ -39,15 +46,9 @@ __all__ = [
     "noise",
     "optimizers",
     "sampling",
-    # Clipping
+    # Clipping (DP-SGD-specific; fixed-clipping at opaque.clipping)
     "adaptive_clipped_grad",
-    "AdaptiveClipState",
-    "AdaptiveClippedGradAux",
-    "auto_clipped_fun",
     "auto_clipped_grad",
-    "AutoClipState",
-    "AutoClippedFunAux",
-    "AutoClippedGradAux",
     # Noise mechanisms
     "gaussian_noise",
     "truncated_gaussian_noise",
@@ -55,6 +56,6 @@ __all__ = [
     # Sampling
     "PoissonSampler",
     "TruncatedPoissonSampler",
-    # Optimizers
+    # Optimizer
     "adamw_bc",
 ]

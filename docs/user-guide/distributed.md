@@ -38,12 +38,12 @@ There are two valid approaches to noise in distributed DP-SGD:
 import torch
 import torch.distributed as dist
 import torchopt
-from opaque.core.clipping import clipped_grad
+from opaque.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.functional import make_functional
 import opaque.distributed as dist_utils
-from opaque.core.random import key, fold_in
+from opaque.random import key, fold_in
 from opaque.distributed import local_shard
 
 # Distributed setup
@@ -114,7 +114,7 @@ rank to get identical noise (centralized DP-SGD). Use `fold_in(key, rank)`
 to get independent per-rank noise streams when needed:
 
 ```python
-from opaque.core.random import key, fold_in
+from opaque.random import key, fold_in
 
 # Synchronized noise — same key on all ranks
 noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(42))
@@ -162,7 +162,7 @@ after each step:
 ```python
 from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.distributed import sync
-from opaque.core.random import key
+from opaque.random import key
 
 grad_fn, clip_state = adaptive_clipped_grad(
     loss_fn,
@@ -205,7 +205,7 @@ on the shard. Derive a per-rank key via `fold_in(key, rank)`.
 ```python
 import torch.distributed as dist
 from opaque.dpsgd.sampling import PoissonSampler
-from opaque.core.random import key, fold_in
+from opaque.random import key, fold_in
 from opaque.distributed import local_shard
 
 rank = dist.get_rank()

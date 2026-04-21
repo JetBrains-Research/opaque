@@ -6,15 +6,15 @@ from typing import Any, cast
 
 import torch
 
-from opaque.core.clipping._helpers import (
+from opaque.clipping._helpers import (
     batch_size_from_args,
     normalize_to_tuple,
     zero_grads_like,
 )
-from opaque.core.clipping.clipped_grad import ClippedGradAux, clipped_grad
-from opaque.core.clipping.types import ClipState
-from opaque.core.random import RngKey, fold_in, generator_from_key
-from opaque.core.clipping.per_group import PerGroup
+from opaque.clipping.clipped_grad import ClippedGradAux, clipped_grad
+from opaque.clipping.types import ClipState
+from opaque.random import RngKey, fold_in, generator_from_key
+from opaque.clipping.per_group import PerGroup
 
 _DEFAULT_FRACTION_NOISE_STD = 0.05
 
@@ -190,9 +190,9 @@ def adaptive_clipped_grad(
 
     Example (single-device or distributed):
         >>> import torch
-        >>> from opaque.core.clipping import adaptive_clipped_grad
+        >>> from opaque.clipping import adaptive_clipped_grad
         >>> from opaque.core.noise.gaussian import gaussian_noise
-        >>> from opaque.core.random import key
+        >>> from opaque.random import key
         >>> import torchopt
         >>>
         >>> def loss_fn(params, x, y):
@@ -232,9 +232,9 @@ def adaptive_clipped_grad(
 
     Example with distributed training (DDP with Poisson sampling):
         >>> import torch.distributed as dist
-        >>> from opaque.core.clipping import adaptive_clipped_grad, sync_adaptive_clip_state
+        >>> from opaque.clipping import adaptive_clipped_grad, sync_adaptive_clip_state
         >>> from opaque.distributed import sum_gradients
-        >>> from opaque.core.random import key
+        >>> from opaque.random import key
         >>> from opaque.dpsgd.sampling import PoissonSampler
         >>>
         >>> # Initialize distributed

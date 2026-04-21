@@ -45,7 +45,7 @@ The standard sampler. Each example is included independently with probability
 
 ```python
 from opaque.dpsgd.sampling import PoissonSampler
-from opaque.core.random import key
+from opaque.random import key
 import torch.utils.data as data
 
 dataset = data.TensorDataset(X, y)
@@ -90,7 +90,7 @@ epsilon) while preventing memory spikes from unusually large batches.
 
 ```python
 from opaque.dpsgd.sampling import TruncatedPoissonSampler
-from opaque.core.random import key
+from opaque.random import key
 
 sampler = TruncatedPoissonSampler(
     dataset,
@@ -130,7 +130,7 @@ is required for matrix-factorization correlated noise mechanisms
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler
 from opaque.dpftrl.sampling._partitions import PartitionType
-from opaque.core.random import key
+from opaque.random import key
 
 sampler = CyclicPoissonSampler(
     dataset,
@@ -182,7 +182,7 @@ Pair with `opaque.accounting.b_min_sep` for privacy accounting.
 
 ```python
 from opaque.dpftrl.sampling import BMinSepSampler
-from opaque.core.random import key
+from opaque.random import key
 
 p0 = batch_size / len(dataset)
 bands = 8
@@ -207,7 +207,7 @@ BnB privacy accounting. Used with DP-λCGD, BISR, BSR, and BLT mechanisms.
 
 ```python
 from opaque.dpftrl.sampling import BallsInBinsSampler
-from opaque.core.random import key
+from opaque.random import key
 
 sampler = BallsInBinsSampler(
     dataset,
@@ -290,7 +290,7 @@ and derive a per-rank key via `fold_in(key, rank)`:
 
 ```python
 from opaque.distributed import local_shard
-from opaque.core.random import key, fold_in
+from opaque.random import key, fold_in
 import torch.distributed as dist
 
 rank = dist.get_rank()
@@ -330,7 +330,7 @@ clipped gradient sums. The result is mathematically identical to processing
 the full batch.
 
 ```python
-from opaque.core.clipping import clipped_grad
+from opaque.clipping import clipped_grad
 
 grad_fn, clip_state = clipped_grad(
     loss_fn,

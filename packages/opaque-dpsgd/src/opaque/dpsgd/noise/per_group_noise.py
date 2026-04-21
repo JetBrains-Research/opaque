@@ -28,8 +28,8 @@ from __future__ import annotations
 
 import math
 
-from opaque.core.clipping.types import ClipState
-from opaque.core.clipping.per_group import PerGroup
+from opaque.clipping.types import ClipState
+from opaque.clipping.per_group import PerGroup
 
 
 def per_group_noise_stddev(clip_state: ClipState, noise_multiplier: float) -> PerGroup:
@@ -67,7 +67,7 @@ def per_group_noise_stddev(clip_state: ClipState, noise_multiplier: float) -> Pe
 
     Example::
 
-        from opaque.core.clipping import clipped_grad
+        from opaque.clipping import clipped_grad
         from opaque.dpsgd.noise.gaussian import gaussian_noise
         from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev
 

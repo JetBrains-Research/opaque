@@ -23,22 +23,22 @@ Top-level (user-facing):
 
 Internal primitives (`opaque.core.*`):
 
-- `opaque.core.random` — JAX-style RNG keys, PyTorch generator bridge
+- `opaque.random` — JAX-style RNG keys, PyTorch generator bridge
 - `opaque.core.pytree` — `tree_map`, `tree_leaves`, `partition`, `merge`,
   `global_norm`
-- `opaque.core.clipping` — per-example / per-group clipping primitives
+- `opaque.clipping` — per-example / per-group clipping primitives
   (`clipped_grad`, `clipped_fun`, `clip_pytree`, `ClipState`,
   `FixedClipState`, `PerGroup`, `per_group`). Distributed sync available
-  via `opaque.core.clipping.distributed`.
-- `opaque.core.sampling` — `empty_collate` wrapper for variable-size /
+  via `opaque.clipping.distributed`.
+- `opaque.functional` — `empty_collate` wrapper for variable-size /
   empty batches (shared by all Poisson-style samplers)
-- `opaque.core.noise.types` — `NoiseState` base class
+- `opaque.core.noise` — `NoiseState` base class
 
 ## Usage
 
 ```python
-from opaque.core.random import key
-from opaque.core.clipping import clipped_grad
+from opaque.random import key
+from opaque.clipping import clipped_grad
 from opaque.dpsgd.sampling import PoissonSampler
 
 rng = key(0)

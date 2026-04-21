@@ -15,7 +15,7 @@ from opaque.dpftrl.noise import (
     lambda_cgd_strategy,
     mf_noise,
 )
-from opaque.core.random import key
+from opaque.random import key
 
 
 # ── BandMfStrategy ──────────────────────────────────────────────────────

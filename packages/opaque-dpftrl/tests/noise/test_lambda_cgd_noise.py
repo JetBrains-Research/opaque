@@ -6,7 +6,7 @@ import torch
 import opaque.accounting as acc
 from opaque.dpftrl.noise.lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
 from opaque.dpftrl.noise import mf_noise
-from opaque.core.random import key
+from opaque.random import key
 
 
 def _make_noise(template, n_steps=100, lambda_=0.9, normalized=True, seed=42):

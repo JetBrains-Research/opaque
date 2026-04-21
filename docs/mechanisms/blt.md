@@ -117,7 +117,7 @@ If you need subsampling amplification with correlated noise, use
 
 ```python
 from opaque.dpftrl.noise import mf_noise, blt_strategy
-from opaque.core.random import key
+from opaque.random import key
 
 # Single participation
 strategy = blt_strategy(n_steps=10000, min_sep=1, max_buffers=10)

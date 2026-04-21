@@ -4,8 +4,8 @@ import pytest
 import torch
 from torch.func import grad
 
-from opaque.core.clipping.clipped_fun import clipped_fun
-from opaque.core.clipping.pytree import clip_pytree
+from opaque.clipping.clipped_fun import clipped_fun
+from opaque.clipping.pytree import clip_pytree
 
 
 @pytest.fixture(params=["cpu", "cuda", "mps"])
@@ -410,7 +410,7 @@ def test_clipped_fun_microbatching_with_pytree():
     x = torch.randn(batch_size, 10, 1)
 
     # Create clipped gradient functions
-    from opaque.core.clipping import clipped_grad
+    from opaque.clipping import clipped_grad
 
     clipped_grad_fn_no_mb, clip_state_no_mb = clipped_grad(
         loss_fn, argnums=0, batch_argnums=1, clipping_norm=1.0, microbatch_size=None

@@ -234,7 +234,7 @@ def _ensure_builtin_sync_types_loaded() -> None:
     registers itself only when :mod:`opaque.performance` is installed, which
     is a soft dependency — missing it must not break ``sync()``.
     """
-    import opaque.core.clipping.distributed  # noqa: F401
+    import opaque.clipping.distributed  # noqa: F401
 
     try:
         import opaque.performance.profiling.distributed  # noqa: F401

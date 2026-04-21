@@ -4,7 +4,7 @@ Opaque provides immutable, JAX-style RNG key semantics with explicit key threadi
 
 ## Overview
 
-The `opaque.core.random` module provides:
+The `opaque.random` module provides:
 
 - **Core primitives**: `RngKey`, `split()`, `fold_in()` - Functional RNG with immutable keys
 - **Convenience helpers**:
@@ -19,10 +19,10 @@ The `opaque.core.random` module provides:
 
 ```python
 # Core primitives
-from opaque.core.random import RngKey, split, fold_in, key, generator_from_key
+from opaque.random import RngKey, split, fold_in, key, generator_from_key
 
 # Convenience helpers
-from opaque.core.random import random_key, set_reproducible_pytorch_seed
+from opaque.random import random_key, set_reproducible_pytorch_seed
 ```
 
 ### Creating Keys
@@ -69,7 +69,7 @@ step_rank_key = fold_in(base_key, step, rank)
 
 ```python
 # Set all PyTorch/CUDNN seeds from RngKey
-from opaque.core.random import set_reproducible_pytorch_seed, key, fold_in
+from opaque.random import set_reproducible_pytorch_seed, key, fold_in
 
 set_reproducible_pytorch_seed(key(42))
 
@@ -106,7 +106,7 @@ Immutable RNG key. Thread explicitly through functions for deterministic randomn
 Create an RngKey from an integer seed.
 
 ```python
-from opaque.core.random import key
+from opaque.random import key
 
 k = key(42)
 ```
@@ -125,7 +125,7 @@ k = key(42)
 Create a non-deterministic RngKey using system entropy.
 
 ```python
-from opaque.core.random import random_key
+from opaque.random import random_key
 
 k = random_key()  # Each call returns different key
 ```
@@ -141,7 +141,7 @@ Useful for prototyping and experiments. For reproducible training, use `key()` w
 Split a key into `num` independent child keys.
 
 ```python
-from opaque.core.random import split, key
+from opaque.random import split, key
 
 k = key(42)
 k1, k2 = split(k, num=2)
@@ -170,7 +170,7 @@ Accepts a variable number of int/str arguments. Each value is folded
 sequentially, so `fold_in(k, a, b)` equals `fold_in(fold_in(k, a), b)`.
 
 ```python
-from opaque.core.random import fold_in, key
+from opaque.random import fold_in, key
 
 base_key = key(42)
 
@@ -211,7 +211,7 @@ key_v2 = fold_in(base_key, "v2")
 Create a deterministic `torch.Generator` from an RngKey.
 
 ```python
-from opaque.core.random import generator_from_key, key
+from opaque.random import generator_from_key, key
 import torch
 
 k = key(42)
@@ -235,7 +235,7 @@ tensor = torch.randn(10, generator=gen)
 Configure PyTorch and CUDNN for reproducible training from a single RngKey.
 
 ```python
-from opaque.core.random import key, fold_in, set_reproducible_pytorch_seed
+from opaque.random import key, fold_in, set_reproducible_pytorch_seed
 
 # At training start
 set_reproducible_pytorch_seed(key(42))
@@ -265,7 +265,7 @@ Sets:
 **Example:**
 
 ```python
-from opaque.core.random import key, fold_in, split, set_reproducible_pytorch_seed
+from opaque.random import key, fold_in, split, set_reproducible_pytorch_seed
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpsgd.sampling import PoissonSampler
 
@@ -297,7 +297,7 @@ for step in range(1000):
 Split master key for different components:
 
 ```python
-from opaque.core.random import split, key
+from opaque.random import split, key
 
 master = key(42)
 sampling_key, noise_key, init_key = split(master, num=3)
@@ -312,7 +312,7 @@ model = initialize_model(init_key)  # If using jax
 Thread key through loop, splitting at each step:
 
 ```python
-from opaque.core.random import split, key
+from opaque.random import split, key
 
 k = key(42)
 for step in range(100):
@@ -326,7 +326,7 @@ for step in range(100):
 
 ```python
 import torch.distributed as dist
-from opaque.core.random import key, fold_in
+from opaque.random import key, fold_in
 
 rank = dist.get_rank()
 base = key(42)
@@ -342,7 +342,7 @@ for step in range(steps):
 **Manual approach** (for reference):
 
 ```python
-from opaque.core.random import split, key
+from opaque.random import split, key
 
 master = key(42)
 sampling_key, noise_master = split(master, num=2)
@@ -362,7 +362,7 @@ Ensure all randomness uses RngKey:
 
 ```python
 # Correct: Use RngKey throughout
-from opaque.core.random import set_reproducible_pytorch_seed, key, fold_in
+from opaque.random import set_reproducible_pytorch_seed, key, fold_in
 
 set_reproducible_pytorch_seed(key(42))  # Framework
 base = key(42)
@@ -398,7 +398,7 @@ noise_fn = gaussian_noise(..., key=rank_keys[rank])
 Use `fold_in()` for deterministic resume:
 
 ```python
-from opaque.core.random import fold_in, key
+from opaque.random import fold_in, key
 
 base_key = key(42)
 

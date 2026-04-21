@@ -10,7 +10,7 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from opaque.core.random import RngKey
+from opaque.random import RngKey
 from opaque.dpsgd.sampling.poisson import PoissonSampler
 
 
@@ -30,7 +30,7 @@ class TruncatedPoissonSampler(PoissonSampler):
         key: RNG key for reproducibility. Use ``key()`` or ``fold_in()``.
 
     Example:
-        >>> from opaque.core.random import key
+        >>> from opaque.random import key
         >>> dataset = MyDataset(...)
         >>> sampler = TruncatedPoissonSampler(
         ...     dataset,

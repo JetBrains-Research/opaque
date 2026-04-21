@@ -24,7 +24,7 @@ from opaque.auditing.one_run.stats import (
     validate_delta,
     validate_significance,
 )
-from opaque.core.random import RngKey
+from opaque.random import RngKey
 
 __all__ = ["OneRunEstimate", "one_run"]
 
@@ -46,7 +46,7 @@ def one_run(scores: np.ndarray, *, coin_flip: CoinFlip) -> OneRunEstimate:
     Example::
 
         import opaque.auditing as auditing
-        from opaque.core.random import key
+        from opaque.random import key
 
         cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
         scores = auditing.loss_scores(loss_fn, params,

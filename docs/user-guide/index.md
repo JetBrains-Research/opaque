@@ -15,10 +15,10 @@ them together:
 import torch
 import torchopt
 import opaque.accounting as acc
-from opaque.core.clipping import clipped_grad
+from opaque.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpsgd.sampling import PoissonSampler
-from opaque.core.random import key, split
+from opaque.random import key, split
 
 # --- Privacy parameters ---
 dataset_size = 50_000

@@ -157,7 +157,7 @@ use `0` to disable transcript reuse and fall back to one-shot MC per `pld()` cal
 
 ```python
 from opaque.dpftrl.noise import mf_noise, band_mf_strategy
-from opaque.core.random import key
+from opaque.random import key
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
 noise_fn, noise_state = mf_noise(
@@ -206,10 +206,10 @@ sampling pattern that the noise strategy exploits:
 
 ```python
 import torch
-from opaque.core.clipping import clipped_grad
+from opaque.clipping import clipped_grad
 from opaque.dpftrl.noise import mf_noise, band_mf_strategy
 from opaque.dpftrl.sampling import CyclicPoissonSampler
-from opaque.core.random import key, split
+from opaque.random import key, split
 import opaque.accounting as acc
 
 n_steps, bands = 1000, 10

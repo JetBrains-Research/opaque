@@ -19,7 +19,7 @@ from opaque.dpftrl.noise import (
     JmeNoiseOutput,
     JmeNoiseState,
 )
-from opaque.core.random import key
+from opaque.random import key
 
 
 # ── Calibration helpers ──────────────────────────────────────────────

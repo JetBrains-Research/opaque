@@ -5,7 +5,7 @@ import pytest
 import torch
 from torch.utils.data import TensorDataset
 
-from opaque.core.random import fold_in, key
+from opaque.random import fold_in, key
 from opaque.dpftrl.sampling import CyclicPoissonSampler
 from opaque.dpsgd.sampling import PoissonSampler, TruncatedPoissonSampler
 

@@ -24,7 +24,7 @@ from collections.abc import Iterator
 import numpy as np
 from torch.utils.data import Sampler
 
-from opaque.core.random import RngKey
+from opaque.random import RngKey
 
 
 class BallsInBinsSampler(Sampler):
@@ -49,7 +49,7 @@ class BallsInBinsSampler(Sampler):
         key: RNG key for reproducibility.
 
     Example:
-        >>> from opaque.core.random import key
+        >>> from opaque.random import key
         >>> dataset = MyDataset(...)
         >>> sampler = BallsInBinsSampler(
         ...     dataset, num_bins=100, num_epochs=10, key=key(42)

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "opaque-core"
 dynamic = ["version"]
-description = "Opaque core primitives: RNG, pytree, clipping, sampling, distributed, profiling"
+description = "Opaque shared primitives: clipping, random, functional, distributed + opaque.core internals"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Opaque Contributors" }]
@@ -29,7 +29,13 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["opaque.core*", "opaque.functional*", "opaque.distributed*"]
+include = [
+    "opaque.core*",
+    "opaque.clipping*",
+    "opaque.random*",
+    "opaque.functional*",
+    "opaque.distributed*",
+]
 namespaces = true
 
 [tool.setuptools_scm]

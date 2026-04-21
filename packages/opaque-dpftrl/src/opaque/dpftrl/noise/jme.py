@@ -38,9 +38,9 @@ from typing import Any, NamedTuple
 
 import torch
 
-from opaque.core.noise.types import NoiseState
-from opaque.core.random import RngKey
-from opaque.core.random import fold_in as rng_fold_in
+from opaque.core.noise import NoiseState
+from opaque.random import RngKey
+from opaque.random import fold_in as rng_fold_in
 from opaque.core.pytree import tree_map
 
 from ._engine import MFNoiseState

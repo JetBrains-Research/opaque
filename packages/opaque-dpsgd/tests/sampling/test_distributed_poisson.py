@@ -10,7 +10,7 @@ import pytest
 import torch
 from torch.utils.data import TensorDataset
 
-from opaque.core.random import fold_in, key
+from opaque.random import fold_in, key
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.dpsgd.sampling import TruncatedPoissonSampler
 from opaque.distributed.shard import _local_shard_bounds, local_shard

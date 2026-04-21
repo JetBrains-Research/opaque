@@ -77,7 +77,7 @@ enter sensitivity or Gram matrix computation).
 
 ```python
 from opaque.dpftrl.noise import mf_noise, bisr_strategy
-from opaque.core.random import key
+from opaque.random import key
 
 strategy = bisr_strategy(
     bandwidth=4,

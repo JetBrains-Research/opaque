@@ -13,11 +13,9 @@ PyTorch.
 from opaque.performance.torch.checkpoint import (
     is_checkpoint_patched,
     patch_checkpoint,
-    unpatch_checkpoint,
 )
 
 __all__ = [
     "patch_checkpoint",
-    "unpatch_checkpoint",
     "is_checkpoint_patched",
 ]

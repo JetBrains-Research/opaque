@@ -24,22 +24,18 @@ Environment::
     OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all    # skip the HF kernel patches
 """
 
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
 from opaque.core._env import parse_skip_env
 from opaque.performance.torch.checkpoint import (
     is_checkpoint_patched,
     patch_checkpoint,
-    unpatch_checkpoint,
 )
 
-__version__ = "0.0.0.dev0"
-
-__all__ = [
-    "__version__",
-    "patch_all",
-    "patch_checkpoint",
-    "unpatch_checkpoint",
-    "is_checkpoint_patched",
-]
+try:
+    __version__ = _pkg_version("opaque-performance")
+except PackageNotFoundError:
+    __version__ = "0.0.0"
 
 
 def patch_all() -> None:
@@ -65,6 +61,15 @@ def patch_all() -> None:
     from opaque.performance.huggingface import patch_all as _patch_hf_kernels
 
     _patch_hf_kernels()
+
+
+__all__ = [
+    "__version__",
+    "patch_all",
+    "is_checkpoint_patched",
+]
+# `patch_checkpoint` is importable for explicit re-application but not
+# in __all__ — env vars + patch_all() are the recommended paths.
 
 
 # Auto-apply performance patches on import. Disable via

@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader, Subset, TensorDataset
 
 import opaque.auditing as auditing
 from opaque.auditing import OneRunEstimate, loss_scores, one_run
-from opaque.core.random import key
+from opaque.random import key
 
 
 @pytest.fixture()

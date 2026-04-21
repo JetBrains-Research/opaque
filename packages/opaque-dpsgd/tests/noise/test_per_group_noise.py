@@ -5,8 +5,8 @@ import torch
 
 from opaque.dpsgd.noise.gaussian import gaussian_noise
 from opaque.dpsgd.noise.gaussian import GaussianNoiseState
-from opaque.core.random import key
-from opaque.core.clipping.per_group import PerGroup
+from opaque.random import key
+from opaque.clipping.per_group import PerGroup
 
 
 class TestGaussianNoisePerGroup:
@@ -149,8 +149,8 @@ class TestEndToEndPerGroup:
 
     def test_full_pipeline_isotropic(self):
         """Per-group clipping with isotropic noise (scalar sensitivity)."""
-        from opaque.core.clipping import clipped_grad
-        from opaque.core.clipping.per_group import per_group
+        from opaque.clipping import clipped_grad
+        from opaque.clipping.per_group import per_group
 
         def loss(params, data):
             pred = params["attn_w"] * data + params["mlp_w"] * data
@@ -189,9 +189,9 @@ class TestEndToEndPerGroup:
 
     def test_full_pipeline_per_group_noise(self):
         """Per-group clipping with per-group noise via per_group_noise_stddev."""
-        from opaque.core.clipping import clipped_grad
+        from opaque.clipping import clipped_grad
         from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev
-        from opaque.core.clipping.per_group import per_group
+        from opaque.clipping.per_group import per_group
 
         def loss(params, data):
             pred = params["attn_w"] * data + params["mlp_w"] * data

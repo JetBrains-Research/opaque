@@ -7,7 +7,7 @@ For comprehensive validation against JAX-Privacy, see tests/jax_validation/test_
 import pytest
 import torch
 
-from opaque.core.clipping import clipped_grad
+from opaque.clipping import clipped_grad
 
 
 def test_clipped_grad_validate_args_overlap():

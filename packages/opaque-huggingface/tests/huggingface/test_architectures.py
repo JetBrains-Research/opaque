@@ -9,7 +9,7 @@ import pytest
 from peft import LoraConfig, get_peft_model
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
-from opaque.core.clipping import clipped_grad
+from opaque.clipping import clipped_grad
 from opaque.functional import make_functional
 from ._helpers import (
     has_hf_token,

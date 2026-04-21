@@ -64,7 +64,7 @@ from transformers import (
 import opaque.accounting as acc
 import opaque.auditing as auditing
 from opaque.accounting import calibration as cal, Accountant
-from opaque.core.clipping import clipped_grad
+from opaque.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
 from opaque.performance.huggingface import is_kernel_patched
 from opaque.distributed import sum_gradients_, sync
@@ -77,12 +77,12 @@ from opaque.performance.profiling import (
     print_memory,
     reset_peak_memory,
 )
-from opaque.core.random import key, fold_in
+from opaque.random import key, fold_in
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.dpsgd.sampling import TruncatedPoissonSampler
 from opaque.distributed.shard import local_shard
 from opaque.functional import make_functional
-from opaque.core.clipping.per_group import PerGroup, per_group
+from opaque.clipping.per_group import PerGroup, per_group
 import wandb
 
 

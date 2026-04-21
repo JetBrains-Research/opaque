@@ -17,7 +17,7 @@ install automatically.
 
 ```python
 import opaque.auditing as auditing
-from opaque.core.random import key
+from opaque.random import key
 
 cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
 # ... DP-SGD training loop ...

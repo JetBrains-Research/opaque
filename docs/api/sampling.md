@@ -1,6 +1,6 @@
 # Sampling
 
-Sampling primitives are split across `opaque.core.sampling` (Poisson and
+Sampling primitives are split across `opaque.functional` (Poisson and
 distributed helpers), `opaque.dpsgd.sampling` (truncated Poisson), and
 `opaque.dpftrl.sampling` (cyclic Poisson, b-min-sep, balls-in-bins, sequential).
 They provide privacy-amplifying sampling mechanisms for DP-SGD and DP-FTRL.
@@ -45,8 +45,8 @@ Opaque provides these sampling strategies:
 ## PoissonSampler
 
 ```python
-from opaque.core.sampling import PoissonSampler
-from opaque.core.random import key
+from opaque.functional import PoissonSampler
+from opaque.random import key
 
 sampler = PoissonSampler(
     data_source,
@@ -70,7 +70,7 @@ Account with `acc.poisson(acc.gaussian(nm), sample_rate)`.
 
 ```python
 from opaque.dpsgd.sampling import TruncatedPoissonSampler
-from opaque.core.random import key
+from opaque.random import key
 
 sampler = TruncatedPoissonSampler(
     data_source,
@@ -97,7 +97,7 @@ batch_size_cap, dataset_size)`.
 
 ```python
 from opaque.dpftrl.sampling import BallsInBinsSampler
-from opaque.core.random import key
+from opaque.random import key
 
 sampler = BallsInBinsSampler(
     data_source,
@@ -127,7 +127,7 @@ Account with `acc.balls_in_bins(mechanism, num_bins, num_epochs)` where
 
 ```python
 from opaque.dpftrl.sampling import CyclicPoissonSampler
-from opaque.core.random import key
+from opaque.random import key
 
 sampler = CyclicPoissonSampler(
     data_source,

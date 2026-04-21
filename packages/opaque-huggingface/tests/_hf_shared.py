@@ -242,7 +242,7 @@ def run_dp_training_step(
     clipping_norm=1.0,
 ):
     """Run DP-SGD training with clipped gradients and gradient accumulation."""
-    from opaque.core.clipping import clipped_grad
+    from opaque.clipping import clipped_grad
     from opaque.functional import make_functional
     from opaque.core.pytree import tree_map
 

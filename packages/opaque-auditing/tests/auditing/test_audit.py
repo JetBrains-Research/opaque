@@ -5,7 +5,7 @@ import pytest
 
 import opaque.auditing as auditing
 from opaque.auditing import CoinFlip, OneRunEstimate, one_run
-from opaque.core.random import RngKey, key
+from opaque.random import RngKey, key
 
 
 def _flip(canary_indices: np.ndarray, *, key: RngKey) -> CoinFlip:

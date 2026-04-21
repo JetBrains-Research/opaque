@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from opaque.dpsgd.clipping.adaptive import adaptive_clipped_grad
-from opaque.core.random import key
+from opaque.random import key
 
 
 class TestAdaptiveClippedGrad:

@@ -13,10 +13,10 @@ import torch
 import torch.nn as nn
 import torchopt
 import opaque.accounting as acc
-from opaque.core.clipping import clipped_grad
+from opaque.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.functional import make_functional
-from opaque.core.random import key
+from opaque.random import key
 
 # Synthetic data
 torch.manual_seed(42)

@@ -318,18 +318,6 @@ def patch_checkpoint() -> None:
     _is_checkpoint_patched = True
 
 
-def unpatch_checkpoint() -> None:
-    """Revert checkpoint patches.
-
-    Not currently supported: the patches mutate PyTorch internals without
-    capturing originals in a recoverable way. Restart the Python process
-    to run unpatched code.
-    """
-    raise NotImplementedError(
-        "unpatch_checkpoint() is not supported; restart the Python process instead."
-    )
-
-
 def is_checkpoint_patched() -> bool:
     """Check if checkpoint compatibility patches have been applied."""
     return _is_checkpoint_patched

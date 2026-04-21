@@ -20,7 +20,7 @@ pytestmark = [
 class TestSaveOnCpuWithClippedGrad:
     def test_clipped_grad_correctness(self):
         """save_on_cpu produces identical clipped gradients."""
-        from opaque.core.clipping import clipped_grad
+        from opaque.clipping import clipped_grad
 
         W = torch.randn(32, 32, device="cuda")
 
@@ -43,7 +43,7 @@ class TestSaveOnCpuWithClippedGrad:
         """save_on_cpu + checkpoint produces correct clipped gradients."""
         from torch.utils.checkpoint import checkpoint
 
-        from opaque.core.clipping import clipped_grad
+        from opaque.clipping import clipped_grad
 
         W1 = torch.randn(32, 32, device="cuda")
         W2 = torch.randn(32, 32, device="cuda")
@@ -71,7 +71,7 @@ class TestSaveOnCpuWithClippedGrad:
 
     def test_no_pin_memory(self):
         """save_on_cpu(pin_memory=False) path works with clipped_grad."""
-        from opaque.core.clipping import clipped_grad
+        from opaque.clipping import clipped_grad
 
         W = torch.randn(32, 32, device="cuda")
 
@@ -100,7 +100,7 @@ class TestSaveOnCpuWithClippedGrad:
         """
         import gc
 
-        from opaque.core.clipping import clipped_grad
+        from opaque.clipping import clipped_grad
 
         d, layers = 64, 32
         Ws = [torch.randn(d, d, device="cuda") for _ in range(layers)]

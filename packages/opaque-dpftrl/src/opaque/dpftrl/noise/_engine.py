@@ -28,13 +28,13 @@ from opaque.distributed import (
     register_sync_type,
     sync_object,
 )
-from opaque.core.noise.types import (
+from opaque.core.noise import (
     NOISE_STATE_FIELD_OPS,
     NoiseState,
     assert_rng_key_equal,
 )
-from opaque.core.random import RngKey, generator_from_key
-from opaque.core.random import fold_in as rng_fold_in
+from opaque.random import RngKey, generator_from_key
+from opaque.random import fold_in as rng_fold_in
 from opaque.core.pytree import tree_map
 
 from . import _streaming_matrix as streaming_matrix

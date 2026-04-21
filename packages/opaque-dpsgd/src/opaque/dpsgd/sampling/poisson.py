@@ -13,7 +13,7 @@ from collections.abc import Iterator
 import numpy as np
 from torch.utils.data import Sampler
 
-from opaque.core.random import RngKey
+from opaque.random import RngKey
 
 
 class PoissonSampler(Sampler):
@@ -41,7 +41,7 @@ class PoissonSampler(Sampler):
         key: RNG key for reproducibility. Use ``key()`` or ``fold_in()``.
 
     Example:
-        >>> from opaque.core.random import key
+        >>> from opaque.random import key
         >>> dataset = MyDataset(...)
         >>> # Yield 10 batches
         >>> sampler = PoissonSampler(dataset, sample_rate=0.01, num_iterations=10, key=key(42))

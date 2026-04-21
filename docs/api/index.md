@@ -69,9 +69,9 @@ Opaque is organized into several modules, each focused on a specific aspect of D
 
 ```python
 import opaque.accounting as acc
-from opaque.core.clipping import clipped_grad
+from opaque.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.core.random import key
+from opaque.random import key
 
 # Calibrate noise multiplier
 result = acc.calibrate(

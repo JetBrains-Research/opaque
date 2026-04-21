@@ -135,9 +135,9 @@ def make_functional(
 
     Example with LoRA partitioning:
         >>> import torch.nn as nn
-        >>> from opaque.core.clipping import clipped_grad
+        >>> from opaque.clipping import clipped_grad
         >>> from opaque.core.noise.gaussian import gaussian_noise
-        >>> from opaque.core.random import key
+        >>> from opaque.random import key
         >>> from opaque.functional import make_functional, merge
         >>>
         >>> # Create model and freeze backbone
@@ -391,4 +391,6 @@ def with_batch_dim(
     return wrapper
 
 
-__all__ = ["make_functional", "with_batch_dim"]
+from opaque.functional.collate import empty_collate  # noqa: E402
+
+__all__ = ["make_functional", "with_batch_dim", "empty_collate"]

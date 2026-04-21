@@ -41,7 +41,7 @@ Create a key from an integer seed. This is the entry point for all
 randomness in Opaque.
 
 ```python
-from opaque.core.random import key
+from opaque.random import key
 
 k = key(42)
 # RngKey(seed=42, impl='opaque_threefry_like')
@@ -56,7 +56,7 @@ Derive `num` independent child keys from a parent key. Use this when you
 need multiple independent sources of randomness.
 
 ```python
-from opaque.core.random import key, split
+from opaque.random import key, split
 
 k = key(42)
 k_noise, k_sample = split(k)
@@ -86,7 +86,7 @@ sampler = PoissonSampler(dataset, sample_rate=0.01, key=k_sample)
 Mix additional data into a key. Variadic — accepts multiple values:
 
 ```python
-from opaque.core.random import key, fold_in
+from opaque.random import key, fold_in
 
 k = key(42)
 step_key = fold_in(k, step)              # single int
@@ -111,7 +111,7 @@ Convert an `RngKey` to a `torch.Generator` for use with PyTorch operations
 that require one.
 
 ```python
-from opaque.core.random import key, generator_from_key
+from opaque.random import key, generator_from_key
 
 gen = generator_from_key(key(42))
 tensor = torch.randn(10, generator=gen)
@@ -127,7 +127,7 @@ Create a non-deterministic key using system entropy. Each call returns a
 different key.
 
 ```python
-from opaque.core.random import random_key
+from opaque.random import random_key
 
 k = random_key()  # different every time
 ```
@@ -141,7 +141,7 @@ For production training, always use `key(seed)` with a fixed seed.
 
 ```python
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.core.random import key
+from opaque.random import key
 
 noise_fn, state = gaussian_noise(stddev=1.1, key=key(42))
 noisy_grads, state = noise_fn(grads, state)
@@ -155,7 +155,7 @@ the base key and the current step counter, then increments the counter.
 
 ```python
 from opaque.dpsgd.sampling import PoissonSampler
-from opaque.core.random import key
+from opaque.random import key
 
 sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))
 ```
@@ -164,7 +164,7 @@ sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))
 
 ```python
 from opaque.dpsgd.clipping import adaptive_clipped_grad
-from opaque.core.random import key
+from opaque.random import key
 
 grad_fn, clip_state = adaptive_clipped_grad(
     loss_fn, initial_clipping_norm=1.0, key=key(7),
@@ -175,7 +175,7 @@ grad_fn, clip_state = adaptive_clipped_grad(
 
 ```python
 import opaque.auditing as auditing
-from opaque.core.random import key
+from opaque.random import key
 
 cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
 ```
@@ -188,9 +188,9 @@ In the common case, you create keys once at the start and thread state
 through the loop:
 
 ```python
-from opaque.core.clipping import clipped_grad
+from opaque.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.core.random import key, split
+from opaque.random import key, split
 
 k_noise, k_sample = split(key(42))
 
@@ -210,7 +210,7 @@ explicit control over the derivation chain:
 `key(seed) → fold_in(step) → fold_in(rank) → fold_in(worker)`.
 
 ```python
-from opaque.core.random import key, fold_in
+from opaque.random import key, fold_in
 
 base = key(42)
 for step in range(num_steps):
@@ -232,7 +232,7 @@ noise_fn, noise_state = gaussian_noise(stddev=1.1, key=key(42))
 For per-rank key control, use `fold_in()`:
 
 ```python
-from opaque.core.random import key, fold_in
+from opaque.random import key, fold_in
 import torch.distributed as dist
 
 rank = dist.get_rank()
@@ -253,7 +253,7 @@ Same key produces identical output across runs, platforms, and devices:
 
 ```python
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.core.random import key
+from opaque.random import key
 import torch
 
 grads = {"w": torch.randn(100)}
@@ -273,7 +273,7 @@ vary across platforms. Use `set_reproducible_pytorch_seed` to configure
 framework-level determinism:
 
 ```python
-from opaque.core.random import set_reproducible_pytorch_seed, key
+from opaque.random import set_reproducible_pytorch_seed, key
 
 set_reproducible_pytorch_seed(key(42))
 # Sets torch.manual_seed, torch.cuda.manual_seed_all

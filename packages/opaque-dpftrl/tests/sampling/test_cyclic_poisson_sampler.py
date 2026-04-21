@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from opaque.core.random import key
+from opaque.random import key
 from opaque.dpftrl.sampling import CyclicPoissonSampler
 from opaque.dpftrl.sampling._partitions import PartitionType
 
@@ -415,7 +415,7 @@ class TestCyclicPoissonSamplerDistributedSimulation:
 
     def test_different_keys_per_rank(self):
         """Different keys per rank produce different sampling."""
-        from opaque.core.random import fold_in
+        from opaque.random import fold_in
         from opaque.distributed.shard import _local_shard_bounds
 
         dataset = list(range(100))
@@ -448,7 +448,7 @@ class TestCyclicPoissonSamplerDistributedSimulation:
 
     def test_cyclic_independence(self):
         """Each rank cycles through its shard independently."""
-        from opaque.core.random import fold_in
+        from opaque.random import fold_in
         from opaque.distributed.shard import _local_shard_bounds
 
         dataset = list(range(100))

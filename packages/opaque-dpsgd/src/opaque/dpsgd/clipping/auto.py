@@ -25,11 +25,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from opaque.core.clipping.clipped_fun import ClippedFunAux, clipped_fun
-from opaque.core.clipping.clipped_grad import ClippedGradAux, clipped_grad
-from opaque.core.clipping.pytree import auto_scale_pytree
-from opaque.core.clipping.types import ClipState
-from opaque.core.clipping.per_group import PerGroup
+from opaque.clipping.clipped_fun import ClippedFunAux, clipped_fun
+from opaque.clipping.clipped_grad import ClippedGradAux, clipped_grad
+from opaque.clipping.pytree import auto_scale_pytree
+from opaque.clipping.types import ClipState
+from opaque.clipping.per_group import PerGroup
 
 _DEFAULT_GAMMA = 0.01
 
@@ -284,7 +284,7 @@ def auto_clipped_grad(
 
     Example:
         >>> import torch
-        >>> from opaque.core.clipping import auto_clipped_grad
+        >>> from opaque.clipping import auto_clipped_grad
         >>> def loss_fn(params, x, y):
         ...     return ((x @ params - y) ** 2).mean()
         >>> grad_fn, state = auto_clipped_grad(

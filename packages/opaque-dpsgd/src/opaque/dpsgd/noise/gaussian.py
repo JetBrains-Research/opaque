@@ -5,7 +5,7 @@ to gradients in DP-SGD (Differentially Private Stochastic Gradient Descent).
 
 The API returns ``(noise_fn, state)`` where state is always immutable:
 
-    >>> from opaque.core.random import key
+    >>> from opaque.random import key
     >>> from opaque.dpsgd.noise.gaussian import gaussian_noise
     >>> noise_fn, state = gaussian_noise(stddev=1.0, key=key(42))
     >>> noisy_grads, state = noise_fn(grads, state)
@@ -32,16 +32,16 @@ from opaque.distributed import (
     register_sync_type,
     sync_object,
 )
-from opaque.core.noise.types import (
+from opaque.core.noise import (
     NOISE_STATE_FIELD_OPS,
     NoiseState,
     assert_rng_key_equal,
 )
-from opaque.core.random import RngKey, generator_from_key
-from opaque.core.random import (
+from opaque.random import RngKey, generator_from_key
+from opaque.random import (
     fold_in as rng_fold_in,
 )
-from opaque.core.clipping.per_group import PerGroup
+from opaque.clipping.per_group import PerGroup
 from opaque.core.pytree import tree_map
 
 
@@ -99,7 +99,7 @@ def gaussian_noise(
     of distributed state. For synchronized noise in DDP, pass the same key on
     every rank. For independent noise, derive a per-rank key::
 
-        from opaque.core.random import key, fold_in
+        from opaque.random import key, fold_in
         my_key = fold_in(key(42), rank)  # different noise per rank
         noise_fn, state = gaussian_noise(stddev=1.1, key=my_key)
 
@@ -120,7 +120,7 @@ def gaussian_noise(
     Example:
         >>> import torch
         >>> from opaque.dpsgd.noise.gaussian import gaussian_noise
-        >>> from opaque.core.random import key
+        >>> from opaque.random import key
         >>>
         >>> noise_fn, state = gaussian_noise(stddev=1.1, key=key(42))
         >>> grads = torch.zeros(10)
@@ -131,7 +131,7 @@ def gaussian_noise(
         >>> noisy, state = noise_fn(grads, state, stddev=0.8)  # override this step
 
     Example (distributed — independent noise per rank):
-        >>> from opaque.core.random import key, fold_in
+        >>> from opaque.random import key, fold_in
         >>> rank = torch.distributed.get_rank()
         >>> noise_fn, state = gaussian_noise(stddev=1.1, key=fold_in(key(42), rank))
     """

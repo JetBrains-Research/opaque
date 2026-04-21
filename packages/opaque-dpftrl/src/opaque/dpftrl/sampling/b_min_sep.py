@@ -17,7 +17,7 @@ from collections.abc import Iterator
 import numpy as np
 from torch.utils.data import Sampler
 
-from opaque.core.random import RngKey
+from opaque.random import RngKey
 
 
 class BMinSepSampler(Sampler):

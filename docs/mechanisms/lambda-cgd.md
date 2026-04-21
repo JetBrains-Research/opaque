@@ -82,7 +82,7 @@ has a closed-form expression in terms of λ, min_sep, and max_participations.
 
 ```python
 from opaque.dpftrl.noise import mf_noise, lambda_cgd_strategy
-from opaque.core.random import key
+from opaque.random import key
 
 strategy = lambda_cgd_strategy(
     lambda_=0.9,

@@ -30,8 +30,8 @@ from typing import Any
 import torch
 
 from opaque.core.pytree import tree_map
-from opaque.core.random import RngKey, generator_from_key
-from opaque.core.random import fold_in as rng_fold_in
+from opaque.random import RngKey, generator_from_key
+from opaque.random import fold_in as rng_fold_in
 
 from ._engine import (
     MFNoiseState,

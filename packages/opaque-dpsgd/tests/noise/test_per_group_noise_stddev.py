@@ -4,9 +4,9 @@ import math
 
 import pytest
 
-from opaque.core.clipping.types import FixedClipState
+from opaque.clipping.types import FixedClipState
 from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev
-from opaque.core.clipping.per_group import PerGroup
+from opaque.clipping.per_group import PerGroup
 
 
 def _make_clip_state(values, normalize_by=1.0):

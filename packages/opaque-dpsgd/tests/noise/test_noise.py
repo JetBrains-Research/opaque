@@ -6,7 +6,7 @@ import torch
 
 from opaque.dpsgd.noise.gaussian import gaussian_noise
 from opaque.dpsgd.noise.gaussian import GaussianNoiseState
-from opaque.core.random import key
+from opaque.random import key
 
 
 class TestGaussian:

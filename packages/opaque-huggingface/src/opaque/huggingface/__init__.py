@@ -11,13 +11,18 @@ Patches are applied automatically on import; disable with the
 apply / re-apply explicitly.
 """
 
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
 from opaque.huggingface.patches import (
     apply_transformers_patches as _apply,
     is_transformers_patched as _is_patched,
     is_vmap_patched,
 )
 
-__version__ = "0.0.0.dev0"
+try:
+    __version__ = _pkg_version("opaque-huggingface")
+except PackageNotFoundError:
+    __version__ = "0.0.0"
 
 
 def patch_all() -> None:

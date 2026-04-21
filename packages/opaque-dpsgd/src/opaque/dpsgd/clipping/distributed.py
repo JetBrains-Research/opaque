@@ -13,15 +13,15 @@ from dataclasses import replace
 
 import torch
 
-from opaque.core.clipping.distributed import sync_clipped_grad_aux
+from opaque.clipping.distributed import sync_clipped_grad_aux
 from opaque.distributed import (
     is_distributed,
     reduce_scalar,
     register_sync_type,
     sync_object,
 )
-from opaque.core.random import fold_in, generator_from_key
-from opaque.core.clipping.per_group import PerGroup
+from opaque.random import fold_in, generator_from_key
+from opaque.clipping.per_group import PerGroup
 
 from .adaptive import (
     AdaptiveClippedGradAux,
@@ -126,7 +126,7 @@ def sync_adaptive_clipped_grad_aux(
 ) -> AdaptiveClippedGradAux:
     """Synchronize ``AdaptiveClippedGradAux`` across distributed ranks.
 
-    Delegates to :func:`opaque.core.clipping.distributed.sync_clipped_grad_aux`
+    Delegates to :func:`opaque.clipping.distributed.sync_clipped_grad_aux`
     which handles ``ClippedGradAux`` subclasses generically.
     """
     if not is_distributed():

@@ -16,8 +16,8 @@ pip install "opaque-dpsgd[optimizers]"   # + AdamW-BC (torchopt)
 ## Quick start
 
 ```python
-from opaque.core.clipping import clipped_grad
-from opaque.core.random import key
+from opaque.clipping import clipped_grad
+from opaque.random import key
 from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
 from opaque.dpsgd.sampling import TruncatedPoissonSampler

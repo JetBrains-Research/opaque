@@ -61,7 +61,7 @@ eps = training.epsilon_at(1e-5)
 
 ```python
 from opaque.dpftrl.noise import mf_noise, bsr_strategy
-from opaque.core.random import key
+from opaque.random import key
 
 strategy = bsr_strategy(
     bandwidth=8,

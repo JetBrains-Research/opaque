@@ -18,7 +18,7 @@ import torch.multiprocessing as mp
 import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
 
-from opaque.core.clipping import clipped_grad
+from opaque.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.distributed import (
     get_rank,
@@ -31,7 +31,7 @@ from opaque.distributed import (
 from opaque.dpsgd.noise.gaussian import gaussian_noise
 from opaque.dpftrl.noise import mf_noise, identity_strategy
 from opaque.performance.profiling import StepTimer, TrainingProfiler
-from opaque.core.random import key
+from opaque.random import key
 from opaque.functional import make_functional
 from opaque.core.pytree import tree_leaves
 
@@ -235,7 +235,7 @@ def _worker_reduce_pytree_nested(rank: int, world_size: int, port: int) -> None:
 def _worker_sync_adaptive_clip_state(rank: int, world_size: int, port: int) -> None:
     from opaque.dpsgd.clipping.adaptive import AdaptiveClipState
     from opaque.distributed import sync
-    from opaque.core.random import key as rng_key
+    from opaque.random import key as rng_key
 
     _setup_ddp(rank, world_size, port)
     try:

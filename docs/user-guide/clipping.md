@@ -21,7 +21,7 @@ gradients, clips each to a maximum L2 norm, and sums the result. This is the
 primary API for DP-SGD training.
 
 ```python
-from opaque.core.clipping import clipped_grad
+from opaque.clipping import clipped_grad
 
 def loss_fn(params, x, y):
     return ((x @ params - y) ** 2).sum()
@@ -175,7 +175,7 @@ be clipped (the *target quantile*).
 
 ```python
 from opaque.dpsgd.clipping import adaptive_clipped_grad
-from opaque.core.random import key
+from opaque.random import key
 
 grad_fn, clip_state = adaptive_clipped_grad(
     loss_fn,
@@ -274,7 +274,7 @@ PyTorch models store parameters internally. To use them with `clipped_grad`,
 convert to functional form:
 
 ```python
-from opaque.core.clipping import clipped_grad
+from opaque.clipping import clipped_grad
 from opaque.functional import make_functional
 
 fmodel, params = make_functional(model)
@@ -320,7 +320,7 @@ Use `per_group` to construct a `PerGroup` from parameter keys and substring
 patterns:
 
 ```python
-from opaque.core.clipping import clipped_grad, per_group
+from opaque.clipping import clipped_grad, per_group
 pg = per_group(params, self_attn=1.0, mlp=2.0)
 
 grad_fn, clip_state = clipped_grad(
@@ -404,7 +404,7 @@ adapts independently based on its own clipping rate:
 
 ```python
 from opaque.dpsgd.clipping import adaptive_clipped_grad
-from opaque.core.random import key
+from opaque.random import key
 
 pg = per_group(params, self_attn=1.0, mlp=2.0)
 
@@ -462,7 +462,7 @@ AUTO-S introduces no extra data-dependent query:
 ```python
 import opaque.accounting as acc
 from opaque.dpsgd.noise import gaussian_noise
-from opaque.core.random import key
+from opaque.random import key
 
 stddev = noise_multiplier * clip_state.sensitivity
 noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
@@ -477,7 +477,7 @@ eps = training.epsilon_at(1e-5)
 Pass a `PerGroup` as `R` to scale each group independently:
 
 ```python
-from opaque.core.clipping import per_group
+from opaque.clipping import per_group
 from opaque.dpsgd.clipping import auto_clipped_grad
 
 pg = per_group(params, self_attn=1.0, mlp=2.0)

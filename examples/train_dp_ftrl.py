@@ -104,7 +104,7 @@ import torchopt
 
 import opaque.accounting as acc
 from opaque.accounting import calibration as cal
-from opaque.core.clipping import clipped_grad
+from opaque.clipping import clipped_grad
 from opaque.dpftrl.noise import (
     band_mf_strategy,
     bisr_strategy,
@@ -123,8 +123,8 @@ from opaque.performance.profiling import (
     print_memory,
     reset_peak_memory,
 )
-from opaque.core.random import key, fold_in
-from opaque.core.sampling import empty_collate
+from opaque.random import key, fold_in
+from opaque.functional import empty_collate
 from opaque.dpsgd.sampling import PoissonSampler
 from opaque.dpftrl.sampling import (
     BallsInBinsSampler,
