@@ -2249,7 +2249,6 @@ wheels = [
 
 [[package]]
 name = "opaque"
-version = "0.0.0.dev0"
 source = { editable = "packages/opaque" }
 dependencies = [
     { name = "opaque-accounting" },
@@ -2320,7 +2319,6 @@ provides-extras = ["cross-validation"]
 
 [[package]]
 name = "opaque-auditing"
-version = "0.0.0.dev0"
 source = { editable = "packages/opaque-auditing" }
 dependencies = [
     { name = "opaque-core" },
@@ -2337,7 +2335,6 @@ requires-dist = [
 
 [[package]]
 name = "opaque-core"
-version = "0.0.0.dev0"
 source = { editable = "packages/opaque-core" }
 dependencies = [
     { name = "optree" },
@@ -2352,7 +2349,6 @@ requires-dist = [
 
 [[package]]
 name = "opaque-dpftrl"
-version = "0.0.0.dev0"
 source = { editable = "packages/opaque-dpftrl" }
 dependencies = [
     { name = "opaque-accounting" },
@@ -2378,7 +2374,6 @@ provides-extras = ["optimizers"]
 
 [[package]]
 name = "opaque-dpsgd"
-version = "0.0.0.dev0"
 source = { editable = "packages/opaque-dpsgd" }
 dependencies = [
     { name = "opaque-core" },
@@ -2400,7 +2395,6 @@ provides-extras = ["optimizers"]
 
 [[package]]
 name = "opaque-huggingface"
-version = "0.0.0.dev0"
 source = { editable = "packages/opaque-huggingface" }
 dependencies = [
     { name = "opaque-core" },
@@ -2430,7 +2424,6 @@ provides-extras = ["kernels", "peft"]
 
 [[package]]
 name = "opaque-performance"
-version = "0.0.0.dev0"
 source = { editable = "packages/opaque-performance" }
 dependencies = [
     { name = "opaque-core" },

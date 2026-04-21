@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=68.0", "setuptools-scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "opaque-performance"
-version = "0.0.0.dev0"
+dynamic = ["version"]
 description = "Opaque fused Triton kernels and PyTorch gradient-checkpointing patches for vmap"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -33,6 +33,10 @@ kernels = ["triton>=3.0.0"]
 where = ["src"]
 include = ["opaque.performance*"]
 namespaces = true
+
+[tool.setuptools_scm]
+root = "../.."
+fallback_version = "0.0.0"
 
 [tool.uv]
 package = true

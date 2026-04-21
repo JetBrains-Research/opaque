@@ -1,0 +1,163 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write   # creating GitHub Release + uploading assets
+  id-token: write   # GCP workload identity federation
+
+jobs:
+  build-python-wheel:
+    name: Build ${{ matrix.package }} @ ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - opaque
+          - opaque-core
+          - opaque-dpsgd
+          - opaque-dpftrl
+          - opaque-auditing
+          - opaque-performance
+          - opaque-huggingface
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - uses: astral-sh/setup-uv@v8.1.0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Preflight — rewrite umbrella pins + accounting version from tag
+        run: bash .github/scripts/set_build_versions.sh
+
+      - name: Build wheel
+        run: |
+          cd packages/${{ matrix.package }} && uv build --wheel --out-dir ../../dist
+
+      - name: Upload wheel to artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.package }}
+          path: dist/*.whl
+          retention-days: 90
+
+  build-opaque-accounting:
+    name: Build opaque-accounting - ${{ matrix.platform }}/${{ matrix.arch }} @ ${{ github.ref_name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            arch: amd64
+            runner: ubuntu-latest
+          - platform: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - platform: macos
+            arch: arm64
+            runner: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: astral-sh/setup-uv@v8.1.0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Preflight — sync accounting version from tag
+        run: bash .github/scripts/set_build_versions.sh
+
+      - name: Build wheel
+        run: |
+          cd packages/opaque-accounting && uv build --wheel --out-dir ../../dist
+
+      - name: Upload wheel to artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-opaque-accounting-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/*opaque_accounting*.whl
+          retention-days: 90
+
+  # ---------------------------------------------------------------------------
+  # Publish to GCP + cut a GitHub Release with git-cliff-generated notes.
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Publish to GCP + GitHub Release
+    needs: [build-python-wheel, build-opaque-accounting]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # git-cliff needs full history
+
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist/
+          merge-multiple: true
+
+      - name: List wheels
+        run: |
+          echo "Releasing ${{ github.ref_name }}. Wheels:"
+          ls -lh dist/*.whl
+
+      - name: Install git-cliff
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        env:
+          OUTPUT: RELEASE_NOTES.md
+
+      - name: Authenticate to GCP
+        id: gcp-auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
+          token_format: access_token
+          access_token_lifetime: 3600s
+
+      - uses: astral-sh/setup-uv@v8.1.0
+
+      - name: Publish release wheels to GCP
+        env:
+          UV_PUBLISH_USERNAME: oauth2accesstoken
+          UV_PUBLISH_PASSWORD: ${{ steps.gcp-auth.outputs.access_token }}
+        run: |
+          uv publish \
+            --publish-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/ \
+            dist/*.whl
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
+          files: dist/*.whl
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}

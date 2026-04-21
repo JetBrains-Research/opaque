@@ -34,6 +34,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history + tags so setuptools-scm resolves the version
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -105,6 +107,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v8.1.0
 
@@ -135,6 +139,12 @@ jobs:
           flags: cuda
           fail_ci_if_error: false
 
+  # ----------------------------------------------------------------------------
+  # Dev builds on push to main. setuptools-scm derives the version from git
+  # tags + commit distance; the preflight script writes umbrella pin versions
+  # and syncs opaque-accounting's Cargo + pyproject. Release builds live in
+  # release.yml (triggered on `v*` tag push).
+  # ----------------------------------------------------------------------------
   build-python-wheel:
     name: Build ${{ matrix.package }}
     if: github.ref == 'refs/heads/main'
@@ -154,6 +164,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history + tags for setuptools-scm
 
       - uses: astral-sh/setup-uv@v8.1.0
 
@@ -161,10 +173,8 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Set dev version
-        run: |
-          DEV_VERSION="0.0.0.dev0+${{ github.run_number }}"
-          cd packages/${{ matrix.package }} && uv version $DEV_VERSION
+      - name: Preflight — rewrite umbrella pins + accounting version
+        run: bash .github/scripts/set_build_versions.sh
 
       - name: Build wheel
         run: |
@@ -199,6 +209,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -208,14 +220,12 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Set dev version
-        run: |
-          DEV_VERSION="0.0.0.dev0+${{ github.run_number }}"
-          cd packages/opaque-accounting && uv version $DEV_VERSION
+      - name: Preflight — sync accounting version from git tag
+        run: bash .github/scripts/set_build_versions.sh
 
       - name: Build wheel
         run: |
-          cd packages/opaque-accounting && uv build --wheel
+          cd packages/opaque-accounting && uv build --wheel --out-dir ../../dist
 
       - name: Upload wheel to artifacts
         uses: actions/upload-artifact@v4
@@ -224,9 +234,9 @@ jobs:
           path: dist/*opaque_accounting*.whl
           retention-days: 30
 
-  # Publish all wheels to GCP (main branch only)
-  publish-to-gcp:
-    name: Publish dev builds to GCP
+  # Publish dev wheels to GCP (main branch only).
+  publish-dev-to-gcp:
+    name: Publish dev wheels to GCP
     needs: [build-python-wheel, build-opaque-accounting]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -237,20 +247,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check if this is a release commit
-        id: check_release
-        run: |
-          VERSION=$(grep '^version = ' packages/opaque/pyproject.toml | sed 's/version = "\(.*\)"/\1/')
-          if [[ "$VERSION" != *"dev"* ]]; then
-            echo "⏭️  Skipping dev build publish - this is a release version ($VERSION)"
-            echo "is_release=true" >> $GITHUB_OUTPUT
-          else
-            echo "📦 Publishing dev build version: $VERSION"
-            echo "is_release=false" >> $GITHUB_OUTPUT
-          fi
-
       - name: Download all wheels
-        if: steps.check_release.outputs.is_release == 'false'
         uses: actions/download-artifact@v4
         with:
           pattern: wheels-*
@@ -258,13 +255,9 @@ jobs:
           merge-multiple: true
 
       - name: List wheels
-        if: steps.check_release.outputs.is_release == 'false'
-        run: |
-          echo "Wheels to publish:"
-          ls -lh dist/*.whl
+        run: ls -lh dist/*.whl
 
       - name: Authenticate to GCP
-        if: steps.check_release.outputs.is_release == 'false'
         id: gcp-auth
         uses: google-github-actions/auth@v2
         with:
@@ -274,10 +267,8 @@ jobs:
           access_token_lifetime: 3600s
 
       - uses: astral-sh/setup-uv@v8.1.0
-        if: steps.check_release.outputs.is_release == 'false'
 
       - name: Publish dev builds to GCP
-        if: steps.check_release.outputs.is_release == 'false'
         env:
           UV_PUBLISH_USERNAME: oauth2accesstoken
           UV_PUBLISH_PASSWORD: ${{ steps.gcp-auth.outputs.access_token }}

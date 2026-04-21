@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=68.0", "setuptools-scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "opaque-core"
-version = "0.0.0.dev0"
+dynamic = ["version"]
 description = "Opaque core primitives: RNG, pytree, clipping, sampling, distributed, profiling"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -31,6 +31,10 @@ dependencies = [
 where = ["src"]
 include = ["opaque.core*", "opaque.functional*", "opaque.distributed*"]
 namespaces = true
+
+[tool.setuptools_scm]
+root = "../.."
+fallback_version = "0.0.0"
 
 [tool.uv]
 package = true

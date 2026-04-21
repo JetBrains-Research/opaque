@@ -129,8 +129,6 @@ nav:
     - Auditing: api/auditing.md
     - Utilities: api/utilities.md
     - Optimizers: api/optimizers.md
-  - Development:
-    - Contributing: development/contributing.md
 
 extra:
   social:

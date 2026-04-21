@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=68.0", "setuptools-scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "opaque-huggingface"
-version = "0.0.0.dev0"
+dynamic = ["version"]
 description = "Opaque HuggingFace Transformers patches: vmap compatibility + fused kernel integration"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -36,6 +36,10 @@ peft = ["peft>=0.13.0"]
 where = ["src"]
 include = ["opaque.huggingface*"]
 namespaces = true
+
+[tool.setuptools_scm]
+root = "../.."
+fallback_version = "0.0.0"
 
 [tool.uv]
 package = true
