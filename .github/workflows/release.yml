@@ -41,13 +41,12 @@ jobs:
         run: bash .github/scripts/set_build_versions.sh
 
       - name: Build wheel
-        # The preflight rewrites pyproject/Cargo pins, leaving the worktree
-        # dirty. setuptools-scm's dirty-tree heuristic would then bump the
-        # patch version and append `.dev0+g<sha>.d<date>` for every sub-package
-        # that uses dynamic versioning. Pin the version to the tag explicitly
-        # so every wheel carries the release version.
+        # SETUPTOOLS_SCM_PRETEND_VERSION is exported by the preflight step
+        # via $GITHUB_ENV so every sub-package wheel carries the same
+        # version the preflight wrote into opaque-accounting/pyproject.toml.
+        # Without the pretend, setuptools-scm would re-derive from the
+        # now-dirty tree (preflight rewrote pyprojects/Cargo) and drift.
         run: |
-          export SETUPTOOLS_SCM_PRETEND_VERSION="${GITHUB_REF_NAME#v}"
           cd packages/${{ matrix.package }} && uv build --wheel --out-dir ../../dist
 
       - name: Upload wheel to artifacts

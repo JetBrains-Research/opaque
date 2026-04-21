@@ -13,23 +13,70 @@
 #      resolves consistently. These pins need rewriting for dev/release
 #      builds because dynamic versioning can't expand them.
 #
+# For Python sub-packages the script also exports
+# `SETUPTOOLS_SCM_PRETEND_VERSION` via `$GITHUB_ENV` so every wheel carries
+# the same version — setuptools-scm's own git-describe would otherwise pick
+# up the dirty tree (this script mutates pyprojects/Cargo.toml before the
+# build) and produce a drifted `.dev0+g<sha>.d<date>` string.
+#
 # Intended to run in CI as a preflight before `uv build`. On local dev,
 # leave pyprojects / Cargo.toml untouched — uv workspace resolution and
 # setuptools-scm fallbacks handle that case.
 #
 # Usage: bash .github/scripts/set_build_versions.sh [VERSION]
 #
-# If VERSION is omitted, derive it from `git describe --tags --match 'v*'`.
+# If VERSION is omitted, derive it from `git describe --tags --match 'v*'`
+# and normalize to PEP 440:
+#
+#   v0.2.0                         → 0.2.0                       (release tag)
+#   v0.2.0-dirty                   → 0.2.0+d20260422             (release + dirty)
+#   v0.2.0-5-g810b6b2              → 0.2.1.dev5+g810b6b2         (post-release)
+#   v0.2.0-5-g810b6b2-dirty        → 0.2.1.dev5+g810b6b2.d20260422
+#   v0.3.0.dev0-5-g810b6b2         → 0.3.0.dev5+g810b6b2         (pre-release anchor)
 
 set -euo pipefail
 
 VERSION="${1:-}"
 if [[ -z "$VERSION" ]]; then
-  if ! VERSION=$(git describe --tags --match 'v*' --dirty 2>/dev/null); then
+  if ! RAW=$(git describe --tags --match 'v*' --dirty 2>/dev/null); then
     echo "ERROR: no v* tag found and no explicit VERSION given" >&2
     exit 1
   fi
-  VERSION="${VERSION#v}"
+  RAW="${RAW#v}"
+
+  DIRTY_SUFFIX=""
+  if [[ "$RAW" == *-dirty ]]; then
+    DIRTY_SUFFIX=".d$(date -u +%Y%m%d)"
+    RAW="${RAW%-dirty}"
+  fi
+
+  # git-describe emits `<tag>-<distance>-g<sha>` when HEAD is past the tag.
+  # Normalize to PEP 440, mirroring setuptools-scm's `guess-next-dev` scheme.
+  if [[ "$RAW" =~ ^(.+)-([0-9]+)-g([0-9a-f]+)$ ]]; then
+    TAG_PART="${BASH_REMATCH[1]}"
+    DISTANCE="${BASH_REMATCH[2]}"
+    SHA="${BASH_REMATCH[3]}"
+
+    if [[ "$TAG_PART" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(\.(dev|alpha|beta|rc)[0-9]+)?$ ]]; then
+      MAJOR="${BASH_REMATCH[1]}"
+      MINOR="${BASH_REMATCH[2]}"
+      PATCH="${BASH_REMATCH[3]}"
+      PRERELEASE="${BASH_REMATCH[4]}"
+
+      if [[ -n "$PRERELEASE" ]]; then
+        # Pre-release anchor (e.g. 0.3.0.dev0): keep base, use distance as dev N.
+        VERSION="${MAJOR}.${MINOR}.${PATCH}.dev${DISTANCE}+g${SHA}${DIRTY_SUFFIX}"
+      else
+        # Release tag (e.g. 0.2.0): bump patch, use distance as dev N.
+        VERSION="${MAJOR}.${MINOR}.$((PATCH + 1)).dev${DISTANCE}+g${SHA}${DIRTY_SUFFIX}"
+      fi
+    else
+      echo "ERROR: cannot parse tag '$TAG_PART' as PEP 440" >&2
+      exit 1
+    fi
+  else
+    VERSION="${RAW}${DIRTY_SUFFIX:++${DIRTY_SUFFIX#.}}"
+  fi
 fi
 
 echo "opaque build version → $VERSION"
@@ -68,3 +115,10 @@ rm -f packages/opaque/pyproject.toml.bak
 
 echo "Updated version pins:"
 grep -E "^version = \"|opaque-[a-z-]+" packages/opaque-accounting/pyproject.toml packages/opaque-accounting/Cargo.toml packages/opaque/pyproject.toml | sed 's|^|  |'
+
+# --- export for downstream build steps --------------------------------------
+# setuptools-scm would otherwise re-derive the version from the now-dirty
+# tree and drift from what we've written into opaque-accounting/pyproject.toml.
+if [[ -n "${GITHUB_ENV:-}" ]]; then
+  echo "SETUPTOOLS_SCM_PRETEND_VERSION=$VERSION" >> "$GITHUB_ENV"
+fi

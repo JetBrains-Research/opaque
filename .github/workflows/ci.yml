@@ -199,6 +199,7 @@ jobs:
     name: Publish dev wheels to GCP
     needs: [build-python-wheels, build-accounting-wheels]
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: read
       id-token: write
@@ -233,5 +234,5 @@ jobs:
           UV_PUBLISH_PASSWORD: ${{ steps.gcp-auth.outputs.access_token }}
         run: |
           uv publish \
-            --publish-url https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/ \
+            --publish-url "${{ vars.PYTHON_REPOSITORY_URL }}" \
             dist/*.whl
