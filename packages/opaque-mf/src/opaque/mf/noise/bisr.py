@@ -19,7 +19,7 @@ from dataclasses import dataclass
 import torch
 
 def _native():
-    from opaque_accounting import opaque_accounting as _n
+    from opaque.accounting import _native as _n
     return _n
 from ._streaming_matrix import StreamingMatrix
 from ._toeplitz import (

@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-import opaque_accounting as acc
+import opaque.accounting as acc
 from opaque.mf.noise.band_mf import BandMfStrategy, band_mf_strategy
 
 

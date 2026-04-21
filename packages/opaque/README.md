@@ -9,7 +9,7 @@ Installing `opaque` pulls in the default bundle:
 - `opaque-auditing` — empirical privacy auditing (one-run, coin-flip, loss attacks)
 - `opaque-accounting` — PLD-based privacy accounting (Rust-backed)
 
-Plus the `opaque.accounting` convenience shim (re-exports `opaque_accounting`).
+The accounting API lives natively at `opaque.accounting` (PyO3 extension under `opaque.accounting._native`).
 
 ## Extras
 
@@ -53,10 +53,10 @@ opaque.mf.optimizers.adamw_jme                  <- opaque-mf
 opaque.auditing.*                            <- opaque-auditing
 opaque.performance.kernels, opaque.performance.torch <- opaque-performance
 opaque.huggingface.patches                   <- opaque-huggingface
-opaque.accounting                            <- opaque (meta, shim to opaque_accounting)
+opaque.accounting                            <- opaque-accounting (native PyO3)
 ```
 
-`opaque`, `opaque.noise`, `opaque.optimizers`, `opaque.compat` are
+`opaque`, `opaque.noise`, `opaque.optimizers` are
 [PEP 420](https://peps.python.org/pep-0420/) namespace packages contributed
 to by multiple distributions — there is no top-level `opaque/__init__.py`,
 so `from opaque import X` no longer works. Always import from the relevant

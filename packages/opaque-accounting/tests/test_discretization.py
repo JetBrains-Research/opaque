@@ -2,8 +2,8 @@
 
 import pytest
 
-import opaque_accounting as acc
-from opaque_accounting.discretization import (
+import opaque.accounting as acc
+from opaque.accounting.discretization import (
     get_discretization,
     set_discretization,
 )
@@ -12,7 +12,7 @@ from opaque_accounting.discretization import (
 @pytest.fixture(autouse=True)
 def _reset_discretization():
     """Reset module-level default after each test."""
-    from opaque_accounting import discretization
+    from opaque.accounting import discretization
 
     original = discretization._default_config
     yield
@@ -24,7 +24,7 @@ class TestSetGetDiscretization:
 
     def test_default_returns_library_default(self):
         """Before set_discretization(), returns library default (1e-4)."""
-        from opaque_accounting import discretization
+        from opaque.accounting import discretization
 
         discretization._default_config = None
         cfg = get_discretization()
@@ -148,7 +148,7 @@ class TestQueryTimeOverrides:
 
     def test_override_on_library_default(self):
         """Query-time override works even without set_discretization."""
-        from opaque_accounting import discretization
+        from opaque.accounting import discretization
 
         discretization._default_config = None  # Clear global default
 

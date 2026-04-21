@@ -4,9 +4,9 @@ import math
 
 import pytest
 
-import opaque_accounting as acc
-from opaque_accounting import calibration as cal
-from opaque_accounting.calibration import (
+import opaque.accounting as acc
+from opaque.accounting import calibration as cal
+from opaque.accounting.calibration import (
     AdvantageBudget,
     BetaBudget,
     CalibrateResult,

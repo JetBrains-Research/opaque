@@ -153,7 +153,7 @@ The accounting constructor receives `sensitivity` and `gram_matrix` from the
 same `blt_strategy` used for noise generation:
 
 ```python
-import opaque_accounting as acc
+import opaque.accounting as acc
 from opaque.mf.noise import blt_strategy
 
 strategy = blt_strategy(

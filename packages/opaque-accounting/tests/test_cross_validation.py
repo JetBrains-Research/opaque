@@ -28,9 +28,9 @@ riskcal = pytest.importorskip("riskcal")
 import riskcal.analysis as rc_analysis  # noqa: E402
 from dp_accounting.pld import privacy_loss_distribution as pld_lib  # noqa: E402
 
-import opaque_accounting as acc  # noqa: E402
-from opaque_accounting import calibration as cal  # noqa: E402
-from opaque_accounting.discretization import get_discretization  # noqa: E402
+import opaque.accounting as acc  # noqa: E402
+from opaque.accounting import calibration as cal  # noqa: E402
+from opaque.accounting.discretization import get_discretization  # noqa: E402
 
 # ============================================================================
 # Helpers
@@ -373,7 +373,7 @@ class TestAdaClipCrossValidation:
         ],
     )
     def test_adaclip_effective_noise(self, sigma, batch_size):
-        import opaque_accounting as _native
+        import opaque.accounting as _native
 
         proc = acc.adaclip(acc.gaussian(sigma), expected_batch_size=batch_size)
         sigma_b = batch_size * 0.05
@@ -385,7 +385,7 @@ class TestAdaClipCrossValidation:
         ref = _native.gaussian_pld(z_eff, config.to_native())
         assert proc.epsilon_at(1e-5) == pytest.approx(ref.epsilon_at(1e-5), rel=1e-12)
 
-        from opaque_accounting.transformations import AdaClip
+        from opaque.accounting.transformations import AdaClip
 
         assert isinstance(proc, AdaClip)
 

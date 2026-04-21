@@ -30,7 +30,7 @@ from typing import Any
 import torch
 
 def _native():
-    from opaque_accounting import opaque_accounting as _n
+    from opaque.accounting import _native as _n
     return _n
 from ._engine import (
     MFNoiseState,

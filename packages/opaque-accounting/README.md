@@ -4,9 +4,18 @@ PLD computation engine for differential privacy accounting, implemented in Rust 
 
 ## Overview
 
-`opaque_accounting` is the numerical backend for `opaque.accounting`. It provides
-flat functions that take scalar parameters and return opaque `Pld` handles.
-Python owns composition, repetition, caching, and calibration.
+`opaque-accounting` ships a PyO3 extension mounted at
+`opaque.accounting._native` plus a Python facade at `opaque.accounting`.
+The native module exposes flat functions that take scalar parameters
+and return opaque `Pld` handles; the Python side owns composition,
+repetition, caching, and calibration.
+
+Install standalone:
+
+```bash
+pip install opaque-accounting
+python -c "from opaque.accounting import gaussian, poisson; print(poisson(gaussian(0.5), 0.01).epsilon_at(1e-5))"
+```
 
 The engine uses the Privacy Loss Distribution (PLD) framework with
 Connect-the-Dots discretization ([Doroshenko et al., 2022](https://arxiv.org/abs/2207.04380)).

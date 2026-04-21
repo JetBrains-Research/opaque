@@ -180,7 +180,7 @@ the same `band_mf_strategy` used for noise generation. This keeps both
 components in sync:
 
 ```python
-import opaque_accounting as acc
+import opaque.accounting as acc
 from opaque.mf.noise import band_mf_strategy
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
@@ -210,7 +210,7 @@ from opaque import clipped_grad
 from opaque.mf.noise import mf_noise, band_mf_strategy
 from opaque.sampling import CyclicPoissonSampler
 from opaque.random import key, split
-import opaque_accounting as acc
+import opaque.accounting as acc
 
 n_steps, bands = 1000, 10
 sample_rate = 0.01

@@ -16,7 +16,7 @@ fn to_py_err(e: PldError) -> PyErr {
 ///
 /// Example::
 ///
-///     import opaque_accounting as dp
+///     import opaque.accounting as dp
 ///     pld = dp.gaussian_pld(1.1)
 ///     print(pld.epsilon_at(1e-5))
 ///     composed = pld.self_compose(1000)

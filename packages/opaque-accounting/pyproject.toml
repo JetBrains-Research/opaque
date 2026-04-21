@@ -28,3 +28,6 @@ package = true
 
 [tool.maturin]
 features = ["python-extension"]
+module-name = "opaque.accounting._native"
+python-source = "src"
+python-packages = ["opaque.accounting"]

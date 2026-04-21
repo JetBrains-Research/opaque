@@ -25,7 +25,7 @@ mechanism parameters in two places.
 
 ```python
 from opaque.mf.noise import lambda_cgd_strategy
-import opaque_accounting as acc
+import opaque.accounting as acc
 
 # 1. Create strategy — computes sensitivity and Gram matrix internally
 strategy = lambda_cgd_strategy(

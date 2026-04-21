@@ -4,8 +4,8 @@ import math
 
 import pytest
 
-import opaque_accounting as acc
-from opaque_accounting.transformations import AdaClip
+import opaque.accounting as acc
+from opaque.accounting.transformations import AdaClip
 
 # ── Constructor function tests ───────────────────────────────────────
 

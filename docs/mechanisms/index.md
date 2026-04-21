@@ -86,7 +86,7 @@ support all amplification types:
 ## Quick comparison
 
 ```python
-import opaque_accounting as acc
+import opaque.accounting as acc
 from opaque.mf.noise import band_mf_strategy, lambda_cgd_strategy
 
 # --- Independent noise ---

@@ -5,14 +5,14 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-import opaque_accounting as acc
-from opaque_accounting.amplification import (
+import opaque.accounting as acc
+from opaque.accounting.amplification import (
     ParallelPoisson,
     Poisson,
     TruncatedPoisson,
 )
-from opaque_accounting.base import DpProcess
-from opaque_accounting.mechanisms import Gaussian
+from opaque.accounting.base import DpProcess
+from opaque.accounting.mechanisms import Gaussian
 
 # ── Amplification dataclass tests ────────────────────────────────────
 

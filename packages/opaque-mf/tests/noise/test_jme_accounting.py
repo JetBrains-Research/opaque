@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-import opaque_accounting as acc
+import opaque.accounting as acc
 
 
 class TestJmeAccounting:

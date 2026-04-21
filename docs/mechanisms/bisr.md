@@ -20,7 +20,7 @@ parameters and keeps the accounting API uniform across all MF mechanisms.
 
 ```python
 from opaque.mf.noise import bisr_strategy
-import opaque_accounting as acc
+import opaque.accounting as acc
 
 # 1. Create strategy — computes sensitivity and Gram matrix internally
 strategy = bisr_strategy(

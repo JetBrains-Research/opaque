@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-import opaque_accounting as acc
+import opaque.accounting as acc
 from opaque.mf.noise.lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
 from opaque.mf.noise import mf_noise
 from opaque.core.random import key

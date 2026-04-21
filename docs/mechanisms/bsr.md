@@ -15,7 +15,7 @@ Opaque exposes **closed-form coefficients** (Theorem 1 in the paper): no L-BFGS 
 
 ```python
 from opaque.mf.noise import bsr_strategy
-import opaque_accounting as acc
+import opaque.accounting as acc
 
 strategy = bsr_strategy(
     bandwidth=8,

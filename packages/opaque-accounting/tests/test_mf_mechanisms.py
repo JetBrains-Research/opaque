@@ -5,12 +5,12 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-import opaque_accounting as acc
-from opaque_accounting.amplification import (
+import opaque.accounting as acc
+from opaque.accounting.amplification import (
     CyclicPoisson,
 )
-from opaque_accounting.base import DpProcess
-from opaque_accounting.mechanisms import (
+from opaque.accounting.base import DpProcess
+from opaque.accounting.mechanisms import (
     BandMf,
     Blt,
 )

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 import torch
 
 def _native():
-    from opaque_accounting import opaque_accounting as _n
+    from opaque.accounting import _native as _n
     return _n
 from .band_mf import _momentum_workload_coef
 from ._blt_math import (
