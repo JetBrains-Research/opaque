@@ -1,6 +1,8 @@
 # Gradient Clipping
 
-The `opaque.clipping` module provides the core functionality for per-sample gradient clipping, the foundation of DP-SGD.
+The `opaque.core.clipping` module provides algorithm-agnostic per-example
+gradient clipping primitives. DP-SGD-specific variants (adaptive, AUTO-S)
+live in `opaque.dpsgd.clipping`.
 
 ## Overview
 
@@ -45,7 +47,12 @@ object. It auto-dispatches to the right function based on type:
 
 ## API Documentation
 
-::: opaque.clipping
+::: opaque.core.clipping
+    options:
+      show_source: true
+      heading_level: 2
+
+::: opaque.dpsgd.clipping
     options:
       show_source: true
       heading_level: 2

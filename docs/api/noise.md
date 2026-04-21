@@ -1,6 +1,9 @@
 # Noise Injection
 
-The `opaque.noise` module provides functions for adding calibrated noise to gradients for differential privacy.
+Opaque's noise mechanisms live next to the training paradigm they support:
+`opaque.dpsgd.noise` for independent Gaussian-family noise, and
+`opaque.dpftrl.noise` for matrix-factorization (correlated) noise. The base
+`NoiseState` type that both build on lives in `opaque.core.noise.types`.
 
 ## Overview
 
@@ -50,11 +53,11 @@ across ranks. It auto-dispatches based on type:
 
 ## Standard Gaussian
 
-::: opaque.noise.gaussian_noise
+::: opaque.dpsgd.noise.gaussian_noise
 
 ## Bounded Gaussian — Truncated (renormalized)
 
-::: opaque.noise.truncated_gaussian_noise
+::: opaque.dpsgd.noise.truncated_gaussian_noise
 
 ## Matrix Factorization Noise
 
@@ -86,12 +89,12 @@ across ranks. It auto-dispatches based on type:
 
 ## State Classes
 
-::: opaque.noise.types.NoiseState
+::: opaque.core.noise.types.NoiseState
     options:
       show_source: true
       heading_level: 3
 
-::: opaque.noise.gaussian.GaussianNoiseState
+::: opaque.dpsgd.noise.gaussian.GaussianNoiseState
     options:
       show_source: true
       heading_level: 3
@@ -103,12 +106,6 @@ across ranks. It auto-dispatches based on type:
 
 ## Distributed Synchronization
 
-::: opaque.noise.distributed.sync_gaussian_noise_state
-    options:
-      show_source: true
-      heading_level: 3
-
-::: opaque.noise.distributed.sync_mf_noise_state
-    options:
-      show_source: true
-      heading_level: 3
+Use `opaque.distributed.sync(state)` — it auto-dispatches on the state's
+type to the right sync function. `GaussianNoiseState` and `MFNoiseState`
+both register handlers at import time, so no named sync call is required.

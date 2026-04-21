@@ -16,13 +16,6 @@ from dataclasses import dataclass
 
 import torch
 
-
-def _native():
-    from opaque.accounting import _native as _n
-
-    return _n
-
-
 from .band_mf import _momentum_workload_coef
 from ._blt_math import (
     inverse_as_streaming_matrix,
@@ -37,6 +30,12 @@ from ._streaming_matrix import StreamingMatrix
 from ._toeplitz import (
     minsep_sensitivity_squared as _toeplitz_minsep_sensitivity_squared,
 )
+
+
+def _native():
+    from opaque.accounting import _native as _n
+
+    return _n
 
 
 __all__ = ["BltStrategy", "blt_strategy"]

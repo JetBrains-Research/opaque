@@ -19,13 +19,6 @@ from dataclasses import dataclass
 
 import torch
 
-
-def _native():
-    from opaque.accounting import _native as _n
-
-    return _n
-
-
 from ._sensitivity import minsep_true_max_participations
 from ._streaming_matrix import StreamingMatrix
 from ._toeplitz import (
@@ -33,6 +26,13 @@ from ._toeplitz import (
     sensitivity_squared as _toeplitz_col_norm_sq,
     minsep_sensitivity_squared as _toeplitz_minsep_sensitivity_squared,
 )
+
+
+def _native():
+    from opaque.accounting import _native as _n
+
+    return _n
+
 
 __all__ = ["BsrStrategy", "bsr_strategy"]
 

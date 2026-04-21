@@ -29,20 +29,20 @@ from typing import Any
 
 import torch
 
-
-def _native():
-    from opaque.accounting import _native as _n
-
-    return _n
-
+from opaque.core.pytree import tree_map
+from opaque.core.random import RngKey, generator_from_key
+from opaque.core.random import fold_in as rng_fold_in
 
 from ._engine import (
     MFNoiseState,
     _iid_normal_noise,
 )
-from opaque.core.random import RngKey, generator_from_key
-from opaque.core.random import fold_in as rng_fold_in
-from opaque.core.pytree import tree_map
+
+
+def _native():
+    from opaque.accounting import _native as _n
+
+    return _n
 
 
 def _column_norm(lambda_: float, n_steps: int, step: int) -> float:

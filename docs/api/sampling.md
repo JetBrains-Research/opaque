@@ -188,7 +188,7 @@ loader = DataLoader(shard, batch_sampler=sampler)
 
 ## API Documentation
 
-::: opaque.core.sampling.poisson.PoissonSampler
+::: opaque.dpsgd.sampling.poisson.PoissonSampler
     options:
       show_source: true
       heading_level: 3

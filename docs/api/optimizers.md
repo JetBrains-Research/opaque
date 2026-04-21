@@ -52,9 +52,9 @@ optimizer = torchopt.adamw(lr=1e-3, weight_decay=0.01)
 
 ```python
 import torchopt
-from opaque.clipping import clipped_grad
-from opaque.noise import gaussian_noise
-from opaque.random import key
+from opaque.core.clipping import clipped_grad
+from opaque.dpsgd.noise import gaussian_noise
+from opaque.core.random import key
 
 # Gradient pipeline
 grad_fn, clip_state = clipped_grad(
@@ -107,7 +107,12 @@ for details:
 These address the same problem from different angles and **must not be
 combined**.
 
-::: opaque.optimizers
+::: opaque.dpsgd.optimizers.adamw_bc
+    options:
+      show_source: true
+      heading_level: 3
+
+::: opaque.dpftrl.optimizers.adamw_jme
     options:
       show_source: true
       heading_level: 3

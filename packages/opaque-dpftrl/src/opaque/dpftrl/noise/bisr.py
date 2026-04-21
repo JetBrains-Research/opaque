@@ -18,17 +18,16 @@ from dataclasses import dataclass
 
 import torch
 
+from ._streaming_matrix import StreamingMatrix
+from ._toeplitz import (
+    inverse_as_streaming_matrix,
+)
+
 
 def _native():
     from opaque.accounting import _native as _n
 
     return _n
-
-
-from ._streaming_matrix import StreamingMatrix
-from ._toeplitz import (
-    inverse_as_streaming_matrix,
-)
 
 
 def _bisr_inverse_coefficients(bandwidth: int, beta: float = 0.0) -> list[float]:
