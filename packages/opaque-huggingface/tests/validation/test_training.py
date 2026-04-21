@@ -68,6 +68,10 @@ def gpt2_with_lora(gpt2_model_and_tokenizer):
         lora_alpha=16,
         lora_dropout=0.0,
         target_modules=["c_attn", "c_proj"],
+        # GPT-2's c_attn/c_proj are `Conv1D` layers (Radford's original naming).
+        # PEFT defaults `fan_in_fan_out=False` which is correct for `nn.Linear`;
+        # Conv1D stores weights transposed, so LoRA needs the flag flipped.
+        fan_in_fan_out=True,
     )
 
     model = get_peft_model(model, lora_config)

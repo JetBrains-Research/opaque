@@ -373,7 +373,7 @@ class TestAdaClipCrossValidation:
         ],
     )
     def test_adaclip_effective_noise(self, sigma, batch_size):
-        import opaque.accounting as _native
+        from opaque.accounting import _native
 
         proc = acc.adaclip(acc.gaussian(sigma), expected_batch_size=batch_size)
         sigma_b = batch_size * 0.05

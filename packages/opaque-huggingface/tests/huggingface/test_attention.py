@@ -97,13 +97,27 @@ class TestAttentionNumericalParity:
     """Test that SDPA and eager produce similar gradients."""
 
     def test_sdpa_eager_gradient_parity(self, qwen2_config, qwen2_tokenizer, device):
-        """Verify SDPA and eager produce numerically similar clipped gradients."""
+        """Verify SDPA and eager produce numerically similar clipped gradients.
+
+        Pins SDPA to the ``MATH`` backend so both runs use identical matmul
+        order. Without the pin, SDPA picks flash / efficient / math kernels
+        based on input shape, device, and dtype — different kernels produce
+        different rounding and the comparison becomes flaky at the
+        ``rtol=0.2`` tolerance below.
+        """
+        from torch.nn.attention import SDPBackend, sdpa_kernel
+
+        # Deterministic init: LoRA and any op that reads torch's default RNG
+        # need a fixed seed for a run-to-run-stable comparison.
+        torch.manual_seed(0)
+
         # Run with eager
         qwen2_config._attn_implementation = "eager"
         model_eager = prepare_lora_model(qwen2_config).to(device)
         grads_eager, _ = run_clipped_grad_test(model_eager, qwen2_tokenizer)
 
-        # Run with SDPA (need fresh model with same weights)
+        # Run with SDPA (fresh model with same weights — state is copied below)
+        torch.manual_seed(0)
         qwen2_config._attn_implementation = "sdpa"
         model_sdpa = prepare_lora_model(qwen2_config).to(device)
 
@@ -115,7 +129,11 @@ class TestAttentionNumericalParity:
                 sdpa_state[key] = eager_state[key]
         model_sdpa.load_state_dict(sdpa_state)
 
-        grads_sdpa, _ = run_clipped_grad_test(model_sdpa, qwen2_tokenizer)
+        # Pin SDPA to the MATH backend so the backward pass uses the same
+        # deterministic reference path eager does (rather than a flash /
+        # efficient kernel with different FP rounding).
+        with sdpa_kernel(SDPBackend.MATH):
+            grads_sdpa, _ = run_clipped_grad_test(model_sdpa, qwen2_tokenizer)
 
         # Compare gradients - allow for numerical differences between backends.
         # Eager uses manual Q@K matmul; SDPA uses fused CUDA kernels (flash/efficient).

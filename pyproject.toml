@@ -81,3 +81,15 @@ markers = [
   "mps: Test requires Apple Metal (MPS); auto-skipped on non-MPS hosts.",
   "slow: Test takes >5 s on CPU; opted out in PR gate via `and not slow`, run on push to main.",
 ]
+
+filterwarnings = [
+  # PyTorch internals: SDPA has no vmap batching rule on CPU, so running
+  # fused attention under vmap falls back to a slower path. Triggered by
+  # design on CPU test runners; on CUDA the batching rule kicks in and no
+  # warning fires.
+  "ignore:There is a performance drop because we have not yet implemented the batching rule.*:UserWarning",
+  # torchopt depends on torch.jit internals that upstream has deprecated in
+  # favor of torch.compile / torch.export. Fires on import of torchopt; not
+  # our code to change.
+  "ignore:.*torch.jit.script_method. is deprecated.*:DeprecationWarning",
+]
