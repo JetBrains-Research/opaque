@@ -14,7 +14,7 @@ Opaque exposes **closed-form coefficients** (Theorem 1 in the paper): no L-BFGS 
 ## Accounting
 
 ```python
-from opaque.noise.mf import bsr_strategy
+from opaque.mf.noise import bsr_strategy
 import opaque_accounting as acc
 
 strategy = bsr_strategy(
@@ -60,7 +60,7 @@ eps = training.epsilon_at(1e-5)
 ## Noise generation
 
 ```python
-from opaque.noise.mf import mf_noise, bsr_strategy
+from opaque.mf.noise import mf_noise, bsr_strategy
 from opaque.random import key
 
 strategy = bsr_strategy(

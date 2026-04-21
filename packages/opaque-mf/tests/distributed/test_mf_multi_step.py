@@ -18,7 +18,7 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
-from opaque.noise.mf import mf_noise, identity_strategy
+from opaque.mf.noise import mf_noise, identity_strategy
 
 
 def _find_free_port() -> int:

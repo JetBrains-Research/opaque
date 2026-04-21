@@ -29,7 +29,7 @@ from opaque.core.distributed import (
     sync,
 )
 from opaque.dpsgd.noise.gaussian import gaussian_noise
-from opaque.noise.mf import mf_noise, identity_strategy
+from opaque.mf.noise import mf_noise, identity_strategy
 from opaque.core.profiling import StepTimer, TrainingProfiler
 from opaque.core.random import key
 from opaque.core.utils import make_functional

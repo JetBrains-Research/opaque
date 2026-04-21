@@ -1,6 +1,6 @@
 """AdamW-JME optimizer: AdamW with JME dual-stream noise.
 
-Paired with :func:`~opaque.noise.mf.jme_noise`, this optimizer
+Paired with :func:`~opaque.mf.noise.jme_noise`, this optimizer
 consumes noisy gradients (first moment) and noisy squared gradients
 (second moment) produced by the JME mechanism::
 
@@ -185,7 +185,7 @@ def adamw_jme(
     decay bypasses the moment EMAs).
 
     The ``noisy_squared_grads`` kwarg on ``update()`` provides the
-    privately-estimated second moment from :func:`~opaque.noise.mf.jme_noise`.
+    privately-estimated second moment from :func:`~opaque.mf.noise.jme_noise`.
 
     Args:
         lr: Learning rate — a float or a callable ``step -> float``

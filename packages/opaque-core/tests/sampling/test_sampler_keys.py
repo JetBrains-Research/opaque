@@ -6,8 +6,9 @@ import torch
 from torch.utils.data import TensorDataset
 
 from opaque.core.random import fold_in, key
+from opaque.mf.sampling import CyclicPoissonSampler
 from opaque.core.sampling import (
-    CyclicPoissonSampler,
+
     PoissonSampler,
 )
 from opaque.dpsgd.sampling import TruncatedPoissonSampler

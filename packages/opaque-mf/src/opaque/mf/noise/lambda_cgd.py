@@ -29,7 +29,9 @@ from typing import Any
 
 import torch
 
-from opaque_accounting import opaque_accounting as _native
+def _native():
+    from opaque_accounting import opaque_accounting as _n
+    return _n
 from ._engine import (
     MFNoiseState,
     _iid_normal_noise,
@@ -107,14 +109,14 @@ def lambda_cgd_strategy(
 
     # Sensitivity (closed-form Rust)
     if normalized:
-        sens_sq = _native.lambda_cgd_normalized_sensitivity_squared(
+        sens_sq = _native().lambda_cgd_normalized_sensitivity_squared(
             lambda_,
             n_steps,
             min_sep,
             max_participations,
         )
     else:
-        sens_sq = _native.lambda_cgd_sensitivity_squared(
+        sens_sq = _native().lambda_cgd_sensitivity_squared(
             lambda_,
             n_steps,
             min_sep,
@@ -126,7 +128,7 @@ def lambda_cgd_strategy(
     coefficients = tuple(lambda_**i for i in range(n_steps))
 
     # Gram matrix (closed-form Rust)
-    gram = _native.lambda_cgd_gram_matrix(
+    gram = _native().lambda_cgd_gram_matrix(
         lambda_,
         n_steps,
         min_sep,
@@ -138,7 +140,7 @@ def lambda_cgd_strategy(
     if normalized:
         max_column_norm = 1.0  # all columns have unit norm after normalization
     else:
-        max_column_norm = float(_native.lambda_cgd_max_column_norm(lambda_, n_steps))
+        max_column_norm = float(_native().lambda_cgd_max_column_norm(lambda_, n_steps))
 
     return LambdaCgdStrategy(
         sensitivity=sensitivity,

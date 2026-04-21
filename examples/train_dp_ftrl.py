@@ -105,7 +105,7 @@ import torchopt
 import opaque.accounting as acc
 from opaque.accounting import calibration as cal
 from opaque.core.clipping import clipped_grad
-from opaque.noise.mf import (
+from opaque.mf.noise import (
     band_mf_strategy,
     bisr_strategy,
     bsr_strategy,
@@ -116,7 +116,7 @@ from opaque.noise.mf import (
     mf_noise,
     jme_noise,
 )
-from opaque.optimizers.adamw_jme import adamw_jme
+from opaque.mf.optimizers.adamw_jme import adamw_jme
 from opaque.core.profiling import (
     StepTimer,
     TrainingProfiler,

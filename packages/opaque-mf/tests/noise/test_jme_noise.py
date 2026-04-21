@@ -5,7 +5,7 @@ import math
 import pytest
 import torch
 
-from opaque.noise.mf import (
+from opaque.mf.noise import (
     band_mf_strategy,
     bisr_strategy,
     bsr_strategy,

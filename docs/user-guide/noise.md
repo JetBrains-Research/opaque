@@ -206,7 +206,7 @@ Opaque provides five MF strategies, all used through the unified `mf_noise()` di
 All strategies are created by factory functions and passed to `mf_noise()`:
 
 ```python
-from opaque.noise.mf import mf_noise, band_mf_strategy
+from opaque.mf.noise import mf_noise, band_mf_strategy
 from opaque.random import key
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
@@ -237,7 +237,7 @@ Banded Toeplitz strategy. Optimizes banded Toeplitz coefficients for the
 workload. Uses cyclic Poisson amplification for privacy accounting.
 
 ```python
-from opaque.noise.mf import mf_noise, band_mf_strategy
+from opaque.mf.noise import mf_noise, band_mf_strategy
 from opaque.random import key
 
 strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.95)
@@ -255,7 +255,7 @@ long training runs, using a parametric representation via exponential decay
 buffers. Supports multi-epoch training via `min_sep` and `max_participations`.
 
 ```python
-from opaque.noise.mf import mf_noise, blt_strategy
+from opaque.mf.noise import mf_noise, blt_strategy
 from opaque.random import key
 
 strategy = blt_strategy(
@@ -274,7 +274,7 @@ DP-λCGD strategy — uses PRNG seed replay instead of storing previous noise
 vectors. Zero extra memory overhead compared to DP-SGD.
 
 ```python
-from opaque.noise.mf import mf_noise, lambda_cgd_strategy
+from opaque.mf.noise import mf_noise, lambda_cgd_strategy
 from opaque.random import key
 
 strategy = lambda_cgd_strategy(
@@ -294,7 +294,7 @@ BISR (Banded Inverse Square Root) strategy — generalises λCGD to arbitrary
 bandwidth p ≥ 2. Asymptotically optimal.
 
 ```python
-from opaque.noise.mf import mf_noise, bisr_strategy
+from opaque.mf.noise import mf_noise, bisr_strategy
 from opaque.random import key
 
 strategy = bisr_strategy(
@@ -313,7 +313,7 @@ Identity strategy — equivalent to standard DP-SGD (independent noise at each
 step) but using the MF API. Useful for testing or as a baseline.
 
 ```python
-from opaque.noise.mf import mf_noise, identity_strategy
+from opaque.mf.noise import mf_noise, identity_strategy
 from opaque.random import key
 
 strategy = identity_strategy()
@@ -335,7 +335,7 @@ noise generation and privacy accounting always agree on the mechanism.
 
 ```python
 import opaque.accounting as acc
-from opaque.noise.mf import band_mf_strategy, lambda_cgd_strategy
+from opaque.mf.noise import band_mf_strategy, lambda_cgd_strategy
 
 # BandMF — strategy provides sensitivity and num_groups
 strategy = band_mf_strategy(n_steps=1000, bands=10)
@@ -369,7 +369,7 @@ Strategies that support multi-epoch patterns (`blt_strategy`, `lambda_cgd_strate
 sensitivity bounds:
 
 ```python
-from opaque.noise.mf import mf_noise, blt_strategy
+from opaque.mf.noise import mf_noise, blt_strategy
 from opaque.random import key
 
 strategy = blt_strategy(

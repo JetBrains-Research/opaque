@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from opaque.noise.mf._checks import (
+from opaque.mf.noise._checks import (
     check,
     check_exactly_one,
     check_finite,

@@ -4,7 +4,7 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from opaque.core.sampling import SequentialBatchSampler
+from opaque.mf.sampling import SequentialBatchSampler
 
 
 class TestSequentialBatchSampler:

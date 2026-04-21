@@ -24,7 +24,7 @@ This separation keeps accounting constructors simple and avoids duplicating
 mechanism parameters in two places.
 
 ```python
-from opaque.noise.mf import lambda_cgd_strategy
+from opaque.mf.noise import lambda_cgd_strategy
 import opaque_accounting as acc
 
 # 1. Create strategy — computes sensitivity and Gram matrix internally
@@ -81,7 +81,7 @@ has a closed-form expression in terms of λ, min_sep, and max_participations.
 ## Noise generation
 
 ```python
-from opaque.noise.mf import mf_noise, lambda_cgd_strategy
+from opaque.mf.noise import mf_noise, lambda_cgd_strategy
 from opaque.random import key
 
 strategy = lambda_cgd_strategy(

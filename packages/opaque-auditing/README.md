@@ -1,9 +1,31 @@
 # opaque-auditing
 
-Empirical privacy auditing:
+Empirical privacy auditing for Opaque: one-run estimator
+(Steinke et al. 2023), coin-flip canary injection, and
+loss-based membership-inference attacks.
+
+## Install
+
+```bash
+pip install opaque-auditing
+```
+
+`opaque-auditing` depends on `opaque-core` and ``scipy``; both
+install automatically.
+
+## Quick start
+
+```python
+import opaque.auditing as auditing
+from opaque.core.random import key
+
+cf = auditing.coin_flip(dataset, num_canaries=1000, key=key(42))
+# ... DP-SGD training loop ...
+estimate = auditing.one_run(scores, coin_flip=cf)
+```
+
+## Layout
 
 - `opaque.auditing.one_run` — one-run estimator (Steinke et al. 2023)
 - `opaque.auditing.coin_flip` — coin-flip canary injection
-- `opaque.auditing.attacks.loss` — loss-based membership inference via vmap
-
-Depends on `opaque-core`.
+- `opaque.auditing.attacks.loss` — loss-based membership inference via `vmap`

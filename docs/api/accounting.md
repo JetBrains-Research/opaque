@@ -217,7 +217,7 @@ BandMF mechanism for cyclic Poisson amplification. Takes `sensitivity` and
 - `num_groups` (int): From `strategy.num_groups`.
 
 ```python
-from opaque.noise.mf import band_mf_strategy
+from opaque.mf.noise import band_mf_strategy
 strategy = band_mf_strategy(n_steps=1000, bands=10)
 proc = acc.band_mf(1.0, sensitivity=strategy.sensitivity,
                    num_groups=strategy.num_groups)
@@ -234,7 +234,7 @@ BLT (Buffered Linear Toeplitz) mechanism. Takes `sensitivity` and optional
 - `gram_matrix` (tuple[float, ...]): From `strategy.gram_matrix`. Empty for unamplified accounting.
 
 ```python
-from opaque.noise.mf import blt_strategy
+from opaque.mf.noise import blt_strategy
 strategy = blt_strategy(n_steps=10000, min_sep=1000, max_participations=5)
 
 # Unamplified
@@ -258,7 +258,7 @@ DP-λCGD mechanism (Kalinin et al., 2026). Takes `sensitivity` and
 - `gram_matrix` (tuple[float, ...]): From `strategy.gram_matrix`.
 
 ```python
-from opaque.noise.mf import lambda_cgd_strategy
+from opaque.mf.noise import lambda_cgd_strategy
 strategy = lambda_cgd_strategy(
     lambda_=0.9, n_steps=total_steps,
     min_sep=steps_per_epoch, max_participations=num_epochs,
@@ -281,7 +281,7 @@ Generalises λCGD to arbitrary bandwidth. Takes `sensitivity` and
 - `gram_matrix` (tuple[float, ...]): From `strategy.gram_matrix`.
 
 ```python
-from opaque.noise.mf import bisr_strategy
+from opaque.mf.noise import bisr_strategy
 strategy = bisr_strategy(
     bandwidth=4, n_steps=total_steps,
     min_sep=steps_per_epoch, max_participations=num_epochs,

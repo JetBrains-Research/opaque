@@ -18,7 +18,9 @@ from dataclasses import dataclass
 
 import torch
 
-from opaque_accounting import opaque_accounting as _native
+def _native():
+    from opaque_accounting import opaque_accounting as _n
+    return _n
 from ._streaming_matrix import StreamingMatrix
 from ._toeplitz import (
     inverse_as_streaming_matrix,
@@ -139,7 +141,7 @@ def bisr_strategy(
     if normalized:
         max_column_norm = 1.0  # all columns have unit norm after normalization
     else:
-        mcn_sq = _native.bisr_sensitivity_squared(
+        mcn_sq = _native().bisr_sensitivity_squared(
             inv_coefs,
             n_steps,
             n_steps,
@@ -149,14 +151,14 @@ def bisr_strategy(
 
     # Sensitivity under actual participation pattern
     if normalized:
-        sens_sq = _native.bisr_normalized_sensitivity_squared(
+        sens_sq = _native().bisr_normalized_sensitivity_squared(
             inv_coefs,
             n_steps,
             min_sep,
             max_participations,
         )
     else:
-        sens_sq = _native.bisr_sensitivity_squared(
+        sens_sq = _native().bisr_sensitivity_squared(
             inv_coefs,
             n_steps,
             min_sep,
@@ -165,12 +167,12 @@ def bisr_strategy(
     sensitivity = float(sens_sq**0.5)
 
     # Strategy coefficients (Rust)
-    strategy_coefs = _native.bisr_strategy_coefficients(inv_coefs, bandwidth)
+    strategy_coefs = _native().bisr_strategy_coefficients(inv_coefs, bandwidth)
     full_coefs = _recover_strategy_coefficients(inv_coefs, n_steps)
     coefs_tuple = tuple(full_coefs)
 
     # Gram matrix (Rust)
-    gram = _native.bisr_gram_matrix(
+    gram = _native().bisr_gram_matrix(
         inv_coefs,
         n_steps,
         min_sep,

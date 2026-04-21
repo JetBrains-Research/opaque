@@ -3,7 +3,7 @@
 import pytest
 
 import opaque_accounting as acc
-from opaque.noise.mf.bsr import BsrStrategy, bsr_strategy
+from opaque.mf.noise.bsr import BsrStrategy, bsr_strategy
 
 
 class TestBsrStrategy:

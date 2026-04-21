@@ -60,27 +60,27 @@ across ranks. It auto-dispatches based on type:
 
 ### Dispatcher
 
-::: opaque.noise.mf.mf_noise
+::: opaque.mf.noise.mf_noise
 
 ### Strategies
 
-::: opaque.noise.mf.band_mf_strategy
+::: opaque.mf.noise.band_mf_strategy
     options:
       heading_level: 4
 
-::: opaque.noise.mf.blt_strategy
+::: opaque.mf.noise.blt_strategy
     options:
       heading_level: 4
 
-::: opaque.noise.mf.lambda_cgd_strategy
+::: opaque.mf.noise.lambda_cgd_strategy
     options:
       heading_level: 4
 
-::: opaque.noise.mf.bisr_strategy
+::: opaque.mf.noise.bisr_strategy
     options:
       heading_level: 4
 
-::: opaque.noise.mf.identity_strategy
+::: opaque.mf.noise.identity_strategy
     options:
       heading_level: 4
 
@@ -96,7 +96,7 @@ across ranks. It auto-dispatches based on type:
       show_source: true
       heading_level: 3
 
-::: opaque.noise.mf.MFNoiseState
+::: opaque.mf.noise.MFNoiseState
     options:
       show_source: true
       heading_level: 3

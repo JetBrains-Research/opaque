@@ -4,7 +4,7 @@ import pytest
 import torch
 
 import opaque_accounting as acc
-from opaque.noise.mf import (
+from opaque.mf.noise import (
     BandMfStrategy,
     BisrStrategy,
     BltStrategy,

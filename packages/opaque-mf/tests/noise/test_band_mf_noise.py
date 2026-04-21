@@ -4,7 +4,7 @@ import pytest
 import torch
 
 import opaque_accounting as acc
-from opaque.noise.mf.band_mf import BandMfStrategy, band_mf_strategy
+from opaque.mf.noise.band_mf import BandMfStrategy, band_mf_strategy
 
 
 class TestBandMfStrategy:

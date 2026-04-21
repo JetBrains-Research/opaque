@@ -4,7 +4,8 @@ import pytest
 import torch
 
 from opaque.core.random import key
-from opaque.core.sampling import CyclicPoissonSampler, PartitionType
+from opaque.mf.sampling import CyclicPoissonSampler
+from opaque.core.sampling import PartitionType
 
 
 class TestCyclicPoissonSamplerBasic:

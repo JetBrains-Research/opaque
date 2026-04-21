@@ -4,8 +4,8 @@ import pytest
 import torch
 
 import opaque_accounting as acc
-from opaque.noise.mf.lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
-from opaque.noise.mf import mf_noise
+from opaque.mf.noise.lambda_cgd import LambdaCgdStrategy, lambda_cgd_strategy
+from opaque.mf.noise import mf_noise
 from opaque.core.random import key
 
 

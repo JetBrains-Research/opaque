@@ -87,7 +87,7 @@ support all amplification types:
 
 ```python
 import opaque_accounting as acc
-from opaque.noise.mf import band_mf_strategy, lambda_cgd_strategy
+from opaque.mf.noise import band_mf_strategy, lambda_cgd_strategy
 
 # --- Independent noise ---
 gauss     = acc.poisson(acc.gaussian(1.0), sample_rate=0.01) * 1000

@@ -4,22 +4,22 @@ import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset
 
-from opaque.noise.mf import mf_noise
-from opaque.noise.mf import (
+from opaque.mf.noise import mf_noise
+from opaque.mf.noise import (
     band_mf_strategy,
     bisr_strategy,
     blt_strategy,
     identity_strategy,
     lambda_cgd_strategy,
 )
-from opaque.noise.mf._engine import _matrix_factorization_noise
-from opaque.noise.mf._streaming_matrix import identity
-from opaque.noise.mf._toeplitz import (
+from opaque.mf.noise._engine import _matrix_factorization_noise
+from opaque.mf.noise._streaming_matrix import identity
+from opaque.mf.noise._toeplitz import (
     inverse_as_streaming_matrix,
     optimal_max_error_strategy_coefs,
 )
 from opaque.core.random import key
-from opaque.core.sampling import BallsInBinsSampler
+from opaque.mf.sampling import BallsInBinsSampler
 
 
 def _train_loop(model, optimizer, noise_fn, state, x_data, y_data, steps):

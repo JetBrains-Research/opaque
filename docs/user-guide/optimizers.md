@@ -111,7 +111,7 @@ When `noise_stddev=0` (default), `adamw_bc` is numerically identical to
 `torchopt.adamw` — use it as a drop-in replacement even without BC.
 
 ```python
-from opaque.optimizers import adamw_bc
+from opaque.dpsgd.optimizers import adamw_bc
 
 # Without BC — identical to torchopt.adamw
 optimizer = adamw_bc(lr=1e-3, weight_decay=0.01)
@@ -165,8 +165,8 @@ Gaussian noise.
 ## AdamW-JME: setup and usage
 
 ```python
-from opaque.noise.mf import jme_noise, band_mf_strategy
-from opaque.optimizers import adamw_jme
+from opaque.mf.noise import jme_noise, band_mf_strategy
+from opaque.mf.optimizers import adamw_jme
 
 # Strategy: momentum=beta1 (Adam's first moment workload)
 strategy = band_mf_strategy(n_steps=1000, bands=8, momentum=0.9)

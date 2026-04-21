@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import TensorDataset
 
 from opaque.core.random import fold_in, key
-from opaque.core.sampling import BMinSepSampler
+from opaque.mf.sampling import BMinSepSampler
 
 
 def test_reproducibility():

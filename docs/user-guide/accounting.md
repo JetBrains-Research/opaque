@@ -177,7 +177,7 @@ agree on the mechanism parameters — the strategy is the single source of
 truth.
 
 ```python
-from opaque.noise.mf import band_mf_strategy
+from opaque.mf.noise import band_mf_strategy
 import opaque.accounting as acc
 
 # Strategy computes sensitivity and num_groups internally

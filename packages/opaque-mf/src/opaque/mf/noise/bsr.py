@@ -19,7 +19,9 @@ from dataclasses import dataclass
 
 import torch
 
-from opaque_accounting import opaque_accounting as _native
+def _native():
+    from opaque_accounting import opaque_accounting as _n
+    return _n
 
 from ._sensitivity import minsep_true_max_participations
 from ._streaming_matrix import StreamingMatrix
@@ -185,7 +187,7 @@ def bsr_strategy(
 
     coefficients = tuple(coef_tensor.tolist())
 
-    gram = _native.toeplitz_gram_matrix(
+    gram = _native().toeplitz_gram_matrix(
         band_coefs,
         n_steps,
         min_sep,

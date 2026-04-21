@@ -30,7 +30,7 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["opaque*"]
+include = ["opaque.auditing*"]
 namespaces = true
 
 [tool.uv]

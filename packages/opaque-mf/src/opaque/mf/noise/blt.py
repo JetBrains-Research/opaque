@@ -16,7 +16,9 @@ from dataclasses import dataclass
 
 import torch
 
-from opaque_accounting import opaque_accounting as _native
+def _native():
+    from opaque_accounting import opaque_accounting as _n
+    return _n
 from .band_mf import _momentum_workload_coef
 from ._blt_math import (
     inverse_as_streaming_matrix,
@@ -122,7 +124,7 @@ def blt_strategy(
     coefficients = tuple(coefs_tensor.tolist())
 
     # Gram matrix
-    gram = _native.toeplitz_gram_matrix(
+    gram = _native().toeplitz_gram_matrix(
         list(coefficients),
         n_steps,
         min_sep,

@@ -32,7 +32,10 @@ from opaque.auditing.attacks import loss_scores
 from opaque.auditing.coin_flip import CoinFlip, coin_flip
 from opaque.auditing.one_run import OneRunEstimate, one_run
 
+__version__ = "0.0.0.dev0"
+
 __all__ = [
+    "__version__",
     "CoinFlip",
     "OneRunEstimate",
     "coin_flip",

@@ -47,9 +47,9 @@ opaque.distributed, opaque.profiling        <- opaque-core
 opaque.noise.types                           <- opaque-core
 opaque.noise.gaussian, opaque.noise.truncated_gaussian,
 opaque.noise.per_group_noise                 <- opaque-dpsgd
-opaque.noise.mf.*                            <- opaque-mf
+opaque.mf.noise.*                            <- opaque-mf
 opaque.optimizers.adamw_bc                   <- opaque-dpsgd
-opaque.optimizers.adamw_jme                  <- opaque-mf
+opaque.mf.optimizers.adamw_jme                  <- opaque-mf
 opaque.auditing.*                            <- opaque-auditing
 opaque.compat.kernels, opaque.compat.pytorch <- opaque-performance
 opaque.compat.transformers                   <- opaque-huggingface

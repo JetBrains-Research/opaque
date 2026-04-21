@@ -27,7 +27,7 @@ def identity_strategy() -> IdentityStrategy:
         An :class:`IdentityStrategy` for use with :func:`mf_noise`.
 
     Example:
-        >>> from opaque.noise.mf import mf_noise, identity_strategy
+        >>> from opaque.mf.noise import mf_noise, identity_strategy
         >>> from opaque.core.random import key
         >>> noise_fn, state = mf_noise(template, identity_strategy(), stddev=1.0, key=key(42))
     """
