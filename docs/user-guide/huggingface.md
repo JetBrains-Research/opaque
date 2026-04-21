@@ -1,9 +1,24 @@
 # HuggingFace Compatibility
 
-Opaque works with HuggingFace Transformers models out of the box. When you
-`import opaque`, it automatically patches core Transformers functions to be
-compatible with `torch.func.vmap`, which is required for per-example
-gradient computation. No manual patching is needed.
+Opaque works with HuggingFace Transformers models. Patches are split across
+two sub-packages:
+
+- `opaque.huggingface` — compatibility patches (vmap-safe attention,
+  KV-cache workarounds, Poisson-collator compat) that make Transformers
+  models run correctly under `vmap(grad(...))`.
+- `opaque.performance.huggingface` — fused Triton kernel patches (SwiGLU,
+  GeGLU, RoPE, fused cross-entropy, LoRA) that wire Opaque's kernels into
+  the corresponding Transformers model classes. Pure performance.
+
+Patches apply automatically on import:
+
+```python
+import opaque.huggingface          # compat patches live
+import opaque.performance          # torch + HF kernel patches live
+```
+
+Disable selectively via the `OPAQUE_SKIP_*` env vars (see
+[Configuration](#configuration)).
 
 ## Auto-patching
 
@@ -107,7 +122,8 @@ PyTorch models store parameters internally. To use them with
 `clipped_grad`, convert to functional form with `make_functional`:
 
 ```python
-from opaque import make_functional, clipped_grad
+from opaque.clipping import clipped_grad
+from opaque.functional import make_functional
 
 model = AutoModelForCausalLM.from_pretrained("gpt2")
 fmodel, params = make_functional(model)
@@ -162,7 +178,9 @@ model, making per-example gradients feasible.
 ```python
 from transformers import AutoModelForCausalLM
 from peft import get_peft_model, LoraConfig
-from opaque import make_functional, clipped_grad, gaussian_noise
+from opaque.clipping import clipped_grad
+from opaque.dpsgd.noise import gaussian_noise
+from opaque.functional import make_functional
 from opaque.random import key
 
 # Load model with LoRA adapters
@@ -299,7 +317,7 @@ qkv_proj), Cohere (no transpose).
 All kernels are available as standalone functions without patching:
 
 ```python
-from opaque.compat.kernels import opaque_swiglu, opaque_cross_entropy_loss
+from opaque.performance.kernels import opaque_swiglu, opaque_cross_entropy_loss
 
 h = opaque_swiglu(gate, up)
 loss = opaque_cross_entropy_loss(logits, labels)
@@ -319,23 +337,34 @@ loss = opaque_cross_entropy_loss(logits, labels)
 
 ## Configuration
 
-Opaque patches are controlled by environment variables. Each accepts `all`
-to skip everything in that group, or a comma-separated list for selective skip.
+Patches apply on import. Disable selectively via sub-package-specific env
+vars, set **before** the matching import:
 
 | Variable | Scope | Values |
 |----------|-------|--------|
-| `OPAQUE_SKIP_COMPAT_PATCHES` | All patching | `all` |
-| `OPAQUE_SKIP_PYTORCH_CHECKPOINT_PATCHES` | Checkpoint compat | `all` |
-| `OPAQUE_SKIP_TRANSFORMERS_PATCHES` | HF Transformers | `all`, or `vmap,kernels` |
+| `OPAQUE_SKIP_PYTORCH_PATCHES` | `opaque.performance` | `all`, `checkpoint` |
+| `OPAQUE_SKIP_TRANSFORMERS_PATCHES` | `opaque.huggingface` compat | `all`, or `vmap,kv_cache,batchify,data` |
 | `OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES` | vmap compat | `all`, or `shared,standard,gemma2,phi3` |
-| `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES` | Triton kernels | `all`, or `swiglu,rope,ce,fused_ce,lora` |
+| `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES` | HF Triton kernels (performance) | `all`, or `swiglu,rope,ce,fused_ce,lora` |
+| `OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES` | Poisson-collator compat | `all` or `collator` |
 
 ### Disabling all patching
 
 ```python
 import os
-os.environ["OPAQUE_SKIP_COMPAT_PATCHES"] = "all"
-import opaque
+
+os.environ["OPAQUE_SKIP_PYTORCH_PATCHES"] = "all"
+os.environ["OPAQUE_SKIP_TRANSFORMERS_PATCHES"] = "all"
+# ... then do your imports.
+```
+
+### Skipping only HuggingFace compat patches
+
+```python
+import os
+os.environ["OPAQUE_SKIP_TRANSFORMERS_PATCHES"] = "all"
+import opaque.huggingface     # no-op compat patch
+import opaque.performance     # performance/kernel patches still active
 ```
 
 ### Disabling kernel optimizations
@@ -343,7 +372,7 @@ import opaque
 ```python
 import os
 os.environ["OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES"] = "all"
-import opaque
+import opaque.performance  # reads the env var at import time
 ```
 
 This disables all kernel optimizations. The library still works — models use
@@ -389,7 +418,7 @@ Use `with_batch_dim` to add a leading batch dimension to the arguments
 that `vmap` unbatches:
 
 ```python
-from opaque.utils.functional import with_batch_dim
+from opaque.functional import with_batch_dim
 
 def loss_fn(params, input_ids, labels):
     out = fmodel(params, input_ids=input_ids, labels=labels)

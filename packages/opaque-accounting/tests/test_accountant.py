@@ -6,9 +6,9 @@ realistic training-loop patterns, calibration integration, and API consistency.
 
 import pytest
 
-import opaque_accounting as acc
-from opaque_accounting.accountant import Accountant
-from opaque_accounting.calibration import epsilon_budget
+import opaque.accounting as acc
+from opaque.accounting.accountant import Accountant
+from opaque.accounting.calibration import epsilon_budget
 
 # ============================================================================
 # Construction & composition

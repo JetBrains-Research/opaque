@@ -266,8 +266,8 @@ Sets:
 
 ```python
 from opaque.random import key, fold_in, split, set_reproducible_pytorch_seed
-from opaque.noise import gaussian_noise
-from opaque.sampling import PoissonSampler
+from opaque.dpsgd.noise import gaussian_noise
+from opaque.dpsgd.sampling import PoissonSampler
 
 # Setup framework reproducibility once
 set_reproducible_pytorch_seed(key(42))

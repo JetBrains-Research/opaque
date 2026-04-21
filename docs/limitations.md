@@ -9,7 +9,7 @@ encoded workload matches your optimizer (for example, BandMF/BLT `lr_schedule` a
 Toeplitz surrogate when \(\eta_t\) varies). JME adds a second MF stream; new strategy
 types must extend `_derive_second_strategy` explicitly.
 
-See [Matrix factorization (MF)](user-guide/matrix-factorization.md).
+See [Matrix factorization (MF)](user-guide/dp-ftrl.md).
 
 ## Gradient checkpointing
 
@@ -41,10 +41,10 @@ Tensor Parallel, and Pipeline Parallel are not supported. Multi-node DDP
 should work but is not extensively tested. The NCCL backend is recommended;
 Gloo and MPI are not tested.
 
-## Kernel patching lives in `opaque.compat`
+## Kernel patching lives in `opaque.huggingface.patches`
 
 Kernel optimization and patching for HuggingFace models is part of
-`opaque.compat.transformers` and is CUDA+Triton only.
+`opaque.huggingface.patches` and is CUDA+Triton only.
 
 Low-level Triton-backed `Opaque_*` autograd classes (for example,
 `Opaque_SwiGLU`, `Opaque_RoPE_QK`, `Opaque_LinearCrossEntropyLoss`) are
@@ -52,12 +52,13 @@ internal implementation details and should not be imported directly in user
 code.
 
 On CPU/MPS (or without Triton), Opaque falls back to non-kernel compatibility
-paths. To control patching behavior, use the `OPAQUE_SKIP_COMPAT_PATCHES` and
-`OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES` environment variables. See
+paths. To control patching behavior, use the `OPAQUE_SKIP_PYTORCH_PATCHES`,
+`OPAQUE_SKIP_TRANSFORMERS_PATCHES`, and `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES`
+environment variables. See
 [HuggingFace Compatibility](user-guide/huggingface.md#configuration).
 
 Advanced users can still call kernel wrappers directly via
-`opaque.compat.kernels`.
+`opaque.performance.kernels`.
 
 ## In-place operations under vmap
 

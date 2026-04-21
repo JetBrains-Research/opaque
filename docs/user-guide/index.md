@@ -15,8 +15,9 @@ them together:
 import torch
 import torchopt
 import opaque.accounting as acc
-from opaque import clipped_grad, gaussian_noise
-from opaque.sampling import PoissonSampler
+from opaque.clipping import clipped_grad
+from opaque.dpsgd.noise import gaussian_noise
+from opaque.dpsgd.sampling import PoissonSampler
 from opaque.random import key, split
 
 # --- Privacy parameters ---

@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm>=8", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opaque-dpftrl"
+dynamic = ["version"]
+description = "Opaque DP-FTRL mechanisms: matrix-factorization noise (BLT, BSR, BISR, JME, lambda-CGD) and AdamW-JME"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Opaque Contributors" }]
+requires-python = ">=3.11,<3.13"
+keywords = ["differential-privacy", "dp-ftrl", "matrix-factorization", "pytorch", "privacy"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security",
+]
+dependencies = [
+    "torch>=2.10.0",
+    "torchopt>=0.7.3",
+    "scipy>=1.11.0",
+    "opaque-core>=0.0.0.dev0",
+    "opaque-accounting>=0.0.0.dev0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["opaque.dpftrl*"]
+namespaces = true
+
+[tool.setuptools_scm]
+root = "../.."
+fallback_version = "0.0.0"
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+opaque-core = { workspace = true }
+opaque-accounting = { workspace = true }

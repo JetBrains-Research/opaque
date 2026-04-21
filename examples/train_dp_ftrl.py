@@ -105,7 +105,7 @@ import torchopt
 import opaque.accounting as acc
 from opaque.accounting import calibration as cal
 from opaque.clipping import clipped_grad
-from opaque.noise.mf import (
+from opaque.dpftrl.noise import (
     band_mf_strategy,
     bisr_strategy,
     bsr_strategy,
@@ -116,23 +116,25 @@ from opaque.noise.mf import (
     mf_noise,
     jme_noise,
 )
-from opaque.optimizers import adamw_jme
-from opaque.profiling import (
+from opaque.dpftrl.optimizers.adamw_jme import adamw_jme
+from opaque.huggingface import is_patched as is_transformers_patched
+from opaque.performance.huggingface import is_kernel_patched
+from opaque.performance.profiling import (
     StepTimer,
     TrainingProfiler,
     print_memory,
     reset_peak_memory,
 )
 from opaque.random import key, fold_in
-from opaque.sampling import (
+from opaque.functional import empty_collate
+from opaque.dpsgd.sampling import PoissonSampler
+from opaque.dpftrl.sampling import (
     BallsInBinsSampler,
     BMinSepSampler,
     CyclicPoissonSampler,
-    PoissonSampler,
     SequentialBatchSampler,
-    poisson_collate,
 )
-from opaque.utils import make_functional
+from opaque.functional import make_functional
 
 try:
     import wandb
@@ -571,7 +573,9 @@ def main():
 
     # --- Device ---
     device, device_name = _select_device()
+    kernels_on = device.type == "cuda" and is_kernel_patched()
     print(f"\nDevice: {device} ({device_name})")
+    print(f"  Patches: transformers={is_transformers_patched()}, kernels={kernels_on}")
 
     torch.manual_seed(args.seed)
 
@@ -684,7 +688,7 @@ def main():
 
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
-    @poisson_collate
+    @empty_collate
     def collate(examples):
         batch = data_collator(examples)
         return (batch["input_ids"].to(device),)

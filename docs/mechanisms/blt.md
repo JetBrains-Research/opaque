@@ -86,7 +86,7 @@ where $S$ is the sensitivity. The PLD is a single Gaussian PLD.
 - BLT targets long runs via a **buffered** Toeplitz parameterization; privacy is for the optimized strategy you instantiate.
 - Optional **`lr_schedule`** is encoded like BandMF into a Toeplitz workload for the optimizer; see [BandMF — Assumptions](band-mf.md#assumptions-and-limitations) for the constant- versus variable-\(\eta\) caveat.
 - **Subsampling**: BLT does not use `cyclic_poisson` the way BandMF does; combine with Balls-in-Bins when using correlated MF + epoch structure (see examples).
-- Overview: [Matrix factorization (MF)](../user-guide/matrix-factorization.md).
+- Overview: [Correlated noise (DP-FTRL)](../user-guide/dp-ftrl.md).
 
 ## Supported amplifications
 
@@ -116,7 +116,7 @@ If you need subsampling amplification with correlated noise, use
 ### Noise injection
 
 ```python
-from opaque.noise.mf import mf_noise, blt_strategy
+from opaque.dpftrl.noise import mf_noise, blt_strategy
 from opaque.random import key
 
 # Single participation
@@ -153,8 +153,8 @@ The accounting constructor receives `sensitivity` and `gram_matrix` from the
 same `blt_strategy` used for noise generation:
 
 ```python
-import opaque_accounting as acc
-from opaque.noise.mf import blt_strategy
+import opaque.accounting as acc
+from opaque.dpftrl.noise import blt_strategy
 
 strategy = blt_strategy(
     n_steps=5000, min_sep=100, max_participations=5,

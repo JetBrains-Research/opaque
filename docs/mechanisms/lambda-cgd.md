@@ -24,8 +24,8 @@ This separation keeps accounting constructors simple and avoids duplicating
 mechanism parameters in two places.
 
 ```python
-from opaque.noise.mf import lambda_cgd_strategy
-import opaque_accounting as acc
+from opaque.dpftrl.noise import lambda_cgd_strategy
+import opaque.accounting as acc
 
 # 1. Create strategy — computes sensitivity and Gram matrix internally
 strategy = lambda_cgd_strategy(
@@ -76,12 +76,12 @@ has a closed-form expression in terms of λ, min_sep, and max_participations.
 - Bandwidth is **fixed** (bidiagonal inverse); correlation is controlled by a single \(\lambda\). Does **not** accept `momentum` (use `bisr_strategy` with bandwidth > 2 for momentum-aware coefficients).
 - Uses **Balls-in-Bins** amplification like other epoch-structured MF mechanisms; sampler semantics must match accounting.
 - **JME (DP-Adam)**: auto-deriving the second-moment strategy is **not supported** for λCGD. If using JME, pass `second_moment_strategy` explicitly.
-- Broader MF context: [Matrix factorization (MF)](../user-guide/matrix-factorization.md).
+- Broader MF context: [Correlated noise (DP-FTRL)](../user-guide/dp-ftrl.md).
 
 ## Noise generation
 
 ```python
-from opaque.noise.mf import mf_noise, lambda_cgd_strategy
+from opaque.dpftrl.noise import mf_noise, lambda_cgd_strategy
 from opaque.random import key
 
 strategy = lambda_cgd_strategy(

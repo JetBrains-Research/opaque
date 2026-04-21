@@ -21,7 +21,7 @@ gradients, clips each to a maximum L2 norm, and sums the result. This is the
 primary API for DP-SGD training.
 
 ```python
-from opaque import clipped_grad
+from opaque.clipping import clipped_grad
 
 def loss_fn(params, x, y):
     return ((x @ params - y) ** 2).sum()
@@ -174,7 +174,7 @@ tuning the clip norm, you specify a target fraction of gradients that should
 be clipped (the *target quantile*).
 
 ```python
-from opaque import adaptive_clipped_grad
+from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.random import key
 
 grad_fn, clip_state = adaptive_clipped_grad(
@@ -274,7 +274,8 @@ PyTorch models store parameters internally. To use them with `clipped_grad`,
 convert to functional form:
 
 ```python
-from opaque import make_functional, clipped_grad
+from opaque.clipping import clipped_grad
+from opaque.functional import make_functional
 
 fmodel, params = make_functional(model)
 
@@ -319,9 +320,7 @@ Use `per_group` to construct a `PerGroup` from parameter keys and substring
 patterns:
 
 ```python
-from opaque import per_group, clipped_grad
-
-# Two groups: attention layers (norm 1.0) and MLP layers (norm 2.0)
+from opaque.clipping import clipped_grad, per_group
 pg = per_group(params, self_attn=1.0, mlp=2.0)
 
 grad_fn, clip_state = clipped_grad(
@@ -373,7 +372,7 @@ For an MSE-optimal allocation that puts less noise on small-norm groups, use
 `per_group_noise_stddev`:
 
 ```python
-from opaque.noise import per_group_noise_stddev
+from opaque.dpsgd.noise import per_group_noise_stddev
 
 stddev = per_group_noise_stddev(clip_state, noise_multiplier)
 noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
@@ -404,7 +403,7 @@ Per-group clipping works with `adaptive_clipped_grad`. Each group's threshold
 adapts independently based on its own clipping rate:
 
 ```python
-from opaque import adaptive_clipped_grad
+from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.random import key
 
 pg = per_group(params, self_attn=1.0, mlp=2.0)
@@ -432,7 +431,7 @@ threshold to tune; the effective step size is absorbed into the learning
 rate.
 
 ```python
-from opaque import auto_clipped_grad
+from opaque.dpsgd.clipping import auto_clipped_grad
 
 grad_fn, clip_state = auto_clipped_grad(
     loss_fn,
@@ -462,7 +461,7 @@ AUTO-S introduces no extra data-dependent query:
 
 ```python
 import opaque.accounting as acc
-from opaque import gaussian_noise
+from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
 
 stddev = noise_multiplier * clip_state.sensitivity
@@ -478,7 +477,8 @@ eps = training.epsilon_at(1e-5)
 Pass a `PerGroup` as `R` to scale each group independently:
 
 ```python
-from opaque import per_group, auto_clipped_grad
+from opaque.clipping import per_group
+from opaque.dpsgd.clipping import auto_clipped_grad
 
 pg = per_group(params, self_attn=1.0, mlp=2.0)
 

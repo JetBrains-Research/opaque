@@ -10,6 +10,7 @@ license = { text = "Apache-2.0" }
 requires-python = ">=3.11,<3.13"
 authors = [{name = "Opaque Contributors"}]
 dependencies = []
+
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -28,3 +29,6 @@ package = true
 
 [tool.maturin]
 features = ["python-extension"]
+module-name = "opaque.accounting.opaque_accounting"
+python-source = "src"
+python-packages = ["opaque.accounting"]

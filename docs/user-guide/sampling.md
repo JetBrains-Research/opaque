@@ -44,7 +44,7 @@ The standard sampler. Each example is included independently with probability
 `sample_rate`, producing variable-size batches.
 
 ```python
-from opaque.sampling import PoissonSampler
+from opaque.dpsgd.sampling import PoissonSampler
 from opaque.random import key
 import torch.utils.data as data
 
@@ -89,7 +89,7 @@ tighter privacy bounds than standard Poisson (up to 20% improvement in
 epsilon) while preventing memory spikes from unusually large batches.
 
 ```python
-from opaque.sampling import TruncatedPoissonSampler
+from opaque.dpsgd.sampling import TruncatedPoissonSampler
 from opaque.random import key
 
 sampler = TruncatedPoissonSampler(
@@ -128,7 +128,8 @@ is required for matrix-factorization correlated noise mechanisms
 (BandMF via `mf_noise`) which need a fixed participation pattern.
 
 ```python
-from opaque.sampling import CyclicPoissonSampler, PartitionType
+from opaque.dpftrl.sampling import CyclicPoissonSampler
+from opaque.dpftrl.sampling._partitions import PartitionType
 from opaque.random import key
 
 sampler = CyclicPoissonSampler(
@@ -180,7 +181,7 @@ Use `p = p_0 / (1 - p_0 * (bands - 1))` when matching a target per-example rate
 Pair with `opaque.accounting.b_min_sep` for privacy accounting.
 
 ```python
-from opaque.sampling import BMinSepSampler
+from opaque.dpftrl.sampling import BMinSepSampler
 from opaque.random import key
 
 p0 = batch_size / len(dataset)
@@ -205,7 +206,7 @@ and **reused across all epochs** — this is required by the dominating-pair
 BnB privacy accounting. Used with DP-λCGD, BISR, BSR, and BLT mechanisms.
 
 ```python
-from opaque.sampling import BallsInBinsSampler
+from opaque.dpftrl.sampling import BallsInBinsSampler
 from opaque.random import key
 
 sampler = BallsInBinsSampler(
@@ -230,7 +231,7 @@ Used by the BLT mechanism, which requires deterministic batch order with
 fixed separation between participations.
 
 ```python
-from opaque.sampling import SequentialBatchSampler
+from opaque.dpftrl.sampling import SequentialBatchSampler
 import torch.utils.data as data
 
 sampler = SequentialBatchSampler(
@@ -288,7 +289,7 @@ and derive a per-rank key via `fold_in(key, rank)`:
    own partition.
 
 ```python
-from opaque.sampling.distributed import local_shard
+from opaque.distributed import local_shard
 from opaque.random import key, fold_in
 import torch.distributed as dist
 
@@ -309,7 +310,7 @@ step = acc.poisson(acc.gaussian(noise_multiplier), global_sample_rate)
 
 ### Distributed helpers
 
-The `opaque.sampling.distributed` submodule provides two utilities used
+The `opaque.distributed` submodule provides two utilities used
 internally by the samplers:
 
 | Function | Description |
@@ -329,7 +330,7 @@ clipped gradient sums. The result is mathematically identical to processing
 the full batch.
 
 ```python
-from opaque import clipped_grad
+from opaque.clipping import clipped_grad
 
 grad_fn, clip_state = clipped_grad(
     loss_fn,

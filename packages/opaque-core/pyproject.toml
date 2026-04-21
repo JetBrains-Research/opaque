@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm>=8", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opaque-core"
+dynamic = ["version"]
+description = "Opaque shared primitives: clipping, random, functional, distributed + opaque.core internals"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Opaque Contributors" }]
+requires-python = ">=3.11,<3.13"
+keywords = ["differential-privacy", "pytorch", "privacy", "machine-learning"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security",
+]
+dependencies = [
+    "torch>=2.10.0",
+    "optree>=0.17.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = [
+    "opaque.core*",
+    "opaque.clipping*",
+    "opaque.random*",
+    "opaque.functional*",
+    "opaque.distributed*",
+]
+namespaces = true
+
+[tool.setuptools_scm]
+root = "../.."
+fallback_version = "0.0.0"
+
+[tool.uv]
+package = true

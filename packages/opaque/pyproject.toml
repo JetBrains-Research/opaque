@@ -1,18 +1,19 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=68.0", "setuptools-scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "opaque-dp"
-version = "0.0.0.dev0"
-description = "Functional Differential Privacy for LoRA Fine-tuning"
+name = "opaque"
+dynamic = ["version"]
+description = "Functional Differential Privacy for LoRA Fine-tuning (meta-package)"
 readme = "README.md"
 license = { text = "Apache-2.0" }
-authors = [{name = "Opaque Contributors"}]
+authors = [{ name = "Opaque Contributors" }]
 requires-python = ">=3.11,<3.13"
 keywords = [
     "differential-privacy",
     "dp-sgd",
+    "dp-ftrl",
     "pytorch",
     "lora",
     "fine-tuning",
@@ -33,14 +34,46 @@ classifiers = [
     "Topic :: Security",
 ]
 dependencies = [
-    "torch>=2.10.0",
-    "optree>=0.17.0",
-    "scipy>=1.11.0",
-    "opaque-accounting>=0.1.0",
+    "opaque-core==0.0.0.dev0",
+    "opaque-dpsgd==0.0.0.dev0",
+    "opaque-accounting==0.0.0.dev0",
 ]
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[project.optional-dependencies]
+auditing = ["opaque-auditing==0.0.0.dev0"]
+dpftrl = ["opaque-dpftrl==0.0.0.dev0"]
+performance = ["opaque-performance==0.0.0.dev0"]
+huggingface = [
+    "opaque-huggingface==0.0.0.dev0",
+    "opaque-performance==0.0.0.dev0",
+]
+peft = [
+    "opaque-huggingface[peft]==0.0.0.dev0",
+    "opaque-performance==0.0.0.dev0",
+]
+all = [
+    "opaque-auditing==0.0.0.dev0",
+    "opaque-dpftrl==0.0.0.dev0",
+    "opaque-performance==0.0.0.dev0",
+    "opaque-huggingface[peft]==0.0.0.dev0",
+]
+
+# Metadata-only meta-package: no src/, no tests/, no code shipped.
+# The ``opaque`` namespace is pure PEP 420 and is composed by whichever
+# ``opaque-*`` sub-packages are installed alongside.
+
+[tool.setuptools_scm]
+root = "../.."
+fallback_version = "0.0.0"
 
 [tool.uv]
 package = true
+
+[tool.uv.sources]
+opaque-core = { workspace = true }
+opaque-dpsgd = { workspace = true }
+opaque-dpftrl = { workspace = true }
+opaque-auditing = { workspace = true }
+opaque-performance = { workspace = true }
+opaque-huggingface = { workspace = true }
+opaque-accounting = { workspace = true }

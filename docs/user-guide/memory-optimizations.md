@@ -62,7 +62,7 @@ GPU utilization. Below that, the overhead of launching kernels dominates.
 Use a short manual sweep with `TrainingProfiler`:
 
 ```python
-from opaque import clipped_grad
+from opaque.clipping import clipped_grad
 from opaque.profiling import StepTimer, TrainingProfiler, reset_peak_memory
 
 def try_microbatch(candidate_mb: int) -> float:
@@ -92,7 +92,7 @@ def try_microbatch(candidate_mb: int) -> float:
 
 PyTorch's `torch.utils.checkpoint.checkpoint` is supported under
 `vmap(grad(...))`. Patches are applied automatically at `import opaque`
-time via `opaque.compat.pytorch`.
+time via `opaque.performance.torch`.
 
 **With PyTorch directly** (non-reentrant checkpoint only):
 

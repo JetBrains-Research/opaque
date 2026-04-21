@@ -12,7 +12,7 @@ For mathematical details, privacy analysis, and parameter guidance for
 each mechanism, see the [Mechanisms](../mechanisms/index.md) reference.
 
 For MF-specific assumptions (workload fidelity vs DP correctness, LR schedules,
-JME, BSR scope), see [Matrix factorization (MF)](matrix-factorization.md).
+JME, BSR scope), see [Correlated noise (DP-FTRL)](dp-ftrl.md).
 
 ## Gaussian noise
 
@@ -20,7 +20,7 @@ JME, BSR scope), see [Matrix factorization (MF)](matrix-factorization.md).
 independent Gaussian noise to each gradient tensor.
 
 ```python
-from opaque import gaussian_noise
+from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
 
 noise_fn, noise_state = gaussian_noise(
@@ -93,7 +93,7 @@ recommended approach is MSE-optimal allocation via `per_group_noise_stddev`,
 which varies σ across groups — putting less noise on smaller-norm groups:
 
 ```python
-from opaque.noise import per_group_noise_stddev
+from opaque.dpsgd.noise import per_group_noise_stddev
 
 stddev = per_group_noise_stddev(clip_state, noise_multiplier)
 noise_fn, noise_state = gaussian_noise(stddev=stddev, key=key(42))
@@ -103,7 +103,7 @@ This returns a `PerGroup` of per-group standard deviations with
 $\sigma_i \propto \sqrt{C_i}$. Privacy accounting is identical to the
 isotropic case — just `gaussian(nm)`.
 
-The [training script](../../examples/train_causal_lm.py) uses this by default
+The [training script](https://github.com/JetBrains-Research/opaque/blob/main/examples/train_causal_lm.py) uses this by default
 when per-group clipping is active.
 
 Alternatively, isotropic noise (same σ everywhere) also works:
@@ -133,7 +133,7 @@ interval. No probability mass sits at the boundaries — the density is smooth
 but slightly taller than the original Gaussian.
 
 ```python
-from opaque import truncated_gaussian_noise
+from opaque.dpsgd.noise import truncated_gaussian_noise
 from opaque.random import key
 
 noise_fn, noise_state = truncated_gaussian_noise(
@@ -206,7 +206,7 @@ Opaque provides five MF strategies, all used through the unified `mf_noise()` di
 All strategies are created by factory functions and passed to `mf_noise()`:
 
 ```python
-from opaque.noise.mf import mf_noise, band_mf_strategy
+from opaque.dpftrl.noise import mf_noise, band_mf_strategy
 from opaque.random import key
 
 strategy = band_mf_strategy(n_steps=1000, bands=10)
@@ -237,7 +237,7 @@ Banded Toeplitz strategy. Optimizes banded Toeplitz coefficients for the
 workload. Uses cyclic Poisson amplification for privacy accounting.
 
 ```python
-from opaque.noise.mf import mf_noise, band_mf_strategy
+from opaque.dpftrl.noise import mf_noise, band_mf_strategy
 from opaque.random import key
 
 strategy = band_mf_strategy(n_steps=1000, bands=10, momentum=0.95)
@@ -255,7 +255,7 @@ long training runs, using a parametric representation via exponential decay
 buffers. Supports multi-epoch training via `min_sep` and `max_participations`.
 
 ```python
-from opaque.noise.mf import mf_noise, blt_strategy
+from opaque.dpftrl.noise import mf_noise, blt_strategy
 from opaque.random import key
 
 strategy = blt_strategy(
@@ -274,7 +274,7 @@ DP-λCGD strategy — uses PRNG seed replay instead of storing previous noise
 vectors. Zero extra memory overhead compared to DP-SGD.
 
 ```python
-from opaque.noise.mf import mf_noise, lambda_cgd_strategy
+from opaque.dpftrl.noise import mf_noise, lambda_cgd_strategy
 from opaque.random import key
 
 strategy = lambda_cgd_strategy(
@@ -294,7 +294,7 @@ BISR (Banded Inverse Square Root) strategy — generalises λCGD to arbitrary
 bandwidth p ≥ 2. Asymptotically optimal.
 
 ```python
-from opaque.noise.mf import mf_noise, bisr_strategy
+from opaque.dpftrl.noise import mf_noise, bisr_strategy
 from opaque.random import key
 
 strategy = bisr_strategy(
@@ -313,7 +313,7 @@ Identity strategy — equivalent to standard DP-SGD (independent noise at each
 step) but using the MF API. Useful for testing or as a baseline.
 
 ```python
-from opaque.noise.mf import mf_noise, identity_strategy
+from opaque.dpftrl.noise import mf_noise, identity_strategy
 from opaque.random import key
 
 strategy = identity_strategy()
@@ -335,7 +335,7 @@ noise generation and privacy accounting always agree on the mechanism.
 
 ```python
 import opaque.accounting as acc
-from opaque.noise.mf import band_mf_strategy, lambda_cgd_strategy
+from opaque.dpftrl.noise import band_mf_strategy, lambda_cgd_strategy
 
 # BandMF — strategy provides sensitivity and num_groups
 strategy = band_mf_strategy(n_steps=1000, bands=10)
@@ -369,7 +369,7 @@ Strategies that support multi-epoch patterns (`blt_strategy`, `lambda_cgd_strate
 sensitivity bounds:
 
 ```python
-from opaque.noise.mf import mf_noise, blt_strategy
+from opaque.dpftrl.noise import mf_noise, blt_strategy
 from opaque.random import key
 
 strategy = blt_strategy(
@@ -414,7 +414,7 @@ MF noise works best with `CyclicPoissonSampler`, which creates a predictable
 sampling pattern that the noise strategy can exploit:
 
 ```python
-from opaque.sampling import CyclicPoissonSampler
+from opaque.dpftrl.sampling import CyclicPoissonSampler
 from opaque.random import key
 
 sampler = CyclicPoissonSampler(

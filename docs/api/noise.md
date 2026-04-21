@@ -1,6 +1,9 @@
 # Noise Injection
 
-The `opaque.noise` module provides functions for adding calibrated noise to gradients for differential privacy.
+Opaque's noise mechanisms live next to the training paradigm they support:
+`opaque.dpsgd.noise` for independent Gaussian-family noise, and
+`opaque.dpftrl.noise` for matrix-factorization (correlated) noise. The base
+`NoiseState` type that both build on lives in `opaque.core.noise`.
 
 ## Overview
 
@@ -50,65 +53,59 @@ across ranks. It auto-dispatches based on type:
 
 ## Standard Gaussian
 
-::: opaque.noise.gaussian_noise
+::: opaque.dpsgd.noise.gaussian_noise
 
 ## Bounded Gaussian — Truncated (renormalized)
 
-::: opaque.noise.truncated_gaussian_noise
+::: opaque.dpsgd.noise.truncated_gaussian_noise
 
 ## Matrix Factorization Noise
 
 ### Dispatcher
 
-::: opaque.noise.mf.mf_noise
+::: opaque.dpftrl.noise.mf_noise
 
 ### Strategies
 
-::: opaque.noise.mf.band_mf_strategy
+::: opaque.dpftrl.noise.band_mf_strategy
     options:
       heading_level: 4
 
-::: opaque.noise.mf.blt_strategy
+::: opaque.dpftrl.noise.blt_strategy
     options:
       heading_level: 4
 
-::: opaque.noise.mf.lambda_cgd_strategy
+::: opaque.dpftrl.noise.lambda_cgd_strategy
     options:
       heading_level: 4
 
-::: opaque.noise.mf.bisr_strategy
+::: opaque.dpftrl.noise.bisr_strategy
     options:
       heading_level: 4
 
-::: opaque.noise.mf.identity_strategy
+::: opaque.dpftrl.noise.identity_strategy
     options:
       heading_level: 4
 
 ## State Classes
 
-::: opaque.noise.types.NoiseState
+::: opaque.core.noise.NoiseState
     options:
       show_source: true
       heading_level: 3
 
-::: opaque.noise.gaussian.GaussianNoiseState
+::: opaque.dpsgd.noise.gaussian.GaussianNoiseState
     options:
       show_source: true
       heading_level: 3
 
-::: opaque.noise.mf.MFNoiseState
+::: opaque.dpftrl.noise.MFNoiseState
     options:
       show_source: true
       heading_level: 3
 
 ## Distributed Synchronization
 
-::: opaque.noise.distributed.sync_gaussian_noise_state
-    options:
-      show_source: true
-      heading_level: 3
-
-::: opaque.noise.distributed.sync_mf_noise_state
-    options:
-      show_source: true
-      heading_level: 3
+Use `opaque.distributed.sync(state)` — it auto-dispatches on the state's
+type to the right sync function. `GaussianNoiseState` and `MFNoiseState`
+both register handlers at import time, so no named sync call is required.

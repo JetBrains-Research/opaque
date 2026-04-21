@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm>=8", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opaque-performance"
+dynamic = ["version"]
+description = "Opaque fused Triton kernels and PyTorch gradient-checkpointing patches for vmap"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Opaque Contributors" }]
+requires-python = ">=3.11,<3.13"
+keywords = ["triton", "kernels", "pytorch", "vmap", "lora"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "torch>=2.10.0",
+    "opaque-core>=0.0.0.dev0",
+    # Triton kernels are the main reason opaque-performance exists; the Linux
+    # marker matches Triton's own wheel availability (no macOS / Windows
+    # wheels upstream). On non-Linux platforms the package still installs
+    # cleanly — the kernel patches soft-fail at import time.
+    "triton>=3.0.0; sys_platform == 'linux'",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["opaque.performance*"]
+namespaces = true
+
+[tool.setuptools_scm]
+root = "../.."
+fallback_version = "0.0.0"
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+opaque-core = { workspace = true }

@@ -1,19 +1,33 @@
-name: CI/CD
+name: CI (main)
 
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false  # main pushes are precious — don't kill in-flight publishes
 
 jobs:
-  test:
-    name: Tests - ${{ matrix.name }} - Py${{ matrix.python-version }}
+  # ---------------------------------------------------------------------------
+  # Tests. Same matrix as the PR gate, but includes `slow` tests and adds a
+  # GPU lane. Failure here doesn't block anything (main is already past), but
+  # catches regressions that the PR gate's fast suite missed.
+  # ---------------------------------------------------------------------------
+  rust-tests:
+    name: Rust tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo test
+        run: cargo test --lib --manifest-path packages/opaque-accounting/Cargo.toml
+
+  python-tests:
+    name: Python tests — ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -22,21 +36,20 @@ jobs:
           - name: CPU
             os: ubuntu-latest
             python-version: "3.11"
-            marker-expression: "not gpu"
+            marker-expression: "not cuda and not mps"
             coverage-suffix: ""
           - name: MPS
             os: macos-latest
             python-version: "3.11"
-            marker-expression: "not gpu or mps_compatible"
+            marker-expression: "not cuda"
             coverage-suffix: "-mps"
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: dtolnay/rust-toolchain@stable
-
-      - name: Run Rust tests
-        run: cargo test --lib --manifest-path packages/opaque-accounting/Cargo.toml
 
       - uses: astral-sh/setup-uv@v8.1.0
 
@@ -44,36 +57,31 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install dependencies
-        run: uv sync --group dev --group compat --all-packages
+      - name: uv sync
+        run: uv sync --group dev --all-packages --extra all
 
-      - name: Run accounting tests
+      - name: pytest
         run: |
-          uv run pytest packages/opaque-accounting/tests \
-            --cov=opaque_accounting \
-            --cov-report=xml:coverage-accounting${{ matrix.coverage-suffix }}.xml \
-            -v
-
-      - name: Run core tests
-        run: |
-          uv run pytest packages/opaque/tests \
+          uv run pytest \
             -m "${{ matrix.marker-expression }}" \
             --cov=opaque \
-            --cov-report=xml:coverage-core${{ matrix.coverage-suffix }}.xml \
+            --cov-report=xml:coverage${{ matrix.coverage-suffix }}.xml \
             -v
 
       - uses: codecov/codecov-action@v4
         with:
-          files: ./coverage-accounting${{ matrix.coverage-suffix }}.xml,./coverage-core${{ matrix.coverage-suffix }}.xml
+          files: ./coverage${{ matrix.coverage-suffix }}.xml
           fail_ci_if_error: false
 
-  test-cuda:
-    name: CUDA Tests
+  python-tests-cuda:
+    name: Python tests — CUDA
     runs-on: GPU-runner-001
-    needs: [test]
+    needs: [python-tests]
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v8.1.0
 
@@ -81,31 +89,48 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
-        run: uv sync --group dev --group compat --all-packages
+      - name: uv sync
+        run: uv sync --group dev --all-packages --extra all
 
-      - name: Run CUDA tests
+      - name: pytest -m cuda
         run: |
-          uv run pytest packages/opaque/tests \
-            -m "(gpu or cuda) and not hf_auth_required" \
+          uv run pytest \
+            -m "cuda" \
             --cov=opaque \
-            --cov-report=xml \
+            --cov-report=xml:coverage-cuda.xml \
             -v
 
       - uses: codecov/codecov-action@v4
         with:
-          file: ./coverage.xml
+          files: ./coverage-cuda.xml
           flags: cuda
           fail_ci_if_error: false
 
-  build-opaque-dp:
-    name: Build opaque-dp
-    if: github.ref == 'refs/heads/main'
-    needs: [test]
+  # ---------------------------------------------------------------------------
+  # Dev wheel builds. Version derived from `setuptools-scm` + the preflight
+  # script that writes the umbrella dep pins + Cargo workspace version.
+  # Release builds live in release.yml (triggered on `v*` tag push).
+  # ---------------------------------------------------------------------------
+  build-python-wheels:
+    name: Build ${{ matrix.package }}
+    needs: [python-tests]
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - opaque
+          - opaque-core
+          - opaque-dpsgd
+          - opaque-dpftrl
+          - opaque-auditing
+          - opaque-performance
+          - opaque-huggingface
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v8.1.0
 
@@ -113,27 +138,22 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Set dev version
-        run: |
-          DEV_VERSION="0.0.0.dev0+${{ github.run_number }}"
-          cd packages/opaque && uv version $DEV_VERSION
+      - name: Preflight — set build versions from git
+        run: bash .github/scripts/set_build_versions.sh
 
       - name: Build wheel
-        run: |
-          cd packages/opaque && uv build --wheel
+        run: cd packages/${{ matrix.package }} && uv build --wheel --out-dir ../../dist
 
-      - name: Upload wheel to artifacts
+      - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-opaque-dp
-          path: dist/*opaque_dp*.whl
+          name: wheels-${{ matrix.package }}
+          path: dist/*.whl
           retention-days: 30
 
-  # Native extension — build per platform
-  build-opaque-accounting:
-    name: Build opaque-accounting - ${{ matrix.platform }}/${{ matrix.arch }}
-    if: github.ref == 'refs/heads/main'
-    needs: [test]
+  build-accounting-wheels:
+    name: Build opaque-accounting — ${{ matrix.platform }}/${{ matrix.arch }}
+    needs: [python-tests]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -151,6 +171,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -160,27 +182,22 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Set dev version
-        run: |
-          DEV_VERSION="0.0.0.dev0+${{ github.run_number }}"
-          cd packages/opaque-accounting && uv version $DEV_VERSION
+      - name: Preflight — set build versions from git
+        run: bash .github/scripts/set_build_versions.sh
 
       - name: Build wheel
-        run: |
-          cd packages/opaque-accounting && uv build --wheel
+        run: cd packages/opaque-accounting && uv build --wheel --out-dir ../../dist
 
-      - name: Upload wheel to artifacts
+      - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
           name: wheels-opaque-accounting-${{ matrix.platform }}-${{ matrix.arch }}
           path: dist/*opaque_accounting*.whl
           retention-days: 30
 
-  # Publish all wheels to GCP (main branch only)
-  publish-to-gcp:
-    name: Publish dev builds to GCP
-    needs: [build-opaque-dp, build-opaque-accounting]
-    if: github.ref == 'refs/heads/main'
+  publish-dev-wheels:
+    name: Publish dev wheels to GCP
+    needs: [build-python-wheels, build-accounting-wheels]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -189,20 +206,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check if this is a release commit
-        id: check_release
-        run: |
-          VERSION=$(grep '^version = ' packages/opaque/pyproject.toml | sed 's/version = "\(.*\)"/\1/')
-          if [[ "$VERSION" != *"dev"* ]]; then
-            echo "⏭️  Skipping dev build publish - this is a release version ($VERSION)"
-            echo "is_release=true" >> $GITHUB_OUTPUT
-          else
-            echo "📦 Publishing dev build version: $VERSION"
-            echo "is_release=false" >> $GITHUB_OUTPUT
-          fi
-
       - name: Download all wheels
-        if: steps.check_release.outputs.is_release == 'false'
         uses: actions/download-artifact@v4
         with:
           pattern: wheels-*
@@ -210,13 +214,9 @@ jobs:
           merge-multiple: true
 
       - name: List wheels
-        if: steps.check_release.outputs.is_release == 'false'
-        run: |
-          echo "Wheels to publish:"
-          ls -lh dist/*.whl
+        run: ls -lh dist/*.whl
 
       - name: Authenticate to GCP
-        if: steps.check_release.outputs.is_release == 'false'
         id: gcp-auth
         uses: google-github-actions/auth@v2
         with:
@@ -226,10 +226,8 @@ jobs:
           access_token_lifetime: 3600s
 
       - uses: astral-sh/setup-uv@v8.1.0
-        if: steps.check_release.outputs.is_release == 'false'
 
-      - name: Publish dev builds to GCP
-        if: steps.check_release.outputs.is_release == 'false'
+      - name: uv publish
         env:
           UV_PUBLISH_USERNAME: oauth2accesstoken
           UV_PUBLISH_PASSWORD: ${{ steps.gcp-auth.outputs.access_token }}

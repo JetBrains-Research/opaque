@@ -1,58 +1,60 @@
 [tool.uv]
-workspace.members = ["packages/opaque", "packages/opaque-accounting"]
+workspace.members = [
+    "packages/opaque",
+    "packages/opaque-core",
+    "packages/opaque-dpsgd",
+    "packages/opaque-dpftrl",
+    "packages/opaque-auditing",
+    "packages/opaque-performance",
+    "packages/opaque-huggingface",
+    "packages/opaque-accounting",
+]
 
 [tool.uv.sources]
 opaque = { workspace = true }
+opaque-core = { workspace = true }
+opaque-dpsgd = { workspace = true }
+opaque-dpftrl = { workspace = true }
+opaque-auditing = { workspace = true }
+opaque-performance = { workspace = true }
+opaque-huggingface = { workspace = true }
 opaque-accounting = { workspace = true }
 
 [dependency-groups]
-# Core development - linting, formatting, testing
-# Install with: uv sync --group dev
+# Developer tooling (test runner, linter, stats helpers, cross-validation
+# against reference DP libs). Package runtime dependencies (Triton, torchopt,
+# transformers, peft) live in each package's [dependencies] or
+# [project.optional-dependencies] and compose via `--extra`.
+# Install with: `uv sync --group dev --all-packages --extra all`
 dev = [
   "pytest>=7.0.0",
   "pytest-cov>=4.0.0",
   "ruff>=0.1.0",
   "scipy>=1.11.0",         # Statistical tests
-  {include-group = "optimizers"},
-]
-
-# Compatibility testing with HuggingFace ecosystem
-# Install with: uv sync --group compat
-compat = [
-  "transformers>=4.57.0",
-  "peft>=0.18.0",
-]
-
-# Cross-validation against other DP implementations
-# Install with: uv sync --group cross-validation
-cross-validation = [
+  # Cross-validation against reference DP accounting libraries. Imported by
+  # packages/opaque-accounting/tests/* — not a runtime dependency of opaque.
   "dp-accounting>=0.4.4",
   "riskcal>=1.2.0",
 ]
 
-# TorchOpt-based optimizers
-# Install with: uv sync --group optimizers
-optimizers = [
-  "torchopt>=0.7.3",
-]
-
-# Examples and tutorials
-# Install with: uv sync --group examples
+# Everything the scripts under examples/ and docs/tutorials/ need on top of
+# the opaque packages (installed via `--all-packages`). HF/PEFT deps compose
+# via `--extra huggingface --extra peft`; this group covers the glue libs
+# that live outside any package.
+# Install with: `uv sync --group examples --all-packages --extra huggingface --extra peft`
 examples = [
-  "transformers>=4.57.0",
-  "peft>=0.18.0",
-  "datasets>=2.0.0",
-  {include-group = "optimizers"},
-  "jupyter>=1.0.0",
-  "matplotlib>=3.10.7",
-  "torchvision>=0.25.0",
-  "wandb>=0.16.0",
-  "jetbrains-cadence",
-  "keyrings-alt>=5.0.0",   # Keyring backend for headless environments (cadence login)
+  "torchopt>=0.7.3",          # DP-SGD/MF optimizer bindings used across examples
+  "datasets>=2.0.0",          # HuggingFace datasets loader
+  "wandb>=0.16.0",            # Experiment tracking
+  "jupyter>=1.0.0",           # Tutorial notebooks
+  "matplotlib>=3.10.7",       # Tutorial plots
+  "torchvision>=0.25.0",      # Vision example datasets
+  "jetbrains-cadence",        # Internal experiment registry
+  "keyrings-alt>=5.0.0",      # Headless keyring backend (cadence login)
 ]
 
 # Documentation building
-# Install with: uv sync --group docs
+# Install with: `uv sync --group docs`
 docs = [
   "mkdocs>=1.5.0",
   "mike>=2.1.3",
@@ -62,11 +64,32 @@ docs = [
 ]
 
 [tool.pytest.ini_options]
+# importlib mode gives each test file a unique module name based on its path,
+# avoiding collisions when multiple packages share directory names (e.g.
+# tests/noise/ in both opaque-dpsgd and opaque-dpftrl).
+addopts = "--import-mode=importlib"
+
+# Test discovery walks the whole `packages/` tree — any package with a
+# `tests/` dir is picked up automatically. New packages, renames, and
+# deletes don't need matching edits in CI. Non-test directories are
+# skipped by pytest's `test_*.py` convention. Identical behavior locally
+# (`pytest` from repo root) and in CI.
+testpaths = ["packages"]
+
 markers = [
-  "gpu: GPU sweep test (runs when CUDA is available; only mps_compatible subset runs on MPS)",
-  "mps_compatible: GPU-marked test is explicitly safe to run on MPS",
-  "cuda: Test requires CUDA specifically",
-  "mps: Test requires Apple Metal (MPS) specifically",
-  "hf_auth_required: Test requires authenticated HuggingFace access (gated/private models)",
-  "slow: Test takes >5 s on CPU (calibration, model download, multi-step training)",
+  "cuda: Test requires CUDA; auto-skipped on non-CUDA hosts.",
+  "mps: Test requires Apple Metal (MPS); auto-skipped on non-MPS hosts.",
+  "slow: Test takes >5 s on CPU; opted out in PR gate via `and not slow`, run on push to main.",
+]
+
+filterwarnings = [
+  # PyTorch internals: SDPA has no vmap batching rule on CPU, so running
+  # fused attention under vmap falls back to a slower path. Triggered by
+  # design on CPU test runners; on CUDA the batching rule kicks in and no
+  # warning fires.
+  "ignore:There is a performance drop because we have not yet implemented the batching rule.*:UserWarning",
+  # torchopt depends on torch.jit internals that upstream has deprecated in
+  # favor of torch.compile / torch.export. Fires on import of torchopt; not
+  # our code to change.
+  "ignore:.*torch.jit.script_method. is deprecated.*:DeprecationWarning",
 ]

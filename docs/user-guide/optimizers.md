@@ -27,7 +27,8 @@ No hidden mutable state. Every piece of the training loop is explicit.
 
 ```python
 import torchopt
-from opaque import clipped_grad, gaussian_noise
+from opaque.clipping import clipped_grad
+from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
 
 # Gradient pipeline
@@ -111,7 +112,7 @@ When `noise_stddev=0` (default), `adamw_bc` is numerically identical to
 `torchopt.adamw` — use it as a drop-in replacement even without BC.
 
 ```python
-from opaque.optimizers import adamw_bc
+from opaque.dpsgd.optimizers import adamw_bc
 
 # Without BC — identical to torchopt.adamw
 optimizer = adamw_bc(lr=1e-3, weight_decay=0.01)
@@ -165,8 +166,8 @@ Gaussian noise.
 ## AdamW-JME: setup and usage
 
 ```python
-from opaque.noise.mf import jme_noise, band_mf_strategy
-from opaque.optimizers import adamw_jme
+from opaque.dpftrl.noise import jme_noise, band_mf_strategy
+from opaque.dpftrl.optimizers import adamw_jme
 
 # Strategy: momentum=beta1 (Adam's first moment workload)
 strategy = band_mf_strategy(n_steps=1000, bands=8, momentum=0.9)
@@ -216,7 +217,7 @@ process = acc.cyclic_poisson(mechanism, sample_rate=q)
 python examples/train_dp_ftrl.py --preset smoke --optimizer adam --mechanism blt
 ```
 
-Works with MF mechanisms supported by `jme_noise` auto-derivation (see [Matrix factorization](matrix-factorization.md)): `band_mf`, `blt`, `bisr`, `bsr`, `identity`. For `lambda_cgd`, pass `second_moment_strategy` explicitly.
+Works with MF mechanisms supported by `jme_noise` auto-derivation (see [DP-FTRL](dp-ftrl.md)): `band_mf`, `blt`, `bisr`, `bsr`, `identity`. For `lambda_cgd`, pass `second_moment_strategy` explicitly.
 
 ## DP-specific optimizer considerations
 

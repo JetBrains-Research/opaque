@@ -1,7 +1,7 @@
 """Tests for b_min_sep BandMF amplification."""
 
-import opaque_accounting as acc
-from opaque_accounting.amplification.b_min_sep import (
+import opaque.accounting as acc
+from opaque.accounting.amplification.b_min_sep import (
     _participation_p_from_per_example_rate,
 )
 
@@ -29,7 +29,7 @@ def test_b_min_sep_smoke_pld():
 
 def test_transcript_cache_reuses_same_handle():
     """Repeated cache lookup returns the same Rust corpus handle."""
-    from opaque_accounting.amplification._b_min_sep_transcript_cache import (
+    from opaque.accounting.amplification._b_min_sep_transcript_cache import (
         get_handle_or_none,
     )
 
@@ -41,8 +41,8 @@ def test_transcript_cache_reuses_same_handle():
 
 def test_b_min_sep_stricter_than_mf_only():
     """Subsampling should lower ε at fixed σ vs unamplified BandMF PLD."""
-    from opaque_accounting import opaque_accounting as native
-    from opaque_accounting.discretization import get_discretization
+    from opaque.accounting import _native as native
+    from opaque.accounting.discretization import get_discretization
 
     inner = acc.band_mf(1.0, sensitivity=0.7, num_groups=5)
     coef = (1.0, 0.0, 0.0)

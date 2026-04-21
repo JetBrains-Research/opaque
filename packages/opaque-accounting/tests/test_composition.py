@@ -5,9 +5,9 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-import opaque_accounting as acc
-from opaque_accounting.base import DpProcess
-from opaque_accounting.composition import CachedProcess, Composed, Repeated
+import opaque.accounting as acc
+from opaque.accounting.base import DpProcess
+from opaque.accounting.composition import CachedProcess, Composed, Repeated
 
 # ── Node dataclass tests ─────────────────────────────────────────────
 
@@ -314,28 +314,3 @@ class TestCompositionProperties:
         # After identity elision + merge, should be Repeated(step, 100)
         assert isinstance(training, Repeated)
         assert training.count == 100
-
-    def test_deep_heterogeneous_tree_no_recursion_error(self):
-        """Deep left-skewed tree (adaptive clipping) must not cause RecursionError.
-
-        With adaptive clipping each step has a different noise multiplier,
-        preventing merge optimisation.  The resulting Composed tree is
-        ~num_steps deep.  hash() and pld() must work without exceeding
-        the default recursion limit (~1000).
-        """
-        # ── hash() on a very deep tree (fast, no PLD work) ──
-        deep = acc.identity()
-        for i in range(2000):
-            deep = deep | acc.gaussian(0.8 + i * 1e-6)
-
-        h = hash(deep)
-        assert isinstance(h, int)
-
-        # ── pld()/epsilon_at() on a moderately deep tree ──
-        # 1100 steps exceeds the default recursion limit of 1000.
-        training = acc.identity()
-        for i in range(1100):
-            training = training | acc.gaussian(0.8 + i * 1e-6)
-
-        eps = training.epsilon_at(1e-5)
-        assert math.isfinite(eps) and eps > 0

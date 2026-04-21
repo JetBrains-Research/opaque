@@ -5,9 +5,9 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-import opaque_accounting as acc
-from opaque_accounting.base import DpProcess
-from opaque_accounting.mechanisms import LambdaCgd, Bisr
+import opaque.accounting as acc
+from opaque.accounting.base import DpProcess
+from opaque.accounting.mechanisms import LambdaCgd, Bisr
 
 
 # ── LambdaCgd dataclass tests ──────────────────────────────────────

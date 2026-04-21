@@ -140,7 +140,7 @@ For production training, always use `key(seed)` with a fixed seed.
 ### Noise
 
 ```python
-from opaque import gaussian_noise
+from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
 
 noise_fn, state = gaussian_noise(stddev=1.1, key=key(42))
@@ -154,7 +154,7 @@ the base key and the current step counter, then increments the counter.
 ### Sampling
 
 ```python
-from opaque import PoissonSampler
+from opaque.dpsgd.sampling import PoissonSampler
 from opaque.random import key
 
 sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))
@@ -163,7 +163,7 @@ sampler = PoissonSampler(dataset, sample_rate=0.01, key=key(42))
 ### Adaptive clipping
 
 ```python
-from opaque import adaptive_clipped_grad
+from opaque.dpsgd.clipping import adaptive_clipped_grad
 from opaque.random import key
 
 grad_fn, clip_state = adaptive_clipped_grad(
@@ -188,7 +188,8 @@ In the common case, you create keys once at the start and thread state
 through the loop:
 
 ```python
-from opaque import clipped_grad, gaussian_noise
+from opaque.clipping import clipped_grad
+from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key, split
 
 k_noise, k_sample = split(key(42))
@@ -251,7 +252,7 @@ step_key = fold_in(fold_in(key(42), step), rank)
 Same key produces identical output across runs, platforms, and devices:
 
 ```python
-from opaque import gaussian_noise
+from opaque.dpsgd.noise import gaussian_noise
 from opaque.random import key
 import torch
 

@@ -64,28 +64,26 @@ from transformers import (
 import opaque.accounting as acc
 import opaque.auditing as auditing
 from opaque.accounting import calibration as cal, Accountant
-from opaque.clipping import (
-    adaptive_clipped_grad,
-    auto_clipped_grad,
-    clipped_grad,
-)
-from opaque.compat.transformers import is_kernel_patched
+from opaque.clipping import clipped_grad
+from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
+from opaque.huggingface import is_patched as is_transformers_patched
+from opaque.performance.huggingface import is_kernel_patched
 from opaque.distributed import sum_gradients_, sync
-from opaque.noise import (
-    gaussian_noise,
-    per_group_noise_stddev,
-    truncated_gaussian_noise,
-)
-from opaque.profiling import (
+from opaque.dpsgd.noise.gaussian import gaussian_noise
+from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev
+from opaque.dpsgd.noise.truncated_gaussian import truncated_gaussian_noise
+from opaque.performance.profiling import (
     StepTimer,
     TrainingProfiler,
     print_memory,
     reset_peak_memory,
 )
 from opaque.random import key, fold_in
-from opaque.sampling import PoissonSampler, TruncatedPoissonSampler
-from opaque.sampling.distributed import local_shard
-from opaque.utils import PerGroup, make_functional, per_group
+from opaque.dpsgd.sampling import PoissonSampler
+from opaque.dpsgd.sampling import TruncatedPoissonSampler
+from opaque.distributed.shard import local_shard
+from opaque.functional import make_functional
+from opaque.clipping.per_group import PerGroup, per_group
 import wandb
 
 
@@ -215,6 +213,7 @@ def _print_runtime_mode_report(
 ) -> None:
     """Print active runtime mode so fallback behavior is explicit."""
     kernel_mode, kernel_reason = _kernel_mode_summary(device, dtype_name)
+    kernels_on = device.type == "cuda" and is_kernel_patched()
 
     print("\nRuntime mode:")
     print(f"  Device: {device} ({device_label})")
@@ -222,6 +221,7 @@ def _print_runtime_mode_report(
     if dtype_warning:
         print(f"  Dtype fallback: {dtype_warning}")
     print(f"  Kernel optimizations: {kernel_mode} ({kernel_reason})")
+    print(f"  Patches: transformers={is_transformers_patched()}, kernels={kernels_on}")
 
     if device.type == "cpu":
         print("  Note: CPU path prioritizes correctness over throughput.")
@@ -1245,7 +1245,7 @@ def main():
     elif args.optimizer == "sgd":
         base_opt = torchopt.sgd(lr=args.learning_rate)
     elif args.optimizer in ("adamw", "adamw-bc"):
-        from opaque.optimizers import adamw_bc
+        from opaque.dpsgd.optimizers import adamw_bc
 
         ns = 0.0
         if args.optimizer == "adamw-bc":

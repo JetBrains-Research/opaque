@@ -19,8 +19,8 @@ receives only these pre-computed values. This avoids duplicating mechanism
 parameters and keeps the accounting API uniform across all MF mechanisms.
 
 ```python
-from opaque.noise.mf import bisr_strategy
-import opaque_accounting as acc
+from opaque.dpftrl.noise import bisr_strategy
+import opaque.accounting as acc
 
 # 1. Create strategy — computes sensitivity and Gram matrix internally
 strategy = bisr_strategy(
@@ -76,7 +76,7 @@ enter sensitivity or Gram matrix computation).
 ## Noise generation
 
 ```python
-from opaque.noise.mf import mf_noise, bisr_strategy
+from opaque.dpftrl.noise import mf_noise, bisr_strategy
 from opaque.random import key
 
 strategy = bisr_strategy(
@@ -102,7 +102,7 @@ and computes the linear combination defined by the BISR coefficients.
 - **Momentum** enters the **inverse** coefficient construction (Lemma 1); sensitivity and Gram use the resulting strategy matrix.
 - **No `lr_schedule`**: BISR coefficients are analytically determined from the prefix-sum workload; schedule-aware BISR would require a different construction (see arXiv:2511.17994). Use BandMF/BLT with `lr_schedule` for schedule-shaped workloads.
 - **Not BSR**: BISR bands the **inverse** square root construction (generalised λCGD). [BSR](bsr.md) uses the **forward** square-root closed form for SGD+momentum+weight decay.
-- For a high-level comparison of MF mechanisms, see [Matrix factorization (MF)](../user-guide/matrix-factorization.md).
+- For a high-level comparison of MF mechanisms, see [Matrix factorization (MF)](../user-guide/dp-ftrl.md).
 
 ## Bandwidth selection
 
