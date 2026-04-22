@@ -36,6 +36,7 @@ jobs:
     name: Build DevContainer
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    environment: devcontainer
     permissions:
       contents: read
       packages: write
