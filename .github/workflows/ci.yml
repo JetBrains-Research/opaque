@@ -113,7 +113,6 @@ jobs:
   # ---------------------------------------------------------------------------
   build-python-wheels:
     name: Build ${{ matrix.package }}
-    needs: [python-tests]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -153,7 +152,6 @@ jobs:
 
   build-accounting-wheels:
     name: Build opaque-accounting — ${{ matrix.platform }}/${{ matrix.arch }}
-    needs: [python-tests]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -236,3 +234,106 @@ jobs:
           uv publish \
             --publish-url "${{ vars.PYTHON_REPOSITORY_URL }}" \
             dist/*.whl
+
+  # ---------------------------------------------------------------------------
+  # Upsert the draft GitHub Release for the next version. The draft is the
+  # preparation surface — maintainers edit title, tag, Highlights, etc. in
+  # the GH UI. This job refreshes only the `<!-- auto:* -->`-fenced section
+  # with git-cliff output so hand edits outside the fence are preserved.
+  # Publishing the draft triggers `release.yml`.
+  # ---------------------------------------------------------------------------
+  upsert-draft:
+    name: Upsert draft Release for next version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version (bump patch from last stable)
+        id: next
+        run: |
+          set -euo pipefail
+          LAST=$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort --version-sort --reverse | head -1 || true)
+          if [[ -z "$LAST" ]]; then
+            NEXT_TAG="v0.0.1"
+          else
+            BASE="${LAST#v}"
+            IFS=. read -r MAJOR MINOR PATCH <<< "$BASE"
+            NEXT_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          fi
+          echo "tag=$NEXT_TAG" >> "$GITHUB_OUTPUT"
+          echo "Computed next version tag: $NEXT_TAG (from last: ${LAST:-<none>})"
+
+      - name: Generate auto-section with git-cliff
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --unreleased --tag ${{ steps.next.outputs.tag }} --strip header
+        env:
+          OUTPUT: AUTO_SECTION.md
+
+      - name: Upsert draft Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT_TAG: ${{ steps.next.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          # Find any open draft Release. Simple rule: one draft at a time.
+          # Matching an existing draft (regardless of tag_name) preserves the
+          # maintainer's version/title/prose edits.
+          DRAFT_ID=$(gh api "/repos/$GITHUB_REPOSITORY/releases" \
+            --jq '[.[] | select(.draft == true)] | first | .id // empty')
+
+          if [[ -z "$DRAFT_ID" ]]; then
+            echo "No open draft — creating one for $NEXT_TAG."
+            python3 - <<'PY' > /tmp/body.md
+          import pathlib
+          auto = pathlib.Path("AUTO_SECTION.md").read_text()
+          print(f"""## Highlights
+
+          <!-- Edit: release headlines, migration prose. Free-form. -->
+
+          ## What's changed
+
+          <!-- auto:begin -->
+          {auto}
+          <!-- auto:end -->
+
+          ## Contributors
+
+          <!-- Thanks / notes. -->
+          """)
+          PY
+            gh api --method POST "/repos/$GITHUB_REPOSITORY/releases" \
+              -f tag_name="$NEXT_TAG" \
+              -f target_commitish="main" \
+              -f name="$NEXT_TAG" \
+              -f body="$(cat /tmp/body.md)" \
+              -F draft=true \
+              -F prerelease=false
+          else
+            echo "Refreshing auto-section of existing draft (id=$DRAFT_ID)."
+            gh api "/repos/$GITHUB_REPOSITORY/releases/$DRAFT_ID" --jq .body > /tmp/body_existing.md
+            python3 - <<'PY' > /tmp/body.md
+          import pathlib, re
+          body = pathlib.Path("/tmp/body_existing.md").read_text()
+          auto = pathlib.Path("AUTO_SECTION.md").read_text()
+          begin, end = "<!-- auto:begin -->", "<!-- auto:end -->"
+          fenced = re.compile(re.escape(begin) + r".*?" + re.escape(end), re.DOTALL)
+          replacement = f"{begin}\n{auto}\n{end}"
+          if fenced.search(body):
+              out = fenced.sub(replacement, body)
+          else:
+              # Legacy draft without markers — append an auto section at the end.
+              out = body.rstrip() + "\n\n" + replacement + "\n"
+          print(out, end="")
+          PY
+            gh api --method PATCH \
+              "/repos/$GITHUB_REPOSITORY/releases/$DRAFT_ID" \
+              -f body="$(cat /tmp/body.md)"
+          fi

@@ -2,6 +2,7 @@ name: PR gate
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, closed]
     branches: [ main ]
   workflow_dispatch:
 
@@ -17,6 +18,7 @@ jobs:
   # `commit_parsers`.
   conventional-title:
     name: Conventional Commits PR title
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: read
@@ -46,6 +48,7 @@ jobs:
 
   rust-tests:
     name: Rust tests
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -57,6 +60,7 @@ jobs:
 
   python-tests:
     name: Python tests — ${{ matrix.name }}
+    if: github.event.action != 'closed'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -108,6 +112,7 @@ jobs:
 
   smoke-imports:
     name: Cross-package import smoke test
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -138,6 +143,7 @@ jobs:
 
   docs:
     name: Build documentation
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -155,6 +161,231 @@ jobs:
 
       - name: mkdocs build --strict
         run: uv run mkdocs build --strict
+
+  # ---------------------------------------------------------------------------
+  # PR preview wheels. Every push to a non-fork PR publishes wheels to GCP AR
+  # at a version like `0.2.2.dev3+pr.142.gabc1234`. A sticky comment lists
+  # install commands. On PR close, `cleanup-preview` deletes everything
+  # stamped with `+pr.<N>.`.
+  # ---------------------------------------------------------------------------
+  compute-preview-version:
+    name: Compute preview version
+    if: github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive version
+        id: v
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          LAST=$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort --version-sort --reverse | head -1 || true)
+          if [[ -z "$LAST" ]]; then
+            BASE="0.0.1"
+            DISTANCE=0
+          else
+            STRIPPED="${LAST#v}"
+            IFS=. read -r MAJOR MINOR PATCH <<< "$STRIPPED"
+            BASE="${MAJOR}.${MINOR}.$((PATCH + 1))"
+            DISTANCE=$(git rev-list --count "${LAST}..HEAD")
+          fi
+          SHA=$(git rev-parse --short HEAD)
+          VERSION="${BASE}.dev${DISTANCE}+pr.${PR_NUMBER}.g${SHA}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Preview version: $VERSION"
+
+  build-preview-python:
+    name: Build preview ${{ matrix.package }}
+    needs: [compute-preview-version]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - opaque
+          - opaque-core
+          - opaque-dpsgd
+          - opaque-dpftrl
+          - opaque-auditing
+          - opaque-performance
+          - opaque-huggingface
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v8.1.0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Preflight
+        run: bash .github/scripts/set_build_versions.sh "${{ needs.compute-preview-version.outputs.version }}"
+
+      - name: Build wheel
+        run: cd packages/${{ matrix.package }} && uv build --wheel --out-dir ../../dist
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-wheels-${{ matrix.package }}
+          path: dist/*.whl
+          retention-days: 14
+
+  build-preview-accounting:
+    name: Build preview opaque-accounting — ${{ matrix.platform }}/${{ matrix.arch }}
+    needs: [compute-preview-version]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            arch: amd64
+            runner: ubuntu-latest
+          - platform: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - platform: macos
+            arch: arm64
+            runner: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: astral-sh/setup-uv@v8.1.0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Preflight
+        run: bash .github/scripts/set_build_versions.sh "${{ needs.compute-preview-version.outputs.version }}"
+
+      - name: Build wheel
+        run: cd packages/opaque-accounting && uv build --wheel --out-dir ../../dist
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-wheels-opaque-accounting-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/*opaque_accounting*.whl
+          retention-days: 14
+
+  publish-preview:
+    name: Publish preview wheels to GCP
+    needs: [compute-preview-version, build-preview-python, build-preview-accounting]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all preview wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: preview-wheels-*
+          path: dist/
+          merge-multiple: true
+
+      - name: List wheels
+        run: ls -lh dist/*.whl
+
+      - name: Authenticate to GCP
+        id: gcp-auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
+          token_format: access_token
+          access_token_lifetime: 3600s
+
+      - uses: astral-sh/setup-uv@v8.1.0
+
+      - name: uv publish
+        env:
+          UV_PUBLISH_USERNAME: oauth2accesstoken
+          UV_PUBLISH_PASSWORD: ${{ steps.gcp-auth.outputs.access_token }}
+        run: |
+          uv publish \
+            --publish-url "${{ vars.PYTHON_REPOSITORY_URL }}" \
+            dist/*.whl
+
+      - name: Sticky PR comment with install commands
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: pr-preview-wheels
+          message: |
+            ### PR preview wheels published
+
+            Version: `${{ needs.compute-preview-version.outputs.version }}`
+
+            ```bash
+            pip install --extra-index-url "${{ vars.PYTHON_REPOSITORY_URL }}simple/" \
+              opaque==${{ needs.compute-preview-version.outputs.version }}
+            ```
+
+            Individual sub-packages available at the same version — replace
+            `opaque` with `opaque-core`, `opaque-dpsgd`, `opaque-dpftrl`,
+            `opaque-auditing`, `opaque-performance`, `opaque-huggingface`,
+            or `opaque-accounting`.
+
+            Wheels deleted automatically when this PR is closed.
+
+  cleanup-preview:
+    name: Delete preview wheels from GCP
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Delete +pr.<n>.* versions
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          for pkg in opaque opaque-core opaque-dpsgd opaque-dpftrl opaque-auditing opaque-performance opaque-huggingface opaque-accounting; do
+            mapfile -t versions < <(gcloud artifacts versions list \
+              --package="$pkg" \
+              --repository=jbr-fed-python \
+              --location=europe-west4 \
+              --project=jetbrains-ml4se-fed \
+              --format='value(name)' 2>/dev/null | grep -F "+pr.${PR_NUMBER}." || true)
+            for v in "${versions[@]}"; do
+              [[ -z "$v" ]] && continue
+              echo "Deleting $pkg @ $v"
+              gcloud artifacts versions delete "$v" \
+                --package="$pkg" \
+                --repository=jbr-fed-python \
+                --location=europe-west4 \
+                --project=jetbrains-ml4se-fed \
+                --quiet
+            done
+          done
 
 # Lint & format live in `autoformat.yml`. That workflow auto-applies
 # ruff format / ruff check --fix, commits any changes to the PR branch,
