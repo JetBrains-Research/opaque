@@ -117,13 +117,15 @@ echo "opaque build version → $VERSION"
 #   0.2.0                     → 0.2.0
 #   0.2.1.dev5+g<sha>         → 0.2.1-dev.5+g<sha>
 #   0.3.0.rc1                 → 0.3.0-rc.1
-#   0.3.0.rc1.dev5+g<sha>     → 0.3.0-rc.1.dev.5+g<sha>         (merged pre-release identifier)
-#   0.2.0.post1               → 0.2.0+post.1                    (SemVer has no post; encode as build metadata)
-#   0.2.0.post1.dev5+g<sha>   → 0.2.0-post.1.dev.5+g<sha>       (ambiguous pre-release when combined; lean SemVer pre-release)
-#   0.2.0+d20260422           → 0.2.0+d20260422                 (dirty marker already SemVer-compatible)
+#   0.3.0.rc1.dev5+g<sha>     → 0.3.0-rc.1.dev.5+g<sha>
+#   0.2.0.post1               → 0.2.0+post.1
+#   0.2.0.post1+d20260422     → 0.2.0+post.1.d20260422           (merge into existing build metadata — SemVer forbids two `+`)
+#   0.2.0.post1.dev5+g<sha>   → 0.2.0-post.1.dev.5+g<sha>        (ambiguous when combined; lean SemVer pre-release)
+#   0.2.0+d20260422           → 0.2.0+d20260422
 CARGO_VERSION=$(echo "$VERSION" | sed -E \
   -e 's/\.(alpha|beta|rc|post)([0-9]+)\.(dev)([0-9]+)/-\1.\2.\3.\4/' \
   -e 's/\.(alpha|beta|rc)([0-9]+)/-\1.\2/' \
+  -e 's/\.post([0-9]+)\+([0-9A-Za-z.-]+)/+post.\1.\2/' \
   -e 's/\.post([0-9]+)/+post.\1/' \
   -e 's/\.dev([0-9]+)/-dev.\1/')
 

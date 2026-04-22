@@ -205,6 +205,9 @@ jobs:
           body = re.sub(r"<!--\s*auto:(begin|end)\s*-->\n?", "", body)
           body = re.sub(r"<!--\s*Edit[^>]*-->\n?", "", body)
           body = re.sub(r"<!--\s*Thanks[^>]*-->\n?", "", body)
+          # Demote top-level Release headings so they nest under the
+          # `## [X.Y.Z]` entry instead of becoming sibling H2s.
+          body = re.sub(r"^(#+)\s", lambda m: "#" + m.group(1) + " ", body, flags=re.MULTILINE)
           body = re.sub(r"\n{3,}", "\n\n", body).strip() + "\n"
 
           new_section = f"## [{version}] - {today}\n\n{body}\n"
