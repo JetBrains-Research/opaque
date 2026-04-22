@@ -21,7 +21,7 @@ jobs:
     permissions:
       pull-requests: read
     steps:
-      - uses: amannn/action-semantic-pull-request@v5
+      - uses: amannn/action-semantic-pull-request@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -48,7 +48,7 @@ jobs:
     name: Rust tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -76,7 +76,7 @@ jobs:
             coverage-suffix: "-mps"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0  # setuptools-scm needs tag history for editable installs
 
@@ -84,7 +84,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v8.1.0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -110,7 +110,7 @@ jobs:
     name: Cross-package import smoke test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -118,7 +118,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v8.1.0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -140,13 +140,13 @@ jobs:
     name: Build documentation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: astral-sh/setup-uv@v8.1.0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -168,7 +168,7 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -209,13 +209,13 @@ jobs:
           - opaque-performance
           - opaque-huggingface
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v8.1.0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -226,7 +226,7 @@ jobs:
         run: cd packages/${{ matrix.package }} && uv build --wheel --out-dir ../../dist
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: preview-wheels-${{ matrix.package }}
           path: dist/*.whl
@@ -250,7 +250,7 @@ jobs:
             arch: arm64
             runner: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -258,7 +258,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v8.1.0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -269,7 +269,7 @@ jobs:
         run: cd packages/opaque-accounting && uv build --wheel --out-dir ../../dist
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: preview-wheels-opaque-accounting-${{ matrix.platform }}-${{ matrix.arch }}
           path: dist/*opaque_accounting*.whl

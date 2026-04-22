@@ -19,7 +19,7 @@ jobs:
     name: Rust tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -45,7 +45,7 @@ jobs:
             coverage-suffix: "-mps"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -53,7 +53,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v8.1.0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -79,13 +79,13 @@ jobs:
     needs: [python-tests]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v8.1.0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -127,13 +127,13 @@ jobs:
           - opaque-huggingface
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v8.1.0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -144,7 +144,7 @@ jobs:
         run: cd packages/${{ matrix.package }} && uv build --wheel --out-dir ../../dist
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: wheels-${{ matrix.package }}
           path: dist/*.whl
@@ -168,7 +168,7 @@ jobs:
             runner: macos-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -176,7 +176,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v8.1.0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -187,7 +187,7 @@ jobs:
         run: cd packages/opaque-accounting && uv build --wheel --out-dir ../../dist
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: wheels-opaque-accounting-${{ matrix.platform }}-${{ matrix.arch }}
           path: dist/*opaque_accounting*.whl
@@ -203,10 +203,10 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download all wheels
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           pattern: wheels-*
           path: dist/
@@ -249,7 +249,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
