@@ -1,0 +1,4 @@
+[submodule "vendor/lora-privacy"]
+	path = vendor/lora-privacy
+	url = git@github.com:JetBrains-Research/LoRA-Privacy.git
+	branch = feature/adaptive-rank
