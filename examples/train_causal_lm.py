@@ -708,9 +708,8 @@ def main():
     is_ddp, rank, world_size, local_rank = _init_distributed()
     is_main_process = rank == 0
 
-    # Set eval_batch_size to batch_size if not specified
     if args.eval_batch_size is None:
-        args.eval_batch_size = args.batch_size
+        args.eval_batch_size = args.microbatch_size or args.batch_size
 
     # Set audit_batch_size to microbatch_size if not specified (forward-only, so at least as cheap)
     if args.audit_batch_size is None:
