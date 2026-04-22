@@ -533,7 +533,7 @@ def parse_args():
     if args.microbatch_size == 0:
         args.microbatch_size = None
     if args.eval_batch_size is None:
-        args.eval_batch_size = args.batch_size
+        args.eval_batch_size = args.microbatch_size or args.batch_size
 
     return args
 
