@@ -247,6 +247,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      models: read
 
     steps:
       - uses: actions/checkout@v5
@@ -266,6 +267,7 @@ jobs:
             NEXT_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))"
           fi
           echo "tag=$NEXT_TAG" >> "$GITHUB_OUTPUT"
+          echo "last=$LAST" >> "$GITHUB_OUTPUT"
           echo "Computed next version tag: $NEXT_TAG (from last: ${LAST:-<none>})"
 
       - name: Generate auto-section with git-cliff
@@ -276,6 +278,56 @@ jobs:
         env:
           OUTPUT: AUTO_SECTION.md
 
+      - name: Install gh models extension
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh extension install github/gh-models
+
+      - name: Generate AI highlights
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LAST_TAG: ${{ steps.next.outputs.last }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "$LAST_TAG" ]]; then
+            git log "${LAST_TAG}..HEAD" --format='- %s' --no-merges > /tmp/commits.txt
+          else
+            git log --format='- %s' --no-merges > /tmp/commits.txt
+          fi
+
+          if [[ ! -s /tmp/commits.txt ]]; then
+            echo "_No unreleased commits yet._" > /tmp/ai_highlights.md
+            exit 0
+          fi
+
+          cat > /tmp/prompt.md <<EOF
+          You are summarizing release changes for Opaque, a PyTorch
+          differential-privacy library (DP-SGD, DP-FTRL, privacy accounting).
+
+          Below are the commits landed on main since the last release
+          (${LAST_TAG:-initial}). Produce 3–7 release highlights for library users.
+
+          Rules:
+          - Return only a markdown bulleted list. No preamble, no headers, no code fences.
+          - Group related commits into one bullet; deduplicate overlap.
+          - Emphasize user-facing impact (APIs, behavior, correctness).
+          - Skip pure refactors, chore, test, or ci commits unless they change user-visible behavior.
+          - Use imperative present tense ("Add", "Fix", "Document").
+
+          Commits:
+
+          $(cat /tmp/commits.txt)
+          EOF
+
+          if ! gh models run openai/gpt-4o-mini < /tmp/prompt.md > /tmp/ai_highlights.md 2>/tmp/ai_err; then
+            echo "AI summary failed: $(cat /tmp/ai_err)" >&2
+            echo "_AI summary unavailable — see \"What's changed\" below._" > /tmp/ai_highlights.md
+          fi
+
+          echo "--- AI highlights ---"
+          cat /tmp/ai_highlights.md
+
       - name: Upsert draft Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -283,9 +335,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Find any open draft Release. Simple rule: one draft at a time.
-          # Matching an existing draft (regardless of tag_name) preserves the
-          # maintainer's version/title/prose edits.
+          # Find any open draft Release. One draft at a time; matching on
+          # the draft flag (not tag_name) preserves the maintainer's
+          # version/title/prose edits.
           DRAFT_ID=$(gh api "/repos/$GITHUB_REPOSITORY/releases" \
             --jq '[.[] | select(.draft == true)] | first | .id // empty')
 
@@ -293,10 +345,13 @@ jobs:
             echo "No open draft — creating one for $NEXT_TAG."
             python3 - <<'PY' > /tmp/body.md
           import pathlib
+          ai = pathlib.Path("/tmp/ai_highlights.md").read_text().rstrip()
           auto = pathlib.Path("AUTO_SECTION.md").read_text()
           print(f"""## Highlights
 
-          <!-- Edit: release headlines, migration prose. Free-form. -->
+          <!-- ai:begin -->
+          {ai}
+          <!-- ai:end -->
 
           ## What's changed
 
@@ -317,21 +372,24 @@ jobs:
               -F draft=true \
               -F prerelease=false
           else
-            echo "Refreshing auto-section of existing draft (id=$DRAFT_ID)."
+            echo "Refreshing fenced sections of existing draft (id=$DRAFT_ID)."
             gh api "/repos/$GITHUB_REPOSITORY/releases/$DRAFT_ID" --jq .body > /tmp/body_existing.md
             python3 - <<'PY' > /tmp/body.md
           import pathlib, re
           body = pathlib.Path("/tmp/body_existing.md").read_text()
           auto = pathlib.Path("AUTO_SECTION.md").read_text()
-          begin, end = "<!-- auto:begin -->", "<!-- auto:end -->"
-          fenced = re.compile(re.escape(begin) + r".*?" + re.escape(end), re.DOTALL)
-          replacement = f"{begin}\n{auto}\n{end}"
-          if fenced.search(body):
-              out = fenced.sub(replacement, body)
-          else:
-              # Legacy draft without markers — append an auto section at the end.
-              out = body.rstrip() + "\n\n" + replacement + "\n"
-          print(out, end="")
+          ai = pathlib.Path("/tmp/ai_highlights.md").read_text().rstrip()
+
+          def splice(body, begin, end, content):
+              fenced = re.compile(re.escape(begin) + r".*?" + re.escape(end), re.DOTALL)
+              replacement = f"{begin}\n{content}\n{end}"
+              if fenced.search(body):
+                  return fenced.sub(replacement, body)
+              return body.rstrip() + "\n\n" + replacement + "\n"
+
+          body = splice(body, "<!-- auto:begin -->", "<!-- auto:end -->", auto)
+          body = splice(body, "<!-- ai:begin -->", "<!-- ai:end -->", ai)
+          print(body, end="")
           PY
             gh api --method PATCH \
               "/repos/$GITHUB_REPOSITORY/releases/$DRAFT_ID" \
