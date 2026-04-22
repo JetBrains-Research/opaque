@@ -28,11 +28,18 @@
 # If VERSION is omitted, derive it from `git describe --tags --match 'v*'`
 # and normalize to PEP 440:
 #
-#   v0.2.0                         → 0.2.0                       (release tag)
-#   v0.2.0-dirty                   → 0.2.0+d20260422             (release + dirty)
-#   v0.2.0-5-g810b6b2              → 0.2.1.dev5+g810b6b2         (post-release)
-#   v0.2.0-5-g810b6b2-dirty        → 0.2.1.dev5+g810b6b2.d20260422
-#   v0.3.0.dev0-5-g810b6b2         → 0.3.0.dev5+g810b6b2         (pre-release anchor)
+#   v0.2.0                     → 0.2.0
+#   v0.2.0-dirty               → 0.2.0+d20260422
+#   v0.2.0-5-g810b6b2          → 0.2.1.dev5+g810b6b2
+#   v0.2.0-5-g810b6b2-dirty    → 0.2.1.dev5+g810b6b2.d20260422
+#   v0.3.0.rc1                 → 0.3.0.rc1
+#   v0.3.0.rc1-5-g810b6b2      → 0.3.0.rc1.dev5+g810b6b2
+#   v0.2.0.post1               → 0.2.0.post1
+#   v0.2.0.post1-5-g810b6b2    → 0.2.1.dev5+g810b6b2
+#
+# PEP 440 gotcha: `0.3.0.rc1.dev5 < 0.3.0.rc1`, so post-rc1 distance builds
+# sort *before* rc1. Pins like `>=0.3.0.rc1` still resolve to rc1 or later;
+# dev wheels between rc1 and rc2 only install if pinned explicitly.
 
 set -euo pipefail
 
@@ -50,15 +57,17 @@ if [[ -z "$VERSION" ]]; then
     RAW="${RAW%-dirty}"
   fi
 
-  # Two supported tag shapes (both PEP 440-parseable):
-  #   * release tag            — `X.Y.Z`         (e.g. 0.2.0)
-  #   * dev-cycle anchor tag   — `X.Y.Z.devN`    (e.g. 0.3.0.dev0)
-  # Anything else — hyphen-form anchors (`0.3.0-dev0`), rc/alpha/beta tags,
-  # `X.Y.Z-test` markers — is rejected up front. The preflight is the only
-  # thing between a tag and `uv build`, so a lax policy here reproduces the
-  # pre-#137 failure mode: an invalid version lands in pyproject.toml and
-  # every build aborts.
-  SUPPORTED_TAG='^([0-9]+)\.([0-9]+)\.([0-9]+)(\.dev[0-9]+)?$'
+  # Supported release-tag shapes (all PEP 440-parseable):
+  #   * release               — `X.Y.Z`               (e.g. 0.2.0)
+  #   * post-release          — `X.Y.Z.postN`         (e.g. 0.2.0.post1)
+  #   * pre-release           — `X.Y.Z.alphaN`        (e.g. 0.3.0.alpha1)
+  #   * pre-release           — `X.Y.Z.betaN`         (e.g. 0.3.0.beta1)
+  #   * release candidate     — `X.Y.Z.rcN`           (e.g. 0.3.0.rc1)
+  #
+  # `.devN` tag shapes are rejected — `.dev` is reserved for workflow-
+  # generated pre-release wheels (main-merge dev wheels, PR preview wheels).
+  # Anything else (hyphen-form, `-test` markers) is rejected up front.
+  SUPPORTED_TAG='^([0-9]+)\.([0-9]+)\.([0-9]+)(\.(post|alpha|beta|rc)[0-9]+)?$'
 
   # git-describe emits `<tag>-<distance>-g<sha>` when HEAD is past the tag.
   # Normalize to PEP 440, mirroring setuptools-scm's `guess-next-dev` scheme.
@@ -72,23 +81,28 @@ if [[ -z "$VERSION" ]]; then
       MINOR="${BASH_REMATCH[2]}"
       PATCH="${BASH_REMATCH[3]}"
       PRERELEASE="${BASH_REMATCH[4]}"
+      PRERELEASE_KIND="${BASH_REMATCH[5]}"
 
-      if [[ -n "$PRERELEASE" ]]; then
-        # Dev-cycle anchor (e.g. 0.3.0.dev0): keep base, use distance as dev N.
-        VERSION="${MAJOR}.${MINOR}.${PATCH}.dev${DISTANCE}+g${SHA}${DIRTY_SUFFIX}"
-      else
-        # Release tag (e.g. 0.2.0): bump patch, use distance as dev N.
-        VERSION="${MAJOR}.${MINOR}.$((PATCH + 1)).dev${DISTANCE}+g${SHA}${DIRTY_SUFFIX}"
-      fi
+      case "$PRERELEASE_KIND" in
+        alpha|beta|rc)
+          # Post-prerelease progress: X.Y.Z.<rc|alpha|beta>N.dev<D>+g<sha>.
+          # (See header note on PEP 440 ordering.)
+          VERSION="${MAJOR}.${MINOR}.${PATCH}${PRERELEASE}.dev${DISTANCE}+g${SHA}${DIRTY_SUFFIX}"
+          ;;
+        *)
+          # Release or post-release tag: bump patch, use distance as dev N.
+          VERSION="${MAJOR}.${MINOR}.$((PATCH + 1)).dev${DISTANCE}+g${SHA}${DIRTY_SUFFIX}"
+          ;;
+      esac
     else
-      echo "ERROR: tag '$TAG_PART' is not a supported shape (X.Y.Z or X.Y.Z.devN)" >&2
+      echo "ERROR: tag '$TAG_PART' is not a supported shape (X.Y.Z or X.Y.Z.{postN,alphaN,betaN,rcN})" >&2
       exit 1
     fi
   elif [[ "$RAW" =~ $SUPPORTED_TAG ]]; then
     # Clean checkout at the tag — no distance, no sha.
     VERSION="${RAW}${DIRTY_SUFFIX:++${DIRTY_SUFFIX#.}}"
   else
-    echo "ERROR: tag '$RAW' is not a supported shape (X.Y.Z or X.Y.Z.devN)" >&2
+    echo "ERROR: tag '$RAW' is not a supported shape (X.Y.Z or X.Y.Z.{postN,alphaN,betaN,rcN})" >&2
     exit 1
   fi
 fi
@@ -97,16 +111,23 @@ echo "opaque build version → $VERSION"
 
 # --- opaque-accounting (maturin) --------------------------------------------
 # Python wheel version lives in the package's pyproject.toml and accepts the
-# full PEP 440 string. Cargo.toml demands SemVer, which rejects PEP 440 dev
-# markers (`0.2.0.dev42`). Transform PEP 440 → SemVer for the Rust side:
+# full PEP 440 string. Cargo.toml demands SemVer, which rejects PEP 440 form
+# (`.dev42`, `.rc1`, `.post1`). Transform PEP 440 → SemVer for the Rust side:
 #
 #   0.2.0                     → 0.2.0
-#   0.2.0.dev42               → 0.2.0-dev.42
-#   0.2.0.dev42+g<sha>        → 0.2.0-dev.42+g<sha>
-#   0.2.0.dev42+g<sha>.dYMD   → 0.2.0-dev.42+g<sha>.dYMD
-#
-# The `+` build-metadata segment is valid in both PEP 440 and SemVer.
-CARGO_VERSION=$(echo "$VERSION" | sed -E 's/\.dev([0-9]+)/-dev.\1/')
+#   0.2.1.dev5+g<sha>         → 0.2.1-dev.5+g<sha>
+#   0.3.0.rc1                 → 0.3.0-rc.1
+#   0.3.0.rc1.dev5+g<sha>     → 0.3.0-rc.1.dev.5+g<sha>
+#   0.2.0.post1               → 0.2.0+post.1
+#   0.2.0.post1+d20260422     → 0.2.0+post.1.d20260422           (merge into existing build metadata — SemVer forbids two `+`)
+#   0.2.0.post1.dev5+g<sha>   → 0.2.0-post.1.dev.5+g<sha>        (ambiguous when combined; lean SemVer pre-release)
+#   0.2.0+d20260422           → 0.2.0+d20260422
+CARGO_VERSION=$(echo "$VERSION" | sed -E \
+  -e 's/\.(alpha|beta|rc|post)([0-9]+)\.(dev)([0-9]+)/-\1.\2.\3.\4/' \
+  -e 's/\.(alpha|beta|rc)([0-9]+)/-\1.\2/' \
+  -e 's/\.post([0-9]+)\+([0-9A-Za-z.-]+)/+post.\1.\2/' \
+  -e 's/\.post([0-9]+)/+post.\1/' \
+  -e 's/\.dev([0-9]+)/-dev.\1/')
 
 # Python wheel metadata
 sed -i.bak -E "s%^version = \"[^\"]+\"%version = \"$VERSION\"%" \

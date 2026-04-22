@@ -36,6 +36,7 @@ jobs:
     name: Build DevContainer
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    environment: devcontainer
     permissions:
       contents: read
       packages: write
@@ -73,7 +74,7 @@ jobs:
           echo "GAR_IMAGE=europe-west4-docker.pkg.dev/gke-dev-dws-jbr/ml/opaque-devcontainer" >> $GITHUB_ENV
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Login to GitHub Container Registry
         if: env.IS_FORK_PR == 'false'
