@@ -31,23 +31,33 @@ jobs:
       - name: Delete +pr.<n>.* versions
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          PYTHON_REPOSITORY_URL: ${{ vars.PYTHON_REPOSITORY_URL }}
         run: |
           set -euo pipefail
+
+          # Parse `https://<LOCATION>-python.pkg.dev/<PROJECT>/<REPOSITORY>/`
+          url="${PYTHON_REPOSITORY_URL%/}"
+          repository="${url##*/}"
+          without_repo="${url%/*}"
+          project="${without_repo##*/}"
+          host="${without_repo#https://}"
+          location="${host%-python.pkg.dev*}"
+
           for pkg in opaque opaque-core opaque-dpsgd opaque-dpftrl opaque-auditing opaque-performance opaque-huggingface opaque-accounting; do
             mapfile -t versions < <(gcloud artifacts versions list \
               --package="$pkg" \
-              --repository=jbr-fed-python \
-              --location=europe-west4 \
-              --project=jetbrains-ml4se-fed \
+              --repository="$repository" \
+              --location="$location" \
+              --project="$project" \
               --format='value(name)' 2>/dev/null | grep -F "+pr.${PR_NUMBER}." || true)
             for v in "${versions[@]}"; do
               [[ -z "$v" ]] && continue
               echo "Deleting $pkg @ $v"
               gcloud artifacts versions delete "$v" \
                 --package="$pkg" \
-                --repository=jbr-fed-python \
-                --location=europe-west4 \
-                --project=jetbrains-ml4se-fed \
+                --repository="$repository" \
+                --location="$location" \
+                --project="$project" \
                 --quiet
             done
           done
