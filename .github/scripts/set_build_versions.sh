@@ -50,6 +50,16 @@ if [[ -z "$VERSION" ]]; then
     RAW="${RAW%-dirty}"
   fi
 
+  # Two supported tag shapes (both PEP 440-parseable):
+  #   * release tag            — `X.Y.Z`         (e.g. 0.2.0)
+  #   * dev-cycle anchor tag   — `X.Y.Z.devN`    (e.g. 0.3.0.dev0)
+  # Anything else — hyphen-form anchors (`0.3.0-dev0`), rc/alpha/beta tags,
+  # `X.Y.Z-test` markers — is rejected up front. The preflight is the only
+  # thing between a tag and `uv build`, so a lax policy here reproduces the
+  # pre-#137 failure mode: an invalid version lands in pyproject.toml and
+  # every build aborts.
+  SUPPORTED_TAG='^([0-9]+)\.([0-9]+)\.([0-9]+)(\.dev[0-9]+)?$'
+
   # git-describe emits `<tag>-<distance>-g<sha>` when HEAD is past the tag.
   # Normalize to PEP 440, mirroring setuptools-scm's `guess-next-dev` scheme.
   if [[ "$RAW" =~ ^(.+)-([0-9]+)-g([0-9a-f]+)$ ]]; then
@@ -57,25 +67,29 @@ if [[ -z "$VERSION" ]]; then
     DISTANCE="${BASH_REMATCH[2]}"
     SHA="${BASH_REMATCH[3]}"
 
-    if [[ "$TAG_PART" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(\.(dev|alpha|beta|rc)[0-9]+)?$ ]]; then
+    if [[ "$TAG_PART" =~ $SUPPORTED_TAG ]]; then
       MAJOR="${BASH_REMATCH[1]}"
       MINOR="${BASH_REMATCH[2]}"
       PATCH="${BASH_REMATCH[3]}"
       PRERELEASE="${BASH_REMATCH[4]}"
 
       if [[ -n "$PRERELEASE" ]]; then
-        # Pre-release anchor (e.g. 0.3.0.dev0): keep base, use distance as dev N.
+        # Dev-cycle anchor (e.g. 0.3.0.dev0): keep base, use distance as dev N.
         VERSION="${MAJOR}.${MINOR}.${PATCH}.dev${DISTANCE}+g${SHA}${DIRTY_SUFFIX}"
       else
         # Release tag (e.g. 0.2.0): bump patch, use distance as dev N.
         VERSION="${MAJOR}.${MINOR}.$((PATCH + 1)).dev${DISTANCE}+g${SHA}${DIRTY_SUFFIX}"
       fi
     else
-      echo "ERROR: cannot parse tag '$TAG_PART' as PEP 440" >&2
+      echo "ERROR: tag '$TAG_PART' is not a supported shape (X.Y.Z or X.Y.Z.devN)" >&2
       exit 1
     fi
-  else
+  elif [[ "$RAW" =~ $SUPPORTED_TAG ]]; then
+    # Clean checkout at the tag — no distance, no sha.
     VERSION="${RAW}${DIRTY_SUFFIX:++${DIRTY_SUFFIX#.}}"
+  else
+    echo "ERROR: tag '$RAW' is not a supported shape (X.Y.Z or X.Y.Z.devN)" >&2
+    exit 1
   fi
 fi
 
