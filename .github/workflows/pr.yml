@@ -157,14 +157,13 @@ jobs:
         run: uv run mkdocs build --strict
 
   # ---------------------------------------------------------------------------
-  # Preview wheels. Every push to a non-fork PR publishes wheels to GCP AR
-  # at a version like `0.2.2.dev3+pr.142.gabc1234`; a sticky PR comment
-  # lists install commands. Wheels are cleaned up by pr-cleanup.yml on
-  # close.
+  # Preview wheels. Builds every wheel at a version like
+  # `0.2.2.dev3+pr.142.gabc1234` and uploads them as workflow artifacts.
+  # Reviewers download from the PR's Actions run page and `pip install`
+  # the .whl files locally. Artifacts expire per workflow retention.
   # ---------------------------------------------------------------------------
   compute-preview-version:
     name: Compute preview version
-    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
@@ -276,74 +275,8 @@ jobs:
           path: dist/*opaque_accounting*.whl
           retention-days: 14
 
-  publish-preview:
-    name: Publish preview wheels to GCP
-    needs: [compute-preview-version, build-preview-python, build-preview-accounting]
-    runs-on: ubuntu-latest
-    environment: release
-    permissions:
-      contents: read
-      id-token: write
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all preview wheels
-        uses: actions/download-artifact@v4
-        with:
-          pattern: preview-wheels-*
-          path: dist/
-          merge-multiple: true
-
-      - name: List wheels
-        run: ls -lh dist/*.whl
-
-      - name: Authenticate to GCP
-        id: gcp-auth
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
-          token_format: access_token
-          access_token_lifetime: 3600s
-
-      - uses: astral-sh/setup-uv@v8.1.0
-
-      - name: uv publish
-        env:
-          UV_PUBLISH_USERNAME: oauth2accesstoken
-          UV_PUBLISH_PASSWORD: ${{ steps.gcp-auth.outputs.access_token }}
-        run: |
-          uv publish \
-            --publish-url "${{ vars.PYTHON_REPOSITORY_URL }}" \
-            dist/*.whl
-
-      - name: Sticky PR comment with install commands
-        uses: marocchino/sticky-pull-request-comment@v2
-        with:
-          header: pr-preview-wheels
-          message: |
-            ### PR preview wheels published
-
-            Version: `${{ needs.compute-preview-version.outputs.version }}`
-
-            ```bash
-            pip install --extra-index-url "${{ vars.PYTHON_REPOSITORY_URL }}simple/" \
-              opaque==${{ needs.compute-preview-version.outputs.version }}
-            ```
-
-            Individual sub-packages available at the same version — replace
-            `opaque` with `opaque-core`, `opaque-dpsgd`, `opaque-dpftrl`,
-            `opaque-auditing`, `opaque-performance`, `opaque-huggingface`,
-            or `opaque-accounting`.
-
-            Wheels deleted automatically when this PR is closed.
-
 # Lint & format live in `autoformat.yml`. That workflow auto-applies
 # ruff format / ruff check --fix, commits any changes to the PR branch,
 # and then verifies the tree is clean. If it pushes a fix, this pr.yml
 # re-runs against the amended tip — making lint self-gating without
 # duplicating the check here.
-#
-# PR close triggers pr-cleanup.yml, which deletes the preview wheels
-# stamped with this PR's number from GCP AR.
