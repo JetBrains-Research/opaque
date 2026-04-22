@@ -92,6 +92,7 @@ import time
 import torch
 from datasets import Dataset, load_dataset
 from peft import LoraConfig, get_peft_model
+from lora_privacy.peft_lora_xs import LoraXSConfig
 from torch.utils.data import DataLoader
 from transformers import (
     AutoConfig,
@@ -363,10 +364,53 @@ def parse_args():
 
     # LoRA
     lora_g = parser.add_argument_group("lora")
+    lora_g.add_argument(
+        "--lora-method",
+        type=str,
+        choices=["lora", "lora-xs"],
+        default="lora",
+        help="LoRA variant: lora (standard) or lora-xs (SVD factors + trainable r×r R matrix)",
+    )
     lora_g.add_argument("--lora-r", type=int, default=4)
     lora_g.add_argument("--lora-alpha", type=int, default=8)
     lora_g.add_argument(
         "--lora-modules", type=str, nargs="+", default=["c_attn", "c_proj"]
+    )
+    lora_g.add_argument(
+        "--lora-xs-sigma",
+        type=float,
+        default=1e-5,
+        help="LoRA-XS: R matrix init std N(0, sigma^2) (default: 1e-5)",
+    )
+    lora_g.add_argument(
+        "--lora-xs-orthonormal-a",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="LoRA-XS: use A=U^T without singular values (eliminates gradient amplification under DP-SGD)",
+    )
+    lora_g.add_argument(
+        "--lora-xs-adaptive-rank",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="LoRA-XS: allocate per-layer ranks via spectral entropy (budget = r^2 * n_modules)",
+    )
+    lora_g.add_argument(
+        "--lora-xs-rank-min",
+        type=int,
+        default=4,
+        help="LoRA-XS adaptive rank: minimum per-layer rank (default: 4)",
+    )
+    lora_g.add_argument(
+        "--lora-xs-rank-probe",
+        type=int,
+        default=64,
+        help="LoRA-XS adaptive rank: SVD probe rank for spectrum estimation (default: 64)",
+    )
+    lora_g.add_argument(
+        "--lora-xs-rank-spread",
+        type=float,
+        default=2.0,
+        help="LoRA-XS adaptive rank: entropy exponent (>1 widens rank spread, default: 2.0)",
     )
 
     # DP / MF mechanism
@@ -637,17 +681,48 @@ def main():
         tokenizer.pad_token = tokenizer.eos_token
 
     # --- LoRA ---
-    print("Applying LoRA...")
-    lora_config = LoraConfig(
-        r=args.lora_r,
-        lora_alpha=args.lora_alpha,
-        target_modules=args.lora_modules,
-        lora_dropout=0.0,
-        bias="none",
-        task_type="CAUSAL_LM",
-    )
+    print(f"Applying {args.lora_method}...")
+    if args.lora_method == "lora-xs":
+        lora_config = LoraXSConfig(
+            r=args.lora_r,
+            lora_alpha=args.lora_alpha,
+            target_modules=args.lora_modules,
+            lora_dropout=0.0,
+            sigma=args.lora_xs_sigma,
+            orthonormal_a=args.lora_xs_orthonormal_a,
+            adaptive_rank=args.lora_xs_adaptive_rank,
+            rank_min=args.lora_xs_rank_min,
+            rank_probe=args.lora_xs_rank_probe,
+            rank_spread=args.lora_xs_rank_spread,
+            task_type="CAUSAL_LM",
+        )
+    else:
+        lora_config = LoraConfig(
+            r=args.lora_r,
+            lora_alpha=args.lora_alpha,
+            target_modules=args.lora_modules,
+            lora_dropout=0.0,
+            bias="none",
+            task_type="CAUSAL_LM",
+        )
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
+
+    # Print adaptive rank allocation table if applicable
+    if hasattr(lora_config, "_adaptive_rank_info"):
+        info = lora_config._adaptive_rank_info
+        alloc = info["allocation"]
+        budget = info["budget"]
+        total_params = sum(a["rank"] ** 2 for a in alloc)
+        print(f"\nAdaptive rank allocation (budget={budget}, modules={len(alloc)}):")
+        print(f"  {'Module':<50s} {'Entropy':>8s} {'Rank':>6s} {'Params':>8s}")
+        print(f"  {'─' * 50} {'─' * 8} {'─' * 6} {'─' * 8}")
+        for a in alloc:
+            name = a["module"]
+            short = name if len(name) <= 50 else "..." + name[-(50 - 3):]
+            print(f"  {short:<50s} {a['entropy']:8.4f} {a['rank']:6d} {a['rank'] ** 2:8d}")
+        print(f"  {'─' * 50} {'─' * 8} {'─' * 6} {'─' * 8}")
+        print(f"  {'TOTAL':<50s} {'':>8s} {'':>6s} {total_params:8d}")
     profiler, _ = profiler.mark("lora_applied")
     print_memory(device, "After LoRA")
 
@@ -1138,6 +1213,7 @@ def main():
             pass  # Non-critical diagnostic
 
     print("\nDP-FTRL setup:")
+    print(f"  LoRA method: {args.lora_method}")
     print(f"  Mechanism: {args.mechanism}")
     if use_adam:
         print(
