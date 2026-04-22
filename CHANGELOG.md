@@ -9,6 +9,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-04-22
+
+**Patch release — release-pipeline hardening only. No user-facing
+code changes.** Cutting this release ships `main` through the fixed
+pipeline end-to-end; functional code is identical to 0.2.0.
+
+### CI/CD
+
+- **Dev-wheel publish from `main` now works.** The preflight
+  ([`set_build_versions.sh`](.github/scripts/set_build_versions.sh))
+  normalizes `git describe` output to PEP 440 instead of passing the
+  raw `0.2.0-5-g<sha>` form straight into `pyproject.toml` (which
+  `uv build` refused to parse). Both the main-branch dev publish and
+  the tag-push release publish are now scoped to the `release` GitHub
+  Environment so they auth as the service account that's actually
+  bound as `roles/artifactregistry.writer` on the target GCP
+  Artifact Registry repo. ([#137](https://github.com/JetBrains-Research/opaque/pull/137))
+- **Conventional Commits enforced on PR titles.** The repo
+  squash-merges, so the PR title becomes the commit message git-cliff
+  reads. The PR gate now rejects titles cliff wouldn't categorize.
+  Accepted types mirror `cliff.toml`'s `commit_parsers` exactly.
+  ([#138](https://github.com/JetBrains-Research/opaque/pull/138))
+- **Release tag guard.** The release workflow fails fast if the
+  pushed tag isn't reachable from `origin/main`. Release-time tests
+  aren't re-run — the main-branch gate is the primary enforcement —
+  so off-main tags would otherwise ship untested code.
+  ([#139](https://github.com/JetBrains-Research/opaque/pull/139))
+- **Preflight tag-shape lockdown.** Only `X.Y.Z` (release) and
+  `X.Y.Z.devN` (dev-cycle anchor) are accepted. Hyphen-form anchors,
+  rc/alpha/beta tags, and legacy `-test` markers fail-fast with a
+  clear error instead of silently producing invalid PEP 440.
+  ([#140](https://github.com/JetBrains-Research/opaque/pull/140))
+- **`cliff.toml` anchor-tag ignore pattern** now accepts both
+  `v0.X.Y.dev0` (dot, PEP 440) and `v0.X.Y-dev0` (hyphen, semver)
+  forms so the anchor doesn't leak into future release notes
+  regardless of which form the cycle uses.
+- **Branch protection.** The `main` ruleset now requires the 8 PR-gate
+  status checks (CPU/MPS/Rust tests, cross-package import smoke, docs
+  build, Python/Rust format checks, Conventional Commits PR title)
+  before merge. Stale repo-level GCP auth vars removed in favor of
+  the `release` environment.
+
 ## [0.2.0] - 2026-04-21
 
 **Major restructure.** The monorepo is split into seven first-class
