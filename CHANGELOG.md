@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-04-22
+
+### Highlights
+
+### What's changed
+
+### [0.2.2] - 2026-04-22
+
+#### CI/CD
+
+- Draft-release-driven pipeline + PR preview wheels (#144) ([f6ac256](https://github.com/JetBrains-Research/opaque/commit/f6ac256bf7e2cf2c4a5696f997e29cf52807d416))
+
+#### Fixed
+
+- **deps:** Pin torch<2.11 for CUDA 12 compat and restore peft in examples (#143) ([fa7a7fd](https://github.com/JetBrains-Research/opaque/commit/fa7a7fd3c3e76c262202a58891f10288822b41bb))
+- **examples:** Default eval_batch_size to microbatch_size (#145) ([5463a02](https://github.com/JetBrains-Research/opaque/commit/5463a0267a1a4839514b52d12d88bd50633f6539))
+
+### Contributors
+
+
 ## [0.2.1] - 2026-04-22
 
 **Patch release — release-pipeline hardening only. No user-facing
