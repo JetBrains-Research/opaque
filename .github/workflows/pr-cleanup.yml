@@ -1,0 +1,53 @@
+name: PR cleanup
+
+# Deletes the preview wheels published by pr.yml from GCP Artifact
+# Registry when the PR is closed (merged or abandoned). Versions to
+# delete match the `+pr.<PR#>.` local identifier.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [ main ]
+
+jobs:
+  delete-preview-wheels:
+    name: Delete preview wheels from GCP
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Delete +pr.<n>.* versions
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          for pkg in opaque opaque-core opaque-dpsgd opaque-dpftrl opaque-auditing opaque-performance opaque-huggingface opaque-accounting; do
+            mapfile -t versions < <(gcloud artifacts versions list \
+              --package="$pkg" \
+              --repository=jbr-fed-python \
+              --location=europe-west4 \
+              --project=jetbrains-ml4se-fed \
+              --format='value(name)' 2>/dev/null | grep -F "+pr.${PR_NUMBER}." || true)
+            for v in "${versions[@]}"; do
+              [[ -z "$v" ]] && continue
+              echo "Deleting $pkg @ $v"
+              gcloud artifacts versions delete "$v" \
+                --package="$pkg" \
+                --repository=jbr-fed-python \
+                --location=europe-west4 \
+                --project=jetbrains-ml4se-fed \
+                --quiet
+            done
+          done
