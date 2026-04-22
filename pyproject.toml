@@ -9,6 +9,10 @@ workspace.members = [
     "packages/opaque-huggingface",
     "packages/opaque-accounting",
 ]
+# torch >=2.11 on PyPI pulls nvidia-*-cu13 runtime packages which require a
+# CUDA 13 driver (570+).  Cadence H200 images ship CUDA 12 drivers, so cap
+# torch to keep CUDA 12 deps and torch.cuda.is_available() working.
+constraint-dependencies = ["torch<2.11"]
 
 [tool.uv.sources]
 opaque = { workspace = true }
@@ -37,14 +41,13 @@ dev = [
   "riskcal>=1.2.0",
 ]
 
-# Everything the scripts under examples/ and docs/tutorials/ need on top of
-# the opaque packages (installed via `--all-packages`). HF/PEFT deps compose
-# via `--extra huggingface --extra peft`; this group covers the glue libs
-# that live outside any package.
-# Install with: `uv sync --group examples --all-packages --extra huggingface --extra peft`
+# Everything the scripts under examples/ and docs/tutorials/ need.
+# Install with: `uv sync --group examples`
 examples = [
   "torchopt>=0.7.3",          # DP-SGD/MF optimizer bindings used across examples
   "datasets>=2.0.0",          # HuggingFace datasets loader
+  "transformers>=4.57.0",     # HuggingFace model loading
+  "peft>=0.18.0",             # LoRA adapters (needed by all training examples)
   "wandb>=0.16.0",            # Experiment tracking
   "jupyter>=1.0.0",           # Tutorial notebooks
   "matplotlib>=3.10.7",       # Tutorial plots
