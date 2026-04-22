@@ -53,6 +53,7 @@ import torch.distributed as dist
 import torchopt
 from datasets import Dataset, load_dataset
 from peft import LoraConfig, get_peft_model
+from lora_privacy.peft_lora_xs import LoraXSConfig
 from torch.utils.data import DataLoader
 from transformers import (
     AutoConfig,
@@ -402,8 +403,39 @@ def parse_args():
         default=False,
         help="Offload saved tensors to CPU via save_on_cpu (works with or without checkpointing)",
     )
+    train_group.add_argument(
+        "--warmup-steps",
+        type=int,
+        default=0,
+        help="Linear LR warmup steps (0 = no warmup)",
+    )
+    train_group.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="Save model adapter to this directory after training (enables downstream eval)",
+    )
+    train_group.add_argument(
+        "--eval-humaneval",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Run HumanEval evaluation after training (requires --output-dir)",
+    )
+    train_group.add_argument(
+        "--eval-humaneval-n-samples",
+        type=int,
+        default=164,
+        help="Number of HumanEval problems to evaluate (default: 164 = all)",
+    )
 
     lora_group = parser.add_argument_group("lora", "LoRA adapter settings")
+    lora_group.add_argument(
+        "--lora-method",
+        type=str,
+        choices=["lora", "lora-xs"],
+        default="lora",
+        help="LoRA variant: lora (standard) or lora-xs (SVD factors + trainable r×r R matrix)",
+    )
     lora_group.add_argument("--lora-r", type=int, default=4, help="LoRA rank")
     lora_group.add_argument("--lora-alpha", type=int, default=8, help="LoRA alpha")
     lora_group.add_argument(
@@ -412,6 +444,62 @@ def parse_args():
         nargs="+",
         default=["c_attn", "c_proj"],
         help="Target module names for LoRA",
+    )
+    lora_group.add_argument(
+        "--lora-dora",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Use DoRA (weight-decomposed LoRA). Only applies to --lora-method lora.",
+    )
+    lora_group.add_argument(
+        "--lora-rslora",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Use rank-stabilized scaling (alpha/sqrt(r) instead of alpha/r). Only applies to --lora-method lora.",
+    )
+    lora_group.add_argument(
+        "--lora-init",
+        type=str,
+        default="default",
+        choices=["default", "gaussian", "pissa", "pissa_niter_4", "olora", "loftq"],
+        help="LoRA weight initialization strategy (default: Kaiming for A, zero for B). "
+        "Only applies to --lora-method lora.",
+    )
+    lora_group.add_argument(
+        "--lora-xs-sigma",
+        type=float,
+        default=1e-5,
+        help="LoRA-XS: R matrix init std N(0, sigma^2) (default: 1e-5)",
+    )
+    lora_group.add_argument(
+        "--lora-xs-orthonormal-a",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="LoRA-XS: use A=U^T without singular values (eliminates gradient amplification under DP-SGD)",
+    )
+    lora_group.add_argument(
+        "--lora-xs-adaptive-rank",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="LoRA-XS: allocate per-layer ranks via spectral entropy (budget = r^2 * n_modules)",
+    )
+    lora_group.add_argument(
+        "--lora-xs-rank-min",
+        type=int,
+        default=4,
+        help="LoRA-XS adaptive rank: minimum per-layer rank (default: 4)",
+    )
+    lora_group.add_argument(
+        "--lora-xs-rank-probe",
+        type=int,
+        default=64,
+        help="LoRA-XS adaptive rank: SVD probe rank for spectrum estimation (default: 64)",
+    )
+    lora_group.add_argument(
+        "--lora-xs-rank-spread",
+        type=float,
+        default=2.0,
+        help="LoRA-XS adaptive rank: entropy exponent (>1 widens rank spread, default: 2.0)",
     )
 
     dp_group = parser.add_argument_group("dp", "DP-SGD clipping and noise")
@@ -715,10 +803,9 @@ def main():
     if args.audit_batch_size is None:
         args.audit_batch_size = args.microbatch_size or args.batch_size
 
-    if is_main_process:
-        print("=" * 80)
-        print("DP-SGD LoRA Training for Causal Language Models")
-        print("=" * 80)
+    print("=" * 80)
+    print("DP-SGD LoRA Training for Causal Language Models")
+    print("=" * 80)
 
     # Initialize wandb (enabled by default, offline if no credentials)
     use_wandb = (not args.no_wandb) and is_main_process
@@ -834,17 +921,52 @@ def main():
         tokenizer.pad_token = tokenizer.eos_token
 
     # Apply LoRA
-    print("Applying LoRA...")
-    lora_config = LoraConfig(
-        r=args.lora_r,
-        lora_alpha=args.lora_alpha,
-        target_modules=args.lora_modules,
-        lora_dropout=0.0,
-        bias="none",
-        task_type="CAUSAL_LM",
-    )
+    print(f"Applying {args.lora_method}...")
+    if args.lora_method == "lora-xs":
+        lora_config = LoraXSConfig(
+            r=args.lora_r,
+            lora_alpha=args.lora_alpha,
+            target_modules=args.lora_modules,
+            lora_dropout=0.0,
+            sigma=args.lora_xs_sigma,
+            orthonormal_a=args.lora_xs_orthonormal_a,
+            adaptive_rank=args.lora_xs_adaptive_rank,
+            rank_min=args.lora_xs_rank_min,
+            rank_probe=args.lora_xs_rank_probe,
+            rank_spread=args.lora_xs_rank_spread,
+            task_type="CAUSAL_LM",
+        )
+    else:
+        lora_config = LoraConfig(
+            r=args.lora_r,
+            lora_alpha=args.lora_alpha,
+            target_modules=args.lora_modules,
+            lora_dropout=0.0,
+            bias="none",
+            task_type="CAUSAL_LM",
+            use_dora=args.lora_dora,
+            use_rslora=args.lora_rslora,
+            init_lora_weights=True if args.lora_init == "default" else args.lora_init,
+        )
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
+
+    # Print adaptive rank allocation table if applicable
+    if hasattr(lora_config, "_adaptive_rank_info"):
+        info = lora_config._adaptive_rank_info
+        alloc = info["allocation"]
+        budget = info["budget"]
+        total_params = sum(a["rank"] ** 2 for a in alloc)
+        print(f"\nAdaptive rank allocation (budget={budget}, modules={len(alloc)}):")
+        print(f"  {'Module':<50s} {'Entropy':>8s} {'Rank':>6s} {'Params':>8s}")
+        print(f"  {'─' * 50} {'─' * 8} {'─' * 6} {'─' * 8}")
+        for a in alloc:
+            name = a["module"]
+            short = name if len(name) <= 50 else "..." + name[-(50 - 3):]
+            print(f"  {short:<50s} {a['entropy']:8.4f} {a['rank']:6d} {a['rank'] ** 2:8d}")
+        print(f"  {'─' * 50} {'─' * 8} {'─' * 6} {'─' * 8}")
+        print(f"  {'TOTAL':<50s} {'':>8s} {'':>6s} {total_params:8d}")
+
     profiler, _ = profiler.mark("lora_applied")
     print_memory(device, "After LoRA")
 
@@ -1094,6 +1216,7 @@ def main():
 
     # Setup optimizer
     print("\nSetting up DP-SGD training...")
+    print(f"  LoRA method: {args.lora_method}")
     print(f"  Optimizer: {args.optimizer}")
     print(f"  Learning rate: {args.learning_rate}")
     if isinstance(clip_norm, PerGroup):
@@ -1240,7 +1363,17 @@ def main():
 
     # Setup optimizer (after calibration so adamw-bc can compute noise_stddev)
     if args.optimizer == "adam":
-        base_opt = torchopt.adam(lr=args.learning_rate)
+        if args.warmup_steps > 0:
+            base_opt = torchopt.adam(
+                lr=torchopt.schedule.linear_schedule(
+                    init_value=args.learning_rate / args.warmup_steps,
+                    end_value=args.learning_rate,
+                    transition_steps=args.warmup_steps,
+                    transition_begin=0,
+                )
+            )
+        else:
+            base_opt = torchopt.adam(lr=args.learning_rate)
     elif args.optimizer == "sgd":
         base_opt = torchopt.sgd(lr=args.learning_rate)
     elif args.optimizer in ("adamw", "adamw-bc"):
@@ -1561,6 +1694,44 @@ def main():
     summary_profiler = sync(profiler) if is_ddp else profiler
     print("\n" + summary_profiler.final_summary())
     print("\n" + summary_profiler.checkpoint_summary())
+
+    # Save model and run downstream evaluation
+    if args.output_dir and is_main_process:
+        from pathlib import Path
+        Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+        print(f"\nSaving adapter to {args.output_dir}...")
+        # Unwrap DP model to get the PEFT model
+        peft_model = model._module if hasattr(model, "_module") else model
+        peft_model.save_pretrained(args.output_dir)
+        tokenizer.save_pretrained(args.output_dir)
+        print(f"Saved adapter + tokenizer to {args.output_dir}")
+
+        if args.eval_humaneval:
+            print("\n" + "=" * 60)
+            print("Running HumanEval evaluation...")
+            print("=" * 60)
+            try:
+                from lora_privacy.evaluation.code_eval import evaluate_humaneval
+
+                # Merge adapter for faster inference
+                # Cast to float32 first — merge_and_unload fails with bfloat16 tensors
+                peft_model = peft_model.float()
+                merged = peft_model.merge_and_unload()
+                merged = merged.to(device).to(torch.bfloat16)
+
+                results = evaluate_humaneval(
+                    model=merged,
+                    tokenizer=tokenizer,
+                    batch_size=args.eval_batch_size or 4,
+                    max_new_tokens=256,
+                )
+                print(f"\nHumanEval Results:")
+                for k, v in results.items():
+                    print(f"  {k}: {v:.4f}")
+                    if use_wandb:
+                        wandb.log({f"downstream/{k}": v}, step=global_step)
+            except Exception as e:
+                print(f"HumanEval evaluation failed: {e}")
 
     if use_wandb:
         wandb.finish()

@@ -23,6 +23,7 @@ opaque-auditing = { workspace = true }
 opaque-performance = { workspace = true }
 opaque-huggingface = { workspace = true }
 opaque-accounting = { workspace = true }
+lora-privacy = { path = "vendor/lora-privacy" }
 
 [dependency-groups]
 # Developer tooling (test runner, linter, stats helpers, cross-validation
@@ -54,6 +55,7 @@ examples = [
   "torchvision>=0.25.0",      # Vision example datasets
   "jetbrains-cadence",        # Internal experiment registry
   "keyrings-alt>=5.0.0",      # Headless keyring backend (cadence login)
+  "lora-privacy",             # Vendored LoRA-XS PEFT integration
 ]
 
 # Documentation building

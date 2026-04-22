@@ -96,6 +96,9 @@ Cargo.lock
 # GitHub Agentic Workflows
 .github/aw/
 
+# Vendored local-only dependencies (synced to Cadence, not committed)
+vendor/
+
 # Experiment tracking
 wandb/
 papers/
