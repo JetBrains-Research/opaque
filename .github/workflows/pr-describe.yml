@@ -1,9 +1,10 @@
 name: PR describe
 
 # Refreshes the `<!-- ai:begin --> ... <!-- ai:end -->` fence in the PR
-# body with a GitHub Models-generated Summary + Test plan derived from
-# the PR title, commit log, and diff. Content outside the fence is
-# untouched, so author edits and the leading template comment survive.
+# body with a GitHub Models-generated Summary derived from the PR
+# title, commit log, diff, and the fence's previous content (so the
+# summary shortens / refines across pushes rather than being rewritten
+# from scratch). Content outside the fence is untouched.
 
 on:
   pull_request:
@@ -33,6 +34,29 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh extension install github/gh-models
 
+      - name: Extract previous AI fence content
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          gh pr view "$PR_NUMBER" --json body --jq .body > /tmp/body_existing.md
+
+          python3 - <<'PY' > /tmp/previous_ai.md
+          import pathlib, re
+          body = pathlib.Path("/tmp/body_existing.md").read_text()
+          m = re.search(r"<!--\s*ai:begin\s*-->(.*?)<!--\s*ai:end\s*-->", body, re.DOTALL)
+          if not m:
+              print("", end="")
+          else:
+              previous = m.group(1).strip()
+              # Skip the template placeholder line so the model doesn't anchor to it.
+              if previous.startswith("_An AI-drafted summary") or previous.startswith("_AI-drafted"):
+                  print("", end="")
+              else:
+                  print(previous, end="")
+          PY
+
       - name: Generate description
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -48,9 +72,9 @@ jobs:
           head -c 40000 /tmp/pr.diff > /tmp/pr.diff.truncated
 
           cat > /tmp/prompt.md <<EOF
-          You are drafting the description of a pull request for Opaque,
-          a PyTorch differential-privacy library (DP-SGD, DP-FTRL,
-          privacy accounting).
+          You are maintaining the description of a pull request for
+          Opaque, a PyTorch differential-privacy library (DP-SGD,
+          DP-FTRL, privacy accounting).
 
           Produce a single "Summary" section with this exact heading:
 
@@ -64,6 +88,16 @@ jobs:
             commentary, no code fences wrapping the whole output.
           - Tight prose. No filler.
           - If the diff is small / trivial, keep it to 1–2 sentences.
+          - **Continuity**: if a previous summary is provided and still
+            fits the change, preserve its wording and tone; only
+            shorten, refine, or extend as the diff demands. Don't
+            rewrite from scratch when an incremental edit will do.
+            If the diff has diverged materially from the previous
+            summary, rewrite.
+
+          Previous summary (may be empty on the first push):
+
+          $(cat /tmp/previous_ai.md)
 
           PR title: ${PR_TITLE}
 
@@ -90,8 +124,6 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-
-          gh pr view "$PR_NUMBER" --json body --jq .body > /tmp/body_existing.md
 
           python3 - <<'PY' > /tmp/body.md
           import pathlib, re
