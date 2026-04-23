@@ -281,11 +281,6 @@ jobs:
       - name: Install gh models extension
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # Install failure (network/rate-limit) must not abort the upsert.
-        # If the extension isn't available, the Generate step's
-        # `gh models run` fails and its inline fallback writes a
-        # placeholder to /tmp/ai_highlights.md.
-        continue-on-error: true
         run: gh extension install github/gh-models
 
       - name: Generate AI highlights
