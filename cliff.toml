@@ -1,5 +1,6 @@
 # git-cliff configuration for Opaque.
-# Generates release notes and CHANGELOG entries from Conventional Commits.
+# Generates the "What's changed" section of draft GitHub Releases from
+# Conventional Commit messages on main.
 # See https://git-cliff.org/docs/configuration for all options.
 
 [changelog]

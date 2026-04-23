@@ -55,7 +55,6 @@ Closes #
 - [ ] Updated user guides (if user-facing changes)
 - [ ] Updated API reference (auto-generated from docstrings)
 - [ ] Added/updated examples in docstrings
-- [ ] Updated CHANGELOG.md
 
 ## Privacy & Security
 
