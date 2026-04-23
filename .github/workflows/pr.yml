@@ -275,6 +275,18 @@ jobs:
           path: dist/*opaque_accounting*.whl
           retention-days: 14
 
+  merge-preview-wheels:
+    name: Merge preview wheels into single artifact
+    needs: [build-preview-python, build-preview-accounting]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/upload-artifact/merge@v6
+        with:
+          name: preview-wheels
+          pattern: preview-wheels-*
+          delete-merged: true
+          retention-days: 14
+
 # Lint & format live in `autoformat.yml`. That workflow auto-applies
 # ruff format / ruff check --fix, commits any changes to the PR branch,
 # and then verifies the tree is clean. If it pushes a fix, this pr.yml
