@@ -1,0 +1,116 @@
+name: PR describe
+
+# Refreshes the `<!-- ai:begin --> ... <!-- ai:end -->` fence in the PR
+# body with a GitHub Models-generated Summary + Test plan derived from
+# the PR title, commit log, and diff. Content outside the fence is
+# untouched, so author edits and the leading template comment survive.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  describe:
+    name: Refresh AI-drafted PR description
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      models: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install gh models extension
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh extension install github/gh-models
+
+      - name: Generate description
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          git log "${BASE_SHA}..${HEAD_SHA}" --format='- %s%n%b' --no-merges > /tmp/commits.txt
+          gh pr diff "$PR_NUMBER" --patch > /tmp/pr.diff
+          head -c 40000 /tmp/pr.diff > /tmp/pr.diff.truncated
+
+          cat > /tmp/prompt.md <<EOF
+          You are drafting the description of a pull request for Opaque,
+          a PyTorch differential-privacy library (DP-SGD, DP-FTRL,
+          privacy accounting).
+
+          Produce two sections, in this exact order, with these exact headings:
+
+          ## Summary
+
+          2–4 sentences: the motivation for the change and what it does.
+          Focus on user-visible impact. Avoid restating the title.
+
+          ## Test plan
+
+          A short markdown bullet list: commands the author ran, edge
+          cases covered, behavior verified. Concrete, not aspirational.
+
+          Rules:
+          - Return only those two sections. No preamble, no trailing
+            commentary, no code fences wrapping the whole output.
+          - Tight prose. No filler.
+          - If the diff is small / trivial, keep the sections small.
+
+          PR title: ${PR_TITLE}
+
+          Commits (subject + body):
+
+          $(cat /tmp/commits.txt)
+
+          Diff (truncated to 40k characters):
+
+          $(cat /tmp/pr.diff.truncated)
+          EOF
+
+          if ! gh models run openai/gpt-4o-mini < /tmp/prompt.md > /tmp/ai_description.md 2>/tmp/ai_err; then
+            echo "AI description generation failed: $(cat /tmp/ai_err)" >&2
+            echo "_AI-drafted description unavailable for this push; edit this fence manually or retry by pushing again._" > /tmp/ai_description.md
+          fi
+
+          echo "--- AI description ---"
+          cat /tmp/ai_description.md
+
+      - name: Splice into PR body
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          gh pr view "$PR_NUMBER" --json body --jq .body > /tmp/body_existing.md
+
+          python3 - <<'PY' > /tmp/body.md
+          import pathlib, re
+          body = pathlib.Path("/tmp/body_existing.md").read_text()
+          ai = pathlib.Path("/tmp/ai_description.md").read_text().rstrip()
+          begin, end = "<!-- ai:begin -->", "<!-- ai:end -->"
+          fenced = re.compile(re.escape(begin) + r".*?" + re.escape(end), re.DOTALL)
+          replacement = f"{begin}\n{ai}\n{end}"
+          if fenced.search(body):
+              out = fenced.sub(replacement, body)
+          else:
+              # No fence — prepend one. Author can move it later.
+              out = replacement + ("\n\n" + body if body.strip() else "\n")
+          print(out, end="")
+          PY
+
+          gh pr edit "$PR_NUMBER" --body-file /tmp/body.md

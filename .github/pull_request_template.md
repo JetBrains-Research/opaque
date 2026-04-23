@@ -7,18 +7,13 @@ don't parse.
 Body (below): short, focused prose. On squash merge the body becomes the
 commit body that git-cliff reads. Keep it useful for future `git log`
 readers.
+
+The `<!-- ai:begin --> ... <!-- ai:end -->` fence below is refreshed on
+every push by `pr-describe.yml` — its content is a first-draft
+Summary + Test plan. Edit it, replace it, or delete the fence
+entirely; the bot won't touch anything outside the markers.
 -->
 
-## Summary
-
-<!-- Why this change exists, and what it does, in 2–4 sentences. -->
-
-## Test plan
-
-<!-- Commands run, edge cases verified, behavior expected. -->
-
-## Checklist
-
-- [ ] Tests added/updated
-- [ ] Docstrings / user guides updated for user-facing changes
-- [ ] DP guarantees preserved for DP-related changes
+<!-- ai:begin -->
+_An AI-drafted summary and test plan will appear here on the first push._
+<!-- ai:end -->
