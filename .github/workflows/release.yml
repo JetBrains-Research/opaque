@@ -202,7 +202,7 @@ jobs:
           version, today = os.environ["VERSION"], os.environ["TODAY"]
 
           body = pathlib.Path("/tmp/body.md").read_text()
-          body = re.sub(r"<!--\s*auto:(begin|end)\s*-->\n?", "", body)
+          body = re.sub(r"<!--\s*\w+:(begin|end)\s*-->\n?", "", body)
           body = re.sub(r"<!--\s*Edit[^>]*-->\n?", "", body)
           body = re.sub(r"<!--\s*Thanks[^>]*-->\n?", "", body)
           # Demote top-level Release headings so they nest under the

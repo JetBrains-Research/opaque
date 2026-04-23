@@ -328,6 +328,43 @@ jobs:
           echo "--- AI highlights ---"
           cat /tmp/ai_highlights.md
 
+      - name: Extract contributors
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LAST_TAG: ${{ steps.next.outputs.last }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$LAST_TAG" ]]; then
+            BASE_REF=$(git rev-list --max-parents=0 HEAD | head -1)
+          else
+            BASE_REF="$LAST_TAG"
+          fi
+
+          gh api --paginate "/repos/$GITHUB_REPOSITORY/compare/${BASE_REF}...HEAD" \
+            --jq '[.commits[].author | select(. != null) | .login]' \
+            > /tmp/contributors_raw.json || echo '[]' > /tmp/contributors_raw.json
+
+          python3 - <<'PY' > /tmp/contributors.md
+          import json, pathlib
+          logins = json.loads(pathlib.Path("/tmp/contributors_raw.json").read_text() or "[]")
+          # Dedup preserving first-seen order; drop bots.
+          seen, unique = set(), []
+          for login in logins:
+              if not login or login in seen or login.endswith("[bot]"):
+                  continue
+              seen.add(login)
+              unique.append(login)
+          if not unique:
+              print("_No external contributors to credit for this release._")
+          else:
+              handles = ", ".join(f"@{u}" for u in unique)
+              print(f"Thanks to {handles} for contributions to this release.")
+          PY
+
+          echo "--- Contributors ---"
+          cat /tmp/contributors.md
+
       - name: Upsert draft Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -347,6 +384,7 @@ jobs:
           import pathlib
           ai = pathlib.Path("/tmp/ai_highlights.md").read_text().rstrip()
           auto = pathlib.Path("AUTO_SECTION.md").read_text()
+          contributors = pathlib.Path("/tmp/contributors.md").read_text().rstrip()
           print(f"""## Highlights
 
           <!-- ai:begin -->
@@ -361,7 +399,9 @@ jobs:
 
           ## Contributors
 
-          <!-- Thanks / notes. -->
+          <!-- contributors:begin -->
+          {contributors}
+          <!-- contributors:end -->
           """)
           PY
             gh api --method POST "/repos/$GITHUB_REPOSITORY/releases" \
@@ -379,6 +419,7 @@ jobs:
           body = pathlib.Path("/tmp/body_existing.md").read_text()
           auto = pathlib.Path("AUTO_SECTION.md").read_text()
           ai = pathlib.Path("/tmp/ai_highlights.md").read_text().rstrip()
+          contributors = pathlib.Path("/tmp/contributors.md").read_text().rstrip()
 
           def splice(body, begin, end, content):
               fenced = re.compile(re.escape(begin) + r".*?" + re.escape(end), re.DOTALL)
@@ -389,6 +430,7 @@ jobs:
 
           body = splice(body, "<!-- auto:begin -->", "<!-- auto:end -->", auto)
           body = splice(body, "<!-- ai:begin -->", "<!-- ai:end -->", ai)
+          body = splice(body, "<!-- contributors:begin -->", "<!-- contributors:end -->", contributors)
           print(body, end="")
           PY
             gh api --method PATCH \
