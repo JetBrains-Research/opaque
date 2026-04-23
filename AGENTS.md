@@ -55,6 +55,41 @@ Three rules the umbrella upholds (rule 1 enforced in CI; rules 2 and 3 are desig
    (the `.so` filename matches the Rust crate) and aliased as `_native` in
    the package's `__init__.py` so internal code can keep using the short name.
 
+## Pull requests
+
+The repo squash-merges. The PR title becomes the commit subject; the
+PR body becomes the commit body (repo-level squash setting =
+`PR_TITLE` + `PR_BODY`). Both feed `git-cliff` when it builds the draft
+Release body on the next main merge.
+
+**Title** — Conventional Commits form `<type>(scope): <imperative subject>`:
+
+- Types `git-cliff` categorizes (see [cliff.toml](cliff.toml)):
+  `feat` / `add` → Added, `fix` → Fixed,
+  `refactor` / `change` / `perf` → Changed, `docs` → Documentation,
+  `test` → Tests, `ci` / `build` → CI/CD, `delete` → Removed,
+  `chore` / `style` → skipped.
+- Scope is optional but encouraged — e.g., `fix(accounting): …`.
+- Breaking change: append `!` (`feat(dpsgd)!: …`) or include a
+  `BREAKING CHANGE:` footer in the body.
+- Subject starts with a lowercase letter and reads as an imperative
+  (`add`, `fix`, `remove`) — not past-tense.
+- The PR-gate workflow runs `amannn/action-semantic-pull-request@v6`
+  and fails the check if the title doesn't parse.
+
+**Body** — short prose:
+
+- 2–4 sentences of "why" + what the change does. This text lands in
+  `git log` on main and feeds the AI release-note summary in
+  `ci.yml`'s `upsert-draft` job.
+- Keep it readable for a future spelunker; avoid checklist-only bodies.
+
+**Gate** — on every push the PR workflow runs: tests (CPU + MPS),
+rust-tests, smoke-imports, docs build, title check, autoformat. All 8
+are required for merge. Preview wheels
+(`0.X.Y.devN+pr.<num>.g<sha>`) build alongside and appear as
+downloadable workflow artifacts on the run page (14-day retention).
+
 ## Key commands
 
 ```bash
