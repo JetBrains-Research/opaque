@@ -322,7 +322,7 @@ jobs:
 
           if ! gh models run openai/gpt-4o-mini < /tmp/prompt.md > /tmp/ai_highlights.md 2>/tmp/ai_err; then
             echo "AI summary failed: $(cat /tmp/ai_err)" >&2
-            echo "<!-- AI summary unavailable for this push — edit this block manually, or leave empty and the rendered Release will start with \"What's changed\". -->" > /tmp/ai_highlights.md
+            echo "<!-- AI summary unavailable for this push. -->" > /tmp/ai_highlights.md
           fi
 
           echo "--- AI highlights ---"
