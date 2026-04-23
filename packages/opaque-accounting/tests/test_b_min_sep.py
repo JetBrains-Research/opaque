@@ -39,6 +39,110 @@ def test_transcript_cache_reuses_same_handle():
     assert h1 == h2
 
 
+def _drain_cache(tc) -> None:
+    """Drop any leftover native handles so tests start from a clean slate."""
+    with tc._lock:
+        while tc._cache:
+            _k, h = tc._cache.popitem(last=False)
+            tc._native.drop_b_min_sep_transcript_corpus(h)
+
+
+def test_transcript_cache_evicts_lru(monkeypatch):
+    """Cache caps entries and drops LRU native handle *before* registering new."""
+    from opaque.accounting.amplification import _b_min_sep_transcript_cache as tc
+
+    monkeypatch.delenv("OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES", raising=False)
+    monkeypatch.setattr(tc, "_MAX_ENTRIES", 2)
+    _drain_cache(tc)
+
+    calls: list[tuple[str, int]] = []
+    orig_drop = tc._native.drop_b_min_sep_transcript_corpus
+    orig_register = tc._native.register_b_min_sep_transcript_corpus
+
+    def tracking_drop(handle: int) -> None:
+        calls.append(("drop", handle))
+        orig_drop(handle)
+
+    def tracking_register(*args, **kwargs) -> int:
+        hid = orig_register(*args, **kwargs)
+        calls.append(("register", hid))
+        return hid
+
+    monkeypatch.setattr(tc._native, "drop_b_min_sep_transcript_corpus", tracking_drop)
+    monkeypatch.setattr(
+        tc._native, "register_b_min_sep_transcript_corpus", tracking_register
+    )
+
+    h1 = tc.get_handle_or_none((1.0, 0.0), 10, 0.05, 64, 1)
+    h2 = tc.get_handle_or_none((1.0, 0.0), 10, 0.05, 64, 2)
+    assert h1 is not None and h2 is not None
+    assert len(tc._cache) == 2
+    assert calls == [("register", h1), ("register", h2)]
+
+    # The third distinct entry must drop the LRU BEFORE registering the new
+    # corpus — that ordering is the regression this PR fixes.
+    calls.clear()
+    h3 = tc.get_handle_or_none((1.0, 0.0), 10, 0.05, 64, 3)
+    assert h3 is not None
+    assert len(tc._cache) == 2
+    assert calls == [("drop", h1), ("register", h3)], (
+        f"eviction must precede registration; got {calls}"
+    )
+
+    # Touching h2 promotes it to MRU; next insert evicts h3, not h2.
+    assert tc.get_handle_or_none((1.0, 0.0), 10, 0.05, 64, 2) == h2
+    calls.clear()
+    h4 = tc.get_handle_or_none((1.0, 0.0), 10, 0.05, 64, 4)
+    assert h4 is not None
+    assert calls == [("drop", h3), ("register", h4)]
+    assert len(tc._cache) == 2
+
+    _drain_cache(tc)
+
+
+def test_transcript_cache_evicts_for_byte_cap(monkeypatch):
+    """Byte budget forces eviction even when entry count is below the cap."""
+    from opaque.accounting.amplification import _b_min_sep_transcript_cache as tc
+
+    monkeypatch.setattr(tc, "_MAX_ENTRIES", 16)
+    _drain_cache(tc)
+
+    # Each entry is 3 * 64 * 10 * 8 = 15360 bytes; budget fits exactly one.
+    monkeypatch.setenv(
+        "OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES",
+        str(tc._estimate_raw_bytes(64, 10)),
+    )
+
+    calls: list[tuple[str, int]] = []
+    orig_drop = tc._native.drop_b_min_sep_transcript_corpus
+    orig_register = tc._native.register_b_min_sep_transcript_corpus
+
+    def tracking_drop(handle: int) -> None:
+        calls.append(("drop", handle))
+        orig_drop(handle)
+
+    def tracking_register(*args, **kwargs) -> int:
+        hid = orig_register(*args, **kwargs)
+        calls.append(("register", hid))
+        return hid
+
+    monkeypatch.setattr(tc._native, "drop_b_min_sep_transcript_corpus", tracking_drop)
+    monkeypatch.setattr(
+        tc._native, "register_b_min_sep_transcript_corpus", tracking_register
+    )
+
+    h1 = tc.get_handle_or_none((1.0, 0.0), 10, 0.05, 64, 10)
+    assert h1 is not None
+    calls.clear()
+    h2 = tc.get_handle_or_none((1.0, 0.0), 10, 0.05, 64, 11)
+    assert h2 is not None
+    # Drop-before-register also holds on the byte-cap path.
+    assert calls == [("drop", h1), ("register", h2)]
+    assert len(tc._cache) == 1
+
+    _drain_cache(tc)
+
+
 def test_b_min_sep_stricter_than_mf_only():
     """Subsampling should lower ε at fixed σ vs unamplified BandMF PLD."""
     from opaque.accounting import _native as native
