@@ -119,9 +119,21 @@ jobs:
           path: dist/*opaque_accounting*.whl
           retention-days: 90
 
+  merge-wheels:
+    name: Merge wheels into single artifact
+    needs: [build-python-wheel, build-opaque-accounting]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/upload-artifact/merge@v6
+        with:
+          name: release-wheels
+          pattern: wheels-*
+          delete-merged: true
+          retention-days: 90
+
   publish:
     name: Publish to GCP + attach Release assets
-    needs: [build-python-wheel, build-opaque-accounting]
+    needs: [merge-wheels]
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -134,9 +146,8 @@ jobs:
       - name: Download all wheels
         uses: actions/download-artifact@v6
         with:
-          pattern: wheels-*
+          name: release-wheels
           path: dist/
-          merge-multiple: true
 
       - name: List wheels
         run: |
