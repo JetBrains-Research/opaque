@@ -84,7 +84,8 @@ def test_transcript_cache_evicts_for_byte_cap(monkeypatch):
 
     # Each entry is 3 * 64 * 10 * 8 = 15360 bytes; budget fits exactly one.
     monkeypatch.setenv(
-        "OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES", str(tc._estimate_raw_bytes(64, 10))
+        "OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES",
+        str(tc._estimate_raw_bytes(64, 10)),
     )
 
     dropped: list[int] = []
