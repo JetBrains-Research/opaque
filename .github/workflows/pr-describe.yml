@@ -52,23 +52,18 @@ jobs:
           a PyTorch differential-privacy library (DP-SGD, DP-FTRL,
           privacy accounting).
 
-          Produce two sections, in this exact order, with these exact headings:
+          Produce a single "Summary" section with this exact heading:
 
           ## Summary
 
           2–4 sentences: the motivation for the change and what it does.
           Focus on user-visible impact. Avoid restating the title.
 
-          ## Test plan
-
-          A short markdown bullet list: commands the author ran, edge
-          cases covered, behavior verified. Concrete, not aspirational.
-
           Rules:
-          - Return only those two sections. No preamble, no trailing
+          - Return only the Summary section. No preamble, no trailing
             commentary, no code fences wrapping the whole output.
           - Tight prose. No filler.
-          - If the diff is small / trivial, keep the sections small.
+          - If the diff is small / trivial, keep it to 1–2 sentences.
 
           PR title: ${PR_TITLE}
 
