@@ -297,7 +297,7 @@ jobs:
           fi
 
           if [[ ! -s /tmp/commits.txt ]]; then
-            echo "_No unreleased commits yet._" > /tmp/ai_highlights.md
+            echo "<!-- No unreleased commits yet. -->" > /tmp/ai_highlights.md
             exit 0
           fi
 
@@ -322,7 +322,7 @@ jobs:
 
           if ! gh models run openai/gpt-4o-mini < /tmp/prompt.md > /tmp/ai_highlights.md 2>/tmp/ai_err; then
             echo "AI summary failed: $(cat /tmp/ai_err)" >&2
-            echo "_AI summary unavailable — see \"What's changed\" below._" > /tmp/ai_highlights.md
+            echo "<!-- AI summary unavailable for this push — edit this block manually, or leave empty and the rendered Release will start with \"What's changed\". -->" > /tmp/ai_highlights.md
           fi
 
           echo "--- AI highlights ---"
@@ -356,7 +356,7 @@ jobs:
               seen.add(login)
               unique.append(login)
           if not unique:
-              print("_No external contributors to credit for this release._")
+              print("<!-- No contributors to credit. -->")
           else:
               handles = ", ".join(f"@{u}" for u in unique)
               print(f"Thanks to {handles} for contributions to this release.")
@@ -385,9 +385,7 @@ jobs:
           ai = pathlib.Path("/tmp/ai_highlights.md").read_text().rstrip()
           auto = pathlib.Path("AUTO_SECTION.md").read_text()
           contributors = pathlib.Path("/tmp/contributors.md").read_text().rstrip()
-          print(f"""## Highlights
-
-          <!-- ai:begin -->
+          print(f"""<!-- ai:begin -->
           {ai}
           <!-- ai:end -->
 
