@@ -39,6 +39,69 @@ def test_transcript_cache_reuses_same_handle():
     assert h1 == h2
 
 
+def test_transcript_cache_evicts_lru(monkeypatch):
+    """Cache caps entries + bytes and drops native handles before registering new."""
+    from opaque.accounting.amplification import _b_min_sep_transcript_cache as tc
+
+    monkeypatch.setattr(tc, "_MAX_ENTRIES", 2)
+    tc._cache.clear()
+
+    dropped: list[int] = []
+    orig_drop = tc._native.drop_b_min_sep_transcript_corpus
+
+    def tracking_drop(handle: int) -> None:
+        dropped.append(handle)
+        orig_drop(handle)
+
+    monkeypatch.setattr(tc._native, "drop_b_min_sep_transcript_corpus", tracking_drop)
+
+    h1 = tc.get_handle_or_none((1.0, 0.0), 10, 0.05, 64, 1)
+    h2 = tc.get_handle_or_none((1.0, 0.0), 10, 0.05, 64, 2)
+    assert h1 is not None and h2 is not None
+    assert len(tc._cache) == 2
+    assert dropped == []
+
+    # Adding a third distinct entry must evict the LRU (h1) before allocating.
+    h3 = tc.get_handle_or_none((1.0, 0.0), 10, 0.05, 64, 3)
+    assert h3 is not None
+    assert len(tc._cache) == 2
+    assert dropped == [h1]
+
+    # Touching h2 promotes it to MRU; next insert evicts h3, not h2.
+    assert tc.get_handle_or_none((1.0, 0.0), 10, 0.05, 64, 2) == h2
+    h4 = tc.get_handle_or_none((1.0, 0.0), 10, 0.05, 64, 4)
+    assert h4 is not None
+    assert dropped == [h1, h3]
+    assert len(tc._cache) == 2
+
+
+def test_transcript_cache_evicts_for_byte_cap(monkeypatch):
+    """Byte budget forces eviction even when entry count is below the cap."""
+    from opaque.accounting.amplification import _b_min_sep_transcript_cache as tc
+
+    monkeypatch.setattr(tc, "_MAX_ENTRIES", 16)
+    tc._cache.clear()
+
+    # Each entry is 3 * 64 * 10 * 8 = 15360 bytes; budget fits exactly one.
+    monkeypatch.setenv(
+        "OPAQUE_B_MIN_SEP_TRANSCRIPT_CACHE_MAX_BYTES", str(tc._estimate_raw_bytes(64, 10))
+    )
+
+    dropped: list[int] = []
+    orig_drop = tc._native.drop_b_min_sep_transcript_corpus
+    monkeypatch.setattr(
+        tc._native,
+        "drop_b_min_sep_transcript_corpus",
+        lambda h: (dropped.append(h), orig_drop(h)),
+    )
+
+    h1 = tc.get_handle_or_none((1.0, 0.0), 10, 0.05, 64, 10)
+    h2 = tc.get_handle_or_none((1.0, 0.0), 10, 0.05, 64, 11)
+    assert h1 is not None and h2 is not None
+    assert dropped == [h1]
+    assert len(tc._cache) == 1
+
+
 def test_b_min_sep_stricter_than_mf_only():
     """Subsampling should lower ε at fixed σ vs unamplified BandMF PLD."""
     from opaque.accounting import _native as native

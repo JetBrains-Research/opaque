@@ -56,6 +56,16 @@ def get_handle_or_none(
         if key in _cache:
             _cache.move_to_end(key)
             return _cache[key]
+        # Evict LRU entries BEFORE allocating the new corpus so peak native
+        # memory stays under `max_b`; otherwise a nearly-full cache plus a
+        # large new entry can OOM before any eviction runs.
+        current_bytes = sum(_estimate_raw_bytes(k[3], k[1]) for k in _cache)
+        while _cache and (
+            len(_cache) >= _MAX_ENTRIES or current_bytes + nbytes > max_b
+        ):
+            old_key, old_h = _cache.popitem(last=False)
+            current_bytes -= _estimate_raw_bytes(old_key[3], old_key[1])
+            _native.drop_b_min_sep_transcript_corpus(old_h)
         try:
             hid = _native.register_b_min_sep_transcript_corpus(
                 list(strategy_coef),
@@ -66,13 +76,5 @@ def get_handle_or_none(
             )
         except ValueError:
             return None
-        while _cache and (
-            len(_cache) >= _MAX_ENTRIES
-            or sum(_estimate_raw_bytes(k[3], k[1]) for k in _cache.keys()) + nbytes
-            > max_b
-        ):
-            _old_key, old_h = _cache.popitem(last=False)
-            _native.drop_b_min_sep_transcript_corpus(old_h)
         _cache[key] = hid
-        _cache.move_to_end(key)
         return hid
