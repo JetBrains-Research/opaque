@@ -1803,11 +1803,13 @@ def main():
                         _n_layers = 0
                         _n_rand_layers = 0
 
-                        # Access velocity if available.
+                        # Access momentum trace. xsrefresh_sgd wraps the
+                        # torchopt state in RefreshState.inner; plain
+                        # torchopt.sgd exposes it directly as a tuple.
                         _inner_state_for_diag = (
                             opt_state.inner
                             if hasattr(opt_state, "inner")
-                            else None
+                            else opt_state
                         )
                         _has_trace = (
                             _inner_state_for_diag is not None
