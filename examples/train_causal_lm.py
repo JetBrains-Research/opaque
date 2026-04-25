@@ -572,6 +572,107 @@ def parse_args():
         default=2.0,
         help="LoRA-XS adaptive rank: entropy exponent (>1 widens rank spread, default: 2.0)",
     )
+    lora_group.add_argument(
+        "--lora-xs-fixed-scaling",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="LoRA-XS adaptive rank: use global --lora-r (not per-layer rank) for alpha/r scaling",
+    )
+    lora_group.add_argument(
+        "--lora-xs-refresh-strategy",
+        type=str,
+        default="disabled",
+        choices=["disabled", "step", "angle", "rnorm"],
+        help=(
+            "LoRA-XS post-processing-free basis refresh trigger. 'disabled' keeps the initial "
+            "SVD basis. 'step'/'angle'/'rnorm' periodically recompute the basis and reorient R "
+            "(and SGD velocity). Requires --optimizer sgd."
+        ),
+    )
+    lora_group.add_argument(
+        "--lora-xs-refresh-source",
+        type=str,
+        default="eff_weight",
+        choices=["eff_weight", "velocity", "combined_delta"],
+        help=(
+            "Tensor that drives the refresh SVD. 'eff_weight' uses W_base + scaling*B*R*A "
+            "(reprojects R onto new top-r; may drop orthogonal component). 'velocity' uses the "
+            "SGD momentum buffer (pure similarity transform, lossless; requires --sgd-momentum > 0). "
+            "'combined_delta' uses scaling*B*R*A + scaling_rand*B_rand*R_rand*A_rand (no W_base); "
+            "promotes top signal from both channels into the main frozen basis (requires --lora-xs-r-rand > 0)."
+        ),
+    )
+    lora_group.add_argument(
+        "--lora-xs-r-rand",
+        type=int,
+        default=0,
+        help=(
+            "Rank of the random orthogonal-complement channel (0 = disabled, default). "
+            "When >0, adds a second adapter whose frozen A_rand, B_rand are random orthonormal "
+            "to A, B; R_rand is trainable and gives the layer capacity to express updates "
+            "outside span(B) x span(A^T)."
+        ),
+    )
+    lora_group.add_argument(
+        "--lora-xs-scaling-rand",
+        type=float,
+        default=0.5,
+        help=(
+            "Scaling factor for the random complement channel (default: 0.5). Keeps the "
+            "probe subordinate to the main channel during early training. Set to 1.0 for "
+            "equal-footing."
+        ),
+    )
+    lora_group.add_argument(
+        "--lora-xs-p-explore",
+        type=float,
+        default=0.7,
+        help=(
+            "Fraction of r_rand re-randomized at each 'combined_delta' refresh. Rest is "
+            "absorbed from residual SVD. 0 = pure absorption (lossless), 1 = pure reset "
+            "(default: 0.7, biased toward exploration)."
+        ),
+    )
+    lora_group.add_argument(
+        "--lora-xs-use-velocity-basis",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "When using combined_delta refresh with momentum, SVD the velocity projection "
+            "v_W for basis selection (default: True). Use --no-lora-xs-use-velocity-basis "
+            "to SVD ΔW_total instead (the pre-velocity-projection behavior)."
+        ),
+    )
+    lora_group.add_argument(
+        "--lora-xs-refresh-check-interval",
+        type=int,
+        default=20,
+        help="Steps between refresh-trigger evaluations (default: 20)",
+    )
+    lora_group.add_argument(
+        "--lora-xs-refresh-angle-threshold",
+        type=float,
+        default=0.05,
+        help="Sin of principal angle that fires an 'angle' refresh (default: 0.05)",
+    )
+    lora_group.add_argument(
+        "--lora-xs-refresh-step-interval",
+        type=int,
+        default=50,
+        help="Steps between refreshes when --lora-xs-refresh-strategy=step (default: 50)",
+    )
+    lora_group.add_argument(
+        "--lora-xs-refresh-rnorm-threshold",
+        type=float,
+        default=0.02,
+        help="||R||_F / ||base||_F that fires an 'rnorm' refresh (default: 0.02)",
+    )
+    lora_group.add_argument(
+        "--sgd-momentum",
+        type=float,
+        default=0.0,
+        help="Momentum for --optimizer sgd (also used by xsrefresh_sgd). Default 0.0.",
+    )
 
     dp_group = parser.add_argument_group("dp", "DP-SGD clipping and noise")
     dp_group.add_argument(
@@ -1062,6 +1163,17 @@ def main():
             rank_min=args.lora_xs_rank_min,
             rank_probe=args.lora_xs_rank_probe,
             rank_spread=args.lora_xs_rank_spread,
+            fixed_scaling=args.lora_xs_fixed_scaling,
+            refresh_strategy=args.lora_xs_refresh_strategy,
+            refresh_source=args.lora_xs_refresh_source,
+            refresh_check_interval=args.lora_xs_refresh_check_interval,
+            refresh_angle_threshold=args.lora_xs_refresh_angle_threshold,
+            refresh_step_interval=args.lora_xs_refresh_step_interval,
+            refresh_rnorm_threshold=args.lora_xs_refresh_rnorm_threshold,
+            r_rand=args.lora_xs_r_rand,
+            scaling_rand=args.lora_xs_scaling_rand,
+            refresh_p_explore=args.lora_xs_p_explore,
+            refresh_use_velocity_basis=args.lora_xs_use_velocity_basis,
             task_type="CAUSAL_LM",
         )
     else:
@@ -1619,9 +1731,35 @@ def main():
             noise_bias_correction=args.noise_bias_correction,
         )
     elif args.optimizer == "sgd":
-        from opaque.optimizers import sgd
+        use_xsrefresh = (
+            args.lora_method == "lora-xs"
+            and args.lora_xs_refresh_strategy != "disabled"
+        )
+        if use_xsrefresh:
+            from lora_privacy.peft_lora_xs import xsrefresh_sgd
 
-        base_opt = sgd(lr=lr_for_opt, weight_decay=args.weight_decay)
+            base_opt = xsrefresh_sgd(
+                lr=args.learning_rate,
+                momentum=args.sgd_momentum,
+                lora_alpha=args.lora_alpha,
+                fixed_scaling_r=args.lora_r if args.lora_xs_fixed_scaling else None,
+                orthonormal_a=args.lora_xs_orthonormal_a,
+                refresh_strategy=args.lora_xs_refresh_strategy,
+                refresh_source=args.lora_xs_refresh_source,
+                refresh_check_interval=args.lora_xs_refresh_check_interval,
+                refresh_angle_threshold=args.lora_xs_refresh_angle_threshold,
+                refresh_step_interval=args.lora_xs_refresh_step_interval,
+                refresh_rnorm_threshold=args.lora_xs_refresh_rnorm_threshold,
+                svd_method=getattr(lora_config, "svd_method", "torch"),
+                svd_n_iter=getattr(lora_config, "svd_n_iter", 10),
+                scaling_rand=args.lora_xs_scaling_rand,
+                refresh_p_explore=args.lora_xs_p_explore,
+                use_velocity_basis=args.lora_xs_use_velocity_basis,
+            )
+        else:
+            from opaque.optimizers import sgd
+
+            base_opt = sgd(lr=lr_for_opt, weight_decay=args.weight_decay)
     elif args.optimizer == "adamw":
         from opaque.optimizers import adamw
 
@@ -1672,8 +1810,75 @@ def main():
     else:
         raise ValueError(f"Unknown optimizer: {args.optimizer}")
 
-    opt_state = base_opt.init(trainable_params)
+    _refresh_active = (
+        args.optimizer == "sgd"
+        and args.lora_method == "lora-xs"
+        and args.lora_xs_refresh_strategy != "disabled"
+    )
+    if _refresh_active:
+        opt_state = base_opt.init(trainable_params, frozen_params)
+    else:
+        opt_state = base_opt.init(trainable_params)
     accounting = Accountant()
+
+    # ---------- Refresh-diagnostic setup ----------
+    # Build per-layer info once: keys + initial B₀ snapshot (top-r column basis
+    # of the main channel at init) for principal-angle-to-init tracking, and
+    # the flat indices into torchopt's trace list for per-channel velocity norms.
+    import re as _re
+
+    _R_KEY_RE_DIAG = _re.compile(
+        r"^(?P<prefix>.+)\.lora_xs_R\.(?P<adapter>[^.]+)\.weight$"
+    )
+    _refresh_diag_layers: list[dict] = []  # [{prefix, r_key, r_rand_key|None, a_key, b_key,
+    #   a_rand_key|None, b_rand_key|None,
+    #   flat_index, flat_index_rand|None, B0}]
+    if args.lora_method == "lora-xs":
+        import optree as _optree
+
+        _diag_leaves, _diag_treedef = _optree.tree_flatten(trainable_params)
+        _diag_flat_idx = _optree.tree_unflatten(
+            _diag_treedef, list(range(len(_diag_leaves)))
+        )
+        assert isinstance(_diag_flat_idx, dict)
+        for _r_key in trainable_params.keys():
+            _m = _R_KEY_RE_DIAG.match(_r_key)
+            if _m is None:
+                continue
+            _prefix = _m.group("prefix")
+            _adapter = _m.group("adapter")
+            _a_key = f"{_prefix}.lora_xs_A.{_adapter}.weight"
+            _b_key = f"{_prefix}.lora_xs_B.{_adapter}.weight"
+            _r_rand_key = f"{_prefix}.lora_xs_R_rand.{_adapter}.weight"
+            _a_rand_key = f"{_prefix}.lora_xs_A_rand.{_adapter}.weight"
+            _b_rand_key = f"{_prefix}.lora_xs_B_rand.{_adapter}.weight"
+            has_complement = _r_rand_key in trainable_params
+            _refresh_diag_layers.append(
+                {
+                    "prefix": _prefix,
+                    "r_key": _r_key,
+                    "r_rand_key": _r_rand_key if has_complement else None,
+                    "a_key": _a_key,
+                    "b_key": _b_key,
+                    "a_rand_key": _a_rand_key if has_complement else None,
+                    "b_rand_key": _b_rand_key if has_complement else None,
+                    "flat_index": _diag_flat_idx[_r_key],
+                    "flat_index_rand": (
+                        _diag_flat_idx[_r_rand_key] if has_complement else None
+                    ),
+                    # Snapshot initial B (main channel top-r basis at init) as a
+                    # QR-orthonormalized anchor, so principal angles are well-defined
+                    # regardless of orthonormal_a convention.
+                    "B0_orth": torch.linalg.qr(
+                        frozen_params[_b_key].detach().to(torch.float32),
+                        mode="reduced",
+                    )[0],
+                }
+            )
+
+    # Ring buffer for trailing loss slope.
+    _loss_ring: list[float] = []
+    _LOSS_SLOPE_WINDOW = 20
 
     # Noise functions consume ClippedPytree metadata directly and return
     # NoisedPytree updates carrying the realized per-step stddev.
@@ -1779,9 +1984,17 @@ def main():
                 if is_ddp:
                     noise_state = sync(noise_state)
 
-                updates, opt_state = base_opt.update(
-                    noisy_grads, opt_state, params=trainable_params
-                )
+                if _refresh_active:
+                    updates, opt_state, frozen_params = base_opt.update(
+                        noisy_grads,
+                        opt_state,
+                        params=trainable_params,
+                        frozen=frozen_params,
+                    )
+                else:
+                    updates, opt_state = base_opt.update(
+                        noisy_grads, opt_state, params=trainable_params
+                    )
                 trainable_params = torchopt.apply_updates(trainable_params, updates)
 
             profiler = profiler.add_step(step_timer)
@@ -1800,6 +2013,11 @@ def main():
             clip_norms_history.append(_effective(step_clip_norm))
             clip_rates_history.append(clip_rate)
             last_clip_bound = step_clip_norm
+
+            # Trailing loss ring for slope-of-loss metric (see wandb block below).
+            _loss_ring.append(avg_loss)
+            if len(_loss_ring) > _LOSS_SLOPE_WINDOW:
+                _loss_ring.pop(0)
 
             global_step += 1
 
@@ -1826,6 +2044,290 @@ def main():
                         "perf/reserved_gb": perf["memory_reserved_gb"],
                         "perf/peak_gb": perf["memory_peak_gb"],
                     }
+                    # ---- Trailing loss slope ----
+                    if len(_loss_ring) >= 2:
+                        _slope_win = _loss_ring[-_LOSS_SLOPE_WINDOW:]
+                        _slope = (_slope_win[-1] - _slope_win[0]) / max(
+                            len(_slope_win) - 1, 1
+                        )
+                        wb_metrics["train/loss_slope"] = _slope
+
+                    # =============================================================
+                    # Cage-breaking LoRA-XS diagnostics
+                    # Isolated section: all metrics specific to the refresh method.
+                    # Continuous metrics under xs/ ; refresh-event metrics under
+                    # refresh/ . Only emitted when LoRA-XS layers are present.
+                    # =============================================================
+                    if _refresh_diag_layers:
+                        from lora_privacy.core.svd import _spectral_entropy
+
+                        # -- Per-layer aggregation loop (runs once per log_step) --
+                        # Params-side accumulators.
+                        _r_frob_sum = 0.0
+                        _r_rand_frob_sum = 0.0
+                        _r_info_sum = 0.0
+                        _r_rand_info_sum = 0.0
+                        _norm_ratio_sum = 0.0
+                        _r_top_energy_sum = 0.0
+                        # Momentum-side accumulators.
+                        _m_frob_sum = 0.0
+                        _m_rand_frob_sum = 0.0
+                        _m_info_sum = 0.0
+                        _m_rand_info_sum = 0.0
+                        _m_norm_ratio_sum = 0.0
+                        _promo_pot_m_sum = 0.0
+                        _m_top_energy_sum = 0.0
+                        _spectral_gap_sum = 0.0
+                        _complement_max_sv_sum = 0.0
+                        _n_layers = 0
+                        _n_rand_layers = 0
+
+                        # Access velocity if available.
+                        _inner_state_for_diag = (
+                            opt_state.inner
+                            if hasattr(opt_state, "inner")
+                            else None
+                        )
+                        _has_trace = (
+                            _inner_state_for_diag is not None
+                            and hasattr(_inner_state_for_diag[0], "trace")
+                            and _inner_state_for_diag[0].trace
+                        )
+
+                        _scaling_main = float(args.lora_alpha) / float(args.lora_r)
+                        _scaling_rand_val = float(args.lora_xs_scaling_rand)
+
+                        for _li in _refresh_diag_layers:
+                            _R = trainable_params[_li["r_key"]]
+                            _R_f = _R.detach().to(torch.float32)
+                            _r_frob = float(torch.linalg.norm(_R_f).item())
+                            _r_frob_sum += _r_frob
+                            _r_info_sum += _spectral_entropy(
+                                torch.linalg.svdvals(_R_f)
+                            )
+                            _n_layers += 1
+
+                            # Momentum-side norm/info for main channel.
+                            if _has_trace:
+                                _m_R = _inner_state_for_diag[0].trace[
+                                    _li["flat_index"]
+                                ].to(torch.float32)
+                                _m_frob = float(torch.linalg.norm(_m_R).item())
+                                _m_frob_sum += _m_frob
+                                _m_info_sum += _spectral_entropy(
+                                    torch.linalg.svdvals(_m_R)
+                                )
+
+                            if _li["r_rand_key"] is not None:
+                                _R_rand = trainable_params[_li["r_rand_key"]]
+                                _R_rand_f = _R_rand.detach().to(torch.float32)
+                                _rr_frob = float(torch.linalg.norm(_R_rand_f).item())
+                                _r_rand_frob_sum += _rr_frob
+                                _r_rand_info_sum += _spectral_entropy(
+                                    torch.linalg.svdvals(_R_rand_f)
+                                )
+                                _n_rand_layers += 1
+                                _r = _R_f.shape[0]
+                                _r_rand = _R_rand_f.shape[0]
+
+                                # Per-layer norm ratio (params).
+                                _norm_ratio_sum += _rr_frob / max(_r_frob, 1e-12)
+
+                                # Top energy (params): merge-sort svdvals,
+                                # fraction of total energy in top-r.
+                                _Sr_main = torch.linalg.svdvals(
+                                    _scaling_main * _R_f
+                                )
+                                _Sr_rand = torch.linalg.svdvals(
+                                    _scaling_rand_val * _R_rand_f
+                                )
+                                _all_Sr = torch.cat([_Sr_main, _Sr_rand])
+                                _all_Sr_sq = _all_Sr * _all_Sr
+                                _total_sq = float(_all_Sr_sq.sum().item())
+                                if _total_sq > 0:
+                                    _top_r_sq = float(
+                                        _all_Sr_sq[
+                                            torch.argsort(
+                                                _all_Sr, descending=True
+                                            )[:_r]
+                                        ].sum().item()
+                                    )
+                                    _r_top_energy_sum += _top_r_sq / _total_sq
+
+                                # Momentum-side metrics for complement.
+                                if _has_trace:
+                                    _m_Rr = _inner_state_for_diag[0].trace[
+                                        _li["flat_index_rand"]
+                                    ].to(torch.float32)
+                                    _mr_frob = float(
+                                        torch.linalg.norm(_m_Rr).item()
+                                    )
+                                    _m_rand_frob_sum += _mr_frob
+                                    _m_rand_info_sum += _spectral_entropy(
+                                        torch.linalg.svdvals(_m_Rr)
+                                    )
+                                    _m_norm_ratio_sum += (
+                                        _mr_frob / max(_m_frob, 1e-12)
+                                    )
+                                    # Promotion potential: fraction of top-r
+                                    # momentum directions from complement.
+                                    _Sm_main = torch.linalg.svdvals(
+                                        _scaling_main * _m_R
+                                    )
+                                    _Sm_rand = torch.linalg.svdvals(
+                                        _scaling_rand_val * _m_Rr
+                                    )
+                                    _all_Sm = torch.cat([_Sm_main, _Sm_rand])
+                                    _top_r_m_idx = torch.argsort(
+                                        _all_Sm, descending=True
+                                    )[:_r]
+                                    _n_promoted = int(
+                                        (_top_r_m_idx >= _r).sum().item()
+                                    )
+                                    _promo_pot_m_sum += _n_promoted / _r
+                                    # Top energy (momentum): merge-sort,
+                                    # fraction of total in top-r.
+                                    _all_Sm_sq = _all_Sm * _all_Sm
+                                    _total_m_sq = float(
+                                        _all_Sm_sq.sum().item()
+                                    )
+                                    if _total_m_sq > 0:
+                                        _top_r_m_sq = float(
+                                            _all_Sm_sq[
+                                                _top_r_m_idx
+                                            ].sum().item()
+                                        )
+                                        _m_top_energy_sum += (
+                                            _top_r_m_sq / _total_m_sq
+                                        )
+                                    # Trigger candidates: spectral gap and
+                                    # complement max singular value ratio.
+                                    _Sm_sorted = torch.sort(
+                                        _all_Sm, descending=True
+                                    ).values
+                                    _sigma_r = float(_Sm_sorted[_r - 1].item())
+                                    if _sigma_r > 1e-12:
+                                        _sigma_rp1 = float(
+                                            _Sm_sorted[_r].item()
+                                        ) if len(_Sm_sorted) > _r else 0.0
+                                        _spectral_gap_sum += (
+                                            _sigma_rp1 / _sigma_r
+                                        )
+                                        _max_rand_sv = float(
+                                            _Sm_rand.max().item()
+                                        )
+                                        _complement_max_sv_sum += (
+                                            _max_rand_sv / _sigma_r
+                                        )
+
+                        # -- Continuous metrics (xs/ namespace) --
+                        # Params-side (r_ prefix).
+                        wb_metrics["xs/r_norm"] = _r_frob_sum / _n_layers
+                        wb_metrics["xs/r_info"] = _r_info_sum / _n_layers
+                        # Momentum-side (m_ prefix).
+                        if _has_trace:
+                            wb_metrics["xs/m_norm"] = _m_frob_sum / _n_layers
+                            wb_metrics["xs/m_info"] = _m_info_sum / _n_layers
+                        if _n_rand_layers > 0:
+                            wb_metrics["xs/r_rand_norm"] = (
+                                _r_rand_frob_sum / _n_rand_layers
+                            )
+                            wb_metrics["xs/r_rand_info"] = (
+                                _r_rand_info_sum / _n_rand_layers
+                            )
+                            wb_metrics["xs/r_rand_norm_ratio"] = (
+                                _norm_ratio_sum / _n_rand_layers
+                            )
+                            wb_metrics["xs/r_top_energy"] = (
+                                _r_top_energy_sum / _n_rand_layers
+                            )
+                            if _has_trace:
+                                wb_metrics["xs/m_rand_norm"] = (
+                                    _m_rand_frob_sum / _n_rand_layers
+                                )
+                                wb_metrics["xs/m_rand_info"] = (
+                                    _m_rand_info_sum / _n_rand_layers
+                                )
+                                wb_metrics["xs/m_rand_norm_ratio"] = (
+                                    _m_norm_ratio_sum / _n_rand_layers
+                                )
+                                wb_metrics["xs/m_potential_promotion_ratio"] = (
+                                    _promo_pot_m_sum / _n_rand_layers
+                                )
+                                wb_metrics["xs/m_top_energy"] = (
+                                    _m_top_energy_sum / _n_rand_layers
+                                )
+                                # Trigger candidates.
+                                wb_metrics["trigger/spectral_gap"] = (
+                                    _spectral_gap_sum / _n_rand_layers
+                                )
+                                wb_metrics["trigger/complement_max_sv"] = (
+                                    _complement_max_sv_sum / _n_rand_layers
+                                )
+                                wb_metrics["trigger/promotion_ratio"] = (
+                                    _promo_pot_m_sum / _n_rand_layers
+                                )
+
+                        # -- Refresh-event metrics (refresh/ namespace) --
+                        if _refresh_active and getattr(
+                            opt_state, "last_diag", None
+                        ):
+                            diag = opt_state.last_diag
+                            per_layer = diag.get("per_layer", {})
+                            if diag.get("any_refreshed", False):
+
+                                def _agg(diag_key: str, reducer):
+                                    vals = [
+                                        entry[diag_key]
+                                        for entry in per_layer.values()
+                                        if diag_key in entry
+                                    ]
+                                    return reducer(vals) if vals else None
+
+                                _mean = lambda xs: sum(xs) / len(xs)
+
+                                _v = _agg("promotion", _mean)
+                                if _v is not None:
+                                    wb_metrics["refresh/promotion_ratio"] = _v
+                                # Energy decomposition (ratios, [0-1]).
+                                _main_e = _agg("spectrum_main_frob_sq", sum)
+                                _absorb_e = _agg("spectrum_absorb_frob_sq", sum)
+                                _tail_e = _agg("spectrum_tail_frob_sq", sum)
+                                if _main_e is not None:
+                                    _total_e = (
+                                        (_main_e or 0)
+                                        + (_absorb_e or 0)
+                                        + (_tail_e or 0)
+                                    )
+                                    if _total_e > 0:
+                                        wb_metrics["refresh/new_r_energy"] = (
+                                            _main_e / _total_e
+                                        )
+                                        wb_metrics["refresh/discarded_energy"] = (
+                                            (_tail_e or 0) / _total_e
+                                        )
+
+                                # Growth: how much R/R_rand norms change.
+                                _r_old = _agg("r_norm_old", _mean)
+                                _r_new = _agg("r_norm_new", _mean)
+                                if _r_old and _r_old > 1e-12:
+                                    wb_metrics["refresh/r_norm_growth"] = (
+                                        _r_new / _r_old
+                                    )
+                                # Subspace angle: sin(θ_max) between
+                                # old and new main basis.
+                                _v = _agg("subspace_sin", _mean)
+                                if _v is not None:
+                                    wb_metrics["refresh/r_subspace_angle"] = _v
+
+                                # Momentum norm growth: ‖m_new‖/‖m_old‖.
+                                # 1.0 = lossless rotation; <1 = energy lost.
+                                _m_old = _agg("m_norm_old", _mean)
+                                _m_new = _agg("m_norm_new", _mean)
+                                if _m_old and _m_old > 1e-12:
+                                    wb_metrics["refresh/m_norm_growth"] = (
+                                        _m_new / _m_old
+                                    )
                     # Per-group metrics under group/ section
                     if (
                         isinstance(step_clip_norm, PerGroup)
