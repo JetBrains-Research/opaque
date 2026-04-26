@@ -569,12 +569,6 @@ def parse_args():
         ),
     )
     lora_group.add_argument(
-        "--lora-xse-refresh-check-interval",
-        type=int,
-        default=1,
-        help="Steps between refresh-trigger evaluations (default: 1)",
-    )
-    lora_group.add_argument(
         "--sgd-momentum",
         type=float,
         default=0.0,
@@ -1636,7 +1630,6 @@ def main():
                 p_e=args.lora_xse_p_e,
                 lora_alpha=args.lora_alpha,
                 refresh_step_interval=args.lora_xse_refresh_step_interval,
-                refresh_check_interval=args.lora_xse_refresh_check_interval,
             )
         else:
             from opaque.optimizers import sgd
