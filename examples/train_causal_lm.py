@@ -1391,8 +1391,6 @@ def main():
                 momentum=args.sgd_momentum,
                 p_e=args.lora_xse_p_e,
                 lora_alpha=args.lora_alpha,
-                fixed_scaling_r=None,
-                orthonormal_a=args.lora_xs_orthonormal_a,
                 refresh_step_interval=args.lora_xse_refresh_step_interval,
                 refresh_check_interval=args.lora_xse_refresh_check_interval,
             )
@@ -1426,7 +1424,7 @@ def main():
         and getattr(args, "lora_xse_p_e", 0.0) > 0
     )
     if _xse_active:
-        opt_state, frozen_params = base_opt.init(trainable_params, frozen_params)
+        opt_state = base_opt.init(trainable_params, frozen_params)
     else:
         opt_state = base_opt.init(trainable_params)
     accounting = Accountant()
