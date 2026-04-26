@@ -458,7 +458,17 @@ def _make_lora_linear_forward(original):
             return self.base_layer(x)
 
         dropout = self.lora_dropout[active]
-        x_input = dropout(x)
+        # Fused kernel passes x to both base linear and adapter. This is only
+        # correct when dropout is a no-op; otherwise dropout would leak into
+        # the base projection. Fall back to PEFT's original forward when
+        # dropout is active (training with lora_dropout > 0).
+        dropout_is_noop = (
+            isinstance(dropout, torch.nn.Identity)
+            or (isinstance(dropout, torch.nn.Dropout) and dropout.p == 0.0)
+            or not self.training
+        )
+        if not dropout_is_noop:
+            return original(self, x, *args, **kwargs)
 
         W = self.base_layer.weight
         # Conv1D stores weight as (in_features, out_features); F.linear expects
@@ -467,12 +477,12 @@ def _make_lora_linear_forward(original):
             W = W.T
         # PEFT stores lora_A as (rank, in_features), kernel expects (in_features, rank)
         # Cast to input dtype for mixed precision compatibility
-        A = self.lora_A[active].weight.T.to(x_input.dtype)
+        A = self.lora_A[active].weight.T.to(x.dtype)
         # PEFT stores lora_B as (out_features, rank), kernel expects (rank, out_features)
-        B = self.lora_B[active].weight.T.to(x_input.dtype)
+        B = self.lora_B[active].weight.T.to(x.dtype)
         scaling = self.scaling[active]
 
-        result = Opaque_LoRA_W.apply(x_input, W, A, B, scaling)
+        result = Opaque_LoRA_W.apply(x, W, A, B, scaling)
 
         # Add base layer bias if present (kernel does F.linear without bias)
         if self.base_layer.bias is not None:
@@ -635,6 +645,25 @@ def _has_lora(module, proj_name):
     if proj is None:
         return False
     return hasattr(proj, "lora_A") and len(getattr(proj, "lora_A", {})) > 0
+
+
+def _no_lora_dropout(module, proj_name):
+    """Check that a projection has no active LoRA dropout (p=0 / Identity).
+
+    Fused QKV/MLP kernels bypass per-projection forwards, so dropout would
+    be silently skipped. Only fuse when dropout is a no-op.
+    """
+    proj = getattr(module, proj_name, None)
+    if proj is None:
+        return True
+    lora_dropout = getattr(proj, "lora_dropout", {})
+    for dropout in lora_dropout.values():
+        if isinstance(dropout, torch.nn.Identity):
+            continue
+        if isinstance(dropout, torch.nn.Dropout) and dropout.p == 0.0:
+            continue
+        return False
+    return True
 
 
 def _no_bias(module, proj_name):
@@ -904,6 +933,9 @@ def _auto_fuse_lora(model):
                 and _no_bias(attn, "q_proj")
                 and _no_bias(attn, "k_proj")
                 and _no_bias(attn, "v_proj")
+                and _no_lora_dropout(attn, "q_proj")
+                and _no_lora_dropout(attn, "k_proj")
+                and _no_lora_dropout(attn, "v_proj")
             ):
                 attn._opaque_fused_qkv = types.MethodType(
                     _opaque_fused_lora_qkv,
@@ -922,11 +954,14 @@ def _auto_fuse_lora(model):
         if _is_phi3_style_mlp(mlp):
             continue
 
-        # Check all three projections have LoRA
+        # Check all three projections have LoRA and no active dropout
         if not (
             _has_lora(mlp, "gate_proj")
             and _has_lora(mlp, "up_proj")
             and _has_lora(mlp, "down_proj")
+            and _no_lora_dropout(mlp, "gate_proj")
+            and _no_lora_dropout(mlp, "up_proj")
+            and _no_lora_dropout(mlp, "down_proj")
         ):
             continue
 
