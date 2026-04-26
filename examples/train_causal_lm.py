@@ -949,22 +949,6 @@ def main():
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
 
-    # Print adaptive rank allocation table if applicable
-    if hasattr(lora_config, "_adaptive_rank_info"):
-        info = lora_config._adaptive_rank_info
-        alloc = info["allocation"]
-        budget = info["budget"]
-        total_params = sum(a["rank"] ** 2 for a in alloc)
-        print(f"\nAdaptive rank allocation (budget={budget}, modules={len(alloc)}):")
-        print(f"  {'Module':<50s} {'Entropy':>8s} {'Rank':>6s} {'Params':>8s}")
-        print(f"  {'─' * 50} {'─' * 8} {'─' * 6} {'─' * 8}")
-        for a in alloc:
-            name = a["module"]
-            short = name if len(name) <= 50 else "..." + name[-(50 - 3):]
-            print(f"  {short:<50s} {a['entropy']:8.4f} {a['rank']:6d} {a['rank'] ** 2:8d}")
-        print(f"  {'─' * 50} {'─' * 8} {'─' * 6} {'─' * 8}")
-        print(f"  {'TOTAL':<50s} {'':>8s} {'':>6s} {total_params:8d}")
-
     profiler, _ = profiler.mark("lora_applied")
     print_memory(device, "After LoRA")
 
