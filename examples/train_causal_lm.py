@@ -477,23 +477,23 @@ def parse_args():
         default=False,
         help="LoRA-XS: use A=U^T without singular values (eliminates gradient amplification under DP-SGD)",
     )
-    # LoRA-XSe: exploration via momentum SVD refresh
+    # LoRA-XSe: exploration via momentum SVD rotation
     lora_group.add_argument(
         "--lora-xse-p-e",
         type=float,
         default=0.0,
         help=(
             "LoRA-XSe exploration fraction (0 = plain LoRA-XS, 1/3 = default XSe). "
-            "Controls what fraction of the rank is re-randomized at each refresh. "
+            "Controls what fraction of the rank is re-randomized at each rotation. "
             "Requires --optimizer sgd with --sgd-momentum > 0."
         ),
     )
     lora_group.add_argument(
-        "--lora-xse-refresh-step-interval",
+        "--lora-xse-rotation-step-interval",
         type=int,
         default=None,
         help=(
-            "Steps between refreshes (default: auto from momentum = max(1, round(0.5/(1-β)))). "
+            "Steps between rotations (default: auto from momentum = max(1, round(0.5/(1-β)))). "
             "Only used when --lora-xse-p-e > 0."
         ),
     )
@@ -501,7 +501,7 @@ def parse_args():
         "--sgd-momentum",
         type=float,
         default=0.0,
-        help="Momentum for --optimizer sgd (also used by xsrefresh_sgd). Default 0.0.",
+        help="Momentum for --optimizer sgd (also used by xse_sgd). Default 0.0.",
     )
 
     dp_group = parser.add_argument_group("dp", "DP-SGD clipping and noise")
@@ -1385,7 +1385,7 @@ def main():
                 momentum=args.sgd_momentum,
                 p_e=args.lora_xse_p_e,
                 lora_alpha=args.lora_alpha,
-                refresh_step_interval=args.lora_xse_refresh_step_interval,
+                rotation_step_interval=args.lora_xse_rotation_step_interval,
             )
         else:
             base_opt = torchopt.sgd(lr=args.learning_rate, momentum=args.sgd_momentum)
@@ -1707,11 +1707,11 @@ def main():
                                 wb_metrics["xs/m_keep_norm"] = _m_keep_norm_sum / _n_layers
                                 wb_metrics["xs/m_explore_norm"] = _m_explore_norm_sum / _n_layers
 
-                        # -- Refresh-event metrics (refresh/) --
+                        # -- Rotation-event metrics (rotation/) --
                         if _xse_active and getattr(opt_state, "last_diag", None):
                             diag = opt_state.last_diag
                             per_layer = diag.get("per_layer", {})
-                            if diag.get("refreshed", False):
+                            if diag.get("rotated", False):
                                 _mean = lambda xs: sum(xs) / len(xs)
                                 def _agg(key):
                                     vals = [e[key] for e in per_layer.values() if key in e]
@@ -1720,17 +1720,17 @@ def main():
                                 _v = _agg("r_norm_old")
                                 _vn = _agg("r_norm_new")
                                 if _v and _v > 1e-12:
-                                    wb_metrics["refresh/r_norm_growth"] = _vn / _v
+                                    wb_metrics["rotation/r_norm_growth"] = _vn / _v
                                 _v = _agg("subspace_sin")
                                 if _v is not None:
-                                    wb_metrics["refresh/r_subspace_angle"] = _v
+                                    wb_metrics["rotation/r_subspace_angle"] = _v
                                 _v = _agg("m_norm_old")
                                 _vn = _agg("m_norm_new")
                                 if _v and _v > 1e-12:
-                                    wb_metrics["refresh/m_norm_growth"] = _vn / _v
+                                    wb_metrics["rotation/m_norm_growth"] = _vn / _v
                                 _v = _agg("projection_energy")
                                 if _v is not None:
-                                    wb_metrics["refresh/projection_energy"] = _v
+                                    wb_metrics["rotation/projection_energy"] = _v
                     # Per-group metrics under group/ section
                     if (
                         isinstance(step_clip_norm, PerGroup)
