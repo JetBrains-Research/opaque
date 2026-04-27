@@ -1437,6 +1437,9 @@ def main():
                 "r_keep": _r - _r_e,
             })
 
+    # Per-step tracking for XSe continuous metrics.
+    _prev_r_explore_norm: dict[str, float] = {}  # r_key → previous ‖R[r_keep:,:]‖
+
     # Ring buffer for trailing loss slope.
     _loss_ring: list[float] = []
     _LOSS_SLOPE_WINDOW = 20
@@ -1629,7 +1632,15 @@ def main():
                         _m_keep_norm_sum = 0.0
                         _m_explore_norm_sum = 0.0
                         _r_explore_info_sum = 0.0
+                        _grad_explore_frac_sum = 0.0
+                        _grad_snr_sum = 0.0
+                        _m_explore_ratio_sum = 0.0
+                        _r_explore_growth_sum = 0.0
+                        _r_velocity_sum = 0.0
+                        _r_condition_sum = 0.0
+                        _r_block_coherence_sum = 0.0
                         _n_layers = 0
+                        _n_explore_growth = 0
 
                         _inner_state_for_diag = (
                             opt_state.inner
@@ -1645,51 +1656,121 @@ def main():
                         for _li in _xse_diag_layers:
                             _R = trainable_params[_li["r_key"]]
                             _R_f = _R.detach().to(torch.float32)
+                            _r_svs = _svdvals(_R_f)
                             _r_frob_sum += float(torch.linalg.norm(_R_f).item())
-                            _r_info_sum += _spectral_entropy(_svdvals(_R_f))
+                            _r_info_sum += _spectral_entropy(_r_svs)
                             _n_layers += 1
 
                             _r_keep = _li["r_keep"]
                             _r_e = _li["r_e"]
+
+                            # R condition number: σ_max / σ_min
+                            _s_max = float(_r_svs[0].item())
+                            _s_min = float(_r_svs[-1].clamp(min=1e-12).item())
+                            _r_condition_sum += _s_max / _s_min
+
+                            # R velocity: ‖update‖ (how fast R is changing)
+                            _upd = updates.get(_li["r_key"])
+                            if _upd is not None:
+                                _r_velocity_sum += float(
+                                    torch.linalg.norm(_upd.detach().to(torch.float32)).item()
+                                )
+
                             if _r_e > 0:
-                                _r_keep_norm_sum += float(
+                                _r_keep_norm_f = float(
                                     torch.linalg.norm(_R_f[:_r_keep, :_r_keep]).item()
                                 )
-                                _r_explore_norm_sum += float(
+                                _r_explore_norm_f = float(
                                     torch.linalg.norm(_R_f[_r_keep:, :]).item()
                                 )
+                                _r_keep_norm_sum += _r_keep_norm_f
+                                _r_explore_norm_sum += _r_explore_norm_f
                                 _explore_svs = _svdvals(_R_f[_r_keep:, _r_keep:])
                                 _r_explore_info_sum += _spectral_entropy(_explore_svs)
+
+                                # R block coherence: ‖R_kk‖ / ‖R‖
+                                _r_full_norm = float(torch.linalg.norm(_R_f).item())
+                                if _r_full_norm > 1e-12:
+                                    _r_block_coherence_sum += _r_keep_norm_f / _r_full_norm
+
+                                # R explore growth: Δ‖R[r_keep:,:]‖
+                                _rk = _li["r_key"]
+                                if _rk in _prev_r_explore_norm:
+                                    _r_explore_growth_sum += (
+                                        _r_explore_norm_f - _prev_r_explore_norm[_rk]
+                                    )
+                                    _n_explore_growth += 1
+                                _prev_r_explore_norm[_rk] = _r_explore_norm_f
+
+                            # Gradient-based metrics (from noisy DP gradient)
+                            _g = noisy_grads.get(_li["r_key"])
+                            if _g is not None:
+                                _g_f = _g.detach().to(torch.float32)
+                                _g_norm = float(torch.linalg.norm(_g_f).item())
+
+                                # grad_explore_frac: ‖g[r_keep:,:]‖ / ‖g‖
+                                if _r_e > 0 and _g_norm > 1e-12:
+                                    _g_explore = float(
+                                        torch.linalg.norm(_g_f[_r_keep:, :]).item()
+                                    )
+                                    _grad_explore_frac_sum += _g_explore / _g_norm
 
                             if _has_trace:
                                 _m_R = _inner_state_for_diag[0].trace[
                                     _li["flat_index"]
                                 ].to(torch.float32)
-                                _m_frob_sum += float(torch.linalg.norm(_m_R).item())
+                                _m_norm_f = float(torch.linalg.norm(_m_R).item())
+                                _m_frob_sum += _m_norm_f
                                 _m_info_sum += _spectral_entropy(
                                     _svdvals(_m_R)
                                 )
+
+                                # Continuous m_explore_ratio: ‖m[r_keep:,:]‖/‖m[:r_keep,:]‖
                                 if _r_e > 0:
-                                    _m_keep_norm_sum += float(
-                                        torch.linalg.norm(_m_R[:_r_keep, :_r_keep]).item()
+                                    _m_keep_n = float(
+                                        torch.linalg.norm(_m_R[:_r_keep, :]).item()
                                     )
-                                    _m_explore_norm_sum += float(
+                                    _m_explore_n = float(
                                         torch.linalg.norm(_m_R[_r_keep:, :]).item()
                                     )
+                                    _m_keep_norm_sum += _m_keep_n
+                                    _m_explore_norm_sum += _m_explore_n
+                                    _m_explore_ratio_sum += (
+                                        _m_explore_n / max(_m_keep_n, 1e-12)
+                                    )
+
+                                # grad signal-to-noise: ‖m_R‖ / ‖g_R - m_R‖
+                                if _g is not None:
+                                    _g_f = _g.detach().to(torch.float32)
+                                    _residual = float(
+                                        torch.linalg.norm(_g_f - _m_R).item()
+                                    )
+                                    if _residual > 1e-12:
+                                        _grad_snr_sum += _m_norm_f / _residual
 
                         # -- Continuous metrics (xs/) --
                         wb_metrics["xs/r_norm"] = _r_frob_sum / _n_layers
                         wb_metrics["xs/r_info"] = _r_info_sum / _n_layers
+                        wb_metrics["xs/r_condition"] = _r_condition_sum / _n_layers
+                        wb_metrics["xs/r_velocity"] = _r_velocity_sum / _n_layers
                         if _has_trace:
                             wb_metrics["xs/m_norm"] = _m_frob_sum / _n_layers
                             wb_metrics["xs/m_info"] = _m_info_sum / _n_layers
+                            wb_metrics["xs/grad_snr"] = _grad_snr_sum / _n_layers
                         if _xse_p_e > 0 and _n_layers > 0:
                             wb_metrics["xs/r_keep_norm"] = _r_keep_norm_sum / _n_layers
                             wb_metrics["xs/r_explore_norm"] = _r_explore_norm_sum / _n_layers
                             wb_metrics["xs/r_explore_info"] = _r_explore_info_sum / _n_layers
+                            wb_metrics["xs/r_block_coherence"] = _r_block_coherence_sum / _n_layers
+                            wb_metrics["xs/grad_explore_frac"] = _grad_explore_frac_sum / _n_layers
                             if _has_trace:
                                 wb_metrics["xs/m_keep_norm"] = _m_keep_norm_sum / _n_layers
                                 wb_metrics["xs/m_explore_norm"] = _m_explore_norm_sum / _n_layers
+                                wb_metrics["xs/m_explore_ratio"] = _m_explore_ratio_sum / _n_layers
+                            if _n_explore_growth > 0:
+                                wb_metrics["xs/r_explore_growth"] = (
+                                    _r_explore_growth_sum / _n_explore_growth
+                                )
                         # Effective rank: exp(H * log(r)) where H is spectral entropy.
                         if _n_layers > 0 and _xse_diag_layers:
                             import math as _m2
