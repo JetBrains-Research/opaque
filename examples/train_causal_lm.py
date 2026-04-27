@@ -1895,7 +1895,7 @@ def main():
                     # LoRA-XSe diagnostics
                     # =============================================================
                     if _xse_diag_layers:
-                        from lora_privacy.core.svd import _spectral_entropy
+                        from lora_privacy.core.svd import _spectral_entropy, _svdvals
 
                         # -- Per-layer aggregation --
                         _r_frob_sum = 0.0
@@ -1924,7 +1924,7 @@ def main():
                             _R = trainable_params[_li["r_key"]]
                             _R_f = _R.detach().to(torch.float32)
                             _r_frob_sum += float(torch.linalg.norm(_R_f).item())
-                            _r_info_sum += _spectral_entropy(torch.linalg.svdvals(_R_f))
+                            _r_info_sum += _spectral_entropy(_svdvals(_R_f))
                             _n_layers += 1
 
                             _r_keep = _li["r_keep"]
@@ -1936,7 +1936,7 @@ def main():
                                 _r_explore_norm_sum += float(
                                     torch.linalg.norm(_R_f[_r_keep:, :]).item()
                                 )
-                                _explore_svs = torch.linalg.svdvals(_R_f[_r_keep:, _r_keep:])
+                                _explore_svs = _svdvals(_R_f[_r_keep:, _r_keep:])
                                 _r_explore_info_sum += _spectral_entropy(_explore_svs)
 
                             if _has_trace:
@@ -1945,7 +1945,7 @@ def main():
                                 ].to(torch.float32)
                                 _m_frob_sum += float(torch.linalg.norm(_m_R).item())
                                 _m_info_sum += _spectral_entropy(
-                                    torch.linalg.svdvals(_m_R)
+                                    _svdvals(_m_R)
                                 )
                                 if _r_e > 0:
                                     _m_keep_norm_sum += float(
@@ -1968,6 +1968,14 @@ def main():
                             if _has_trace:
                                 wb_metrics["xs/m_keep_norm"] = _m_keep_norm_sum / _n_layers
                                 wb_metrics["xs/m_explore_norm"] = _m_explore_norm_sum / _n_layers
+                        # Effective rank: exp(H * log(r)) where H is spectral entropy.
+                        if _n_layers > 0 and _xse_diag_layers:
+                            import math as _m2
+                            _avg_info = _r_info_sum / _n_layers
+                            _avg_r = sum(li["r"] for li in _xse_diag_layers) / _n_layers
+                            wb_metrics["xs/r_effective_rank"] = _m2.exp(
+                                _avg_info * _m2.log(max(_avg_r, 1))
+                            )
 
                         # -- Rotation-event metrics (rotation/) --
                         if _xse_active and getattr(opt_state, "last_diag", None):
@@ -1996,6 +2004,18 @@ def main():
                                 _v = _agg("projection_energy")
                                 if _v is not None:
                                     wb_metrics["rotation/projection_energy"] = _v
+                                _v = _agg("explore_m_ratio")
+                                if _v is not None:
+                                    wb_metrics["rotation/explore_m_ratio"] = _v
+                                _v = _agg("promotion_count")
+                                if _v is not None:
+                                    wb_metrics["rotation/promotion_count"] = _v
+                                _v = _agg("energy_ratio")
+                                if _v is not None:
+                                    wb_metrics["rotation/energy_ratio"] = _v
+                                _v = _agg("r_cross_norm")
+                                if _v is not None:
+                                    wb_metrics["rotation/r_cross_norm"] = _v
                     # Per-group metrics under group/ section
                     if (
                         isinstance(step_clip_norm, PerGroup)
