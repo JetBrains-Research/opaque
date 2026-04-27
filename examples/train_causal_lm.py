@@ -1712,6 +1712,9 @@ def main():
                                 _vn = _agg("m_norm_new")
                                 if _v and _v > 1e-12:
                                     wb_metrics["rotation/m_norm_growth"] = _vn / _v
+                                _v = _agg("spectral_gap")
+                                if _v is not None:
+                                    wb_metrics["rotation/spectral_gap"] = _v
                                 _v = _agg("projection_energy")
                                 if _v is not None:
                                     wb_metrics["rotation/projection_energy"] = _v
