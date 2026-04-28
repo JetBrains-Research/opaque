@@ -294,9 +294,21 @@ def parse_args():
     parser.add_argument(
         "--preset",
         type=str,
-        choices=["custom", "smoke", "mellum-kstack", "qwen-7b-kstack"],
+        choices=[
+            "custom",
+            "smoke",
+            "mellum-kstack",
+            "qwen-7b-kstack",
+            "qwen-coder-kstack-lora",
+        ],
         default="smoke",
-        help="Apply preset configuration (custom=keep explicit args, smoke=quick test ~2min, mellum-kstack=Mellum-4b + KStack at ε=10 with adafactor @ 5e-5, qwen-7b-kstack=Qwen2.5-Coder-7B + KStack at ε=3 with adafactor @ 5e-4).",
+        help=(
+            "Apply preset configuration (custom=keep explicit args, "
+            "smoke=quick test ~2min, mellum-kstack=Mellum-4b + KStack at ε=10 "
+            "with adafactor @ 5e-5, qwen-7b-kstack=Qwen2.5-Coder-7B + KStack at "
+            "ε=3 with adafactor @ 5e-4, qwen-coder-kstack-lora=tuned vanilla LoRA "
+            "baseline for the same model/dataset with SGD)."
+        ),
     )
 
     model_group = parser.add_argument_group("model", "Model and tokenizer settings")
@@ -878,6 +890,43 @@ def parse_args():
             ],
         )
         _set("dtype", "bfloat16")
+    elif args.preset == "qwen-coder-kstack-lora":
+        # Tuned LoRA baseline for Qwen2.5-Coder-7B on KStack, ε=3.
+        # Sweep results: r=16 > r=8/24/32/48/64, lr=5e-2 > 2e-2/1e-2,
+        # mom=0.9 > 0.8/0.85/0.95/0.99, bs=192 > 128/256/384/512,
+        # warmup=0 > 5/10/20.
+        # Best eval: 0.3449 at step 520.
+        _set("model_name", "Qwen/Qwen2.5-Coder-7B")
+        _set("dataset", "JetBrains/KStack")
+        _set("dataset_text_field", "content")
+        _set("num_train_samples", 50000)
+        _set("num_eval_samples", 1000)
+        _set("num_epochs", 2)
+        _set("batch_size", 192)
+        _set("log_steps", 1)
+        _set("eval_steps", 10)
+        _set("target_epsilon", 3.0)
+        _set("learning_rate", 5e-2)
+        _set("lora_method", "lora")
+        _set("lora_r", 16)
+        _set("lora_alpha", 16)
+        _set("optimizer", "sgd")
+        _set("sgd_momentum", 0.9)
+        _set("max_seq_len", 1024)
+        _set(
+            "lora_modules",
+            [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
+        )
+        _set("dtype", "bfloat16")
+        _set("microbatch_size", 16)
     elif args.preset == "custom":
         # Keep all user-provided/default CLI arguments unchanged.
         pass
