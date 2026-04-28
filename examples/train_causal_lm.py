@@ -498,6 +498,16 @@ def parse_args():
         ),
     )
     lora_group.add_argument(
+        "--lora-xse-w0-pool-size",
+        type=int,
+        default=-1,
+        help=(
+            "Number of W₀ spectral tail directions for informed exploration. "
+            "Precomputed via eigh(W₀ᵀW₀) at init. 0 = random exploration. "
+            "-1 = all available (= min(m,n) - r per layer)."
+        ),
+    )
+    lora_group.add_argument(
         "--sgd-momentum",
         type=float,
         default=0.0,
@@ -1370,6 +1380,7 @@ def main():
                 p_e=args.lora_xse_p_e,
                 lora_alpha=args.lora_alpha,
                 rotation_step_interval=args.lora_xse_rotation_step_interval,
+                w0_pool_size=args.lora_xse_w0_pool_size,
             )
         else:
             base_opt = torchopt.sgd(lr=args.learning_rate, momentum=args.sgd_momentum)
