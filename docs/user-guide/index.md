@@ -99,6 +99,8 @@ understanding, or jump to a specific topic.
 
 - **[Optimizers](optimizers.md)** -- Using TorchOpt functional optimizers with
   DP-SGD.
+- **[LR Scheduling](lr-scheduling.md)** -- Warmup, cosine and inverse-sqrt
+  schedules; composing `with_warmup` with any decay curve.
 - **[Distributed Training](distributed.md)** -- DDP with synchronized noise
   and gradient aggregation.
 - **[HuggingFace Compatibility](huggingface.md)** -- Using HuggingFace

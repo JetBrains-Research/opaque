@@ -35,6 +35,7 @@ include = [
     "opaque.random*",
     "opaque.functional*",
     "opaque.distributed*",
+    "opaque.scheduling*",
 ]
 namespaces = true
 

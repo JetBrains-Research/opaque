@@ -49,6 +49,14 @@ Opaque is organized into several modules, each focused on a specific aspect of D
   - `BallsInBinsSampler` - Random-partition sampling (λCGD, BISR, BLT)
   - `SequentialBatchSampler` - Deterministic sequential batching (BLT)
 
+- **[Schedules](schedules.md)**: LR schedules for TorchOpt functional optimizers
+  - `constant_schedule()` - Constant LR
+  - `cosine_schedule()` - Cosine annealing
+  - `inverse_sqrt_schedule()` - Inverse-square-root decay
+  - `one_minus_sqrt_schedule()` - `1 - sqrt(progress)` decay (concave)
+  - `with_warmup()` - Compose warmup ramp with any decay schedule
+  - `with_restarts()` - Replay a schedule N times
+
 ### Validation & Debugging
 
 - **[Auditing](auditing.md)**: Empirical privacy validation
@@ -176,6 +184,17 @@ See [Quick Start](../getting-started/quickstart.md) for a complete working examp
 | `CyclicPoissonSampler`    | Cyclic Poisson sampling (BandMF) | [Guide](../user-guide/sampling.md#poisson-sampling) |
 | `BallsInBinsSampler`      | Random-partition sampling  | [Guide](../user-guide/sampling.md#balls-in-bins-sampling) |
 | `SequentialBatchSampler`  | Deterministic sequential batching (BLT) | [Guide](../user-guide/sampling.md#sequential-batch-sampling) |
+
+### Schedules
+
+| Function                       | Purpose                                       | User Guide                                       |
+|--------------------------------|-----------------------------------------------|--------------------------------------------------|
+| `constant_schedule()`          | Constant LR                                   | [Guide](../user-guide/lr-scheduling.md)          |
+| `cosine_schedule()`            | Cosine annealing curve                        | [Guide](../user-guide/lr-scheduling.md)          |
+| `inverse_sqrt_schedule()`      | Inverse-square-root decay                     | [Guide](../user-guide/lr-scheduling.md)          |
+| `one_minus_sqrt_schedule()`    | `1 - sqrt(progress)` decay (concave)          | [Guide](../user-guide/lr-scheduling.md)          |
+| `with_warmup()`                | Compose warmup ramp with a decay schedule     | [Guide](../user-guide/lr-scheduling.md#adding-warmup) |
+| `with_restarts()`              | Replay a schedule N times                     | [Guide](../user-guide/lr-scheduling.md)          |
 
 ### Privacy Auditing
 
