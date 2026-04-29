@@ -97,6 +97,7 @@ nav:
     - Privacy Accounting: user-guide/accounting.md
     - Sampling & Microbatching: user-guide/sampling.md
     - Optimizers: user-guide/optimizers.md
+    - LR Scheduling: user-guide/lr-scheduling.md
     - Distributed Training: user-guide/distributed.md
     - HuggingFace Compatibility: user-guide/huggingface.md
     - Memory Optimizations: user-guide/memory-optimizations.md
@@ -129,6 +130,7 @@ nav:
     - Auditing: api/auditing.md
     - Utilities: api/utilities.md
     - Optimizers: api/optimizers.md
+    - Schedules: api/schedules.md
 
 extra:
   social:
