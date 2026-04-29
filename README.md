@@ -20,7 +20,7 @@ installing under the shared `opaque.*` namespace:
 
 | Distribution | Import roots | Purpose |
 |---|---|---|
-| `opaque` (umbrella) | — (metadata only) | Meta-package; installs a curated bundle of sub-packages |
+| `opaque` | — | Convenience installer; pulls in a curated bundle of sub-packages |
 | `opaque-core` | `opaque.core`, `opaque.functional`, `opaque.distributed` | RNG, pytree, clipping, `PerGroup`, `empty_collate`, `make_functional`, DDP plumbing |
 | `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated / per-group noise, AdamW-BC, Poisson samplers, adaptive + auto clipping |
 | `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, JME, λ-CGD), AdamW-JME, correlated-noise samplers |
@@ -68,8 +68,8 @@ pip install "opaque[all]"           # everything
 ```
 
 Each sub-package is also installable directly (`pip install opaque-core`,
-`pip install opaque-dpsgd`, …) — `import opaque.dpsgd` works without the
-umbrella.
+`pip install opaque-dpsgd`, …) — `import opaque.dpsgd` works on its own,
+without `pip install opaque`.
 
 ### Patching
 

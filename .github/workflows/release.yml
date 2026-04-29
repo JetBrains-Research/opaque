@@ -58,7 +58,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Preflight — rewrite umbrella pins + accounting version from tag
+      - name: Preflight — rewrite opaque pins + accounting version from tag
         run: bash .github/scripts/set_build_versions.sh
 
       - name: Build wheel
@@ -72,8 +72,8 @@ jobs:
           path: dist/*.whl
           retention-days: 90
 
-  build-umbrella-wheel:
-    name: Build opaque (umbrella) @ ${{ github.event.release.tag_name }}
+  build-opaque-wheel:
+    name: Build opaque @ ${{ github.event.release.tag_name }}
     needs: [tag-guard]
     runs-on: ubuntu-latest
     steps:
@@ -88,7 +88,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Preflight — rewrite umbrella pins + accounting version from tag
+      - name: Preflight — rewrite opaque pins + accounting version from tag
         run: bash .github/scripts/set_build_versions.sh
 
       - name: Build wheel
@@ -149,7 +149,7 @@ jobs:
 
   merge-wheels:
     name: Merge wheels into single artifact
-    needs: [build-python-wheel, build-umbrella-wheel, build-opaque-accounting]
+    needs: [build-python-wheel, build-opaque-wheel, build-opaque-accounting]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/upload-artifact/merge@v6

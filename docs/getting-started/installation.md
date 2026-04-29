@@ -7,8 +7,8 @@
 
 ## From GCP Artifact Registry
 
-Install the umbrella meta-package (pulls in `opaque-core`, `opaque-dpsgd`,
-`opaque-auditing`, and `opaque-accounting` by default):
+Install `opaque` (pulls in `opaque-core`, `opaque-dpsgd`, `opaque-auditing`,
+and `opaque-accounting` by default):
 
 ```bash
 pip install opaque \

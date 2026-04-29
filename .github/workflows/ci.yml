@@ -108,7 +108,7 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Dev wheel builds. Version derived from `setuptools-scm` + the preflight
-  # script that writes the umbrella dep pins + Cargo workspace version.
+  # script that writes the opaque dep pins + Cargo workspace version.
   # Release builds live in release.yml (triggered on `v*` tag push).
   # ---------------------------------------------------------------------------
   build-python-wheels:
@@ -149,8 +149,8 @@ jobs:
           path: dist/*.whl
           retention-days: 30
 
-  build-umbrella-wheel:
-    name: Build opaque (umbrella)
+  build-opaque-wheel:
+    name: Build opaque
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -221,7 +221,7 @@ jobs:
 
   merge-wheels:
     name: Merge wheels into single artifact
-    needs: [build-python-wheels, build-umbrella-wheel, build-accounting-wheels]
+    needs: [build-python-wheels, build-opaque-wheel, build-accounting-wheels]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/upload-artifact/merge@v6

@@ -38,12 +38,13 @@ No contribution is too small!
 ## Repository Structure
 
 The monorepo ships eight independent distributions sharing the `opaque.*`
-PEP 420 namespace. The umbrella distribution `opaque` lives at the
-workspace root; every other distribution lives under `packages/`:
+PEP 420 namespace. The `opaque` distribution lives at the workspace root
+and pins the curated sub-package bundle; every other distribution lives
+under `packages/`:
 
 ```
-pyproject.toml           # opaque (umbrella) — metadata-only meta-package
-README.md                # umbrella long description
+pyproject.toml           # opaque — pins the curated sub-package bundle
+README.md                # top-level description
 
 packages/
 ├── opaque-core/         # RNG, pytree, clipping, scheduling, distributed plumbing
@@ -163,7 +164,7 @@ Gated HuggingFace models use the `@requires_hf_auth` skipif helper from
 those tests; otherwise they skip automatically.
 
 Other tests use `pytest.importorskip()` for automatic dependency handling:
-- HuggingFace tests: Skip if `transformers` not installed (install via `--extra huggingface` on the umbrella or `opaque-huggingface[peft]`)
+- HuggingFace tests: Skip if `transformers` not installed (install via `opaque[huggingface]` or `opaque-huggingface[peft]`)
 - Cross-validation: Skip if `dp-accounting` not installed (install via `opaque-accounting[cross-validation]`)
 
 No manual marker exclusion needed - tests skip automatically when dependencies are missing.
@@ -355,7 +356,7 @@ grep -E '^version|opaque-core' pyproject.toml \
                                packages/opaque-accounting/pyproject.toml \
                                Cargo.toml
 
-# Build the umbrella wheel (workspace root)
+# Build the opaque wheel (workspace root)
 rm -rf dist
 uv build --wheel --out-dir dist
 

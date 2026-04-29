@@ -8,8 +8,8 @@
 #      setuptools-scm.
 #   2. `packages/opaque-accounting/Cargo.toml` — the Rust crate version must
 #      match the Python wheel version for the PyO3 extension.
-#   3. `pyproject.toml` (workspace root) — the umbrella metadata pins its
-#      sub-packages with `opaque-*==<version>` so `pip install opaque`
+#   3. `pyproject.toml` (workspace root) — the `opaque` distribution pins
+#      its sub-packages with `opaque-*==<version>` so `pip install opaque`
 #      resolves consistently. These pins need rewriting for dev/release
 #      builds because dynamic versioning can't expand them.
 #
@@ -138,8 +138,8 @@ rm -f packages/opaque-accounting/pyproject.toml.bak
 sed -i.bak -E "s%^version = \"[^\"]+\"%version = \"$CARGO_VERSION\"%" Cargo.toml
 rm -f Cargo.toml.bak
 
-# --- opaque umbrella: pin sub-packages to the same version ------------------
-# The umbrella distribution lives in the workspace-root pyproject.toml.
+# --- opaque: pin sub-packages to the same version ---------------------------
+# The `opaque` distribution lives in the workspace-root pyproject.toml.
 # Use `%` as sed delimiter so regex alternation `|` doesn't collide.
 sed -i.bak -E \
   -e "s%opaque-([a-z-]+)==0\.0\.0\.dev0%opaque-\1==$VERSION%g" \

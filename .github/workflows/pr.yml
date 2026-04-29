@@ -231,8 +231,8 @@ jobs:
           path: dist/*.whl
           retention-days: 14
 
-  build-preview-umbrella:
-    name: Build preview opaque (umbrella)
+  build-preview-opaque:
+    name: Build preview opaque
     needs: [compute-preview-version]
     runs-on: ubuntu-latest
     steps:
@@ -304,7 +304,7 @@ jobs:
 
   merge-preview-wheels:
     name: Merge preview wheels into single artifact
-    needs: [build-preview-python, build-preview-umbrella, build-preview-accounting]
+    needs: [build-preview-python, build-preview-opaque, build-preview-accounting]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/upload-artifact/merge@v6

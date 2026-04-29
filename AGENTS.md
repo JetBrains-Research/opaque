@@ -23,7 +23,7 @@ nested under `opaque.core.*`.
 
 | Distribution | Import roots | Purpose | Build |
 | --- | --- | --- | --- |
-| `opaque` (umbrella) | — (metadata only) | meta-package that pulls in sub-packages via extras | setuptools |
+| `opaque` | — | pins the curated sub-package bundle; extras add the rest | setuptools |
 | `opaque-core` | `opaque.core`, `opaque.functional`, `opaque.distributed`, `opaque.clipping`, `opaque.scheduling` | RNG, pytree, clipping, step-indexed schedules + warmup composition, `PerGroup`, `empty_collate`, `make_functional`, DDP plumbing | setuptools |
 | `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated-Gaussian / per-group noise, AdamW-BC, Poisson + truncated-Poisson samplers, adaptive + auto clipping | setuptools |
 | `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, JME, λ-CGD), AdamW-JME, cyclic Poisson + b-min-sep + balls-in-bins + sequential samplers | setuptools |
@@ -35,16 +35,16 @@ nested under `opaque.core.*`.
 Sub-packages are independently installable; `pip install opaque-dpsgd`
 gives a working `import opaque.dpsgd` without pulling any other package.
 
-## Umbrella contract
+## Namespace contract
 
-Three rules the umbrella upholds (rule 1 enforced in CI; rules 2 and 3 are design invariants):
+Three rules (rule 1 enforced in CI; rules 2 and 3 are design invariants):
 
 1. **No package ships `src/opaque/__init__.py`.** `opaque` is a pure PEP 420
    namespace. Each sub-package installs under `opaque/<name>/` and composes
    automatically. CI enforces that no `src/opaque/__init__.py` slips in.
-2. **The umbrella `opaque` is metadata-only.** Installing `opaque[all]` pulls
-   in the sub-packages, but the umbrella distribution itself ships no code
-   and exposes no names. Each algorithm owns its own dotted path
+2. **The root `opaque` distribution ships no code.** Installing `opaque[all]`
+   pulls in the sub-packages, but the root distribution itself exposes no
+   names. Each algorithm owns its own dotted path
    (`opaque.dpsgd.noise.gaussian`, `opaque.dpftrl.sampling.b_min_sep`, …)
    and that's intentional. This matches the convention of `zope.*`,
    `google.cloud.*`, `azure.*`, `sphinxcontrib.*`.
@@ -123,7 +123,7 @@ pip install opaque-dpftrl                    # + MF (DP-FTRL) mechanisms
 pip install opaque-accounting            # + Rust PLD accounting
 pip install opaque-performance[kernels]  # + Triton fused kernels
 pip install opaque-huggingface[peft]     # + HF patches + PEFT extras
-pip install "opaque[all]"                # everything via metadata umbrella
+pip install "opaque[all]"                # everything
 ```
 
 ### Dependency groups
@@ -149,7 +149,7 @@ Everything else lives in the relevant package's
 ## Patching model (on-import)
 
 Importing `opaque.performance` or `opaque.huggingface` automatically applies
-their respective patches. There is no umbrella `opaque.patch_all()` —
+their respective patches. There is no top-level `opaque.patch_all()` —
 each sub-package owns its own patching. Disable selectively with
 sub-package-specific env vars set **before** the import:
 

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "opaque"
 dynamic = ["version"]
-description = "Functional Differential Privacy for PyTorch (meta-package)"
+description = "Functional Differential Privacy for PyTorch"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Opaque Contributors" }]
@@ -55,14 +55,14 @@ all = [
     "opaque-huggingface[peft]==0.0.0.dev0",
 ]
 
-# The ``opaque`` namespace is pure PEP 420 and is composed by whichever
-# ``opaque-*`` sub-packages are installed alongside.  This umbrella
-# distribution itself is metadata-only: no src/, no tests/, no code shipped.
+# The ``opaque`` namespace is pure PEP 420, composed by whichever
+# ``opaque-*`` sub-packages are installed alongside. The root distribution
+# ships no Python code — it pins the curated sub-package bundle so
+# ``pip install opaque`` resolves consistently.
 
 [tool.setuptools]
-# Metadata-only umbrella — no Python modules ship from this distribution.
-# Without this, setuptools auto-discovery would scan the workspace root and
-# try to package ``packages/``, ``examples/``, ``docs/`` etc.
+# Suppress setuptools auto-discovery so it doesn't scan the workspace root
+# and try to package ``packages/``, ``examples/``, ``docs/`` etc.
 py-modules = []
 
 [tool.setuptools.packages.find]
