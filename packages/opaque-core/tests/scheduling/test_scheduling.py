@@ -479,7 +479,12 @@ class TestHFParity:
     @pytest.mark.parametrize("num_cycles", [1, 2, 4])
     def test_cosine_with_restarts(self, warmup_total, num_cycles):
         W, N = warmup_total
-        cycle_length = (N - W) / num_cycles
+        if (N - W) % num_cycles != 0:
+            pytest.skip(
+                f"with_restarts requires num_cycles | (N-W); "
+                f"got N-W={N - W}, num_cycles={num_cycles}"
+            )
+        cycle_length = (N - W) // num_cycles
         inner = cosine_schedule(BASE_LR, 0.0, transition_steps=cycle_length)
         decay = with_restarts(
             inner,

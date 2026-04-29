@@ -90,16 +90,18 @@ def with_restarts(
     """Repeat ``schedule`` ``num_cycles`` times across
     ``[transition_begin, transition_begin + transition_steps)``.
 
-    Each cycle has length ``transition_steps / num_cycles``; within a
-    cycle, ``schedule`` is evaluated at the cycle-local step
+    Each cycle has length ``transition_steps // num_cycles``; within a
+    cycle, ``schedule`` is evaluated at the cycle-local integer step
     (``relative_step % cycle_length``).  Configure ``schedule`` to
     produce its full curve over a single cycle of that length.
 
     Before ``transition_begin`` returns ``schedule(0)``; after the
     final cycle, returns ``schedule(cycle_length)``.
 
-    Raises :class:`ValueError` if ``num_cycles <= 0`` or
-    ``transition_steps <= 0``.
+    Raises :class:`ValueError` if ``num_cycles <= 0``,
+    ``transition_steps <= 0``, or ``num_cycles`` does not evenly divide
+    ``transition_steps`` (the cycle length must be an integer so the
+    inner schedule receives integer steps).
     """
     if num_cycles <= 0:
         raise ValueError(f"with_restarts requires num_cycles > 0; got {num_cycles}.")
@@ -107,8 +109,14 @@ def with_restarts(
         raise ValueError(
             f"with_restarts requires transition_steps > 0; got {transition_steps}."
         )
+    if transition_steps % num_cycles != 0:
+        raise ValueError(
+            "with_restarts requires num_cycles to evenly divide transition_steps; "
+            f"got transition_steps={transition_steps}, num_cycles={num_cycles} "
+            f"(remainder={transition_steps % num_cycles})."
+        )
 
-    cycle_length = transition_steps / num_cycles
+    cycle_length = transition_steps // num_cycles
 
     def wrapped(step: int) -> float:
         relative = step - transition_begin

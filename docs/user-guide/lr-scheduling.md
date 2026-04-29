@@ -170,7 +170,7 @@ for step in range(num_steps):
 ```
 
 The optimizer maintains its own counter inside `opt_state` (via
-`scale_by_schedule`), so calling `schedule(step)` for logging does
+`scale_by_neg_lr`), so calling `schedule(step)` for logging does
 not interfere with how the optimizer applies the schedule.
 
 ## See Also
