@@ -766,6 +766,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../user-guide/lr-scheduling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    LR Scheduling
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../user-guide/distributed/" class="md-nav__link">
         
   
@@ -1547,6 +1570,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#schedules" class="md-nav__link">
+    <span class="md-ellipsis">
+      Schedules
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#privacy-auditing" class="md-nav__link">
     <span class="md-ellipsis">
       Privacy Auditing
@@ -1812,6 +1844,29 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="schedules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Schedules
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1985,6 +2040,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#schedules" class="md-nav__link">
+    <span class="md-ellipsis">
+      Schedules
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#privacy-auditing" class="md-nav__link">
     <span class="md-ellipsis">
       Privacy Auditing
@@ -2110,7 +2174,18 @@ classes.</p>
 <li><code>TruncatedPoissonSampler</code> - Bounded Poisson sampling</li>
 <li><code>CyclicPoissonSampler</code> - Cyclic Poisson sampling (BandMF)</li>
 <li><code>BallsInBinsSampler</code> - Random-partition sampling (λCGD, BISR, BLT)</li>
-<li><code>SequentialBatchSampler</code> - Deterministic sequential batching (BLT)</li>
+<li>
+<p><code>SequentialBatchSampler</code> - Deterministic sequential batching (BLT)</p>
+</li>
+<li>
+<p><strong><a href="schedules/">Schedules</a></strong>: LR schedules for TorchOpt functional optimizers</p>
+</li>
+<li><code>constant_schedule()</code> - Constant LR</li>
+<li><code>cosine_schedule()</code> - Cosine annealing</li>
+<li><code>inverse_sqrt_schedule()</code> - Inverse-square-root decay</li>
+<li><code>one_minus_sqrt_schedule()</code> - <code>1 - sqrt(progress)</code> decay (concave)</li>
+<li><code>with_warmup()</code> - Compose warmup ramp with any decay schedule</li>
+<li><code>with_restarts()</code> - Replay a schedule N times</li>
 </ul>
 <h3 id="validation-debugging">Validation &amp; Debugging<a class="headerlink" href="#validation-debugging" title="Permanent link">&para;</a></h3>
 <ul>
@@ -2451,6 +2526,48 @@ classes.</p>
 <td><code>SequentialBatchSampler</code></td>
 <td>Deterministic sequential batching (BLT)</td>
 <td><a href="../user-guide/sampling/#sequential-batch-sampling">Guide</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="schedules">Schedules<a class="headerlink" href="#schedules" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Purpose</th>
+<th>User Guide</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>constant_schedule()</code></td>
+<td>Constant LR</td>
+<td><a href="../user-guide/lr-scheduling/">Guide</a></td>
+</tr>
+<tr>
+<td><code>cosine_schedule()</code></td>
+<td>Cosine annealing curve</td>
+<td><a href="../user-guide/lr-scheduling/">Guide</a></td>
+</tr>
+<tr>
+<td><code>inverse_sqrt_schedule()</code></td>
+<td>Inverse-square-root decay</td>
+<td><a href="../user-guide/lr-scheduling/">Guide</a></td>
+</tr>
+<tr>
+<td><code>one_minus_sqrt_schedule()</code></td>
+<td><code>1 - sqrt(progress)</code> decay (concave)</td>
+<td><a href="../user-guide/lr-scheduling/">Guide</a></td>
+</tr>
+<tr>
+<td><code>with_warmup()</code></td>
+<td>Compose warmup ramp with a decay schedule</td>
+<td><a href="../user-guide/lr-scheduling/#adding-warmup">Guide</a></td>
+</tr>
+<tr>
+<td><code>with_restarts()</code></td>
+<td>Replay a schedule N times</td>
+<td><a href="../user-guide/lr-scheduling/">Guide</a></td>
 </tr>
 </tbody>
 </table>
