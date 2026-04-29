@@ -210,9 +210,7 @@ def with_restarts(
     ``transition_steps <= 0``.
     """
     if num_cycles <= 0:
-        raise ValueError(
-            f"with_restarts requires num_cycles > 0; got {num_cycles}."
-        )
+        raise ValueError(f"with_restarts requires num_cycles > 0; got {num_cycles}.")
     if transition_steps <= 0:
         raise ValueError(
             f"with_restarts requires transition_steps > 0; got {transition_steps}."

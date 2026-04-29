@@ -206,7 +206,7 @@ class TestWithWarmup:
         sched = with_warmup(inner, transition_steps=10)
         assert sched(0) == pytest.approx(0.0)
         assert sched(5) == pytest.approx(0.5 * 5)  # 0.5 * 5.0 = 2.5
-        assert sched(10) == pytest.approx(10.0)    # ramp == 1, inner(10) = 10.0
+        assert sched(10) == pytest.approx(10.0)  # ramp == 1, inner(10) = 10.0
         assert sched(100) == pytest.approx(100.0)
 
     def test_warmup_ramp_linear_with_constant_inner(self):
@@ -240,7 +240,9 @@ class TestWithWarmup:
 
     def test_callable_ramp(self):
         # Quadratic ramp: progress**2.
-        sched = with_warmup(constant_schedule(1.0), transition_steps=10, ramp=lambda p: p * p)
+        sched = with_warmup(
+            constant_schedule(1.0), transition_steps=10, ramp=lambda p: p * p
+        )
         assert sched(0) == pytest.approx(0.0)
         assert sched(5) == pytest.approx(0.25)  # (5/10)**2 = 0.25
         assert sched(10) == pytest.approx(1.0)
@@ -269,22 +271,26 @@ class TestWithRestarts:
         decay = cosine_schedule(1.0, 0.0, transition_steps=50)
         sched = with_restarts(decay, transition_steps=100, num_cycles=2)
         # Cycle length = 50; second cycle starts at step 50 from peak.
-        assert sched(0) == pytest.approx(1.0)        # first cycle peak
-        assert sched(50) == pytest.approx(1.0)       # second cycle peak (restart)
+        assert sched(0) == pytest.approx(1.0)  # first cycle peak
+        assert sched(50) == pytest.approx(1.0)  # second cycle peak (restart)
         assert sched(25) == pytest.approx(decay(25))
         assert sched(75) == pytest.approx(decay(25))  # same point in cycle 2
 
     def test_transition_begin_holds_at_init(self):
         decay = cosine_schedule(1.0, 0.0, transition_steps=50)
-        sched = with_restarts(decay, transition_steps=100, num_cycles=2, transition_begin=10)
-        assert sched(0) == pytest.approx(1.0)   # before begin -> schedule(0)
+        sched = with_restarts(
+            decay, transition_steps=100, num_cycles=2, transition_begin=10
+        )
+        assert sched(0) == pytest.approx(1.0)  # before begin -> schedule(0)
         assert sched(9) == pytest.approx(1.0)
         assert sched(10) == pytest.approx(1.0)  # cycle starts here
 
     def test_after_window_returns_cycle_end(self):
         decay = cosine_schedule(1.0, 0.0, transition_steps=50)
         sched = with_restarts(decay, transition_steps=100, num_cycles=2)
-        assert sched(100) == pytest.approx(0.0)  # cycle_length = 50; schedule(50) = end_value
+        assert sched(100) == pytest.approx(
+            0.0
+        )  # cycle_length = 50; schedule(50) = end_value
         assert sched(500) == pytest.approx(0.0)
 
 
@@ -306,7 +312,9 @@ class TestHFParity:
 
     def test_linear(self, warmup_total):
         W, N = warmup_total
-        decay = torchopt.schedule.linear_schedule(BASE_LR, 0.0, N - W, transition_begin=W)
+        decay = torchopt.schedule.linear_schedule(
+            BASE_LR, 0.0, N - W, transition_begin=W
+        )
         ours = with_warmup(decay, transition_steps=W) if W > 0 else decay
         hf = _hf_lambda(lambda o: get_linear_schedule_with_warmup(o, W, N))
         self._check(ours, hf, N)
@@ -330,7 +338,11 @@ class TestHFParity:
         W, N = warmup_total
         # HF defaults: lr_end=1e-7, power=1.0.
         decay = torchopt.schedule.polynomial_schedule(
-            BASE_LR, 1e-7, 1.0, N - W, transition_begin=W,
+            BASE_LR,
+            1e-7,
+            1.0,
+            N - W,
+            transition_begin=W,
         )
         ours = with_warmup(decay, transition_steps=W) if W > 0 else decay
         hf = _hf_lambda(lambda o: get_polynomial_decay_schedule_with_warmup(o, W, N))
@@ -339,7 +351,11 @@ class TestHFParity:
     def test_polynomial_custom_power(self):
         W, N = 100, 1000
         decay = torchopt.schedule.polynomial_schedule(
-            BASE_LR, 1e-7, 2.0, N - W, transition_begin=W,
+            BASE_LR,
+            1e-7,
+            2.0,
+            N - W,
+            transition_begin=W,
         )
         ours = with_warmup(decay, transition_steps=W)
         hf = _hf_lambda(
@@ -364,12 +380,18 @@ class TestHFParity:
         cycle_length = (N - W) / num_cycles
         inner = cosine_schedule(BASE_LR, 0.0, transition_steps=cycle_length)
         decay = with_restarts(
-            inner, transition_steps=N - W, num_cycles=num_cycles, transition_begin=W,
+            inner,
+            transition_steps=N - W,
+            num_cycles=num_cycles,
+            transition_begin=W,
         )
         ours = with_warmup(decay, transition_steps=W) if W > 0 else decay
         hf = _hf_lambda(
             lambda o: get_cosine_with_hard_restarts_schedule_with_warmup(
-                o, W, N, num_cycles=num_cycles,
+                o,
+                W,
+                N,
+                num_cycles=num_cycles,
             )
         )
         self._check(ours, hf, N)
