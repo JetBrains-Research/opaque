@@ -3,6 +3,7 @@
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$/packages/opaque-performance">
       <sourceFolder url="file://$MODULE_DIR$/packages/opaque-performance/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/packages/opaque-performance/tests" isTestSource="true" />
     </content>
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module" module-name="opaque-core" exported="" />

@@ -3,6 +3,7 @@
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$/packages/opaque-dpftrl">
       <sourceFolder url="file://$MODULE_DIR$/packages/opaque-dpftrl/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/packages/opaque-dpftrl/tests" isTestSource="true" />
     </content>
     <orderEntry type="jdk" jdkName="uv (opaque)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
