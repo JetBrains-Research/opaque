@@ -29,7 +29,7 @@ We welcome all kinds of contributions:
 - **Documentation**: Clarifications, examples, tutorial notebooks
 - **DP validation**: Cross-validation against JAX-Privacy, numerical comparisons
 - **Performance**: Profiling, optimization, memory efficiency improvements
-- **Examples**: Real-world use cases (LoRA fine-tuning, classification, etc.)
+- **Examples**: Real-world training pipelines (HuggingFace LLMs, vision classification, etc.)
 
 No contribution is too small!
 
@@ -37,24 +37,31 @@ No contribution is too small!
 
 ## Repository Structure
 
-The monorepo contains two main packages:
+The monorepo ships eight independent distributions sharing the `opaque.*`
+PEP 420 namespace. The `opaque` distribution lives at the workspace root
+and pins the curated sub-package bundle; every other distribution lives
+under `packages/`:
 
 ```
+pyproject.toml           # opaque — pins the curated sub-package bundle
+README.md                # top-level description
+
 packages/
-├── opaque/              # PyTorch DP-SGD library (Python)
-│   ├── src/opaque/      # Source code (clipping, noise, accounting, sampling, optimizers)
-│   └── tests/           # Test suite (111 tests, ~90% coverage)
-└── opaque-accounting/   # Privacy accounting engine (Rust + Python bindings)
-    ├── src/             # Rust implementation (PLD, mechanisms, composition)
-    └── tests/           # Rust test suite (182 tests)
+├── opaque-core/         # RNG, pytree, clipping, scheduling, distributed plumbing
+├── opaque-dpsgd/        # Gaussian/per-group noise, AdamW-BC, Poisson samplers
+├── opaque-dpftrl/       # Correlated-noise mechanisms (BLT, BSR, BiSR, band-MF, JME, λ-CGD)
+├── opaque-auditing/     # Empirical privacy auditing
+├── opaque-performance/  # Triton kernels, checkpoint patches, HF kernel patches
+├── opaque-huggingface/  # Transformers compat patches (vmap-safe attention, KV cache)
+└── opaque-accounting/   # Rust/PyO3 PLD privacy accounting
 
 docs/                    # User documentation (getting-started, guides, tutorials, API)
 examples/                # Example scripts and notebooks
 ```
 
-**For Python changes**: Edit `packages/opaque/src/opaque/` and add tests to `packages/opaque/tests/`
+**For Python changes**: edit the relevant `packages/opaque-<name>/src/opaque/<name>/` and add tests under the matching `packages/opaque-<name>/tests/`.
 
-**For accounting changes**: If it's just using the existing Rust API from Python, work in `packages/opaque-accounting/opaque_accounting/`. If you need to modify the Rust core, work in `packages/opaque-accounting/src/`.
+**For accounting changes**: if you only need the existing Rust API from Python, work in `packages/opaque-accounting/opaque_accounting/`. If you need to modify the Rust core, work in `packages/opaque-accounting/src/`.
 
 ---
 
@@ -125,7 +132,7 @@ uv run pytest
 uv run pytest --cov=opaque --cov-report=html
 
 # Specific test file
-uv run pytest packages/opaque/tests/clipping/test_clipped_fun.py -v
+uv run pytest packages/opaque-core/tests/clipping/test_clipped_fun.py -v
 ```
 
 ### Test Markers and Filtering
@@ -157,7 +164,7 @@ Gated HuggingFace models use the `@requires_hf_auth` skipif helper from
 those tests; otherwise they skip automatically.
 
 Other tests use `pytest.importorskip()` for automatic dependency handling:
-- HuggingFace tests: Skip if `transformers` not installed (install via `--extra huggingface` on the umbrella or `opaque-huggingface[peft]`)
+- HuggingFace tests: Skip if `transformers` not installed (install via `opaque[huggingface]` or `opaque-huggingface[peft]`)
 - Cross-validation: Skip if `dp-accounting` not installed (install via `opaque-accounting[cross-validation]`)
 
 No manual marker exclusion needed - tests skip automatically when dependencies are missing.
@@ -207,7 +214,7 @@ uv run ruff check --fix packages/
 
 ### Before Submitting
 
-1. **Run tests**: `uv run pytest packages/opaque/tests packages/opaque-accounting/tests`
+1. **Run tests**: `uv run pytest -m "not cuda and not mps and not slow"`
 2. **Format code**: `uv run ruff format --check packages/`
 3. **Check linting**: `uv run ruff check packages/`
 4. **Update docs**: Ensure docstrings are complete
@@ -345,13 +352,16 @@ uv sync --group dev --all-packages --extra all
 
 # Dry-run the preflight script at a specific version
 bash .github/scripts/set_build_versions.sh 0.2.0
-grep -E '^version|opaque-core' packages/opaque/pyproject.toml \
+grep -E '^version|opaque-core' pyproject.toml \
                                packages/opaque-accounting/pyproject.toml \
                                Cargo.toml
 
-# Build every Python wheel
+# Build the opaque wheel (workspace root)
 rm -rf dist
-for pkg in opaque opaque-core opaque-dpsgd opaque-dpftrl opaque-auditing \
+uv build --wheel --out-dir dist
+
+# Build every sub-package wheel
+for pkg in opaque-core opaque-dpsgd opaque-dpftrl opaque-auditing \
            opaque-performance opaque-huggingface; do
   (cd "packages/$pkg" && uv build --wheel --out-dir ../../dist)
 done
@@ -365,7 +375,7 @@ ls dist/   # expect 8 wheels, all at 0.2.0
 unzip -p dist/opaque_core-*.whl '*/METADATA' | grep '^Version:'
 
 # Revert the preflight's in-tree edits
-git checkout -- packages/opaque/pyproject.toml \
+git checkout -- pyproject.toml \
                packages/opaque-accounting/pyproject.toml Cargo.toml
 ```
 
@@ -399,7 +409,7 @@ By contributing, you agree that your contributions will be licensed under the Ap
 
 ## Acknowledgments
 
-Thank you for contributing to differential privacy research and making LLM fine-tuning more privacy-preserving!
+Thank you for contributing to differential privacy research and making private machine learning more accessible!
 
 **Key Resources**:
 - [JAX-Privacy](https://github.com/google-deepmind/jax_privacy) - Reference implementation

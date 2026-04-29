@@ -25,35 +25,6 @@ members = [
 ]
 constraints = [{ name = "torch", specifier = "<2.11" }]
 
-[manifest.dependency-groups]
-dev = [
-    { name = "dp-accounting", specifier = ">=0.4.4" },
-    { name = "pytest", specifier = ">=7.0.0" },
-    { name = "pytest-cov", specifier = ">=4.0.0" },
-    { name = "riskcal", specifier = ">=1.2.0" },
-    { name = "ruff", specifier = ">=0.1.0" },
-    { name = "scipy", specifier = ">=1.11.0" },
-]
-docs = [
-    { name = "mike", specifier = ">=2.1.3" },
-    { name = "mkdocs", specifier = ">=1.5.0" },
-    { name = "mkdocs-jupyter", specifier = ">=0.24.0" },
-    { name = "mkdocs-material", specifier = ">=9.5.0" },
-    { name = "mkdocstrings", extras = ["python"], specifier = ">=0.24.0" },
-]
-examples = [
-    { name = "datasets", specifier = ">=2.0.0" },
-    { name = "jetbrains-cadence" },
-    { name = "jupyter", specifier = ">=1.0.0" },
-    { name = "keyrings-alt", specifier = ">=5.0.0" },
-    { name = "matplotlib", specifier = ">=3.10.7" },
-    { name = "peft", specifier = ">=0.18.0" },
-    { name = "torchopt", specifier = ">=0.7.3" },
-    { name = "torchvision", specifier = ">=0.25.0" },
-    { name = "transformers", specifier = ">=4.57.0" },
-    { name = "wandb", specifier = ">=0.16.0" },
-]
-
 [[package]]
 name = "absl-py"
 version = "1.4.0"
@@ -2194,7 +2165,7 @@ wheels = [
 
 [[package]]
 name = "opaque"
-source = { editable = "packages/opaque" }
+source = { editable = "." }
 dependencies = [
     { name = "opaque-accounting" },
     { name = "opaque-core" },
@@ -2226,6 +2197,35 @@ performance = [
     { name = "opaque-performance" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "dp-accounting" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "riskcal" },
+    { name = "ruff" },
+    { name = "scipy" },
+]
+docs = [
+    { name = "mike" },
+    { name = "mkdocs" },
+    { name = "mkdocs-jupyter" },
+    { name = "mkdocs-material" },
+    { name = "mkdocstrings", extra = ["python"] },
+]
+examples = [
+    { name = "datasets" },
+    { name = "jetbrains-cadence" },
+    { name = "jupyter" },
+    { name = "keyrings-alt" },
+    { name = "matplotlib" },
+    { name = "peft" },
+    { name = "torchopt" },
+    { name = "torchvision" },
+    { name = "transformers" },
+    { name = "wandb" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "opaque-accounting", editable = "packages/opaque-accounting" },
@@ -2244,6 +2244,35 @@ requires-dist = [
     { name = "opaque-performance", marker = "extra == 'performance'", editable = "packages/opaque-performance" },
 ]
 provides-extras = ["auditing", "dpftrl", "performance", "huggingface", "peft", "all"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "dp-accounting", specifier = ">=0.4.4" },
+    { name = "pytest", specifier = ">=7.0.0" },
+    { name = "pytest-cov", specifier = ">=4.0.0" },
+    { name = "riskcal", specifier = ">=1.2.0" },
+    { name = "ruff", specifier = ">=0.1.0" },
+    { name = "scipy", specifier = ">=1.11.0" },
+]
+docs = [
+    { name = "mike", specifier = ">=2.1.3" },
+    { name = "mkdocs", specifier = ">=1.5.0" },
+    { name = "mkdocs-jupyter", specifier = ">=0.24.0" },
+    { name = "mkdocs-material", specifier = ">=9.5.0" },
+    { name = "mkdocstrings", extras = ["python"], specifier = ">=0.24.0" },
+]
+examples = [
+    { name = "datasets", specifier = ">=2.0.0" },
+    { name = "jetbrains-cadence" },
+    { name = "jupyter", specifier = ">=1.0.0" },
+    { name = "keyrings-alt", specifier = ">=5.0.0" },
+    { name = "matplotlib", specifier = ">=3.10.7" },
+    { name = "peft", specifier = ">=0.18.0" },
+    { name = "torchopt", specifier = ">=0.7.3" },
+    { name = "torchvision", specifier = ">=0.25.0" },
+    { name = "transformers", specifier = ">=4.57.0" },
+    { name = "wandb", specifier = ">=0.16.0" },
+]
 
 [[package]]
 name = "opaque-accounting"

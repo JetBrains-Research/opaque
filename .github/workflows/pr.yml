@@ -201,7 +201,6 @@ jobs:
       fail-fast: false
       matrix:
         package:
-          - opaque
           - opaque-core
           - opaque-dpsgd
           - opaque-dpftrl
@@ -230,6 +229,34 @@ jobs:
         with:
           name: preview-wheels-${{ matrix.package }}
           path: dist/*.whl
+          retention-days: 14
+
+  build-preview-opaque:
+    name: Build preview opaque
+    needs: [compute-preview-version]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v8.1.0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Preflight
+        run: bash .github/scripts/set_build_versions.sh "${{ needs.compute-preview-version.outputs.version }}"
+
+      - name: Build wheel
+        run: uv build --wheel --out-dir dist
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v6
+        with:
+          name: preview-wheels-opaque
+          path: dist/opaque-*.whl
           retention-days: 14
 
   build-preview-accounting:
@@ -277,7 +304,7 @@ jobs:
 
   merge-preview-wheels:
     name: Merge preview wheels into single artifact
-    needs: [build-preview-python, build-preview-accounting]
+    needs: [build-preview-python, build-preview-opaque, build-preview-accounting]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/upload-artifact/merge@v6
