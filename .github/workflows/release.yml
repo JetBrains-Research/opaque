@@ -39,7 +39,6 @@ jobs:
       fail-fast: false
       matrix:
         package:
-          - opaque
           - opaque-core
           - opaque-dpsgd
           - opaque-dpftrl
@@ -71,6 +70,35 @@ jobs:
         with:
           name: wheels-${{ matrix.package }}
           path: dist/*.whl
+          retention-days: 90
+
+  build-umbrella-wheel:
+    name: Build opaque (umbrella) @ ${{ github.event.release.tag_name }}
+    needs: [tag-guard]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: astral-sh/setup-uv@v8.1.0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Preflight — rewrite umbrella pins + accounting version from tag
+        run: bash .github/scripts/set_build_versions.sh
+
+      - name: Build wheel
+        run: uv build --wheel --out-dir dist
+
+      - name: Upload wheel to artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: wheels-opaque
+          path: dist/opaque-*.whl
           retention-days: 90
 
   build-opaque-accounting:
@@ -121,7 +149,7 @@ jobs:
 
   merge-wheels:
     name: Merge wheels into single artifact
-    needs: [build-python-wheel, build-opaque-accounting]
+    needs: [build-python-wheel, build-umbrella-wheel, build-opaque-accounting]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/upload-artifact/merge@v6

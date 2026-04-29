@@ -31,6 +31,21 @@ installing under the shared `opaque.*` namespace:
 
 [PEP 420]: https://peps.python.org/pep-0420/
 
+### Import layout
+
+```
+opaque.core.{clipping,sampling,noise,random,pytree}        <- opaque-core
+opaque.distributed.{collectives,gradients,state,shard}     <- opaque-core
+opaque.functional                                          <- opaque-core
+opaque.scheduling                                          <- opaque-core
+opaque.dpsgd.{noise,clipping,sampling,optimizers}          <- opaque-dpsgd
+opaque.dpftrl.{noise,sampling,optimizers}                  <- opaque-dpftrl
+opaque.auditing                                            <- opaque-auditing
+opaque.performance.{kernels,torch,profiling,huggingface}   <- opaque-performance
+opaque.huggingface.{patches,trainer,callbacks,...}         <- opaque-huggingface
+opaque.accounting (._native)                               <- opaque-accounting
+```
+
 ## Installation
 
 ```bash

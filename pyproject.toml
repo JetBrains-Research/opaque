@@ -1,6 +1,81 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm>=8", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opaque"
+dynamic = ["version"]
+description = "Functional Differential Privacy for PyTorch (meta-package)"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Opaque Contributors" }]
+requires-python = ">=3.11,<3.13"
+keywords = [
+    "differential-privacy",
+    "dp-sgd",
+    "dp-ftrl",
+    "pytorch",
+    "privacy",
+    "machine-learning",
+    "deep-learning",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security",
+]
+dependencies = [
+    "opaque-core==0.0.0.dev0",
+    "opaque-dpsgd==0.0.0.dev0",
+    "opaque-accounting==0.0.0.dev0",
+]
+
+[project.optional-dependencies]
+auditing = ["opaque-auditing==0.0.0.dev0"]
+dpftrl = ["opaque-dpftrl==0.0.0.dev0"]
+performance = ["opaque-performance==0.0.0.dev0"]
+huggingface = [
+    "opaque-huggingface==0.0.0.dev0",
+    "opaque-performance==0.0.0.dev0",
+]
+peft = [
+    "opaque-huggingface[peft]==0.0.0.dev0",
+    "opaque-performance==0.0.0.dev0",
+]
+all = [
+    "opaque-auditing==0.0.0.dev0",
+    "opaque-dpftrl==0.0.0.dev0",
+    "opaque-performance==0.0.0.dev0",
+    "opaque-huggingface[peft]==0.0.0.dev0",
+]
+
+# The ``opaque`` namespace is pure PEP 420 and is composed by whichever
+# ``opaque-*`` sub-packages are installed alongside.  This umbrella
+# distribution itself is metadata-only: no src/, no tests/, no code shipped.
+
+[tool.setuptools]
+# Metadata-only umbrella — no Python modules ship from this distribution.
+# Without this, setuptools auto-discovery would scan the workspace root and
+# try to package ``packages/``, ``examples/``, ``docs/`` etc.
+py-modules = []
+
+[tool.setuptools.packages.find]
+include = []
+exclude = ["*"]
+
+[tool.setuptools_scm]
+fallback_version = "0.0.0"
+git_describe_command = "git describe --dirty --tags --long --match v*"
+
 [tool.uv]
+package = true
 workspace.members = [
-    "packages/opaque",
     "packages/opaque-core",
     "packages/opaque-dpsgd",
     "packages/opaque-dpftrl",
@@ -15,7 +90,6 @@ workspace.members = [
 constraint-dependencies = ["torch<2.11"]
 
 [tool.uv.sources]
-opaque = { workspace = true }
 opaque-core = { workspace = true }
 opaque-dpsgd = { workspace = true }
 opaque-dpftrl = { workspace = true }
