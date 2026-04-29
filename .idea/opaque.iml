@@ -4,11 +4,10 @@
     <content url="file://$MODULE_DIR$/packages/opaque">
       <sourceFolder url="file://$MODULE_DIR$/packages/opaque/src" isTestSource="false" />
     </content>
-    <orderEntry type="jdk" jdkName="uv (opaque)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module" module-name="opaque-core" exported="" />
     <orderEntry type="module" module-name="opaque-dpsgd" exported="" />
     <orderEntry type="module" module-name="opaque-accounting" exported="" />
-    <orderEntry type="module" module-name="opaque-auditing" exported="" />
+    <orderEntry type="jdk" jdkName="uv (opaque)" jdkType="Python SDK" />
   </component>
 </module>
