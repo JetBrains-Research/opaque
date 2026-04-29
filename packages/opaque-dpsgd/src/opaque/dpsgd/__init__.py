@@ -13,7 +13,7 @@ is functional.
 
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
-from opaque.dpsgd import clipping, noise, optimizers, sampling, schedules
+from opaque.dpsgd import clipping, noise, optimizers, sampling
 from opaque.dpsgd.clipping.adaptive import (
     AdaptiveClippedGradAux as AdaptiveClippedGradAux,
 )
@@ -46,7 +46,6 @@ __all__ = [
     "noise",
     "optimizers",
     "sampling",
-    "schedules",
     # Clipping (DP-SGD-specific; fixed-clipping at opaque.clipping)
     "adaptive_clipped_grad",
     "auto_clipped_grad",

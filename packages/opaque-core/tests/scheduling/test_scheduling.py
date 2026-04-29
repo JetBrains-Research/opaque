@@ -1,4 +1,4 @@
-"""Tests for opaque.dpsgd.schedules.
+"""Tests for opaque.scheduling.
 
 Cross-checks each public curve against HuggingFace's reference lambdas
 pointwise — the multiplier returned by HF's LambdaLR scaled by
@@ -10,7 +10,6 @@ import math
 import pytest
 import torch
 
-torchopt = pytest.importorskip("torchopt", reason="torchopt required")
 transformers = pytest.importorskip(
     "transformers", reason="transformers required for HF cross-check"
 )
@@ -26,11 +25,14 @@ from transformers.optimization import (  # noqa: E402
     get_polynomial_decay_schedule_with_warmup,
 )
 
-from opaque.dpsgd.schedules import (  # noqa: E402
+from opaque.scheduling import (  # noqa: E402
     constant_schedule,
     cosine_schedule,
+    exponential_decay,
     inverse_sqrt_schedule,
+    linear_schedule,
     one_minus_sqrt_schedule,
+    polynomial_schedule,
     with_restarts,
     with_warmup,
 )
@@ -68,6 +70,115 @@ class TestConstantSchedule:
         sched = constant_schedule(BASE_LR)
         hf = _hf_lambda(get_constant_schedule)
         _assert_pointwise(sched, hf, range(0, 1100, 13))
+
+
+# ---------------------------------------------------------------------------
+# linear_schedule
+# ---------------------------------------------------------------------------
+
+
+class TestLinearSchedule:
+    def test_starts_at_init(self):
+        s = linear_schedule(1.0, 0.0, transition_steps=100)
+        assert s(0) == pytest.approx(1.0)
+
+    def test_reaches_end(self):
+        s = linear_schedule(1.0, 0.0, transition_steps=100)
+        assert s(100) == pytest.approx(0.0, abs=1e-12)
+
+    def test_midpoint(self):
+        s = linear_schedule(1.0, 0.0, transition_steps=100)
+        assert s(50) == pytest.approx(0.5)
+
+    def test_clamps_after_transition(self):
+        s = linear_schedule(1.0, 0.2, transition_steps=100)
+        assert s(100) == pytest.approx(0.2)
+        assert s(500) == pytest.approx(0.2)
+
+    def test_transition_begin_holds_init(self):
+        s = linear_schedule(1.0, 0.0, transition_steps=100, transition_begin=50)
+        assert s(0) == pytest.approx(1.0)
+        assert s(49) == pytest.approx(1.0)
+        assert s(50) == pytest.approx(1.0)
+        assert s(150) == pytest.approx(0.0, abs=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# polynomial_schedule
+# ---------------------------------------------------------------------------
+
+
+class TestPolynomialSchedule:
+    def test_power_one_matches_linear(self):
+        poly = polynomial_schedule(1.0, 0.0, power=1.0, transition_steps=100)
+        lin = linear_schedule(1.0, 0.0, transition_steps=100)
+        for s in (0, 25, 50, 75, 100, 200):
+            assert poly(s) == pytest.approx(lin(s), abs=1e-12)
+
+    def test_power_two_quadratic(self):
+        # frac = 1 - count/T; value = (init - end) * frac^2 + end.
+        s = polynomial_schedule(1.0, 0.0, power=2.0, transition_steps=100)
+        # At progress=0.5: frac=0.5, frac^2 = 0.25.
+        assert s(50) == pytest.approx(0.25)
+        # At progress=1: frac=0, value=end.
+        assert s(100) == pytest.approx(0.0, abs=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# exponential_decay
+# ---------------------------------------------------------------------------
+
+
+class TestExponentialDecay:
+    def test_starts_at_init_value(self):
+        s = exponential_decay(1.0, decay_rate=0.5, transition_steps=100)
+        assert s(0) == pytest.approx(1.0)
+
+    def test_decays_geometrically(self):
+        # decayed = init * decay_rate^(step / transition_steps)
+        s = exponential_decay(1.0, decay_rate=0.5, transition_steps=100)
+        assert s(100) == pytest.approx(0.5)
+        assert s(200) == pytest.approx(0.25)
+        assert s(300) == pytest.approx(0.125)
+
+    def test_transition_begin_holds_init(self):
+        s = exponential_decay(
+            1.0,
+            decay_rate=0.5,
+            transition_begin=50,
+            transition_steps=100,
+        )
+        assert s(0) == pytest.approx(1.0)
+        assert s(50) == pytest.approx(1.0)
+        assert s(150) == pytest.approx(0.5)
+
+    def test_staircase(self):
+        # With staircase=True, exponent is floored.
+        s = exponential_decay(
+            1.0,
+            decay_rate=0.5,
+            transition_steps=100,
+            staircase=True,
+        )
+        # step=99: floor(0.99) = 0 -> decay_rate^0 = 1.
+        assert s(99) == pytest.approx(1.0)
+        # step=100: floor(1.0) = 1 -> 0.5.
+        assert s(100) == pytest.approx(0.5)
+        # step=199: floor(1.99) = 1 -> still 0.5.
+        assert s(199) == pytest.approx(0.5)
+        # step=200: floor(2.0) = 2 -> 0.25.
+        assert s(200) == pytest.approx(0.25)
+
+    def test_end_value_clamps(self):
+        # decay_rate < 1 -> clamp at max(decayed, end_value).
+        s = exponential_decay(
+            1.0,
+            decay_rate=0.5,
+            transition_steps=100,
+            end_value=0.1,
+        )
+        # Without clamp at step=400: 0.5^4 = 0.0625 < 0.1.
+        assert s(400) == pytest.approx(0.1)
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +257,7 @@ class TestInverseSqrtSchedule:
 
 
 # ---------------------------------------------------------------------------
-# with_warmup
+# one_minus_sqrt_schedule
 # ---------------------------------------------------------------------------
 
 
@@ -177,6 +288,11 @@ class TestOneMinusSqrtSchedule:
         assert s(0) == pytest.approx(1.0)
         assert s(50) == pytest.approx(1.0)
         assert s(150) == pytest.approx(0.0, abs=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# with_warmup
+# ---------------------------------------------------------------------------
 
 
 class TestWithWarmup:
@@ -312,9 +428,7 @@ class TestHFParity:
 
     def test_linear(self, warmup_total):
         W, N = warmup_total
-        decay = torchopt.schedule.linear_schedule(
-            BASE_LR, 0.0, N - W, transition_begin=W
-        )
+        decay = linear_schedule(BASE_LR, 0.0, N - W, transition_begin=W)
         ours = with_warmup(decay, transition_steps=W) if W > 0 else decay
         hf = _hf_lambda(lambda o: get_linear_schedule_with_warmup(o, W, N))
         self._check(ours, hf, N)
@@ -337,26 +451,14 @@ class TestHFParity:
     def test_polynomial(self, warmup_total):
         W, N = warmup_total
         # HF defaults: lr_end=1e-7, power=1.0.
-        decay = torchopt.schedule.polynomial_schedule(
-            BASE_LR,
-            1e-7,
-            1.0,
-            N - W,
-            transition_begin=W,
-        )
+        decay = polynomial_schedule(BASE_LR, 1e-7, 1.0, N - W, transition_begin=W)
         ours = with_warmup(decay, transition_steps=W) if W > 0 else decay
         hf = _hf_lambda(lambda o: get_polynomial_decay_schedule_with_warmup(o, W, N))
         self._check(ours, hf, N)
 
     def test_polynomial_custom_power(self):
         W, N = 100, 1000
-        decay = torchopt.schedule.polynomial_schedule(
-            BASE_LR,
-            1e-7,
-            2.0,
-            N - W,
-            transition_begin=W,
-        )
+        decay = polynomial_schedule(BASE_LR, 1e-7, 2.0, N - W, transition_begin=W)
         ours = with_warmup(decay, transition_steps=W)
         hf = _hf_lambda(
             lambda o: get_polynomial_decay_schedule_with_warmup(o, W, N, power=2.0)

@@ -5,9 +5,9 @@ without modification under DP-SGD: they scale the already-clipped,
 already-noised update direction.  The privacy guarantee is
 unchanged.
 
-This page explains the small composition primitive Opaque adds on top
-of [`torchopt.schedule`](https://torchopt.readthedocs.io/) and the
-pattern for using it.
+This page explains the schedules and warmup composition Opaque
+provides via [`opaque.scheduling`](../api/schedules.md), and the
+pattern for using them with TorchOpt functional optimizers.
 
 ## Why warmup matters under DP-SGD
 
@@ -41,17 +41,20 @@ needed.
 
 ```python
 import torchopt
+from opaque.scheduling import linear_schedule
 
 # Linear decay 1e-3 -> 0 over 10 000 steps.
-schedule = torchopt.schedule.linear_schedule(1e-3, 0.0, transition_steps=10_000)
+schedule = linear_schedule(1e-3, 0.0, transition_steps=10_000)
 opt = torchopt.adamw(lr=schedule)
 ```
 
-TorchOpt's `linear_schedule`, `polynomial_schedule`, and
-`exponential_decay` cover the common decay curves; reach for them
-first.  Opaque adds [`cosine_schedule`](../api/schedules.md#cosine_schedule)
-and [`inverse_sqrt_schedule`](../api/schedules.md#inverse_sqrt_schedule)
-for the cases TorchOpt doesn't ship.
+`opaque.scheduling` ships the common decay curves directly:
+[`linear_schedule`](../api/schedules.md#linear_schedule),
+[`polynomial_schedule`](../api/schedules.md#polynomial_schedule),
+[`exponential_decay`](../api/schedules.md#exponential_decay),
+[`cosine_schedule`](../api/schedules.md#cosine_schedule),
+[`inverse_sqrt_schedule`](../api/schedules.md#inverse_sqrt_schedule),
+and [`one_minus_sqrt_schedule`](../api/schedules.md#one_minus_sqrt_schedule).
 
 ## Adding warmup
 
@@ -61,17 +64,17 @@ steps and leaves it untouched afterwards.
 
 For the standard "warmup, then decay" shape, configure the decay
 with `transition_begin = num_warmup_steps`.  Schedules in
-`opaque.dpsgd.schedules` and `torchopt.schedule` return their
-`init_value` while `step < transition_begin`, so the multiplicative
-ramp turns that leading plateau into the warmup ramp.
+`opaque.scheduling` return their `init_value` while
+`step < transition_begin`, so the multiplicative ramp turns that
+leading plateau into the warmup ramp.
 
 ```python
 import torchopt
-from opaque.dpsgd.schedules import with_warmup
+from opaque.scheduling import linear_schedule, with_warmup
 
 base_lr, W, N = 1e-3, 500, 10_000
 
-decay = torchopt.schedule.linear_schedule(
+decay = linear_schedule(
     base_lr, 0.0,
     transition_steps=N - W,
     transition_begin=W,
@@ -102,11 +105,10 @@ schedule = with_warmup(decay, transition_steps=W, ramp="cosine")
 ### Linear with warmup
 
 ```python
-import torchopt
-from opaque.dpsgd.schedules import with_warmup
+from opaque.scheduling import linear_schedule, with_warmup
 
 base_lr, W, N = 1e-3, 500, 10_000
-decay = torchopt.schedule.linear_schedule(
+decay = linear_schedule(
     base_lr, 0.0, transition_steps=N - W, transition_begin=W,
 )
 schedule = with_warmup(decay, transition_steps=W)
@@ -115,7 +117,7 @@ schedule = with_warmup(decay, transition_steps=W)
 ### Cosine with warmup
 
 ```python
-from opaque.dpsgd.schedules import with_warmup, cosine_schedule
+from opaque.scheduling import with_warmup, cosine_schedule
 
 base_lr, W, N = 1e-3, 500, 10_000
 decay = cosine_schedule(
@@ -130,7 +132,7 @@ schedule = with_warmup(decay, transition_steps=W)
 schedule, so warm-up-then-plateau is a one-liner:
 
 ```python
-from opaque.dpsgd.schedules import with_warmup
+from opaque.scheduling import with_warmup
 
 schedule = with_warmup(1e-3, transition_steps=500)
 ```
@@ -142,7 +144,7 @@ schedule `num_cycles` times over a window.  Combined with cosine you
 get SGDR (Loshchilov & Hutter, 2017):
 
 ```python
-from opaque.dpsgd.schedules import cosine_schedule, with_restarts
+from opaque.scheduling import cosine_schedule, with_restarts
 
 base_lr, N, k = 1e-3, 4000, 4
 cycle_length = N / k
