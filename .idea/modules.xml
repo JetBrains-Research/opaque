@@ -10,7 +10,6 @@
       <module fileurl="file://$PROJECT_DIR$/.idea/opaque-dpsgd.iml" filepath="$PROJECT_DIR$/.idea/opaque-dpsgd.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/opaque-huggingface.iml" filepath="$PROJECT_DIR$/.idea/opaque-huggingface.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/opaque-performance.iml" filepath="$PROJECT_DIR$/.idea/opaque-performance.iml" />
-      <module fileurl="file://$PROJECT_DIR$/.idea/opaque.iml" filepath="$PROJECT_DIR$/.idea/opaque.iml" />
     </modules>
   </component>
 </project>
