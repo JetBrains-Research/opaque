@@ -2,15 +2,15 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/lora-privacy.iml" filepath="$PROJECT_DIR$/.idea/lora-privacy.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/opaque.iml" filepath="$PROJECT_DIR$/.idea/opaque.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/opaque-accounting.iml" filepath="$PROJECT_DIR$/.idea/opaque-accounting.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/opaque-auditing.iml" filepath="$PROJECT_DIR$/.idea/opaque-auditing.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/opaque-core.iml" filepath="$PROJECT_DIR$/.idea/opaque-core.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/opaque-dpftrl.iml" filepath="$PROJECT_DIR$/.idea/opaque-dpftrl.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/opaque-dpsgd.iml" filepath="$PROJECT_DIR$/.idea/opaque-dpsgd.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/opaque-huggingface.iml" filepath="$PROJECT_DIR$/.idea/opaque-huggingface.iml" />
-      <module fileurl="file://$PROJECT_DIR$/.idea/opaque-dpftrl.iml" filepath="$PROJECT_DIR$/.idea/opaque-dpftrl.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/opaque-performance.iml" filepath="$PROJECT_DIR$/.idea/opaque-performance.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/opaque@1.iml" filepath="$PROJECT_DIR$/.idea/opaque@1.iml" />
     </modules>
   </component>
 </project>
