@@ -229,7 +229,7 @@ def _batchify_forward(original_forward):
 
     The wrapper is a no-op for normal (already-batched) inputs.
 
-    Delegates to :func:`opaque.utils.functional.with_batch_dim`.
+    Delegates to :func:`opaque.functional.with_batch_dim`.
     """
     from opaque.functional import with_batch_dim
 
@@ -254,8 +254,10 @@ def _batchify_forward(original_forward):
 _ALL_MODEL_MODULES = [
     "transformers.models.llama.modeling_llama",
     "transformers.models.mistral.modeling_mistral",
+    "transformers.models.ministral.modeling_ministral",
     "transformers.models.qwen2.modeling_qwen2",
     "transformers.models.qwen3.modeling_qwen3",
+    "transformers.models.smollm3.modeling_smollm3",
     "transformers.models.phi3.modeling_phi3",
     "transformers.models.gemma.modeling_gemma",
     "transformers.models.gemma2.modeling_gemma2",
@@ -263,6 +265,9 @@ _ALL_MODEL_MODULES = [
     "transformers.models.cohere.modeling_cohere",
     "transformers.models.cohere2.modeling_cohere2",
     "transformers.models.gpt2.modeling_gpt2",
+    "transformers.models.olmo2.modeling_olmo2",
+    "transformers.models.olmo3.modeling_olmo3",
+    "transformers.models.glm4.modeling_glm4",
 ]
 
 

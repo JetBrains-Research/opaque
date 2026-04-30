@@ -10,6 +10,11 @@ two sub-packages:
   GeGLU, RMSNorm, RoPE, fused cross-entropy, LoRA) that wire Opaque's kernels into
   the corresponding Transformers model classes. Pure performance.
 
+**Scope:** the curated matrix prioritises **decoder-only text** models
+(``ForCausalLM`` and shared text modules). Vision-language stacks
+(e.g. ``*ForConditionalGeneration``) are not part of the default patch set.
+Tested against `transformers==4.57.1`.
+
 Patches apply automatically on import:
 
 ```python
@@ -35,11 +40,11 @@ components:
 - **Batchify wrappers** -- automatically adds/removes the batch dimension
   for model forward methods called under `vmap(grad(...))`.
 
-These patches are applied for LLaMA, Mistral, Qwen2, Qwen3, Phi-3,
-Gemma, Gemma2, Granite, Cohere, and Cohere2 models. DeepSeek models
-inherit LLaMA patches automatically. GPT-2 works without patches (simple
-architecture). Other models may work if their attention implementation
-follows the standard Transformers pattern.
+These patches are applied for LLaMA, Mistral, Ministral, Qwen2, Qwen3,
+SmolLM3, OLMo2, OLMo3, GLM4, Phi-3, Gemma, Gemma2, Granite, Cohere, and
+Cohere2 models. DeepSeek models inherit LLaMA patches automatically. GPT-2
+works without patches (simple architecture). Other text models may work if
+their attention implementation follows the standard Transformers pattern.
 
 ### Why patches are needed
 
@@ -95,15 +100,23 @@ vmap compatibility and which fused Triton kernels are applied per model:
 |-------|-------------|--------------|---------|------|----|-----------------|-------------|
 | LLaMA / Llama 3 | 7B, 8B, 70B (LoRA) | SwiGLU | Yes | Yes | Yes | Yes | QKV + MLP |
 | Mistral | 7B | SwiGLU | Yes | Yes | Yes | Yes | QKV + MLP |
+| Ministral | 8B | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
 | Qwen2 / Qwen3 | 0.5B, 7B | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
+| SmolLM3 | 3B | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
+| OLMo2 | 1B, 7B (tiny config in tests) | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
+| OLMo3 | 1B, 7B (tiny config in tests) | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
+| GLM4 | 9B (tiny config in tests) | SwiGLU (Phi3-style) | Yes | -- | Yes | Yes | MLP only |
 | Phi-3 | 3.8B | SwiGLU | Yes | Yes | Yes | -- | -- |
 | Gemma | 2B, 7B | GeGLU Exact | Yes | Yes | Yes | Yes | QKV + MLP |
 | Gemma2 | 2B, 7B | GeGLU Approx | Yes | Yes | Yes | Yes (softcap) | QKV + MLP |
 | Granite | 3B, 8B | SwiGLU | Yes | Yes | Yes | Yes | QKV + MLP |
-| Cohere | 8B | SwiGLU | -- | -- | Yes | Yes | MLP only |
-| Cohere2 | 8B | SwiGLU | -- | -- | Yes | Yes | QKV + MLP |
+| Cohere | 8B | SwiGLU | -- | Yes | Yes | Yes | MLP only |
+| Cohere2 | 8B | SwiGLU | -- | Yes | Yes | Yes | QKV + MLP |
 | GPT-2 | 124M, 355M | -- | -- | -- | -- | -- | -- |
 | DeepSeek | 7B | SwiGLU | Yes | Yes | Yes | Yes | QKV + MLP |
+
+**Not supported by default patching:** expert-routed decoder stacks such as
+GPT-OSS.
 
 **What makes a model vmap-compatible:** The model must not use
 `torch.nonzero`, data-dependent control flow (`if tensor.item() > 0`), or

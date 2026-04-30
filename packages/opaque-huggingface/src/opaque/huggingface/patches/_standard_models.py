@@ -3,7 +3,8 @@
 """Standard model patches for HuggingFace transformers.
 
 These patches work for models that use standard eager attention:
-LLaMA, Mistral, Qwen2, Phi3, Gemma, Gemma2.
+LLaMA, Mistral, Ministral, Qwen2/3, SmolLM3, OLMo2/3, GLM4, Phi3, Gemma,
+Gemma2, Granite, Cohere, Cohere2.
 """
 
 import importlib
@@ -16,13 +17,18 @@ from opaque.huggingface.patches._shared import vmap_repeat_kv
 _STANDARD_MODEL_MODULES = [
     "transformers.models.llama.modeling_llama",
     "transformers.models.mistral.modeling_mistral",
+    "transformers.models.ministral.modeling_ministral",
     "transformers.models.qwen2.modeling_qwen2",
     "transformers.models.qwen3.modeling_qwen3",
+    "transformers.models.smollm3.modeling_smollm3",
     "transformers.models.phi3.modeling_phi3",
     "transformers.models.gemma.modeling_gemma",
     "transformers.models.granite.modeling_granite",
     "transformers.models.cohere.modeling_cohere",
     "transformers.models.cohere2.modeling_cohere2",
+    "transformers.models.olmo2.modeling_olmo2",
+    "transformers.models.olmo3.modeling_olmo3",
+    "transformers.models.glm4.modeling_glm4",
 ]
 
 
@@ -86,8 +92,7 @@ def vmap_eager_attention_forward(
 def apply_standard_model_patches() -> None:
     """Apply patches to standard models.
 
-    Patches models that use standard eager attention:
-    - LLaMA, Mistral, Qwen2, Phi3, Gemma, Gemma2
+    Patches models that use standard eager attention.
 
     Note: Requires apply_shared_patches() to be called first.
     """

@@ -16,9 +16,11 @@ control with the ``OPAQUE_SKIP_TRANSFORMERS_*`` environment variables:
   ``shared,standard,gemma2,phi3``.
 - ``OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES`` — ``all`` or ``collator``.
 
-Supported models: GPT-2, LLaMA / Llama 3 (and LLaMA-based: DeepSeek,
-Mistral, ...), Qwen2/3, Phi-3, Gemma / Gemma 2, Granite, Cohere /
-Cohere 2.
+Supported models (text / ``ForCausalLM``): GPT-2, LLaMA / Llama 3
+(and LLaMA-based: DeepSeek, Mistral, …), Ministral, Qwen2/3, SmolLM3,
+OLMo2/3, GLM4, Phi-3, Gemma / Gemma 2, Granite, Cohere / Cohere 2.
+Vision-language and other ``*ForConditionalGeneration`` stacks are out of
+scope for the curated patch matrix until explicitly supported.
 """
 
 from opaque.core._env import parse_skip_env

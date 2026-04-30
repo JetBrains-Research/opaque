@@ -68,6 +68,12 @@ AGENTS.md notes incompatibility with `@torch.amp.custom_fwd` / `custom_bwd`.
 New architectures (e.g. VL) need **both** tracks before claiming support in
 [`docs/user-guide/huggingface.md`](../user-guide/huggingface.md).
 
+### HuggingFace version pin
+
+Parity in this roadmap is evaluated against `transformers==4.57.1` (locked in
+`uv.lock`; see root [`pyproject.toml`](../../pyproject.toml) and
+[`packages/opaque-huggingface/pyproject.toml`](../../packages/opaque-huggingface/pyproject.toml)).
+
 ## Auto-patch acceptance criteria
 
 Before enabling **default** patching for a new op, record results in this doc or
@@ -201,17 +207,34 @@ Current perf baseline remains in the same envelope as pre-change runs for
 `label_smoothing=0` (differences are run-to-run noise); enabling
 `label_smoothing=0.1` showed negligible overhead in local spot checks.
 
-### Phase 3 — RoPE and extended model families
+### Phase 3 — RoPE and extended **text** model families
 
-**Rationale:** Multimodal / M-RoPE (e.g. VL stacks) needs **compat** patches
-first, then kernel patches.
+**Rationale (current):** expand **decoder-only text** coverage (compat +
+kernels) where the contract matches existing primitives (half-split RoPE,
+SwiGLU, RMSNorm, fused CE). VL / M-RoPE remains **out of scope** for the
+default matrix until explicitly scheduled.
 
 **Work:**
 
-- `opaque.huggingface`: vmap-safe masks, rotary helpers, cache behavior.
-- `opaque.performance`: M-RoPE Triton only after compat is stable.
+- `opaque.huggingface`: vmap-safe masks and eager attention for each new text
+  family added to the patch list.
+- `opaque.performance`: register the same kernel hooks on the family’s
+  `modeling_*` module paths.
 - Update [`docs/user-guide/huggingface.md`](../user-guide/huggingface.md) table
-  when both land.
+  when a family lands.
+
+**Coverage (incremental):** Module-level `apply_rotary_pos_emb` Triton swap now
+includes **Cohere** and **Cohere2** (same half-split contract as Llama). Tests:
+[`test_rope_module_patches.py`](../../packages/opaque-performance/tests/huggingface/test_rope_module_patches.py).
+
+**Text-first scope (product default):** kernel and compat expansion targets
+**decoder-only text** models (``ForCausalLM`` and shared text modules). Example
+addition: **OLMo2** — SwiGLU / RMSNorm / RoPE / fused CE wiring in
+[`kernel_patches.py`](../../packages/opaque-performance/src/opaque/performance/huggingface/kernel_patches.py)
+plus vmap eager-attention patches in `opaque.huggingface`. OLMo2 uses a
+different residual layout than Llama (no ``LlamaDecoderLayer``-style fused
+add+RMS block); fused post-attention kernels stay **off** until a dedicated
+factory exists.
 
 ### Phase 4 — MoE and wide FFN
 

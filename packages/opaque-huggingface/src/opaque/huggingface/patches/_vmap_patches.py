@@ -7,7 +7,8 @@ gradients. Applied at `import opaque` time.
 
 Patched groups:
 - shared: causal mask (masking_utils), repeat_kv (sdpa_attention)
-- standard: eager attention for LLaMA, Mistral, Qwen2, Qwen3, Granite, Cohere, Cohere2
+- standard: eager attention for LLaMA, Mistral, Ministral, Qwen2, Qwen3,
+  SmolLM3, OLMo2/3, GLM4, Granite, Cohere, Cohere2
 - gemma2: softcap-aware attention
 - phi3: DynamicCache compatibility, repeat_kv
 
@@ -31,7 +32,7 @@ def apply_vmap_patches() -> None:
 
     Patches at module/class level for:
     - shared: causal mask, repeat_kv utilities
-    - standard: eager attention for standard models
+    - standard: eager attention for standard decoder-only text models
     - gemma2: softcap attention
     - phi3: DynamicCache compatibility
 

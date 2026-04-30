@@ -5,10 +5,14 @@
 Replaces model components with Opaque's vmap-compatible Triton kernels at class
 level. Applied at `import opaque` time when CUDA and Triton are available.
 
+**Scope:** targets are **decoder-only text** architectures (``ForCausalLM`` /
+shared text modules). Vision-language and other multimodal heads are not part
+of the default patch matrix.
+
 Patched components:
-- MLP activations: SwiGLU (LLaMA, Mistral, Qwen2, Qwen3, Phi3, Granite, Cohere, Cohere2) and GeGLU (Gemma, Gemma2)
+- MLP activations: SwiGLU (LLaMA, Mistral, Ministral, Qwen2, Qwen3, SmolLM3, OLMo2, OLMo3, Granite, Cohere, Cohere2), Phi3-style SwiGLU (Phi3, Glm4), and GeGLU (Gemma, Gemma2)
 - RMSNorm: Llama-style and Gemma-style RMSNorm modules
-- Fused add + post-attention RMSNorm on decoder layers (Llama, Mistral, Qwen2/3, Gemma, Phi-3, Granite)
+- Fused add + post-attention RMSNorm on decoder layers with Llama-style residual ordering (Llama, Mistral/Ministral, Qwen2/3, SmolLM3, Gemma, Phi-3, Granite)
 - RoPE: apply_rotary_pos_emb for all supported models (standard half-split rotation)
 - Cross-entropy loss: ForCausalLM loss via LOSS_MAPPING (fp32 fallback)
 - Fused linear + CE: ForCausalLM.forward replaced to skip lm_head materialization (bf16/fp16)
@@ -49,16 +53,21 @@ _is_kernel_patched = False
 _SWIGLU_MLP = [
     ("transformers.models.llama.modeling_llama", "LlamaMLP"),
     ("transformers.models.mistral.modeling_mistral", "MistralMLP"),
+    ("transformers.models.ministral.modeling_ministral", "MinistralMLP"),
     ("transformers.models.qwen2.modeling_qwen2", "Qwen2MLP"),
     ("transformers.models.qwen3.modeling_qwen3", "Qwen3MLP"),
+    ("transformers.models.smollm3.modeling_smollm3", "SmolLM3MLP"),
     ("transformers.models.granite.modeling_granite", "GraniteMLP"),
     ("transformers.models.cohere.modeling_cohere", "CohereMLP"),
     ("transformers.models.cohere2.modeling_cohere2", "Cohere2MLP"),
+    ("transformers.models.olmo2.modeling_olmo2", "Olmo2MLP"),
+    ("transformers.models.olmo3.modeling_olmo3", "Olmo3MLP"),
 ]
 
 # Phi3 MLP: combined gate_up_proj, needs chunk(2)
 _PHI3_MLP = [
     ("transformers.models.phi3.modeling_phi3", "Phi3MLP"),
+    ("transformers.models.glm4.modeling_glm4", "Glm4MLP"),
 ]
 
 # GeGLU exact MLP (Gemma): gelu activation
@@ -75,12 +84,18 @@ _GEGLU_APPROX_MLP = [
 _ROPE_MODELS = [
     "transformers.models.llama.modeling_llama",
     "transformers.models.mistral.modeling_mistral",
+    "transformers.models.ministral.modeling_ministral",
     "transformers.models.qwen2.modeling_qwen2",
     "transformers.models.qwen3.modeling_qwen3",
+    "transformers.models.smollm3.modeling_smollm3",
     "transformers.models.phi3.modeling_phi3",
     "transformers.models.gemma.modeling_gemma",
     "transformers.models.gemma2.modeling_gemma2",
     "transformers.models.granite.modeling_granite",
+    "transformers.models.cohere.modeling_cohere",
+    "transformers.models.cohere2.modeling_cohere2",
+    "transformers.models.olmo2.modeling_olmo2",
+    "transformers.models.olmo3.modeling_olmo3",
 ]
 
 
@@ -93,8 +108,10 @@ _ROPE_MODELS = [
 _RMSNORM_LLAMA_STYLE = [
     ("transformers.models.llama.modeling_llama", "LlamaRMSNorm"),
     ("transformers.models.mistral.modeling_mistral", "MistralRMSNorm"),
+    ("transformers.models.ministral.modeling_ministral", "MinistralRMSNorm"),
     ("transformers.models.qwen2.modeling_qwen2", "Qwen2RMSNorm"),
     ("transformers.models.qwen3.modeling_qwen3", "Qwen3RMSNorm"),
+    ("transformers.models.smollm3.modeling_smollm3", "SmolLM3RMSNorm"),
     ("transformers.models.phi3.modeling_phi3", "Phi3RMSNorm"),
     ("transformers.models.granite.modeling_granite", "GraniteRMSNorm"),
 ]
@@ -105,6 +122,15 @@ _RMSNORM_GEMMA = [
 
 _RMSNORM_GEMMA2 = [
     ("transformers.models.gemma2.modeling_gemma2", "Gemma2RMSNorm"),
+]
+
+_RMSNORM_OLMO2 = [
+    ("transformers.models.olmo2.modeling_olmo2", "Olmo2RMSNorm"),
+    ("transformers.models.olmo3.modeling_olmo3", "Olmo3RMSNorm"),
+]
+
+_RMSNORM_GLM4 = [
+    ("transformers.models.glm4.modeling_glm4", "Glm4RMSNorm"),
 ]
 
 
@@ -163,6 +189,20 @@ def _rmsnorm_fac_gemma2(orig):
     )
 
 
+def _rmsnorm_fac_olmo2(orig):
+    # OLMo2 follows the same numeric formula as Llama-style RMSNorm but uses
+    # non in-place backward in Liger's model-specific patching.
+    return _make_rms_norm_forward(
+        orig, casting_mode="llama", offset=0.0, in_place_bwd=False
+    )
+
+
+def _rmsnorm_fac_glm4(orig):
+    return _make_rms_norm_forward(
+        orig, casting_mode="llama", offset=0.0, in_place_bwd=False
+    )
+
+
 def _patch_rms_norm(patched: list) -> None:
     for path, cls_name in _RMSNORM_LLAMA_STYLE:
         if _patch_forward(path, cls_name, _rmsnorm_fac_llama):
@@ -173,6 +213,12 @@ def _patch_rms_norm(patched: list) -> None:
     for path, cls_name in _RMSNORM_GEMMA2:
         if _patch_forward(path, cls_name, _rmsnorm_fac_gemma2):
             patched.append(f"{cls_name}(rmsnorm)")
+    for path, cls_name in _RMSNORM_OLMO2:
+        if _patch_forward(path, cls_name, _rmsnorm_fac_olmo2):
+            patched.append(f"{cls_name}(rmsnorm)")
+    for path, cls_name in _RMSNORM_GLM4:
+        if _patch_forward(path, cls_name, _rmsnorm_fac_glm4):
+            patched.append(f"{cls_name}(rmsnorm)")
 
 
 # Fused residual add + post_attention_layernorm (Pre-LN block after attention;
@@ -180,8 +226,10 @@ def _patch_rms_norm(patched: list) -> None:
 _FUSED_ADD_RMS_DECODER_LLAMA = [
     ("transformers.models.llama.modeling_llama", "LlamaDecoderLayer"),
     ("transformers.models.mistral.modeling_mistral", "MistralDecoderLayer"),
+    ("transformers.models.ministral.modeling_ministral", "MinistralDecoderLayer"),
     ("transformers.models.qwen2.modeling_qwen2", "Qwen2DecoderLayer"),
     ("transformers.models.qwen3.modeling_qwen3", "Qwen3DecoderLayer"),
+    ("transformers.models.smollm3.modeling_smollm3", "SmolLM3DecoderLayer"),
 ]
 
 _FUSED_ADD_RMS_DECODER_GEMMA = [
@@ -620,13 +668,18 @@ def _opaque_causal_lm_loss(
 _FUSED_CE_CAUSAL_LM = [
     ("transformers.models.llama.modeling_llama", "LlamaForCausalLM"),
     ("transformers.models.mistral.modeling_mistral", "MistralForCausalLM"),
+    ("transformers.models.ministral.modeling_ministral", "MinistralForCausalLM"),
     ("transformers.models.qwen2.modeling_qwen2", "Qwen2ForCausalLM"),
     ("transformers.models.qwen3.modeling_qwen3", "Qwen3ForCausalLM"),
+    ("transformers.models.smollm3.modeling_smollm3", "SmolLM3ForCausalLM"),
     ("transformers.models.gemma.modeling_gemma", "GemmaForCausalLM"),
     ("transformers.models.gemma2.modeling_gemma2", "Gemma2ForCausalLM"),
     ("transformers.models.granite.modeling_granite", "GraniteForCausalLM"),
     ("transformers.models.cohere.modeling_cohere", "CohereForCausalLM"),
     ("transformers.models.cohere2.modeling_cohere2", "Cohere2ForCausalLM"),
+    ("transformers.models.olmo2.modeling_olmo2", "Olmo2ForCausalLM"),
+    ("transformers.models.olmo3.modeling_olmo3", "Olmo3ForCausalLM"),
+    ("transformers.models.glm4.modeling_glm4", "Glm4ForCausalLM"),
 ]
 
 
@@ -979,11 +1032,16 @@ def _patch_lora_forward(patched: list) -> None:
 _MLP_ACTIVATION_MAP = {
     "LlamaMLP": 0,  # ACTIVATION_SWIGLU
     "MistralMLP": 0,
+    "MinistralMLP": 0,
     "Qwen2MLP": 0,
     "Qwen3MLP": 0,
+    "SmolLM3MLP": 0,
     "GraniteMLP": 0,
     "CohereMLP": 0,
     "Cohere2MLP": 0,
+    "Olmo2MLP": 0,
+    "Olmo3MLP": 0,
+    "Glm4MLP": 0,
     "Phi3MLP": 0,
     "GemmaMLP": 1,  # ACTIVATION_GEGLU_EXACT
     "Gemma2MLP": 2,  # ACTIVATION_GEGLU_APPROX
