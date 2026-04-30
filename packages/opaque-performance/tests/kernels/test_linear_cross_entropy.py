@@ -10,7 +10,11 @@ Tests:
 6. Softcapping (Gemma2) and logit scaling (Granite)
 
 Uses bf16 throughout — CCE backward requires half precision.
-Config: Mellum-4b scale (uses mellum_config from conftest).
+``mellum_config`` (see ``kernels/conftest.py``) uses Mellum-4b-shaped tensors
+(seq 1024, hidden 3072, vocab up to 128256): realistic geometry comparable to
+``train_causal_lm.py --preset mellum-kstack``, not tiny matrices where launch
+and dispatch dominate the timing story.
+
 Parametrized over vocab sizes: 32768 (single-chunk) and 128256 (Mellum-4b, chunked path).
 Reference computes in fp32 for comparison baseline.
 
@@ -48,7 +52,13 @@ VOCAB_SIZES = [32768, 128256]
 
 
 def pytorch_linear_ce(
-    hidden_states, weight, labels, ignore_index=-100, softcap=None, scaling=0
+    hidden_states,
+    weight,
+    labels,
+    ignore_index=-100,
+    softcap=None,
+    scaling=0,
+    label_smoothing=0.0,
 ):
     """PyTorch reference: matmul + shift + F.cross_entropy.
 
@@ -73,12 +83,19 @@ def pytorch_linear_ce(
         shift_logits.reshape(-1, V),
         shift_labels.reshape(-1),
         ignore_index=ignore_index,
+        label_smoothing=label_smoothing,
     )
     return loss
 
 
 def opaque_linear_ce(
-    hidden_states, weight, labels, ignore_index=-100, softcap=0, scaling=0
+    hidden_states,
+    weight,
+    labels,
+    ignore_index=-100,
+    softcap=0,
+    scaling=0,
+    label_smoothing=0.0,
 ):
     """Opaque kernel wrapper for functional use in vmap/grad.
 
@@ -95,6 +112,7 @@ def opaque_linear_ce(
         labels,
         ignore_index,
         softcap,
+        label_smoothing,
     )
     shifted_labels = labels[..., 1:].contiguous().flatten()
     n_valid = (shifted_labels != ignore_index).sum().float().clamp(min=1)
@@ -166,6 +184,111 @@ class TestLinearCEForward:
             rtol=RTOL_FORWARD,
             atol=ATOL_FORWARD,
             label="loss",
+        )
+
+    @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
+    def test_forward_label_smoothing(self, assert_precision, mellum_config, vocab_size):
+        """Forward with label smoothing matches PyTorch."""
+        torch.manual_seed(43)
+        batch = mellum_config["batch_size"]
+        seq_len = mellum_config["seq_len"]
+        hidden_dim = mellum_config["hidden_dim"]
+
+        hidden = torch.randn(
+            batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
+        weight = torch.randn(
+            vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
+        labels = torch.randint(0, vocab_size, (batch, seq_len), device="cuda")
+
+        for ls in (0.05, 0.1):
+            out_pt = pytorch_linear_ce(hidden, weight, labels, label_smoothing=ls)
+            out_op = opaque_linear_ce(hidden, weight, labels, label_smoothing=ls)
+            print(f"\nLinear CE forward label_smoothing={ls} (V={vocab_size}):")
+            assert_precision(
+                out_op.float().unsqueeze(0),
+                out_pt.float().unsqueeze(0),
+                rtol=RTOL_FORWARD,
+                atol=ATOL_FORWARD,
+                label="loss",
+            )
+
+    @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
+    def test_backward_label_smoothing_hidden_grad(
+        self, assert_precision, mellum_config, vocab_size
+    ):
+        ls = 0.1
+        torch.manual_seed(44)
+        batch = mellum_config["batch_size"]
+        seq_len = mellum_config["seq_len"]
+        hidden_dim = mellum_config["hidden_dim"]
+
+        hidden_pt = torch.randn(
+            batch,
+            seq_len,
+            hidden_dim,
+            device="cuda",
+            dtype=torch.bfloat16,
+            requires_grad=True,
+        )
+        weight = torch.randn(
+            vocab_size, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
+        labels = torch.randint(0, vocab_size, (batch, seq_len), device="cuda")
+
+        loss_pt = pytorch_linear_ce(hidden_pt, weight, labels, label_smoothing=ls)
+        loss_pt.backward()
+
+        hidden_op = hidden_pt.detach().clone().requires_grad_(True)
+        loss_op = opaque_linear_ce(hidden_op, weight, labels, label_smoothing=ls)
+        loss_op.backward()
+
+        print(f"\nLinear CE backward d_hidden label_smoothing (V={vocab_size}):")
+        assert_precision(
+            hidden_op.grad.float(),
+            hidden_pt.grad.float(),
+            rtol=RTOL_BACKWARD,
+            atol=ATOL_BACKWARD,
+            label="hidden_states.grad",
+        )
+
+    @pytest.mark.parametrize("vocab_size", VOCAB_SIZES)
+    def test_backward_label_smoothing_weight_grad(
+        self, assert_precision, mellum_config, vocab_size
+    ):
+        ls = 0.1
+        torch.manual_seed(45)
+        batch = mellum_config["batch_size"]
+        seq_len = mellum_config["seq_len"]
+        hidden_dim = mellum_config["hidden_dim"]
+
+        hidden = torch.randn(
+            batch, seq_len, hidden_dim, device="cuda", dtype=torch.bfloat16
+        )
+        weight_pt = torch.randn(
+            vocab_size,
+            hidden_dim,
+            device="cuda",
+            dtype=torch.bfloat16,
+            requires_grad=True,
+        )
+        labels = torch.randint(0, vocab_size, (batch, seq_len), device="cuda")
+
+        loss_pt = pytorch_linear_ce(hidden, weight_pt, labels, label_smoothing=ls)
+        loss_pt.backward()
+
+        weight_op = weight_pt.detach().clone().requires_grad_(True)
+        loss_op = opaque_linear_ce(hidden, weight_op, labels, label_smoothing=ls)
+        loss_op.backward()
+
+        print(f"\nLinear CE backward d_weight label_smoothing (V={vocab_size}):")
+        assert_precision(
+            weight_op.grad.float(),
+            weight_pt.grad.float(),
+            rtol=RTOL_BACKWARD,
+            atol=ATOL_BACKWARD,
+            label="weight.grad",
         )
 
 
@@ -768,6 +891,7 @@ class TestLinearCEWrapper:
             labels,
             -100,
             0,
+            0.0,
         )
         shifted = labels[..., 1:].contiguous().flatten()
         n_valid = (shifted != -100).sum().float().clamp(min=1)

@@ -92,6 +92,7 @@ def _linear_ce_forward_kernel(
     C,
     LSE,
     NegCorrectLogit,
+    SumLogits,
     Locks,
     Valids,
     Targets,
@@ -115,6 +116,7 @@ def _linear_ce_forward_kernel(
     GROUP_B: tl.constexpr,
     EVEN_D: tl.constexpr,
     HAS_SOFTCAP: tl.constexpr,
+    label_smoothing: tl.constexpr,
 ):
     pid = tl.program_id(axis=0)
     num_pid_b = tl.cdiv(B, BLOCK_B)
@@ -174,6 +176,10 @@ def _linear_ce_forward_kernel(
         neg_correct_logit_ptrs, -logits, mask=this_targets[:, None] == offs_v[None, :]
     )
 
+    if label_smoothing > 0:
+        row_sum = tl.sum(tl.where(offs_v[None, :] < V, logits, 0.0), axis=1)
+        tl.atomic_add(SumLogits + direct_offs_b, row_sum, mask=direct_offs_b < B)
+
     # Per-block LSE: max + log(sum(exp(logits - max)))
     this_mx = tl.max(logits, axis=1)
     this_lse = this_mx + tl.log(tl.sum(tl.exp(logits - this_mx[:, None]), axis=1))
@@ -207,8 +213,8 @@ _linear_ce_forward_kernel = triton.heuristics(
 if _AUTOTUNE:
     _linear_ce_forward_kernel = triton.autotune(
         configs=_get_autotune_configs(),
-        key=["V", "D", "B_BIN"],
-        restore_value=["LSE"],
+        key=["V", "D", "B_BIN", "label_smoothing"],
+        restore_value=["LSE", "SumLogits"],
     )(_linear_ce_forward_kernel)
 else:
     # Fixed best config (matches CCE default)
@@ -316,6 +322,7 @@ def _linear_ce_backward_kernel(
     COMPUTE_DC: tl.constexpr,
     COMPUTE_DE: tl.constexpr,
     PER_SAMPLE_DC: tl.constexpr,
+    label_smoothing: tl.constexpr,
 ):
     pid = tl.program_id(axis=0)
     num_b_chunks = tl.cdiv(B, BLOCK_B)
@@ -369,14 +376,16 @@ def _linear_ce_backward_kernel(
         lse = tl.load(LSE + offs_b, mask=offs_b < B, other=float("inf"))
 
     accum = accum.cast(tl.float32)
-    # d_accum = softmax(logits) - one_hot(target) = exp(logits - LSE) - one_hot
     d_accum = tl.exp(accum - lse[:, None])
     d_accum = tl.where(offs_v[None, :] < V, d_accum, 0.0)
 
-    # Subtract one-hot at target positions
     targets = tl.load(Targets + offs_b, mask=offs_b < BMax, other=V + 1)
     is_target = targets[:, None] == offs_v[None, :]
-    d_accum += tl.where(is_target, -1.0, 0.0)
+    if label_smoothing > 0:
+        d_accum = tl.where(offs_v[None, :] < V, d_accum - label_smoothing / V, d_accum)
+        d_accum += tl.where(is_target, -(1.0 - label_smoothing), 0.0)
+    else:
+        d_accum += tl.where(is_target, -1.0, 0.0)
 
     # Scale by upstream gradient
     if ITEM_DO:
@@ -485,7 +494,7 @@ _linear_ce_backward_kernel = triton.heuristics(
 if _AUTOTUNE:
     _linear_ce_backward_kernel = triton.autotune(
         configs=_get_autotune_configs(),
-        key=["V", "D", "B_BIN"],
+        key=["V", "D", "B_BIN", "label_smoothing"],
         reset_to_zero=["dE", "dC"],
     )(_linear_ce_backward_kernel)
 else:
@@ -510,6 +519,22 @@ else:
 class LSEReturn:
     lse: torch.Tensor
     neg_correct_logit: torch.Tensor
+    sum_logits: torch.Tensor | None
+
+
+def _per_token_nll_from_lse_ret(
+    lse_ret: LSEReturn,
+    vocab_size: int,
+    label_smoothing: float,
+) -> torch.Tensor:
+    """Per-token NLL matching ``F.cross_entropy(..., label_smoothing=…)``."""
+    hard = lse_ret.neg_correct_logit + lse_ret.lse
+    ls = float(label_smoothing)
+    if ls <= 0.0:
+        return hard
+    assert lse_ret.sum_logits is not None
+    mean_z = lse_ret.sum_logits / vocab_size
+    return (1.0 - ls) * hard + ls * (lse_ret.lse - mean_z)
 
 
 def _forward_impl(
@@ -518,6 +543,7 @@ def _forward_impl(
     targets: torch.Tensor,
     valids: torch.Tensor | None,
     softcap: float | None,
+    label_smoothing: float = 0.0,
 ) -> LSEReturn:
     """Launch forward kernel. e=(B,D) or (N,D), c=(V,D), targets=(N,)."""
     assert e.is_contiguous()
@@ -530,9 +556,11 @@ def _forward_impl(
         B = e.shape[0]
 
     V, D = c.shape
+    ls = float(label_smoothing)
 
     lse = e.new_full((B,), -torch.inf, dtype=torch.float32)
     neg_correct_logit = e.new_full((B,), 0.0, dtype=torch.float32)
+    sum_logits = e.new_zeros((B,), dtype=torch.float32)
     locks = e.new_full((triton.cdiv(B, 128),), 0, dtype=torch.uint32)
 
     def grid(META):
@@ -543,6 +571,7 @@ def _forward_impl(
         c,
         lse,
         neg_correct_logit,
+        sum_logits,
         locks,
         valids,
         targets,
@@ -558,9 +587,14 @@ def _forward_impl(
         1 if valids is None else valids.stride(0),
         num_locks=locks.size(0),
         B_BIN=b_bin_fn(B),
+        label_smoothing=ls,
     )
 
-    return LSEReturn(lse, neg_correct_logit)
+    return LSEReturn(
+        lse,
+        neg_correct_logit,
+        sum_logits if ls > 0.0 else None,
+    )
 
 
 def _backward_impl(
@@ -575,6 +609,7 @@ def _backward_impl(
     compute_dc: bool,
     num_dc_samples: int = 1,
     tokens_per_sample: int = 0,
+    label_smoothing: float = 0.0,
 ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
     """Launch backward kernel.
 
@@ -635,6 +670,7 @@ def _backward_impl(
 
     do = do.contiguous()
     lse = lse.contiguous()
+    ls = float(label_smoothing)
 
     def grid(META):
         return (triton.cdiv(B, META["BLOCK_B"]) * triton.cdiv(V, META["BLOCK_V"]),)
@@ -667,6 +703,7 @@ def _backward_impl(
         dc_sample_stride=dc_sample_stride,
         dc_locks_sample_stride=dc_locks_sample_stride,
         B_BIN=b_bin_fn(B),
+        label_smoothing=ls,
     )
 
     if de is not None:
@@ -694,6 +731,7 @@ class _LinearCEBackward(torch.autograd.Function):
         softcap,
         ignore_index,
         compute_dc,
+        label_smoothing,
     ):
         # Pre-shift and flatten
         e = hidden_states[..., :-1, :].contiguous().flatten(0, -2)  # (N, D)
@@ -701,7 +739,7 @@ class _LinearCEBackward(torch.autograd.Function):
         valids = _build_flat_valids(targets, ignore_index)
 
         # Recompute LSE (activation checkpointing style)
-        lse = _forward_impl(e, weight, targets, valids, softcap).lse
+        lse = _forward_impl(e, weight, targets, valids, softcap, label_smoothing).lse
 
         de, dc = _backward_impl(
             grad_out,
@@ -713,6 +751,7 @@ class _LinearCEBackward(torch.autograd.Function):
             softcap,
             compute_de=True,
             compute_dc=compute_dc,
+            label_smoothing=label_smoothing,
         )
         if dc is None:
             dc = weight.new_zeros(weight.shape)
@@ -739,13 +778,24 @@ class _LinearCEBackward(torch.autograd.Function):
         softcap,
         ignore_index,
         compute_dc,
+        label_smoothing,
     ):
-        (grad_bdim, h_bdim, w_bdim, lab_bdim, sc_bdim, ii_bdim, dc_bdim) = in_dims
+        (
+            grad_bdim,
+            h_bdim,
+            w_bdim,
+            lab_bdim,
+            sc_bdim,
+            ii_bdim,
+            dc_bdim,
+            ls_bdim,
+        ) = in_dims
 
         assert w_bdim is None, "weight should not be batched"
         assert sc_bdim is None, "softcap should not be batched"
         assert ii_bdim is None, "ignore_index should not be batched"
         assert dc_bdim is None, "compute_dc should not be batched"
+        assert ls_bdim is None, "label_smoothing should not be batched"
 
         B_vmap = hidden_states.shape[0]
         D = hidden_states.shape[-1]
@@ -770,7 +820,7 @@ class _LinearCEBackward(torch.autograd.Function):
             do = grad_out.expand(B_vmap * tokens_per_sample)
 
         # Single merged forward
-        lse = _forward_impl(e, weight, targets, valids, softcap).lse
+        lse = _forward_impl(e, weight, targets, valids, softcap, label_smoothing).lse
 
         # Single merged backward with per-sample dC (if needed):
         # de is merged (all samples), dc is per-sample via kernel-level sample masking.
@@ -787,6 +837,7 @@ class _LinearCEBackward(torch.autograd.Function):
             compute_dc=compute_dc,
             num_dc_samples=B_vmap if compute_dc else 1,
             tokens_per_sample=tokens_per_sample if compute_dc else 0,
+            label_smoothing=label_smoothing,
         )
 
         # Reshape de from (B_vmap * tokens_per_sample, D) to (B_vmap, tokens_per_sample, D)
@@ -808,12 +859,13 @@ class _LinearCEBackward(torch.autograd.Function):
 class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
     """Fused linear projection + cross-entropy loss with vmap support.
 
-    Computes the NLL sum:
-        nll_sum = Σ_valid_tokens CE(hidden_states @ weight.T, labels)
+    Computes the NLL sum (HF-style label shift: position ``i`` predicts
+    ``labels[i+1]``) per valid token, optionally with label smoothing matching
+    :func:`torch.nn.functional.cross_entropy`.  Does not materialize the full
+    ``(batch * seq, vocab)`` logit matrix.
 
-    Without materializing the full (batch*seq, vocab) logit matrix.
-
-    Returns unreduced nll_sum — caller handles reduction (mean, num_items_in_batch).
+    Returns unreduced ``nll_sum`` — caller handles reduction (mean,
+    ``num_items_in_batch``).
     """
 
     @staticmethod
@@ -823,6 +875,7 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
         labels,
         ignore_index=-100,
         logit_softcapping=0,
+        label_smoothing=0.0,
     ):
         softcap = logit_softcapping if logit_softcapping != 0 else None
 
@@ -831,19 +884,25 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
         targets = labels[..., 1:].contiguous().flatten()  # (N,)
         valids = _build_flat_valids(targets, ignore_index)
 
-        lse_ret = _forward_impl(e, weight, targets, valids, softcap)
-
-        # NLL = neg_correct_logit + lse = -e·c[t] + log(Σ exp(e·c[v]))
-        nll = lse_ret.neg_correct_logit.add_(lse_ret.lse)
+        lse_ret = _forward_impl(e, weight, targets, valids, softcap, label_smoothing)
+        nll = _per_token_nll_from_lse_ret(lse_ret, weight.shape[0], label_smoothing)
         return nll.sum()
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        (hidden_states, weight, labels, ignore_index, logit_softcapping) = inputs
+        (
+            hidden_states,
+            weight,
+            labels,
+            ignore_index,
+            logit_softcapping,
+            label_smoothing,
+        ) = inputs
 
         ctx.save_for_backward(hidden_states, weight, labels)
         ctx.softcap = logit_softcapping if logit_softcapping != 0 else None
         ctx.ignore_index = ignore_index
+        ctx.label_smoothing = float(label_smoothing)
 
     @staticmethod
     def backward(ctx, grad_loss):
@@ -860,6 +919,7 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
             ctx.softcap,
             ctx.ignore_index,
             compute_dc,
+            ctx.label_smoothing,
         )
 
         # de is (shifted_seq, D) — reshape and pad to match hidden_states shape
@@ -870,14 +930,21 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
         pad_shape[-2] = 1
         de = torch.cat([de, de.new_zeros(pad_shape)], dim=-2)
 
-        return de, dc, None, None, None
+        return de, dc, None, None, None, None
 
     @staticmethod
     def vmap(
-        info, in_dims, hidden_states, weight, labels, ignore_index, logit_softcapping
+        info,
+        in_dims,
+        hidden_states,
+        weight,
+        labels,
+        ignore_index,
+        logit_softcapping,
+        label_smoothing,
     ):
         """Custom vmap rule for DP-SGD — single merged kernel call."""
-        (h_bdim, w_bdim, lab_bdim, ii_bdim, sc_bdim) = in_dims
+        (h_bdim, w_bdim, lab_bdim, ii_bdim, sc_bdim, ls_bdim) = in_dims
 
         if h_bdim != 0:
             raise ValueError(f"hidden_states should be batched at dim 0, got {h_bdim}")
@@ -886,11 +953,13 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
         assert w_bdim is None, "weight should not be batched"
         assert ii_bdim is None, "ignore_index should not be batched"
         assert sc_bdim is None, "logit_softcapping should not be batched"
+        assert ls_bdim is None, "label_smoothing should not be batched"
 
         softcap = logit_softcapping if logit_softcapping != 0 else None
 
         B_vmap = hidden_states.shape[0]
         D = hidden_states.shape[-1]
+        V = weight.shape[0]
 
         # Pre-shift and merge all samples into one flat batch
         h_shifted = hidden_states[..., :-1, :].contiguous()
@@ -903,8 +972,8 @@ class Opaque_LinearCrossEntropyLoss(torch.autograd.Function):
         valids = _build_flat_valids(targets, ignore_index)
 
         # Single forward call for entire merged batch
-        lse_ret = _forward_impl(e, weight, targets, valids, softcap)
-        nll = lse_ret.neg_correct_logit.add_(lse_ret.lse)
+        lse_ret = _forward_impl(e, weight, targets, valids, softcap, label_smoothing)
+        nll = _per_token_nll_from_lse_ret(lse_ret, V, label_smoothing)
 
         # Split per-sample: scatter NLLs back to sample buckets
         if valids is not None:
@@ -924,6 +993,7 @@ def opaque_linear_cross_entropy_loss(
     num_items_in_batch=None,
     ignore_index=-100,
     logit_softcapping=0,
+    label_smoothing=0.0,
 ):
     """Convenience wrapper for fused linear + cross-entropy loss.
 
@@ -941,6 +1011,7 @@ def opaque_linear_cross_entropy_loss(
         num_items_in_batch: optional denominator for loss averaging
         ignore_index: label value to ignore
         logit_softcapping: Gemma2 softcap value (0 = disabled)
+        label_smoothing: same semantics as :func:`torch.nn.functional.cross_entropy`
 
     Returns:
         loss: scalar tensor
@@ -957,6 +1028,7 @@ def opaque_linear_cross_entropy_loss(
         labels,
         ignore_index,
         logit_softcapping,
+        label_smoothing,
     )
 
     if num_items_in_batch is not None:

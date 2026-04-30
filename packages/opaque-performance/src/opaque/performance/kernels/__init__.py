@@ -33,6 +33,8 @@ try:
         ACTIVATION_GEGLU_EXACT,
         ACTIVATION_GEGLU_APPROX,
     )
+    from .rms_norm import opaque_rms_norm
+    from .fused_add_rms_norm import opaque_fused_add_rms_norm
 except ModuleNotFoundError as import_error:
     if import_error.name != "triton":
         raise
@@ -155,6 +157,53 @@ except ModuleNotFoundError as import_error:
     ACTIVATION_GEGLU_EXACT = 1
     ACTIVATION_GEGLU_APPROX = 2
 
+    def opaque_rms_norm(
+        x,
+        weight,
+        eps=1e-6,
+        offset=0.0,
+        casting_mode="llama",
+        *,
+        in_place_backward=False,
+        row_mode=None,
+    ):
+        del in_place_backward, row_mode
+        orig = x.shape
+        x2 = x.reshape(-1, x.shape[-1])
+        if casting_mode in ("llama", "gemma"):
+            xf = x2.float()
+            ms = (xf * xf).mean(-1, keepdim=True)
+            inv = torch.rsqrt(ms + eps)
+            normed = (xf * inv).to(x.dtype)
+        elif casting_mode == "none":
+            ms = (x2 * x2).mean(-1, keepdim=True)
+            eps_t = torch.tensor(
+                eps, device=x2.device, dtype=x2.dtype, requires_grad=False
+            )
+            inv = torch.rsqrt(ms + eps_t)
+            normed = x2 * inv
+        else:
+            raise ValueError(casting_mode)
+        out = normed * (weight + offset)
+        return out.view(orig)
+
+    def opaque_fused_add_rms_norm(
+        x,
+        residual,
+        weight,
+        eps=1e-6,
+        offset=0.0,
+        casting_mode="llama",
+        *,
+        in_place_backward=False,
+    ):
+        del in_place_backward
+        S = x + residual
+        y = opaque_rms_norm(
+            S, weight, eps, offset, casting_mode, in_place_backward=False, row_mode=None
+        )
+        return y, S
+
 __all__ = [
     # Loss
     "opaque_cross_entropy_loss",
@@ -163,6 +212,8 @@ __all__ = [
     "opaque_swiglu",
     "opaque_geglu_exact",
     "opaque_geglu_approx",
+    "opaque_rms_norm",
+    "opaque_fused_add_rms_norm",
     # Position embeddings
     "opaque_rope",
     "opaque_rope_qk",

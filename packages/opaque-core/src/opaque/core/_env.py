@@ -20,7 +20,16 @@ ALLOWED_SKIP_TOKENS: dict[str, frozenset[str]] = {
     ),
     "OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES": frozenset({"all", "collator"}),
     "OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES": frozenset(
-        {"all", "swiglu", "rope", "ce", "fused_ce", "lora"}
+        {
+            "all",
+            "swiglu",
+            "rope",
+            "ce",
+            "fused_ce",
+            "lora",
+            "rmsnorm",
+            "fused_add_rmsnorm",
+        }
     ),
 }
 

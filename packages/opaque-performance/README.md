@@ -24,7 +24,7 @@ from opaque.performance.kernels.swiglu import opaque_swiglu
 ## Layout
 
 - `opaque.performance.kernels` — `opaque_swiglu`, `opaque_geglu_*`,
-  `opaque_rope*`, `opaque_cross_entropy_loss`,
+  `opaque_rms_norm`, `opaque_rope*`, `opaque_cross_entropy_loss`,
   `opaque_linear_cross_entropy_loss`, `opaque_lora_*` (fall back to pure
   PyTorch when Triton is unavailable).
 - `opaque.performance.torch.checkpoint` — `patch_checkpoint`,

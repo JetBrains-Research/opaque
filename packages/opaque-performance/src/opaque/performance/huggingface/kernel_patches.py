@@ -7,13 +7,15 @@ level. Applied at `import opaque` time when CUDA and Triton are available.
 
 Patched components:
 - MLP activations: SwiGLU (LLaMA, Mistral, Qwen2, Qwen3, Phi3, Granite, Cohere, Cohere2) and GeGLU (Gemma, Gemma2)
+- RMSNorm: Llama-style and Gemma-style RMSNorm modules
+- Fused add + post-attention RMSNorm on decoder layers (Llama, Mistral, Qwen2/3, Gemma, Phi-3, Granite)
 - RoPE: apply_rotary_pos_emb for all supported models (standard half-split rotation)
 - Cross-entropy loss: ForCausalLM loss via LOSS_MAPPING (fp32 fallback)
 - Fused linear + CE: ForCausalLM.forward replaced to skip lm_head materialization (bf16/fp16)
 - LoRA: peft.tuners.lora.Linear forward + auto-fused QKV (Opaque_LoRA_QKV) and MLP (Opaque_LoRA_MLP) via get_peft_model hook
 
 Disable all with: OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all
-Skip specific kernels: OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=swiglu,rope,ce,fused_ce,lora
+Skip specific kernels: OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=swiglu,rope,ce,fused_ce,lora,rmsnorm,fused_add_rmsnorm
 """
 
 from __future__ import annotations
@@ -87,6 +89,49 @@ _ROPE_MODELS = [
 # =============================================================================
 
 
+# RMSNorm (Llama / Mistral / Qwen / Phi3 / Granite; Gemma variants)
+_RMSNORM_LLAMA_STYLE = [
+    ("transformers.models.llama.modeling_llama", "LlamaRMSNorm"),
+    ("transformers.models.mistral.modeling_mistral", "MistralRMSNorm"),
+    ("transformers.models.qwen2.modeling_qwen2", "Qwen2RMSNorm"),
+    ("transformers.models.qwen3.modeling_qwen3", "Qwen3RMSNorm"),
+    ("transformers.models.phi3.modeling_phi3", "Phi3RMSNorm"),
+    ("transformers.models.granite.modeling_granite", "GraniteRMSNorm"),
+]
+
+_RMSNORM_GEMMA = [
+    ("transformers.models.gemma.modeling_gemma", "GemmaRMSNorm"),
+]
+
+_RMSNORM_GEMMA2 = [
+    ("transformers.models.gemma2.modeling_gemma2", "Gemma2RMSNorm"),
+]
+
+
+def _make_rms_norm_forward(
+    original, *, casting_mode: str, offset: float, in_place_bwd: bool
+):
+    """RMSNorm forward using Opaque Triton kernel."""
+
+    def forward(self, hidden_states):
+        if not hidden_states.is_cuda:
+            return original(self, hidden_states)
+        from opaque.performance.kernels.rms_norm import Opaque_RMSNorm
+
+        eps = getattr(self, "variance_epsilon", None) or getattr(self, "eps", 1e-6)
+        return Opaque_RMSNorm.apply(
+            hidden_states,
+            self.weight,
+            float(eps),
+            float(offset),
+            casting_mode,
+            in_place_bwd,
+            None,
+        )
+
+    return forward
+
+
 def _make_swiglu_mlp_forward(original):
     """SwiGLU MLP forward using Opaque Triton kernel."""
 
@@ -98,6 +143,298 @@ def _make_swiglu_mlp_forward(original):
         return self.down_proj(Opaque_SwiGLU.apply(self.gate_proj(x), self.up_proj(x)))
 
     return forward
+
+
+def _rmsnorm_fac_llama(orig):
+    return _make_rms_norm_forward(
+        orig, casting_mode="llama", offset=0.0, in_place_bwd=True
+    )
+
+
+def _rmsnorm_fac_gemma(orig):
+    return _make_rms_norm_forward(
+        orig, casting_mode="gemma", offset=1.0, in_place_bwd=True
+    )
+
+
+def _rmsnorm_fac_gemma2(orig):
+    return _make_rms_norm_forward(
+        orig, casting_mode="gemma", offset=1.0, in_place_bwd=False
+    )
+
+
+def _patch_rms_norm(patched: list) -> None:
+    for path, cls_name in _RMSNORM_LLAMA_STYLE:
+        if _patch_forward(path, cls_name, _rmsnorm_fac_llama):
+            patched.append(f"{cls_name}(rmsnorm)")
+    for path, cls_name in _RMSNORM_GEMMA:
+        if _patch_forward(path, cls_name, _rmsnorm_fac_gemma):
+            patched.append(f"{cls_name}(rmsnorm)")
+    for path, cls_name in _RMSNORM_GEMMA2:
+        if _patch_forward(path, cls_name, _rmsnorm_fac_gemma2):
+            patched.append(f"{cls_name}(rmsnorm)")
+
+
+# Fused residual add + post_attention_layernorm (Pre-LN block after attention;
+# not Gemma2, which normalizes before the residual add).
+_FUSED_ADD_RMS_DECODER_LLAMA = [
+    ("transformers.models.llama.modeling_llama", "LlamaDecoderLayer"),
+    ("transformers.models.mistral.modeling_mistral", "MistralDecoderLayer"),
+    ("transformers.models.qwen2.modeling_qwen2", "Qwen2DecoderLayer"),
+    ("transformers.models.qwen3.modeling_qwen3", "Qwen3DecoderLayer"),
+]
+
+_FUSED_ADD_RMS_DECODER_GEMMA = [
+    ("transformers.models.gemma.modeling_gemma", "GemmaDecoderLayer"),
+]
+
+_FUSED_ADD_RMS_DECODER_PHI3 = [
+    ("transformers.models.phi3.modeling_phi3", "Phi3DecoderLayer"),
+]
+
+_FUSED_ADD_RMS_DECODER_GRANITE = [
+    ("transformers.models.granite.modeling_granite", "GraniteDecoderLayer"),
+]
+
+
+def _post_attn_eps_and_weight(layer) -> tuple[torch.Tensor, float]:
+    norm = layer.post_attention_layernorm
+    w = norm.weight
+    eps = float(getattr(norm, "variance_epsilon", None) or getattr(norm, "eps", 1e-6))
+    return w, eps
+
+
+def _fused_add_rms_fac_llama(orig):
+    def forward(
+        self,
+        hidden_states,
+        attention_mask=None,
+        position_ids=None,
+        past_key_values=None,
+        use_cache=False,
+        position_embeddings=None,
+        **kwargs,
+    ):
+        if not hidden_states.is_cuda:
+            return orig(
+                self,
+                hidden_states,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                use_cache=use_cache,
+                position_embeddings=position_embeddings,
+                **kwargs,
+            )
+        from opaque.performance.kernels.fused_add_rms_norm import (
+            Opaque_FusedAddRMSNorm,
+        )
+
+        residual = hidden_states
+        hidden_states = self.input_layernorm(hidden_states)
+        hidden_states, _ = self.self_attn(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+            position_embeddings=position_embeddings,
+            **kwargs,
+        )
+        weight, eps = _post_attn_eps_and_weight(self)
+        hidden_states, residual = Opaque_FusedAddRMSNorm.apply(
+            hidden_states,
+            residual,
+            weight,
+            eps,
+            0.0,
+            "llama",
+            False,
+        )
+        hidden_states = self.mlp(hidden_states)
+        hidden_states = residual + hidden_states
+        return hidden_states
+
+    return forward
+
+
+def _fused_add_rms_fac_gemma(orig):
+    def forward(
+        self,
+        hidden_states,
+        attention_mask=None,
+        position_ids=None,
+        past_key_values=None,
+        use_cache=False,
+        position_embeddings=None,
+        **kwargs,
+    ):
+        if not hidden_states.is_cuda:
+            return orig(
+                self,
+                hidden_states,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                use_cache=use_cache,
+                position_embeddings=position_embeddings,
+                **kwargs,
+            )
+        from opaque.performance.kernels.fused_add_rms_norm import (
+            Opaque_FusedAddRMSNorm,
+        )
+
+        residual = hidden_states
+        hidden_states = self.input_layernorm(hidden_states)
+        hidden_states, _ = self.self_attn(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+            position_embeddings=position_embeddings,
+            **kwargs,
+        )
+        weight, eps = _post_attn_eps_and_weight(self)
+        hidden_states, residual = Opaque_FusedAddRMSNorm.apply(
+            hidden_states,
+            residual,
+            weight,
+            eps,
+            1.0,
+            "gemma",
+            False,
+        )
+        hidden_states = self.mlp(hidden_states)
+        hidden_states = residual + hidden_states
+        return hidden_states
+
+    return forward
+
+
+def _fused_add_rms_fac_phi3(orig):
+    def forward(
+        self,
+        hidden_states,
+        attention_mask=None,
+        position_ids=None,
+        past_key_values=None,
+        use_cache=False,
+        position_embeddings=None,
+        **kwargs,
+    ):
+        if not hidden_states.is_cuda:
+            return orig(
+                self,
+                hidden_states,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                use_cache=use_cache,
+                position_embeddings=position_embeddings,
+                **kwargs,
+            )
+        from opaque.performance.kernels.fused_add_rms_norm import (
+            Opaque_FusedAddRMSNorm,
+        )
+
+        residual = hidden_states
+        hidden_states = self.input_layernorm(hidden_states)
+        hidden_states, _ = self.self_attn(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+            position_embeddings=position_embeddings,
+            **kwargs,
+        )
+        xa = self.resid_attn_dropout(hidden_states)
+        weight, eps = _post_attn_eps_and_weight(self)
+        hidden_states, residual = Opaque_FusedAddRMSNorm.apply(
+            xa,
+            residual,
+            weight,
+            eps,
+            0.0,
+            "llama",
+            False,
+        )
+        hidden_states = self.mlp(hidden_states)
+        hidden_states = residual + self.resid_mlp_dropout(hidden_states)
+        return hidden_states
+
+    return forward
+
+
+def _fused_add_rms_fac_granite(orig):
+    def forward(
+        self,
+        hidden_states,
+        attention_mask=None,
+        position_ids=None,
+        past_key_values=None,
+        use_cache=False,
+        position_embeddings=None,
+        **kwargs,
+    ):
+        if not hidden_states.is_cuda:
+            return orig(
+                self,
+                hidden_states,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                use_cache=use_cache,
+                position_embeddings=position_embeddings,
+                **kwargs,
+            )
+        from opaque.performance.kernels.fused_add_rms_norm import (
+            Opaque_FusedAddRMSNorm,
+        )
+
+        residual = hidden_states
+        hidden_states = self.input_layernorm(hidden_states)
+        hidden_states, _ = self.self_attn(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+            position_embeddings=position_embeddings,
+            **kwargs,
+        )
+        xa = hidden_states * self.residual_multiplier
+        weight, eps = _post_attn_eps_and_weight(self)
+        hidden_states, residual = Opaque_FusedAddRMSNorm.apply(
+            xa,
+            residual,
+            weight,
+            eps,
+            0.0,
+            "llama",
+            False,
+        )
+        hidden_states = self.mlp(hidden_states)
+        hidden_states = residual + hidden_states * self.residual_multiplier
+        return hidden_states
+
+    return forward
+
+
+def _patch_fused_add_rms_norm_decoder(patched: list) -> None:
+    for path, cls_name in _FUSED_ADD_RMS_DECODER_LLAMA:
+        if _patch_forward(path, cls_name, _fused_add_rms_fac_llama):
+            patched.append(f"{cls_name}(fused_add_rmsnorm)")
+    for path, cls_name in _FUSED_ADD_RMS_DECODER_GEMMA:
+        if _patch_forward(path, cls_name, _fused_add_rms_fac_gemma):
+            patched.append(f"{cls_name}(fused_add_rmsnorm)")
+    for path, cls_name in _FUSED_ADD_RMS_DECODER_PHI3:
+        if _patch_forward(path, cls_name, _fused_add_rms_fac_phi3):
+            patched.append(f"{cls_name}(fused_add_rmsnorm)")
+    for path, cls_name in _FUSED_ADD_RMS_DECODER_GRANITE:
+        if _patch_forward(path, cls_name, _fused_add_rms_fac_granite):
+            patched.append(f"{cls_name}(fused_add_rmsnorm)")
 
 
 def _make_phi3_mlp_forward(original):
@@ -293,13 +630,40 @@ _FUSED_CE_CAUSAL_LM = [
 ]
 
 
+def _fused_linear_ce_loss_is_supported(
+    logits_to_keep: int | torch.Tensor,
+    kwargs: dict,
+) -> bool:
+    """Return True only when fused linear+CE can match HF ``loss_function`` behavior.
+
+    Fused path uses full-sequence hidden states and fixed label shift. Non-default
+    ``logits_to_keep`` needs sliced logits (and label alignment) — defer to the
+    original forward.
+    """
+    if torch.is_tensor(logits_to_keep):
+        return False
+    if not isinstance(logits_to_keep, int):
+        return False
+    if logits_to_keep != 0:
+        return False
+    if kwargs.get("shift_labels") is not None:
+        return False
+    if kwargs.get("weight") is not None:
+        return False
+    ii = kwargs.get("ignore_index", -100)
+    if torch.is_tensor(ii):
+        return False
+    return True
+
+
 def _make_fused_ce_causal_lm_forward(original):
     """ForCausalLM forward with fused linear + cross-entropy loss.
 
-    When labels are provided and hidden_states are bf16/fp16, skips lm_head
-    projection and computes loss directly from hidden_states @ lm_head.weight.T
-    using CCE Triton kernels. Avoids materializing the full (B, S, V) logit
-    tensor — saves ~1 GB per sample for 128K vocab models.
+    When labels are provided and hidden_states are bf16/fp16, skips ``lm_head``
+    and computes loss from ``hidden_states @ lm_head.weight.T`` (CCE), unless
+    ``loss_function`` would need unsupported options — then defers to the
+    original forward (e.g. non-zero ``logits_to_keep``, ``shift_labels``, class
+    ``weight``).
     """
 
     def forward(
@@ -315,7 +679,7 @@ def _make_fused_ce_causal_lm_forward(original):
         output_hidden_states=None,
         return_dict=None,
         cache_position=None,
-        num_logits_to_keep=0,
+        logits_to_keep: int | torch.Tensor = 0,
         **kwargs,
     ):
         # No labels → inference → use original forward
@@ -333,7 +697,7 @@ def _make_fused_ce_causal_lm_forward(original):
                 output_hidden_states=output_hidden_states,
                 return_dict=return_dict,
                 cache_position=cache_position,
-                num_logits_to_keep=num_logits_to_keep,
+                logits_to_keep=logits_to_keep,
                 **kwargs,
             )
 
@@ -368,11 +732,13 @@ def _make_fused_ce_causal_lm_forward(original):
         )
         hidden_states = outputs[0]
 
-        # Fused path requires half precision on CUDA (CCE backward constraint)
-        if hidden_states.is_cuda and hidden_states.dtype in (
-            torch.bfloat16,
-            torch.float16,
-        ):
+        use_fused_ce = (
+            hidden_states.is_cuda
+            and hidden_states.dtype in (torch.bfloat16, torch.float16)
+            and _fused_linear_ce_loss_is_supported(logits_to_keep, kwargs)
+        )
+
+        if use_fused_ce:
             from opaque.performance.kernels.linear_cross_entropy import (
                 Opaque_LinearCrossEntropyLoss,
             )
@@ -394,13 +760,16 @@ def _make_fused_ce_causal_lm_forward(original):
             # Gemma2 softcapping: softcap * tanh(logits / softcap)
             softcap = getattr(self.config, "final_logit_softcapping", 0) or 0
 
-            # Kernel returns nll_sum (unreduced) — reduce here
+            ignore_index = int(kwargs.get("ignore_index", -100))
+            label_smoothing = float(kwargs.get("label_smoothing") or 0.0)
+
             nll_sum = Opaque_LinearCrossEntropyLoss.apply(
                 hidden_states,
                 weight,
                 labels,
-                -100,
+                ignore_index,
                 softcap,
+                label_smoothing,
             )
 
             num_items_in_batch = kwargs.get("num_items_in_batch")
@@ -410,13 +779,18 @@ def _make_fused_ce_causal_lm_forward(original):
                 loss = nll_sum / num_items_in_batch
             else:
                 shifted_labels = labels[..., 1:].contiguous().flatten()
-                n_valid = (shifted_labels != -100).sum().float().clamp(min=1)
+                n_valid = (shifted_labels != ignore_index).sum().float().clamp(min=1)
                 loss = nll_sum / n_valid
 
             logits = None
         else:
-            # fp32 fallback: materialize logits, use existing CE kernel via LOSS_MAPPING
-            logits = self.lm_head(hidden_states[..., -num_logits_to_keep:, :])
+            # Match HF: slice hidden states like ``lm_head`` in modeling code.
+            slice_indices = (
+                slice(-logits_to_keep, None)
+                if isinstance(logits_to_keep, int)
+                else logits_to_keep
+            )
+            logits = self.lm_head(hidden_states[:, slice_indices, :])
             loss = self.loss_function(logits, labels, self.vocab_size, **kwargs)
 
         if not return_dict:
@@ -1016,6 +1390,9 @@ def apply_kernel_patches() -> None:
 
     Patches at class/module level for:
     - MLP activations: SwiGLU and GeGLU variants
+    - RMSNorm: Llama-style and Gemma-style modules
+    - Fused residual + post-attention RMSNorm on decoder layers (Llama-family,
+      Gemma, Phi-3, Granite — not Gemma2)
     - RoPE: apply_rotary_pos_emb for all supported models
     - Cross-entropy loss: ForCausalLM via LOSS_MAPPING
     - LoRA: peft.tuners.lora.Linear forward
@@ -1062,6 +1439,12 @@ def apply_kernel_patches() -> None:
         for path, cls_name in _GEGLU_APPROX_MLP:
             if _patch_forward(path, cls_name, _make_geglu_approx_mlp_forward):
                 patched.append(cls_name)
+
+    if "rmsnorm" not in skip:
+        _patch_rms_norm(patched)
+
+    if "fused_add_rmsnorm" not in skip:
+        _patch_fused_add_rms_norm_decoder(patched)
 
     # RoPE
     if "rope" not in skip:
