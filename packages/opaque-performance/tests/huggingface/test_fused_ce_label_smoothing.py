@@ -9,8 +9,12 @@ import types
 import pytest
 import torch
 
-from opaque.performance.huggingface.kernel_patches import _make_fused_ce_causal_lm_forward
-from opaque.performance.kernels.linear_cross_entropy import Opaque_LinearCrossEntropyLoss
+from opaque.performance.huggingface.kernel_patches import (
+    _make_fused_ce_causal_lm_forward,
+)
+from opaque.performance.kernels.linear_cross_entropy import (
+    Opaque_LinearCrossEntropyLoss,
+)
 
 
 pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")

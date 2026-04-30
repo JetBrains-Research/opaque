@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Unit tests for fused linear+CE eligibility (Phase 2 loss parity)."""
 
-import pytest
 import torch
 
 from opaque.performance.huggingface.kernel_patches import (
