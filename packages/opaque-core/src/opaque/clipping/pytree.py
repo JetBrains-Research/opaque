@@ -42,9 +42,7 @@ def _auto_scale_per_group(
     compute_dtype: torch.dtype | None,
 ) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
     """Per-group AUTO-S scaling: each group is scaled to sensitivity R_k."""
-    sample = next(
-        (t for t in pytree.values() if isinstance(t, torch.Tensor)), None
-    )
+    sample = next((t for t in pytree.values() if isinstance(t, torch.Tensor)), None)
     acc_dtype = (
         _resolve_compute_dtype_for_reduction(sample, compute_dtype)
         if sample is not None
@@ -167,9 +165,7 @@ def _clip_pytree_per_group(
     compute_dtype: torch.dtype | None,
 ) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
     """Per-group clipping: each group is clipped to its own L2 norm bound."""
-    sample = next(
-        (t for t in pytree.values() if isinstance(t, torch.Tensor)), None
-    )
+    sample = next((t for t in pytree.values() if isinstance(t, torch.Tensor)), None)
     acc_dtype = (
         _resolve_compute_dtype_for_reduction(sample, compute_dtype)
         if sample is not None
@@ -272,9 +268,7 @@ def clip_pytree(
 
     # Per-group path: clip each group independently
     if isinstance(clipping_norm, PerGroup):
-        return _clip_pytree_per_group(
-            pytree, clipping_norm, return_zero, compute_dtype
-        )
+        return _clip_pytree_per_group(pytree, clipping_norm, return_zero, compute_dtype)
 
     # --- Global (flat) clipping path ---
 

@@ -103,9 +103,7 @@ def test_clipped_fun_output_dtype_default_matches_input():
     def per_example(params, x):
         return grad_fn(params, x)
 
-    clipped_fn, state = clipped_fun(
-        per_example, batch_argnums=1, clipping_norm=1.0
-    )
+    clipped_fn, state = clipped_fun(per_example, batch_argnums=1, clipping_norm=1.0)
     params = torch.tensor([1.0, 2.0], dtype=torch.bfloat16)
     x = torch.randn(4, 2, dtype=torch.bfloat16)
     result, _ = clipped_fn(params, x, state=state)
