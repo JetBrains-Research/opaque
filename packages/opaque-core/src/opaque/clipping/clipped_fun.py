@@ -46,17 +46,19 @@ class ClippedFunAux:
     group_norms: dict[str, torch.Tensor] | None = None
 
 
-def _resolve_accumulation_dtype(
+def _resolve_compute_dtype(
     tensor: torch.Tensor,
-    requested_dtype: torch.dtype | None,
+    compute_dtype: torch.dtype | None,
 ) -> torch.dtype | None:
-    """Resolve safe accumulation dtype for reductions.
+    """Resolve safe compute dtype for reductions.
 
-    If dtype is explicitly requested, use it. Otherwise, promote low-precision
-    floating reductions (fp16/bf16) to float32 for numerical stability.
+    If compute_dtype is explicitly requested, use it. Otherwise, promote
+    low-precision floating reductions (fp16/bf16) to float32 for numerical
+    stability.  Returns ``None`` to mean "no promotion needed" — the caller
+    can pass that directly to ``torch.sum(dtype=None)`` (default behavior).
     """
-    if requested_dtype is not None:
-        return requested_dtype
+    if compute_dtype is not None:
+        return compute_dtype
     if torch.is_floating_point(tensor) and tensor.dtype in (
         torch.float16,
         torch.bfloat16,
@@ -69,23 +71,21 @@ def _sum_clipped_tensor(
     tensor: torch.Tensor,
     *,
     dim: int,
-    requested_dtype: torch.dtype | None,
+    output_dtype: torch.dtype | None,
+    compute_dtype: torch.dtype | None,
 ) -> torch.Tensor:
-    """Sum with safe accumulation dtype and user-facing output dtype semantics.
+    """Sum with separate compute (accumulation) and output dtype.
 
-    If `requested_dtype` is set, the output is returned in that dtype.
-    Otherwise, low-precision tensors use float32 internally for reduction, then
-    cast back to the original dtype so public API dtype behavior remains stable.
+    ``compute_dtype`` controls the reduction precision; ``output_dtype`` the
+    caller-visible result dtype.  Defaults preserve the type-stable contract
+    (output dtype = input dtype) with auto-fp32 promotion for bf16/fp16 inputs.
     """
-    accumulation_dtype = _resolve_accumulation_dtype(tensor, requested_dtype)
-    summed = torch.sum(tensor, dim=dim, dtype=accumulation_dtype)
+    accum_dtype = _resolve_compute_dtype(tensor, compute_dtype)
+    summed = torch.sum(tensor, dim=dim, dtype=accum_dtype)
 
-    if requested_dtype is not None:
-        return summed
-
-    if accumulation_dtype is not None and summed.dtype != tensor.dtype:
-        return summed.to(dtype=tensor.dtype)
-
+    target = output_dtype if output_dtype is not None else tensor.dtype
+    if summed.dtype != target:
+        return summed.to(dtype=target)
     return summed
 
 
@@ -97,6 +97,7 @@ def _microbatch_accumulate(
     microbatch_size,
     return_aux,
     dtype,
+    compute_dtype,
 ):
     """Process batch in microbatches, accumulating results without materializing full batch.
 
@@ -188,7 +189,9 @@ def _microbatch_accumulate(
 
         # Accumulate clipped gradients (SUM)
         microbatch_sum = tree_map(
-            lambda x: _sum_clipped_tensor(x, dim=0, requested_dtype=dtype),
+            lambda x: _sum_clipped_tensor(
+                x, dim=0, output_dtype=dtype, compute_dtype=compute_dtype
+            ),
             clipped_values,
         )
         if accumulated_grads is None:
@@ -231,6 +234,7 @@ def clipped_fun(
     return_aux: bool = False,
     microbatch_size: int | None = None,
     dtype: torch.dtype | None = None,
+    compute_dtype: torch.dtype | None = None,
     _scale_fn: Callable | None = None,
 ) -> tuple[Callable, FixedClipState]:
     """Transform a function to clip its output and sum across a batch.
@@ -277,6 +281,11 @@ def clipped_fun(
             Set this to reduce peak memory usage at the cost of slightly slower computation.
         dtype: Optional dtype for the clipped+aggregated pytree. If None, the dtype
             will be the same as the dtypes of the function output.
+        compute_dtype: Internal accumulation dtype for reductions (per-example
+            clip-norm and the across-batch sum).  ``None`` (default) auto-promotes
+            bf16/fp16 to float32 for numerical stability; explicit dtype forces
+            that precision regardless of input.  Independent of ``dtype`` (which
+            controls the *output* dtype).
     Returns:
         A new function `clip_fn` that clips the output of `fun` and sums across
         the batch. `clip_fn` takes the same arguments as `fun`. The exact output
@@ -309,7 +318,11 @@ def clipped_fun(
         scale_fn = (
             _scale_fn
             if _scale_fn is not None
-            else (lambda v: clip_pytree(v, clipping_norm=clipping_norm))
+            else (
+                lambda v: clip_pytree(
+                    v, clipping_norm=clipping_norm, compute_dtype=compute_dtype
+                )
+            )
         )
 
         # Define per-example function
@@ -322,7 +335,9 @@ def clipped_fun(
                 # computational graphs. These are monitoring values, not used for gradients.
                 aux_dict = {
                     "norms": norm.norm.detach(),
-                    "clipped_norms": global_norm(clipped_value).detach(),
+                    "clipped_norms": global_norm(
+                        clipped_value, compute_dtype=compute_dtype
+                    ).detach(),
                 }
 
                 # Per-group norms (dict of scalar tensors → dict of 1D tensors after vmap)
@@ -382,7 +397,9 @@ def clipped_fun(
 
             # Sum clipped values across batch dimension
             result = tree_map(
-                lambda x: _sum_clipped_tensor(x, dim=0, requested_dtype=dtype),
+                lambda x: _sum_clipped_tensor(
+                    x, dim=0, output_dtype=dtype, compute_dtype=compute_dtype
+                ),
                 clipped_values,
             )
         else:
@@ -395,6 +412,7 @@ def clipped_fun(
                 microbatch_size=microbatch_size,
                 return_aux=return_aux,
                 dtype=dtype,
+                compute_dtype=compute_dtype,
             )
 
         # Normalize

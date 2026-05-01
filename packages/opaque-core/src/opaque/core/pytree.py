@@ -267,7 +267,11 @@ def _merge_two(tree1: Any, tree2: Any) -> Any:
     return tree2
 
 
-def global_norm(tree: Any) -> torch.Tensor:
+def global_norm(
+    tree: Any,
+    *,
+    compute_dtype: torch.dtype | None = None,
+) -> torch.Tensor:
     """Compute global L2 norm across all tensors in a PyTree.
 
     The global norm is the square root of the sum of squared norms of all
@@ -276,10 +280,16 @@ def global_norm(tree: Any) -> torch.Tensor:
 
     Args:
         tree: PyTree of tensors (e.g., parameters or gradients)
+        compute_dtype: Internal accumulation dtype.  ``None`` (default)
+            promotes low-precision floats (fp16/bf16) to float32 for
+            numerical stability and otherwise uses the input float dtype
+            promoted to at least float32.  Pass an explicit dtype (e.g.
+            ``torch.float64``) to force a specific accumulation precision.
 
     Returns:
         Scalar tensor containing the global L2 norm on the device of the first
-        tensor leaf (or CPU if the tree is empty).
+        tensor leaf (or CPU if the tree is empty).  Output dtype matches
+        the resolved compute dtype.
 
     Example:
         >>> tree = {'w': torch.tensor([3.0, 4.0]), 'b': torch.tensor([0.0, 12.0])}
@@ -294,35 +304,36 @@ def global_norm(tree: Any) -> torch.Tensor:
     """
     leaves = tree_leaves(tree)
     if not leaves:
-        return torch.tensor(0.0)
+        return torch.tensor(0.0, dtype=compute_dtype or torch.float32)
 
-    # Determine common floating dtype for accumulation.
-    # If all leaves are integer/bool, promote to float32.
-    dtypes = [t.dtype for t in leaves]
-    float_dtypes = [
-        dt for dt in dtypes if torch.is_floating_point(torch.empty((), dtype=dt))
-    ]
-    complex_dtypes = [
-        dt for dt in dtypes if torch.is_complex(torch.empty((), dtype=dt))
-    ]
-
-    if complex_dtypes:
-        acc_dtype = torch.complex64
-        for dt in complex_dtypes:
-            acc_dtype = torch.promote_types(acc_dtype, dt)
-        # For complex, we'll accumulate real magnitudes in the corresponding real dtype
-        real_acc_dtype = torch.promote_types(
-            torch.float32, torch.tensor(0, dtype=acc_dtype).real.dtype
-        )
-    elif float_dtypes:
-        acc_dtype = torch.float32
-        for dt in float_dtypes:
-            acc_dtype = torch.promote_types(acc_dtype, dt)
-        real_acc_dtype = acc_dtype
+    if compute_dtype is not None:
+        real_acc_dtype = compute_dtype
     else:
-        # All integer/bool → accumulate in float32
-        acc_dtype = torch.float32
-        real_acc_dtype = torch.float32
+        # Auto-promote: at least float32, but match user's intent if they
+        # supplied higher-precision inputs.
+        dtypes = [t.dtype for t in leaves]
+        float_dtypes = [
+            dt for dt in dtypes if torch.is_floating_point(torch.empty((), dtype=dt))
+        ]
+        complex_dtypes = [
+            dt for dt in dtypes if torch.is_complex(torch.empty((), dtype=dt))
+        ]
+
+        if complex_dtypes:
+            acc_dtype = torch.complex64
+            for dt in complex_dtypes:
+                acc_dtype = torch.promote_types(acc_dtype, dt)
+            # For complex, accumulate real magnitudes in the corresponding real dtype
+            real_acc_dtype = torch.promote_types(
+                torch.float32, torch.tensor(0, dtype=acc_dtype).real.dtype
+            )
+        elif float_dtypes:
+            real_acc_dtype = torch.float32
+            for dt in float_dtypes:
+                real_acc_dtype = torch.promote_types(real_acc_dtype, dt)
+        else:
+            # All integer/bool → accumulate in float32
+            real_acc_dtype = torch.float32
 
     device = leaves[0].device
     total = torch.zeros((), device=device, dtype=real_acc_dtype)
