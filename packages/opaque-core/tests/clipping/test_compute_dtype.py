@@ -46,6 +46,16 @@ def test_global_norm_explicit_bf16_honored():
     assert n.dtype == torch.bfloat16
 
 
+@pytest.mark.parametrize(
+    "bad_dtype", [torch.int32, torch.int64, torch.bool, torch.complex64]
+)
+def test_global_norm_rejects_non_real_floating_compute_dtype(bad_dtype):
+    """Integer / bool / complex compute_dtype is rejected at boundary."""
+    tree = {"a": torch.tensor([3.0, 4.0])}
+    with pytest.raises(TypeError, match="real floating-point"):
+        global_norm(tree, compute_dtype=bad_dtype)
+
+
 def test_global_norm_bf16_norm_unbiased_under_default():
     """Many small contributions: fp32 accumulation matches fp32 baseline."""
     torch.manual_seed(0)
@@ -83,6 +93,29 @@ def test_clip_pytree_compute_dtype_propagates_to_norm():
     _, aux_fp64 = clip_pytree(tree, clipping_norm=10.0, compute_dtype=torch.float64)
     assert aux_default.norm.dtype == torch.float32
     assert aux_fp64.norm.dtype == torch.float64
+
+
+def test_clip_pytree_per_group_mixed_dtypes_promote_to_highest():
+    """Per-group reduction must scan all leaves: fp32 + fp64 ⇒ fp64 accumulator.
+
+    Regression for a Copilot-flagged bug where the per-group path picked
+    the *first* leaf's dtype as the accumulator, silently downcasting
+    higher-precision peers (e.g. fp64).
+    """
+    from opaque.clipping.per_group import PerGroup
+
+    pg = PerGroup(
+        groups={"a": "g", "b": "g"},
+        values={"g": 100.0},
+    )
+    # Mixed dtypes: float32 leaf and float64 leaf in the same group.
+    tree = {
+        "a": torch.tensor([3.0, 4.0], dtype=torch.float32),
+        "b": torch.tensor([12.0], dtype=torch.float64),
+    }
+    _, aux = clip_pytree(tree, clipping_norm=pg)
+    # The per-group norm must accumulate at fp64, not fp32.
+    assert aux.group_norms["g"].dtype == torch.float64
 
 
 # ----------------------------------------------------------------------------

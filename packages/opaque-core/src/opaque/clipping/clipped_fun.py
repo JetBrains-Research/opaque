@@ -113,7 +113,15 @@ def _microbatch_accumulate(
         in_dims: Input dimensions for vmap
         microbatch_size: Size of each microbatch
         return_aux: Whether function returns auxiliary outputs
-        dtype: Optional dtype for accumulated gradients
+        dtype: Optional output dtype for the accumulated pytree.  ``None``
+            keeps the output in the input dtype (type-stable).
+        compute_dtype: Optional internal accumulation dtype for the
+            across-microbatch sum.  ``None`` (the default) auto-promotes
+            bf16/fp16 inputs to float32 for numerical stability while
+            still returning the result in the ``dtype`` (or input dtype).
+            Independent of ``dtype``: ``compute_dtype=fp32`` with
+            ``dtype=None`` accumulates in fp32 internally and casts back
+            to input dtype at the boundary.
 
     Returns:
         Tuple of (accumulated_values, concatenated_aux)

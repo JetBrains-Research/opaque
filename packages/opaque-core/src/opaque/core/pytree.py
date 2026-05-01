@@ -302,6 +302,17 @@ def global_norm(
         This function is commonly used in gradient clipping for deep learning.
         See: Pascanu et al. 2013, "On the difficulty of training RNNs"
     """
+    if compute_dtype is not None and not torch.is_floating_point(
+        torch.empty((), dtype=compute_dtype)
+    ):
+        raise TypeError(
+            f"compute_dtype must be a real floating-point dtype, got "
+            f"{compute_dtype!r}.  Integer/bool/complex compute dtypes can "
+            f"silently corrupt the L2-norm reduction (the squared sum is "
+            f"non-negative real and the final sqrt assumes a real "
+            f"accumulator)."
+        )
+
     leaves = tree_leaves(tree)
     if not leaves:
         return torch.tensor(0.0, dtype=compute_dtype or torch.float32)
