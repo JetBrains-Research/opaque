@@ -19,18 +19,50 @@ Fields:
 """
 
 
+def _resolve_compute_dtype_for_reduction(
+    pytree: dict[str, object],
+    compute_dtype: torch.dtype | None,
+) -> torch.dtype:
+    """Pick the dtype for sum-of-squares reductions.
+
+    None ⇒ promote bf16/fp16 inputs to fp32, then take the highest float
+    dtype present across all tensor leaves (so mixed fp32/fp64 trees
+    accumulate at fp64, not silently downcast).  Explicit dtype ⇒ use
+    as-is (DP callers force fp32 here for sensitivity-bound stability).
+
+    Mirrors :func:`opaque.core.pytree.global_norm`'s dtype resolution so
+    the per-group reduction agrees with the global-flat path.
+    """
+    if compute_dtype is not None:
+        return compute_dtype
+    acc = torch.float32  # baseline; bf16/fp16 always promote to at least this
+    for leaf in pytree.values():
+        if not isinstance(leaf, torch.Tensor) or not torch.is_floating_point(leaf):
+            continue
+        promoted = (
+            torch.float32
+            if leaf.dtype in (torch.float16, torch.bfloat16)
+            else leaf.dtype
+        )
+        acc = torch.promote_types(acc, promoted)
+    return acc
+
+
 def _auto_scale_per_group(
     pytree: dict[str, torch.Tensor],
     pg: PerGroup,
     gamma: float,
+    compute_dtype: torch.dtype | None,
 ) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
     """Per-group AUTO-S scaling: each group is scaled to sensitivity R_k."""
+    acc_dtype = _resolve_compute_dtype_for_reduction(pytree, compute_dtype)
+
     group_sq_norms: dict[str, torch.Tensor] = {}
     for key, tensor in pytree.items():
         if not isinstance(tensor, torch.Tensor):
             continue
         group_name = pg.groups[key]
-        sq = (tensor.to(torch.float32) ** 2).sum()
+        sq = (tensor.to(acc_dtype) ** 2).sum()
         if group_name in group_sq_norms:
             group_sq_norms[group_name] = group_sq_norms[group_name] + sq
         else:
@@ -56,7 +88,7 @@ def _auto_scale_per_group(
         else:
             scaled[key] = val
 
-    orig_norm = global_norm(pytree)
+    orig_norm = global_norm(pytree, compute_dtype=compute_dtype)
     group_norms = {name: torch.sqrt(sq) for name, sq in group_sq_norms.items()}
     return scaled, ClipPytreeAux(norm=orig_norm, group_norms=group_norms)
 
@@ -65,6 +97,8 @@ def auto_scale_pytree(
     pytree: dict[str, torch.Tensor],
     R: float | PerGroup = 1.0,
     gamma: float = 0.01,
+    *,
+    compute_dtype: torch.dtype | None = None,
 ) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
     r"""AUTO-S automatic scaling of a PyTree (Bu et al., NeurIPS 2023).
 
@@ -81,6 +115,9 @@ def auto_scale_pytree(
         gamma: Small positive denominator stabilizer :math:`\gamma` (default
             0.01). Must be strictly positive; at ``gamma=0`` this reduces to
             AUTO-V (undefined at zero gradient).
+        compute_dtype: Internal accumulation dtype for the L2-norm
+            reduction.  ``None`` (default) auto-promotes bf16/fp16 inputs to
+            float32.
 
     Returns:
         Tuple of (scaled_pytree, aux) where ``aux.norm`` is the original L2
@@ -107,9 +144,9 @@ def auto_scale_pytree(
     )
 
     if isinstance(R, PerGroup):
-        return _auto_scale_per_group(pytree, R, gamma)
+        return _auto_scale_per_group(pytree, R, gamma, compute_dtype)
 
-    orig_norm = global_norm(pytree)
+    orig_norm = global_norm(pytree, compute_dtype=compute_dtype)
     R_tensor = torch.tensor(R, dtype=orig_norm.dtype, device=orig_norm.device)
     R_tensor = torch.clamp(R_tensor, min=0.0)
     gamma_tensor = torch.tensor(gamma, dtype=orig_norm.dtype, device=orig_norm.device)
@@ -133,15 +170,18 @@ def _clip_pytree_per_group(
     pytree: dict[str, torch.Tensor],
     pg: PerGroup,
     return_zero: bool,
+    compute_dtype: torch.dtype | None,
 ) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
     """Per-group clipping: each group is clipped to its own L2 norm bound."""
+    acc_dtype = _resolve_compute_dtype_for_reduction(pytree, compute_dtype)
+
     # 1. Accumulate squared norms per group
     group_sq_norms: dict[str, torch.Tensor] = {}
     for key, tensor in pytree.items():
         if not isinstance(tensor, torch.Tensor):
             continue
         group_name = pg.groups[key]
-        sq = (tensor.to(torch.float32) ** 2).sum()
+        sq = (tensor.to(acc_dtype) ** 2).sum()
         if group_name in group_sq_norms:
             group_sq_norms[group_name] = group_sq_norms[group_name] + sq
         else:
@@ -175,7 +215,7 @@ def _clip_pytree_per_group(
             clipped,
         )
 
-    orig_norm = global_norm(pytree)
+    orig_norm = global_norm(pytree, compute_dtype=compute_dtype)
     group_norms = {name: torch.sqrt(sq) for name, sq in group_sq_norms.items()}
     return clipped, ClipPytreeAux(norm=orig_norm, group_norms=group_norms)
 
@@ -184,6 +224,8 @@ def clip_pytree(
     pytree: dict[str, torch.Tensor],
     clipping_norm: float | PerGroup,
     return_zero: bool = False,
+    *,
+    compute_dtype: torch.dtype | None = None,
 ) -> tuple[dict[str, torch.Tensor], ClipPytreeAux]:
     """Clip a PyTree of tensors to a maximum L2 norm.
 
@@ -198,6 +240,11 @@ def clip_pytree(
         return_zero: If True, the output PyTree is guaranteed to be zero no matter
             what the inputs are. Does not influence the formal guarantees but useful
             for privacy amplification via padding (see https://arxiv.org/pdf/2411.04205).
+        compute_dtype: Internal accumulation dtype for the L2-norm
+            reduction.  ``None`` (default) auto-promotes bf16/fp16 inputs to
+            float32.  This keeps the sensitivity bound numerically honest
+            under low-precision compute — small per-element contributions
+            don't get rounded away during the sum-of-squares.
 
     Returns:
         Tuple of (clipped_pytree, aux) where aux contains:
@@ -224,12 +271,12 @@ def clip_pytree(
 
     # Per-group path: clip each group independently
     if isinstance(clipping_norm, PerGroup):
-        return _clip_pytree_per_group(pytree, clipping_norm, return_zero)
+        return _clip_pytree_per_group(pytree, clipping_norm, return_zero, compute_dtype)
 
     # --- Global (flat) clipping path ---
 
     # Compute original norm (always finite after sanitization)
-    orig_norm = global_norm(pytree)
+    orig_norm = global_norm(pytree, compute_dtype=compute_dtype)
 
     # Compute scale factor
     clipping_norm_tensor = torch.tensor(

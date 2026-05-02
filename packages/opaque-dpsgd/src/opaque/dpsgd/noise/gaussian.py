@@ -79,6 +79,7 @@ def gaussian_noise(
     stddev: float | PerGroup,
     *,
     key: RngKey,
+    compute_dtype: torch.dtype = torch.float32,
 ) -> tuple[
     Callable[..., tuple[Any, GaussianNoiseState]],
     GaussianNoiseState,
@@ -110,6 +111,14 @@ def gaussian_noise(
         key: Explicit RNG key for deterministic, functional randomness.
             Same key on all ranks → same noise (synchronized).
             ``fold_in(key, rank)`` → independent noise per rank.
+        compute_dtype: Internal dtype for ``torch.randn`` and the
+            scale-and-add arithmetic.  Defaults to ``torch.float32`` because
+            the Gaussian-mechanism privacy guarantee requires sampling from a
+            true Gaussian — ``torch.randn(dtype=torch.bfloat16)`` samples
+            from a coarsely-discretized lattice that does not satisfy the
+            standard analysis.  The type-stable boundary is preserved: the
+            input's dtype is matched on output (input upcast to
+            ``compute_dtype``, noise added, downcast at return).
 
     Returns:
         A tuple ``(noise_fn, state)`` where:
@@ -147,6 +156,18 @@ def gaussian_noise(
 
     default_stddev = stddev
 
+    def _add_noise(tensor: torch.Tensor, std: float, generator) -> torch.Tensor:
+        """Sample noise in compute_dtype, add, downcast to input dtype."""
+        noise = torch.randn(
+            tensor.shape,
+            dtype=compute_dtype,
+            generator=generator,
+        ).to(device=tensor.device)
+        if tensor.dtype == compute_dtype:
+            return tensor + noise * std
+        # Type-stable boundary: upcast input, add in compute_dtype, downcast.
+        return (tensor.to(compute_dtype) + noise * std).to(dtype=tensor.dtype)
+
     def noise_fn(grads, st, *, stddev=None):
         """Add Gaussian noise to gradients."""
         effective_stddev = stddev if stddev is not None else default_stddev
@@ -167,13 +188,8 @@ def gaussian_noise(
 
             noisy = {}
             for param_key, tensor in grads.items():
-                noise = torch.randn(
-                    tensor.shape,
-                    dtype=tensor.dtype,
-                    generator=g,
-                ).to(device=tensor.device)
                 group_std = effective_stddev.for_key(param_key)
-                noisy[param_key] = tensor + noise * group_std
+                noisy[param_key] = _add_noise(tensor, group_std, g)
 
             return noisy, next_state
 
@@ -184,15 +200,7 @@ def gaussian_noise(
         step_key = rng_fold_in(st._rng_key, st._step_counter)
         g = generator_from_key(step_key)
 
-        def add_noise_to_tensor(tensor: torch.Tensor) -> torch.Tensor:
-            noise = torch.randn(
-                tensor.shape,
-                dtype=tensor.dtype,
-                generator=g,
-            ).to(device=tensor.device)
-            return tensor + noise * effective_stddev
-
-        noisy = tree_map(add_noise_to_tensor, grads)
+        noisy = tree_map(lambda t: _add_noise(t, effective_stddev, g), grads)
 
         return noisy, next_state
 

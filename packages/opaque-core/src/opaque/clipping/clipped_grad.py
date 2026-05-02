@@ -82,6 +82,7 @@ def clipped_grad(
     pre_clipping_transform: Callable = lambda x: x,
     microbatch_size: int | None = None,
     dtype: torch.dtype | None = None,
+    compute_dtype: torch.dtype | None = None,
     _force_grad_norms: bool = False,
     _scale_fn: Callable | None = None,
 ) -> tuple[Callable, FixedClipState]:
@@ -166,6 +167,10 @@ def clipped_grad(
             the same as the dtypes of the gradient function. Can be useful to avoid
             overflow issues when using low-precision dtypes as the returned function
             computes a sum over a potentially large batch.
+        compute_dtype: Internal accumulation dtype for reductions (per-example
+            clip-norm and the across-batch sum). ``None`` (default) auto-promotes
+            bf16/fp16 to float32 for numerical stability. Independent of
+            ``dtype`` (which controls the *output* dtype).
     Returns:
         Tuple of (clipped_grad_fn, clip_state) where:
         - clipped_grad_fn: A function that computes the sum of clipped per-example gradients.
@@ -226,6 +231,7 @@ def clipped_grad(
         return_aux=return_aux or _force_grad_norms,
         microbatch_size=microbatch_size,
         dtype=dtype,
+        compute_dtype=compute_dtype,
         _scale_fn=_scale_fn,
     )
 
