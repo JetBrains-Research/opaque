@@ -29,6 +29,8 @@ _STANDARD_MODEL_MODULES = [
     "transformers.models.olmo2.modeling_olmo2",
     "transformers.models.olmo3.modeling_olmo3",
     "transformers.models.glm4.modeling_glm4",
+    "transformers.models.gemma3.modeling_gemma3",
+    "transformers.models.exaone4.modeling_exaone4",
 ]
 
 

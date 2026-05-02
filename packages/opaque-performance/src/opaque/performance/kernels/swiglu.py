@@ -1,3 +1,10 @@
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Triton SwiGLU kernels derive from the Unsloth project
+# (Apache-2.0; https://github.com/unslothai/unsloth) and have been adapted to
+# Opaque's vmap-friendly new-style autograd dispatch. See NOTICE in the
+# repository root.
 """SwiGLU kernel with vmap support for DP-SGD."""
 
 import triton

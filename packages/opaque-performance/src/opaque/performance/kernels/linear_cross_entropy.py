@@ -1,3 +1,11 @@
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Triton fused linear+CE kernel derives from Apple's cut_cross_entropy
+# project (Apache-2.0; https://github.com/apple/ml-cross-entropy, ICLR 2025).
+# Simplified to drop bias / Kahan / filtering / VocabOrdering / dLSE / shift
+# handling and adapted to Opaque's vmap-friendly new-style autograd dispatch.
+# See NOTICE in the repository root.
 """Fused Linear + Cross-Entropy Loss with native vmap support.
 
 Computes CE(hidden_states @ weight.T, labels) without materializing the full

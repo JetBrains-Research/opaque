@@ -4,10 +4,14 @@ Provides pytest fixtures for:
 - mellum_config: Mellum-4b model dimensions for realistic testing
 - assert_precision: Assert precision using torch.testing.assert_close (atol+rtol)
 - measure_time_and_memory: Benchmark execution time and peak CUDA memory
-- assert_perf_benefit: Assert performance improvement
+- assert_perf_benefit: Assert performance improvement (and optionally record
+  the measured numbers to a JSON acceptance log when ``--record-perf=PATH``
+  is passed; default behavior is unchanged when the option is absent).
 """
 
 import gc
+import json
+import os
 import time
 import pytest
 import torch
@@ -170,7 +174,123 @@ def measure_time_and_memory():
     return _measure_time_and_memory
 
 
-@pytest.fixture(scope="session")
-def assert_perf_benefit():
-    """Assert performance improvement over PyTorch baseline."""
-    return _assert_perf_benefit
+# ============================================================================
+# Acceptance recorder (--record-perf)
+# ============================================================================
+
+# Per-session list populated by the ``assert_perf_benefit`` fixture when the
+# ``--record-perf=PATH`` option is set. Flushed in ``pytest_sessionfinish``.
+_PERF_ROWS: list[dict] = []
+
+
+def pytest_addoption(parser):
+    """Register the ``--record-perf=PATH`` CLI option."""
+    parser.addoption(
+        "--record-perf",
+        action="store",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Append assert_perf_benefit measurements to a JSON acceptance log "
+            "at PATH (one row per call). Default: no recording."
+        ),
+    )
+
+
+def _record_perf_row(
+    *,
+    nodeid: str,
+    label: str,
+    pt_stats: dict,
+    op_stats: dict,
+) -> None:
+    """Append one acceptance row to the in-memory buffer.
+
+    The row schema matches the plan in
+    ``docs/development/liger-kernel-porting-plan.md`` — kernel/op are derived
+    from the test ``nodeid`` and the ``label`` argument; numeric fields come
+    straight from ``measure_time_and_memory`` stats.
+    """
+    speedup = pt_stats["time_ms"] / op_stats["time_ms"]
+    mem_reduction = pt_stats["memory_mb"] / op_stats["memory_mb"]
+    device_name = ""
+    if torch.cuda.is_available():
+        try:
+            device_name = torch.cuda.get_device_name(0)
+        except Exception:
+            device_name = ""
+    _PERF_ROWS.append(
+        {
+            "nodeid": nodeid,
+            "label": label,
+            "device": device_name,
+            "time_pt_ms": pt_stats["time_ms"],
+            "time_op_ms": op_stats["time_ms"],
+            "mem_pt_mb": pt_stats["memory_mb"],
+            "mem_op_mb": op_stats["memory_mb"],
+            "speedup": speedup,
+            "mem_reduction": mem_reduction,
+        }
+    )
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """On session end, flush ``_PERF_ROWS`` to ``--record-perf`` if set.
+
+    The output file is a single JSON array; if it already exists the new rows
+    are appended to the array so reruns accumulate measurements.
+    """
+    path = session.config.getoption("--record-perf")
+    if not path or not _PERF_ROWS:
+        return
+
+    abs_path = os.path.abspath(path)
+    parent = os.path.dirname(abs_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
+    existing: list = []
+    if os.path.exists(abs_path):
+        try:
+            with open(abs_path) as fh:
+                loaded = json.load(fh)
+            if isinstance(loaded, list):
+                existing = loaded
+        except (json.JSONDecodeError, OSError):
+            existing = []
+
+    existing.extend(_PERF_ROWS)
+
+    with open(abs_path, "w") as fh:
+        json.dump(existing, fh, indent=2)
+        fh.write("\n")
+
+
+@pytest.fixture
+def assert_perf_benefit(request):
+    """Assert performance improvement; record a row when ``--record-perf`` is set.
+
+    Default behavior is unchanged: the fixture exposes ``_assert_perf_benefit``
+    so existing assertions keep firing. When ``--record-perf=PATH`` is passed
+    on the pytest CLI, each call additionally appends a row to the in-memory
+    buffer flushed by :func:`pytest_sessionfinish`.
+
+    Recording happens *before* the assertion so failed buckets still appear in
+    the acceptance log (the run can then waive or widen the bucket).
+    """
+    record_path = request.config.getoption("--record-perf")
+
+    if not record_path:
+        return _assert_perf_benefit
+
+    nodeid = request.node.nodeid
+
+    def _record_then_assert(pt_stats, op_stats, label="", max_perf_overhead=0.20):
+        _record_perf_row(
+            nodeid=nodeid, label=label, pt_stats=pt_stats, op_stats=op_stats
+        )
+        _assert_perf_benefit(
+            pt_stats, op_stats, label=label, max_perf_overhead=max_perf_overhead
+        )
+
+    return _record_then_assert

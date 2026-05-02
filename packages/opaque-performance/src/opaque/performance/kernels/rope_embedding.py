@@ -1,3 +1,10 @@
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Triton RoPE kernels derive from the Unsloth project
+# (Apache-2.0; https://github.com/unslothai/unsloth/blob/main/unsloth/kernels/rope_embedding.py)
+# and have been adapted to Opaque's vmap-friendly new-style autograd dispatch.
+# See NOTICE in the repository root.
 """RoPE (Rotary Position Embedding) kernels with vmap support for DP-SGD.
 
 Ported from unsloth/kernels/rope_embedding.py with new-style autograd API.

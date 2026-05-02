@@ -69,3 +69,57 @@ def test_skip_rope_token_leaves_cohere_stock():
         env_overrides={"OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES": "rope"},
     )
     assert out == "ok"
+
+
+@_requires_cuda_triton
+def test_gemma3_apply_rotary_uses_opaque_kernel():
+    """Gemma3 uses the same module-level apply_rotary_pos_emb API as Llama."""
+    out = _run(
+        "import opaque.performance\n"
+        "from opaque.performance.huggingface import kernel_patches as kp\n"
+        "import transformers.models.gemma3.modeling_gemma3 as m3\n"
+        "assert m3.apply_rotary_pos_emb is kp._opaque_apply_rotary_pos_emb\n"
+        "print('ok')",
+        env_overrides={},
+    )
+    assert out == "ok"
+
+
+@_requires_cuda_triton
+def test_skip_rope_token_leaves_gemma3_stock():
+    """OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=rope skips Gemma3 RoPE swap too."""
+    out = _run(
+        "import opaque.performance\n"
+        "import transformers.models.gemma3.modeling_gemma3 as m3\n"
+        "assert m3.apply_rotary_pos_emb.__name__ == 'apply_rotary_pos_emb'\n"
+        "print('ok')",
+        env_overrides={"OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES": "rope"},
+    )
+    assert out == "ok"
+
+
+@_requires_cuda_triton
+def test_exaone4_apply_rotary_uses_opaque_kernel():
+    """Exaone4 uses the same module-level apply_rotary_pos_emb API as Llama."""
+    out = _run(
+        "import opaque.performance\n"
+        "from opaque.performance.huggingface import kernel_patches as kp\n"
+        "import transformers.models.exaone4.modeling_exaone4 as me4\n"
+        "assert me4.apply_rotary_pos_emb is kp._opaque_apply_rotary_pos_emb\n"
+        "print('ok')",
+        env_overrides={},
+    )
+    assert out == "ok"
+
+
+@_requires_cuda_triton
+def test_skip_rope_token_leaves_exaone4_stock():
+    """OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=rope skips Exaone4 RoPE swap too."""
+    out = _run(
+        "import opaque.performance\n"
+        "import transformers.models.exaone4.modeling_exaone4 as me4\n"
+        "assert me4.apply_rotary_pos_emb.__name__ == 'apply_rotary_pos_emb'\n"
+        "print('ok')",
+        env_overrides={"OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES": "rope"},
+    )
+    assert out == "ok"

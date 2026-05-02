@@ -41,10 +41,11 @@ components:
   for model forward methods called under `vmap(grad(...))`.
 
 These patches are applied for LLaMA, Mistral, Ministral, Qwen2, Qwen3,
-SmolLM3, OLMo2, OLMo3, GLM4, Phi-3, Gemma, Gemma2, Granite, Cohere, and
-Cohere2 models. DeepSeek models inherit LLaMA patches automatically. GPT-2
-works without patches (simple architecture). Other text models may work if
-their attention implementation follows the standard Transformers pattern.
+SmolLM3, OLMo2, OLMo3, GLM4, Phi-3, Gemma, Gemma2, Gemma3 (text), Granite,
+Cohere, Cohere2, and Exaone4 models. DeepSeek models inherit LLaMA patches
+automatically. GPT-2 works without patches (simple architecture). Other
+text models may work if their attention implementation follows the
+standard Transformers pattern.
 
 ### Why patches are needed
 
@@ -109,14 +110,30 @@ vmap compatibility and which fused Triton kernels are applied per model:
 | Phi-3 | 3.8B | SwiGLU | Yes | Yes | Yes | -- | -- |
 | Gemma | 2B, 7B | GeGLU Exact | Yes | Yes | Yes | Yes | QKV + MLP |
 | Gemma2 | 2B, 7B | GeGLU Approx | Yes | Yes | Yes | Yes (softcap) | QKV + MLP |
+| Gemma3 (text) | 1B, 4B (tiny config in tests) | GeGLU Approx | Yes | Yes | Yes | Yes | MLP only |
 | Granite | 3B, 8B | SwiGLU | Yes | Yes | Yes | Yes | QKV + MLP |
 | Cohere | 8B | SwiGLU | -- | Yes | Yes | Yes | MLP only |
 | Cohere2 | 8B | SwiGLU | -- | Yes | Yes | Yes | QKV + MLP |
+| Exaone4 | 1.2B, 32B (tiny config in tests) | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
 | GPT-2 | 124M, 355M | -- | -- | -- | -- | -- | -- |
 | DeepSeek | 7B | SwiGLU | Yes | Yes | Yes | Yes | QKV + MLP |
 
+Gemma3's `q_norm` / `k_norm` RMSNorms inside `Gemma3Attention` are picked up
+automatically because the kernel patcher rebinds `Gemma3RMSNorm.forward` at
+class level; the same trick covers `Exaone4RMSNorm` for Exaone4. Fused add +
+RMSNorm is intentionally **off** for OLMo2 / OLMo3 / Cohere / Cohere2 /
+Gemma3 / Exaone4 because their decoder layers apply
+`post_attention_layernorm` *between* the attention output and the residual
+add (the fused primitive expects residual-first ordering).
+
 **Not supported by default patching:** expert-routed decoder stacks such as
-GPT-OSS.
+GPT-OSS. **Deferred families:** Nemotron — `transformers.models.nemotron.modeling_nemotron`
+in 4.57.1 ships only legacy `NemotronAttention` / `NemotronSdpaAttention` /
+`NemotronFlashAttention2` (no `eager_attention_forward` symbol to swap), and
+`NemotronMLP` is non-gated (`up_proj → act_fn → down_proj`, no
+SwiGLU/GeGLU split). Adding it would require both a bespoke vmap attention
+path and a new non-gated MLP kernel; revisit when a benchmark customer
+needs it.
 
 **What makes a model vmap-compatible:** The model must not use
 `torch.nonzero`, data-dependent control flow (`if tensor.item() > 0`), or

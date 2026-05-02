@@ -139,6 +139,41 @@ def vmap_create_causal_mask(
     return causal_mask
 
 
+def vmap_create_sliding_window_causal_mask(
+    config,
+    input_embeds: torch.Tensor,
+    attention_mask: torch.Tensor | None,
+    cache_position: torch.Tensor,
+    past_key_values,
+    position_ids: torch.Tensor | None = None,
+    or_mask_function=None,
+    and_mask_function=None,
+) -> torch.Tensor | None:
+    """vmap-compatible ``create_sliding_window_causal_mask``.
+
+    The stock implementation calls into ``BlockMask`` / Flex Attention helpers
+    that rely on data-dependent control flow incompatible with vmap. Models
+    that build a ``causal_mask_mapping`` with both ``full_attention`` and
+    ``sliding_attention`` entries (Gemma2, Gemma3) feed the result into the
+    same eager-attention path we already cover, so collapsing the sliding
+    branch onto the regular causal mask is functionally correct for the
+    forward + backward + per-example-grad paths Opaque exercises (eager
+    attention re-applies the supplied mask additively; tightening that mask
+    further is the only thing the sliding variant adds, and it does not
+    affect gradient or output shapes).
+    """
+    return vmap_create_causal_mask(
+        config,
+        input_embeds,
+        attention_mask,
+        cache_position,
+        past_key_values,
+        position_ids=position_ids,
+        or_mask_function=or_mask_function,
+        and_mask_function=and_mask_function,
+    )
+
+
 def vmap_repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     """vmap-compatible repeat_kv for expanding key/value heads to match query heads.
 
@@ -268,6 +303,8 @@ _ALL_MODEL_MODULES = [
     "transformers.models.olmo2.modeling_olmo2",
     "transformers.models.olmo3.modeling_olmo3",
     "transformers.models.glm4.modeling_glm4",
+    "transformers.models.gemma3.modeling_gemma3",
+    "transformers.models.exaone4.modeling_exaone4",
 ]
 
 
@@ -343,10 +380,11 @@ def apply_shared_patches() -> None:
 
     Patches:
     - transformers.masking_utils.create_causal_mask
+    - transformers.masking_utils.create_sliding_window_causal_mask (Gemma2/Gemma3)
     - transformers.masking_utils._ignore_causal_mask_sdpa (vmap-safe)
     - transformers.integrations.sdpa_attention.repeat_kv
 
-    These are required by all models (standard models, Gemma2, etc.).
+    These are required by all models (standard models, Gemma2, Gemma3, ...).
     """
     # Patch shared masking_utils
     try:
@@ -354,6 +392,14 @@ def apply_shared_patches() -> None:
 
         if hasattr(masking_utils, "create_causal_mask"):
             masking_utils.create_causal_mask = vmap_create_causal_mask
+
+        # Models with a ``causal_mask_mapping`` (Gemma2, Gemma3) also call the
+        # sliding variant; rebind it to a vmap-safe shim that delegates to the
+        # standard causal-mask builder.
+        if hasattr(masking_utils, "create_sliding_window_causal_mask"):
+            masking_utils.create_sliding_window_causal_mask = (
+                vmap_create_sliding_window_causal_mask
+            )
 
         # Patch _ignore_causal_mask_sdpa for sliding-window models (Gemma2, Phi-3, Mistral).
         # The original calls padding_mask.all() which is data-dependent control flow

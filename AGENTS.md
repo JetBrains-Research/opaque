@@ -229,8 +229,10 @@ CI lane marker expressions:
 ### Supported HF model families
 
 LLaMA / Mistral / Ministral / Qwen2 / Qwen3 / SmolLM3 / OLMo2 / OLMo3 /
-GLM4 / Phi-3 / Gemma / Gemma2 / Granite / Cohere / Cohere2 / DeepSeek
-(inherits LLaMA). Text-first; see `docs/user-guide/huggingface.md`.
+GLM4 / Phi-3 / Gemma / Gemma2 / Gemma3 (text) / Granite / Cohere / Cohere2 /
+Exaone4 / DeepSeek (inherits LLaMA). Text-first; see
+`docs/user-guide/huggingface.md`. Nemotron is deferred (no
+`eager_attention_forward` and a non-gated `NemotronMLP` in 4.57.1).
 
 ## Non-obvious notes
 

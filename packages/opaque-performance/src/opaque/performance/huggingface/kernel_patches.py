@@ -10,9 +10,9 @@ shared text modules). Vision-language and other multimodal heads are not part
 of the default patch matrix.
 
 Patched components:
-- MLP activations: SwiGLU (LLaMA, Mistral, Ministral, Qwen2, Qwen3, SmolLM3, OLMo2, OLMo3, Granite, Cohere, Cohere2), Phi3-style SwiGLU (Phi3, Glm4), and GeGLU (Gemma, Gemma2)
-- RMSNorm: Llama-style and Gemma-style RMSNorm modules
-- Fused add + post-attention RMSNorm on decoder layers with Llama-style residual ordering (Llama, Mistral/Ministral, Qwen2/3, SmolLM3, Gemma, Phi-3, Granite)
+- MLP activations: SwiGLU (LLaMA, Mistral, Ministral, Qwen2, Qwen3, SmolLM3, OLMo2, OLMo3, Granite, Cohere, Cohere2, Exaone4), Phi3-style SwiGLU (Phi3, Glm4), and GeGLU (Gemma, Gemma2, Gemma3)
+- RMSNorm: Llama-style, Gemma-style, OLMo2-style, GLM4-style, and Gemma3-style RMSNorm modules (incl. q_norm/k_norm rebinds inside Gemma3Attention / Exaone4Attention)
+- Fused add + post-attention RMSNorm on decoder layers with Llama-style residual ordering (Llama, Mistral/Ministral, Qwen2/3, SmolLM3, Gemma, Phi-3, Granite). OLMo2/OLMo3/Cohere/Cohere2/Gemma3/Exaone4 keep this OFF because their decoder layers apply ``post_attention_layernorm`` between attention output and the residual add (incompatible with the fused primitive's residual-first contract).
 - RoPE: apply_rotary_pos_emb for all supported models (standard half-split rotation)
 - Cross-entropy loss: ForCausalLM loss via LOSS_MAPPING (fp32 fallback)
 - Fused linear + CE: ForCausalLM.forward replaced to skip lm_head materialization (bf16/fp16)
@@ -62,6 +62,7 @@ _SWIGLU_MLP = [
     ("transformers.models.cohere2.modeling_cohere2", "Cohere2MLP"),
     ("transformers.models.olmo2.modeling_olmo2", "Olmo2MLP"),
     ("transformers.models.olmo3.modeling_olmo3", "Olmo3MLP"),
+    ("transformers.models.exaone4.modeling_exaone4", "Exaone4MLP"),
 ]
 
 # Phi3 MLP: combined gate_up_proj, needs chunk(2)
@@ -75,9 +76,10 @@ _GEGLU_EXACT_MLP = [
     ("transformers.models.gemma.modeling_gemma", "GemmaMLP"),
 ]
 
-# GeGLU approx MLP (Gemma2): gelu_pytorch_tanh activation
+# GeGLU approx MLP (Gemma2, Gemma3): gelu_pytorch_tanh activation
 _GEGLU_APPROX_MLP = [
     ("transformers.models.gemma2.modeling_gemma2", "Gemma2MLP"),
+    ("transformers.models.gemma3.modeling_gemma3", "Gemma3MLP"),
 ]
 
 # RoPE: module-level apply_rotary_pos_emb function
@@ -96,6 +98,8 @@ _ROPE_MODELS = [
     "transformers.models.cohere2.modeling_cohere2",
     "transformers.models.olmo2.modeling_olmo2",
     "transformers.models.olmo3.modeling_olmo3",
+    "transformers.models.gemma3.modeling_gemma3",
+    "transformers.models.exaone4.modeling_exaone4",
 ]
 
 
@@ -124,9 +128,24 @@ _RMSNORM_GEMMA2 = [
     ("transformers.models.gemma2.modeling_gemma2", "Gemma2RMSNorm"),
 ]
 
+# Gemma3 uses the same offset=1.0, casting="gemma", in_place=False semantics as
+# Gemma2; the same factory covers both the layer-level `*RMSNorm` *and* the
+# in-attention `q_norm`/`k_norm` modules because we rebind
+# ``Gemma3RMSNorm.forward`` at class level.
+_RMSNORM_GEMMA3 = [
+    ("transformers.models.gemma3.modeling_gemma3", "Gemma3RMSNorm"),
+]
+
+# OLMo2-style RMSNorm: Llama casting + offset 0.0 + in_place_bwd=False. Exaone4
+# joins this list because (a) its formula matches the Llama variant exactly,
+# (b) it places ``post_attention_layernorm`` between the attention output and
+# the residual add (so the fused add+RMS path stays off), and (c) its q_norm
+# / k_norm modules inside Exaone4Attention are also Exaone4RMSNorm instances
+# and pick up the same forward rebind automatically.
 _RMSNORM_OLMO2 = [
     ("transformers.models.olmo2.modeling_olmo2", "Olmo2RMSNorm"),
     ("transformers.models.olmo3.modeling_olmo3", "Olmo3RMSNorm"),
+    ("transformers.models.exaone4.modeling_exaone4", "Exaone4RMSNorm"),
 ]
 
 _RMSNORM_GLM4 = [
@@ -211,6 +230,9 @@ def _patch_rms_norm(patched: list) -> None:
         if _patch_forward(path, cls_name, _rmsnorm_fac_gemma):
             patched.append(f"{cls_name}(rmsnorm)")
     for path, cls_name in _RMSNORM_GEMMA2:
+        if _patch_forward(path, cls_name, _rmsnorm_fac_gemma2):
+            patched.append(f"{cls_name}(rmsnorm)")
+    for path, cls_name in _RMSNORM_GEMMA3:
         if _patch_forward(path, cls_name, _rmsnorm_fac_gemma2):
             patched.append(f"{cls_name}(rmsnorm)")
     for path, cls_name in _RMSNORM_OLMO2:
@@ -680,6 +702,8 @@ _FUSED_CE_CAUSAL_LM = [
     ("transformers.models.olmo2.modeling_olmo2", "Olmo2ForCausalLM"),
     ("transformers.models.olmo3.modeling_olmo3", "Olmo3ForCausalLM"),
     ("transformers.models.glm4.modeling_glm4", "Glm4ForCausalLM"),
+    ("transformers.models.gemma3.modeling_gemma3", "Gemma3ForCausalLM"),
+    ("transformers.models.exaone4.modeling_exaone4", "Exaone4ForCausalLM"),
 ]
 
 
@@ -1045,6 +1069,8 @@ _MLP_ACTIVATION_MAP = {
     "Phi3MLP": 0,
     "GemmaMLP": 1,  # ACTIVATION_GEGLU_EXACT
     "Gemma2MLP": 2,  # ACTIVATION_GEGLU_APPROX
+    "Gemma3MLP": 2,  # ACTIVATION_GEGLU_APPROX (gelu_pytorch_tanh)
+    "Exaone4MLP": 0,  # ACTIVATION_SWIGLU
 }
 
 

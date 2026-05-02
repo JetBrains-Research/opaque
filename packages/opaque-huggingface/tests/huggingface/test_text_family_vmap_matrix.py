@@ -45,6 +45,30 @@ _TEXT_FAMILY_SPECS = {
         "model_cls": "Glm4ForCausalLM",
         "extra": {},
     },
+    "gemma3": {
+        "module": "transformers.models.gemma3.modeling_gemma3",
+        "config_module": "transformers.models.gemma3.configuration_gemma3",
+        "config_cls": "Gemma3TextConfig",
+        "model_cls": "Gemma3ForCausalLM",
+        # Gemma3 needs an explicit head_dim and exercises both sliding +
+        # global RoPE branches; pin sliding_window so the layer pattern
+        # actually fires under vmap.
+        "extra": {
+            "head_dim": 16,
+            "sliding_window": 8,
+            "sliding_window_pattern": 2,
+        },
+    },
+    "exaone4": {
+        "module": "transformers.models.exaone4.modeling_exaone4",
+        "config_module": "transformers.models.exaone4.configuration_exaone4",
+        "config_cls": "Exaone4Config",
+        "model_cls": "Exaone4ForCausalLM",
+        # Exaone4 needs an explicit head_dim because its config validator
+        # rejects ``hidden_size // num_attention_heads`` for non-power-of-2
+        # combinations of the tiny test geometry.
+        "extra": {"head_dim": 16},
+    },
 }
 
 
@@ -58,7 +82,9 @@ def _tiny_text_model(family: str):
         "vocab_size": 128,
         "hidden_size": 64,
         "intermediate_size": 128,
-        "num_hidden_layers": 1,
+        # Gemma3 picks between sliding/global RoPE per layer pair; use 2
+        # layers so both branches run. One layer is fine for everyone else.
+        "num_hidden_layers": 2 if family == "gemma3" else 1,
         "num_attention_heads": 4,
         "num_key_value_heads": 2,
         "max_position_embeddings": 128,

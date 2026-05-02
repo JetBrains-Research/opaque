@@ -1,3 +1,10 @@
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Triton LoRA kernels derive from the Unsloth project
+# (Apache-2.0; https://github.com/unslothai/unsloth/blob/main/unsloth/kernels/fast_lora.py)
+# and have been adapted to Opaque's vmap-friendly new-style autograd dispatch.
+# See NOTICE in the repository root.
 """LoRA (Low-Rank Adaptation) kernels with vmap support for DP-SGD.
 
 Ported from unsloth/kernels/fast_lora.py for vmap compatibility.

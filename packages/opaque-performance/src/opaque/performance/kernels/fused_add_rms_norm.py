@@ -1,9 +1,11 @@
 # Copyright (c) 2025 Opaque Authors
-# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2024 LinkedIn Corporation (Liger Kernel)
+# SPDX-License-Identifier: Apache-2.0 AND BSD-2-Clause
 #
 # Fused residual add + RMSNorm Triton kernels derive from the Liger Kernel
 # project (BSD-2-Clause, Copyright LinkedIn Corporation). See:
 # https://github.com/linkedin/Liger-Kernel/blob/main/src/liger_kernel/ops/fused_add_rms_norm.py
+# See ./../../../../../../NOTICE in the repository root.
 """Fused (hidden + residual) + RMSNorm with vmap(grad(...)) support (DP-SGD)."""
 
 from __future__ import annotations

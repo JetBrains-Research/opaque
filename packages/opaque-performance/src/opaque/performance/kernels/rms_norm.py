@@ -1,10 +1,12 @@
 # Copyright (c) 2025 Opaque Authors
-# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2024 LinkedIn Corporation (Liger Kernel)
+# SPDX-License-Identifier: Apache-2.0 AND BSD-2-Clause
 #
 # Triton RMSNorm kernels derive from the Liger Kernel project (BSD-2-Clause,
 # Copyright LinkedIn Corporation), which incorporated prior Unsloth Apache-2.0
 # RMSNorm code. See:
 # https://github.com/linkedin/Liger-Kernel/blob/main/src/liger_kernel/ops/rms_norm.py
+# See ./../../../../../../NOTICE in the repository root.
 """RMSNorm Triton kernel with vmap(grad(...)) support (DP-SGD)."""
 
 from __future__ import annotations

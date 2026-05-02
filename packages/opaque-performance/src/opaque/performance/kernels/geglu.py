@@ -1,3 +1,10 @@
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Triton GeGLU kernels derive from the Unsloth project
+# (Apache-2.0; https://github.com/unslothai/unsloth) and have been adapted to
+# Opaque's vmap-friendly new-style autograd dispatch. See NOTICE in the
+# repository root.
 """GeGLU (exact and approx) kernels with vmap support for DP-SGD."""
 
 import math

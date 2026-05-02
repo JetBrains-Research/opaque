@@ -1,3 +1,10 @@
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Triton cross-entropy kernel derives from the Unsloth project
+# (Apache-2.0; https://github.com/unslothai/unsloth) and has been adapted to
+# Opaque's vmap-friendly new-style autograd dispatch. See NOTICE in the
+# repository root.
 """Cross-entropy loss kernel with vmap support for DP-SGD."""
 
 import triton
