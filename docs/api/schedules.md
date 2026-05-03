@@ -3,7 +3,7 @@
 Pure-Python step-indexed scalar schedules.  Each public function
 returns a plain `Callable[[int], float]` that plugs straight into
 `torchopt.adamw(lr=...)`, `torchopt.adam(lr=...)`,
-`torchopt.sgd(lr=...)`, or [`opaque.dpsgd.adamw_bc`](optimizers.md).
+`torchopt.sgd(lr=...)`, or [`opaque.optimizers.adamw`](optimizers.md).
 TorchOpt's `scale_by_neg_lr` advances the schedule via the
 optimizer-state step counter — no manual `.step()` call.
 

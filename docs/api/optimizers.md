@@ -1,20 +1,22 @@
 # Optimizers
 
-Opaque does **not** bundle optimizers. Use [TorchOpt](https://torchopt.readthedocs.io/)
-functional optimizers for the parameter-update step.
+Opaque ships its own functional optimizer library at
+[`opaque.optimizers`](#opaque.optimizers). The factories follow the
+[TorchOpt](https://torchopt.readthedocs.io/) ``GradientTransformation``
+protocol and accept optional DP-aware kwargs (``noise_stddev``,
+``noisy_squared_grads``) at update time.
 
 ---
 
-## Why TorchOpt?
+## API shape
 
-TorchOpt provides **functional** optimizers: no hidden mutable state, explicit
-`(updates, new_state) = optimizer.update(grads, state)` interface.  This matches
-Opaque's functional gradient pipeline (`clipped_grad → noise_fn → optimizer`).
+Functional: no hidden mutable state, explicit
+`(updates, new_state) = optimizer.update(grads, state)` interface.
 
 ```python
-import torchopt
+from opaque.optimizers import adamw
 
-optimizer = torchopt.adam(lr=1e-3)
+optimizer = adamw(lr=1e-3, weight_decay=0.01)
 opt_state = optimizer.init(params)
 
 # Explicit state in, state out
@@ -26,24 +28,25 @@ params = torchopt.apply_updates(params, updates)
 
 ## Supported Optimizers
 
-Any TorchOpt functional optimizer works. The most common choices for DP training:
+The library ships:
 
-### SGD
+- ``opaque.optimizers.adamw`` — universal Adam / AdamW; optional DP
+  modes via ``noise_stddev`` (φ-EMA bias correction) or
+  ``noisy_squared_grads`` (JME paired-stream second moment).  Knobs:
+  ``decoupled_weight_decay``, ``update_rms_clip`` (StableAdamW).
+- ``opaque.optimizers.lion`` — Lion (Tu et al., 2023); no DP-aware mode.
+- ``opaque.optimizers.ademamix`` — AdEMAMix (Pagliardini et al., 2024);
+  same DP-aware options as ``adamw``.
+- ``opaque.optimizers.adafactor`` — Adafactor (factored second moment;
+  vanilla + WD only in this release).
+- ``opaque.optimizers.schedule_free`` — wrapper around any of the above
+  (or ``torchopt.sgd``) implementing Defazio's schedule-free averaging.
+
+For SGD use ``torchopt.sgd`` directly:
 
 ```python
+import torchopt
 optimizer = torchopt.sgd(lr=0.01, momentum=0.9)
-```
-
-### Adam
-
-```python
-optimizer = torchopt.adam(lr=1e-3)
-```
-
-### AdamW
-
-```python
-optimizer = torchopt.adamw(lr=1e-3, weight_decay=0.01)
 ```
 
 ---
@@ -64,7 +67,9 @@ grad_fn, clip_state = clipped_grad(
 noise_fn, noise_state = gaussian_noise(stddev=noise_multiplier * clip_state.sensitivity, key=key(42))
 
 # Optimizer
-optimizer = torchopt.adam(lr=1e-3)
+from opaque.optimizers import adamw
+
+optimizer = adamw(lr=1e-3, weight_decay=0.01)
 opt_state = optimizer.init(params)
 
 for step in range(num_steps):
@@ -91,28 +96,40 @@ per-rank key via `fold_in(key, rank)` to each `PoissonSampler`.
 ## DP-Aware Optimizers
 
 Standard Adam's second moment is biased upward in DP training because it
-squares noised gradients ($\tilde{g}^2 = g^2 + 2gz + z^2$).  Opaque provides
-two independent corrections — see the
+squares noised gradients ($\tilde{g}^2 = g^2 + 2gz + z^2$).  ``adamw``
+(and ``ademamix``) accept two orthogonal corrections — see the
 [Optimizers User Guide](../user-guide/optimizers.md#the-second-moment-problem-in-dp-training)
 for details:
 
-- **`adamw_bc`** — subtracts the known noise variance from $\hat{v}_t$
-  (Chooi et al., [arXiv:2511.07843](https://arxiv.org/abs/2511.07843)).
-  Works with any Gaussian noise source.  With `noise_stddev=0` (default),
-  identical to `torchopt.adamw`.
-- **`adamw_jme`** — uses a separately privatized $g^2$ estimate from JME
-  (Kalinin et al., [arXiv:2502.06597](https://arxiv.org/abs/2502.06597)).
-  Requires MF correlated noise (`jme_noise`).
+- **``noise_stddev`` (DP-AdamW-BC)** — subtracts the known noise variance
+  from $\hat{v}_t$ via a β₂-EMA (Chooi et al.,
+  [arXiv:2511.07843](https://arxiv.org/abs/2511.07843)).  Works with
+  any Gaussian noise source.  With ``noise_stddev = 0`` (the default),
+  the optimizer reduces to standard AdamW math.
+
+  ```python
+  optimizer = adamw(lr=1e-3, weight_decay=0.01, noise_stddev=initial_sigma)
+  # Per-step override under adaptive clipping:
+  updates, state = optimizer.update(grads, state, params=p, noise_stddev=current_sigma)
+  ```
+
+- **``noisy_squared_grads`` (JME)** — substitutes a separately privatized
+  $g^2$ estimate from JME (Kalinin et al.,
+  [arXiv:2502.06597](https://arxiv.org/abs/2502.06597)).  Requires MF
+  correlated noise (``jme_noise``).
+
+  ```python
+  (noisy_grads, noisy_sq), state = jme_noise_fn(grads, state)
+  updates, opt_state = optimizer.update(
+      noisy_grads, opt_state, params=p, noisy_squared_grads=noisy_sq
+  )
+  ```
 
 These address the same problem from different angles and **must not be
-combined**.
+combined** — passing both kwargs at the same ``update()`` call raises
+``ValueError``.
 
-::: opaque.dpsgd.optimizers.adamw_bc
-    options:
-      show_source: true
-      heading_level: 3
-
-::: opaque.dpftrl.optimizers.adamw_jme
+::: opaque.optimizers.adamw
     options:
       show_source: true
       heading_level: 3

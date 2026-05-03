@@ -1,8 +1,10 @@
 # opaque-dpsgd
 
 Differentially Private SGD mechanisms for Opaque: Gaussian /
-truncated-Gaussian noise, adaptive and AUTO-S clipping, truncated
-Poisson sampling, and the AdamW-BC optimizer.
+truncated-Gaussian noise, adaptive and AUTO-S clipping, and truncated
+Poisson sampling. Functional optimizers (including the universal
+``adamw`` with optional DP bias-correction) live in
+[`opaque.optimizers`](../opaque-core/README.md).
 
 ## Install
 
@@ -28,7 +30,6 @@ from opaque.dpsgd.sampling import TruncatedPoissonSampler
 - `opaque.dpsgd.noise` — `gaussian_noise`, `truncated_gaussian_noise`, `per_group_noise_stddev`
 - `opaque.dpsgd.clipping` — `adaptive_clipped_grad`, `auto_clipped_grad`, `auto_clipped_fun`
 - `opaque.dpsgd.sampling` — `TruncatedPoissonSampler`
-- `opaque.dpsgd.optimizers` — `adamw_bc` (requires the `optimizers` extra)
 
 All algorithm-agnostic primitives (fixed clipping, Poisson sampling,
 RNG keys, pytree / distributed / profiling helpers) live in

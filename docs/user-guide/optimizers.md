@@ -108,18 +108,18 @@ This is Algorithm 2 from
 cheap (one extra scalar EMA), requires no changes to the noise mechanism,
 and works with any i.i.d. Gaussian noise source.
 
-When `noise_stddev=0` (default), `adamw_bc` is numerically identical to
-`torchopt.adamw` — use it as a drop-in replacement even without BC.
+When `noise_stddev=0` (default), `adamw` reduces to standard AdamW math —
+use it as a drop-in replacement even without BC.
 
 ```python
-from opaque.dpsgd.optimizers import adamw_bc
+from opaque.optimizers import adamw
 
-# Without BC — identical to torchopt.adamw
-optimizer = adamw_bc(lr=1e-3, weight_decay=0.01)
+# Without BC — standard AdamW
+optimizer = adamw(lr=1e-3, weight_decay=0.01)
 
 # With BC — pass sigma
 noise_stddev = noise_multiplier * clip_state.sensitivity
-optimizer = adamw_bc(lr=1e-3, weight_decay=0.01, noise_stddev=noise_stddev)
+optimizer = adamw(lr=1e-3, weight_decay=0.01, noise_stddev=noise_stddev)
 ```
 
 With adaptive clipping (where sensitivity changes each step), override
@@ -158,16 +158,16 @@ Gaussian noise.
 
 | Scenario | Recommended | Why |
 |---|---|---|
-| DP-SGD with Gaussian noise | `adamw_bc` | No MF streams available for JME |
+| DP-SGD with Gaussian noise | `adamw(noise_stddev=σ)` | No MF streams available for JME |
 | DP-FTRL without Adam | `torchopt.sgd` | No second moment to correct |
-| DP-FTRL with Adam | `adamw_jme` | Better v estimate; JME streams available |
-| DP-FTRL with Adam, no extra budget | `adamw_bc` | BC is free; JME costs ~22% ε |
+| DP-FTRL with Adam | `adamw(...) + noisy_squared_grads` | Better v estimate; JME streams available |
+| DP-FTRL with Adam, no extra budget | `adamw(noise_stddev=σ)` | BC is free; JME costs ~22% ε |
 
-## AdamW-JME: setup and usage
+## AdamW with JME: setup and usage
 
 ```python
 from opaque.dpftrl.noise import jme_noise, band_mf_strategy
-from opaque.dpftrl.optimizers import adamw_jme
+from opaque.optimizers import adamw
 
 # Strategy: momentum=beta1 (Adam's first moment workload)
 strategy = band_mf_strategy(n_steps=1000, bands=8, momentum=0.9)
@@ -181,8 +181,9 @@ noise_fn, noise_state = jme_noise(
     beta2=0.999,
 )
 
-# Optimizer: decoupled weight decay, callable LR schedule
-optimizer = adamw_jme(lr=lr_schedule_fn, betas=(0.9, 0.999), weight_decay=0.01)
+# Optimizer: decoupled weight decay, callable LR schedule.
+# JME path is selected by passing noisy_squared_grads at update() time.
+optimizer = adamw(lr=lr_schedule_fn, betas=(0.9, 0.999), weight_decay=0.01)
 opt_state = optimizer.init(params)
 ```
 

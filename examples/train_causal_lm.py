@@ -360,7 +360,7 @@ def parse_args():
         type=str,
         default="adam",
         choices=["sgd", "adam", "adamw", "adamw-bc"],
-        help="Optimizer (adamw/adamw-bc use opaque.optimizers.adamw_bc)",
+        help="Optimizer (adamw/adamw-bc use opaque.optimizers.adamw)",
     )
     train_group.add_argument(
         "--weight-decay",
@@ -1242,11 +1242,11 @@ def main():
     elif args.optimizer == "sgd":
         base_opt = torchopt.sgd(lr=args.learning_rate)
     elif args.optimizer in ("adamw", "adamw-bc"):
-        from opaque.dpsgd.optimizers import adamw_bc
+        from opaque.optimizers import adamw
 
-        ns = 0.0
+        ns: float | PerGroup = 0.0
         if args.optimizer == "adamw-bc":
-            # Pass noise stddev to adamw_bc for BC correction.
+            # Pass noise stddev to adamw for the BC correction path.
             # PerGroup stddev and scalar stddev are both squared internally.
             initial_stddev = _noise_stddev(clip_state, noise_multiplier)
             if isinstance(initial_stddev, PerGroup):
@@ -1255,7 +1255,7 @@ def main():
             else:
                 ns = initial_stddev
                 print(f"  AdamW-BC noise_stddev: {ns:.6f}")
-        base_opt = adamw_bc(
+        base_opt = adamw(
             lr=args.learning_rate,
             weight_decay=args.weight_decay,
             noise_stddev=ns,

@@ -1,9 +1,11 @@
 # opaque-dpftrl
 
 Matrix-factorization noise mechanisms for Opaque: BLT, BSR, BiSR,
-band-MF, JME, lambda-CGD, identity — plus the ``AdamW-JME`` optimizer
-and the MF-specific participation samplers (b-min-separation,
-cyclic Poisson, balls-in-bins, sequential batches).
+band-MF, JME, lambda-CGD, identity — plus the MF-specific participation
+samplers (b-min-separation, cyclic Poisson, balls-in-bins, sequential
+batches). Functional optimizers (including the universal ``adamw``
+that consumes ``noisy_squared_grads`` from JME) live in
+[`opaque.optimizers`](../opaque-core/README.md).
 
 ## Install
 
@@ -26,7 +28,6 @@ from opaque.dpftrl.sampling import BMinSepSampler
 ## Layout
 
 - `opaque.dpftrl.noise` — strategies (band-MF, BLT, BSR, BiSR, identity, JME, lambda-CGD) + dispatchers
-- `opaque.dpftrl.optimizers` — `adamw_jme` (requires the `optimizers` extra)
 - `opaque.dpftrl.sampling` — `BMinSepSampler`, `CyclicPoissonSampler`, `BallsInBinsSampler`, `SequentialBatchSampler`
 
 All algorithm-agnostic primitives (Poisson sampling, fixed clipping,

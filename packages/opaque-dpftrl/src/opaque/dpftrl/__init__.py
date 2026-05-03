@@ -1,12 +1,13 @@
 """Opaque DP-FTRL: correlated (matrix-factorization) noise mechanisms.
 
-Strategies (BLT, BSR, BiSR, band-MF, JME, λ-CGD, identity) + the ``AdamW-JME``
-optimizer + DP-FTRL-specific participation samplers (b-min-sep, cyclic
-Poisson, balls-in-bins, sequential).
+Strategies (BLT, BSR, BiSR, band-MF, JME, λ-CGD, identity) + DP-FTRL-specific
+participation samplers (b-min-sep, cyclic Poisson, balls-in-bins, sequential).
 
 Fixed clipping lives in :mod:`opaque.clipping`; DP-FTRL requires fixed
 sensitivity across steps (the single-shot MF privacy proof breaks under
-adaptive / AUTO-S clipping).
+adaptive / AUTO-S clipping).  Functional optimizers (including the
+universal ``adamw`` that consumes ``noisy_squared_grads`` from
+:func:`jme_noise`) live in :mod:`opaque.optimizers`.
 
 Strategy data classes (``BandMfStrategy``, ``BltStrategy``, …) are importable
 from this module for type annotations but are not part of ``__all__`` — the
@@ -16,7 +17,7 @@ public surface is functional (strategy factory functions + ``mf_noise`` /
 
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
-from opaque.dpftrl import noise, optimizers, sampling
+from opaque.dpftrl import noise, sampling
 from opaque.dpftrl.noise import BandMfStrategy as BandMfStrategy
 from opaque.dpftrl.noise import BisrStrategy as BisrStrategy
 from opaque.dpftrl.noise import BltStrategy as BltStrategy
@@ -37,7 +38,6 @@ from opaque.dpftrl.noise import (
     lambda_cgd_strategy,
     mf_noise,
 )
-from opaque.dpftrl.optimizers.adamw_jme import adamw_jme
 from opaque.dpftrl.sampling import (
     BallsInBinsSampler,
     BMinSepSampler,
@@ -54,7 +54,6 @@ __all__ = [
     "__version__",
     # Subpackages
     "noise",
-    "optimizers",
     "sampling",
     # Dispatchers
     "mf_noise",
@@ -71,6 +70,4 @@ __all__ = [
     "BMinSepSampler",
     "CyclicPoissonSampler",
     "SequentialBatchSampler",
-    # Optimizer
-    "adamw_jme",
 ]
