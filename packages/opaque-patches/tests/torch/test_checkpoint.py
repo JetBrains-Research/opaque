@@ -166,11 +166,15 @@ class TestCheckpointWithClippedGrad:
 
         from opaque.clipping import clipped_grad
         from opaque.functional import make_functional
+        from opaque.patches import apply_model_patches
 
         config = transformers.AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
         config.num_hidden_layers = 2
 
         model = transformers.AutoModelForCausalLM.from_config(config)
+        # Model-level patches (vmap-safe RoPE, masking, etc.) must be applied
+        # to the base model BEFORE wrapping with PEFT.
+        apply_model_patches(model)
         model = peft.get_peft_model(
             model,
             peft.LoraConfig(
@@ -215,6 +219,7 @@ class TestCheckpointWithClippedGrad:
 
         from opaque.clipping import clipped_grad
         from opaque.functional import make_functional
+        from opaque.patches import apply_model_patches
 
         config = transformers.AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
         config.num_hidden_layers = 2
@@ -237,6 +242,7 @@ class TestCheckpointWithClippedGrad:
         # Without checkpoint
         torch.manual_seed(42)
         model_a = transformers.AutoModelForCausalLM.from_config(config)
+        apply_model_patches(model_a)
         model_a = peft.get_peft_model(model_a, lora_config).to(device)
         fmodel_a, train_a, frozen_a = make_functional(
             model_a, disable_autograd_tracking=True, partition_trainable=True
@@ -253,6 +259,7 @@ class TestCheckpointWithClippedGrad:
         # With checkpoint (same weights)
         torch.manual_seed(42)
         model_b = transformers.AutoModelForCausalLM.from_config(config)
+        apply_model_patches(model_b)
         model_b = peft.get_peft_model(model_b, lora_config).to(device)
         # Bare call — patch forces use_reentrant=False automatically.
         model_b.gradient_checkpointing_enable()

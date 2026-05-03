@@ -17,7 +17,7 @@ import torch
 import triton
 import triton.language as tl
 
-from ._utils import calculate_settings, torch_gpu_device
+from ._utils import calculate_settings, follow_autocast, torch_gpu_device
 
 try:
     _tv = tuple(int(p) for p in triton.__version__.split(".")[:3] if p.isdigit())
@@ -501,6 +501,7 @@ def opaque_rms_norm(
     """Public API: fused RMSNorm (CUDA only when Triton path is used)."""
     if not x.is_cuda:
         raise RuntimeError("opaque_rms_norm Triton path requires CUDA")
+    x, weight = follow_autocast(x, weight)
     return Opaque_RMSNorm.apply(
         x,
         weight,

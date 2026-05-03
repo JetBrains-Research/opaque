@@ -39,6 +39,7 @@ from ._utils import (
     _build_flat_valids,
     b_bin_fn,
     ensure_cuda_tensors,
+    follow_autocast,
     tl_lock_add,
     tl_logaddexp,
     tl_softcapping,
@@ -1030,6 +1031,7 @@ def opaque_linear_cross_entropy_loss(
         labels,
         fn_name="opaque_linear_cross_entropy_loss",
     )
+    hidden_states, weight = follow_autocast(hidden_states, weight)
     nll_sum = Opaque_LinearCrossEntropyLoss.apply(
         hidden_states,
         weight,

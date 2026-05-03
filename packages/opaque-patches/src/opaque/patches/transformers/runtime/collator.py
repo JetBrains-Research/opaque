@@ -34,6 +34,9 @@ def apply_collator_patches(*, allow_empty_batches: bool = True) -> None:
     except ImportError:
         return
 
+    if getattr(DataCollatorForLanguageModeling.torch_call, "__opaque_patched__", False):
+        return
+
     _original_torch_call = DataCollatorForLanguageModeling.torch_call
 
     def _patched_torch_call(self, examples):
@@ -43,4 +46,5 @@ def apply_collator_patches(*, allow_empty_batches: bool = True) -> None:
             setattr(self, _WRAPPER_ATTR, wrapper)
         return wrapper(examples)
 
+    _patched_torch_call.__opaque_patched__ = True
     DataCollatorForLanguageModeling.torch_call = _patched_torch_call

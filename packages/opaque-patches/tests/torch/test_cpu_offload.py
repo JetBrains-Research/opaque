@@ -9,6 +9,12 @@ offloads tensors to CPU when used with Opaque's clipped_grad pipeline.
 import pytest
 import torch
 
+from opaque.patches import apply_runtime_patches
+
+# Saved-tensor hooks (used by save_on_cpu) are blocked inside torch.func.grad
+# upstream; the runtime patch removes that restriction.
+apply_runtime_patches(enable_vmap_checkpointing=True)
+
 pytestmark = [
     pytest.mark.cuda,
     pytest.mark.skipif(

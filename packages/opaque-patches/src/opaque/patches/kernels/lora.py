@@ -27,7 +27,7 @@ For DP-SGD:
 import torch
 import torch.nn.functional as F
 
-from ._utils import ensure_cuda_tensors
+from ._utils import ensure_cuda_tensors, follow_autocast
 
 from .swiglu import _triton_swiglu_forward, _triton_swiglu_backward_fused
 from .geglu import (
@@ -1278,6 +1278,7 @@ def opaque_lora_w(X, W, A, B, scaling):
         Output tensor (batch, seq_len, out_features)
     """
     ensure_cuda_tensors(X, W, A, B, fn_name="opaque_lora_w")
+    X, W, A, B = follow_autocast(X, W, A, B)
     return Opaque_LoRA_W.apply(X, W, A, B, scaling)
 
 
@@ -1299,6 +1300,9 @@ def opaque_lora_qkv(X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv):
         Av,
         Bv,
         fn_name="opaque_lora_qkv",
+    )
+    X, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv = follow_autocast(
+        X, Wq, Aq, Bq, Wk, Ak, Bk, Wv, Av, Bv
     )
     return Opaque_LoRA_QKV.apply(X, Wq, Aq, Bq, Sq, Wk, Ak, Bk, Sk, Wv, Av, Bv, Sv)
 
@@ -1327,6 +1331,9 @@ def opaque_lora_mlp(
         Ad,
         Bd,
         fn_name="opaque_lora_mlp",
+    )
+    X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd = follow_autocast(
+        X, Wg, Ag, Bg, Wu, Au, Bu, Wd, Ad, Bd
     )
     if isinstance(activation, str):
         activation_type = _ACTIVATION_NAMES[activation]

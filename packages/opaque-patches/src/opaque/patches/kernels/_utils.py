@@ -122,6 +122,35 @@ def b_bin_fn(b: int) -> int:
         return 512
 
 
+def follow_autocast(*tensors):
+    """Cast floating-point CUDA tensors to the active autocast dtype, if any.
+
+    Public ``opaque_*`` wrappers call this at the entry point so that a kernel
+    used inside ``torch.autocast(device_type="cuda", dtype=...)`` runs in the
+    autocast dtype end-to-end. Without this, the kernels are dtype-passthrough
+    — not autocast-aware — producing a hybrid graph that defeats the user's
+    autocast intent.
+
+    Non-tensor arguments and integer tensors are returned unchanged. ``None``
+    is passed through. The cast is a no-op when autocast is inactive or when
+    a tensor already has the target dtype.
+    """
+    if not torch.is_autocast_enabled("cuda"):
+        return tensors
+    target = torch.get_autocast_dtype("cuda")
+    out = []
+    for t in tensors:
+        if (
+            isinstance(t, torch.Tensor)
+            and t.is_floating_point()
+            and t.dtype != target
+        ):
+            out.append(t.to(target))
+        else:
+            out.append(t)
+    return tuple(out)
+
+
 def ensure_cuda_tensors(*tensors: torch.Tensor, fn_name: str) -> None:
     """Validate that all tensors are CUDA tensors for Triton kernels.
 

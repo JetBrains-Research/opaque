@@ -16,7 +16,7 @@ import torch
 import triton
 import triton.language as tl
 
-from ._utils import calculate_settings, torch_gpu_device
+from ._utils import calculate_settings, follow_autocast, torch_gpu_device
 
 try:
     _tv = tuple(int(p) for p in triton.__version__.split(".")[:3] if p.isdigit())
@@ -503,6 +503,7 @@ def opaque_fused_add_rms_norm(
     """Fused ``S = x + residual`` then Llama/Gemma RMSNorm; returns ``(norm(S), S)``."""
     if not x.is_cuda:
         raise RuntimeError("opaque_fused_add_rms_norm Triton path requires CUDA")
+    x, residual, weight = follow_autocast(x, residual, weight)
     return Opaque_FusedAddRMSNorm.apply(
         x,
         residual,

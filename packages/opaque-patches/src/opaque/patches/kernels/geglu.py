@@ -14,6 +14,7 @@ import triton.language as tl
 import torch
 from ._utils import (
     ensure_cuda_tensors,
+    follow_autocast,
     triton_tanh,
     torch_gpu_device,
     INT32_SAFETY_BUFFER,
@@ -530,11 +531,13 @@ class Opaque_GeGLU_Approx(torch.autograd.Function):
 # Convenience wrappers
 def opaque_geglu_exact(gate, up):
     ensure_cuda_tensors(gate, up, fn_name="opaque_geglu_exact")
+    gate, up = follow_autocast(gate, up)
     return Opaque_GeGLU_Exact.apply(gate, up)
 
 
 def opaque_geglu_approx(gate, up):
     ensure_cuda_tensors(gate, up, fn_name="opaque_geglu_approx")
+    gate, up = follow_autocast(gate, up)
     return Opaque_GeGLU_Approx.apply(gate, up)
 
 

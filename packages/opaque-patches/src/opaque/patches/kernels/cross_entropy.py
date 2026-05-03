@@ -14,6 +14,7 @@ from ._utils import (
     MAX_FUSED_SIZE,
     calculate_settings,
     ensure_cuda_tensors,
+    follow_autocast,
     torch_gpu_device,
     triton_cast,
     triton_tanh,
@@ -481,6 +482,7 @@ def opaque_cross_entropy_loss(logits, labels, logit_softcapping=0, logit_scaling
         logit_scaling: Cohere logit scale value (0 = disabled).
     """
     ensure_cuda_tensors(logits, labels, fn_name="opaque_cross_entropy_loss")
+    (logits,) = follow_autocast(logits)
     losses, _ = Opaque_CrossEntropyLoss.apply(
         logits, labels, logit_softcapping, logit_scaling
     )
