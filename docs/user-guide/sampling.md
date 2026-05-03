@@ -352,7 +352,7 @@ Use `TrainingProfiler` to compare a few candidate microbatch sizes and select
 the largest stable value for your device:
 
 ```python
-from opaque.profiling import StepTimer, TrainingProfiler, reset_peak_memory
+from opaque.core.profiling import StepTimer, TrainingProfiler, reset_peak_memory
 
 profiler = TrainingProfiler(device)
 for optimal in [64, 32, 16, 8, 4, 2, 1]:

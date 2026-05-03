@@ -42,7 +42,7 @@ auditing = ["opaque-auditing"]
 dpftrl = ["opaque-dpftrl"]
 transformers = [
   "opaque-transformers",
-  "opaque-patches[transofrmers]"
+  "opaque-patches[transformers]"
 ]
 all = [
     "opaque-auditing",

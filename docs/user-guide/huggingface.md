@@ -3,32 +3,40 @@
 Opaque works with HuggingFace Transformers models. Patches are split across
 two sub-packages:
 
-- `opaque.transformers` — compatibility patches (vmap-safe attention,
-  KV-cache workarounds, Poisson-collator compat) that make Transformers
-  models run correctly under `vmap(grad(...))`.
-- `opaque.performance.huggingface` — fused Triton kernel patches (SwiGLU,
-  GeGLU, RMSNorm, RoPE, fused cross-entropy, LoRA) that wire Opaque's kernels into
-  the corresponding Transformers model classes. Pure performance.
+- `opaque.patches` — the operational entrypoint. `apply_runtime_patches()`
+  enables runtime fixes (checkpointing, masking, collator, loss mapping), and
+  `apply_model_patches(model)` wires compat wrappers and Triton kernels into a
+  concrete model instance.
+- `opaque.transformers` — the namespace package installed by
+  `opaque-transformers`; it carries the Transformers-facing dependency bundle,
+  while the patch APIs live under `opaque.patches`.
 
 **Scope:** the curated matrix prioritises **decoder-only text** models
 (``ForCausalLM`` and shared text modules). Vision-language stacks
 (e.g. ``*ForConditionalGeneration``) are not part of the default patch set.
 Tested against `transformers==4.57.1`.
 
-Patches apply automatically on import:
+Recommended usage matches the training examples:
 
 ```python
-import opaque.transformers          # compat patches live
-import opaque.performance          # torch + HF kernel patches live
+from opaque.patches import apply_model_patches, apply_runtime_patches
+
+apply_runtime_patches()
+
+model = AutoModelForCausalLM.from_pretrained(...)
+# Optional: attach LoRA / PEFT adapters here.
+apply_model_patches(model)
 ```
 
-Disable selectively via the `OPAQUE_SKIP_*` env vars (see
-[Configuration](#configuration)).
+Call `apply_runtime_patches()` once near process startup, before creating
+checkpointed models or Hugging Face data collators. Call
+`apply_model_patches(model)` after the model is instantiated and after any
+PEFT/LoRA wrapping, so the patcher sees the final module graph.
 
 ## Auto-patching
 
-On import, Opaque applies patches to the following HuggingFace Transformers
-components:
+After `apply_runtime_patches()` and `apply_model_patches(model)`, Opaque
+patches the following HuggingFace Transformers components:
 
 - **Causal mask creation** (`create_causal_mask`, `_ignore_causal_mask_sdpa`)
   -- handles arbitrary batch dimensions under vmap, including sliding-window
@@ -278,8 +286,8 @@ or add modules only if accuracy is insufficient.
 ## Patched operations
 
 Opaque replaces standard PyTorch operations with fused Triton kernels for
-supported models. These are applied automatically on `import opaque` and
-require no code changes. See [Memory Optimizations — Kernel benchmarks](memory-optimizations.md#kernel-benchmarks)
+supported models. These are applied by `apply_model_patches(model)` and
+require no model-code changes. See [Memory Optimizations — Kernel benchmarks](memory-optimizations.md#kernel-benchmarks)
 for performance numbers.
 
 ### Activation functions
@@ -367,73 +375,43 @@ loss = opaque_cross_entropy_loss(logits, labels)
 
 ## Configuration
 
-Patches apply on import. Disable selectively via sub-package-specific env
-vars, set **before** the matching import:
-
-| Variable | Scope | Values |
-|----------|-------|--------|
-| `OPAQUE_SKIP_PYTORCH_PATCHES` | `opaque.performance` | `all`, `checkpoint` |
-| `OPAQUE_SKIP_TRANSFORMERS_PATCHES` | `opaque.transformers` compat | `all`, or `vmap,kv_cache,batchify,data` |
-| `OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES` | vmap compat | `all`, or `shared,standard,gemma2,phi3` |
-| `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES` | HF Triton kernels (performance) | `all`, or `swiglu,rope,ce,fused_ce,lora` |
-| `OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES` | Poisson-collator compat | `all` or `collator` |
-
-### Disabling all patching
+Patching is configured through the explicit API rather than import-time side
+effects. The most useful knobs today are:
 
 ```python
-import os
+from opaque.patches import apply_model_patches, apply_runtime_patches
 
-os.environ["OPAQUE_SKIP_PYTORCH_PATCHES"] = "all"
-os.environ["OPAQUE_SKIP_TRANSFORMERS_PATCHES"] = "all"
-# ... then do your imports.
+apply_runtime_patches(
+  compat=True,
+  allow_empty_batches=True,
+  enable_vmap_checkpointing=True,
+  use_fused_loss=True,
+)
+
+apply_model_patches(
+  model,
+  performance=True,  # Triton kernels + PEFT fusion
+  compat=True,       # vmap-safe attention / batchify / KV-cache shims
+  peft=True,         # LoRA / PEFT module patching
+)
 ```
 
-### Skipping only HuggingFace compat patches
+Common configurations:
 
 ```python
-import os
-os.environ["OPAQUE_SKIP_TRANSFORMERS_PATCHES"] = "all"
-import opaque.transformers     # no-op compat patch
-import opaque.performance     # performance/kernel patches still active
+# Keep correctness shims, but disable Triton kernels / PEFT fusion.
+apply_model_patches(model, performance=False)
+
+# Disable model-side compat wrappers while keeping runtime patches.
+apply_model_patches(model, compat=False)
+
+# Disable runtime checkpoint patching for debugging.
+apply_runtime_patches(enable_vmap_checkpointing=False)
 ```
 
-### Disabling kernel optimizations
-
-```python
-import os
-os.environ["OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES"] = "all"
-import opaque.performance  # reads the env var at import time
-```
-
-This disables all kernel optimizations. The library still works — models use
-standard PyTorch operations with vmap patches still applied.
-
-### Selectively skipping kernels
-
-```bash
-# Skip only fused linear CE
-OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=fused_ce python train.py
-
-# Skip multiple
-OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=swiglu,rope,fused_ce python train.py
-```
-
-Available kernel names: `swiglu`, `rope`, `ce`, `fused_ce`, `lora`.
-
-### Disabling vmap patches
-
-Vmap patches make HuggingFace models compatible with `vmap(grad())`. These
-are required for DP-SGD training but can be skipped for debugging:
-
-```bash
-# Skip all vmap patches (models will NOT work with vmap)
-OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES=all python train.py
-
-# Skip only Gemma2-specific patches
-OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES=gemma2 python train.py
-```
-
-Available vmap groups: `shared`, `standard`, `gemma2`, `phi3`.
+The only remaining environment-level switch in this area is
+`OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES=all|collator`, which controls the empty-
+batch collator wrapper used with Poisson sampling.
 
 ## Other models
 

@@ -43,7 +43,7 @@ jobs:
           - opaque-dpsgd
           - opaque-dpftrl
           - opaque-auditing
-          - opaque-performance
+          - opaque-patches
           - opaque-transformers
 
     steps:

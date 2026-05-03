@@ -2187,7 +2187,7 @@ dpftrl = [
     { name = "opaque-dpftrl" },
 ]
 transformers = [
-    { name = "opaque-patches" },
+    { name = "opaque-patches", extra = ["transformers"] },
     { name = "opaque-transformers" },
 ]
 
@@ -2231,7 +2231,7 @@ requires-dist = [
     { name = "opaque-dpsgd", editable = "packages/opaque-dpsgd" },
     { name = "opaque-patches", editable = "packages/opaque-patches" },
     { name = "opaque-patches", marker = "extra == 'all'", editable = "packages/opaque-patches" },
-    { name = "opaque-patches", extras = ["transofrmers"], marker = "extra == 'transformers'", editable = "packages/opaque-patches" },
+    { name = "opaque-patches", extras = ["transformers"], marker = "extra == 'transformers'", editable = "packages/opaque-patches" },
     { name = "opaque-transformers", marker = "extra == 'all'", editable = "packages/opaque-transformers" },
     { name = "opaque-transformers", marker = "extra == 'transformers'", editable = "packages/opaque-transformers" },
 ]

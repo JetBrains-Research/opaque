@@ -7,7 +7,7 @@
 
 ## From GCP Artifact Registry
 
-Install `opaque` (pulls in `opaque-core`, `opaque-dpsgd`, `opaque-auditing`,
+Install `opaque` (pulls in `opaque-core`, `opaque-dpsgd`, `opaque-patches`,
 and `opaque-accounting` by default):
 
 ```bash
@@ -25,14 +25,15 @@ uv add opaque \
 ### Extras
 
 ```bash
+pip install "opaque[auditing]"      # + opaque-auditing (empirical privacy auditing)
 pip install "opaque[dpftrl]"        # + opaque-dpftrl (correlated-noise mechanisms)
-pip install "opaque[performance]"   # + opaque-performance (fused Triton kernels + HF kernel patches + checkpoint patches)
-pip install "opaque[huggingface]"   # + opaque-transformers (Transformers compat patches) + performance
+pip install "opaque[transformers]"  # + opaque-transformers + opaque-patches[transformers]
 pip install "opaque[all]"           # everything above, including [optimizers] extras
 ```
 
 Each sub-package is also installable directly, e.g. `pip install opaque-core`
-or `pip install opaque-dpsgd`.
+or `pip install opaque-dpsgd`. For Hugging Face-only workflows, install
+`opaque-transformers` together with `opaque-patches[transformers]`.
 
 ## From Source
 

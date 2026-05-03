@@ -25,8 +25,8 @@ installing under the shared `opaque.*` namespace:
 | `opaque-dpsgd` | `opaque.dpsgd` | Gaussian / truncated / per-group noise, AdamW-BC, Poisson samplers, adaptive + auto clipping |
 | `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, JME, λ-CGD), AdamW-JME, correlated-noise samplers |
 | `opaque-auditing` | `opaque.auditing` | Empirical privacy auditing (one-run, coin-flip, loss attacks) |
-| `opaque-performance` | `opaque.performance`, `opaque.performance.huggingface`, `opaque.performance.profiling` | Fused Triton kernels, PyTorch checkpoint patches, HF model kernel patches, memory/step profiler |
-| `opaque-transformers` | `opaque.transformers` | HuggingFace Transformers compatibility patches (vmap-safe attention, KV cache, Poisson collator) |
+| `opaque-patches` | `opaque.patches` | Unified patching entrypoint for PyTorch checkpointing, Hugging Face compat wrappers, Triton kernels, and PEFT/LoRA fusion |
+| `opaque-transformers` | `opaque.transformers` | Transformers dependency bundle and namespace package for Hugging Face integrations |
 | `opaque-accounting` | `opaque.accounting` | PLD privacy accounting (Rust/PyO3 backend) |
 
 [PEP 420]: https://peps.python.org/pep-0420/
@@ -41,9 +41,10 @@ opaque.scheduling                                          <- opaque-core
 opaque.dpsgd.{noise,clipping,sampling,optimizers}          <- opaque-dpsgd
 opaque.dpftrl.{noise,sampling,optimizers}                  <- opaque-dpftrl
 opaque.auditing                                            <- opaque-auditing
-opaque.performance.{kernels,torch,profiling,huggingface}   <- opaque-performance
-opaque.transformers.{patches,trainer,callbacks,...}         <- opaque-transformers
+opaque.patches.{kernels,torch,transformers,peft}           <- opaque-patches
+opaque.transformers                                        <- opaque-transformers
 opaque.accounting (._native)                               <- opaque-accounting
+opaque.core.profiling                                      <- opaque-core
 ```
 
 ## Installation
@@ -61,9 +62,9 @@ uv add opaque \
 Extras:
 
 ```bash
+pip install "opaque[auditing]"      # + opaque-auditing
 pip install "opaque[dpftrl]"        # + opaque-dpftrl
-pip install "opaque[performance]"   # + opaque-performance
-pip install "opaque[huggingface]"   # + opaque-transformers + opaque-performance
+pip install "opaque[transformers]"  # + opaque-transformers + opaque-patches[transformers]
 pip install "opaque[all]"           # everything
 ```
 
@@ -73,16 +74,22 @@ without `pip install opaque`.
 
 ### Patching
 
-`opaque.performance` and `opaque.transformers` apply their patches
-automatically on import. Disable selectively:
+Hugging Face and checkpoint patches are now applied explicitly through
+`opaque.patches`:
 
-```bash
-OPAQUE_SKIP_PYTORCH_PATCHES=all             # skip all opaque.performance patches
-OPAQUE_SKIP_TRANSFORMERS_PATCHES=all        # skip all opaque.transformers compat patches
-OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all # skip the HF kernel patches (performance side)
+```python
+from opaque.patches import apply_model_patches, apply_runtime_patches
+
+apply_runtime_patches()
+
+# ... build / wrap the model, then patch the concrete instance
+apply_model_patches(model)
 ```
 
-See `docs/user-guide/huggingface.md` for the full list of tokens.
+`apply_runtime_patches()` enables the runtime-side checkpoint, collator, and
+loss-mapping fixes. `apply_model_patches(model)` wires compat wrappers and
+Triton kernels into the specific model instance, including PEFT/LoRA modules.
+See `docs/user-guide/huggingface.md` for the model matrix and tuning knobs.
 
 ## Example
 
@@ -140,7 +147,7 @@ for batch_x, batch_y in dataloader:
   gradient aggregation via `opaque.distributed`.
 - **HuggingFace compatibility**: automatic `vmap` patching for LLaMA, Mistral,
   Qwen2/3, Phi-3, Gemma/Gemma2, Granite, Cohere/Cohere2, plus fused Triton
-  kernels via `opaque.performance.huggingface`.
+  kernels via `opaque.patches`.
 
 ## Documentation
 

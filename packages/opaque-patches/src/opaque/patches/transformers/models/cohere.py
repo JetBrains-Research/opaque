@@ -25,8 +25,6 @@ def apply_cohere_patches(
     **kwargs
 ) -> None:
     fuse_swiglu = kwargs.get('fuse_swiglu', performance)
-    fuse_rms_norm = kwargs.get('fuse_rms_norm', performance)
-    fuse_add_rms_norm = kwargs.get('fuse_add_rms_norm', performance)
     fuse_rope = kwargs.get('fuse_rope', performance)
     fuse_cross_entropy = kwargs.get('fuse_cross_entropy', performance)
     wrap_eager_attention = kwargs.get('wrap_eager_attention', compat)
