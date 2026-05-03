@@ -133,9 +133,7 @@ class TestWeightDecayMode:
         adam_dec = _adam_state(s_dec)
         # mu must differ between the two (wd was added to the gradient
         # under L2, so the first moment EMA picked up wd * params).
-        assert any(
-            not torch.allclose(adam_l2.mu[k], adam_dec.mu[k]) for k in params
-        )
+        assert any(not torch.allclose(adam_l2.mu[k], adam_dec.mu[k]) for k in params)
 
 
 # ---------------------------------------------------------------------------

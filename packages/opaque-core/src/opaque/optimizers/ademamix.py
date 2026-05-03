@@ -85,9 +85,7 @@ def _scale_by_ademamix(
 
     def init_fn(params: Any) -> AdEMAMixState:
         zeros = lambda p: torch.zeros_like(p)  # noqa: E731
-        phi: Any = (
-            {k: 0.0 for k in params} if _default_per_group else 0.0
-        )
+        phi: Any = {k: 0.0 for k in params} if _default_per_group else 0.0
         return AdEMAMixState(
             m_fast=tree_map(zeros, params),
             m_slow=tree_map(zeros, params),
@@ -137,9 +135,7 @@ def _scale_by_ademamix(
             )
 
         new_nu = tree_map(lambda v, g: b2 * v + (1 - b2) * g * g, state.nu, updates)
-        effective = (
-            noise_stddev if noise_stddev is not None else default_noise_stddev
-        )
+        effective = noise_stddev if noise_stddev is not None else default_noise_stddev
         per_group = is_per_group(effective) or isinstance(state.phi, dict)
 
         if per_group:
@@ -150,9 +146,7 @@ def _scale_by_ademamix(
             result = {}
             for key in new_mf:
                 nv_k = resolve_noise_variance(effective, key)
-                old_phi_k = (
-                    state.phi[key] if isinstance(state.phi, dict) else state.phi
-                )
+                old_phi_k = state.phi[key] if isinstance(state.phi, dict) else state.phi
                 new_phi_k = b2 * old_phi_k + (1 - b2) * nv_k
                 new_phi[key] = new_phi_k
                 phi_hat = new_phi_k / bc2

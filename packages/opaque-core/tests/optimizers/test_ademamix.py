@@ -95,9 +95,7 @@ class TestJMEMode:
         b2 = 0.999
         opt = ademamix(lr=1e-3, betas=(0.9, b2, 0.9999))
         state = opt.init(params)
-        _, state = opt.update(
-            grads, state, params=params, noisy_squared_grads=sq_grads
-        )
+        _, state = opt.update(grads, state, params=params, noisy_squared_grads=sq_grads)
         st = _ame(state)
         for k in params:
             torch.testing.assert_close(st.nu[k], (1 - b2) * sq_grads[k])

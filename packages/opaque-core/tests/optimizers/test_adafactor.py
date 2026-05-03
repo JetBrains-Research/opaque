@@ -109,7 +109,9 @@ class TestDPKwargsNotOffered:
         opt = adafactor(lr=1e-3)
         state = opt.init(matrix_params)
         with pytest.raises(TypeError, match="noisy_squared_grads"):
-            opt.update(matrix_grads, state, params=matrix_params, noisy_squared_grads=sq)
+            opt.update(
+                matrix_grads, state, params=matrix_params, noisy_squared_grads=sq
+            )
 
 
 class TestValidation:

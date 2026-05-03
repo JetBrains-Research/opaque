@@ -166,9 +166,7 @@ def schedule_free(
             new_x = tree_map(lambda _, z: z.clone(), state.x, new_z)
         else:
             w = 1.0 / float(t)
-            new_x = tree_map(
-                lambda x, z: (1.0 - w) * x + w * z, state.x, new_z
-            )
+            new_x = tree_map(lambda x, z: (1.0 - w) * x + w * z, state.x, new_z)
         # y_{t+1} = (1 − β) z_{t+1} + β x_{t+1}
         new_y = tree_map(
             lambda z, x: (1.0 - state.beta) * z + state.beta * x, new_z, new_x
