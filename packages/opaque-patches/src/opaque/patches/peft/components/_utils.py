@@ -43,6 +43,20 @@ def _no_lora_dropout(module, proj_name):
     if proj is None:
         return True
 
+    if not hasattr(proj, "lora_dropout") or not getattr(proj, "active_adapters", []):
+        return True
+
+    active = proj.active_adapters[0]
+    if active not in proj.lora_dropout:
+        return True
+
+    dropout = proj.lora_dropout[active]
+    if isinstance(dropout, torch.nn.Identity):
+        return True
+    if isinstance(dropout, torch.nn.Dropout) and dropout.p == 0.0:
+        return True
+    return False
+
 def _no_bias(module, proj_name):
     """Check that a projection has no bias (required for fused QKV kernel)."""
     proj = getattr(module, proj_name, None)

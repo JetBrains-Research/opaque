@@ -648,8 +648,8 @@ def main():
         bias="none",
         task_type="CAUSAL_LM",
     )
-    model = get_peft_model(model, lora_config)
     apply_model_patches(model)
+    model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
     profiler, _ = profiler.mark("lora_applied")
     print_memory(device, "After LoRA")

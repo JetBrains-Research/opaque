@@ -102,10 +102,16 @@ def apply_runtime_patches(
 
 
 
+def is_transformers_patched() -> bool:
+    """Return True if runtime Transformers patches have been applied via apply_runtime_patches()."""
+    return _runtime_patches_applied
+
+
 __all__ = [
     "apply_model_patches",
     "apply_runtime_patches",
     "apply_transformers_model_patches",
     "apply_peft_model_patches",
+    "is_transformers_patched",
 ]
 

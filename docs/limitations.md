@@ -41,10 +41,10 @@ Tensor Parallel, and Pipeline Parallel are not supported. Multi-node DDP
 should work but is not extensively tested. The NCCL backend is recommended;
 Gloo and MPI are not tested.
 
-## Kernel patching lives in `opaque.transformers.patches`
+## Kernel patching lives in `opaque.patches`
 
 Kernel optimization and patching for HuggingFace models is part of
-`opaque.transformers.patches` and is CUDA+Triton only.
+`opaque.patches` and is CUDA+Triton only.
 
 Low-level Triton-backed `Opaque_*` autograd classes (for example,
 `Opaque_SwiGLU`, `Opaque_RoPE_QK`, `Opaque_LinearCrossEntropyLoss`) are

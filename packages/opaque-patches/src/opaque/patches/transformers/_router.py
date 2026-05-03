@@ -17,7 +17,13 @@ logger = logging.getLogger(__name__)
 
 def apply_kernels_for(model: nn.Module, family: str) -> None:
     """Explicitly apply Triton kernel patches for a specific model family."""
-    apply_transformers_model_patches(model)  # Currently applies patches based on the instance.
+    import importlib
+    try:
+        models_module = importlib.import_module("opaque.patches.transformers.models." + family)
+        patch_fn = getattr(models_module, "apply_" + family.replace("-", "_") + "_patches")
+        patch_fn(model)
+    except (ImportError, AttributeError) as e:
+        logger.warning("opaque: Could not load patch function for %s: %s", family, e)
 
 def _patch_forward(
     target_cls: type[nn.Module] | None,
@@ -43,7 +49,8 @@ def _patch_forward(
     # 2. Instance-level fallback patching
     if model is not None:
         for module in model.modules():
-            if type(module) is target_cls and not hasattr(module.forward, "__opaque_patched__"):
+            fwd_fn = getattr(module.forward, "__func__", module.forward)
+            if type(module) is target_cls and not hasattr(fwd_fn, "__opaque_patched__"):
                 new_fwd = factory(type(module).forward)
                 new_fwd.__opaque_patched__ = True
                 module.forward = types.MethodType(new_fwd, module)
@@ -85,8 +92,7 @@ def apply_transformers_model_patches(
             models_module = importlib.import_module("opaque.patches.transformers.models." + family)
             patch_fn = getattr(models_module, "apply_" + family.replace("-", "_") + "_patches")
         except (ImportError, AttributeError) as e:
-            print(f"opaque: Could not load patch function for {family}: {e}")
-            logger.debug(f"opaque: Could not load patch function for {family}: {e}")
+            logger.warning("opaque: Could not load patch function for %s: %s", family, e)
             patch_fn = None
             
         if patch_fn:

@@ -19,4 +19,6 @@ Patched components:
 - LoRA: peft.tuners.lora.Linear forward + auto-fused QKV (Opaque_LoRA_QKV) and MLP (Opaque_LoRA_MLP) via get_peft_model hook
 """
 
-__all__ = []
+from opaque.patches import is_transformers_patched as is_transformers_patched
+
+__all__ = ["is_transformers_patched"]

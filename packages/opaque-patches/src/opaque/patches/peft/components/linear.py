@@ -65,8 +65,8 @@ def _make_lora_linear_forward(original):
             if adapter in self.lora_A:
                 dropout_i = self.lora_dropout[adapter]
                 x_i = dropout_i(x)
-                A_i = self.lora_A[adapter].weight.T
-                B_i = self.lora_B[adapter].weight.T
+                A_i = self.lora_A[adapter].weight.T.to(x.dtype)
+                B_i = self.lora_B[adapter].weight.T.to(x.dtype)
                 scaling_i = self.scaling[adapter]
                 lora_out = (x_i @ A_i) @ B_i * scaling_i
                 result = result + lora_out

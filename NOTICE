@@ -65,11 +65,11 @@ project (https://github.com/unslothai/unsloth), distributed under the
 Apache License, Version 2.0. Adapted to Opaque's vmap-friendly
 new-style autograd dispatch (Opaque_* + _Backward + setup_context).
 
-  packages/opaque-performance/src/opaque/performance/kernels/swiglu.py
-  packages/opaque-performance/src/opaque/performance/kernels/geglu.py
-  packages/opaque-performance/src/opaque/performance/kernels/rope_embedding.py
-  packages/opaque-performance/src/opaque/performance/kernels/cross_entropy.py
-  packages/opaque-performance/src/opaque/performance/kernels/lora.py
+  packages/opaque-patches/src/opaque/patches/kernels/swiglu.py
+  packages/opaque-patches/src/opaque/patches/kernels/geglu.py
+  packages/opaque-patches/src/opaque/patches/kernels/rope_embedding.py
+  packages/opaque-patches/src/opaque/patches/kernels/cross_entropy.py
+  packages/opaque-patches/src/opaque/patches/kernels/lora.py
 
 
 ------------------------------------------------------------------------
