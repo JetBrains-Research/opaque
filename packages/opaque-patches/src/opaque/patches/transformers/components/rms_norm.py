@@ -27,19 +27,6 @@ def _make_rms_norm_forward(
     return forward
 
 
-def _make_swiglu_mlp_forward(original):
-    """SwiGLU MLP forward using Opaque Triton kernel."""
-
-    def forward(self, x):
-        if not x.is_cuda:
-            return original(self, x)
-        from opaque.patches.kernels.swiglu import Opaque_SwiGLU
-
-        return self.down_proj(Opaque_SwiGLU.apply(self.gate_proj(x), self.up_proj(x)))
-
-    return forward
-
-
 def _rmsnorm_fac_llama(orig):
     return _make_rms_norm_forward(
         orig, casting_mode="llama", offset=0.0, in_place_bwd=True

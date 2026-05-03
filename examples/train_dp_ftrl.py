@@ -120,7 +120,6 @@ from opaque.dpftrl.noise import (
     jme_noise,
 )
 from opaque.dpftrl.optimizers.adamw_jme import adamw_jme
-from opaque.patches.transformers.components import is_transformers_patched
 from opaque.core.profiling import (
     StepTimer,
     TrainingProfiler,
@@ -575,9 +574,7 @@ def main():
 
     # --- Device ---
     device, device_name = _select_device()
-    kernels_on = device.type == "cuda"
     print(f"\nDevice: {device} ({device_name})")
-    print(f"  Patches: transformers={is_transformers_patched()}, kernels={kernels_on}")
 
     torch.manual_seed(args.seed)
 
@@ -648,8 +645,8 @@ def main():
         bias="none",
         task_type="CAUSAL_LM",
     )
-    apply_model_patches(model)
     model = get_peft_model(model, lora_config)
+    apply_model_patches(model)
     model.print_trainable_parameters()
     profiler, _ = profiler.mark("lora_applied")
     print_memory(device, "After LoRA")

@@ -47,21 +47,25 @@ def prepare_lora_model(config, target_modules=None):
         target_modules = ["q_proj", "v_proj"]
 
     model = AutoModelForCausalLM.from_config(config)
-    apply_model_patches(
-        model,
-        fuse_swiglu=False,
-        fuse_rms_norm=False,
-        fuse_rope=False,
-        fuse_cross_entropy=False,
-        wrap_eager_attention=True,
-    )
     lora_config = LoraConfig(
         r=8,
         lora_alpha=16,
         target_modules=target_modules,
         lora_dropout=0.0,
     )
-    return get_peft_model(model, lora_config)
+    model = get_peft_model(model, lora_config)
+    apply_model_patches(
+        model,
+        performance=False,
+        compat=True,
+        fuse_lora=True,
+        fuse_swiglu=False,
+        fuse_rms_norm=False,
+        fuse_rope=False,
+        fuse_cross_entropy=False,
+        wrap_eager_attention=True,
+    )
+    return model
 
 
 def run_clipped_grad_test(model, tokenizer, device=None):

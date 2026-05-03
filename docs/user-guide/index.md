@@ -5,6 +5,13 @@ how the API works, and the practical decisions you need to make. For hands-on
 practice, see the [Tutorials](../tutorials/README.md). For complete function
 signatures, see the [API Reference](../api/index.md).
 
+## Installation surface
+
+Use `pip install opaque` (plus `opaque[...]` extras) as the public install
+target. The `opaque.*` import modules are implemented across namespace
+sub-packages, but those sub-packages are not documented as standalone install
+targets in user-facing workflows.
+
 ## End-to-end DP-SGD training
 
 A complete DP-SGD training loop uses five components: calibration, clipping,

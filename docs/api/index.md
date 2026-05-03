@@ -3,6 +3,10 @@
 Opaque provides a functional API for differential privacy in PyTorch. This reference documents all public functions and
 classes.
 
+Install via `opaque` (and `opaque[...]` extras) when using this API. Module
+paths remain under `opaque.*`, but the root package is the supported
+user-facing installation target.
+
 ## Module Organization
 
 Opaque is organized into several modules, each focused on a specific aspect of DP training:

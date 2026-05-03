@@ -34,6 +34,7 @@ def apply_qwen2_patches(
     compat: bool = True,
     **kwargs,
 ) -> None:
+    """Apply Triton kernel and compat patches for Qwen2."""
     fuse_swiglu = kwargs.get("fuse_swiglu", performance)
     fuse_rms_norm = kwargs.get("fuse_rms_norm", performance)
     fuse_add_rms_norm = kwargs.get("fuse_add_rms_norm", performance)
@@ -42,7 +43,6 @@ def apply_qwen2_patches(
     wrap_eager_attention = kwargs.get("wrap_eager_attention", compat)
     wrap_batchify = kwargs.get("wrap_batchify", compat)
     disable_kv_cache = kwargs.get("disable_kv_cache", compat)
-    """Apply Triton kernel patches for qwen2 model."""
     try:
         import transformers.models.qwen2.modeling_qwen2 as mod
     except ImportError:

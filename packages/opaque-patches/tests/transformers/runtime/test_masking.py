@@ -42,3 +42,21 @@ def test_vmap_causal_mask():
         past_key_values=None,
     )
     assert mask_vmap.shape == (1, 1, 4, 4)
+
+
+def test_masking_runtime_patch_idempotent_for_ignore_causal_mask_sdpa():
+    apply_runtime_patches(enable_vmap_masking=True)
+
+    import transformers.masking_utils as masking_utils
+
+    patched_fn = masking_utils._ignore_causal_mask_sdpa
+    original_fn = getattr(patched_fn, "_original", None)
+    assert original_fn is not None
+    assert original_fn is not patched_fn
+
+    # Re-applying runtime patches must preserve the same original binding.
+    apply_runtime_patches(enable_vmap_masking=True)
+    patched_fn_2 = masking_utils._ignore_causal_mask_sdpa
+    original_fn_2 = getattr(patched_fn_2, "_original", None)
+    assert patched_fn_2 is patched_fn
+    assert original_fn_2 is original_fn

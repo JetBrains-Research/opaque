@@ -70,7 +70,6 @@ import opaque.auditing as auditing
 from opaque.accounting import calibration as cal, Accountant
 from opaque.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
-from opaque.patches.transformers.components import is_transformers_patched
 from opaque.distributed import sum_gradients_, sync
 from opaque.dpsgd.noise.gaussian import gaussian_noise
 from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev
@@ -213,7 +212,6 @@ def _print_runtime_mode_report(
 ) -> None:
     """Print active runtime mode so fallback behavior is explicit."""
     kernel_mode, kernel_reason = _kernel_mode_summary(device, dtype_name)
-    kernels_on = device.type == "cuda"
 
     print("\nRuntime mode:")
     print(f"  Device: {device} ({device_label})")
@@ -221,7 +219,6 @@ def _print_runtime_mode_report(
     if dtype_warning:
         print(f"  Dtype fallback: {dtype_warning}")
     print(f"  Kernel optimizations: {kernel_mode} ({kernel_reason})")
-    print(f"  Patches: transformers={is_transformers_patched()}, kernels={kernels_on}")
 
     if device.type == "cpu":
         print("  Note: CPU path prioritizes correctness over throughput.")
@@ -843,8 +840,8 @@ def main():
         bias="none",
         task_type="CAUSAL_LM",
     )
-    apply_model_patches(model)
     model = get_peft_model(model, lora_config)
+    apply_model_patches(model)
     model.print_trainable_parameters()
     profiler, _ = profiler.mark("lora_applied")
     print_memory(device, "After LoRA")

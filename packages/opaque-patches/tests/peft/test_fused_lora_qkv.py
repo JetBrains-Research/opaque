@@ -84,8 +84,8 @@ class TestFusedLoRAQKV:
         assert Bv.grad is not None, "No gradient for V LoRA B"
 
     @requires_hf_auth
-    def test_auto_fuse_qkv_on_get_peft_model(self, device):
-        """get_peft_model should auto-fuse QKV layers with LoRA on q/k/v."""
+    def test_apply_model_patches_on_peft_model_qkv(self, device):
+        """apply_model_patches() should fuse QKV layers on a PEFT-wrapped model."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2
         model = AutoModelForCausalLM.from_config(config)
@@ -95,8 +95,8 @@ class TestFusedLoRAQKV:
             lora_dropout=0.0,
             target_modules=["q_proj", "k_proj", "v_proj"],
         )
-        apply_model_patches(model, performance=False, compat=True)
         model = get_peft_model(model, lora_config).to(device)
+        apply_model_patches(model, performance=False, compat=True, fuse_lora=True)
         layers = model.model.model.layers
         for layer in layers:
             attn = layer.self_attn
@@ -116,8 +116,8 @@ class TestFusedLoRAQKV:
             lora_dropout=0.0,
             target_modules=["q_proj", "k_proj", "v_proj"],
         )
-        apply_model_patches(model, performance=False, compat=True)
         model = get_peft_model(model, lora_config).to(device)
+        apply_model_patches(model, performance=False, compat=True, fuse_lora=True)
         input_ids = torch.randint(0, config.vocab_size, (2, 16), device=device)
         outputs = model(input_ids, labels=input_ids)
         loss = outputs.loss
@@ -142,8 +142,8 @@ class TestFusedLoRAQKV:
             lora_dropout=0.0,
             target_modules=["q_proj", "k_proj", "v_proj"],
         )
-        apply_model_patches(model, performance=False, compat=True)
         model = get_peft_model(model, lora_config).to(device)
+        apply_model_patches(model, performance=False, compat=True, fuse_lora=True)
         layers = model.model.model.layers
         for layer in layers:
             attn = layer.self_attn
@@ -165,8 +165,8 @@ class TestFusedLoRAQKV:
             lora_dropout=0.0,
             target_modules=["q_proj", "k_proj", "v_proj"],
         )
-        apply_model_patches(model, performance=False, compat=True)
         model = get_peft_model(model, lora_config).to(device)
+        apply_model_patches(model, performance=False, compat=True, fuse_lora=True)
         layers = model.model.model.layers
         for layer in layers:
             attn = layer.self_attn
@@ -175,9 +175,9 @@ class TestFusedLoRAQKV:
             )
 
     @requires_hf_auth
-    def test_patch_lora_model_manual_qkv(self, device):
-        """patch_lora_model() should fuse QKV for manually loaded PEFT models."""
-        from opaque.patches.peft import patch_lora_model
+    def test_apply_peft_model_patches_manual_qkv(self, device):
+        """apply_peft_model_patches() should fuse QKV for manually loaded PEFT models."""
+        from opaque.patches.peft import apply_peft_model_patches
 
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2
@@ -193,11 +193,11 @@ class TestFusedLoRAQKV:
         model = raw_get_peft_model(model, lora_config).to(device)
         layers = model.model.model.layers
         assert not hasattr(layers[0].self_attn, "_opaque_fused_qkv"), (
-            "QKV should not be fused before patch_lora_model()"
+            "QKV should not be fused before apply_peft_model_patches()"
         )
-        patch_lora_model(model)
+        apply_peft_model_patches(model)
         assert hasattr(layers[0].self_attn, "_opaque_fused_qkv"), (
-            "QKV should be fused after patch_lora_model()"
+            "QKV should be fused after apply_peft_model_patches()"
         )
 
     @requires_hf_auth
@@ -212,8 +212,8 @@ class TestFusedLoRAQKV:
             lora_dropout=0.0,
             target_modules=["q_proj", "k_proj", "v_proj"],
         )
-        apply_model_patches(model, performance=False, compat=True)
         model = get_peft_model(model, lora_config).to(device)
+        apply_model_patches(model, performance=False, compat=True, fuse_lora=True)
         tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B")
         tokenizer.pad_token = tokenizer.eos_token
         texts = ["Hello world", "Another test", "Third sample", "Last one"]

@@ -7,11 +7,11 @@ Poisson sampling, and the AdamW-BC optimizer.
 ## Install
 
 ```bash
-pip install opaque-dpsgd                 # core DP-SGD
-pip install "opaque-dpsgd[optimizers]"   # + AdamW-BC (torchopt)
+pip install opaque
 ```
 
-`opaque-dpsgd` depends on `opaque-core`; both install automatically.
+This package is an internal implementation package in the `opaque.*`
+namespace. Use `opaque` as the public installation target.
 
 ## Quick start
 

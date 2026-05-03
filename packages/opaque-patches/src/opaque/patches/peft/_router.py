@@ -40,7 +40,8 @@ def _find_decoder_layers(model):
 def _auto_fuse_lora(model):
     """Auto-detect and fuse LoRA layers with Opaque fused kernels.
 
-    Called automatically after get_peft_model(). Walks decoder layers and:
+    Called from explicit PEFT patching on an already wrapped model. Walks
+    decoder layers and:
     1. Fuses Q/K/V projections when all three have LoRA (Opaque_LoRA_QKV)
     2. Fuses gate/up/down projections when all three have LoRA (Opaque_LoRA_MLP)
     """
@@ -55,6 +56,9 @@ def _auto_fuse_lora(model):
         # --- QKV fusion ---
         attn = getattr(layer, "self_attn", None)
         if attn is not None:
+            if getattr(attn, "_opaque_lora_qkv_patched", False):
+                continue
+
             # Check attention class is fuseable (standard QKV pattern, no bias)
             attn_cls_name = type(attn).__name__
             if attn_cls_name not in _FUSEABLE_QKV_ATTENTION_CLASSES:
@@ -81,7 +85,9 @@ def _auto_fuse_lora(model):
                     attn,
                 )
                 fused_qkv_fwd = _make_fused_qkv_attention_forward(attn.forward)
+                fused_qkv_fwd.__opaque_lora_qkv_patched__ = True
                 attn.forward = types.MethodType(fused_qkv_fwd, attn)
+                attn._opaque_lora_qkv_patched = True
                 qkv_count += 1
 
         # --- MLP fusion ---
@@ -91,6 +97,9 @@ def _auto_fuse_lora(model):
 
         # Skip Phi3-style combined gate_up_proj (not supported by fused kernel)
         if _is_phi3_style_mlp(mlp):
+            continue
+
+        if getattr(mlp, "_opaque_lora_mlp_patched", False):
             continue
 
         # Check all three projections have LoRA and no active dropout
@@ -119,7 +128,9 @@ def _auto_fuse_lora(model):
         activation_type = _MLP_ACTIVATION_MAP[cls_name]
 
         fused_mlp_fwd = _make_fused_lora_mlp_forward(mlp.forward, activation_type)
+        fused_mlp_fwd.__opaque_lora_mlp_patched__ = True
         mlp.forward = types.MethodType(fused_mlp_fwd, mlp)
+        mlp._opaque_lora_mlp_patched = True
         mlp_count += 1
 
     if qkv_count > 0 or mlp_count > 0:
@@ -133,9 +144,8 @@ def apply_peft_model_patches(
 ) -> None:
     """Manually apply fused LoRA patching (QKV + MLP + Linear) to a PEFT model.
 
-    Use this when loading a pre-existing PEFT model (e.g., from checkpoint)
-    without calling get_peft_model(). The auto-hook only fires on
-    get_peft_model() calls.
+    Use this on an already wrapped PEFT model, including after
+    ``get_peft_model()`` or when loading a PEFT checkpoint.
 
     Detects and fuses:
     - Base `Linear` projections with LoRA → Opaque_LoRA_Linear

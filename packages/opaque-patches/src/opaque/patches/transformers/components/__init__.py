@@ -16,9 +16,7 @@ Patched components:
 - RoPE: apply_rotary_pos_emb for all supported models (standard half-split rotation)
 - Cross-entropy loss: ForCausalLM loss via LOSS_MAPPING (fp32 fallback)
 - Fused linear + CE: ForCausalLM.forward replaced to skip lm_head materialization (bf16/fp16)
-- LoRA: peft.tuners.lora.Linear forward + auto-fused QKV (Opaque_LoRA_QKV) and MLP (Opaque_LoRA_MLP) via get_peft_model hook
+- LoRA: peft.tuners.lora.Linear forward + explicit fused QKV (Opaque_LoRA_QKV) and MLP (Opaque_LoRA_MLP) when ``apply_model_patches()`` is called on a PEFT-wrapped model
 """
 
-from opaque.patches import is_transformers_patched as is_transformers_patched
-
-__all__ = ["is_transformers_patched"]
+__all__ = []

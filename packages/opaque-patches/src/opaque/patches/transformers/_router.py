@@ -16,22 +16,6 @@ from opaque.patches.transformers._registry import SUPPORTED_FAMILIES, detect_fam
 logger = logging.getLogger(__name__)
 
 
-def apply_kernels_for(model: nn.Module, family: str) -> None:
-    """Explicitly apply Triton kernel patches for a specific model family."""
-    import importlib
-
-    try:
-        models_module = importlib.import_module(
-            "opaque.patches.transformers.models." + family
-        )
-        patch_fn = getattr(
-            models_module, "apply_" + family.replace("-", "_") + "_patches"
-        )
-        patch_fn(model)
-    except (ImportError, AttributeError) as e:
-        logger.warning("opaque: Could not load patch function for %s: %s", family, e)
-
-
 def _patch_forward(
     target_cls: type[nn.Module] | None,
     factory: Callable | None,
@@ -131,5 +115,4 @@ def apply_transformers_model_patches(
 
 __all__ = [
     "apply_transformers_model_patches",
-    "apply_kernels_for",
 ]

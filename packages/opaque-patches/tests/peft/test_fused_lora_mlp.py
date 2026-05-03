@@ -75,8 +75,8 @@ class TestFusedLoRAMLP:
         assert Bd.grad is not None, "No gradient for down LoRA B"
 
     @requires_hf_auth
-    def test_auto_fuse_on_get_peft_model(self, device):
-        """get_peft_model should auto-fuse MLP layers with LoRA on gate/up/down."""
+    def test_apply_model_patches_on_peft_model(self, device):
+        """apply_model_patches() should fuse MLP layers on a PEFT-wrapped model."""
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2
         model = AutoModelForCausalLM.from_config(config)
@@ -86,8 +86,8 @@ class TestFusedLoRAMLP:
             lora_dropout=0.0,
             target_modules=["gate_proj", "up_proj", "down_proj"],
         )
-        apply_model_patches(model, performance=False, compat=True)
         model = get_peft_model(model, lora_config).to(device)
+        apply_model_patches(model, performance=False, compat=True, fuse_lora=True)
         layers = model.model.model.layers
         for layer in layers:
             mlp = layer.mlp
@@ -105,8 +105,8 @@ class TestFusedLoRAMLP:
             lora_dropout=0.0,
             target_modules=["gate_proj", "up_proj", "down_proj"],
         )
-        apply_model_patches(model, performance=False, compat=True)
         model = get_peft_model(model, lora_config).to(device)
+        apply_model_patches(model, performance=False, compat=True, fuse_lora=True)
         input_ids = torch.randint(0, config.vocab_size, (2, 16), device=device)
         outputs = model(input_ids, labels=input_ids)
         loss = outputs.loss
@@ -121,9 +121,9 @@ class TestFusedLoRAMLP:
         assert has_grad, "No gradients computed"
 
     @requires_hf_auth
-    def test_patch_lora_model_manual(self, device):
-        """patch_lora_model() should work for manually loaded PEFT models."""
-        from opaque.patches.peft import patch_lora_model
+    def test_apply_peft_model_patches_manual(self, device):
+        """apply_peft_model_patches() should work for manually loaded PEFT models."""
+        from opaque.patches.peft import apply_peft_model_patches
 
         config = AutoConfig.from_pretrained("meta-llama/Llama-3.2-1B")
         config.num_hidden_layers = 2
@@ -139,9 +139,9 @@ class TestFusedLoRAMLP:
         model = raw_get_peft_model(model, lora_config).to(device)
         layers = model.model.model.layers
         assert "forward" not in vars(layers[0].mlp), (
-            "MLP should not be fused before patch_lora_model()"
+            "MLP should not be fused before apply_peft_model_patches()"
         )
-        patch_lora_model(model)
+        apply_peft_model_patches(model)
         assert "forward" in vars(layers[0].mlp), (
-            "MLP should be fused after patch_lora_model()"
+            "MLP should be fused after apply_peft_model_patches()"
         )

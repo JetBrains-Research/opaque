@@ -220,10 +220,13 @@ def apply_masking_patches(*, enable_vmap_masking: bool = True) -> None:
         # The original calls padding_mask.all() which is data-dependent control flow
         # incompatible with vmap.
         if hasattr(masking_utils, "_ignore_causal_mask_sdpa"):
-            _vmap_safe_ignore_causal_mask_sdpa._original = (
-                masking_utils._ignore_causal_mask_sdpa
-            )
-            masking_utils._ignore_causal_mask_sdpa = _vmap_safe_ignore_causal_mask_sdpa
+            current_fn = masking_utils._ignore_causal_mask_sdpa
+            # Idempotency guard: avoid wrapping our own wrapper on repeated calls.
+            if current_fn is not _vmap_safe_ignore_causal_mask_sdpa:
+                _vmap_safe_ignore_causal_mask_sdpa._original = current_fn
+                masking_utils._ignore_causal_mask_sdpa = (
+                    _vmap_safe_ignore_causal_mask_sdpa
+                )
     except ImportError:
         pass
 

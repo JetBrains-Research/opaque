@@ -15,8 +15,8 @@ hidden mutation.
 
 ## Packages
 
-The repository ships as eight independent [PEP 420] namespace packages, all
-installing under the shared `opaque.*` namespace:
+Install and depend on `opaque` only. The repository is implemented as
+[PEP 420] namespace sub-packages under the shared `opaque.*` namespace:
 
 | Distribution | Import roots | Purpose |
 |---|---|---|
@@ -62,15 +62,11 @@ uv add opaque \
 Extras:
 
 ```bash
-pip install "opaque[auditing]"      # + opaque-auditing
-pip install "opaque[dpftrl]"        # + opaque-dpftrl
-pip install "opaque[transformers]"  # + opaque-transformers + opaque-patches[transformers]
-pip install "opaque[all]"           # everything
+pip install "opaque[auditing]"      # auditing components
+pip install "opaque[dpftrl]"        # correlated-noise DP-FTRL components
+pip install "opaque[transformers]"  # Hugging Face + patching components
+pip install "opaque[all]"           # all optional components
 ```
-
-Each sub-package is also installable directly (`pip install opaque-core`,
-`pip install opaque-dpsgd`, …) — `import opaque.dpsgd` works on its own,
-without `pip install opaque`.
 
 ### Patching
 

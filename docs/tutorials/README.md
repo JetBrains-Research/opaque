@@ -29,10 +29,10 @@ Install Opaque and its tutorial dependencies from a repository checkout:
 ```bash
 git clone https://github.com/JetBrains-Research/opaque.git
 cd opaque
-uv sync --group examples --all-packages --extra huggingface --extra peft
+uv sync --group examples --all-packages --extra transformers
 jupyter lab docs/tutorials/
 ```
 
 The `examples` group ships Jupyter, matplotlib, torchvision, torchopt,
-datasets, and wandb; HuggingFace + PEFT come via the `opaque-transformers[peft]`
-extra. There is no separate `tutorials` group.
+datasets, and wandb; HuggingFace integration is enabled via
+`--extra transformers`. There is no separate `tutorials` group.

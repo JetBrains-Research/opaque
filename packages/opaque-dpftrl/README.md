@@ -8,14 +8,12 @@ cyclic Poisson, balls-in-bins, sequential batches).
 ## Install
 
 ```bash
-pip install opaque-dpftrl                 # core MF mechanisms
-pip install "opaque-dpftrl[optimizers]"   # + AdamW-JME (torchopt)
+pip install "opaque[dpftrl]"
 ```
 
-`opaque-dpftrl` depends on `opaque-core` and `opaque-accounting`; both
-install automatically. The native accounting extension is loaded
-lazily — `import opaque.dpftrl` works without it, as long as no
-calibration helper (e.g. `bisr_strategy`) is called.
+This package is an internal implementation package in the `opaque.*`
+namespace. Use `opaque` (with the `dpftrl` extra) as the public
+installation target.
 
 ## Quick start
 
