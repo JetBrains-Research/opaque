@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import types
 
 import pytest
@@ -12,12 +13,20 @@ import torch
 from opaque.patches.transformers.components.cross_entropy import (
     _make_fused_ce_causal_lm_forward,
 )
+
+pytest.importorskip("triton")
 from opaque.patches.kernels.linear_cross_entropy import (
     Opaque_LinearCrossEntropyLoss,
 )
 
 
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+_KERNELS_AVAILABLE = (
+    torch.cuda.is_available() and importlib.util.find_spec("triton") is not None
+)
+pytestmark = pytest.mark.skipif(
+    not _KERNELS_AVAILABLE,
+    reason="Fused CE label-smoothing tests require CUDA + Triton",
+)
 
 
 class _DummyForCausalLM:
