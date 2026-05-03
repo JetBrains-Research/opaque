@@ -24,7 +24,12 @@ def apply_model_patches(
     peft: bool = True,
     **kwargs
 ) -> None:
-    """Apply global and instance-level patches for a specific model."""
+    """Apply global and instance-level patches for a specific model.
+    
+    This is a convenience orchestrator that handles both Transformers and PEFT natively.
+    Users with purely custom non-Transformers architectures can import and invoke 
+    `apply_peft_model_patches` directly from the root namespace to apply LoRA kernels.
+    """
     global _runtime_patches_applied
     if not _runtime_patches_applied:
         apply_runtime_patches()

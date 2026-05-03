@@ -11,7 +11,7 @@ from opaque.patches.transformers._router import _patch_forward
 from opaque.patches.transformers.components.cross_entropy import _make_fused_ce_causal_lm_forward
 from opaque.patches.transformers.components.rope import _opaque_apply_rotary_pos_emb
 from opaque.patches.transformers.components.swiglu import _make_swiglu_mlp_forward
-from opaque.patches.transformers.components.attention import vmap_repeat_kv, vmap_eager_attention_forward
+from opaque.patches.transformers.components.attention import vmap_repeat_kv, vmap_eager_attention_forward, apply_module_masking_patch
 
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,7 @@ def apply_cohere2_patches(
         return
 
     if wrap_eager_attention:
+        apply_module_masking_patch(mod)
         if hasattr(mod, 'repeat_kv'):
             mod.repeat_kv = vmap_repeat_kv
         if hasattr(mod, 'eager_attention_forward'):

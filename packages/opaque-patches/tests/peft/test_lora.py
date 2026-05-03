@@ -1,6 +1,6 @@
 from opaque.patches import apply_model_patches, apply_runtime_patches
 import pytest
-from ..transformers.compat._helpers import requires_hf_auth
+from tests._helpers import requires_hf_auth
 
 apply_runtime_patches()
 import torch

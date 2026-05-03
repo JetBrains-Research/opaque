@@ -20,7 +20,10 @@ def detect_family(model: nn.Module) -> str | None:
     """Detect the model family from the model config."""
     config = getattr(model, "config", None)
     if config:
-        return getattr(config, "model_type", None)
+        model_type = getattr(config, "model_type", None)
+        if model_type == "gemma3_text":
+            return "gemma3"
+        return model_type
     return None
 
 __all__ = [

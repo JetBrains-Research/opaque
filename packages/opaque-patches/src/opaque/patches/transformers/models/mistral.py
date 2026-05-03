@@ -13,7 +13,7 @@ from opaque.patches.transformers.components.fused_add_rms_norm import _fused_add
 from opaque.patches.transformers.components.rms_norm import _rmsnorm_fac_llama
 from opaque.patches.transformers.components.rope import _opaque_apply_rotary_pos_emb
 from opaque.patches.transformers.components.swiglu import _make_swiglu_mlp_forward
-from opaque.patches.transformers.components.attention import vmap_repeat_kv, vmap_eager_attention_forward
+from opaque.patches.transformers.components.attention import vmap_repeat_kv, vmap_eager_attention_forward, apply_module_masking_patch
 
 
 logger = logging.getLogger(__name__)
@@ -40,6 +40,7 @@ def apply_mistral_patches(
         return
 
     if wrap_eager_attention:
+        apply_module_masking_patch(mod)
         if hasattr(mod, 'repeat_kv'):
             mod.repeat_kv = vmap_repeat_kv
         if hasattr(mod, 'eager_attention_forward'):
