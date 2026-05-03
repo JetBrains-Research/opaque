@@ -58,7 +58,7 @@ environment variables. See
 [HuggingFace Compatibility](user-guide/huggingface.md#configuration).
 
 Advanced users can still call kernel wrappers directly via
-`opaque.performance.kernels`.
+`opaque.patches.kernels`.
 
 ## In-place operations under vmap
 

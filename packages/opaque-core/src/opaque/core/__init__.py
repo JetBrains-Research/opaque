@@ -12,7 +12,6 @@ Contents:
 - :mod:`opaque.core.pytree` — pytree helpers (``tree_map``, ``global_norm``,
   ``partition``, ``merge``, …). Used internally by clipping and
   distributed; users should not need this directly.
-- ``opaque.core._env`` — ``parse_skip_env`` helper (internal).
 """
 
 # Intentionally empty: no user-facing re-exports. Full dotted paths only.

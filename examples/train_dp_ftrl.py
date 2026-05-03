@@ -100,6 +100,9 @@ from transformers import (
     DataCollatorForLanguageModeling,
 )
 
+from opaque.patches import apply_model_patches, apply_runtime_patches
+apply_runtime_patches()
+
 import torchopt
 
 import opaque.accounting as acc
@@ -117,9 +120,8 @@ from opaque.dpftrl.noise import (
     jme_noise,
 )
 from opaque.dpftrl.optimizers.adamw_jme import adamw_jme
-from opaque.huggingface import is_patched as is_transformers_patched
-from opaque.performance.huggingface import is_kernel_patched
-from opaque.performance.profiling import (
+from opaque.patches.transformers.components import is_transformers_patched
+from opaque.core.profiling import (
     StepTimer,
     TrainingProfiler,
     print_memory,
@@ -573,7 +575,7 @@ def main():
 
     # --- Device ---
     device, device_name = _select_device()
-    kernels_on = device.type == "cuda" and is_kernel_patched()
+    kernels_on = device.type == "cuda"
     print(f"\nDevice: {device} ({device_name})")
     print(f"  Patches: transformers={is_transformers_patched()}, kernels={kernels_on}")
 
@@ -647,6 +649,7 @@ def main():
         task_type="CAUSAL_LM",
     )
     model = get_peft_model(model, lora_config)
+    apply_model_patches(model)
     model.print_trainable_parameters()
     profiler, _ = profiler.mark("lora_applied")
     print_memory(device, "After LoRA")

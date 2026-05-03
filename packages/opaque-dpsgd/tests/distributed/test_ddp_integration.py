@@ -30,7 +30,7 @@ from opaque.distributed import (
 )
 from opaque.dpsgd.noise.gaussian import gaussian_noise
 from opaque.dpftrl.noise import mf_noise, identity_strategy
-from opaque.performance.profiling import StepTimer, TrainingProfiler
+from opaque.core.profiling import StepTimer, TrainingProfiler
 from opaque.random import key
 from opaque.functional import make_functional
 from opaque.core.pytree import tree_leaves

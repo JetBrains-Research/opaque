@@ -34,25 +34,23 @@ dependencies = [
     "opaque-core==0.0.0.dev0",
     "opaque-dpsgd==0.0.0.dev0",
     "opaque-accounting==0.0.0.dev0",
+    "opaque-patches==0.0.0.dev0",
 ]
 
 [project.optional-dependencies]
 auditing = ["opaque-auditing==0.0.0.dev0"]
 dpftrl = ["opaque-dpftrl==0.0.0.dev0"]
-performance = ["opaque-performance==0.0.0.dev0"]
+performance = ["opaque-patches==0.0.0.dev0"]
 huggingface = [
-    "opaque-huggingface==0.0.0.dev0",
-    "opaque-performance==0.0.0.dev0",
+    "opaque-patches==0.0.0.dev0",
 ]
 peft = [
-    "opaque-huggingface[peft]==0.0.0.dev0",
-    "opaque-performance==0.0.0.dev0",
+    "opaque-patches==0.0.0.dev0",
 ]
 all = [
     "opaque-auditing==0.0.0.dev0",
     "opaque-dpftrl==0.0.0.dev0",
-    "opaque-performance==0.0.0.dev0",
-    "opaque-huggingface[peft]==0.0.0.dev0",
+    "opaque-patches==0.0.0.dev0",
 ]
 
 # The ``opaque`` namespace is pure PEP 420, composed by whichever
@@ -80,9 +78,9 @@ workspace.members = [
     "packages/opaque-dpsgd",
     "packages/opaque-dpftrl",
     "packages/opaque-auditing",
-    "packages/opaque-performance",
     "packages/opaque-huggingface",
     "packages/opaque-accounting",
+    "packages/opaque-patches",
 ]
 # torch >=2.11 on PyPI pulls nvidia-*-cu13 runtime packages which require a
 # CUDA 13 driver (570+).  Cadence H200 images ship CUDA 12 drivers, so cap
@@ -94,9 +92,9 @@ opaque-core = { workspace = true }
 opaque-dpsgd = { workspace = true }
 opaque-dpftrl = { workspace = true }
 opaque-auditing = { workspace = true }
-opaque-performance = { workspace = true }
 opaque-huggingface = { workspace = true }
 opaque-accounting = { workspace = true }
+opaque-patches = { workspace = true }
 
 [dependency-groups]
 # Developer tooling (test runner, linter, stats helpers, cross-validation

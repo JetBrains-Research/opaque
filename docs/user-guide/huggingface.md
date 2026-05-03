@@ -347,7 +347,7 @@ qkv_proj), Cohere (no transpose).
 All kernels are available as standalone functions without patching:
 
 ```python
-from opaque.performance.kernels import opaque_swiglu, opaque_cross_entropy_loss
+from opaque.patches.kernels import opaque_swiglu, opaque_cross_entropy_loss
 
 h = opaque_swiglu(gate, up)
 loss = opaque_cross_entropy_loss(logits, labels)
