@@ -1050,57 +1050,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Configuration">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#disabling-all-patching" class="md-nav__link">
-    <span class="md-ellipsis">
-      Disabling all patching
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#skipping-only-huggingface-compat-patches" class="md-nav__link">
-    <span class="md-ellipsis">
-      Skipping only HuggingFace compat patches
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#disabling-kernel-optimizations" class="md-nav__link">
-    <span class="md-ellipsis">
-      Disabling kernel optimizations
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#selectively-skipping-kernels" class="md-nav__link">
-    <span class="md-ellipsis">
-      Selectively skipping kernels
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#disabling-vmap-patches" class="md-nav__link">
-    <span class="md-ellipsis">
-      Disabling vmap patches
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
@@ -2183,57 +2132,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Configuration">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#disabling-all-patching" class="md-nav__link">
-    <span class="md-ellipsis">
-      Disabling all patching
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#skipping-only-huggingface-compat-patches" class="md-nav__link">
-    <span class="md-ellipsis">
-      Skipping only HuggingFace compat patches
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#disabling-kernel-optimizations" class="md-nav__link">
-    <span class="md-ellipsis">
-      Disabling kernel optimizations
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#selectively-skipping-kernels" class="md-nav__link">
-    <span class="md-ellipsis">
-      Selectively skipping kernels
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#disabling-vmap-patches" class="md-nav__link">
-    <span class="md-ellipsis">
-      Disabling vmap patches
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
@@ -2319,22 +2217,34 @@
 <p>Opaque works with HuggingFace Transformers models. Patches are split across
 two sub-packages:</p>
 <ul>
-<li><code>opaque.huggingface</code> — compatibility patches (vmap-safe attention,
-  KV-cache workarounds, Poisson-collator compat) that make Transformers
-  models run correctly under <code>vmap(grad(...))</code>.</li>
-<li><code>opaque.performance.huggingface</code> — fused Triton kernel patches (SwiGLU,
-  GeGLU, RoPE, fused cross-entropy, LoRA) that wire Opaque's kernels into
-  the corresponding Transformers model classes. Pure performance.</li>
+<li><code>opaque.patches</code> — the operational entrypoint. <code>apply_runtime_patches()</code>
+  enables runtime fixes (checkpointing, masking, collator, loss mapping), and
+  <code>apply_model_patches(model)</code> wires compat wrappers and Triton kernels into a
+  concrete model instance.</li>
+<li><code>opaque.transformers</code> — the namespace package installed by
+  <code>opaque-transformers</code>; it carries the Transformers-facing dependency bundle,
+  while the patch APIs live under <code>opaque.patches</code>.</li>
 </ul>
-<p>Patches apply automatically on import:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.huggingface</span>          <span class="c1"># compat patches live</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.performance</span>          <span class="c1"># torch + HF kernel patches live</span>
+<p><strong>Scope:</strong> the curated matrix prioritises <strong>decoder-only text</strong> models
+(<code>ForCausalLM</code> and shared text modules). Vision-language stacks
+(e.g. <code>*ForConditionalGeneration</code>) are not part of the default patch set.
+Tested against <code>transformers==4.57.1</code>.</p>
+<p>Recommended usage matches the training examples:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.patches</span><span class="w"> </span><span class="kn">import</span> <span class="n">apply_model_patches</span><span class="p">,</span> <span class="n">apply_runtime_patches</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">apply_runtime_patches</span><span class="p">()</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="c1"># Optional: attach LoRA / PEFT adapters here.</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">apply_model_patches</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 </code></pre></div>
-<p>Disable selectively via the <code>OPAQUE_SKIP_*</code> env vars (see
-<a href="#configuration">Configuration</a>).</p>
+<p>Call <code>apply_runtime_patches()</code> once near process startup, before creating
+checkpointed models or Hugging Face data collators. Call
+<code>apply_model_patches(model)</code> after the model is instantiated and after any
+PEFT/LoRA wrapping, so the patcher sees the final module graph.</p>
 <h2 id="auto-patching">Auto-patching<a class="headerlink" href="#auto-patching" title="Permanent link">&para;</a></h2>
-<p>On import, Opaque applies patches to the following HuggingFace Transformers
-components:</p>
+<p>After <code>apply_runtime_patches()</code> and <code>apply_model_patches(model)</code>, Opaque
+patches the following HuggingFace Transformers components:</p>
 <ul>
 <li><strong>Causal mask creation</strong> (<code>create_causal_mask</code>, <code>_ignore_causal_mask_sdpa</code>)
   -- handles arbitrary batch dimensions under vmap, including sliding-window
@@ -2346,11 +2256,12 @@ components:</p>
 <li><strong>Batchify wrappers</strong> -- automatically adds/removes the batch dimension
   for model forward methods called under <code>vmap(grad(...))</code>.</li>
 </ul>
-<p>These patches are applied for LLaMA, Mistral, Qwen2, Qwen3, Phi-3,
-Gemma, Gemma2, Granite, Cohere, and Cohere2 models. DeepSeek models
-inherit LLaMA patches automatically. GPT-2 works without patches (simple
-architecture). Other models may work if their attention implementation
-follows the standard Transformers pattern.</p>
+<p>These patches are applied for LLaMA, Mistral, Ministral, Qwen2, Qwen3,
+SmolLM3, OLMo2, OLMo3, GLM4, Phi-3, Gemma, Gemma2, Gemma3 (text), Granite,
+Cohere, Cohere2, and Exaone4 models. DeepSeek models inherit LLaMA patches
+automatically. GPT-2 works without patches (simple architecture). Other
+text models may work if their attention implementation follows the
+standard Transformers pattern.</p>
 <h3 id="why-patches-are-needed">Why patches are needed<a class="headerlink" href="#why-patches-are-needed" title="Permanent link">&para;</a></h3>
 <p><code>torch.func.vmap</code> removes the batch dimension: a function that normally
 receives input of shape <code>(batch, seq_len, hidden)</code> instead receives
@@ -2450,6 +2361,7 @@ vmap compatibility and which fused Triton kernels are applied per model:</p>
 <th>Model</th>
 <th>Tested sizes</th>
 <th>SwiGLU/GeGLU</th>
+<th>RMSNorm</th>
 <th>RoPE</th>
 <th>CE</th>
 <th>Fused Linear CE</th>
@@ -2464,6 +2376,7 @@ vmap compatibility and which fused Triton kernels are applied per model:</p>
 <td>Yes</td>
 <td>Yes</td>
 <td>Yes</td>
+<td>Yes</td>
 <td>QKV + MLP</td>
 </tr>
 <tr>
@@ -2473,7 +2386,18 @@ vmap compatibility and which fused Triton kernels are applied per model:</p>
 <td>Yes</td>
 <td>Yes</td>
 <td>Yes</td>
+<td>Yes</td>
 <td>QKV + MLP</td>
+</tr>
+<tr>
+<td>Ministral</td>
+<td>8B</td>
+<td>SwiGLU</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>MLP only</td>
 </tr>
 <tr>
 <td>Qwen2 / Qwen3</td>
@@ -2482,12 +2406,54 @@ vmap compatibility and which fused Triton kernels are applied per model:</p>
 <td>Yes</td>
 <td>Yes</td>
 <td>Yes</td>
+<td>Yes</td>
+<td>MLP only</td>
+</tr>
+<tr>
+<td>SmolLM3</td>
+<td>3B</td>
+<td>SwiGLU</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>MLP only</td>
+</tr>
+<tr>
+<td>OLMo2</td>
+<td>1B, 7B (tiny config in tests)</td>
+<td>SwiGLU</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>MLP only</td>
+</tr>
+<tr>
+<td>OLMo3</td>
+<td>1B, 7B (tiny config in tests)</td>
+<td>SwiGLU</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>MLP only</td>
+</tr>
+<tr>
+<td>GLM4</td>
+<td>9B (tiny config in tests)</td>
+<td>SwiGLU (Phi3-style)</td>
+<td>Yes</td>
+<td>--</td>
+<td>Yes</td>
+<td>Yes</td>
 <td>MLP only</td>
 </tr>
 <tr>
 <td>Phi-3</td>
 <td>3.8B</td>
 <td>SwiGLU</td>
+<td>Yes</td>
 <td>Yes</td>
 <td>Yes</td>
 <td>--</td>
@@ -2500,6 +2466,7 @@ vmap compatibility and which fused Triton kernels are applied per model:</p>
 <td>Yes</td>
 <td>Yes</td>
 <td>Yes</td>
+<td>Yes</td>
 <td>QKV + MLP</td>
 </tr>
 <tr>
@@ -2508,13 +2475,25 @@ vmap compatibility and which fused Triton kernels are applied per model:</p>
 <td>GeGLU Approx</td>
 <td>Yes</td>
 <td>Yes</td>
+<td>Yes</td>
 <td>Yes (softcap)</td>
 <td>QKV + MLP</td>
+</tr>
+<tr>
+<td>Gemma3 (text)</td>
+<td>1B, 4B (tiny config in tests)</td>
+<td>GeGLU Approx</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>MLP only</td>
 </tr>
 <tr>
 <td>Granite</td>
 <td>3B, 8B</td>
 <td>SwiGLU</td>
+<td>Yes</td>
 <td>Yes</td>
 <td>Yes</td>
 <td>Yes</td>
@@ -2527,6 +2506,7 @@ vmap compatibility and which fused Triton kernels are applied per model:</p>
 <td>--</td>
 <td>Yes</td>
 <td>Yes</td>
+<td>Yes</td>
 <td>MLP only</td>
 </tr>
 <tr>
@@ -2536,11 +2516,23 @@ vmap compatibility and which fused Triton kernels are applied per model:</p>
 <td>--</td>
 <td>Yes</td>
 <td>Yes</td>
+<td>Yes</td>
 <td>QKV + MLP</td>
+</tr>
+<tr>
+<td>Exaone4</td>
+<td>1.2B, 32B (tiny config in tests)</td>
+<td>SwiGLU</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>MLP only</td>
 </tr>
 <tr>
 <td>GPT-2</td>
 <td>124M, 355M</td>
+<td>--</td>
 <td>--</td>
 <td>--</td>
 <td>--</td>
@@ -2554,10 +2546,26 @@ vmap compatibility and which fused Triton kernels are applied per model:</p>
 <td>Yes</td>
 <td>Yes</td>
 <td>Yes</td>
+<td>Yes</td>
 <td>QKV + MLP</td>
 </tr>
 </tbody>
 </table>
+<p>Gemma3's <code>q_norm</code> / <code>k_norm</code> RMSNorms inside <code>Gemma3Attention</code> are picked up
+automatically because the kernel patcher rebinds <code>Gemma3RMSNorm.forward</code> at
+class level; the same trick covers <code>Exaone4RMSNorm</code> for Exaone4. Fused add +
+RMSNorm is intentionally <strong>off</strong> for OLMo2 / OLMo3 / Cohere / Cohere2 /
+Gemma3 / Exaone4 because their decoder layers apply
+<code>post_attention_layernorm</code> <em>between</em> the attention output and the residual
+add (the fused primitive expects residual-first ordering).</p>
+<p><strong>Not supported by default patching:</strong> expert-routed decoder stacks such as
+GPT-OSS. <strong>Deferred families:</strong> Nemotron — <code>transformers.models.nemotron.modeling_nemotron</code>
+in 4.57.1 ships only legacy <code>NemotronAttention</code> / <code>NemotronSdpaAttention</code> /
+<code>NemotronFlashAttention2</code> (no <code>eager_attention_forward</code> symbol to swap), and
+<code>NemotronMLP</code> is non-gated (<code>up_proj → act_fn → down_proj</code>, no
+SwiGLU/GeGLU split). Adding it would require both a bespoke vmap attention
+path and a new non-gated MLP kernel; revisit when a benchmark customer
+needs it.</p>
 <p><strong>What makes a model vmap-compatible:</strong> The model must not use
 <code>torch.nonzero</code>, data-dependent control flow (<code>if tensor.item() &gt; 0</code>), or
 operations that depend on the batch dimension being a specific index. Most
@@ -2728,8 +2736,8 @@ standard parameters, it may not work with <code>vmap</code>.</p>
 or add modules only if accuracy is insufficient.</p>
 <h2 id="patched-operations">Patched operations<a class="headerlink" href="#patched-operations" title="Permanent link">&para;</a></h2>
 <p>Opaque replaces standard PyTorch operations with fused Triton kernels for
-supported models. These are applied automatically on <code>import opaque</code> and
-require no code changes. See <a href="../memory-optimizations/#kernel-benchmarks">Memory Optimizations — Kernel benchmarks</a>
+supported models. These are applied by <code>apply_model_patches(model)</code> and
+require no model-code changes. See <a href="../memory-optimizations/#kernel-benchmarks">Memory Optimizations — Kernel benchmarks</a>
 for performance numbers.</p>
 <h3 id="activation-functions">Activation functions<a class="headerlink" href="#activation-functions" title="Permanent link">&para;</a></h3>
 <table>
@@ -2814,7 +2822,7 @@ Excluded: Qwen2 (bias on Q/K/V), Qwen3 (q_norm/k_norm), Phi3 (combined
 qkv_proj), Cohere (no transpose).</p>
 <h3 id="using-kernels-directly">Using kernels directly<a class="headerlink" href="#using-kernels-directly" title="Permanent link">&para;</a></h3>
 <p>All kernels are available as standalone functions without patching:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.performance.kernels</span><span class="w"> </span><span class="kn">import</span> <span class="n">opaque_swiglu</span><span class="p">,</span> <span class="n">opaque_cross_entropy_loss</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.patches.kernels</span><span class="w"> </span><span class="kn">import</span> <span class="n">opaque_swiglu</span><span class="p">,</span> <span class="n">opaque_cross_entropy_loss</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">h</span> <span class="o">=</span> <span class="n">opaque_swiglu</span><span class="p">(</span><span class="n">gate</span><span class="p">,</span> <span class="n">up</span><span class="p">)</span>
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">loss</span> <span class="o">=</span> <span class="n">opaque_cross_entropy_loss</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">labels</span><span class="p">)</span>
@@ -2867,82 +2875,37 @@ qkv_proj), Cohere (no transpose).</p>
 </tbody>
 </table>
 <h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
-<p>Patches apply on import. Disable selectively via sub-package-specific env
-vars, set <strong>before</strong> the matching import:</p>
-<table>
-<thead>
-<tr>
-<th>Variable</th>
-<th>Scope</th>
-<th>Values</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>OPAQUE_SKIP_PYTORCH_PATCHES</code></td>
-<td><code>opaque.performance</code></td>
-<td><code>all</code>, <code>checkpoint</code></td>
-</tr>
-<tr>
-<td><code>OPAQUE_SKIP_TRANSFORMERS_PATCHES</code></td>
-<td><code>opaque.huggingface</code> compat</td>
-<td><code>all</code>, or <code>vmap,kv_cache,batchify,data</code></td>
-</tr>
-<tr>
-<td><code>OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES</code></td>
-<td>vmap compat</td>
-<td><code>all</code>, or <code>shared,standard,gemma2,phi3</code></td>
-</tr>
-<tr>
-<td><code>OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES</code></td>
-<td>HF Triton kernels (performance)</td>
-<td><code>all</code>, or <code>swiglu,rope,ce,fused_ce,lora</code></td>
-</tr>
-<tr>
-<td><code>OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES</code></td>
-<td>Poisson-collator compat</td>
-<td><code>all</code> or <code>collator</code></td>
-</tr>
-</tbody>
-</table>
-<h3 id="disabling-all-patching">Disabling all patching<a class="headerlink" href="#disabling-all-patching" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<p>Patching is configured through the explicit API rather than import-time side
+effects. The most useful knobs today are:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.patches</span><span class="w"> </span><span class="kn">import</span> <span class="n">apply_model_patches</span><span class="p">,</span> <span class="n">apply_runtime_patches</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;OPAQUE_SKIP_PYTORCH_PATCHES&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;OPAQUE_SKIP_TRANSFORMERS_PATCHES&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># ... then do your imports.</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">apply_runtime_patches</span><span class="p">(</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>  <span class="n">compat</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>  <span class="n">allow_empty_batches</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>  <span class="n">enable_vmap_checkpointing</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>  <span class="n">use_fused_loss</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="p">)</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="n">apply_model_patches</span><span class="p">(</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>  <span class="n">model</span><span class="p">,</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>  <span class="n">performance</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>  <span class="c1"># Triton kernels + PEFT fusion</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>  <span class="n">compat</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>       <span class="c1"># vmap-safe attention / batchify / KV-cache shims</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>  <span class="n">peft</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>         <span class="c1"># LoRA / PEFT module patching</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="p">)</span>
 </code></pre></div>
-<h3 id="skipping-only-huggingface-compat-patches">Skipping only HuggingFace compat patches<a class="headerlink" href="#skipping-only-huggingface-compat-patches" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;OPAQUE_SKIP_TRANSFORMERS_PATCHES&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.huggingface</span>     <span class="c1"># no-op compat patch</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.performance</span>     <span class="c1"># performance/kernel patches still active</span>
+<p>Common configurations:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Keep correctness shims, but disable Triton kernels / PEFT fusion.</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">apply_model_patches</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">performance</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Disable model-side compat wrappers while keeping runtime patches.</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="n">apply_model_patches</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">compat</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="c1"># Disable runtime checkpoint patching for debugging.</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="n">apply_runtime_patches</span><span class="p">(</span><span class="n">enable_vmap_checkpointing</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 </code></pre></div>
-<h3 id="disabling-kernel-optimizations">Disabling kernel optimizations<a class="headerlink" href="#disabling-kernel-optimizations" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.performance</span>  <span class="c1"># reads the env var at import time</span>
-</code></pre></div>
-<p>This disables all kernel optimizations. The library still works — models use
-standard PyTorch operations with vmap patches still applied.</p>
-<h3 id="selectively-skipping-kernels">Selectively skipping kernels<a class="headerlink" href="#selectively-skipping-kernels" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Skip only fused linear CE</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nv">OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES</span><span class="o">=</span>fused_ce<span class="w"> </span>python<span class="w"> </span>train.py
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1"># Skip multiple</span>
-<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="nv">OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES</span><span class="o">=</span>swiglu,rope,fused_ce<span class="w"> </span>python<span class="w"> </span>train.py
-</code></pre></div>
-<p>Available kernel names: <code>swiglu</code>, <code>rope</code>, <code>ce</code>, <code>fused_ce</code>, <code>lora</code>.</p>
-<h3 id="disabling-vmap-patches">Disabling vmap patches<a class="headerlink" href="#disabling-vmap-patches" title="Permanent link">&para;</a></h3>
-<p>Vmap patches make HuggingFace models compatible with <code>vmap(grad())</code>. These
-are required for DP-SGD training but can be skipped for debugging:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Skip all vmap patches (models will NOT work with vmap)</span>
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nv">OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES</span><span class="o">=</span>all<span class="w"> </span>python<span class="w"> </span>train.py
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="c1"># Skip only Gemma2-specific patches</span>
-<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="nv">OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES</span><span class="o">=</span>gemma2<span class="w"> </span>python<span class="w"> </span>train.py
-</code></pre></div>
-<p>Available vmap groups: <code>shared</code>, <code>standard</code>, <code>gemma2</code>, <code>phi3</code>.</p>
+<p>The only remaining environment-level switch in this area is
+<code>OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES=all|collator</code>, which controls the empty-
+batch collator wrapper used with Poisson sampling.</p>
 <h2 id="other-models">Other models<a class="headerlink" href="#other-models" title="Permanent link">&para;</a></h2>
 <p>Models not in the table above may work if their architecture follows
 the standard Transformers pattern. If a model fails under <code>vmap</code>, the most
@@ -2951,17 +2914,17 @@ common cause is that its <code>forward</code> method assumes a batch dimension t
 <h3 id="wrapping-the-loss-function">Wrapping the loss function<a class="headerlink" href="#wrapping-the-loss-function" title="Permanent link">&para;</a></h3>
 <p>Use <code>with_batch_dim</code> to add a leading batch dimension to the arguments
 that <code>vmap</code> unbatches:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.functional</span><span class="w"> </span><span class="kn">import</span> <span class="n">with_batch_dim</span>
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">loss_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span><span class="p">):</span>
-<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>    <span class="n">out</span> <span class="o">=</span> <span class="n">fmodel</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">input_ids</span><span class="o">=</span><span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="n">labels</span><span class="p">)</span>
-<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>    <span class="k">return</span> <span class="n">out</span><span class="o">.</span><span class="n">loss</span>
-<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>
-<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="n">loss_fn</span> <span class="o">=</span> <span class="n">with_batch_dim</span><span class="p">(</span><span class="n">loss_fn</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
-<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>
-<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
-<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
-<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.functional</span><span class="w"> </span><span class="kn">import</span> <span class="n">with_batch_dim</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">loss_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span><span class="p">):</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="n">out</span> <span class="o">=</span> <span class="n">fmodel</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">input_ids</span><span class="o">=</span><span class="n">input_ids</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="n">labels</span><span class="p">)</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    <span class="k">return</span> <span class="n">out</span><span class="o">.</span><span class="n">loss</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="n">loss_fn</span> <span class="o">=</span> <span class="n">with_batch_dim</span><span class="p">(</span><span class="n">loss_fn</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="p">)</span>
 </code></pre></div>
 <p><code>batch_argnums</code> specifies which positional arguments get <code>unsqueeze(0)</code>.
 Under <code>vmap</code>, <code>input_ids</code> arrives as <code>(seq,)</code>; the wrapper makes it
@@ -2969,11 +2932,11 @@ Under <code>vmap</code>, <code>input_ids</code> arrives as <code>(seq,)</code>; 
 <h3 id="wrapping-the-model-forward">Wrapping the model forward<a class="headerlink" href="#wrapping-the-model-forward" title="Permanent link">&para;</a></h3>
 <p>Alternatively, patch the model's forward method once. This is what Opaque
 does internally for supported HuggingFace models:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">model</span><span class="o">.</span><span class="n">forward</span> <span class="o">=</span> <span class="n">with_batch_dim</span><span class="p">(</span>
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>    <span class="n">model</span><span class="o">.</span><span class="n">forward</span><span class="p">,</span>
-<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>    <span class="n">batch_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;input_ids&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;attention_mask&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;labels&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;inputs_embeds&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">},</span>
-<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>    <span class="n">min_ndim</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">model</span><span class="o">.</span><span class="n">forward</span> <span class="o">=</span> <span class="n">with_batch_dim</span><span class="p">(</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="n">model</span><span class="o">.</span><span class="n">forward</span><span class="p">,</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="n">batch_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;input_ids&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;attention_mask&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;labels&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;inputs_embeds&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">},</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="n">min_ndim</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="p">)</span>
 </code></pre></div>
 <p><code>batch_kwargs</code> maps keyword argument names to their expected minimum
 number of dimensions. When a tensor has fewer dimensions than the
@@ -2982,13 +2945,13 @@ output. When the tensor already has the expected shape, it is a no-op.</p>
 <h2 id="distributed-huggingface-models">Distributed HuggingFace models<a class="headerlink" href="#distributed-huggingface-models" title="Permanent link">&para;</a></h2>
 <p>DDP works with patched HuggingFace models. The patches are applied once
 on import and affect all ranks identically.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torch.distributed</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dist</span>
-<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">torch.nn.parallel</span><span class="w"> </span><span class="kn">import</span> <span class="n">DistributedDataParallel</span>
-<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>
-<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="n">dist</span><span class="o">.</span><span class="n">init_process_group</span><span class="p">(</span><span class="s2">&quot;nccl&quot;</span><span class="p">)</span>
-<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;meta-llama/Llama-3.1-8B&quot;</span><span class="p">)</span>
-<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="c1"># DDP wraps the model; make_functional unwraps it</span>
-<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="n">fmodel</span><span class="p">,</span> <span class="n">trainable</span><span class="p">,</span> <span class="n">frozen</span> <span class="o">=</span> <span class="n">make_functional</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">partition_trainable</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torch.distributed</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dist</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">torch.nn.parallel</span><span class="w"> </span><span class="kn">import</span> <span class="n">DistributedDataParallel</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="n">dist</span><span class="o">.</span><span class="n">init_process_group</span><span class="p">(</span><span class="s2">&quot;nccl&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;meta-llama/Llama-3.1-8B&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="c1"># DDP wraps the model; make_functional unwraps it</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="n">fmodel</span><span class="p">,</span> <span class="n">trainable</span><span class="p">,</span> <span class="n">frozen</span> <span class="o">=</span> <span class="n">make_functional</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">partition_trainable</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </code></pre></div>
 <p>The noise key must be identical across ranks so that each rank adds the same
 noise after <code>sum_gradients</code>. See <a href="../distributed/">Distributed Training</a>.</p>

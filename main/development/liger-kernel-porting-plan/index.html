@@ -12,28 +12,24 @@
         <meta name="author" content="Opaque Contributors">
       
       
-        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/user-guide/">
+        <link rel="canonical" href="https://jetbrains-research.github.io/opaque/main/development/liger-kernel-porting-plan/">
       
       
-        <link rel="prev" href="../getting-started/quickstart/">
       
       
-        <link rel="next" href="dp-concepts/">
-      
-      
-      <link rel="icon" href="../assets/images/favicon.png">
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.23">
     
     
       
-        <title>Overview - Opaque</title>
+        <title>Liger-style kernels: porting plan for Opaque - Opaque</title>
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.84d31ad4.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.84d31ad4.min.css">
       
         
-        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.06af60db.min.css">
       
       
 
@@ -52,9 +48,9 @@
       
     
     
-      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
     
-    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -80,7 +76,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#user-guide" class="md-skip">
+        <a href="#liger-style-kernels-porting-plan-for-opaque" class="md-skip">
           Skip to content
         </a>
       
@@ -98,7 +94,7 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href=".." title="Opaque" class="md-header__button md-logo" aria-label="Opaque" data-md-component="logo">
+    <a href="../.." title="Opaque" class="md-header__button md-logo" aria-label="Opaque" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -118,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Overview
+              Liger-style kernels: porting plan for Opaque
             
           </span>
         </div>
@@ -231,7 +227,7 @@
   
   
     <li class="md-tabs__item">
-      <a href=".." class="md-tabs__link">
+      <a href="../.." class="md-tabs__link">
         
   
   
@@ -252,7 +248,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../getting-started/installation/" class="md-tabs__link">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
           
   
   
@@ -268,13 +264,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="./" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../../user-guide/" class="md-tabs__link">
           
   
   
@@ -294,7 +288,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../mechanisms/" class="md-tabs__link">
+        <a href="../../mechanisms/" class="md-tabs__link">
           
   
   
@@ -314,7 +308,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../tutorials/" class="md-tabs__link">
+        <a href="../../tutorials/" class="md-tabs__link">
           
   
   
@@ -334,7 +328,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../api/" class="md-tabs__link">
+        <a href="../../api/" class="md-tabs__link">
           
   
   
@@ -368,7 +362,7 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href=".." title="Opaque" class="md-nav__button md-logo" aria-label="Opaque" data-md-component="logo">
+    <a href="../.." title="Opaque" class="md-nav__button md-logo" aria-label="Opaque" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -398,7 +392,7 @@
   
   
     <li class="md-nav__item">
-      <a href=".." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -463,7 +457,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../getting-started/installation/" class="md-nav__link">
+      <a href="../../getting-started/installation/" class="md-nav__link">
         
   
   
@@ -486,7 +480,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../getting-started/quickstart/" class="md-nav__link">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
         
   
   
@@ -513,31 +507,26 @@
       
   
   
-    
   
   
-  
     
     
     
     
-      
-        
-        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
         
           
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
             
   
   
@@ -550,7 +539,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             User Guide
@@ -561,32 +550,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    Overview
-    
-  </span>
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../user-guide/" class="md-nav__link">
         
   
   
@@ -597,95 +564,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#installation-surface" class="md-nav__link">
-    <span class="md-ellipsis">
-      Installation surface
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#end-to-end-dp-sgd-training" class="md-nav__link">
-    <span class="md-ellipsis">
-      End-to-end DP-SGD training
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#topics" class="md-nav__link">
-    <span class="md-ellipsis">
-      Topics
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Topics">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#foundations" class="md-nav__link">
-    <span class="md-ellipsis">
-      Foundations
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#core-pipeline" class="md-nav__link">
-    <span class="md-ellipsis">
-      Core pipeline
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#integration" class="md-nav__link">
-    <span class="md-ellipsis">
-      Integration
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#reference" class="md-nav__link">
-    <span class="md-ellipsis">
-      Reference
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -698,7 +576,7 @@
   
   
     <li class="md-nav__item">
-      <a href="dp-concepts/" class="md-nav__link">
+      <a href="../../user-guide/dp-concepts/" class="md-nav__link">
         
   
   
@@ -721,7 +599,7 @@
   
   
     <li class="md-nav__item">
-      <a href="rng-key/" class="md-nav__link">
+      <a href="../../user-guide/rng-key/" class="md-nav__link">
         
   
   
@@ -744,7 +622,7 @@
   
   
     <li class="md-nav__item">
-      <a href="clipping/" class="md-nav__link">
+      <a href="../../user-guide/clipping/" class="md-nav__link">
         
   
   
@@ -767,7 +645,7 @@
   
   
     <li class="md-nav__item">
-      <a href="noise/" class="md-nav__link">
+      <a href="../../user-guide/noise/" class="md-nav__link">
         
   
   
@@ -790,7 +668,7 @@
   
   
     <li class="md-nav__item">
-      <a href="dp-ftrl/" class="md-nav__link">
+      <a href="../../user-guide/dp-ftrl/" class="md-nav__link">
         
   
   
@@ -813,7 +691,7 @@
   
   
     <li class="md-nav__item">
-      <a href="accounting/" class="md-nav__link">
+      <a href="../../user-guide/accounting/" class="md-nav__link">
         
   
   
@@ -836,7 +714,7 @@
   
   
     <li class="md-nav__item">
-      <a href="sampling/" class="md-nav__link">
+      <a href="../../user-guide/sampling/" class="md-nav__link">
         
   
   
@@ -859,7 +737,7 @@
   
   
     <li class="md-nav__item">
-      <a href="optimizers/" class="md-nav__link">
+      <a href="../../user-guide/optimizers/" class="md-nav__link">
         
   
   
@@ -882,7 +760,7 @@
   
   
     <li class="md-nav__item">
-      <a href="lr-scheduling/" class="md-nav__link">
+      <a href="../../user-guide/lr-scheduling/" class="md-nav__link">
         
   
   
@@ -905,7 +783,7 @@
   
   
     <li class="md-nav__item">
-      <a href="distributed/" class="md-nav__link">
+      <a href="../../user-guide/distributed/" class="md-nav__link">
         
   
   
@@ -928,7 +806,7 @@
   
   
     <li class="md-nav__item">
-      <a href="huggingface/" class="md-nav__link">
+      <a href="../../user-guide/huggingface/" class="md-nav__link">
         
   
   
@@ -951,7 +829,7 @@
   
   
     <li class="md-nav__item">
-      <a href="memory-optimizations/" class="md-nav__link">
+      <a href="../../user-guide/memory-optimizations/" class="md-nav__link">
         
   
   
@@ -974,7 +852,7 @@
   
   
     <li class="md-nav__item">
-      <a href="auditing/" class="md-nav__link">
+      <a href="../../user-guide/auditing/" class="md-nav__link">
         
   
   
@@ -997,7 +875,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../limitations/" class="md-nav__link">
+      <a href="../../limitations/" class="md-nav__link">
         
   
   
@@ -1070,7 +948,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/" class="md-nav__link">
+      <a href="../../mechanisms/" class="md-nav__link">
         
   
   
@@ -1093,7 +971,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/gaussian/" class="md-nav__link">
+      <a href="../../mechanisms/gaussian/" class="md-nav__link">
         
   
   
@@ -1116,7 +994,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/bsr/" class="md-nav__link">
+      <a href="../../mechanisms/bsr/" class="md-nav__link">
         
   
   
@@ -1139,7 +1017,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/band-mf/" class="md-nav__link">
+      <a href="../../mechanisms/band-mf/" class="md-nav__link">
         
   
   
@@ -1162,7 +1040,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/blt/" class="md-nav__link">
+      <a href="../../mechanisms/blt/" class="md-nav__link">
         
   
   
@@ -1185,7 +1063,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/lambda-cgd/" class="md-nav__link">
+      <a href="../../mechanisms/lambda-cgd/" class="md-nav__link">
         
   
   
@@ -1208,7 +1086,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mechanisms/bisr/" class="md-nav__link">
+      <a href="../../mechanisms/bisr/" class="md-nav__link">
         
   
   
@@ -1281,7 +1159,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/" class="md-nav__link">
+      <a href="../../tutorials/" class="md-nav__link">
         
   
   
@@ -1304,7 +1182,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/dp_sgd_training/" class="md-nav__link">
+      <a href="../../tutorials/dp_sgd_training/" class="md-nav__link">
         
   
   
@@ -1327,7 +1205,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/accounting_and_calibration/" class="md-nav__link">
+      <a href="../../tutorials/accounting_and_calibration/" class="md-nav__link">
         
   
   
@@ -1350,7 +1228,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/llm_finetuning/" class="md-nav__link">
+      <a href="../../tutorials/llm_finetuning/" class="md-nav__link">
         
   
   
@@ -1373,7 +1251,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/sampling_and_microbatching/" class="md-nav__link">
+      <a href="../../tutorials/sampling_and_microbatching/" class="md-nav__link">
         
   
   
@@ -1396,7 +1274,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/privacy_auditing/" class="md-nav__link">
+      <a href="../../tutorials/privacy_auditing/" class="md-nav__link">
         
   
   
@@ -1419,7 +1297,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tutorials/distributed_training/" class="md-nav__link">
+      <a href="../../tutorials/distributed_training/" class="md-nav__link">
         
   
   
@@ -1492,7 +1370,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../api/" class="md-nav__link">
+      <a href="../../api/" class="md-nav__link">
         
   
   
@@ -1515,7 +1393,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../api/clipping/" class="md-nav__link">
+      <a href="../../api/clipping/" class="md-nav__link">
         
   
   
@@ -1538,7 +1416,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../api/noise/" class="md-nav__link">
+      <a href="../../api/noise/" class="md-nav__link">
         
   
   
@@ -1561,7 +1439,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../api/accounting/" class="md-nav__link">
+      <a href="../../api/accounting/" class="md-nav__link">
         
   
   
@@ -1584,7 +1462,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../api/sampling/" class="md-nav__link">
+      <a href="../../api/sampling/" class="md-nav__link">
         
   
   
@@ -1607,7 +1485,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../api/rng/" class="md-nav__link">
+      <a href="../../api/rng/" class="md-nav__link">
         
   
   
@@ -1630,7 +1508,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../api/distributed/" class="md-nav__link">
+      <a href="../../api/distributed/" class="md-nav__link">
         
   
   
@@ -1653,7 +1531,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../api/auditing/" class="md-nav__link">
+      <a href="../../api/auditing/" class="md-nav__link">
         
   
   
@@ -1676,7 +1554,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../api/utilities/" class="md-nav__link">
+      <a href="../../api/utilities/" class="md-nav__link">
         
   
   
@@ -1699,7 +1577,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../api/optimizers/" class="md-nav__link">
+      <a href="../../api/optimizers/" class="md-nav__link">
         
   
   
@@ -1722,7 +1600,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../api/schedules/" class="md-nav__link">
+      <a href="../../api/schedules/" class="md-nav__link">
         
   
   
@@ -1772,64 +1650,64 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#installation-surface" class="md-nav__link">
+  <a href="#goals" class="md-nav__link">
     <span class="md-ellipsis">
-      Installation surface
+      Goals
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#end-to-end-dp-sgd-training" class="md-nav__link">
+  <a href="#licensing" class="md-nav__link">
     <span class="md-ellipsis">
-      End-to-end DP-SGD training
+      Licensing
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#topics" class="md-nav__link">
+  <a href="#technical-constraints" class="md-nav__link">
     <span class="md-ellipsis">
-      Topics
+      Technical constraints
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Topics">
+    <nav class="md-nav" aria-label="Technical constraints">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#foundations" class="md-nav__link">
+  <a href="#autograd-api" class="md-nav__link">
     <span class="md-ellipsis">
-      Foundations
+      Autograd API
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#core-pipeline" class="md-nav__link">
+  <a href="#kernel-pattern" class="md-nav__link">
     <span class="md-ellipsis">
-      Core pipeline
+      Kernel pattern
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#integration" class="md-nav__link">
+  <a href="#huggingface-split" class="md-nav__link">
     <span class="md-ellipsis">
-      Integration
+      HuggingFace split
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#reference" class="md-nav__link">
+  <a href="#huggingface-version-pin" class="md-nav__link">
     <span class="md-ellipsis">
-      Reference
+      HuggingFace version pin
     </span>
   </a>
   
@@ -1837,6 +1715,186 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#auto-patch-acceptance-criteria" class="md-nav__link">
+    <span class="md-ellipsis">
+      Auto-patch acceptance criteria
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Auto-patch acceptance criteria">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#must-pass" class="md-nav__link">
+    <span class="md-ellipsis">
+      Must pass
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#baselines" class="md-nav__link">
+    <span class="md-ellipsis">
+      Baselines
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#h100-benchmarking-protocol" class="md-nav__link">
+    <span class="md-ellipsis">
+      H100 benchmarking protocol
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="H100 benchmarking protocol">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      Environment
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#shape-matrix-minimum" class="md-nav__link">
+    <span class="md-ellipsis">
+      Shape matrix (minimum)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      Metrics
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#implementation-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      Implementation options
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phased-roadmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      Phased roadmap
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phased roadmap">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-0-foundations" class="md-nav__link">
+    <span class="md-ellipsis">
+      Phase 0 — Foundations
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-rmsnorm-and-fused-addrmsnorm" class="md-nav__link">
+    <span class="md-ellipsis">
+      Phase 1 — RMSNorm and fused Add+RMSNorm
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-cross-entropy-lm-head-parity" class="md-nav__link">
+    <span class="md-ellipsis">
+      Phase 2 — Cross-entropy / LM-head parity
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-3-rope-and-extended-text-model-families" class="md-nav__link">
+    <span class="md-ellipsis">
+      Phase 3 — RoPE and extended text model families
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-4-moe-and-wide-ffn" class="md-nav__link">
+    <span class="md-ellipsis">
+      Phase 4 — MoE and wide FFN
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-5-chunked-alignment-preference-losses" class="md-nav__link">
+    <span class="md-ellipsis">
+      Phase 5 — Chunked alignment / preference losses
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#documentation-and-tests-to-update-per-phase" class="md-nav__link">
+    <span class="md-ellipsis">
+      Documentation and tests to update per phase
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-checklist-per-kernel" class="md-nav__link">
+    <span class="md-ellipsis">
+      Implementation checklist (per kernel)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-step" class="md-nav__link">
+    <span class="md-ellipsis">
+      Next step
+    </span>
+  </a>
   
 </li>
       
@@ -1859,121 +1917,281 @@
   
 
 
-<h1 id="user-guide">User Guide<a class="headerlink" href="#user-guide" title="Permanent link">&para;</a></h1>
-<p>This guide explains each component of Opaque's DP-SGD pipeline: what it does,
-how the API works, and the practical decisions you need to make. For hands-on
-practice, see the <a href="../tutorials/">Tutorials</a>. For complete function
-signatures, see the <a href="../api/">API Reference</a>.</p>
-<h2 id="installation-surface">Installation surface<a class="headerlink" href="#installation-surface" title="Permanent link">&para;</a></h2>
-<p>Use <code>pip install opaque</code> (plus <code>opaque[...]</code> extras) as the public install
-target. The <code>opaque.*</code> import modules are implemented across namespace
-sub-packages, but those sub-packages are not documented as standalone install
-targets in user-facing workflows.</p>
-<h2 id="end-to-end-dp-sgd-training">End-to-end DP-SGD training<a class="headerlink" href="#end-to-end-dp-sgd-training" title="Permanent link">&para;</a></h2>
-<p>A complete DP-SGD training loop uses five components: calibration, clipping,
-noise, sampling, and accounting. Here is a minimal working example that ties
-them together:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torchopt</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque.accounting</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">acc</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.noise</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.dpsgd.sampling</span><span class="w"> </span><span class="kn">import</span> <span class="n">PoissonSampler</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.random</span><span class="w"> </span><span class="kn">import</span> <span class="n">key</span><span class="p">,</span> <span class="n">split</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="c1"># --- Privacy parameters ---</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="n">dataset_size</span> <span class="o">=</span> <span class="mi">50_000</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="n">batch_size</span> <span class="o">=</span> <span class="mi">256</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="n">sample_rate</span> <span class="o">=</span> <span class="n">batch_size</span> <span class="o">/</span> <span class="n">dataset_size</span>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="n">num_steps</span> <span class="o">=</span> <span class="mi">1000</span>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="c1"># --- Calibrate noise multiplier ---</span>
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="n">result</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">calibrate</span><span class="p">(</span>
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    <span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">),</span>
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    <span class="k">lambda</span> <span class="n">nm</span><span class="p">:</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">nm</span><span class="p">),</span> <span class="n">sample_rate</span><span class="p">)</span> <span class="o">*</span> <span class="n">num_steps</span><span class="p">,</span>
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>    <span class="n">param_min</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">param_max</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span>
-<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="p">)</span>
-<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="n">noise_multiplier</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">param</span>
-<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>
-<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="c1"># --- Create DP components ---</span>
-<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="n">key_sampling</span><span class="p">,</span> <span class="n">key_noise</span> <span class="o">=</span> <span class="n">split</span><span class="p">(</span><span class="n">key</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span> <span class="n">num</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
-<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>
-<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
-<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>    <span class="n">loss_fn</span><span class="p">,</span> <span class="n">clipping_norm</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">argnums</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">batch_argnums</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
-<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>    <span class="n">normalize_by</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
-<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="p">)</span>
-<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="n">noise_fn</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">gaussian_noise</span><span class="p">(</span>
-<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>    <span class="n">stddev</span><span class="o">=</span><span class="n">noise_multiplier</span> <span class="o">*</span> <span class="n">clip_state</span><span class="o">.</span><span class="n">sensitivity</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key_noise</span><span class="p">,</span>
-<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="p">)</span>
-<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>
-<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">adam</span><span class="p">(</span><span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
-<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a><span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
-<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>
-<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a><span class="n">sampler</span> <span class="o">=</span> <span class="n">PoissonSampler</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">sample_rate</span><span class="o">=</span><span class="n">sample_rate</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key_sampling</span><span class="p">)</span>
-<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a><span class="n">dataloader</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">(</span><span class="n">dataset</span><span class="p">,</span> <span class="n">batch_sampler</span><span class="o">=</span><span class="n">sampler</span><span class="p">)</span>
-<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>
-<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a><span class="c1"># --- Training loop ---</span>
-<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.accounting.accountant</span><span class="w"> </span><span class="kn">import</span> <span class="n">Accountant</span>
-<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a>
-<a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a><span class="n">step_proc</span> <span class="o">=</span> <span class="n">acc</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="n">acc</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">noise_multiplier</span><span class="p">),</span> <span class="n">sample_rate</span><span class="p">)</span>
-<a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a><span class="n">acct</span> <span class="o">=</span> <span class="n">Accountant</span><span class="p">(</span><span class="n">budget</span><span class="o">=</span><span class="n">acc</span><span class="o">.</span><span class="n">epsilon_budget</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">))</span>
-<a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a>
-<a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a><span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">dataloader</span><span class="p">:</span>
-<a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a>    <span class="n">grads</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">batch</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">clip_state</span><span class="p">)</span>
-<a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a>    <span class="n">noisy_grads</span><span class="p">,</span> <span class="n">noise_state</span> <span class="o">=</span> <span class="n">noise_fn</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">noise_state</span><span class="p">)</span>
-<a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a>
-<a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a>    <span class="n">updates</span><span class="p">,</span> <span class="n">opt_state</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">noisy_grads</span><span class="p">,</span> <span class="n">opt_state</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">params</span><span class="p">)</span>
-<a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a>    <span class="n">params</span> <span class="o">=</span> <span class="n">torchopt</span><span class="o">.</span><span class="n">apply_updates</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">updates</span><span class="p">)</span>
-<a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a>
-<a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a>    <span class="n">acct</span> <span class="o">=</span> <span class="n">acct</span> <span class="o">|</span> <span class="n">step_proc</span>
-<a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a>    <span class="k">if</span> <span class="n">acct</span><span class="o">.</span><span class="n">budget_exceeded</span><span class="p">:</span>
-<a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a>        <span class="k">break</span>
-<a id="__codelineno-0-56" name="__codelineno-0-56" href="#__codelineno-0-56"></a>
-<a id="__codelineno-0-57" name="__codelineno-0-57" href="#__codelineno-0-57"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Final privacy: epsilon=</span><span class="si">{</span><span class="n">acct</span><span class="o">.</span><span class="n">epsilon_at</span><span class="p">(</span><span class="mf">1e-5</span><span class="p">)</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<h1 id="liger-style-kernels-porting-plan-for-opaque">Liger-style kernels: porting plan for Opaque<a class="headerlink" href="#liger-style-kernels-porting-plan-for-opaque" title="Permanent link">&para;</a></h1>
+<p>This document is a <strong>roadmap</strong> for adapting ideas and Triton approaches from
+<a href="https://github.com/linkedin/Liger-Kernel">Liger Kernel</a> (BSD-2-Clause) into
+Opaque, with <strong>vmap(<code>grad(...)</code>)</strong> correctness and <strong>benchmark-gated</strong> auto-patching.</p>
+<p>It is <strong>not</strong> a commitment to copy Liger verbatim: reference implementation,
+numerics, and block sizes can be reused where license-compliant; autograd
+packaging must follow Opaque patterns.</p>
+<h2 id="goals">Goals<a class="headerlink" href="#goals" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Extend <strong>fused kernels</strong> in <code>opaque.patches</code>
+  where they <strong>win</strong> on wall time <strong>or</strong> peak memory.</li>
+<li>Extend <strong>model support</strong> in lockstep:</li>
+<li><code>opaque.transformers</code> — vmap-safe compat
+    (<code>patches/</code>, causal mask, attention, cache).</li>
+<li><code>opaque.patches.transformers</code> —
+    optional Triton patches (env-gated; see <code>OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES</code>).</li>
+<li><strong>Default auto-patch only</strong> if a kernel passes acceptance (below) on <strong>this
+  machine’s</strong> reference GPU (H100-class here): forward, backward, and
+  <strong>vmap(<code>grad</code>) backward</strong>.</li>
+</ul>
+<p>Non-goals for default patching: operations that only help standard Trainer
+loops without vmap; those may still ship as <strong>manual</strong> APIs under
+<code>opaque.patches.kernels</code>.</p>
+<h2 id="licensing">Licensing<a class="headerlink" href="#licensing" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Liger Kernel: <strong>BSD-2-Clause</strong> (Copyright LinkedIn).</li>
+<li>Opaque: <strong>Apache-2.0</strong>.</li>
+</ul>
+<p>Substantially derived files or blocks must <strong>retain BSD-2 copyright and
+license notices</strong> (file header, <code>NOTICE</code>, or <code>third_party/</code> — follow repo
+conventions once defined). Clean-room implementations that do not copy
+non-trivial expressive code remain Opaque-contributed under Apache-2.0.</p>
+<p>Do not imply LinkedIn endorsement of Opaque. <strong>This is not legal advice.</strong></p>
+<h2 id="technical-constraints">Technical constraints<a class="headerlink" href="#technical-constraints" title="Permanent link">&para;</a></h2>
+<h3 id="autograd-api">Autograd API<a class="headerlink" href="#autograd-api" title="Permanent link">&para;</a></h3>
+<p>Opaque uses the <strong>new-style</strong> <code>torch.autograd.Function</code> with <code>setup_context</code>,
+not legacy <code>forward(ctx, …)</code>. Required for <strong>functorch / vmap</strong> integration.</p>
+<p>Overhead per op is real: prefer <strong>larger fused ops</strong> (e.g. residual + RMSNorm)
+so kernel time dominates.</p>
+<h3 id="kernel-pattern">Kernel pattern<a class="headerlink" href="#kernel-pattern" title="Permanent link">&para;</a></h3>
+<p>Match existing ops: main <code>Opaque_*</code> class plus <code>_Opaque*Backward</code> (or
+equivalent) with <code>vmap</code> support where the main backward dispatches. See:</p>
+<ul>
+<li><code>packages/opaque-patches/src/opaque/patches/kernels/swiglu.py</code></li>
+<li><code>packages/opaque-patches/src/opaque/patches/kernels/rope_embedding.py</code></li>
+<li><code>packages/opaque-patches/src/opaque/patches/kernels/lora.py</code></li>
+</ul>
+<p>AGENTS.md notes incompatibility with <code>@torch.amp.custom_fwd</code> / <code>custom_bwd</code>.</p>
+<h3 id="huggingface-split">HuggingFace split<a class="headerlink" href="#huggingface-split" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Package</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Correctness under vmap</td>
+<td><code>opaque.transformers</code></td>
+<td>Patches in <code>patches/_shared.py</code>, <code>_standard_models.py</code>, <code>_gemma2.py</code>, <code>_phi3.py</code>, …</td>
+</tr>
+<tr>
+<td>Fused kernels</td>
+<td><code>opaque.patches</code></td>
+<td><code>opaque.patches.transformers</code> wires Triton into Transformers classes</td>
+</tr>
+</tbody>
+</table>
+<p>New architectures (e.g. VL) need <strong>both</strong> tracks before claiming support in
+<a href="../../user-guide/huggingface/"><code>docs/user-guide/huggingface.md</code></a>.</p>
+<h3 id="huggingface-version-pin">HuggingFace version pin<a class="headerlink" href="#huggingface-version-pin" title="Permanent link">&para;</a></h3>
+<p>Parity in this roadmap is evaluated against <code>transformers==4.57.1</code> (locked in
+<code>uv.lock</code>; see root <code>pyproject.toml</code> and <code>packages/opaque-transformers/pyproject.toml</code>).</p>
+<h2 id="auto-patch-acceptance-criteria">Auto-patch acceptance criteria<a class="headerlink" href="#auto-patch-acceptance-criteria" title="Permanent link">&para;</a></h2>
+<p>Before enabling <strong>default</strong> patching for a new op, record results in this doc or
+a linked benchmark log (table or committed JSON optional).</p>
+<h3 id="must-pass">Must pass<a class="headerlink" href="#must-pass" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Correctness</strong>: HF-faithful numerics within agreed tolerance; kernel + HF
+   smoke tests pass.</li>
+<li><strong>vmap</strong>: <code>vmap(grad(...))</code> tests pass (extend
+  <code>packages/opaque-patches/tests/kernels/</code> and HF tests as needed).</li>
+<li><strong>Performance or memory</strong>: On <strong>at least two</strong> shape buckets from the H100
+   matrix below:</li>
+<li><strong>≥10%</strong> wall-time improvement <strong>or</strong> <strong>≥10%</strong> peak CUDA memory reduction
+     vs baseline (PyTorch eager or current Opaque path), for <strong>forward</strong>,
+     <strong>backward</strong>, and <strong>vmap(<code>grad</code>) backward</strong>; and</li>
+<li><strong>≤5%</strong> regression on the remaining buckets, unless explicitly waived
+     (document why).</li>
+</ol>
+<p>If an op wins without vmap but fails the vmap path, ship <strong>kernels only</strong> or
+<strong>opt-in</strong> patch (document env flag).</p>
+<h3 id="baselines">Baselines<a class="headerlink" href="#baselines" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Norms / activations</strong>: HF module forward + <code>torch.autograd.grad</code> vs
+  <code>Opaque_*</code>.</li>
+<li><strong>Loss</strong>: Materialized logits + CE vs fused linear CE (where applicable).</li>
+</ul>
+<h2 id="h100-benchmarking-protocol">H100 benchmarking protocol<a class="headerlink" href="#h100-benchmarking-protocol" title="Permanent link">&para;</a></h2>
+<p>Hardware here: <strong>NVIDIA H100</strong> (or note exact SKU / driver / PyTorch / CUDA in
+the log).</p>
+<h3 id="environment">Environment<a class="headerlink" href="#environment" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Example: sync dev deps + Triton (adjust to your workflow)</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>uv<span class="w"> </span>sync<span class="w"> </span>--group<span class="w"> </span>dev<span class="w"> </span>--all-packages<span class="w"> </span>--extra<span class="w"> </span>all
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Optional: isolate clock / power for repeatable numbers (machine-specific)</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># sudo nvidia-smi -pm 1</span>
 </code></pre></div>
-<p>The sections below explain each part. Read them in order for a complete
-understanding, or jump to a specific topic.</p>
-<h2 id="topics">Topics<a class="headerlink" href="#topics" title="Permanent link">&para;</a></h2>
-<h3 id="foundations">Foundations<a class="headerlink" href="#foundations" title="Permanent link">&para;</a></h3>
+<h3 id="shape-matrix-minimum">Shape matrix (minimum)<a class="headerlink" href="#shape-matrix-minimum" title="Permanent link">&para;</a></h3>
+<p>Use <strong>bf16</strong> as primary; add fp16 if a kernel is half-specific.</p>
+<table>
+<thead>
+<tr>
+<th>Bucket</th>
+<th><code>batch</code> or vmap <code>N</code></th>
+<th><code>seq</code></th>
+<th><code>hidden</code></th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Small</td>
+<td>1–4</td>
+<td>512</td>
+<td>1024–2048</td>
+<td>Autograd overhead sensitive</td>
+</tr>
+<tr>
+<td>Medium</td>
+<td>8</td>
+<td>2048</td>
+<td>4096</td>
+<td>Typical finetune</td>
+</tr>
+<tr>
+<td>Large</td>
+<td>1–2</td>
+<td>8192+</td>
+<td>4096–8192</td>
+<td>Memory stress</td>
+</tr>
+</tbody>
+</table>
+<p>For <strong>vmap</strong>, set microbatch <code>N</code> (e.g. 4–16) matching DP-SGD use cases.</p>
+<h3 id="metrics">Metrics<a class="headerlink" href="#metrics" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong><a href="dp-concepts/">Differential Privacy Concepts</a></strong> -- What DP guarantees,
-  how DP-SGD works, privacy budgets, composition, and amplification.</li>
-<li><strong><a href="rng-key/">Random Number Generation</a></strong> -- Explicit RNG keys, splitting,
-  fold_in, and reproducibility in distributed training.</li>
+<li>Wall time: median of ≥10 runs after warmup (<code>torch.cuda.synchronize()</code>).</li>
+<li>Memory: <code>torch.cuda.max_memory_allocated()</code> reset per configuration, or
+  equivalent profiler.</li>
 </ul>
-<h3 id="core-pipeline">Core pipeline<a class="headerlink" href="#core-pipeline" title="Permanent link">&para;</a></h3>
+<h3 id="implementation-options">Implementation options<a class="headerlink" href="#implementation-options" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Ad-hoc scripts</strong> under <code>benchmarks/</code> (create if needed; keep optional /
+   non-CI unless stabilized).</li>
+<li><strong>pytest</strong> <code>@pytest.mark.slow</code> + <code>cuda</code> microbench modules mirroring CI
+  patterns in <code>AGENTS.md</code>.</li>
+</ol>
+<p>Record: PyTorch version, Triton version, GPU name, and command line in the
+benchmark log.</p>
+<h2 id="phased-roadmap">Phased roadmap<a class="headerlink" href="#phased-roadmap" title="Permanent link">&para;</a></h2>
+<h3 id="phase-0-foundations">Phase 0 — Foundations<a class="headerlink" href="#phase-0-foundations" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong><a href="clipping/">Per-Example Gradient Clipping</a></strong> -- <code>clipped_grad</code>,
-  <code>adaptive_clipped_grad</code>, <code>auto_clipped_grad</code>, microbatching, and
-  per-group clipping.</li>
-<li><strong><a href="noise/">Noise Addition</a></strong> -- Gaussian noise, bounded Gaussian variants
-  (truncated, rectified), and matrix-factorization correlated noise for DP-FTRL.</li>
-<li><strong><a href="accounting/">Privacy Accounting</a></strong> -- Composable <code>DpProcess</code> objects,
-  privacy metrics, calibration, and the <code>Accountant</code> helper.</li>
-<li><strong><a href="sampling/">Sampling &amp; Microbatching</a></strong> -- Poisson, truncated Poisson,
-  and cyclic samplers with distributed support.</li>
+<li>Finalize shape matrix and pass/fail thresholds for this repo.</li>
+<li>Add or extend a small benchmark harness (script or slow tests).</li>
+<li>License / attribution convention for any Liger-derived Triton (header text,
+  NOTICE).</li>
 </ul>
-<h3 id="integration">Integration<a class="headerlink" href="#integration" title="Permanent link">&para;</a></h3>
+<p><strong>Exit:</strong> Harness runs on H100; no new default auto-patches required.</p>
+<h3 id="phase-1-rmsnorm-and-fused-addrmsnorm">Phase 1 — RMSNorm and fused Add+RMSNorm<a class="headerlink" href="#phase-1-rmsnorm-and-fused-addrmsnorm" title="Permanent link">&para;</a></h3>
+<p><strong>Rationale:</strong> Largest gap vs Liger for decoder-only LMs; fuses multiple small
+ops and reduces torch→Triton launch overhead.</p>
+<p><strong>Work:</strong></p>
 <ul>
-<li><strong><a href="optimizers/">Optimizers</a></strong> -- Using TorchOpt functional optimizers with
-  DP-SGD.</li>
-<li><strong><a href="lr-scheduling/">LR Scheduling</a></strong> -- Warmup, cosine and inverse-sqrt
-  schedules; composing <code>with_warmup</code> with any decay curve.</li>
-<li><strong><a href="distributed/">Distributed Training</a></strong> -- DDP with synchronized noise
-  and gradient aggregation.</li>
-<li><strong><a href="huggingface/">HuggingFace Compatibility</a></strong> -- Using HuggingFace
-  Transformers models with Opaque, including LoRA, fused Triton kernels,
-  and model compatibility.</li>
-<li><strong><a href="memory-optimizations/">Memory Optimizations</a></strong> -- Microbatching,
-  gradient checkpointing, fused kernels, profiling, and configuration.</li>
-<li><strong><a href="auditing/">Privacy Auditing</a></strong> -- Empirical privacy validation via
-  membership inference.</li>
+<li>New modules under <code>opaque.patches.kernels</code> (names TBD: e.g.
+  <code>rms_norm.py</code>, <code>fused_add_rms_norm.py</code>).</li>
+<li><code>Opaque_*</code> + backward split with <code>setup_context</code> and vmap tests.</li>
+<li>Wire into <code>opaque.patches.transformers</code>
+  for families already in vmap standard patches (LLaMA, Mistral, Qwen2/3,
+  Phi-3, Gemma, Gemma2, Granite, Cohere).</li>
+<li>Gemma/Gemma2 casting and offset behavior must match HF and existing
+  <code>packages/opaque-patches/src/opaque/patches/transformers/models/gemma2.py</code> semantics.</li>
 </ul>
-<h3 id="reference">Reference<a class="headerlink" href="#reference" title="Permanent link">&para;</a></h3>
+<p><strong>Exit:</strong> Default patch only if acceptance criteria pass; extend
+<code>OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES</code> with granular tokens (e.g.
+<code>rmsnorm</code>, <code>fused_add_rms</code>).</p>
+<h3 id="phase-2-cross-entropy-lm-head-parity">Phase 2 — Cross-entropy / LM-head parity<a class="headerlink" href="#phase-2-cross-entropy-lm-head-parity" title="Permanent link">&para;</a></h3>
+<p><strong>Rationale:</strong> Liger CE supports label smoothing, z-loss, aux metrics; Opaque
+already has fused linear CE with Gemma2 softcapping and Cohere/Granite scaling.</p>
+<p><strong>Work:</strong> Port <strong>recipe-driven</strong> knobs only if H100 benchmarks show net benefit
+under vmap; avoid feature creep without measurements.</p>
+<p><strong>Status (2026-04-30):</strong> Implemented and benchmark-gated for the current
+<code>opaque-patches</code> test geometry.</p>
 <ul>
-<li><strong><a href="../limitations/">Known Limitations</a></strong> -- Flash Attention, DDP-only,
-  in-place operations, and other constraints.</li>
+<li>Added fused linear+CE <strong>label smoothing</strong> support in
+  <code>packages/opaque-patches/src/opaque/patches/kernels/linear_cross_entropy.py</code>
+  (forward + backward + vmap pathways).</li>
+<li>Updated HF fused ForCausalLM wiring in
+  <code>opaque.patches.transformers</code>
+  so non-zero <code>label_smoothing</code> can stay on the fused path when other loss
+  knobs are compatible.</li>
+<li>Added coverage:</li>
+<li>kernel-level gating tests:
+    <code>packages/opaque-patches/tests/transformers/components/test_fused_ce_gating.py</code></li>
+<li>kernel-level smoothing parity:
+    <code>packages/opaque-patches/tests/kernels/test_linear_cross_entropy.py</code></li>
+<li>HF fused-forward integration for <code>label_smoothing &gt; 0</code>:
+    <code>packages/opaque-patches/tests/transformers/components/test_fused_ce_label_smoothing.py</code></li>
 </ul>
+<p>Current perf baseline remains in the same envelope as pre-change runs for
+<code>label_smoothing=0</code> (differences are run-to-run noise); enabling
+<code>label_smoothing=0.1</code> showed negligible overhead in local spot checks.</p>
+<h3 id="phase-3-rope-and-extended-text-model-families">Phase 3 — RoPE and extended <strong>text</strong> model families<a class="headerlink" href="#phase-3-rope-and-extended-text-model-families" title="Permanent link">&para;</a></h3>
+<p><strong>Rationale (current):</strong> expand <strong>decoder-only text</strong> coverage (compat +
+kernels) where the contract matches existing primitives (half-split RoPE,
+SwiGLU, RMSNorm, fused CE). VL / M-RoPE remains <strong>out of scope</strong> for the
+default matrix until explicitly scheduled.</p>
+<p><strong>Work:</strong></p>
+<ul>
+<li><code>opaque.transformers</code>: vmap-safe masks and eager attention for each new text
+  family added to the patch list.</li>
+<li><code>opaque.patches</code>: register the same kernel hooks on the family’s
+  <code>modeling_*</code> module paths.</li>
+<li>Update <a href="../../user-guide/huggingface/"><code>docs/user-guide/huggingface.md</code></a> table
+  when a family lands.</li>
+</ul>
+<p><strong>Coverage (incremental):</strong> Module-level <code>apply_rotary_pos_emb</code> Triton swap now
+includes <strong>Cohere</strong> and <strong>Cohere2</strong> (same half-split contract as Llama). Tests:
+<code>packages/opaque-patches/tests/transformers/components/test_rope.py</code>.</p>
+<p><strong>Text-first scope (product default):</strong> kernel and compat expansion targets
+<strong>decoder-only text</strong> models (<code>ForCausalLM</code> and shared text modules). Example
+addition: <strong>OLMo2</strong> — SwiGLU / RMSNorm / RoPE / fused CE wiring in
+<code>opaque.patches.transformers</code>
+plus vmap eager-attention patches in <code>opaque.transformers</code>. OLMo2 uses a
+different residual layout than Llama (no <code>LlamaDecoderLayer</code>-style fused
+add+RMS block); fused post-attention kernels stay <strong>off</strong> until a dedicated
+factory exists.</p>
+<h3 id="phase-4-moe-and-wide-ffn">Phase 4 — MoE and wide FFN<a class="headerlink" href="#phase-4-moe-and-wide-ffn" title="Permanent link">&para;</a></h3>
+<p><strong>Rationale:</strong> Liger <code>fused_moe</code>, tiled MLP — high complexity; vmap through
+routing is non-trivial.</p>
+<p><strong>Work:</strong> Schedule only if product commits to MoE model families; treat
+auto-patch as <strong>opt-in</strong> until gated.</p>
+<h3 id="phase-5-chunked-alignment-preference-losses">Phase 5 — Chunked alignment / preference losses<a class="headerlink" href="#phase-5-chunked-alignment-preference-losses" title="Permanent link">&para;</a></h3>
+<p><strong>Rationale:</strong> Large memory wins for DPO/ORPO/… in standard training; vmap
+story is harder (chunk loops, ref model).</p>
+<p><strong>Work:</strong> Prefer <strong>manual</strong> <code>chunked_*</code> API first; default HF patch only if
+vmap acceptance is met or scope is explicitly non-vmap.</p>
+<h2 id="documentation-and-tests-to-update-per-phase">Documentation and tests to update per phase<a class="headerlink" href="#documentation-and-tests-to-update-per-phase" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../../user-guide/huggingface/"><code>docs/user-guide/huggingface.md</code></a> — kernel /
+  model table.</li>
+<li><code>packages/opaque-patches/tests/kernels/</code> —
+  vmap + numerical tests.</li>
+<li><code>packages/opaque-patches/tests/transformers/</code> —
+  integration / smoke.</li>
+<li><code>AGENTS.md</code> — only if new tooling or markers are added.</li>
+</ul>
+<h2 id="implementation-checklist-per-kernel">Implementation checklist (per kernel)<a class="headerlink" href="#implementation-checklist-per-kernel" title="Permanent link">&para;</a></h2>
+<ul>
+<li>[ ] <strong>Triton:</strong> forward + backward kernels; dtype / alignment / block sizes
+      tuned on H100.</li>
+<li>[ ] <strong>Autograd:</strong> <code>Opaque_*</code>, <code>_Backward</code>, <code>setup_context</code>; no
+      <code>custom_fwd</code>/<code>custom_bwd</code>.</li>
+<li>[ ] <strong>Tests:</strong> correctness, fallback (CPU / no Triton), <code>vmap(grad(...))</code>.</li>
+<li>[ ] <strong>Benchmarks:</strong> forward / backward / vmap-backward vs baseline; memory.</li>
+<li>[ ] <strong>Patching:</strong> HF class list + skip env; doc + changelog entry for merges
+      to <code>main</code>.</li>
+<li>[ ] <strong>License:</strong> attribution for BSD-2 derived material.</li>
+</ul>
+<h2 id="next-step">Next step<a class="headerlink" href="#next-step" title="Permanent link">&para;</a></h2>
+<p>Run <strong>Phase 0</strong> harness on this H100, then implement <strong>Phase 1</strong> behind
+benchmarks; iterate until default patch eligibility is demonstrated or the
+kernel ships as opt-in only.</p>
 
 
 
@@ -2044,10 +2262,10 @@ understanding, or jump to a specific topic.</p>
     
     
       
-      <script id="__config" type="application/json">{"base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.tracking", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../assets/javascripts/workers/search.973d3a69.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.tracking", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.973d3a69.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
-      <script src="../assets/javascripts/bundle.f55a23d4.min.js"></script>
+      <script src="../../assets/javascripts/bundle.f55a23d4.min.js"></script>
       
         <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
       

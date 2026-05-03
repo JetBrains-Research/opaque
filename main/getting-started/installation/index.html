@@ -1896,8 +1896,7 @@
 <li>PyTorch 2.10 or later</li>
 </ul>
 <h2 id="from-gcp-artifact-registry">From GCP Artifact Registry<a class="headerlink" href="#from-gcp-artifact-registry" title="Permanent link">&para;</a></h2>
-<p>Install <code>opaque</code> (pulls in <code>opaque-core</code>, <code>opaque-dpsgd</code>, <code>opaque-auditing</code>,
-and <code>opaque-accounting</code> by default):</p>
+<p>Install <code>opaque</code> as the single public package entrypoint:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pip<span class="w"> </span>install<span class="w"> </span>opaque<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span>--extra-index-url<span class="w"> </span>https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/
 </code></pre></div>
@@ -1906,13 +1905,11 @@ and <code>opaque-accounting</code> by default):</p>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--index<span class="w"> </span>https://europe-west4-python.pkg.dev/jetbrains-ml4se-fed/jbr-fed-python/simple/
 </code></pre></div>
 <h3 id="extras">Extras<a class="headerlink" href="#extras" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;opaque[dpftrl]&quot;</span><span class="w">        </span><span class="c1"># + opaque-dpftrl (correlated-noise mechanisms)</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;opaque[performance]&quot;</span><span class="w">   </span><span class="c1"># + opaque-performance (fused Triton kernels + HF kernel patches + checkpoint patches)</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;opaque[huggingface]&quot;</span><span class="w">   </span><span class="c1"># + opaque-huggingface (Transformers compat patches) + performance</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;opaque[auditing]&quot;</span><span class="w">      </span><span class="c1"># + opaque-auditing (empirical privacy auditing)</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;opaque[dpftrl]&quot;</span><span class="w">        </span><span class="c1"># + opaque-dpftrl (correlated-noise mechanisms)</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;opaque[transformers]&quot;</span><span class="w">  </span><span class="c1"># + opaque-transformers + opaque-patches[transformers]</span>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;opaque[all]&quot;</span><span class="w">           </span><span class="c1"># everything above, including [optimizers] extras</span>
 </code></pre></div>
-<p>Each sub-package is also installable directly, e.g. <code>pip install opaque-core</code>
-or <code>pip install opaque-dpsgd</code>.</p>
 <h2 id="from-source">From Source<a class="headerlink" href="#from-source" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Clone the repository</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/JetBrains-Research/opaque.git

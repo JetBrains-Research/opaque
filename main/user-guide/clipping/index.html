@@ -2522,9 +2522,9 @@ the full batch.</p>
 sums are accumulated in-place, so peak memory is proportional to
 <code>microbatch_size * model_parameters</code> instead of <code>batch_size * model_parameters</code>.</p>
 <h3 id="choosing-microbatch-size">Choosing microbatch size<a class="headerlink" href="#choosing-microbatch-size" title="Permanent link">&para;</a></h3>
-<p>Use <code>TrainingProfiler</code> from <code>opaque.profiling</code> to run a short sweep and
+<p>Use <code>TrainingProfiler</code> from <code>opaque.core.profiling</code> to run a short sweep and
 select the largest stable microbatch that does not OOM:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.profiling</span><span class="w"> </span><span class="kn">import</span> <span class="n">StepTimer</span><span class="p">,</span> <span class="n">TrainingProfiler</span><span class="p">,</span> <span class="n">reset_peak_memory</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.core.profiling</span><span class="w"> </span><span class="kn">import</span> <span class="n">StepTimer</span><span class="p">,</span> <span class="n">TrainingProfiler</span><span class="p">,</span> <span class="n">reset_peak_memory</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">profiler</span> <span class="o">=</span> <span class="n">TrainingProfiler</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="k">for</span> <span class="n">candidate_mb</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">64</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">]:</span>

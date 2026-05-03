@@ -972,9 +972,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#kernel-patching-lives-in-opaquehuggingfacepatches" class="md-nav__link">
+  <a href="#kernel-patching-lives-in-opaquepatches" class="md-nav__link">
     <span class="md-ellipsis">
-      Kernel patching lives in opaque.huggingface.patches
+      Kernel patching lives in opaque.patches
     </span>
   </a>
   
@@ -1802,9 +1802,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#kernel-patching-lives-in-opaquehuggingfacepatches" class="md-nav__link">
+  <a href="#kernel-patching-lives-in-opaquepatches" class="md-nav__link">
     <span class="md-ellipsis">
-      Kernel patching lives in opaque.huggingface.patches
+      Kernel patching lives in opaque.patches
     </span>
   </a>
   
@@ -1876,9 +1876,9 @@ for supported attention implementations.</p>
 Tensor Parallel, and Pipeline Parallel are not supported. Multi-node DDP
 should work but is not extensively tested. The NCCL backend is recommended;
 Gloo and MPI are not tested.</p>
-<h2 id="kernel-patching-lives-in-opaquehuggingfacepatches">Kernel patching lives in <code>opaque.huggingface.patches</code><a class="headerlink" href="#kernel-patching-lives-in-opaquehuggingfacepatches" title="Permanent link">&para;</a></h2>
+<h2 id="kernel-patching-lives-in-opaquepatches">Kernel patching lives in <code>opaque.patches</code><a class="headerlink" href="#kernel-patching-lives-in-opaquepatches" title="Permanent link">&para;</a></h2>
 <p>Kernel optimization and patching for HuggingFace models is part of
-<code>opaque.huggingface.patches</code> and is CUDA+Triton only.</p>
+<code>opaque.patches</code> and is CUDA+Triton only.</p>
 <p>Low-level Triton-backed <code>Opaque_*</code> autograd classes (for example,
 <code>Opaque_SwiGLU</code>, <code>Opaque_RoPE_QK</code>, <code>Opaque_LinearCrossEntropyLoss</code>) are
 internal implementation details and should not be imported directly in user
@@ -1889,7 +1889,7 @@ paths. To control patching behavior, use the <code>OPAQUE_SKIP_PYTORCH_PATCHES</
 environment variables. See
 <a href="../user-guide/huggingface/#configuration">HuggingFace Compatibility</a>.</p>
 <p>Advanced users can still call kernel wrappers directly via
-<code>opaque.performance.kernels</code>.</p>
+<code>opaque.patches.kernels</code>.</p>
 <h2 id="in-place-operations-under-vmap">In-place operations under vmap<a class="headerlink" href="#in-place-operations-under-vmap" title="Permanent link">&para;</a></h2>
 <p><code>torch.func.vmap</code> does not support in-place tensor operations. Models that
 use in-place operations (e.g., <code>x.add_()</code>, <code>x[:, 0] = 0</code>) in their

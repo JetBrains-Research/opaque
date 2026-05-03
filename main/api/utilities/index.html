@@ -2541,7 +2541,7 @@ optimizer = torch.optim.SGD([p for p in model.parameters() if p.requires_grad], 
 <details class="note" open>
   <summary>Note</summary>
   <p>Gradient checkpointing compatibility is handled by Patches 7-8 in
-<code>opaque.performance.torch.checkpoint</code>.  Those patches make
+<code>opaque.patches.torch.runtime</code>.  Those patches make
 <code>functional_call</code> record its (module, params) on a thread-local
 stack, and make <code>checkpoint</code> replay that context before
 recomputation.  This wrapper is purely functional — it delegates
@@ -2846,7 +2846,7 @@ entirely to <code>torch.func.functional_call</code>.</p>
 <a id="__codelineno-0-174" name="__codelineno-0-174"></a>
 <a id="__codelineno-0-175" name="__codelineno-0-175"></a><span class="sd">    Note:</span>
 <a id="__codelineno-0-176" name="__codelineno-0-176"></a><span class="sd">        Gradient checkpointing compatibility is handled by Patches 7-8 in</span>
-<a id="__codelineno-0-177" name="__codelineno-0-177"></a><span class="sd">        ``opaque.performance.torch.checkpoint``.  Those patches make</span>
+<a id="__codelineno-0-177" name="__codelineno-0-177"></a><span class="sd">        ``opaque.patches.torch.runtime``.  Those patches make</span>
 <a id="__codelineno-0-178" name="__codelineno-0-178"></a><span class="sd">        ``functional_call`` record its (module, params) on a thread-local</span>
 <a id="__codelineno-0-179" name="__codelineno-0-179"></a><span class="sd">        stack, and make ``checkpoint`` replay that context before</span>
 <a id="__codelineno-0-180" name="__codelineno-0-180"></a><span class="sd">        recomputation.  This wrapper is purely functional — it delegates</span>
@@ -3187,7 +3187,8 @@ An int means only unsqueeze when <code>tensor.ndim &lt; min_ndim</code>.</p>
 <span class="normal"><a href="#__codelineno-0-388">388</a></span>
 <span class="normal"><a href="#__codelineno-0-389">389</a></span>
 <span class="normal"><a href="#__codelineno-0-390">390</a></span>
-<span class="normal"><a href="#__codelineno-0-391">391</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-261" name="__codelineno-0-261"></a><span class="k">def</span><span class="w"> </span><span class="nf">with_batch_dim</span><span class="p">(</span>
+<span class="normal"><a href="#__codelineno-0-391">391</a></span>
+<span class="normal"><a href="#__codelineno-0-392">392</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-261" name="__codelineno-0-261"></a><span class="k">def</span><span class="w"> </span><span class="nf">with_batch_dim</span><span class="p">(</span>
 <a id="__codelineno-0-262" name="__codelineno-0-262"></a>    <span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span>
 <a id="__codelineno-0-263" name="__codelineno-0-263"></a>    <span class="n">batch_argnums</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(),</span>
 <a id="__codelineno-0-264" name="__codelineno-0-264"></a>    <span class="n">batch_kwargs</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(),</span>
@@ -3298,26 +3299,27 @@ An int means only unsqueeze when <code>tensor.ndim &lt; min_ndim</code>.</p>
 <a id="__codelineno-0-369" name="__codelineno-0-369"></a>                    <span class="k">return</span> <span class="n">x</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
 <a id="__codelineno-0-370" name="__codelineno-0-370"></a>                <span class="k">return</span> <span class="n">x</span>
 <a id="__codelineno-0-371" name="__codelineno-0-371"></a>
-<a id="__codelineno-0-372" name="__codelineno-0-372"></a>            <span class="n">args_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">tree_map</span><span class="p">(</span><span class="n">_unsqueeze_arg</span><span class="p">,</span> <span class="n">args_list</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
-<a id="__codelineno-0-373" name="__codelineno-0-373"></a>
-<a id="__codelineno-0-374" name="__codelineno-0-374"></a>        <span class="c1"># Process keyword args</span>
-<a id="__codelineno-0-375" name="__codelineno-0-375"></a>        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">threshold</span> <span class="ow">in</span> <span class="n">batch_kwargs_dict</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-<a id="__codelineno-0-376" name="__codelineno-0-376"></a>            <span class="k">if</span> <span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">kwargs</span> <span class="ow">or</span> <span class="n">kwargs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-<a id="__codelineno-0-377" name="__codelineno-0-377"></a>                <span class="k">continue</span>
-<a id="__codelineno-0-378" name="__codelineno-0-378"></a>            <span class="n">val</span> <span class="o">=</span> <span class="n">kwargs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
-<a id="__codelineno-0-379" name="__codelineno-0-379"></a>            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="ow">and</span> <span class="n">_needs_unsqueeze</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="n">threshold</span><span class="p">):</span>
-<a id="__codelineno-0-380" name="__codelineno-0-380"></a>                <span class="n">unsqueezed</span> <span class="o">=</span> <span class="kc">True</span>
-<a id="__codelineno-0-381" name="__codelineno-0-381"></a>                <span class="n">kwargs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">val</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-<a id="__codelineno-0-382" name="__codelineno-0-382"></a>
-<a id="__codelineno-0-383" name="__codelineno-0-383"></a>        <span class="n">result</span> <span class="o">=</span> <span class="n">fn</span><span class="p">(</span><span class="o">*</span><span class="n">args_list</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-<a id="__codelineno-0-384" name="__codelineno-0-384"></a>
-<a id="__codelineno-0-385" name="__codelineno-0-385"></a>        <span class="k">if</span> <span class="n">conditional</span> <span class="ow">and</span> <span class="n">unsqueezed</span><span class="p">:</span>
-<a id="__codelineno-0-386" name="__codelineno-0-386"></a>            <span class="n">result</span> <span class="o">=</span> <span class="n">_squeeze_output</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
-<a id="__codelineno-0-387" name="__codelineno-0-387"></a>
-<a id="__codelineno-0-388" name="__codelineno-0-388"></a>        <span class="k">return</span> <span class="n">result</span>
-<a id="__codelineno-0-389" name="__codelineno-0-389"></a>
-<a id="__codelineno-0-390" name="__codelineno-0-390"></a>    <span class="n">wrapper</span><span class="o">.</span><span class="n">_opaque_batchified</span> <span class="o">=</span> <span class="kc">True</span>
-<a id="__codelineno-0-391" name="__codelineno-0-391"></a>    <span class="k">return</span> <span class="n">wrapper</span>
+<a id="__codelineno-0-372" name="__codelineno-0-372"></a>            <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">args_list</span><span class="p">):</span>
+<a id="__codelineno-0-373" name="__codelineno-0-373"></a>                <span class="n">args_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">tree_map</span><span class="p">(</span><span class="n">_unsqueeze_arg</span><span class="p">,</span> <span class="n">args_list</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+<a id="__codelineno-0-374" name="__codelineno-0-374"></a>
+<a id="__codelineno-0-375" name="__codelineno-0-375"></a>        <span class="c1"># Process keyword args</span>
+<a id="__codelineno-0-376" name="__codelineno-0-376"></a>        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">threshold</span> <span class="ow">in</span> <span class="n">batch_kwargs_dict</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+<a id="__codelineno-0-377" name="__codelineno-0-377"></a>            <span class="k">if</span> <span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">kwargs</span> <span class="ow">or</span> <span class="n">kwargs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-378" name="__codelineno-0-378"></a>                <span class="k">continue</span>
+<a id="__codelineno-0-379" name="__codelineno-0-379"></a>            <span class="n">val</span> <span class="o">=</span> <span class="n">kwargs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+<a id="__codelineno-0-380" name="__codelineno-0-380"></a>            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="ow">and</span> <span class="n">_needs_unsqueeze</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="n">threshold</span><span class="p">):</span>
+<a id="__codelineno-0-381" name="__codelineno-0-381"></a>                <span class="n">unsqueezed</span> <span class="o">=</span> <span class="kc">True</span>
+<a id="__codelineno-0-382" name="__codelineno-0-382"></a>                <span class="n">kwargs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">val</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<a id="__codelineno-0-383" name="__codelineno-0-383"></a>
+<a id="__codelineno-0-384" name="__codelineno-0-384"></a>        <span class="n">result</span> <span class="o">=</span> <span class="n">fn</span><span class="p">(</span><span class="o">*</span><span class="n">args_list</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+<a id="__codelineno-0-385" name="__codelineno-0-385"></a>
+<a id="__codelineno-0-386" name="__codelineno-0-386"></a>        <span class="k">if</span> <span class="n">conditional</span> <span class="ow">and</span> <span class="n">unsqueezed</span><span class="p">:</span>
+<a id="__codelineno-0-387" name="__codelineno-0-387"></a>            <span class="n">result</span> <span class="o">=</span> <span class="n">_squeeze_output</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+<a id="__codelineno-0-388" name="__codelineno-0-388"></a>
+<a id="__codelineno-0-389" name="__codelineno-0-389"></a>        <span class="k">return</span> <span class="n">result</span>
+<a id="__codelineno-0-390" name="__codelineno-0-390"></a>
+<a id="__codelineno-0-391" name="__codelineno-0-391"></a>    <span class="n">wrapper</span><span class="o">.</span><span class="n">_opaque_batchified</span> <span class="o">=</span> <span class="kc">True</span>
+<a id="__codelineno-0-392" name="__codelineno-0-392"></a>    <span class="k">return</span> <span class="n">wrapper</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>

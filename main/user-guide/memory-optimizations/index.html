@@ -2141,7 +2141,7 @@ GPU utilization. Below that, the overhead of launching kernels dominates.</p>
 <h3 id="tuning-workflow">Tuning workflow<a class="headerlink" href="#tuning-workflow" title="Permanent link">&para;</a></h3>
 <p>Use a short manual sweep with <code>TrainingProfiler</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.clipping</span><span class="w"> </span><span class="kn">import</span> <span class="n">clipped_grad</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.profiling</span><span class="w"> </span><span class="kn">import</span> <span class="n">StepTimer</span><span class="p">,</span> <span class="n">TrainingProfiler</span><span class="p">,</span> <span class="n">reset_peak_memory</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.core.profiling</span><span class="w"> </span><span class="kn">import</span> <span class="n">StepTimer</span><span class="p">,</span> <span class="n">TrainingProfiler</span><span class="p">,</span> <span class="n">reset_peak_memory</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">def</span><span class="w"> </span><span class="nf">try_microbatch</span><span class="p">(</span><span class="n">candidate_mb</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">grad_fn</span><span class="p">,</span> <span class="n">clip_state</span> <span class="o">=</span> <span class="n">clipped_grad</span><span class="p">(</span>
@@ -2168,18 +2168,20 @@ GPU utilization. Below that, the overhead of launching kernels dominates.</p>
 </ol>
 <h2 id="gradient-checkpointing">Gradient checkpointing<a class="headerlink" href="#gradient-checkpointing" title="Permanent link">&para;</a></h2>
 <p>PyTorch's <code>torch.utils.checkpoint.checkpoint</code> is supported under
-<code>vmap(grad(...))</code>. Patches are applied automatically at <code>import opaque</code>
-time via <code>opaque.performance.torch</code>.</p>
+<code>vmap(grad(...))</code>. Enable the runtime patch once with
+<code>opaque.patches.apply_runtime_patches()</code>.</p>
 <p><strong>With PyTorch directly</strong> (non-reentrant checkpoint only):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opaque</span>  <span class="c1"># must be imported before checkpoint to apply patches</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.patches</span><span class="w"> </span><span class="kn">import</span> <span class="n">apply_runtime_patches</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">torch.utils.checkpoint</span><span class="w"> </span><span class="kn">import</span> <span class="n">checkpoint</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="k">def</span><span class="w"> </span><span class="nf">my_model</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">h</span> <span class="o">=</span> <span class="n">checkpoint</span><span class="p">(</span><span class="n">block1</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">use_reentrant</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">h</span> <span class="o">=</span> <span class="n">checkpoint</span><span class="p">(</span><span class="n">block2</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">use_reentrant</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="k">return</span> <span class="n">h</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="n">grads</span> <span class="o">=</span> <span class="n">vmap</span><span class="p">(</span><span class="n">grad</span><span class="p">(</span><span class="n">my_model</span><span class="p">))(</span><span class="n">batch_x</span><span class="p">)</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">apply_runtime_patches</span><span class="p">()</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="k">def</span><span class="w"> </span><span class="nf">my_model</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">h</span> <span class="o">=</span> <span class="n">checkpoint</span><span class="p">(</span><span class="n">block1</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">use_reentrant</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">h</span> <span class="o">=</span> <span class="n">checkpoint</span><span class="p">(</span><span class="n">block2</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">use_reentrant</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="k">return</span> <span class="n">h</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="n">grads</span> <span class="o">=</span> <span class="n">vmap</span><span class="p">(</span><span class="n">grad</span><span class="p">(</span><span class="n">my_model</span><span class="p">))(</span><span class="n">batch_x</span><span class="p">)</span>
 </code></pre></div>
 <p><strong>With HuggingFace models:</strong></p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;meta-llama/Llama-3.1-8B&quot;</span><span class="p">)</span>
@@ -2240,7 +2242,8 @@ combined with gradient checkpointing, it offloads the checkpoint inputs
 <h2 id="fused-triton-kernels">Fused Triton kernels<a class="headerlink" href="#fused-triton-kernels" title="Permanent link">&para;</a></h2>
 <p>Opaque includes fused Triton kernels that replace standard PyTorch operations
 in supported models, reducing memory and improving throughput without changing
-training semantics. Patches are applied automatically on <code>import opaque</code>.</p>
+training semantics. These are enabled by <code>apply_model_patches(model)</code> after
+runtime patching has been set up.</p>
 <p>The kernels reduce memory by eliminating intermediate tensors (fused forward
 passes) and recomputing activations in backward instead of saving them. Each
 kernel also implements native vmap support, so <code>vmap(grad())</code> works without
@@ -2377,7 +2380,7 @@ from hidden states, never materializing the full logits tensor.</p>
 <h3 id="trainingprofiler">TrainingProfiler<a class="headerlink" href="#trainingprofiler" title="Permanent link">&para;</a></h3>
 <p>Use <code>TrainingProfiler</code> to track checkpoints and step-level metrics in your
 training loop.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.profiling</span><span class="w"> </span><span class="kn">import</span> <span class="n">StepTimer</span><span class="p">,</span> <span class="n">TrainingProfiler</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">opaque.core.profiling</span><span class="w"> </span><span class="kn">import</span> <span class="n">StepTimer</span><span class="p">,</span> <span class="n">TrainingProfiler</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">profiler</span> <span class="o">=</span> <span class="n">TrainingProfiler</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">profiler</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">profiler</span><span class="o">.</span><span class="n">mark</span><span class="p">(</span><span class="s2">&quot;start&quot;</span><span class="p">)</span>
@@ -2449,7 +2452,7 @@ the training loop (e.g., appending to a list without detaching).</p>
 <code>(batch*seq, vocab)</code> logits tensor is materialized. For 128K vocab models,
 this uses ~2 GB per sample. Re-enable fused CE or reduce batch size.</p>
 <h2 id="api-reference">API reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
-<p>See the <code>opaque.profiling</code> module for complete function signatures.</p>
+<p>See the <code>opaque.core.profiling</code> module for complete function signatures.</p>
 
 
 
