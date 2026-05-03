@@ -46,7 +46,7 @@ plugins:
             - packages/opaque-auditing/src
             - packages/opaque-accounting
             - packages/opaque-performance/src
-            - packages/opaque-huggingface/src
+            - packages/opaque-transformers/src
           options:
             docstring_style: google
             show_source: true

@@ -44,7 +44,7 @@ jobs:
           - opaque-dpftrl
           - opaque-auditing
           - opaque-performance
-          - opaque-huggingface
+          - opaque-transformers
 
     steps:
       - uses: actions/checkout@v5

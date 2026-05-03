@@ -1,4 +1,5 @@
 import pytest
+pytest.importorskip("transformers")
 from opaque.patches import apply_runtime_patches
 
 def test_loss_mapping():

@@ -3,7 +3,7 @@
 Opaque works with HuggingFace Transformers models. Patches are split across
 two sub-packages:
 
-- `opaque.huggingface` — compatibility patches (vmap-safe attention,
+- `opaque.transformers` — compatibility patches (vmap-safe attention,
   KV-cache workarounds, Poisson-collator compat) that make Transformers
   models run correctly under `vmap(grad(...))`.
 - `opaque.performance.huggingface` — fused Triton kernel patches (SwiGLU,
@@ -18,7 +18,7 @@ Tested against `transformers==4.57.1`.
 Patches apply automatically on import:
 
 ```python
-import opaque.huggingface          # compat patches live
+import opaque.transformers          # compat patches live
 import opaque.performance          # torch + HF kernel patches live
 ```
 
@@ -373,7 +373,7 @@ vars, set **before** the matching import:
 | Variable | Scope | Values |
 |----------|-------|--------|
 | `OPAQUE_SKIP_PYTORCH_PATCHES` | `opaque.performance` | `all`, `checkpoint` |
-| `OPAQUE_SKIP_TRANSFORMERS_PATCHES` | `opaque.huggingface` compat | `all`, or `vmap,kv_cache,batchify,data` |
+| `OPAQUE_SKIP_TRANSFORMERS_PATCHES` | `opaque.transformers` compat | `all`, or `vmap,kv_cache,batchify,data` |
 | `OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES` | vmap compat | `all`, or `shared,standard,gemma2,phi3` |
 | `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES` | HF Triton kernels (performance) | `all`, or `swiglu,rope,ce,fused_ce,lora` |
 | `OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES` | Poisson-collator compat | `all` or `collator` |
@@ -393,7 +393,7 @@ os.environ["OPAQUE_SKIP_TRANSFORMERS_PATCHES"] = "all"
 ```python
 import os
 os.environ["OPAQUE_SKIP_TRANSFORMERS_PATCHES"] = "all"
-import opaque.huggingface     # no-op compat patch
+import opaque.transformers     # no-op compat patch
 import opaque.performance     # performance/kernel patches still active
 ```
 

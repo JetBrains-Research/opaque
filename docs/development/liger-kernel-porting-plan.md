@@ -13,7 +13,7 @@ packaging must follow Opaque patterns.
 - Extend **fused kernels** in [`opaque.performance`](../../packages/opaque-performance)
   where they **win** on wall time **or** peak memory.
 - Extend **model support** in lockstep:
-  - [`opaque.huggingface`](../../packages/opaque-huggingface) — vmap-safe compat
+  - [`opaque.transformers`](../../packages/opaque-transformers) — vmap-safe compat
     (`patches/`, causal mask, attention, cache).
   - [`opaque.performance.huggingface`](../../packages/opaque-performance/src/opaque/performance/huggingface/kernel_patches.py) —
     optional Triton patches (env-gated; see `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES`).
@@ -62,7 +62,7 @@ AGENTS.md notes incompatibility with `@torch.amp.custom_fwd` / `custom_bwd`.
 
 | Layer | Package | Role |
 |-------|---------|------|
-| Correctness under vmap | `opaque.huggingface` | Patches in `patches/_shared.py`, `_standard_models.py`, `_gemma2.py`, `_phi3.py`, … |
+| Correctness under vmap | `opaque.transformers` | Patches in `patches/_shared.py`, `_standard_models.py`, `_gemma2.py`, `_phi3.py`, … |
 | Fused kernels | `opaque.performance` | `kernel_patches.py` wires Triton into Transformers classes |
 
 New architectures (e.g. VL) need **both** tracks before claiming support in
@@ -72,7 +72,7 @@ New architectures (e.g. VL) need **both** tracks before claiming support in
 
 Parity in this roadmap is evaluated against `transformers==4.57.1` (locked in
 `uv.lock`; see root [`pyproject.toml`](../../pyproject.toml) and
-[`packages/opaque-huggingface/pyproject.toml`](../../packages/opaque-huggingface/pyproject.toml)).
+[`packages/opaque-transformers/pyproject.toml`](../../packages/opaque-transformers/pyproject.toml)).
 
 ## Auto-patch acceptance criteria
 
@@ -171,7 +171,7 @@ ops and reduces torch→Triton launch overhead.
   for families already in vmap standard patches (LLaMA, Mistral, Qwen2/3,
   Phi-3, Gemma, Gemma2, Granite, Cohere).
 - Gemma/Gemma2 casting and offset behavior must match HF and existing
-  [`_gemma2.py`](../../packages/opaque-huggingface/src/opaque/huggingface/patches/_gemma2.py) semantics.
+  [`_gemma2.py`](../../packages/opaque-transformers/src/opaque/huggingface/patches/_gemma2.py) semantics.
 
 **Exit:** Default patch only if acceptance criteria pass; extend
 `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES` with granular tokens (e.g.
@@ -216,7 +216,7 @@ default matrix until explicitly scheduled.
 
 **Work:**
 
-- `opaque.huggingface`: vmap-safe masks and eager attention for each new text
+- `opaque.transformers`: vmap-safe masks and eager attention for each new text
   family added to the patch list.
 - `opaque.performance`: register the same kernel hooks on the family’s
   `modeling_*` module paths.
@@ -231,7 +231,7 @@ includes **Cohere** and **Cohere2** (same half-split contract as Llama). Tests:
 **decoder-only text** models (``ForCausalLM`` and shared text modules). Example
 addition: **OLMo2** — SwiGLU / RMSNorm / RoPE / fused CE wiring in
 [`kernel_patches.py`](../../packages/opaque-performance/src/opaque/performance/huggingface/kernel_patches.py)
-plus vmap eager-attention patches in `opaque.huggingface`. OLMo2 uses a
+plus vmap eager-attention patches in `opaque.transformers`. OLMo2 uses a
 different residual layout than Llama (no ``LlamaDecoderLayer``-style fused
 add+RMS block); fused post-attention kernels stay **off** until a dedicated
 factory exists.
@@ -258,7 +258,7 @@ vmap acceptance is met or scope is explicitly non-vmap.
   model table.
 - [`packages/opaque-performance/tests/kernels/`](../../packages/opaque-performance/tests/kernels/) —
   vmap + numerical tests.
-- [`packages/opaque-huggingface/tests/huggingface/`](../../packages/opaque-huggingface/tests/huggingface/) —
+- [`packages/opaque-transformers/tests/huggingface/`](../../packages/opaque-transformers/tests/huggingface/) —
   integration / smoke.
 - [`AGENTS.md`](../../AGENTS.md) — only if new tooling or markers are added.
 

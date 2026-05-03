@@ -27,7 +27,7 @@ uv add opaque \
 ```bash
 pip install "opaque[dpftrl]"        # + opaque-dpftrl (correlated-noise mechanisms)
 pip install "opaque[performance]"   # + opaque-performance (fused Triton kernels + HF kernel patches + checkpoint patches)
-pip install "opaque[huggingface]"   # + opaque-huggingface (Transformers compat patches) + performance
+pip install "opaque[huggingface]"   # + opaque-transformers (Transformers compat patches) + performance
 pip install "opaque[all]"           # everything above, including [optimizers] extras
 ```
 

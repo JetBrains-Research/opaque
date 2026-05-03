@@ -134,7 +134,7 @@ jobs:
 
       - name: Import all public namespaces
         run: |
-          uv run python -c "import opaque.core, opaque.distributed, opaque.functional, opaque.dpsgd, opaque.dpsgd.sampling, opaque.dpftrl, opaque.auditing, opaque.performance, opaque.performance.profiling, opaque.performance.kernels, opaque.performance.torch.checkpoint, opaque.performance.huggingface, opaque.huggingface, opaque.huggingface.patches, opaque.accounting; print('OK')"
+          uv run python -c "import opaque.core, opaque.distributed, opaque.functional, opaque.dpsgd, opaque.dpsgd.sampling, opaque.dpftrl, opaque.auditing, opaque.performance, opaque.performance.profiling, opaque.performance.kernels, opaque.performance.torch.checkpoint, opaque.performance.huggingface, opaque.transformers, opaque.transformers.patches, opaque.accounting; print('OK')"
 
   docs:
     name: Build documentation
@@ -206,7 +206,7 @@ jobs:
           - opaque-dpftrl
           - opaque-auditing
           - opaque-performance
-          - opaque-huggingface
+          - opaque-transformers
     steps:
       - uses: actions/checkout@v5
         with:

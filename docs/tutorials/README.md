@@ -34,5 +34,5 @@ jupyter lab docs/tutorials/
 ```
 
 The `examples` group ships Jupyter, matplotlib, torchvision, torchopt,
-datasets, and wandb; HuggingFace + PEFT come via the `opaque-huggingface[peft]`
+datasets, and wandb; HuggingFace + PEFT come via the `opaque-transformers[peft]`
 extra. There is no separate `tutorials` group.

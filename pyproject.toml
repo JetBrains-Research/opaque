@@ -31,26 +31,24 @@ classifiers = [
     "Topic :: Security",
 ]
 dependencies = [
-    "opaque-core==0.0.0.dev0",
-    "opaque-dpsgd==0.0.0.dev0",
-    "opaque-accounting==0.0.0.dev0",
-    "opaque-patches==0.0.0.dev0",
+    "opaque-core",
+    "opaque-accounting",
+    "opaque-dpsgd",
+    "opaque-patches",
 ]
 
 [project.optional-dependencies]
-auditing = ["opaque-auditing==0.0.0.dev0"]
-dpftrl = ["opaque-dpftrl==0.0.0.dev0"]
-performance = ["opaque-patches==0.0.0.dev0"]
-huggingface = [
-    "opaque-patches==0.0.0.dev0",
-]
-peft = [
-    "opaque-patches==0.0.0.dev0",
+auditing = ["opaque-auditing"]
+dpftrl = ["opaque-dpftrl"]
+transformers = [
+  "opaque-transformers",
+  "opaque-patches[transofrmers]"
 ]
 all = [
-    "opaque-auditing==0.0.0.dev0",
-    "opaque-dpftrl==0.0.0.dev0",
-    "opaque-patches==0.0.0.dev0",
+    "opaque-auditing",
+    "opaque-dpftrl",
+    "opaque-patches",
+    "opaque-transformers"
 ]
 
 # The ``opaque`` namespace is pure PEP 420, composed by whichever
@@ -78,7 +76,7 @@ workspace.members = [
     "packages/opaque-dpsgd",
     "packages/opaque-dpftrl",
     "packages/opaque-auditing",
-    "packages/opaque-huggingface",
+    "packages/opaque-transformers",
     "packages/opaque-accounting",
     "packages/opaque-patches",
 ]
@@ -92,7 +90,7 @@ opaque-core = { workspace = true }
 opaque-dpsgd = { workspace = true }
 opaque-dpftrl = { workspace = true }
 opaque-auditing = { workspace = true }
-opaque-huggingface = { workspace = true }
+opaque-transformers = { workspace = true }
 opaque-accounting = { workspace = true }
 opaque-patches = { workspace = true }
 

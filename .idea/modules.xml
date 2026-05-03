@@ -8,8 +8,8 @@
       <module fileurl="file://$PROJECT_DIR$/.idea/opaque-core.iml" filepath="$PROJECT_DIR$/.idea/opaque-core.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/opaque-dpftrl.iml" filepath="$PROJECT_DIR$/.idea/opaque-dpftrl.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/opaque-dpsgd.iml" filepath="$PROJECT_DIR$/.idea/opaque-dpsgd.iml" />
-      <module fileurl="file://$PROJECT_DIR$/.idea/opaque-huggingface.iml" filepath="$PROJECT_DIR$/.idea/opaque-huggingface.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/opaque-patches.iml" filepath="$PROJECT_DIR$/.idea/opaque-patches.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/opaque-transformers.iml" filepath="$PROJECT_DIR$/.idea/opaque-transformers.iml" />
     </modules>
   </component>
 </project>

@@ -23,12 +23,14 @@ classifiers = [
 ]
 dependencies = [
     "torch>=2.10.0",
-    "transformers==4.57.1",
-    "opaque-core>=0.0.0.dev0",
+    "opaque-core",
 ]
 
 [project.optional-dependencies]
-peft = ["peft>=0.13.0"]
+transformers = [
+  "transformers==4.57.1",
+  "peft>=0.13.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -45,4 +47,3 @@ package = true
 
 [tool.uv.sources]
 opaque-core = { workspace = true }
-opaque-huggingface = { workspace = true }

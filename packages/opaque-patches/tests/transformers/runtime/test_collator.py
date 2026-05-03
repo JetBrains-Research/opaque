@@ -1,4 +1,5 @@
 import pytest
+pytest.importorskip("transformers")
 from transformers import DataCollatorForLanguageModeling, AutoTokenizer
 from opaque.patches import apply_runtime_patches
 

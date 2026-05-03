@@ -26,7 +26,7 @@ installing under the shared `opaque.*` namespace:
 | `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, JME, λ-CGD), AdamW-JME, correlated-noise samplers |
 | `opaque-auditing` | `opaque.auditing` | Empirical privacy auditing (one-run, coin-flip, loss attacks) |
 | `opaque-performance` | `opaque.performance`, `opaque.performance.huggingface`, `opaque.performance.profiling` | Fused Triton kernels, PyTorch checkpoint patches, HF model kernel patches, memory/step profiler |
-| `opaque-huggingface` | `opaque.huggingface` | HuggingFace Transformers compatibility patches (vmap-safe attention, KV cache, Poisson collator) |
+| `opaque-transformers` | `opaque.transformers` | HuggingFace Transformers compatibility patches (vmap-safe attention, KV cache, Poisson collator) |
 | `opaque-accounting` | `opaque.accounting` | PLD privacy accounting (Rust/PyO3 backend) |
 
 [PEP 420]: https://peps.python.org/pep-0420/
@@ -42,7 +42,7 @@ opaque.dpsgd.{noise,clipping,sampling,optimizers}          <- opaque-dpsgd
 opaque.dpftrl.{noise,sampling,optimizers}                  <- opaque-dpftrl
 opaque.auditing                                            <- opaque-auditing
 opaque.performance.{kernels,torch,profiling,huggingface}   <- opaque-performance
-opaque.huggingface.{patches,trainer,callbacks,...}         <- opaque-huggingface
+opaque.transformers.{patches,trainer,callbacks,...}         <- opaque-transformers
 opaque.accounting (._native)                               <- opaque-accounting
 ```
 
@@ -63,7 +63,7 @@ Extras:
 ```bash
 pip install "opaque[dpftrl]"        # + opaque-dpftrl
 pip install "opaque[performance]"   # + opaque-performance
-pip install "opaque[huggingface]"   # + opaque-huggingface + opaque-performance
+pip install "opaque[huggingface]"   # + opaque-transformers + opaque-performance
 pip install "opaque[all]"           # everything
 ```
 
@@ -73,12 +73,12 @@ without `pip install opaque`.
 
 ### Patching
 
-`opaque.performance` and `opaque.huggingface` apply their patches
+`opaque.performance` and `opaque.transformers` apply their patches
 automatically on import. Disable selectively:
 
 ```bash
 OPAQUE_SKIP_PYTORCH_PATCHES=all             # skip all opaque.performance patches
-OPAQUE_SKIP_TRANSFORMERS_PATCHES=all        # skip all opaque.huggingface compat patches
+OPAQUE_SKIP_TRANSFORMERS_PATCHES=all        # skip all opaque.transformers compat patches
 OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all # skip the HF kernel patches (performance side)
 ```
 
