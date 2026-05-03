@@ -11,7 +11,8 @@ from opaque.patches.transformers._router import _patch_forward
 from opaque.patches.transformers.components.cross_entropy import _make_fused_ce_causal_lm_forward
 from opaque.patches.transformers.components.rms_norm import _rmsnorm_fac_glm4
 from opaque.patches.transformers.components.swiglu import _make_phi3_mlp_forward
-from opaque.patches.transformers.components.attention import vmap_repeat_kv, vmap_eager_attention_forward, apply_module_masking_patch
+from opaque.patches.transformers.components.attention import vmap_repeat_kv, vmap_eager_attention_forward
+from opaque.patches.transformers.components.masking import apply_module_masking_patch
 
 
 logger = logging.getLogger(__name__)

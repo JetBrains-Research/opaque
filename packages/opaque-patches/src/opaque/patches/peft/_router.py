@@ -122,7 +122,13 @@ def _auto_fuse_lora(model):
         )
 
 
-def apply_peft_model_patches(model) -> None:
+def apply_peft_model_patches(
+    model,
+    *,
+    performance: bool = True,
+    compat: bool = True,
+    **kwargs
+) -> None:
     """Manually apply fused LoRA patching (QKV + MLP + Linear) to a PEFT model.
 
     Use this when loading a pre-existing PEFT model (e.g., from checkpoint)
@@ -137,6 +143,10 @@ def apply_peft_model_patches(model) -> None:
     Args:
         model: A PEFT-wrapped model with LoRA adapters.
     """
+    fuse_lora = kwargs.get("fuse_lora", performance)
+    if not fuse_lora:
+        return
+
     patched_lora = False
     for module in model.modules():
         cls_name = type(module).__name__

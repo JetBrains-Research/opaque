@@ -85,6 +85,7 @@ def apply_transformers_model_patches(
             models_module = importlib.import_module("opaque.patches.transformers.models." + family)
             patch_fn = getattr(models_module, "apply_" + family.replace("-", "_") + "_patches")
         except (ImportError, AttributeError) as e:
+            print(f"opaque: Could not load patch function for {family}: {e}")
             logger.debug(f"opaque: Could not load patch function for {family}: {e}")
             patch_fn = None
             

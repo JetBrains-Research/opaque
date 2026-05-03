@@ -20,7 +20,7 @@ class TestCrossEntropyPatches:
 
     def test_causal_lm_loss_matches_pytorch(self, device):
         """Patched ForCausalLMLoss should match F.cross_entropy reference."""
-        from opaque.patches.transformers.components import _opaque_causal_lm_loss
+        from opaque.patches.transformers.components.cross_entropy import _opaque_causal_lm_loss
         batch, seq_len, vocab_size = (2, 16, 1000)
         logits = torch.randn(batch, seq_len, vocab_size, device=device)
         labels = torch.randint(0, vocab_size, (batch, seq_len), device=device)
@@ -36,7 +36,7 @@ class TestCrossEntropyPatches:
 
     def test_causal_lm_loss_with_num_items_in_batch(self, device):
         """Loss with num_items_in_batch should use sum reduction."""
-        from opaque.patches.transformers.components import _opaque_causal_lm_loss
+        from opaque.patches.transformers.components.cross_entropy import _opaque_causal_lm_loss
         batch, seq_len, vocab_size = (2, 16, 1000)
         logits = torch.randn(batch, seq_len, vocab_size, device=device)
         labels = torch.randint(0, vocab_size, (batch, seq_len), device=device)
@@ -52,7 +52,7 @@ class TestCrossEntropyPatches:
 
     def test_backward_through_patched_loss(self, device):
         """Gradients should flow through patched cross-entropy loss."""
-        from opaque.patches.transformers.components import _opaque_causal_lm_loss
+        from opaque.patches.transformers.components.cross_entropy import _opaque_causal_lm_loss
         batch, seq_len, vocab_size = (2, 16, 1000)
         logits = torch.randn(batch, seq_len, vocab_size, device=device, requires_grad=True)
         labels = torch.randint(0, vocab_size, (batch, seq_len), device=device)
@@ -64,7 +64,7 @@ class TestCrossEntropyPatches:
 
     def test_loss_mapping_patched(self):
         """LOSS_MAPPING should point to Opaque loss function after patching."""
-        from opaque.patches.transformers.components import _opaque_causal_lm_loss
+        from opaque.patches.transformers.components.cross_entropy import _opaque_causal_lm_loss
         try:
             from transformers.loss.loss_utils import LOSS_MAPPING
         except ImportError:

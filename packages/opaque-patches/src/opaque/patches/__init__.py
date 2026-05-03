@@ -33,15 +33,6 @@ def apply_model_patches(
     global _runtime_patches_applied
     if not _runtime_patches_applied:
         apply_runtime_patches()
-
-    allowed_kwargs = {
-        "fuse_swiglu", "fuse_rms_norm", "fuse_add_rms_norm", "fuse_rope", 
-        "fuse_cross_entropy", "fuse_lora", "wrap_eager_attention", 
-        "wrap_batchify", "disable_kv_cache"
-    }
-    for k in kwargs:
-        if k not in allowed_kwargs:
-            logger.warning(f"opaque: Unknown patch kwarg '{k}' passed to apply_model_patches. It will be ignored.")
     
     try:
         from opaque.patches.transformers._router import apply_transformers_model_patches
@@ -54,11 +45,15 @@ def apply_model_patches(
     except ImportError:
         logger.debug("opaque: Hugging Face kernel patches not available.")
 
-    fuse_lora = kwargs.get("fuse_lora", peft and performance)
-    if fuse_lora:
+    if peft:
         try:
             from opaque.patches.peft import apply_peft_model_patches
-            apply_peft_model_patches(model)
+            apply_peft_model_patches(
+                model,
+                performance=performance,
+                compat=compat,
+                **kwargs
+            )
         except ImportError:
             pass
 
@@ -71,14 +66,6 @@ def apply_runtime_patches(
     """Apply global runtime patches."""
     global _runtime_patches_applied
     _runtime_patches_applied = True
-
-    allowed_kwargs = {
-        "enable_vmap_checkpointing", "use_fused_loss", 
-        "enable_vmap_masking", "allow_empty_batches"
-    }
-    for k in kwargs:
-        if k not in allowed_kwargs:
-            logger.warning(f"opaque: Unknown patch kwarg '{k}' passed to apply_runtime_patches. It will be ignored.")
 
     enable_vmap_masking = kwargs.get("enable_vmap_masking", compat)
     allow_empty_batches = kwargs.get("allow_empty_batches", compat)
