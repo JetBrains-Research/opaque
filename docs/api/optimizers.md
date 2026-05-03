@@ -134,6 +134,34 @@ combined** — passing both kwargs at the same ``update()`` call raises
       show_source: true
       heading_level: 3
 
+---
+
+## Serialisation
+
+``opaque.optimizers.state_dict`` flattens any chain optimizer state
+into a ``dict[str, Any]`` of tensors and Python primitives, ready
+for ``torch.save``.  ``load_state_dict`` rebuilds the state from a
+freshly-initialised template:
+
+```python
+from opaque.optimizers import adamw, state_dict, load_state_dict
+
+opt = adamw(lr=1e-3, weight_decay=0.01)
+state = opt.init(params)
+# ... train ...
+
+# Save
+torch.save(state_dict(state), "opt.pt")
+
+# Load — template must have the same shape (init from same params).
+template = opt.init(params)
+state = load_state_dict(template, torch.load("opt.pt"))
+```
+
+Forward-compatible: paths missing from the saved dict keep the
+template's value, so optimizers that gain new state fields between
+releases load cleanly from older checkpoints.
+
 ## See Also
 
 - [Gradient Clipping API](clipping.md) — includes `adaptive_clipped_grad()` and `auto_clipped_grad()`

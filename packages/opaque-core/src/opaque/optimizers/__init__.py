@@ -26,8 +26,14 @@ Optimizers in this module:
 Each factory returns a ``torchopt.base.GradientTransformation`` and is
 state-isolated; multiple optimizers can coexist in the same process
 without RNG / global state collisions.
+
+Serialisation: :func:`state_dict` flattens any chain optimizer state
+into a ``dict[str, Any]`` of tensors / primitives suitable for
+``torch.save``; :func:`load_state_dict` rebuilds a state by applying
+the dict to a fresh template (``opt.init(params)``).
 """
 
+from opaque.optimizers._state_dict import load_state_dict, state_dict
 from opaque.optimizers.adafactor import AdafactorState, adafactor
 from opaque.optimizers.adam import AdamState, adamw
 from opaque.optimizers.ademamix import AdEMAMixState, ademamix
@@ -54,4 +60,6 @@ __all__ = [
     "ScheduleFreeState",
     # Helpers
     "get_eval_params",
+    "state_dict",
+    "load_state_dict",
 ]
