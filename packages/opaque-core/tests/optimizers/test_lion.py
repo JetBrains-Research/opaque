@@ -82,13 +82,14 @@ class TestLion:
         with pytest.raises(ValueError, match="non-negative"):
             lion(weight_decay=-0.1)
 
-    def test_dp_kwargs_silently_ignored(self, params, grads):
-        """Lion has no v; passing noise_stddev should not raise (forwards via kwargs)."""
+    def test_dp_kwargs_rejected(self, params, grads):
+        """Lion has no second moment, so DP-aware kwargs aren't part of
+        its update signature; passing one raises ``TypeError`` instead
+        of silently ignoring it (which would mislead users into thinking
+        DP-BC was active when it wasn't)."""
         opt = lion(lr=1e-4)
         state = opt.init(params)
-        # The chain forwards **kwargs to the moment scaler; lion's
-        # scaler accepts and discards them.
-        u1, _ = opt.update(grads, state, params=params)
-        u2, _ = opt.update(grads, state, params=params, noise_stddev=0.5)
-        for k in u1:
-            torch.testing.assert_close(u1[k], u2[k])
+        with pytest.raises(TypeError, match="noise_stddev"):
+            opt.update(grads, state, params=params, noise_stddev=0.5)
+        with pytest.raises(TypeError, match="noisy_squared_grads"):
+            opt.update(grads, state, params=params, noisy_squared_grads={})

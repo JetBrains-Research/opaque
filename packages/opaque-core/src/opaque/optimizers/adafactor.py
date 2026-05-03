@@ -15,15 +15,15 @@ outer product ``v_row · v_col / sum(v_row)``.  This saves
 ``rows·cols − rows − cols`` floats of state per matrix parameter, which
 matters at LM scale.
 
-Phase A scope.  Vanilla + decoupled / L2 weight decay, with the
-paper's RMS update clip (threshold 1.0 by default).  DP-aware modes
-(``noise_stddev`` φ-EMA, ``noisy_squared_grads`` JME) are **deferred**:
-the per-axis bias derivation for the factored ``v̂`` needs to be
-written down before they can land — the bias on ``v_row[i]`` after
-one Gaussian noise injection is ``(1 − β₂) · d_col · σ²``, so the
-φ-EMA tracks one term per axis with axis-dimension scaling.  Issue
-tracking the derivation is filed; until then ``adafactor`` rejects
-both kwargs.
+Scope.  Vanilla + decoupled / L2 weight decay, with the paper's RMS
+update clip (threshold 1.0 by default).  DP-aware modes (``noise_stddev``
+φ-EMA, ``noisy_squared_grads`` JME) are **not offered** yet — the
+per-axis bias derivation for the factored ``v̂`` needs to be written
+down before they can land — the bias on ``v_row[i]`` after one Gaussian
+noise injection is ``(1 − β₂) · d_col · σ²``, so the φ-EMA tracks one
+term per axis with axis-dimension scaling.  Until then ``adafactor``'s
+moment scaler does not accept the DP kwargs in its signature; passing
+them raises ``TypeError`` immediately.
 
 Skipped (orthogonal knobs, can be added later):
 
@@ -141,25 +141,7 @@ def _scale_by_adafactor(
         *,
         params: Any = None,  # noqa: ARG001
         inplace: bool = False,  # noqa: ARG001
-        noise_stddev: float | None = None,
-        noisy_squared_grads: Any = None,
-        **_: Any,
     ) -> tuple[Any, AdafactorState]:
-        if noise_stddev not in (None, 0, 0.0):
-            raise NotImplementedError(
-                "DP-Adafactor with φ-EMA bias correction is not implemented "
-                "in Phase A; the per-axis bias term derivation is pending. "
-                "Use opaque.optimizers.adamw with noise_stddev for now."
-            )
-        if noisy_squared_grads is not None:
-            raise NotImplementedError(
-                "DP-Adafactor with JME paired-stream second moment is not "
-                "implemented in Phase A — the factored v can't directly "
-                "consume an unfactored noisy_squared_grads pytree without "
-                "a paired derivation.  Use opaque.optimizers.adamw with "
-                "noisy_squared_grads for now."
-            )
-
         t = state.step + 1
         # Time-varying β₂_t per the paper: β₂_t = 1 − t^c.
         beta2_t = 1.0 - (float(t) ** b2_decay)
@@ -255,9 +237,10 @@ def adafactor(
     Returns:
         A ``torchopt.base.GradientTransformation``.
 
-    Raises ``NotImplementedError`` if ``noise_stddev`` or
-    ``noisy_squared_grads`` is passed at update time — Phase A scope
-    excludes the factored-v DP corrections.
+    The factory does not accept ``noise_stddev`` or ``noisy_squared_grads``
+    at update time — passing either raises ``TypeError`` from the
+    moment-scaler signature.  Use :func:`opaque.optimizers.adamw` for
+    DP-aware modes until the per-axis Adafactor derivation lands.
     """
     if decay_rate >= 0:
         raise ValueError(f"decay_rate must be negative, got {decay_rate}")

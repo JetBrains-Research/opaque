@@ -59,7 +59,6 @@ def _scale_by_lion(b1: float, b2: float) -> GradientTransformation:
         *,
         params: Any = None,  # noqa: ARG001
         inplace: bool = False,  # noqa: ARG001
-        **_: Any,
     ) -> tuple[Any, LionState]:
         # Direction: sign of (b1 * m + (1-b1) * g).
         direction = tree_map(

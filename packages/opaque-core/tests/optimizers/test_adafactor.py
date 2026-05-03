@@ -92,20 +92,23 @@ class TestVanilla:
             assert torch.isfinite(updates[k]).all()
 
 
-class TestDeferredDPModes:
-    """Phase A: factored-v DP corrections are deferred; both raise."""
+class TestDPKwargsNotOffered:
+    """Factored-v DP corrections aren't supported yet; the moment scaler
+    doesn't list ``noise_stddev`` or ``noisy_squared_grads`` in its
+    signature, so passing either raises ``TypeError`` immediately
+    (instead of silently ignoring or returning a half-baked result)."""
 
-    def test_noise_stddev_raises(self, matrix_params, matrix_grads):
+    def test_noise_stddev_rejected(self, matrix_params, matrix_grads):
         opt = adafactor(lr=1e-3)
         state = opt.init(matrix_params)
-        with pytest.raises(NotImplementedError, match="DP-Adafactor"):
+        with pytest.raises(TypeError, match="noise_stddev"):
             opt.update(matrix_grads, state, params=matrix_params, noise_stddev=0.5)
 
-    def test_noisy_squared_grads_raises(self, matrix_params, matrix_grads):
+    def test_noisy_squared_grads_rejected(self, matrix_params, matrix_grads):
         sq = {k: v.pow(2) for k, v in matrix_grads.items()}
         opt = adafactor(lr=1e-3)
         state = opt.init(matrix_params)
-        with pytest.raises(NotImplementedError, match="DP-Adafactor"):
+        with pytest.raises(TypeError, match="noisy_squared_grads"):
             opt.update(matrix_grads, state, params=matrix_params, noisy_squared_grads=sq)
 
 
