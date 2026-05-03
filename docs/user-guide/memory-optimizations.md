@@ -63,7 +63,7 @@ Use a short manual sweep with `TrainingProfiler`:
 
 ```python
 from opaque.clipping import clipped_grad
-from opaque.profiling import StepTimer, TrainingProfiler, reset_peak_memory
+from opaque.core.profiling import StepTimer, TrainingProfiler, reset_peak_memory
 
 def try_microbatch(candidate_mb: int) -> float:
     grad_fn, clip_state = clipped_grad(
@@ -91,14 +91,16 @@ def try_microbatch(candidate_mb: int) -> float:
 ## Gradient checkpointing
 
 PyTorch's `torch.utils.checkpoint.checkpoint` is supported under
-`vmap(grad(...))`. Patches are applied automatically at `import opaque`
-time via `opaque.performance.torch`.
+`vmap(grad(...))`. Enable the runtime patch once with
+`opaque.patches.apply_runtime_patches()`.
 
 **With PyTorch directly** (non-reentrant checkpoint only):
 
 ```python
-import opaque  # must be imported before checkpoint to apply patches
+from opaque.patches import apply_runtime_patches
 from torch.utils.checkpoint import checkpoint
+
+apply_runtime_patches()
 
 def my_model(x):
     h = checkpoint(block1, x, use_reentrant=False)
@@ -153,7 +155,8 @@ with torch.autograd.graph.save_on_cpu(pin_memory=True):
 
 Opaque includes fused Triton kernels that replace standard PyTorch operations
 in supported models, reducing memory and improving throughput without changing
-training semantics. Patches are applied automatically on `import opaque`.
+training semantics. These are enabled by `apply_model_patches(model)` after
+runtime patching has been set up.
 
 The kernels reduce memory by eliminating intermediate tensors (fused forward
 passes) and recomputing activations in backward instead of saving them. Each
@@ -209,7 +212,7 @@ Use `TrainingProfiler` to track checkpoints and step-level metrics in your
 training loop.
 
 ```python
-from opaque.profiling import StepTimer, TrainingProfiler
+from opaque.core.profiling import StepTimer, TrainingProfiler
 
 profiler = TrainingProfiler(device)
 profiler, _ = profiler.mark("start")
@@ -269,4 +272,4 @@ this uses ~2 GB per sample. Re-enable fused CE or reduce batch size.
 
 ## API reference
 
-See the `opaque.profiling` module for complete function signatures.
+See the `opaque.core.profiling` module for complete function signatures.

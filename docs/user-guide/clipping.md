@@ -140,11 +140,11 @@ sums are accumulated in-place, so peak memory is proportional to
 
 ### Choosing microbatch size
 
-Use `TrainingProfiler` from `opaque.profiling` to run a short sweep and
+Use `TrainingProfiler` from `opaque.core.profiling` to run a short sweep and
 select the largest stable microbatch that does not OOM:
 
 ```python
-from opaque.profiling import StepTimer, TrainingProfiler, reset_peak_memory
+from opaque.core.profiling import StepTimer, TrainingProfiler, reset_peak_memory
 
 profiler = TrainingProfiler(device)
 for candidate_mb in [64, 32, 16, 8, 4, 2, 1]:

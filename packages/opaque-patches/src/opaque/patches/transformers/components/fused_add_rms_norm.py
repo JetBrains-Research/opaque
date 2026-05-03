@@ -1,0 +1,236 @@
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
+from __future__ import annotations
+
+import torch
+
+
+def _post_attn_eps_and_weight(layer) -> tuple[torch.Tensor, float]:
+    norm = layer.post_attention_layernorm
+    w = norm.weight
+    eps = float(getattr(norm, "variance_epsilon", None) or getattr(norm, "eps", 1e-6))
+    return w, eps
+
+
+def _fused_add_rms_fac_llama(orig):
+    def forward(
+        self,
+        hidden_states,
+        attention_mask=None,
+        position_ids=None,
+        past_key_values=None,
+        use_cache=False,
+        position_embeddings=None,
+        **kwargs,
+    ):
+        if not hidden_states.is_cuda:
+            return orig(
+                self,
+                hidden_states,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                use_cache=use_cache,
+                position_embeddings=position_embeddings,
+                **kwargs,
+            )
+        from opaque.patches.kernels.fused_add_rms_norm import (
+            Opaque_FusedAddRMSNorm,
+        )
+
+        residual = hidden_states
+        hidden_states = self.input_layernorm(hidden_states)
+        hidden_states, _ = self.self_attn(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+            position_embeddings=position_embeddings,
+            **kwargs,
+        )
+        weight, eps = _post_attn_eps_and_weight(self)
+        hidden_states, residual = Opaque_FusedAddRMSNorm.apply(
+            hidden_states,
+            residual,
+            weight,
+            eps,
+            0.0,
+            "llama",
+            False,
+        )
+        hidden_states = self.mlp(hidden_states)
+        hidden_states = residual + hidden_states
+        return hidden_states
+
+    return forward
+
+
+def _fused_add_rms_fac_gemma(orig):
+    def forward(
+        self,
+        hidden_states,
+        attention_mask=None,
+        position_ids=None,
+        past_key_values=None,
+        use_cache=False,
+        position_embeddings=None,
+        **kwargs,
+    ):
+        if not hidden_states.is_cuda:
+            return orig(
+                self,
+                hidden_states,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                use_cache=use_cache,
+                position_embeddings=position_embeddings,
+                **kwargs,
+            )
+        from opaque.patches.kernels.fused_add_rms_norm import (
+            Opaque_FusedAddRMSNorm,
+        )
+
+        residual = hidden_states
+        hidden_states = self.input_layernorm(hidden_states)
+        hidden_states, _ = self.self_attn(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+            position_embeddings=position_embeddings,
+            **kwargs,
+        )
+        weight, eps = _post_attn_eps_and_weight(self)
+        hidden_states, residual = Opaque_FusedAddRMSNorm.apply(
+            hidden_states,
+            residual,
+            weight,
+            eps,
+            1.0,
+            "gemma",
+            False,
+        )
+        hidden_states = self.mlp(hidden_states)
+        hidden_states = residual + hidden_states
+        return hidden_states
+
+    return forward
+
+
+def _fused_add_rms_fac_phi3(orig):
+    def forward(
+        self,
+        hidden_states,
+        attention_mask=None,
+        position_ids=None,
+        past_key_values=None,
+        use_cache=False,
+        position_embeddings=None,
+        **kwargs,
+    ):
+        if not hidden_states.is_cuda:
+            return orig(
+                self,
+                hidden_states,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                use_cache=use_cache,
+                position_embeddings=position_embeddings,
+                **kwargs,
+            )
+        from opaque.patches.kernels.fused_add_rms_norm import (
+            Opaque_FusedAddRMSNorm,
+        )
+
+        residual = hidden_states
+        hidden_states = self.input_layernorm(hidden_states)
+        hidden_states, _ = self.self_attn(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+            position_embeddings=position_embeddings,
+            **kwargs,
+        )
+        xa = self.resid_attn_dropout(hidden_states)
+        weight, eps = _post_attn_eps_and_weight(self)
+        hidden_states, residual = Opaque_FusedAddRMSNorm.apply(
+            xa,
+            residual,
+            weight,
+            eps,
+            0.0,
+            "llama",
+            False,
+        )
+        hidden_states = self.mlp(hidden_states)
+        hidden_states = residual + self.resid_mlp_dropout(hidden_states)
+        return hidden_states
+
+    return forward
+
+
+def _fused_add_rms_fac_granite(orig):
+    def forward(
+        self,
+        hidden_states,
+        attention_mask=None,
+        position_ids=None,
+        past_key_values=None,
+        use_cache=False,
+        position_embeddings=None,
+        **kwargs,
+    ):
+        if not hidden_states.is_cuda:
+            return orig(
+                self,
+                hidden_states,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                use_cache=use_cache,
+                position_embeddings=position_embeddings,
+                **kwargs,
+            )
+        from opaque.patches.kernels.fused_add_rms_norm import (
+            Opaque_FusedAddRMSNorm,
+        )
+
+        residual = hidden_states
+        hidden_states = self.input_layernorm(hidden_states)
+        hidden_states, _ = self.self_attn(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+            position_embeddings=position_embeddings,
+            **kwargs,
+        )
+        xa = hidden_states * self.residual_multiplier
+        weight, eps = _post_attn_eps_and_weight(self)
+        hidden_states, residual = Opaque_FusedAddRMSNorm.apply(
+            xa,
+            residual,
+            weight,
+            eps,
+            0.0,
+            "llama",
+            False,
+        )
+        hidden_states = self.mlp(hidden_states)
+        hidden_states = residual + hidden_states * self.residual_multiplier
+
+        outputs = (hidden_states,)
+        if kwargs.get("output_attentions"):
+            # Opaque does not return attention weights from fused kernels
+            outputs += (None,)
+
+        return outputs
+
+    return forward

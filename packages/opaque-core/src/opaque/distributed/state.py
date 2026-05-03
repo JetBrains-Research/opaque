@@ -231,13 +231,13 @@ def _ensure_builtin_sync_types_loaded() -> None:
     """Import internal registrations the first time a dispatch misses.
 
     Core clipping registers itself synchronously; the performance profiler
-    registers itself only when :mod:`opaque.performance` is installed, which
+    registers itself only when :mod:`opaque.core` is installed, which
     is a soft dependency — missing it must not break ``sync()``.
     """
     import opaque.clipping.distributed  # noqa: F401
 
     try:
-        import opaque.performance.profiling.distributed  # noqa: F401
+        import opaque.core.profiling.distributed  # noqa: F401
     except ImportError:
         pass
 

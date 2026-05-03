@@ -37,10 +37,9 @@ No contribution is too small!
 
 ## Repository Structure
 
-The monorepo ships eight independent distributions sharing the `opaque.*`
-PEP 420 namespace. The `opaque` distribution lives at the workspace root
-and pins the curated sub-package bundle; every other distribution lives
-under `packages/`:
+The monorepo ships multiple distributions sharing the `opaque.*`
+PEP 420 namespace. User-facing installation should go through the root
+`opaque` package; implementation packages live under `packages/`:
 
 ```
 pyproject.toml           # opaque — pins the curated sub-package bundle
@@ -51,8 +50,8 @@ packages/
 ├── opaque-dpsgd/        # Gaussian/per-group noise, AdamW-BC, Poisson samplers
 ├── opaque-dpftrl/       # Correlated-noise mechanisms (BLT, BSR, BiSR, band-MF, JME, λ-CGD)
 ├── opaque-auditing/     # Empirical privacy auditing
-├── opaque-performance/  # Triton kernels, checkpoint patches, HF kernel patches
-├── opaque-huggingface/  # Transformers compat patches (vmap-safe attention, KV cache)
+├── opaque-patches/      # Triton kernels, checkpoint patches, HF compatibility + PEFT patching
+├── opaque-transformers/  # Transformers compat patches (vmap-safe attention, KV cache)
 └── opaque-accounting/   # Rust/PyO3 PLD privacy accounting
 
 docs/                    # User documentation (getting-started, guides, tutorials, API)
@@ -113,13 +112,11 @@ uv sync --group examples --all-packages        # Examples runtime: torchopt, dat
 uv sync --group docs                           # + mkdocs stack
 
 # Package extras (compose with --extra):
-#   opaque-huggingface[peft]        — HuggingFace + PEFT
-#   opaque-huggingface[kernels]     — + Triton kernels
-#   opaque-performance[kernels]     — Triton kernels
-#   opaque-dpsgd[optimizers]        — torchopt bindings
-#   opaque-dpftrl[optimizers]           — torchopt bindings
+#   opaque[transformers]             — HuggingFace + patching stack
+#   opaque[dpftrl]                   — DP-FTRL mechanisms
+#   opaque[auditing]                 — empirical privacy auditing
 #   opaque-accounting[cross-validation] — dp-accounting, riskcal
-uv sync --group dev --all-packages --extra peft --extra kernels
+uv sync --group dev --all-packages --extra transformers
 ```
 
 ### Running Tests
@@ -159,12 +156,12 @@ uv run pytest -m slow
 ```
 
 Gated HuggingFace models use the `@requires_hf_auth` skipif helper from
-`packages/opaque-huggingface/tests/huggingface/_helpers.py`. Set
+`packages/opaque-transformers/tests/huggingface/_helpers.py`. Set
 `HF_TOKEN` / `HUGGINGFACEHUB_API_TOKEN` / `HUGGINGFACE_TOKEN` to run
 those tests; otherwise they skip automatically.
 
 Other tests use `pytest.importorskip()` for automatic dependency handling:
-- HuggingFace tests: Skip if `transformers` not installed (install via `opaque[huggingface]` or `opaque-huggingface[peft]`)
+- HuggingFace tests: Skip if `transformers` not installed (install via `opaque[transformers]`)
 - Cross-validation: Skip if `dp-accounting` not installed (install via `opaque-accounting[cross-validation]`)
 
 No manual marker exclusion needed - tests skip automatically when dependencies are missing.
@@ -173,7 +170,7 @@ No manual marker exclusion needed - tests skip automatically when dependencies a
 
 Some tests require a CUDA GPU. They live under each package's
 `tests/distributed/` directory (e.g. `packages/opaque-dpsgd/tests/distributed/`,
-`packages/opaque-huggingface/tests/distributed/`) and use `torch.distributed`
+`packages/opaque-transformers/tests/distributed/`) and use `torch.distributed`
 with the NCCL backend:
 
 ```bash
@@ -182,7 +179,7 @@ uv run pytest -m cuda -v
 
 # Run distributed tests (requires 2+ GPUs)
 uv run pytest packages/opaque-dpsgd/tests/distributed/ \
-              packages/opaque-huggingface/tests/distributed/ -v
+              packages/opaque-transformers/tests/distributed/ -v
 ```
 
 `@pytest.mark.cuda` tests auto-skip on hosts without CUDA; `@pytest.mark.mps`
@@ -300,7 +297,7 @@ This keeps release docs stable while allowing continuous docs updates on `main`.
 
 Opaque uses **lockstep versioning**: all eight distributions (`opaque`,
 `opaque-core`, `opaque-dpsgd`, `opaque-dpftrl`, `opaque-auditing`,
-`opaque-performance`, `opaque-huggingface`, `opaque-accounting`) release
+`opaque-patches`, `opaque-transformers`, `opaque-accounting`) release
 at the same version. Python sub-package versions come from
 [`setuptools-scm`](https://setuptools-scm.readthedocs.io/) — no
 `version = "..."` literal to bump in `pyproject.toml` files.
@@ -362,7 +359,7 @@ uv build --wheel --out-dir dist
 
 # Build every sub-package wheel
 for pkg in opaque-core opaque-dpsgd opaque-dpftrl opaque-auditing \
-           opaque-performance opaque-huggingface; do
+                opaque-patches opaque-transformers; do
   (cd "packages/$pkg" && uv build --wheel --out-dir ../../dist)
 done
 

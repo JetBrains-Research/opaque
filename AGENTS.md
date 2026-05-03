@@ -29,7 +29,7 @@ nested under `opaque.core.*`.
 | `opaque-dpftrl` | `opaque.dpftrl` | DP-FTRL mechanisms (BLT, BSR, BiSR, band-MF, JME, λ-CGD), AdamW-JME, cyclic Poisson + b-min-sep + balls-in-bins + sequential samplers | setuptools |
 | `opaque-auditing` | `opaque.auditing` | empirical privacy auditing (one-run, coin-flip, loss attacks) | setuptools |
 | `opaque-performance` | `opaque.performance`, `opaque.performance.huggingface`, `opaque.performance.profiling` | fused Triton kernels, PyTorch checkpoint patches, HF model kernel patches, memory/step profiler | setuptools |
-| `opaque-huggingface` | `opaque.huggingface` | HF Transformers compat patches (vmap-safe attention, KV cache, Poisson collator) | setuptools |
+| `opaque-transformers` | `opaque.transformers` | HF Transformers compat patches (vmap-safe attention, KV cache, Poisson collator) | setuptools |
 | `opaque-accounting` | `opaque.accounting` | PLD privacy accounting (PyO3 extension at `opaque.accounting.opaque_accounting`, aliased as `_native`) | maturin |
 
 Sub-packages are independently installable; `pip install opaque-dpsgd`
@@ -110,7 +110,7 @@ uv run pytest packages/opaque-dpsgd/tests/
 uv run pytest packages/opaque-dpftrl/tests/
 uv run pytest packages/opaque-auditing/tests/
 uv run pytest packages/opaque-performance/tests/
-uv run pytest packages/opaque-huggingface/tests/
+uv run pytest packages/opaque-transformers/tests/
 uv run pytest packages/opaque-accounting/tests/
 ```
 
@@ -122,7 +122,7 @@ pip install opaque-dpsgd                 # + DP-SGD mechanisms
 pip install opaque-dpftrl                    # + MF (DP-FTRL) mechanisms
 pip install opaque-accounting            # + Rust PLD accounting
 pip install opaque-performance[kernels]  # + Triton fused kernels
-pip install opaque-huggingface[peft]     # + HF patches + PEFT extras
+pip install opaque-transformers[peft]     # + HF patches + PEFT extras
 pip install "opaque[all]"                # everything
 ```
 
@@ -138,8 +138,8 @@ Everything else lives in the relevant package's
 
 | Extra | Pulls in |
 | --- | --- |
-| `opaque-huggingface[peft]` | `peft`, `transformers`, `datasets` |
-| `opaque-huggingface[kernels]` | HF + `opaque-performance[kernels]` |
+| `opaque-transformers[peft]` | `peft`, `transformers`, `datasets` |
+| `opaque-transformers[kernels]` | HF + `opaque-performance[kernels]` |
 | `opaque-performance[kernels]` | `triton` |
 | `opaque-dpsgd[optimizers]` | `torchopt` |
 | `opaque-dpftrl[optimizers]` | `torchopt` |
@@ -148,14 +148,14 @@ Everything else lives in the relevant package's
 
 ## Patching model (on-import)
 
-Importing `opaque.performance` or `opaque.huggingface` automatically applies
+Importing `opaque.performance` or `opaque.transformers` automatically applies
 their respective patches. There is no top-level `opaque.patch_all()` —
 each sub-package owns its own patching. Disable selectively with
 sub-package-specific env vars set **before** the import:
 
 ```bash
 OPAQUE_SKIP_PYTORCH_PATCHES=all            # skip all opaque.performance patches
-OPAQUE_SKIP_TRANSFORMERS_PATCHES=all       # skip all opaque.huggingface compat patches
+OPAQUE_SKIP_TRANSFORMERS_PATCHES=all       # skip all opaque.transformers compat patches
 OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=all # skip the HF kernel patches (performance side)
 ```
 
@@ -169,7 +169,7 @@ Patch layers:
 - `opaque.performance` — gradient-checkpointing for `torch.utils.checkpoint`
   + HF Triton kernel patches (SwiGLU, GeGLU, RoPE, fused CE, LoRA) via
   `opaque.performance.huggingface`.
-- `opaque.huggingface` — compatibility-only (vmap-safe attention, KV cache,
+- `opaque.transformers` — compatibility-only (vmap-safe attention, KV cache,
   Poisson-collator compat). Performance patches live in
   `opaque.performance.huggingface`.
 
@@ -214,7 +214,7 @@ Three orthogonal markers, declared in the root `pyproject.toml`:
   clause conditionally).
 
 Gated HuggingFace models use `@requires_hf_auth` imported from
-`packages/opaque-huggingface/tests/huggingface/_helpers.py`. It is a
+`packages/opaque-transformers/tests/huggingface/_helpers.py`. It is a
 `skipif(not has_hf_token())` mark, not a pytest marker. Set `HF_TOKEN`
 (or `HUGGINGFACEHUB_API_TOKEN` / `HUGGINGFACE_TOKEN`) to run them.
 
@@ -228,9 +228,11 @@ CI lane marker expressions:
 
 ### Supported HF model families
 
-LLaMA / Mistral / Qwen2 / Qwen3 / Phi-3 / Gemma / Gemma2 / Granite /
-Cohere / Cohere2 / DeepSeek (inherits LLaMA). See
-`docs/user-guide/huggingface.md`.
+LLaMA / Mistral / Ministral / Qwen2 / Qwen3 / SmolLM3 / OLMo2 / OLMo3 /
+GLM4 / Phi-3 / Gemma / Gemma2 / Gemma3 (text) / Granite / Cohere / Cohere2 /
+Exaone4 / DeepSeek (inherits LLaMA). Text-first; see
+`docs/user-guide/huggingface.md`. Nemotron is deferred (no
+`eager_attention_forward` and a non-gated `NemotronMLP` in 4.57.1).
 
 ## Non-obvious notes
 

@@ -53,6 +53,10 @@ import torch.distributed as dist
 import torchopt
 from datasets import Dataset, load_dataset
 from peft import LoraConfig, get_peft_model
+
+from opaque.patches import apply_model_patches, apply_runtime_patches
+apply_runtime_patches()
+
 from torch.utils.data import DataLoader
 from transformers import (
     AutoConfig,
@@ -66,13 +70,11 @@ import opaque.auditing as auditing
 from opaque.accounting import calibration as cal, Accountant
 from opaque.clipping import clipped_grad
 from opaque.dpsgd.clipping import adaptive_clipped_grad, auto_clipped_grad
-from opaque.huggingface import is_patched as is_transformers_patched
-from opaque.performance.huggingface import is_kernel_patched
 from opaque.distributed import sum_gradients_, sync
 from opaque.dpsgd.noise.gaussian import gaussian_noise
 from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev
 from opaque.dpsgd.noise.truncated_gaussian import truncated_gaussian_noise
-from opaque.performance.profiling import (
+from opaque.core.profiling import (
     StepTimer,
     TrainingProfiler,
     print_memory,
@@ -198,10 +200,7 @@ def _kernel_mode_summary(device: torch.device, dtype_name: str) -> tuple[str, st
     if dtype_name not in {"float16", "bfloat16"}:
         return "partial", f"dtype={dtype_name} (fused CE requires fp16/bf16)"
 
-    patched = is_kernel_patched()
-    if patched:
-        return "enabled", "global kernel patches applied"
-    return "partial", "kernel patch state unavailable"
+    return "enabled", "explicit kernel patches applied"
 
 
 def _print_runtime_mode_report(
@@ -213,7 +212,6 @@ def _print_runtime_mode_report(
 ) -> None:
     """Print active runtime mode so fallback behavior is explicit."""
     kernel_mode, kernel_reason = _kernel_mode_summary(device, dtype_name)
-    kernels_on = device.type == "cuda" and is_kernel_patched()
 
     print("\nRuntime mode:")
     print(f"  Device: {device} ({device_label})")
@@ -221,7 +219,6 @@ def _print_runtime_mode_report(
     if dtype_warning:
         print(f"  Dtype fallback: {dtype_warning}")
     print(f"  Kernel optimizations: {kernel_mode} ({kernel_reason})")
-    print(f"  Patches: transformers={is_transformers_patched()}, kernels={kernels_on}")
 
     if device.type == "cpu":
         print("  Note: CPU path prioritizes correctness over throughput.")
@@ -844,6 +841,7 @@ def main():
         task_type="CAUSAL_LM",
     )
     model = get_peft_model(model, lora_config)
+    apply_model_patches(model)
     model.print_trainable_parameters()
     profiler, _ = profiler.mark("lora_applied")
     print_memory(device, "After LoRA")

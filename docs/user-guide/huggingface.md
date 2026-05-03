@@ -3,27 +3,40 @@
 Opaque works with HuggingFace Transformers models. Patches are split across
 two sub-packages:
 
-- `opaque.huggingface` — compatibility patches (vmap-safe attention,
-  KV-cache workarounds, Poisson-collator compat) that make Transformers
-  models run correctly under `vmap(grad(...))`.
-- `opaque.performance.huggingface` — fused Triton kernel patches (SwiGLU,
-  GeGLU, RoPE, fused cross-entropy, LoRA) that wire Opaque's kernels into
-  the corresponding Transformers model classes. Pure performance.
+- `opaque.patches` — the operational entrypoint. `apply_runtime_patches()`
+  enables runtime fixes (checkpointing, masking, collator, loss mapping), and
+  `apply_model_patches(model)` wires compat wrappers and Triton kernels into a
+  concrete model instance.
+- `opaque.transformers` — the namespace package installed by
+  `opaque-transformers`; it carries the Transformers-facing dependency bundle,
+  while the patch APIs live under `opaque.patches`.
 
-Patches apply automatically on import:
+**Scope:** the curated matrix prioritises **decoder-only text** models
+(``ForCausalLM`` and shared text modules). Vision-language stacks
+(e.g. ``*ForConditionalGeneration``) are not part of the default patch set.
+Tested against `transformers==4.57.1`.
+
+Recommended usage matches the training examples:
 
 ```python
-import opaque.huggingface          # compat patches live
-import opaque.performance          # torch + HF kernel patches live
+from opaque.patches import apply_model_patches, apply_runtime_patches
+
+apply_runtime_patches()
+
+model = AutoModelForCausalLM.from_pretrained(...)
+# Optional: attach LoRA / PEFT adapters here.
+apply_model_patches(model)
 ```
 
-Disable selectively via the `OPAQUE_SKIP_*` env vars (see
-[Configuration](#configuration)).
+Call `apply_runtime_patches()` once near process startup, before creating
+checkpointed models or Hugging Face data collators. Call
+`apply_model_patches(model)` after the model is instantiated and after any
+PEFT/LoRA wrapping, so the patcher sees the final module graph.
 
 ## Auto-patching
 
-On import, Opaque applies patches to the following HuggingFace Transformers
-components:
+After `apply_runtime_patches()` and `apply_model_patches(model)`, Opaque
+patches the following HuggingFace Transformers components:
 
 - **Causal mask creation** (`create_causal_mask`, `_ignore_causal_mask_sdpa`)
   -- handles arbitrary batch dimensions under vmap, including sliding-window
@@ -35,11 +48,12 @@ components:
 - **Batchify wrappers** -- automatically adds/removes the batch dimension
   for model forward methods called under `vmap(grad(...))`.
 
-These patches are applied for LLaMA, Mistral, Qwen2, Qwen3, Phi-3,
-Gemma, Gemma2, Granite, Cohere, and Cohere2 models. DeepSeek models
-inherit LLaMA patches automatically. GPT-2 works without patches (simple
-architecture). Other models may work if their attention implementation
-follows the standard Transformers pattern.
+These patches are applied for LLaMA, Mistral, Ministral, Qwen2, Qwen3,
+SmolLM3, OLMo2, OLMo3, GLM4, Phi-3, Gemma, Gemma2, Gemma3 (text), Granite,
+Cohere, Cohere2, and Exaone4 models. DeepSeek models inherit LLaMA patches
+automatically. GPT-2 works without patches (simple architecture). Other
+text models may work if their attention implementation follows the
+standard Transformers pattern.
 
 ### Why patches are needed
 
@@ -91,19 +105,43 @@ model = AutoModelForCausalLM.from_pretrained(
 Opaque's auto-patching covers these model families. The table shows both
 vmap compatibility and which fused Triton kernels are applied per model:
 
-| Model | Tested sizes | SwiGLU/GeGLU | RoPE | CE | Fused Linear CE | LoRA Fusion |
-|-------|-------------|--------------|------|----|-----------------|-------------|
-| LLaMA / Llama 3 | 7B, 8B, 70B (LoRA) | SwiGLU | Yes | Yes | Yes | QKV + MLP |
-| Mistral | 7B | SwiGLU | Yes | Yes | Yes | QKV + MLP |
-| Qwen2 / Qwen3 | 0.5B, 7B | SwiGLU | Yes | Yes | Yes | MLP only |
-| Phi-3 | 3.8B | SwiGLU | Yes | Yes | -- | -- |
-| Gemma | 2B, 7B | GeGLU Exact | Yes | Yes | Yes | QKV + MLP |
-| Gemma2 | 2B, 7B | GeGLU Approx | Yes | Yes | Yes (softcap) | QKV + MLP |
-| Granite | 3B, 8B | SwiGLU | Yes | Yes | Yes | QKV + MLP |
-| Cohere | 8B | SwiGLU | -- | Yes | Yes | MLP only |
-| Cohere2 | 8B | SwiGLU | -- | Yes | Yes | QKV + MLP |
-| GPT-2 | 124M, 355M | -- | -- | -- | -- | -- |
-| DeepSeek | 7B | SwiGLU | Yes | Yes | Yes | QKV + MLP |
+| Model | Tested sizes | SwiGLU/GeGLU | RMSNorm | RoPE | CE | Fused Linear CE | LoRA Fusion |
+|-------|-------------|--------------|---------|------|----|-----------------|-------------|
+| LLaMA / Llama 3 | 7B, 8B, 70B (LoRA) | SwiGLU | Yes | Yes | Yes | Yes | QKV + MLP |
+| Mistral | 7B | SwiGLU | Yes | Yes | Yes | Yes | QKV + MLP |
+| Ministral | 8B | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
+| Qwen2 / Qwen3 | 0.5B, 7B | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
+| SmolLM3 | 3B | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
+| OLMo2 | 1B, 7B (tiny config in tests) | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
+| OLMo3 | 1B, 7B (tiny config in tests) | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
+| GLM4 | 9B (tiny config in tests) | SwiGLU (Phi3-style) | Yes | -- | Yes | Yes | MLP only |
+| Phi-3 | 3.8B | SwiGLU | Yes | Yes | Yes | -- | -- |
+| Gemma | 2B, 7B | GeGLU Exact | Yes | Yes | Yes | Yes | QKV + MLP |
+| Gemma2 | 2B, 7B | GeGLU Approx | Yes | Yes | Yes | Yes (softcap) | QKV + MLP |
+| Gemma3 (text) | 1B, 4B (tiny config in tests) | GeGLU Approx | Yes | Yes | Yes | Yes | MLP only |
+| Granite | 3B, 8B | SwiGLU | Yes | Yes | Yes | Yes | QKV + MLP |
+| Cohere | 8B | SwiGLU | -- | Yes | Yes | Yes | MLP only |
+| Cohere2 | 8B | SwiGLU | -- | Yes | Yes | Yes | QKV + MLP |
+| Exaone4 | 1.2B, 32B (tiny config in tests) | SwiGLU | Yes | Yes | Yes | Yes | MLP only |
+| GPT-2 | 124M, 355M | -- | -- | -- | -- | -- | -- |
+| DeepSeek | 7B | SwiGLU | Yes | Yes | Yes | Yes | QKV + MLP |
+
+Gemma3's `q_norm` / `k_norm` RMSNorms inside `Gemma3Attention` are picked up
+automatically because the kernel patcher rebinds `Gemma3RMSNorm.forward` at
+class level; the same trick covers `Exaone4RMSNorm` for Exaone4. Fused add +
+RMSNorm is intentionally **off** for OLMo2 / OLMo3 / Cohere / Cohere2 /
+Gemma3 / Exaone4 because their decoder layers apply
+`post_attention_layernorm` *between* the attention output and the residual
+add (the fused primitive expects residual-first ordering).
+
+**Not supported by default patching:** expert-routed decoder stacks such as
+GPT-OSS. **Deferred families:** Nemotron — `transformers.models.nemotron.modeling_nemotron`
+in 4.57.1 ships only legacy `NemotronAttention` / `NemotronSdpaAttention` /
+`NemotronFlashAttention2` (no `eager_attention_forward` symbol to swap), and
+`NemotronMLP` is non-gated (`up_proj → act_fn → down_proj`, no
+SwiGLU/GeGLU split). Adding it would require both a bespoke vmap attention
+path and a new non-gated MLP kernel; revisit when a benchmark customer
+needs it.
 
 **What makes a model vmap-compatible:** The model must not use
 `torch.nonzero`, data-dependent control flow (`if tensor.item() > 0`), or
@@ -248,8 +286,8 @@ or add modules only if accuracy is insufficient.
 ## Patched operations
 
 Opaque replaces standard PyTorch operations with fused Triton kernels for
-supported models. These are applied automatically on `import opaque` and
-require no code changes. See [Memory Optimizations — Kernel benchmarks](memory-optimizations.md#kernel-benchmarks)
+supported models. These are applied by `apply_model_patches(model)` and
+require no model-code changes. See [Memory Optimizations — Kernel benchmarks](memory-optimizations.md#kernel-benchmarks)
 for performance numbers.
 
 ### Activation functions
@@ -317,7 +355,7 @@ qkv_proj), Cohere (no transpose).
 All kernels are available as standalone functions without patching:
 
 ```python
-from opaque.performance.kernels import opaque_swiglu, opaque_cross_entropy_loss
+from opaque.patches.kernels import opaque_swiglu, opaque_cross_entropy_loss
 
 h = opaque_swiglu(gate, up)
 loss = opaque_cross_entropy_loss(logits, labels)
@@ -337,73 +375,43 @@ loss = opaque_cross_entropy_loss(logits, labels)
 
 ## Configuration
 
-Patches apply on import. Disable selectively via sub-package-specific env
-vars, set **before** the matching import:
-
-| Variable | Scope | Values |
-|----------|-------|--------|
-| `OPAQUE_SKIP_PYTORCH_PATCHES` | `opaque.performance` | `all`, `checkpoint` |
-| `OPAQUE_SKIP_TRANSFORMERS_PATCHES` | `opaque.huggingface` compat | `all`, or `vmap,kv_cache,batchify,data` |
-| `OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES` | vmap compat | `all`, or `shared,standard,gemma2,phi3` |
-| `OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES` | HF Triton kernels (performance) | `all`, or `swiglu,rope,ce,fused_ce,lora` |
-| `OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES` | Poisson-collator compat | `all` or `collator` |
-
-### Disabling all patching
+Patching is configured through the explicit API rather than import-time side
+effects. The most useful knobs today are:
 
 ```python
-import os
+from opaque.patches import apply_model_patches, apply_runtime_patches
 
-os.environ["OPAQUE_SKIP_PYTORCH_PATCHES"] = "all"
-os.environ["OPAQUE_SKIP_TRANSFORMERS_PATCHES"] = "all"
-# ... then do your imports.
+apply_runtime_patches(
+  compat=True,
+  allow_empty_batches=True,
+  enable_vmap_checkpointing=True,
+  use_fused_loss=True,
+)
+
+apply_model_patches(
+  model,
+  performance=True,  # Triton kernels + PEFT fusion
+  compat=True,       # vmap-safe attention / batchify / KV-cache shims
+  peft=True,         # LoRA / PEFT module patching
+)
 ```
 
-### Skipping only HuggingFace compat patches
+Common configurations:
 
 ```python
-import os
-os.environ["OPAQUE_SKIP_TRANSFORMERS_PATCHES"] = "all"
-import opaque.huggingface     # no-op compat patch
-import opaque.performance     # performance/kernel patches still active
+# Keep correctness shims, but disable Triton kernels / PEFT fusion.
+apply_model_patches(model, performance=False)
+
+# Disable model-side compat wrappers while keeping runtime patches.
+apply_model_patches(model, compat=False)
+
+# Disable runtime checkpoint patching for debugging.
+apply_runtime_patches(enable_vmap_checkpointing=False)
 ```
 
-### Disabling kernel optimizations
-
-```python
-import os
-os.environ["OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES"] = "all"
-import opaque.performance  # reads the env var at import time
-```
-
-This disables all kernel optimizations. The library still works — models use
-standard PyTorch operations with vmap patches still applied.
-
-### Selectively skipping kernels
-
-```bash
-# Skip only fused linear CE
-OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=fused_ce python train.py
-
-# Skip multiple
-OPAQUE_SKIP_TRANSFORMERS_KERNEL_PATCHES=swiglu,rope,fused_ce python train.py
-```
-
-Available kernel names: `swiglu`, `rope`, `ce`, `fused_ce`, `lora`.
-
-### Disabling vmap patches
-
-Vmap patches make HuggingFace models compatible with `vmap(grad())`. These
-are required for DP-SGD training but can be skipped for debugging:
-
-```bash
-# Skip all vmap patches (models will NOT work with vmap)
-OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES=all python train.py
-
-# Skip only Gemma2-specific patches
-OPAQUE_SKIP_TRANSFORMERS_VMAP_PATCHES=gemma2 python train.py
-```
-
-Available vmap groups: `shared`, `standard`, `gemma2`, `phi3`.
+The only remaining environment-level switch in this area is
+`OPAQUE_SKIP_TRANSFORMERS_DATA_PATCHES=all|collator`, which controls the empty-
+batch collator wrapper used with Poisson sampling.
 
 ## Other models
 

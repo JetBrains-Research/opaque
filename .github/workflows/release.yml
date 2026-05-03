@@ -43,8 +43,8 @@ jobs:
           - opaque-dpsgd
           - opaque-dpftrl
           - opaque-auditing
-          - opaque-performance
-          - opaque-huggingface
+          - opaque-patches
+          - opaque-transformers
 
     steps:
       - uses: actions/checkout@v5

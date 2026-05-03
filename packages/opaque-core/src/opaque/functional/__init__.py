@@ -174,7 +174,7 @@ def make_functional(
 
     Note:
         Gradient checkpointing compatibility is handled by Patches 7-8 in
-        ``opaque.performance.torch.checkpoint``.  Those patches make
+        ``opaque.patches.torch.runtime``.  Those patches make
         ``functional_call`` record its (module, params) on a thread-local
         stack, and make ``checkpoint`` replay that context before
         recomputation.  This wrapper is purely functional — it delegates
@@ -369,7 +369,8 @@ def with_batch_dim(
                     return x.unsqueeze(0)
                 return x
 
-            args_list[i] = tree_map(_unsqueeze_arg, args_list[i])
+            if i < len(args_list):
+                args_list[i] = tree_map(_unsqueeze_arg, args_list[i])
 
         # Process keyword args
         for name, threshold in batch_kwargs_dict.items():

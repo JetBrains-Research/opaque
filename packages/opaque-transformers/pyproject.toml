@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "setuptools-scm>=8.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opaque-transformers"
+dynamic = ["version"]
+description = "Hugging Face compatibility layer for Opaque."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Opaque Authors", email = "federated-compute@jetbrains.com" },
+]
+dependencies = [
+    "transformers==4.57.1",
+    "peft>=0.13.0",
+    "datasets>=2.0.0",
+    "opaque-core",
+]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["opaque.transformers*"]
+namespaces = true
+
+[tool.setuptools_scm]
+root = "../.."
+fallback_version = "0.0.0.dev0"
+git_describe_command = "git describe --dirty --tags --long --match v*"
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+opaque-core = { workspace = true }

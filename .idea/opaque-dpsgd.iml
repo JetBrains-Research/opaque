@@ -5,8 +5,8 @@
       <sourceFolder url="file://$MODULE_DIR$/packages/opaque-dpsgd/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/packages/opaque-dpsgd/tests" isTestSource="true" />
     </content>
-    <orderEntry type="jdk" jdkName="uv (opaque)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module" module-name="opaque-core" exported="" />
+    <orderEntry type="jdk" jdkName="uv (opaque)" jdkType="Python SDK" />
   </component>
 </module>
