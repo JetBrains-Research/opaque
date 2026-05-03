@@ -46,9 +46,7 @@ def test_opaque_rms_norm_returns_autocast_dtype(amp_dtype: torch.dtype):
     w = torch.ones(16, device="cuda")
     with torch.autocast(device_type="cuda", dtype=amp_dtype):
         y = opaque_rms_norm(x, w)
-    assert y.dtype == amp_dtype, (
-        f"expected {amp_dtype} under autocast, got {y.dtype}"
-    )
+    assert y.dtype == amp_dtype, f"expected {amp_dtype} under autocast, got {y.dtype}"
 
 
 @pytest.mark.parametrize("amp_dtype", [torch.float16, torch.bfloat16])
@@ -115,11 +113,16 @@ def test_block_under_autocast_uniform_intermediate_dtype(amp_dtype: torch.dtype)
 
     def tap_forward(inp):
         seen.append(("input", inp.dtype))
-        x = opaque_rms_norm(inp, model.norm_w); seen.append(("rms", x.dtype))
-        g = model.gate(x); seen.append(("gate", g.dtype))
-        u = model.up(x); seen.append(("up", u.dtype))
-        h = opaque_swiglu(g, u); seen.append(("swiglu", h.dtype))
-        out = model.down(h); seen.append(("down", out.dtype))
+        x = opaque_rms_norm(inp, model.norm_w)
+        seen.append(("rms", x.dtype))
+        g = model.gate(x)
+        seen.append(("gate", g.dtype))
+        u = model.up(x)
+        seen.append(("up", u.dtype))
+        h = opaque_swiglu(g, u)
+        seen.append(("swiglu", h.dtype))
+        out = model.down(h)
+        seen.append(("down", out.dtype))
         return out
 
     model.forward = tap_forward  # type: ignore[assignment]
@@ -179,7 +182,9 @@ def test_kernels_autocast_proximity_to_full_cast(amp_dtype: torch.dtype):
 
     # full-cast reference
     model_full = _Block().cuda().to(dtype=amp_dtype)
-    model_full.load_state_dict({k: v.to(dtype=amp_dtype) for k, v in model_fp32.state_dict().items()})
+    model_full.load_state_dict(
+        {k: v.to(dtype=amp_dtype) for k, v in model_fp32.state_dict().items()}
+    )
     with torch.no_grad():
         out_full = model_full(x.to(dtype=amp_dtype))
 
@@ -281,7 +286,9 @@ def test_autocast_linear_then_kernel_then_linear_backward(amp_dtype: torch.dtype
         (post.weight, "post.weight"),
     ]:
         assert p.grad is not None, f"{name} got no gradient"
-        assert torch.isfinite(p.grad).all(), f"{name} grad has non-finite under autocast"
+        assert torch.isfinite(p.grad).all(), (
+            f"{name} grad has non-finite under autocast"
+        )
 
 
 # ----------------------------------------------------------------------------

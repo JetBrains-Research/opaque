@@ -15,15 +15,22 @@ from opaque.patches.transformers._registry import SUPPORTED_FAMILIES, detect_fam
 
 logger = logging.getLogger(__name__)
 
+
 def apply_kernels_for(model: nn.Module, family: str) -> None:
     """Explicitly apply Triton kernel patches for a specific model family."""
     import importlib
+
     try:
-        models_module = importlib.import_module("opaque.patches.transformers.models." + family)
-        patch_fn = getattr(models_module, "apply_" + family.replace("-", "_") + "_patches")
+        models_module = importlib.import_module(
+            "opaque.patches.transformers.models." + family
+        )
+        patch_fn = getattr(
+            models_module, "apply_" + family.replace("-", "_") + "_patches"
+        )
         patch_fn(model)
     except (ImportError, AttributeError) as e:
         logger.warning("opaque: Could not load patch function for %s: %s", family, e)
+
 
 def _patch_forward(
     target_cls: type[nn.Module] | None,
@@ -31,16 +38,18 @@ def _patch_forward(
     model: nn.Module | None,
 ) -> bool:
     """Helper to apply Liger-style global + instance forward replacement.
-    
+
     Returns True if any patch was applied (either global or instance).
     """
     if target_cls is None or factory is None:
         return False
-        
+
     patched = False
 
     # 1. Global class-level patching
-    if hasattr(target_cls, "forward") and not hasattr(target_cls.forward, "__opaque_patched__"):
+    if hasattr(target_cls, "forward") and not hasattr(
+        target_cls.forward, "__opaque_patched__"
+    ):
         new_fwd = factory(target_cls.forward)
         new_fwd.__opaque_patched__ = True
         target_cls.forward = new_fwd
@@ -55,15 +64,12 @@ def _patch_forward(
                 new_fwd.__opaque_patched__ = True
                 module.forward = types.MethodType(new_fwd, module)
                 patched = True
-                
+
     return patched
 
+
 def apply_transformers_model_patches(
-    model: nn.Module,
-    *,
-    performance: bool = True,
-    compat: bool = True,
-    **kwargs
+    model: nn.Module, *, performance: bool = True, compat: bool = True, **kwargs
 ) -> None:
     """Apply Liger-style global + instance patching for kernels and compat wrappers."""
     # Check CUDA for kernels, but compat patches can run without CUDA
@@ -88,20 +94,22 @@ def apply_transformers_model_patches(
 
     if family and family in SUPPORTED_FAMILIES:
         import importlib
+
         try:
-            models_module = importlib.import_module("opaque.patches.transformers.models." + family)
-            patch_fn = getattr(models_module, "apply_" + family.replace("-", "_") + "_patches")
-        except (ImportError, AttributeError) as e:
-            logger.warning("opaque: Could not load patch function for %s: %s", family, e)
-            patch_fn = None
-            
-        if patch_fn:
-            patch_fn(
-                model,
-                performance=performance,
-                compat=compat,
-                **kwargs
+            models_module = importlib.import_module(
+                "opaque.patches.transformers.models." + family
             )
+            patch_fn = getattr(
+                models_module, "apply_" + family.replace("-", "_") + "_patches"
+            )
+        except (ImportError, AttributeError) as e:
+            logger.warning(
+                "opaque: Could not load patch function for %s: %s", family, e
+            )
+            patch_fn = None
+
+        if patch_fn:
+            patch_fn(model, performance=performance, compat=compat, **kwargs)
             logger.debug(f"opaque: Applied model patches for {family}")
 
     wrap_batchify = kwargs.get("wrap_batchify", compat)
@@ -109,12 +117,17 @@ def apply_transformers_model_patches(
     if wrap_batchify and model is not None:
         try:
             import peft
+
             if isinstance(model, peft.PeftModel):
                 cls = type(model)
-                from opaque.patches.transformers.components.batchify import apply_batchify_patch
+                from opaque.patches.transformers.components.batchify import (
+                    apply_batchify_patch,
+                )
+
                 apply_batchify_patch(cls, model)
         except ImportError:
             pass
+
 
 __all__ = [
     "apply_transformers_model_patches",

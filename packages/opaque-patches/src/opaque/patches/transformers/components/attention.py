@@ -4,6 +4,7 @@
 
 import torch
 
+
 def vmap_repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     """vmap-compatible repeat_kv for expanding key/value heads to match query heads.
 
@@ -38,6 +39,7 @@ def vmap_repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     # 3D: (num_kv_heads, n_rep, slen, head_dim) -> (num_heads, slen, head_dim)
     new_shape = (*leading_dims, num_kv_heads * n_rep, slen, head_dim)
     return hidden_states.reshape(*new_shape)
+
 
 def vmap_eager_attention_forward(
     module: torch.nn.Module,
@@ -89,6 +91,7 @@ def vmap_eager_attention_forward(
     attn_output = attn_output.transpose(-3, -2).contiguous()
 
     return attn_output, attn_weights
+
 
 def vmap_eager_attention_forward_gemma2(
     module: torch.nn.Module,
@@ -153,22 +156,22 @@ def vmap_eager_attention_forward_gemma2(
 
     return attn_output, attn_weights
 
+
 def _make_vmap_compatible_init(original_init):
     """Create a vmap-compatible init for DynamicCache."""
+
     def vmap_compatible_init(self, *args, **kwargs):
         original_init(self, *args, **kwargs)
 
         if not hasattr(self, "get_usable_length"):
+
             def get_usable_length(
                 kv_seq_len: int | None = None,
                 layer_idx: int | None = None,
             ) -> int:
                 if layer_idx is None:
                     return 0
-                if (
-                    hasattr(self, "key_cache")
-                    and len(self.key_cache) > layer_idx
-                ):
+                if hasattr(self, "key_cache") and len(self.key_cache) > layer_idx:
                     kc = self.key_cache[layer_idx]
                     if kc is not None:
                         return kc.shape[-2]

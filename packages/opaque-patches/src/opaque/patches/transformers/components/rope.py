@@ -5,6 +5,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
+
 def _rotate_half(x):
     """Rotates half the hidden dims of the input (standard HF rotate_half)."""
     x1 = x[..., : x.shape[-1] // 2]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import torch
 
+
 def _extract_lora_params(lora_linear):
     """Extract (W, A, B, scaling) from a peft LoRA Linear module.
 
@@ -26,12 +27,14 @@ def _extract_lora_params(lora_linear):
     scaling = lora_linear.scaling[active]
     return W, A, B, scaling
 
+
 def _has_lora(module, proj_name):
     """Check if a module's sub-module has active LoRA adapters."""
     proj = getattr(module, proj_name, None)
     if proj is None:
         return False
     return hasattr(proj, "lora_A") and len(getattr(proj, "lora_A", {})) > 0
+
 
 def _no_lora_dropout(module, proj_name):
     """Check that a projection has no active LoRA dropout (p=0 / Identity).
@@ -56,6 +59,7 @@ def _no_lora_dropout(module, proj_name):
     if isinstance(dropout, torch.nn.Dropout) and dropout.p == 0.0:
         return True
     return False
+
 
 def _no_bias(module, proj_name):
     """Check that a projection has no bias (required for fused QKV kernel)."""

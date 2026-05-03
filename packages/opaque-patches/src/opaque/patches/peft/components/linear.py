@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import torch
-import torch.nn as nn
 import logging
 
 logger = logging.getLogger(__name__)
+
 
 def _make_lora_linear_forward(original):
     """LoRA linear forward using Opaque kernel (vmap-compatible).

@@ -2,8 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
-import torch
-import torch.nn as nn
 
 def _make_rms_norm_forward(
     original, *, casting_mode: str, offset: float, in_place_bwd: bool
@@ -72,5 +70,3 @@ def _rmsnorm_fac_glm4(orig):
     return _make_rms_norm_forward(
         orig, casting_mode="llama", offset=0.0, in_place_bwd=False
     )
-
-

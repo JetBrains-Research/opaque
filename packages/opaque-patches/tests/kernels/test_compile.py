@@ -53,7 +53,9 @@ def _build(seed: int = 0):
     return model, x, target
 
 
-def _run(model: nn.Module, x: torch.Tensor, y: torch.Tensor, *, compile_backend: str | None):
+def _run(
+    model: nn.Module, x: torch.Tensor, y: torch.Tensor, *, compile_backend: str | None
+):
     fmodel, params = make_functional(model)
 
     def loss_fn(p, xi, yi):

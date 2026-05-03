@@ -14,6 +14,7 @@ _FUSEABLE_QKV_ATTENTION_CLASSES = {
     "Cohere2Attention",
 }
 
+
 def _opaque_fused_lora_qkv(self, hidden_states):
     """Compute Q, K, V using fused Opaque_LoRA_QKV kernel.
 
@@ -51,6 +52,7 @@ def _opaque_fused_lora_qkv(self, hidden_states):
         Bv,
         Sv,
     )
+
 
 def _make_fused_qkv_attention_forward(original_forward):
     """Create attention forward with fused QKV LoRA projection.

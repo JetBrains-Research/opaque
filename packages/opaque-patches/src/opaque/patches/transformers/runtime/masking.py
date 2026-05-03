@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 import torch
 from opaque.patches.transformers.components.attention import vmap_repeat_kv
+
+
 def vmap_create_causal_mask(
     config,
     input_embeds: torch.Tensor,
@@ -132,6 +134,7 @@ def vmap_create_causal_mask(
 
     return causal_mask
 
+
 def vmap_create_sliding_window_causal_mask(
     config,
     input_embeds: torch.Tensor,
@@ -166,6 +169,7 @@ def vmap_create_sliding_window_causal_mask(
         and_mask_function=and_mask_function,
     )
 
+
 def _vmap_safe_ignore_causal_mask_sdpa(
     padding_mask, query_length, kv_length, kv_offset, local_attention_size=None
 ) -> bool:
@@ -181,6 +185,7 @@ def _vmap_safe_ignore_causal_mask_sdpa(
     return _vmap_safe_ignore_causal_mask_sdpa._original(
         padding_mask, query_length, kv_length, kv_offset, local_attention_size
     )
+
 
 def apply_masking_patches(*, enable_vmap_masking: bool = True) -> None:
     """Apply patches to shared utilities used by all models.

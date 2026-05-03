@@ -6,6 +6,7 @@ import torch
 from opaque.clipping import clipped_grad
 from opaque.functional import make_functional
 
+
 def get_tiny_config_kwargs():
     return {
         "vocab_size": 128,
@@ -21,6 +22,7 @@ def get_tiny_config_kwargs():
         "rope_theta": 10000.0,
     }
 
+
 def assert_forward_no_grad(model, device):
     model.eval()
     torch.manual_seed(0)
@@ -29,6 +31,7 @@ def assert_forward_no_grad(model, device):
     with torch.no_grad():
         out = model(input_ids=input_ids, attention_mask=attention_mask)
     assert out.logits.shape == (2, 10, model.config.vocab_size)
+
 
 def assert_forward_backward(model, device):
     model.train()
@@ -40,6 +43,7 @@ def assert_forward_backward(model, device):
     loss.backward()
     # Assert some gradient exists
     assert any(p.grad is not None for p in model.parameters())
+
 
 def assert_vmap_forward(model, device):
     model.eval()
@@ -55,6 +59,7 @@ def assert_vmap_forward(model, device):
 
     vmapped = torch.vmap(per_example)(input_ids, attention_mask)
     assert vmapped.shape == (batch,)
+
 
 def assert_vmap_grad(model, device):
     model.train()

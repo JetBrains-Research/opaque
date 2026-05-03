@@ -16,16 +16,19 @@ from opaque.clipping import clipped_grad
 from opaque.functional import make_functional
 from opaque.patches import apply_model_patches
 
+
 def has_hf_token() -> bool:
     return any(
         os.getenv(name)
         for name in ("HF_TOKEN", "HUGGINGFACEHUB_API_TOKEN", "HUGGINGFACE_TOKEN")
     )
 
+
 requires_hf_auth = pytest.mark.skipif(
     not has_hf_token(),
     reason="HF token not set (test loads a gated HuggingFace model)",
 )
+
 
 @pytest.fixture(scope="module")
 def qwen2_config():
@@ -33,16 +36,25 @@ def qwen2_config():
     config.num_hidden_layers = 2
     return config
 
+
 @pytest.fixture(scope="module")
 def qwen2_tokenizer():
     return AutoTokenizer.from_pretrained("Qwen/Qwen2-0.5B")
+
 
 def prepare_lora_model(config, target_modules=None):
     if target_modules is None:
         target_modules = ["q_proj", "v_proj"]
 
     model = AutoModelForCausalLM.from_config(config)
-    apply_model_patches(model, fuse_swiglu=False, fuse_rms_norm=False, fuse_rope=False, fuse_cross_entropy=False, wrap_eager_attention=True)
+    apply_model_patches(
+        model,
+        fuse_swiglu=False,
+        fuse_rms_norm=False,
+        fuse_rope=False,
+        fuse_cross_entropy=False,
+        wrap_eager_attention=True,
+    )
     lora_config = LoraConfig(
         r=8,
         lora_alpha=16,
@@ -50,6 +62,7 @@ def prepare_lora_model(config, target_modules=None):
         lora_dropout=0.0,
     )
     return get_peft_model(model, lora_config)
+
 
 def run_clipped_grad_test(model, tokenizer, device=None):
     if device is None:

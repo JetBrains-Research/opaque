@@ -7,14 +7,30 @@ from __future__ import annotations
 import torch.nn as nn
 
 SUPPORTED_FAMILIES = [
-    "cohere", "cohere2", "exaone4", "gemma", "gemma2", "gemma3", 
-    "glm4", "granite", "llama", "ministral", "mistral", 
-    "olmo2", "olmo3", "phi3", "qwen2", "qwen3", "smollm3"
+    "cohere",
+    "cohere2",
+    "exaone4",
+    "gemma",
+    "gemma2",
+    "gemma3",
+    "glm4",
+    "granite",
+    "llama",
+    "ministral",
+    "mistral",
+    "olmo2",
+    "olmo3",
+    "phi3",
+    "qwen2",
+    "qwen3",
+    "smollm3",
 ]
+
 
 def supported_families() -> list[str]:
     """Return a list of all HuggingFace model families with patching support."""
     return list(SUPPORTED_FAMILIES)
+
 
 def detect_family(model: nn.Module) -> str | None:
     """Detect the model family from the model config."""
@@ -25,6 +41,7 @@ def detect_family(model: nn.Module) -> str | None:
             return "gemma3"
         return model_type
     return None
+
 
 __all__ = [
     "SUPPORTED_FAMILIES",

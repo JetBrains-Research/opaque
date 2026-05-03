@@ -19,4 +19,3 @@ __all__ = [
     "apply_checkpoint_patch",
     "is_checkpoint_patched",
 ]
-

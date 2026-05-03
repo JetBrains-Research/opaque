@@ -5,6 +5,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
+
 def _pytorch_causal_lm_loss(
     logits,
     labels,
@@ -296,6 +297,3 @@ def _make_fused_ce_causal_lm_forward(original):
         )
 
     return forward
-
-
-

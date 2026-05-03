@@ -22,7 +22,12 @@ Three implementations:
 import triton
 import triton.language as tl
 import torch
-from ._utils import calculate_settings, ensure_cuda_tensors, follow_autocast, torch_gpu_device
+from ._utils import (
+    calculate_settings,
+    ensure_cuda_tensors,
+    follow_autocast,
+    torch_gpu_device,
+)
 
 ROPE_GROUP_SIZE: int = 4
 

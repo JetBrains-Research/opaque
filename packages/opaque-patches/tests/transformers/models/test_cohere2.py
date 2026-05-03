@@ -3,11 +3,17 @@
 """Tests for cohere2 model."""
 
 import pytest
+
 pytest.importorskip("transformers")
 
-from transformers.models.cohere2.modeling_cohere2 import Cohere2Config, Cohere2ForCausalLM
+from transformers.models.cohere2.modeling_cohere2 import (
+    Cohere2Config,
+    Cohere2ForCausalLM,
+)
 from opaque.patches import apply_model_patches
-import sys, os
+import sys
+import os
+
 sys.path.insert(0, os.path.dirname(__file__))
 from _test_utils import (
     get_tiny_config_kwargs,
@@ -16,6 +22,7 @@ from _test_utils import (
     assert_vmap_forward,
     assert_vmap_grad,
 )
+
 
 @pytest.fixture
 def tiny_model(device):
@@ -27,14 +34,18 @@ def tiny_model(device):
     apply_model_patches(model, wrap_eager_attention=True)
     return model
 
+
 def test_cohere2_forward_no_grad(tiny_model, device):
     assert_forward_no_grad(tiny_model, device)
+
 
 def test_cohere2_forward_backward(tiny_model, device):
     assert_forward_backward(tiny_model, device)
 
+
 def test_cohere2_vmap_forward(tiny_model, device):
     assert_vmap_forward(tiny_model, device)
+
 
 def test_cohere2_vmap_grad(tiny_model, device):
     assert_vmap_grad(tiny_model, device)

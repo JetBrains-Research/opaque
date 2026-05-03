@@ -51,7 +51,9 @@ def _make_batch(dtype: torch.dtype, device: torch.device, seed: int = 1):
     return x, y
 
 
-def _full_step(model: nn.Module, x: torch.Tensor, y: torch.Tensor, *, noise_stddev: float):
+def _full_step(
+    model: nn.Module, x: torch.Tensor, y: torch.Tensor, *, noise_stddev: float
+):
     fmodel, params = make_functional(model)
 
     def loss_fn(p, xi, yi):
@@ -360,4 +362,6 @@ def test_fp16_autocast_full_pipeline_with_optimizer():
     new_params = torchopt.apply_updates(params, updates, inplace=False)
 
     for p in new_params:
-        assert torch.isfinite(p).all(), "fp16 autocast pipeline produced non-finite params"
+        assert torch.isfinite(p).all(), (
+            "fp16 autocast pipeline produced non-finite params"
+        )

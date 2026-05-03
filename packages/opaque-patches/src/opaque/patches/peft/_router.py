@@ -2,17 +2,23 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
-import sys
 import types
 import logging
 
 from .components.linear import _make_lora_linear_forward
-from .components.mlp import _is_phi3_style_mlp, _MLP_ACTIVATION_MAP, _make_fused_lora_mlp_forward
-from .components.qkv import _FUSEABLE_QKV_ATTENTION_CLASSES, _opaque_fused_lora_qkv, _make_fused_qkv_attention_forward
+from .components.mlp import (
+    _is_phi3_style_mlp,
+    _MLP_ACTIVATION_MAP,
+    _make_fused_lora_mlp_forward,
+)
+from .components.qkv import (
+    _FUSEABLE_QKV_ATTENTION_CLASSES,
+    _opaque_fused_lora_qkv,
+    _make_fused_qkv_attention_forward,
+)
 from .components._utils import _has_lora, _no_lora_dropout, _no_bias
 
 logger = logging.getLogger(__name__)
-
 
 
 def _find_decoder_layers(model):
@@ -123,11 +129,7 @@ def _auto_fuse_lora(model):
 
 
 def apply_peft_model_patches(
-    model,
-    *,
-    performance: bool = True,
-    compat: bool = True,
-    **kwargs
+    model, *, performance: bool = True, compat: bool = True, **kwargs
 ) -> None:
     """Manually apply fused LoRA patching (QKV + MLP + Linear) to a PEFT model.
 
@@ -159,5 +161,5 @@ def apply_peft_model_patches(
 
     if patched_lora:
         logger.debug("opaque: Applied Triton kernel patches for peft.LoRA.Linear")
-        
+
     _auto_fuse_lora(model)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import torch
-import torch.nn as nn
+
 
 def _post_attn_eps_and_weight(layer) -> tuple[torch.Tensor, float]:
     norm = layer.post_attention_layernorm
@@ -225,14 +225,12 @@ def _fused_add_rms_fac_granite(orig):
         )
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states * self.residual_multiplier
-        
+
         outputs = (hidden_states,)
         if kwargs.get("output_attentions"):
             # Opaque does not return attention weights from fused kernels
             outputs += (None,)
-            
+
         return outputs
 
     return forward
-
-

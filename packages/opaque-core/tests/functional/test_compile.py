@@ -123,7 +123,9 @@ def test_compile_loss_closure_grad_parity(backend: str):
 def test_compile_loss_closure_noised_grad_parity(backend: str):
     """Adding deterministic Gaussian noise on top of compiled grads still matches."""
     model, x, y = _build_model_and_batch()
-    _, eager_noisy, _ = _run_dp_step(model, x, y, compile_backend=None, noise_stddev=0.5)
+    _, eager_noisy, _ = _run_dp_step(
+        model, x, y, compile_backend=None, noise_stddev=0.5
+    )
     _, compiled_noisy, _ = _run_dp_step(
         model, x, y, compile_backend=backend, noise_stddev=0.5
     )

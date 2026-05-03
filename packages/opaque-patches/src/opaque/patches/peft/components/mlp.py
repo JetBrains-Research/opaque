@@ -24,9 +24,11 @@ _MLP_ACTIVATION_MAP = {
     "Exaone4MLP": 0,  # ACTIVATION_SWIGLU
 }
 
+
 def _is_phi3_style_mlp(mlp):
     """Check if MLP uses combined gate_up_proj (Phi3 style)."""
     return hasattr(mlp, "gate_up_proj") and not hasattr(mlp, "gate_proj")
+
 
 def _make_fused_lora_mlp_forward(original_forward, activation_type):
     """Create fused LoRA MLP forward using Opaque_LoRA_MLP kernel.

@@ -140,11 +140,7 @@ def follow_autocast(*tensors):
     target = torch.get_autocast_dtype("cuda")
     out = []
     for t in tensors:
-        if (
-            isinstance(t, torch.Tensor)
-            and t.is_floating_point()
-            and t.dtype != target
-        ):
+        if isinstance(t, torch.Tensor) and t.is_floating_point() and t.dtype != target:
             out.append(t.to(target))
         else:
             out.append(t)

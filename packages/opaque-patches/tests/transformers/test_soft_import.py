@@ -24,6 +24,7 @@ except Exception as e:
     print(repr(e))
 """
 
+
 def test_apply_kernels_no_ops_without_transformers():
     env = os.environ.copy()
     result = subprocess.run(
