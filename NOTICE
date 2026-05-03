@@ -23,8 +23,8 @@ License. They carry an SPDX-License-Identifier of
 "Apache-2.0 AND BSD-2-Clause" and the LinkedIn copyright line in their
 file headers.
 
-  packages/opaque-performance/src/opaque/performance/kernels/rms_norm.py
-  packages/opaque-performance/src/opaque/performance/kernels/fused_add_rms_norm.py
+  packages/opaque-patches/src/opaque/patches/kernels/rms_norm.py
+  packages/opaque-patches/src/opaque/patches/kernels/fused_add_rms_norm.py
 
 BSD 2-Clause License text:
 
@@ -83,4 +83,4 @@ under the Apache License, Version 2.0. Simplified to drop bias /
 Kahan / VocabOrdering / dLSE / shift handling and adapted to Opaque's
 vmap-friendly autograd dispatch.
 
-  packages/opaque-performance/src/opaque/performance/kernels/linear_cross_entropy.py
+  packages/opaque-patches/src/opaque/patches/kernels/linear_cross_entropy.py
