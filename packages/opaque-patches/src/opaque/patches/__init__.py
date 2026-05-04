@@ -40,22 +40,6 @@ def apply_model_patches(
     if not _runtime_patches_applied:
         apply_runtime_patches()
 
-    # Fused-CE depends on a global LOSS_MAPPING patch (HF's loss registry
-    # is one-per-arch, not per-instance).  Applied here, once, when any
-    # model is patched with cross_entropy=True — folded out of
-    # apply_runtime_patches's deprecated ``use_fused_loss`` knob.
-    if kwargs.get("cross_entropy", performance):
-        try:
-            from opaque.patches.transformers.runtime.loss_mapping import (
-                apply_loss_mapping_patch,
-            )
-
-            apply_loss_mapping_patch(cross_entropy=True)
-        except ImportError:
-            logger.debug(
-                "opaque: Hugging Face loss mapping not available. Skipping."
-            )
-
     try:
         from opaque.patches.transformers._router import apply_transformers_model_patches
 

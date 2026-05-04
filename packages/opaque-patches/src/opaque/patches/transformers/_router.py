@@ -11,9 +11,16 @@ from typing import Callable
 import torch
 import torch.nn as nn
 
-from opaque.patches.transformers._registry import SUPPORTED_FAMILIES, detect_family
+from opaque.patches.transformers._registry import detect_family, get_family_apply_fn
 
 logger = logging.getLogger(__name__)
+
+
+# When CUDA + Triton aren't available the kernel patches can't run; force
+# them off even if the caller passed an explicit ``True``.  Listed here
+# (rather than computed by prefix) so the Liger-aligned flag set is
+# explicit and grep-able.
+_KERNEL_KWARGS = ("rope", "rms_norm", "swiglu", "geglu", "cross_entropy")
 
 
 def _patch_forward(
@@ -69,32 +76,26 @@ def apply_transformers_model_patches(
     # Force disable kernels if dependencies are missing
     if not has_kernels:
         performance = False
-        # Overwrite all specific kernel kwargs if they were set
-        for key in list(kwargs.keys()):
-            if key.startswith("fuse_"):
+        for key in _KERNEL_KWARGS:
+            if key in kwargs:
                 kwargs[key] = False
 
     family = detect_family(model)
+    if family is None:
+        logger.debug("opaque: model has no detectable family; skipping patches")
+        return
 
-    if family and family in SUPPORTED_FAMILIES:
-        import importlib
+    apply_fn = get_family_apply_fn(family)
+    if apply_fn is None:
+        logger.debug(
+            "opaque: no apply function registered for family %s; "
+            "register one via opaque.patches.transformers.register_family",
+            family,
+        )
+        return
 
-        try:
-            models_module = importlib.import_module(
-                "opaque.patches.transformers.models." + family
-            )
-            patch_fn = getattr(
-                models_module, "apply_" + family.replace("-", "_") + "_patches"
-            )
-        except (ImportError, AttributeError) as e:
-            logger.warning(
-                "opaque: Could not load patch function for %s: %s", family, e
-            )
-            patch_fn = None
-
-        if patch_fn:
-            patch_fn(model, performance=performance, compat=compat, **kwargs)
-            logger.debug(f"opaque: Applied model patches for {family}")
+    apply_fn(model, performance=performance, compat=compat, **kwargs)
+    logger.debug("opaque: Applied model patches for %s", family)
 
     batchify = kwargs.get("batchify", compat)
     # Apply batchify to PeftModel classes if needed

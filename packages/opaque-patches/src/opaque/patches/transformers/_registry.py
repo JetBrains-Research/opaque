@@ -1,35 +1,96 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Source of truth for Hugging Face model architecture support."""
+"""Family registry — built-in + user-registered HuggingFace model families.
+
+Dispatch flow (called from
+:func:`apply_transformers_model_patches`):
+
+1. ``detect_family(model)`` → short family name from
+   ``model.config.model_type``.
+2. ``get_family_apply_fn(name)`` → the registered apply function.
+3. The apply function is what
+   :func:`opaque.patches.transformers.make_apply_model_patches` returns.
+
+Both built-in and user-defined families share the same registration path:
+``register_family(name, apply_fn)``.  Built-in families register
+themselves at import time from
+``opaque.patches.transformers.models.X``; downstream users register
+their own families the same way (typically right after building
+``apply_X_patches`` via :func:`make_apply_model_patches`).
+
+User registration:
+
+    from opaque.patches.transformers import (
+        make_apply_family_patches,
+        make_apply_model_patches,
+        register_family,
+    )
+
+    apply_my_fam_family_patches = make_apply_family_patches(
+        family="my_fam", module_path="my_pkg.modeling_my_fam",
+    )
+    apply_my_fam_patches = make_apply_model_patches(
+        family="my_fam",
+        family_apply=apply_my_fam_family_patches,
+        module_path="my_pkg.modeling_my_fam",
+        classes={...},
+        mlp_kind="swiglu",
+    )
+    register_family("my_fam", apply_my_fam_patches)
+
+Now ``opaque.patches.apply_model_patches(my_fam_instance)`` routes to it.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import torch.nn as nn
 
-SUPPORTED_FAMILIES = [
-    "cohere",
-    "cohere2",
-    "exaone4",
-    "gemma",
-    "gemma2",
-    "gemma3",
-    "glm4",
-    "granite",
-    "llama",
-    "ministral",
-    "mistral",
-    "olmo2",
-    "olmo3",
-    "phi3",
-    "qwen2",
-    "qwen3",
-    "smollm3",
-]
+
+_FAMILY_REGISTRY: dict[str, Callable] = {}
+
+
+def register_family(name: str, apply_fn: Callable) -> None:
+    """Register a HuggingFace model family.
+
+    The dispatcher will route models with
+    ``model.config.model_type == name`` to ``apply_fn``.  Used both by
+    opaque's shipped families (each ``opaque.patches.transformers.models.X``
+    calls this on import) and by downstream users adding their own.
+
+    Args:
+        name: The HF ``model_type`` string (matches
+            :func:`opaque.patches.transformers.family_name`).  Re-registering
+            an existing name overwrites the previous registration.
+        apply_fn: Callable with signature
+            ``apply(model, *, performance=True, compat=True, **kwargs) -> None``,
+            typically the return value of
+            :func:`opaque.patches.transformers.make_apply_model_patches`.
+    """
+    _FAMILY_REGISTRY[name] = apply_fn
+    if name not in SUPPORTED_FAMILIES:
+        SUPPORTED_FAMILIES.append(name)
+
+
+def get_family_apply_fn(name: str) -> Callable | None:
+    """Return the registered apply function for a family, or ``None``."""
+    return _FAMILY_REGISTRY.get(name)
 
 
 def supported_families() -> list[str]:
-    """Return a list of all HuggingFace model families with patching support."""
-    return list(SUPPORTED_FAMILIES)
+    """List currently registered families (built-ins + user-registered)."""
+    return sorted(_FAMILY_REGISTRY)
+
+
+# Kept for backwards-compatibility with existing callers that read
+# ``SUPPORTED_FAMILIES`` directly.  Prefer :func:`supported_families`.
+# Populated at first lookup (after built-in models import).
+def _supported_families_proxy() -> list[str]:
+    return supported_families()
+
+
+SUPPORTED_FAMILIES: list[str] = []  # populated by built-in imports
 
 
 def detect_family(model: nn.Module) -> str | None:
@@ -45,6 +106,8 @@ def detect_family(model: nn.Module) -> str | None:
 
 __all__ = [
     "SUPPORTED_FAMILIES",
-    "supported_families",
     "detect_family",
+    "get_family_apply_fn",
+    "register_family",
+    "supported_families",
 ]

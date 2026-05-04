@@ -1,67 +1,44 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
+"""Patches for the glm4 family — built via the patch factories.
+
+The factories close over architecture-specific knobs (MLP kind, RMSNorm
+casting, whether the family supports fused-add RMS) at construction
+time, so the dispatch is bug-by-construction: e.g. Gemma's
+``mlp_kind="geglu_exact"`` cannot accidentally route to SwiGLU.
+
+Registration: this module calls ``register_family`` at import time —
+the same mechanism downstream users follow to add their own families.
+"""
+
 from __future__ import annotations
-from opaque.patches.transformers.components.batchify import apply_batchify_patch
-from opaque.patches.transformers.components.kv_cache import apply_kv_cache_patch
+
+from opaque.patches.transformers._factory import make_apply_model_patches
+from opaque.patches.transformers._family import make_apply_family_patches
+from opaque.patches.transformers._registry import register_family
 
 
-import logging
-import torch.nn as nn
-from opaque.patches.transformers._router import _patch_forward
-from opaque.patches.transformers.components.cross_entropy import (
-    _make_fused_ce_causal_lm_forward,
+_MODULE_PATH = "transformers.models.glm4.modeling_glm4"
+
+
+apply_glm4_family_patches = make_apply_family_patches(
+    family="glm4",
+    module_path=_MODULE_PATH,
 )
-from opaque.patches.transformers.components.rms_norm import _rmsnorm_fac_glm4
-from opaque.patches.transformers.components.swiglu import _make_phi3_mlp_forward
-from opaque.patches.transformers.components.attention import (
-    vmap_repeat_kv,
-    vmap_eager_attention_forward,
+
+
+apply_glm4_patches = make_apply_model_patches(
+    family="glm4",
+    family_apply=apply_glm4_family_patches,
+    module_path=_MODULE_PATH,
+    classes={"mlp": "Glm4MLP", "rms_norm": "Glm4RMSNorm", "causal_lm": "Glm4ForCausalLM"},
+    mlp_kind='phi3_swiglu',
+    rms_norm_kind='glm4',
+    fused_add_rms_kind=None,
 )
-from opaque.patches.transformers.components.masking import apply_module_masking_patch
 
 
-logger = logging.getLogger(__name__)
+register_family("glm4", apply_glm4_patches)
 
 
-def apply_glm4_patches(
-    model: nn.Module | None = None,
-    *,
-    performance: bool = True,
-    compat: bool = True,
-    **kwargs,
-) -> None:
-    swiglu = kwargs.get("swiglu", performance)
-    rms_norm = kwargs.get("rms_norm", performance)
-    cross_entropy = kwargs.get("cross_entropy", performance)
-    eager_attention = kwargs.get("eager_attention", compat)
-    batchify = kwargs.get("batchify", compat)
-    kv_cache = kwargs.get("kv_cache", compat)
-    """Apply Triton kernel patches for glm4 model."""
-    try:
-        import transformers.models.glm4.modeling_glm4 as mod
-    except ImportError:
-        return
-
-    if eager_attention:
-        apply_module_masking_patch(mod)
-        if hasattr(mod, "repeat_kv"):
-            mod.repeat_kv = vmap_repeat_kv
-        if hasattr(mod, "eager_attention_forward"):
-            mod.eager_attention_forward = vmap_eager_attention_forward
-
-    if swiglu:
-        _patch_forward(getattr(mod, "Glm4MLP", None), _make_phi3_mlp_forward, model)
-    if rms_norm:
-        _patch_forward(getattr(mod, "Glm4RMSNorm", None), _rmsnorm_fac_glm4, model)
-    if cross_entropy:
-        _patch_forward(
-            getattr(mod, "Glm4ForCausalLM", None),
-            _make_fused_ce_causal_lm_forward,
-            model,
-        )
-
-    causal_lm_cls = getattr(mod, "Glm4ForCausalLM", None)
-    if batchify:
-        apply_batchify_patch(causal_lm_cls, model)
-    if kv_cache:
-        apply_kv_cache_patch(causal_lm_cls, model)
+__all__ = ["apply_glm4_patches", "apply_glm4_family_patches"]
