@@ -177,8 +177,9 @@ def _scale_by_adam(
             bc1 = 1 - b1**t
             bc2 = 1 - b2**t
             result = tree_map(
-                lambda m, v: (m / bc1)
-                / (torch.clamp(v / bc2, min=bc_floor).sqrt() + eps),
+                lambda m, v: (
+                    (m / bc1) / (torch.clamp(v / bc2, min=bc_floor).sqrt() + eps)
+                ),
                 new_mu,
                 new_nu,
             )
