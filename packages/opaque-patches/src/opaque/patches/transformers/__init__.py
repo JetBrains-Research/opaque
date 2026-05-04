@@ -8,11 +8,11 @@ families::
     from opaque.patches.transformers import (
         make_apply_family_patches,
         make_apply_model_patches,
-        register_mlp_kind,
+        register_activation_kind,
     )
 
     # 1) (Optional) Register a custom kernel variant under a name.
-    register_mlp_kind("my_glu", my_factory, flag="my_glu")
+    register_activation_kind("my_glu", my_factory)
 
     # 2) Build the family-runtime patch fn (mutates module-level globals
     #    in `my_pkg.my_modeling`; once-per-process, idempotent).
@@ -28,7 +28,7 @@ families::
         module_path="my_pkg.my_modeling",
         classes={"mlp": "MyMLP", "rms_norm": "MyRMSNorm",
                  "decoder_layer": "MyDecoder", "causal_lm": "MyForCausalLM"},
-        mlp_kind="my_glu",          # registered above; or pass the callable directly
+        activation_kind="my_glu",   # registered above; or pass the callable directly
         rms_norm_kind="llama",      # any built-in or callable
         fused_add_rms_kind=None,
     )
@@ -49,8 +49,8 @@ the family from the model and dispatches to the right
 
 from opaque.patches.transformers._factory import (
     make_apply_model_patches,
+    register_activation_kind,
     register_fused_add_rms_kind,
-    register_mlp_kind,
     register_rms_norm_kind,
 )
 from opaque.patches.transformers._family import (
@@ -74,9 +74,9 @@ __all__ = [
     "family_name",
     "make_apply_family_patches",
     "make_apply_model_patches",
+    "register_activation_kind",
     "register_family",
     "register_fused_add_rms_kind",
-    "register_mlp_kind",
     "register_rms_norm_kind",
     "supported_families",
 ]

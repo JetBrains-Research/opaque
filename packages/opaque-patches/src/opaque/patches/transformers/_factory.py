@@ -14,7 +14,7 @@ This collapses what was previously ~17 hand-rolled per-model files into
 ~17 small factory invocations.  Architectural choices (which MLP kind,
 which RMSNorm casting mode, whether the family supports fused-add-RMS)
 are encoded in the factory call's kwargs and closed over the returned
-function — so e.g. Gemma's ``mlp_kind="geglu_exact"`` cannot accidentally
+function — so e.g. Gemma's ``activation_kind="geglu_exact"`` cannot accidentally
 dispatch to SwiGLU.
 """
 
@@ -58,13 +58,13 @@ log = logging.getLogger(__name__)
 
 
 # Dispatch tables — single source of truth for which factory function
-# implements each kind.  Adding a new MLP / RMSNorm variant: register here,
-# then reference by string from per-model factory calls.
-MlpKind = Literal["swiglu", "phi3_swiglu", "geglu_exact", "geglu_approx"]
+# implements each kind.  Adding a new activation / RMSNorm variant:
+# register here, then reference by string from per-model factory calls.
+ActivationKind = Literal["swiglu", "phi3_swiglu", "geglu_exact", "geglu_approx"]
 RmsNormKind = Literal["llama", "gemma", "gemma2", "olmo2", "glm4"]
 FusedAddRmsKind = Literal["llama", "gemma", "phi3", "granite"]
 
-_MLP_FACTORIES = {
+_ACTIVATION_FACTORIES = {
     "swiglu": _make_swiglu_mlp_forward,
     "phi3_swiglu": _make_phi3_mlp_forward,
     "geglu_exact": _make_geglu_exact_mlp_forward,
@@ -87,43 +87,24 @@ _FUSED_ADD_RMS_FACTORIES = {
 }
 
 
-# Mapping from the MLP kind string to the user-facing kwarg name
-# (``swiglu`` vs ``geglu``).  Closed over by the factory so the kernel
-# choice is fixed at registration time — Gemma's ``geglu_exact`` reads
-# the ``geglu`` flag, never ``swiglu``.
-_MLP_FLAG_FOR_KIND = {
-    "swiglu": "swiglu",
-    "phi3_swiglu": "swiglu",
-    "geglu_exact": "geglu",
-    "geglu_approx": "geglu",
-}
-
-
 # ----------------------------------------------------------------------------
 # Public registration helpers — let users plug their own kernel variants in.
 # ----------------------------------------------------------------------------
 
 
-def register_mlp_kind(
+def register_activation_kind(
     name: str,
     factory: Callable,
-    *,
-    flag: str = "swiglu",
 ) -> None:
-    """Register a custom MLP forward factory under ``name``.
+    """Register a custom gated-activation forward factory under ``name``.
 
     Args:
         name: Identifier used in :func:`make_apply_model_patches` as
-            ``mlp_kind=name``.
+            ``activation_kind=name``.
         factory: Callable taking the original module's bound ``forward``
             and returning a new forward.
-        flag: Which user-facing kwarg name on
-            :func:`opaque.patches.apply_model_patches` enables this
-            kernel (``"swiglu"``, ``"geglu"``, or any custom name your
-            users will type).
     """
-    _MLP_FACTORIES[name] = factory
-    _MLP_FLAG_FOR_KIND[name] = flag
+    _ACTIVATION_FACTORIES[name] = factory
 
 
 def register_rms_norm_kind(name: str, factory: Callable) -> None:
@@ -163,10 +144,9 @@ def make_apply_model_patches(
     family_apply: Callable,
     module_path: str,
     classes: dict[str, str],
-    mlp_kind: str | Callable | None = None,
+    activation_kind: str | Callable | None = None,
     rms_norm_kind: str | Callable | None = None,
     fused_add_rms_kind: str | Callable | None = None,
-    mlp_flag: str | None = None,
 ) -> Callable:
     """Build an ``apply_X_patches`` function for a given family.
 
@@ -186,38 +166,25 @@ def make_apply_model_patches(
             ``"mlp"``, ``"rms_norm"``, ``"decoder_layer"``,
             ``"causal_lm"``.  Roles absent from the mapping are skipped
             (e.g. Cohere has no RMSNorm; omit the ``"rms_norm"`` entry).
-        mlp_kind: Which MLP forward factory to use.  Either a registered
-            string name (``"swiglu"``, ``"geglu_exact"``, …), a callable
-            used directly, or ``None`` (no MLP patch).
+        activation_kind: Which gated-activation forward factory to use.
+            Either a registered string name (``"swiglu"``,
+            ``"geglu_exact"``, …), a callable used directly, or ``None``
+            (no activation patch).  The user-facing kwarg that gates this
+            concern is always ``activation``; the family decides which
+            concrete activation kernel is deployed.
         rms_norm_kind: Same shape — registered name, callable, or ``None``.
         fused_add_rms_kind: Same shape — for the DecoderLayer fused-add
             variant.
-        mlp_flag: Which user-facing kwarg name enables the MLP patch.
-            When ``mlp_kind`` is a registered string, defaults to that
-            kind's registered flag (``"swiglu"`` or ``"geglu"``).  When
-            ``mlp_kind`` is a custom callable, defaults to ``"swiglu"``
-            unless overridden here.
 
     Returns:
         Callable with signature
         ``apply(model=None, *, performance=True, compat=True, **kwargs) -> None``.
-        Liger-aligned kwargs: ``rope``, ``rms_norm``, ``swiglu`` /
-        ``geglu``, ``cross_entropy``, ``eager_attention``, ``batchify``,
-        ``kv_cache``.
+        Liger-aligned kwargs: ``rope``, ``rms_norm``, ``activation``,
+        ``cross_entropy``, ``eager_attention``, ``batchify``, ``kv_cache``.
     """
-    mlp_factory = _resolve(mlp_kind, _MLP_FACTORIES)
+    activation_factory = _resolve(activation_kind, _ACTIVATION_FACTORIES)
     rms_norm_factory = _resolve(rms_norm_kind, _RMSNORM_FACTORIES)
     fused_add_rms_factory = _resolve(fused_add_rms_kind, _FUSED_ADD_RMS_FACTORIES)
-
-    # Resolve the user-facing kwarg name that gates the MLP patch.
-    if mlp_factory is None:
-        mlp_flag_name = None
-    elif mlp_flag is not None:
-        mlp_flag_name = mlp_flag
-    elif isinstance(mlp_kind, str):
-        mlp_flag_name = _MLP_FLAG_FOR_KIND.get(mlp_kind, "swiglu")
-    else:
-        mlp_flag_name = "swiglu"  # default for custom callables
 
     def apply(
         model=None,
@@ -234,13 +201,13 @@ def make_apply_model_patches(
         except ImportError:
             return
 
-        # MLP (SwiGLU / GeGLU / phi3 SwiGLU variant)
-        if mlp_factory is not None and mlp_flag_name is not None:
-            mlp_on = kwargs.get(mlp_flag_name, performance)
-            if mlp_on:
-                mlp_class = classes.get("mlp")
-                if mlp_class is not None:
-                    _patch_forward(getattr(mod, mlp_class, None), mlp_factory, model)
+        # Gated activation inside the model's MLP module (SwiGLU / GeGLU /
+        # Phi3-style SwiGLU).  ``performance`` remains the coarse gate;
+        # ``activation`` is the fine-grained override.
+        if activation_factory is not None and kwargs.get("activation", performance):
+            mlp_class = classes.get("mlp")
+            if mlp_class is not None:
+                _patch_forward(getattr(mod, mlp_class, None), activation_factory, model)
 
         # RMSNorm (unified standalone + fused-add).
         rms_norm_on = kwargs.get("rms_norm", performance)
@@ -288,9 +255,7 @@ def make_apply_model_patches(
 
         # vmap-safety patches on the causal-LM class.
         causal_lm_class = classes.get("causal_lm")
-        causal_lm_obj = (
-            getattr(mod, causal_lm_class, None) if causal_lm_class else None
-        )
+        causal_lm_obj = getattr(mod, causal_lm_class, None) if causal_lm_class else None
         if kwargs.get("batchify", compat) and causal_lm_obj is not None:
             apply_batchify_patch(causal_lm_obj, model)
         if kwargs.get("kv_cache", compat) and causal_lm_obj is not None:
@@ -304,10 +269,10 @@ def make_apply_model_patches(
 
 __all__ = [
     "make_apply_model_patches",
-    "register_mlp_kind",
+    "register_activation_kind",
     "register_rms_norm_kind",
     "register_fused_add_rms_kind",
-    "MlpKind",
+    "ActivationKind",
     "RmsNormKind",
     "FusedAddRmsKind",
 ]

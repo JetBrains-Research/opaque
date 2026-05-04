@@ -11,6 +11,9 @@ Validates:
 
 from __future__ import annotations
 
+import sys
+import types
+
 import pytest
 
 pytest.importorskip("transformers")
@@ -19,9 +22,9 @@ from opaque.patches.transformers import (
     family_name,
     make_apply_family_patches,
     make_apply_model_patches,
+    register_activation_kind,
     register_family,
     register_fused_add_rms_kind,
-    register_mlp_kind,
     register_rms_norm_kind,
     supported_families,
 )
@@ -56,10 +59,13 @@ def test_built_in_kinds_compose_into_a_callable():
         family="public_api_test_a",
         family_apply=fam,
         module_path="transformers.models.llama.modeling_llama",
-        classes={"mlp": "LlamaMLP", "rms_norm": "LlamaRMSNorm",
-                 "decoder_layer": "LlamaDecoderLayer",
-                 "causal_lm": "LlamaForCausalLM"},
-        mlp_kind="swiglu",
+        classes={
+            "mlp": "LlamaMLP",
+            "rms_norm": "LlamaRMSNorm",
+            "decoder_layer": "LlamaDecoderLayer",
+            "causal_lm": "LlamaForCausalLM",
+        },
+        activation_kind="swiglu",
         rms_norm_kind="llama",
         fused_add_rms_kind="llama",
     )
@@ -79,7 +85,7 @@ def test_unknown_kind_raises_with_registered_set_in_message():
             family_apply=fam,
             module_path="transformers.models.llama.modeling_llama",
             classes={},
-            mlp_kind="nope",
+            activation_kind="nope",
         )
 
 
@@ -88,8 +94,8 @@ def test_unknown_kind_raises_with_registered_set_in_message():
 # ----------------------------------------------------------------------------
 
 
-def test_register_mlp_kind_then_use_by_name():
-    register_mlp_kind("public_api_glu", _passthrough_factory, flag="public_api_glu")
+def test_register_activation_kind_then_use_by_name():
+    register_activation_kind("public_api_glu", _passthrough_factory)
     fam = make_apply_family_patches(
         family="public_api_test_b",
         module_path="transformers.models.llama.modeling_llama",
@@ -99,7 +105,7 @@ def test_register_mlp_kind_then_use_by_name():
         family_apply=fam,
         module_path="transformers.models.llama.modeling_llama",
         classes={"mlp": "LlamaMLP"},
-        mlp_kind="public_api_glu",
+        activation_kind="public_api_glu",
     )
     assert callable(apply)
 
@@ -147,11 +153,54 @@ def test_raw_callable_accepted_without_registration():
         family_apply=fam,
         module_path="transformers.models.llama.modeling_llama",
         classes={"mlp": "LlamaMLP", "rms_norm": "LlamaRMSNorm"},
-        mlp_kind=_passthrough_factory,         # not registered, raw callable
-        mlp_flag="my_custom_flag",             # custom kwarg name
-        rms_norm_kind=_passthrough_factory,    # raw, also unregistered
+        activation_kind=_passthrough_factory,  # not registered, raw callable
+        rms_norm_kind=_passthrough_factory,  # raw, also unregistered
     )
     assert callable(apply)
+
+
+def test_activation_kwarg_gates_family_selected_activation_patch(monkeypatch):
+    """The public fine-grained knob is ``activation``; the family-selected
+    ``activation_kind`` decides which concrete kernel factory is installed."""
+    module_name = "public_api_fake_activation_module"
+    mod = types.ModuleType(module_name)
+
+    class FakeMLP:
+        def forward(self, x):
+            return x
+
+    mod.FakeMLP = FakeMLP
+    monkeypatch.setitem(sys.modules, module_name, mod)
+
+    calls = []
+
+    def activation_factory(original):
+        calls.append(original)
+
+        def forward(self, x):
+            return original(self, x)
+
+        return forward
+
+    fam = make_apply_family_patches(
+        family="public_api_test_activation_gate",
+        module_path=module_name,
+    )
+    apply = make_apply_model_patches(
+        family="public_api_test_activation_gate",
+        family_apply=fam,
+        module_path=module_name,
+        classes={"mlp": "FakeMLP"},
+        activation_kind=activation_factory,
+    )
+
+    apply(performance=True, compat=True, activation=False)
+    assert calls == []
+    assert not hasattr(FakeMLP.forward, "__opaque_patched__")
+
+    apply(performance=True, compat=True, activation=True)
+    assert len(calls) == 1
+    assert getattr(FakeMLP.forward, "__opaque_patched__", False)
 
 
 # ----------------------------------------------------------------------------
@@ -245,7 +294,7 @@ def test_register_family_makes_it_visible_in_supported_families(_restore_registr
         family_apply=fam,
         module_path="some.fake.module",
         classes={},
-        mlp_kind="swiglu",
+        activation_kind="swiglu",
     )
     register_family(name, apply)
     assert name in supported_families()

@@ -33,8 +33,8 @@ def apply_model_patches(
     directly from the root namespace to apply LoRA kernels.
 
     Liger-aligned per-model flags are passed through ``**kwargs``:
-    ``rope``, ``rms_norm``, ``swiglu`` / ``geglu``, ``cross_entropy``,
-    plus opaque-specific ``eager_attention``, ``batchify``, ``kv_cache``.
+    ``rope``, ``rms_norm``, ``activation``, ``cross_entropy``, plus
+    opaque-specific ``eager_attention``, ``batchify``, ``kv_cache``.
     """
     global _runtime_patches_applied
     if not _runtime_patches_applied:

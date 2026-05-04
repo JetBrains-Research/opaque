@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # them off even if the caller passed an explicit ``True``.  Listed here
 # (rather than computed by prefix) so the Liger-aligned flag set is
 # explicit and grep-able.
-_KERNEL_KWARGS = ("rope", "rms_norm", "swiglu", "geglu", "cross_entropy")
+_KERNEL_KWARGS = ("rope", "rms_norm", "activation", "cross_entropy")
 
 
 def _patch_forward(

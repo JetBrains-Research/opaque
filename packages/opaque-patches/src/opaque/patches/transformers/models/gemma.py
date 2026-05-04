@@ -5,7 +5,7 @@
 The factories close over architecture-specific knobs (MLP kind, RMSNorm
 casting, whether the family supports fused-add RMS) at construction
 time, so the dispatch is bug-by-construction: e.g. Gemma's
-``mlp_kind="geglu_exact"`` cannot accidentally route to SwiGLU.
+``activation_kind="geglu_exact"`` cannot accidentally route to SwiGLU.
 
 Registration: this module calls ``register_family`` at import time —
 the same mechanism downstream users follow to add their own families.
@@ -31,10 +31,15 @@ apply_gemma_patches = make_apply_model_patches(
     family="gemma",
     family_apply=apply_gemma_family_patches,
     module_path=_MODULE_PATH,
-    classes={"mlp": "GemmaMLP", "rms_norm": "GemmaRMSNorm", "decoder_layer": "GemmaDecoderLayer", "causal_lm": "GemmaForCausalLM"},
-    mlp_kind='geglu_exact',
-    rms_norm_kind='gemma',
-    fused_add_rms_kind='gemma',
+    classes={
+        "mlp": "GemmaMLP",
+        "rms_norm": "GemmaRMSNorm",
+        "decoder_layer": "GemmaDecoderLayer",
+        "causal_lm": "GemmaForCausalLM",
+    },
+    activation_kind="geglu_exact",
+    rms_norm_kind="gemma",
+    fused_add_rms_kind="gemma",
 )
 
 

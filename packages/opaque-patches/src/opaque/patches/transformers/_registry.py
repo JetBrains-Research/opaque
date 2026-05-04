@@ -34,7 +34,7 @@ User registration:
         family_apply=apply_my_fam_family_patches,
         module_path="my_pkg.modeling_my_fam",
         classes={...},
-        mlp_kind="swiglu",
+        activation_kind="swiglu",
     )
     register_family("my_fam", apply_my_fam_patches)
 

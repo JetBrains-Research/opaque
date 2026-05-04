@@ -5,7 +5,7 @@
 The factories close over architecture-specific knobs (MLP kind, RMSNorm
 casting, whether the family supports fused-add RMS) at construction
 time, so the dispatch is bug-by-construction: e.g. Gemma's
-``mlp_kind="geglu_exact"`` cannot accidentally route to SwiGLU.
+``activation_kind="geglu_exact"`` cannot accidentally route to SwiGLU.
 
 Registration: this module calls ``register_family`` at import time —
 the same mechanism downstream users follow to add their own families.
@@ -31,10 +31,15 @@ apply_qwen2_patches = make_apply_model_patches(
     family="qwen2",
     family_apply=apply_qwen2_family_patches,
     module_path=_MODULE_PATH,
-    classes={"mlp": "Qwen2MLP", "rms_norm": "Qwen2RMSNorm", "decoder_layer": "Qwen2DecoderLayer", "causal_lm": "Qwen2ForCausalLM"},
-    mlp_kind='swiglu',
-    rms_norm_kind='llama',
-    fused_add_rms_kind='llama',
+    classes={
+        "mlp": "Qwen2MLP",
+        "rms_norm": "Qwen2RMSNorm",
+        "decoder_layer": "Qwen2DecoderLayer",
+        "causal_lm": "Qwen2ForCausalLM",
+    },
+    activation_kind="swiglu",
+    rms_norm_kind="llama",
+    fused_add_rms_kind="llama",
 )
 
 
