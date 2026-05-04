@@ -67,6 +67,7 @@ except ImportError as exc:
 from opaque.clipping.per_group import PerGroup
 from opaque.core.pytree import tree_map
 from opaque.optimizers._bias_correction import (
+    init_per_group_phi,
     is_per_group,
     resolve_noise_variance,
     update_phi_ema,
@@ -139,11 +140,7 @@ def _scale_by_adam(
     def init_fn(params: Any) -> AdamState:
         mu = tree_map(torch.zeros_like, params)
         nu = tree_map(torch.zeros_like, params)
-        phi: Any
-        if _default_per_group:
-            phi = {k: 0.0 for k in params}
-        else:
-            phi = 0.0
+        phi: Any = init_per_group_phi(params) if _default_per_group else 0.0
         return AdamState(mu=mu, nu=nu, phi=phi, step=0)
 
     def update_fn(
@@ -198,25 +195,40 @@ def _scale_by_adam(
         bc2 = 1 - b2**t
 
         if per_group:
-            # Per-key path: φ is a dict[str, float] indexed by param key.
-            assert isinstance(new_mu, dict), (
-                "PerGroup BC requires top-level dict params."
-            )
-            new_phi: Any = {}
-            result = {}
-            for key in new_mu:
-                nv_k = resolve_noise_variance(effective_stddev, key)
-                old_phi_k = state.phi[key] if isinstance(state.phi, dict) else state.phi
-                new_phi_k = b2 * old_phi_k + (1 - b2) * nv_k
-                new_phi[key] = new_phi_k
+            # Per-leaf path: walk ``new_mu`` and ``new_nu`` in lockstep
+            # by dotted-key paths matching :class:`PerGroup`'s lookup
+            # keys, so nested param pytrees work the same as flat dicts.
+            new_phi: dict[str, float] = {}
 
-                m_hat = new_mu[key] / bc1
+            def _bc_walk(mu_node: Any, nu_node: Any, prefix: str) -> Any:
+                if isinstance(mu_node, dict):
+                    return {
+                        k: _bc_walk(
+                            mu_node[k],
+                            nu_node[k],
+                            f"{prefix}.{k}" if prefix else str(k),
+                        )
+                        for k in mu_node
+                    }
+                # Tensor leaf.
+                path = prefix
+                nv = resolve_noise_variance(effective_stddev, path)
+                old_phi_k = (
+                    state.phi.get(path, 0.0)
+                    if isinstance(state.phi, dict)
+                    else state.phi
+                )
+                new_phi_k = b2 * old_phi_k + (1 - b2) * nv
+                new_phi[path] = new_phi_k
+                m_hat = mu_node / bc1
                 phi_hat = new_phi_k / bc2
                 if phi_hat > 0:
-                    v_hat = torch.clamp(new_nu[key] / bc2 - phi_hat, min=bc_floor)
+                    v_hat = torch.clamp(nu_node / bc2 - phi_hat, min=bc_floor)
                 else:
-                    v_hat = new_nu[key] / bc2
-                result[key] = m_hat / (v_hat.sqrt() + eps)
+                    v_hat = nu_node / bc2
+                return m_hat / (v_hat.sqrt() + eps)
+
+            result = _bc_walk(new_mu, new_nu, "")
         else:
             scalar_var = float(effective_stddev) ** 2
             new_phi = update_phi_ema(state.phi, scalar_var, b2)

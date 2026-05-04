@@ -238,6 +238,61 @@ class TestPerGroupBC:
         torch.testing.assert_close(u_pg["q_proj.weight"], u_sc["q_proj.weight"])
         assert not torch.equal(u_pg["mlp.weight"], u_sc["mlp.weight"])
 
+    def test_per_group_with_nested_params(self):
+        """Nested param pytrees: PerGroup looks up by dotted leaf path,
+        and BC must walk leaves the same way (regression test for the
+        review comment about iterating top-level dict keys only)."""
+        torch.manual_seed(0)
+        nested_params = {
+            "layer1": {
+                "weight": torch.randn(4, 3),
+                "bias": torch.randn(3),
+            },
+            "layer2": {"weight": torch.randn(3, 2)},
+        }
+        nested_grads = {
+            "layer1": {
+                "weight": torch.randn_like(nested_params["layer1"]["weight"]),
+                "bias": torch.randn_like(nested_params["layer1"]["bias"]),
+            },
+            "layer2": {"weight": torch.randn_like(nested_params["layer2"]["weight"])},
+        }
+        # PerGroup keyed by dotted leaf paths (exactly what
+        # opaque.clipping.per_group._extract_keys produces for nested dicts).
+        pg = PerGroup(
+            groups={
+                "layer1.weight": "g_a",
+                "layer1.bias": "g_a",
+                "layer2.weight": "g_b",
+            },
+            values={"g_a": 0.2, "g_b": 0.7},
+        )
+        opt = adamw(lr=1e-3, noise_stddev=pg)
+        state = opt.init(nested_params)
+        # init creates a phi entry per dotted leaf path, not per top-level key.
+        adam = _adam_state(state)
+        assert isinstance(adam.phi, dict)
+        assert set(adam.phi.keys()) == {
+            "layer1.weight",
+            "layer1.bias",
+            "layer2.weight",
+        }
+        # Update should not raise (the old code crashed on the
+        # ``resolve_noise_variance(pg, "layer1")`` lookup).
+        updates, new_state = opt.update(nested_grads, state, params=nested_params)
+        new_adam = _adam_state(new_state)
+        # Different groups → different φ-EMA values.
+        assert new_adam.phi["layer1.weight"] == pytest.approx(
+            new_adam.phi["layer1.bias"]
+        )
+        assert new_adam.phi["layer2.weight"] != pytest.approx(
+            new_adam.phi["layer1.weight"]
+        )
+        # Updates have matching nested shape.
+        assert updates["layer1"]["weight"].shape == (4, 3)
+        assert updates["layer1"]["bias"].shape == (3,)
+        assert updates["layer2"]["weight"].shape == (3, 2)
+
 
 # ---------------------------------------------------------------------------
 # JME paired-stream

@@ -51,6 +51,7 @@ except ImportError as exc:
 from opaque.clipping.per_group import PerGroup
 from opaque.core.pytree import tree_map
 from opaque.optimizers._bias_correction import (
+    init_per_group_phi,
     is_per_group,
     resolve_noise_variance,
     update_phi_ema,
@@ -85,7 +86,7 @@ def _scale_by_ademamix(
 
     def init_fn(params: Any) -> AdEMAMixState:
         zeros = lambda p: torch.zeros_like(p)  # noqa: E731
-        phi: Any = {k: 0.0 for k in params} if _default_per_group else 0.0
+        phi: Any = init_per_group_phi(params) if _default_per_group else 0.0
         return AdEMAMixState(
             m_fast=tree_map(zeros, params),
             m_slow=tree_map(zeros, params),
@@ -139,24 +140,40 @@ def _scale_by_ademamix(
         per_group = is_per_group(effective) or isinstance(state.phi, dict)
 
         if per_group:
-            assert isinstance(new_mf, dict), (
-                "PerGroup BC requires top-level dict params."
-            )
-            new_phi = {}
-            result = {}
-            for key in new_mf:
-                nv_k = resolve_noise_variance(effective, key)
-                old_phi_k = state.phi[key] if isinstance(state.phi, dict) else state.phi
-                new_phi_k = b2 * old_phi_k + (1 - b2) * nv_k
-                new_phi[key] = new_phi_k
+            # Per-leaf path: walk by dotted-key paths matching
+            # :class:`PerGroup`'s lookup keys, so nested param pytrees
+            # work the same as flat dicts.
+            new_phi: dict[str, float] = {}
+
+            def _bc_walk(mf_node: Any, ms_node: Any, v_node: Any, prefix: str) -> Any:
+                if isinstance(mf_node, dict):
+                    return {
+                        k: _bc_walk(
+                            mf_node[k],
+                            ms_node[k],
+                            v_node[k],
+                            f"{prefix}.{k}" if prefix else str(k),
+                        )
+                        for k in mf_node
+                    }
+                # Tensor leaf.
+                path = prefix
+                nv = resolve_noise_variance(effective, path)
+                old_phi_k = (
+                    state.phi.get(path, 0.0)
+                    if isinstance(state.phi, dict)
+                    else state.phi
+                )
+                new_phi_k = b2 * old_phi_k + (1 - b2) * nv
+                new_phi[path] = new_phi_k
                 phi_hat = new_phi_k / bc2
                 if phi_hat > 0:
-                    v_hat = torch.clamp(new_nu[key] / bc2 - phi_hat, min=bc_floor)
+                    v_hat = torch.clamp(v_node / bc2 - phi_hat, min=bc_floor)
                 else:
-                    v_hat = new_nu[key] / bc2
-                result[key] = ((new_mf[key] / bc1) + alpha * new_ms[key]) / (
-                    v_hat.sqrt() + eps
-                )
+                    v_hat = v_node / bc2
+                return ((mf_node / bc1) + alpha * ms_node) / (v_hat.sqrt() + eps)
+
+            result = _bc_walk(new_mf, new_ms, new_nu, "")
         else:
             scalar_var = float(effective) ** 2
             new_phi = update_phi_ema(state.phi, scalar_var, b2)

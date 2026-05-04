@@ -35,6 +35,35 @@ from typing import Any
 from opaque.clipping.per_group import PerGroup
 
 
+def walk_dict_leaves(tree: Any, prefix: str = "") -> Any:
+    """Yield ``(dotted_path, leaf)`` pairs for a ``dict``-tree.
+
+    Mirrors the path convention of
+    :func:`opaque.clipping.per_group._extract_keys`: walks ``dict``-valued
+    nodes recursively and treats anything that is not a ``dict`` as a
+    leaf.  The yielded dotted-key paths match the keys
+    :class:`PerGroup` expects when looking up per-leaf values, so this
+    is the right walker to use whenever a per-leaf operation needs
+    PerGroup parity (BC's φ-EMA, per-leaf noise allocation, …).
+    """
+    if isinstance(tree, dict):
+        for k, v in tree.items():
+            sub = f"{prefix}.{k}" if prefix else str(k)
+            yield from walk_dict_leaves(v, sub)
+    else:
+        yield prefix, tree
+
+
+def init_per_group_phi(params: Any) -> dict[str, float]:
+    """Initial φ-EMA dict: ``0.0`` per dotted leaf path of ``params``.
+
+    Used by per-group BC at ``init`` time so the state shape covers
+    every leaf the per-step BC walk will see, including for nested
+    param pytrees.
+    """
+    return {path: 0.0 for path, _ in walk_dict_leaves(params)}
+
+
 def resolve_noise_variance(
     noise_stddev: float | PerGroup,
     key: str | None = None,
@@ -86,4 +115,6 @@ __all__ = [
     "resolve_noise_variance",
     "is_per_group",
     "update_phi_ema",
+    "walk_dict_leaves",
+    "init_per_group_phi",
 ]

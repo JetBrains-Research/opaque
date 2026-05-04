@@ -1238,9 +1238,13 @@ def main():
 
     # Setup optimizer (after calibration so adamw-bc can compute noise_stddev)
     if args.optimizer == "adam":
-        base_opt = torchopt.adam(lr=args.learning_rate)
+        from opaque.optimizers import adam
+
+        base_opt = adam(lr=args.learning_rate)
     elif args.optimizer == "sgd":
-        base_opt = torchopt.sgd(lr=args.learning_rate)
+        from opaque.optimizers import sgd
+
+        base_opt = sgd(lr=args.learning_rate)
     elif args.optimizer in ("adamw", "adamw-bc"):
         from opaque.optimizers import adamw
 

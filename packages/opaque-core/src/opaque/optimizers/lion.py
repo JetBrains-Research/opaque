@@ -1,4 +1,4 @@
-"""Lion optimizer (Tu et al., 2023).
+"""Lion optimizer (Chen et al., 2023).
 
 Sign-of-momentum update::
 

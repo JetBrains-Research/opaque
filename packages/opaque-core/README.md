@@ -16,6 +16,18 @@ Top-level (user-facing):
 
 - `opaque.functional` — `make_functional`, `with_batch_dim` (PyTorch <->
   functional API bridges)
+- `opaque.optimizers` — single import path for functional optimizers.
+  Opaque-built factories with DP-aware modes (`adamw`, `lion`,
+  `ademamix`, `adafactor`) plus the `schedule_free` wrapper, alongside
+  re-exports of the stateless `torchopt` primitives we don't extend
+  (`sgd`, `adam`, `adagrad`, `adadelta`, `adamax`, `radam`, `rmsprop`).
+  All return `torchopt`-compatible `GradientTransformation`s; DP-aware
+  modes are selected at `update()` time via optional `noise_stddev`
+  (DP-AdamW-BC) and `noisy_squared_grads` (JME paired stream) kwargs.
+  Helpers: `state_dict` / `load_state_dict` for checkpoint
+  serialisation, `get_eval_params` for schedule-free's published
+  weights.  See [`docs/api/optimizers.md`](../../docs/api/optimizers.md)
+  for the full reference.
 - `opaque.distributed` — DDP plumbing (`is_distributed`, `get_rank`,
   `all_reduce`, `reduce_pytree`, `sum_gradients`, `gather_pytree`,
   `reduce_scalar`, `sync_object`, `sync`, `local_shard`). Submodules:

@@ -14,6 +14,7 @@ Functional: no hidden mutable state, explicit
 `(updates, new_state) = optimizer.update(grads, state)` interface.
 
 ```python
+import torchopt
 from opaque.optimizers import adamw
 
 optimizer = adamw(lr=1e-3, weight_decay=0.01)
@@ -28,25 +29,33 @@ params = torchopt.apply_updates(params, updates)
 
 ## Supported Optimizers
 
-The library ships:
+Single import path: everything below lives at ``opaque.optimizers``.
+
+**Opaque-built** (DP-aware modes via ``update()`` kwargs):
 
 - ``opaque.optimizers.adamw`` — universal Adam / AdamW; optional DP
   modes via ``noise_stddev`` (φ-EMA bias correction) or
   ``noisy_squared_grads`` (JME paired-stream second moment).  Knobs:
   ``decoupled_weight_decay``, ``update_rms_clip`` (StableAdamW).
-- ``opaque.optimizers.lion`` — Lion (Tu et al., 2023); no DP-aware mode.
+- ``opaque.optimizers.lion`` — Lion (Chen et al., 2023); no DP-aware mode.
 - ``opaque.optimizers.ademamix`` — AdEMAMix (Pagliardini et al., 2024);
   same DP-aware options as ``adamw``.
 - ``opaque.optimizers.adafactor`` — Adafactor (factored second moment;
   vanilla + WD only in this release).
-- ``opaque.optimizers.schedule_free`` — wrapper around any of the above
-  (or ``torchopt.sgd``) implementing Defazio's schedule-free averaging.
+- ``opaque.optimizers.schedule_free`` — wrapper around any base
+  optimizer implementing Defazio's schedule-free averaging.
 
-For SGD use ``torchopt.sgd`` directly:
+**Re-exported from torchopt** (stateless primitives, no DP-aware modes):
+
+- ``opaque.optimizers.sgd`` — vanilla / Polyak-momentum SGD.
+- ``opaque.optimizers.adam``, ``adagrad``, ``adadelta``, ``adamax``,
+  ``radam``, ``rmsprop``.
 
 ```python
-import torchopt
-optimizer = torchopt.sgd(lr=0.01, momentum=0.9)
+from opaque.optimizers import sgd, adamw, schedule_free
+
+opt = sgd(lr=0.01, momentum=0.9)
+opt = schedule_free(adamw(lr=1e-3))
 ```
 
 ---

@@ -152,20 +152,37 @@ def schedule_free(
                 "to be passed at update time."
             )
         # Step the wrapped optimizer to get its delta (already
-        # negative-LR-scaled by the wrapped chain).
+        # negative-LR-scaled by the wrapped chain).  Crucially, the
+        # base optimizer is told ``params=state.z`` rather than ``y_t``:
+        # decoupled / L2 weight decay must reference the raw iterate
+        # ``z`` (which is what the inner optimizer's update is being
+        # added to), not the interpolated ``y`` we use for the forward
+        # pass.  Mismatching this regularises the wrong tensor and
+        # quietly changes the algorithm.
         inner_update, new_inner = base.update(
-            updates, state.inner, params=params, inplace=inplace, **kwargs
+            updates, state.inner, params=state.z, inplace=inplace, **kwargs
         )
         # z_{t+1} = z_t + inner_update  (inner_update is the negative
         # step the wrapped optimizer would have applied to params).
         new_z = tree_map(lambda z, du: z + du, state.z, inner_update)
-        # Uniform average: x_{t+1} = (1 − w) x_t + w z_{t+1}, where
-        # w = 1/(t+1) (or 1.0 during warm-up so x tracks z).
+        # Uniform average over post-warmup iterates::
+        #
+        #   x_{t+1} = (1 − w) x_t + w z_{t+1}
+        #
+        # During warm-up (``state.step < warmup_steps``) we set ``x=z``
+        # so the average doesn't anchor to early-training noise.  After
+        # warm-up we use ``w = 1 / post_warmup_t``: the first averaged
+        # iterate has ``w=1`` (start a fresh average), and subsequent
+        # iterates get the standard Polyak-Ruppert ``1/n`` weight.
+        # Using the global ``t`` here (the bug) leaves ``x`` anchored to
+        # the warmup-end ``z`` because the first post-warmup step would
+        # only move it by ``1/(warmup_steps+1)``.
         t = state.step + 1
         if state.step < warmup_steps:
             new_x = tree_map(lambda _, z: z.clone(), state.x, new_z)
         else:
-            w = 1.0 / float(t)
+            post_warmup_t = t - warmup_steps  # 1 on the first post-warmup step
+            w = 1.0 / float(post_warmup_t)
             new_x = tree_map(lambda x, z: (1.0 - w) * x + w * z, state.x, new_z)
         # y_{t+1} = (1 − β) z_{t+1} + β x_{t+1}
         new_y = tree_map(

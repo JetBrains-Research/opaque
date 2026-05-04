@@ -1,19 +1,24 @@
 # Optimizers
 
-Opaque does not bundle optimizers. Use
-[TorchOpt](https://torchopt.readthedocs.io/) functional optimizers for the
-parameter-update step in your DP training loop.
+Opaque ships its own functional optimizer library at
+[`opaque.optimizers`](../api/optimizers.md): a universal ``adamw``
+factory plus ``lion``, ``ademamix``, ``adafactor``, and a ``schedule_free``
+wrapper. All factories return [TorchOpt](https://torchopt.readthedocs.io/)
+``GradientTransformation``s, so they compose with TorchOpt primitives
+(``torchopt.sgd``, ``torchopt.rmsprop``, …) and ``torchopt.apply_updates``.
+DP-aware paths (DP-AdamW-BC, JME) are exposed as optional ``update()``
+kwargs.
 
 ## Why functional optimizers
 
 Opaque's gradient pipeline is functional: every function takes state in and
-returns new state out. TorchOpt follows the same pattern, making
-integration seamless:
+returns new state out. The optimizer factories follow the same pattern:
 
 ```python
 import torchopt
+from opaque.optimizers import adamw
 
-optimizer = torchopt.adam(lr=1e-3)
+optimizer = adamw(lr=1e-3, weight_decay=0.01)
 opt_state = optimizer.init(params)
 
 # Explicit state in -> state out
@@ -29,6 +34,7 @@ No hidden mutable state. Every piece of the training loop is explicit.
 import torchopt
 from opaque.clipping import clipped_grad
 from opaque.dpsgd.noise import gaussian_noise
+from opaque.optimizers import adamw
 from opaque.random import key
 
 # Gradient pipeline
@@ -40,7 +46,7 @@ noise_fn, noise_state = gaussian_noise(
 )
 
 # Optimizer
-optimizer = torchopt.adam(lr=1e-3)
+optimizer = adamw(lr=1e-3, weight_decay=0.01)
 opt_state = optimizer.init(params)
 
 # Training
@@ -53,29 +59,29 @@ for batch in dataloader:
 
 ## Choosing an optimizer
 
-**Adam** (`torchopt.adam`) is the recommended default. Its per-parameter
-adaptive learning rates help compensate for DP noise, since different
-parameters receive different signal-to-noise ratios. Adam typically
-converges faster and is more robust to hyperparameter choices than SGD in
-DP training.  For an improved version that corrects the second-moment bias
-introduced by DP noise, see
-[the second-moment problem](#the-second-moment-problem-in-dp-training) below.
+**AdamW** (`opaque.optimizers.adamw`) is the recommended default. Its
+per-parameter adaptive learning rates help compensate for DP noise,
+since different parameters receive different signal-to-noise ratios.
+Adam typically converges faster and is more robust to hyperparameter
+choices than SGD in DP training.  For an improved version that
+corrects the second-moment bias introduced by DP noise, see
+[the second-moment problem](#the-second-moment-problem-in-dp-training)
+below.
 
 ```python
-optimizer = torchopt.adam(lr=1e-3)
+from opaque.optimizers import adamw
+
+optimizer = adamw(lr=1e-3, weight_decay=0.01)
+# Plain Adam (no decoupled WD): adamw(..., decoupled_weight_decay=False).
 ```
 
-**AdamW** (`torchopt.adamw`) adds decoupled weight decay, useful for
-fine-tuning pre-trained models:
+**SGD** (`opaque.optimizers.sgd`, re-exported from torchopt) is simpler
+and useful as a debugging baseline:
 
 ```python
-optimizer = torchopt.adamw(lr=1e-3, weight_decay=0.01)
-```
+from opaque.optimizers import sgd
 
-**SGD** (`torchopt.sgd`) is simpler and useful as a debugging baseline:
-
-```python
-optimizer = torchopt.sgd(lr=0.01, momentum=0.9)
+optimizer = sgd(lr=0.01, momentum=0.9)
 ```
 
 ## The second-moment problem in DP training
