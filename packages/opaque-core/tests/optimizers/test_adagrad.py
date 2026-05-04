@@ -34,9 +34,7 @@ class TestVanilla:
         opt = adagrad(lr=1e-2, initial_accumulator_value=0.5)
         st = _ada_state(opt.init(params))
         for k in params:
-            torch.testing.assert_close(
-                st.v_acc[k], torch.full_like(params[k], 0.5)
-            )
+            torch.testing.assert_close(st.v_acc[k], torch.full_like(params[k], 0.5))
 
     def test_v_acc_accumulates_without_decay(self, params, grads):
         opt = adagrad(lr=1e-2, initial_accumulator_value=0.0)

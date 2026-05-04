@@ -116,9 +116,7 @@ class TestJMEMode:
         alpha = 0.99
         opt = rmsprop(lr=1e-2, alpha=alpha)
         state = opt.init(params)
-        _, state = opt.update(
-            grads, state, params=params, noisy_squared_grads=sq_grads
-        )
+        _, state = opt.update(grads, state, params=params, noisy_squared_grads=sq_grads)
         st = _rms_state(state)
         for k in params:
             torch.testing.assert_close(st.nu[k], (1 - alpha) * sq_grads[k])

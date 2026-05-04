@@ -110,9 +110,7 @@ def _scale_by_adagrad(
         # Cumulative second moment: v_acc += g².
         new_v = tree_map(lambda v, g: v + g * g, state.v_acc, updates)
 
-        effective = (
-            noise_stddev if noise_stddev is not None else default_noise_stddev
-        )
+        effective = noise_stddev if noise_stddev is not None else default_noise_stddev
         per_group = is_per_group(effective) or isinstance(state.phi_acc, dict)
 
         if per_group:

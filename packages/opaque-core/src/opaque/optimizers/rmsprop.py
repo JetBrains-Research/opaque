@@ -128,9 +128,7 @@ def _scale_by_rmsprop(
             updates,
         )
 
-        effective = (
-            noise_stddev if noise_stddev is not None else default_noise_stddev
-        )
+        effective = noise_stddev if noise_stddev is not None else default_noise_stddev
         per_group = is_per_group(effective) or isinstance(state.phi, dict)
 
         if per_group:
