@@ -58,12 +58,12 @@ def prepare_lora_model(config, target_modules=None):
         model,
         performance=False,
         compat=True,
-        fuse_lora=True,
-        fuse_swiglu=False,
-        fuse_rms_norm=False,
-        fuse_rope=False,
-        fuse_cross_entropy=False,
-        wrap_eager_attention=True,
+        lora=True,
+        swiglu=False,
+        rms_norm=False,
+        rope=False,
+        cross_entropy=False,
+        eager_attention=True,
     )
     return model
 

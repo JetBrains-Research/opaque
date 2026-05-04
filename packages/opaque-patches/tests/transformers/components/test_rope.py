@@ -68,7 +68,7 @@ def test_skip_rope_token_leaves_cohere_stock():
         "import transformers.models.cohere2.modeling_cohere2 as mc2\n"
         "class C: model_type='cohere'\n"
         "class M(nn.Module): config=C()\n"
-        "apply_transformers_model_patches(M(), fuse_rope=False)\n"
+        "apply_transformers_model_patches(M(), rope=False)\n"
         "assert mc.apply_rotary_pos_emb.__name__ == 'apply_rotary_pos_emb'\n"
         "assert mc2.apply_rotary_pos_emb.__name__ == 'apply_rotary_pos_emb'\n"
         "print('ok')",
@@ -102,7 +102,7 @@ def test_skip_rope_token_leaves_gemma3_stock():
         "import transformers.models.gemma3.modeling_gemma3 as m3\n"
         "class C: model_type='gemma3'\n"
         "class M(nn.Module): config=C()\n"
-        "apply_transformers_model_patches(M(), fuse_rope=False)\n"
+        "apply_transformers_model_patches(M(), rope=False)\n"
         "assert m3.apply_rotary_pos_emb.__name__ == 'apply_rotary_pos_emb'\n"
         "print('ok')",
     )
@@ -135,7 +135,7 @@ def test_skip_rope_token_leaves_exaone4_stock():
         "import transformers.models.exaone4.modeling_exaone4 as me4\n"
         "class C: model_type='exaone4'\n"
         "class M(nn.Module): config=C()\n"
-        "apply_transformers_model_patches(M(), fuse_rope=False)\n"
+        "apply_transformers_model_patches(M(), rope=False)\n"
         "assert me4.apply_rotary_pos_emb.__name__ == 'apply_rotary_pos_emb'\n"
         "print('ok')",
     )

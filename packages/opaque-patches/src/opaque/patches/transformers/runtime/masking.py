@@ -187,7 +187,7 @@ def _vmap_safe_ignore_causal_mask_sdpa(
     )
 
 
-def apply_masking_patches(*, enable_vmap_masking: bool = True) -> None:
+def apply_masking_patches(*, vmap_masking: bool = True) -> None:
     """Apply patches to shared utilities used by all models.
 
     Patches:
@@ -198,7 +198,7 @@ def apply_masking_patches(*, enable_vmap_masking: bool = True) -> None:
 
     These are required by all models (standard models, Gemma2, Gemma3, ...).
     """
-    if enable_vmap_masking is False:
+    if vmap_masking is False:
         return
 
     # Patch shared masking_utils

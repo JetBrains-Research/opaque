@@ -1,23 +1,29 @@
 import pytest
 
 pytest.importorskip("transformers")
-from opaque.patches import apply_runtime_patches
 
 
 def test_loss_mapping():
-    # Patch the global registry
-    apply_runtime_patches(use_fused_loss=True)
+    """``apply_loss_mapping_patch`` registers opaque's fused-CE in the
+    global ``LOSS_MAPPING``.
+
+    Triggered automatically from :func:`opaque.patches.apply_model_patches`
+    when any model is patched with ``cross_entropy=True``; this test
+    invokes the underlying runtime patch directly.
+    """
+    from opaque.patches.transformers.runtime.loss_mapping import (
+        apply_loss_mapping_patch,
+    )
+
+    apply_loss_mapping_patch(cross_entropy=True)
 
     from transformers.loss.loss_utils import LOSS_MAPPING
 
     assert "ForCausalLM" in LOSS_MAPPING
-    # Transformers creates instances in LOSS_MAPPING, or stores functions.
-    # Let's check if the CausalLM loss maps to our function.
-
     loss_fn = LOSS_MAPPING["ForCausalLM"]
     assert loss_fn.__name__ == "_opaque_causal_lm_loss"
 
-    # We can also check if we can call it (smoke test)
+    # Smoke-test that the registered loss is callable with the standard signature.
     import torch
 
     logits = torch.randn(2, 5, 10)

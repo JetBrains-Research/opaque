@@ -32,20 +32,19 @@ def apply_phi3_patches(
     compat: bool = True,
     **kwargs,
 ) -> None:
-    fuse_swiglu = kwargs.get("fuse_swiglu", performance)
-    fuse_rms_norm = kwargs.get("fuse_rms_norm", performance)
-    fuse_add_rms_norm = kwargs.get("fuse_add_rms_norm", performance)
-    fuse_rope = kwargs.get("fuse_rope", performance)
-    wrap_eager_attention = kwargs.get("wrap_eager_attention", compat)
-    wrap_batchify = kwargs.get("wrap_batchify", compat)
-    disable_kv_cache = kwargs.get("disable_kv_cache", compat)
+    swiglu = kwargs.get("swiglu", performance)
+    rms_norm = kwargs.get("rms_norm", performance)
+    rope = kwargs.get("rope", performance)
+    eager_attention = kwargs.get("eager_attention", compat)
+    batchify = kwargs.get("batchify", compat)
+    kv_cache = kwargs.get("kv_cache", compat)
     """Apply Triton kernel patches for phi3 model."""
     try:
         import transformers.models.phi3.modeling_phi3 as mod
     except ImportError:
         return
 
-    if wrap_eager_attention:
+    if eager_attention:
         apply_module_masking_patch(mod)
         if hasattr(mod, "repeat_kv"):
             mod.repeat_kv = vmap_repeat_kv
@@ -58,15 +57,14 @@ def apply_phi3_patches(
                 )
                 mod.DynamicCache.__init__._is_vmap_patched = True
 
-    if fuse_swiglu:
+    if swiglu:
         _patch_forward(getattr(mod, "Phi3MLP", None), _make_phi3_mlp_forward, model)
-    if fuse_rms_norm:
+    if rms_norm:
         _patch_forward(getattr(mod, "Phi3RMSNorm", None), _rmsnorm_fac_llama, model)
-    if fuse_add_rms_norm:
         _patch_forward(
             getattr(mod, "Phi3DecoderLayer", None), _fused_add_rms_fac_phi3, model
         )
-    if fuse_rope:
+    if rope:
         if (
             hasattr(mod, "apply_rotary_pos_emb")
             and mod.apply_rotary_pos_emb is not _opaque_apply_rotary_pos_emb
@@ -74,7 +72,7 @@ def apply_phi3_patches(
             mod.apply_rotary_pos_emb = _opaque_apply_rotary_pos_emb
 
     causal_lm_cls = getattr(mod, "Phi3ForCausalLM", None)
-    if wrap_batchify:
+    if batchify:
         apply_batchify_patch(causal_lm_cls, model)
-    if disable_kv_cache:
+    if kv_cache:
         apply_kv_cache_patch(causal_lm_cls, model)

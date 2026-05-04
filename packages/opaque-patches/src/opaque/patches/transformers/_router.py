@@ -96,9 +96,9 @@ def apply_transformers_model_patches(
             patch_fn(model, performance=performance, compat=compat, **kwargs)
             logger.debug(f"opaque: Applied model patches for {family}")
 
-    wrap_batchify = kwargs.get("wrap_batchify", compat)
+    batchify = kwargs.get("batchify", compat)
     # Apply batchify to PeftModel classes if needed
-    if wrap_batchify and model is not None:
+    if batchify and model is not None:
         try:
             import peft
 

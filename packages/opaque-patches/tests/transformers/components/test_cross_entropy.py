@@ -3,7 +3,7 @@ from opaque.patches import apply_runtime_patches
 import torch
 import torch.nn.functional as F
 
-apply_runtime_patches(use_fused_loss=True)
+apply_runtime_patches(cross_entropy=True)
 
 pytestmark = pytest.mark.skipif(
     not torch.cuda.is_available(),

@@ -29,7 +29,7 @@ class TestEndToEnd:
             r=8, lora_alpha=16, target_modules=["q_proj", "v_proj"], lora_dropout=0.0
         )
         model = get_peft_model(model, lora_config).to(device)
-        apply_model_patches(model, performance=False, compat=True, fuse_lora=True)
+        apply_model_patches(model, performance=False, compat=True, lora=True)
         tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2-0.5B")
         texts = ["Hello world test", "Another example", "Third sample", "Final one"]
         inputs = tokenizer(

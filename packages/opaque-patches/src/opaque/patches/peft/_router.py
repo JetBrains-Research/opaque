@@ -155,8 +155,8 @@ def apply_peft_model_patches(
     Args:
         model: A PEFT-wrapped model with LoRA adapters.
     """
-    fuse_lora = kwargs.get("fuse_lora", performance)
-    if not fuse_lora:
+    lora = kwargs.get("lora", performance)
+    if not lora:
         return
 
     patched_lora = False

@@ -34,46 +34,44 @@ def apply_ministral_patches(
     compat: bool = True,
     **kwargs,
 ) -> None:
-    fuse_swiglu = kwargs.get("fuse_swiglu", performance)
-    fuse_rms_norm = kwargs.get("fuse_rms_norm", performance)
-    fuse_add_rms_norm = kwargs.get("fuse_add_rms_norm", performance)
-    fuse_rope = kwargs.get("fuse_rope", performance)
-    fuse_cross_entropy = kwargs.get("fuse_cross_entropy", performance)
-    wrap_eager_attention = kwargs.get("wrap_eager_attention", compat)
-    wrap_batchify = kwargs.get("wrap_batchify", compat)
-    disable_kv_cache = kwargs.get("disable_kv_cache", compat)
+    swiglu = kwargs.get("swiglu", performance)
+    rms_norm = kwargs.get("rms_norm", performance)
+    rope = kwargs.get("rope", performance)
+    cross_entropy = kwargs.get("cross_entropy", performance)
+    eager_attention = kwargs.get("eager_attention", compat)
+    batchify = kwargs.get("batchify", compat)
+    kv_cache = kwargs.get("kv_cache", compat)
     """Apply Triton kernel patches for ministral model."""
     try:
         import transformers.models.ministral.modeling_ministral as mod
     except ImportError:
         return
 
-    if wrap_eager_attention:
+    if eager_attention:
         apply_module_masking_patch(mod)
         if hasattr(mod, "repeat_kv"):
             mod.repeat_kv = vmap_repeat_kv
         if hasattr(mod, "eager_attention_forward"):
             mod.eager_attention_forward = vmap_eager_attention_forward
 
-    if fuse_swiglu:
+    if swiglu:
         _patch_forward(
             getattr(mod, "MinistralMLP", None), _make_swiglu_mlp_forward, model
         )
-    if fuse_rms_norm:
+    if rms_norm:
         _patch_forward(
             getattr(mod, "MinistralRMSNorm", None), _rmsnorm_fac_llama, model
         )
-    if fuse_add_rms_norm:
         _patch_forward(
             getattr(mod, "MinistralDecoderLayer", None), _fused_add_rms_fac_llama, model
         )
-    if fuse_rope:
+    if rope:
         if (
             hasattr(mod, "apply_rotary_pos_emb")
             and mod.apply_rotary_pos_emb is not _opaque_apply_rotary_pos_emb
         ):
             mod.apply_rotary_pos_emb = _opaque_apply_rotary_pos_emb
-    if fuse_cross_entropy:
+    if cross_entropy:
         _patch_forward(
             getattr(mod, "MinistralForCausalLM", None),
             _make_fused_ce_causal_lm_forward,
@@ -81,7 +79,7 @@ def apply_ministral_patches(
         )
 
     causal_lm_cls = getattr(mod, "MinistralForCausalLM", None)
-    if wrap_batchify:
+    if batchify:
         apply_batchify_patch(causal_lm_cls, model)
-    if disable_kv_cache:
+    if kv_cache:
         apply_kv_cache_patch(causal_lm_cls, model)

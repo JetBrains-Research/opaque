@@ -39,11 +39,11 @@ def test_apply_model_patches_is_idempotent_for_lora_fusions():
     model = get_peft_model(model, lora_config)
     layer = model.model.model.layers[0]
 
-    apply_model_patches(model, performance=False, compat=True, fuse_lora=True)
+    apply_model_patches(model, performance=False, compat=True, lora=True)
     attn_forward = layer.self_attn.forward.__func__
     mlp_forward = layer.mlp.forward.__func__
 
-    apply_model_patches(model, performance=False, compat=True, fuse_lora=True)
+    apply_model_patches(model, performance=False, compat=True, lora=True)
 
     assert layer.self_attn.forward.__func__ is attn_forward
     assert layer.mlp.forward.__func__ is mlp_forward

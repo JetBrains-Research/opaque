@@ -3,9 +3,15 @@
 """Global loss mapping patch for HuggingFace Transformers."""
 
 
-def apply_loss_mapping_patch(*, use_fused_loss: bool = True) -> None:
-    """Patch HuggingFace LOSS_MAPPING with Opaque causal LM loss."""
-    if use_fused_loss is False:
+def apply_loss_mapping_patch(*, cross_entropy: bool = True) -> None:
+    """Patch HuggingFace ``LOSS_MAPPING`` with Opaque causal LM loss.
+
+    Triggered automatically by :func:`opaque.patches.apply_model_patches`
+    when any model is patched with ``cross_entropy=True``.  Patching is
+    idempotent — the global ``LOSS_MAPPING["ForCausalLM"]`` key is set
+    to the opaque variant (no-op when already set).
+    """
+    if cross_entropy is False:
         return
 
     try:

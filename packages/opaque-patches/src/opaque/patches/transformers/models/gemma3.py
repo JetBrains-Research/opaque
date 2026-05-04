@@ -31,39 +31,39 @@ def apply_gemma3_patches(
     compat: bool = True,
     **kwargs,
 ) -> None:
-    fuse_swiglu = kwargs.get("fuse_swiglu", performance)
-    fuse_rms_norm = kwargs.get("fuse_rms_norm", performance)
-    fuse_rope = kwargs.get("fuse_rope", performance)
-    fuse_cross_entropy = kwargs.get("fuse_cross_entropy", performance)
-    wrap_eager_attention = kwargs.get("wrap_eager_attention", compat)
-    wrap_batchify = kwargs.get("wrap_batchify", compat)
-    disable_kv_cache = kwargs.get("disable_kv_cache", compat)
+    geglu = kwargs.get("geglu", performance)
+    rms_norm = kwargs.get("rms_norm", performance)
+    rope = kwargs.get("rope", performance)
+    cross_entropy = kwargs.get("cross_entropy", performance)
+    eager_attention = kwargs.get("eager_attention", compat)
+    batchify = kwargs.get("batchify", compat)
+    kv_cache = kwargs.get("kv_cache", compat)
     """Apply Triton kernel patches for gemma3 model."""
     try:
         import transformers.models.gemma3.modeling_gemma3 as mod
     except ImportError:
         return
 
-    if wrap_eager_attention:
+    if eager_attention:
         apply_module_masking_patch(mod)
         if hasattr(mod, "repeat_kv"):
             mod.repeat_kv = vmap_repeat_kv
         if hasattr(mod, "eager_attention_forward"):
             mod.eager_attention_forward = vmap_eager_attention_forward
 
-    if fuse_swiglu:
+    if geglu:
         _patch_forward(
             getattr(mod, "Gemma3MLP", None), _make_geglu_approx_mlp_forward, model
         )
-    if fuse_rms_norm:
+    if rms_norm:
         _patch_forward(getattr(mod, "Gemma3RMSNorm", None), _rmsnorm_fac_gemma2, model)
-    if fuse_rope:
+    if rope:
         if (
             hasattr(mod, "apply_rotary_pos_emb")
             and mod.apply_rotary_pos_emb is not _opaque_apply_rotary_pos_emb
         ):
             mod.apply_rotary_pos_emb = _opaque_apply_rotary_pos_emb
-    if fuse_cross_entropy:
+    if cross_entropy:
         _patch_forward(
             getattr(mod, "Gemma3ForCausalLM", None),
             _make_fused_ce_causal_lm_forward,
@@ -71,7 +71,7 @@ def apply_gemma3_patches(
         )
 
     causal_lm_cls = getattr(mod, "Gemma3ForCausalLM", None)
-    if wrap_batchify:
+    if batchify:
         apply_batchify_patch(causal_lm_cls, model)
-    if disable_kv_cache:
+    if kv_cache:
         apply_kv_cache_patch(causal_lm_cls, model)

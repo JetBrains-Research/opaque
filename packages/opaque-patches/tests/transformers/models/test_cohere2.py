@@ -31,7 +31,7 @@ def tiny_model(device):
     config = Cohere2Config(**kwargs)
     config._attn_implementation = "eager"
     model = Cohere2ForCausalLM(config).to(device)
-    apply_model_patches(model, wrap_eager_attention=True)
+    apply_model_patches(model, eager_attention=True)
     return model
 
 
