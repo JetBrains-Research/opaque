@@ -129,9 +129,8 @@ def make_apply_family_patches(
         if eager_attention:
             if repeat_kv_replacement is not None and hasattr(mod, "repeat_kv"):
                 mod.repeat_kv = repeat_kv_replacement
-            if (
-                eager_attention_replacement is not None
-                and hasattr(mod, "eager_attention_forward")
+            if eager_attention_replacement is not None and hasattr(
+                mod, "eager_attention_forward"
             ):
                 mod.eager_attention_forward = eager_attention_replacement
             if masking_module_patcher is not None:
