@@ -1,9 +1,11 @@
 """Opaque DP-SGD: Differentially Private SGD mechanisms.
 
 Gaussian / truncated-Gaussian noise, per-group noise allocation, adaptive
-and AUTO-S clipping, the standard + truncated Poisson samplers, and the
-AdamW-BC optimizer. Fixed-clipping primitives used by this package live in
-:mod:`opaque.clipping`.
+and AUTO-S clipping, and the standard + truncated Poisson samplers.
+Fixed-clipping primitives used by this package live in
+:mod:`opaque.clipping`; functional optimizers (including the universal
+``adamw`` with DP bias-correction and JME paths) live in
+:mod:`opaque.optimizers`.
 
 Data classes (``AdaptiveClipState``, ``AdaptiveClippedGradAux``,
 ``AutoClipState``, ``AutoClippedGradAux``) are importable from this module
@@ -13,7 +15,7 @@ is functional.
 
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
-from opaque.dpsgd import clipping, noise, optimizers, sampling
+from opaque.dpsgd import clipping, noise, sampling
 from opaque.dpsgd.clipping.adaptive import (
     AdaptiveClippedGradAux as AdaptiveClippedGradAux,
 )
@@ -30,7 +32,6 @@ from opaque.dpsgd.clipping import distributed as _clipping_distributed  # noqa: 
 from opaque.dpsgd.noise.gaussian import gaussian_noise
 from opaque.dpsgd.noise.per_group_noise import per_group_noise_stddev
 from opaque.dpsgd.noise.truncated_gaussian import truncated_gaussian_noise
-from opaque.dpsgd.optimizers.adamw_bc import adamw_bc
 from opaque.dpsgd.sampling.poisson import PoissonSampler
 from opaque.dpsgd.sampling.truncated_poisson import TruncatedPoissonSampler
 
@@ -44,7 +45,6 @@ __all__ = [
     # Subpackages
     "clipping",
     "noise",
-    "optimizers",
     "sampling",
     # Clipping (DP-SGD-specific; fixed-clipping at opaque.clipping)
     "adaptive_clipped_grad",
@@ -56,6 +56,4 @@ __all__ = [
     # Sampling
     "PoissonSampler",
     "TruncatedPoissonSampler",
-    # Optimizer
-    "adamw_bc",
 ]

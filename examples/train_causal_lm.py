@@ -359,14 +359,33 @@ def parse_args():
         "--optimizer",
         type=str,
         default="adam",
-        choices=["sgd", "adam", "adamw", "adamw-bc"],
-        help="Optimizer (adamw/adamw-bc use opaque.optimizers.adamw_bc)",
+        choices=["sgd", "adam", "adamw", "ademamix", "lion", "adafactor",
+                 "rmsprop", "adagrad"],
+        help=(
+            "Optimizer.  ``sgd`` and ``adam`` are torchopt's vanilla "
+            "primitives (no DP-aware paths); the others are Opaque-built "
+            "(see opaque.optimizers).  Pair with ``--bc`` to enable "
+            "DP-aware bias correction where applicable."
+        ),
+    )
+    train_group.add_argument(
+        "--bc",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Enable DP-aware bias correction by passing the per-step "
+            "noise σ to the optimizer's update().  Applies to ``adamw`` "
+            "(φ-EMA on v̂), ``ademamix`` (same), ``rmsprop`` (φ-EMA on v), "
+            "and ``adagrad`` (cumulative Φ subtraction).  No effect on "
+            "``sgd`` / ``adam`` / ``lion`` / ``adafactor`` (no BC mode "
+            "implemented).  Off by default."
+        ),
     )
     train_group.add_argument(
         "--weight-decay",
         type=float,
         default=0.01,
-        help="Weight decay for adamw/adamw-bc optimizers (default: 0.01)",
+        help="Weight decay for optimizers that support it (default: 0.01)",
     )
     train_group.add_argument(
         "--log-steps",
@@ -1236,26 +1255,79 @@ def main():
             f"(iterations={calibration.iterations}, converged={calibration.converged})"
         )
 
-    # Setup optimizer (after calibration so adamw-bc can compute noise_stddev)
+    # Setup optimizer.
+    #
+    # ``--bc`` activates DP-aware bias correction on optimizers that
+    # support it.  We construct with ``noise_stddev`` set to the
+    # initial value here; the per-step adaptive override is passed at
+    # ``opt.update()`` time below.  For optimizers without a BC path,
+    # ``--bc`` is a silent no-op.  Notably ``--optimizer adagrad``
+    # without ``--bc`` is *expected* to misbehave under DP noise (the
+    # cumulative ``v_acc`` denominator absorbs ``t·σ²`` with no decay)
+    # — that's the empirical observation this example exists to
+    # demonstrate.  We don't gate it.
+    BC_CAPABLE = {"adamw", "ademamix", "rmsprop", "adagrad"}
+    bc_active = args.bc and args.optimizer in BC_CAPABLE
+
+    if bc_active:
+        initial_stddev = _noise_stddev(clip_state, noise_multiplier)
+        ns: float | PerGroup = initial_stddev
+        if isinstance(initial_stddev, PerGroup):
+            print(
+                f"  BC active: per-group noise_stddev "
+                f"(effective σ={_effective(initial_stddev):.6f})"
+            )
+        else:
+            print(f"  BC active: noise_stddev={ns:.6f}")
+    else:
+        ns = 0.0
+
     if args.optimizer == "adam":
         base_opt = torchopt.adam(lr=args.learning_rate)
     elif args.optimizer == "sgd":
         base_opt = torchopt.sgd(lr=args.learning_rate)
-    elif args.optimizer in ("adamw", "adamw-bc"):
-        from opaque.dpsgd.optimizers import adamw_bc
+    elif args.optimizer == "adamw":
+        from opaque.optimizers import adamw
 
-        ns = 0.0
-        if args.optimizer == "adamw-bc":
-            # Pass noise stddev to adamw_bc for BC correction.
-            # PerGroup stddev and scalar stddev are both squared internally.
-            initial_stddev = _noise_stddev(clip_state, noise_multiplier)
-            if isinstance(initial_stddev, PerGroup):
-                ns = initial_stddev
-                print(f"  AdamW-BC noise_stddev: per-group (effective σ={_effective(initial_stddev):.6f})")
-            else:
-                ns = initial_stddev
-                print(f"  AdamW-BC noise_stddev: {ns:.6f}")
-        base_opt = adamw_bc(
+        base_opt = adamw(
+            lr=args.learning_rate,
+            weight_decay=args.weight_decay,
+            noise_stddev=ns,
+        )
+    elif args.optimizer == "ademamix":
+        from opaque.optimizers import ademamix
+
+        base_opt = ademamix(
+            lr=args.learning_rate,
+            weight_decay=args.weight_decay,
+            noise_stddev=ns,
+        )
+    elif args.optimizer == "lion":
+        from opaque.optimizers import lion
+
+        base_opt = lion(
+            lr=args.learning_rate,
+            weight_decay=args.weight_decay,
+        )
+    elif args.optimizer == "adafactor":
+        from opaque.optimizers import adafactor
+
+        base_opt = adafactor(
+            lr=args.learning_rate,
+            weight_decay=args.weight_decay,
+        )
+    elif args.optimizer == "rmsprop":
+        from opaque.optimizers import rmsprop
+
+        base_opt = rmsprop(
+            lr=args.learning_rate,
+            weight_decay=args.weight_decay,
+            noise_stddev=ns,
+        )
+    elif args.optimizer == "adagrad":
+        from opaque.optimizers import adagrad
+
+        base_opt = adagrad(
             lr=args.learning_rate,
             weight_decay=args.weight_decay,
             noise_stddev=ns,
@@ -1363,11 +1435,14 @@ def main():
                 if is_ddp:
                     noise_state = sync(noise_state)
 
-                # For adamw-bc: pass current noise stddev so the EMA
-                # tracks adaptive clipping changes.  For other optimizers
-                # the extra kwarg is harmless (torchopt ignores it).
+                # When ``--bc`` is on for a BC-capable optimizer, pass
+                # the current noise stddev so the φ-EMA / cumulative Φ
+                # tracks adaptive clipping changes.  Otherwise omit the
+                # kwarg entirely — Opaque-built optimizers without a BC
+                # path (lion, adafactor) reject unknown kwargs by signature,
+                # and torchopt's primitives don't accept ``noise_stddev``.
                 opt_kwargs = {}
-                if args.optimizer == "adamw-bc":
+                if bc_active:
                     opt_kwargs["noise_stddev"] = noise_stddev
                 updates, opt_state = base_opt.update(
                     noisy_grads, opt_state, params=trainable_params, **opt_kwargs

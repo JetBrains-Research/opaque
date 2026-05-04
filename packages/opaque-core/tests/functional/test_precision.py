@@ -3,7 +3,7 @@
 Three axes:
 
 1. **Full-cast bf16** — ``model.to(bfloat16)`` flows cleanly through
-   ``vmap(grad)`` → ``clipped_grad`` → ``gaussian_noise`` → ``adamw_bc``.
+   ``vmap(grad)`` → ``clipped_grad`` → ``gaussian_noise`` → ``adamw``.
    Reduction-stability promotion to fp32 already lives in
    ``opaque/clipping/clipped_fun.py:_sum_clipped_tensor``; we exercise it
    end-to-end and check dtype is preserved on the public boundary.
@@ -30,7 +30,7 @@ import torchopt
 
 from opaque.clipping import clipped_grad
 from opaque.dpsgd.noise.gaussian import gaussian_noise
-from opaque.dpsgd.optimizers.adamw_bc import adamw_bc
+from opaque.optimizers import adamw
 from opaque.functional import make_functional
 from opaque.random import key
 
@@ -68,7 +68,7 @@ def _full_step(
     noise_fn, ns = gaussian_noise(stddev=noise_stddev, key=key(42))
     noisy, _ = noise_fn(grads, ns)
 
-    optimizer = adamw_bc(lr=1e-2, noise_stddev=noise_stddev)
+    optimizer = adamw(lr=1e-2, noise_stddev=noise_stddev)
     opt_state = optimizer.init(params)
     updates, _ = optimizer.update(noisy, opt_state, params=params)
     new_params = torchopt.apply_updates(params, updates, inplace=False)
@@ -119,12 +119,12 @@ def test_bf16_full_pipeline_proximity_to_fp32_cpu():
 
 
 def test_bf16_optimizer_step_finite_cpu():
-    """adamw_bc.update on bf16 grads produces finite updated params."""
+    """adamw.update on bf16 grads produces finite updated params."""
     model = _build_model().to(dtype=torch.bfloat16)
     x, y = _make_batch(torch.bfloat16, torch.device("cpu"))
     _, _, new_params = _full_step(model, x, y, noise_stddev=0.5)
     for p in new_params:
-        assert torch.isfinite(p).all(), "adamw_bc produced non-finite param update"
+        assert torch.isfinite(p).all(), "adamw produced non-finite param update"
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="cuda required")

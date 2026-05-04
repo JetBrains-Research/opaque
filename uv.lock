@@ -2293,12 +2293,14 @@ source = { editable = "packages/opaque-core" }
 dependencies = [
     { name = "optree" },
     { name = "torch" },
+    { name = "torchopt" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "optree", specifier = ">=0.17.0" },
     { name = "torch", specifier = ">=2.10.0" },
+    { name = "torchopt", specifier = ">=0.7.3" },
 ]
 
 [[package]]
