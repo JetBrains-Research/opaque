@@ -13,7 +13,7 @@ from opaque.patches import apply_runtime_patches
 
 # Saved-tensor hooks (used by save_on_cpu) are blocked inside torch.func.grad
 # upstream; the runtime patch removes that restriction.
-apply_runtime_patches(enable_vmap_checkpointing=True)
+apply_runtime_patches(vmap_checkpointing=True)
 
 pytestmark = [
     pytest.mark.cuda,

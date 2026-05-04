@@ -1,4 +1,17 @@
-"""Model specific patches."""
+# Copyright (c) 2025 Opaque Authors
+# SPDX-License-Identifier: Apache-2.0
+"""Built-in HuggingFace model family patches.
+
+Importing this package eagerly imports every shipped model file.  Each
+file ends with a ``register_family(...)`` call, so all built-in
+families land in the registry by the time
+:func:`opaque.patches.transformers.supported_families` is called.
+
+The cost is bounded: each ``models/X.py`` only constructs two factory
+closures and registers them — the actual ``transformers.models.X``
+modeling module is imported lazily inside the apply function (when the
+patch is first used on a real model), not at import time.
+"""
 
 from .cohere import apply_cohere_patches as apply_cohere_patches
 from .cohere2 import apply_cohere2_patches as apply_cohere2_patches

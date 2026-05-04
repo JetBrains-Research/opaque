@@ -87,7 +87,7 @@ class TestFusedLoRAMLP:
             target_modules=["gate_proj", "up_proj", "down_proj"],
         )
         model = get_peft_model(model, lora_config).to(device)
-        apply_model_patches(model, performance=False, compat=True, fuse_lora=True)
+        apply_model_patches(model, performance=False, compat=True, lora=True)
         layers = model.model.model.layers
         for layer in layers:
             mlp = layer.mlp
@@ -106,7 +106,7 @@ class TestFusedLoRAMLP:
             target_modules=["gate_proj", "up_proj", "down_proj"],
         )
         model = get_peft_model(model, lora_config).to(device)
-        apply_model_patches(model, performance=False, compat=True, fuse_lora=True)
+        apply_model_patches(model, performance=False, compat=True, lora=True)
         input_ids = torch.randint(0, config.vocab_size, (2, 16), device=device)
         outputs = model(input_ids, labels=input_ids)
         loss = outputs.loss

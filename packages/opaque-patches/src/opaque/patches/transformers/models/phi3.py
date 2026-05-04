@@ -1,80 +1,49 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
+"""Patches for the phi3 family — built via the patch factories.
+
+The factories close over architecture-specific knobs (MLP kind, RMSNorm
+casting, whether the family supports fused-add RMS) at construction
+time, so the dispatch is bug-by-construction: e.g. Gemma's
+``activation_kind="geglu_exact"`` cannot accidentally route to SwiGLU.
+
+Registration: this module calls ``register_family`` at import time —
+the same mechanism downstream users follow to add their own families.
+"""
+
 from __future__ import annotations
-from opaque.patches.transformers.components.batchify import apply_batchify_patch
-from opaque.patches.transformers.components.kv_cache import apply_kv_cache_patch
+
+from opaque.patches.transformers._factory import make_apply_model_patches
+from opaque.patches.transformers._family import make_apply_family_patches
+from opaque.patches.transformers._registry import register_family
 
 
-import logging
-import torch.nn as nn
-from opaque.patches.transformers._router import _patch_forward
-from opaque.patches.transformers.components.fused_add_rms_norm import (
-    _fused_add_rms_fac_phi3,
+_MODULE_PATH = "transformers.models.phi3.modeling_phi3"
+
+
+apply_phi3_family_patches = make_apply_family_patches(
+    family="phi3",
+    module_path=_MODULE_PATH,
 )
-from opaque.patches.transformers.components.rms_norm import _rmsnorm_fac_llama
-from opaque.patches.transformers.components.rope import _opaque_apply_rotary_pos_emb
-from opaque.patches.transformers.components.swiglu import _make_phi3_mlp_forward
-from opaque.patches.transformers.components.attention import (
-    vmap_repeat_kv,
-    vmap_eager_attention_forward,
-    _make_vmap_compatible_init,
+
+
+apply_phi3_patches = make_apply_model_patches(
+    family="phi3",
+    family_apply=apply_phi3_family_patches,
+    module_path=_MODULE_PATH,
+    classes={
+        "mlp": "Phi3MLP",
+        "rms_norm": "Phi3RMSNorm",
+        "decoder_layer": "Phi3DecoderLayer",
+        "causal_lm": "Phi3ForCausalLM",
+    },
+    activation_kind="phi3_swiglu",
+    rms_norm_kind="llama",
+    fused_add_rms_kind="phi3",
 )
-from opaque.patches.transformers.components.masking import apply_module_masking_patch
 
 
-logger = logging.getLogger(__name__)
+register_family("phi3", apply_phi3_patches)
 
 
-def apply_phi3_patches(
-    model: nn.Module | None = None,
-    *,
-    performance: bool = True,
-    compat: bool = True,
-    **kwargs,
-) -> None:
-    fuse_swiglu = kwargs.get("fuse_swiglu", performance)
-    fuse_rms_norm = kwargs.get("fuse_rms_norm", performance)
-    fuse_add_rms_norm = kwargs.get("fuse_add_rms_norm", performance)
-    fuse_rope = kwargs.get("fuse_rope", performance)
-    wrap_eager_attention = kwargs.get("wrap_eager_attention", compat)
-    wrap_batchify = kwargs.get("wrap_batchify", compat)
-    disable_kv_cache = kwargs.get("disable_kv_cache", compat)
-    """Apply Triton kernel patches for phi3 model."""
-    try:
-        import transformers.models.phi3.modeling_phi3 as mod
-    except ImportError:
-        return
-
-    if wrap_eager_attention:
-        apply_module_masking_patch(mod)
-        if hasattr(mod, "repeat_kv"):
-            mod.repeat_kv = vmap_repeat_kv
-        if hasattr(mod, "eager_attention_forward"):
-            mod.eager_attention_forward = vmap_eager_attention_forward
-        if hasattr(mod, "DynamicCache"):
-            if not hasattr(mod.DynamicCache.__init__, "_is_vmap_patched"):
-                mod.DynamicCache.__init__ = _make_vmap_compatible_init(
-                    mod.DynamicCache.__init__
-                )
-                mod.DynamicCache.__init__._is_vmap_patched = True
-
-    if fuse_swiglu:
-        _patch_forward(getattr(mod, "Phi3MLP", None), _make_phi3_mlp_forward, model)
-    if fuse_rms_norm:
-        _patch_forward(getattr(mod, "Phi3RMSNorm", None), _rmsnorm_fac_llama, model)
-    if fuse_add_rms_norm:
-        _patch_forward(
-            getattr(mod, "Phi3DecoderLayer", None), _fused_add_rms_fac_phi3, model
-        )
-    if fuse_rope:
-        if (
-            hasattr(mod, "apply_rotary_pos_emb")
-            and mod.apply_rotary_pos_emb is not _opaque_apply_rotary_pos_emb
-        ):
-            mod.apply_rotary_pos_emb = _opaque_apply_rotary_pos_emb
-
-    causal_lm_cls = getattr(mod, "Phi3ForCausalLM", None)
-    if wrap_batchify:
-        apply_batchify_patch(causal_lm_cls, model)
-    if disable_kv_cache:
-        apply_kv_cache_patch(causal_lm_cls, model)
+__all__ = ["apply_phi3_patches", "apply_phi3_family_patches"]

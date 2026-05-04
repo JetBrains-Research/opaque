@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 _is_checkpoint_patched = False
 
 
-def apply_checkpoint_patch(*, enable_vmap_checkpointing: bool = True) -> None:
+def apply_checkpoint_patch(*, vmap_checkpointing: bool = True) -> None:
     """Patch PyTorch to allow gradient checkpointing under vmap(grad(...)).
 
     Applies eight patches:
@@ -56,14 +56,14 @@ def apply_checkpoint_patch(*, enable_vmap_checkpointing: bool = True) -> None:
     8. Transparent checkpoint wrapper for HF binding compatibility
 
     Args:
-        enable_vmap_checkpointing: If True, applies the patch. If False, skips it.
+        vmap_checkpointing: If True, applies the patch. If False, skips it.
     """
     global _is_checkpoint_patched
 
     if _is_checkpoint_patched:
         return
 
-    if enable_vmap_checkpointing is False:
+    if vmap_checkpointing is False:
         return
 
     import torch._functorch.eager_transforms as eager_transforms

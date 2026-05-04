@@ -178,9 +178,8 @@ pub fn py_bnb_mc_pld(
     sigma: f64,
     config: &PyDiscretizationConfig,
 ) -> PyResult<PyPld> {
-    let pld =
-        crate::amplification::bnb_mc_pld(&gram, num_bins, sigma, &config.inner)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    let pld = crate::amplification::bnb_mc_pld(&gram, num_bins, sigma, &config.inner)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
     Ok(PyPld::new(pld))
 }
 
