@@ -28,18 +28,16 @@ from opaque.patches.transformers import (
     register_rms_norm_kind,
     supported_families,
 )
-from opaque.patches.transformers._registry import SUPPORTED_FAMILIES, _FAMILY_REGISTRY
+from opaque.patches.transformers._registry import _FAMILY_REGISTRY
 
 
 @pytest.fixture
 def _restore_registry():
     """Snapshot/restore the family registry around tests that mutate it."""
     snapshot = dict(_FAMILY_REGISTRY)
-    supported_snapshot = list(SUPPORTED_FAMILIES)
     yield
     _FAMILY_REGISTRY.clear()
     _FAMILY_REGISTRY.update(snapshot)
-    SUPPORTED_FAMILIES[:] = supported_snapshot
 
 
 def _passthrough_factory(orig):

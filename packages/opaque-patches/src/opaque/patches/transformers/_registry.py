@@ -69,8 +69,6 @@ def register_family(name: str, apply_fn: Callable) -> None:
             :func:`opaque.patches.transformers.make_apply_model_patches`.
     """
     _FAMILY_REGISTRY[name] = apply_fn
-    if name not in SUPPORTED_FAMILIES:
-        SUPPORTED_FAMILIES.append(name)
 
 
 def get_family_apply_fn(name: str) -> Callable | None:
@@ -81,16 +79,6 @@ def get_family_apply_fn(name: str) -> Callable | None:
 def supported_families() -> list[str]:
     """List currently registered families (built-ins + user-registered)."""
     return sorted(_FAMILY_REGISTRY)
-
-
-# Kept for backwards-compatibility with existing callers that read
-# ``SUPPORTED_FAMILIES`` directly.  Prefer :func:`supported_families`.
-# Populated at first lookup (after built-in models import).
-def _supported_families_proxy() -> list[str]:
-    return supported_families()
-
-
-SUPPORTED_FAMILIES: list[str] = []  # populated by built-in imports
 
 
 def detect_family(model: nn.Module) -> str | None:
@@ -105,7 +93,6 @@ def detect_family(model: nn.Module) -> str | None:
 
 
 __all__ = [
-    "SUPPORTED_FAMILIES",
     "detect_family",
     "get_family_apply_fn",
     "register_family",
