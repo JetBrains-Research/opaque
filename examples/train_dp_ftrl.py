@@ -7,10 +7,13 @@ combined with the correct optimizer.
 
 KEY DIFFERENCES FROM DP-SGD (train_causal_lm.py):
 
-  1. Optimizer: SGD with Polyak momentum (default) OR Adam via JME
-     (--optimizer adam). JME (Joint Moment Estimation, arXiv:2502.06597)
-     enables Adam/AdaGrad by privately estimating both gradient moments
-     with MF correlated noise at zero additional privacy cost.
+  1. Optimizer: SGD with Polyak momentum (default), or one of the
+     Opaque-built v-using optimizers (``adamw``, ``ademamix``).  For
+     adaptive optimizers, pair with ``--jme`` to activate JME paired
+     noise (Joint Moment Estimation, arXiv:2502.06597); the optimizer
+     consumes the privately-estimated ``g²`` stream alongside the
+     standard noisy gradients.  ``lion`` is also exposed but has no v,
+     so ``--jme`` is rejected for it.
 
   2. Clipping: Fixed norm ONLY (adaptive clipping changes sensitivity
      mid-training which invalidates the single-shot MF privacy proof).
@@ -23,8 +26,8 @@ KEY DIFFERENCES FROM DP-SGD (train_causal_lm.py):
 
   5. Noise: Fixed stddev, correlated across steps via C^{-1} streaming
      multiplication. Cannot change noise level mid-training.
-     With --optimizer adam: two independent MF noise streams (one per
-     Adam moment), calibrated via JME joint sensitivity.
+     With ``--jme`` (Adam-family only): two independent MF noise streams
+     (one per Adam moment), calibrated via JME joint sensitivity.
 
 MECHANISMS:
 
@@ -67,10 +70,19 @@ USAGE:
   # Non-DP baseline (no noise, no privacy accounting, same loop)
   python examples/train_dp_ftrl.py --preset mellum-kstack --mechanism none
 
+  # Adam-family without JME (single-stream MF noise, vanilla Adam math)
+  python examples/train_dp_ftrl.py --preset smoke --optimizer adamw
+
   # DP-Adam via JME (two MF noise streams, second moment is "free")
-  python examples/train_dp_ftrl.py --preset smoke --optimizer adam
-  python examples/train_dp_ftrl.py --preset smoke --optimizer adam --mechanism blt
-  python examples/train_dp_ftrl.py --preset smoke --optimizer adam --beta1 0.9 --beta2 0.999
+  python examples/train_dp_ftrl.py --preset smoke --optimizer adamw --jme
+  python examples/train_dp_ftrl.py --preset smoke --optimizer adamw --jme --mechanism blt
+  python examples/train_dp_ftrl.py --preset smoke --optimizer adamw --jme --beta1 0.9 --beta2 0.999
+
+  # AdEMAMix with JME — slow EMA captures long-range gradient signal
+  python examples/train_dp_ftrl.py --preset smoke --optimizer ademamix --jme
+
+  # Lion under MF noise (no JME — lion has no second moment)
+  python examples/train_dp_ftrl.py --preset smoke --optimizer lion
 
 REFERENCES:
 
@@ -119,7 +131,6 @@ from opaque.dpftrl.noise import (
     mf_noise,
     jme_noise,
 )
-from opaque.optimizers import adamw
 from opaque.core.profiling import (
     StepTimer,
     TrainingProfiler,
@@ -310,9 +321,31 @@ def parse_args():
     train_g.add_argument(
         "--optimizer",
         type=str,
-        choices=["sgd", "adam"],
+        choices=["sgd", "adamw", "ademamix", "lion"],
         default="sgd",
-        help="Optimizer: sgd (Polyak momentum, default) or adam (via JME).",
+        help=(
+            "Optimizer.  ``sgd`` is the canonical DP-FTRL baseline "
+            "(torchopt.sgd, Polyak momentum).  ``adamw`` and ``ademamix`` "
+            "are Adam-family adaptive optimizers; pair with ``--jme`` to "
+            "activate the paired-stream second-moment mechanism.  ``lion`` "
+            "is sign-of-momentum; works under MF noise but has no v so "
+            "``--jme`` is rejected for it."
+        ),
+    )
+    train_g.add_argument(
+        "--jme",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Activate JME paired-stream noise: ``jme_noise`` produces a "
+            "privately-estimated second moment ``g²`` alongside the "
+            "first-moment stream, and the optimizer consumes it via "
+            "``noisy_squared_grads`` at every update.  Costs ~22% extra "
+            "noise on the first-moment stream under add/remove DP; in "
+            "exchange the optimizer's v̂ is unbiased.  Requires an "
+            "Adam-family optimizer (``adamw`` or ``ademamix``) with a "
+            "second moment to consume the paired stream.  Off by default."
+        ),
     )
     train_g.add_argument(
         "--momentum",
@@ -900,14 +933,29 @@ def main():
         args.target_delta = 1.0 / (global_train_size**1.1)
 
     # Build the accounting mechanism.
-    # For Adam via JME, the first-moment strategy uses β₁ as the workload
-    # momentum and the second-moment strategy uses β₂.  For SGD, a single
-    # strategy uses the Polyak momentum.
-    use_adam = args.optimizer == "adam"
+    #
+    # Two orthogonal toggles:
+    #   ``is_adam_family``: optimizer has a first-moment EMA at β₁
+    #     (``adamw``, ``ademamix``, ``lion``).  Drives MF workload
+    #     momentum.
+    #   ``use_jme`` (= ``args.jme``): switch from single-stream MF noise
+    #     to paired-stream JME noise.  Requires the optimizer to consume
+    #     ``noisy_squared_grads``, which only Adam-family optimizers
+    #     with v support.  Validated below.
+    is_adam_family = args.optimizer in ("adamw", "ademamix", "lion")
+    use_jme = args.jme
+
+    if use_jme and args.optimizer not in ("adamw", "ademamix"):
+        raise ValueError(
+            f"--jme requires an Adam-family optimizer with a second moment "
+            f"to consume the paired ``noisy_squared_grads`` stream "
+            f"(``adamw`` or ``ademamix``); got --optimizer {args.optimizer}.  "
+            f"Run without --jme, or switch optimizer."
+        )
 
     def _workload_momentum() -> float:
         """Workload momentum for the primary (first moment) strategy."""
-        return args.beta1 if use_adam else args.momentum
+        return args.beta1 if is_adam_family else args.momentum
 
     def _make_strategy(momentum_override=None, lr_sched=None):
         """Build a strategy for the selected mechanism with given workload momentum."""
@@ -958,7 +1006,7 @@ def main():
             mechanism = acc.band_mf(
                 nm, sensitivity=strategy.sensitivity, num_groups=strategy.num_groups
             )
-            if use_adam:
+            if use_jme:
                 mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
                                    max_column_norm=strategy._max_column_norm)
             if args.band_mf_sampling == "cyclic_poisson":
@@ -972,7 +1020,7 @@ def main():
     elif args.mechanism == "blt" and strategy is not None:
         def acct_mechanism(nm):
             mechanism = acc.blt(nm, sensitivity=strategy.sensitivity)
-            if use_adam:
+            if use_jme:
                 mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
                                    max_column_norm=strategy._max_column_norm)
             return mechanism
@@ -983,7 +1031,7 @@ def main():
                 sensitivity=strategy.sensitivity,
                 gram_matrix=strategy.gram_matrix,
             )
-            if use_adam:
+            if use_jme:
                 mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
                                    max_column_norm=strategy._max_column_norm)
             return acc.balls_in_bins(
@@ -998,7 +1046,7 @@ def main():
                 sensitivity=strategy.sensitivity,
                 gram_matrix=strategy.gram_matrix,
             )
-            if use_adam:
+            if use_jme:
                 mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
                                    max_column_norm=strategy._max_column_norm)
             return acc.balls_in_bins(
@@ -1013,7 +1061,7 @@ def main():
                 sensitivity=strategy.sensitivity,
                 gram_matrix=strategy.gram_matrix,
             )
-            if use_adam:
+            if use_jme:
                 mechanism = acc.jme(mechanism, zeta=clip_state.sensitivity,
                                    max_column_norm=strategy._max_column_norm)
             return acc.balls_in_bins(
@@ -1072,13 +1120,13 @@ def main():
         print("\nNon-DP mode: using identity noise with stddev=0...")
     elif args.mechanism == "identity":
         print("\nCreating identity noise (i.i.d. Gaussian, DP-SGD baseline)...")
-    elif use_adam:
+    elif use_jme:
         print(f"\nCreating JME noise (β₁={args.beta1}, β₂={args.beta2})...")
     else:
         print(f"\nCreating MF noise (β={args.momentum})...")
     t0 = time.time()
 
-    if use_adam and args.mechanism not in ("identity", "none"):
+    if use_jme and args.mechanism not in ("identity", "none"):
         noise_fn, noise_state = jme_noise(
             trainable_params,
             strategy,
@@ -1103,21 +1151,48 @@ def main():
         )
     print(f"  Noise function created in {time.time() - t0:.1f}s")
 
-    if use_adam:
-        # JME mode: pass ``noisy_squared_grads`` to opt.update() at every
-        # step (paired-stream second moment from jme_noise()).
+    lr_callable = lambda step: lr_schedule[min(step, len(lr_schedule) - 1)].item()  # noqa: E731
+
+    if args.optimizer == "sgd":
+        optimizer = torchopt.sgd(
+            lr=lr_callable,
+            momentum=args.momentum,
+            weight_decay=args.weight_decay,
+        )
+    elif args.optimizer == "adamw":
+        from opaque.optimizers import adamw
+
+        # ``--jme`` (when on) drives the noise side; the optimizer side
+        # consumes ``noisy_squared_grads`` at every update() — same factory
+        # in either case.
         optimizer = adamw(
-            lr=lambda step: lr_schedule[min(step, len(lr_schedule) - 1)].item(),
+            lr=lr_callable,
             betas=(args.beta1, args.beta2),
             eps=args.adam_eps,
             weight_decay=args.weight_decay,
         )
-    else:
-        optimizer = torchopt.sgd(
-            lr=lambda step: lr_schedule[min(step, len(lr_schedule) - 1)].item(),
-            momentum=args.momentum,
+    elif args.optimizer == "ademamix":
+        from opaque.optimizers import ademamix
+
+        # β₃ and α default to the paper values (0.9999, 5.0).  Expose
+        # CLI knobs for them once a real user case appears.
+        optimizer = ademamix(
+            lr=lr_callable,
+            betas=(args.beta1, args.beta2, 0.9999),
+            alpha=5.0,
+            eps=args.adam_eps,
             weight_decay=args.weight_decay,
         )
+    elif args.optimizer == "lion":
+        from opaque.optimizers import lion
+
+        optimizer = lion(
+            lr=lr_callable,
+            betas=(args.beta1, args.beta2),
+            weight_decay=args.weight_decay,
+        )
+    else:
+        raise ValueError(f"Unknown optimizer: {args.optimizer}")
     opt_state = optimizer.init(trainable_params)
 
     # --- Diagnostic: compute what identity baseline σ would be ---
@@ -1141,24 +1216,34 @@ def main():
 
     print("\nDP-FTRL setup:")
     print(f"  Mechanism: {args.mechanism}")
-    if use_adam:
+    jme_note = " + JME paired noise" if use_jme else ""
+    if is_adam_family:
         print(
-            f"  Optimizer: Adam via JME (β₁={args.beta1}, β₂={args.beta2}, "
+            f"  Optimizer: {args.optimizer}{jme_note} "
+            f"(β₁={args.beta1}, β₂={args.beta2}, "
             f"ε={args.adam_eps}, weight_decay={args.weight_decay})"
         )
-        print(f"  Workload: EMA β₁={args.beta1} (1st moment), β₂={args.beta2} (2nd moment)")
+        if use_jme:
+            print(
+                f"  Workload: EMA β₁={args.beta1} (1st moment), β₂={args.beta2} (2nd moment)"
+            )
+        else:
+            print(f"  Workload: EMA β₁={args.beta1} (single-stream MF)")
         if args.mechanism == "bsr":
             print(
                 f"  BSR workload (α={args.bsr_alpha}, β=β₁={args.beta1}): "
                 "noise strategy uses paper (α,β); independent of optimizer --weight-decay; require α>β."
             )
     else:
+        # sgd / lion (lion technically has β₁ but no JME; treat like the
+        # SGD-style printout since neither uses JME).
         print(
-            f"  Optimizer: SGD + Polyak momentum (β={args.momentum}, "
+            f"  Optimizer: {args.optimizer} (β={args.momentum}, "
             f"weight_decay={args.weight_decay})"
         )
         print(
-            f"  Workload: momentum-SGD (β={args.momentum}){' [prefix-sum]' if args.momentum == 1.0 else ''}"
+            f"  Workload: momentum-SGD (β={args.momentum})"
+            f"{' [prefix-sum]' if args.momentum == 1.0 else ''}"
         )
         if args.mechanism == "bsr":
             print(
@@ -1174,7 +1259,7 @@ def main():
         f"  Sensitivity: {zeta:.6f} (= {args.clipping_norm} / {args.batch_size})"
     )
     print(f"  Noise multiplier (σ): {noise_multiplier:.4f}")
-    if use_adam and args.mechanism not in ("identity", "none"):
+    if use_jme and args.mechanism not in ("identity", "none"):
         joint_sens = jme_joint_sensitivity(strategy.sensitivity, zeta)
         print(f"  JME joint sensitivity: {joint_sens:.6f}")
         print(f"  Noise stddev (1st moment): {noise_multiplier * joint_sens:.6f}")
@@ -1204,7 +1289,7 @@ def main():
         print(f"  BISR bandwidth: {args.bisr_bandwidth}")
         print("  Column normalization: enabled (Appendix A, exact BnB)")
     elif args.mechanism == "bsr":
-        bsr_beta = args.beta1 if use_adam else args.momentum
+        bsr_beta = args.beta1 if is_adam_family else args.momentum
         print(
             f"  BSR: bandwidth={args.bsr_bandwidth}, workload (α={args.bsr_alpha}, β={bsr_beta})"
         )
@@ -1260,7 +1345,7 @@ def main():
                         state=clip_state,
                     )
 
-                if use_adam:
+                if use_jme:
                     (noisy_grads, noisy_sq), noise_state = noise_fn(grads, noise_state)
                     updates, opt_state = optimizer.update(
                         noisy_grads,
@@ -1343,10 +1428,14 @@ def main():
     print(f"Model: {args.model_name}")
     print(f"Dataset: {args.dataset} ({global_train_size} train samples)")
     print(f"\nMechanism: {args.mechanism}")
-    if use_adam:
-        print(f"Optimizer: Adam via JME (β₁={args.beta1}, β₂={args.beta2})")
+    jme_suffix = " + JME paired noise" if use_jme else ""
+    if is_adam_family:
+        print(
+            f"Optimizer: {args.optimizer}{jme_suffix} "
+            f"(β₁={args.beta1}, β₂={args.beta2})"
+        )
     else:
-        print(f"Optimizer: SGD + Polyak momentum (β={args.momentum})")
+        print(f"Optimizer: {args.optimizer} (β={args.momentum})")
     print("\nTraining results:")
     print(f"  Total steps: {global_step}")
     if losses:
