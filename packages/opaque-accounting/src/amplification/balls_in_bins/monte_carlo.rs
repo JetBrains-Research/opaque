@@ -474,12 +474,8 @@ mod tests {
         }
         let config = default_config();
 
-        let eps_low = bnb_mc_pld(&gram, b, 0.5, &config)
-            .unwrap()
-            .epsilon_at(1e-5);
-        let eps_high = bnb_mc_pld(&gram, b, 2.0, &config)
-            .unwrap()
-            .epsilon_at(1e-5);
+        let eps_low = bnb_mc_pld(&gram, b, 0.5, &config).unwrap().epsilon_at(1e-5);
+        let eps_high = bnb_mc_pld(&gram, b, 2.0, &config).unwrap().epsilon_at(1e-5);
         assert!(
             eps_high < eps_low,
             "More noise: {} should be < {}",
