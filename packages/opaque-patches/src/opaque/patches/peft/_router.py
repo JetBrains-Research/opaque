@@ -21,12 +21,13 @@ from .components._utils import _has_lora, _no_lora_dropout, _no_bias
 logger = logging.getLogger(__name__)
 
 
-def _lora_kernels_available() -> bool:
+def _lora_patching_allowed() -> bool:
+    """Return whether it is safe to install LoRA kernel wrappers."""
     try:
         import torch
 
         if not torch.cuda.is_available():
-            return False
+            return True
         import triton  # noqa: F401
     except ImportError:
         return False
@@ -168,7 +169,7 @@ def apply_peft_model_patches(
         model: A PEFT-wrapped model with LoRA adapters.
     """
     lora = kwargs.get("lora", performance)
-    if not lora or not _lora_kernels_available():
+    if not lora or not _lora_patching_allowed():
         return
 
     patched_lora = False

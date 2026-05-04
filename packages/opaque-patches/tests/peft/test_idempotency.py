@@ -1,6 +1,8 @@
 # Copyright (c) 2025 Opaque Authors
 # SPDX-License-Identifier: Apache-2.0
 
+import builtins
+
 import pytest
 
 pytest.importorskip("transformers")
@@ -10,6 +12,34 @@ from peft import LoraConfig, get_peft_model
 from transformers import LlamaConfig, AutoModelForCausalLM
 
 from opaque.patches import apply_model_patches
+
+
+def test_lora_patching_allowed_on_non_cuda_hosts(monkeypatch):
+    import torch
+
+    from opaque.patches.peft._router import _lora_patching_allowed
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+    assert _lora_patching_allowed()
+
+
+def test_lora_patching_rejected_on_cuda_without_triton(monkeypatch):
+    import torch
+
+    from opaque.patches.peft._router import _lora_patching_allowed
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "triton":
+            raise ImportError("no triton")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    assert not _lora_patching_allowed()
 
 
 def test_apply_model_patches_is_idempotent_for_lora_fusions():
